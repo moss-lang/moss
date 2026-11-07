@@ -28,7 +28,10 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound BodyTy Merge CtxWalk.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes ContextClean CtxWalk LFunPresence.
+From NM Require Export FnInfoCore TypeReadingInj.
+From NM Require Import KeyTranslation.
+Include KeyTranslation.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -141,11 +144,16 @@ Qed.
 
 Lemma recvty_det : forall r tm t1 t2, RecvTy W r tm t1 -> RecvTy W r tm t2 -> t1 = t2.
 Proof.
+  assert (Nom : forall r tm t1 t2,
+    (exists args, t1 = TNom r args /\ Forall2 (fun x xa => fst xa=x /\ nlook x tm=Some(snd xa)) (w_reqs W r) args) ->
+    (exists args, t2 = TNom r args /\ Forall2 (fun x xa => fst xa=x /\ nlook x tm=Some(snd xa)) (w_reqs W r) args) -> t1=t2).
+  { intros r tm t1 t2 (a1 & -> & F1) (a2 & -> & F2). f_equal. revert a2 F2. clear -F1.
+    induction F1 as [|x xa xs xas [E1 L1] Fr IH]; intros a2 F2; inversion F2; subst; [reflexivity|].
+    match goal with H0 : fst ?y = _ /\ _ |- _ => destruct H0 as [E2 L2] end.
+    f_equal; [apply pair_eta; congruence|apply IH; assumption]. }
   intros r tm t1 t2. unfold RecvTy. destruct (nlook r tm); [congruence|].
-  intros (a1 & -> & F1) (a2 & -> & F2). f_equal. revert a2 F2. clear -F1.
-  induction F1 as [|x xa xs xas [E1 L1] Fr IH]; intros a2 F2; inversion F2; subst; [reflexivity|].
-  match goal with H0 : fst ?y = _ /\ _ |- _ => destruct H0 as [E2 L2] end.
-  f_equal; [apply pair_eta; congruence | apply IH; assumption].
+  destruct (w_decl W r) as [d|]; [destruct (d_ast d); try apply Nom|apply Nom].
+  intros H1 H2. eapply tyof_det; eassumption.
 Qed.
 
 Lemma methodnamed_det : forall p r n m1 m2, MethodNamed W p r n m1 -> MethodNamed W p r n m2 -> m1 = m2.
@@ -159,7 +167,27 @@ Qed.
 
 End Det.
 
-Scheme IE_mut := Minimality for IE Sort Prop with IEs_mut := Minimality for IEs Sort Prop.
+Scheme IE_mut := Minimality for A.ItemEntries Sort Prop with IEs_mut := Minimality for A.ItemsEntries Sort Prop.
+
+(* Fixed snapshots are metadata: their ordering does not affect merging. *)
+Definition entry_shape(e:A.entry):A.entry:=match e with A.NFun u _=>A.NFun u[]|_=>e end.
+Lemma entry_shape_key:forall sb e,A.entry_key sb(entry_shape e)=A.entry_key sb e.
+Proof. intros sb [];reflexivity. Qed.
+Lemma entry_shape_sig:forall sb e,A.entry_sig sb(entry_shape e)=A.entry_sig sb e.
+Proof. intros sb [];reflexivity. Qed.
+Lemma unifies_entry_shapes:forall sb es,A.Unifies sb es<->A.Unifies sb(map entry_shape es).
+Proof.
+ intros sb es;split.
+ - intros H a b k Ha Hb Ka Kb.
+   apply in_map_iff in Ha as[x[<- Hx]];apply in_map_iff in Hb as[y[<- Hy]].
+   rewrite !entry_shape_key in Ka,Kb;rewrite !entry_shape_sig;exact(H x y k Hx Hy Ka Kb).
+ - intros H a b k Ha Hb Ka Kb.
+   pose proof(H(entry_shape a)(entry_shape b)k(in_map entry_shape es a Ha)(in_map entry_shape es b Hb))as E.
+   rewrite !entry_shape_key,!entry_shape_sig in E;exact(E Ka Kb).
+Qed.
+Lemma unifies_shape_equal:forall es es',map entry_shape es=map entry_shape es'->
+ forall sb,A.Unifies sb es<->A.Unifies sb es'.
+Proof. intros es es' E sb;rewrite(unifies_entry_shapes sb es),(unifies_entry_shapes sb es'),E;reflexivity. Qed.
 
 Section DetIE.
 Variable W : A.world.
@@ -204,84 +232,44 @@ Ltac fin :=
       assert_fails (constr_eq a1 a2); pose proof (appof_det W _ _ _ _ H1 H2); subst a2; clear H2
   | H1 : TyOf W ?p ?tm ?th ?t ?a1, H2 : TyOf W ?p ?tm ?th ?t ?a2 |- _ =>
       assert_fails (constr_eq a1 a2); pose proof (tyof_det W _ _ _ _ _ H1 _ H2); subst a2; clear H2
-  | IH : forall es2 tm2, IE W ?p ?ob ?tm ?sp es2 tm2 -> _, H : IE W ?p ?ob ?tm ?sp ?e2 ?t2 |- _ =>
+  | IH : forall es2 tm2, A.ItemEntries W ?p ?ob ?tm ?sp es2 tm2 -> _, H : A.ItemEntries W ?p ?ob ?tm ?sp ?e2 ?t2 |- _ =>
       destruct (IH _ _ H); subst; clear H
-  | IH : forall es2 tm2, IEs W ?p ?ob ?tm ?sp es2 tm2 -> _, H : IEs W ?p ?ob ?tm ?sp ?e2 ?t2 |- _ =>
+  | IH : forall es2 tm2, A.ItemsEntries W ?p ?ob ?tm ?sp es2 tm2 -> _, H : A.ItemsEntries W ?p ?ob ?tm ?sp ?e2 ?t2 |- _ =>
       destruct (IH _ _ H); subst; clear H
   end; auto.
 
-Lemma ie_det_all :
-  (forall p ob tm sp es tm', IE W p ob tm sp es tm' -> forall es2 tm2, IE W p ob tm sp es2 tm2 -> es = es2 /\ tm' = tm2) /\
-  (forall p ob tm its es tm', IEs W p ob tm its es tm' -> forall es2 tm2, IEs W p ob tm its es2 tm2 -> es = es2 /\ tm' = tm2).
+Lemma ie_shape_det_all :
+  (forall p ob tm sp es tm', IE W p ob tm sp es tm' -> forall es2 tm2, IE W p ob tm sp es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2) /\
+  (forall p ob tm its es tm', IEs W p ob tm its es tm' -> forall es2 tm2, IEs W p ob tm its es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2).
 Proof.
   split; [apply (IE_mut W
-    (fun p ob tm sp es tm' => forall es2 tm2, IE W p ob tm sp es2 tm2 -> es = es2 /\ tm' = tm2)
-    (fun p ob tm its es tm' => forall es2 tm2, IEs W p ob tm its es2 tm2 -> es = es2 /\ tm' = tm2))
+    (fun p ob tm sp es tm' => forall es2 tm2, IE W p ob tm sp es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2)
+    (fun p ob tm its es tm' => forall es2 tm2, IEs W p ob tm its es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2))
    | apply (IEs_mut W
-    (fun p ob tm sp es tm' => forall es2 tm2, IE W p ob tm sp es2 tm2 -> es = es2 /\ tm' = tm2)
-    (fun p ob tm its es tm' => forall es2 tm2, IEs W p ob tm its es2 tm2 -> es = es2 /\ tm' = tm2))];
-  intros; lazymatch goal with H : _ |- _ => inversion H; subst; clear H end;
-  try solve [kmis']; fin.
+    (fun p ob tm sp es tm' => forall es2 tm2, IE W p ob tm sp es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2)
+    (fun p ob tm its es tm' => forall es2 tm2, IEs W p ob tm its es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2))];
+  intros; unfold IE,IEs in *; lazymatch goal with H : _ |- _ => inversion H; subst; clear H end;
+  try solve [kmis']; fin; repeat split;cbn[map entry_shape];rewrite ?map_app;congruence.
 Qed.
 
 End DetIE.
 
-Lemma ie_det : forall W p ob tm sp es1 tm1 es2 tm2, IE W p ob tm sp es1 tm1 -> IE W p ob tm sp es2 tm2 -> es1 = es2 /\ tm1 = tm2.
-Proof. intros W p ob tm sp es1 tm1 es2 tm2 H1 H2. exact (proj1 (ie_det_all W) _ _ _ _ _ _ H1 _ _ H2). Qed.
+Lemma ie_shape_det : forall W p ob tm sp es1 tm1 es2 tm2, IE W p ob tm sp es1 tm1 -> IE W p ob tm sp es2 tm2 -> map entry_shape es1 = map entry_shape es2 /\ tm1 = tm2.
+Proof. intros W p ob tm sp es1 tm1 es2 tm2 H1 H2. exact (proj1 (ie_shape_det_all W) _ _ _ _ _ _ H1 _ _ H2). Qed.
 
-Lemma ies_det : forall W p ob tm its es1 tm1 es2 tm2, IEs W p ob tm its es1 tm1 -> IEs W p ob tm its es2 tm2 -> es1 = es2 /\ tm1 = tm2.
-Proof. intros W p ob tm its es1 tm1 es2 tm2 H1 H2. exact (proj2 (ie_det_all W) _ _ _ _ _ _ H1 _ _ H2). Qed.
+Lemma ies_shape_det : forall W p ob tm its es1 tm1 es2 tm2, IEs W p ob tm its es1 tm1 -> IEs W p ob tm its es2 tm2 -> map entry_shape es1 = map entry_shape es2 /\ tm1 = tm2.
+Proof. intros W p ob tm its es1 tm1 es2 tm2 H1 H2. exact (proj2 (ie_shape_det_all W) _ _ _ _ _ _ H1 _ _ H2). Qed.
+
+Lemma ies_unifies:forall W p ob tm its es1 tm1 es2 tm2,
+ IEs W p ob tm its es1 tm1->IEs W p ob tm its es2 tm2->
+ forall sb,A.Unifies sb es1<->A.Unifies sb es2.
+Proof. intros;apply unifies_shape_equal;exact(proj1(ies_shape_det _ _ _ _ _ _ _ _ _ H H0)). Qed.
 
 (* ======================================================================== *)
 (* 2. Method keys: tr is injective on the types ety_ok admits                *)
 (* ======================================================================== *)
 
-Section Inj.
-Variable Fl : string -> nat.
-Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
-Notation trF := (tr Fl).
 
-Lemma map_inj_forall : forall X Y (f : X -> Y) (P : X -> Prop) xs ys,
-  Forall (fun x => forall y, P y -> f x = f y -> x = y) xs -> Forall P ys -> map f xs = map f ys -> xs = ys.
-Proof.
-  intros X Y f P xs. induction xs as [|x r IH]; intros [|y r'] Fx Fy E; cbn in E; try discriminate; [reflexivity|].
-  injection E as E1 E2. inversion Fx; subst. inversion Fy; subst. f_equal; [auto | eauto].
-Qed.
-
-Lemma forallb_Forall : forall X (f : X -> bool) l, forallb f l = true -> Forall (fun x => f x = true) l.
-Proof. intros X f l H. apply Forall_forall. intros x Hx. rewrite forallb_forall in H. exact (H x Hx). Qed.
-
-Lemma tr_inj : forall a b, ety_ok a = true -> ety_ok b = true -> trF a = trF b -> a = b.
-Proof.
-  induction a as [| |g|n xs IH|ms IH|fs IH] using ety_ind'; intros b Oa Ob E;
-    destruct b as [| |g'|n' ys|ms'|fs']; cbn [tr] in E; try discriminate; try reflexivity.
-  - destruct ms' as [|m r]; [discriminate Ob | discriminate E].
-  - injection E as ->. reflexivity.
-  - cbn [ety_ok] in Oa, Ob. apply andb_true_iff in Oa as [Na Oa]. apply andb_true_iff in Ob as [Nb Ob].
-    injection E as <- E. f_equal.
-    eapply (map_inj_forall _ _ _ (fun p => ety_ok (snd p) = true)); [| exact (forallb_Forall _ _ _ Ob) | exact E].
-    pose proof (forallb_Forall _ _ _ Oa) as Fa. rewrite Forall_forall in IH, Fa |- *.
-    intros [k x] Hx [k' y] Hy Exy. cbn in Exy |- *. injection Exy as <- Exy. f_equal.
-    exact (IH (k, x) Hx y (Fa _ Hx) Hy Exy).
-  - cbn [ety_ok] in Oa. apply andb_true_iff in Oa as [Na _]. injection E as En _. subst n.
-    discriminate Na.
-  - destruct ms as [|m r]; [discriminate Oa | discriminate E].
-  - cbn [ety_ok] in Oa, Ob. destruct ms as [|m r]; [discriminate Oa|]. destruct ms' as [|m' r']; [discriminate Ob|].
-    assert (E' : map trF (m :: r) = map trF (m' :: r')) by (injection E as E1 E2; cbn; rewrite E1, E2; reflexivity).
-    clear E. rename E' into E. f_equal.
-    eapply (map_inj_forall _ _ _ (fun x => ety_ok x = true)); [| exact (forallb_Forall _ _ _ Ob) | exact E].
-    pose proof (forallb_Forall _ _ _ Oa) as Fa. rewrite Forall_forall in IH, Fa |- *.
-    intros x Hx y Hy Exy. exact (IH x Hx y (Fa _ Hx) Hy Exy).
-  - cbn [ety_ok] in Ob. apply andb_true_iff in Ob as [Nb _]. injection E as En _. subst n'.
-    discriminate Nb.
-  - cbn [ety_ok] in Oa, Ob. injection E as E. f_equal.
-    eapply (map_inj_forall _ _ _ (fun p => ety_ok (snd p) = true)); [| exact (forallb_Forall _ _ _ Ob) | exact E].
-    pose proof (forallb_Forall _ _ _ Oa) as Fa. rewrite Forall_forall in IH, Fa |- *.
-    intros [k x] Hx [k' y] Hy Exy. cbn in Exy |- *. injection Exy as Ek Exy. rewrite (Finj _ _ Ek). f_equal.
-    exact (IH (k, x) Hx y (Fa _ Hx) Hy Exy).
-Qed.
-
-End Inj.
 
 (* ======================================================================== *)
 (* 3. A settled round: σ = suf U unifies the entries; the needs             *)
@@ -293,13 +281,7 @@ Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Notation trF := (tr Fl).
 
 (* the item an elaborator key reads as *)
-Definition key_tr (k : key) : item :=
-  match k with
-  | KyVal v => IVal v
-  | KyFn f => IFn f
-  | KyMth r m => IMth (trF r) m []
-  | KyFun u => IFun u
-  end.
+Local Notation key_tr := (KeyTranslation.key_tr Fl).
 
 Lemma sigma_tr : forall U e t, en_uf e = U -> Tri U -> asub (suf Fl U) (trF t) = trF (canon e t).
 Proof. intros U e t E T. rewrite (tr_res Fl U (tri_rk U T)), canon_res, E. reflexivity. Qed.
@@ -328,7 +310,7 @@ Proof.
   intros U e tm les needs Hws E. pose proof (ws_tri _ _ _ _ _ _ Hws) as T. rewrite E in T.
   intros e1 e2 k H1 H2 K1 K2. apply in_map_iff in H1 as (l1 & <- & Hl1). apply in_map_iff in H2 as (l2 & <- & Hl2).
   rewrite (entry_key_tr U e _ E T) in K1. rewrite (entry_key_tr U e _ E T) in K2.
-  destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2];
+  destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2];
     cbn [lkey option_map key_tr] in K1, K2; try discriminate; try (rewrite <- K2 in K1; discriminate K1);
     cbn [tr_ent A.entry_sig]; try reflexivity.
   - rewrite <- K2 in K1. injection K1 as <-.
@@ -362,7 +344,7 @@ Proof.
   intros U e tm les needs Hws E. pose proof (ws_tri _ _ _ _ _ _ Hws) as T. rewrite E in T.
   assert (Ok : forall k, In k needs -> match k with KyMth r _ => ety_ok r = true | _ => True end).
   { intros k Hk. apply (ws_needs _ _ _ _ _ _ Hws E k) in Hk as (l & Hl & Hk).
-    destruct l as [|v y a|f g a|r m g a|u]; cbn in Hk; try discriminate; injection Hk as <-; try exact I.
+    destruct l as [|v y a|f g a|r m g a|u fx]; cbn in Hk; try discriminate; injection Hk as <-; try exact I.
     exact (proj1 (ws_mths _ _ _ _ _ _ Hws E r m g a Hl)). }
   split.
   - apply nodup_map_on; [exact (ws_nodup _ _ _ _ _ _ Hws)|]. intros x y Hx Hy Exy.
@@ -416,66 +398,45 @@ Hypothesis Hok : forall e, ok (walk e).
 (* what a round reads: its entries (and types in force), the same in every
    round (IEs is functional) *)
 Variable Rd : list A.entry -> list (nat * ty) -> Prop.
-Hypothesis Hdet : forall es tm es' tm', Rd es tm -> Rd es' tm' -> es = es'.
+Hypothesis Hdet : forall es tm es' tm' sb, Rd es tm -> Rd es' tm' -> A.Unifies sb es <-> A.Unifies sb es'.
 (* what the state must satisfy before (kept going forwards) and after
    (kept going back) *)
 Variables (Pre Post : st -> Prop).
 Hypothesis Pre_fwd : forall s s', Fr s s' -> Pre s -> Pre s'.
 Hypothesis Post_back : forall s s', Fr s s' -> Post s' -> Post s.
 (* one round, from the merges U *)
-Hypothesis Hround : forall U s e needs s', Tri U -> Inv s -> Pre s -> Post s' ->
+Hypothesis Hround : forall U s e needs s', Tri U -> UfOK U -> Inv s -> Pre s -> Post s' ->
   walk (env_with_edges [] U) s = Good ((e, needs), s') ->
   exists les tm, Rd (map (tr_ent Fl) les) tm /\ WS Fl U e tm les needs.
 
 Definition MG (U : list (nat * ety)) : Prop :=
   forall es tm sb, Rd es tm -> A.Unifies sb es -> RespE Fl sb U.
 
-Definition mw_go (mi : nat) :=
-  fix go (n : nat) (tne ufe : list (nat * ety)) : M (env * list key) :=
-     let! (e, needs) := walk (env_with_edges tne ufe) in
-     let tne' := filter (fun p => negb (ety_eqb (snd p) (YAbs (fst p)))) (tymap e) in
-     let ufe' := en_uf e in
-     if edges_eqb (tne' ++ ufe') (tne ++ ufe) then ret (e, needs) else
-     match n with
-     | 0 => err mi "merging the context does not settle in 8 rounds (D43)"
-     | S n' => go n' tne' ufe'
-     end.
-
-Lemma mw_go_eq : forall mi, merged_walk mi walk = mw_go mi 8 [] [].
-Proof. reflexivity. Qed.
-
-Lemma ok_mw_go : forall mi n tne ufe, ok (mw_go mi n tne ufe).
-Proof.
-  intros mi n. induction n as [|n IH]; intros tne ufe; cbn [mw_go];
-    apply ok_bind; [apply Hok | | apply Hok |]; intros [e needs]; cbn beta iota zeta;
-    destruct (edges_eqb _ _); try apply ok_ret; [unfold err; okt | apply IH].
-Qed.
-
 Lemma rounds : forall mi n U s e needs s',
-  mw_go mi n [] U s = Good ((e, needs), s') ->
-  Inv s -> Pre s -> Post s' -> Tri U -> MG U ->
+  mw_go walk mi n [] U s = Good ((e, needs), s') ->
+  Inv s -> Pre s -> Post s' -> Tri U -> UfOK U -> MG U ->
   exists les tm, Rd (map (tr_ent Fl) les) tm /\ WS Fl (en_uf e) e tm les needs /\ MG (en_uf e).
 Proof.
-  intros mi n. induction n as [|n IH]; intros U s e needs s' H Hi Hp Hq T Mg; cbn [mw_go] in H;
+  intros mi n. induction n as [|n IH]; intros U s e needs s' H Hi Hp Hq T O Mg; cbn [mw_go] in H;
     apply bind_inv in H as ([e1 n1] & s1 & H1 & H2); destruct (Hok _ s _ s1 Hi H1) as [Hi1 F1];
     cbn beta iota zeta in H2.
   - destruct (edges_eqb _ _) eqn:Ee; [|noerr H2]. injection H2; intros; subst.
-    destruct (Hround U s e needs s' T Hi Hp Hq H1) as (les & tm & Rl & Hws).
+    destruct (Hround U s e needs s' T O Hi Hp Hq H1) as (les & tm & Rl & Hws).
     rewrite (tne_nil _ _ _ _ _ _ Hws) in Ee. destruct (ws_ext _ _ _ _ _ _ Hws) as (nw & En).
     rewrite En in Ee. pose proof (edges_settled _ _ Ee) as ->. rewrite app_nil_r in En.
     exists les, tm. rewrite En. auto.
   - destruct (edges_eqb _ _) eqn:Ee.
     + injection H2; intros; subst.
-      destruct (Hround U s e needs s' T Hi Hp Hq H1) as (les & tm & Rl & Hws).
+      destruct (Hround U s e needs s' T O Hi Hp Hq H1) as (les & tm & Rl & Hws).
       rewrite (tne_nil _ _ _ _ _ _ Hws) in Ee. destruct (ws_ext _ _ _ _ _ _ Hws) as (nw & En).
       rewrite En in Ee. pose proof (edges_settled _ _ Ee) as ->. rewrite app_nil_r in En.
       exists les, tm. rewrite En. auto.
-    + destruct (ok_mw_go mi n _ _ s1 _ s' Hi1 H2) as [_ F2].
-      destruct (Hround U s e1 n1 s1 T Hi Hp (Post_back _ _ F2 Hq) H1) as (les & tm & Rl & Hws).
+    + destruct (ok_mw_go walk Hok mi n _ _ s1 _ s' Hi1 H2) as [_ F2].
+      destruct (Hround U s e1 n1 s1 T O Hi Hp (Post_back _ _ F2 Hq) H1) as (les & tm & Rl & Hws).
       rewrite (tne_nil _ _ _ _ _ _ Hws) in H2.
-      apply (IH (en_uf e1) s1 e needs s' H2 Hi1 (Pre_fwd _ _ F1 Hp) Hq (ws_tri _ _ _ _ _ _ Hws)).
+      apply (IH (en_uf e1) s1 e needs s' H2 Hi1 (Pre_fwd _ _ F1 Hp) Hq (ws_tri _ _ _ _ _ _ Hws) (cc_uf _ (ws_clean _ _ _ _ _ _ Hws))).
       intros es tm' sb Rs Hu. apply (ws_mg _ _ _ _ _ _ Hws sb (Mg es tm' sb Rs Hu)).
-      rewrite (Hdet _ _ _ _ Rl Rs). exact Hu.
+      exact(proj2(Hdet _ _ _ _ sb Rl Rs)Hu).
 Qed.
 
 (* merged_walk: its last round's entries, read under σ = suf (its merges),
@@ -487,7 +448,7 @@ Theorem merged_walk_spec : forall mi s e needs s', merged_walk mi walk s = Good 
     A.Needs (suf Fl (en_uf e)) (map (tr_ent Fl) les) (map (key_tr Fl) needs).
 Proof.
   intros mi s e needs s' H Hi Hp Hq. rewrite mw_go_eq in H.
-  destruct (rounds mi 8 [] s e needs s' H Hi Hp Hq TriNil (fun es tm sb _ _ g t Hin => match Hin with end))
+  destruct (rounds mi 8 [] s e needs s' H Hi Hp Hq TriNil (fun g t Hin => match Hin with end) (fun es tm sb _ _ g t Hin => match Hin with end))
     as (les & tm & Rl & Hws & Mg).
   exists les, tm. split; [exact Rl|]. split; [exact Hws|]. split.
   - apply (settled_mgm Fl Finj _ e tm les needs Hws eq_refl). intros sb Hu. exact (Mg _ _ sb Rl Hu).
@@ -501,47 +462,12 @@ End Rounds.
 (* ======================================================================== *)
 
 (* fn_info's walk, as it is written there *)
-Definition fi_walk (g : gsym) (e : env) : M (env * list key) :=
-  let mi := gs_mod g in
-  match gs_origin g with
-  | OForwarder t =>
-      let! tg := sym t in
-      let! rs := reqs t in
-      let! cf := ctx_fuel in
-      let! (e, needs) := mfold (fun acc r => let! rg := sym r in
-                                             add_symbol_item cf (fst acc) mi rg [] (snd acc)) (e, []) rs in
-      add_symbol_item cf e mi tg [] needs
-  | _ =>
-      let! acc := mfold (fun acc it => add_assume_item (fst acc) mi it (snd acc)) (e, []) (gs_assumes g) in
-      let! main := is_main g in
-      if main then add_root_context (fst acc) mi (snd acc) else ret acc
-  end.
-
-Lemma fn_info_miss : forall g0 s i s', fn_info g0 s = Good (i, s') -> nget (st_info s) (gs_id g0) = None ->
-  exists g e needs s1, nget (st_syms s) (gs_id g0) = Some g /\
-    merged_walk (gs_mod g) (fi_walk g) s = Good ((e, needs), s1) /\
-    i = FInfo (freeze_all_apps e) needs
-              (map (fun k => (k, match get_app (freeze_all_apps e) k with Some (a, _) => a | None => [] end)) needs)
-              (merge_edges e) /\
-    s' = St (st_w s1) (st_syms s1) (st_next s1) (st_reqs s1) (st_sigsyms s1) (nset (st_info s1) (gs_id g0) i)
-            (st_fns s1) (st_funs s1) (st_fwd s1) (st_links s1) (st_flds s1) (st_consts s1)
-            (st_wrappers s1) (st_vars s1) (st_nvar s1) (st_memory_bound s1) (st_memory_used s1)
-            (st_checked_total s1) (st_lang s1) (st_unsup s1).
-Proof.
-  intros g0 s i s' H N. unfold fn_info in H. apply bind_inv in H as (x & s0 & H0 & H). injection H0 as <- <-.
-  rewrite N in H. apply bind_inv in H as (g & s2 & H2 & H). unfold sym in H2.
-  destruct (nget (st_syms s) (gs_id g0)) as [g'|] eqn:Eg; [|discriminate]. injection H2 as -> <-.
-  apply bind_inv in H as ([e needs] & s1 & H1 & H). exists g, e, needs, s1. split; [reflexivity|]. split; [exact H1|].
-  cbn beta iota zeta in H. apply bind_inv in H as (u & s3 & H3 & H). injection H as <- <-. unfold upd in H3.
-  injection H3 as _ <-. split; reflexivity.
-Qed.
-
 Section FnWalk.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Hypothesis MS : @MethStep w P R Fl.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 Lemma ok_is_main : forall g, ok (is_main g).
 Proof. intro g. unfold is_main. destruct (_ || _); okt. Qed.
@@ -571,17 +497,17 @@ Proof.
                  intro acc; apply ok_bind; [apply ok_is_main|]; intro m; destruct m;
                  [unfold add_root_context; okt | apply ok_ret])
            (fun es tm => IEs WW (gm_path (get_mod w (gs_mod g))) [] [] (map A.assume_spec (gs_assumes g)) es tm)
-           (fun es tm es' tm' H1 H2 => proj1 (ies_det _ _ _ _ _ _ _ _ _ H1 H2))
+           (fun es tm es' tm' sb H1 H2 => ies_unifies _ _ _ _ _ _ _ _ _ H1 H2 sb)
            (fun s0 => st_w s0 = w) (Later w P R Fl)
            (fun s0 s1 F E => fr_w' w s0 s1 F E) (fun s0 s1 F L1 => later_from w R Fl s0 s1 F L1))
     with (mi := gs_mod g) (s := s) (s' := s'); [|exact H | exact Hi | exact Hw | exact L].
-  clear e needs s s' H Hi Hw L. intros U s e needs s' T Hi Hw L H. rewrite Ew in H.
+  clear e needs s s' H Hi Hw L. intros U s e needs s' T O Hi Hw L H. rewrite Ew in H.
   apply bind_inv in H as ([e1 n1] & s1 & H1 & H).
   destruct (ok_mfold _ _ _ (gs_assumes g) (env_with_edges [] U, []) (fun acc it => ok_add_assume_item (fst acc) (gs_mod g) it (snd acc)) s _ s1 Hi H1) as [Hi1 F1].
   apply bind_inv in H as (m & s2 & H2 & H). pose proof (Nm s1 m s2 (fr_w' w _ _ F1 Hw) H2) as Em. subst m.
   injection H as -> -> ->. destruct (ok_is_main g s1 false s' Hi1 H2) as [_ F2].
   destruct (assumes_walk w R Fl b Hload MS (gs_mod g) (gs_assumes g) _ [] s e needs s1 U [] [] H1 Hi Hw Hmi
-              (later_from w R Fl _ _ F2 L) (ws_start Fl U T)) as (les & es & tm & I & M & Ws).
+              (later_from w R Fl _ _ F2 L) (ws_start Fl U T O)) as (les & es & tm & I & M & Ws).
   exists les, tm. rewrite M. split; [exact I | exact Ws].
 Qed.
 
@@ -636,7 +562,7 @@ Definition cmths (s : tsubst) (es : list A.entry) : list ((ty * nat) * A.fsig) :
 Lemma cvals_some : forall s es v t, A.nlook v (cvals s es) = Some t -> exists ty a, In (A.NVal v ty a) es /\ t = asub s ty.
 Proof.
   intros s es v t. induction es as [|e0 r IH]; [discriminate|]. unfold cvals in *. cbn [flat_map].
-  destruct e0 as [|v' ty a|f g a|r0 m g a|u]; cbn [List.app]; try (intro H; destruct (IH H) as (ty1 & a1 & Hi & E1); exists ty1, a1; split; [right; exact Hi | exact E1]).
+  destruct e0 as [|v' ty a|f g a|r0 m g a|u fx]; cbn [List.app]; try (intro H; destruct (IH H) as (ty1 & a1 & Hi & E1); exists ty1, a1; split; [right; exact Hi | exact E1]).
   cbn [A.nlook]. destruct (Nat.eqb_spec v v') as [->|Ne].
   - intro H. injection H as <-. exists ty, a. split; [left; reflexivity | reflexivity].
   - intro H. destruct (IH H) as (ty' & a' & Hi & E). exists ty', a'. split; [right; exact Hi | exact E].
@@ -645,7 +571,7 @@ Qed.
 Lemma cvals_none : forall s es v ty a, A.nlook v (cvals s es) = None -> ~ In (A.NVal v ty a) es.
 Proof.
   intros s es v ty a. induction es as [|e0 r IH]; [intros _ []|]. unfold cvals in *. cbn [flat_map].
-  destruct e0 as [|v' ty' a'|f g a'|r0 m g a'|u]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
+  destruct e0 as [|v' ty' a'|f g a'|r0 m g a'|u fx]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
   cbn [A.nlook]. destruct (Nat.eqb_spec v v') as [->|Ne]; [discriminate|].
   intros H [E|Hi]; [injection E as <- _ _; exact (Ne eq_refl) | exact (IH H Hi)].
 Qed.
@@ -653,7 +579,7 @@ Qed.
 Lemma cfns_some : forall s es f g, A.nlook f (cfns s es) = Some g -> exists g0 a, In (A.NFn f g0 a) es /\ g = A.sig_subst s g0.
 Proof.
   intros s es f g. induction es as [|e0 r IH]; [discriminate|]. unfold cfns in *. cbn [flat_map].
-  destruct e0 as [|v ty a|f' g' a|r0 m g' a|u]; cbn [List.app]; try (intro H; destruct (IH H) as (g1 & a1 & Hi & E1); exists g1, a1; split; [right; exact Hi | exact E1]).
+  destruct e0 as [|v ty a|f' g' a|r0 m g' a|u fx]; cbn [List.app]; try (intro H; destruct (IH H) as (g1 & a1 & Hi & E1); exists g1, a1; split; [right; exact Hi | exact E1]).
   cbn [A.nlook]. destruct (Nat.eqb_spec f f') as [->|Ne].
   - intro H. injection H as <-. exists g', a. split; [left; reflexivity | reflexivity].
   - intro H. destruct (IH H) as (g0 & a0 & Hi & E). exists g0, a0. split; [right; exact Hi | exact E].
@@ -662,7 +588,7 @@ Qed.
 Lemma cfns_none : forall s es f g a, A.nlook f (cfns s es) = None -> ~ In (A.NFn f g a) es.
 Proof.
   intros s es f g a. induction es as [|e0 r IH]; [intros _ []|]. unfold cfns in *. cbn [flat_map].
-  destruct e0 as [|v ty a'|f' g' a'|r0 m g' a'|u]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
+  destruct e0 as [|v ty a'|f' g' a'|r0 m g' a'|u fx]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
   cbn [A.nlook]. destruct (Nat.eqb_spec f f') as [->|Ne]; [discriminate|].
   intros H [E|Hi]; [injection E as <- _ _; exact (Ne eq_refl) | exact (IH H Hi)].
 Qed.
@@ -671,7 +597,7 @@ Lemma cmths_some : forall s es r m g, A.mlook r m (cmths s es) = Some g ->
   exists r0 g0 a, In (A.NMth r0 m g0 a) es /\ asub s r0 = r /\ g = A.sig_subst s g0.
 Proof.
   intros s es r m g. induction es as [|e0 rest IH]; [discriminate|]. unfold cmths in *. cbn [flat_map].
-  destruct e0 as [|v ty a|f g' a|r0 m0 g' a|u]; cbn [List.app];
+  destruct e0 as [|v ty a|f g' a|r0 m0 g' a|u fx]; cbn [List.app];
     try (intro H; destruct (IH H) as (r9 & g9 & a9 & Hi & E1 & E2); exists r9, g9, a9; split; [right; exact Hi | split; assumption]).
   cbn [A.mlook]. destruct (ty_eqb r (asub s r0) && Nat.eqb m m0) eqn:E.
   - apply andb_true_iff in E as [E1 E2]. apply CoreMoss.ty_eqb_eq in E1. apply Nat.eqb_eq in E2. subst.
@@ -682,7 +608,7 @@ Qed.
 Lemma cmths_none : forall s es r m r0 g a, A.mlook r m (cmths s es) = None -> In (A.NMth r0 m g a) es -> asub s r0 <> r.
 Proof.
   intros s es r m r0 g a. induction es as [|e0 rest IH]; [intros _ []|]. unfold cmths in *. cbn [flat_map].
-  destruct e0 as [|v ty a'|f g' a'|r1 m1 g' a'|u]; cbn [List.app]; try (intros H [Eq|Hi]; [discriminate | exact (IH H Hi)]).
+  destruct e0 as [|v ty a'|f g' a'|r1 m1 g' a'|u fx]; cbn [List.app]; try (intros H [Eq|Hi]; [discriminate | exact (IH H Hi)]).
   cbn [A.mlook]. destruct (ty_eqb r (asub s r1) && Nat.eqb m m1) eqn:E; [discriminate|].
   intros H [Eq|Hi]; [|exact (IH H Hi)]. injection Eq as -> -> _ _. intro Er. subst r.
   rewrite (proj2 (CoreMoss.ty_eqb_eq _ _) eq_refl), Nat.eqb_refl in E. discriminate.
@@ -741,36 +667,25 @@ Proof.
     rewrite (Rs σ ltac:(rewrite E; exact (suf_resp U T))), (sigma_tr Fl U e _ E T), Ck. reflexivity.
 Qed.
 
+(* Every semantic method receiver is represented by a real canonical source key. *)
+Lemma ctx_mths_domain:forall receiver method signature,
+ A.mlook receiver method (cmths σ es)=Some signature ->
+ exists raw,ety_ok raw=true/\canon e raw=raw/\trF raw=receiver.
+Proof.
+ intros receiver method signature Found.
+ destruct(cmths_some _ _ _ _ _ Found)as(r1&g1&a&Member&Receiver&Signature).
+ apply in_map_iff in Member as(l&Entry&Member).
+ destruct(tr_ent_mth l r1 method g1 a Entry)as(r0&g0&a0&->&->&->).
+ destruct(ws_mths _ _ _ _ _ _ Hws E r0 method g0 a0 Member)as[Valid _].
+ exists(canon e r0);split;[exact Valid|];split.
+ - apply canon_idem;rewrite E;exact T.
+ - rewrite(sigma_tr Fl U e _ E T)in Receiver;exact Receiver.
+Qed.
+
 (* ---- the abstract functors in force ---- *)
 
-Definition cfuns (xs : list A.entry) : list (nat * list (nat * ty)) :=
-  flat_map (fun e => match e with A.NFun u => [(u, [])] | _ => [] end) xs.
-
-Lemma cfuns_in : forall xs u, In (A.NFun u) xs -> A.nlook u (cfuns xs) = Some [].
-Proof.
-  intros xs u. induction xs as [|e0 r IH]; [intros []|]. unfold cfuns in *. cbn [flat_map].
-  intros [->|H]; [cbn; rewrite Nat.eqb_refl; reflexivity|].
-  destruct e0 as [|v ty a|f g a|r0 m g a|u']; cbn [List.app]; try exact (IH H).
-  cbn [A.nlook]. destruct (Nat.eqb u u'); [reflexivity | exact (IH H)].
-Qed.
-
-Lemma cfuns_none : forall xs u, ~ In (A.NFun u) xs -> A.nlook u (cfuns xs) = None.
-Proof.
-  intros xs u. induction xs as [|e0 r IH]; [reflexivity|]. unfold cfuns in *. cbn [flat_map]. intro N.
-  destruct e0 as [|v ty a|f g a|r0 m g a|u']; cbn [List.app]; try (apply IH; intro H; exact (N (or_intror H))).
-  cbn [A.nlook]. destruct (Nat.eqb_spec u u') as [->|_]; [exfalso; exact (N (or_introl eq_refl))|].
-  apply IH. intro H. exact (N (or_intror H)).
-Qed.
-
-Lemma ctx_funs : forall u, A.nlook u (cfuns es) = option_map (fun _ => []) (nget (en_funs e) u).
-Proof.
-  intro u. destruct (nget (en_funs e) u) as [st|] eqn:G.
-  - apply cfuns_in. assert (Hl : In (LFun u) les) by (apply (proj1 (ws_funs _ _ _ _ _ _ Hws u)); congruence).
-    exact (in_map (tr_ent Fl) _ _ Hl).
-  - apply cfuns_none. intro H. apply in_map_iff in H as (l & El & Hl).
-    destruct l; cbn in El; try discriminate. injection El as ->.
-    apply (proj2 (ws_funs _ _ _ _ _ _ Hws u)) in Hl. exact (Hl G).
-Qed.
+Definition cfuns (xs : list A.entry) : list (nat * Audit.subst) :=
+  flat_map (fun e => match e with A.NFun u fx => [(u, A.fixed_subst σ fx)] | _ => [] end) xs.
 
 (* ---- the instantiation each provision is made at ---- *)
 
@@ -781,13 +696,14 @@ Definition capps (s : tsubst) (tm : list (nat * ty)) (xs : list A.entry) : list 
                             (match snd q with Some t => Some t | None => A.nlook (fst q) tm end))) a in
   flat_map (fun e => match e, A.entry_key s e with
                      | A.NVal _ _ a, Some k | A.NFn _ _ a, Some k | A.NMth _ _ _ a, Some k => [(k, fz a)]
+                     | A.NFun u fx, Some k => [(k, A.fixed_app (A.fixed_subst s fx))]
                      | _, _ => [] end) xs.
 
 Definition capp_fz (a : A.inst) : A.inst :=
   map (fun q => (fst q, option_map (asub σ) (match snd q with Some t => Some t | None => A.nlook (fst q) tm end))) a.
 
 (* the keys whose items tr reads apart *)
-Definition key_ok (k : key) : bool := match k with KyMth t _ => ety_ok t | _ => true end.
+
 
 Lemma key_tr_inj : forall k k', key_ok k = true -> key_ok k' = true -> key_tr Fl k = key_tr Fl k' -> k = k'.
 Proof.
@@ -831,7 +747,7 @@ Proof.
   assert (IH' : A.ilook (key_tr Fl k) (capps σ tm (map (tr_ent Fl) r)) = option_map (fun a => capp_fz (tr_inst Fl a)) (lfirst e k r))
     by (apply IH; intros r0 m g a H; exact (Hm r0 m g a (or_intror H))).
   unfold capps in *. cbn [map flat_map lfirst].
-  destruct l as [t|v y a|f g a|r0 m g a|u]; cbn [tr_ent A.entry_key lapp List.app].
+  destruct l as [t|v y a|f g a|r0 m g a|u fx]; cbn [tr_ent A.entry_key lapp List.app].
   - exact IH'.
   - cbn [A.ilook]. change (IVal v) with (key_tr Fl (KyVal v)). rewrite (key_tr_eqb k (KyVal v) Ok eq_refl).
     destruct (key_eqb k (KyVal v)); [reflexivity | exact IH'].
@@ -841,7 +757,13 @@ Proof.
     change (IMth (trF (canon e r0)) m []) with (key_tr Fl (KyMth (canon e r0) m)).
     rewrite (key_tr_eqb k (KyMth (canon e r0) m) Ok (Hm r0 m g a (or_introl eq_refl))).
     destruct (key_eqb k (KyMth (canon e r0) m)); [reflexivity | exact IH'].
-  - exact IH'.
+  - cbn [A.ilook]. change (IFun u) with (key_tr Fl (KyFun u)).
+    rewrite (key_tr_eqb k (KyFun u) Ok eq_refl).
+    destruct (key_eqb k (KyFun u)); [|exact IH'].
+    cbn [option_map]. f_equal.
+    unfold A.fixed_app,A.fixed_subst,capp_fz,tr_inst,tr_fixed,raw_fixed_app.
+    rewrite !map_map. apply map_ext. intros [x y]. cbn[fst snd]. reflexivity.
+
 Qed.
 
 (* c_apps against fi_env's (frozen) instantiations, at a key tr reads apart *)
@@ -853,6 +775,39 @@ Proof.
     cbn [option_map fst]. rewrite tr_fzE. reflexivity.
   - intros r m g a H. exact (proj1 (ws_mths _ _ _ _ _ _ Hws E r m g a H)).
 Qed.
+
+Lemma known_fixed_app:forall fx,A.known(A.fixed_app fx)=fx.
+Proof. intros fx;induction fx as[|[x y]fx IH];[reflexivity|].
+ change((x,y)::A.known(A.fixed_app fx)=(x,y)::fx);f_equal;exact IH. Qed.
+Lemma cfuns_capps:forall xs u,
+ A.nlook u(cfuns xs)=option_map A.known(A.ilook(IFun u)(capps σ tm xs)).
+Proof.
+ intros xs;induction xs as[|ent xs IH];intro u;[reflexivity|].
+ unfold cfuns,capps in *;cbn[flat_map].
+ destruct ent as[t|v y a|f g a|r m g a|v fx];cbn[A.entry_key List.app A.ilook item_eqb A.nlook];try exact(IH u).
+ destruct(Nat.eqb u v);[cbn[option_map];symmetry;f_equal;apply known_fixed_app|exact(IH u)].
+Qed.
+Lemma ctx_funs:forall u,A.nlook u(cfuns es)=
+ option_map(fun p=>A.known(tr_inst Fl(fst p)))(get_app(freeze_all_apps e)(KyFun u)).
+Proof.
+ intro u;rewrite(cfuns_capps es u).
+ pose proof(ctx_apps(KyFun u)eq_refl eq_refl)as Apps.
+ change(A.ilook(IFun u)(capps σ tm es)=option_map(fun p=>tr_inst Fl(fst p))(get_app(freeze_all_apps e)(KyFun u)))in Apps.
+ rewrite Apps.
+ destruct(get_app(freeze_all_apps e)(KyFun u));reflexivity.
+Qed.
+
+Lemma ctx_funspresent:forall u,
+ is_some(A.nlook u(cfuns es))=is_some(nget(en_funs e)u).
+Proof.
+ intro u;rewrite ctx_funs,get_app_freeze.
+ pose proof(ws_fun_app_presence Fl U e tm les needs Hws E u)as Present.
+ destruct(get_app e(KyFun u));exact Present.
+Qed.
+Lemma ctx_funpack:forall u,
+ A.nlook u(cfuns es)=option_map(fun p=>A.known(tr_inst Fl(fst p)))(get_app(freeze_all_apps e)(KyFun u))/\
+ is_some(A.nlook u(cfuns es))=is_some(nget(en_funs e)u).
+Proof. intro u;split;[exact(ctx_funs u)|exact(ctx_funspresent u)]. Qed.
 
 End Tables.
 
@@ -869,18 +824,21 @@ Definition CtxOfIE (W : A.world) (s : nat) (C : A.cx) (ns : list item) : Prop :=
     A.RootCtx W s es tm er tmr /\
     A.MostGeneralMerge σ (es ++ er) /\ C = A.entries_cx σ tmr (es ++ er) /\ A.Needs σ (es ++ er) ns.
 
+Theorem ctx_of_ie_complete:forall W s C ns,CtxOfIE W s C ns->A.CtxOf W s C ns.
+Proof. intros W s C ns H;exact H. Qed.
+
 Section FnInfo.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Hypothesis MS : @MethStep w P R Fl.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 
 Lemma later_info : forall s c, Later w P R Fl (St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) c
             (st_fns s) (st_funs s) (st_fwd s) (st_links s) (st_flds s) (st_consts s)
             (st_wrappers s) (st_vars s) (st_nvar s) (st_memory_bound s) (st_memory_used s)
-            (st_checked_total s) (st_lang s) (st_unsup s)) -> Later w P R Fl s.
+            (st_checked_total s) (st_lang s) (st_unsup s) (st_reify s)) -> Later w P R Fl s.
 Proof. intros s c [L1 L2 L3 L4 L5 L6]. constructor; assumption. Qed.
 
 (* A function g of the program, neither a forwarder nor `main`, whose info
@@ -898,7 +856,8 @@ Theorem fn_info_ctx : forall g s i s',
     (forall v, A.nlook v (A.c_vals C) = option_map (fun y => trF (canon e y)) (nget (en_vals e) v)) /\
     (forall f, A.nlook f (A.c_fns C) = option_map (csig Fl e) (nget (en_fns e) f)) /\
     (forall k m, ety_ok k = true -> canon e k = k -> A.mlook (trF k) m (A.c_mths C) = option_map (csig Fl e) (get_mth e k m)) /\
-    (forall u, A.nlook u (A.c_funs C) = option_map (fun _ => []) (nget (en_funs e) u)) /\
+    (forall u, A.nlook u (A.c_funs C) = option_map (fun p => A.known (tr_inst Fl (fst p))) (get_app e (KyFun u)) /\
+       is_some(A.nlook u(A.c_funs C))=is_some(nget(en_funs e)u)) /\
     (forall k, nofun k = true -> key_ok k = true ->
        A.ilook (key_tr Fl k) (A.c_apps C) = option_map (fun p => tr_inst Fl (fst p)) (get_app e k)).
 Proof.
@@ -924,7 +883,7 @@ Proof.
     + intro v. exact (ctx_vals Fl U e tm les needs Hws eq_refl v).
     + intro f. exact (ctx_fns Fl U e tm les needs Hws eq_refl f).
     + intros k m Ok Ck. exact (ctx_mths Fl Finj U e tm les needs Hws eq_refl k m Ok Ck).
-    + intro u. exact (ctx_funs Fl U e tm les needs Hws u).
+    + intro u. exact (ctx_funpack Fl Finj U e tm les needs Hws eq_refl u).
     + intros k Nk Ok. exact (ctx_apps Fl Finj U e tm les needs Hws eq_refl k Nk Ok).
 Qed.
 

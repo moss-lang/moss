@@ -1,0 +1,7 @@
+tag Left;
+tag Right;
+fn choose(): Left | Right;
+fn main() {
+ bind choose = () => Left;
+ match choose() { Left => (), Right => () };
+}

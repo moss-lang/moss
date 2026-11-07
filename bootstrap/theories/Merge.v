@@ -15,7 +15,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodyTr.
 From NM Require CoreMoss.
 Import ListNotations.
 Local Open Scope list_scope.

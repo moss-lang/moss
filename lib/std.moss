@@ -1,19 +1,17 @@
 import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read, .begin, .more, .after;
 import "./bool.moss" use Bool, False, True;
-import "./cell.moss" use CellInt, cell_int;
-# `.char` is imported by name because it is provided at `Int`, not at
-# `Char`: method lookup falls back to the *receiver's* home module, and
-# int.moss cannot declare it without importing char.moss back.
+import "./cell.moss" use CellInt, cell_int, .write;
+# Detached methods must be imported where their context items are named.
 import "./byte.moss" use ByteTypes, Bytes;
-import "./char.moss" use Char, Chars, .char;
+import "./char.moss" use Char, Chars, .code, .char;
 import "./float.moss" use Floats;
 import "./array.moss" use ArrayHandle, Arrays;
 import "./int.moss" use Int, IntOps, zero, one;
 import "./size.moss" use Size, Sizes;
 import "./list.moss" use IntList, int_list;
 import "./num.moss" use .not, .and, .or, .xor;
-import "./path.moss" use Path, pwd;
-import "./string.moss" use String, StringLiterals, first_arg, print, arg_count, arg_at;
+import "./path.moss" use Path, pwd, .join, .readable;
+import "./string.moss" use String, StringLiterals, first_arg, print, arg_count, arg_at, .slice, .concat;
 import "./strlist.moss" use StrList, str_list;
 
 assume Char {

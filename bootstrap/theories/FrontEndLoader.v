@@ -4,9 +4,9 @@
 (* ======================================================================== *)
 
 From Stdlib Require Import String Ascii List Bool Arith Lia.
-From NM Require Import Audit Parse FrontEnd.
+From NM Require Import Audit Sx Parse FrontEnd DumpRoundTrip.
 Import ListNotations.
-Import Audit.Input Audit.Syntax Audit.Dump Audit.Loader.
+Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
 Local Open Scope string_scope.
 
 Section Walk.
@@ -17,7 +17,7 @@ Definition ModOK (m : lmod) : Prop :=
   exists text f, read (lm_path m) = Some text /\ parse_moss text = Good f /\
     lm_wants m = wants_prelude prelude (lm_path m) /\
     lm_targets m = map (fun i => resolve root prelude (lm_path m) (i_path i)) (f_imports f) /\
-    lm_dump m = dump_file f.
+    lm_dump m = dump_file f /\ wf_names f = true.
 
 Definition needs (m : lmod) : list string := lm_targets m ++ (if lm_wants m then [prelude] else []).
 
@@ -48,6 +48,7 @@ Proof.
         right. apply existsb_exists in Ex as (q & Hq & Eq). apply String.eqb_eq in Eq. subst. auto.
     + destruct (read p) as [text|] eqn:Er; [|discriminate].
       destruct (parse_moss text) as [f|msg] eqn:Ep; [|discriminate].
+      destruct (wf_names f) eqn:En; [|discriminate].
       apply (IH _ _ _ _ H). subst seen.
       assert (Hnin : ~ In p (map lm_path acc)).
       { intro Hin. assert (existsb (String.eqb p) (map lm_path acc) = true).
@@ -115,10 +116,10 @@ Proof.
   apply read_mods in Er. pose proof (forall2_map_path _ _ Er) as Ep.
   unfold Bundled. cbn [b_entry b_prelude b_mods]. rewrite Ep. repeat split; auto.
   intros am Ham. destruct (forall2_in_r _ _ _ Er Ham) as (m & Hm & (E1 & E2 & E3 & E4)).
-  destruct (Hok m Hm) as (text & f & Hr & Hp & Hw & Ht & Hd).
+  destruct (Hok m Hm) as (text & f & Hr & Hp & Hw & Ht & Hd & Hnames).
   exists text, f. rewrite E1, E2, E3. repeat split; auto.
   - apply parse_moss_sound; auto.
-  - rewrite <- Hd. auto.
+  - eapply dump_reads; [exact Hnames|]. rewrite <- Hd. exact E4.
   - intros t Hin. apply (Hcl m t Hm). unfold needs. apply in_or_app. auto.
   - intros Hwt. apply (Hcl m p Hm). unfold needs. rewrite Hwt. apply in_or_app. right. left. auto.
 Qed.

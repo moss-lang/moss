@@ -20,9 +20,9 @@
 
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
-From NM Require Import Audit.
+From NM Require Import Audit Sx DumpRoundTrip.
 Import ListNotations.
-Import Audit.Input Audit.Syntax Audit.Dump Audit.Loader.
+Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
 Local Open Scope string_scope.
 
 (* ######################################################################## *)
@@ -349,16 +349,14 @@ Fixpoint parse_pattern (n : nat) (ts : list token) : pr apat :=
   | 0 => fuel_err ts
   | S n =>
       if at_ "LBRACE" ts then parse_record_pattern n None ts
+      else if at_ "UNDERSCORE" ts then POk APWild (advance ts)
       else if at_ "NAME" ts then
-        if String.eqb (tx (peek ts)) "_" && negb (String.eqb (kind_at 1 ts) "COLON_COLON") then
-          POk APWild (advance ts)
-        else
-          let@ p & ts := parse_path n ts in
-          if at_ "LBRACE" ts then parse_record_pattern n (Some p) ts
-          else if at_ "LPAREN" ts then
-            let@ sub & ts := parse_pattern n (advance ts) in
-            let@ _ & ts := expect "RPAREN" ts in POk (APTag p sub) ts
-          else POk (APPath p) ts
+        let@ p & ts := parse_path n ts in
+        if at_ "LBRACE" ts then parse_record_pattern n (Some p) ts
+        else if at_ "LPAREN" ts then
+          let@ sub & ts := parse_pattern n (advance ts) in
+          let@ _ & ts := expect "RPAREN" ts in POk (APTag p sub) ts
+        else POk (APPath p) ts
       else err ("expected a pattern, found " ++ kind ts) ts
   end
 with parse_record_pattern (n : nat) (p : option path) (ts : list token) : pr apat :=
@@ -403,7 +401,7 @@ Definition mixed {A} (before : option string) (ts : list token) : pr A :=
 (* A literal's text is normalized by Audit.Syntax.lit_norm, and `for` is
    desugared by Audit.Syntax.for_desugar (D85). *)
 
-Fixpoint parse_expr (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
+Fixpoint parse_expr (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -421,7 +419,7 @@ Fixpoint parse_expr (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
       else if at_ "BREAK" ts then POk AEBreak (advance ts)
       else parse_operators n nr ts
   end
-with parse_if (n : nat) (ts : list token) : pr aexpr :=
+with parse_if (n : nat) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -434,7 +432,7 @@ with parse_if (n : nat) (ts : list token) : pr aexpr :=
         else let@ b & ts := parse_block n ts in POk (AEIf c t (Some (AEBlock b))) ts
       else POk (AEIf c t None) ts
   end
-with parse_arms (n : nat) (ts : list token) : pr (list (apat * aexpr)) :=
+with parse_arms (n : nat) (ts : list token) {struct n} : pr (list (apat * aexpr)) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -451,7 +449,7 @@ with parse_arms (n : nat) (ts : list token) : pr (list (apat * aexpr)) :=
       let@ rest & ts := parse_arms n ts in
       POk ((p, body) :: rest) ts
   end
-with parse_operators (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
+with parse_operators (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -478,7 +476,7 @@ with parse_operators (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
             end
       end
   end
-with bit_loop (n : nat) (nr : bool) (op : string) (e : aexpr) (ts : list token) : pr aexpr :=
+with bit_loop (n : nat) (nr : bool) (op : string) (e : aexpr) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -492,7 +490,7 @@ with bit_loop (n : nat) (nr : bool) (op : string) (e : aexpr) (ts : list token) 
   end
 (* a comparison's operand: a shift, or an arithmetic expression; with the
    last operator it ended on *)
-with parse_operand (n : nat) (nr : bool) (first : aexpr) (ts : list token)
+with parse_operand (n : nat) (nr : bool) (first : aexpr) (ts : list token) {struct n}
   : pr (aexpr * option string) :=
   match n with
   | 0 => fuel_err ts
@@ -508,7 +506,7 @@ with parse_operand (n : nat) (nr : bool) (first : aexpr) (ts : list token)
         | None => POk (e, last) ts
         end
   end
-with add_loop (n : nat) (nr : bool) (e : aexpr) (last : option string) (ts : list token)
+with add_loop (n : nat) (nr : bool) (e : aexpr) (last : option string) (ts : list token) {struct n}
   : pr (aexpr * option string) :=
   match n with
   | 0 => fuel_err ts
@@ -523,7 +521,7 @@ with add_loop (n : nat) (nr : bool) (e : aexpr) (last : option string) (ts : lis
       | None => POk (e, last) ts
       end
   end
-with parse_term (n : nat) (nr : bool) (first : aexpr) (ts : list token)
+with parse_term (n : nat) (nr : bool) (first : aexpr) (ts : list token) {struct n}
   : pr (aexpr * option string) :=
   match n with
   | 0 => fuel_err ts
@@ -539,7 +537,7 @@ with parse_term (n : nat) (nr : bool) (first : aexpr) (ts : list token)
       | None => POk (e, last) ts
       end
   end
-with mul_loop (n : nat) (nr : bool) (e : aexpr) (last : option string) (ts : list token)
+with mul_loop (n : nat) (nr : bool) (e : aexpr) (last : option string) (ts : list token) {struct n}
   : pr (aexpr * option string) :=
   match n with
   | 0 => fuel_err ts
@@ -549,7 +547,7 @@ with mul_loop (n : nat) (nr : bool) (e : aexpr) (last : option string) (ts : lis
         mul_loop n nr (AEBinary "*" e u) (Some "*") ts
       else POk (e, last) ts
   end
-with parse_unary (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
+with parse_unary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -565,13 +563,13 @@ with parse_unary (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
           else let@ u & ts := parse_unary n nr ts in POk (AEUnary op u) ts
       end
   end
-with parse_postfix (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
+with parse_postfix (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
       let@ e & ts := parse_primary n nr ts in postfix_loop n e ts
   end
-with postfix_loop (n : nat) (e : aexpr) (ts : list token) : pr aexpr :=
+with postfix_loop (n : nat) (e : aexpr) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -587,7 +585,7 @@ with postfix_loop (n : nat) (e : aexpr) (ts : list token) : pr aexpr :=
              end
       else POk e ts
   end
-with parse_lambda (n : nat) (ts : list token) : pr aexpr :=
+with parse_lambda (n : nat) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -601,7 +599,7 @@ with parse_lambda (n : nat) (ts : list token) : pr aexpr :=
       let@ body & ts := parse_expr n false ts in
       POk (AELam ps ret body) ts
   end
-with parse_primary (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
+with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -637,7 +635,7 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) : pr aexpr :=
         else POk (AEPath p a) ts
       else err ("expected an expression, found " ++ kind ts) ts
   end
-with parse_block (n : nat) (ts : list token) : pr ablock :=
+with parse_block (n : nat) (ts : list token) {struct n} : pr ablock :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -646,7 +644,7 @@ with parse_block (n : nat) (ts : list token) : pr ablock :=
       let@ _ & ts := expect "RBRACE" ts in
       POk (ABlock ss tl) ts
   end
-with block_loop (n : nat) (ts : list token) : pr (list astmt * option aexpr) :=
+with block_loop (n : nat) (ts : list token) {struct n} : pr (list astmt * option aexpr) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -688,7 +686,7 @@ with block_loop (n : nat) (ts : list token) : pr (list astmt * option aexpr) :=
         else if braced then more (ASExpr e) ts
         else err ("expected SEMI or RBRACE, found " ++ kind ts) ts
   end
-with parse_bind (n : nat) (ts : list token) : pr (list (spec * option aexpr)) :=
+with parse_bind (n : nat) (ts : list token) {struct n} : pr (list (spec * option aexpr)) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
@@ -888,8 +886,7 @@ Definition parse_moss (src : string) : res afile :=
       end
   end.
 
-(* The dump (sexpr.py's format, AST -> sx) is Audit.Dump's: the
-   specification of the loader (Audit.Loader.Bundled) is stated with it. *)
+(* The loader uses the S-expression codec in Sx.Dump. *)
 
 (* ===================== Text ================================================ *)
 
@@ -935,11 +932,13 @@ Fixpoint walk (fuel : nat) (read : string -> option string) (root prelude : stri
           match parse_moss text with
           | Bad m => Bad ("bundle: " ++ p ++ ": " ++ m)
           | Good f =>
+              if DumpRoundTrip.wf_names f then
               let w := wants_prelude prelude p in
               let ts := map (fun i => resolve root prelude p (i_path i)) (f_imports f) in
               let todo := app ts todo in
               let todo := if w then prelude :: todo else todo in
               walk fuel read root prelude todo (p :: seen) (LMod p w ts (dump_file f) :: acc)
+              else Bad ("bundle: " ++ p ++ ": names cannot be represented in the AST dump")
           end
       end
   end end.

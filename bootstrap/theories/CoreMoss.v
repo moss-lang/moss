@@ -116,7 +116,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Export Audit.
+From NM Require Export Audit CoreInterp.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -507,7 +507,12 @@ Inductive wf_ty (Sg : gsig) (Phi : ctx) : ty -> Prop :=
 | WfRec : forall fts,
     g_tag Sg rec_nom = None ->
     Forall (fun p => wf_ty Sg Phi (snd p)) fts ->
-    wf_ty Sg Phi (TNom rec_nom fts).
+    wf_ty Sg Phi (TNom rec_nom fts)
+| WfOpaque : forall n D th,
+    g_tag Sg n = None -> g_opaque Sg n = Some D ->
+    sat Sg Phi th D -> Forall (fun i => is_ty_item i = true) D ->
+    Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+    wf_ty Sg Phi (TNom n th).
 
 (* Type equality up to the substitution in force (the applicative identity
    rule [D18]); unions are compared in order (deviation 3). *)
@@ -906,6 +911,10 @@ Inductive item_ok (Sg : gsig) (Phi : ctx) : item -> Prop :=
     g_fun Sg u = Some (Du, Dr, None) ->
     (* Rule A: listing φ requires X(φ) in force [D20] *)
     Forall (fun x => avail Phi (ITy x)) (g_fixed Sg u) ->
+    item_ok Sg Phi (IFun u)
+| OkOpaqueFun : forall u,
+    g_opaque_fun Sg u = true -> g_fun Sg u = None ->
+    Forall (fun x => avail Phi (ITy x)) (g_fixed Sg u) ->
     item_ok Sg Phi (IFun u).
 
 (* The telescoping rule [D20], now with merging [D43]: each item is checked
@@ -1051,7 +1060,11 @@ Definition fun_mentions (Sg : gsig) (Dr : tele) : list tsym :=
 Record wf_gsig (Sg : gsig) : Prop := {
   wf_tag_decl : forall n D taup,
       g_tag Sg n = Some (D, taup) ->
-      exists PhiD, wf_tele Sg empty_ctx D PhiD /\ wf_ty Sg PhiD taup;
+      (* A declaration is a type template: abstract union alternatives can
+         become nominal only at an actual checked instantiation.  Safety
+         needs the template's variables scoped, not premature instance WF. *)
+      exists PhiD, wf_tele Sg empty_ctx D PhiD
+      /\ incl (ty_frees taup) (tyreqs (cA PhiD));
   wf_val_decl : forall v D tauv,
       g_val Sg v = Some (D, tauv) ->
       exists PhiD, wf_tele Sg empty_ctx D PhiD /\ wf_ty Sg PhiD tauv;
@@ -1097,7 +1110,9 @@ Record wf_gsig (Sg : gsig) : Prop := {
                   (mkCtx (cA (fun_ctx PhiD PhiC (snd (g_cap Sg u))) ++ Dr)
                          (cS (fun_ctx PhiD PhiC (snd (g_cap Sg u)))))
              /\ exists PhiB, binds_ty Sg (fun_ctx PhiD PhiC (snd (g_cap Sg u))) bs PhiB
-                /\ Forall (fun i => In i (cA PhiB)) Dr)
+                /\ Forall (fun i => In i (cA PhiB)) Dr);
+  wf_opaque_decl : forall n D,
+      g_opaque Sg n = Some D -> exists PhiD, wf_tele Sg empty_ctx D PhiD
 }.
 
 (* ⊢ P ok: a well-formed signature whose main is defined, closed, unit-valued. *)
@@ -3286,12 +3301,17 @@ Lemma wf_ty_ind' : forall (Sg : gsig) (Phi : ctx) (P : ty -> Prop),
       Forall (fun p => wf_ty Sg Phi (snd p)) fts ->
       Forall (fun p => P (snd p)) fts ->
       P (TNom rec_nom fts)) ->
+  (forall n D th,
+      g_tag Sg n = None -> g_opaque Sg n = Some D -> sat Sg Phi th D ->
+      Forall (fun i => is_ty_item i = true) D ->
+      Forall (fun p => wf_ty Sg Phi (snd p)) th ->
+      Forall (fun p => P (snd p)) th -> P (TNom n th)) ->
   forall tau, wf_ty Sg Phi tau -> P tau.
 Proof.
-  intros Sg Phi P HU HA HN HUn HR.
+  intros Sg Phi P HU HA HN HUn HR HO.
   fix IH 2.
   intros tau W.
-  destruct W as [ | t Hav | n D tau0 th Hg Hsat Hall | ms Hall Hnom Hnd | fts Hr0 Hall ].
+  destruct W as [ | t Hav | n D tau0 th Hg Hsat Hall | ms Hall Hnom Hnd | fts Hr0 Hall | n D th Hnone Hopaque Hsat Honly Hall ].
   - exact HU.
   - apply HA; exact Hav.
   - apply (HN n D tau0 th Hg Hsat Hall).
@@ -3301,6 +3321,9 @@ Proof.
     clear - IH Hall.
     induction Hall; constructor; [apply IH; assumption | assumption].
   - apply (HR fts Hr0 Hall).
+    clear - IH Hall.
+    induction Hall; constructor; [apply IH; assumption | assumption].
+  - apply (HO n D th Hnone Hopaque Hsat Honly Hall).
     clear - IH Hall.
     induction Hall; constructor; [apply IH; assumption | assumption].
 Qed.
@@ -3355,6 +3378,9 @@ Proof.
   - (* a record *) intros fts _ Hwf IH x Hx.
     apply wf_ty_frees_aux1 in Hx. destruct Hx as [p [Hp Ht]].
     rewrite Forall_forall in IH. apply (IH p Hp). exact Ht.
+  - intros n D th Hnone Hopaque Hsat Honly Hwf IH x Hx.
+    apply wf_ty_frees_aux1 in Hx as[p[Hp Ht]].
+    rewrite Forall_forall in IH;exact(IH p Hp x Ht).
 Qed.
 (* END:wf_ty_frees *)
 
@@ -3538,13 +3564,15 @@ Lemma tele_deps_closed_aux1 : forall Sg Phi i,
 Proof.
   intros Sg Phi i Hok.
   destruct Hok as [t Hg Hne | v Dv tauv Hg Hsat | f Df S b Hg Hsat
-                   | rt m Dm S th Hg Hrt Hsat Hth | uf Du Dr Hg Hfx]; simpl.
+                   | rt m Dm S th Hg Hrt Hsat Hth | uf Du Dr Hg Hfx | uf Mark Missing Hfx]; simpl.
   - intros x Hx. destruct Hx.
   - rewrite Hg. intros t Ht. rewrite Forall_forall in Hsat.
     apply wf_ty_frees_aux3. apply avail_ty_in. exact (Hsat t Ht).
   - rewrite Hg. intros t Ht. rewrite Forall_forall in Hsat.
     apply wf_ty_frees_aux3. apply avail_ty_in. exact (Hsat t Ht).
   - intros x Hx. destruct Hx.
+  - intros x Hx. rewrite Forall_forall in Hfx.
+    apply wf_ty_frees_aux3. apply avail_ty_in. exact (Hfx x Hx).
   - intros x Hx. rewrite Forall_forall in Hfx.
     apply wf_ty_frees_aux3. apply avail_ty_in. exact (Hfx x Hx).
 Qed.
@@ -3556,8 +3584,8 @@ Lemma tele_items_regular_aux1 : forall Sg Phi i,
 Proof.
   intros Sg Phi i Hok.
   destruct Hok as [t Hg Hne | v Dv tauv Hg Hsat | f Df S b Hg Hsat
-                   | rt m Dm S th Hg Hrt Hsat Hth | uf Du Dr Hg Hfx]; simpl;
-    [ intros x Hx; destruct Hx .. | | intros x Hx; destruct Hx ].
+                   | rt m Dm S th Hg Hrt Hsat Hth | uf Du Dr Hg Hfx | uf Mark Missing Hfx]; simpl;
+    [ intros x Hx; destruct Hx | intros x Hx; destruct Hx | intros x Hx; destruct Hx | | intros x Hx; destruct Hx | intros x Hx; destruct Hx ].
   - intros u Hu. apply in_app_or in Hu. destruct Hu as [Hrt' | Hth'].
     + exact (wf_ty_frees Hrt u Hrt').
     + apply in_flat_map in Hth'. destruct Hth' as [p [Hp Hup]].
@@ -3572,8 +3600,8 @@ Lemma tele_items_regular_aux2 : forall Sg Phi i,
 Proof.
   intros Sg Phi i WF Hok.
   destruct Hok as [t Hg Hne | v Dv tauv Hg Hsat | f Df S b Hg Hsat
-                   | rt m Dm Sm th Hg Hrt Hsat Hth | uf Du Dr Hg Hfx]; simpl;
-    [ intros x Hx; destruct Hx .. | | intros x Hx; destruct Hx ].
+                   | rt m Dm Sm th Hg Hrt Hsat Hth | uf Du Dr Hg Hfx | uf Mark Missing Hfx]; simpl;
+    [ intros x Hx; destruct Hx | intros x Hx; destruct Hx | intros x Hx; destruct Hx | | intros x Hx; destruct Hx | intros x Hx; destruct Hx ].
   - intros u Hu. rewrite Hg in Hu.
     apply in_flat_map in Hu. destruct Hu as [rho [Hrho Hu]].
     apply in_map_iff in Hrho. destruct Hrho as [tau [Heq Htau]]. subst rho.
@@ -4687,15 +4715,15 @@ Proof.
       incl (ty_frees (member_payload Sg (TNom n th)))
            (tyreqs (cA Phi))).
   { intros n th Hn.
-    inversion Hn as [| |n' D payload th' Htag Hsat Hwfth| |fts' Hr0 Hfts]; subst;
-      [| cbn [member_payload]; rewrite Hr0; intros x []].
+    inversion Hn as [| |n' D payload th' Htag Hsat Hwfth| |fts' Hr0 Hfts|n' D th' Hnone Hopaque Hsat Honly Hall]; subst;
+      [| cbn [member_payload]; rewrite Hr0; intros x []|cbn[member_payload];rewrite Hnone;intros x []].
     cbn [member_payload]. rewrite Htag.
     destruct (wf_tag_decl WF n Htag) as [PhiD [Wt Hp]].
     destruct Hsat as [PhiD' [Htc [Hdom _]]].
     pose proof (wf_tele_ctx Wt) as Htc'.
     rewrite Htc' in Htc. injection Htc as <-.
     apply has_ty_frees_success_aux2 with (s := th).
-    - rewrite Hdom. exact (wf_ty_frees Hp).
+    - rewrite Hdom. exact Hp.
     - eapply Forall_impl; [|exact Hwfth].
       intros p Hwp. exact (wf_ty_frees Hwp). }
   remember (app_subst (cS Phi) tau0) as T eqn:HT in Hwf, Hmembers.
@@ -4704,7 +4732,7 @@ Proof.
     simpl in Hin. destruct Hin as [Heq|[]]. subst mem.
     exact (Hpayload n th Hwf).
   - injection Hmembers as Hms. subst ms.
-    inversion Hwf as [| | |ms' Hwfms Hnomms Hnd|]; subst.
+    inversion Hwf as [| | |ms' Hwfms Hnomms Hnd| |]; subst.
     rewrite Forall_forall in Hwfms.
     pose proof (Hwfms mem Hin) as Hmemwf.
     rewrite Forall_forall in Hnomms.
@@ -5890,7 +5918,7 @@ Section SafetyCases.
       destruct (Wtag n D tau0 Hgt) as [PhiD' [Wt Hwf]].
       apply wf_tele_ctx in Wt.
       assert (HP : PhiD' = PhiD) by congruence. subst PhiD'.
-      exact (wf_ty_frees Hwf). }
+      exact Hwf. }
     assert (IH := IHfuel (Nat.le_refl k) Hty Hg Hd Hve).
     rewrite !(absorbs_all Hab) in IH.
     rewrite !(absorbs_all Hab).
@@ -6717,15 +6745,15 @@ Section SafetyCases.
         incl (ty_frees (member_payload Sg (TNom n th)))
              (tyreqs (cA Phi))).
     { intros n th Hn.
-      inversion Hn as [| | n' D payload th' Htag Hsat Hwfth | |fts' Hr0 Hfts]; subst;
-        [| cbn [member_payload]; rewrite Hr0; intros x []].
+      inversion Hn as [| | n' D payload th' Htag Hsat Hwfth | |fts' Hr0 Hfts|n' D th' Hnone Hopaque Hsat Honly Hall]; subst;
+        [| cbn [member_payload]; rewrite Hr0; intros x []|cbn[member_payload];rewrite Hnone;intros x []].
       cbn [member_payload]. rewrite Htag.
       pose proof (wf_tag_decl WF n Htag) as [PhiD' [Wt Hp]].
       destruct Hsat as [PhiD [Htc [Hdom _]]].
       apply wf_tele_ctx in Wt.
       assert (HP : PhiD' = PhiD) by congruence. subst PhiD'.
       assert (Hcover : incl (ty_frees payload) (map fst th)).
-      { rewrite Hdom. exact (wf_ty_frees Hp). }
+      { rewrite Hdom. exact Hp. }
       intros u Hu.
       apply frees_app_subst_bound in Hu.
       destruct Hu as [[p [Hpth Hup]] | [Hu Hmiss]].
@@ -6739,7 +6767,7 @@ Section SafetyCases.
       simpl in Hin. destruct Hin as [Heq | []]. subst mem.
       exact (Hpayload n th Hwf).
     - injection Hmembers as Hms. subst ms.
-      inversion Hwf as [| | |ms' Hwfms Hnomms Hnd'|]; subst.
+      inversion Hwf as [| | |ms' Hwfms Hnomms Hnd'| |]; subst.
       rewrite Forall_forall in Hwfms.
       pose proof (Hwfms mem Hin) as Hmemwf.
       rewrite Forall_forall in Hnomms.
@@ -10036,8 +10064,8 @@ Module FunctorExample.
         injection H as <- <-.
       + exists (mkCtx [ITy sElem] []). split.
         * eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity | constructor].
-        * apply WfNeed. reflexivity.
-      + exists empty_ctx. split; constructor.
+        * apply incl_refl.
+      + exists empty_ctx. split; [constructor|intros x Hx; contradiction].
     - intros v D tauv H.
       destruct v as [|[|v]]; simpl in H; try discriminate; injection H as <- <-.
       exists empty_ctx. split; [constructor | apply wf_O].
@@ -10090,6 +10118,7 @@ Module FunctorExample.
         exists empty_ctx. split; [constructor |].
         split; [split; [intros x [] | constructor] |].
         split; [exact tele_res | exact bare_ok].
+    - intros n D Impossible;discriminate Impossible.
   Qed.
 
 End FunctorExample.
@@ -10376,7 +10405,7 @@ Module ArraysExample.
       intros Hmain. constructor.
       - intros n D taup H.
         destruct n as [|[|[|[|[|n]]]]]; simpl in H; try discriminate;
-          injection H as <- <-; exists empty_ctx; split; constructor.
+          injection H as <- <-; (exists empty_ctx; split; [constructor|intros x Hx; contradiction]).
       - intros v D tauv H. discriminate H.
       - intros f D S b H.
         destruct f as [|[|[|[|[|[|f]]]]]]; simpl in H; try discriminate;
@@ -10429,6 +10458,7 @@ Module ArraysExample.
           split; [split; [intros x [<- | []]; simpl; tauto | constructor; [intros x [] | constructor]] |].
           split; [eapply WCons; [apply get_ok; reflexivity | reflexivity | constructor] |].
           exact gc_ok.
+      - intros n D Impossible;discriminate Impossible.
     Qed.
 
     (* The bind: Gc's captured inputs are here, its pin holds here, and the

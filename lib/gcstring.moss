@@ -11,8 +11,8 @@ import "./int.moss" as int use Int;
 import "./char.moss" as char use Char;
 import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read;
 import "./string.moss" as string use String, StringBuilder, StringLiterals,
-  string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, print, first_arg, arg_count, arg_at;
-import "./path.moss" as path use Path, pwd, .readable;
+  string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, print, first_arg, arg_count, arg_at, .slice, .concat;
+import "./path.moss" as path use Path, pwd, .join, .readable;
 import "./strlist.moss" as strlist use StrList, str_list;
 
 assume Wasm {

@@ -30,7 +30,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Elab Prune SlotX FoldX CloX.
+From NM Require Import Audit CoreMoss MossX FastX Prune SlotX FoldX CloX.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -48,7 +48,7 @@ Fixpoint uses (e : xexpr) : list item :=
   | XVar _ | XUnit | XBreak => []
   | XVl v => [IVal v]
   | XTag _ _ e1 | XBindTy _ _ e1 | XAssign _ e1 | XLoop e1 | XReturn e1 | XField e1 _
-  | XBindFunSym _ _ e1 | XBindPrim _ _ e1 => uses e1
+  | XBindFunSym _ _ e1 | XBindPrim _ _ e1 | XConst _ e1 => uses e1
   | XCallD _ _ sm args => srcs sm ++ flat_map uses args
   | XCallA f args => IFn f :: flat_map uses args
   | XMeth e0 _ it args => it :: uses e0 ++ flat_map uses args
@@ -58,6 +58,7 @@ Fixpoint uses (e : xexpr) : list item :=
   | XBindFun _ _ _ smc e1 => srcs smc ++ uses e1
   | XBindFunA _ u' _ e1 | XBindFunCopy _ u' e1 => IFun u' :: uses e1
   | XApply u _ sm e1 => IFun u :: srcs sm ++ uses e1
+  | XApplyR u inputs _ e1 => IFun u :: srcs inputs ++uses e1
   | XIf a b c => uses a ++ uses b ++ uses c
   | XRec fs => flat_map (fun p => uses (snd p)) fs
   | XMatchP e0 arms => uses e0 ++ flat_map (fun p => uses (snd p)) arms
@@ -73,6 +74,7 @@ with buses (b : xbind) : list item :=
   | XBFun _ _ _ smc => srcs smc
   | XBFunA _ u' _ | XBFunCopy _ u' => [IFun u']
   | XBApply u _ sm => IFun u :: srcs sm
+  | XBApplyR u inputs _ => IFun u::srcs inputs
   | XBApplyBr u brs =>
       IFun u :: flat_map (fun br => match br with (_, bs, pr) => flat_map buses bs ++ srcs pr end) brs
   end.
@@ -102,6 +104,7 @@ Fixpoint ok_e (e : xexpr) : bool :=
   | XTag _ _ e1 | XBindTy _ _ e1 | XAssign _ e1 | XLoop e1 | XReturn e1 | XField e1 _ => ok_e e1
   | XBindFunSym u _ e1 => notU u && ok_e e1
   | XBindPrim i _ e1 => negb (isU i) && ok_e e1
+  | XConst _ e1 => ok_e e1
   | XCallD _ _ sm args => sm_ok sm && forallb ok_e args
   | XCallA _ args => forallb ok_e args
   | XMeth e0 _ _ args => ok_e e0 && forallb ok_e args
@@ -112,6 +115,7 @@ Fixpoint ok_e (e : xexpr) : bool :=
   | XBindFunA u u' sm e1 => notU u && notU u' && sm_ok sm && ok_e e1
   | XBindFunCopy u u' e1 => notU u && notU u' && ok_e e1
   | XApply u _ sm e1 => sm_ok sm && (notU u || match sm with [] => true | _ => false end) && ok_e e1
+  | XApplyR _ _ _ _ => false
   | XIf a b c => ok_e a && ok_e b && ok_e c
   | XRec fs => forallb (fun p => ok_e (snd p)) fs
   | XMatchP e0 arms => ok_e e0 && forallb (fun p => ok_e (snd p)) arms
@@ -130,6 +134,7 @@ with ok_b (b : xbind) : bool :=
   | XBFunCopy u u' => notU u && notU u'
   | XBFunSym u _ => notU u
   | XBApply u _ sm => sm_ok sm && (notU u || match sm with [] => true | _ => false end)
+  | XBApplyR _ _ _ => false
   | XBApplyBr u brs =>
       notU u && forallb (fun br => match br with (_, bs, pr) => forallb ok_b bs && sm_ok pr end) brs
   | XBPrim i _ => negb (isU i)
@@ -137,7 +142,8 @@ with ok_b (b : xbind) : bool :=
 
 (* h's body: primitives only, none filed under F, and one for every member *)
 Definition prim_bind (b : xbind) : bool :=
-  match b with XBPrim i _ => negb (isU i) | _ => false end.
+  match b with XBPrim _ (PBox _) | XBPrim _ (PArrNew _) => false
+  | XBPrim i _ => negb (isU i) | _ => false end.
 Definition binds_item (i : item) (b : xbind) : bool :=
   match b with XBPrim j _ => item_eqb j i | _ => false end.
 Definition body_ok : bool :=
@@ -145,10 +151,10 @@ Definition body_ok : bool :=
   && forallb (fun i => is_ty_item i || existsb (binds_item i) bsH) Dr.
 
 (* Main's root environment: F's entries are the platform's, and no other
-   entry holds an environment. *)
+   entry holds an environment. Runtime type entries remain unchanged. *)
 Definition plain (a : xdentry) : bool :=
   match a with
-  | XDVal _ | XDPrim _ | XDFunSym _ => true
+  | XDVal _ | XDPrim _ | XDFunSym _ | XDType _ => true
   | XDClo _ [] => true
   | XDFun _ sms [] => forallb sm_ok sms
   | _ => false
@@ -190,6 +196,7 @@ Fixpoint fp_e (e : xexpr) : xexpr :=
   | XApply u th sm e1 =>
       if Nat.eqb u U then XApplyBr U (branch th (inW (uses e1))) (fp_e e1)
       else XApply u th sm (fp_e e1)
+  | XApplyR u inputs outputs e1 => XApplyR u inputs outputs (fp_e e1)
   | XSeq e1 e2 => XSeq (fp_e e1) (fp_e e2)
   | XAssign x e1 => XAssign x (fp_e e1)
   | XIf c e1 e2 => XIf (fp_e c) (fp_e e1) (fp_e e2)
@@ -206,6 +213,7 @@ Fixpoint fp_e (e : xexpr) : xexpr :=
       XApplyBr u (map (fun br => match br with (h, bs, pr) => (h, map fp_b bs, pr) end) brs)
                (fp_e e1)
   | XBindPrim i p e1 => XBindPrim i p (fp_e e1)
+  | XConst v e1 => XConst v (fp_e e1)
   end
 with fp_b (b : xbind) : xbind :=
   match b with
@@ -221,10 +229,12 @@ Definition fp_env (env : xdenv) : xdenv :=
 
 End Pass.
 
+(* Primitive-only families with no type results cannot expose their runtime
+   type instantiation. Other calls and checked casts retain their types. *)
 Definition ok_program (U H : usym) (p : xprogram) : bool :=
   match Elaboration.nlook H (xo_funs p) with
   | Some (Dr, bsH) =>
-      body_ok U Dr bsH
+      forallb (fun i => negb (is_ty_item i)) Dr && body_ok U Dr bsH
       && forallb (fun fb => ok_e U (snd fb)) (xo_fns p)
       && forallb (fun ub => forallb (ok_b U) (snd (snd ub))) (xo_funs p)
       && root_ok U H (xo_env p)
@@ -237,7 +247,7 @@ Definition fp_program (U H : usym) (p : xprogram) : xprogram :=
       XProgram (map (fun fb => (fst fb, fp_e U H Dr bsH (snd fb))) (xo_fns p))
                (map (fun ub => (fst ub, (fst (snd ub), map (fp_b U H Dr bsH) (snd (snd ub))))) (xo_funs p))
                (xo_bool p) (xo_true p) (xo_false p) (xo_main p)
-               (fp_env U H (xo_env p)) (xo_prims p)
+               (fp_env U H (xo_env p)) (xo_prims p) (xo_cast p) (xo_inputs p) (xo_exports p) (xo_immutable p) (xo_fixed_inst p) (xo_fixed_keys p)
   | None => p
   end.
 
@@ -294,15 +304,20 @@ Variables U H : usym.
 Inductive ent : xdentry -> xdentry -> Prop :=
 | EVal : forall w, ent (XDVal w) (XDVal w)
 | EPrim : forall p, ent (XDPrim p) (XDPrim p)
+| EPrimAt : forall p tau, ent (XDPrimAt p tau) (XDPrimAt p tau)
 | ESym : forall h, ent (XDFunSym h) (XDFunSym h)
 | EClo : forall f d d', lr d d' -> ent (XDClo f d) (XDClo f d')
 | EFun : forall h sms d d', forallb (sm_ok U) sms = true -> lr d d' -> ent (XDFun h sms d) (XDFun h sms d')
+| EType : forall tau, ent (XDType tau) (XDType tau)
 with kent : item -> xdentry -> xdentry -> Prop :=
 | KU : forall i, isU U i = true -> kent i (XDFun H [] []) (XDFunSym H)
 | KO : forall i a a', isU U i = false -> ent a a' -> kent i a a'
 with lr : xdenv -> xdenv -> Prop :=
 | LNil : lr [] []
 | LCons : forall i a a' d d', kent i a a' -> lr d d' -> lr ((i, a) :: d) ((i, a') :: d').
+
+Lemma ent_prim_entry : forall i p, ent (xprim_entry [] i p) (xprim_entry [] i p).
+Proof. intros i p. destruct p; destruct i; constructor. Qed.
 
 Definition orel (i : item) (o o' : option xdentry) : Prop :=
   match o, o' with
@@ -311,9 +326,26 @@ Definition orel (i : item) (o o' : option xdentry) : Prop :=
   | _, _ => False
   end.
 
-(* The two environments agree at every item in S. *)
-Definition agx (S : item -> Prop) (d d' : xdenv) : Prop :=
-  forall i, S i -> orel i (lookup_xdenv i d) (lookup_xdenv i d').
+(* The environments agree on S and retain exactly the same runtime type
+   stream, even when some unused primitive provisions have been removed. *)
+Record agx (S : item -> Prop) (d d' : xdenv) : Prop := Agx {
+  agx_lookup : forall i, S i -> orel i (lookup_xdenv i d) (lookup_xdenv i d');
+  agx_types : xdtypes d = xdtypes d'
+}.
+Coercion agx_lookup : agx >-> Funclass.
+
+Lemma kent_types : forall i a a', kent i a a' ->
+  xdtypes [(i,a)] = xdtypes [(i,a')].
+Proof.
+  intros i a a' K. inversion K; subst; [destruct i; reflexivity|].
+  inversion H1; subst; destruct i; reflexivity.
+Qed.
+Lemma lr_types : forall d d', lr d d' -> xdtypes d = xdtypes d'.
+Proof.
+  intros d d' L. induction L; [reflexivity|].
+  change (xdtypes ([(i,a)] ++ d) = xdtypes ([(i,a')] ++ d')).
+  rewrite !xdtypes_app, (kent_types H0), IHL. reflexivity.
+Qed.
 
 Definition lk (S : item -> Prop) (l : list item) : Prop := forall i, In i l -> S i.
 
@@ -324,12 +356,17 @@ Proof.
 Qed.
 
 Lemma lr_agx : forall S d d', lr d d' -> agx S d d'.
-Proof. intros S d d' Hd i _. apply lr_lookup; auto. Qed.
+Proof.
+  intros S d d' Hd. constructor; [intros i _; apply lr_lookup; exact Hd|apply lr_types; exact Hd].
+Qed.
 
 Lemma agx_cons : forall S d d' i a a', kent i a a' -> agx S d d' -> agx S ((i, a) :: d) ((i, a') :: d').
 Proof.
-  intros S d d' i a a' Ha Hd j Hj. simpl.
-  destruct (item_eqb j i) eqn:E; [apply item_eqb_eq in E; subst; exact Ha|apply Hd; auto].
+  intros S d d' i a a' Ha Hd. constructor.
+  - intros j Hj. simpl. destruct (item_eqb j i) eqn:E;
+      [apply item_eqb_eq in E; subst; exact Ha|apply Hd; auto].
+  - change (xdtypes ([(i,a)] ++ d) = xdtypes ([(i,a')] ++ d')).
+    rewrite !xdtypes_app, (kent_types Ha), (agx_types Hd). reflexivity.
 Qed.
 
 Lemma agx_app : forall S dr dr' d d', lr dr dr' -> agx S d d' -> agx S (dr ++ d) (dr' ++ d').
@@ -337,6 +374,60 @@ Proof. intros S dr dr' d d' Hr Hd. induction Hr; simpl; auto. apply agx_cons; au
 
 Lemma lr_app : forall a a' b b', lr a a' -> lr b b' -> lr (a ++ b) (a' ++ b').
 Proof. intros a a' b b' Ha Hb. induction Ha; simpl; auto. constructor; auto. Qed.
+
+Lemma lr_type_rows : forall types, lr (ftype_pairs types) (ftype_pairs types).
+Proof.
+  induction types as [|[t tau] types IH]; constructor; auto.
+  apply KO; [reflexivity|constructor].
+Qed.
+Lemma lr_close : forall S d d' dc dc', agx S d d' -> lr dc dc' -> lr (xclose d dc) (xclose d' dc').
+Proof.
+  intros S d d' dc dc' Hd Hc. unfold xclose.
+  rewrite !xtype_env_pairs, (agx_types Hd).
+  apply lr_app; [exact Hc|apply lr_type_rows].
+Qed.
+Lemma agx_ground : forall S d d' tau, agx S d d' -> xground d tau = xground d' tau.
+Proof. intros S d d' tau Hd; unfold xground; rewrite (agx_types Hd); reflexivity. Qed.
+Lemma lr_inst : forall S d d' th, agx S d d' -> lr (xinst d th) (xinst d' th).
+Proof.
+  intros S d d' th Hd. rewrite !xinst_map.
+  induction th as [|[t tau] th IH]; cbn [map fst snd]; constructor; auto.
+  rewrite (agx_ground tau Hd). apply KO; [reflexivity|constructor].
+Qed.
+Lemma lr_call : forall P P' S d d' th dc dc',
+  xreify P' = xreify P -> agx S d d' -> lr dc dc' ->
+  lr (xcall_env P d th dc) (xcall_env P' d' th dc').
+Proof.
+  intros P P' S d d' th dc dc' Mode Hd Hc. unfold xcall_env.
+  rewrite Mode. destruct (xreify P); [|exact Hc].
+  apply lr_app; [apply lr_inst with S; exact Hd|eapply lr_close; eauto].
+Qed.
+Lemma lr_result : forall P P' S d d' Dr dr dr',
+  xreify P' = xreify P -> agx S d d' -> lr dr dr' ->
+  lr (xresult_env P d Dr dr) (xresult_env P' d' Dr dr').
+Proof.
+  intros P P' S d d' Dr dr dr' Mode Hd Hr. unfold xresult_env.
+  rewrite Mode. destruct (xreify P); [|exact Hr].
+  unfold xresult_types. rewrite !xtype_env_pairs, (agx_types Hd).
+  apply lr_app; [exact Hr|].
+  generalize (xdtypes d'). intro types. induction types as [|[t tau] types IH]; cbn [ftype_pairs map filter fst].
+  - constructor.
+  - destruct (existsb (item_eqb (ITy t)) Dr); auto. constructor; auto.
+    apply KO; [reflexivity|constructor].
+Qed.
+Lemma agx_bind_ty : forall P P' S d d' t tau,
+  xreify P' = xreify P -> agx S d d' ->
+  agx S (xbind_ty P d t tau) (xbind_ty P' d' t tau).
+Proof.
+  intros P P' S d d' t tau Mode Hd. unfold xbind_ty.
+  rewrite Mode. destruct (xreify P); [|exact Hd].
+  rewrite (agx_ground tau Hd). apply agx_cons; [apply KO; [reflexivity|constructor]|exact Hd].
+Qed.
+Lemma agx_prim : forall S d d' i p, agx S d d' -> ent (xprim_entry d i p) (xprim_entry d' i p).
+Proof.
+  intros S d d' i p Hd. unfold xprim_entry; destruct p; destruct i; try constructor;
+    rewrite (agx_ground _ Hd); constructor.
+Qed.
 
 Lemma kent_move : forall s req a a', kent s a a' -> Bool.eqb (isU U req) (isU U s) = true -> kent req a a'.
 Proof.
@@ -414,23 +505,33 @@ Qed.
 
 (* After a narrowed application: agreement on the items the result keeps,
    and on S elsewhere *)
+Lemma prim_env_types : forall dr, prim_env dr -> xdtypes dr = [].
+Proof.
+  intros dr Hp. induction Hp as [|[i a] r Hp Hr IH]; [reflexivity|].
+  destruct Hp as [Hu [q Eq]]. cbn in Eq. subst a. destruct i; cbn [xdtypes]; exact IH.
+Qed.
+Lemma prim_env_filter : forall dr (f : item * xdentry -> bool), prim_env dr -> prim_env (filter f dr).
+Proof. intros dr f Hp. apply Forall_forall. intros x E. apply filter_In in E as [E _]. exact ((proj1 (Forall_forall _ _) Hp) x E). Qed.
+
 Lemma agx_narrow : forall S (keep : item -> bool) dr d d', prim_env dr -> agx S d d' ->
   agx (fun i => if inkeys i dr then keep i = true else S i)
       (dr ++ d) (filter (fun p => keep (fst p)) dr ++ d').
 Proof.
-  intros S keep dr d d' Hp Hd i. rewrite !lookup_app.
+  intros S keep dr d d' Hp Hd. constructor.
+  - intro i. rewrite !lookup_app.
   destruct (inkeys i dr) eqn:E; intros Hi.
-  - rewrite lookup_filter_keep by auto.
+  + rewrite lookup_filter_keep by auto.
     destruct (lookup_xdenv i dr) as [a|] eqn:El.
-    + apply lookup_In in El. unfold prim_env in Hp. rewrite Forall_forall in Hp. destruct (Hp _ El) as [Hu [q Hq]].
+    * apply lookup_In in El. unfold prim_env in Hp. rewrite Forall_forall in Hp. destruct (Hp _ El) as [Hu [q Hq]].
       simpl in *. subst. apply KO; auto. constructor.
-    + exfalso. unfold inkeys in E. apply existsb_exists in E as [[j a] [Hin Hj]].
+    * exfalso. unfold inkeys in E. apply existsb_exists in E as [[j a] [Hin Hj]].
       simpl in Hj. apply item_eqb_eq in Hj. subst.
       clear -El Hin. induction dr as [|[k b] r IH]; simpl in *; [contradiction|].
       destruct (item_eqb j k) eqn:E; [discriminate|]. destruct Hin as [Hin|Hin]; auto.
       injection Hin as -> ->. rewrite item_eqb_refl in E. discriminate.
-  - rewrite lookup_inkeys by auto. rewrite lookup_filter_none by (apply lookup_inkeys; auto).
+  + rewrite lookup_inkeys by auto. rewrite lookup_filter_none by (apply lookup_inkeys; auto).
     apply Hd; auto.
+  - rewrite !xdtypes_app, (prim_env_types Hp), (prim_env_types (prim_env_filter _ Hp)), (agx_types Hd). reflexivity.
 Qed.
 
 End Rel.
@@ -445,15 +546,16 @@ Lemma binds_prims : forall U P bs k d g st, forallb (prim_bind U) bs = true ->
   = if Nat.ltb (length bs) k then inl (rev (map bent bs) ++ d, g, st) else inr (XR XFuel g st).
 Proof.
   intros U P. induction bs as [|b r IH]; intros [|k] d g st Hp; simpl; auto.
-  destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [_ Hp].
-  rewrite IH by auto. rewrite <- app_assoc. reflexivity.
+  destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hpi Hp].
+  assert (Ep : xprim_entry d i p = XDPrim p) by (destruct p; try discriminate Hpi; destruct i; reflexivity).
+  rewrite Ep. rewrite IH by auto. rewrite <- app_assoc. reflexivity.
 Qed.
 
 Lemma prims_shape : forall U bs, forallb (prim_bind U) bs = true -> prim_env U (rev (map bent bs)).
 Proof.
   intros U bs Hp. unfold prim_env. apply Forall_rev. induction bs as [|b r IH]; simpl; constructor.
   - destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hi _].
-    simpl. split; [apply negb_true_iff; auto|eauto].
+    simpl. split; [apply negb_true_iff; destruct p; simpl in Hi; try discriminate; exact Hi|eauto].
   - apply IH. destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp; tauto.
 Qed.
 
@@ -545,14 +647,43 @@ Hypothesis Hfn : forall f, xp_fn P' f = option_map T (xp_fn P f).
 Hypothesis Hfun : forall u, xp_fun P' u = option_map (fun p => (fst p, map Tb (snd p))) (xp_fun P u).
 Hypothesis Hprim : forall p ws st, run_prim P' p ws st = run_prim P p ws st.
 Hypothesis Htrue : xp_true P' = xp_true P.
+Hypothesis Hmode : xreify P' = xreify P.
+Hypothesis Hcasts : xp_cast P' = xp_cast P.
+Hypothesis Hinputs : forall h, xp_inputs P' h = xp_inputs P h.
 Hypothesis Hokf : forall f b, xp_fn P f = Some b -> ok_e U b = true.
 Hypothesis Hoku : forall u D bs, xp_fun P u = Some (D, bs) -> forallb (ok_b U) bs = true.
 Hypothesis HH : xp_fun P H = Some (Dr, bsH).
 Hypothesis Hbody : body_ok U Dr bsH = true.
+Hypothesis Hresults : forallb (fun i => negb (is_ty_item i)) Dr = true.
 
 Notation agx := (agx U H).
 Notation lr := (lr U H).
 Notation lk := lk.
+
+Lemma cast_eq : forall S d d' n th w, agx S d d' -> xcast P' d' n th w = xcast P d n th w.
+Proof.
+  intros S d d' n th w Hd. unfold xcast, xground.
+  rewrite Hcasts, (agx_types Hd). reflexivity.
+Qed.
+Lemma apply_lr : forall S d d' h th dc dc', agx S d d' -> lr dc dc' ->
+  lr (xapply_env P d h th dc) (xapply_env P' d' h th dc').
+Proof.
+  intros S d d' h th dc dc' Hd Hc. unfold xapply_env.
+  rewrite Hinputs. eapply lr_call; eauto.
+Qed.
+Lemma result_plain : forall d dr, xresult_env P d Dr dr = dr.
+Proof.
+  intros d dr. unfold xresult_env, xresult_types. destruct (xreify P); [|reflexivity].
+  assert (E : filter (fun p => existsb (item_eqb (fst p)) Dr) (xtype_env d) = []).
+  { clear -Hresults. induction d as [|[i a] d IH]; [reflexivity|].
+    destruct i,a; cbn [xtype_env filter fst]; try exact IH.
+    destruct (existsb (item_eqb (ITy t)) Dr) eqn:InTy; [|exact IH].
+    apply existsb_exists in InTy as [j [In Eq]]. apply item_eqb_eq in Eq. subst j.
+    rewrite forallb_forall in Hresults. specialize (Hresults _ In). discriminate. }
+  rewrite E, app_nil_r. reflexivity.
+Qed.
+Lemma prim_at_eq : forall p tau ws st, run_prim_at P' p tau ws st = run_prim_at P p tau ws st.
+Proof. intros. unfold run_prim_at. rewrite Hprim. reflexivity. Qed.
 
 (* An application of F: the original runs h's whole body and composes the
    whole result; the branch runs the binds the kept pairs read and composes
@@ -577,11 +708,11 @@ Proof.
   assert (Hpf : forallb (prim_bind U) (filter (read_by N) bsH) = true).
   { apply forallb_forall. intros b Hb. apply filter_In in Hb as [Hb _].
     rewrite forallb_forall in Hp. auto. }
-  rewrite (binds_prims U P bsH k [] [] st Hp), (binds_prims U P' _ k d' g st Hpf).
+  rewrite (binds_prims U P bsH k (xapply_env P d H th []) [] st Hp), (binds_prims U P' _ k d' g st Hpf).
   destruct (Nat.ltb (length bsH) k) eqn:Ek; [|left; reflexivity].
   assert (Ek' : Nat.ltb (length (filter (read_by N) bsH)) k = true).
   { apply Nat.ltb_lt. apply Nat.ltb_lt in Ek. pose proof (filter_length_le (read_by N) bsH). lia. }
-  rewrite Ek'. rewrite app_nil_r.
+  rewrite Ek'.
   (* every member of the result has its primitive *)
   assert (Hsrc : forall q, In q (inst_smap th Dr) -> exists a, lookup_xdenv (snd q) (rev (map bent bsH)) = Some a).
   { intros q Hq. destruct (in_inst _ _ _ Hq) as [i [-> [Hi Ht]]]. simpl.
@@ -589,7 +720,11 @@ Proof.
     eapply lookup_prims_some; eauto. }
   destruct (compose_some (rev (map bent bsH)) (inst_smap th Dr)) as [dr Hdr].
   { intros x Hx. unfold srcs in Hx. apply in_map_iff in Hx as [q [<- Hq]]. auto. }
-  rewrite Hdr.
+  assert (HdrBase : xcompose (rev (map bent bsH) ++ xapply_env P d H th []) (inst_smap th Dr) = Some dr).
+  { rewrite <- Hdr. apply compose_ext. intros x Hx.
+    apply in_map_iff in Hx as [q [<- Hq]]. destruct (Hsrc q Hq) as [a Ha].
+    rewrite lookup_app, Ha. reflexivity. }
+  rewrite HdrBase, result_plain.
   assert (Hc' : xcompose (rev (map bent (filter (read_by N) bsH)) ++ d') N = Some (filter (fun p => keep (fst p)) dr)).
   { rewrite <- (compose_filter _ _ keep Hdr). apply compose_ext.
     intros x Hx. unfold srcs in Hx. apply in_map_iff in Hx as [q [<- Hq]].
@@ -608,7 +743,7 @@ Proof.
     rewrite forallb_forall in Hcov. specialize (Hcov i Hi). rewrite Ht in Hcov. simpl in Hcov.
     apply existsb_exists in Hcov as [b [Hb Hbi]]. rewrite forallb_forall in Hp. specialize (Hp b Hb).
     destruct b; simpl in Hp, Hbi; try discriminate. apply item_eqb_eq in Hbi. subst.
-    apply negb_true_iff; auto.
+    apply negb_true_iff; destruct p; simpl in Hp; try discriminate; exact Hp.
 Qed.
 
 
@@ -736,9 +871,9 @@ Proof.
   split; [|split; [|split; [|split]]].
   - intros S d d' g st e Hok Hlk Hd.
     destruct e as [x| |v|n th e1|f th sm args|f args|e0 m it args|e0 arms|x e1 e2|t tau e1|v e1 e2
-                  |f f' sm e1|tk m th f' sm e1|u h sm smc e1|u u' sm e1|u th sm e1|e1 e2|x e1|c e1 e2
-                  |c b|b|e1| |fs|e1 fl|e0 arms|u h e1|u u' e1|u brs e1|i p e1];
-      simpl in Hok |- *; andb_split.
+                  |f f' sm e1|tk m th f' sm e1|u h sm smc e1|u u' sm e1|u th sm e1|u inputs outputs e1|e1 e2|x e1|c e1 e2
+                  |c b|b|e1| |fs|e1 fl|e0 arms|u h e1|u u' e1|u brs e1|i p e1|id e1];
+      simpl in Hok |- *; try discriminate; andb_split.
     + (* XVar *) err.
     + (* XUnit *) err.
     + (* XVl *)
@@ -748,23 +883,26 @@ Proof.
       inversion Ho; subst; err.
     + (* XTag *)
       destruct (IHe S d d' g st e1 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
-      destruct (xinterp k P d g st e1) as [[]]; err.
+      destruct (xinterp k P d g st e1) as [[]]; try err. rewrite (cast_eq n th x Hd). err.
     + (* XCallD *)
       rewrite Hfn. destruct (xp_fn P f) as [body|] eqn:Ef; simpl; [|err].
       destruct (IHl S d d' g st args ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
       destruct (xinterp_list k P d g st args) as [[[ws g1] st1]|]; [|err].
       pose proof (@compose_agx U H S d d' sm Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d sm) as [dc|], (xcompose d' sm) as [dc'|]; try contradiction; [|err].
-      destruct (IHe (fun _ => True) dc dc' (mk_xvenv ws) st1 body (Hokf f Ef) (fun _ _ => I)
-                    (lr_agx _ Hc)) as [Hs| ->]; [fout|err].
+      destruct (IHe (fun _ => True) (xcall_env P d th dc) (xcall_env P' d' th dc') (mk_xvenv ws) st1 body (Hokf f Ef) (fun _ _ => I)
+                    (lr_agx _ (lr_call P P' th Hmode Hd Hc))) as [Hs| ->]; [fout|err].
     + (* XCallA *)
       pose proof (look_nonU (IFn f) Hd (Hlk _ (or_introl eq_refl)) eq_refl) as Ho.
       destruct (lookup_xdenv (IFn f) d) as [a|], (lookup_xdenv (IFn f) d') as [a'|];
         try contradiction; [|err].
-      inversion Ho as [w|q|hh|f0 dc dc' Hdc|hh sms dc dc' Hsms Hdc]; subst; try err.
+      inversion Ho as [w|q|q tau0|hh|f0 dc dc' Hdc|hh sms dc dc' Hsms Hdc|tau]; subst; try err.
       * destruct (IHl S d d' g st args ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
         destruct (xinterp_list k P d g st args) as [[[ws g1] st1]|]; [|err].
-        rewrite Hprim. err.
+        rewrite prim_at_eq. err.
+      * destruct (IHl S d d' g st args ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
+        destruct (xinterp_list k P d g st args) as [[[ws g1] st1]|]; [|err].
+        rewrite prim_at_eq. err.
       * rewrite Hfn. destruct (xp_fn P f0) as [body|] eqn:Ef; simpl; [|err].
         destruct (IHl S d d' g st args ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
         destruct (xinterp_list k P d g st args) as [[[ws g1] st1]|]; [|err].
@@ -775,12 +913,17 @@ Proof.
       destruct (lookup_xdenv it d) as [a|], (lookup_xdenv it d') as [a'|]; simpl in Ho;
         try contradiction; [|err].
       inversion Ho as [? Hu|? ? ? Hu He]; subst; [err|].
-      inversion He as [w|q|hh|f0 dc dc' Hdc|hh sms dc dc' Hsms Hdc]; subst; try err.
+      inversion He as [w|q|q tau0|hh|f0 dc dc' Hdc|hh sms dc dc' Hsms Hdc|tau]; subst; try err.
       * destruct (IHe S d d' g st e0 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
         destruct (xinterp k P d g st e0) as [[w0| | | | | | |] g0 st0]; try err.
         destruct (IHl S d d' g0 st0 args ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
         destruct (xinterp_list k P d g0 st0 args) as [[[ws g1] st1]|]; [|err].
-        rewrite Hprim. err.
+        rewrite prim_at_eq. err.
+      * destruct (IHe S d d' g st e0 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
+        destruct (xinterp k P d g st e0) as [[w0| | | | | | |] g0 st0]; try err.
+        destruct (IHl S d d' g0 st0 args ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
+        destruct (xinterp_list k P d g0 st0 args) as [[[ws g1] st1]|]; [|err].
+        rewrite prim_at_eq. err.
       * rewrite Hfn. destruct (xp_fn P f0) as [body|] eqn:Ef; simpl; [|err].
         destruct (IHe S d d' g st e0 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
         destruct (xinterp k P d g st e0) as [[w0| | | | | | |] g0 st0]; try err.
@@ -805,7 +948,7 @@ Proof.
       destruct (xinterp k P d g st e1) as [[w0| | | | | | |] g0 st0]; try err.
       destruct (IHe S d d' ((x, w0) :: g0) st0 e2 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->];
         [fout|err].
-    + (* XBindTy *) apply (IHe S); [assumption|sub Hlk|assumption].
+    + (* XBindTy *) apply (IHe S); [assumption|sub Hlk|eapply agx_bind_ty; eauto].
     + (* XBindVal *)
       destruct (IHe S d d' g st e1 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
       destruct (xinterp k P d g st e1) as [[w0| | | | | | |] g0 st0]; try err.
@@ -813,21 +956,21 @@ Proof.
     + (* XBindFn *)
       pose proof (@compose_agx U H S d d' sm Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d sm) as [dc|], (xcompose d' sm) as [dc'|]; try contradiction; [|err].
-      apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; auto].
+      apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; eapply lr_close; eauto].
     + (* XBindMth *)
       pose proof (@compose_agx U H S d d' sm Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d sm) as [dc|], (xcompose d' sm) as [dc'|]; try contradiction; [|err].
-      apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; auto].
+      apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; eapply lr_close; eauto].
     + (* XBindFun *)
       pose proof (@compose_agx U H S d d' smc Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d smc) as [dc|], (xcompose d' smc) as [dc'|]; try contradiction; [|err].
       apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto.
-      apply KO; [apply notU_isU; auto|constructor; auto]. simpl. rewrite andb_true_r. auto.
+      apply KO; [apply notU_isU; auto|constructor; [simpl; rewrite andb_true_r; assumption|eapply lr_close; eauto]].
     + (* XBindFunA *)
       pose proof (look_nonU (IFun u') Hd (Hlk _ (or_introl eq_refl)) (notU_isU _ _ ltac:(eassumption))) as Ho.
       destruct (lookup_xdenv (IFun u') d) as [a|], (lookup_xdenv (IFun u') d') as [a'|];
         try contradiction; [|err].
-      inversion Ho as [| | | |h0 sms dc dc' Hsms Hdc]; subst; try err.
+      inversion Ho as [| | | | |h0 sms dc dc' Hsms Hdc|tau]; subst; try err.
       apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto.
       apply KO; [apply notU_isU; auto|constructor; auto]. rewrite forallb_app. simpl.
       rewrite Hsms. simpl. rewrite andb_true_r. auto.
@@ -918,7 +1061,9 @@ Proof.
       * subst. err.
     + (* XBindPrim *)
       apply (IHe S); [assumption|sub Hlk|]. apply agx_cons; auto.
-      apply KO; [apply negb_true_iff; auto|constructor].
+      apply KO; [apply negb_true_iff; auto|].
+      eapply agx_prim; exact Hd.
+    + (* XConst *) destruct k;[err|apply(IHe S);[assumption|sub Hlk|exact Hd]].
   - intros S d d' g st l Hok Hlk Hd. destruct l as [|e r]; simpl in Hok |- *; [err|]. andb_split.
     destruct (IHe S d d' g st e ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
     destruct (xinterp k P d g st e) as [[w0| | | | | | |] g0 st0]; try err.
@@ -927,9 +1072,9 @@ Proof.
       [intros []|]. intros Hx; exact Hx.
   - intros S d d' g st bs Hok Hlk Hd. destruct bs as [|b r]; simpl in Hok |- *; [right; simpl; auto|].
     andb_split.
-    destruct b as [t tau|v e1|f f' sm|tk m th f' sm|u h sm smc|u u' sm|u th sm|u h|u u'|u brs|i p];
-      match goal with Hb : ok_b _ _ = true |- _ => simpl in Hb |- * end; andb_split.
-    + (* XBTy *) apply (IHb S); [assumption|sub Hlk|assumption].
+    destruct b as [t tau|v e1|f f' sm|tk m th f' sm|u h sm smc|u u' sm|u th sm|u inputs outputs|u h|u u'|u brs|i p];
+      match goal with Hb : ok_b _ _ = true |- _ => simpl in Hb |- * end; try discriminate; andb_split.
+    + (* XBTy *) apply (IHb S); [assumption|sub Hlk|eapply agx_bind_ty; eauto].
     + (* XBVal *)
       destruct (IHe S d d' g st e1 ltac:(assumption) ltac:(sub Hlk) Hd) as [Hs| ->]; [fout|].
       destruct (xinterp k P d g st e1) as [[w0| | | | | | |] g0 st0]; try (right; reflexivity).
@@ -938,23 +1083,23 @@ Proof.
       pose proof (@compose_agx U H S d d' sm Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d sm) as [dc|], (xcompose d' sm) as [dc'|]; try contradiction;
         [|right; reflexivity].
-      apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; auto].
+      apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; eapply lr_close; eauto].
     + (* XBMth *)
       pose proof (@compose_agx U H S d d' sm Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d sm) as [dc|], (xcompose d' sm) as [dc'|]; try contradiction;
         [|right; reflexivity].
-      apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; auto].
+      apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto. apply KO; [reflexivity|constructor; eapply lr_close; eauto].
     + (* XBFun *)
       pose proof (@compose_agx U H S d d' smc Hd ltac:(sub Hlk) ltac:(assumption)) as Hc.
       destruct (xcompose d smc) as [dc|], (xcompose d' smc) as [dc'|]; try contradiction;
         [|right; reflexivity].
       apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto.
-      apply KO; [apply notU_isU; auto|constructor; auto]. simpl. rewrite andb_true_r. auto.
+      apply KO; [apply notU_isU; auto|constructor; [simpl; rewrite andb_true_r; assumption|eapply lr_close; eauto]].
     + (* XBFunA *)
       pose proof (look_nonU (IFun u') Hd (Hlk _ (or_introl eq_refl)) (notU_isU _ _ ltac:(eassumption))) as Ho.
       destruct (lookup_xdenv (IFun u') d) as [a|], (lookup_xdenv (IFun u') d') as [a'|];
         try contradiction; [|right; reflexivity].
-      inversion Ho as [| | | |h0 sms dc dc' Hsms Hdc]; subst; try (right; reflexivity).
+      inversion Ho as [| | | | |h0 sms dc dc' Hsms Hdc|tau]; subst; try (right; reflexivity).
       apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto.
       apply KO; [apply notU_isU; auto|constructor; auto]. rewrite forallb_app. simpl.
       rewrite Hsms. simpl. rewrite andb_true_r. auto.
@@ -993,12 +1138,13 @@ Proof.
       * subst. right. reflexivity.
     + (* XBPrim *)
       apply (IHb S); [assumption|sub Hlk|]. apply agx_cons; auto.
-      apply KO; [apply negb_true_iff; auto|constructor].
+      apply KO; [apply negb_true_iff; auto|].
+      eapply agx_prim; exact Hd.
   - intros S d d' u th sm st Hn Hu Hlk Hsm Hd. simpl.
     pose proof (look_nonU (IFun u) Hd Hu (notU_isU _ _ Hn)) as Ho.
     destruct (lookup_xdenv (IFun u) d) as [a|], (lookup_xdenv (IFun u) d') as [a'|];
       try contradiction; [|right; reflexivity].
-    inversion Ho as [| | | |h sms dc dc' Hsms Hdc]; subst; try (right; reflexivity).
+    inversion Ho as [| | | | |h sms dc dc' Hsms Hdc|tau]; subst; try (right; reflexivity).
     rewrite Hfun. destruct (xp_fun P h) as [[D bs]|] eqn:Ef; simpl; [|right; reflexivity].
     pose proof (@compose_agx U H S d d' sm Hd Hlk Hsm) as Hc.
     destruct (xcompose d sm) as [d1|], (xcompose d' sm) as [d1'|]; try contradiction;
@@ -1006,18 +1152,19 @@ Proof.
     pose proof (@chain_lr U H sms d1 d1' Hc Hsms) as Hch.
     destruct (xrun_chain d1 sms) as [d2|], (xrun_chain d1' sms) as [d2'|]; try contradiction;
       [|right; reflexivity].
-    destruct (IHb (fun _ => True) (d2 ++ dc) (d2' ++ dc') [] st bs (Hoku h Ef) (fun _ _ => I)
-                  (lr_agx _ (lr_app Hch Hdc))) as [Hs|Hb].
-    + left. revert Hs. destruct (xinterp_binds k P (d2 ++ dc) [] st bs) as [?|[o0 g0 sx1]]; simpl;
+    destruct (IHb (fun _ => True) (xapply_env P d h th (d2 ++ dc)) (xapply_env P' d' h th (d2' ++ dc')) [] st bs (Hoku h Ef) (fun _ _ => I)
+                  (lr_agx _ (apply_lr h th Hd (lr_app Hch Hdc)))) as [Hs|Hb].
+    + left. revert Hs. destruct (xinterp_binds k P (xapply_env P d h th (d2 ++ dc)) [] st bs) as [?|[o0 g0 sx1]]; simpl;
         [intros []|]. intros Hx; exact Hx.
-    + destruct (xinterp_binds k P' (d2' ++ dc') [] st (map Tb bs)) as [[[d3' g3'] st3']|r3'],
-               (xinterp_binds k P (d2 ++ dc) [] st bs) as [[[d3 g3] st3]|r3]; simpl in Hb;
+    + destruct (xinterp_binds k P' (xapply_env P' d' h th (d2' ++ dc')) [] st (map Tb bs)) as [[[d3' g3'] st3']|r3'],
+               (xinterp_binds k P (xapply_env P d h th (d2 ++ dc)) [] st bs) as [[[d3 g3] st3]|r3]; simpl in Hb;
         try contradiction.
       * destruct Hb as [Hd3 [-> ->]].
         pose proof (@compose_agx U H (fun _ => True) d3 d3' (inst_smap th D) Hd3 (fun _ _ => I)
                       (sm_ok_inst U th D)) as Hc3.
         destruct (xcompose d3 (inst_smap th D)) as [dr|], (xcompose d3' (inst_smap th D)) as [dr'|];
           try contradiction; right; simpl; auto.
+        split; [eapply lr_result; eauto|reflexivity].
       * subst. right. simpl. auto.
   - intros S d d' g st u brs Hn Hu Hb Hlk Hd. simpl.
     pose proof (look_nonU (IFun u) Hd Hu (notU_isU _ _ Hn)) as Ho.
@@ -1062,12 +1209,17 @@ Proof.
   intros U H. induction env as [|[i a] r IH]; simpl; intros Hr; [constructor|].
   apply andb_true_iff in Hr as [Ha Hr]. simpl in Ha.
   destruct (isU U i) eqn:Ei; simpl; constructor; auto.
-  - destruct a as [w|f dc|h sms dc|p|h]; try discriminate.
+  - destruct a as [w|f dc|h sms dc|p|h|tau|p tau]; try discriminate.
     destruct sms; try discriminate. destruct dc; try discriminate.
     apply Nat.eqb_eq in Ha. subst. apply KU; auto.
   - apply KO; auto.
-    destruct a as [w|f dc|h sms dc|p|h]; simpl in Ha;
-      try (destruct dc; [|discriminate]); constructor; auto; constructor.
+    destruct a as [w|f dc|h sms dc|p|h|tau|p tau]; simpl in Ha; try discriminate.
+    + apply EVal.
+    + destruct dc; [apply EClo; constructor|discriminate].
+    + destruct dc; [apply EFun; [exact Ha|constructor]|discriminate].
+    + apply EPrim.
+    + apply ESym.
+    + apply EType.
 Qed.
 
 Lemma fo_ret_call : forall g r, fo r -> fo (ret_call g r).
@@ -1082,14 +1234,16 @@ Definition run_of (p : xprogram) (argv : list (list int)) (rd : list int -> opti
 Theorem fp_run : forall U H p argv rd fuel st0, ok_program U H p = true ->
   fo (run_of p argv rd fuel st0) \/ run_of (fp_program U H p) argv rd fuel st0 = run_of p argv rd fuel st0.
 Proof.
-  intros U H p argv rd fuel st0 Hok. unfold ok_program in Hok. unfold fp_program, run_of.
+  intros U H p argv rd fuel st0 Hok. unfold ok_program in Hok.
+  unfold fp_program, run_of.
   destruct (Elaboration.nlook H (xo_funs p)) as [[Dr bsH]|] eqn:EH; [|discriminate].
   apply andb_true_iff in Hok as [Hok Hroot]. apply andb_true_iff in Hok as [Hok Hfuns].
-  apply andb_true_iff in Hok as [Hbody Hfns]. cbn [xo_main xo_env].
+  apply andb_true_iff in Hok as [Hbody Hfns].
+  apply andb_true_iff in Hbody as [Hresults Hbody]. cbn [xo_main xo_env].
   set (P := program_of p argv rd).
   set (P' := program_of (XProgram (map (fun fb => (fst fb, fp_e U H Dr bsH (snd fb))) (xo_fns p))
                 (map (fun ub => (fst ub, (fst (snd ub), map (fp_b U H Dr bsH) (snd (snd ub))))) (xo_funs p))
-                (xo_bool p) (xo_true p) (xo_false p) (xo_main p) (fp_env U H (xo_env p)) (xo_prims p))
+                (xo_bool p) (xo_true p) (xo_false p) (xo_main p) (fp_env U H (xo_env p)) (xo_prims p) (xo_cast p) (xo_inputs p) (xo_exports p) (xo_immutable p) (xo_fixed_inst p) (xo_fixed_keys p))
               argv rd).
   assert (Hfn : forall f, xp_fn P' f = option_map (fp_e U H Dr bsH) (xp_fn P f)).
   { intro f. unfold P, P', program_of. simpl. apply nlook_map. }
@@ -1101,12 +1255,15 @@ Proof.
   assert (Hprim : forall q ws st, run_prim P' q ws st = run_prim P q ws st)
     by (intros; apply run_prim_code).
   assert (Htrue : xp_true P' = xp_true P) by reflexivity.
+  assert (Hmode : xreify P' = xreify P) by reflexivity.
+  assert (Hcasts : xp_cast P' = xp_cast P) by reflexivity.
+  assert (Hinputs : forall h, xp_inputs P' h = xp_inputs P h) by reflexivity.
   assert (Hokf : forall f b, xp_fn P f = Some b -> ok_e U b = true).
   { intros f b Hf. apply nlook_in in Hf. rewrite forallb_forall in Hfns. exact (Hfns (f, b) Hf). }
   assert (Hoku : forall u D bs, xp_fun P u = Some (D, bs) -> forallb (ok_b U) bs = true).
   { intros u D bs Hf. apply nlook_in in Hf. rewrite forallb_forall in Hfuns. exact (Hfuns (u, (D, bs)) Hf). }
   assert (HH : xp_fun P H = Some (Dr, bsH)) by exact EH.
-  destruct (@sim_all U H Dr bsH P P' Hfn Hfun Hprim Htrue Hokf Hoku HH Hbody fuel) as [Hsim _].
+  destruct (@sim_all U H Dr bsH P P' Hfn Hfun Hprim Htrue Hmode Hcasts Hinputs Hokf Hoku HH Hbody Hresults fuel) as [Hsim _].
   unfold run_main. rewrite Hfn. destruct (xp_fn P (xo_main p)) as [body|] eqn:Em; simpl;
     [|right; reflexivity].
   destruct (Hsim (fun _ => True) (xo_env p) (fp_env U H (xo_env p)) [] st0 body (Hokf _ _ Em)
@@ -1136,9 +1293,9 @@ Theorem fast_engine_agrees : forall p argv rd fuel st0 tb M N R' tbl ftbl,
   (forall f bs, tb f = Some bs -> exists bd, rp_fn R f = Some (bs, bd)) ->
   rp_x R' = rp_x R ->
   (forall f, rp_fn R' f =
-     match rp_fn R f with Some (bs, bd) => Some (fold_e tb M N bs, fold_e tb M N bd) | None => None end) ->
+     match rp_fn R f with Some (bs, bd) => Some (guard_fold_e (rp_x R) tb M N bs, guard_fold_e (rp_x R) tb M N bd) | None => None end) ->
   (forall h, rp_fun R' h =
-     match rp_fun R h with Some (Dr, bs) => Some (Dr, map (fold_b tb M N) bs) | None => None end) ->
+     match rp_fun R h with Some (Dr, bs) => Some (Dr, map (guard_fold_b (rp_x R) tb M N) bs) | None => None end) ->
   tbl_ok R' tbl ftbl ->
   let P := program_of p argv rd in
   fo (run_main fuel P (xo_main p) (xo_env p) st0)

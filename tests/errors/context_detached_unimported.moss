@@ -1,0 +1,5 @@
+# The receiver's module does not put its detached method in this scope.
+import "../fixtures/context_detached/receiver.moss" use Receiver;
+context K = Receiver, Receiver.private_method;
+assume K { fn unused() {} }
+fn main() {}

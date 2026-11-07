@@ -1,0 +1,6 @@
+type T;
+fn seed();
+assume T, seed { fn f(); }
+# The whole list is in force, regardless of order.
+assume f, seed, T { fn g() {} }
+fn main() {}

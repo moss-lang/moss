@@ -1,0 +1,2 @@
+import "./int.moss" use Int, one;
+import "./num.moss" use .add;

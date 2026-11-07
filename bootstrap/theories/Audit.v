@@ -5,28 +5,23 @@
 (* This file imports no implementation module (no CoreMoss, MossX, Elab,    *)
 (* Sx, ...): only the Rocq standard library.  It is read in this order:     *)
 (*                                                                           *)
-(*   Part I    The input: the s-expression dump of a parsed bundle, and the *)
-(*             surface AST it is read into.  m4: the dump is now made in    *)
-(*             Gallina from the source text (Parse.v: lexer, parser,        *)
-(*             `dump_file`, and `load_bundle`, bundle.py's walk and         *)
-(*             collect.Loader's path resolution), so what is trusted is the *)
-(*             OCaml driver's `read` (reading a file) and nothing of Python.*)
-(*             Part I.2 (module Syntax) specifies the lexer and parser:     *)
-(*             `Derives`, a declarative grammar from a file's bytes to its  *)
-(*             AST (DRAFT), the subject of FRONT_END in Part VI; Part I.3   *)
-(*             the dump and the loader, `Bundled`, the subject of LOADER.   *)
+(*   Part I    The surface AST, declarative grammar (Syntax.Derives), and
+               module loader specification (Loader.Bundled). The dump
+               format and codec live in Sx.v. *)
 (*   Part II   Elaborated programs: Core Moss's syntax (types, items,       *)
 (*             terms, Σ) and MossX's extension (records, loops, memory,     *)
 (*             primitives) — what the elaborator outputs.                   *)
 (*   Part III  Their dynamic semantics: Core Moss's big-step `eval` and     *)
-(*             fueled `interp`, and MossX's `xinterp`/`run_main`, the       *)
-(*             latter over an ABSTRACT primitive semantics (PRIM_SEMANTICS) *)
+(*             MossX's `xinterp`/`run_main`. The Core Moss interpreter is   *)
+(*             implemented in CoreInterp.v. MossX runs over an            *)
+(*             ABSTRACT primitive semantics (PRIM_SEMANTICS)             *)
 (*             — see the comment there for what that leaves trusted.        *)
 (*   Part IV   The primitives' signatures and the one law the theorems use. *)
 (*   Part V    The declarative elaboration relation (DRAFT, for the         *)
 (*             designer's review).                                           *)
-(*   Part VI   The obligations, as module types: PROVED_NOW (what          *)
-(*             Certified.v binds today) and COMPLETE (the whole contract).  *)
+(*   Part VI   Checked contracts for the front end, source milestones,     *)
+(*             runtime safety, heap laws and interpreter agreement.        *)
+(*             COMPLETE records the pending end-to-end obligations.        *)
 (*                                                                           *)
 (* What is deliberately NOT here: the typing judgment `has_ty` of Core Moss *)
 (* and everything about it (contexts, satisfaction, merging, wf_gsig, the   *)
@@ -45,14 +40,7 @@ Import ListNotations.
 (* Part I. The input                                                         *)
 (* ######################################################################## *)
 
-(* The elaborator's input is a *bundle*: the entry module's path, the
-   prelude's path, and for each module its path, whether it imports the
-   prelude, the canonical paths its imports name (resolved by the file
-   system, py/bundle.py), and its parse, as sexpr.py dumps it.  This part is
-   moved verbatim from Sx.v; the readers are total and report a malformed
-   dump as `Bad`.  A reader can check them against sexpr.py's one-letter
-   node tags.  It lives in a module of its own because its result type
-   `res`/`Good`/`Bad` would collide with the core's `res`/`Ok`/`Err`. *)
+(* The surface AST and the typed bundle consumed by elaboration. *)
 Module Input.
 Local Open Scope string_scope.
 
@@ -75,12 +63,6 @@ Fixpoint rmap {A B : Type} (f : A -> res B) (l : list A) : res (list B) :=
   | [] => Good []
   | x :: r => let* y := f x in let* ys := rmap f r in Good (y :: ys)
   end.
-
-(* ===================== Tokens ============================================= *)
-
-Inductive sx : Type :=
-| SA : string -> sx                 (* an atom *)
-| SL : bool -> list sx -> sx.       (* a list; true for [ … ] *)
 
 (* ===================== The surface AST (ast.py) =========================== *)
 
@@ -160,360 +142,12 @@ Record aimport := AImport {
 
 Record afile := AFile { f_imports : list aimport; f_decls : list adecl }.
 
-(* ===================== String helpers ===================================== *)
-
-Fixpoint split_on_colons (cs : list ascii) (acc : list ascii) : list (list ascii) :=
-  match cs with
-  | [] => [rev acc]
-  | ":"%char :: ":"%char :: r => rev acc :: split_on_colons r []
-  | c :: r => split_on_colons r (c :: acc)
-  end.
-
-Definition split_path (s : string) : path :=
-  map string_of_list_ascii (split_on_colons (list_ascii_of_string s) []).
-
-Definition join_path (p : path) : string := String.concat "::" p.
-
-(* ===================== Reading the dump =================================== *)
-
-Definition bad {A} (what : string) : res A := Bad ("malformed dump: " ++ what).
-
-Definition atom (x : sx) : res string :=
-  match x with SA a => Good a | _ => bad "atom" end.
-
-Definition items (x : sx) : res (list sx) :=
-  match x with SL true l => Good l | _ => bad "list" end.
-
-(* `_` is sexpr.py's None. *)
-Definition opt_atom (x : sx) : res (option string) :=
-  match x with SA "_" => Good None | SA a => Good (Some a) | _ => bad "optional atom" end.
-
-Definition opt_path (x : sx) : res (option path) :=
-  let* o := opt_atom x in Good (option_map split_path o).
-
-Fixpoint read_spec (fuel : nat) (x : sx) : res spec :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "I"; p; d; a] =>
-          let* p' := opt_path p in
-          let* d' := opt_atom d in
-          let* a' := read_app k a in
-          Good (Spec p' d' a')
-      | _ => bad "spec"
-      end
-  end
-with read_app (fuel : nat) (x : sx) : res sapp :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SA "_" => Good None
-      | SL true bs =>
-          let* l := rmap (fun b => match b with
-                                   | SL false [SA "J"; SA p; s] =>
-                                       let* s' := read_spec k s in Good (split_path p, s')
-                                   | _ => bad "binding"
-                                   end) bs in
-          Good (Some l)
-      | _ => bad "application"
-      end
-  end.
-
-Fixpoint read_ty (fuel : nat) (x : sx) : res aty :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "a"] => Good ATUnit
-      | SL false [SA "b"] => Good ATNever
-      | SL false [SA "c"] => Good ATThis
-      | SL false [SA "d"; SA p; a] =>
-          let* a' := read_app k a in Good (ATRef (split_path p) a')
-      | SL false [SA "f"; SL true fs] =>
-          let* fs' := rmap (fun f => match f with
-                                     | SL false [SA "h"; SA n; t] =>
-                                         let* t' := read_ty k t in Good (n, t')
-                                     | _ => bad "record field type"
-                                     end) fs in
-          Good (ATRec fs')
-      | SL false [SA "g"; SL true ms] =>
-          let* ms' := rmap (read_ty k) ms in Good (ATUnion ms')
-      | _ => bad "type"
-      end
-  end.
-
-Definition read_opt_ty (fuel : nat) (x : sx) : res (option aty) :=
-  match x with
-  | SA "_" => Good None
-  | _ => let* t := read_ty fuel x in Good (Some t)
-  end.
-
-Fixpoint read_pat (fuel : nat) (x : sx) : res apat :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "D"] => Good APWild
-      | SL false [SA "E"; SA p; SA "_"] => Good (APPath (split_path p))
-      | SL false [SA "E"; SA p; sub] =>
-          let* s := read_pat k sub in Good (APTag (split_path p) s)
-      | SL false [SA "F"; p; SL true fs] =>
-          let* p' := opt_path p in
-          let* fs' := rmap (fun f => match f with
-                                     | SL false [SA "G"; SA n; SA "_"] => Good (n, None)
-                                     | SL false [SA "G"; SA n; s] =>
-                                         let* s' := read_pat k s in Good (n, Some s')
-                                     | _ => bad "pattern field"
-                                     end) fs in
-          Good (APRec p' fs')
-      | _ => bad "pattern"
-      end
-  end.
-
-Fixpoint read_expr (fuel : nat) (x : sx) : res aexpr :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "i"] => Good AEUnit
-      | SL false [SA "j"] => Good AEThis
-      | SL false [SA "k"; SA p; a] =>
-          let* a' := read_app k a in Good (AEPath (split_path p) a')
-      | SL false [SA "l"; SL false [SA "k"; SA p; a]; SL true args] =>
-          let* a' := read_app k a in
-          let* args' := rmap (read_expr k) args in
-          Good (AECall (split_path p) a' args')
-      | SL false [SA "m"; o; SA f] =>
-          let* o' := read_expr k o in Good (AEField o' f)
-      | SL false [SA "n"; o; SA p; SL true args] =>
-          let* o' := read_expr k o in
-          let* args' := rmap (read_expr k) args in
-          Good (AEMeth o' (split_path p) args')
-      | SL false [SA "o"; SL false [SA "k"; SA p; a]; SL true fs] =>
-          let* a' := read_app k a in
-          let* fs' := rmap (fun f => match f with
-                                     | SL false [SA "p"; SA n; SA "_"] => Good (n, None)
-                                     | SL false [SA "p"; SA n; v] =>
-                                         let* v' := read_expr k v in Good (n, Some v')
-                                     | _ => bad "record field"
-                                     end) fs in
-          Good (AERec (split_path p) a' fs')
-      | SL false [SA "q"; c; t; e] =>
-          let* c' := read_expr k c in
-          let* t' := read_block k t in
-          let* e' := (match e with
-                      | SA "_" => Good None
-                      | _ => let* e1 := read_expr k e in Good (Some e1)
-                      end) in
-          Good (AEIf c' t' e')
-      | SL false [SA "r"; s; SL true arms] =>
-          let* s' := read_expr k s in
-          let* arms' := rmap (fun a => match a with
-                                       | SL false [SA "H"; p; b] =>
-                                           let* p' := read_pat k p in
-                                           let* b' := read_expr k b in Good (p', b')
-                                       | _ => bad "arm"
-                                       end) arms in
-          Good (AEMatch s' arms')
-      | SL false [SA "s"; SA "_"] => Good (AEReturn None)
-      | SL false [SA "s"; e] => let* e' := read_expr k e in Good (AEReturn (Some e'))
-      | SL false [SA "t"] => Good AEBreak
-      | SL false (SA "u" :: _) => let* b := read_block k x in Good (AEBlock b)
-      | SL false [SA "W"; SA op; e] => let* e' := read_expr k e in Good (AEUnary op e')
-      | SL false [SA "X"; SA op; l; r] =>
-          let* l' := read_expr k l in let* r' := read_expr k r in Good (AEBinary op l' r')
-      | SL false [SA "Y"; SA t] => Good (AELit t)
-      | SL false [SA "Z"; SL true ps; ret; body] =>
-          let* ps' := rmap (fun p => match p with
-                                     | SL false [SA "K"; SA n; t] =>
-                                         let* t' := read_opt_ty k t in Good (n, t')
-                                     | _ => bad "lambda parameter"
-                                     end) ps in
-          let* ret' := read_opt_ty k ret in
-          let* b := read_expr k body in
-          Good (AELam ps' ret' b)
-      | _ => bad "expression"
-      end
-  end
-with read_block (fuel : nat) (x : sx) : res ablock :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "u"; SL true ss; t] =>
-          let* ss' := rmap (read_stmt k) ss in
-          let* t' := (match t with
-                      | SA "_" => Good None
-                      | _ => let* e := read_expr k t in Good (Some e)
-                      end) in
-          Good (ABlock ss' t')
-      | _ => bad "block"
-      end
-  end
-with read_stmt (fuel : nat) (x : sx) : res astmt :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "v"; SA n; t; e] =>
-          let* t' := read_opt_ty k t in let* e' := read_expr k e in Good (ASLet n t' e')
-      | SL false [SA "w"; SA n; t; e] =>
-          let* t' := read_opt_ty k t in let* e' := read_expr k e in Good (ASVar n t' e')
-      | SL false [SA "x"; SA n; e] => let* e' := read_expr k e in Good (ASAssign n e')
-      | SL false [SA "y"; _] => let* b := read_bind k x in Good (ASBind b)
-      | SL false [SA "A"; c; b] =>
-          let* c' := read_expr k c in let* b' := read_block k b in Good (ASWhile c' b')
-      | SL false [SA "B"; b] => let* b' := read_block k b in Good (ASLoop b')
-      | SL false [SA "C"; e] => let* e' := read_expr k e in Good (ASExpr e')
-      | _ => bad "statement"
-      end
-  end
-with read_bind (fuel : nat) (x : sx) : res (list (spec * option aexpr)) :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "y"; SL true its] =>
-          rmap (fun it => match it with
-                          | SL false [SA "z"; s; SA "_"] =>
-                              let* s' := read_spec k s in Good (s', None)
-                          | SL false [SA "z"; s; v] =>
-                              let* s' := read_spec k s in
-                              let* v' := read_expr k v in Good (s', Some v')
-                          | _ => bad "bind item"
-                          end) its
-      | _ => bad "bind"
-      end
-  end.
-
-Fixpoint read_decl (fuel : nat) (x : sx) : res adecl :=
-  match fuel with
-  | 0 => bad "too deep"
-  | S k =>
-      match x with
-      | SL false [SA "M"; SL true its; SL true ds] =>
-          let* its' := rmap (fun it => match it with
-                                       | SL false [SA "I"; SA p; d; SA "_"] =>
-                                           let* d' := opt_atom d in Good (split_path p, d')
-                                       | _ => bad "assume item"
-                                       end) its in
-          let* ds' := rmap (read_decl k) ds in
-          Good (ADAssume its' ds')
-      | SL false [SA "N"; SA n] => Good (ADType n)
-      | SL false [SA "O"; SA n; t] => let* t' := read_ty k t in Good (ADAlias n t')
-      | SL false [SA "P"; SA n; SL true ps; t] =>
-          let* ps' := rmap atom ps in let* t' := read_ty k t in Good (ADTag n ps' t')
-      | SL false [SA "Q"; SA n] => Good (ADUnit n)
-      | SL false [SA "R"; SA n; t; i] =>
-          let* t' := read_ty k t in
-          let* i' := (match i with
-                      | SA "_" => Good None
-                      | _ => let* e := read_expr k i in Good (Some e)
-                      end) in
-          Good (ADVal n t' i')
-      | SL false [SA "S"; SA r; SA n; SL true ps; ret; body] =>
-          let rcv := match r with "." => RDetached | "_" => RPlain | _ => RAttached r end in
-          let* ps' := rmap (fun p => match p with
-                                     | SL false [SA "K"; SA pn; t] =>
-                                         let* t' := read_ty k t in Good (pn, t')
-                                     | _ => bad "parameter"
-                                     end) ps in
-          let* ret' := read_opt_ty k ret in
-          let* body' := (match body with
-                         | SA "_" => Good None
-                         | _ => let* b := read_block k body in Good (Some b)
-                         end) in
-          Good (ADFn rcv n ps' ret' body')
-      | SL false [SA "T"; SA n; SL true ss] =>
-          let* ss' := rmap (read_spec k) ss in Good (ADCtx n ss')
-      | SL false (SA "U" :: SA n :: rest) =>
-          (* 61b7b76: name args result body; the d84 branch adds the
-             brackets after the name *)
-          let* (ps, a, r, b) := match rest with
-                                | [SL true a; SL true r; b] => Good (None, a, r, b)
-                                | [SA "_"; SL true a; SL true r; b] => Good (None, a, r, b)
-                                | [SL true ps; SL true a; SL true r; b] =>
-                                    let* ps' := rmap atom ps in Good (Some ps', a, r, b)
-                                | _ => bad "functor"
-                                end in
-          let* a' := rmap (read_spec k) a in
-          let* r' := rmap (read_spec k) r in
-          let* b' := (match b with
-                      | SA "_" => Good None
-                      | SL true bs => let* l := rmap (read_bind k) bs in Good (Some l)
-                      | _ => bad "functor body"
-                      end) in
-          Good (ADFunctor n ps a' r' b')
-      | _ => bad "declaration"
-      end
-  end.
-
-(* `.name>alias`: a use item, with the dots that mark detached names. *)
-Definition read_use_side (s : string) : bool * name :=
-  match s with
-  | String "."%char r => (true, r)
-  | _ => (false, s)
-  end.
-
-Fixpoint split_gt (cs : list ascii) (acc : list ascii) : list ascii * option (list ascii) :=
-  match cs with
-  | [] => (rev acc, None)
-  | ">"%char :: r => (rev acc, Some r)
-  | c :: r => split_gt r (c :: acc)
-  end.
-
-Definition read_use (x : sx) : res ause :=
-  let* s := atom x in
-  let (l, r) := split_gt (list_ascii_of_string s) [] in
-  let (d, n) := read_use_side (string_of_list_ascii l) in
-  Good (AUse d n (option_map (fun r => read_use_side (string_of_list_ascii r)) r)).
-
-Definition read_import (x : sx) : res aimport :=
-  match x with
-  | SL false [SA "L"; SA p; a; g; SL true us] =>
-      let* a' := opt_atom a in
-      let* us' := rmap read_use us in
-      Good (AImport p a' (match g with SA "*" => true | _ => false end) us')
-  | _ => bad "import"
-  end.
-
-Definition dump_fuel : nat := 100000.
-
-Definition read_file (x : sx) : res afile :=
-  match x with
-  | SL false [SA "$"; SL true is; SL true ds] =>
-      let* is' := rmap read_import is in
-      let* ds' := rmap (read_decl dump_fuel) ds in
-      Good (AFile is' ds')
-  | _ => bad "file"
-  end.
-
-(* A bundle (py/bundle.py): the entry, the prelude, and each module's path,
-   whether it imports the prelude, its imports' resolved paths, its dump. *)
 Record amodule := AModule {
   am_path : string; am_prelude : bool; am_targets : list string; am_file : afile
 }.
 
 Record bundle := Bundle { b_entry : string; b_prelude : string; b_mods : list amodule }.
 
-Definition read_module (m : sx) : res amodule :=
-  match m with
-  | SL false [SA "module"; SA path; SA w; SL false ts; f] =>
-      let* ts' := rmap atom ts in
-      let* f' := read_file f in
-      Good (AModule path (String.eqb w "1") ts' f')
-  | _ => bad "module"
-  end.
-
-Definition read_bundle (x : sx) : res bundle :=
-  match x with
-  | SL false (SA "bundle" :: SA e :: SA p :: ms) =>
-      let* ms' := rmap read_module ms in
-      Good (Bundle e p ms')
-  | _ => bad "bundle"
-  end.
 End Input.
 
 
@@ -624,7 +258,10 @@ Definition KEYWORDS : list (string * string) :=
    ("for", "FOR"); ("if", "IF"); ("import", "IMPORT"); ("let", "LET");
    ("loop", "LOOP"); ("match", "MATCH"); ("return", "RETURN"); ("tag", "TAG");
    ("This", "THIS_TYPE"); ("this", "THIS"); ("type", "TYPE"); ("use", "USE");
-   ("val", "VAL"); ("var", "VAR"); ("while", "WHILE"); ("in", "IN")].
+   ("val", "VAL"); ("var", "VAR"); ("while", "WHILE"); ("in", "IN");
+   (* (f) `_` alone is a word of its own, the wildcard pattern, and not a
+      name (`_x` and `x_` are names) *)
+   ("_", "UNDERSCORE")].
 
 Fixpoint assoc (k : string) (l : list (string * string)) : option string :=
   match l with [] => None | (a, b) :: r => if String.eqb a k then Some b else assoc k r end.
@@ -824,15 +461,16 @@ Inductive OptType : list token -> option aty -> list token -> Prop :=
 
 (* ===================== Patterns π ========================================= *)
 
-(* π ::= _ | p | p(π) | {x = π, ...} | p{x = π, ...}   (`= π` optional) *)
+(* π ::= _ | p | p(π) | {x = π, ...} | p{x = π, ...}   (`= π` optional);
+   `_` is its own token, not a name (f) *)
 Inductive Pattern : list token -> apat -> list token -> Prop :=
-| PatWild : forall ts ts1, TkName ts "_" ts1 -> kind ts1 <> "COLON_COLON" -> Pattern ts APWild ts1
-(* a path other than `_` itself, not followed by `(` or `{` *)
-| PatPath : forall ts p ts1, Path ts p ts1 -> p <> ["_"] -> ~ In (kind ts1) ["LBRACE"; "LPAREN"] ->
+| PatWild : forall ts ts1, Tk "UNDERSCORE" ts ts1 -> Pattern ts APWild ts1
+(* a path not followed by `(` or `{` *)
+| PatPath : forall ts p ts1, Path ts p ts1 -> ~ In (kind ts1) ["LBRACE"; "LPAREN"] ->
     Pattern ts (APPath p) ts1
-| PatTag : forall ts p ts1 ts2 q ts3 ts4, Path ts p ts1 -> p <> ["_"] -> Tk "LPAREN" ts1 ts2 ->
+| PatTag : forall ts p ts1 ts2 q ts3 ts4, Path ts p ts1 -> Tk "LPAREN" ts1 ts2 ->
     Pattern ts2 q ts3 -> Tk "RPAREN" ts3 ts4 -> Pattern ts (APTag p q) ts4
-| PatRecord : forall ts p ts1 fs ts2, Path ts p ts1 -> p <> ["_"] -> RecordPattern ts1 fs ts2 ->
+| PatRecord : forall ts p ts1 fs ts2, Path ts p ts1 -> RecordPattern ts1 fs ts2 ->
     Pattern ts (APRec (Some p) fs) ts2
 | PatAnon : forall ts fs ts1, RecordPattern ts fs ts1 -> Pattern ts (APRec None fs) ts1
 with RecordPattern : list token -> list (name * option apat) -> list token -> Prop :=
@@ -1400,126 +1038,8 @@ Definition Derives (bytes : list byte) (f : afile) : Prop :=
 End Syntax.
 
 (* ######################################################################## *)
-(* Part I.3  The dump and the loader                                        *)
+(* Part I.3  The module loader                                        *)
 (* ######################################################################## *)
-
-(* The dump: an AST as the s-expression the readers of Part I.1 read
-   (sexpr.py's format).  Moved verbatim from Parse.v: the loader's
-   specification below is stated with it. *)
-Module Dump.
-Import Input.
-Local Open Scope string_scope.
-
-Definition nd (tag : string) (xs : list sx) : sx := SL false (SA tag :: xs).
-Definition sl (xs : list sx) : sx := SL true xs.
-Definition dopt {X} (f : X -> sx) (o : option X) : sx :=
-  match o with None => SA "_" | Some x => f x end.
-Definition dpath (p : path) : sx := SA (join_path p).
-
-Fixpoint dspec (s : spec) : sx :=
-  match s with
-  | Spec p d a =>
-      nd "I" [dopt dpath p; dopt SA d;
-              match a with
-              | None => SA "_"
-              | Some bs => sl (map (fun '(bp, bs1) => nd "J" [dpath bp; dspec bs1]) bs)
-              end]
-  end.
-
-Definition dapp (a : sapp) : sx :=
-  match a with
-  | None => SA "_"
-  | Some bs => sl (map (fun '(bp, s) => nd "J" [dpath bp; dspec s]) bs)
-  end.
-
-Fixpoint dty (t : aty) : sx :=
-  match t with
-  | ATNever => nd "b" []
-  | ATThis => nd "c" []
-  | ATUnit => nd "a" []
-  | ATRec fs => nd "f" [sl (map (fun '(x, t1) => nd "h" [SA x; dty t1]) fs)]
-  | ATUnion ms => nd "g" [sl (map dty ms)]
-  | ATRef p a => nd "d" [dpath p; dapp a]
-  end.
-
-Fixpoint dpat (p : apat) : sx :=
-  match p with
-  | APWild => nd "D" []
-  | APPath q => nd "E" [dpath q; SA "_"]
-  | APTag q s => nd "E" [dpath q; dpat s]
-  | APRec q fs => nd "F" [dopt dpath q; sl (map (fun '(x, s) => nd "G" [SA x; dopt dpat s]) fs)]
-  end.
-
-Fixpoint dexpr (e : aexpr) : sx :=
-  match e with
-  | AEUnit => nd "i" []
-  | AEThis => nd "j" []
-  | AEPath p a => nd "k" [dpath p; dapp a]
-  | AECall p a args => nd "l" [nd "k" [dpath p; dapp a]; sl (map dexpr args)]
-  | AEField o f => nd "m" [dexpr o; SA f]
-  | AEMeth o p args => nd "n" [dexpr o; dpath p; sl (map dexpr args)]
-  | AERec p a fs => nd "o" [nd "k" [dpath p; dapp a];
-                            sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]
-  | AEIf c t el => nd "q" [dexpr c; dblock t; dopt dexpr el]
-  | AEMatch s arms => nd "r" [dexpr s; sl (map (fun '(p, b) => nd "H" [dpat p; dexpr b]) arms)]
-  | AEReturn o => nd "s" [dopt dexpr o]
-  | AEBreak => nd "t" []
-  | AEBlock b => dblock b
-  | AEUnary op x => nd "W" [SA op; dexpr x]
-  | AEBinary op l r => nd "X" [SA op; dexpr l; dexpr r]
-  | AELit t => nd "Y" [SA t]
-  | AELam ps ret body => nd "Z" [sl (map (fun '(x, t) => nd "K" [SA x; dopt dty t]) ps);
-                                 dopt dty ret; dexpr body]
-  end
-with dblock (b : ablock) : sx :=
-  match b with
-  | ABlock ss t => nd "u" [sl (map dstmt ss); dopt dexpr t]
-  end
-with dstmt (s : astmt) : sx :=
-  match s with
-  | ASLet x t e => nd "v" [SA x; dopt dty t; dexpr e]
-  | ASVar x t e => nd "w" [SA x; dopt dty t; dexpr e]
-  | ASAssign x e => nd "x" [SA x; dexpr e]
-  | ASBind its => nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)]
-  | ASWhile c b => nd "A" [dexpr c; dblock b]
-  | ASLoop b => nd "B" [dblock b]
-  | ASExpr e => nd "C" [dexpr e]
-  end.
-
-Definition dbind (its : list (spec * option aexpr)) : sx :=
-  nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)].
-
-Fixpoint ddecl (d : adecl) : sx :=
-  match d with
-  | ADAssume its ds => nd "M" [sl (map (fun '(p, o) => nd "I" [dpath p; dopt SA o; SA "_"]) its);
-                               sl (map ddecl ds)]
-  | ADType x => nd "N" [SA x]
-  | ADAlias x t => nd "O" [SA x; dty t]
-  | ADTag x ps t => nd "P" [SA x; sl (map SA ps); dty t]
-  | ADUnit x => nd "Q" [SA x]
-  | ADVal x t i => nd "R" [SA x; dty t; dopt dexpr i]
-  | ADFn r x ps ret body =>
-      nd "S" [SA (match r with RDetached => "." | RPlain => "_" | RAttached q => q end); SA x;
-              sl (map (fun '(p, t) => nd "K" [SA p; dty t]) ps); dopt dty ret; dopt dblock body]
-  | ADCtx x its => nd "T" [SA x; sl (map dspec its)]
-  | ADFunctor x ps args res body =>
-      nd "U" [SA x; dopt (fun l => sl (map SA l)) ps; sl (map dspec args); sl (map dspec res);
-              dopt (fun bs => sl (map dbind bs)) body]
-  end.
-
-Definition duse_side (d : bool) (x : name) : string := (if d then "." else "") ++ x.
-Definition duse (u : ause) : sx :=
-  SA (duse_side (u_dot u) (u_name u) ++
-      match u_alias u with None => "" | Some (d, y) => ">" ++ duse_side d y end).
-
-Definition dimport (i : aimport) : sx :=
-  nd "L" [SA (i_path i); dopt SA (i_alias i); SA (if i_glob i then "*" else "_");
-          sl (map duse (i_uses i))].
-
-Definition dump_file (f : afile) : sx :=
-  nd "$" [sl (map dimport (f_imports f)); sl (map ddecl (f_decls f))].
-
-End Dump.
 
 (* The loader (py/bundle.py; collect.Loader's normalize, resolve and
    wants_prelude, moved verbatim from Parse.v), and `Bundled`, what a
@@ -1577,6 +1097,19 @@ Definition resolve (root prelude importer p : string) : string :=
   if is_abs p || String.eqb first "." || String.eqb first ".." then normalize root (Some importer) p
   else normalize root (Some prelude) p.
 
+(* The directory prefix, including its final slash, preserves relative
+   paths as well as absolute ones. Disabling the auto-prelude retains
+   the default library directory, `lib/` relative to the working directory. *)
+Fixpoint directory_cut (p : string) (pos cut : nat) : nat :=
+  match p with
+  | EmptyString => cut
+  | String c rest => directory_cut rest (S pos)
+      (if Ascii.eqb c "/"%char then S pos else cut)
+  end.
+Definition directory (p : string) : string := substring 0 (directory_cut p 0 0) p.
+Definition library_dir (prelude : string) : option string :=
+  if String.eqb prelude "" then Some "lib/" else Some (directory prelude).
+
 Definition parent_str (p : string) : string :=
   "/" ++ String.concat "/" (removelast (segs p)).
 
@@ -1589,7 +1122,7 @@ Definition wants_prelude (prelude p : string) : bool :=
    paths, normalized against the working directory `root`; it has each
    module once, the entry among them; and each module is a file that
    `read` gives, whose bytes derive an AST f (Syntax.Derives), and the
-   module holds f as the dump reads it back, whether it wants the prelude,
+   module holds exactly f, whether it wants the prelude,
    and its imports resolved (D64); and every module it imports, and the
    prelude if it wants it, is in the bundle too. *)
 Definition Bundled (read : string -> option string) (root prelude_in entry_in : string) (b : bundle) : Prop :=
@@ -1597,7 +1130,7 @@ Definition Bundled (read : string -> option string) (root prelude_in entry_in : 
   NoDup (map am_path (b_mods b)) /\ In (b_entry b) (map am_path (b_mods b)) /\
   forall m, In m (b_mods b) ->
     exists text f, read (am_path m) = Some text /\ Syntax.Derives (list_byte_of_string text) f /\
-      read_file (Dump.dump_file f) = Good (am_file m) /\
+      am_file m = f /\
       am_prelude m = wants_prelude (b_prelude b) (am_path m) /\
       am_targets m = map (fun i => resolve root (b_prelude b) (am_path m) (i_path i)) (f_imports f) /\
       (forall t, In t (am_targets m) -> In t (map am_path (b_mods b))) /\
@@ -1798,7 +1331,7 @@ Record fnsig : Type := mkSig { fs_params : list ty; fs_ret : ty }.
 (* Σ: every symbol's kind, signature, and (concatenated) enclosing telescope.
    Method signatures may mention TAbs this_sym; the receiver is understood as
    an implicit first argument. *)
-Record gsig : Type := mkGsig {
+Record gsig : Type := mkGsigInterfaces {
   g_ty  : tsym -> bool;
   g_tag : nsym -> option (tele * ty);
   g_val : vsym -> option (tele * ty);
@@ -1822,8 +1355,20 @@ Record gsig : Type := mkGsig {
      item may be captured, vals included (D84 3b: vals by value); that a
      family's bindings bind no vals is a condition on families (rule 7,
      `family_binding`), not one the calculus imposes on capture. *)
-  g_cap : usym -> tele * subst
+  g_cap : usym -> tele * subst;
+  (* A genuine nominal type interface whose payload is not observed. *)
+  g_opaque : nsym -> option tele;
+  (* A source interface with no well-formed callable schema. It can be
+     assumed in a telescope, but has no runtime inhabitants. *)
+  g_opaque_fun : usym -> bool
 }.
+
+Definition mkGsigFull ty tag val fn mth functor fixed poly cap opaque : gsig :=
+  mkGsigInterfaces ty tag val fn mth functor fixed poly cap opaque (fun _ => false).
+
+(* Existing calculi declare only payload-bearing nominal types. *)
+Definition mkGsig ty tag val fn mth functor fixed poly cap : gsig :=
+  mkGsigInterfaces ty tag val fn mth functor fixed poly cap (fun _ => None) (fun _ => false).
 
 (* ---- II.2 MossX, the extension the elaborator targets (moved from
    MossX.v; section numbers are its) ---- *)
@@ -1842,7 +1387,8 @@ Inductive xvalue : Type :=
 | XVRec  : list (fld * xvalue) -> xvalue
 | XVF32  : float -> xvalue              (* a binary64 holding a binary32 value *)
 | XVI64  : Z -> xvalue                  (* invariant kept by every op: [0, 2^64) *)
-| XVRef  : int -> xvalue.               (* a GC reference: a heap address *)
+| XVRef  : int -> xvalue                (* legacy primitive heap address *)
+| XVRefAt : bool -> ty -> int -> xvalue. (* allocation kind and ground held type *)
 
 (* ===================== 2. Primitives ===================================== *)
 
@@ -1929,6 +1475,7 @@ Inductive xexpr : Type :=
 | XBindFun  : usym -> usym -> smap -> smap -> xexpr -> xexpr
 | XBindFunA : usym -> usym -> smap -> xexpr -> xexpr
 | XApply    : usym -> subst -> smap -> xexpr -> xexpr
+| XApplyR   : usym -> smap -> smap -> xexpr -> xexpr
 (* extensions *)
 | XSeq      : xexpr -> xexpr -> xexpr
 | XAssign   : var -> xexpr -> xexpr
@@ -1944,6 +1491,7 @@ Inductive xexpr : Type :=
 | XBindFunCopy : usym -> usym -> xexpr -> xexpr   (* bind F = G (abstract) *)
 | XApplyBr  : usym -> list (usym * list xbind * smap) -> xexpr -> xexpr
 | XBindPrim : item -> prim -> xexpr -> xexpr
+| XConst : vsym -> xexpr -> xexpr
 with xbind : Type :=
 | XBTy    : tsym -> ty -> xbind
 | XBVal   : vsym -> xexpr -> xbind
@@ -1952,6 +1500,7 @@ with xbind : Type :=
 | XBFun   : usym -> usym -> smap -> smap -> xbind
 | XBFunA  : usym -> usym -> smap -> xbind
 | XBApply : usym -> subst -> smap -> xbind
+| XBApplyR : usym -> smap -> smap -> xbind
 | XBFunSym  : usym -> usym -> xbind
 | XBFunCopy : usym -> usym -> xbind
 | XBApplyBr : usym -> list (usym * list xbind * smap) -> xbind
@@ -1964,10 +1513,45 @@ Inductive xdentry : Type :=
 | XDClo    : fsym -> list (item * xdentry) -> xdentry
 | XDFun    : usym -> list smap -> list (item * xdentry) -> xdentry
 | XDPrim   : prim -> xdentry
-| XDFunSym : usym -> xdentry.
+| XDFunSym : usym -> xdentry
+| XDType : ty -> xdentry
+| XDPrimAt : prim -> ty -> xdentry.
 
 Definition xdenv := list (item * xdentry).
 Definition xvenv := list (var * xvalue).
+
+(* Ground types are retained at runtime because native GC casts compare the
+   allocation's generated Wasm type. All GC types are distinct projections of
+   the emitter's single recursive group, keyed by the ground held type. *)
+Fixpoint xdtypes (d : xdenv) : subst :=
+  match d with
+  | [] => []
+  | (ITy t, XDType tau) :: r => (t, tau) :: xdtypes r
+  | _ :: r => xdtypes r
+  end.
+Definition xground (d : xdenv) (tau : ty) : ty := app_subst (xdtypes d) tau.
+Fixpoint xtype_env (d : xdenv) : xdenv :=
+  match d with
+  | [] => []
+  | (ITy t, XDType tau) :: r => (ITy t, XDType tau) :: xtype_env r
+  | _ :: r => xtype_env r
+  end.
+Definition xinst (d : xdenv) (th : subst) : xdenv :=
+  match th with
+  | [] => []
+  | _ :: _ =>
+      let types := xdtypes d in
+      map (fun p => (ITy (fst p), XDType (app_subst types (snd p)))) th
+  end.
+Lemma xinst_map : forall d th,
+  xinst d th = map (fun p => (ITy (fst p), XDType (xground d (snd p)))) th.
+Proof. intros d [|p th]; reflexivity. Qed.
+Definition xclose (d dc : xdenv) : xdenv := dc ++ xtype_env d.
+Definition xprim_entry (d : xdenv) (i : item) (p : prim) : xdentry :=
+  match p, i with
+  | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => XDPrimAt p (xground d tau)
+  | _, _ => XDPrim p
+  end.
 
 Fixpoint lookup_xdenv (i : item) (d : xdenv) : option xdentry :=
   match d with
@@ -2030,6 +1614,13 @@ Fixpoint find_branch (h : usym) (brs : list (usym * list xbind * smap))
 
 (* The program: function bodies, core functor bodies, and the symbols the
    extended constructs need to know (Bool's units, for `if`). *)
+Record xcastspec : Type := XCastSpec {
+  xc_array : bool;
+  xc_held : tsym;
+  (* Ref and Array are ordinary wrappers when their respective raw
+     handle payload is rebound to a different representation. *)
+  xc_handle : option (tsym * ty)
+}.
 Record xprog : Type := mkXProg {
   xp_fn    : fsym -> option xexpr;
   xp_fun   : usym -> option (tele * list xbind);
@@ -2038,8 +1629,49 @@ Record xprog : Type := mkXProg {
   xp_false : nsym;
   xp_argv  : list (list int);
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
-  xp_read  : list int -> option (list int)
+  xp_read  : list int -> option (list int);
+  (* selected Ref/Array tag -> (array?, held-type parameter) *)
+  xp_cast : list (nsym * xcastspec);
+  xp_inputs : usym -> list tsym;
+  xp_exports : usym -> smap;
+  xp_immutable : bool;
+  xp_fixed_inst : usym -> subst;
+  (* Actual immutable fixed inputs; their meanings are xp_fixed_inst. *)
+  xp_fixed_keys : usym -> list tsym
 }.
+
+(* Core declarations use erased fixed dependencies. Immutable provisioning
+   reads the actual fixed keys and their captured interpretations here. *)
+Definition runtime_fixed (Sg : gsig) (P : xprog) (u : usym) : list tsym :=
+  if xp_immutable P then xp_fixed_keys P u else g_fixed Sg u.
+Definition runtime_signature (Sg : gsig) (P : xprog) : gsig :=
+  mkGsigInterfaces (g_ty Sg) (g_tag Sg) (g_val Sg) (g_fn Sg) (g_mth Sg) (g_fun Sg)
+    (runtime_fixed Sg P) (g_poly Sg) (g_cap Sg) (g_opaque Sg) (g_opaque_fun Sg).
+
+Fixpoint lookup_cast (n : nsym) (cs : list (nsym * xcastspec)) : option xcastspec :=
+  match cs with
+  | [] => None
+  | (n', c) :: r => if Nat.eqb n n' then Some c else lookup_cast n r
+  end.
+Definition xreify (P : xprog) : bool :=
+  xp_immutable P || match xp_cast P with [] => false | _ => true end.
+Definition xbind_ty (P : xprog) (d : xdenv) (t : tsym) (tau : ty) : xdenv :=
+  if xreify P then (ITy t, XDType (xground d tau)) :: d else d.
+Definition xcall_env (P : xprog) (d : xdenv) (th : subst) (dc : xdenv) : xdenv :=
+  if xreify P then xinst d th ++ xclose d dc else dc.
+
+(* A linked provider receives only its own formal type inputs. Extra
+   abstract-functor inputs must not override lexical captured meanings. *)
+Definition xapply_env (P : xprog) (d : xdenv) (h : usym) (th : subst) (dc : xdenv) : xdenv :=
+  xcall_env P d
+    (filter (fun p => existsb (Nat.eqb (fst p)) (xp_inputs P h)) th) dc.
+
+(* Applying a functor exports the type meanings its result declares, beside
+   its executable non-type provisions. Captured input types remain private. *)
+Definition xresult_types (Dr : tele) (d3 : xdenv) : xdenv :=
+  filter (fun p => existsb (item_eqb (fst p)) Dr) (xtype_env d3).
+Definition xresult_env (P : xprog) (d3 : xdenv) (Dr : tele) (dr : xdenv) : xdenv :=
+  if xreify P then dr ++ xresult_types Dr d3 else dr.
 
 (* Outcomes.  XOk/XErr/XFuel are the core's Ok/Err/OutOfFuel; XRet and XBrk
    are control transfers; XTrap is a Wasm trap (well-defined failure),
@@ -2067,7 +1699,13 @@ Record xprogram : Type := XProgram {
   xo_bool : nat; xo_true : nat; xo_false : nat;
   xo_main : nat;
   xo_env : list (item * xdentry);
-  xo_prims : list string
+  xo_prims : list string;
+  xo_cast : list (nsym * xcastspec);
+  xo_inputs : list (usym * list tsym);
+  xo_exports : list (usym * smap);
+  xo_immutable : bool;
+  xo_fixed_inst : list (usym * subst);
+  xo_fixed_keys : list (usym * list tsym)
 }.
 
 (* ######################################################################## *)
@@ -2261,216 +1899,12 @@ with run_apply (Sg : gsig) : denv -> usym -> subst -> smap -> denv -> Prop :=
     compose_smap d3 (inst_smap th Dr) = Some dr ->
     run_apply Sg d u th sm dr.
 
-(* An executable twin: a fueled definitional interpreter.  It is the
-   deterministic implementation of `eval`, and its Err result is the
-   instrumented error of Theorem 4.2 (any missing lookup or shape mismatch). *)
+(* Outcomes of the fueled interpreter. Err denotes a missing lookup or
+   shape mismatch, the instrumented error of Theorem 4.2. *)
 Inductive res : Type :=
 | Ok        : value -> res
 | Err       : res
 | OutOfFuel : res.
-
-Fixpoint interp (fuel : nat) (Sg : gsig) (d : denv) (g : venv) (e : expr)
-  {struct fuel} : res :=
-  match fuel with
-  | 0 => OutOfFuel
-  | S k =>
-      let interp_args := interp_list k Sg d g in
-      match e with
-      | EVar x => match lookup_venv x g with
-                  | Some w => Ok w
-                  | None => Err
-                  end
-      | EUnit => Ok VUnit
-      | EVl v => match lookup_denv (IVal v) d with
-                 | Some (DVal w) => Ok w
-                 | _ => Err
-                 end
-      | ETag n th e1 =>
-          match interp k Sg d g e1 with
-          | Ok w => Ok (VTag n w)
-          | rr => rr
-          end
-      | ECallD f th sm args =>
-          match g_fn Sg f with
-          | Some (_, _, Some body) =>
-              match interp_args args with
-              | inl ws =>
-                  match compose_smap d sm with
-                  | Some d' => interp k Sg d' (mk_venv ws) body
-                  | None => Err
-                  end
-              | inr rr => rr
-              end
-          | _ => Err
-          end
-      | ECallA f args =>
-          match lookup_denv (IFn f) d with
-          | Some (DClo f' df) =>
-              match g_fn Sg f' with
-              | Some (_, _, Some body) =>
-                  match interp_args args with
-                  | inl ws => interp k Sg df (mk_venv ws) body
-                  | inr rr => rr
-                  end
-              | _ => Err
-              end
-          | _ => Err
-          end
-      | EMeth e0 m prov args =>
-          match lookup_denv prov d with
-          | Some (DClo f' d') =>
-              match g_fn Sg f' with
-              | Some (_, _, Some body) =>
-                  match interp k Sg d g e0 with
-                  | Ok w0 =>
-                      match interp_args args with
-                      | inl ws => interp k Sg d' (mk_venv (w0 :: ws)) body
-                      | inr rr => rr
-                      end
-                  | rr => rr
-                  end
-              | _ => Err
-              end
-          | _ => Err
-          end
-      | EMatch e0 arms =>
-          match interp k Sg d g e0 with
-          | Ok (VTag n w') =>
-              match find_arm n arms with
-              | Some (x, eb) => interp k Sg d ((x, w') :: g) eb
-              | None => Err
-              end
-          | Ok VUnit => Err
-          | rr => rr
-          end
-      | ELet x e1 e2 =>
-          match interp k Sg d g e1 with
-          | Ok w1 => interp k Sg d ((x, w1) :: g) e2
-          | rr => rr
-          end
-      | EBindTy _ _ e1 => interp k Sg d g e1
-      | EBindVal v e1 e2 =>
-          match interp k Sg d g e1 with
-          | Ok w1 => interp k Sg ((IVal v, DVal w1) :: d) g e2
-          | rr => rr
-          end
-      | EBindFn f f' sm e1 =>
-          match compose_smap d sm with
-          | Some dc => interp k Sg ((IFn f, DClo f' dc) :: d) g e1
-          | None => Err
-          end
-      | EBindMth tauk m th f' sm e1 =>
-          match compose_smap d sm with
-          | Some dc => interp k Sg ((IMth tauk m th, DClo f' dc) :: d) g e1
-          | None => Err
-          end
-      | EBindFun u h sm smc e1 =>
-          match compose_smap d smc with
-          | Some dc => interp k Sg ((IFun u, DFun h [sm] dc) :: d) g e1
-          | None => Err
-          end
-      | EBindFunA u u' sm e1 =>
-          match lookup_denv (IFun u') d with
-          | Some (DFun h sms dc) =>
-              interp k Sg ((IFun u, DFun h (sms ++ [sm]) dc) :: d) g e1
-          | _ => Err
-          end
-      | EApply u th sm e1 =>
-          match interp_apply k Sg d u th sm with
-          | inl dr => interp k Sg (dr ++ d) g e1
-          | inr rr => rr
-          end
-      end
-  end
-with interp_list (fuel : nat) (Sg : gsig) (d : denv) (g : venv)
-    (l : list expr) {struct fuel} : sum (list value) res :=
-  match fuel with
-  | 0 => inr OutOfFuel
-  | S k =>
-      match l with
-      | [] => inl []
-      | e1 :: r =>
-          match interp k Sg d g e1 with
-          | Ok w =>
-              match interp_list k Sg d g r with
-              | inl ws => inl (w :: ws)
-              | inr rr => inr rr
-              end
-          | rr => inr rr
-          end
-      end
-  end
-with interp_binds (fuel : nat) (Sg : gsig) (d : denv) (bs : list bnd)
-    {struct fuel} : sum denv res :=
-  match fuel with
-  | 0 => inr OutOfFuel
-  | S k =>
-      match bs with
-      | [] => inl d
-      | BTy _ _ :: r => interp_binds k Sg d r
-      | BVal v e1 :: r =>
-          match interp k Sg d [] e1 with
-          | Ok w1 => interp_binds k Sg ((IVal v, DVal w1) :: d) r
-          | rr => inr rr
-          end
-      | BFn f f' sm :: r =>
-          match compose_smap d sm with
-          | Some dc => interp_binds k Sg ((IFn f, DClo f' dc) :: d) r
-          | None => inr Err
-          end
-      | BMth tauk m th f' sm :: r =>
-          match compose_smap d sm with
-          | Some dc => interp_binds k Sg ((IMth tauk m th, DClo f' dc) :: d) r
-          | None => inr Err
-          end
-      | BFun u h sm smc :: r =>
-          match compose_smap d smc with
-          | Some dc => interp_binds k Sg ((IFun u, DFun h [sm] dc) :: d) r
-          | None => inr Err
-          end
-      | BFunA u u' sm :: r =>
-          match lookup_denv (IFun u') d with
-          | Some (DFun h sms dc) =>
-              interp_binds k Sg ((IFun u, DFun h (sms ++ [sm]) dc) :: d) r
-          | _ => inr Err
-          end
-      | BApply u th sm :: r =>
-          match interp_apply k Sg d u th sm with
-          | inl dr => interp_binds k Sg (dr ++ d) r
-          | inr rr => inr rr
-          end
-      end
-  end
-with interp_apply (fuel : nat) (Sg : gsig) (d : denv) (u : usym) (th : subst)
-    (sm : smap) {struct fuel} : sum denv res :=
-  match fuel with
-  | 0 => inr OutOfFuel
-  | S k =>
-      match lookup_denv (IFun u) d with
-      | Some (DFun h sms dc) =>
-          match g_fun Sg h with
-          | Some (_, Dr, Some bs) =>
-              match compose_smap d sm with
-              | Some d1 =>
-                  match run_chain d1 sms with
-                  | Some d2 =>
-                      match interp_binds k Sg (d2 ++ dc) bs with
-                      | inl d3 =>
-                          match compose_smap d3 (inst_smap th Dr) with
-                          | Some dr => inl dr
-                          | None => inr Err
-                          end
-                      | inr rr => inr rr
-                      end
-                  | None => inr Err
-                  end
-              | None => inr Err
-              end
-          | _ => inr Err
-          end
-      | _ => inr Err
-      end
-  end.
 
 (* Specialization of code (moved from Specialization.v): substitute a
    grounding g of the type symbols into an elaborated term's type
@@ -2562,6 +1996,49 @@ Definition popn (n : nat) (r : xres) : xres :=
 Definition with_g (g : xvenv) (r : xres) : xres :=
   match r with XR o _ st => XR o g st end.
 
+(* A checked source wrapper is the native ref.cast_null operation. The
+   metadata is the allocation's runtime type header, carried by an opaque
+   handle; extracting/repacking a handle never changes that header. *)
+Definition xcast (P : xprog) (d : xdenv) (n : nsym) (th : subst) (w : xvalue) : xout :=
+  match lookup_cast n (xp_cast P) with
+  | None => XOk (XVTag n w)
+  | Some spec =>
+      let enabled := match xc_handle spec with
+                     | None => true
+                     | Some (h, expected) => ty_eqb (xground d (match lookup_subst h th with Some t => t | None => TAbs h end)) expected
+                     end in
+      if enabled then
+        match lookup_subst (xc_held spec) th, w with
+        | Some tau, XVRefAt k' tau' _ =>
+            if Bool.eqb (xc_array spec) k' && ty_eqb (xground d tau) tau'
+            then XOk (XVTag n w) else XTrap 37
+        | _, _ => XTrap 37
+        end
+      else XOk (XVTag n w)
+  end.
+Definition xgc_receiver (w : xvalue) : xvalue :=
+  match w with
+  | XVTag n (XVRefAt _ _ a) => XVTag n (XVRef a)
+  | _ => w
+  end.
+Definition xgc_args (p : prim) (ws : list xvalue) : list xvalue :=
+  match p, ws with
+  | PArrCopy, [r; i; s; j; count] => [xgc_receiver r; i; xgc_receiver s; j; count]
+  | PDeref, r :: args | PRefSet, r :: args | PArrLen, r :: args
+  | PArrGet, r :: args | PArrSet, r :: args | PArrFill, r :: args => xgc_receiver r :: args
+  | _, _ => ws
+  end.
+Definition xallocation (p : prim) (tau : ty) (o : xout) : xout :=
+  match p, o with
+  | PBox _, XOk (XVTag n (XVRef a)) => XOk (XVTag n (XVRefAt false tau a))
+  | PArrNew _, XOk (XVTag n (XVRef a)) => XOk (XVTag n (XVRefAt true tau a))
+  | _, _ => o
+  end.
+Definition run_prim_at (P : xprog) (p : prim) (ot : option ty)
+    (ws : list xvalue) (st : mstate) : xout * mstate :=
+  let '(o, st') := run_prim P p (xgc_args p ws) st in
+  (match ot with Some tau => xallocation p tau o | None => o end, st').
+
 Definition truthy (P : xprog) (w : xvalue) : option bool :=
   match w with
   | XVTag n XVUnit => Some (Nat.eqb n (xp_true P))
@@ -2647,7 +2124,7 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
                  end
       | XTag n th e1 =>
           match xinterp k P d g st e1 with
-          | XR (XOk w) g1 st1 => XR (XOk (XVTag n w)) g1 st1
+          | XR (XOk w) g1 st1 => XR (xcast P d n th w) g1 st1
           | r => r
           end
       | XCallD f th sm args =>
@@ -2656,7 +2133,7 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
               match xinterp_list k P d g st args with
               | inl (ws, g1, st1) =>
                   match xcompose d sm with
-                  | Some d' => ret_call g1 (xinterp k P d' (mk_xvenv ws) st1 body)
+                  | Some d' => ret_call g1 (xinterp k P (xcall_env P d th d') (mk_xvenv ws) st1 body)
                   | None => XR (XErr e_compose) g1 st1
                   end
               | inr r => r
@@ -2677,7 +2154,13 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
           | Some (XDPrim p) =>
               match xinterp_list k P d g st args with
               | inl (ws, g1, st1) =>
-                  let (o, st2) := run_prim P p ws st1 in XR o g1 st2
+                  let (o, st2) := run_prim_at P p None ws st1 in XR o g1 st2
+              | inr r => r
+              end
+          | Some (XDPrimAt p tau) =>
+              match xinterp_list k P d g st args with
+              | inl (ws, g1, st1) =>
+                  let (o, st2) := run_prim_at P p (Some tau) ws st1 in XR o g1 st2
               | inr r => r
               end
           | _ => XR (XErr e_entry) g st
@@ -2703,7 +2186,17 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
               | XR (XOk w0) g0 st0 =>
                   match xinterp_list k P d g0 st0 args with
                   | inl (ws, g1, st1) =>
-                      let (o, st2) := run_prim P p (w0 :: ws) st1 in XR o g1 st2
+                      let (o, st2) := run_prim_at P p None (w0 :: ws) st1 in XR o g1 st2
+                  | inr r => r
+                  end
+              | r => r
+              end
+          | Some (XDPrimAt p tau) =>
+              match xinterp k P d g st e0 with
+              | XR (XOk w0) g0 st0 =>
+                  match xinterp_list k P d g0 st0 args with
+                  | inl (ws, g1, st1) =>
+                      let (o, st2) := run_prim_at P p (Some tau) (w0 :: ws) st1 in XR o g1 st2
                   | inr r => r
                   end
               | r => r
@@ -2725,7 +2218,7 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
           | XR (XOk w1) g1 st1 => pop1 (xinterp k P d ((x, w1) :: g1) st1 e2)
           | r => r
           end
-      | XBindTy _ _ e1 => xinterp k P d g st e1
+      | XBindTy t tau e1 => xinterp k P (xbind_ty P d t tau) g st e1
       | XBindVal v e1 e2 =>
           match xinterp k P d g st e1 with
           | XR (XOk w1) g1 st1 => xinterp k P ((IVal v, XDVal w1) :: d) g1 st1 e2
@@ -2733,17 +2226,17 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
           end
       | XBindFn f f' sm e1 =>
           match xcompose d sm with
-          | Some dc => xinterp k P ((IFn f, XDClo f' dc) :: d) g st e1
+          | Some dc => xinterp k P ((IFn f, XDClo f' (xclose d dc)) :: d) g st e1
           | None => XR (XErr e_compose) g st
           end
       | XBindMth tauk m th f' sm e1 =>
           match xcompose d sm with
-          | Some dc => xinterp k P ((IMth tauk m th, XDClo f' dc) :: d) g st e1
+          | Some dc => xinterp k P ((IMth tauk m th, XDClo f' (xclose d dc)) :: d) g st e1
           | None => XR (XErr e_compose) g st
           end
       | XBindFun u h sm smc e1 =>
           match xcompose d smc with
-          | Some dc => xinterp k P ((IFun u, XDFun h [sm] dc) :: d) g st e1
+          | Some dc => xinterp k P ((IFun u, XDFun h [sm] (xclose d dc)) :: d) g st e1
           | None => XR (XErr e_compose) g st
           end
       | XBindFunA u u' sm e1 =>
@@ -2756,6 +2249,11 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
           match xinterp_apply k P d u th sm st with
           | inl (dr, st1) => xinterp k P (dr ++ d) g st1 e1
           | inr r => with_g g r
+          end
+      | XApplyR u inputs outputs e1 =>
+          match xinterp_apply_r k P d u inputs outputs st with
+          | inl (dr, st1) => xinterp k P (dr ++ d) g st1 e1
+          | inr rr => with_g g rr
           end
       (* extensions *)
       | XSeq e1 e2 =>
@@ -2844,7 +2342,10 @@ Fixpoint xinterp (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
           | inl (dr, g1, st1) => xinterp k P (dr ++ d) g1 st1 e1
           | inr r => r
           end
-      | XBindPrim i p e1 => xinterp k P ((i, XDPrim p) :: d) g st e1
+      | XBindPrim i p e1 => xinterp k P ((i, xprim_entry d i p) :: d) g st e1
+      | XConst _ initializer => match k with
+          | O => XR XFuel g st
+          | S _ => xinterp k P d g st initializer end
       end
   end
 with xinterp_list (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate)
@@ -2872,7 +2373,7 @@ with xinterp_binds (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate
   | S k =>
       match bs with
       | [] => inl (d, g, st)
-      | XBTy _ _ :: r => xinterp_binds k P d g st r
+      | XBTy t tau :: r => xinterp_binds k P (xbind_ty P d t tau) g st r
       | XBVal v e1 :: r =>
           match xinterp k P d g st e1 with
           | XR (XOk w1) g1 st1 => xinterp_binds k P ((IVal v, XDVal w1) :: d) g1 st1 r
@@ -2880,17 +2381,17 @@ with xinterp_binds (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate
           end
       | XBFn f f' sm :: r =>
           match xcompose d sm with
-          | Some dc => xinterp_binds k P ((IFn f, XDClo f' dc) :: d) g st r
+          | Some dc => xinterp_binds k P ((IFn f, XDClo f' (xclose d dc)) :: d) g st r
           | None => inr (XR (XErr e_compose) g st)
           end
       | XBMth tauk m th f' sm :: r =>
           match xcompose d sm with
-          | Some dc => xinterp_binds k P ((IMth tauk m th, XDClo f' dc) :: d) g st r
+          | Some dc => xinterp_binds k P ((IMth tauk m th, XDClo f' (xclose d dc)) :: d) g st r
           | None => inr (XR (XErr e_compose) g st)
           end
       | XBFun u h sm smc :: r =>
           match xcompose d smc with
-          | Some dc => xinterp_binds k P ((IFun u, XDFun h [sm] dc) :: d) g st r
+          | Some dc => xinterp_binds k P ((IFun u, XDFun h [sm] (xclose d dc)) :: d) g st r
           | None => inr (XR (XErr e_compose) g st)
           end
       | XBFunA u u' sm :: r =>
@@ -2901,6 +2402,11 @@ with xinterp_binds (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate
           end
       | XBApply u th sm :: r =>
           match xinterp_apply k P d u th sm st with
+          | inl (dr, st1) => xinterp_binds k P (dr ++ d) g st1 r
+          | inr rr => inr (with_g g rr)
+          end
+      | XBApplyR u inputs outputs :: r =>
+          match xinterp_apply_r k P d u inputs outputs st with
           | inl (dr, st1) => xinterp_binds k P (dr ++ d) g st1 r
           | inr rr => inr (with_g g rr)
           end
@@ -2915,7 +2421,7 @@ with xinterp_binds (fuel : nat) (P : xprog) (d : xdenv) (g : xvenv) (st : mstate
           | inl (dr, g1, st1) => xinterp_binds k P (dr ++ d) g1 st1 r
           | inr rr => inr rr
           end
-      | XBPrim i p :: r => xinterp_binds k P ((i, XDPrim p) :: d) g st r
+      | XBPrim i p :: r => xinterp_binds k P ((i, xprim_entry d i p) :: d) g st r
       end
   end
 with xinterp_apply (fuel : nat) (P : xprog) (d : xdenv) (u : usym) (th : subst)
@@ -2931,10 +2437,45 @@ with xinterp_apply (fuel : nat) (P : xprog) (d : xdenv) (u : usym) (th : subst)
               | Some d1 =>
                   match xrun_chain d1 sms with
                   | Some d2 =>
-                      match xinterp_binds k P (d2 ++ dc) [] st bs with
+                      match xinterp_binds k P (xapply_env P d h th (d2 ++ dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match xcompose d3 (inst_smap th Dr) with
-                          | Some dr => inl (dr, st3)
+                          | Some dr => inl (xresult_env P d3 Dr dr, st3)
+                          | None => inr (XR (XErr e_compose) [] st3)
+                          end
+                      | inr rr => inr rr
+                      end
+                  | None => inr (XR (XErr e_chain) [] st)
+                  end
+              | None => inr (XR (XErr e_compose) [] st)
+              end
+          | None => inr (XR (XErr e_nobody) [] st)
+          end
+      | _ => inr (XR (XErr e_fun) [] st)
+      end
+  end
+(* Immutable application maps carry every type and provision explicitly. *)
+with xinterp_apply_r (fuel : nat) (P : xprog) (d : xdenv) (u : usym)
+    (inputs outputs : smap) (st : mstate) {struct fuel} : (xdenv * mstate) + xres :=
+  match fuel with
+  | 0 => inr (XR XFuel [] st)
+  | S k =>
+      match lookup_xdenv (IFun u) d with
+      | Some (XDFun h sms dc) =>
+          match xp_fun P h with
+          | Some (_, bs) =>
+              match xcompose d inputs with
+              | Some d1 =>
+                  match xrun_chain d1 sms with
+                  | Some d2 =>
+                      match xinterp_binds k P (d2 ++ dc) [] st bs with
+                      | inl (d3, _, st3) =>
+                          match xcompose d3 (xp_exports P h) with
+                          | Some named =>
+                              match xcompose named outputs with
+                              | Some dr => inl (dr, st3)
+                              | None => inr (XR (XErr e_compose) [] st3)
+                              end
                           | None => inr (XR (XErr e_compose) [] st3)
                           end
                       | inr rr => inr rr
@@ -3056,7 +2597,7 @@ Definition emb_prog (Sg : gsig) : xprog :=
                     | Some (_, Dr, Some bs) => Some (Dr, map emb_bnd bs)
                     | _ => None
                     end)
-          0 0 0 [] (fun _ => None).
+          0 0 0 [] (fun _ => None) [] (fun _ => []) (fun _ => []) false (fun _ => []) (fun _ => []).
 
 Definition res_agree (r : res) (o : xout) : Prop :=
   match r, o with
@@ -3279,7 +2820,7 @@ End PrimNames.
 (* STATUS: DRAFT, for the designer's review.  The elaborator (Elab.v) is
    neither shown sound nor complete for it; Certified.v lists both as
    pending.  RelExamples.v checks it on examples.  Proved toward soundness
-   (WorldSound.v, bound as Certified.world_reads): the loader's reading of
+   (WorldSound.v, bound as SourceCertified.loader_reads): the loader's reading of
    an accepted bundle meets every condition of WorldOf (V.1) except the
    requirement lists and the field numbering.
 
@@ -3439,7 +2980,8 @@ Record world := World {
   w_exp   : string -> nspace -> name -> option ent;  (* what a module exports *)
   w_attached : nat -> name -> option nat;            (* receiver symbol, name -> attached method *)
   w_reqs  : nat -> list nat;                         (* a symbol's requirements (type symbols) *)
-  w_fld   : string -> nat                            (* record field numbering *)
+  w_fld   : string -> nat;                           (* record field numbering *)
+  w_library : option string                         (* prelude's directory prefix *)
 }.
 
 Definition kind_sym (W : world) (s : nat) : option dkind :=
@@ -3607,17 +3149,24 @@ Record WorldOf (b : bundle) (W : world) : Prop := {
   wo_listed : forall g d ps t n, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) -> In n ps ->
       exists x, resolve_sym W (d_mod d) [n] = Some x /\ AssumeTypes W g x;
   (* record fields: distinct names get distinct numbers *)
-  wo_fld : forall a c, w_fld W a = w_fld W c -> a = c
+  wo_fld : forall a c, w_fld W a = w_fld W c -> a = c;
+  wo_library : w_library W = Loader.library_dir (b_prelude b)
 }.
 
 (* Library symbols the language itself refers to ([D45], [D68]): the
-   declaration named `n` in the loaded module whose path ends in
-   `lib/<short>.moss`. *)
+   symbol in scope as `n` in `<prelude directory>/<short>.moss`.
+   Reexports are ordinary scope entries, including here (note 68). *)
 Definition ends_with (suf s : string) : Prop := exists pre, s = String.append pre suf.
 
+Definition LibraryModule (W : world) (short p : string) : Prop :=
+  match w_library W with
+  | Some dir => p = String.append dir (String.append short ".moss")
+  | None => False
+  end.
+
 Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : nat) : Prop :=
-  exists d, w_decl W s = Some d /\ ends_with (String.append "lib/" (String.append short ".moss")) (d_mod d) /\
-            filed_name (d_ast d) = Some (ns, n).
+  exists d p, w_decl W s = Some d /\ LibraryModule W short p /\
+              w_scope W p ns n = Some (ESym s).
 
 (* [D75]/m4: the platform's reference tags, `Ref` and `Array` of
    lib/wasm.moss, which only the library builds from a bare handle (note
@@ -3625,11 +3174,9 @@ Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : na
 Definition PlatformRefTag (W : world) (s : nat) : Prop :=
   LangSym W "wasm" NSName "Ref" s \/ LangSym W "wasm" NSName "Array" s.
 
-(* Module p is one of the library's: its path has the directory of the
-   loaded lib/wasm.moss as a prefix (Elab.in_library). *)
+(* Module p is in the selected library's directory or a subdirectory. *)
 Definition InLibrary (W : world) (p : string) : Prop :=
-  exists s d dir rest, w_decl W s = Some d /\ ends_with "lib/wasm.moss" (d_mod d) /\
-    d_mod d = String.append dir "wasm.moss" /\ p = String.append dir rest.
+  exists dir rest, w_library W = Some dir /\ p = String.append dir rest.
 
 (* ======================================================================== *)
 (* V.2 Types                                                                 *)
@@ -3732,6 +3279,10 @@ Definition rkey (C : cx) (r : ty) (m : nat) : item :=
 Definition rkey_of (C : cx) (k : item) : item :=
   match k with IMth r m _ => rkey C r m | _ => k end.
 
+(* A provision has one identity; method type arguments are read separately. *)
+Definition provision_id (it : item) : item :=
+  match it with IMth r m _ => IMth r m [] | _ => it end.
+
 Definition provides (C : cx) (i : item) : Prop :=
   match i with
   | IVal v => nlook v (c_vals C) <> None
@@ -3747,7 +3298,7 @@ Inductive entry :=
 | NVal (v : nat) (t : ty) (a : inst)
 | NFn  (f : nat) (g : fsig) (a : inst)
 | NMth (r : ty) (m : nat) (g : fsig) (a : inst)
-| NFun (u : nat).
+| NFun (u : nat) (fx : subst).
 
 (* `SigOf W s tm this g`: the declared signature of fn/method s read with
    the type meanings tm (and receiver type `this`). *)
@@ -3778,8 +3329,17 @@ Definition AppOf (W : world) (s : nat) (tm : list (nat * ty)) (a : inst) : Prop 
 Definition RecvTy (W : world) (r : nat) (tm : list (nat * ty)) (t : ty) : Prop :=
   match nlook r tm with
   | Some t' => t = t'
-  | None => exists args, t = TNom r args /\
-              Forall2 (fun x xa => fst xa = x /\ nlook x tm = Some (snd xa)) (w_reqs W r) args
+  | None =>
+      match w_decl W r with
+      | Some d =>
+          match d_ast d with
+          | ADAlias _ body => TyOf W (d_mod d) tm None body t
+          | _ => exists args, t = TNom r args /\
+                   Forall2 (fun x xa => fst xa = x /\ nlook x tm = Some (snd xa)) (w_reqs W r) args
+          end
+      | None => exists args, t = TNom r args /\
+                  Forall2 (fun x xa => fst xa = x /\ nlook x tm = Some (snd xa)) (w_reqs W r) args
+      end
   end.
 
 (* The method a name `.n` on receiver symbol r means in module p's items:
@@ -3804,29 +3364,45 @@ Definition FunOutputs (W : world) (u : nat) (t : nat) : Prop :=
    for a fn its whole telescope), a method's receiver and the requirements
    its signature mentions, less what brackets bind, plus the brackets'
    right sides; closed through relevance (w_reqs); less F's outputs. *)
-Inductive ResultMentions (W : world) : string -> spec -> nat -> Prop :=
-| RMValFn : forall p pa a s t,
+Inductive ResultMentions (W : world) : nat -> string -> spec -> nat -> Prop :=
+| RMValFn : forall self p pa a s t,
     resolve_sym W p pa = Some s -> (kind_sym W s = Some DKVal \/ kind_sym W s = Some DKFn) ->
     In t (w_reqs W s) ->
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultMentions W p (Spec (Some pa) None a) t
-| RMMeth : forall p pa dn a r m t,
-    resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
-    (t = r /\ kind_sym W r = Some DKType \/ In t (w_reqs W r) \/ In t (w_reqs W m)) ->
+    ResultMentions W self p (Spec (Some pa) None a) t
+| RMReceiver : forall self p pa dn a r t,
+    resolve_sym W p pa = Some r ->
+    (t = r /\ kind_sym W r = Some DKType \/
+     kind_sym W r <> Some DKType /\ In t (w_reqs W r)) ->
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultMentions W p (Spec (Some pa) (Some dn) a) t
-| RMBracket : forall p pa d a bp sp sa t,
-    In (bp, Spec (Some sp) None sa) (match a with Some bs => bs | None => [] end) ->
+    ResultMentions W self p (Spec (Some pa) (Some dn) a) t
+| RMMeth : forall self p pa dn a r m t,
+    resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
+    In t (w_reqs W m) -> SigMentions W m t ->
+    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
+    ResultMentions W self p (Spec (Some pa) (Some dn) a) t
+| RMBracket : forall self p pa d a bp sp dr sa t,
+    resolve_sym W p pa <> None ->
+    In (bp, Spec (Some sp) dr sa) (match a with Some bs => bs | None => [] end) ->
     FreeIn W (w_reqs W) p (ATRef sp sa) t ->
-    ResultMentions W p (Spec (Some pa) d a) t
-| RMCtx : forall p pa c dc n its sp t,
+    ResultMentions W self p (Spec (Some pa) d a) t
+| RMCtx : forall self p pa a c dc n its sp t,
     resolve_sym W p pa = Some c -> w_decl W c = Some dc -> d_ast dc = ADCtx n its ->
-    In sp its -> ResultMentions W (d_mod dc) sp t ->
-    ResultMentions W p (Spec (Some pa) None None) t.
+    In sp its -> ResultMentions W self (d_mod dc) sp t ->
+    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
+    ResultMentions W self p (Spec (Some pa) None a) t
+| RMFunctor : forall self p pa a u du n names args res sp t,
+    resolve_sym W p pa = Some u -> w_decl W u = Some du ->
+    d_ast du = ADFunctor n (Some names) args res None -> u <> self ->
+    In sp res -> ResultMentions W u (d_mod du) sp t ->
+    ~ FunOutputs W u t ->
+    ~ (exists name, In name names /\ resolve_sym W (d_mod du) [name] = Some t) ->
+    ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
+    ResultMentions W self p (Spec (Some pa) None a) t.
 
 Definition Mentions (W : world) (u : nat) (t : nat) : Prop :=
   exists d ps a r b sp, w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
-    In sp r /\ ResultMentions W (d_mod d) sp t /\ ~ FunOutputs W u t.
+    In sp r /\ ResultMentions W u (d_mod d) sp t /\ ~ FunOutputs W u t.
 
 (* P(F): the brackets; an unbracketed abstract functor has P(F) = M(F). *)
 Definition Poly (W : world) (u : nat) (t : nat) : Prop :=
@@ -3838,6 +3414,14 @@ Definition Poly (W : world) (u : nat) (t : nat) : Prop :=
 
 (* X(F) = M(F) ∖ P(F), the fixed inputs ([D84] rule 1). *)
 Definition Fixed (W : world) (u : nat) (t : nat) : Prop := Mentions W u t /\ ~ Poly W u t.
+
+(* A functor provision retains its fixed inputs as read where provided. *)
+Definition FixedReadings (W : world) (u : nat) (tm : list (nat * ty)) (fx : subst) : Prop :=
+  forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x tm = Some tx.
+Definition fixed_subst (sigma : subst) (fx : subst) : subst :=
+  map (fun q => (fst q, app_subst sigma (snd q))) fx.
+Definition fixed_app (fx : subst) : inst :=
+  map (fun q => (fst q, Some (snd q))) fx.
 
 (* `ItemEntries W p ob tm sp es tm'`: the context item `sp`, written in
    module p, under the enclosing items' bracket bindings `ob`, introduces
@@ -3867,12 +3451,13 @@ Inductive ItemEntries (W : world) : string -> list (nat * ty) -> list (nat * ty)
     Brackets W p (ob ++ tm) s a bs ->
     SigOf W s (bs ++ ob ++ tm) None g -> AppOf W s (bs ++ ob ++ tm) ap ->
     ItemEntries W p ob tm (Spec (Some pa) None a) [NFn s g ap] tm
-| IEFun : forall p ob tm pa u d n ps args res,
+| IEFun : forall p ob tm pa u d n ps args res fx,
     resolve_sym W p pa = Some u -> w_decl W u = Some d -> d_ast d = ADFunctor n ps args res None ->
     (* [D84] rule 2, [D20]: F is at an instantiation of X(F), so assuming
        it asks X(F) in force (note 70) *)
-    (forall x, Fixed W u x -> nlook x (ob ++ tm) <> None) ->
-    ItemEntries W p ob tm (Spec (Some pa) None None) [NFun u] tm
+    (forall x, Fixed W u x -> nlook x tm <> None) ->
+    FixedReadings W u tm fx ->
+    ItemEntries W p ob tm (Spec (Some pa) None None) [NFun u fx] tm
 | IEMeth : forall p ob tm a pa dn r m rt g bs ap,
     resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
     Brackets W p (ob ++ tm) m a bs ->
@@ -3901,7 +3486,7 @@ Definition entry_key (s : subst) (e : entry) : option item :=
   | NVal v _ _ => Some (IVal v)
   | NFn f _ _ => Some (IFn f)
   | NMth r m _ _ => Some (mkey (app_subst s r) m)
-  | NFun u => Some (IFun u)
+  | NFun u _ => Some (IFun u)
   end.
 
 Definition entry_sig (s : subst) (e : entry) : option fsig :=
@@ -3938,9 +3523,10 @@ Definition entries_cx (s : subst) (tm : list (nat * ty)) (es : list entry) : cx 
      (flat_map (fun e => match e with NVal v t _ => [(v, app_subst s t)] | _ => [] end) es)
      (flat_map (fun e => match e with NFn f g _ => [(f, sig_subst s g)] | _ => [] end) es)
      (flat_map (fun e => match e with NMth r m g _ => [((app_subst s r, m), sig_subst s g)] | _ => [] end) es)
-     (flat_map (fun e => match e with NFun u => [(u, [])] | _ => [] end) es)
+     (flat_map (fun e => match e with NFun u fx => [(u, fixed_subst s fx)] | _ => [] end) es)
      (flat_map (fun e => match e, entry_key s e with
                          | NVal _ _ a, Some k | NFn _ _ a, Some k | NMth _ _ _ a, Some k => [(k, fz a)]
+                         | NFun u fx, Some k => [(k, fixed_app (fixed_subst s fx))]
                          | _, _ => [] end) es)
      [].
 
@@ -3949,13 +3535,13 @@ Definition Needs (s : subst) (es : list entry) (ns : list item) : Prop :=
   NoDup ns /\ forall k, In k ns <-> exists e, In e es /\ entry_key s e = Some k.
 
 (* [D84] (8), [D37] (note 54): `main` runs in the platform's root context.
-   Beside what it assumes, a module's own `fn main` has lib/wasm.moss's
+   Beside what it assumes, any function in scope as `main` has lib/wasm.moss's
    `Gc`: each abstract functor `Gc` lists that is not already in force,
    after the types it is fixed in (X(F), [D84] rule 1), each in force as
    its own generation unless it is already. *)
 Definition IsMainFn (W : world) (s : nat) : Prop :=
-  exists d ps rt body, w_decl W s = Some d /\ d_ast d = ADFn RPlain "main" ps rt body /\
-    w_scope W (d_mod d) NSName "main" = Some (ESym s).
+  exists d n ps rt body p, w_decl W s = Some d /\ d_ast d = ADFn RPlain n ps rt body /\
+    w_scope W p NSName "main" = Some (ESym s).
 
 Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
   fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
@@ -3964,14 +3550,15 @@ Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
    q), after the entries es0 and with meanings tm, add the entries es. *)
 Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
 | RINil : forall es0 tm, RootItems W q es0 tm [] [] tm
-| RIFun : forall es0 tm p a rest u du n ps args res xs es tm',
+| RIFun : forall es0 tm p a rest u du n ps args res xs fx es tm',
     resolve_sym W q p = Some u -> w_decl W u = Some du -> d_ast du = ADFunctor n ps args res None ->
-    ~ In (NFun u) es0 -> NoDup xs -> (forall x, In x xs <-> Fixed W u x) ->
-    RootItems W q (es0 ++ map NTy xs ++ [NFun u]) (add_tys xs tm) rest es tm' ->
-    RootItems W q es0 tm (Spec (Some p) None a :: rest) (map NTy xs ++ [NFun u] ++ es) tm'
+    ~ (exists fx0, In (NFun u fx0) es0) -> NoDup xs -> (forall x, In x xs <-> Fixed W u x) ->
+    FixedReadings W u (add_tys xs tm) fx ->
+    RootItems W q (es0 ++ map NTy xs ++ [NFun u fx]) (add_tys xs tm) rest es tm' ->
+    RootItems W q es0 tm (Spec (Some p) None a :: rest) (map NTy xs ++ [NFun u fx] ++ es) tm'
 | RISkip : forall es0 tm sp rest es tm',
     match sp with
-    | Spec (Some p) None _ => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> In (NFun u) es0
+    | Spec (Some p) None _ => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> exists fx, In (NFun u fx) es0
     | _ => True
     end ->
     RootItems W q es0 tm rest es tm' -> RootItems W q es0 tm (sp :: rest) es tm'.
@@ -4042,13 +3629,13 @@ Definition Satisfies (C : cx) (Cs : cx) (ns : list item) (sm : smap) : Prop :=
 (* ======================================================================== *)
 
 (* F's own terms: the context its argument telescope forms, plus its
-   implicit inputs (rule 1: P(F) ∪ M(F) symbols the inputs do not list). *)
+   implicit mentioned inputs (symbols the explicit inputs do not list). *)
 Definition FunCtx (W : world) (u : nat) (C : cx) (ns : list item) : Prop :=
   exists d ps a r b es tm tm' σ implicit,
     w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
     ItemsEntries W (d_mod d) [] [] a es tm /\
     (* implicit inputs: only an abstract functor has them *)
-    (forall t, In t implicit <-> (b = None /\ (Mentions W u t \/ Poly W u t) /\ nlook t tm = None)) /\
+    (forall t, In t implicit <-> (b = None /\ Mentions W u t /\ nlook t tm = None)) /\
     tm' = map (fun t => (t, TAbs t)) implicit ++ tm /\
     MostGeneralMerge σ es /\ C = entries_cx σ tm' es /\ Needs σ es ns.
 
@@ -4056,29 +3643,153 @@ Definition FunCtx (W : world) (u : nat) (C : cx) (ns : list item) : Prop :=
    `out t` (a fresh generation at an application): the context grows by
    the result's items, each at the instantiation it is made at, and `ks`
    are its non-type keys. *)
+(* Output brackets are bindings at the point an output is installed.  Unlike
+   an input telescope application, the output reader permits a binding that
+   the target does not mention.  The right-hand types still use [TyOf]. *)
+Inductive OutputBrackets (W : world) (p : string) (tm : list (nat * ty)) :
+    option (list (path * spec)) -> list (nat * ty) -> Prop :=
+| OBrNone : OutputBrackets W p tm None []
+| OBrSome : forall bs l,
+    Forall2 (fun b tb =>
+      exists sp sa, snd b = Spec (Some sp) None sa /\
+        resolve_sym W p (fst b) = Some (fst tb) /\
+        kind_sym W (fst tb) = Some DKType /\
+        TyOf W p tm None (ATRef sp sa) (snd tb)) bs l ->
+    OutputBrackets W p tm (Some bs) (rev l).
+
+(* Output installation follows the result list in order.  Type outputs have
+   already received their generations; the item walk leaves their meanings
+   alone.  A defined function or value is already available and adds no slot. *)
+Inductive OutputItemEntries (W : world) : string -> list (nat * ty) ->
+    list (nat * ty) -> spec -> list entry -> list (nat * ty) -> Prop :=
+| OIEType : forall p ob tm pa a bs t,
+    resolve_sym W p pa = Some t -> kind_sym W t = Some DKType ->
+    OutputBrackets W p (ob ++ tm) a bs ->
+    OutputItemEntries W p ob tm (Spec (Some pa) None a) [NTy t] tm
+| OIENothing : forall p ob tm pa a bs s k,
+    resolve_sym W p pa = Some s -> kind_sym W s = Some k ->
+    OutputBrackets W p (ob ++ tm) a bs ->
+    (k = DKUnit \/ k = DKTag \/ k = DKAlias \/
+      (k = DKVal /\ exists d n t i, w_decl W s = Some d /\ d_ast d = ADVal n t (Some i)) \/
+      (k = DKFn /\ exists d r n ps rt b, w_decl W s = Some d /\
+         d_ast d = ADFn r n ps rt (Some b))) ->
+    OutputItemEntries W p ob tm (Spec (Some pa) None a) [] tm
+| OIEVal : forall p ob tm a pa s d n t ty0 bs ap,
+    resolve_sym W p pa = Some s -> w_decl W s = Some d -> d_ast d = ADVal n t None ->
+    OutputBrackets W p (ob ++ tm) a bs ->
+    TyOf W (d_mod d) (bs ++ ob ++ tm) None t ty0 ->
+    AppOf W s (bs ++ ob ++ tm) ap ->
+    OutputItemEntries W p ob tm (Spec (Some pa) None a) [NVal s ty0 ap] tm
+| OIEFn : forall p ob tm a pa s g bs ap d rcv n ps rt,
+    resolve_sym W p pa = Some s -> kind_sym W s = Some DKFn ->
+    w_decl W s = Some d -> d_ast d = ADFn rcv n ps rt None ->
+    OutputBrackets W p (ob ++ tm) a bs ->
+    SigOf W s (bs ++ ob ++ tm) None g -> AppOf W s (bs ++ ob ++ tm) ap ->
+    OutputItemEntries W p ob tm (Spec (Some pa) None a) [NFn s g ap] tm
+| OIEFun : forall p ob tm a bs pa u d n ps args res fx,
+    resolve_sym W p pa = Some u -> w_decl W u = Some d ->
+    d_ast d = ADFunctor n ps args res None ->
+    OutputBrackets W p (ob ++ tm) a bs ->
+    (forall x, Fixed W u x -> nlook x (bs ++ ob ++ tm) <> None) ->
+    FixedReadings W u (bs ++ ob ++ tm) fx ->
+    OutputItemEntries W p ob tm (Spec (Some pa) None a) [NFun u fx] tm
+| OIEMeth : forall p ob tm a pa dn r m rt g bs ap,
+    resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
+    OutputBrackets W p (ob ++ tm) a bs -> RecvTy W r (bs ++ ob ++ tm) rt ->
+    SigOf W m (bs ++ ob ++ tm) (Some rt) g -> AppOf W m (bs ++ ob ++ tm) ap ->
+    OutputItemEntries W p ob tm (Spec (Some pa) (Some dn) a) [NMth rt m g ap] tm
+| OIECtx : forall p ob tm a pa c d n its bs es tm',
+    resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
+    OutputBrackets W p (ob ++ tm) a bs ->
+    OutputItemsEntries W (d_mod d) (bs ++ ob) tm its es tm' ->
+    OutputItemEntries W p ob tm (Spec (Some pa) None a) es tm'
+with OutputItemsEntries (W : world) : string -> list (nat * ty) ->
+    list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
+| OIsNil : forall p ob tm, OutputItemsEntries W p ob tm [] [] tm
+| OIsCons : forall p ob tm sp rest es1 tm1 es2 tm2,
+    OutputItemEntries W p ob tm sp es1 tm1 ->
+    OutputItemsEntries W p ob tm1 rest es2 tm2 ->
+    OutputItemsEntries W p ob tm (sp :: rest) (es1 ++ es2) tm2.
+
+(* Result slots follow the written output occurrences.  Repeated output keys
+   remain repeated slots, as in both evaluators; input [Needs] stays set-valued. *)
+Definition ResultKeys (s : subst) (es : list entry) (ks : list item) : Prop :=
+  ks = flat_map (fun e => match entry_key s e with Some k => [k] | None => [] end) es.
+
+(* Replace the output roles before normalizing through the caller's merges.
+   Output provisions and their recorded applications use these completed
+   meanings, as [provided_at] freezes the corresponding source readings. *)
+Definition output_type_map (C : cx) (outs : list nat) (out : nat -> ty) : list (nat * ty) :=
+  map (fun q => (fst q, canon C (snd q))) (map (fun t => (t, out t)) outs ++ c_ty C).
+
+Definition output_cx (C : cx) (tm : list (nat * ty)) (es : list entry) : cx :=
+  Cx (map (fun q => (fst q, canon C (snd q))) tm) (c_sub C)
+            (flat_map (fun e => match e with NVal v t _ => [(v, canon C t)] | _ => [] end) (rev es) ++ c_vals C)
+            (flat_map (fun e => match e with NFn f g _ => [(f, sig_subst (c_sub C) g)] | _ => [] end) (rev es) ++ c_fns C)
+            (flat_map (fun e => match e with NMth r m g _ => [((canon C r, m), sig_subst (c_sub C) g)] | _ => [] end) (rev es) ++ c_mths C)
+            (flat_map (fun e => match e with NFun u' fx => [(u', fixed_subst (c_sub C) fx)] | _ => [] end) (rev es) ++ c_funs C)
+            (flat_map (fun e => match e, entry_key (c_sub C) e with
+                                | NVal _ _ a0, Some k | NFn _ _ a0, Some k | NMth _ _ _ a0, Some k => [(k, a0)]
+                                | NFun u fx, Some k => [(k, fixed_app (fixed_subst (c_sub C) fx))]
+                                | _, _ => [] end) (rev es) ++ c_apps C)
+            (c_locals C).
+
 Definition ProvideResult (W : world) (u : nat) (C : cx) (out : nat -> ty) (C' : cx) (ks : list item) : Prop :=
   exists d ps a r b outs es tm',
     w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
     (forall t, In t outs <-> FunOutputs W u t) /\
-    ItemsEntries W (d_mod d) [] (map (fun t => (t, out t)) outs ++ c_ty C) r es tm' /\
-    Needs (c_sub C) es ks /\
-    C' = Cx (map (fun q => (fst q, canon C (snd q))) tm') (c_sub C)
-            (flat_map (fun e => match e with NVal v t _ => [(v, canon C t)] | _ => [] end) es ++ c_vals C)
-            (flat_map (fun e => match e with NFn f g _ => [(f, sig_subst (c_sub C) g)] | _ => [] end) es ++ c_fns C)
-            (flat_map (fun e => match e with NMth r m g _ => [((canon C r, m), sig_subst (c_sub C) g)] | _ => [] end) es ++ c_mths C)
-            (flat_map (fun e => match e with NFun u' => [(u', [])] | _ => [] end) es ++ c_funs C)
-            (flat_map (fun e => match e, entry_key (c_sub C) e with
-                                | NVal _ _ a0, Some k | NFn _ _ a0, Some k | NMth _ _ _ a0, Some k => [(k, a0)]
-                                | _, _ => [] end) es ++ c_apps C)
-            (c_locals C).
+    OutputItemsEntries W (d_mod d) [] (output_type_map C outs out) r es tm' /\
+    ResultKeys (c_sub C) es ks /\
+    C' = output_cx C tm' es.
 
 (* [D84] rule 7: a family is an abstract functor whose result is method
    items only and holds no type, each item's key determining every P(F)
    symbol it mentions; its bindings bind no vals and apply no functor but
    a family (DECISIONS.md). *)
-Definition Family (W : world) (u : nat) : Prop :=
+Inductive FamilyResult (W : world) : string -> spec -> Prop :=
+| FRMethod : forall mi pa dn br,
+    FamilyResult W mi (Spec (Some pa) (Some dn) br)
+| FRContext : forall mi pa br u d n its,
+    resolve_sym W mi pa = Some u -> w_decl W u = Some d ->
+    d_ast d = ADCtx n its ->
+    Forall (FamilyResult W (d_mod d)) its ->
+    FamilyResult W mi (Spec (Some pa) None br).
+
+Definition FamilyShape (W : world) (u : nat) : Prop :=
   exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None /\
-    Forall (fun sp => exists pa dn br, sp = Spec (Some pa) (Some dn) br) r.
+    Forall (FamilyResult W (d_mod d)) r.
+
+Definition FamilyBracketBound (W : world) (p : string)
+    (a : option (list (path * spec))) (t : nat) : Prop :=
+  exists b, In b (match a with Some bs => bs | None => [] end) /\
+    resolve_sym W p (fst b) = Some t.
+Definition FamilyBracketFree (W : world) (p : string)
+    (a : option (list (path * spec))) (t : nat) : Prop :=
+  exists bp pa dn bs, In (bp, Spec (Some pa) dn bs)
+    (match a with Some brackets => brackets | None => [] end) /\
+    FreeIn W (w_reqs W) p (ATRef pa bs) t.
+
+(* Every polymorphic signature/bracket dependency not replaced by the leaf's
+   brackets is determined by its receiver key, as the actual D84 classifier
+   checks.  A method-only abstract functor need not be a family. *)
+Inductive FamilyKeyed (W : world) (u : nat) : string -> spec -> Prop :=
+| FKMethod : forall p pa dn a r m,
+    resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
+    (forall t, Poly W u t ->
+       (SigMentions W m t \/ FamilyBracketFree W p a t) ->
+       ~ FamilyBracketBound W p a t ->
+       FreeIn W (w_reqs W) p (ATRef pa None) t) ->
+    FamilyKeyed W u p (Spec (Some pa) (Some dn) a)
+| FKContext : forall p pa a c d n its,
+    resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
+    Forall (FamilyKeyed W u (d_mod d)) its ->
+    FamilyKeyed W u p (Spec (Some pa) None a).
+
+Definition FamilyKeys (W : world) (u : nat) : Prop :=
+  forall d n ps a r, w_decl W u = Some d -> d_ast d = ADFunctor n ps a r None ->
+    Forall (FamilyKeyed W u (d_mod d)) r.
+Definition Family (W : world) (u : nat) : Prop :=
+  FamilyShape W u /\ FamilyKeys W u.
 
 (* ======================================================================== *)
 (* V.6 Bodies: expressions, blocks, binds                                    *)
@@ -4126,7 +3837,7 @@ Definition set_fn (C : cx) (f : nat) (g : fsig) : cx :=
 Definition set_mth (C : cx) (r : ty) (m : nat) (g : fsig) : cx :=
   Cx (c_ty C) (c_sub C) (c_vals C) (c_fns C) (((r, m), g) :: c_mths C) (c_funs C) (c_apps C) (c_locals C).
 Definition set_fun (C : cx) (u : nat) (fx : list (nat * ty)) : cx :=
-  Cx (c_ty C) (c_sub C) (c_vals C) (c_fns C) (c_mths C) ((u, fx) :: c_funs C) (c_apps C) (c_locals C).
+  Cx (c_ty C) (c_sub C) (c_vals C) (c_fns C) (c_mths C) ((u, fx) :: c_funs C) ((IFun u, fixed_app fx) :: c_apps C) (c_locals C).
 
 Definition body_of (P : xprogram) (f : nat) : option xexpr := nlook f (xo_fns P).
 Definition funbody_of (P : xprogram) (h : nat) : option (tele * list xbind) := nlook h (xo_funs P).
@@ -4164,6 +3875,51 @@ Definition lit_value (text : string) : nat * nat :=
 Definition is_float_lit (text : string) : bool :=
   existsb (fun c => Ascii.eqb c "."%char || Ascii.eqb c "e"%char) (list_ascii_of_string text).
 
+(* [D84] rule 7 / DECISIONS.md: at most one family in force produces a key.
+   Here θ is the matching substitution over P(F), not the full emitted
+   application argument list; fixed caller meanings cannot be overridden. *)
+Definition FixedAgreement (W : world) (C : cx) (u : nat) : Prop :=
+  forall x, Fixed W u x ->
+    match ilook (IFun u) (c_apps C), nlook x (c_ty C) with
+    | Some recorded, Some now =>
+        match nlook x recorded with
+        | Some (Some was) => canon C was = canon C now
+        | _ => True
+        end
+    | _, _ => True
+    end.
+
+Definition FamilyProduces (W : world) (C : cx) (u : nat) (k : item) : Prop :=
+  exists fx th C' ks, nlook u (c_funs C) = Some fx /\ Family W u /\
+    Forall (fun q => Poly W u (fst q)) th /\
+    ProvideResult W u (fold_left (fun C q => set_ty C (fst q) (snd q)) th C) (fun t => TAbs t) C' ks /\
+    In k ks.
+
+Definition OnlyFamily (W : world) (C : cx) (u : nat) (k : item) : Prop :=
+  forall u', u' <> u -> ~ FamilyProduces W C u' k.
+
+(* A literal's binary arithmetic call uses a provision already in force,
+   or a unique family applied in a scope around that call ([D84] rule 7).
+   Its one parameter and result are exactly the literal's own type. *)
+Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : xexpr) : xexpr -> Prop :=
+| LitOpIn :
+    mlook t m (c_mths C) = Some (FSig [t] t) ->
+    LitOp W C t m ox oy (XMeth ox m (rkey C t m) [oy])
+| LitOpFamily : forall u fx matching th sm Cu nsu C' ks,
+    mlook t m (c_mths C) = None -> nlook u (c_funs C) = Some fx -> Family W u ->
+    Forall (fun q => Poly W u (fst q)) matching ->
+    FunCtx W u Cu nsu ->
+    (forall a, Poly W u a -> nlook a (c_ty Cu) <> None -> exists tt, In (a, tt) th) ->
+    (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here,
+       nlook t (c_ty (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C)) = Some here /\
+       In (t, canon (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) here) th) ->
+    FixedAgreement W (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) u ->
+    ProvideResult W u (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) (fun a => TAbs a) C' ks ->
+    In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
+    Satisfies (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) Cu nsu sm ->
+    mlook t m (c_mths C') = Some (FSig [t] t) ->
+    LitOp W C t m ox oy (XApply u th sm (XMeth ox m (rkey C' t m) [oy])).
+
 (* [D68] A literal is arithmetic over fixed library symbols: lib/int.moss's
    `zero` and `one` (as provided here), num.moss's `.add`/`.mul`/`.div`
    provided at their type, and lib/float.moss's `float`.  `LitTerm` says a
@@ -4187,9 +3943,21 @@ Inductive LitTerm (W : world) (C : cx) (t : ty) : xexpr -> nat -> nat -> Prop :=
     mlook t m (c_mths C) = Some (FSig [t] t) ->
     LitTerm W C t x a b -> LitTerm W C t y c d -> c <> 0 ->
     LitTerm W C t (XMeth x m (rkey C t m) [y]) (a * d) (b * c)
-| LitFloat : forall f ti x a b, LangSym W "float" NSName "float" f ->
-    nlook f (c_fns C) = Some (FSig [ti] t) -> LitTerm W C ti x a b ->
-    LitTerm W C t (XCallA f [x]) a b.
+| LitFloat : forall f ti tp x a b, LangSym W "float" NSName "float" f ->
+    nlook f (c_fns C) = Some (FSig [tp] t) -> fits ti tp -> LitTerm W C ti x a b ->
+    LitTerm W C t (XCallA f [x]) a b
+| LitAddOp : forall m x y result a b c d,
+    LangSym W "num" NSDetached "add" m -> LitOp W C t m x y result ->
+    LitTerm W C t x a b -> LitTerm W C t y c d ->
+    LitTerm W C t result (a * d + c * b) (b * d)
+| LitMulOp : forall m x y result a b c d,
+    LangSym W "num" NSDetached "mul" m -> LitOp W C t m x y result ->
+    LitTerm W C t x a b -> LitTerm W C t y c d ->
+    LitTerm W C t result (a * c) (b * d)
+| LitDivOp : forall m x y result a b c d,
+    LangSym W "num" NSDetached "div" m -> LitOp W C t m x y result ->
+    LitTerm W C t x a b -> LitTerm W C t y c d -> c <> 0 ->
+    LitTerm W C t result (a * d) (b * c).
 
 (* Operators ([D68], [D77] rule 2): fixed to num.moss's detached methods;
    the `for.` operators of [D85]'s `for` sugar (Parse.for_desugar) to
@@ -4313,12 +4081,34 @@ Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
 | JoinLeftNever : forall b, Join never b None b
 | JoinSame : forall a b, (b = never \/ a = b) -> a <> never -> Join a b None a.
 
-(* A leaf of a functor's result: an item key as written (symbol, method name). *)
+(* D78 compares raw signature leaves, recursively through contexts. Types
+   remain leaves; units, tags, aliases, and concrete values/functions do
+   not require a provision. Brackets affect later interpretations, not
+   this preliminary leaf-identity check. *)
+Definition result_already_provided (d : adecl) : bool :=
+  match d with
+  | ADUnit _ | ADTag _ _ _ | ADAlias _ _ => true
+  | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => true
+  | _ => false
+  end.
+Inductive ResultSpecLeaf (W : world) : string -> spec -> (nat * option name) -> Prop :=
+| RSLMethod : forall p pa dn br s,
+    resolve_sym W p pa = Some s ->
+    ResultSpecLeaf W p (Spec (Some pa) (Some dn) br) (s,Some dn)
+| RSLPlain : forall p pa br s d,
+    resolve_sym W p pa = Some s -> w_decl W s = Some d ->
+    (forall n its, d_ast d <> ADCtx n its) ->
+    result_already_provided (d_ast d) = false ->
+    ResultSpecLeaf W p (Spec (Some pa) None br) (s,None)
+| RSLContext : forall p pa br c d n its sp k,
+    resolve_sym W p pa = Some c -> w_decl W c = Some d ->
+    d_ast d = ADCtx n its -> In sp its ->
+    ResultSpecLeaf W (d_mod d) sp k ->
+    ResultSpecLeaf W p (Spec (Some pa) None br) k.
 Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
-| RL : forall u d n ps a r b pa dn br s,
+| RL : forall u d n ps a r b sp k,
     w_decl W u = Some d -> d_ast d = ADFunctor n ps a r b ->
-    In (Spec (Some pa) dn br) r -> resolve_sym W (d_mod d) pa = Some s ->
-    ResultLeaf W u (s, dn).
+    In sp r -> ResultSpecLeaf W (d_mod d) sp k -> ResultLeaf W u k.
 
 (* [D78]/[D84] 3e: G's result is F's, leaf by leaf. *)
 Definition SameResult (W : world) (u g : nat) : Prop :=
@@ -4348,7 +4138,7 @@ Inductive BindsOf : xexpr -> list xbind -> Prop :=
 | BOApply : forall u th sm x r, BindsOf x r -> BindsOf (XApply u th sm x) (XBApply u th sm :: r).
 
 Inductive Mentions_name : aexpr -> name -> Prop :=
-| MNPath : forall n a, Mentions_name (AEPath [n] a) n
+| MNPath : forall n, Mentions_name (AEPath [n] None) n
 | MNSub : forall e e' n, Sub_expr e' e -> Mentions_name e' n -> Mentions_name e n
 
 with Sub_expr : aexpr -> aexpr -> Prop :=
@@ -4359,7 +4149,7 @@ with Sub_expr : aexpr -> aexpr -> Prop :=
 | SubRec : forall p a fs n y, In (n, Some y) fs -> Sub_expr y (AERec p a fs)
 | SubRecPun : forall p a fs n, In (n, None) fs -> Sub_expr (AEPath [n] None) (AERec p a fs)
 | SubIfC : forall c b e, Sub_expr c (AEIf c b e)
-| SubIfB : forall c ss tl e y, In (ASExpr y) ss \/ tl = Some y -> Sub_expr y (AEIf c (ABlock ss tl) e)
+| SubIfB : forall c ss tl e y, (exists st, In st ss /\ Stmt_sub y st) \/ tl = Some y -> Sub_expr y (AEIf c (ABlock ss tl) e)
 | SubIfE : forall c b y, Sub_expr y (AEIf c b (Some y))
 | SubMatchS : forall s arms, Sub_expr s (AEMatch s arms)
 | SubMatchA : forall s arms pt y, In (pt, y) arms -> Sub_expr y (AEMatch s arms)
@@ -4382,14 +4172,43 @@ with Stmt_sub : aexpr -> astmt -> Prop :=
 | SSLoop : forall b, Stmt_sub (AEBlock b) (ASLoop b)
 | SSBind : forall its sp y, In (sp, Some y) its -> Stmt_sub y (ASBind its).
 
-(* [D84] rule 7 / DECISIONS.md: at most one family in force produces a key. *)
-Definition FamilyProduces (W : world) (C : cx) (u : nat) (k : item) : Prop :=
-  exists fx th C' ks, nlook u (c_funs C) = Some fx /\ Family W u /\
-    ProvideResult W u (fold_left (fun C q => set_ty C (fst q) (snd q)) th C) (fun t => TAbs t) C' ks /\
-    In k ks.
+(* Automatic family demand checks an initial missing method key, then applies
+   its unique family in the context extended by preceding demands.  Type
+   arguments are temporary; a family provides methods only. *)
+Definition family_restore (C Cr : cx) : cx :=
+  Cx (c_ty C) (c_sub Cr) (c_vals Cr) (c_fns Cr) (c_mths Cr)
+     (c_funs Cr) (c_apps Cr) (c_locals Cr).
 
-Definition OnlyFamily (W : world) (C : cx) (u : nat) (k : item) : Prop :=
-  forall u', u' <> u -> ~ FamilyProduces W C u' k.
+
+Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
+    : cx -> nat -> subst -> subst -> smap -> cx -> Prop :=
+| FamilyStepApply : forall C ot m u fx matching th sm Cu nsu Cr ks,
+    In (mkey ot m) wanted -> mlook ot m (c_mths C0) = None ->
+    nlook u (c_funs C0) = Some fx -> nlook u (c_funs C) = Some fx ->
+    Family W u -> OnlyFamily W C0 u (mkey ot m) ->
+    Forall (fun q => Poly W u (fst q)) matching ->
+    FunCtx W u Cu nsu ->
+    (forall t, Poly W u t -> nlook t (c_ty Cu) <> None -> exists tt, In (t, tt) th) ->
+    (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here,
+       nlook t (c_ty (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C)) = Some here /\
+       In (t, canon (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) here) th) ->
+    FixedAgreement W (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) u ->
+    Satisfies (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) Cu nsu sm ->
+    ProvideResult W u (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C)
+       (fun t => TAbs t) Cr ks ->
+    In (mkey ot m) ks ->
+    FamilyStep W C0 wanted C u matching th sm (family_restore C Cr).
+
+(* Group identity is the inferred matching substitution.  Distinct groups
+   may emit equal complete type arguments after reading the other inputs. *)
+Inductive Demand (W : world) (C0 : cx) (wanted : list item)
+    : list (nat * subst) -> cx -> (xexpr -> xexpr) -> cx -> Prop :=
+| DemandDone : forall used C,
+    Demand W C0 wanted used C (fun x => x) C
+| DemandApply : forall used C u matching th sm Cm wrap Cf,
+    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th sm Cm ->
+    Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
+    Demand W C0 wanted used C (fun x => XApply u th sm (wrap x)) Cf.
 
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
@@ -4419,12 +4238,10 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     d_assumes d = [] -> TyOf W (d_mod d) [] None t0 t ->
     (exists F0 t', Ex W P F0 (Cx [] [] [] [] [] [] [] []) i (Some t) x t' /\ fits t' t /\
                    fr_mod F0 = d_mod d) ->
-    Ex W P F C (AEPath pa None) exp x t
+    Ex W P F C (AEPath pa None) exp (XConst s x) t
 (* a tag applied to its payload *)
 | ExTag : forall F C exp pa a args s bs xs pay y v ty,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
-    (* a bare handle becomes a `Ref`/`Array` only in the library (note 32) *)
-    ~ (PlatformRefTag W s /\ ~ InLibrary W (fr_mod F)) ->
     Brackets W (fr_mod F) (c_ty C) s a bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->
@@ -4439,6 +4256,16 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     SigOf W f (c_ty C) None g ->
     Args W P F C args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp (XCallD f (theta_at W C f) sm xs) (sg_ret g)
+(* Defined calls may first demand missing methods from unique families. *)
+| ExCallDDemand : forall F C exp pa args f Cf ns sm g xs wrap C',
+    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
+    (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
+    CtxOf W f Cf ns ->
+    Demand W C (map (at_site C) ns) [] C wrap C' ->
+    Satisfies C' Cf ns sm -> SigOf W f (c_ty C') None g ->
+    Args W P F C' args (sg_params g) xs ->
+    Ex W P F C (AECall pa None args) exp
+       (wrap (XCallD f (theta_at W C' f) sm xs)) (sg_ret g)
 (* an abstract fn: whatever provides it here *)
 | ExCallA : forall F C exp pa args f g xs,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
@@ -4589,6 +4416,21 @@ with MethCall (W : world) (P : xprogram) : frame -> cx -> xexpr -> ty -> path ->
     MethCall W P F C ox ot [n] args
              (XCallD att (theta_at W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) att) sm (ox :: xs))
              (sg_ret g)
+(* Defined attached calls can demand methods after installing receiver arguments.
+   Their source arguments are still checked in the original caller context. *)
+| MCAttachedDefinedDemand : forall F C ox ot n args h att Ca ns sm g xs rargs wrap Cd,
+    head ot = Some h -> Attached W h n att ->
+    ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
+    (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
+    rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
+    CtxOf W att Ca ns ->
+    Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
+      (map (at_site (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)) ns) []
+      (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
+    Satisfies Cd Ca ns sm -> SigOf W att (c_ty Cd) (Some ot) g ->
+    Args W P F C args (sg_params g) xs ->
+    MethCall W P F C ox ot [n] args
+      (wrap (XCallD att (theta_at W Cd att) sm (ox :: xs))) (sg_ret g)
 (* an abstract attached method: a key the context provides ([D36]) *)
 | MCAttachedAbstract : forall F C ox ot n args h att x t,
     head ot = Some h -> Attached W h n att ->
@@ -4615,17 +4457,22 @@ with Provided (W : world) (P : xprogram) : frame -> cx -> xexpr -> ty -> nat -> 
    receiver becomes ot); the call is elaborated as if preceded by `bind F;`
    at θ, in a scope of its own: `XApply F θ sm` around the call.  No search:
    at most one family in a context produces a key (DECISIONS.md, rule 7). *)
-| PrFamily : forall F C ox ot m args u fx th sm Cu nsu C' ks g xs,
+| PrFamily : forall F C ox ot m args u fx matching th sm Cu nsu C' ks g xs,
     mlook ot m (c_mths C) = None ->
     nlook u (c_funs C) = Some fx -> Family W u ->
+    Forall (fun q => Poly W u (fst q)) matching ->
     FunCtx W u Cu nsu ->
-    (* θ: P(F) read off the key *)
-    (forall t, Poly W u t -> exists tt, In (t, tt) th) ->
-    ProvideResult W u (fold_left (fun C q => set_ty C (fst q) (snd q)) th C) (fun t => TAbs t) C' ks ->
+    (* θ covers the polymorphic inputs actually present in F's own context. *)
+    (forall t, Poly W u t -> nlook t (c_ty Cu) <> None -> exists tt, In (t, tt) th) ->
+    (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here,
+       nlook t (c_ty (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C)) = Some here /\
+       In (t, canon (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) here) th) ->
+    FixedAgreement W (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) u ->
+    ProvideResult W u (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) (fun t => TAbs t) C' ks ->
     In (mkey ot m) ks ->
     (* uniqueness: no other family in force produces this key *)
     OnlyFamily W C u (mkey ot m) ->
-    Satisfies C Cu nsu sm ->
+    Satisfies (fold_left (fun C q => set_ty C (fst q) (snd q)) matching C) Cu nsu sm ->
     mlook ot m (c_mths C') = Some g ->
     Args W P F C args (sg_params g) xs ->
     Provided W P F C ox ot m args (XApply u th sm (XMeth ox m (rkey C' ot m) xs)) (sg_ret g)
@@ -4715,12 +4562,12 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     BindItem W P F C (Spec (Some pa) None None, Some y) (XBindVal v x)
              (provide C (IVal v) a (set_val C v declared)) F []
 (* `bind f = g;`: g a defined fn whose signature, read here, is f's *)
-| BFnBind : forall F C pa f g sg pv sm a,
+| BFnBind : forall F C pa f g sg pg sm a,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     SigOf W f (c_ty C) None sg ->
-    FnProvider W P F C (AEPath [pv] None) sg None g sm ->
+    FnProvider W P F C (AEPath pg None) sg None g sm ->
     AppOf W f (c_ty C) a ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath [pv] None)) (XBindFn f g sm)
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (XBindFn f g sm)
              (provide C (IFn f) a (set_fn C f sg)) F []
 (* [D70] `bind f = |ps| body;`: see LambdaProvider *)
 | BFnLambda : forall F C pa f sg ps rt body pid pre sm a,
@@ -4735,7 +4582,7 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
    defined fn (eta-expanded to take the receiver, [D54]), or a lambda *)
 | BMethBind : forall F C pa dn a y r m bs rt sg target pre sm ap,
     resolve_sym W (fr_mod F) pa = Some r -> MethodNamed W (fr_mod F) r dn m ->
-    Brackets W (fr_mod F) [] m a bs ->
+    Brackets W (fr_mod F) (c_ty C) m a bs ->
     TyOf W (fr_mod F) (bs ++ c_ty C) None (ATRef pa None) rt ->
     SigOf W m (bs ++ c_ty C) (Some rt) sg ->
     MethProvider W P F C y sg rt target pre sm ->
@@ -4763,7 +4610,8 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here, nlook t (c_ty C) = Some here /\
         In (t, canon C here) th) ->
     (* rule 5: fixed inputs unchanged since the provision *)
-    (forall x tx, In (x, tx) fx -> nlook x (c_ty C) = Some tx) ->
+    (forall x tx, In (x, tx) fx -> exists here,
+      nlook x (c_ty C) = Some here /\ canon C here = canon C tx) ->
     Satisfies C Cu ns sm ->
     (* outputs: fresh where the symbol is already in force *)
     (forall t, FunOutputs W u t ->
@@ -4777,6 +4625,11 @@ with BindItem (W : world) (P : xprogram) : frame -> cx -> (spec * option aexpr) 
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh -> incl nsh nsu ->
+    (* Copying requires the target fixed inputs now and preserves every
+       known fixed interpretation carried by the existing source binding. *)
+    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
+    (forall x, Fixed W h x -> Fixed W u x) ->
+    FixedAgreement W C h ->
     SameResult W u h ->
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
@@ -4824,6 +4677,8 @@ with MethProvider (W : world) (P : xprogram) : frame -> cx -> aexpr -> fsig -> t
     (exists rn ps r b, ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
     head rt = Some rg ->
     CtxOf W att Ca ns -> Satisfies C Ca ns sm ->
+    SigOf W att (c_ty C) None
+      (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
     MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (fun x => x) sm
 | MPWrapped : forall F C pa sg rt g sm w n Cg nsg,
     FnProvider W P F C (AEPath pa None) sg None g sm ->
@@ -4843,7 +4698,7 @@ with MethProvider (W : world) (P : xprogram) : frame -> cx -> aexpr -> fsig -> t
    the captured names as those vals (`let x = v;` in front); its needs are
    answered by the same items here. *)
 with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * option aty) -> option aty -> aexpr -> fsig -> option ty -> nat -> (xexpr -> xexpr) -> smap -> Prop :=
-| LP : forall F C ps rt body sg this pid caps capvals Cl Fl lbody keys sm,
+| LP : forall F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm,
     length ps = length (sg_params sg) -> NoDup (map fst ps) ->
     Forall2 (fun pq t => match snd pq with
                          | Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ canon C t' = canon C t
@@ -4851,7 +4706,7 @@ with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * opt
     match rt with Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ canon C t' = canon C (sg_ret sg)
                  | None => True end ->
     (* captured: the enclosing locals it mentions, less its parameters *)
-    (forall n, In n caps <-> (Mentions_name body n /\ slook n (c_locals C) <> None /\ ~ In n (map fst ps))) ->
+    (forall n, In n caps <-> (Mentions_name body n /\ slook n (c_locals C) <> None /\ ~ In n (map fst ps) /\ fr_applying F = [])) ->
     NoDup caps -> length capvals = length caps -> Forall (Fresh W) capvals -> NoDup capvals ->
     Fresh W pid ->
     (* the provider's own context: everything here, the captured vals in
@@ -4867,11 +4722,13 @@ with LambdaProvider (W : world) (P : xprogram) : frame -> cx -> list (name * opt
     Numbering Fl this (map fst ps) -> Forall (Named Fl) caps -> Forall (Named F) caps ->
     BlkE W P Fl (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
                            (combine (map fst ps) (sg_params sg)) Cl)
-         (ABlock [] (Some body)) (Some (sg_ret sg)) lbody (sg_ret sg) ->
+         (ABlock [] (Some body)) (Some (sg_ret sg)) lbody ltype ->
+    fits ltype (sg_ret sg) ->
     body_of P pid = Some (fold_right (fun q x => XLet (var_of Fl (fst q)) (XVl (snd q)) x) lbody
                                     (combine caps capvals)) ->
     (* its needs: every key in force here, each answered by itself *)
-    (forall k, In k keys <-> (provides Cl k /\ match k with ITy _ => False | _ => True end)) ->
+    (forall k, In k keys <-> (provides Cl k /\
+       (match k with ITy _ => False | _ => True end) /\ k = provision_id k)) ->
     NoDup keys -> sm = map (fun k => (rkey_of Cl k, rkey_of C k)) keys ->
     LambdaProvider W P F C ps rt body sg this pid
       (fun x => fold_right (fun q x => XBindVal (snd q) (XVar (var_of F (fst q))) x) x (combine caps capvals))
@@ -4940,23 +4797,38 @@ Definition FnElab (W : world) (P : xprogram) (f : nat) : Prop :=
    fns are primitives (`prim_of_name`, Part IV), wasistd's `i32_zero`/
    `i32_one` the I32 constants, and an abstract functor of those modules a
    platform binding (DRAFT NOTE 9). *)
-Definition platform_mod (p : string) : Prop :=
-  ends_with "lib/wasm.moss" p \/ ends_with "lib/wasip1.moss" p \/ ends_with "lib/wasistd.moss" p.
+Definition platform_mod (W : world) (p : string) : Prop :=
+  LibraryModule W "wasm" p \/ LibraryModule W "wasip1" p \/ LibraryModule W "wasistd" p.
 
 Inductive PlatformEntry (W : world) (P : xprogram) : item -> xdentry -> Prop :=
-| PEZero : forall v d, w_decl W v = Some d -> platform_mod (d_mod d) ->
+| PEZero : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
     filed_name (d_ast d) = Some (NSName, "i32_zero") -> PlatformEntry W P (IVal v) (XDVal (XVI32 0%uint63))
-| PEOne : forall v d, w_decl W v = Some d -> platform_mod (d_mod d) ->
+| PEOne : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
     filed_name (d_ast d) = Some (NSName, "i32_one") -> PlatformEntry W P (IVal v) (XDVal (XVI32 1%uint63))
-| PEPrim : forall f d n ps rt pr, w_decl W f = Some d -> platform_mod (d_mod d) ->
-    d_ast d = ADFn RPlain n ps rt None -> prim_of_name n = Some pr ->
+| PEPrim : forall f d n ps rt body pr, w_decl W f = Some d -> platform_mod W (d_mod d) ->
+    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = Some pr ->
     PlatformEntry W P (IFn f) (XDPrim pr)
-| PEUnsupported : forall f d n ps rt i, w_decl W f = Some d -> platform_mod (d_mod d) ->
-    d_ast d = ADFn RPlain n ps rt None -> prim_of_name n = None -> nth_error (xo_prims P) i = Some n ->
+| PEUnsupported : forall f d n ps rt body i, w_decl W f = Some d -> platform_mod W (d_mod d) ->
+    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = None -> nth_error (xo_prims P) i = Some n ->
     PlatformEntry W P (IFn f) (XDPrim (PUnsupported i))
-| PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod (d_mod d) ->
+| PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
     PlatformEntry W P (IFun u) (XDFun h [] []).
+
+(* The runtime type prefix is a representation of the source context,
+   separate from the values and code supplied by the platform. Its six
+   machine heads are fresh and selected from the actual library scope. *)
+Definition initial_machine_names : list name :=
+ ["I32";"I64";"F32";"F64";"StructRef";"ArrayRef"].
+Definition initial_machine_subst(W:world)(base:nat):subst:=
+ flat_map(fun q=>match w_library W with
+ |None=>[]
+ |Some dir=>match w_scope W(String.append dir "wasm.moss")NSName(snd q)with
+   |Some(ESym symbol)=>[(symbol,TNom(base+fst q)[])]
+   |_=>[]end end)(combine(seq 0 6)initial_machine_names).
+Definition InitialTypes(W:world)(C:cx)(types:subst):Prop:=
+ exists base,(forall slot,slot<6->Fresh W(base+slot))/\
+ forall key,nlook key types=option_map(app_subst(initial_machine_subst W base))(nlook key(c_ty C)).
 
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
@@ -4966,9 +4838,10 @@ Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
     (* main: the entry's `main`, a defined fn assuming only what the
        platform provides *)
     w_scope W (b_entry b) NSName "main" = Some (ESym (xo_main P)) /\
-    (exists d ps rt body, w_decl W (xo_main P) = Some d /\ d_ast d = ADFn RPlain "main" ps rt (Some body)) /\
-    (exists C ns, CtxOf W (xo_main P) C ns /\ map fst (xo_env P) = map (rkey_of C) ns /\
-       Forall (fun ie => PlatformEntry W P (fst ie) (snd ie)) (xo_env P)) /\
+    (exists d n ps rt body, w_decl W (xo_main P) = Some d /\ d_ast d = ADFn RPlain n ps rt (Some body)) /\
+    (exists C ns types platform, CtxOf W (xo_main P) C ns /\ InitialTypes W C types /\
+       xo_env P = xinst [] types ++ platform /\ map fst platform = map (rkey_of C) ns /\
+       Forall (fun ie => PlatformEntry W P (fst ie) (snd ie)) platform) /\
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
     (LangSym W "bool" NSName "Bool" (xo_bool P) /\ LangSym W "bool" NSName "True" (xo_true P) /\
      LangSym W "bool" NSName "False" (xo_false P)
@@ -5027,10 +4900,10 @@ End Elaboration.
       name at the receiver"; the draft reads this as a provision at the
       receiver's canonical type exactly ([D62]), as the elaborator does —
       a provision at another instantiation of the same head does not win.
-  12. (spec gap) [D61] `find_method_decl`: for context items the
-      elaborator also looks for the attached method in the *current*
-      module, not only the receiver's; the draft follows [D61] (receiver's
-      file only).
+  12. (resolved) [D61] `find_method_decl` reads an attached method in
+      the receiver's file only, as Attached does. The redundant lookup
+      in the current module has been removed together with note 57's
+      detached-method fallback.
 
    CHANGES THE PROOF WORK FORCED (RelFacts.v, RelExamples.v, RelNegative.v,
    RelFamily.v), recorded for the designer:
@@ -5091,7 +4964,7 @@ End Elaboration.
       `XApply F θ [] e` into `XApplyBr F [(h, bs', ps)] e`, where ps is the
       pairs of inst_smap θ Dr whose requirement e may look up and bs' the
       primitives they read.  PROVED (FastPath.fast_run, bound as
-      Certified.fast_path_agrees): for every program, argv, rd and fuel, the
+      OracleCertified.fast_path_agrees): for every program, argv, rd and fuel, the
       transformed program's run equals the original's unless the original
       reports XFuel; with CloX.engine_agrees, Certified.fast_path_engine_agrees
       covers the default pipeline.
@@ -5124,11 +4997,11 @@ End Elaboration.
       - `bind T = τ;` is XBindTy T τ (canonical) in a body and XBTy T τ in
         a functor body's binds (BTypeBind, BindsOf's BOTy); it was
         omitted before.
-      None of these changes what MossX computes (xinterp ignores XTag's
-      and XCallD's θ and XBindTy); the oracle's stdout, stderr and exit
-      status were checked identical before and after on every program of
-      tests/wasi, tests/errors and examples and on the compiler compiling
-      tests/wasi/tags.moss.
+      Checked GC casts now read these annotations. Runtime type bindings
+      and captured type arguments identify the generated allocation type;
+      incompatible raw-handle rewrapping traps, matching native ref.cast.
+      Tag annotations are canonicalized before emission, including merged
+      arguments nested inside nominal applications.
   28. (decided by the designer, Track A) θ in method keys: a method
       provision is still filed under its receiver and method (mkey, in
       c_mths and c_apps: at most one per key, [D62]), but its run-time key
@@ -5192,12 +5065,13 @@ End Elaboration.
       is now twice `walk_fuel`, which only a cycle uses up (Elab reports
       "contexts nest in a cycle"; the compiler stops at a context already
       being walked and reports it, e_deep), so it has no depth bound
-      either and rejects exactly the cycles.  Still bounded: the D84 walks
-      of a functor's result (Elab.result_mentions_go, expand_spec,
-      provide_spec, family_leaves at 17; lower.mention_walk and
-      codegen.result_keys at 16).  Tests: tests/wasi/context_deep.moss
-      (70 deep), tests/wasi/context_cycle.moss and
-      tests/errors/context_cycle.moss.
+      either and rejects exactly the cycles. The designer subsequently
+      required rejecting cycles at declaration, including unused contexts:
+      check_contexts now validates the declaration graph before lowering.
+      The remaining D84 walks use a bound derived from the declaration
+      graph's size rather than the old 16/17-level limits. Tests:
+      tests/wasi/context_deep.moss (70 deep), context_shared.moss and
+      tests/errors/context_cycle{,_unused,_nominal}.moss.
   31. (relation wrong, adjusted to the elaborator) Relevance (V.1).
       FreeIn's FBracket read a bracket's right side even when the head of
       `R[…]` resolves to nothing; the elaborator (free_type_syms) reads
@@ -5207,16 +5081,13 @@ End Elaboration.
       mentioned in a nominal's body (FNom) require nothing while the
       elaborator reads its fixed requirements: least is now over the R
       that agree with w_reqs on everything but tags and aliases.
-  32. (relation permissive) [D75]/m4: a `Ref`/`Array` built from a bare
-      `StructRef`/`ArrayRef`.  The elaborator rejects `Ref(h)`/`Array(h)`
-      outside the library's directory, but `ExTag` accepted it.  Minimal
-      rule: `ExTag` gains the premise
-      `~ (PlatformRefTag W s /\ ~ InLibrary W (fr_mod F))`, where
-      `PlatformRefTag W s := LangSym W "wasm" NSName "Ref" s \/
-      LangSym W "wasm" NSName "Array" s`, and `InLibrary W p` says p's path
-      has the directory of the loaded `lib/wasm.moss` as a prefix, as
-      Elab's `in_library` checks.  (RelSupport's `ex` discharges it with
-      `not_ref` for every other tag.)
+  32. [D75]/[D81]: reconstructing Ref/Array from an opaque handle is now
+      modeled by the native checked cast, inside or outside the selected
+      library. The old directory restriction in ExTag and the oracle was
+      an unsupported-case boundary for missing runtime casts, and is
+      removed. Source tag typing still checks the declared payload; the
+      runtime checks the allocation kind and grounded held type.
+
 
    CHANGES DECIDED BY THE DESIGNER (spec fixes):
   33. (relation and both implementations unsound; decided: rejected)
@@ -5272,15 +5143,13 @@ End Elaboration.
       Oracle outputs are identical on all 243 programs and on the compiler
       compiling tests/wasi/tags.moss; the self-hosted compiler (src/) is
       unchanged and still accepts such a program.
-  41. (discrepancy, open) `main` under another name.  Elaborates asks
-      that the entry's scope map `main` to xo_main and that xo_main's
-      declaration be `fn main` (ADFn RPlain "main" ...).  The elaborator
-      takes whatever symbol the entry's scope has under `main`, so it runs
-      an entry that is only `import "./lib.moss" use start as main;`,
-      whose `main` is lib's `fn start`; that program has no relation.
-      Either the relation drops the name (the scope already says which fn
-      is main), or the elaborator asks that the entry declare `main`
-      itself.  Nothing proved depends on the choice.
+  41. (resolved by the designer: imported main is allowed) The entry's
+      scope identifies main, regardless of its declaration's spelling.
+      Elaborates now permits `import "./lib.moss" use start as main;`
+      where lib declares `fn start`. IsMainFn and both implementations
+      give the root context to a function in scope as main in any loaded
+      module, so its body is checked consistently wherever called (D16).
+      Test: tests/wasi/imported_main.moss, whose imported main binds Heap.
   42. (relation incomplete and wrong; adjusted to the elaborator, which
       changes only where noted) Divergence in blocks.  The elaborator
       gives a block two types: the one its value has (`|` when its last
@@ -5403,9 +5272,8 @@ End Elaboration.
       for a module's own `fn main` (IsMainFn), as the elaborator does,
       by symbol (Gc's items are read in lib/wasm.moss, where they are in
       scope); the merge, the context and the needs are over both.  The
-      relation only; the oracle is unchanged.  Still open: note 41 (a
-      `main` imported under that name), which IsMainFn, like the
-      elaborator's is_main, does not count.
+      relation only at that stage. Note 41 now also counts an imported
+      main in IsMainFn and in both implementations.
   55. (elaborator fragile; made total for the proof, no change on any
       program tried) [D43] Elab.canon followed the merges with a fuel of
       5000 that counted the type's depth as well as the merge steps, and
@@ -5460,14 +5328,16 @@ End Elaboration.
       stdout, stderr and exit status are identical to the previous
       oracle's on all programs and on the compiler compiling
       tests/wasi/tags.moss, but for the new error test.
-      STILL OPEN (reported, not changed): find_method_decl, for a method
+      RESOLVED (designer decision): find_method_decl no longer falls back
+      to a detached method in the receiver's home module. Previously, for a method
       item `A.m` of a context, falls back to a detached `.m` of A's own
       module when none is in scope here; MethodNamed (IEMeth) does not, so
       `context K = Int, A, A.gimme;` with `.gimme` detached in A's module
       and not imported is accepted (exit status 0) with no CtxOf, while a
       call `a.gimme()` in a body is rejected ("not a detached method in
-      scope").  Either the elaborator drops the fallback (newly rejecting
-      such a context) or IEMeth gains it: a designer's choice.
+      scope"). Both implementations now reject such a context, as
+      MethodNamed requires. Tests: context_detached_unimported.moss and
+      context_detached_imported.moss.
   58. (elaborator fragile; made robust for the proof, no change on any
       program) fn_info caches a function's info under its symbol, but
       computed it from the gsym record it was handed, so the cache was
@@ -5547,17 +5417,14 @@ End Elaboration.
       type (or a float literal), so `assume Int, zero { fn f(): Int { 0 }
       }` was accepted (the oracle ran it) with no reading.  ExLit now also
       takes zero's type.
-  64. (relation and elaborator disagree; adjusted to the relation,
-      provisionally) [D68] A literal's arithmetic is `.add`/`.mul`/`.div`
-      provided at its type (LitTerm: `mlook t m (c_mths C)`), but the
-      elaborator's lang_call went through provided_call, which on a miss
-      applies a family in force that produces the key ([D84] rule 7), so
-      `2` under `bind AddF = AddG;` for `functor AddF[T]: -> T.add;` was
-      accepted (the oracle ran it) with no reading: LitTerm has no
-      PrFamily.  lang_call now reports the family instead ("a literal's
-      arithmetic is not a call (D68)"); a miss with no family reports what
-      it did.  The other way, LitTerm rules mirroring PrFamily, is the
-      designer's call.  Test: tests/errors/literal_family.moss.
+  64. (resolved by the designer: literal arithmetic follows families)
+      [D68, D84 rule 7] LitOp and LitTerm now allow the same unique-family
+      provision as method calls, including its type bindings, requirements,
+      produced keys and resulting method signature. Direct arithmetic
+      constructors remain valid. Both elaborators check each literal
+      arithmetic method takes and returns the literal's own type; arbitrary
+      selected library modules need not have a hardcoded standard signature.
+      Tests: tests/wasi/literal_family.moss and the literal_signature fixture.
   65. (elaborator unsound on bundles the parser does not write; adjusted
       to the relation) [D68] lit_value and is_float_lit read a literal's
       text in the parser's normal form (Parse.lit_norm): digits, then
@@ -5586,44 +5453,22 @@ End Elaboration.
       numbers), and report the missing provision.  lang_call now reports
       it itself (Elab.no_provision, the same message), so a literal's
       arithmetic is provided_call's direct case only (BodyLit.v).
-  68. (discrepancy, open; the elaborator accepts what the relation
-      rejects) [D75]/note 32: two loaded modules whose paths end in
-      `lib/wasm.moss`.  Imports resolve relative to the importer, so a
-      program may load its own `lib/wasm.moss` beside the library's:
-
-        # dir/lib/wasm.moss
-        tag Ref(Int);
-        # dir/main.moss
-        import "<the library>/wasi.moss" use WasiStd;
-        import "<the library>/wasistd.moss" use Branch;
-        import "<the library>/wasm.moss" use Wasm;
-        import "<the library>/wasip1.moss" use Wasi;
-        import "./lib/wasm.moss" as mine use Ref;
-        assume Std { fn get(r: Ref): Int { match r { Ref(n) => n } } }
-        assume Wasm, Wasi, Branch {
-          fn main() { bind WasiStd; let r = Ref(one);
-                      putchar((get(r) + char::digit0.code()).char());
-                      putchar(char::newline); } }
-
-      The oracle runs it (prints `1`, exit 0): lang_modules takes the
-      library's wasm.moss (loaded first), so is_platform_sym does not
-      find the program's `Ref`.  Part V's LangSym reads any module with
-      that suffix, so the program's `Ref` is a PlatformRefTag, and main.moss
-      is under neither loaded `lib/` directory (InLibrary): no ExTag
-      derivation.  BodyTag.v so keeps Hwasm (at most one such module) as a
-      hypothesis; it cannot be discharged from the loader.  The same holds
-      of every library module LangSym names (Hbool, Hlang, Hnumsig, Hfloat
-      read the first `lib/<short>.moss`).  Proposed fixes, not made (each
-      changes acceptance, on programs such as this one only): (a) the
-      elaborator rejects a bundle in which two loaded modules end in the
-      same `lib/<short>.moss` of lang_modules' list (then lang_modules has
-      one entry per short, and Hwasm follows from elaboration); or (b) Part
-      V names the library by the prelude's directory (b_prelude), LangSym
-      reading the module at `<that directory>/<short>.moss`, and the
-      elaborator's lang_modules the same path (the world would carry the
-      prelude's path).  (b) is the principled one: the program above is
-      then accepted by both, and a program's own `lib/wasm.moss` is never
-      the platform's.
+  68. (resolved by the designer: library identity is the prelude's
+      directory) A user module named `lib/wasm.moss` is not the selected
+      library. The world now carries that directory (w_library), tied to
+      b_prelude by WorldOf. LangSym selects a symbol from the scope of the
+      exact sibling module `<directory>/<short>.moss`, as lang_symbol does;
+      a reexport is valid, and a declaration need not live in that module.
+      This scope alignment also removes the old, false generic Hlang
+      assumption: int.moss itself reexports num.moss's detached `.eq`.
+      LibraryFacts proves the identity/scope facts from the loader.
+      PlatformRefTag follows the selected wasm scope (including deliberate
+      reexports), as is_platform_sym does; InLibrary uses the same directory.
+      Native primitive/operator lookup uses the same exact directory, not
+      a last-basename match. Disabling automatic prelude imports retains
+      the default `lib/` directory from the working directory; it does not
+      disable library identity. Tests: tests/wasi/library_identity.moss,
+      with a user's own lib/wasm.moss, in both native prelude modes.
 
    CHANGES OF TRACK B (the typing bridge; notes 70-71):
   70. (relation permissive; adjusted to the elaborator, no change in what
@@ -5671,7 +5516,12 @@ End Elaboration.
    host file system `rd` (both inputs, like the program). *)
 Definition program_of (p : xprogram) (argv : list (list int)) (rd : list int -> option (list int)) : xprog :=
   mkXProg (fun f => Elaboration.nlook f (xo_fns p)) (fun u => Elaboration.nlook u (xo_funs p))
-          (xo_bool p) (xo_true p) (xo_false p) argv rd.
+          (xo_bool p) (xo_true p) (xo_false p) argv rd (xo_cast p)
+    (fun h => match Elaboration.nlook h (xo_inputs p) with Some ts => ts | None => [] end)
+    (fun h => match Elaboration.nlook h (xo_exports p) with Some sm => sm | None => [] end)
+    (xo_immutable p)
+    (fun h => match Elaboration.nlook h (xo_fixed_inst p) with Some th => th | None => [] end)
+    (fun h => match Elaboration.nlook h (xo_fixed_keys p) with Some keys => keys | None => [] end).
 
 (* D1 as a property of the relation: which callee a method call means is
    determined by the context and the key — the case analysis of
@@ -5683,26 +5533,27 @@ Inductive choice := CDirect (f : nat) | CProv (i : item) | CFamily (u : nat) (i 
 (* The provision chosen is its identity, the key without θ: θ is where the
    provision was made (Part V, note 28), and for a family application the
    application's own θ (DRAFT NOTE 7). *)
-Definition provision_id (it : item) : item :=
-  match it with IMth r m _ => IMth r m [] | _ => it end.
 
-Definition choice_of (x : xexpr) : option choice :=
+Definition provision_id (it : item) : item := Elaboration.provision_id it.
+
+Fixpoint choice_of (x : xexpr) : option choice :=
   match x with
   | XCallD f _ _ _ => Some (CDirect f)
   | XMeth _ _ it _ => Some (CProv (provision_id it))
   | XApply u _ _ (XMeth _ _ it _) => Some (CFamily u (provision_id it))
+  | XApply _ _ _ rest => choice_of rest
   | _ => None
   end.
 
 (* What Certified.v binds today.  Read the comment on each. *)
-(* The front end's contract, in Ender's ProblemGrammar / parser_sound /
-   parser_complete pattern: `Syntax.Derives` (Part I.2, a DRAFT for the
-   designer's review) is the declarative grammar of Moss's surface syntax
-   over a file's bytes, relating it to the surface AST of Part I, and the
-   parser must be sound and complete for it.  FrontEnd.v and
-   FrontEndComplete.v prove both for Parse.parse_moss, and Certified.v
-   binds them (`FrontEndCertified <: FRONT_END`). *)
+(* The lexer agrees with Lexes on the bytes it receives. The parser
+   agrees with Derives, which includes source normalization before lexing. *)
 Module Type FRONT_END.
+Import Stdlib.Strings.Byte.
+  Parameter lex : list byte -> option (list Syntax.token).
+  Axiom lexer_sound : forall bytes ts, lex bytes = Some ts -> Syntax.Lexes 0 bytes ts.
+  Axiom lexer_complete : forall bytes ts, Syntax.Lexes 0 bytes ts -> lex bytes = Some ts.
+
   Parameter parse : string -> Input.res Input.afile.
   Axiom parser_sound : forall s f, parse s = Input.Good f -> Syntax.Derives (list_byte_of_string s) f.
   Axiom parser_complete : forall s f, Syntax.Derives (list_byte_of_string s) f -> parse s = Input.Good f.
@@ -5720,16 +5571,9 @@ Module Type LOADER.
 End LOADER.
 
 Module Type PROVED_NOW.
-  (* The elaborator: a total Gallina function from the tokens of a bundle
-     to a program or an error (so total and deterministic by construction),
-     reading the tokens with Part I's reader. *)
   Parameter elaborate : Input.bundle -> Input.res xprogram.
-  Parameter elaborate_sx : Input.sx -> Input.res xprogram.
-  Parameter elaborate_sx_reads : forall x,
-    elaborate_sx x = match Input.read_bundle x with
-                     | Input.Good b => elaborate b
-                     | Input.Bad m => Input.Bad m
-                     end.
+
+  Parameter interp : nat -> gsig -> denv -> venv -> expr -> res.
 
   (* Core Moss's dynamics: big-step evaluation is deterministic, and the
      fueled interpreter is adequate for it (both directions, on Ok). *)
@@ -5807,8 +5651,426 @@ Module Type PROVED_NOW.
     choice_of x1 = choice_of x2.
 End PROVED_NOW.
 
-(* The whole contract.  Certified.v does NOT bind this yet; the obligations
-   below PROVED_NOW are pending (see Certified.v for the list). *)
+(* Store typing and the laws that the concrete GC primitives satisfy. *)
+Module HeapAddress.
+Local Open Scope uint63_scope.
+
+(* The bits of a key, low first, up to the last 1. *)
+Fixpoint key_go (fuel : nat) (a : int) : list bool :=
+  match fuel with
+  | O => []
+  | S f => if a =? 0 then [] else (a land 1 =? 1) :: key_go f (a >> 1)
+  end.
+
+Definition key (a : int) : list bool := key_go 63 a.
+
+End HeapAddress.
+
+Module Heap.
+Local Unset Implicit Arguments.
+Import HeapAddress.
+(* A store typing: an address's kind (true: an array) and what its
+   contents (a box's value, an array's elements) satisfy.  It is keyed by
+   an address's bits (HeapAddress.key), so that no law needs a fact about
+   machine-integer equality. *)
+Definition hty : Type := list bool -> option (bool * (xvalue -> Prop)).
+
+(* Ψ' extends Ψ: every address Ψ types, Ψ' types the same way. *)
+Definition hext (Psi Psi' : hty) : Prop :=
+  forall a k Q, Psi a = Some (k, Q) -> Psi' a = Some (k, Q).
+
+(* w is a reference (a tag over a heap address) of kind k whose contents
+   satisfy Q. *)
+Definition href (Psi : hty) (k : bool) (w : xvalue) (Q : xvalue -> Prop) : Prop :=
+  exists n a, w = XVTag n (XVRef a) /\ Psi (key a) = Some (k, Q).
+
+(* What a GC primitive needs of its arguments, for contents satisfying Q. *)
+Definition gc_pre (Psi : hty) (p : prim) (ws : list xvalue) (Q : xvalue -> Prop) : Prop :=
+  match p, ws with
+  | PBox _, [v] => Q v
+  | PDeref, [r] => href Psi false r Q
+  | PRefSet, [r; v] => href Psi false r Q /\ Q v
+  | PArrNew _, [v; XVI32 _] => Q v
+  | PArrLen, [r] => href Psi true r Q
+  | PArrGet, [r; XVI32 _] => href Psi true r Q
+  | PArrSet, [r; XVI32 _; v] => href Psi true r Q /\ Q v
+  | PArrFill, [r; XVI32 _; v; XVI32 _] => href Psi true r Q /\ Q v
+  | PArrCopy, [r; XVI32 _; r2; XVI32 _; XVI32 _] =>
+      href Psi true r Q /\ exists Q2, href Psi true r2 Q2 /\ forall x, Q2 x -> Q x
+  | _, _ => False
+  end.
+
+(* What it gives back, when it gives a value w, with Ψ' its store typing after. *)
+Definition gc_post (Psi Psi' : hty) (p : prim) (Q : xvalue -> Prop) (w : xvalue) : Prop :=
+  hext Psi Psi' /\
+  match p with
+  | PBox rf => exists a, w = XVTag rf (XVRef a) /\ Psi (key a) = None /\ Psi' (key a) = Some (false, Q)
+  | PArrNew ar => exists a, w = XVTag ar (XVRef a) /\ Psi (key a) = None /\ Psi' (key a) = Some (true, Q)
+  | PDeref | PArrGet => Q w
+  | PArrLen => exists n, w = XVI32 n
+  | _ => w = XVUnit
+  end.
+
+Definition is_gc (p : prim) : bool :=
+  match p with
+  | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
+  | PArrFill | PArrCopy => true
+  | _ => false
+  end.
+
+Module Type HEAP_LAWS (Import Prims : PRIM_SEMANTICS).
+  Parameter heap_ok : hty -> mstate -> Prop.
+
+  (* the invariant holds of fewer addresses, and of weaker predicates *)
+  Axiom heap_mono : forall Psi Psi' st,
+    heap_ok Psi st ->
+    (forall a k Q', Psi' a = Some (k, Q') ->
+       exists Q, Psi a = Some (k, Q) /\ forall v, Q v -> Q' v) ->
+    heap_ok Psi' st.
+
+  (* of no address at all, it holds of any machine *)
+  Axiom heap_empty : forall st, heap_ok (fun _ => None) st.
+
+  (* every other primitive keeps it *)
+  Axiom heap_other : forall P p ws st Psi,
+    is_gc p = false -> heap_ok Psi st -> heap_ok Psi (snd (run_prim P p ws st)).
+
+  (* the GC primitives: a value as gc_post says, or a trap *)
+  Axiom heap_gc : forall P p ws st Psi Q,
+    heap_ok Psi st -> gc_pre Psi p ws Q ->
+    match run_prim P p ws st with
+    | (XOk w, st') => exists Psi', heap_ok Psi' st' /\ gc_post Psi Psi' p Q w
+    | (XTrap _, st') => heap_ok Psi st'
+    | _ => False
+    end.
+End HEAP_LAWS.
+
+End Heap.
+
+(* Public guarantees for the serialization boundary. The codec itself
+   lives in Sx.v. *)
+Module Type DUMP_CONTRACT.
+  Parameter dump : Type.
+  Parameter dump_file : Input.afile -> dump.
+  Parameter read_file : dump -> Input.res Input.afile.
+  Parameter read_bundle : dump -> Input.res Input.bundle.
+  Parameter wf_names : Input.afile -> bool.
+  Parameter elaborate : Input.bundle -> Input.res xprogram.
+  Parameter elaborate_sx : dump -> Input.res xprogram.
+
+  Axiom dump_reads : forall f f',
+    wf_names f = true -> read_file (dump_file f) = Input.Good f' -> f' = f.
+  Axiom elaborate_sx_reads : forall x,
+    elaborate_sx x =
+      match read_bundle x with
+      | Input.Good b => elaborate b
+      | Input.Bad m => Input.Bad m
+      end.
+End DUMP_CONTRACT.
+
+Module SourceReading.
+Local Unset Implicit Arguments.
+Import Input Elaboration.
+
+(* The fields of WorldOf about the loader: everything but requirements and
+   field numbering. *)
+Record LoaderReading (b : bundle) (W : world) : Prop := {
+  lr_acyclic : exists rank : string -> nat, forall p m t imp,
+      Loaded b p -> module_of b p = Some m -> In (t, imp) (imports_of b m) ->
+      module_of b t <> None /\ rank t < rank p;
+  lr_decl_sound : forall s d, w_decl W s = Some d -> s <> 0 /\ Declared b d /\ kind_of (d_ast d) <> None;
+  lr_decl_complete : forall d, Declared b d -> kind_of (d_ast d) <> None ->
+      exists s, w_decl W s = Some d /\ forall s', w_decl W s' = Some d -> s' = s;
+  lr_exports : forall p ns n e, Loaded b p -> (w_exp W p ns n = Some e <-> Exports b W p ns n e);
+  lr_scope : forall p ns n e, Loaded b p -> (w_scope W p ns n = Some e <-> InScope b W p ns n e);
+  lr_attached : forall r n s, w_attached W r n = Some s <-> AttachedDecl W r n s;
+  lr_library : w_library W = Loader.library_dir (b_prelude b)
+}.
+
+(* The rest: requirements ([D71]/[D73]) and field numbering. *)
+Record ReqsReading (W : world) : Prop := {
+  rr_nodup : forall s, NoDup (w_reqs W s);
+  rr_plain : forall s k, kind_sym W s = Some k ->
+      k <> DKTag -> k <> DKAlias -> k <> DKType -> k <> DKUnit ->
+      forall t, In t (w_reqs W s) <-> AssumeTypes W s t;
+  rr_none : forall s, kind_sym W s = Some DKType \/ kind_sym W s = Some DKUnit -> w_reqs W s = [];
+  rr_closed : RelevanceClosed W (w_reqs W);
+  rr_least : forall R, RelevanceClosed W R ->
+      (forall s, kind_sym W s <> Some DKTag -> kind_sym W s <> Some DKAlias -> R s = w_reqs W s) ->
+      forall g, (kind_sym W g = Some DKTag \/ kind_sym W g = Some DKAlias) -> incl (w_reqs W g) (R g);
+  rr_listed : forall g d ps t n, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) -> In n ps ->
+      exists x, resolve_sym W (d_mod d) [n] = Some x /\ AssumeTypes W g x
+}.
+
+End SourceReading.
+
+(* Checked milestones toward whole-source elaboration and runtime typing.
+   Metadata and frame specifications are artifacts of the implementation. *)
+Module Type SOURCE_PROGRESS (C : PROVED_NOW).
+  Parameter metadata frame_specs loaded_world : Type.
+  Parameter load_world : Input.bundle -> Input.res loaded_world.
+  Parameter read_world :
+    loaded_world -> (nat -> list nat) -> (string -> nat) -> Elaboration.world.
+  Parameter module_ids : loaded_world -> list nat.
+  Parameter module_path : loaded_world -> nat -> string.
+  Parameter resolve_path :
+    loaded_world -> nat -> Input.path -> Input.res (option Elaboration.ent).
+  Parameter cached_requirements : metadata -> nat -> option (list nat).
+  Parameter elaborate_with_metadata :
+    Input.bundle -> Input.res (xprogram * metadata).
+  Parameter function_frame_specifications :
+    metadata -> xprogram -> option frame_specs.
+  Parameter lower_runtime : metadata -> xprogram -> option xprogram.
+
+  Axiom elaborate_metadata_projects : forall b,
+    C.elaborate b =
+      match elaborate_with_metadata b with
+      | Input.Good (p, _) => Input.Good p
+      | Input.Bad msg => Input.Bad msg
+      end.
+  Axiom loader_reads : forall b w requirements fields,
+    load_world b = Input.Good w ->
+    SourceReading.LoaderReading b (read_world w requirements fields).
+  Axiom world_of_reading : forall b W,
+    SourceReading.LoaderReading b W -> SourceReading.ReqsReading W ->
+    (forall a c, Elaboration.w_fld W a = Elaboration.w_fld W c -> a = c) ->
+    Elaboration.WorldOf b W.
+  Axiom world_resolves : forall b w requirements fields i path entity,
+    load_world b = Input.Good w -> In i (module_ids w) ->
+    resolve_path w i path = Input.Good entity ->
+    Elaboration.resolve (read_world w requirements fields) (module_path w i) path = entity.
+  Axiom elaborate_world_of : forall b p,
+    C.elaborate b = Input.Good p ->
+    exists w source requirements,
+      load_world b = Input.Good w /\
+      elaborate_with_metadata b = Input.Good (p, source) /\
+      (forall x l, cached_requirements source x = Some l -> requirements x = l) /\
+      forall fields, (forall a c, fields a = fields c -> a = c) ->
+      Elaboration.WorldOf b (read_world w requirements fields).
+  Axiom context_type_meanings : forall W s Ctx needs,
+    Elaboration.CtxOf W s Ctx needs -> forall t x,
+    Elaboration.nlook t (Elaboration.c_ty Ctx) = Some x ->
+    x = Elaboration.canon Ctx (TAbs t).
+  Axiom function_frames_total : forall b p source,
+    elaborate_with_metadata b = Input.Good (p, source) ->
+    exists specs, function_frame_specifications source p = Some specs.
+End SOURCE_PROGRESS.
+
+(* The reference run, with the entry point and initial provisions supplied
+   by elaboration. Both the safety and agreement contracts refer to it. *)
+Module ReferenceRun (C : PROVED_NOW).
+  Definition run p argv read fuel st :=
+    C.X.run_main fuel (program_of p argv read) (xo_main p) (xo_env p) st.
+End ReferenceRun.
+
+(* Typing judgments supplied by the runtime proof. The contracts below
+   spell out how they constrain an initial configuration and its outcome. *)
+Module Type RUNTIME_TYPING (C : PROVED_NOW).
+  Parameter representation context locals store : Type.
+  Definition representations := nsym -> option representation.
+  Definition functors := usym -> option (tele * tele * subst).
+  Parameter context_items : context -> tele.
+  Parameter context_subst : context -> subst.
+  Parameter empty_store : store.
+  Parameter well_formed : gsig -> representations -> xprog -> functors -> Prop.
+  Parameter typed : gsig -> representations -> xprog -> functors ->
+    option ty -> bool -> context -> locals -> xexpr -> ty -> Prop.
+  Parameter grounded : subst -> context -> Prop.
+  Parameter provides : gsig -> representations -> xprog -> functors ->
+    store -> subst -> tele -> xdenv -> Prop.
+  Parameter locals_ok : gsig -> representations -> xprog ->
+    store -> subst -> tele -> locals -> xvenv -> Prop.
+  Parameter inputs_form : gsig -> tele -> context -> Prop.
+  Parameter store_ok : gsig -> representations -> xprog -> store -> C.Prims.mstate -> Prop.
+  Parameter store_extends : store -> store -> Prop.
+  Parameter value_typed : gsig -> representations -> xprog -> store -> xvalue -> ty -> Prop.
+  Parameter HeapNonempty : C.Prims.mstate -> Prop.
+End RUNTIME_TYPING.
+
+Module RuntimeSpec (C : PROVED_NOW) (Source : SOURCE_PROGRESS C)
+    (Import T : RUNTIME_TYPING C).
+  Module Ref := ReferenceRun C.
+
+  Record expression_typing := ExpressionTyping {
+    signature : gsig;
+    reps : representations;
+    funs : functors;
+    return_type : option ty;
+    in_loop : bool;
+    provisions : context;
+    local_types : locals;
+    result_type : ty;
+    grounding : subst;
+    store_typing : store
+  }.
+
+  Definition ReadyExpression t P d ge st e : Prop :=
+    let Sg := signature t in let Rp := reps t in let Fb := funs t in
+    let Phi := provisions t in let H := store_typing t in let g := grounding t in
+    well_formed Sg Rp P Fb /\
+    typed Sg Rp P Fb (return_type t) (in_loop t) Phi (local_types t) e (result_type t) /\
+    grounded g Phi /\
+    provides Sg Rp P Fb H g (context_items Phi) d /\
+    locals_ok Sg Rp P H g (context_items Phi) (local_types t) ge /\
+    store_ok Sg Rp P H st.
+
+  Definition SafeResult t P (r : C.X.xres) : Prop :=
+    let Sg := signature t in let Rp := reps t in
+    let Phi := provisions t in let g := grounding t in
+    exists H', store_extends (store_typing t) H' /\ store_ok Sg Rp P H' (C.X.xr_st r) /\
+    let locals_preserved := locals_ok Sg Rp P H' g (context_items Phi) (local_types t) (C.X.xr_g r) in
+    match C.X.xr_out r with
+    | XOk w =>
+        value_typed Sg Rp P H' w (app_subst g (app_subst (context_subst Phi) (result_type t))) /\
+        locals_preserved
+    | XRet w => exists rt, return_type t = Some rt /\ value_typed Sg Rp P H' w (app_subst g rt)
+    | XBrk => in_loop t = true /\ locals_preserved
+    | XErr _ => False
+    | _ => True
+    end.
+
+  Definition ReadyMain P main d : Prop :=
+    exists Sg Rp Fb Dm Sm body Phi ground,
+      well_formed Sg Rp P Fb /\
+      g_fn Sg main = Some (Dm, Sm, None) /\ fs_params Sm = [] /\
+      xp_fn P main = Some body /\ inputs_form Sg Dm Phi /\
+      grounded ground Phi /\
+      provides Sg Rp P Fb empty_store ground (context_items Phi) d.
+
+  Definition TypedRuntime p : Prop :=
+    forall argv read,
+    let P := program_of p argv read in
+    let main := xo_main p in
+    exists Sg Rp Fb inputs body Phi ground,
+      well_formed Sg Rp P Fb /\
+      g_fn Sg main = Some (inputs, mkSig [] TUnit, None) /\
+      xp_fn P main = Some body /\ inputs_form Sg inputs Phi /\
+      grounded ground Phi /\
+      provides Sg Rp P Fb empty_store ground (context_items Phi) (xo_env p).
+
+  Definition ReificationCertificate source raw result : Prop :=
+    Source.lower_runtime source raw = Some result /\ TypedRuntime result.
+End RuntimeSpec.
+
+Module Type RUNTIME_SAFETY (C : PROVED_NOW) (Source : SOURCE_PROGRESS C)
+    (T : RUNTIME_TYPING C).
+  Module Spec := RuntimeSpec C Source T.
+  Import Spec T.
+
+  Axiom expression_safe : forall typing P d g st e,
+    ReadyExpression typing P d g st e ->
+    forall fuel, SafeResult typing P (C.X.xinterp fuel P d g st e).
+  Axiom main_safe : forall P main d,
+    ReadyMain P main d ->
+    forall fuel st c, C.X.xr_out (C.X.run_main fuel P main d st) <> XErr c.
+  Axiom main_typing_inhabited : exists P main d, ReadyMain P main d.
+  Axiom heap_example : exists P main d st,
+    ReadyMain P main d /\ C.X.xr_out (C.X.run_main 30 P main d st) = XOk XVUnit /\
+    HeapNonempty (C.X.xr_st (C.X.run_main 30 P main d st)).
+  Axiom typed_runtime_never_err : forall p,
+    TypedRuntime p ->
+    forall fuel argv read st c, C.X.xr_out (Ref.run p argv read fuel st) <> XErr c.
+  Axiom certified_reification_never_err : forall source raw result,
+    ReificationCertificate source raw result ->
+    forall fuel argv read st c, C.X.xr_out (Ref.run result argv read fuel st) <> XErr c.
+End RUNTIME_SAFETY.
+
+(* The concrete slot syntax and executable closures are supplied by the
+   oracle. The equations relating its stages are part of the contract. *)
+Module Type ORACLE_PIPELINE (C : PROVED_NOW).
+  Parameter slot_program slot_expr slot_bind code bind_code scalar_cache : Type.
+  Parameter fast_program : xprogram -> xprogram.
+  Parameter slot_input : xprogram -> list (list int) ->
+    (list int -> option (list int)) -> slot_program.
+  Parameter slot_runtime : slot_program -> xprog.
+  Parameter slot_function : slot_program -> fsym -> option (slot_expr * slot_expr).
+  Parameter slot_functor : slot_program -> usym -> option (tele * list slot_bind).
+  Parameter fold_expr : xprog -> (fsym -> option slot_expr) -> nat -> nat -> slot_expr -> slot_expr.
+  Parameter fold_bind : xprog -> (fsym -> option slot_expr) -> nat -> nat -> slot_bind -> slot_bind.
+  Definition function_table := fsym -> option (code * code).
+  Definition functor_table := usym -> option (tele * bind_code * scalar_cache).
+  Parameter compile_expr : slot_program -> function_table -> functor_table -> slot_expr -> code.
+  Parameter compile_binds : slot_program -> function_table -> functor_table -> list slot_bind -> bind_code.
+  Parameter prepare_scalars : tele -> list slot_bind -> scalar_cache.
+  Parameter engine_run : function_table -> nat -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+  Parameter slot_run : nat -> slot_program -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+  Parameter mapped_run : nat -> xprog -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+End ORACLE_PIPELINE.
+
+Module OracleSpec (C : PROVED_NOW) (Import Engine : ORACLE_PIPELINE C).
+  Module Ref := ReferenceRun C.
+
+  Record tables := Tables {
+    static_bodies : fsym -> option slot_expr;
+    max_size : nat;
+    max_depth : nat;
+    folded_program : slot_program;
+    functions : function_table;
+    functors : functor_table
+  }.
+
+  Definition CompiledTables folded fns funs : Prop :=
+    (forall f, fns f =
+      option_map (fun '(bs, bd) => (compile_expr folded fns funs bs, compile_expr folded fns funs bd))
+        (slot_function folded f)) /\
+    (forall h, funs h =
+      option_map (fun '(Dr, bs) => (Dr, compile_binds folded fns funs bs, prepare_scalars Dr bs))
+        (slot_functor folded h)).
+
+  (* The driver supplies the pruned slot program's static bodies, the
+     correctly folded program, and tables satisfying the closure equations. *)
+  Definition Prepared p argv read (t : tables) : Prop :=
+    let original := slot_input p argv read in
+    let folded := folded_program t in
+    let P := slot_runtime original in
+    let tb := static_bodies t in let m := max_size t in let n := max_depth t in
+    let fns := functions t in let funs := functors t in
+    (forall f bs, tb f = Some bs -> exists bd, slot_function original f = Some (bs, bd)) /\
+    slot_runtime folded = P /\
+    (forall f, slot_function folded f =
+      option_map (fun '(bs, bd) => (fold_expr P tb m n bs, fold_expr P tb m n bd))
+        (slot_function original f)) /\
+    (forall h, slot_functor folded h =
+      option_map (fun '(Dr, bs) => (Dr, map (fold_bind P tb m n) bs))
+        (slot_functor original h)) /\
+    CompiledTables folded fns funs.
+
+  Definition out_of_fuel (r : C.X.xres) := C.X.xr_out r = XFuel.
+  Definition stuck (r : C.X.xres) := exists c, C.X.xr_out r = XErr c.
+  Definition run_prepared p t fuel st :=
+    engine_run (functions t) fuel (xo_main p) (xo_env p) st.
+End OracleSpec.
+
+Module Type ORACLE_AGREEMENT (C : PROVED_NOW) (Engine : ORACLE_PIPELINE C).
+  Module Spec := OracleSpec C Engine.
+  Import Spec Engine.
+
+  Axiom mapped_engine_agrees : forall fuel P main d st,
+    mapped_run fuel P main d st = C.X.run_main fuel P main d st.
+  Axiom slot_engine_agrees : forall p argv read fuel st,
+    stuck (Ref.run p argv read fuel st) \/
+    slot_run fuel (slot_input p argv read) (xo_main p) (xo_env p) st =
+      Ref.run p argv read fuel st.
+  Axiom compiled_engine_agrees : forall folded fns funs fuel main d st,
+    CompiledTables folded fns funs ->
+    engine_run fns fuel main d st = slot_run fuel folded main d st.
+
+  Axiom fast_path_agrees : forall p argv read fuel st,
+    out_of_fuel (Ref.run p argv read fuel st) \/
+    Ref.run (fast_program p) argv read fuel st = Ref.run p argv read fuel st.
+  Axiom engine_agrees : forall p argv read fuel st t,
+    Prepared p argv read t ->
+    stuck (Ref.run p argv read fuel st) \/
+    run_prepared p t fuel st = Ref.run p argv read fuel st.
+  Axiom fast_engine_agrees : forall p argv read fuel st t,
+    Prepared (fast_program p) argv read t ->
+    out_of_fuel (Ref.run p argv read fuel st) \/
+    stuck (Ref.run p argv read fuel st) \/
+    run_prepared (fast_program p) t fuel st = Ref.run p argv read fuel st.
+End ORACLE_AGREEMENT.
+
+(* Pending end-to-end source obligations. The checked component contracts
+   above are bound in Certified.v. *)
 Module Type COMPLETE.
   Include PROVED_NOW.
 
@@ -5837,3 +6099,8 @@ Module Type COMPLETE.
       forall f x, Elaboration.nlook f (xo_fns p) = Some x ->
         exists D S e, g_fn Sg f = Some (D, S, Some e) /\ emb_expr e = x.
 End COMPLETE.
+
+(* Approved continuation alignment: float literal conversion uses the same
+   checked argument subtyping as an ordinary call. LitFloat records the
+   selected parameter type and the actual fits premise; it does not assume
+   every custom library declares an exactly equal Int parameter. *)

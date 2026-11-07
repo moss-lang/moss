@@ -11,6 +11,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool PrimInt63 Uint63.
+From NM Require Audit.
 Import ListNotations.
 
 Inductive trie (A : Type) : Type :=
@@ -21,14 +22,8 @@ Arguments TN {A}.
 
 Local Open Scope uint63_scope.
 
-(* The bits of a key, low first, up to the last 1. *)
-Fixpoint key_go (fuel : nat) (a : int) : list bool :=
-  match fuel with
-  | O => []
-  | S f => if a =? 0 then [] else (a land 1 =? 1) :: key_go f (a >> 1)
-  end.
-
-Definition key (a : int) : list bool := key_go 63 a.
+Notation key_go := Audit.HeapAddress.key_go.
+Notation key := Audit.HeapAddress.key.
 
 (* ---- the maps, by lists of bits ---- *)
 

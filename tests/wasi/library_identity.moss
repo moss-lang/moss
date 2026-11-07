@@ -1,0 +1,9 @@
+import "../../lib/wasm.moss" as w use Wasm;
+import "../fixtures/library_identity/lib/wasm.moss" as mine;
+
+assume Wasm {
+  fn main() {
+    let r = mine::Ref(w::i32_one);
+    match r { mine::Ref(payload) => () }
+  }
+}

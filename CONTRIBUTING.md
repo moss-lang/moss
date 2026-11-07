@@ -13,11 +13,12 @@ The compiler is written in Moss, under [`src`](src), and compiles itself.
 Building it from nothing is the job of [`bootstrap`](bootstrap): a front
 end and interpreter for Moss written in Rocq and extracted to OCaml (the
 *oracle*), which runs `src/main.moss` compiling itself. That is the
-flake's `compiler` package, and it takes about 20 minutes and 3 GB:
+flake's `compiler` package. This is an expensive interpreted self-compile;
+the build prints phase timings to stderr:
 
 ```sh
 nix build .#compiler -o result-compiler   # the bootstrap
-nix build .#oracle -o result-oracle       # just the oracle, a few minutes
+nix build .#oracle -o result-oracle       # audited oracle without self-compilation
 ```
 
 You do not do that for everyday work. Any compiler built before, from an
@@ -38,6 +39,16 @@ itself. So:
   previous version lacks, land the feature first and its use after.
 - **CI runs the full `nix flake check`** on every platform, bootstrap
   included, so every merged commit is known to bootstrap from Rocq alone.
+
+Keep the bootstrap's dependency graph limited to the compiler and the
+libraries it needs. Future tools written in Moss, such as an LSP server,
+should reuse shared compiler services through separate entry points; the
+compiler's bootstrap entry point must not import tool-specific code.
+User-facing integration must preserve this boundary. Check the actual
+module/import closure: removing unused code during WebAssembly generation
+does not spare the Rocq front end from loading and elaborating it first.
+Keep compiler build-input filesets equally narrow, so edits to tool-only
+files do not invalidate an otherwise unchanged compiler bootstrap.
 
 ## Tests
 
@@ -71,11 +82,57 @@ Everything CI enforces is a flake check:
 nix flake check
 ```
 
-That includes `bootstrap-rocq`, which compiles the Rocq development and
-audits the assumptions of what it certifies (about 5 minutes and 6 GB);
+That includes `bootstrap-rocq`, which depends on the audited oracle build.
+The oracle compiles every Rocq theory, audits the assumptions of what it
+certifies, and extracts the executable in the same release build tree;
 `bootstrap/check.sh` runs the same in `nix develop .#bootstrap`, where
 `dune build` in `bootstrap` builds the oracle
 ([`bootstrap/README.md`](bootstrap/README.md)).
+
+For a proof edit, build the individual module so Dune reuses its unchanged
+dependencies (choose a job count that fits available memory):
+
+```sh
+nix develop .#bootstrap
+cd bootstrap
+dune build -j 2 theories/BodyPending.vo
+```
+
+Use the full audit at integration checkpoints. Keep expensive stable
+computations and reusable witnesses separate from frequently edited proofs.
+
+When changing shared definitions, check selected downstream proofs against
+statement-only dependencies for faster development feedback:
+
+```sh
+nix develop .#bootstrap -c python3 bootstrap/quick-check.py FrontEnd
+```
+
+This runs the selected module's proofs with Rocq's `-vok`. Dependencies are
+built with `-vos`, which checks their definitions and statements while skipping
+opaque proofs. The cache lives in `scratch/rocq-quick`, separate from Dune's
+fully checked artifacts, and invalidates on source, dependency and toolchain
+changes. Use `bootstrap/check.sh` to validate all proofs and assumptions before
+integration. To check the quick workflow's failure and cache handling:
+
+```sh
+nix develop .#bootstrap -c python3 -m unittest discover -s bootstrap/tests
+```
+
+When a proof is slow, measure both tactic construction and kernel checking;
+replace repeated search with named lemmas where it helps. Generic tactics
+should inspect the relevant hypothesis, such as `discriminate H`, rather
+than search an entire context containing large induction hypotheses.
+For speculative preservation lemmas, prove cheap `keeps` premises before
+constructing `ok` or other invariants. Otherwise a failed preservation check
+can cause tactics to construct and discard large invariant proofs repeatedly.
+
+For a reproducible full-build measurement, use an empty, separate build
+directory. `check.sh` uses it for compilation and both assumption audits:
+
+```sh
+DUNE_BUILD_DIR="$PWD/scratch/rocq-profile" nix develop .#bootstrap -c ./bootstrap/check.sh
+```
 
 For editing proofs with
 [VsRocq](https://marketplace.visualstudio.com/items?itemName=rocq-prover.vsrocq),

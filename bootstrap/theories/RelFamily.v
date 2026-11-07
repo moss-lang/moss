@@ -27,7 +27,7 @@ Definition family_fns : list (nat * xexpr) := Eval vm_compute in
   match read_bundle family_sx with
   | Good b => match load_world b with
               | Good w => match lower_all (St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0
-                                                false false [] (lang_modules w) []) with
+                                                false false [] (lang_modules w) [] (ReifyData.empty_reify_metadata Elab.ety Elab.key)) with
                           | Good (_, s) => st_fns s
                           | Bad _ => []
                           end
@@ -52,7 +52,7 @@ Definition pick_body : xexpr :=
   XApply 4 [(1, TNom 3 [])] []
     (XMeth (XVar 0) 6 (IMth (TNom 2 [(1, TNom 3 [])]) 6 [(1, TNom 3 [])]) []).
 
-Definition P_fa : xprogram := XProgram [(5, pick_body)] [] 0 0 0 5 [] [].
+Definition P_fa : xprogram := XProgram [(5, pick_body)] [] 0 0 0 5 [] [] [] [] [] false [] [].
 
 (* m4: what the elaborator makes of `pick` is the body the relation gives *)
 Theorem family_elaborator_agrees : nlook 5 family_fns = Some pick_body.
@@ -78,20 +78,34 @@ Proof.
   vm_compute in Hx. injection Hx as <-. reflexivity.
 Qed.
 
+Lemma fam_family : Family W_fa 4.
+Proof.
+ split.
+ - do 5 eexists; split; [comp|]. split; [comp|]. repeat constructor.
+ - intros d n ps a r Hd Ha;vm_compute in Hd;injection Hd as <-.
+   cbn in Ha;injection Ha as <- <- <- <-.
+   apply Forall_cons;[|apply Forall_nil].
+   eapply FKMethod;[comp|methodnamed|].
+   intros t Hp _ _;apply fam_poly in Hp;subst t.
+   eapply FNom with(g:=2);[comp|vm_compute;discriminate|vm_compute;auto|].
+   intros [b[H _]];contradiction.
+Qed.
+
 Lemma fam_mentions : forall t, Mentions W_fa 4 t -> t = 1.
 Proof.
   intros t (d & ps & a & r & b & sp & Hd & Hp & Hin & Hm & _). vm_compute in Hd. injection Hd as <-.
   simpl in Hp. injection Hp as <- <- <- <-. destruct Hin as [<-|[]].
   inversion Hm; subst.
   - match goal with H : resolve_sym _ _ _ = Some ?r |- _ => vm_compute in H; injection H as <- end.
-    match goal with H : MethodNamed _ _ _ _ ?m |- _ => idtac end.
     match goal with H : (t = 2 /\ _) \/ _ |- _ =>
-      destruct H as [[-> Hk]|[Hi|Hi]]; [vm_compute in Hk; discriminate Hk | |] end.
-    + vm_compute in Hi. destruct Hi as [<-|[]]. reflexivity.
-    + match goal with H : MethodNamed _ _ _ _ ?m |- _ =>
-        destruct H as [Hat|(_ & Hs)]; [ | vm_compute in Hs; discriminate Hs ] end.
-      unfold Attached in Hat. vm_compute in Hat. injection Hat as <-.
-      vm_compute in Hi. destruct Hi as [<-|[]]. reflexivity.
+      destruct H as [[-> Hk]|[_ Hi]]; [vm_compute in Hk; discriminate Hk |] end.
+    vm_compute in Hi. destruct Hi as [<-|[]]. reflexivity.
+  - match goal with H : resolve_sym _ _ _ = Some ?r |- _ => vm_compute in H; injection H as <- end.
+    match goal with H : MethodNamed _ _ _ _ ?m |- _ =>
+      destruct H as [Hat|(_ & Hs)]; [ | vm_compute in Hs; discriminate Hs ] end.
+    unfold Attached in Hat. vm_compute in Hat. injection Hat as <-.
+    match goal with H : In t (w_reqs W_fa _) |- _ => vm_compute in H; destruct H as [<-|[]] end.
+    reflexivity.
   - match goal with H : In _ [] |- _ => destruct H end.
 Qed.
 
@@ -111,7 +125,7 @@ Proof.
   simpl in Hp. injection Hp as <- <- <- <-. destruct Hin as [<-|[]]. inversion Hs.
 Qed.
 
-Definition C_pick : cx := Cx [] [] [] [] [] [(4, [])] [] [].
+Definition C_pick : cx := Cx [] [] [] [] [] [(4, [])] [(IFun 4,[])] [].
 
 Theorem pick_elab : FnElab W_fa P_fa 5.
 Proof.
@@ -125,7 +139,7 @@ Proof.
     eexists; eexists; eexists; eexists; eexists; exists []. split; [comp|]. split; [items|]. split; [rootctx|].
     split; [apply mgm_nil; vm_compute; reflexivity|]. split; [vm_compute; reflexivity|].
     split; [repeat constructor; simpl; tauto|]. intro k; simpl; split.
-    - intros [<-|[]]. exists (NFun 4). split; [left; reflexivity | reflexivity].
+    - intros [<-|[]]. exists (NFun 4 []). split; [left; reflexivity | reflexivity].
     - intros (e & [<-|[]] & E). injection E as <-. left; reflexivity. }
   split; [reflexivity|].
   split.
@@ -146,25 +160,30 @@ Proof.
   - intros (m & Hm & _). vm_compute in Hm. discriminate Hm.
   - do 3 eexists. comp.
   - (* [D84] rule 7: Fam produces the key at θ = (Item ↦ A) *)
-    eapply PrFamily with (th := [(1, TNom 3 [])]) (g := FSig [] (TNom 3 [])) (u := 4).
+    eapply PrFamily with (matching := [(1, TNom 3 [])]) (th := [(1, TNom 3 [])]) (g := FSig [] (TNom 3 [])) (u := 4).
     + comp.
     + comp.
-    + do 5 eexists. split; [comp|]. split; [comp|]. repeat constructor. do 3 eexists. reflexivity.
+    + apply fam_family.
+    + apply Forall_cons;[|apply Forall_nil]. cbn.
+      do 5 eexists;split;[comp|];split;[comp|].
+      exists "Item";split;[left;reflexivity|comp].
     + (* Fam's own terms: its input Item *)
       eexists; eexists; eexists; eexists; eexists; eexists; eexists; eexists; exists [], [].
       split; [comp|]. split; [comp|]. split; [items|].
       split.
-      { intro t. split; [intros []|]. intros (_ & [Hm|Hp] & Hn).
-        - apply fam_mentions in Hm. subst. vm_compute in Hn. discriminate Hn.
-        - apply fam_poly in Hp. subst. vm_compute in Hn. discriminate Hn. }
+      { intro t. split; [intros []|]. intros (_ & Hm & Hn).
+        apply fam_mentions in Hm. subst. vm_compute in Hn. discriminate Hn. }
       split; [reflexivity|]. split; [apply mgm_nil; vm_compute; reflexivity|].
       split; [reflexivity | apply needs_keys_of].
-    + intros t Hp. apply fam_poly in Hp. subst. eexists. left. reflexivity.
+    + intros t Hp _. apply fam_poly in Hp. subst. eexists. left. reflexivity.
+    + intros [|[|t]] tt H;vm_compute in H;try discriminate.
+      injection H as <-;exists(TNom 3 []);split;[reflexivity|left;reflexivity].
+    + intros x Hfixed;exfalso;exact(fam_no_fixed x Hfixed).
     + (* its result, read at θ *)
       do 5 eexists. exists []. do 2 eexists. split; [comp|]. split; [comp|].
       split; [intro t; split; [intros []| intro Ho; apply fam_no_outputs in Ho; destruct Ho]|].
-      split; [simpl; items|].
-      split; [apply needs_keys_of | reflexivity].
+      split; [simpl; eapply OIsCons; [eapply OIEMeth; [comp|methodnamed|apply OBrNone|recvty|sigof|appof]|apply OIsNil]|].
+      split; [unfold ResultKeys;reflexivity | reflexivity].
     + vm_compute. left. reflexivity.
     + (* the only family in force *)
       intros u' Hne (fx & th' & C' & ks & Hf & _). simpl in Hf.

@@ -494,13 +494,17 @@ fn a_bound_record_payload_is_a_bare_record() {
     both_exit("tests/wasi/record_payload_shared.moss", 3);
 }
 
-/// Audit.v note 30: contexts nest to any depth, and the types a cycle of
-/// them requires are the union of theirs. (A function's context cannot
-/// be made from a cycle: tests/errors/context_cycle.moss.)
+/// Audit.v note 30: acyclic contexts nest to any depth. Cycles are
+/// rejected at declaration, including when used only by a tag.
 #[test]
 fn contexts_nest_to_any_depth() {
     both_exit("tests/wasi/context_deep.moss", 2);
-    both_exit("tests/wasi/context_cycle.moss", 2);
+    both_exit("tests/wasi/context_shared.moss", 0);
+}
+
+#[test]
+fn imported_main_gets_the_root_context() {
+    both_exit("tests/wasi/imported_main.moss", 0);
 }
 
 /// The same, watched from underneath: constructing a wrapper leaves the
@@ -633,4 +637,106 @@ fn emitted_module_matches_the_interpreters_and_runs() {
     assert_eq!(theirs.code, 0, "{}", theirs.stderr);
     assert!(theirs.stdout == emitted, "the oracle's run of emit.moss writes another module");
     assert_eq!(run_module(&emitted, &[]), "Hello, world!\n");
+}
+
+#[test]
+fn merged_branch_types_are_canonical() {
+    agree("tests/wasi/merge_never.moss", &[], "ok\n");
+    agree("tests/wasi/merge_join.moss", &[], "bcbc\n");
+}
+
+/// A user file named wasm.moss cannot shadow the selected library, even
+/// when automatic prelude imports are disabled.
+#[test]
+fn library_identity_comes_from_the_prelude_directory() {
+    both_exit("tests/wasi/library_identity.moss", 0);
+    let module = build_with("tests/wasi/library_identity.moss", "");
+    assert_eq!(run_module(&module, &[]), "");
+}
+
+#[test]
+fn literal_arithmetic_applies_a_family_on_demand() {
+    agree("tests/wasi/literal_family.moss", &[], "y");
+}
+
+#[test]
+fn family_demand_instantiates_its_method_prerequisites() {
+    agree("tests/wasi/family_poly_need.moss", &[], "y");
+    agree("tests/wasi/family_context_result.moss", &[], "y");
+}
+
+#[test]
+fn family_demand_groups_inferred_substitutions() {
+    agree("tests/wasi/family_same_full_theta.moss", &[], "");
+}
+
+#[test]
+fn unused_functor_parameters_do_not_create_implicit_inputs() {
+    agree("tests/wasi/functor_unused_poly.moss", &[], "y");
+}
+
+#[test]
+fn literal_arithmetic_requires_its_own_type_signature() {
+    let entry = "tests/fixtures/literal_signature/main.moss";
+    let prelude = "tests/fixtures/literal_signature/prelude.moss";
+    assert!(!compile(entry, prelude).is_module());
+    let checked = oracle_command(&["--prelude", prelude, "--elab-only", entry]);
+    assert_eq!(checked.code, ORACLE_REJECTED, "{}", checked.stderr);
+    assert!(checked.stderr.contains("must take and return its own type (D68)"), "{}", checked.stderr);
+}
+
+#[test]
+fn merged_constructor_arguments_are_canonical() {
+    agree("tests/wasi/merge_tag.moss", &[], "b\n");
+}
+
+#[test]
+fn context_method_receiver_follows_alias() {
+    agree("tests/wasi/context_alias_receiver.moss", &[], "");
+}
+
+#[test]
+fn functor_application_checks_merged_input_types() {
+    let entry = "tests/wasi/functor_merge_apply.moss";
+    assert!(!compile(entry, "lib/prelude.moss").is_module());
+    let checked = oracle_command(&["--prelude", "lib/prelude.moss", "--elab-only", entry]);
+    assert_eq!(checked.code, ORACLE_REJECTED, "{}", checked.stderr);
+    assert!(checked.stderr.contains("which its context merged (D43)"), "{}", checked.stderr);
+}
+
+#[test]
+fn functor_application_checks_input_provision_instantiations() {
+    let entry = "tests/wasi/functor_incoherent_apply.moss";
+    assert!(!compile(entry, "lib/prelude.moss").is_module());
+    let checked = oracle_command(&["--prelude", "lib/prelude.moss", "--elab-only", entry]);
+    assert_eq!(checked.code, ORACLE_REJECTED, "{}", checked.stderr);
+    assert!(checked.stderr.contains("at another instantiation"), "{}", checked.stderr);
+}
+
+#[test]
+fn calls_check_fixed_functor_captures() {
+    let entry = "tests/wasi/functor_fixed_call.moss";
+    assert!(!compile(entry, "lib/prelude.moss").is_module());
+    let checked = oracle_command(&["--prelude", "lib/prelude.moss", "--elab-only", entry]);
+    assert_eq!(checked.code, ORACLE_REJECTED, "{}", checked.stderr);
+    assert!(checked.stderr.contains("at another instantiation"), "{}", checked.stderr);
+    agree("tests/wasi/functor_fixed_call_ok.moss", &[], "0");
+}
+
+#[test]
+fn attached_defined_methods_demand_families() {
+    agree("tests/wasi/family_attached_demand.moss", &[], "");
+}
+
+/// Defined functions in the selected platform module retain their source
+/// bodies even when main's initial bindings include primitive dispatch rows.
+#[test]
+fn selected_platform_functions_may_have_bodies() {
+    let entry = "tests/fixtures/platform_defined/main.moss";
+    let prelude = "tests/fixtures/platform_defined/prelude.moss";
+    let module = build_with(entry, prelude);
+    assert_eq!(run_module(&module, &[]), "");
+    let checked = oracle_command(&["--prelude", prelude, entry]);
+    assert_eq!(checked.code, 0, "{}", checked.stderr);
+    assert!(checked.stdout.is_empty(), "{:?}", checked.stdout);
 }

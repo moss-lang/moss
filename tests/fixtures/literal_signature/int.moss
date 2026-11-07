@@ -1,0 +1,2 @@
+type Int;
+assume Int { val one: Int; }

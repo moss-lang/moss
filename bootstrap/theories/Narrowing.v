@@ -184,8 +184,9 @@ Qed.
    symbols (units: none), without duplicates, and closed. *)
 Definition narrowed_sig (Sg : gsig) (R : relmap) : Prop :=
   rel_closed Sg R /\
-  forall n D taup, g_tag Sg n = Some (D, taup) ->
-    D = map ITy (R n) /\ NoDup (R n).
+  (forall n D taup, g_tag Sg n = Some (D, taup) ->
+    D = map ITy (R n) /\ NoDup (R n)) /\
+  (forall n D, g_opaque Sg n = Some D -> D=map ITy(R n) /\NoDup(R n)).
 
 (* A telescope of distinct type items merges to itself. *)
 Lemma tele_ctx_tys : forall ts,
@@ -240,8 +241,8 @@ Qed.
 Theorem wf_ty_narrowed : forall Sg R Phi tau,
   narrowed_sig Sg R -> wf_ty Sg Phi tau -> narrow R tau = tau.
 Proof.
-  intros Sg R Phi tau [_ HN] H.
-  apply (@wf_ty_ind' Sg Phi (fun t => narrow R t = t)); [| | | | | exact H].
+  intros Sg R Phi tau[_[HN HO]]H.
+  apply (@wf_ty_ind' Sg Phi (fun t => narrow R t = t)); [| | | | | | exact H].
   - reflexivity.
   - reflexivity.
   - intros n D tau0 th Htag Hsat Hwf IH.
@@ -260,6 +261,14 @@ Proof.
     unfold map_snd. clear -IH.
     induction IH as [| [t ty0] r Hp Hr IHr]; simpl; [reflexivity |].
     simpl in Hp. rewrite Hp. f_equal. exact IHr.
+  - intros n D th Hnone Hop Hsat Honly Hwf IH.
+    destruct(HO _ _ Hop)as[-> Hnd].
+    destruct Hsat as[PhiD[Hctx[Hdom _]]].
+    rewrite(tele_ctx_tys Hnd)in Hctx;injection Hctx as <-;cbn in Hdom.
+    rewrite tyreqs_map_ITy in Hdom.
+    rewrite narrow_nom,(keep_all R n th Hdom);f_equal;unfold map_snd;clear -IH.
+    induction IH as[|[t tau]rest Head Tail Inner];cbn;[reflexivity|].
+    cbn in Head;rewrite Head;f_equal;exact Inner.
 Qed.
 
 (* Type soundness of the narrowed calculus: an instance of soundness_main,

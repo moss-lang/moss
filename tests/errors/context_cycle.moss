@@ -1,10 +1,7 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi, proc_exit;
 
-# Two contexts that name each other. What they require is the union of
-# their items (tests/wasi/context_cycle.moss), but a function that
-# assumes them would walk them forever to make its context: the nesting
-# has no reading there (Audit note 30), and it is refused.
+# A context cycle is invalid at declaration (Audit note 30).
 type T;
 context A = T, B;
 context B = A;

@@ -1,0 +1,3 @@
+# This basename does not make this module part of the selected library.
+import "../../../../lib/wasm.moss" use I32;
+tag Ref(I32);

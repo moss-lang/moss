@@ -1350,11 +1350,11 @@ Lemma payload_subst : forall Sg g Phi m,
   app_subst g (member_payload Sg m) = member_payload Sg (app_subst g m).
 Proof.
   intros Sg g Phi m WF Hw [n [th ->]]. rewrite app_subst_nom. simpl.
-  inversion Hw as [| |n' D tau0 th' Hn Hsat Hth| |fts' Hr0 Hfts]; subst;
-    [| rewrite Hr0; reflexivity].
+  inversion Hw as [| |n' D tau0 th' Hn Hsat Hth| |fts' Hr0 Hfts|n' D th' Hnone Hop Hsat Honly Hall]; subst;
+    [| rewrite Hr0; reflexivity|rewrite Hnone;reflexivity].
   rewrite Hn. apply app_subst_chain.
   destruct (wf_tag_decl WF _ Hn) as [PhiD [Wt Hwt]].
-  rewrite (sat_dom Hsat (@wf_tele_ctx Sg _ _ Wt)). eapply wf_ty_frees. exact Hwt.
+  rewrite (sat_dom Hsat (@wf_tele_ctx Sg _ _ Wt)). exact Hwt.
 Qed.
 
 Lemma Forall2_map_r : forall (A B : Type) (R : A -> B -> Prop) (f : B -> B) l1 l2,
@@ -1433,7 +1433,7 @@ Section SpecCases.
     pose proof (IH g M Hb) as H. rewrite (bo_abs Hb) in H.
     rewrite app_subst_chain in H; [exact H|].
     destruct (wf_tag_decl WF _ Hn) as [PhiD [Wt Hwt]].
-    rewrite (sat_dom Hsat (@wf_tele_ctx Sg _ _ Wt)). eapply wf_ty_frees. exact Hwt.
+    rewrite (sat_dom Hsat (@wf_tele_ctx Sg _ _ Wt)). exact Hwt.
   Qed.
 
   Lemma case_need : forall Phi G f Df S args,
@@ -2415,11 +2415,11 @@ Module SpecExample.
     constructor.
     - intros n D taup H.
       destruct n as [|[|[|[|n]]]]; simpl in H; try discriminate; injection H as <- <-.
-      + exists empty_ctx. split; constructor.
-      + exists empty_ctx. split; constructor.
+      + exists empty_ctx. split; [constructor|apply incl_refl].
+      + exists empty_ctx. split; [constructor|apply incl_refl].
       + exists (mkCtx [ITy sE] []). split.
         * eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity | constructor].
-        * apply WfNeed. reflexivity.
+        * apply incl_refl.
     - intros v D tauv H. discriminate.
     - intros f D S b H.
       destruct f as [|[|[|[|[|f]]]]]; simpl in H; try discriminate; injection H as <- <- <-.
@@ -2449,6 +2449,7 @@ Module SpecExample.
     - intros m D S H. destruct m as [|[|m]]; simpl in H; try discriminate; injection H as <- <-.
       exists empty_ctx. split; [constructor|]. split; [constructor | apply WfNeed; reflexivity].
     - intros u Du Dr ob H. discriminate.
+    - intros n D Impossible;discriminate Impossible.
   Qed.
 
   Lemma wf : wf_prog Sg fMain.
@@ -2760,8 +2761,8 @@ Module PolyRec.
         injection H as <- <-.
       + exists (mkCtx [ITy sE] []). split.
         * eapply WCons; [constructor; [reflexivity | discriminate] | reflexivity | constructor].
-        * apply WfNeed. reflexivity.
-      + exists empty_ctx. split; constructor.
+        * apply incl_refl.
+      + exists empty_ctx. split; [constructor|apply incl_refl].
     - intros v D tauv H. discriminate.
     - intros f D S b H. destruct f as [|[|[|f]]]; simpl in H; try discriminate;
         injection H as <- <- <-.
@@ -2776,6 +2777,7 @@ Module PolyRec.
         intros body Hb. injection Hb as <-. apply call_nest. apply wf_A.
     - intros m D S H. discriminate.
     - intros u Du Dr ob H. discriminate.
+    - intros n D Impossible;discriminate Impossible.
   Qed.
 
   Lemma wf : wf_prog Sg fMain.

@@ -111,17 +111,6 @@ assume Std {
       }
     }
 
-    # `_` is lexed as a name; only the pattern grammar cares.
-    fn at_wildcard(): Bool {
-      if !here(tk_name()) {
-        false
-      } else if tend.read() - tstart.read() == 1 {
-        lexer::src.get(tstart.read()) == char::underscore
-      } else {
-        false
-      }
-    }
-
     # Names and applications.
 
     fn parse_path(): Int {
@@ -931,16 +920,14 @@ assume Std {
       if accept(tk_lbrace()) {
         return parse_record_pattern(ast::none());
       }
+      # `_` is its own token, never a name.
+      if accept(tk_underscore()) {
+        return ast::node0(ast::k_pt_wild());
+      }
       if !here(tk_name()) {
         fail();
         skip_one();
         return ast::node0(ast::k_pt_wild());
-      }
-      if at_wildcard() {
-        if peek2() != tk_colon_colon() {
-          advance();
-          return ast::node0(ast::k_pt_wild());
-        }
       }
       let p = parse_path();
       if accept(tk_lbrace()) {
