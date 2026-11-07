@@ -281,9 +281,15 @@ decision), and the obligations, as module types (Part VI):
 - `RUNTIME_SAFETY` states MossX expression and entry-point safety, including
   safety of a lowered program given its typing certificate. `Heap.HEAP_LAWS`
   states the laws that the concrete GC primitives satisfy.
-- `ORACLE_AGREEMENT` states what the cached interpreter computes, including
+- `ORACLE_AGREEMENT` states what the slot/fold cached interpreter computes, including
   the conditions on the tables built by the OCaml driver and the exceptions
   for fuel exhaustion and stuck reference runs.
+- [`LazyOracle.v`](theories/LazyOracle.v)'s `DIRECT_PIPELINE` and
+  `DIRECT_AGREEMENT` state the direct engine's table equations, exact
+  interpreter/closure agreement, and the composed pruning/fast-path result.
+  `LazyOracle.Certified` binds `LazyX` and `LazyClo` to this contract, without
+  introducing slot syntax or scalar templates into their driver interface.
+  The bound theorems are included in the certificate assumption audit.
 - **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory

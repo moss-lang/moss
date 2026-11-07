@@ -42,7 +42,9 @@ The development includes proofs of:
   with exact interpreter and closure-compiler agreement at every fuel
   ([`LazyEnvFacts.v`](theories/LazyEnvFacts.v),
   [`LazyInterpFacts.v`](theories/LazyInterpFacts.v),
-  [`LazyCloFacts.v`](theories/LazyCloFacts.v)); available as `MOSS_ENGINE=lazy`.
+  [`LazyCloFacts.v`](theories/LazyCloFacts.v)), bound to the direct pipeline
+  contract in [`LazyOracle.v`](theories/LazyOracle.v); available as
+  `MOSS_ENGINE=lazy`.
 - Narrowing nonallocating primitive families with no type results while
   preserving runtime type meanings and checked GC casts
   ([`FastPath.v`](theories/FastPath.v),
