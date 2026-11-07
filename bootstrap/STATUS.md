@@ -39,7 +39,10 @@ The development includes proofs of:
   wrappers, and explicit left-hand type brackets
   ([`BindMethodExec.v`](theories/BindMethodExec.v)).
   [`BodyPending.v`](theories/BodyPending.v) excludes method bindings from
-  its remaining callback; non-method provider cases remain open.
+  its remaining callback. Successful remaining non-method bindings are
+  characterized as abstract-to-defined functor closures
+  ([`FunctorRemainingDispatch.v`](theories/FunctorRemainingDispatch.v));
+  their complete soundness proof remains open.
 - Fresh linked-functor execution yields its input contexts, capture checks,
   typed body and actual emission receipts. The assembler still requires four
   explicit result-stage coherence conditions
@@ -49,6 +52,12 @@ The development includes proofs of:
   [`LinkBodyResultView.v`](theories/LinkBodyResultView.v),
   [`LinkOutputKeys.v`](theories/LinkOutputKeys.v)); these component proofs do
   not discharge all four conditions.
+- Actual whole-build execution preserves authenticated linked-code cache
+  creators and final functor rows
+  ([`LinkProgramPreserve.v`](theories/LinkProgramPreserve.v),
+  [`FunctorRowsProgram.v`](theories/FunctorRowsProgram.v)). These are physical
+  provenance facts; semantic agreement for cached linked bodies still needs
+  to be assembled with the fresh-body proof.
 - Actual source Bool selection for every successful elaboration, including
   the absence case, with no pending body-soundness premises
   ([`MainProgramBool.v`](theories/MainProgramBool.v)).
