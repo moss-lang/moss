@@ -1,7 +1,7 @@
 (* A visible body below the current allocation frontier is never replaced.
    This statement includes generated providers and recursion markers. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabInv FnReadonly.
 Import ListNotations.
 Set Implicit Arguments.
 Definition fn_present_stable(s s':st):Prop:=forall key body,

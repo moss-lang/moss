@@ -8,11 +8,11 @@
 (* well formed, and tm covers the environment's own, which app_subst reads *)
 (* behind it).  A nominal's arguments are its requirements in the reading's *)
 (* order: the list `reqs` reads is the final state's (ReqsStable.v), which  *)
-(* is the reading's (BodySound.Later's lt_reqs).                            *)
+(* is the reading's (BodySoundCore.Later's lt_reqs).                            *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound Merge CanonTypes TyOfSubst.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore Merge CanonTypes TyOfSubst.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -20,11 +20,21 @@ Module A := Audit.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
+Local Lemma miter_each : forall X (f : X -> M unit) l s u s',
+  (forall x, In x l -> forall u s', f x s = Good (u, s') -> s' = s) ->
+  miter f l s = Good (u, s') -> forall x, In x l -> exists u', f x s = Good (u', s).
+Proof.
+  intros X f l. induction l as [|x r IH]; intros s u s' Hr H y Hy; [destruct Hy|]. cbn [miter] in H.
+  apply bind_inv in H as (u1 & s1 & H1 & H2). pose proof (Hr x (or_introl eq_refl) u1 s1 H1) as ->.
+  destruct Hy as [<-|Hy]; [exists u1; exact H1|].
+  exact (IH s u s' (fun z Hz => Hr z (or_intror Hz)) H2 y Hy).
+Qed.
+
 Section Ty.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
 
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 Notation path_of mi := (gm_path (get_mod w mi)).
 
@@ -260,7 +270,7 @@ Lemma head_tr : forall x, (exists h xs, x = YNom h xs /\ h <> 0) -> A.head (trF 
 Proof. intros x (h & xs & -> & _). reflexivity. Qed.
 
 (* a union the elaborator makes from well-formed members' members, each a
-   tag or unit application, is well formed (BodySound.ety_wf) *)
+   tag or unit application, is well formed (BodySoundCore.ety_wf) *)
 Lemma members_wf : forall y, WFty y -> Forall WFty (Elab.members y).
 Proof.
   intros y Wy. destruct y as [| |n|n xs|ms|fs]; cbn [Elab.members]; try (constructor; [exact Wy | constructor]).
