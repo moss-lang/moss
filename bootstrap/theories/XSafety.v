@@ -2836,6 +2836,9 @@ Proof.
         rewrite (lookup_prefix_in (fun t => app_subst gB (TAbs t)) (tyreqs Dr) t g Ht). reflexivity.
       * intros t Ht. symmetry; apply Hreads; exact Ht.
       * eapply inst_smap_typefree; exact Hdr.
+      * apply runtime_result_generations_empty. intros t Hout.
+        apply lookup_subst_none. intro Input. rewrite Hdomth in Input.
+        apply (Hout_U t (proj2 (call_type_item Dr t) Hout) Input).
   - intros x Hx. rewrite tyreqs_app_tele in Hx. exact (Hlg x Hx).
 Qed.
 

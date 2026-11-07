@@ -31,12 +31,19 @@ Qed.
 Lemma xenv_lookup_app : forall i d e,
   lookup_xdenv i (d ++ e) = match lookup_xdenv i d with Some en => Some en | None => lookup_xdenv i e end.
 Proof. intros i d; induction d as [|[j en] r IH]; intro e; simpl; [reflexivity|]. destruct (item_eqb i j); auto. Qed.
-Lemma lookup_xresult_non_type : forall P db Dr dr d i,
-  is_ty_item i = false ->
-  lookup_xdenv i (xresult_env P db Dr dr ++ d) = lookup_xdenv i (dr ++ d).
+Lemma lookup_xinst_non_type : forall db th i,
+  is_ty_item i = false -> lookup_xdenv i (xinst db th) = None.
 Proof.
-  intros P db Dr dr d i Nt. unfold xresult_env. destruct (xreify P); [|reflexivity].
-  rewrite <- app_assoc, !xenv_lookup_app. destruct (lookup_xdenv i dr); [reflexivity|].
+  intros db th i NonType; rewrite xinst_map; destruct i; try discriminate.
+  all: induction th as [|[name tau] th IH]; cbn; auto.
+Qed.
+Lemma lookup_xresult_non_type : forall P th db Dr dr d i,
+  is_ty_item i = false ->
+  lookup_xdenv i (xresult_env P th db Dr dr ++ d) = lookup_xdenv i (dr ++ d).
+Proof.
+  intros P th db Dr dr d i Nt. unfold xresult_env. destruct (xreify P); [|reflexivity].
+  rewrite <- !app_assoc, !xenv_lookup_app. destruct (lookup_xdenv i dr); [reflexivity|].
+  rewrite lookup_xinst_non_type by exact Nt.
   unfold xresult_types.
   pose proof (call_lookup_filter (fun j => existsb (item_eqb j) Dr) (xtype_env db) i) as Filt.
   cbn beta in Filt. rewrite Filt. rewrite lookup_type_env_non_type by exact Nt.

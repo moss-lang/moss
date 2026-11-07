@@ -211,19 +211,32 @@ Proof.
       [apply item_eqb_eq in E; subst j; rewrite Kj; reflexivity|reflexivity].
 Qed.
 
+(* Core functor outputs are fresh from their input telescope, so the
+   output-generation transfer is empty for a well-formed core application. *)
+Lemma runtime_result_generations_empty : forall th Dr,
+  (forall t, In (ITy t) Dr -> lookup_subst t th = None) ->
+  xresult_generations th Dr = [].
+Proof.
+  intros th Dr; induction Dr as [|i Dr IH]; intro Missing; [reflexivity|].
+  destruct i; cbn [xresult_generations flat_map]; try solve
+    [apply IH; intros; apply Missing; right; assumption].
+  rewrite (Missing t (or_introl eq_refl)); cbn.
+  apply IH; intros; apply Missing; right; assumption.
+Qed.
+
 Theorem runtime_types_result : forall P g gb gout A AB Dr th d db dr,
   runtime_types P g A d -> runtime_types P gb AB db ->
   incl (tyreqs Dr) (tyreqs AB) ->
   (forall t, In t (tyreqs Dr) -> app_subst gout (TAbs t) = app_subst gb (TAbs t)) ->
   (forall t, In t (tyreqs A) -> app_subst gout (TAbs t) = app_subst g (TAbs t)) ->
-  typefree dr ->
-  runtime_types P gout (app_tele th Dr ++ A) (xresult_env P db Dr dr ++ d).
+  typefree dr -> xresult_generations th Dr = [] ->
+  runtime_types P gout (app_tele th Dr ++ A) (xresult_env P th db Dr dr ++ d).
 Proof.
-  intros P g gb gout A AB Dr th d db dr Rt Rb Inc EqOut EqOld Free Reify t Hi.
+  intros P g gb gout A AB Dr th d db dr Rt Rb Inc EqOut EqOld Free Generations Reify t Hi.
   specialize (Rt Reify). specialize (Rb Reify).
   assert (Ht : In t (tyreqs Dr ++ tyreqs A)).
   { rewrite <- tyreqs_app_tele with (th:=th). rewrite <- tyreqs_app. apply call_type_item; exact Hi. }
-  unfold xresult_env. rewrite Reify. rewrite <- app_assoc.
+  unfold xresult_env. rewrite Reify, Generations. cbn [xinst app]. rewrite <- app_assoc.
   destruct (in_dec Nat.eq_dec t (tyreqs Dr)) as [Hout|Hnot].
   - assert (Hkey : existsb (item_eqb (ITy t)) Dr = true).
     { apply existsb_exists. exists (ITy t). split; [apply call_type_item;exact Hout|apply item_eqb_eq;reflexivity]. }
