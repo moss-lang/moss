@@ -1,8 +1,8 @@
 (* The compact AST dump preserves every constructor and field. Names need
    only avoid the dump's few reserved spellings and path separators. *)
 From Stdlib Require Import List String Ascii Bool Arith.
-From NM Require Import Audit.
-Import ListNotations Audit.Input Audit.Dump.
+From NM Require Import Audit Sx.
+Import ListNotations Audit.Input Sx.Dump.
 Local Open Scope string_scope.
 
 Fixpoint strings_eqb (xs ys : list string) : bool :=

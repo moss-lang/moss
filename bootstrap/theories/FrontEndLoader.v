@@ -4,9 +4,9 @@
 (* ======================================================================== *)
 
 From Stdlib Require Import String Ascii List Bool Arith Lia.
-From NM Require Import Audit Parse FrontEnd DumpRoundTrip.
+From NM Require Import Audit Sx Parse FrontEnd DumpRoundTrip.
 Import ListNotations.
-Import Audit.Input Audit.Syntax Audit.Dump Audit.Loader.
+Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
 Local Open Scope string_scope.
 
 Section Walk.
@@ -119,7 +119,6 @@ Proof.
   destruct (Hok m Hm) as (text & f & Hr & Hp & Hw & Ht & Hd & Hnames).
   exists text, f. rewrite E1, E2, E3. repeat split; auto.
   - apply parse_moss_sound; auto.
-  - rewrite <- Hd. auto.
   - eapply dump_reads; [exact Hnames|]. rewrite <- Hd. exact E4.
   - intros t Hin. apply (Hcl m t Hm). unfold needs. apply in_or_app. auto.
   - intros Hwt. apply (Hcl m p Hm). unfold needs. rewrite Hwt. apply in_or_app. right. left. auto.

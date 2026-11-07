@@ -28,7 +28,7 @@ Definition dummy_st : st :=
 
 (* Run the elaborator and keep its final state, with every symbol's
    requirements computed (the elaborator computes them lazily). *)
-Definition run_elab (x : Input.sx) : Input.res (xprogram * st) :=
+Definition run_elab (x : Sx.sx) : Input.res (xprogram * st) :=
   match read_bundle x with
   | Good b =>
       match load_world b with
@@ -542,7 +542,7 @@ Ltac fnelab m ret vars :=
 (* The static reading of a bundle the elaborator rejects: its loader's
    world and every source symbol's requirements, without elaborating any
    body. *)
-Definition run_world (x : Input.sx) : Input.res st :=
+Definition run_world (x : Sx.sx) : Input.res st :=
   match read_bundle x with
   | Good b =>
       match load_world b with

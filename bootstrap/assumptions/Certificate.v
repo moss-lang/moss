@@ -7,8 +7,7 @@ From NM Require Certified Parse FastPath Prune SlotX FoldX
   CachedClo CachedCloFacts FunctionFrameProgram XElabTyped.
 
 Print Assumptions NM.Certified.Certified.elaborate.
-Print Assumptions NM.Certified.Certified.elaborate_sx.
-Print Assumptions NM.Certified.Certified.elaborate_sx_reads.
+Print Assumptions NM.Certified.elaborate_sx_reads.
 Print Assumptions NM.Certified.Certified.eval_deterministic.
 Print Assumptions NM.Certified.Certified.interp_sound.
 Print Assumptions NM.Certified.Certified.interp_complete.

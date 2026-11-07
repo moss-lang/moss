@@ -40,12 +40,15 @@ errors and positions included.
   - [`Audit.v`](theories/Audit.v): what a reader has to trust, and nothing
     else (below). It imports only Rocq's standard library.
   - [`Parse.v`](theories/Parse.v): the lexer, the parser, the parse dump
-    and the module loader, from a file's bytes to the bundle `Audit.v`'s
-    Part I reads.
+    and the module loader, from a file's bytes to the bundle specified in
+    `Audit.v` Part I.
+  - [`Sx.v`](theories/Sx.v): the S-expression codec for parsed files and
+    bundles.
+  - [`CoreInterp.v`](theories/CoreInterp.v): the fueled implementation of
+    Core Moss's `eval`, bound to the audit contract by `Certified.v`.
   - [`Elab.v`](theories/Elab.v): the elaborator, from a bundle to an
     elaborated program (Core Moss extended with records, loops, memory and
-    primitives) or an error message. [`Sx.v`](theories/Sx.v) and
-    [`NMap.v`](theories/NMap.v) support it.
+    primitives) or an error message. [`NMap.v`](theories/NMap.v) supports it.
   - [`MossX.v`](theories/MossX.v): the interpreter of elaborated programs
     and the concrete primitives (linear memory, IEEE floats, WASI, the GC
     heap); [`FastX.v`](theories/FastX.v) (map-keyed environments) and
@@ -240,10 +243,10 @@ decision), and the obligations, as module types (Part VI):
   the grammar of Moss's surface syntax (`Audit.v` Part I.2), file by
   file; and `LOADER`: a bundle the loader loads is `Audit.Loader.Bundled`,
   every module a readable file deriving its AST, each once, closed under
-  its imports and the prelude. That the dump reads back as the AST it
-  was made from is proved in `DumpRoundTrip.v`; the loader checks the
-  dump's name restrictions at the serialization boundary, and `Bundled`
-  requires the module's AST to equal the parsed one.
+  its imports and the prelude. `Bundled` requires the module's AST to equal
+  the parsed one. The loader proof uses the round-trip theorem from
+  `DumpRoundTrip.v`, and the loader checks the theorem's name restrictions
+  at the serialization boundary.
 - **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory

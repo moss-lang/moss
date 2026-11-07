@@ -24,7 +24,7 @@ open MossX.XS
 
 
 (* tokens: atoms, "quoted", ( ... ) and [ ... ] *)
-let tokenize (s : string) : Audit.Input.sx =
+let tokenize (s : string) : Sx.sx =
   let n = String.length s in
   let pos = ref 0 in
   let rec skip () =
@@ -40,7 +40,7 @@ let tokenize (s : string) : Audit.Input.sx =
     | '(' | '[' -> incr pos; stack := !cur :: !stack; cur := []
     | ')' | ']' as c ->
         incr pos;
-        let done_ = Audit.Input.SL (c = ']', Stdlib.List.rev !cur) in
+        let done_ = Sx.SL (c = ']', Stdlib.List.rev !cur) in
         (match !stack with
          | [] -> failwith "unbalanced"
          | [_] -> result := Some done_
@@ -53,13 +53,13 @@ let tokenize (s : string) : Audit.Input.sx =
           Buffer.add_char b s.[!pos]; incr pos
         done;
         incr pos;
-        cur := Audit.Input.SA (Buffer.contents b) :: !cur
+        cur := Sx.SA (Buffer.contents b) :: !cur
     | _ ->
         let start = !pos in
         while !pos < n && (match s.[!pos] with
                           | ' ' | '\n' | '\t' | '\r' | '(' | ')' | '[' | ']' -> false
                           | _ -> true) do incr pos done;
-        cur := Audit.Input.SA (String.sub s start (!pos - start)) :: !cur
+        cur := Sx.SA (String.sub s start (!pos - start)) :: !cur
   done;
   match !result with Some r -> r | None -> assert false
 
@@ -148,7 +148,7 @@ let () =
        Stdlib.List.iter (fun f ->
          let text = match read_file f with Some t -> t | None -> failwith ("cannot read " ^ f) in
          let out = match Parse.parse_moss text with
-           | Audit.Input.Good a -> Parse.print_sx (Audit.Dump.dump_file a) ^ "\n"
+           | Audit.Input.Good a -> Parse.print_sx (Sx.Dump.dump_file a) ^ "\n"
            | Audit.Input.Bad m -> "ERROR " ^ m ^ "\n" in
          Out_channel.with_open_bin (Filename.concat d (mangle f ^ ".rocq.sx"))
            (fun oc -> output_string oc out)) rest;

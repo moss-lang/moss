@@ -116,7 +116,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Export Audit.
+From NM Require Export Audit CoreInterp.
 Import ListNotations.
 
 Set Implicit Arguments.

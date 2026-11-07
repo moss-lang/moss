@@ -27,13 +27,7 @@ Import ListNotations.
 
 Module Certified <: PROVED_NOW.
   Definition elaborate := Elab.elaborate.
-  Definition elaborate_sx := Elab.elaborate_sx.
-  Lemma elaborate_sx_reads : forall x,
-    elaborate_sx x = match Input.read_bundle x with
-                     | Input.Good b => elaborate b
-                     | Input.Bad m => Input.Bad m
-                     end.
-  Proof. intro x. reflexivity. Qed.
+  Definition interp := CoreInterp.interp.
 
   Definition eval_deterministic := CoreMoss.eval_deterministic.
   Definition interp_sound := CoreMoss.interp_sound.
@@ -120,8 +114,17 @@ Module LoaderCertified <: LOADER.
   Definition load_sound := FrontEndLoader.load_sound.
 End LoaderCertified.
 
-(* The executable roots (Extract2.v extracts these). *)
-Definition elaborate_sx := Certified.elaborate_sx.
+(* The dump adapter used by extraction and its agreement with the typed
+   elaborator. *)
+Definition elaborate_sx := Elab.elaborate_sx.
+Lemma elaborate_sx_reads : forall x,
+  elaborate_sx x = match Sx.read_bundle x with
+                   | Input.Good b => Certified.elaborate b
+                   | Input.Bad m => Input.Bad m
+                   end.
+Proof. intro x. reflexivity. Qed.
+
+(* The other executable root. *)
 Definition run_main := MossX.XS.run_main.
 
 (* Track B: type safety of MossX itself (XTyping.v's judgment,

@@ -20,9 +20,9 @@
 
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
-From NM Require Import Audit DumpRoundTrip.
+From NM Require Import Audit Sx DumpRoundTrip.
 Import ListNotations.
-Import Audit.Input Audit.Syntax Audit.Dump Audit.Loader.
+Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
 Local Open Scope string_scope.
 
 (* ######################################################################## *)
@@ -886,8 +886,7 @@ Definition parse_moss (src : string) : res afile :=
       end
   end.
 
-(* The dump (sexpr.py's format, AST -> sx) is Audit.Dump's: the
-   specification of the loader (Audit.Loader.Bundled) is stated with it. *)
+(* The loader uses the S-expression codec in Sx.Dump. *)
 
 (* ===================== Text ================================================ *)
 
