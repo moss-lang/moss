@@ -1,11 +1,11 @@
-(* The residual callback excludes anonymous method binds without brackets. *)
+(* The residual callback excludes all anonymous method binds, with or without brackets. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore InfoPreserve
  BindSequence BindCopyDispatch BindFnDispatch BindLambdaDispatch BindMethodLambdaExec.
 Import ListNotations.
 Definition method_lambda_bind (sp : spec) (y : aexpr) : bool :=
  match sp,y with
- | Spec (Some _) (Some _) None,AELam _ _ _ => true
+ | Spec (Some _) (Some _) _,AELam _ _ _ => true
  | _,_ => false
  end.
 Section Dispatch.
@@ -25,9 +25,9 @@ Theorem residual_after_method_lambda : forall fuel,
 Proof.
  intros fuel IH Other c e sp y s xs e' c' final Run F C Simple Copy Named FnClass Valid Cache Forward Caller Last.
  destruct (method_lambda_bind sp y) eqn:Class.
- - destruct sp as [[pa|][dn|][bs|]]; cbn [method_lambda_bind] in Class; try discriminate Class.
+ - destruct sp as [[pa|] [dn|] a]; cbn [method_lambda_bind] in Class; try discriminate Class.
    destruct y; cbn [method_lambda_bind] in Class; try discriminate Class.
-   eapply (@check_bind_method_lambda_no_brackets w P R Fl b Load Finj);
+   eapply (@check_bind_method_lambda w P R Fl b Load Finj);
      [exact IH|exact Run|exact Valid|exact Cache|exact Forward|exact Caller|exact Last].
  - exact (Other _ _ _ _ _ _ _ _ _ Run F C Simple Copy Named FnClass Class Valid Cache Forward Caller Last).
 Qed.

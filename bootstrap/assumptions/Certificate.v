@@ -9,7 +9,7 @@ From NM Require Certified Parse FastPath Prune SlotX FoldX
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
 Definition certificate_roots :=
- (@NM.BindMethodLambdaExec.check_bind_method_lambda_no_brackets,
+ (@NM.BindMethodLambdaExec.check_bind_method_lambda,
   @NM.BindMethodDispatch.residual_after_method_lambda,
   @NM.BodyPending.pending,
   @NM.MainProgramBool.main_program_bool,

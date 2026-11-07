@@ -55,6 +55,24 @@ Proof.
  split; assumption.
 Qed.
 
+
+Theorem method_bind_target_reading : forall c e F C pa recv tm meanings s resolved this typed,
+ resolve_type_symbol (cx_mod c) pa s = Good (recv,resolved) ->
+ symbol_type 200 (cx_mod c) recv tm e resolved = Good (this,typed) ->
+ Inv s -> st_w s = w -> CxRel w R Fl c e F C -> Later w P R Fl typed ->
+ TmRel Fl tm (map (trp Fl) tm) e ->
+ (forall key, A.nlook key meanings = option_map (fun y => tr Fl (canon e y)) (nassoc key tm)) ->
+ A.TyOf W (A.fr_mod F) meanings None (ATRef pa None) (tr Fl (canon e this)) /\ WFty this.
+Proof.
+ intros c e F C pa recv tm meanings s resolved this typed Resolve Read Valid World Context Last Types Meaning.
+ destruct (method_bind_receiver w (P:=P) R Fl b Load (cx_mod c) pa recv tm
+   (map (trp Fl) tm) e s resolved this typed Resolve Read Valid World
+   (cr_mod_in _ _ _ _ _ _ _ Context) Types Last) as [Receiver Wellformed].
+ split; [|exact Wellformed].
+ rewrite <- (cr_mod _ _ _ _ _ _ _ Context) in Receiver.
+ eapply method_receiver_canonical; [exact (proj1 (cr_uf _ _ _ _ _ _ _ Context))|exact Meaning|exact Receiver].
+Qed.
+
 Theorem method_bind_target_no_brackets : forall c e F C pa recv s resolved this typed,
  resolve_type_symbol (cx_mod c) pa s = Good (recv,resolved) ->
  symbol_type 200 (cx_mod c) recv (tymap e) e resolved = Good (this,typed) ->
