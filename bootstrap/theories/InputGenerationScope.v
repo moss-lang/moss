@@ -288,3 +288,24 @@ Proof.
  - induction IH as[|[label t]rest H IH IHr];cbn;[reflexivity|].
    cbn in H;rewrite H,IHr,map_app;reflexivity.
 Qed.
+
+Definition semantic_generation_substitution(rho:generation_substitution):subst:=
+ map(fun p=>(fst p,TAbs(snd p)))rho.
+Lemma scope_semantic_lookup : forall rho g,
+ lookup_subst g(semantic_generation_substitution rho)=option_map TAbs(nassoc g rho).
+Proof.
+ intros rho g;unfold semantic_generation_substitution;induction rho as[|[a b]rho IH];cbn[map lookup_subst nassoc assoc fst snd];[reflexivity|].
+ destruct(Nat.eqb g a);[reflexivity|exact IH].
+Qed.
+Lemma scoped_type_read : forall Fl rho t,
+ tr Fl(scoped_type rho t)=Audit.app_subst(semantic_generation_substitution rho)(tr Fl t).
+Proof.
+ intros Fl rho t;induction t as[| |g|h args IH|ts IH|fs IH]using ety_ind';cbn[scoped_type tr Audit.app_subst];try reflexivity.
+ - rewrite scope_semantic_lookup;unfold scoped_generation;destruct(nassoc g rho);reflexivity.
+ - f_equal;induction IH as[|[label t]rest H IH IHr];cbn;[reflexivity|].
+   cbn in H;rewrite H,IHr;reflexivity.
+ - f_equal;induction IH as[|t rest H IH IHr];cbn;[reflexivity|].
+   rewrite H,IHr;reflexivity.
+ - f_equal;induction IH as[|[label t]rest H IH IHr];cbn;[reflexivity|].
+   cbn in H;rewrite H,IHr;reflexivity.
+Qed.
