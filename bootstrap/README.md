@@ -233,7 +233,15 @@ out of fuel (`FastPath.fast_run`):
   and malformed type rows. [`LazyInterpFacts.v`](theories/LazyInterpFacts.v)
   proves exact interpreter agreement at every fuel, and
   [`LazyCloFacts.v`](theories/LazyCloFacts.v) proves closure compilation and
-  composes that agreement with pruning and the family fast path. This
+  composes that agreement with pruning and the family fast path.
+  [`LazyFold.v`](theories/LazyFold.v) unfolds small direct calls whose
+  environment sources are ordinary bindings. It remaps lookups into the
+  caller's environment and gathers those entries once, including every
+  composition source. Checked casts and type-dependent lookups retain the
+  original code. Unsupported operations, failed lookups or evaluation, and
+  insufficient fuel fall back with the original state.
+  [`LazyFoldFacts.v`](theories/LazyFoldFacts.v) proves exact agreement,
+  including runtime types, composition failures and fuel exhaustion. This
   engine remains opt-in while complete bootstrap measurements are pending.
 - `lazy-ref`: the same environments with AST dispatch
   (`LazyInterpFacts.frun_main_eq`).

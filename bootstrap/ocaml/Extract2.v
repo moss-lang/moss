@@ -40,7 +40,8 @@ Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
 Extraction Inline CachedClo.lnil CachedClo.lcons CachedClo.lvar CachedClo.lval
   CachedClo.bnil CachedClo.capply CachedClo.capply_r CachedClo.cbranch csnil cscons
   LazyClo.lnil LazyClo.lcons LazyClo.lvar LazyClo.lval LazyClo.bnil
-  LazyClo.capply LazyClo.capply_r LazyClo.cbranch.
+  LazyClo.capply LazyClo.capply_r LazyClo.cbranch
+  LazyFold.knil LazyFold.kcons.
 Extraction Blacklist String List Char Bool.
 Separate Extraction run_main FastX.frun_main fast_program oracle_program init_state xinterp f64_bits f64_of_bits elaborate_sx
   parse_moss Dump.dump_file print_sx load_bundle bundle_sx print_bundle
@@ -60,3 +61,5 @@ Extraction Library CloScalar.
 Extraction Library CachedClo.
 Extraction Library LazyX.
 Extraction Library LazyClo.
+(* Preserve the same child-code sharing in the scalar closure compiler. *)
+Extraction Library LazyFold.

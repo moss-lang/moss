@@ -3,7 +3,7 @@
    Child/list code is built before its evaluation closure; Extract2.v preserves
    that sharing by extracting this library with term optimizations disabled. *)
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit MossX LazyX.
+From NM Require Import Audit MossX LazyX LazyFold.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.
@@ -239,7 +239,7 @@ Fixpoint cc (e : xexpr) {struct e} : code :=
                                         | XVar x => lvar x cr
                                         | XVl v => lval (IVal v) cr
                                         | _ => let c := cc e in lcons c cr end) lnil args in
-      fun n d g st =>
+      LazyFold.fold_call P (XCallD f th pl args) (fun n d g st =>
       match n with
       | 0 => XR XFuel g st
       | S k =>
@@ -255,7 +255,7 @@ Fixpoint cc (e : xexpr) {struct e} : code :=
               end
           | None => XR (XErr e_nobody) g st
           end
-      end
+      end)
   | XCallA f args =>
       let ca := fold_right (fun e cr => match e with
                                         | XVar x => lvar x cr

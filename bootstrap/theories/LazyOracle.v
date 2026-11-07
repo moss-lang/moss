@@ -1,6 +1,7 @@
-(* The direct closure pipeline has no slot/fold/scalar-template stages.
-   This contract complements Audit's legacy ORACLE_AGREEMENT and states the
-   exact table equations used by the direct engine's OCaml driver. *)
+(* The direct closure pipeline compiles elaborated bodies without SlotX's
+   intermediate representation. This contract complements Audit's legacy
+   ORACLE_AGREEMENT and states the exact table equations used by the driver;
+   optional scalar folding is proved within LazyClo's expression compiler. *)
 From Stdlib Require Import List.
 From NM Require Import Audit.
 From NM Require EarlyCertified LazyX LazyClo LazyInterpFacts LazyCloFacts FastPath Prune.

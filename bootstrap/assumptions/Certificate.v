@@ -106,6 +106,10 @@ Definition certificate_roots :=
   @NM.LazyCloFacts.engine_agrees,
   @NM.LazyCloFacts.fast_engine_agrees,
 
+(* Scalar folding preserves checked composition, runtime types and fuel. *)
+  @NM.LazyFold.fold_call,
+  @NM.LazyFoldFacts.fold_call_agrees,
+
 (* The direct engine bound to its explicit pipeline/table contract. *)
   @NM.LazyOracle.Certified.mapped_engine_agrees,
   @NM.LazyOracle.Certified.compiled_engine_agrees,

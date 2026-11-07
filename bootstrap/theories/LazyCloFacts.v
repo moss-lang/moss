@@ -1,6 +1,6 @@
 (* Closure compilation preserves the split-environment interpreter exactly. *)
 From Stdlib Require Import List Arith.
-From NM Require Import Audit MossX LazyX LazyClo LazyInterpFacts.
+From NM Require Import Audit MossX LazyX LazyClo LazyInterpFacts LazyFoldFacts.
 From NM Require Prune FastPath.
 Import ListNotations.
 Set Implicit Arguments.
@@ -155,6 +155,7 @@ Proof.
     all: try (rewrite cc_while; cbn [fxinterp]; dig Htbl Hftbl IHe IHl IHr IHb IHa IHbr IHar; fail).
     all: try (rewrite cc_loop; cbn [fxinterp]; dig Htbl Hftbl IHe IHl IHr IHb IHa IHbr IHar; fail).
     all: cbn [LazyClo.cc fxinterp]; fold_lists.
+    all: try (apply LazyFoldFacts.fold_call_agrees; cbn [fxinterp]).
     all: dig Htbl Hftbl IHe IHl IHr IHb IHa IHbr IHar.
     all: try (match goal with |- context [match ?w with XVTag _ _ => _ | _ => _ end] => destruct w end;
               cbn iota; try reflexivity; rewrite rfind_carm_cc;
@@ -197,7 +198,7 @@ Proof.
   { induction n as [|k IH].
     - repeat split; intros;
         repeat match goal with
-        | e : xexpr |- _ => destruct e; reflexivity
+        | e : xexpr |- _ => destruct e; first [reflexivity | apply LazyFoldFacts.fold_call_agrees; reflexivity]
         | l : list _ |- _ => destruct l as [|[]]; reflexivity
         end.
     - apply agree_step, IH. }
