@@ -1,7 +1,7 @@
 (* Headers of emitted owners survive even a later top-level lowering pass. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
- FnReadonly FnPresentStable FnPresentEmit FnPresentSynth FnCompleted
+ FnReadonly FnPresentStable FnPresentEmit FnPresentSynth LowerOne
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderSynth.
 Import ListNotations.
 Set Implicit Arguments.

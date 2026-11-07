@@ -1,6 +1,6 @@
 (* Completed runs account for the loaded bodies visible after lowering. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve ElabProgramInput FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve ElabProgramInput FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv LowerOne.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
@@ -95,15 +95,12 @@ Proof.
  apply fh_bind;[apply F|apply Fwd|intro;exact IH].
 Qed.
 
-Definition lower_one(fuel id:nat):M unit:=
- let! g:=sym id in
- if is_some(fn_body g)&&(kind_eqb(gs_kind g)KFn||kind_eqb(gs_kind g)KMethod)
- then lower_body fuel g else ret tt.
+Definition lower_one := LowerOne.lower_one.
 Lemma fh_lower_one:forall fuel id,FH(lower_one fuel id).
 Proof.
  intros fuel id;split.
- - unfold lower_one;okIt.
- - intros b s value final InvS InfoS FwdS Load Run;unfold lower_one in Run.
+ - unfold lower_one, LowerOne.lower_one;okIt.
+ - intros b s value final InvS InfoS FwdS Load Run;unfold lower_one, LowerOne.lower_one in Run.
    apply bind_inv in Run as[g[mid[Read Run]]].
    unfold sym in Read;destruct(nget(st_syms s)id)as[got|]eqn:Lookup;[|discriminate].
    injection Read as <- <-.
@@ -125,7 +122,7 @@ Proof.
  assert(Fold:FH(miter(fun mi=>let m:=get_mod(st_w s)mi in
    miter(lower_one ELAB_FUEL)(module_function_ids m))
    (w_order(st_w s)))).
- {apply fh_miter;[intro mi;apply fh_miter;[intro id;apply fh_lower_one|intro id;unfold lower_one;fwt]|intro mi;apply okF_miter;intro id;unfold lower_one;fwt]. }
+ {apply fh_miter;[intro mi;apply fh_miter;[intro id;apply fh_lower_one|intro id;unfold lower_one, LowerOne.lower_one;fwt]|intro mi;apply okF_miter;intro id;unfold lower_one, LowerOne.lower_one;fwt]. }
  exact(proj2 Fold b s value final InvS InfoS FwdS Load Run).
 Qed.
 

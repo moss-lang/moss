@@ -1,23 +1,14 @@
 (* Successful lambda annotation checks produce the actual LP premises. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
- LambdaTypeRead CanonTypes.
+ LambdaTypeRead CanonTypes LambdaAnnotationOps.
 Import ListNotations.
 Local Open Scope string_scope.
 Module A:=Audit.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL ety_of].
-Definition lambda_parameter_check(c:cx)(e:env)(this:option ety)(what:string)
- (q:(name*option aty)*(name*ety)):M unit:=
- let '((pn,pt),(_,want)):=q in
- match pt with
- |Some t=>let! actual:=ety_of t(cx_mod c)(tymap e)e this in
-   if ety_eqb(canon e actual)(canon e want)then ret tt else
-   let! a:=show actual in let! b:=show want in
-   err(cx_mod c)("parameter `"++pn++"` of the anonymous function bound to "++what++
-   " is annotated `"++a++"`, but "++what++" declares `"++b++"` there (D70)")
- |None=>ret tt end.
+Definition lambda_parameter_check := LambdaAnnotationOps.lambda_parameter_check.
 Lemma ok_lambda_parameter_check:forall c e this what q,ok(lambda_parameter_check c e this what q).
-Proof. intros c e this what[[pn[ty|]][n want]];unfold lambda_parameter_check;okt. all:apply ok_ety_of. Qed.
+Proof. exact LambdaAnnotationOps.ok_lambda_parameter_check. Qed.
 Section Checks.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
@@ -34,7 +25,7 @@ Lemma parameter_annotation_checked:forall c e F C this what pn pt name want s u 
  ParameterAnnotation F C e this(pn,pt)(tc e want).
 Proof.
  intros c e F C this what pn[ty|]name want s u final Run Hi Hc Wthis L;[|exact I].
- unfold lambda_parameter_check in Run;apply bind_inv in Run as[actual[mid[Read Run]]].
+ unfold lambda_parameter_check, LambdaAnnotationOps.lambda_parameter_check in Run;apply bind_inv in Run as[actual[mid[Read Run]]].
  destruct(ok_ety_of _ _ _ _ _ _ _ _ Hi Read)as[Im Frame].
  destruct(ety_eqb(canon e actual)(canon e want))eqn:Equal.
  - injection Run as <- <-;apply ety_eqb_true in Equal.
@@ -62,14 +53,7 @@ Proof.
      (later_back w P R Fl _ _ Ft L)).
    + eapply IH;[lia|exact Tail|exact Im|exact Hc|exact Wthis|exact L].
 Qed.
-Definition lambda_return_check(c:cx)(e:env)(this:option ety)(what:string)(rt:option aty)(want:ety):M unit:=
- match rt with
- |Some t=>let! actual:=ety_of t(cx_mod c)(tymap e)e this in
-   if ety_eqb(canon e actual)(canon e want)then ret tt else
-   let! a:=show actual in let! b:=show want in
-   err(cx_mod c)("the anonymous function bound to "++what++" is annotated to return `"++a++
-   "`, but "++what++" returns `"++b++"` (D70)")
- |None=>ret tt end.
+Definition lambda_return_check := LambdaAnnotationOps.lambda_return_check.
 Theorem lambda_return_checked:forall c e F C this what rt want s u final,
  lambda_return_check c e this what rt want s=Good(u,final)->
  Inv s->CxRel w R Fl c e F C->opt_wf this->Later w P R Fl final->
@@ -78,7 +62,7 @@ Theorem lambda_return_checked:forall c e F C this what rt want s u final,
  |None=>True end.
 Proof.
  intros c e F C this what[ty|]want s u final Run Hi Hc Wthis L;[|exact I].
- unfold lambda_return_check in Run;apply bind_inv in Run as[actual[mid[Read Run]]].
+ unfold lambda_return_check, LambdaAnnotationOps.lambda_return_check in Run;apply bind_inv in Run as[actual[mid[Read Run]]].
  destruct(ety_eqb(canon e actual)(canon e want))eqn:Equal.
  - injection Run as <- <-;apply ety_eqb_true in Equal.
    destruct(lambda_annotation_read w (P:=P) R Fl b Hload c e F C this ty s actual mid Read Hi Hc Wthis L)as[Ty WF].

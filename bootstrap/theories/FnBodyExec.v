@@ -2,16 +2,16 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  InfoInvariant InfoPreserve BodySound BodyConst BodyTr BodyTy CanonTypes ContextClean NominalSupport
- FnBodyContext FnBodyParameters FnBodyTrace FnBodyScope FnBodyReceiver ProviderSig LoadedContextSupport.
+ FnBodyContext FnBodyParameters FnBodyTrace FnBodyScope FnBodyReceiver ProviderSig LoadedContextSupport FnBodyOps.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Lemma ok_fn_sig_body:forall g tm e this,ok(fn_sig g tm e this).
-Proof. intros;unfold fn_sig;okt. Qed.
+Proof. exact FnBodyOps.ok_fn_sig_body. Qed.
 Lemma okI_fn_sig_body:forall g tm e this,okI(fn_sig g tm e this).
 Proof. intros;unfold fn_sig;okIt. Qed.
 Lemma ok_register_body:forall owner e needs sg,ok(register_reify_code owner e needs sg).
-Proof. intros;unfold register_reify_code;okt. Qed.
+Proof. exact FnBodyOps.ok_register_body. Qed.
 Lemma okI_register_body:forall owner e needs sg,okI(register_reify_code owner e needs sg).
 Proof. intros;unfold register_reify_code;okIt. Qed.
 Lemma ok_metadata_body:forall A owner(m:M A),ok m->ok(in_reify_code owner m).

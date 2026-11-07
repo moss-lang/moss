@@ -3,7 +3,7 @@ From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly SymReadonly FnBound FnBoundEmit FnBoundSynth FnPresentStable FnPresentEmit FnPresentSynth
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderSynth ReifyHeaderPresent
- FnBodyTrace FnBodyParameters FnBodyExec FnBodyReceiver ReifyBodyHeader
+ FnBodyTrace FnBodySlots FnBodyOps ReifyBodyHeader
  LambdaOrigin ReifyFrameReady FunctionFrameHistory FunctionFrameOps.
 Import ListNotations.
 Set Implicit Arguments.

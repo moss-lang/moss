@@ -11,10 +11,10 @@ Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
 Lemma ff_lower_one:forall fuel id,FF(lower_one fuel id).
 Proof.
  intros fuel id;split;[apply hp_lower_one|];split.
- - unfold lower_one;apply bf_bind_symbol;intros g Id.
+ - unfold lower_one, LowerOne.lower_one;apply bf_bind_symbol;intros g Id.
    destruct(is_some(fn_body g)&&(kind_eqb(gs_kind g)KFn||kind_eqb(gs_kind g)KMethod));
    [apply bf_lower_body_at|apply bfa_of_bf,bf_ret].
- - intros initial value final I Bound Run;unfold lower_one in Run.
+ - intros initial value final I Bound Run;unfold lower_one, LowerOne.lower_one in Run.
    apply bind_inv in Run as[g[mid[Read Run]]].
    unfold sym in Read;destruct(nget(st_syms initial)id)as[got|]eqn:At;[injection Read as <- <-|discriminate].
    destruct(is_some(fn_body got)&&(kind_eqb(gs_kind got)KFn||kind_eqb(gs_kind got)KMethod)).
