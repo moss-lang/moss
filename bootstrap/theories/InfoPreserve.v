@@ -96,7 +96,14 @@ Qed.
 Definition ok_fi_walk := FnInfoCore.ok_fi_walk.
 
 Lemma ni_fi_walk : forall g e, NI (fi_walk g e).
-Proof. intros g e. unfold fi_walk. destruct (gs_origin g); nit. Qed.
+Proof.
+  intros g e.
+  (* All origins except forwarders execute the same walk. Check that branch once. *)
+  assert (Common : NI (let! acc := mfold (fun acc it => add_assume_item (fst acc) (gs_mod g) it (snd acc)) (e, []) (gs_assumes g) in
+      let! main := is_main g in
+      if main then add_root_context (fst acc) (gs_mod g) (snd acc) else ret acc)) by nit.
+  unfold fi_walk. destruct (gs_origin g); try exact Common. nit.
+Qed.
 
 Definition ok_merged_fi := FnInfoCore.ok_merged_fi.
 
@@ -109,7 +116,13 @@ Proof.
 Qed.
 
 Lemma kwr_merged_fi:forall g,keeps st_wrappers(merged_walk(gs_mod g)(fi_walk g)).
-Proof. intro g;apply kwr_merged_walk_frame;intro;unfold fi_walk;destruct(gs_origin g);keepst. Qed.
+Proof.
+  intro g. apply kwr_merged_walk_frame. intro e.
+  assert (Common : keeps st_wrappers (let! acc := mfold (fun acc it => add_assume_item (fst acc) (gs_mod g) it (snd acc)) (e, []) (gs_assumes g) in
+      let! main := is_main g in
+      if main then add_root_context (fst acc) (gs_mod g) (snd acc) else ret acc)) by keepst.
+  unfold fi_walk. destruct (gs_origin g); try exact Common. keepst.
+Qed.
 Local Strategy opaque[merged_walk].
 Lemma okI_fn_info : forall g0, okI (fn_info g0).
 Proof.

@@ -1,6 +1,6 @@
 (* Ordinary calls of a method already provided in the checked context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySound EtyTyExec
+From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore EtyTyExec
  CanonTypes NominalSupport TySupport SourceSupport CallArgs MethodKeyTr.
 Import ListNotations.
 Set Implicit Arguments.
@@ -8,7 +8,7 @@ Local Strategy opaque [Nat.of_num_uint FUEL ety_ty canon].
 Module PD := Audit.Elaboration.
 Section Direct.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation tc := (fun e t => tr Fl (canon e t)).
 Lemma provided_direct_step : forall fuel, OK w P R Fl fuel -> forall c e ox r m args sg s x t s' F C,
  get_mth e (canon e r) (gs_id m) = Some sg ->

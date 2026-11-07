@@ -1,6 +1,6 @@
 (* The actual platform-root context visitor, including its implicit types. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  Merge CanonTypes CtxWalk CtxMerge CtxMethodExec LibraryFacts ResultMentionsExact ResultMentionsNoDup MethodCallCore XBridge.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -11,14 +11,14 @@ Section Root.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma sym_declared_read:forall x k s g s',
  A.kind_sym WW x=Some k->sym x s=Good(g,s')->Inv s->st_w s=w->
  s'=s/\gs_id g=x/\nget(w_syms w)(gs_id g)=Some g.
 Proof.
  intros x k s g s' K E Hi Hw.
- unfold A.kind_sym,BodySound.W,WorldSound.W_read in K;cbn[A.w_decl A.d_ast]in K.
+ unfold A.kind_sym,BodySoundCore.W,WorldSound.W_read in K;cbn[A.w_decl A.d_ast]in K.
  destruct(nget(w_syms w)x)as[g0|]eqn:Hg;[|discriminate K].
  assert(G:nget(st_syms s)x=Some g0)by exact(iv_loader _ Hi b ltac:(rewrite Hw;exact Hload)x g0 ltac:(rewrite Hw;exact Hg)).
  unfold sym in E;rewrite G in E;injection E as <- <-.
@@ -226,7 +226,7 @@ Lemma sym_world_decl_read:forall x d s g s',
  s'=s/\gs_id g=x/\nget(w_syms w)(gs_id g)=Some g.
 Proof.
  intros x d s g s' Hd E Hi Hw.
- unfold BodySound.W,WorldSound.W_read in Hd;cbn[A.w_decl]in Hd.
+ unfold BodySoundCore.W,WorldSound.W_read in Hd;cbn[A.w_decl]in Hd.
  destruct(nget(w_syms w)x)as[g0|]eqn:Hg;[|discriminate Hd].
  assert(G:nget(st_syms s)x=Some g0)by exact(iv_loader _ Hi b ltac:(rewrite Hw;exact Hload)x g0 ltac:(rewrite Hw;exact Hg)).
  unfold sym in E;rewrite G in E;injection E as <- <-.

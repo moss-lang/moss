@@ -1,6 +1,6 @@
 (* Actual ordinary declaration contexts, including every merge rebuild. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  Merge CanonTypes SourceClean ContextClean CtxWalk CtxMerge NominalSupport
  ContextSupport ContextWalkSupport ContextMergeSupport InfoCache.
 Import ListNotations.
@@ -8,7 +8,7 @@ Section Formation.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem assumes_merged_support:forall g s e needs s',
  (forall t,gs_origin g<>OForwarder t)->
  (forall s0 m s1,st_w s0=w->is_main g s0=Good(m,s1)->m=false)->

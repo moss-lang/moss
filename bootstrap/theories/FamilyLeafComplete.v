@@ -1,6 +1,6 @@
 (* Actual scanner leaves correspond to entries in a completed semantic result read. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  MethodLookup MethodLookupNone MethodKind FamilySelectTrace FamilyOutputLeaf FamilyLeafScan.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -37,7 +37,7 @@ Section Complete.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition FamilyReadComplete(e:env)(mi:nat)(outer:list(nat*ety))(sp:spec)(leaves:list family_leaf):Prop:=
  forall ob tm es tm',A.OutputItemEntries W(gm_path(get_mod w mi))ob tm sp es tm'->
  forall leaf,In leaf leaves->exists rt mid sg ap,

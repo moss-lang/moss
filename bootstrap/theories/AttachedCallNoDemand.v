@@ -1,8 +1,9 @@
+From NM Require Import BodyProofTools.
 From NM Require Import WrapperKeyReadonly.
 From NM Require Import CallFwdReadonly.
 (* Actual defined attached calls when every need is already in force. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr BodyTy
  CanonTypes EtyTyExec Merge InstantiateTr NominalSupport SourceSupport NeedMapExec MethodKeyTr CallArgs CallCacheExec
  CallDefinedCore CallThetaExec DemandEmptyExec ProviderSig ReceiverCallEnv ReceiverFnSig
  CtxWalk CtxMerge SourceSatisfiesAfter MethodSelectExec MethodCallCore MethodCallRoutes AttachedCallExec.
@@ -14,8 +15,8 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Hypothesis ReqNd:forall n,NoDup(A.w_reqs(BodySound.W w R Fl)n).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis ReqNd:forall n,NoDup(A.w_reqs(BodySoundCore.W w R Fl)n).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation tc:=(fun e y=>tr Fl(canon e y)).
 Lemma attached_decl_loaded:forall h n att body,
  A.Attached WW h n(gs_id att)->nget(w_syms w)(gs_id att)=Some att->fn_body att=Some body->

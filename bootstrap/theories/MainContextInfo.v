@@ -1,6 +1,6 @@
 (* The actual fn_info walk of main, including the platform root context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  Merge CanonTypes CtxWalk CtxMerge CtxMethodExec RootContextExec FunctorMerge InfoCache MainRoot LoaderOrigin NeedKeys.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -45,8 +45,8 @@ Section Main.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Let MS:@MethStep w P R Fl:=meth_step_holds w R Fl b Hload.
 Definition MainRd(g:gsym)(es:list A.entry)(tmr:list(nat*ty)):Prop:=
  exists aes atm er,A.ItemsEntries WW(gm_path(get_mod w(gs_mod g)))[][](map A.assume_spec(gs_assumes g))aes atm/\

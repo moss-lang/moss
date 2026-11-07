@@ -1,6 +1,6 @@
 (* A selected scanner leaf remains an output occurrence, even when already present. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv BodySound BodyTr Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv BodySoundCore BodyTr Merge CanonTypes
  TyOfSubst SourceReadingExtend TySupport FamilyMatchReconstruct FamilyCandidateWitness FamilyMarkedSubst
  FamilyMatchingCtx FamilyMarkerSpecialize FamilyLeafComplete FamilyScanSpecialize FamilyLeafScan.
 Import ListNotations.
@@ -9,7 +9,7 @@ Section Selected.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_selected_leaf_occurs:forall fuel c e F C em mi specs si leaves sf leaf sr pat se
  marks matching r ob tm es tm' sigma completed,
  family_leaves fuel em mi specs [] si=Good(leaves,sf)->

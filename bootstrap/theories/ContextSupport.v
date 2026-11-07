@@ -1,13 +1,13 @@
 (* Actual context signature reading preserves declaration support. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy ContextClean NominalSupport SourceSupport.
 Import ListNotations.
 Section Source.
 Variable w : Elab.world. Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Lemma fn_sig_support : forall g tm e this s sg s',
  fn_sig g tm e this s = Good (sg,s') -> Inv s -> st_w s = w -> In (gs_mod g) (w_order w) ->
  Forall (fun p => Support WW (snd p)) tm -> Forall (fun p => WFty (snd p)) tm ->

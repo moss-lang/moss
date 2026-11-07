@@ -1,6 +1,6 @@
 (* Actual attached-method lookup, including its redundant local-table fallback. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy MethodLookup MethodLookupNone MethodKind.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy MethodLookup MethodLookupNone MethodKind.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL].
@@ -45,7 +45,7 @@ Proof. intros;unfold attached_call_lookup;okt. Qed.
 Section Selection.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma attached_call_lookup_exact:forall mi hid hg nm s mg s',
  In mi(w_order w)->nget(w_syms w)hid=Some hg->
  Inv s->st_w s=w->attached_call_lookup mi hid nm s=Good(mg,s')->
@@ -65,7 +65,7 @@ Proof.
  - apply bind_inv in H as(g&s1&Es&H);injection H as <- <-.
    assert(Hatt:A.Attached WW hid nm mid)by(unfold A.Attached;change(match nget(w_syms w)hid with Some gr=>assoc attached_eqb(hid,nm)(gm_attached(get_mod w(gs_mod gr)))|None=>None end=Some mid);rewrite Hg;exact Ea).
    pose proof(method_named_kind b w R Fl mi hid nm mid Hload Hmi(or_introl Hatt))as K.
-   unfold A.kind_sym in K;cbn[A.w_decl BodySound.W W_read]in K.
+   unfold A.kind_sym in K;cbn[A.w_decl BodySoundCore.W W_read]in K.
    destruct(nget(w_syms w)mid)as[g1|]eqn:Hg1;[|discriminate K].
    assert(G1:nget(st_syms s)mid=Some g1)by exact(iv_loader _ Hi b ltac:(rewrite Hw;exact Hload)mid g1 ltac:(rewrite Hw;exact Hg1)).
    unfold sym in Es;rewrite G1 in Es;injection Es as <- <-.

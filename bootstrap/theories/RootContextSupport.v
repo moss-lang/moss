@@ -1,6 +1,6 @@
 (* Nominal support through the platform's actual root-context visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy BodyTr
  WorldSound CanonTypes CtxWalk CtxMerge CtxMethodExec RootContextExec ContextWalkSupport
  ContextClean ContextSupport NominalSupport LibraryFacts ResultMentionsExact MethodCallCore XBridge.
 Import ListNotations.
@@ -12,8 +12,8 @@ Section Root.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation WW:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 #[local] Hint Resolve ok_functor_fixed ok_ctx_fuel : okdb.
 Lemma root_type_support:forall cf mi xs e needs s e' needs' s' U tm les,
  mfold(fun acc t=>let! tg:=sym t in add_symbol_item cf(fst acc)mi tg[](snd acc))(e,needs)xs s=

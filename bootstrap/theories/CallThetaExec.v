@@ -1,6 +1,6 @@
 (* A direct call records the complete canonical caller instantiation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy EtyTyExec InstantiateTr.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy EtyTyExec InstantiateTr.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
@@ -33,7 +33,7 @@ Proof.
 Qed.
 Theorem call_theta_tr : forall c e F C g s th s',
  call_theta e g s=Good(th,s')->Inv s->Later w P R Fl s'->CxRel w R Fl c e F C->
- th=A.theta_at(BodySound.W w R Fl)C(gs_id g).
+ th=A.theta_at(BodySoundCore.W w R Fl)C(gs_id g).
 Proof.
  intros c e F C g s th s' E Hi L Hc. unfold call_theta in E.
  apply bind_inv in E as[rs[sr[Er E]]].

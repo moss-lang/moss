@@ -373,6 +373,9 @@ Qed.
 Definition VarsIn (s : st) (F : A.frame) : Prop :=
   forall n k, sassoc n (st_vars s) = Some k -> A.slook n (A.fr_var F) = Some k.
 
+Lemma varsin_frame : forall s F F', A.fr_var F' = A.fr_var F -> VarsIn s F -> VarsIn s F'.
+Proof. intros s F F' E H n k Hk. rewrite E. exact (H n k Hk). Qed.
+
 Lemma varsin_back : forall s s' F, Fr s s' -> VarsIn s' F -> VarsIn s F.
 Proof.
   intros s s' F Fs H n k Hk. apply H. destruct Fs as [[_ _ _ _ _ _ [(l & El) _ _ _ _ _]] _].
@@ -483,8 +486,14 @@ Qed.
 
 Definition Post (s : st) (F : A.frame) : Prop := Later s /\ VarsIn s F.
 
+Lemma post_frame : forall s F F', A.fr_var F' = A.fr_var F -> Post s F -> Post s F'.
+Proof. intros s F F' E [L V]. split; [exact L | exact (varsin_frame s F F' E V)]. Qed.
+
 Lemma post_back : forall s s' F, Fr s s' -> Post s' F -> Post s F.
 Proof. intros s s' F Fs [L V]. split; [exact (later_back s s' Fs L) | exact (varsin_back s s' F Fs V)]. Qed.
+
+Lemma fold_stmts_app : forall xs ys tx, fold_stmts (xs ++ ys) tx = fold_stmts xs (fold_stmts ys tx).
+Proof. intros xs ys tx. induction xs as [|x r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
 
 Variable b : bundle.
 Hypothesis Hload : load_world b = Good w.
@@ -630,5 +639,57 @@ Ltac noerr H := exfalso;
 
 
 
+
+Lemma join_tr : forall mi e a b0 exp s t s', join mi e a b0 exp s = Good (t,s') ->
+  Tri (en_uf e) /\ UfWF (en_uf e) -> WFty a -> WFty b0 -> opt_wf exp ->
+  A.Join (trF (canon e a)) (trF (canon e b0))
+    (option_map (fun t => trF (canon e t)) exp) (trF (canon e t)) /\ WFty t.
+Proof. intros mi e a b0 exp s t s' H [_ U] Wa Wb Wx. exact (join_canon_tr Fl mi e a b0 exp s t s' H U Wa Wb Wx). Qed.
+
+Lemma fits_tr : forall e t x, Tri (en_uf e) /\ UfWF (en_uf e) -> fits e t x = true ->
+  A.fits (trF (canon e t)) (trF (canon e x)).
+Proof. intros e t x _ H. exact (fits_canon_tr Fl e t x H). Qed.
+
+Lemma opt_fits_lift : forall a c, A.fits a c -> A.opt_fits a (Some c).
+Proof. intros a c H. exact H. Qed.
+
+Lemma elab_opt_fits_tr : forall e t exp, Tri (en_uf e) /\ UfWF (en_uf e) -> Elab.opt_fits e t exp = true ->
+  A.opt_fits (trF (canon e t)) (option_map (fun t => trF (canon e t)) exp).
+Proof. intros e t exp _ H. exact (opt_fits_canon_tr Fl e t exp H). Qed.
+
+Lemma local_named : forall n s k s' s'' F, local_var n s = Good (k, s') -> Fr s' s'' -> Post s'' F ->
+  A.Named F n /\ A.var_of F n = k.
+Proof.
+  intros n s k s' s'' F H Fs Hp. destruct (post_back _ _ _ Fs Hp) as [_ V].
+  pose proof (V n k (local_var_spec _ _ _ _ H)) as E. unfold A.Named, A.var_of. rewrite E.
+  split; [discriminate | reflexivity].
+Qed.
+
+Lemma ok_join : forall mi e a b0 exp, ok (join mi e a b0 exp).
+Proof. intros. unfold join. okt. Qed.
+
+Lemma bool_type_spec : forall mi s bt s', bool_type mi s = Good (bt, s') -> Later s ->
+  s' = s /\ exists bi x, sassoc "bool"%string (lang_modules w) = Some bi /\
+    sassoc "Bool"%string (gm_names (get_mod w bi)) = Some x /\ bt = YNom x [].
+Proof.
+  intros mi s bt s' H [Lw _ _ Ll]. unfold bool_type in H. binv H as bm s3 Hl. unfold lang in Hl.
+  binv Hl as st0 s4 Hg. injection Hg as E1 E2. subst st0 s4. injection Hl as E1 E2. subst bm s3.
+  rewrite Ll in H. destruct (sassoc "bool"%string (lang_modules w)) as [bi|] eqn:Eb; [|noerr H].
+  binv H as m s5 Hm. unfold the_mod in Hm. injection Hm as E1 E2. subst m s5.
+  rewrite Lw in H. destruct (sassoc "Bool"%string (gm_names (get_mod w bi))) as [x|] eqn:Ex; [|noerr H].
+  injection H as E1 E2. subst bt s'. split; [reflexivity|]. exists bi, x. auto.
+Qed.
+
+Lemma branch_tr : forall bl t, trF (block_bt bl t) = A.branch_ty bl (trF t).
+Proof. intros [ss [y|]] t; reflexivity. Qed.
+
+Lemma branch_canon_tr : forall e bl t, trF (canon e (block_bt bl t)) = A.branch_ty bl (trF (canon e t)).
+Proof. intros e [ss [y|]] t; reflexivity. Qed.
+
+Lemma block_bt_wf : forall bl t, WFty t -> WFty (block_bt bl t).
+Proof. intros [ss [y|]] t W0; cbn; [exact W0 | reflexivity]. Qed.
+
+Lemma block_bt_support : forall bl t, Support W t -> Support W(block_bt bl t).
+Proof. intros [ss [y|]] t S; [exact S|constructor]. Qed.
 
 End Bodies.

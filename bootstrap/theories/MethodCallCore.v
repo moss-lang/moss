@@ -1,6 +1,6 @@
 (* Operational decomposition of the actual method-call branches. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySound InfoPreserve MethodSelectExec.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore InfoPreserve MethodSelectExec.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL synth provided_call fn_info demand_needs check_args canon].

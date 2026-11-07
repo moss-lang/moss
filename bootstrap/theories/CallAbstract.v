@@ -1,6 +1,6 @@
 (* The executable abstract-function branch, using the actual context table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound
+From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore
  EtyTyExec CanonTypes NominalSupport CallArgs.
 Import ListNotations.
 Set Implicit Arguments.
@@ -18,7 +18,7 @@ Qed.
 
 Section Abstract.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation tc := (fun e t => tr Fl (canon e t)).
 Definition abstract_call_code fuel c e fid n sg args : M (xexpr * ety) :=
  let! xs := check_args fuel c e n sg (map AA args) in

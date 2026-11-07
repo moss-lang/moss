@@ -1,6 +1,7 @@
+From NM Require Import BodyProofTools.
 (* Selected provision routes, justified by actual attached/scope tables. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  CanonTypes Merge NominalSupport TySupport SourceSupport MethodLookup MethodSelectExec MethodCallCore DetachedResolve ElabMono ProvidedDirect.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -10,7 +11,7 @@ Proof. intros Fl y h H;destruct y;cbn[head]in H;try discriminate H;injection H a
 Section Routes.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation tc:=(fun e y=>tr Fl(canon e y)).
 Lemma method_receiver_clean:forall c e F C r,
  CxRel w R Fl c e F C->WFty r->Support WW r->ety_ok(canon e r)=true.

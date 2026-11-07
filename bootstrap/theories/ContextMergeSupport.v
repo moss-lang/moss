@@ -1,6 +1,6 @@
 (* Support is carried through every actual context-rebuild round. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy Merge CanonTypes SourceClean ContextClean NominalSupport ContextSupport.
 Import ListNotations.
 Lemma clean_tne_nil : forall e, ContextClean e ->
@@ -21,7 +21,7 @@ Definition support_go (walk:env->M(env*list key))(mi:nat) :=
 Section Rounds.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(walk:env->M(env*list key)).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Hypothesis Hok:forall e,ok(walk e).
 Hypothesis Hround:forall U s e needs s',
  Tri U->UfOK U->UfSupport WW U->Inv s->st_w s=w->Later w P R Fl s'->

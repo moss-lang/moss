@@ -1,6 +1,7 @@
+From NM Require Import BodyProofTools.
 (* Sequential argument checking, from the actual recursive expression step. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySound CanonTypes NominalSupport.
+From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore CanonTypes NominalSupport.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope string_scope.
@@ -32,7 +33,7 @@ Qed.
 
 Section Args.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation tc := (fun e t => tr Fl (canon e t)).
 Variable f : nat.
 (* This is the recursive expression induction step, restricted to an argument. *)
@@ -100,10 +101,10 @@ Section AllFuel.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
 Lemma check_args_aa_ok : forall fuel,
  OK w P R Fl fuel -> forall c e nm sg args s xs s' F C,
- Forall (fun p => WFty(snd p) /\ Support (BodySound.W w R Fl)(snd p)) (sg_params sg) ->
+ Forall (fun p => WFty(snd p) /\ Support (BodySoundCore.W w R Fl)(snd p)) (sg_params sg) ->
  check_args fuel c e nm sg (map AA args) s = Good(xs,s') ->
  Inv s -> InfoInv s -> FwdInv s -> CxRel w R Fl c e F C -> Post w P R Fl s' F ->
- CA.Args (BodySound.W w R Fl) P F C args
+ CA.Args (BodySoundCore.W w R Fl) P F C args
  (map (fun p => tr Fl (canon e (snd p))) (sg_params sg)) xs.
 Proof.
  intros [|[|f]] HOK c e nm sg args s xs s' F C Wps H Hi Hii Hfi Hc Hp.

@@ -44,6 +44,20 @@ Ltac okstep' H L Hi Hi' Fs' := destruct (L _ _ _ Hi H) as [Hi' Fs'].
 
 Definition dstep (v : nat) (c : ascii) : nat := 10 * v + (nat_of_ascii c - 48).
 
+(* Prefer an existing whole-operation invariant before reconstructing its
+   readonly frame through the preceding execution trace. *)
+Local Ltac fwd_inv := first
+ [assumption
+ |match goal with
+  | Run : ?m ?initial = Good (?value, ?final) |- FwdInv ?final =>
+    tryif constr_eq initial final then fail else idtac;
+    let Forward := fresh "Forward" in
+    assert (Forward : okF m) by first [solve [auto with fwdb] | solve [fwt]];
+    eapply (proj2 Forward initial value final);
+      [eassumption | fwd_inv | exact Run]
+  end
+ |BodySound.fwd_inv].
+
 Lemma digits_val_fold : forall l v, A.digits_val l v = fold_left dstep l v.
 Proof. induction l as [|c r IH]; intro v; [reflexivity | cbn; rewrite IH; reflexivity]. Qed.
 

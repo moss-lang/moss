@@ -1,6 +1,6 @@
 (* A collected selection remains a valid family step after earlier groups. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  NominalSupport SourceSupport Merge CanonTypes RelFacts FamilyOnly FamilySelectTrace FamilyMatchingCtx
  FamilyApplyRestore FamilySelectedOccurrence FamilyProducedKey FamilyResultFold FamilyResultFrame
  FamilyMarkerSpecialize TySupport.
@@ -25,7 +25,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall x y,Fl x=Fl y->x=y.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_demand_group:forall f c e0 F C0 e C mi r mid s g matching ss sa pre e' sf rawWanted wanted sc,
  A.WorldOf b W->check_contexts sc=Good(tt,sc)->st_w sc=w->
  family_member mi e0 r mid s=Good(Some(g,matching),ss)->

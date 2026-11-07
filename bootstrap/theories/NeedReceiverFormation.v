@@ -1,6 +1,6 @@
 (* Method requirements of real callee contexts have well formed supported receivers. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  CoreMoss Merge CanonTypes SourceClean ContextClean NominalSupport TypeReadingInj CtxWalk CtxMerge
  InfoInvariant InfoCache FnBodyContext LoadedContextSupport SourceSatisfiesAny MainContextInfo
  NeedInfoExec MainRoot LoaderOrigin NeedMapExec InstantiateTr.
@@ -33,8 +33,8 @@ Section Formation.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
-Notation W:=(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition NeedReceivers(info:fninfo):Prop:=forall r m,In(KyMth r m)(fi_needs info)->
  WFty r/\Support W r.
 Lemma fn_context_need_receivers:forall g info,

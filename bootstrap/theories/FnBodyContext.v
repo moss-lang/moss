@@ -3,7 +3,7 @@ From NM Require Import CanonBodyTy.
    before parameter locals are installed. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant
- BodySound BodyTy BodyTr Merge CanonTypes CtxWalk CtxMerge CtxMethodExec InfoCache
+ BodySoundCore BodyTy BodyTr Merge CanonTypes CtxWalk CtxMerge CtxMethodExec InfoCache
  ContextClean ContextMergeSupport NominalSupport FnContextFunctors ContextFixed
  FunctorDecl MainRoot MainContextInfo SourceSatisfiesAny LoaderOrigin LoadedContextSupport
  FnSigExec ProviderSig SourceClean ContextSupport ContextFnSnapshots.
@@ -35,7 +35,7 @@ Qed.
 
 Section BodyContext.
 Variables(w:Elab.world)(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma fn_ctx_initial_body:forall g info sg variables,
  FnCtx w R Fl g info ->ContextClean(fi_env info)->Tri(en_uf(fi_env info))->
  EnvSupport WW(fi_env info)->en_locals(fi_env info)=[]->In(gs_mod g)(w_order w)->
@@ -103,7 +103,7 @@ Section LoadedContext.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:A.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:A.WorldOf b(BodySoundCore.W w R Fl).
 Theorem fn_info_context_loaded:forall g s info final,
  nget(w_syms w)(gs_id g)=Some g->fn_info g s=Good(info,final)->
  Inv s->InfoInv s->st_w s=w->Later w P R Fl final->FnCtx w R Fl g info.
@@ -113,10 +113,10 @@ Proof.
  destruct(is_main_total g s)as[main Main].
  pose proof(is_main_spec w R Fl b Hload g s main s Loaded Hw Main)as Spec.
  destruct main.
- - assert(IsMain:A.IsMainFn(BodySound.W w R Fl)(gs_id g))by(apply(proj1 Spec);reflexivity).
+ - assert(IsMain:A.IsMainFn(BodySoundCore.W w R Fl)(gs_id g))by(apply(proj1 Spec);reflexivity).
    exact(proj1(fn_info_main w(P:=P)R Fl b Hload Hworld Finj g s info final
      Loaded IsMain Run Inv Cache Hw Late)).
- - assert(NotMain:~A.IsMainFn(BodySound.W w R Fl)(gs_id g)).
+ - assert(NotMain:~A.IsMainFn(BodySoundCore.W w R Fl)(gs_id g)).
    {intro IsMain;apply(proj2 Spec)in IsMain;discriminate. }
    eapply fn_info_ctx_any;[exact Hload|exact Finj|exact(meth_step_holds w R Fl b Hload)|
      exact Loaded|exact(loaded_no_forwarder b w g Hload Loaded)|exact NotMain|
@@ -134,13 +134,13 @@ Theorem loaded_function_body_context:forall g s info si sr sg final this variabl
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn receiver name parameters result body->
  fn_info g s=Good(info,si)->fn_sig g(tymap(fi_env info))(fi_env info)this sr=Good(sg,final)->
  Inv s->InfoInv s->Inv sr->Fr si sr->st_w s=w->Later w P R Fl final->
- (match this with None=>True|Some t=>ety_ok t=true/\Support(BodySound.W w R Fl)t end)->
- exists C,A.CtxOf(BodySound.W w R Fl)(gs_id g)C(map(key_tr Fl)(fi_needs info))/\
- A.SigOf(BodySound.W w R Fl)(gs_id g)(A.c_ty C)
+ (match this with None=>True|Some t=>ety_ok t=true/\Support(BodySoundCore.W w R Fl)t end)->
+ exists C,A.CtxOf(BodySoundCore.W w R Fl)(gs_id g)C(map(key_tr Fl)(fi_needs info))/\
+ A.SigOf(BodySoundCore.W w R Fl)(gs_id g)(A.c_ty C)
    (option_map(fun t=>tr Fl(canon(fi_env info)t))this)(canonical_sig Fl(fi_env info)sg)/\
  CxRel w R Fl(initial_body_context g sg)(fi_env info)
    (initial_body_frame w Fl g(fi_env info)sg variables)C/\sg_this sg=this/\
- SigOK sg/\SigSupport(BodySound.W w R Fl)sg.
+ SigOK sg/\SigSupport(BodySoundCore.W w R Fl)sg.
 Proof.
  intros g s info si sr sg final this variables receiver name parameters result body
    Loaded Decl Info Signature Inv Cache InvR ReceiverFrame Hw Late This.
@@ -161,7 +161,7 @@ Proof.
  {destruct this;[apply ety_ok_wf;exact(proj1 This)|exact I]. }
  pose proof(fn_sig_clean_at w(P:=P)R Fl b Hload g _ _ _ _ _ _ Signature InvR Wr Loaded
    Tm Tm ThisClean Late)as SigClean.
- assert(SigSupported:SigSupport(BodySound.W w R Fl)sg).
+ assert(SigSupported:SigSupport(BodySoundCore.W w R Fl)sg).
  {eapply fn_sig_support_at;[exact Hload|exact Signature|exact InvR|exact Wr|
     exact(loader_mod_in w R Fl b Hload _ _ Loaded)| | |exact Support|
      | |exact Late].
