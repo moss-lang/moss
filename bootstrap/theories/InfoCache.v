@@ -11,7 +11,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound BodyTy Merge CtxWalk CtxMerge FinalForwarders FinalLambdas MethodRows.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CtxWalk CtxMerge FinalForwarders FinalLambdas MethodRows.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -23,7 +23,7 @@ Local Strategy opaque [Nat.of_num_uint FUEL].
 (* 1. Steps that leave the cache alone                                       *)
 (* ======================================================================== *)
 
-From NM Require Export InfoPreserve.
+From NM Require Export InfoInvariant.
 
 Lemma later_fromL : forall w {P} R Fl s s', FrL s s' -> Later w P R Fl s' -> Later w P R Fl s.
 Proof.
@@ -48,7 +48,7 @@ Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat)
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Hypothesis MS : @MethStep w P R Fl.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 
 (* what fn_info_ctx concludes of an info i of g *)
@@ -129,7 +129,7 @@ Proof.
     exact (walk_ctx g s e needs s1 Hg Nf Nm Nm' H1 Hi Hw (later_info w R Fl s1 _ L)).
 Qed.
 
-(* Without merges (BodySound's CxRel, for now), the context's tables are
+(* Without merges (BodySoundCore's CxRel, for now), the context's tables are
    fi_env's read by tr, in CxRel's form *)
 Corollary fnctx_nomerge : forall g i, FnCtx g i -> en_uf (fi_env i) = [] ->
   let e := fi_env i in
@@ -209,7 +209,7 @@ Qed.
 Section Fwd.
 Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b = Good w.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 (* the target's requirements are type symbols of the loader's *)
 Definition ReqTypes (t : nat) : Prop :=
@@ -226,10 +226,10 @@ Proof.
   apply (proj1 (A.wo_reqs_plain Wo t Kt ltac:(discriminate) ltac:(discriminate) ltac:(discriminate) ltac:(discriminate) r)) in Hr.
   destruct Hr as (d & pa & _ & _ & St). pose proof (spectypes_type _ _ _ St) as Kr.
   unfold A.kind_sym in Kr. destruct (A.w_decl WW r) eqn:Dr; [|discriminate].
-  cbn [A.w_decl BodySound.W W_read] in Dr. destruct (nget (w_syms w) r) as [rg|] eqn:Er; [|discriminate].
+  cbn [A.w_decl BodySoundCore.W W_read] in Dr. destruct (nget (w_syms w) r) as [rg|] eqn:Er; [|discriminate].
   exists rg. split; [reflexivity|]. apply kconv_type.
   pose proof (kind_sym_rd w R Fl b Hload _ _ Er) as Kr'. unfold A.kind_sym in Kr'.
-  cbn [A.w_decl BodySound.W W_read] in Kr'. rewrite Er in Kr'. injection Dr as <-. rewrite Kr in Kr'.
+  cbn [A.w_decl BodySoundCore.W W_read] in Kr'. rewrite Er in Kr'. injection Dr as <-. rewrite Kr in Kr'.
   injection Kr' as E. exact (eq_sym E).
 Qed.
 

@@ -1,6 +1,6 @@
 (* Successful automatic family selection and application really produce the key. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  BodyTy NominalSupport CanonTypes FamilyMatchingCtx FamilyApplyRestore FamilySelectTrace
  FamilyResultFrame RelFacts ProvideResultContext.
 Import ListNotations.
@@ -24,7 +24,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_application_produces:forall fuel c e F C g n names args res matching wanted s pre e' sf r mid sg,
  A.WorldOf b W->nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  A.Family W(gs_id g)->apply_family fuel c e g matching wanted s=Good((pre,e'),sf)->

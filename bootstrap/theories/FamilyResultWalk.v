@@ -1,7 +1,7 @@
 (* Sequential actual result walks for method-only families. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
- Merge CanonTypes NominalSupport CtxWalk CtxMerge FamilyShapeExec FamilyMethodExec FamilyMethodCtx FamilyResultFold TySupport
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+ Merge CanonTypes NominalSupport CtxWalk KeyTranslation FamilyShapeExec FamilyMethodExec FamilyMethodCtx FamilyResultFold TySupport
  FamilyOutputSubst ProvideResultExec ProvideResultFold.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -11,7 +11,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Definition FamilyItemOK(fuel:nat):Prop:=forall c e F C fg mi sp outer ob out s e' keys s',
  provide_spec fuel e fg mi sp outer out s=Good((e',keys),s')->
  A.FamilyResult W(gm_path(get_mod w mi))sp->

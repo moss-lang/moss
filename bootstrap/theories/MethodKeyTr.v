@@ -1,6 +1,6 @@
 (* Runtime provision keys read the actual checked instantiation table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound EtyTyExec CanonTypes Merge.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore EtyTyExec CanonTypes Merge.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque [Nat.of_num_uint FUEL ety_ty canon].

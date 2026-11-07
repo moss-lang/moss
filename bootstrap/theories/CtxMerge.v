@@ -28,8 +28,10 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySound BodyTy Merge CanonTypes ContextClean CtxWalk LFunPresence.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes ContextClean CtxWalk LFunPresence.
 From NM Require Export FnInfoCore TypeReadingInj.
+From NM Require Import KeyTranslation.
+Include KeyTranslation.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -279,13 +281,7 @@ Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Notation trF := (tr Fl).
 
 (* the item an elaborator key reads as *)
-Definition key_tr (k : key) : item :=
-  match k with
-  | KyVal v => IVal v
-  | KyFn f => IFn f
-  | KyMth r m => IMth (trF r) m []
-  | KyFun u => IFun u
-  end.
+Local Notation key_tr := (KeyTranslation.key_tr Fl).
 
 Lemma sigma_tr : forall U e t, en_uf e = U -> Tri U -> asub (suf Fl U) (trF t) = trF (canon e t).
 Proof. intros U e t E T. rewrite (tr_res Fl U (tri_rk U T)), canon_res, E. reflexivity. Qed.
@@ -471,7 +467,7 @@ Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat)
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Hypothesis MS : @MethStep w P R Fl.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 
 Lemma ok_is_main : forall g, ok (is_main g).
 Proof. intro g. unfold is_main. destruct (_ || _); okt. Qed.
@@ -707,7 +703,7 @@ Definition capp_fz (a : A.inst) : A.inst :=
   map (fun q => (fst q, option_map (asub σ) (match snd q with Some t => Some t | None => A.nlook (fst q) tm end))) a.
 
 (* the keys whose items tr reads apart *)
-Definition key_ok (k : key) : bool := match k with KyMth t _ => ety_ok t | _ => true end.
+
 
 Lemma key_tr_inj : forall k k', key_ok k = true -> key_ok k' = true -> key_tr Fl k = key_tr Fl k' -> k = k'.
 Proof.
@@ -836,7 +832,7 @@ Variable w : Elab.world. Context {P : xprogram}. Variables (R : nat -> list nat)
 Hypothesis Hload : load_world b = Good w.
 Hypothesis Finj : forall a c, Fl a = Fl c -> a = c.
 Hypothesis MS : @MethStep w P R Fl.
-Notation WW := (BodySound.W w R Fl).
+Notation WW := (BodySoundCore.W w R Fl).
 Notation trF := (tr Fl).
 
 Lemma later_info : forall s c, Later w P R Fl (St (st_w s) (st_syms s) (st_next s) (st_reqs s) (st_sigsyms s) c

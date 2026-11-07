@@ -1,7 +1,7 @@
 (* Actual function output installation reads its declaration and captures the
    instantiation at that read, before installing the next output occurrence. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy CtxWalk SigSound ProvideResultReading.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -17,7 +17,7 @@ Section Function.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Local Opaque reqs type_requirements provision_app fn_sig ety_of.
 Theorem provide_function_read:forall e g tm tmr out s e' keys s' rcv n ps rt body,
  provide_function_code e g tm out s=Good((e',keys),s')->

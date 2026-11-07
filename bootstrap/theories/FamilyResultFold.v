@@ -1,6 +1,6 @@
 (* Normalizing result type tables is justified by the actual context invariant. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySound BodyTr BodyTy Merge CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr BodyTy Merge CanonTypes
  ProvideResultContext ProvideResultFold.
 Import ListNotations.
 Module A:=Audit.Elaboration.

@@ -1,7 +1,7 @@
 (* The actual result bracket reader, retaining type/dependency checks while
    allowing bindings that the result target itself does not mention. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTy.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=Audit.Elaboration.
@@ -10,7 +10,7 @@ Section Reading.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma output_subst_rel:forall a e mi outer s subst0 s' tm ob,
  (match a with
  |Some bs=>let!l:=app_subst 200 e mi bs outer in ret(l++outer)
@@ -37,7 +37,7 @@ Local Opaque reqs type_requirements.
 Section Provision.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition output_inst(a:Elab.inst):A.inst:=
  map(fun q=>(fst q,option_map(tr Fl)(snd q)))a.
 Lemma ordinary_provision_rel:forall g tm tmr e s a s',
@@ -69,7 +69,7 @@ Section Value.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Local Opaque reqs type_requirements.
 Theorem provide_value_read:forall e g t tm tmr out s e' keys s',
  provide_value_code e g t tm out s=Good((e',keys),s')->

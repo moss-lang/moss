@@ -1,6 +1,6 @@
 (* Fixed inputs are present in an abstract functor's actual input context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy CanonTypes
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy CanonTypes
  CtxMerge FunctorContext XBridgeCtx NeedExec BindFunctorCtx.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -51,8 +51,8 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat).
 Lemma recorded_fixed_agreement:forall c e F C u fx,
  CxRel w R Fl c e F C->A.nlook u(A.c_funs C)=Some fx->
- (forall x,A.Fixed(BodySound.W w R Fl)u x->tn_get e x<>None)->
- (forall x raw now,A.Fixed(BodySound.W w R Fl)u x->
+ (forall x,A.Fixed(BodySoundCore.W w R Fl)u x->tn_get e x<>None)->
+ (forall x raw now,A.Fixed(BodySoundCore.W w R Fl)u x->
   (exists a stamp,get_app e(KyFun u)=Some(a,stamp)/\assoc Nat.eqb x a=Some(Some raw))->
   tn_get e x=Some now->canon e raw=canon e now)->
  forall x tx,In(x,tx)fx->exists here,
@@ -122,7 +122,7 @@ Section Actual.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Let WW:=BodySound.W w R Fl.
+Let WW:=BodySoundCore.W w R Fl.
 Theorem actual_application_fixed:forall g n names args res s ef needs sf xf sx mi e c F C fx sy sz,
  A.WorldOf b WW->nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  fun_env g s=Good((ef,needs),sf)->functor_fixed g sf=Good(xf,sx)->
@@ -161,7 +161,7 @@ Section RecordedAgreement.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Let W:=BodySound.W w R Fl.
+Let W:=BodySoundCore.W w R Fl.
 Theorem actual_recorded_fixed_agreement:forall g n names args res s xf sf mi e c F C ss,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  functor_fixed g s=Good(xf,sf)->

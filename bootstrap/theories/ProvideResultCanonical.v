@@ -1,7 +1,7 @@
 (* Output readers use the completed, canonical meaning table.  In particular,
    the model records the same frozen instantiation as actual provided_at. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy Merge CanonTypes TyOfSubst ProvideResultReading ProvideResultSubst.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -24,7 +24,7 @@ Section Read.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Local Opaque reqs type_requirements ety_of provision_app.
 Theorem output_type_canonical:forall t mi tm e this s d s' tmr,
  ety_of t mi tm e this s=Good(d,s')->
@@ -70,7 +70,7 @@ Section Brackets.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem output_brackets_canonical:forall e mi bs outer s xs s' tmr,
  app_subst 200 e mi bs outer s=Good(xs,s')->
  Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl s'->
@@ -98,7 +98,7 @@ Section Signature.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem output_signature_canonical:forall g tm tmr e this s sg s' rcv n ps rt body,
  fn_sig g tm e this s=Good(sg,s')->Inv s->st_w s=w->
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn rcv n ps rt body->

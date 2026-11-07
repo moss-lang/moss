@@ -1,7 +1,7 @@
 (* Output keys are occurrences, in source order; unlike input needs, they
    need not be distinct.  These execution facts do not assume uniqueness. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore.
 Import ListNotations.
 Local Open Scope list_scope.
 

@@ -93,14 +93,12 @@ Qed.
 
 (* ---- fn_info writes the cache ---- *)
 
-Lemma ok_fi_walk : forall g e, ok (fi_walk g e).
-Proof. intros g e. unfold fi_walk. destruct (gs_origin g); okt. Qed.
+Definition ok_fi_walk := FnInfoCore.ok_fi_walk.
 
 Lemma ni_fi_walk : forall g e, NI (fi_walk g e).
 Proof. intros g e. unfold fi_walk. destruct (gs_origin g); nit. Qed.
 
-Lemma ok_merged_fi : forall g, ok (merged_walk (gs_mod g) (fi_walk g)).
-Proof. intro g. rewrite (mw_go_eq (fi_walk g)). apply ok_mw_go. apply ok_fi_walk. Qed.
+Definition ok_merged_fi := FnInfoCore.ok_merged_fi.
 
 Lemma ni_merged_fi : forall g, NI (merged_walk (gs_mod g) (fi_walk g)).
 Proof.

@@ -1,7 +1,7 @@
 (* Actual value provisions retain the body context and checked application. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
- BodyData NominalSupport NominalMergeSupport CanonTypes.
+ NominalSupport NominalMergeSupport CanonTypes CtxWalk.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Module A:=Audit.Elaboration.

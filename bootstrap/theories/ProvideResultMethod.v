@@ -1,7 +1,7 @@
 (* Actual method output reads, including declaration selection and receiver
    instantiation.  Method output brackets do not use input relevance gates. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy CtxWalk CtxMethodExec MethodLookup MethodClean MethodKind SigSound
  FreeTypesExec MethodKeyTr ProvideResultReading ProvideResultFunction.
 Import ListNotations.
@@ -26,7 +26,7 @@ Section Method.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Ltac output_step H Hi Hw L a si E Ii Wi Li:=
  match type of H with mbind ?m ?k ?s=Good(?v,?sf)=>
  let O:=fresh"O"in assert(O:ok m)by okt;

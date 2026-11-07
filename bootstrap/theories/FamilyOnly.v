@@ -1,6 +1,6 @@
 (* Actual successful unique-family selection excludes every semantic competitor. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr BodyTy NominalSupport NMapEnum
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy NominalSupport NMapEnum
  FamilySelectTrace FamilySearchCompetitor FamilySearchRetains FamilyFoldExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -8,7 +8,7 @@ Section Only.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Theorem family_member_only:forall c e F C mi r mid s fg th sf sc,
  (forall x y,Fl x=Fl y->x=y)->A.WorldOf b W->
  check_contexts sc=Good(tt,sc)->st_w sc=w->CxRel w R Fl c e F C->

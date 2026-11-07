@@ -1,6 +1,6 @@
 (* Actual output setters preserve the body context relation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  NominalSupport NominalMergeSupport CanonTypes Merge CtxWalk.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -22,7 +22,7 @@ Qed.
 Section Context.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Definition output_sig(e:env)(sg:Elab.fsig):A.fsig:=
  A.FSig(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))(tr Fl(canon e(sg_ret sg))).
 Lemma cxrel_function:forall c e F C f sg raw app stamp,
@@ -91,7 +91,7 @@ Section MethodContext.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma cxrel_method:forall c e F C r m sg raw app stamp,
  CxRel w R Fl c e F C->canon e r=r->ety_ok r=true->
  SigOK sg->SigSupport WW sg->Support WW r->

@@ -1,6 +1,6 @@
 (* Visible type readings suffice for function signatures after body binds. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy BodyTr
  SourceClean SourceSupport CanonBodyTy CanonTypes NominalSupport NeedMapExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -8,7 +8,7 @@ Section Source.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma fn_sig_clean_at : forall g tm e this s sg s',
   fn_sig g tm e this s = Good (sg,s') -> Inv s -> st_w s = w ->
   nget (w_syms w) (gs_id g) = Some g -> TmClean tm -> TmClean(tymap e) ->

@@ -1,6 +1,6 @@
 (* The actual need checker and satisfaction-map emitter establish Satisfies. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr Merge CtxWalk CtxMerge
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CtxWalk CtxMerge
  CanonTypes InstantiateTr NeedExec NeedMapExec SmapExec InfoShape.
 Import ListNotations.
 Module A:=Audit.Elaboration.

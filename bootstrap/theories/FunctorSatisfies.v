@@ -1,6 +1,6 @@
 (* The actual application checker establishes satisfaction of functor inputs. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr
  CtxWalk CtxMerge FunctorContext NeedSatisfies InfoShape SmapExec.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -8,7 +8,7 @@ Section Execution.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Let WW:=BodySound.W w R Fl.
+Let WW:=BodySoundCore.W w R Fl.
 Theorem fun_env_satisfaction:forall g n names args res s ef needs sf mi e c F C sn ps sp sm ss,
  A.WorldOf b WW->nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  fun_env g s=Good((ef,needs),sf)->Inv s->st_w s=w->Later w P R Fl sf->

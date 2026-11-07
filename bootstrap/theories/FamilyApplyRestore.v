@@ -1,6 +1,6 @@
 (* Actual automatic family application, including temporary type restoration. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  BodyTy NominalSupport CanonTypes FamilyMatchingCtx FamilyApplyExec ApplyAbstractExec
  ApplyThetaExec MethodKeyTr FunctorFixedExec FamilyResultExec ProvideResultExec FamilyResultFold TySupport.
 Import ListNotations.
@@ -12,7 +12,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_abstract_frame:forall fuel c e g n names args res s pre e' c' sf,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->
  A.Family W(gs_id g)->apply_abstract fuel c e g s=Good((pre,e',c'),sf)->

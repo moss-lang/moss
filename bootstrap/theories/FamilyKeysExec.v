@@ -1,6 +1,6 @@
 (* The actual D84 family classifier enforces receiver-determined polymorphism. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  FreeVisitorCore NestingTypesExec ResultMentionsExact FunctorContext FamilyShapeExec MethodLookup MethodLookupNone.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -21,7 +21,7 @@ Section Classifier.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Notation path_of mi:=(gm_path(get_mod w mi)).
 Lemma family_loaded_poly:forall g n names args res t,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->

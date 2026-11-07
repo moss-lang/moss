@@ -1,6 +1,6 @@
 (* Actual method output formation preserves the full source context invariant. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTr BodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes CanonBodyTy TySupport CtxWalk CtxMethodExec MethodLookup MethodLookupNone MethodKind MethodKeyTr SigSound FreeTypesExec
  SourceClean SourceSupport FnSigExec NeedMapExec NominalSupport FamilyMethodExec
  FamilyResultFold ProvideResultMethod ProvideResultFunction ProvideResultReading ProvideResultContext.
@@ -14,7 +14,7 @@ Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a b,Fl a=Fl b->a=b.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Ltac family_step H Hi Hw L a si E Ii Wi Li:=
  match type of H with mbind ?m ?k ?s=Good(?v,?sf)=>
  let O:=fresh"O"in assert(O:ok m)by okt;

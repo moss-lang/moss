@@ -1,13 +1,13 @@
 (* Actual context update used by a source type binding. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
- BodyData CanonBodyTy SourceSupport EtyTyExec NominalSupport NominalMergeSupport CanonTypes.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+ NatAssoc CanonBodyTy SourceSupport EtyTyExec NominalSupport NominalMergeSupport CanonTypes.
 Import ListNotations.
 Module A:=Audit.Elaboration.
 Section TypeBinding.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Lemma cxrel_type : forall c e F C t ty stamp,
  CxRel w R Fl c e F C ->WFty ty ->Support WW ty ->
  CxRel w R Fl c(set_tn e t ty stamp)F(A.set_ty C t(tr Fl(canon e ty))).
@@ -34,7 +34,7 @@ Section Execution.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Theorem check_bind_type_sound_full : forall fuel c e pp rp ra s xs e' c' s' F C,
  check_bind fuel c e (Spec(Some pp)None None)(AEPath rp ra)s=Good((xs,e',c'),s') ->
  Inv s ->CxRel w R Fl c e F C ->Later w P R Fl s' ->
@@ -119,8 +119,8 @@ Hypothesis Hload:load_world b=Good w.
 Theorem check_bind_type_rhs:forall fuel c e pp y s xs e' c' s' F C,
  check_bind fuel c e(Spec(Some pp)None None)y s=Good((xs,e',c'),s')->
  Inv s->CxRel w R Fl c e F C->Later w P R Fl s'->
- (exists t,A.resolve_sym(BodySound.W w R Fl)(A.fr_mod F)pp=Some t /\
-  A.kind_sym(BodySound.W w R Fl)t=Some A.DKType)->
+ (exists t,A.resolve_sym(BodySoundCore.W w R Fl)(A.fr_mod F)pp=Some t /\
+  A.kind_sym(BodySoundCore.W w R Fl)t=Some A.DKType)->
  exists rp ra,y=AEPath rp ra.
 Proof.
  intros fuel c e pp y s xs e' c' s' F C E Hi Hc L(t0 &Hrs &Hkt).
@@ -135,7 +135,7 @@ Proof.
  assert(Et:t0=t).
  { unfold A.resolve_sym in Hrs. rewrite(cr_mod _ _ _ _ _ _ _ Hc),Hres in Hrs. injection Hrs as <-;reflexivity. }
  subst t0. pose proof(kind_sym_read b w R Fl Hload t g Hg)as Kd.
- change(A.kind_sym(BodySound.W w R Fl)t=Some(kconv(gs_kind g)))in Kd.
+ change(A.kind_sym(BodySoundCore.W w R Fl)t=Some(kconv(gs_kind g)))in Kd.
  assert(Kg:gs_kind g=KType)by(rewrite Kd in Hkt;destruct(gs_kind g);try discriminate Hkt;reflexivity).
  rewrite Kg in E. destruct y;try noerr_bind E. eexists;eexists;reflexivity.
 Qed.

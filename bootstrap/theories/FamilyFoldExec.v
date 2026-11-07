@@ -1,6 +1,6 @@
 (* Select a genuine visit, including the prefix and suffix executions. *)
 From Stdlib Require Import List.
-From NM Require Import Sx Elab ElabSound ElabFrame.
+From NM Require Import Sx Elab ElabSound ElabFrameCore.
 Import ListNotations.
 Theorem family_fold_visit:forall X A(step:A->X->M A),
  (forall a x,ok(step a x))->forall xs a s z sf,

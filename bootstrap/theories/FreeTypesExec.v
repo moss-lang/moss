@@ -1,6 +1,6 @@
 (* Method provision applications reuse the context-independent visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame BodySound BodyTy CtxWalk.
+From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy CtxWalk.
 From NM Require Export FreeVisitorCore.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -9,7 +9,7 @@ Section Visitor.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation WW:=(BodySound.W w R Fl).
+Notation WW:=(BodySoundCore.W w R Fl).
 Notation path_of mi:=(gm_path(get_mod w mi)).
 Theorem method_provision_app_rel:forall g rcv n ps rt body tm tmr e s a s',
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn rcv n ps rt body->

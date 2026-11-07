@@ -1,6 +1,6 @@
 (* Recorded actual context brackets transport the matching substitution to the receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv BodySound BodyTr BodyTy Merge CanonTypes CanonBodyTy
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabInv BodySoundCore BodyTr BodyTy Merge CanonTypes CanonBodyTy
  TyOfSubst SourceReadingExtend TySupport ProvideResultCanonical FamilyLeafScan FamilyReceiverExec FamilyReceiverTransfer.
 Import ListNotations.
 Module A:=Audit.Elaboration.
@@ -19,7 +19,7 @@ Section Specialize.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Notation W:=(BodySound.W w R Fl).
+Notation W:=(BodySoundCore.W w R Fl).
 Lemma family_raw_tmrel:forall e outer,
  (forall k y,tn_get e k=Some y->WFty y)->Forall(fun q=>WFty(snd q))outer->
  TmRel Fl(outer++tymap e)(map(trp Fl)(outer++tymap e))e.
