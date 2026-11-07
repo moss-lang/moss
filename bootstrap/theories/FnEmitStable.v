@@ -33,8 +33,11 @@ Qed.
 
 Create HintDb nfdb.
 #[local]Hint Resolve nf_ret nf_emit_unloaded:nfdb.
-Ltac nf_kept:=apply nf_keeps;[solve[okt]|solve[auto with keepsdb]].
-Ltac nf_leaf:=apply nf_keeps;[solve[okt]|solve[keepst]].
+Lemma nf_keeps_first : forall A (m : M A), keeps st_fns m -> ok m -> NF m.
+Proof. intros A m Keeps0 Valid; apply nf_keeps; assumption. Qed.
+
+Ltac nf_kept:=apply nf_keeps_first;[solve[auto with keepsdb]|solve[okt]].
+Ltac nf_leaf:=apply nf_keeps_first;[solve[keepst]|solve[okt]].
 Ltac nft:=repeat(fintros;first[solve[auto with nfdb]|lazymatch goal with
  | |-NF_unloaded ?key(emit_fn ?key _)=>apply nf_emit_unloaded
  | H:gs_id ?g = ?key |-NF_unloaded ?key(lower_body _ ?g)=>rewrite <-H;solve[auto]

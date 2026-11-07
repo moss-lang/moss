@@ -31,7 +31,12 @@ Proof.
 Qed.
 Create HintDb lcdb.
 #[local]Hint Resolve lc_ret:lcdb.
-Ltac lc_kept:=apply lc_keeps;[first[solve[auto with bfdb]|solve[bft]]|solve[auto with keepsdb]].
+Local Lemma lc_keeps_first : forall A (m : M A),
+  keeps st_fns m -> BF m -> LC m.
+Proof. intros A m K B; apply lc_keeps; assumption. Qed.
+(* Reject helpers that change the function table before constructing BF. *)
+Ltac lc_kept := apply lc_keeps_first;
+  [solve [auto with keepsdb] | first [solve [auto with bfdb] | solve [bft]]].
 Ltac lc_leaf:=apply lc_keeps;[solve[bft]|solve[keepst]].
 Ltac lct:=repeat(fintros;first[solve[auto with lcdb]|lazymatch goal with
  | |-LC(mbind(new_sym _ _ _ _ OLambda)_)=>apply lc_new_lambda_bind;[split;discriminate|intro]

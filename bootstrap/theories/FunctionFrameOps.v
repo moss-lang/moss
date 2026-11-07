@@ -44,8 +44,11 @@ Proof.
 Qed.
 Create HintDb ffdb.
 #[export]Hint Resolve ff_ret ff_record_event ff_record_exports:ffdb.
-Ltac ff_kept:=apply ff_keeps;[solve[okt]|solve[auto with keepsdb]|solve[auto with keepsdb]].
-Ltac ff_leaf:=apply ff_keeps;[solve[okt]|solve[keepst]|solve[keepst]].
+Lemma ff_keeps_first : forall A (m : M A), keeps st_fns m -> keeps function_headers m -> ok m -> FF m.
+Proof. intros A m Keeps0 Keeps1 Valid; apply ff_keeps; assumption. Qed.
+
+Ltac ff_kept:=apply ff_keeps_first;[solve[auto with keepsdb]|solve[auto with keepsdb]|solve[okt]].
+Ltac ff_leaf:=apply ff_keeps_first;[solve[keepst]|solve[keepst]|solve[okt]].
 Ltac fft:=repeat(fintros;first[solve[auto with ffdb]|lazymatch goal with
  | |-FF(new_sym _ _ _ _ _)=>apply ff_new_sym;[discriminate|split;discriminate]
  | |-FF(mbind _ _)=>apply ff_bind

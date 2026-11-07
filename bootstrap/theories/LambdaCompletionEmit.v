@@ -50,7 +50,12 @@ Proof.
 Qed.
 Create HintDb chdb.
 #[local]Hint Resolve ch_ret:chdb.
-Ltac ch_kept:=apply ch_keeps;[solve[okt]|solve[auto with keepsdb]|solve[auto with keepsdb]].
+Local Lemma ch_keeps_first : forall A (m : M A),
+  keeps st_fns m -> keeps st_syms m -> ok m -> CH m.
+Proof. intros A m F S O; apply ch_keeps; assumption. Qed.
+(* Reject writes to either table before constructing the invariant proof. *)
+Ltac ch_kept := apply ch_keeps_first;
+  [solve [auto with keepsdb] | solve [auto with keepsdb] | solve [okt]].
 Ltac ch_leaf:=apply ch_keeps;[solve[okt]|solve[keepst]|solve[keepst]].
 Ltac cht:=repeat(fintros;first[solve[auto with chdb]|lazymatch goal with
  | |-CH_at ?owner(emit_fn ?owner _)=>apply cha_emit

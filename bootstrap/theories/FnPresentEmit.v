@@ -34,8 +34,11 @@ Lemma pf_fresh_marker:forall e,PF(fresh_marker e).
 Proof. intro e;apply pf_keeps;[apply ok_fresh_marker|unfold fresh_marker,keeps;intros;injection H as _ <-;reflexivity]. Qed.
 #[export]Hint Resolve pf_fresh_marker:pfdb.
 #[local]Hint Resolve pf_ret pfe_emit:pfdb.
-Ltac pf_kept:=apply pf_keeps;[solve[okt]|solve[auto with keepsdb]].
-Ltac pf_leaf:=apply pf_keeps;[solve[okt]|solve[keepst]].
+Lemma pf_keeps_first : forall A (m : M A), keeps st_fns m -> ok m -> PF m.
+Proof. intros A m Keeps0 Valid; apply pf_keeps; assumption. Qed.
+
+Ltac pf_kept:=apply pf_keeps_first;[solve[auto with keepsdb]|solve[okt]].
+Ltac pf_leaf:=apply pf_keeps_first;[solve[keepst]|solve[okt]].
 Ltac pft:=repeat(fintros;first[solve[auto with pfdb]|lazymatch goal with
  | |-PF_except ?key(emit_fn ?key _)=>apply pfe_emit
  | |-PF(mbind(new_sym _ _ _ _ _)_)=>apply pf_new_sym_bind;[discriminate|split;discriminate|intro]

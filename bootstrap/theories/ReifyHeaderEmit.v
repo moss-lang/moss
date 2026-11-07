@@ -25,8 +25,15 @@ Lemma hs_fresh_marker:forall e,HS(fresh_marker e).
 Proof. intro e;apply hs_keeps;[apply pf_fresh_marker|apply header_keeps_of_rows;unfold fresh_marker;keepst]. Qed.
 #[export]Hint Resolve hs_fresh_marker:hsdb.
 #[local]Hint Resolve hs_ret hse_emit hse_register:hsdb.
-Ltac hs_kept:=apply hs_keeps;[solve[apply pf_keeps;[okt|auto with keepsdb]]|apply header_keeps_of_rows;solve[auto with keepsdb]].
-Ltac hs_leaf:=apply hs_keeps;[apply pf_keeps;[solve[okt]|solve[keepst]]|apply header_keeps_of_rows;solve[keepst]].
+Lemma hs_keeps_first : forall A (m : M A), keeps st_fns m -> keeps function_headers m -> ok m -> HS m.
+Proof.
+  intros A m Functions Headers Valid. apply hs_keeps.
+  - apply pf_keeps; assumption.
+  - apply header_keeps_of_rows; exact Headers.
+Qed.
+
+Ltac hs_kept:=apply hs_keeps_first;[solve[auto with keepsdb]|solve[auto with keepsdb]|solve[okt]].
+Ltac hs_leaf:=apply hs_keeps_first;[solve[keepst]|solve[keepst]|solve[okt]].
 Ltac hst:=repeat(fintros;first[solve[auto with hsdb]|lazymatch goal with
  | |-HSE ?key(emit_fn ?key _)=>apply hse_emit
  | |-HSE ?key(register_reify_code(ROFunction ?key)_ _ _)=>apply hse_register

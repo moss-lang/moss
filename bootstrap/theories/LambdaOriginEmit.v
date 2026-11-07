@@ -32,8 +32,11 @@ Proof.
 Qed.
 #[export]Hint Resolve lh_record_event lh_record_exports:lhdb.
 #[local]Hint Resolve lh_ret:lhdb.
-Ltac lh_kept:=apply lh_keeps;[solve[okt]|solve[auto with keepsdb]|solve[auto with keepsdb]|solve[auto with keepsdb]].
-Ltac lh_leaf:=apply lh_keeps;[solve[okt]|solve[keepst]|solve[keepst]|solve[keepst]].
+Lemma lh_keeps_first : forall A (m : M A), keeps st_fns m -> keeps st_syms m -> keeps function_headers m -> ok m -> LH m.
+Proof. intros A m Functions Symbols Headers Valid; apply lh_keeps; assumption. Qed.
+
+Ltac lh_kept:=apply lh_keeps_first;[solve[auto with keepsdb]|solve[auto with keepsdb]|solve[auto with keepsdb]|solve[okt]].
+Ltac lh_leaf:=apply lh_keeps_first;[solve[keepst]|solve[keepst]|solve[keepst]|solve[okt]].
 Ltac lht:=repeat(fintros;first[solve[auto with lhdb]|lazymatch goal with
  | |-LH_at ?owner(emit_fn ?owner _)=>apply lha_emit
  | |-LH_at ?owner(register_reify_code(ROFunction ?owner)_ _ _)=>apply lha_register

@@ -36,8 +36,11 @@ Create HintDb fwdb.
 Lemma okF_fresh_marker:forall e,okF(fresh_marker e).
 Proof. intro e;apply okF_readonly;[apply ok_fresh_marker|unfold fresh_marker,keeps;intros;injection H as _ <-;reflexivity]. Qed.
 #[export]Hint Resolve okF_ret okF_fresh_marker:fwdb.
-Ltac fw_kept:=apply okF_readonly;[solve[okt]|solve[auto with keepsdb]].
-Ltac fw_leaf:=apply okF_readonly;[solve[okt]|solve[keepst]].
+Lemma fw_keeps_first : forall A (m : M A), keeps st_fwd m -> ok m -> okF m.
+Proof. intros A m Keeps0 Valid; apply okF_readonly; assumption. Qed.
+
+Ltac fw_kept:=apply fw_keeps_first;[solve[auto with keepsdb]|solve[okt]].
+Ltac fw_leaf:=apply fw_keeps_first;[solve[keepst]|solve[okt]].
 Ltac fwt:=repeat(fintros;first[solve[auto with fwdb]|lazymatch goal with
  | |-okF(mbind _ _)=>apply okF_bind
  | |-okF(mmap _ _)=>apply okF_mmap

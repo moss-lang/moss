@@ -32,8 +32,12 @@ Lemma bf_fresh_marker:forall e,BF(fresh_marker e).
 Proof. intro e;apply bf_keeps;[apply ok_fresh_marker|unfold fresh_marker,keeps;intros;injection H as _ <-;reflexivity]. Qed.
 #[export]Hint Resolve bf_fresh_marker:bfdb.
 #[local]Hint Resolve bf_ret bfa_emit:bfdb.
-Ltac bf_kept:=apply bf_keeps;[solve[okt]|solve[auto with keepsdb]].
-Ltac bf_leaf:=apply bf_keeps;[solve[okt]|solve[keepst]].
+Lemma bf_keeps_first : forall A (m : M A), keeps st_fns m -> ok m -> BF m.
+Proof. intros A m Keeps Valid; apply bf_keeps; assumption. Qed.
+
+(* Fail on state-changing operations before constructing their invariant proof. *)
+Ltac bf_kept:=apply bf_keeps_first;[solve[auto with keepsdb]|solve[okt]].
+Ltac bf_leaf:=apply bf_keeps_first;[solve[keepst]|solve[okt]].
 Ltac bft:=repeat(fintros;first[solve[auto with bfdb]|lazymatch goal with
  | |-BF_at ?key(emit_fn ?key _)=>apply bfa_emit
  | H:gs_id ?g = ?key |-BF_at ?key(lower_body _ ?g)=>rewrite <-H;solve[auto]

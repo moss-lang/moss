@@ -9,8 +9,11 @@ Lemma gh_fresh_marker:forall e,GH(fresh_marker e).
 Proof. intro e;apply gh_keeps;[apply ok_fresh_marker|unfold fresh_marker,keeps;intros;injection H as _ <-;reflexivity|unfold fresh_marker,keeps;intros;injection H as _ <-;reflexivity]. Qed.
 #[export]Hint Resolve gh_fresh_marker:ghdb.
 #[local]Hint Resolve gh_ret gha_emit:ghdb.
-Ltac gh_kept:=apply gh_keeps;[solve[okt]|solve[auto with keepsdb]|solve[auto with keepsdb]].
-Ltac gh_leaf:=apply gh_keeps;[solve[okt]|solve[keepst]|solve[keepst]].
+Lemma gh_keeps_first : forall A (m : M A), keeps st_fns m -> keeps st_syms m -> ok m -> GH m.
+Proof. intros A m Keeps0 Keeps1 Valid; apply gh_keeps; assumption. Qed.
+
+Ltac gh_kept:=apply gh_keeps_first;[solve[auto with keepsdb]|solve[auto with keepsdb]|solve[okt]].
+Ltac gh_leaf:=apply gh_keeps_first;[solve[keepst]|solve[keepst]|solve[okt]].
 Ltac ght:=repeat(fintros;first[solve[auto with ghdb]|lazymatch goal with
  | |-GH_at ?key(emit_fn ?key _)=>apply gha_emit
  | H:gs_id ?g = ?key |-GH_at ?key(lower_body _ ?g)=>rewrite <-H;solve[auto]

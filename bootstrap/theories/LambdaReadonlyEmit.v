@@ -34,8 +34,11 @@ Lemma lr_fresh_marker:forall e,LR(fresh_marker e).
 Proof. intro e;apply lr_keeps;[apply ok_fresh_marker|unfold fresh_marker,keeps;intros;injection H as _ <-;reflexivity]. Qed.
 #[export]Hint Resolve lr_fresh_marker:lrdb.
 #[local]Hint Resolve lr_ret lre_emit:lrdb.
-Ltac lr_kept:=apply lr_keeps;[solve[okt]|solve[auto with keepsdb]].
-Ltac lr_leaf:=apply lr_keeps;[solve[okt]|solve[keepst]].
+Lemma lr_keeps_first : forall A (m : M A), keeps st_fns m -> ok m -> LR m.
+Proof. intros A m Keeps0 Valid; apply lr_keeps; assumption. Qed.
+
+Ltac lr_kept:=apply lr_keeps_first;[solve[auto with keepsdb]|solve[okt]].
+Ltac lr_leaf:=apply lr_keeps_first;[solve[keepst]|solve[okt]].
 Ltac lrt:=repeat(fintros;first[solve[auto with lrdb]|lazymatch goal with
  | |-LR_except ?key(emit_fn ?key _)=>apply lre_emit
  | |-LR(mbind(new_sym _ _ _ _ _)_)=>apply lr_new_sym_bind;[discriminate|split;discriminate|intro]
