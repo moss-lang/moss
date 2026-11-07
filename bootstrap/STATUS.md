@@ -144,6 +144,33 @@ and typing proofs remain open. The four conditions in the fresh-link
 assembler remain explicit; the output regression is not treated as proved
 safe or rejected as invalid source.
 
+Private input preparation now has checked components:
+[`InputGenerationScope.v`](theories/InputGenerationScope.v) snapshots the
+input tables while retaining source names and argument labels;
+[`InputGenerationMerge.v`](theories/InputGenerationMerge.v) preserves the
+source merge action in private generation space, including after a source
+name is rebound. [`InputGenerationFresh.v`](theories/InputGenerationFresh.v),
+[`InputGenerationPlan.v`](theories/InputGenerationPlan.v), and
+[`InputGenerationAllocate.v`](theories/InputGenerationAllocate.v) connect a
+finite, injective scope to actual symbol allocations and an inverse reading.
+The support includes method receivers appearing only in application records.
+[`InputGenerationRuntime.v`](theories/InputGenerationRuntime.v) specifies
+input, capture and source-name transfers and proves that old input arguments
+and captured meanings survive shadowing. These preparation steps are not yet
+called by `link_body`; the alpha-capture regression above remains open.
+
+A separate runtime output transfer is implemented: `xresult_env` now exports
+each result type's actual meaning under the caller's fresh generation as well
+as its source name. Previously, a functor taking and replacing `Fresh` could
+produce an I32, but boxing it after application used the old or unresolved
+type and a valid dereference trapped. The native compiler and all oracle
+engines now pass the
+[GC regression](../tests/regressions/functor_output_generation_cast.moss).
+[`InputGenerationExports.v`](theories/InputGenerationExports.v) proves the
+runtime generation reading. The optimized engines retain their agreement
+proofs; core safety derives the empty-transfer case from its existing fresh
+input/output separation and has no additional assumption.
+
 ## Trust and validation boundaries
 
 [`Audit.v`](theories/Audit.v) states the syntax, semantics and proof
