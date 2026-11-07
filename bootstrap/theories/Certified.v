@@ -243,6 +243,8 @@ Module RuntimeCertified <: RUNTIME_SAFETY Certified SourceCertified RuntimeTypin
   Proof. intros source raw result [_ T]. exact (typed_runtime_never_err result T). Qed.
 End RuntimeCertified.
 
-Module OraclePipeline := EarlyCertified.OraclePipeline.
+From NM Require LazyOracle.
 
-Module OracleCertified := EarlyCertified.OracleCertified.
+Module OraclePipeline := LazyOracle.Pipeline.
+
+Module OracleCertified := LazyOracle.Certified.

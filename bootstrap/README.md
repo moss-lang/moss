@@ -258,10 +258,13 @@ out of fuel (`FastPath.fast_run`):
 
 **`Audit.v`** is the contract, and is meant to be read in full. It states
 the input (Part I: the bundle and the surface syntax tree), elaborated
-programs and their meaning (Parts II–IV: Core Moss and MossX, with the
-primitives abstract), the declarative elaboration relation (Part V, a
+programs and their meaning (Parts II–IV: MossX, with the primitives
+abstract), the declarative elaboration relation (Part V, a
 DRAFT for the designer's review, with numbered DRAFT NOTES on each
-decision), and the obligations, as module types (Part VI):
+decision), and the obligations, as module types (Part VI). A supporting
+core calculus before Part VI supplies the existing core proof contracts.
+Historical review notes and counterexamples are preserved in
+[`audit-notes.md`](../docs/design/audit-notes.md).
 
 - `PROVED_NOW`, which `Certified.v` binds: the elaborator is a total
   function; Core Moss's evaluation is deterministic and its interpreter
@@ -290,16 +293,15 @@ decision), and the obligations, as module types (Part VI):
 - `RUNTIME_SAFETY` states MossX expression and entry-point safety, including
   safety of a lowered program given its typing certificate. `Heap.HEAP_LAWS`
   states the laws that the concrete GC primitives satisfy.
-- `ORACLE_AGREEMENT.interpreter_correct` states the slot/fold pipeline's
-  correctness, including its driver table conditions and exceptions for
-  fuel exhaustion and stuck reference runs.
-- [`LazyOracle.v`](theories/LazyOracle.v)'s `DIRECT_PIPELINE` and
-  `DIRECT_AGREEMENT` state the default direct engine's table equations
-  and interpreter agreement. `LazyOracle.Certified` binds its implementation.
+- `ORACLE_AGREEMENT.interpreter_correct` states correctness of the default
+  direct closure engine, including its driver table conditions and
+  exceptions for fuel exhaustion and stuck reference runs.
+  [`LazyOracle.v`](theories/LazyOracle.v) binds `LazyClo` to this contract
+  and checks the component agreement results used by its proof.
 - **Pending**, `SOURCE_RUNTIME_COMPLETE.source_runtime_certificate`: every
   successful source elaboration must produce a successful immutable
   lowering with a runtime typing certificate.
-- **The family fast path** (`Audit.v` DRAFT NOTE 24) is proved, and is
+- **The family fast path** ([design note 24](../docs/design/audit-notes.md)) is proved, and is
   not the elaborator's: the elaborator applies a family exactly by rule 7
   as drafted. Applying the platform's memory family at every memory
   access would compose all 27 of its members each time, two thirds of the
@@ -314,8 +316,8 @@ decision), and the obligations, as module types (Part VI):
   other families, so checked GC casts keep the same behavior.
   `FastPath.fast_run`: the result is exactly the elaborated
   program's, at every fuel at which that run does not run out of fuel;
-  `OracleCertified.interpreter_correct` binds the slot/fold pipeline,
-  and `LazyOracle.Certified.fast_engine_agrees` binds the default pipeline.
+  `OracleCertified.interpreter_correct` binds the default pipeline through
+  `LazyOracle.Certified`.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
 arguments, printing, and the engine's tables, below), Rocq's extraction,

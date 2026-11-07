@@ -1,36 +1,23 @@
-(* ======================================================================== *)
-(* Audit.v — everything a reader must trust about the Moss reference        *)
-(* implementation, and nothing else.                                         *)
-(*                                                                           *)
-(* This file imports no implementation module (no CoreMoss, MossX, Elab,    *)
-(* Sx, ...): only the Rocq standard library.  It is read in this order:     *)
-(*                                                                           *)
-(*   Part I    The surface AST, declarative grammar (Syntax.Derives), and
-               module loader specification (Loader.Bundled). The dump
-               format and codec live in Sx.v. *)
-(*   Part II   Elaborated programs: Core Moss's syntax (types, items,       *)
-(*             terms, Σ) and MossX's extension (records, loops, memory,     *)
-(*             primitives) — what the elaborator outputs.                   *)
-(*   Part III  Their dynamic semantics: Core Moss's big-step `eval` and     *)
-(*             MossX's `xinterp`/`run_main`. The Core Moss interpreter is   *)
-(*             implemented in CoreInterp.v. MossX runs over an            *)
-(*             ABSTRACT primitive semantics (PRIM_SEMANTICS)             *)
-(*             — see the comment there for what that leaves trusted.        *)
-(*   Part IV   The primitives' signatures and the one law the theorems use. *)
-(*   Part V    The declarative elaboration relation (DRAFT, for the         *)
-(*             designer's review).                                           *)
-(*   Part VI   Checked contracts for the front end, source milestones,     *)
-(*             runtime safety, heap laws and interpreter agreement.        *)
-(*             COMPLETE and SOURCE_RUNTIME_COMPLETE record the pending     *)
-(*             end-to-end obligations.                                     *)
-(*                                                                           *)
-(* What is deliberately NOT here: the typing judgment `has_ty` of Core Moss *)
-(* and everything about it (contexts, satisfaction, merging, wf_gsig, the   *)
-(* logical relation).  The guarantee is phrased as: an accepted program      *)
-(* never goes wrong.  So typing is a proof device that lives in CoreMoss.v. *)
-(* The definitions of Parts II–III are verbatim moves out of CoreMoss.v and *)
-(* MossX.v (which now import this file); none was changed.                 *)
-(* ======================================================================== *)
+(* Audit.v — the language model and its public guarantees.
+
+   Read the file along the program's path:
+     I.   Source files, tokens, ASTs and bundles.
+     II.  Elaborated programs: symbols, types, expressions and runtime tables.
+     III. Execution: values, environments, machine operations and outcomes.
+     IV.  Primitive signatures.
+     V.   Source elaboration and name resolution.
+     VI.  Checked contracts and pending end-to-end obligations.
+
+   MossX is the executable language throughout. A supporting core calculus
+   before Part VI states the smaller fragment's existing proof contracts.
+   Implementations and proofs are bound to these contracts in Certified.v.
+
+   Historical design notes and counterexamples are preserved in
+   docs/design/audit-notes.md. Source soundness, elaboration completeness and
+   universal runtime certificate construction remain pending.
+
+   This specification imports only Rocq's standard library.
+*)
 
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat PArray ZArith.
 From Stdlib Require Import String Ascii List Bool Arith.
@@ -41,7 +28,7 @@ Import ListNotations.
 (* Part I. The input                                                         *)
 (* ######################################################################## *)
 
-(* The surface AST and the typed bundle consumed by elaboration. *)
+(* The surface AST and the parsed bundle consumed by elaboration. *)
 Module Input.
 Local Open Scope string_scope.
 
@@ -1144,11 +1131,9 @@ End Loader.
 
 Set Implicit Arguments.
 
-(* ---- II.1 Core Moss (moved from CoreMoss.v; section numbers are its) ---- *)
+(* Shared symbols, types and provision keys. *)
 
-(* Core Moss isolates the abstract type, provision and functor machinery
-   for component proofs. The source elaborator targets the extension
-   MossX directly. The embedding theorem relates the two calculi. *)
+
 
 (* ===================== 1. Symbols ======================================== *)
 
@@ -1285,98 +1270,7 @@ Definition is_ty_item (i : item) : bool :=
    item that satisfies it (recorded by elaboration, used by the dynamics). *)
 Definition smap := list (item * item).
 
-Inductive expr : Type :=
-| EVar     : var -> expr
-| EUnit    : expr
-| EVl      : vsym -> expr
-| ETag     : nsym -> subst -> expr -> expr
-| ECallD   : fsym -> subst -> smap -> list expr -> expr   (* defined fn call *)
-| ECallA   : fsym -> list expr -> expr                    (* abstract fn call *)
-| EMeth    : expr -> msym -> item -> list expr -> expr    (* item: the provision *)
-| EMatch   : expr -> list (nsym * var * expr) -> expr
-| ELet     : var -> expr -> expr -> expr
-| EBindTy  : tsym -> ty -> expr -> expr
-| EBindVal : vsym -> expr -> expr -> expr
-| EBindFn  : fsym -> fsym -> smap -> expr -> expr
-| EBindMth : ty -> msym -> subst -> fsym -> smap -> expr -> expr
-(* Abstract functors [D78].  `bind φ = g;` binds φ to a functor g with a
-   body (ς: g's argument items to φ's); `bind φ = ψ;` copies the binding of
-   an abstract ψ in force (ς: ψ's argument items to φ's); `bind φ;` applies
-   whatever φ is bound to (ς: φ's argument items to the items in force),
-   and is an existential unpack when φ's result holds types. *)
-| EBindFun  : usym -> usym -> smap -> smap -> expr -> expr
-| EBindFunA : usym -> usym -> smap -> expr -> expr
-| EApply    : usym -> subst -> smap -> expr -> expr.
-(* Rule A: EBindFun u h sm smc e also records smc, the bind site's items
-   answering h's captured inputs; EApply u θ sm e applies at θ. *)
-(* In EBindMth the first field is the receiver type; its head is the key. *)
-
-(* A functor body [D55]: a run of binds, the same five forms as the
-   expression-level binds plus an application, with no continuation — the
-   body's provisions are what it leaves in force.  Functors are elaborated
-   away where they are applied by name (deviation 5); a body survives into
-   the core only as the binding of an abstract functor [D78]. *)
-Inductive bnd : Type :=
-| BTy    : tsym -> ty -> bnd
-| BVal   : vsym -> expr -> bnd
-| BFn    : fsym -> fsym -> smap -> bnd
-| BMth   : ty -> msym -> subst -> fsym -> smap -> bnd
-| BFun   : usym -> usym -> smap -> smap -> bnd
-| BFunA  : usym -> usym -> smap -> bnd
-| BApply : usym -> subst -> smap -> bnd.
-
-Inductive value : Type :=
-| VUnit : value
-| VTag  : nsym -> value -> value.
-
-(* ===================== 6. Global signatures ============================== *)
-
-Record fnsig : Type := mkSig { fs_params : list ty; fs_ret : ty }.
-
-(* Σ: every symbol's kind, signature, and (concatenated) enclosing telescope.
-   Method signatures may mention TAbs this_sym; the receiver is understood as
-   an implicit first argument. *)
-Record gsig : Type := mkGsigInterfaces {
-  g_ty  : tsym -> bool;
-  g_tag : nsym -> option (tele * ty);
-  g_val : vsym -> option (tele * ty);
-  g_fn  : fsym -> option (tele * fnsig * option expr);
-  g_mth : msym -> option (tele * fnsig);
-  (* a functor: its argument and result telescopes, and its body — None
-     for an abstract functor `functor F: Args -> Result;` [D78] *)
-  g_fun : usym -> option (tele * tele * option (list bnd));
-  (* Rule A (D84 rule 1).  An abstract functor's *fixed* type inputs X(F).
-     wf_gsig (wf_fun_fixed) makes it exactly M(F) ∖ P(F): the type symbols
-     its result mentions (`fun_mentions`, closed through relevance), less
-     its type outputs, less its brackets. *)
-  g_fixed : usym -> list tsym;
-  (* D84 rule 1: the brackets P(F) of an abstract functor `F[P…]`, read at
-     each application.  An unbracketed `functor F: …;` elaborates to
-     P(F) = M(F), so X(F) = ∅; a functor with a body has no brackets. *)
-  g_poly : usym -> list tsym;
-  (* A functor with a body: the inputs it captures where it is bound, and
-     its pins — manifest equations on captured types (Leroy 1994): `bind
-     Int = Num` in GcArrays's body elaborates to the pin (Int, Num).  Any
-     item may be captured, vals included (D84 3b: vals by value); that a
-     family's bindings bind no vals is a condition on families (rule 7,
-     `family_binding`), not one the calculus imposes on capture. *)
-  g_cap : usym -> tele * subst;
-  (* A genuine nominal type interface whose payload is not observed. *)
-  g_opaque : nsym -> option tele;
-  (* A source interface with no well-formed callable schema. It can be
-     assumed in a telescope, but has no runtime inhabitants. *)
-  g_opaque_fun : usym -> bool
-}.
-
-Definition mkGsigFull ty tag val fn mth functor fixed poly cap opaque : gsig :=
-  mkGsigInterfaces ty tag val fn mth functor fixed poly cap opaque (fun _ => false).
-
-(* Existing calculi declare only payload-bearing nominal types. *)
-Definition mkGsig ty tag val fn mth functor fixed poly cap : gsig :=
-  mkGsigInterfaces ty tag val fn mth functor fixed poly cap (fun _ => None) (fun _ => false).
-
-(* ---- II.2 MossX, the extension the elaborator targets (moved from
-   MossX.v; section numbers are its) ---- *)
+(* MossX: the elaborator's output and the interpreter's language. *)
 
 Local Open Scope nat_scope.
 
@@ -1460,9 +1354,9 @@ Inductive xpat : Type :=
 | XPAny  : option var -> xpat                          (* _ or a binder *)
 | XPHead : nsym -> option var -> list (fld * var) -> xpat.
 
-(* The core's constructors, one for one (XVar .. XApply), then the
-   extensions.  `smap` pairs in XApplyBr are (out, key): what the branch
-   made under `key` is provided under `out` after it. *)
+(* Expressions include calls, provision binding, records and control flow.
+   Satisfaction maps identify the provisions passed to a call. In XApplyBr,
+   each (out, key) exports the branch's key under the name out. *)
 Inductive xexpr : Type :=
 | XVar      : var -> xexpr
 | XUnit     : xexpr
@@ -1617,8 +1511,8 @@ Fixpoint find_branch (h : usym) (brs : list (usym * list xbind * smap))
   | (h', bs, pairs) :: r => if Nat.eqb h h' then Some (bs, pairs) else find_branch h r
   end.
 
-(* The program: function bodies, core functor bodies, and the symbols the
-   extended constructs need to know (Bool's units, for `if`). *)
+(* Runtime tables and external inputs. Function and functor bodies use
+   the same MossX syntax as the elaborator's output. *)
 Record xcastspec : Type := XCastSpec {
   xc_array : bool;
   xc_held : tsym;
@@ -1626,6 +1520,29 @@ Record xcastspec : Type := XCastSpec {
      handle payload is rebound to a different representation. *)
   xc_handle : option (tsym * ty)
 }.
+(* What the elaborator outputs (moved from Elab.v): the bodies of every
+   defined fn (and of the fns elaboration synthesizes: forwarders, lambda
+   providers, wrappers), the core functor bodies `bind F = G;` made, Bool's
+   symbols, `main`, main's initial runtime environment (the platform's
+   provisions for what main assumes), and the names of primitives the
+   model does not implement (PUnsupported i is the i-th). *)
+Record xprogram : Type := XProgram {
+  xo_fns : list (nat * xexpr);
+  xo_funs : list (nat * (tele * list xbind));
+  xo_bool : nat; xo_true : nat; xo_false : nat;
+  xo_main : nat;
+  xo_env : list (item * xdentry);
+  xo_prims : list string;
+  xo_cast : list (nsym * xcastspec);
+  xo_inputs : list (usym * list tsym);
+  xo_exports : list (usym * smap);
+  xo_immutable : bool;
+  xo_fixed_inst : list (usym * subst);
+  xo_fixed_keys : list (usym * list tsym)
+}.
+
+(* Execution view: symbol lookups, runtime inputs and representation data.
+   program_of constructs this view from xprogram and the host inputs. *)
 Record xprog : Type := mkXProg {
   xp_fn    : fsym -> option xexpr;
   xp_fun   : usym -> option (tele * list xbind);
@@ -1644,6 +1561,99 @@ Record xprog : Type := mkXProg {
   (* Actual immutable fixed inputs; their meanings are xp_fixed_inst. *)
   xp_fixed_keys : usym -> list tsym
 }.
+
+(* Signature support for the core proof fragment. Executable function and
+   functor bodies above use xexpr and xbind; gsig also retains the core
+   fragment's bodies for its separate safety and embedding proofs. *)
+Inductive expr : Type :=
+| EVar     : var -> expr
+| EUnit    : expr
+| EVl      : vsym -> expr
+| ETag     : nsym -> subst -> expr -> expr
+| ECallD   : fsym -> subst -> smap -> list expr -> expr   (* defined fn call *)
+| ECallA   : fsym -> list expr -> expr                    (* abstract fn call *)
+| EMeth    : expr -> msym -> item -> list expr -> expr    (* item: the provision *)
+| EMatch   : expr -> list (nsym * var * expr) -> expr
+| ELet     : var -> expr -> expr -> expr
+| EBindTy  : tsym -> ty -> expr -> expr
+| EBindVal : vsym -> expr -> expr -> expr
+| EBindFn  : fsym -> fsym -> smap -> expr -> expr
+| EBindMth : ty -> msym -> subst -> fsym -> smap -> expr -> expr
+(* Abstract functors [D78].  `bind φ = g;` binds φ to a functor g with a
+   body (ς: g's argument items to φ's); `bind φ = ψ;` copies the binding of
+   an abstract ψ in force (ς: ψ's argument items to φ's); `bind φ;` applies
+   whatever φ is bound to (ς: φ's argument items to the items in force),
+   and is an existential unpack when φ's result holds types. *)
+| EBindFun  : usym -> usym -> smap -> smap -> expr -> expr
+| EBindFunA : usym -> usym -> smap -> expr -> expr
+| EApply    : usym -> subst -> smap -> expr -> expr.
+(* Rule A: EBindFun u h sm smc e also records smc, the bind site's items
+   answering h's captured inputs; EApply u θ sm e applies at θ. *)
+(* In EBindMth the first field is the receiver type; its head is the key. *)
+
+(* A functor body [D55]: a run of binds, the same five forms as the
+   expression-level binds plus an application, with no continuation — the
+   body's provisions are what it leaves in force.  Functors are elaborated
+   away where they are applied by name (deviation 5); a body survives into
+   the core only as the binding of an abstract functor [D78]. *)
+Inductive bnd : Type :=
+| BTy    : tsym -> ty -> bnd
+| BVal   : vsym -> expr -> bnd
+| BFn    : fsym -> fsym -> smap -> bnd
+| BMth   : ty -> msym -> subst -> fsym -> smap -> bnd
+| BFun   : usym -> usym -> smap -> smap -> bnd
+| BFunA  : usym -> usym -> smap -> bnd
+| BApply : usym -> subst -> smap -> bnd.
+
+Inductive value : Type :=
+| VUnit : value
+| VTag  : nsym -> value -> value.
+
+(* ===================== 6. Global signatures ============================== *)
+
+Record fnsig : Type := mkSig { fs_params : list ty; fs_ret : ty }.
+
+(* Σ: every symbol's kind, signature, and (concatenated) enclosing telescope.
+   Method signatures may mention TAbs this_sym; the receiver is understood as
+   an implicit first argument. *)
+Record gsig : Type := mkGsigInterfaces {
+  g_ty  : tsym -> bool;
+  g_tag : nsym -> option (tele * ty);
+  g_val : vsym -> option (tele * ty);
+  g_fn  : fsym -> option (tele * fnsig * option expr);
+  g_mth : msym -> option (tele * fnsig);
+  (* a functor: its argument and result telescopes, and its body — None
+     for an abstract functor `functor F: Args -> Result;` [D78] *)
+  g_fun : usym -> option (tele * tele * option (list bnd));
+  (* Rule A (D84 rule 1).  An abstract functor's *fixed* type inputs X(F).
+     wf_gsig (wf_fun_fixed) makes it exactly M(F) ∖ P(F): the type symbols
+     its result mentions (`fun_mentions`, closed through relevance), less
+     its type outputs, less its brackets. *)
+  g_fixed : usym -> list tsym;
+  (* D84 rule 1: the brackets P(F) of an abstract functor `F[P…]`, read at
+     each application.  An unbracketed `functor F: …;` elaborates to
+     P(F) = M(F), so X(F) = ∅; a functor with a body has no brackets. *)
+  g_poly : usym -> list tsym;
+  (* A functor with a body: the inputs it captures where it is bound, and
+     its pins — manifest equations on captured types (Leroy 1994): `bind
+     Int = Num` in GcArrays's body elaborates to the pin (Int, Num).  Any
+     item may be captured, vals included (D84 3b: vals by value); that a
+     family's bindings bind no vals is a condition on families (rule 7,
+     `family_binding`), not one the calculus imposes on capture. *)
+  g_cap : usym -> tele * subst;
+  (* A genuine nominal type interface whose payload is not observed. *)
+  g_opaque : nsym -> option tele;
+  (* A source interface with no well-formed callable schema. It can be
+     assumed in a telescope, but has no runtime inhabitants. *)
+  g_opaque_fun : usym -> bool
+}.
+
+Definition mkGsigFull ty tag val fn mth functor fixed poly cap opaque : gsig :=
+  mkGsigInterfaces ty tag val fn mth functor fixed poly cap opaque (fun _ => false).
+
+(* Existing calculi declare only payload-bearing nominal types. *)
+Definition mkGsig ty tag val fn mth functor fixed poly cap : gsig :=
+  mkGsigInterfaces ty tag val fn mth functor fixed poly cap (fun _ => None) (fun _ => false).
 
 (* Core declarations use erased fixed dependencies. Immutable provisioning
    reads the actual fixed keys and their captured interpretations here. *)
@@ -1692,284 +1702,19 @@ Inductive xout : Type :=
 | XUns  : nat -> xout
 | XFuel : xout.
 
-(* What the elaborator outputs (moved from Elab.v): the bodies of every
-   defined fn (and of the fns elaboration synthesizes: forwarders, lambda
-   providers, wrappers), the core functor bodies `bind F = G;` made, Bool's
-   symbols, `main`, main's initial runtime environment (the platform's
-   provisions for what main assumes), and the names of primitives the
-   model does not implement (PUnsupported i is the i-th). *)
-Record xprogram : Type := XProgram {
-  xo_fns : list (nat * xexpr);
-  xo_funs : list (nat * (tele * list xbind));
-  xo_bool : nat; xo_true : nat; xo_false : nat;
-  xo_main : nat;
-  xo_env : list (item * xdentry);
-  xo_prims : list string;
-  xo_cast : list (nsym * xcastspec);
-  xo_inputs : list (usym * list tsym);
-  xo_exports : list (usym * smap);
-  xo_immutable : bool;
-  xo_fixed_inst : list (usym * subst);
-  xo_fixed_keys : list (usym * list tsym)
-}.
-
 (* ######################################################################## *)
 (* Part III. Dynamic semantics                                               *)
 (* ######################################################################## *)
-
-(* ---- III.1 Core Moss (moved from CoreMoss.v) ---- *)
-
-(* ===================== 10. Dynamics ====================================== *)
-
-(* Runtime contexts: val items carry values; fn and method items carry
-   (code, captured context) pairs — the dynamic residue of [D2]. *)
-Inductive dentry : Type :=
-| DVal : value -> dentry
-| DClo : fsym -> list (item * dentry) -> dentry
-(* a functor binding [D78]: the functor with a body that answers, and the
-   chain of re-keyings out to the abstract functor's arguments — no
-   captured context: the arguments are supplied at each application *)
-| DFun : usym -> list smap -> list (item * dentry) -> dentry.
-(* Rule A: DFun h sms dc also holds dc, the entries h captured where it was
-   bound — a closure, as DClo's. *)
-
-Definition denv := list (item * dentry).
-Definition venv := list (var * value).
-
-Fixpoint lookup_denv (i : item) (d : denv) : option dentry :=
-  match d with
-  | [] => None
-  | (i', en) :: r => if item_eqb i i' then Some en else lookup_denv i r
-  end.
-
-Fixpoint lookup_venv (x : var) (g : venv) : option value :=
-  match g with
-  | [] => None
-  | (x', w) :: r => if Nat.eqb x x' then Some w else lookup_venv x r
-  end.
-
-(* δ ∘ ς: the caller's provisions, restricted and re-keyed to the callee's
-   own requirement names. *)
-Fixpoint compose_smap (d : denv) (sm : smap) : option denv :=
-  match sm with
-  | [] => Some []
-  | (req, s) :: r =>
-      match lookup_denv s d, compose_smap d r with
-      | Some en, Some d' => Some ((req, en) :: d')
-      | _, _ => None
-      end
-  end.
-
-(* Running a binding's chain of re-keyings: the outermost link (the last)
-   first, so the result is keyed by the bound functor's own arguments. *)
-Fixpoint run_chain (d : denv) (sms : list smap) : option denv :=
-  match sms with
-  | [] => Some d
-  | sm :: r =>
-      match run_chain d r with
-      | Some d' => compose_smap d' sm
-      | None => None
-      end
-  end.
-
-(* The identity re-keying of a result telescope's non-type items: running
-   it restricts an environment to exactly the result [D78]. *)
-Definition id_smap (D : tele) : smap :=
-  map (fun i => (i, i)) (filter (fun i => negb (is_ty_item i)) D).
 
 (* Rule A: an application at θ files each result entry under the result
    item read at θ — the key its scope refers to it by. *)
 Definition inst_smap (th : subst) (D : tele) : smap :=
   map (fun i => (app_subst_item th i, i)) (filter (fun i => negb (is_ty_item i)) D).
 
-Fixpoint find_arm (n : nsym) (arms : list (nsym * var * expr))
-  : option (var * expr) :=
-  match arms with
-  | [] => None
-  | (n', x, eb) :: r => if Nat.eqb n n' then Some (x, eb) else find_arm n r
-  end.
-
-Definition mk_venv (ws : list value) : venv :=
-  combine (seq 0 (length ws)) ws.
-
-(* Big-step evaluation (Figure 7 of the paper), with a functor body's run
-   and an application [D78] defined alongside: an application looks up the
-   binding, re-keys the caller's environment to the bound functor's own
-   arguments, runs its binds there, and keeps exactly the result. *)
-Inductive eval (Sg : gsig) : denv -> venv -> expr -> value -> Prop :=
-| EvUnit : forall d g,
-    eval Sg d g EUnit VUnit
-| EvVar : forall d g x w,
-    lookup_venv x g = Some w ->
-    eval Sg d g (EVar x) w
-| EvVal : forall d g v w,
-    lookup_denv (IVal v) d = Some (DVal w) ->
-    eval Sg d g (EVl v) w
-| EvTag : forall d g n th e w,
-    eval Sg d g e w ->
-    eval Sg d g (ETag n th e) (VTag n w)
-| EvLet : forall d g x e1 e2 w1 w,
-    eval Sg d g e1 w1 ->
-    eval Sg d ((x, w1) :: g) e2 w ->
-    eval Sg d g (ELet x e1 e2) w
-| EvMatch : forall d g e0 arms n w' x eb w,
-    eval Sg d g e0 (VTag n w') ->
-    find_arm n arms = Some (x, eb) ->
-    eval Sg d ((x, w') :: g) eb w ->
-    eval Sg d g (EMatch e0 arms) w
-| EvCallD : forall d g f th sm args D S body ws d' w,
-    g_fn Sg f = Some (D, S, Some body) ->
-    Forall2 (eval Sg d g) args ws ->
-    compose_smap d sm = Some d' ->
-    eval Sg d' (mk_venv ws) body w ->
-    eval Sg d g (ECallD f th sm args) w
-| EvCallA : forall d g f args f' df D' S' body ws w,
-    lookup_denv (IFn f) d = Some (DClo f' df) ->
-    g_fn Sg f' = Some (D', S', Some body) ->
-    Forall2 (eval Sg d g) args ws ->
-    eval Sg df (mk_venv ws) body w ->
-    eval Sg d g (ECallA f args) w
-| EvMeth : forall d g e0 m prov args f' d' D' S' body w0 ws w,
-    lookup_denv prov d = Some (DClo f' d') ->
-    g_fn Sg f' = Some (D', S', Some body) ->
-    eval Sg d g e0 w0 ->
-    Forall2 (eval Sg d g) args ws ->
-    eval Sg d' (mk_venv (w0 :: ws)) body w ->
-    eval Sg d g (EMeth e0 m prov args) w
-| EvBindTy : forall d g t tau e w,
-    eval Sg d g e w ->
-    eval Sg d g (EBindTy t tau e) w
-| EvBindVal : forall d g v e1 e w1 w,
-    eval Sg d g e1 w1 ->
-    eval Sg ((IVal v, DVal w1) :: d) g e w ->
-    eval Sg d g (EBindVal v e1 e) w
-| EvBindFn : forall d g f f' sm dc e w,
-    compose_smap d sm = Some dc ->
-    eval Sg ((IFn f, DClo f' dc) :: d) g e w ->
-    eval Sg d g (EBindFn f f' sm e) w
-| EvBindMth : forall d g tauk m th f' sm dc e w,
-    compose_smap d sm = Some dc ->
-    eval Sg ((IMth tauk m th, DClo f' dc) :: d) g e w ->
-    eval Sg d g (EBindMth tauk m th f' sm e) w
-| EvBindFun : forall d g u h sm smc dc e w,
-    compose_smap d smc = Some dc ->
-    eval Sg ((IFun u, DFun h [sm] dc) :: d) g e w ->
-    eval Sg d g (EBindFun u h sm smc e) w
-| EvBindFunA : forall d g u u' sm h sms dc e w,
-    lookup_denv (IFun u') d = Some (DFun h sms dc) ->
-    eval Sg ((IFun u, DFun h (sms ++ [sm]) dc) :: d) g e w ->
-    eval Sg d g (EBindFunA u u' sm e) w
-| EvApply : forall d g u th sm dr e w,
-    run_apply Sg d u th sm dr ->
-    eval Sg (dr ++ d) g e w ->
-    eval Sg d g (EApply u th sm e) w
-with run_binds (Sg : gsig) : denv -> list bnd -> denv -> Prop :=
-| RbNil : forall d, run_binds Sg d [] d
-| RbTy : forall d t tau r d',
-    run_binds Sg d r d' ->
-    run_binds Sg d (BTy t tau :: r) d'
-| RbVal : forall d v e1 w1 r d',
-    eval Sg d [] e1 w1 ->
-    run_binds Sg ((IVal v, DVal w1) :: d) r d' ->
-    run_binds Sg d (BVal v e1 :: r) d'
-| RbFn : forall d f f' sm dc r d',
-    compose_smap d sm = Some dc ->
-    run_binds Sg ((IFn f, DClo f' dc) :: d) r d' ->
-    run_binds Sg d (BFn f f' sm :: r) d'
-| RbMth : forall d tauk m th f' sm dc r d',
-    compose_smap d sm = Some dc ->
-    run_binds Sg ((IMth tauk m th, DClo f' dc) :: d) r d' ->
-    run_binds Sg d (BMth tauk m th f' sm :: r) d'
-| RbFun : forall d u h sm smc dc r d',
-    compose_smap d smc = Some dc ->
-    run_binds Sg ((IFun u, DFun h [sm] dc) :: d) r d' ->
-    run_binds Sg d (BFun u h sm smc :: r) d'
-| RbFunA : forall d u u' sm h sms dc r d',
-    lookup_denv (IFun u') d = Some (DFun h sms dc) ->
-    run_binds Sg ((IFun u, DFun h (sms ++ [sm]) dc) :: d) r d' ->
-    run_binds Sg d (BFunA u u' sm :: r) d'
-| RbApply : forall d u th sm dr r d',
-    run_apply Sg d u th sm dr ->
-    run_binds Sg (dr ++ d) r d' ->
-    run_binds Sg d (BApply u th sm :: r) d'
-with run_apply (Sg : gsig) : denv -> usym -> subst -> smap -> denv -> Prop :=
-(* Rule A: the body runs over its linked arguments, then what its binding
-   captured; the result is filed under its items read at θ. *)
-| RunApply : forall d u th sm h sms dc Dh Dr bs d1 d2 d3 dr,
-    lookup_denv (IFun u) d = Some (DFun h sms dc) ->
-    g_fun Sg h = Some (Dh, Dr, Some bs) ->
-    compose_smap d sm = Some d1 ->
-    run_chain d1 sms = Some d2 ->
-    run_binds Sg (d2 ++ dc) bs d3 ->
-    compose_smap d3 (inst_smap th Dr) = Some dr ->
-    run_apply Sg d u th sm dr.
-
-(* Outcomes of the fueled interpreter. Err denotes a missing lookup or
-   shape mismatch, the instrumented error of Theorem 4.2. *)
-Inductive res : Type :=
-| Ok        : value -> res
-| Err       : res
-| OutOfFuel : res.
-
-(* Specialization of code (moved from Specialization.v): substitute a
-   grounding g of the type symbols into an elaborated term's type
-   annotations, following type binds.  Provision keys and θ of
-   applications stay (they are runtime keys). *)
-Fixpoint spec (g : subst) (e : expr) : expr :=
-  match e with
-  | EVar x => EVar x
-  | EUnit => EUnit
-  | EVl v => EVl v
-  | ETag n th e1 => ETag n (map_snd (app_subst g) th) (spec g e1)
-  | ECallD f th sm args =>
-      ECallD f (map_snd (app_subst g) th) sm
-        ((fix go (l : list expr) : list expr :=
-            match l with [] => [] | a :: r => spec g a :: go r end) args)
-  | ECallA f args =>
-      ECallA f ((fix go (l : list expr) : list expr :=
-                   match l with [] => [] | a :: r => spec g a :: go r end) args)
-  | EMeth e0 m prov args =>
-      EMeth (spec g e0) m prov
-        ((fix go (l : list expr) : list expr :=
-            match l with [] => [] | a :: r => spec g a :: go r end) args)
-  | EMatch e0 arms =>
-      EMatch (spec g e0)
-        ((fix go (l : list (nsym * var * expr)) :=
-            match l with
-            | [] => []
-            | (n, x, eb) :: r => (n, x, spec g eb) :: go r
-            end) arms)
-  | ELet x e1 e2 => ELet x (spec g e1) (spec g e2)
-  | EBindTy t tau e1 =>
-      EBindTy t (app_subst g tau) (spec ((t, app_subst g tau) :: g) e1)
-  | EBindVal v e1 e2 => EBindVal v (spec g e1) (spec g e2)
-  | EBindFn f f' sm e1 => EBindFn f f' sm (spec g e1)
-  | EBindMth tk m th f' sm e1 => EBindMth tk m th f' sm (spec g e1)
-  | EBindFun u h sm smc e1 => EBindFun u h sm smc (spec g e1)
-  | EBindFunA u w sm e1 => EBindFunA u w sm (spec g e1)
-  (* Rule A: an application's θ keys its result, so it stays a label, as
-     provision keys do *)
-  | EApply u th sm e1 => EApply u th sm (spec g e1)
-  end.
-
-
-(* ---- III.2 MossX, over an abstract primitive semantics ----
-
-   The interpreter below is MossX.v's, verbatim, except that the machine
-   state and what a primitive does are parameters: a Wasm instruction or a
-   WASI call is `run_prim P p args st`, for whatever `run_prim` an
-   instantiation supplies.  MossX.v supplies the concrete one (paged linear
-   memory over PArray, IEEE binary64/binary32 via PrimFloat, wrapping i32/i64
-   arithmetic, WASI fd_write/args/path_open/fd_read, the GC heap) and
-   instantiates this functor with it.
-
-   What this leaves trusted: nothing any obligation of Part VI depends on.
-   Every obligation either holds for every primitive semantics (determinism,
-   conservativity, the elaboration relation) or assumes exactly the law
-   `PRIM_LAW` of Part IV of it.  Whether MossX's concrete primitives are the
-   *right* meaning of `i32.add` or `fd_write` matters to the differential
-   tests against the compilers, not to any theorem; it is checked there, not
-   here. *)
+(* Reference execution is parameterized by the machine state and primitive
+   operations. MossX.v supplies the concrete machine, including linear
+   memory, numeric instructions, WASI and the GC heap. The primitive
+   signatures and Heap.HEAP_LAWS state the laws used by the safety proofs. *)
 Module Type PRIM_SEMANTICS.
   Parameter mstate : Type.
   Parameter run_prim : xprog -> prim -> list xvalue -> mstate -> xout * mstate.
@@ -2530,89 +2275,6 @@ Definition run_main (fuel : nat) (P : xprog) (main : fsym) (d0 : xdenv)
   end.
 End XSem.
 
-(* ---- III.3 The core inside MossX (moved from MossX.v): the embedding of
-   Core Moss terms, runtime entries and programs into MossX, and when a
-   core result and a MossX outcome agree.  The obligation
-   `xinterp_conservative` (Part VI) says MossX runs embedded core programs
-   exactly as Core Moss does. ---- *)
-
-Fixpoint emb_value (w : value) : xvalue :=
-  match w with
-  | VUnit => XVUnit
-  | VTag n w1 => XVTag n (emb_value w1)
-  end.
-
-(* The embedding of the core: syntax, runtime entries, environments. *)
-Fixpoint emb_expr (e : expr) : xexpr :=
-  match e with
-  | EVar x => XVar x
-  | EUnit => XUnit
-  | EVl v => XVl v
-  | ETag n th e1 => XTag n th (emb_expr e1)
-  | ECallD f th sm args => XCallD f th sm (map emb_expr args)
-  | ECallA f args => XCallA f (map emb_expr args)
-  | EMeth e0 m prov args => XMeth (emb_expr e0) m prov (map emb_expr args)
-  | EMatch e0 arms =>
-      XMatch (emb_expr e0)
-             (map (fun a => match a with (n, x, eb) => (n, x, emb_expr eb) end) arms)
-  | ELet x e1 e2 => XLet x (emb_expr e1) (emb_expr e2)
-  | EBindTy t tau e1 => XBindTy t tau (emb_expr e1)
-  | EBindVal v e1 e2 => XBindVal v (emb_expr e1) (emb_expr e2)
-  | EBindFn f f' sm e1 => XBindFn f f' sm (emb_expr e1)
-  | EBindMth tauk m th f' sm e1 => XBindMth tauk m th f' sm (emb_expr e1)
-  | EBindFun u h sm smc e1 => XBindFun u h sm smc (emb_expr e1)
-  | EBindFunA u u' sm e1 => XBindFunA u u' sm (emb_expr e1)
-  | EApply u th sm e1 => XApply u th sm (emb_expr e1)
-  end.
-
-Definition emb_arms (arms : list (nsym * var * expr)) : list (nsym * var * xexpr) :=
-  map (fun a => match a with (n, x, eb) => (n, x, emb_expr eb) end) arms.
-
-Definition emb_bnd (b : bnd) : xbind :=
-  match b with
-  | BTy t tau => XBTy t tau
-  | BVal v e1 => XBVal v (emb_expr e1)
-  | BFn f f' sm => XBFn f f' sm
-  | BMth tauk m th f' sm => XBMth tauk m th f' sm
-  | BFun u h sm smc => XBFun u h sm smc
-  | BFunA u u' sm => XBFunA u u' sm
-  | BApply u th sm => XBApply u th sm
-  end.
-
-Fixpoint emb_dentry (en : dentry) : xdentry :=
-  match en with
-  | DVal w => XDVal (emb_value w)
-  | DClo f d => XDClo f (map (fun p => match p with (i, en') => (i, emb_dentry en') end) d)
-  | DFun h sms dc =>
-      XDFun h sms (map (fun p => match p with (i, en') => (i, emb_dentry en') end) dc)
-  end.
-
-Definition emb_denv (d : denv) : xdenv :=
-  map (fun p => match p with (i, en) => (i, emb_dentry en) end) d.
-Definition emb_venv (g : venv) : xvenv :=
-  map (fun p => match p with (x, w) => (x, emb_value w) end) g.
-
-(* the core program as an extended one: the same bodies, embedded *)
-Definition emb_prog (Sg : gsig) : xprog :=
-  mkXProg (fun f => match g_fn Sg f with
-                    | Some (_, _, Some b) => Some (emb_expr b)
-                    | _ => None
-                    end)
-          (fun u => match g_fun Sg u with
-                    | Some (_, Dr, Some bs) => Some (Dr, map emb_bnd bs)
-                    | _ => None
-                    end)
-          0 0 0 [] (fun _ => None) [] (fun _ => []) (fun _ => []) false (fun _ => []) (fun _ => []).
-
-Definition res_agree (r : res) (o : xout) : Prop :=
-  match r, o with
-  | Ok w, XOk w' => w' = emb_value w
-  | Err, XErr _ => True
-  | OutOfFuel, XFuel => True
-  | _, _ => False
-  end.
-
-
 (* ######################################################################## *)
 (* Part IV. The primitives' signatures                                       *)
 (* ######################################################################## *)
@@ -2852,8 +2514,8 @@ End PrimNames.
    HOW TO READ IT.  V.1 the static world; V.2 types; V.3 context formation;
    V.4 calls, needs and coherence; V.5 functors (D84); V.6 expressions,
    statements, binds; V.7 the program.  Each rule cites the decision it
-   encodes.  The list "DRAFT NOTES" at the end records every place where
-   the draft departs from the elaborator, and the spec gaps it surfaced.
+   encodes. Historical differences, counterexamples and open design
+   questions are recorded in docs/design/audit-notes.md.
 *)
 
 Module Elaboration.
@@ -4854,663 +4516,327 @@ Definition Elaborates (b : bundle) (P : xprogram) : Prop :=
 
 End Elaboration.
 
-(* DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
-   the spec questions writing it raised.  Numbered for reference.
+(* ######################################################################## *)
+(* Supporting core calculus                                                  *)
+(* ######################################################################## *)
 
-   1. (permissive) Layout ([D59]) and the platform reference checks are not
-      in the draft: the elaborator also rejects a type with no layout and a
-      `Ref`/`Array` built from a bare handle.  Completeness (relation ⇒
-      elaborator accepts) cannot hold until they are.
-   2. (permissive) [D79] memory instructions under a rebound `Memory`:
-      the elaborator reports "unsupported"; the draft says nothing.
-      m4: they are `Addr`'s methods and the family `Memories` (D79 as
-      amended); the elaborator reports "unsupported" where `Memories` is
-      applied in a program that binds `Memory`, since MossX has one memory.
-   3. (decided: see note 27) θ is part of the elaboration contract.
-   4. (spec gap) Order.  Requirement lists, needs and satisfaction maps
-      are sets here; the elaborator's order is its walk's.  Observable only
-      through `TNom` argument order, which the draft fixes per symbol
-      (w_reqs) without saying which.  Is the canonical order part of the
-      language (it is part of the runtime key, [D62])?
-   5. (spec gap) [D43] most general merge.  The draft takes σ most general
-      among *self-consistent* unifiers (keys compared under the unifier
-      itself), which is what "union the atom graphs, unify per key" means
-      when method keys contain merged types.  The elaborator iterates its
-      walk at most 8 times (and a 9th must add nothing, note 52); a
-      telescope needing more rounds is rejected by it and accepted here.
-   6. (deliberately loose) [D68] literals: any term over zero/one/add/mul
-      (/div, float) denoting the literal's exact value is allowed; the
-      elaborator's is a Horner chain with digits as sums of `one`.  If the
-      designer wants the shape fixed (it is observable through overflow
-      in a provided `.add`), the rule must say which.
-   7. (m4: implemented) [D84] rule 7 (PrFamily) and rule 1's fixed inputs
-      (Fixed, rule 5's check in BApplyAbstract) are in the relation, and
-      the elaborator now does both (Elab.family_member/apply_family at a
-      call's miss; functor_fixed, fixed_ok in apply_abstract).  Rule 7's
-      θ is "read off the key": the
-      draft states it as *any* θ under which the family's result contains
-      the key, plus uniqueness of the family — DECISIONS.md's "no two items
-      share an instance of their key" is what makes θ unique, and is not
-      yet a condition of `Family`.
-   8. (spec gap) [D70] capture is by *mention*: a local named in the body
-      (anywhere, including as a field-punning record entry) is captured,
-      even if shadowed inside the lambda by a `let`.  The elaborator does
-      the same (free_names_e is syntactic); the designer should confirm.
-   9. (abstracted) The platform's functors (`Heap`, `Mutable`, `Arrays`)
-      are bound to synthesized bodies of primitive binds (Elab.platform_fun);
-      the draft says only that some body exists.
-  10. (not covered) `const_val`'s cache, forwarder/wrapper sharing (one per
-      provider) and lowering order are unobservable and absent.
-  11. (spec gap) [D77] rule 4 needs "the context provides the detached
-      name at the receiver"; the draft reads this as a provision at the
-      receiver's canonical type exactly ([D62]), as the elaborator does —
-      a provision at another instantiation of the same head does not win.
-  12. (resolved) [D61] `find_method_decl` reads an attached method in
-      the receiver's file only, as Attached does. The redundant lookup
-      in the current module has been removed together with note 57's
-      detached-method fallback.
+(* The executable language above is MossX. This smaller calculus and its
+   embedding support the core adequacy, specialization and safety contracts.
+   They form a proof fragment rather than another compilation stage. *)
 
-   CHANGES THE PROOF WORK FORCED (RelFacts.v, RelExamples.v, RelNegative.v,
-   RelFamily.v), recorded for the designer:
-  13. Attached methods are a table of the world (w_attached, with
-      wo_attached tying it to the declarations), not an existential over
-      all symbols: otherwise "the attached method of Box named get" could
-      not be identified without enumerating every symbol (family example).
-  14. Local numbering is a finite injective list (Named/Numbering), not an
-      injective function on all strings: the elaborator numbers only the
-      names a body uses, in order of first use.
-  15. A block ending in `e;` has the type () (or |) *whatever* is expected
-      (BlkExprLast took exp = None only, so every fn whose body ends in a
-      statement was unrelatable: found on app.moss).
-  16. ProvideResult reads the type outputs from the declaration
-      (FunOutputs), not from the entries being produced (a circularity).
-  17. Rule 7's "one family per key" is the named premise OnlyFamily.
-  18. Positivity: `if` with/without else, `return` with/without value,
-      and `let`/`var` (LetStmt) are separate rules; SameResult is a
-      definition.
-   Elaborator finding (cosmetic): its rule-7 miss message prints the key
-   as "`.Box.get`" (Elab.provided_call strips only a leading dot).
+(* Core environments and evaluation. *)
 
-   m4 (5ea4e2e's language), where the elaborator now goes beyond the draft:
-  19. (not in the draft) [D84] rule 7 for a callee's needs (lower.demand_
-      needs): at a call of a defined fn or attached method, each method
-      need nothing in force provides and a family in force produces is met
-      by `XApply F θ sm` around the call (one per family and θ).  The draft
-      has PrFamily for method calls only; CallDirect/Satisfies would need
-      the same premise as PrFamily per need.
-  20. (not in the draft) [D84] (8), [D37]: `main` runs in the platform's
-      root context: CtxOf for `main` must add lib/wasm.moss's `Gc` (its
-      functors, with the types they are fixed in) beside its assumes
-      (Elab.add_root_context).  ItemsEntries resolves context items by
-      path in the declaring module, and `Gc` need not be in scope there, so
-      the draft needs an entry form by symbol.
-  21. (not in the draft) `Family` is only "method items only"; the
-      elaborator also checks rule 7's conditions: keys determine P(F)
-      (Elab.is_family), a family's binding binds no val and applies no
-      functor but a family, no direct bind of a member in force, no two
-      families producing a key, no two items of one at a key instance.
-  22. (not in the draft) [D84] 3d pins (a body's bind of x ∈ X(F) denotes
-      what x does at the bind; a pin mentioning a per-application type is
-      refused), rule 4's X(H) ⊆ X(F), and rule 2's "assuming F needs X(F)
-      in force" are checked by the elaborator (bind_functor), not stated.
-  23. (permissive, MossX) The platform's `Memories` members are the memory
-      primitives, which MossX.mem_args lets take an `Addr` receiver (and
-      source); and a `Ref`/`Array` rebuilt from a bare handle inside the
-      library (GcArrays) is an unchecked cast (see note 1).
-  24. (m4, implementation optimization; the relation is unchanged) Under
-      PrFamily, `XApply F θ sm e` composes the family's whole result at θ at
-      every application, though e reads one member: for the platform's
-      `Memories` (27 members) at every memory access, about two thirds of
-      the compiler's interpreted time.  The elaborator applies families
-      exactly as drafted; the oracle then runs FastPath.fast_program of its
-      output.  For each platform functor of primitives in main's root
-      context that no bind, copy or satisfaction map moves (a syntactic
-      check), that pass files it as XDFunSym h and turns each
-      `XApply F θ [] e` into `XApplyBr F [(h, bs', ps)] e`, where ps is the
-      pairs of inst_smap θ Dr whose requirement e may look up and bs' the
-      primitives they read. PROVED (FastPath.fast_run): for every program,
-      argv, rd and fuel, the
-      transformed program's run equals the original's unless the original
-      reports XFuel; with CachedCloFacts.engine_agrees, OracleCertified.interpreter_correct
-      covers the default pipeline.
+(* ===================== 10. Dynamics ====================================== *)
 
-   CHANGES THE SOUNDNESS PROOF FORCED (Track A, WorldSound.v):
-  25. (relation wrong; adjusted to the elaborator) [D44] a `use` of a plain
-      name that its target exports both as a symbol and as a module alias:
-      ExUse gave the importer both, the elaborator (Elab.link_uses) only
-      the symbol, as path resolution (`resolve`) reads the first segment.
-      ExUse's alias branch now requires that t export no symbol of that
-      name (`w_exp W t NSName (u_name u) = None`).  Without it no reading
-      of such a bundle by the elaborator is a `WorldOf`.
-  26. (elaborator support fixed, not the relation) NMap.nset walked a fixed
-      64 levels, so a key of 2^64 or more was silently not stored; no
-      theorem about the loader's symbol table could hold for every bundle.
-      It now walks S k levels (enough for every key; identical to 64 levels
-      on every key an OCaml int can hold, so the extracted oracle is
-      unchanged).
-  27. (decided by the designer, Track A) θ is part of the elaboration
-      contract, so that elaborated programs are typable (Track B found
-      elaborated_typed false for polymorphic programs without it):
-      - a tag `S(e)`/`S{…}` at type TNom S xs is XTag S xs …: θ is the
-        type's own arguments (ExTag, ExRecord; a unit has none);
-      - a direct call of f (a defined fn, a defined attached method at
-        its receiver's instantiation, a wrapper's call of its provider) is
-        XCallD f (theta_at W C f) …: each of f's requirements, in w_reqs
-        order, read at the site (its meaning in C, else itself),
-        canonical (ExCallD, MCAttachedDefined with the receiver's
-        arguments set, MPWrapped in the provider's own context);
-      - `bind T = τ;` is XBindTy T τ (canonical) in a body and XBTy T τ in
-        a functor body's binds (BTypeBind, BindsOf's BOTy); it was
-        omitted before.
-      Checked GC casts now read these annotations. Runtime type bindings
-      and captured type arguments identify the generated allocation type;
-      incompatible raw-handle rewrapping traps, matching native ref.cast.
-      Tag annotations are canonicalized before emission, including merged
-      arguments nested inside nominal applications.
-  28. (decided by the designer, Track A) θ in method keys: a method
-      provision is still filed under its receiver and method (mkey, in
-      c_mths and c_apps: at most one per key, [D62]), but its run-time key
-      carries θ, the instantiation it was made at (rkey C r m: c_apps's
-      entry, its known entries, canonical).  Every elaborated key is the
-      run-time key read in the context that holds or looks it up:
-      XMeth's (PrIn, PrFamily after the application, LitTerm), XBindMth's
-      (BMethBind: θ = the provision's AppOf), and each side of every
-      satisfaction map (Satisfies: callee's needs in the callee's
-      context, provisions in the caller's; the wrapper's, lambda's and
-      functor binds' maps likewise), main's environment, and a linked
-      functor body's result telescope (in F's own terms).  A linked body's
-      method binds are filed under F's spelling of the key as well
-      (`refile`; the elaborator filed a renamed receiver so already, and
-      now does for θ: a body that pins a fixed input, e.g. `bind Index =
-      Int;`, makes its key's θ differ from F's).  Part VI's choice_of now
-      compares provisions by identity (provision_id: the key without θ),
-      since θ is where a provision was made, not which one it is.
-      This changes MossX's run-time keys: the oracle's stdout, stderr and
-      exit status were checked identical before and after on the same
-      programs as note 27's, the compiler compiling tests/wasi/tags.moss
-      included, and cargo test passes with it.
-  29. (elaborator, for the proof; no change in behaviour) solve_requirements
-      writes a tag's or alias's requirements through set_nominal_reqs,
-      which writes only if the symbol is a tag or alias and drops repeats.
-      Its group holds only tags and aliases and its lists have no repeats,
-      so nothing changes (oracle outputs checked identical, as in note 27);
-      the guard makes the requirement cache's invariant (ElabFrame.ReqOK)
-      provable step by step.
-  30. (discrepancy, resolved by the designer: the elaborator now follows
-      the relation, which is unchanged) Depth of contexts.
-      AssumeTypes/SpecTypes (V.1) reach a context's type symbols through
-      contexts nested to any depth, and allow cycles (context A naming
-      context B naming A: the inductive simply has finite derivations).
-      The elaborator walked contexts 64 deep (assume_type_syms ->
-      walk_specs 64) and failed ("context nests too deeply") beyond that,
-      including on any cycle; the self-hosted compiler (lower.nest_types)
-      stopped silently 17 deep.  That cost (i) completeness, and (ii)
-      WorldOf's requirement lists for symbols the elaborator never asks
-      about (TODO_reqs_reading (c)) could not be had by running its own
-      `reqs` on them.  The options were to bound the relation, to forbid
-      cyclic contexts, or to record that completeness held only below 64.
-      Decided: neither implementation bounds the depth.  Both walk an
-      assume nesting depth first with the set of contexts entered so far,
-      entering each context once, until nothing new appears; a cycle
-      requires the union of its contexts' types.  Elab.walk_specs (fuel
-      one more than the symbols, which only a bug could use up: each
-      call enters a context not entered before) gives the types in the
-      order the old walk did on every nesting it accepted, so requirement
-      lists, and with them TNom argument order, are unchanged there
-      (oracle outputs checked identical on tests/wasi, tests/errors and
-      examples).  WorldSound.assume_type_syms_exact is re-proved for the
-      new walk: what it computes is exactly AssumeTypes, at any depth and
-      through cycles.  The same walk reads a functor's result types
-      (V.5 FunOutputs: Elab.result_types, which stopped at 17, and
-      lower.result_type_syms, silently at 17).
-      Making a function's context (V.3 ItemEntries) walks the same
-      nesting, with brackets, and there a cycle has no finite derivation:
-      a body that assumes a cycle of contexts has no reading.  The
-      elaborator bounded that walk at 64 and the compiler at 16.  Its fuel
-      is now twice `walk_fuel`, which only a cycle uses up (Elab reports
-      "contexts nest in a cycle"; the compiler stops at a context already
-      being walked and reports it, e_deep), so it has no depth bound
-      either and rejects exactly the cycles. The designer subsequently
-      required rejecting cycles at declaration, including unused contexts:
-      check_contexts now validates the declaration graph before lowering.
-      The remaining D84 walks use a bound derived from the declaration
-      graph's size rather than the old 16/17-level limits. Tests:
-      tests/wasi/context_deep.moss (70 deep), context_shared.moss and
-      tests/errors/context_cycle{,_unused,_nominal}.moss.
-  31. (relation wrong, adjusted to the elaborator) Relevance (V.1).
-      FreeIn's FBracket read a bracket's right side even when the head of
-      `R[…]` resolves to nothing; the elaborator (free_type_syms) reads
-      brackets only under a head that resolves to a symbol.  FBracket now
-      asks that.  And wo_reqs_least quantified over every relevance-closed
-      R, which constrains only tags and aliases, so R could make a val
-      mentioned in a nominal's body (FNom) require nothing while the
-      elaborator reads its fixed requirements: least is now over the R
-      that agree with w_reqs on everything but tags and aliases.
-  32. [D75]/[D81]: reconstructing Ref/Array from an opaque handle is now
-      modeled by the native checked cast, inside or outside the selected
-      library. The old directory restriction in ExTag and the oracle was
-      an unsupported-case boundary for missing runtime casts, and is
-      removed. Source tag typing still checks the declared payload; the
-      runtime checks the allocation kind and grounded held type.
+(* Runtime contexts: val items carry values; fn and method items carry
+   (code, captured context) pairs — the dynamic residue of [D2]. *)
+Inductive dentry : Type :=
+| DVal : value -> dentry
+| DClo : fsym -> list (item * dentry) -> dentry
+(* a functor binding [D78]: the functor with a body that answers, and the
+   chain of re-keyings out to the abstract functor's arguments — no
+   captured context: the arguments are supplied at each application *)
+| DFun : usym -> list smap -> list (item * dentry) -> dentry.
+(* Rule A: DFun h sms dc also holds dc, the entries h captured where it was
+   bound — a closure, as DClo's. *)
+
+Definition denv := list (item * dentry).
+Definition venv := list (var * value).
+
+Fixpoint lookup_denv (i : item) (d : denv) : option dentry :=
+  match d with
+  | [] => None
+  | (i', en) :: r => if item_eqb i i' then Some en else lookup_denv i r
+  end.
+
+Fixpoint lookup_venv (x : var) (g : venv) : option value :=
+  match g with
+  | [] => None
+  | (x', w) :: r => if Nat.eqb x x' then Some w else lookup_venv x r
+  end.
+
+(* δ ∘ ς: the caller's provisions, restricted and re-keyed to the callee's
+   own requirement names. *)
+Fixpoint compose_smap (d : denv) (sm : smap) : option denv :=
+  match sm with
+  | [] => Some []
+  | (req, s) :: r =>
+      match lookup_denv s d, compose_smap d r with
+      | Some en, Some d' => Some ((req, en) :: d')
+      | _, _ => None
+      end
+  end.
+
+(* Running a binding's chain of re-keyings: the outermost link (the last)
+   first, so the result is keyed by the bound functor's own arguments. *)
+Fixpoint run_chain (d : denv) (sms : list smap) : option denv :=
+  match sms with
+  | [] => Some d
+  | sm :: r =>
+      match run_chain d r with
+      | Some d' => compose_smap d' sm
+      | None => None
+      end
+  end.
+
+(* The identity re-keying of a result telescope's non-type items: running
+   it restricts an environment to exactly the result [D78]. *)
+Definition id_smap (D : tele) : smap :=
+  map (fun i => (i, i)) (filter (fun i => negb (is_ty_item i)) D).
+
+Fixpoint find_arm (n : nsym) (arms : list (nsym * var * expr))
+  : option (var * expr) :=
+  match arms with
+  | [] => None
+  | (n', x, eb) :: r => if Nat.eqb n n' then Some (x, eb) else find_arm n r
+  end.
+
+Definition mk_venv (ws : list value) : venv :=
+  combine (seq 0 (length ws)) ws.
+
+(* Big-step evaluation (Figure 7 of the paper), with a functor body's run
+   and an application [D78] defined alongside: an application looks up the
+   binding, re-keys the caller's environment to the bound functor's own
+   arguments, runs its binds there, and keeps exactly the result. *)
+Inductive eval (Sg : gsig) : denv -> venv -> expr -> value -> Prop :=
+| EvUnit : forall d g,
+    eval Sg d g EUnit VUnit
+| EvVar : forall d g x w,
+    lookup_venv x g = Some w ->
+    eval Sg d g (EVar x) w
+| EvVal : forall d g v w,
+    lookup_denv (IVal v) d = Some (DVal w) ->
+    eval Sg d g (EVl v) w
+| EvTag : forall d g n th e w,
+    eval Sg d g e w ->
+    eval Sg d g (ETag n th e) (VTag n w)
+| EvLet : forall d g x e1 e2 w1 w,
+    eval Sg d g e1 w1 ->
+    eval Sg d ((x, w1) :: g) e2 w ->
+    eval Sg d g (ELet x e1 e2) w
+| EvMatch : forall d g e0 arms n w' x eb w,
+    eval Sg d g e0 (VTag n w') ->
+    find_arm n arms = Some (x, eb) ->
+    eval Sg d ((x, w') :: g) eb w ->
+    eval Sg d g (EMatch e0 arms) w
+| EvCallD : forall d g f th sm args D S body ws d' w,
+    g_fn Sg f = Some (D, S, Some body) ->
+    Forall2 (eval Sg d g) args ws ->
+    compose_smap d sm = Some d' ->
+    eval Sg d' (mk_venv ws) body w ->
+    eval Sg d g (ECallD f th sm args) w
+| EvCallA : forall d g f args f' df D' S' body ws w,
+    lookup_denv (IFn f) d = Some (DClo f' df) ->
+    g_fn Sg f' = Some (D', S', Some body) ->
+    Forall2 (eval Sg d g) args ws ->
+    eval Sg df (mk_venv ws) body w ->
+    eval Sg d g (ECallA f args) w
+| EvMeth : forall d g e0 m prov args f' d' D' S' body w0 ws w,
+    lookup_denv prov d = Some (DClo f' d') ->
+    g_fn Sg f' = Some (D', S', Some body) ->
+    eval Sg d g e0 w0 ->
+    Forall2 (eval Sg d g) args ws ->
+    eval Sg d' (mk_venv (w0 :: ws)) body w ->
+    eval Sg d g (EMeth e0 m prov args) w
+| EvBindTy : forall d g t tau e w,
+    eval Sg d g e w ->
+    eval Sg d g (EBindTy t tau e) w
+| EvBindVal : forall d g v e1 e w1 w,
+    eval Sg d g e1 w1 ->
+    eval Sg ((IVal v, DVal w1) :: d) g e w ->
+    eval Sg d g (EBindVal v e1 e) w
+| EvBindFn : forall d g f f' sm dc e w,
+    compose_smap d sm = Some dc ->
+    eval Sg ((IFn f, DClo f' dc) :: d) g e w ->
+    eval Sg d g (EBindFn f f' sm e) w
+| EvBindMth : forall d g tauk m th f' sm dc e w,
+    compose_smap d sm = Some dc ->
+    eval Sg ((IMth tauk m th, DClo f' dc) :: d) g e w ->
+    eval Sg d g (EBindMth tauk m th f' sm e) w
+| EvBindFun : forall d g u h sm smc dc e w,
+    compose_smap d smc = Some dc ->
+    eval Sg ((IFun u, DFun h [sm] dc) :: d) g e w ->
+    eval Sg d g (EBindFun u h sm smc e) w
+| EvBindFunA : forall d g u u' sm h sms dc e w,
+    lookup_denv (IFun u') d = Some (DFun h sms dc) ->
+    eval Sg ((IFun u, DFun h (sms ++ [sm]) dc) :: d) g e w ->
+    eval Sg d g (EBindFunA u u' sm e) w
+| EvApply : forall d g u th sm dr e w,
+    run_apply Sg d u th sm dr ->
+    eval Sg (dr ++ d) g e w ->
+    eval Sg d g (EApply u th sm e) w
+with run_binds (Sg : gsig) : denv -> list bnd -> denv -> Prop :=
+| RbNil : forall d, run_binds Sg d [] d
+| RbTy : forall d t tau r d',
+    run_binds Sg d r d' ->
+    run_binds Sg d (BTy t tau :: r) d'
+| RbVal : forall d v e1 w1 r d',
+    eval Sg d [] e1 w1 ->
+    run_binds Sg ((IVal v, DVal w1) :: d) r d' ->
+    run_binds Sg d (BVal v e1 :: r) d'
+| RbFn : forall d f f' sm dc r d',
+    compose_smap d sm = Some dc ->
+    run_binds Sg ((IFn f, DClo f' dc) :: d) r d' ->
+    run_binds Sg d (BFn f f' sm :: r) d'
+| RbMth : forall d tauk m th f' sm dc r d',
+    compose_smap d sm = Some dc ->
+    run_binds Sg ((IMth tauk m th, DClo f' dc) :: d) r d' ->
+    run_binds Sg d (BMth tauk m th f' sm :: r) d'
+| RbFun : forall d u h sm smc dc r d',
+    compose_smap d smc = Some dc ->
+    run_binds Sg ((IFun u, DFun h [sm] dc) :: d) r d' ->
+    run_binds Sg d (BFun u h sm smc :: r) d'
+| RbFunA : forall d u u' sm h sms dc r d',
+    lookup_denv (IFun u') d = Some (DFun h sms dc) ->
+    run_binds Sg ((IFun u, DFun h (sms ++ [sm]) dc) :: d) r d' ->
+    run_binds Sg d (BFunA u u' sm :: r) d'
+| RbApply : forall d u th sm dr r d',
+    run_apply Sg d u th sm dr ->
+    run_binds Sg (dr ++ d) r d' ->
+    run_binds Sg d (BApply u th sm :: r) d'
+with run_apply (Sg : gsig) : denv -> usym -> subst -> smap -> denv -> Prop :=
+(* Rule A: the body runs over its linked arguments, then what its binding
+   captured; the result is filed under its items read at θ. *)
+| RunApply : forall d u th sm h sms dc Dh Dr bs d1 d2 d3 dr,
+    lookup_denv (IFun u) d = Some (DFun h sms dc) ->
+    g_fun Sg h = Some (Dh, Dr, Some bs) ->
+    compose_smap d sm = Some d1 ->
+    run_chain d1 sms = Some d2 ->
+    run_binds Sg (d2 ++ dc) bs d3 ->
+    compose_smap d3 (inst_smap th Dr) = Some dr ->
+    run_apply Sg d u th sm dr.
+
+(* Outcomes of the fueled interpreter. Err denotes a missing lookup or
+   shape mismatch, the instrumented error of Theorem 4.2. *)
+Inductive res : Type :=
+| Ok        : value -> res
+| Err       : res
+| OutOfFuel : res.
+
+(* Specialization of code (moved from Specialization.v): substitute a
+   grounding g of the type symbols into an elaborated term's type
+   annotations, following type binds.  Provision keys and θ of
+   applications stay (they are runtime keys). *)
+Fixpoint spec (g : subst) (e : expr) : expr :=
+  match e with
+  | EVar x => EVar x
+  | EUnit => EUnit
+  | EVl v => EVl v
+  | ETag n th e1 => ETag n (map_snd (app_subst g) th) (spec g e1)
+  | ECallD f th sm args =>
+      ECallD f (map_snd (app_subst g) th) sm
+        ((fix go (l : list expr) : list expr :=
+            match l with [] => [] | a :: r => spec g a :: go r end) args)
+  | ECallA f args =>
+      ECallA f ((fix go (l : list expr) : list expr :=
+                   match l with [] => [] | a :: r => spec g a :: go r end) args)
+  | EMeth e0 m prov args =>
+      EMeth (spec g e0) m prov
+        ((fix go (l : list expr) : list expr :=
+            match l with [] => [] | a :: r => spec g a :: go r end) args)
+  | EMatch e0 arms =>
+      EMatch (spec g e0)
+        ((fix go (l : list (nsym * var * expr)) :=
+            match l with
+            | [] => []
+            | (n, x, eb) :: r => (n, x, spec g eb) :: go r
+            end) arms)
+  | ELet x e1 e2 => ELet x (spec g e1) (spec g e2)
+  | EBindTy t tau e1 =>
+      EBindTy t (app_subst g tau) (spec ((t, app_subst g tau) :: g) e1)
+  | EBindVal v e1 e2 => EBindVal v (spec g e1) (spec g e2)
+  | EBindFn f f' sm e1 => EBindFn f f' sm (spec g e1)
+  | EBindMth tk m th f' sm e1 => EBindMth tk m th f' sm (spec g e1)
+  | EBindFun u h sm smc e1 => EBindFun u h sm smc (spec g e1)
+  | EBindFunA u w sm e1 => EBindFunA u w sm (spec g e1)
+  (* Rule A: an application's θ keys its result, so it stays a label, as
+     provision keys do *)
+  | EApply u th sm e1 => EApply u th sm (spec g e1)
+  end.
 
 
-   CHANGES DECIDED BY THE DESIGNER (spec fixes):
-  33. (relation and both implementations unsound; decided: rejected)
-      [D15] two union members with one head, as in `A[X=I32] | A[X=I64]`
-      for `tag A[X](X)`.  A match arm names a member by its head alone
-      (`A(y)`), so such a union gives the arm no one payload type: the
-      elaborator typed it at the last such member (its table of heads,
-      Elab.synth_match, keeps the last member set under a head), the
-      self-hosted compiler at the first, and the program then ran stuck
-      under the oracle, or compiled to an invalid module or a wrong
-      value.  TyUnion now asks that no two members
-      share a head (`NoDup (map head flat)`, which implies the old
-      `NoDup flat`); the elaborator reports "union members `A[X=I32]` and
-      `A[X=I64]` share a head (D15)" and the compiler e_union, named by
-      the head.  Only a written union is checked: a union type arises from
-      nothing else (Join without an expected type asks for equal types),
-      and substitution keeps heads.  PatOf's tag rules (note 35) find
-      their member by head, which is now unique.  Tests:
-      tests/errors/union_shared_head*.moss.
-  34. (relation permissive; decided: rejected) [D15] a union member that
-      is a bare record type, as in `type U = | {a: I32} | Red;`.  TyUnion
-      counted `TNom rec_head` (V.0: a record's reserved head) as nominal;
-      the elaborator rejected it ("not nominal (D15)") and the self-hosted
-      compiler accepted it.  TyUnion now asks `n <> rec_head` of each
-      member, and the compiler reports e_union, named by nothing.  Test:
-      tests/errors/union_record_member.moss.
-  35. (relation incomplete; adjusted to the elaborator) Patterns.  PatOf
-      had no rule for a tag pattern with a payload binder (`S(y)`) or a
-      record pattern (`S{x, x = y, x = _}`), so no match with one was
-      related.  PTagBind binds y to S's payload at the member's
-      arguments (PayloadOf): for a struct tag that is the bare record
-      type `TNom rec_head ftys`, which a parameter or another tag of the
-      same payload can take (tests/wasi/record_payload_*.moss).  PRecord
-      binds fields by name through FieldPats, in the order written.  As
-      the elaborator (compile_pattern) does: a sub-pattern of `S(…)` is
-      a binder only, a field's is a binder or `_`, and `{…}` with no tag
-      head is rejected, so neither has a rule.  Two more changes make
-      PatOf match it: PatOf takes the frame, and a binder (PBinder,
-      PTagBind, FieldPats) is the local `var_of F y`, where PBinder had
-      `XPAny None` (the elaborator writes the local's number, so no
-      match with a binder arm was related); and PUnit also covers a
-      bare `S` for a tag with a payload, which the elaborator accepts.
-      Not stated, as layouts are nowhere in the relation: the
-      elaborator's layout check (layout_ok) of a bound payload.
-  40. (elaborator unsound; adjusted to the relation) [D73] Listed
-      parameters of a tag nothing uses.  WorldOf's wo_listed asks of every
-      tag that each parameter it lists is a type its assume nesting
-      requires.  The elaborator checked that only in solve_requirements,
-      that is, only of the tags elaboration reaches, so it accepted a
-      program with an unused `tag Bad[T](I32)` whose nesting does not
-      require T, which has no reading.  It now checks every tag of the
-      loader's world first (Elab.check_listed, the same listed_params).
-      Oracle outputs are identical on all 243 programs and on the compiler
-      compiling tests/wasi/tags.moss; the self-hosted compiler (src/) is
-      unchanged and still accepts such a program.
-  41. (resolved by the designer: imported main is allowed) The entry's
-      scope identifies main, regardless of its declaration's spelling.
-      Elaborates now permits `import "./lib.moss" use start as main;`
-      where lib declares `fn start`. IsMainFn and both implementations
-      give the root context to a function in scope as main in any loaded
-      module, so its body is checked consistently wherever called (D16).
-      Test: tests/wasi/imported_main.moss, whose imported main binds Heap.
-  42. (relation incomplete and wrong; adjusted to the elaborator, which
-      changes only where noted) Divergence in blocks.  The elaborator
-      gives a block two types: the one its value has (`|` when its last
-      statement cannot fall through: an expression of type `|`, or a
-      `loop` no `break` leaves), and its type as a branch (its tail's, `()`
-      without a tail), which `if` and `match` join.  The relation had only
-      the first, and not for a loop:
-      (a) `fn stop(): Never { loop {} }` (tests/wasi/branches_diverge.moss)
-          had no reading: Blk typed a block ending in a statement `loop`
-          `()`.  New rule BlkLoopLast: a block whose last statement is a
-          `loop` no `break` leaves (BlockBreaks, defined structurally) is
-          `|`; BlkLoop now asks that something follow or that the loop
-          break, as BlkExpr does.
-      (b) a branch block without a tail that cannot fall through is `()`
-          to the elaborator (synth_if, synth_match use block_type) and was
-          `|` to the relation, so `if c { return; } else { return; }` was
-          `()` there and `|` here, and a later `match` on it (a catch-all
-          arm, accepted) had no reading (ArmsSome asks st <> never).  New
-          judgment Branch (an `else` and a match arm: a block has
-          branch_ty, `()` without a tail, or the expected type), used by
-          ExIfElse (the then-block joins at branch_ty too) and ArmsOne/
-          ArmsMore; ArmsOne's type is the arm's, as the elaborator's
-          one-arm match is (it joined with the expected type only from
-          the second arm on).
-      (c) elaborator: has_break_e/has_break_b walked 10000 deep, so a
-          `break` nested deeper made its loop count as never falling
-          through (and the program ran into what followed).  They are now
-          structural (has_break_s for statements), BlockBreaks's mirror.
-      (d) elaborator: a union type all of whose members are `|` (`N | N`
-          for `type N = |;`) was YUnion [], which is_never does not see,
-          while TyUnion makes it TUnion [] = never; elab_type now gives
-          YNever for a union of no members.
-      Oracle stdout, stderr and exit status are identical on all 243
-      programs and on the compiler compiling tests/wasi/tags.moss.
-  43. (elaborator unsound; adjusted to the relation) Two parameters of a
-      fn with one name, `fn pick(x: I32, x: I32): I32 { x }`.  Numbering
-      (V.6) numbers parameter i as i (after `this`) by name, so no
-      numbering exists and such a fn has no reading; the elaborator
-      accepted it (`x` read the first).  lower_body now rejects it ("is
-      declared twice"), as lambda_provider already did for an anonymous
-      function's parameters.  Oracle outputs identical as in note 42; the
-      self-hosted compiler (src/) is unchanged.
-  44. (relation incomplete; adjusted to the elaborator) A field of a bare
-      record, `fn get(r: { a: I32, b: I32 }): I32 { r.b }`
-      (tests/wasi/record_payload_param.moss, note 35).  A record's type is
-      TNom rec_head …, which ExField's `match ot with TNom s xs => …`
-      read as a tag's application and asked kind_sym W rec_head = tag,
-      which never holds, so the program had no reading.  ExField now asks
-      that the receiver be a tag's application whose payload is the
-      record, or the record itself.
-  45. (elaborator unsound; adjusted to the relation) (a) A value path
-      with brackets, `let r = Red[I32 = I32];` for a unit `Red`: no rule
-      reads a value path's brackets (ExUnitTag, ExVal, ExConst ask
-      `AEPath pa None`), but synth_path ignored them and accepted.  It now
-      rejects them ("only a type or a tag constructor takes brackets").
-      (b) The escape check of a block ([D78], BlkE: no generation `bind
-      F;` made may occur in the block's type) read the type's generations
-      with ety_gens, which stopped 5000 deep; it is now structural, as
-      Part V's gens is.  Oracle outputs identical on all 243 programs and
-      on the compiler compiling tests/wasi/tags.moss.
+(* The core inside MossX: the embedding of
+   Core Moss terms, runtime entries and programs into MossX, and when a
+   core result and a MossX outcome agree.  The obligation
+   `xinterp_conservative` (Part VI) says MossX runs embedded core programs
+   exactly as Core Moss does. ---- *)
 
-   CHANGES OF TRACK A, PART 2 (calls, contexts, types; notes 50-59):
-  50. (elaborator unsound; adjusted to the relation) A type symbol with
-      empty brackets, `x: T[]` for `type T;`: TyType reads only
-      `ATRef pa None`, so `T[]` has no reading, but elab_type read it as
-      `T` (check_relevant and check_totality pass an empty application).
-      elab_type now rejects brackets on a type symbol ("type `T` takes no
-      brackets"; nonempty ones are still rejected first by check_relevant,
-      with the message they had).  Test: tests/errors/type_brackets.moss;
-      the self-hosted compiler still accepts it (listed as its bug in
-      errors.rs and agreement.rs).  Also for the proof, with no change in
-      behaviour: a union member whose head is 0 is rejected (0 is no
-      symbol; TyUnion asks n <> rec_head).  Oracle outputs: see note 53.
-      PROVED (BodyTy.pd_ty_holds): elab_type, app_subst and symbol_type
-      against TyOf and Brackets, discharging BodySound's pd_ty.
-  51. (relation loose; tightened to the elaborator, asked by Track B)
-      AppOf let a method provision's instantiation range over any subset
-      of its requirements.  It is now exactly those its signature mentions
-      (SigMentions: FreeIn of a parameter's or the result's type, against
-      w_reqs), in w_reqs order, as Elab.provision_app records it
-      (signature_type_syms filters the requirement list by free_type_syms
-      of the signature).  The relation only; the oracle is unchanged.
-  52. (elaborator unsound; adjusted to the relation) [D43] merged_walk
-      re-ran the assume walk with the merges found so far until a round
-      added none, but after its 8th run it returned without checking, so a
-      telescope whose merges take more rounds (each round finds that
-      B(k-1) and C(k-1) are one, which makes `B(k-1).w` and `C(k-1).w` one
-      key, and so B(k) and C(k) one type, in the next) was used half
-      merged: its σ does not unify its entries, so it is no CtxOf and the
-      body has no reading, yet a body that did not need the missing merges
-      was accepted.  merged_walk now checks every round, the last too
-      (eight walks and a ninth that must add nothing; a telescope that
-      settles in eight is accepted as before), and rejects one that has
-      not settled ("merging the context does not settle in 8 rounds";
-      draft note 5 said so already).  Test:
-      tests/errors/merge_unsettled.moss (eight levels); the same with
-      seven is accepted as before.  The self-hosted compiler
-      (lower.merged_walk) still accepts it (listed as its bug).
-  53. (elaborator unsound; adjusted to the relation) [D43] unify had no
-      occurs check: merging `A.gimme[Foo=X]` with `A.gimme[Foo=Box[T=X]]`
-      set X to Box[T=X], a cyclic merge, which no finite type unifies and
-      MostGeneralMerge (idempotent σ) excludes; a function in that context
-      that never read X was accepted.  unify now rejects merging a
-      generation with a type that contains it.  Test:
-      tests/errors/merge_cyclic.moss; the self-hosted compiler still
-      accepts it (listed as its bug).  For notes 50, 52 and 53 together,
-      oracle stdout, stderr and exit status are identical on all 243
-      programs of tests/wasi, tests/errors and examples and on the compiler
-      compiling tests/wasi/tags.moss.
-  54. (relation incomplete; adjusted to the elaborator, which is
-      unchanged) [D84] (8), note 20: the elaborator forms `main`'s context
-      with the platform's root context (Elab.add_root_context: lib/wasm.moss's
-      `Gc`, each of its abstract functors not already in force after the
-      types it is fixed in), but CtxOf had only the assumes.  So a `main`
-      that assumes `Wasm, Wasi, Branch` and calls a fn assuming `Gc` (or
-      binds `Heap`) had no reading, though the oracle accepts and runs it
-      (exit status 0): tests/wasi/gc_slots.moss, whose `main` assumes
-      `Wasm, Wasi, Branch` and calls `demo`, which assumes `Gc`; likewise
-      functor_alloc, gc_ast, gc_bodiless and gc_resolution.  CtxOf now adds RootCtx's entries
-      for a module's own `fn main` (IsMainFn), as the elaborator does,
-      by symbol (Gc's items are read in lib/wasm.moss, where they are in
-      scope); the merge, the context and the needs are over both.  The
-      relation only at that stage. Note 41 now also counts an imported
-      main in IsMainFn and in both implementations.
-  55. (elaborator fragile; made total for the proof, no change on any
-      program tried) [D43] Elab.canon followed the merges with a fuel of
-      5000 that counted the type's depth as well as the merge steps, and
-      returned what it had reached when the fuel ran out: a deep enough
-      type, or a long enough chain of merges, came back unresolved, and a
-      key or a fits read off it would not be the relation's (σ is a
-      resolution).  The merges unify makes are triangular (an edge g ↦ t
-      maps a generation not merged yet to a canonical type without g, by
-      the occurs check of note 53), so following them from any type takes
-      at most as many steps along a path as there are edges: canon's fuel
-      now counts only those steps, and is the number of edges plus one,
-      which never runs out (Merge.canon_go_fuel).  unify also compares a
-      nominal's argument keys before zipping its arguments (one head has
-      one argument list, its requirements in order; `combine` dropped a
-      longer list's tail).  PROVED (Merge.v): canon is the resolution of
-      the edges and is idempotent; σ = suf uf, the edges resolved, is an
-      idempotent substitution with tr (canon t) = σ (tr t); whatever
-      respects the edges is unchanged by σ first (resp_mg, most
-      generality); unify keeps the edges triangular, adds only edges every
-      unifier of its two sides respects, and when it adds none its two
-      sides already resolve alike (unify_spec).
-  56. (elaborator unsound; adjusted to the relation) [D71] A bracket on a
-      context, val or fn item binds a type symbol among the item's
-      requirements (Brackets asks it), as on a type or a bind, but
-      add_spec never checked it: `context D = Int, C[T = Int, U = Int];`
-      for a `C` that requires only `T` was accepted (exit status 0), and
-      no CtxOf reads it.  add_spec now checks (check_relevant, the
-      message elab_type's has).  Test: tests/errors/context_brackets.moss;
-      the self-hosted compiler still accepts it (listed as its bug).
-      (relation incomplete; adjusted to the elaborator) A method item's
-      brackets: the designer's [D43] example tests/wasi/merge.moss (and
-      merge_order, merge_functor, functor_merge_bracketed, ...) writes
-      `A.gimme[Foo=B]` for `fn .gimme(): Foo;`, whose requirements are none
-      (it is declared under no assume), so Brackets, asking Foo among them,
-      gave those programs no CtxOf, though the oracle runs them (merge.moss
-      prints `qbq`).  The elaborator binds any type symbol on a method item
-      (and rejects it on a bind: check_relevant, as before); Brackets now
-      asks the left side among the requirements only for a target that is
-      not a method.  Oracle stdout, stderr and exit status for notes 55 and
-      56 are identical to the previous oracle's on all 243 programs of
-      tests/wasi, tests/errors and examples and on the compiler compiling
-      tests/wasi/tags.moss, but for the new error test.
-  57. (elaborator unsound; adjusted to the relation) [D71] Brackets on a
-      context item that takes none: ItemEntries reads a type, a tag, a
-      unit, an alias, a defined val and a functor item only unbracketed
-      (IEType, IENothing, IEFun), but add_spec elaborated the brackets and
-      add_symbol_item ignored them, so `context K = T[];` and
-      `context L = Int, Box[T = Int];` were accepted (exit status 0) with no
-      CtxOf.  add_spec now rejects them ("`T` takes no brackets in a
-      context").  Test: tests/errors/context_item_brackets.moss; the
-      self-hosted compiler still accepts it (listed as its bug).  Oracle
-      stdout, stderr and exit status are identical to the previous
-      oracle's on all programs and on the compiler compiling
-      tests/wasi/tags.moss, but for the new error test.
-      RESOLVED (designer decision): find_method_decl no longer falls back
-      to a detached method in the receiver's home module. Previously, for a method
-      item `A.m` of a context, falls back to a detached `.m` of A's own
-      module when none is in scope here; MethodNamed (IEMeth) does not, so
-      `context K = Int, A, A.gimme;` with `.gimme` detached in A's module
-      and not imported is accepted (exit status 0) with no CtxOf, while a
-      call `a.gimme()` in a body is rejected ("not a detached method in
-      scope"). Both implementations now reject such a context, as
-      MethodNamed requires. Tests: context_detached_unimported.moss and
-      context_detached_imported.moss.
-  58. (elaborator fragile; made robust for the proof, no change on any
-      program) fn_info caches a function's info under its symbol, but
-      computed it from the gsym record it was handed, so the cache was
-      only as good as every caller's record: an entry under a symbol
-      could have been made from another record with that number.  It
-      now reads the symbol table's entry for the number (sym) before it
-      walks.  PROVED (InfoCache.v): every entry of the cache is fn_info's
-      merged walk of the table's entry for its key, or (lambda_provider)
-      an entry for a symbol the elaborator made, and every step keeps
-      this, so fn_info forms its function's context (CtxOf with the
-      enclosing brackets apart, CtxMerge.CtxOfIE) whether its answer was
-      cached or not, for a function neither a forwarder nor `main`.
-      Oracle stdout, stderr and exit status are identical to the previous
-      oracle's on all programs of tests/wasi, tests/errors and examples
-      and on the compiler compiling tests/wasi/tags.moss.
-  59. (discrepancy, reported, not changed: the relation reads more than the
-      elaborator accepts) [D43] Merged types in a body.  CtxOf reads a
-      body's types canonically (σ applied: c_ty, c_vals, a parameter's
-      type), so a type symbol merged with `|` is `|` there and two merged
-      type symbols are one type.  The elaborator tests divergence
-      (check_stmt's `ASExpr` flag is_never, synth_if's and `return`'s
-      is_unit_or_never, a match on `|`) and joins branches (join: is_never,
-      ety_eqb) on its types as they are, not canonically (canon e).  So
-      with `type N = |;`, `context C1 = A, B, A.gimme[Foo=B];` and
-      `context C2 = A, A.gimme[Foo=N];`, the fn
-      `assume Wasm, C1, C2 { fn f(x: B): I32 { x; } }` is rejected ("block
-      yields `()`, expected `I32`", exit status 64) though BlkExprLast reads
-      its body as `|`; and, B and C merged (as in tests/wasi/merge.moss),
-      `fn pick(k: Bool, b: B, c: C): B { let r = if k { b } else { c }; r }`
-      is rejected ("branches disagree: `B` vs `C`") though Join reads it.
-      Every test the elaborator passes implies the canonical one, so no
-      accepted program lacks a reading on this account; but where they
-      differ the elaborator's statement-level divergence (`x;` is `()` to
-      it, `|` to the relation) is not the relation's, which BodySound's
-      StmtConcl equates.  Lifting CxRel's en_uf = [] therefore needs the
-      elaborator to test canonically (is_never (canon e t), join over
-      canon e): it newly accepts only such programs.  Left for that lift,
-      as it changes synth/check_stmt, which the bodies track (proof-a2) is
-      changing too.
+Fixpoint emb_value (w : value) : xvalue :=
+  match w with
+  | VUnit => XVUnit
+  | VTag n w1 => XVTag n (emb_value w1)
+  end.
 
-   CHANGES OF TRACK A, PART 3 (fields, match, records, operators, tags,
-   literals, defined vals; notes 60-68):
-  60. (relation incomplete; adjusted to the elaborator) [D85] `for x in
-      xs` is sugar (Parse.for_desugar) over four operators, `for.begin`,
-      `for.more`, `for.get` and `for.after`, which the elaborator reads as
-      access.moss's detached `.begin`/`.more`/`.get`/`.after`.  Part V's
-      operator_method knew only num.moss's, so no program with a `for`
-      loop had a reading, among them tests/wasi/lists.moss, iterate.moss,
-      newton.moss and five more, which the oracle runs.  operator_method
-      now gives the library module with the method's name, as the
-      elaborator's does (the same table, BodyOps.operator_rel), and
-      ExUnary/ExBinary read LangSym at that module.
-  61. (elaborator, for the proof; no change in behaviour) A pattern names a
-      member of the scrutinee's type by its head, and compile_pattern's
-      table of heads also holds an abstract type's (a generation's or a
-      `type`'s number).  A tag never shares its number with a type, but
-      nothing local says so; compile_pattern now asks that the member it
-      finds under a tag's or unit's head be that tag's application
-      (YNom), so PUnit/PTagBind/PRecord's `In (TNom s xs) (members st)`
-      follows (BodyData.pat_step).  Union members are tag and unit
-      applications (BodySound.ety_wf, which the proof of elab_type
-      against TyOf now owes), so the exhaustiveness check reads heads as
-      ArmsSome does.
-  62. (elaborator unsound; adjusted to the relation) A record literal of a
-      payload that names a field twice, `tag P { a: I32, a: I32 };` and
-      `P { a = one }`: ExRecord asks for as many fields as the payload
-      has (`length fs = length ftys`, every field given once), the
-      elaborator only that each payload field's name be given, and it
-      ran the program.  synth_record now rejects it ("names a field
-      twice, so no record literal builds it").  Such a type is still
-      readable (TyRec), and `P(r)`, patterns and field reads of it are
-      unchanged.  Test: tests/errors/record_field_twice.moss (the oracle
-      ran it and exited 1; the self-hosted compiler still accepts it).
-  63. (relation incomplete; adjusted to the elaborator) The literal `0`
-      needs only lib/int.moss's `zero`: the elaborator types it at
-      zero's type, but ExLit asked for `one` in force at the literal's
-      type (or a float literal), so `assume Int, zero { fn f(): Int { 0 }
-      }` was accepted (the oracle ran it) with no reading.  ExLit now also
-      takes zero's type.
-  64. (resolved by the designer: literal arithmetic follows families)
-      [D68, D84 rule 7] LitOp and LitTerm now allow the same unique-family
-      provision as method calls, including its type bindings, requirements,
-      produced keys and resulting method signature. Direct arithmetic
-      constructors remain valid. Both elaborators check each literal
-      arithmetic method takes and returns the literal's own type; arbitrary
-      selected library modules need not have a hardcoded standard signature.
-      Tests: tests/wasi/literal_family.moss and the literal_signature fixture.
-  65. (elaborator unsound on bundles the parser does not write; adjusted
-      to the relation) [D68] lit_value and is_float_lit read a literal's
-      text in the parser's normal form (Parse.lit_norm): digits, then
-      optionally `.` and digits, then optionally `e`, `-` and digits.  The
-      elaborator also split an exponent at `E`, and read any character as
-      a digit (code - 48), so a bundle with `(Y "1E3")` (a Float at 1000;
-      lit_value: not a float literal) or `(Y "/")` (one; lit_value: 0) had
-      no reading.  synth_literal now rejects a text not in that form ("is
-      not a numeric literal (D68)").  The oracle parses source, whose
-      literals are always in that form, so it cannot be given one; outputs
-      identical on all 245 programs.
-  66. (elaborator, for the proof; no change in behaviour) const_val's
-      cache write now only adds an entry: an initializer that reaches its
-      own val recurses until the fuel runs out, so no successful run
-      overwrote one.  The cache so only grows (ElabFrame's fx_consts), and
-      BodySound's Later reads every entry as its val's ExConst premises
-      (lt_consts, ConstFact; BodyConst.v proves pd_const).  That the last
-      state of a run holds only such entries is an obligation of the
-      whole run (each entry is made by const_val's fresh case, which
-      BodyConst.const_fresh relates, from an earlier state), proved in
-      ElabConsts.v (elab_consts: every step keeps the cache valid).
-  67. (elaborator, for the proof; no change in behaviour) lang_call (a
-      literal's `.add`/`.mul`/`.div`, note 64) called provided_call also
-      when no provision was in force and no family produced the key, for
-      provided_call to search for a family again, on a later state (fresh
-      numbers), and report the missing provision.  lang_call now reports
-      it itself (Elab.no_provision, the same message), so a literal's
-      arithmetic is provided_call's direct case only (BodyLit.v).
-  68. (resolved by the designer: library identity is the prelude's
-      directory) A user module named `lib/wasm.moss` is not the selected
-      library. The world now carries that directory (w_library), tied to
-      b_prelude by WorldOf. LangSym selects a symbol from the scope of the
-      exact sibling module `<directory>/<short>.moss`, as lang_symbol does;
-      a reexport is valid, and a declaration need not live in that module.
-      This scope alignment also removes the old, false generic Hlang
-      assumption: int.moss itself reexports num.moss's detached `.eq`.
-      LibraryFacts proves the identity/scope facts from the loader.
-      PlatformRefTag follows the selected wasm scope (including deliberate
-      reexports), as is_platform_sym does; InLibrary uses the same directory.
-      Native primitive/operator lookup uses the same exact directory, not
-      a last-basename match. Disabling automatic prelude imports retains
-      the default `lib/` directory from the working directory; it does not
-      disable library identity. Tests: tests/wasi/library_identity.moss,
-      with a user's own lib/wasm.moss, in both native prelude modes.
+(* The embedding of the core: syntax, runtime entries, environments. *)
+Fixpoint emb_expr (e : expr) : xexpr :=
+  match e with
+  | EVar x => XVar x
+  | EUnit => XUnit
+  | EVl v => XVl v
+  | ETag n th e1 => XTag n th (emb_expr e1)
+  | ECallD f th sm args => XCallD f th sm (map emb_expr args)
+  | ECallA f args => XCallA f (map emb_expr args)
+  | EMeth e0 m prov args => XMeth (emb_expr e0) m prov (map emb_expr args)
+  | EMatch e0 arms =>
+      XMatch (emb_expr e0)
+             (map (fun a => match a with (n, x, eb) => (n, x, emb_expr eb) end) arms)
+  | ELet x e1 e2 => XLet x (emb_expr e1) (emb_expr e2)
+  | EBindTy t tau e1 => XBindTy t tau (emb_expr e1)
+  | EBindVal v e1 e2 => XBindVal v (emb_expr e1) (emb_expr e2)
+  | EBindFn f f' sm e1 => XBindFn f f' sm (emb_expr e1)
+  | EBindMth tauk m th f' sm e1 => XBindMth tauk m th f' sm (emb_expr e1)
+  | EBindFun u h sm smc e1 => XBindFun u h sm smc (emb_expr e1)
+  | EBindFunA u u' sm e1 => XBindFunA u u' sm (emb_expr e1)
+  | EApply u th sm e1 => XApply u th sm (emb_expr e1)
+  end.
 
-   CHANGES OF TRACK B (the typing bridge; notes 70-71):
-  70. (relation permissive; adjusted to the elaborator, no change in what
-      is accepted) [D84] rule 2 / [D20]: assuming an abstract functor F
-      asks its fixed inputs X(F) in force, as the elaborator has checked
-      since m4 (add_symbol_item: "assuming `F` needs `T` in force: `F` is
-      fixed in them").  IEFun did not ask it, so the relation related
-      programs the elaborator rejects, and Core's OkFun (X(φ) available
-      where φ is listed) could not be read off a CtxOf (Track B).  IEFun
-      now asks every x with Fixed W u x to have a meaning in tm; Fixed
-      and what it is built from move ahead of ItemEntries.
-  71. (relation wrong; adjusted to the elaborator, no change in what an
-      implementation accepts) Brackets on a context item, `C[T=U]`.  The
-      elaborator (add_spec, add_symbol_item; provide_spec likewise) reads
-      the items of C under the bracket substitution, which it passes down
-      and drops when C is done, and puts a type item `T` of C in force as
-      its own generation whether or not a bracket binds it (the env, not
-      the substitution, holds the types in force).  IECtx instead walked
-      C's items at `bs ++ tm` and returned the walk's tm', so the bindings
-      outlived C: in `context Outer = T, U, Inner[T=U];` (with `Inner`
-      under `assume T`) T meant U for the rest of the walk and in the
-      context made, where the elaborator has T as its own generation; and
-      IEType did not put a bracket-bound T in force.  So Part V gave such
-      a context meanings the elaborator does not (typing `fn f(t: T): T`
-      at U -> U, and relating `fn g(t: T): U { t }`, which the elaborator
-      rejects), and keys that are no requirement (tests/wasi/generic.moss:
-      T and L in `exercise`'s context).  ItemEntries/ItemsEntries now take
-      the enclosing brackets `ob` apart from the types in force `tm`: an
-      item is read at `ob ++ tm` (its own brackets at `bs ++ ob ++ tm`),
-      IECtx walks C's items under `bs ++ ob` with tm threaded alone, and
-      IEType consults and extends tm only.  CtxOf, FunCtx and
-      ProvideResult start with no brackets.  The elaborator is unchanged;
-      the relation's worked examples (RelSupport's tactic) bracket no
-      context item, so their proofs stand.  Track B: what makes
-      BRIDGE-A2's "each requirement means its own generation, and only
-      requirements have meanings" true of Part V.
-*)
+Definition emb_arms (arms : list (nsym * var * expr)) : list (nsym * var * xexpr) :=
+  map (fun a => match a with (n, x, eb) => (n, x, emb_expr eb) end) arms.
+
+Definition emb_bnd (b : bnd) : xbind :=
+  match b with
+  | BTy t tau => XBTy t tau
+  | BVal v e1 => XBVal v (emb_expr e1)
+  | BFn f f' sm => XBFn f f' sm
+  | BMth tauk m th f' sm => XBMth tauk m th f' sm
+  | BFun u h sm smc => XBFun u h sm smc
+  | BFunA u u' sm => XBFunA u u' sm
+  | BApply u th sm => XBApply u th sm
+  end.
+
+Fixpoint emb_dentry (en : dentry) : xdentry :=
+  match en with
+  | DVal w => XDVal (emb_value w)
+  | DClo f d => XDClo f (map (fun p => match p with (i, en') => (i, emb_dentry en') end) d)
+  | DFun h sms dc =>
+      XDFun h sms (map (fun p => match p with (i, en') => (i, emb_dentry en') end) dc)
+  end.
+
+Definition emb_denv (d : denv) : xdenv :=
+  map (fun p => match p with (i, en) => (i, emb_dentry en) end) d.
+Definition emb_venv (g : venv) : xvenv :=
+  map (fun p => match p with (x, w) => (x, emb_value w) end) g.
+
+(* the core program as an extended one: the same bodies, embedded *)
+Definition emb_prog (Sg : gsig) : xprog :=
+  mkXProg (fun f => match g_fn Sg f with
+                    | Some (_, _, Some b) => Some (emb_expr b)
+                    | _ => None
+                    end)
+          (fun u => match g_fun Sg u with
+                    | Some (_, Dr, Some bs) => Some (Dr, map emb_bnd bs)
+                    | _ => None
+                    end)
+          0 0 0 [] (fun _ => None) [] (fun _ => []) (fun _ => []) false (fun _ => []) (fun _ => []).
+
+Definition res_agree (r : res) (o : xout) : Prop :=
+  match r, o with
+  | Ok w, XOk w' => w' = emb_value w
+  | Err, XErr _ => True
+  | OutOfFuel, XFuel => True
+  | _, _ => False
+  end.
+
 
 (* ######################################################################## *)
 (* Part VI. The obligations                                                  *)
@@ -5970,82 +5296,40 @@ Module Type SOURCE_RUNTIME_COMPLETE (C : PROVED_NOW)
     exists runtime, Spec.ReificationCertificate source raw runtime.
 End SOURCE_RUNTIME_COMPLETE.
 
-(* The concrete slot syntax and executable closures are supplied by the
-   oracle. The equations relating its stages are part of the contract. *)
+(* The default interpreter compiles MossX bodies directly to closures.
+   The table equations describe the OCaml driver's trusted preparation. *)
 Module Type ORACLE_PIPELINE (C : PROVED_NOW).
-  Parameter slot_program slot_expr slot_bind code bind_code scalar_cache : Type.
-  Parameter fast_program : xprogram -> xprogram.
-  Parameter slot_input : xprogram -> list (list int) ->
-    (list int -> option (list int)) -> slot_program.
-  Parameter slot_runtime : slot_program -> xprog.
-  Parameter slot_function : slot_program -> fsym -> option (slot_expr * slot_expr).
-  Parameter slot_functor : slot_program -> usym -> option (tele * list slot_bind).
-  Parameter fold_expr : xprog -> (fsym -> option slot_expr) -> nat -> nat -> slot_expr -> slot_expr.
-  Parameter fold_bind : xprog -> (fsym -> option slot_expr) -> nat -> nat -> slot_bind -> slot_bind.
-  Definition function_table := fsym -> option (code * code).
-  Definition functor_table := usym -> option (tele * bind_code * scalar_cache).
-  Parameter compile_expr : slot_program -> function_table -> functor_table -> slot_expr -> code.
-  Parameter compile_binds : slot_program -> function_table -> functor_table -> list slot_bind -> bind_code.
-  Parameter prepare_scalars : tele -> list slot_bind -> scalar_cache.
+  Parameter code bind_code : Type.
+  Definition function_table := fsym -> option code.
+  Definition functor_table := usym -> option (tele * bind_code).
+  Parameter compile_expr : xprog -> function_table -> functor_table -> xexpr -> code.
+  Parameter compile_binds : xprog -> function_table -> functor_table -> list xbind -> bind_code.
   Parameter engine_run : function_table -> nat -> fsym -> xdenv -> C.Prims.mstate -> C.X.xres.
+  Parameter fast_program prune_program : xprogram -> xprogram.
 End ORACLE_PIPELINE.
 
 Module OracleSpec (C : PROVED_NOW) (Import Engine : ORACLE_PIPELINE C).
   Module Ref := ReferenceRun C.
-
-  Record tables := Tables {
-    static_bodies : fsym -> option slot_expr;
-    max_size : nat;
-    max_depth : nat;
-    folded_program : slot_program;
-    functions : function_table;
-    functors : functor_table
-  }.
-
-  Definition CompiledTables folded fns funs : Prop :=
-    (forall f, fns f =
-      option_map (fun '(bs, bd) => (compile_expr folded fns funs bs, compile_expr folded fns funs bd))
-        (slot_function folded f)) /\
-    (forall h, funs h =
-      option_map (fun '(Dr, bs) => (Dr, compile_binds folded fns funs bs, prepare_scalars Dr bs))
-        (slot_functor folded h)).
-
-  (* The driver supplies the pruned slot program's static bodies, the
-     correctly folded program, and tables satisfying the closure equations. *)
-  Definition Prepared p argv read (t : tables) : Prop :=
-    let original := slot_input p argv read in
-    let folded := folded_program t in
-    let P := slot_runtime original in
-    let tb := static_bodies t in let m := max_size t in let n := max_depth t in
-    let fns := functions t in let funs := functors t in
-    (forall f bs, tb f = Some bs -> exists bd, slot_function original f = Some (bs, bd)) /\
-    slot_runtime folded = P /\
-    (forall f, slot_function folded f =
-      option_map (fun '(bs, bd) => (fold_expr P tb m n bs, fold_expr P tb m n bd))
-        (slot_function original f)) /\
-    (forall h, slot_functor folded h =
-      option_map (fun '(Dr, bs) => (Dr, map (fold_bind P tb m n) bs))
-        (slot_functor original h)) /\
-    CompiledTables folded fns funs.
-
+  Definition CompiledTables P fns funs : Prop :=
+    (forall f, fns f = option_map (compile_expr P fns funs) (xp_fn P f)) /\
+    (forall h, funs h = option_map (fun '(Dr,bs) => (Dr,compile_binds P fns funs bs)) (xp_fun P h)).
+  Definition Prepared p argv read fns funs : Prop :=
+    CompiledTables (program_of (prune_program p) argv read) fns funs.
   Definition out_of_fuel (r : C.X.xres) := C.X.xr_out r = XFuel.
   Definition stuck (r : C.X.xres) := exists c, C.X.xr_out r = XErr c.
-  Definition run_prepared p t fuel st :=
-    engine_run (functions t) fuel (xo_main p) (xo_env p) st.
 End OracleSpec.
 
 Module Type ORACLE_AGREEMENT (C : PROVED_NOW) (Engine : ORACLE_PIPELINE C).
   Module Spec := OracleSpec C Engine.
   Import Spec Engine.
-
-  (* Correctness of the default interpreter: the family fast path,
-     pruning, slots, folding and cached closures. Prepared records the
-     hypotheses on the tables constructed by the OCaml driver. *)
-  Axiom interpreter_correct : forall p argv read fuel st t,
-    Prepared (fast_program p) argv read t ->
+  (* With the driver's compiled tables, the default engine agrees with
+     the reference run whenever that run avoids fuel exhaustion and XErr. *)
+  Axiom interpreter_correct : forall p argv read fuel st fns funs,
+    Prepared (fast_program p) argv read fns funs ->
     out_of_fuel (Ref.run p argv read fuel st) \/
     stuck (Ref.run p argv read fuel st) \/
-    run_prepared (fast_program p) t fuel st = Ref.run p argv read fuel st.
+    engine_run fns fuel (xo_main (fast_program p)) (xo_env (fast_program p)) st =
+      Ref.run p argv read fuel st.
 End ORACLE_AGREEMENT.
 
 (* Pending end-to-end source obligations. The checked component contracts
