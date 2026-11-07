@@ -164,7 +164,7 @@ The build fails on any other OCaml, and compiles the oracle with `-O3
 `check.sh` is the audit, since Rocq alone accepts `Admitted`. It audits
 the certificate, which transitively covers everything the guarantee
 depends on: what `Certified.v` binds, the extracted roots (the default
-engine's among them), and `CachedCloFacts.fast_engine_agrees`, may assume only the
+engine's among them), and both pipelines' `fast_engine_agrees` theorems, may assume only the
 kernel's `Primitive` declarations (Rocq's primitive integers, floats and
 arrays; [`assumptions/Certificate.v`](assumptions/Certificate.v)).
 The theorems the design notes cite as closed under the global context
@@ -182,7 +182,7 @@ Every engine is proved to compute exactly what Audit's interpreter
 (pruning's caveat, `Prune.oracle_agrees`) or, after the fast path, runs
 out of fuel (`FastPath.fast_run`):
 
-- `fold`, the default: the program pre-resolved, its calls to small fns
+- `fold`: the program pre-resolved, its calls to small fns
   folded when eligible, and compiled to closures, run by `CachedClo.crun_main`
   (`CachedCloFacts.engine_agrees`). Programs with checked GC casts retain runtime
   type environments, so `FoldX.guard_fold_e` preserves their original
@@ -210,7 +210,7 @@ out of fuel (`FastPath.fast_run`):
     optimizations off (`Set Extraction Flag 0`), so the code of a node's
     children and argument lists stays computed once, outside the closure
     that runs it, rather than being rebuilt at every evaluation.
-- `lazy`: [`LazyClo.v`](theories/LazyClo.v) compiles expressions directly
+- `lazy`, the default: [`LazyClo.v`](theories/LazyClo.v) compiles expressions directly
   to closures over [`LazyX.v`](theories/LazyX.v)'s split environments.
   Ordinary bindings, type bindings and the proper-type projection have
   ordered streams. When every type row is proper, the type bindings and
@@ -243,8 +243,7 @@ out of fuel (`FastPath.fast_run`):
   original code. Unsupported operations, failed lookups or evaluation, and
   insufficient fuel fall back with the original state.
   [`LazyFoldFacts.v`](theories/LazyFoldFacts.v) proves exact agreement,
-  including runtime types, composition failures and fuel exhaustion. This
-  engine remains opt-in while complete bootstrap measurements are pending.
+  including runtime types, composition failures and fuel exhaustion.
 - `lazy-ref`: the same environments with AST dispatch
   (`LazyInterpFacts.frun_main_eq`).
 - `clo`: the same without folding (`CachedCloFacts.crun_main_eq` and
@@ -315,8 +314,8 @@ decision), and the obligations, as module types (Part VI):
   other families, so checked GC casts keep the same behavior.
   `FastPath.fast_run`: the result is exactly the elaborated
   program's, at every fuel at which that run does not run out of fuel;
-  `OracleCertified` binds it as `fast_path_agrees` and binds the combined
-  result for the default pipeline as `fast_engine_agrees`.
+  `OracleCertified` and `LazyOracle.Certified` bind it as `fast_path_agrees`
+  and bind their combined pipeline results as `fast_engine_agrees`.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
 arguments, printing, and the engine's tables, below), Rocq's extraction,

@@ -9,7 +9,7 @@
    Gallina elaborator (Elab.elaborate_sx), and the result is given the
    family fast path (FastPath.fast_program), pruned
    (Prune.oracle_program) and run by an engine proved equal to
-   MossX.run_main (MOSS_ENGINE, below; CloX.crun_main by default).  The prelude is P, else $MOSS_LIB/prelude.moss, else
+   MossX.run_main (MOSS_ENGINE, below; LazyClo.crun_main by default).  The prelude is P, else $MOSS_LIB/prelude.moss, else
    lib/prelude.moss (from the working directory).  --bundle-text prints the
    bundle; --dump writes each file's dump (Parse.print_sx) or `ERROR msg` to
    OUTDIR/<mangled path>.rocq.sx. Exit status: 63 the front end rejected
@@ -292,7 +292,7 @@ let () =
   let st0 = init_state (Uint63.of_int !pages) in
   (* MOSS_ENGINE: which interpreter runs the program (pruned unless
      MOSS_PRUNE=0).  Each is proved equal to Audit's interpreter:
-     - fold (default): the program pre-resolved (SlotX), its calls to small
+     - fold: the program pre-resolved (SlotX), its calls to small
        fns folded (FoldX) and closure-compiled (CloX), run by
        CloX.crun_main; CloX.engine_agrees, on the pruned program;
      - clo: the same without folding (CloX.clo_oracle_agrees);
@@ -300,7 +300,7 @@ let () =
        (SlotX.slot_oracle_agrees);
      - ref: Audit's interpreter itself (XS.run_main);
      - fast: FastX.frun_main, map-keyed environments (FastX.frun_main_eq);
-     - lazy: split environments and deferred type substitutions, compiled
+     - lazy (default): split environments and deferred type substitutions, compiled
        directly to closures (LazyCloFacts.crun_main_eq);
      - lazy-ref: the same environments with AST dispatch
        (LazyInterpFacts.frun_main_eq).
@@ -312,7 +312,7 @@ let () =
      arrays afn'/afun' its bodies folded (R'), and tbl/ftbl the closure
      code of R', closures that read the very arrays they are stored in
      (the knot CloX.tbl_ok describes). *)
-  let engine = match Sys.getenv_opt "MOSS_ENGINE" with Some e -> e | None -> "fold" in
+  let engine = match Sys.getenv_opt "MOSS_ENGINE" with Some e -> e | None -> "lazy" in
   let r = match engine with
     | "lazy-ref" -> LazyX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
     | "lazy" ->

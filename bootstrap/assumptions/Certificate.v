@@ -76,7 +76,7 @@ Definition certificate_roots :=
   @NM.Parse.load_bundle,
   @NM.Parse.bundle_sx,
 
-(* The default engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
+(* The legacy slot/fold engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
    fast path, pruning, pre-resolution, folding and closure compilation,
    then the run; and the theorem that makes it Audit's semantics, given the tables the driver
    builds (README.md, What is trusted). *)
@@ -95,7 +95,8 @@ Definition certificate_roots :=
   @NM.CachedCloFacts.engine_agrees,
   @NM.CachedCloFacts.fast_engine_agrees,
 
-(* The deferred-type engines, with exact environment/compiler agreement and
+(* The default deferred-type engine (MOSS_ENGINE=lazy) and its AST reference,
+   with exact environment/compiler agreement and
    the same fast-path and pruning exceptions as the original pipeline. *)
   @NM.LazyX.frun_main,
   @NM.LazyClo.cc,
