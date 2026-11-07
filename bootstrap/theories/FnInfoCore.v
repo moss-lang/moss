@@ -1,6 +1,6 @@
 (* Executable fn_info views, independent of body semantics. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame.
+From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore.
 Import ListNotations.
 Section Walker.
 Variable walk:env->M(env*list key).

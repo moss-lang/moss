@@ -22,6 +22,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import FinalLambdas Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySound BodyConst InfoPreserve ElabConstInput ElabProgramInput FinalForwarders FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv ForwarderTrace.
 From NM Require Import ReadonlyHelpers.
+From NM Require Import InfoInputs SemanticTraversal.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -493,6 +494,79 @@ Local Ltac cache_step_tac := repeat (fintros; lazymatch goal with
         | let h := head_of m in progress unfold h]
     end).
 
+Local Lemma shared_cache_base:forall A(m:M A),keeps readonly_state m->InfoInputs.NI m->ok m->cache_step ConstCache m.
+Proof.
+ intros A m K N O;apply cache_step_intro.
+ - apply okqi_keeps;[exact O|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst x));exact K].
+ - apply okI_ni;[exact O|exact N|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst(fst x)));exact K].
+ - apply okF_readonly;[exact O|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst(fst(fst x))));exact K].
+Qed.
+Local Lemma shared_cache_info:forall g,cache_step ConstCache(fn_info g).
+Proof. intro;apply cache_step_intro;[apply okqi_keeps;[apply ok_fn_info_frame|apply kc_fn_info_frame]|apply okI_fn_info|apply okF_readonly;[apply ok_fn_info_frame|apply kw_fn_info_frame]]. Qed.
+Local Lemma shared_cache_lower_zero:forall g,cache_step ConstCache(lower_body 0 g).
+Proof. intro;apply shared_cache_base;[cbn[lower_body];keepst|cbn[lower_body];InfoInputs.nit|cbn[lower_body];okt]. Qed.
+Local Lemma shared_cache_const_zero:forall g,GoodG g->okc(const_val 0 g).
+Proof. intros;cbn[const_val];okqit. Qed.
+Local Lemma shared_cache_path_zero:forall c e p a,cache_step ConstCache(synth_path 0 c e p a).
+Proof. intros;apply shared_cache_base;[cbn[synth_path];keepst|cbn[synth_path];InfoInputs.nit|cbn[synth_path];okt]. Qed.
+Local Lemma shared_cache_const:forall fuel,
+ (forall c e x exp,cache_step ConstCache(synth fuel c e x exp))->forall g,GoodG g->okc(const_val(S fuel)g).
+Proof. intros fuel B;apply okc_const_val_step;intros;exact(proj2(proj2(B _ _ _ _))). Qed.
+Local Lemma shared_cache_path:forall fuel,(forall g,GoodG g->okc(const_val fuel g))->forall c e p a,cache_step ConstCache(synth_path(S fuel)c e p a).
+Proof. intros;apply cache_step_intro;[apply okc_synth_path_step;assumption|apply okI_synth_path|apply okF_synth_path]. Qed.
+Local Lemma shared_cache_wrapper_keeps:forall fuel pv,keeps st_consts(wrapper fuel pv).
+Proof. intros[|fuel]pv;cbn[wrapper];keepst. Qed.
+Local Lemma shared_cache_wrapper:forall fuel pv,cache_step ConstCache(wrapper fuel pv).
+Proof. intros;apply cache_step_intro;[apply okqi_keeps;[apply ok_wrapper|apply shared_cache_wrapper_keeps]|apply okI_wrapper|apply okF_wrapper]. Qed.
+Local Lemma shared_cache_forwarder:forall fuel,(forall g,cache_step ConstCache(lower_body fuel g))->forall tg,cache_step ConstCache(forwarder(S fuel)tg).
+Proof. intros fuel B tg;apply cache_step_intro;[apply okc_forwarder_step;intro g;exact(proj2(proj2(B g)))|apply okI_forwarder|apply okF_forwarder]. Qed.
+Local Lemma shared_cache_lower:forall fuel,(forall c e b exp,cache_step ConstCache(synth_block fuel c e b exp))->forall g,cache_step ConstCache(lower_body(S fuel)g).
+Proof. intros fuel B g;assert(Bq:forall c e b exp,okc(synth_block fuel c e b exp))by(intros;exact(proj2(proj2(B _ _ _ _))));apply cache_step_intro;[cbn[lower_body];okqit|apply okI_lower_body|apply okF_lower_body]. Qed.
+Local Lemma shared_cache_lambda:forall fuel,(forall c e b exp,cache_step ConstCache(synth_block fuel c e b exp))->forall c e ps rt body bound sg this what,cache_step ConstCache(lambda_provider(S fuel)c e ps rt body bound sg this what).
+Proof. intros fuel B;assert(Bq:forall c e b exp,okc(synth_block fuel c e b exp))by(intros;exact(proj2(proj2(B _ _ _ _))));intros;apply cache_step_intro;[cbn[lambda_provider];okqit|apply okI_lambda_provider|apply okF_lambda_provider]. Qed.
+Local Lemma shared_cache_group : forall fuel,
+  (forall c e x exp, cache_step ConstCache (synth fuel c e x exp)) /\
+  (forall c e a exp, cache_step ConstCache (synth_arg fuel c e a exp)) /\
+  (forall c e b exp, cache_step ConstCache (synth_block fuel c e b exp)) /\
+  (forall c e ss, cache_step ConstCache (check_stmts fuel c e ss)) /\
+  (forall c e s, cache_step ConstCache (check_stmt fuel c e s)) /\
+  (forall c e y, cache_step ConstCache (check_bool fuel c e y)) /\
+  (forall c e x exp, cache_step ConstCache (synth_if fuel c e x exp)) /\
+  (forall c e s arms exp, cache_step ConstCache (synth_match fuel c e s arms exp)) /\
+  (forall g, GoodG g -> okc (const_val fuel g)) /\
+  (forall c e p a, cache_step ConstCache (synth_path fuel c e p a)) /\
+  (forall c e nm sg args, cache_step ConstCache (check_args fuel c e nm sg args)) /\
+  (forall c e p a args, cache_step ConstCache (synth_call fuel c e p a args)) /\
+  (forall c e p a fs, cache_step ConstCache (synth_record fuel c e p a fs)) /\
+  (forall c e o n, cache_step ConstCache (synth_field fuel c e o n)) /\
+  (forall c e o p args, cache_step ConstCache (synth_method fuel c e o p args)) /\
+  (forall c e ox oty m args, cache_step ConstCache (provided_call fuel c e ox oty m args)) /\
+  (forall c e fg th want, cache_step ConstCache (apply_family fuel c e fg th want)) /\
+  (forall c e info, cache_step ConstCache (demand_needs fuel c e info)) /\
+  (forall c e lm n op operand args, cache_step ConstCache (synth_operator fuel c e lm n op operand args)) /\
+  (forall c e o n args why, cache_step ConstCache (lang_call fuel c e o n args why)) /\
+  (forall c e ds why, cache_step ConstCache (int_literal fuel c e ds why)) /\
+  (forall c e v why, cache_step ConstCache (float_of fuel c e v why)) /\
+  (forall c e text, cache_step ConstCache (synth_literal fuel c e text)) /\
+  (forall c e sp y, cache_step ConstCache (check_bind fuel c e sp y)) /\
+  (forall c e y, cache_step ConstCache (expect_fn_provider fuel c e y)) /\
+  (forall c e pv wanted kind, cache_step ConstCache (match_fn_sig fuel c e pv wanted kind)) /\
+  (forall pv, cache_step ConstCache (wrapper fuel pv)) /\
+  (forall tg, cache_step ConstCache (forwarder fuel tg)) /\
+  (forall g, cache_step ConstCache (lower_body fuel g)) /\
+  (forall c e ps rt body bound sg this what, cache_step ConstCache (lambda_provider fuel c e ps rt body bound sg this what)) /\
+  (forall c e sp, cache_step ConstCache (apply_functor fuel c e sp)) /\
+  (forall c e g, cache_step ConstCache (apply_body fuel c e g)) /\
+  (forall c e fg, cache_step ConstCache (apply_abstract fuel c e fg)) /\
+  (forall c e fg y, cache_step ConstCache (bind_functor fuel c e fg y)) /\
+  (forall fg bg, cache_step ConstCache (link_body fuel fg bg)).
+Proof.
+ exact (@SemanticTraversal.synth_preservation_group (@cache_step ConstCache) (fun fuel g=>cache_step ConstCache(lower_body fuel g)) shared_cache_lower_zero
+ (fun fuel g=>GoodG g->okc(const_val fuel g)) (fun fuel c e p a=>cache_step ConstCache(synth_path fuel c e p a))
+ shared_cache_const_zero shared_cache_path_zero (fun fuel c e p a H=>H) shared_cache_const shared_cache_path shared_cache_info
+ (@cache_step_ret ConstCache) (@cache_step_bind ConstCache) (@cache_step_mmap ConstCache) (@cache_step_mfold ConstCache) (@cache_step_miter ConstCache) (@cache_step_with_vars ConstCache)
+ shared_cache_base shared_cache_wrapper shared_cache_forwarder shared_cache_lower shared_cache_lambda).
+Qed.
 Lemma okc_synth_group : forall fuel,
   (forall c e x exp, okc (synth fuel c e x exp)) /\
   (forall c e a exp, okc (synth_arg fuel c e a exp)) /\
@@ -529,17 +603,45 @@ Lemma okc_synth_group : forall fuel,
   (forall c e fg, okc (apply_abstract fuel c e fg)) /\
   (forall c e fg y, okc (bind_functor fuel c e fg y)) /\
   (forall fg bg, okc (link_body fuel fg bg)).
-Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))); fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; okqit. }
-  destruct IH as (I0 & I1 & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & I18 & I19 & I20 & I21 & I22 & I23 & I24 & I25 & I26 & I27 & I28 & I29 & I30 & I31 & I32 & I33 & I34).
-  refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))).
-  10: exact (okc_synth_path_step fuel I8).
-  9: exact (okc_const_val_step fuel I0).
-  26: exact (okc_forwarder_step fuel I28).
-  (* Some operations, such as wrapper, need only the weaker cache property. *)
-  all: first [solve [fintros; apply cache_step_cache; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; cache_step_tac] | solve [fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; okqit]].
+Proof. intro fuel. destruct(shared_cache_group fuel)as(H0 & H1 & H2 & H3 & H4 & H5 & H6 & H7 & H8 & H9 & H10 & H11 & H12 & H13 & H14 & H15 & H16 & H17 & H18 & H19 & H20 & H21 & H22 & H23 & H24 & H25 & H26 & H27 & H28 & H29 & H30 & H31 & H32 & H33 & H34).
+ refine(conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))).
+ - intros c e x exp;exact(proj2(proj2(H0 c e x exp))).
+ - intros c e a exp;exact(proj2(proj2(H1 c e a exp))).
+ - intros c e block exp;exact(proj2(proj2(H2 c e block exp))).
+ - intros c e ss;exact(proj2(proj2(H3 c e ss))).
+ - intros c e s;exact(proj2(proj2(H4 c e s))).
+ - intros c e y;exact(proj2(proj2(H5 c e y))).
+ - intros c e x exp;exact(proj2(proj2(H6 c e x exp))).
+ - intros c e s arms exp;exact(proj2(proj2(H7 c e s arms exp))).
+ - intros g G;exact(H8 g G).
+ - intros c e p a;exact(proj2(proj2(H9 c e p a))).
+ - intros c e nm sg args;exact(proj2(proj2(H10 c e nm sg args))).
+ - intros c e p a args;exact(proj2(proj2(H11 c e p a args))).
+ - intros c e p a fs;exact(proj2(proj2(H12 c e p a fs))).
+ - intros c e o n;exact(proj2(proj2(H13 c e o n))).
+ - intros c e o p args;exact(proj2(proj2(H14 c e o p args))).
+ - intros c e ox oty m args;exact(proj2(proj2(H15 c e ox oty m args))).
+ - intros c e fg th want;exact(proj2(proj2(H16 c e fg th want))).
+ - intros c e info;exact(proj2(proj2(H17 c e info))).
+ - intros c e lm n op operand args;exact(proj2(proj2(H18 c e lm n op operand args))).
+ - intros c e o n args why;exact(proj2(proj2(H19 c e o n args why))).
+ - intros c e ds why;exact(proj2(proj2(H20 c e ds why))).
+ - intros c e v why;exact(proj2(proj2(H21 c e v why))).
+ - intros c e text;exact(proj2(proj2(H22 c e text))).
+ - intros c e sp y;exact(proj2(proj2(H23 c e sp y))).
+ - intros c e y;exact(proj2(proj2(H24 c e y))).
+ - intros c e pv wanted kind;exact(proj2(proj2(H25 c e pv wanted kind))).
+ - intros pv;exact(proj2(proj2(H26 pv))).
+ - intros tg;exact(proj2(proj2(H27 tg))).
+ - intros g;exact(proj2(proj2(H28 g))).
+ - intros c e ps rt body bound sg this what;exact(proj2(proj2(H29 c e ps rt body bound sg this what))).
+ - intros c e sp;exact(proj2(proj2(H30 c e sp))).
+ - intros c e g;exact(proj2(proj2(H31 c e g))).
+ - intros c e fg;exact(proj2(proj2(H32 c e fg))).
+ - intros c e fg y;exact(proj2(proj2(H33 c e fg y))).
+ - intros fg bg;exact(proj2(proj2(H34 fg bg))).
 Qed.
+
 
 Lemma okc_synth : forall fuel c e x exp, okc (synth fuel c e x exp).
 Proof. intros fuel. exact (proj1 (okc_synth_group fuel)). Qed.
@@ -696,7 +798,7 @@ Lemma okc_check_runtime_library_phase:okc check_runtime_library.
 Proof. apply okqi_keeps;[exact(proj1 program_info_runtime)|unfold check_runtime_library;keepst]. Qed.
 #[local]Hint Resolve okc_check_runtime_library_phase:okqidb.
 Lemma okc_check_assumes_phase:okc check_assumes.
-Proof. apply okqi_keeps;[exact(proj1 program_info_assumes)|unfold check_assumes;keepst]. Qed.
+Proof. apply okqi_keeps;[exact(proj1 program_info_assumes)|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst x));exact kr_check_assumes]. Qed.
 #[local]Hint Resolve okc_check_assumes_phase:okqidb.
 Lemma okc_platform_phase:forall k p,okc(platform_entry k p).
 Proof. intros;apply okqi_keeps;[exact(proj1(program_info_platform k p))|unfold platform_entry;keepst]. Qed.
@@ -708,7 +810,7 @@ Proof. apply okF_readonly;[exact(proj1 program_info_contexts)|unfold check_conte
 Lemma cache_fwd_runtime:okF check_runtime_library.
 Proof. apply okF_readonly;[exact(proj1 program_info_runtime)|unfold check_runtime_library;keepst]. Qed.
 Lemma cache_fwd_assumes:okF check_assumes.
-Proof. apply okF_readonly;[exact(proj1 program_info_assumes)|unfold check_assumes;keepst]. Qed.
+Proof. apply okF_readonly;[exact(proj1 program_info_assumes)|eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst(fst(fst x))));exact kr_check_assumes]. Qed.
 #[local]Hint Resolve cache_fwd_listed cache_fwd_contexts cache_fwd_runtime cache_fwd_assumes:inputfwdb.
 Lemma okc_lower_phase:okc lower_all.
 Proof. unfold lower_all;program_qit. Qed.
