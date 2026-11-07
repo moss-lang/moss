@@ -21,38 +21,10 @@ From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
 From NM Require FastPath WorldSound ElabFrame ReqsTotal MethodLookup XBridgeCtx.
 From NM Require XTyping XSafety XExample XHeapC.
 From NM Require Parse FrontEnd FrontEndComplete FrontEndLoader DumpRoundTrip.
+From NM Require EarlyCertified.
 Import ListNotations.
 
-Module Certified <: PROVED_NOW.
-  Definition elaborate := Elab.elaborate.
-  Definition interp := CoreInterp.interp.
-
-  Definition eval_deterministic := CoreMoss.eval_deterministic.
-  Definition interp_sound := CoreMoss.interp_sound.
-  Definition interp_complete := CoreMoss.interp_complete.
-  Definition spec_eval := Specialization.spec_eval.
-
-  Module Prims := MossX.ConcretePrims.
-  Module X := MossX.XS.
-  Definition xinterp_conservative := MossX.xinterp_conservative.
-  Definition prim_law := MossX.prim_sound.
-  Definition prim_mlaw := MossX.prim_msound.
-  Definition prim_ulaw := MossX.prim_usound.
-
-  Definition Typed := CoreMoss.wf_prog.
-  Lemma typed_safe : forall Sg main body fuel,
-    Typed Sg main -> g_fn Sg main = Some ([], mkSig [] TUnit, Some body) ->
-    interp fuel Sg [] [] body <> Err.
-  Proof. intros Sg main body fuel H Hm. exact (proj1 (@soundness_main Sg main body fuel H Hm)). Qed.
-  Lemma typed_inhabited : exists Sg main u, Typed Sg main /\ g_fun Sg u <> None.
-  Proof.
-    exists FunctorExample.Sg, FunctorExample.fMain, 1. split.
-    - exact functor_example_ok.
-    - intro H. vm_compute in H. discriminate H.
-  Qed.
-
-  Definition method_choice_unique := RelFacts.method_choice_unique.
-End Certified.
+Module Certified := EarlyCertified.Certified.
 
 (* Toward elaborate_sound (Audit.v, Part VI, COMPLETE), step 1: the static
    world the elaborator's loader reads a bundle as satisfies every condition
@@ -281,76 +253,6 @@ Module RuntimeCertified <: RUNTIME_SAFETY Certified SourceCertified RuntimeTypin
   Proof. intros source raw result [_ T]. exact (typed_runtime_never_err result T). Qed.
 End RuntimeCertified.
 
-Module OraclePipeline <: ORACLE_PIPELINE Certified.
-  Definition slot_program := SlotX.rprog.
-  Definition slot_expr := SlotX.rexpr.
-  Definition slot_bind := SlotX.rbind.
-  Definition code := CachedClo.code.
-  Definition bind_code := CachedClo.bcode.
-  Definition scalar_cache := option (nat * CachedClo.cached_env).
-  Definition fast_program := FastPath.fast_program.
-  Definition slot_input p := SlotX.rprog_of (Prune.oracle_program p).
-  Definition slot_runtime := SlotX.rp_x.
-  Definition slot_function := SlotX.rp_fn.
-  Definition slot_functor := SlotX.rp_fun.
-  Definition fold_expr := FoldX.guard_fold_e.
-  Definition fold_bind := FoldX.guard_fold_b.
-  Definition function_table := fsym -> option (code * code).
-  Definition functor_table := usym -> option (tele * bind_code * scalar_cache).
-  Definition compile_expr := CachedClo.cc.
-  Definition compile_binds := CachedClo.ccbs.
-  Definition prepare_scalars := CachedClo.prepare_scalar_cache.
-  Definition engine_run := CachedClo.crun_main.
-  Definition slot_run := SlotX.rrun_main.
-  Definition mapped_run := FastX.frun_main.
-End OraclePipeline.
+Module OraclePipeline := EarlyCertified.OraclePipeline.
 
-Module OracleCertified <: ORACLE_AGREEMENT Certified OraclePipeline.
-  Module Spec := OracleSpec Certified OraclePipeline.
-  Import Spec OraclePipeline.
-
-  Definition mapped_engine_agrees := FastX.frun_main_eq.
-  Definition slot_engine_agrees := SlotX.slot_oracle_agrees.
-  Lemma option_map_pair {A B C : Type} (f : A * B -> C) pair :
-    option_map f pair =
-      match pair with Some (a, b) => Some (f (a, b)) | None => None end.
-  Proof. destruct pair as [[a b]|]; reflexivity. Qed.
-
-  Lemma compiled_engine_agrees : forall folded fns funs fuel main d st,
-    CompiledTables folded fns funs ->
-    engine_run fns fuel main d st = slot_run fuel folded main d st.
-  Proof.
-    intros folded fns funs fuel main d st [Fns Funs].
-    setoid_rewrite option_map_pair in Fns. setoid_rewrite option_map_pair in Funs.
-    apply (@CachedCloFacts.crun_main_eq folded fns funs fuel main d st).
-    split; [exact Fns | exact Funs].
-  Qed.
-  Definition fast_path_agrees := FastPath.fast_run.
-
-  Lemma engine_agrees : forall p argv read fuel st t,
-    Prepared p argv read t ->
-    stuck (Ref.run p argv read fuel st) \/
-    run_prepared p t fuel st = Ref.run p argv read fuel st.
-  Proof.
-    intros p argv read fuel st t (Tb & X & Fn & Fun & Fns & Funs).
-    setoid_rewrite option_map_pair in Fn. setoid_rewrite option_map_pair in Fun.
-    setoid_rewrite option_map_pair in Fns. setoid_rewrite option_map_pair in Funs.
-    assert (Tables : CachedCloFacts.tbl_ok (folded_program t) (functions t) (functors t)).
-    { split; [exact Fns | exact Funs]. }
-    exact (@CachedCloFacts.engine_agrees p argv read fuel st _ _ _ _ _ _ Tb X Fn Fun Tables).
-  Qed.
-
-  Lemma fast_engine_agrees : forall p argv read fuel st t,
-    Prepared (fast_program p) argv read t ->
-    out_of_fuel (Ref.run p argv read fuel st) \/
-    stuck (Ref.run p argv read fuel st) \/
-    run_prepared (fast_program p) t fuel st = Ref.run p argv read fuel st.
-  Proof.
-    intros p argv read fuel st t (Tb & X & Fn & Fun & Fns & Funs).
-    setoid_rewrite option_map_pair in Fn. setoid_rewrite option_map_pair in Fun.
-    setoid_rewrite option_map_pair in Fns. setoid_rewrite option_map_pair in Funs.
-    assert (Tables : CachedCloFacts.tbl_ok (folded_program t) (functions t) (functors t)).
-    { split; [exact Fns | exact Funs]. }
-    exact (@CachedCloFacts.fast_engine_agrees p argv read fuel st _ _ _ _ _ _ Tb X Fn Fun Tables).
-  Qed.
-End OracleCertified.
+Module OracleCertified := EarlyCertified.OracleCertified.
