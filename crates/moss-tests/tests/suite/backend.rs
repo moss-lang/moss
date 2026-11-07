@@ -717,6 +717,15 @@ fn abstract_functors() {
     }
 }
 
+/// A fresh result type overrides its old input meaning when result methods
+/// are exported, while the other input keeps its original receiver.
+#[test]
+fn functor_outputs_shadow_input_type_arguments() {
+    let entry = wasi("functor_output_input_shadow");
+    assert_eq!(oracle_run(&entry, &[]), "yn");
+    assert_eq!(run_moss(&entry, PRELUDE), "yn");
+}
+
 /// D84's standing tests that run: a functor's own inputs read per
 /// application (`fn_input`), a captured val across frames, a captured
 /// memory, merged polymorphic inputs, arrays in a scratch memory, an

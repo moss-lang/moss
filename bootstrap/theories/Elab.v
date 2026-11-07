@@ -4814,7 +4814,9 @@ with apply_abstract (fuel : nat) (c : cx) (e : env) (fg : gsym) {struct fuel} : 
   record_reify_event (REApply ety key (gs_id fg) needs output_keys
     (map (fun t => (t, canon e (opt_default YUnit (tn_get e t)))) argtys)
     (map (fun p => (fst p, YAbs (snd p))) gens) (reify_scope_of e')) ;;
-  ret ([SApply (gs_id fg) (th +++ th2) sm], e', cx_with_fresh c (cx_fresh c +++ map snd gens))
+  (* A new output shadows its old input meaning. Substitution lookup takes
+     the first matching key, so fresh outputs must precede input readings. *)
+  ret ([SApply (gs_id fg) (th2 +++ th) sm], e', cx_with_fresh c (cx_fresh c +++ map snd gens))
   end
 
 (* D84 rule 3, `bind F = G;`, and rule 4, `bind F = H;` *)

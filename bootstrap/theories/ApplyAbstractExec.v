@@ -28,7 +28,7 @@ Definition abstract_tail(c:cx)(e:env)(fg:gsym)(ef:env)(needs:list key)(pairs:lis
  record_reify_event(REApply ety key(gs_id fg)needs output_keys
   (map(fun t=>(t,canon e(opt_default YUnit(tn_get e t))))argtys)
   (map(fun p=>(fst p,YAbs(snd p)))gens)(reify_scope_of e'));;
- ret([SApply(gs_id fg)(th++th2)sm],e',cx_with_fresh c(cx_fresh c++map snd gens)).
+ ret([SApply(gs_id fg)(th2++th)sm],e',cx_with_fresh c(cx_fresh c++map snd gens)).
 Lemma apply_abstract_phases:forall fuel c e fg s xs e' c' s',
  apply_abstract fuel c e fg s=Good((xs,e',c'),s')->
  exists ef needs sf xf sx sy sz pairs sp,
@@ -63,7 +63,7 @@ Lemma abstract_tail_phases:forall c e fg ef needs pairs s xs e' c' s',
  record_reify_event(REApply ety key(gs_id fg)needs output_keys
   (map(fun t=>(t,canon e(opt_default YUnit(tn_get e t))))(map fst(en_tn ef)))
   (map(fun p=>(fst p,YAbs(snd p)))gens)(reify_scope_of e'))so=Good(tt,s') /\
- xs=[SApply(gs_id fg)(th++th2)sm] /\ c'=cx_with_fresh c(cx_fresh c++map snd gens).
+ xs=[SApply(gs_id fg)(th2++th)sm] /\ c'=cx_with_fresh c(cx_fresh c++map snd gens).
 Proof.
  intros c e fg ef needs pairs s xs e' c' s' E;unfold abstract_tail in E.
  apply bind_inv in E as(rts&sr&R&E).

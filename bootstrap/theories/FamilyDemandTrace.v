@@ -50,7 +50,7 @@ Proof.
  as(ef&needs&sf&xf&sx&sy&sz&pairs&sp&Av&Env&Fix&Guard&Input&Req&Tail).
  destruct(abstract_tail_phases _ _ _ _ _ _ _ _ _ _ _ Tail)
  as(rts&sr&gens&sg&full&st0&extra&st1&sm&ss&keys&so&R&G&T&T2&S&O&Meta&->&Ctx).
- exists(full++extra),sm;reflexivity.
+ exists(extra++full),sm;reflexivity.
 Qed.
 Definition demand_apply_step(f:nat)(c:cx)(acc:list xstmt*env)(q:demand_group):M(list xstmt*env):=
  let '(ss,e):=acc in

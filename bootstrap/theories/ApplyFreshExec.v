@@ -109,6 +109,28 @@ Proof.
  - apply Nat.eqb_eq in E;subst k;intro H;injection H as <-;left;reflexivity.
  - intro H;right;auto.
 Qed.
+Lemma output_argument_lookup:forall gens t g,
+ nassoc t gens=Some g->g<>t->
+ lookup_subst t(map(fun p=>(fst p,TAbs(snd p)))
+   (filter(fun p=>negb(Nat.eqb(fst p)(snd p)))gens))=Some(TAbs g).
+Proof.
+ intros gens;induction gens as[|[key value]gens IH];intros t g Read Different;[discriminate|].
+ cbn[nassoc assoc fst snd]in Read.
+ destruct(Nat.eqb t key)eqn:Eq.
+ - apply Nat.eqb_eq in Eq;subst key;injection Read as <-.
+   assert(Ne:Nat.eqb t value=false)by(apply Nat.eqb_neq;congruence).
+   cbn[filter map fst snd];rewrite Ne;cbn[negb map lookup_subst fst snd];rewrite Nat.eqb_refl;reflexivity.
+ - cbn[filter map fst snd];destruct(Nat.eqb key value);cbn[negb map lookup_subst fst snd];
+   try rewrite Eq;apply IH;assumption.
+Qed.
+Theorem output_arguments_override_inputs:forall gens s fresh final inputs t g,
+ output_arguments gens s=Good(fresh,final)->nassoc t gens=Some g->g<>t->
+ lookup_subst t(fresh++inputs)=Some(TAbs g).
+Proof.
+ intros gens s fresh final inputs t g Run Read Different;unfold output_arguments in Run.
+ destruct(mmap_ret_value _ _ _ _ _ _ _ Run)as[-> _].
+ rewrite CoreMoss.lookup_subst_app,(output_argument_lookup gens t g Read Different);reflexivity.
+Qed.
 Theorem output_arguments_contains:forall gens s th s' t g,
  output_arguments gens s=Good(th,s')->nassoc t gens=Some g->g<>t->In(t,TAbs g)th.
 Proof.
@@ -128,7 +150,7 @@ Theorem generation_output_premise:forall c e F C rts gens ss th2 ss' th,
  output_arguments gens ss=Good(th2,ss')->forall t,In t rts->
  (A.nlook t(A.c_ty C)=None/\generation_of gens t=t)\/
  (A.nlook t(A.c_ty C)<>None/\A.Fresh W(generation_of gens t)/\
- In(generation_of gens t)(map snd gens)/\In(t,TAbs(generation_of gens t))(th++th2)).
+ In(generation_of gens t)(map snd gens)/\In(t,TAbs(generation_of gens t))(th2++th)).
 Proof.
  intros c e F C rts gens ss th2 ss' th Hc Rel Out t Hin.
  destruct(output_generations_lookup w R Fl e rts gens Rel t Hin)as(g&Look&Case).
@@ -139,6 +161,6 @@ Proof.
    + rewrite(cr_ty _ _ _ _ _ _ _ Hc);destruct(tn_get e t);[discriminate|contradiction].
    + split;[exact Fresh|]. split.
      * apply in_map_iff;exists(t,g);split;[reflexivity|exact(nassoc_some_in _ _ _ _ Look)].
-     * apply in_or_app;right;eapply output_arguments_contains;eauto.
+     * apply in_or_app;left;eapply output_arguments_contains;eauto.
 Qed.
 End ModelOutputs.

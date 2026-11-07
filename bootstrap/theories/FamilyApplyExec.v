@@ -46,7 +46,7 @@ Proof.
  destruct(family_result_types_empty w R Fl b Hload g n names args res sp rts sr Hg D Fam Types Ip Wp)as[-> ->].
  cbn[mmap]in Gen;injection Gen as <- <-.
  unfold output_arguments in Extra;cbn[filter mmap]in Extra;injection Extra as <- <-.
- rewrite app_nil_r in Pre;cbn[map]in Ctx;rewrite app_nil_r in Ctx.
+ cbn[List.app]in Pre;cbn[map]in Ctx;rewrite app_nil_r in Ctx.
  assert(Csame:c'=c)by(rewrite Ctx;destruct c;reflexivity).
  assert(Oth:ok(mmap(input_argument e)(map fst(en_tn ef))))by(apply ok_mmap;apply ok_input_argument).
  destruct(Oth _ _ _ Ip Theta)as[It Ftheta].

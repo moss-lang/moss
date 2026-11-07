@@ -17,7 +17,7 @@ Theorem abstract_application_plan:forall fuel c e F C g n names args res s pre e
  exists ef needs Cu fx rts gens th extra sm ss keys so,
  A.nlook(gs_id g)(A.c_funs C)=Some fx/\A.FunCtx W(gs_id g)Cu(map(key_tr Fl)needs)/\
  FunEnvTables Fl ef Cu/\
- (forall t tt,A.nlook t(A.c_ty Cu)=Some tt->exists here,A.nlook t(A.c_ty C)=Some here/\In(t,A.canon C here)(th++extra))/\
+ (forall t tt,A.nlook t(A.c_ty Cu)=Some tt->exists here,A.nlook t(A.c_ty C)=Some here/\In(t,A.canon C here)(extra++th))/\
  (forall x tx,In(x,tx)fx->exists here,A.nlook x(A.c_ty C)=Some here/\A.canon C here=A.canon C tx)/\
  A.FixedAgreement W C(gs_id g)/\A.Satisfies C Cu(map(key_tr Fl)needs)sm/\
  NoDup rts/\(forall t,In t rts<->A.FunOutputs W(gs_id g)t)/\
@@ -25,10 +25,10 @@ Theorem abstract_application_plan:forall fuel c e F C g n names args res s pre e
  (forall t,A.FunOutputs W(gs_id g)t->
  (A.nlook t(A.c_ty C)=None/\generation_of gens t=t)\/
  (A.nlook t(A.c_ty C)<>None/\A.Fresh W(generation_of gens t)/\
- In(generation_of gens t)(map snd gens)/\In(t,TAbs(generation_of gens t))(th++extra)))/\
+ In(generation_of gens t)(map snd gens)/\In(t,TAbs(generation_of gens t))(extra++th)))/\
  (forall t,A.Mentions W(gs_id g)t->tn_get e t<>None)/\
  provide_result e g gens ss=Good((e',keys),so)/\Inv ss/\st_w ss=w/\Later w P R Fl so/\
- pre=[SApply(gs_id g)(th++extra)sm]/\c'=cx_with_fresh c(cx_fresh c++map snd gens).
+ pre=[SApply(gs_id g)(extra++th)sm]/\c'=cx_with_fresh c(cx_fresh c++map snd gens).
 Proof.
  intros fuel c e F C g n names args res s pre e' c' sf Wo Hg D E Hi Hw L HC.
  destruct(apply_abstract_phases _ _ _ _ _ _ _ _ _ E)
@@ -92,7 +92,7 @@ Proof.
  destruct(tn_get e t);[discriminate|discriminate Here]. }
  exists ef,needs,Cu,fx,rts,gens,th,extra,sm,ss,keys,so.
  split;[reflexivity|];split;[exact FC|];split;[exact Tables|];split.
- - intros t tt Ht;destruct(Reads t tt Ht)as(here&Here&Hit);exists here;split;[exact Here|apply in_or_app;left;exact Hit].
+ - intros t tt Ht;destruct(Reads t tt Ht)as(here&Here&Hit);exists here;split;[exact Here|apply in_or_app;right;exact Hit].
  - split;[exact Fixed|];split;[exact Agree|];split;[exact Sat|];split;[exact Nd|];split;[exact Domain|].
    split;[exact Generated|];split.
    + intros t Ht;eapply generation_output_premise;[exact HC|exact Generated|exact Extra|apply Domain;exact Ht].
