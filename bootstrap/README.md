@@ -12,7 +12,7 @@ writes of itself, and the flake checks exactly that
 src/main.moss --(theories/Parse.v: lexer, parser, module loader)--> bundle
               --(theories/Elab.v: elaborator)--> elaborated program
               --(theories/Prune.v)--> pruned program
-              --(SlotX.v, FoldX.v, CloX.v: the engine)--> MossX.run_main's
+              --(SlotX.v, FoldX.v, CachedClo.v: the engine)--> MossX.run_main's
                 result, on `src/main.moss`
               --> S1, the compiler; S1 compiling src/ must give S1 again
 ```
@@ -54,7 +54,7 @@ errors and positions included.
     platform family keeping only the members used, proved equal to
     applying it whole.
   - [`SlotX.v`](theories/SlotX.v), [`FoldX.v`](theories/FoldX.v) and
-    [`CloX.v`](theories/CloX.v): the engine that runs the pruned program
+    [`CachedClo.v`](theories/CachedClo.v): the engine that runs the pruned program
     (below), each proved equal to the interpreter before it.
   - [`CoreMoss.v`](theories/CoreMoss.v): the core calculus, its typing
     and dynamics, and its metatheory (type soundness included);
@@ -106,7 +106,7 @@ errors and positions included.
   - [`Certified.v`](theories/Certified.v): binds the implementation to the
     obligations `Audit.v` states, as far as they are proved.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
-  the extraction to OCaml (`CloX.v` a second time on its own, with
+  the extraction to OCaml (`CachedClo.v` a second time on its own, with
   extraction's optimizations off; below), and `moss_m2.ml` the driver (it
   reads files and the command line, builds the engine's tables, and
   prints). The extracted code links against Rocq's own implementations of
@@ -160,7 +160,7 @@ The build fails on any other OCaml, and compiles the oracle with `-O3
 `check.sh` is the audit, since Rocq alone accepts `Admitted`. It audits
 the certificate, which transitively covers everything the guarantee
 depends on: what `Certified.v` binds, the extracted roots (the default
-engine's among them), and `CloX.engine_agrees`, may assume only the
+engine's among them), and `CachedCloFacts.fast_engine_agrees`, may assume only the
 kernel's `Primitive` declarations (Rocq's primitive integers, floats and
 arrays; [`assumptions/Certificate.v`](assumptions/Certificate.v)).
 The theorems the design notes cite as closed under the global context
@@ -179,8 +179,8 @@ Every engine is proved to compute exactly what Audit's interpreter
 out of fuel (`FastPath.fast_run`):
 
 - `fold`, the default: the program pre-resolved, its calls to small fns
-  folded when eligible, and compiled to closures, run by `CloX.crun_main`
-  (`CloX.engine_agrees`). Programs with checked GC casts retain runtime
+  folded when eligible, and compiled to closures, run by `CachedClo.crun_main`
+  (`CachedCloFacts.engine_agrees`). Programs with checked GC casts retain runtime
   type environments, so `FoldX.guard_fold_e` preserves their original
   compiled bodies. Closure compilation and read-set pruning still apply.
   [`CloScalar.v`](theories/CloScalar.v) prepares nonallocating scalar-family
@@ -197,14 +197,17 @@ out of fuel (`FastPath.fast_run`):
     such fns (to depth 6) by one expression over the caller's environment,
     which runs when the fuel suffices and every step succeeds, and
     otherwise falls back to the call (`fold_sound`, `fold_agrees`).
-  - [`CloX.v`](theories/CloX.v) turns each expression into a Gallina
+  - [`CachedClo.v`](theories/CachedClo.v) turns each expression into a Gallina
     function, an OCaml closure once extracted, so the dispatch on the term
-    happens once (`cc_agrees`). Extract2.v extracts CloX a second time
-    alone (`Extraction Library CloX`, last) with extraction's term
+    happens once (`CachedCloFacts.cc_agrees`). Its environments cache the
+    type substitution and type-only rows while preserving the raw environment
+    and its lookup order. Extract2.v extracts CachedClo a second time
+    alone (`Extraction Library CachedClo`, last) with extraction's term
     optimizations off (`Set Extraction Flag 0`), so the code of a node's
     children and argument lists stays computed once, outside the closure
     that runs it, rather than being rebuilt at every evaluation.
-- `clo`: the same without folding (`CloX.clo_oracle_agrees`);
+- `clo`: the same without folding (`CachedCloFacts.crun_main_eq` and
+  `SlotX.slot_oracle_agrees`);
 - `slot`: `SlotX.rinterp` on the pre-resolved program
   (`SlotX.slot_oracle_agrees`);
 - `ref`: Audit's interpreter itself;
@@ -253,7 +256,7 @@ decision), and the obligations, as module types (Part VI):
   the family. `FastPath.fast_run`: the result is exactly the elaborated
   program's, at every fuel at which that run does not run out of fuel;
   `Certified.v` binds it (`fast_path_agrees`), and composed with
-  `CloX.engine_agrees` (`fast_path_engine_agrees`) it covers the default
+  `CachedCloFacts.engine_agrees` (`CachedCloFacts.fast_engine_agrees`) it covers the default
   pipeline.
 
 Outside Rocq, what is trusted is the OCaml driver (reading files and
@@ -271,10 +274,10 @@ lookup of a compiled body (`nlook` over `SlotX.compile_fns` and
 symbol winning, as `nlook`'s does; for `fold`, the static bodies FoldX
 may unfold (`tb`) and the guarded folded program (`R'`) are arrays of the same;
 and the closure tables `tbl` and `ftbl` are arrays of closures that read
-the very arrays they are stored in (the knot `CloX.tbl_ok` describes).
+the very arrays they are stored in (the knot `CachedCloFacts.tbl_ok` describes).
 Functor entries also contain the scalar result templates computed by the
-extracted `CloScalar.prepare_scalar`; `tbl_ok` requires those exact templates.
-These are the hypotheses of `CloX.engine_agrees`, and no theorem checks
+extracted `CachedClo.prepare_scalar_cache`; `tbl_ok` requires those exact templates.
+These are the hypotheses of `CachedCloFacts.engine_agrees`, and no theorem checks
 that the arrays meet them: that rests on reading `moss_m2.ml`'s
 `MOSS_ENGINE` block, and on testing against the `ref` engine.
 

@@ -6,7 +6,7 @@
 (rocq.extraction
  (prelude Extract2)
  (extracted_modules Ascii Audit BinInt BinNat BinNums BinPos Bool0 Byte Byte0
-  CloScalar CloX Datatypes Decimal DumpRoundTrip Elab FastPath FastX FloatClass FoldX Hexadecimal HTrie IntDef List0
+  CachedClo CloScalar Datatypes Decimal DumpRoundTrip Elab FastPath FastX FloatClass FoldX Hexadecimal HTrie IntDef List0
   ListDef MossX NMap Nat NatDef Number Parse PeanoNat PosDef PrimArray
   PrimFloat PrimInt63 Prune ReifyData SlotX Specif String0 Uint63Axioms)
  (theories NM Stdlib))

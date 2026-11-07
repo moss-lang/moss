@@ -3,8 +3,8 @@
    transitively everything the guarantee rests on, and check.sh requires
    them to be only the kernel's `Primitive` declarations (Rocq's primitive
    integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Certified Parse FastPath Prune SlotX FoldX CloX
-  FunctionFrameProgram XElabTyped.
+From NM Require Certified Parse FastPath Prune SlotX FoldX
+  CachedClo CachedCloFacts FunctionFrameProgram XElabTyped.
 
 Print Assumptions NM.Certified.Certified.elaborate.
 Print Assumptions NM.Certified.Certified.elaborate_sx.
@@ -73,9 +73,10 @@ Print Assumptions NM.SlotX.compile_fns.
 Print Assumptions NM.SlotX.compile_funs.
 Print Assumptions NM.FoldX.fold_e.
 Print Assumptions NM.FoldX.fold_b.
-Print Assumptions NM.CloX.cc.
-Print Assumptions NM.CloX.ccbs.
+Print Assumptions NM.CachedClo.cc.
+Print Assumptions NM.CachedClo.ccbs.
 Print Assumptions NM.CloScalar.prepare_scalar.
 Print Assumptions NM.CloScalar.prepared_scalar_execution.
-Print Assumptions NM.CloX.crun_main.
-Print Assumptions NM.CloX.engine_agrees.
+Print Assumptions NM.CachedClo.crun_main.
+Print Assumptions NM.CachedCloFacts.engine_agrees.
+Print Assumptions NM.CachedCloFacts.fast_engine_agrees.

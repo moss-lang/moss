@@ -347,14 +347,14 @@ let () =
           let tbl f = if f >= 0 && f < nf then tarr.(f) else None in
           let ftbl h = if h >= 0 && h < nu then farr.(h) else None in
           Array.iteri (fun f e -> match e with
-            | Some (bs, bd) -> tarr.(f) <- Some (CloX.cc rp tbl ftbl bs, CloX.cc rp tbl ftbl bd)
+            | Some (bs, bd) -> tarr.(f) <- Some (CachedClo.cc rp tbl ftbl bs, CachedClo.cc rp tbl ftbl bd)
             | None -> ()) afn;
           Array.iteri (fun h e -> match e with
-            | Some (dr, bs) -> farr.(h) <- Some ((dr, CloX.ccbs rp tbl ftbl bs), CloScalar.prepare_scalar dr bs)
+            | Some (dr, bs) -> farr.(h) <- Some ((dr, CachedClo.ccbs rp tbl ftbl bs), CachedClo.prepare_scalar_cache dr bs)
             | None -> ()) afun;
           if Sys.getenv_opt "MOSS_REF_TIME" <> None then
             Printf.eprintf "[moss_m2: closure-compiled in %.3fs]\n%!" (Unix.gettimeofday () -. tc);
-          CloX.crun_main tbl max_int p.Audit.xo_main p.Audit.xo_env st0
+          CachedClo.crun_main tbl max_int p.Audit.xo_main p.Audit.xo_env st0
         end
     | e -> Printf.eprintf "[moss_m2: unknown MOSS_ENGINE %s]\n" e; exit 2 in
   let t2 = Unix.gettimeofday () in
