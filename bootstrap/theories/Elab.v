@@ -1186,7 +1186,32 @@ Definition reify_scope_types(e:env):list ety:= map snd (tymap e) +++ map snd (en
     map (fun p => fst (snd p)) (en_locals e) ++
     flat_map (fun p => flat_map (fun q => match snd q with
        Some t => [t] | None => [] end) (fst (snd p))) (en_apps e).
-Definition reify_generation_ids(e:env):list nat:= nodup Nat.eq_dec (map fst (en_tn e) +++ map fst (en_uf e) ++
+(* Test membership in the already deduplicated suffix. This preserves
+   nodup's last-occurrence order while avoiding repeated scans of duplicates. *)
+Definition dedup_nat_step (ys : list nat) (x : nat) : list nat :=
+ if in_dec Nat.eq_dec x ys then ys else x::ys.
+Definition dedup_nat_fast (xs : list nat) : list nat :=
+ fold_left dedup_nat_step (rev_append xs []) [].
+Lemma dedup_nat_fast_fold : forall xs,
+ dedup_nat_fast xs = fold_right (fun x ys => dedup_nat_step ys x) [] xs.
+Proof.
+ intro xs. unfold dedup_nat_fast. rewrite rev_append_rev, app_nil_r.
+ change (fold_left (fun ys x => dedup_nat_step ys x) (rev xs) [] = fold_right (fun x ys => dedup_nat_step ys x) [] xs).
+ rewrite <- (fold_left_rev_right (fun x ys => dedup_nat_step ys x) (rev xs) []).
+ rewrite rev_involutive. reflexivity.
+Qed.
+Lemma dedup_nat_fast_eq : forall xs, dedup_nat_fast xs=nodup Nat.eq_dec xs.
+Proof.
+ intro xs. rewrite dedup_nat_fast_fold.
+ induction xs as[|x xs IH];cbn [fold_right];[reflexivity|].
+ rewrite IH. unfold dedup_nat_step. cbn [nodup].
+ destruct(in_dec Nat.eq_dec x(nodup Nat.eq_dec xs))as[A|A];
+ destruct(in_dec Nat.eq_dec x xs)as[B|B];try reflexivity.
+ - exfalso;apply B. apply nodup_In in A;exact A.
+ - exfalso;apply A. apply nodup_In;exact B.
+Qed.
+
+Definition reify_generation_ids(e:env):list nat:= dedup_nat_fast (map fst (en_tn e) +++ map fst (en_uf e) ++
     flat_map ety_gens (reify_scope_types e)).
 Definition reify_scope_of (e : env) : reify_scope ety key :=
   let generations := map (fun t => (t,canon e (YAbs t))) (reify_generation_ids e) in
