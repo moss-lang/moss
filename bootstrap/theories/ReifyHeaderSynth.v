@@ -1,5 +1,6 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ReifyData Audit NMap Sx Elab ElabFrame ElabInv FnReadonly FnPresentStable FnPresentEmit FnPresentSynth ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit.
+From NM Require Import SynthTraversal.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
@@ -41,11 +42,8 @@ Lemma hs_synth_group : forall fuel,
   (forall c e fg y, HS (bind_functor fuel c e fg y)) /\
   (forall fg bg, HS (link_body fuel fg bg)).
 Proof.
-  induction fuel as [|fuel IH].
-  { refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))); fintros; cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; hst. }
-  destruct IH as (I0 & I1 & I2 & I3 & I4 & I5 & I6 & I7 & I8 & I9 & I10 & I11 & I12 & I13 & I14 & I15 & I16 & I17 & I18 & I19 & I20 & I21 & I22 & I23 & I24 & I25 & I26 & I27 & I28 & I29 & I30 & I31 & I32 & I33 & I34).
-  refine (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ (conj _ _)))))))))))))))))))))))))))))))))).
-  all: solve [fintros; first [apply hs_wrapper|apply hs_forwarder_step;exact I28|apply hse_lower_body_step;exact I2|apply hs_lambda_provider_step;exact I2|cbn [synth synth_arg synth_block check_stmts check_stmt check_bool synth_if synth_match const_val synth_path check_args synth_call synth_record synth_field synth_method provided_call apply_family demand_needs synth_operator lang_call int_literal float_of synth_literal check_bind expect_fn_provider match_fn_sig wrapper forwarder lower_body lambda_provider apply_functor apply_body apply_abstract bind_functor link_body]; hst]].
+ refine (@synth_preservation_group (@HS) (fun fuel g=>HSE(gs_id g)(lower_body fuel g)) _ (@hs_ret) (@hs_bind) (@hs_mmap) (@hs_mfold) (@hs_miter) (@hs_with_vars) (fun A m F W H O=>@hs_keeps_first A m F H O) (@hs_wrapper) (@hs_forwarder_step) (@hse_lower_body_step) (@hs_lambda_provider_step)).
+ intro g;cbn[lower_body];hst.
 Qed.
 
 Lemma hs_synth : forall fuel c e x exp, HS (synth fuel c e x exp).
