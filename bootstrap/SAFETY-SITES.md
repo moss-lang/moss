@@ -134,9 +134,14 @@ hypotheses, each a named remaining obligation:
 | `literal_case` | numeric literals through contextual arithmetic | T05, T06 |
 | `bind_case` | bind statements | T07, T15, T16 |
 | `tag_check` | checked tag construction from a typed payload | T24 premises |
-| `arms_select` | arm selection and binder typing for a typed scrutinee | T08 |
+| `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `BoolSymbols` | platform layout and Bool symbols | from `Linked`/`ElaboratesIn` |
+
+Arm selection is proved in [PublicArms.v](theories/PublicArms.v)
+(`arms_select`): a value typed at a formed scrutinee type selects an arm
+whose pattern binds typed, distinct, numbered locals, and exhaustiveness
+rules out falling through. It relies on the distinct-binder repair.
 
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
@@ -147,6 +152,7 @@ only has to be preserved by heap extension.
   stuck-site table, unit-tag typing, type-reading lemmas, two
   counterexamples and their repairs, and the frame/local foundations. I had
   planned this as two hours.
-- Checkpoint 2 (19:37 to 19:53, about 16 minutes): the slice induction
+- Checkpoint 2 (19:37 to 19:51, about 14 minutes): the slice induction
   (`safe_all`), with loops, records, fields, match, let, assignment and
   constants. I had estimated a few hours.
+- Arm selection (19:51 to about 20:05): `PublicArms.arms_select`.

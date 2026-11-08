@@ -10,13 +10,14 @@
    remaining obligation, not an assumption about accepted programs. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
-  PublicBoolTyping PublicBodySafety PublicTypeFacts.
+  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Module BodySlice (Prims : PRIMITIVES).
-Module O := Outcomes Prims.
+Module AR := Arms Prims.
+Module O := AR.O.
 Module I := O.I.
 Module B := BoolTruthy Prims.
 
@@ -114,15 +115,9 @@ Hypothesis tag_check : forall d H s xs pay value,
   | _ => False
   end.
 
-(* Match arm selection for a typed scrutinee (static pattern typing). *)
-Hypothesis arms_select : forall F C st arms exp xarms t d H w,
-  A.Arms W Prog F C st arms exp xarms t -> FrameOk F ->
-  value_typed W P H w (ground d st) ->
-  exists pat body bs eb binds et,
-    I.select_arm xarms w = Some (bs, eb) /\ In (pat, body) arms /\
-    A.Branch W Prog F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) body exp eb et /\
-    A.fits et t /\ Forall (fun q => A.Named F (fst q)) binds /\ NoDup (map fst binds) /\
-    locals_typed W P H bs (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds).
+(* Elaborated types are formed: a union has nominal members with distinct
+   heads, also after canonicalization (T29). *)
+Hypothesis ex_formed : forall F C a exp x t, A.Ex W Prog F C a exp x t -> UnionFormed (A.canon C t).
 
 (* ---- generic outcome facts ------------------------------------------------ *)
 
@@ -248,23 +243,6 @@ Proof. intros pa a B; inversion B. Qed.
 Lemma assoc_slook : forall f (fs : list (fld * value)), I.assoc_fld f fs = A.slook f fs.
 Proof. intros f fs; induction fs as [|[g v] r IH]; cbn; [reflexivity|rewrite IH; reflexivity]. Qed.
 
-Lemma slook_ground : forall d n (fs : list (string * ty)),
-  A.slook n (map (fun q => (fst q, ground d (snd q))) fs) = option_map (ground d) (A.slook n fs).
-Proof. intros d n fs; induction fs as [|[g t] r IH]; cbn; [reflexivity|]. destruct (String.eqb n g); auto. Qed.
-
-Lemma ground_record : forall d fs, ground d (TRecord fs) = TRecord (map (fun q => (fst q, ground d (snd q))) fs).
-Proof. intros d fs; unfold ground; apply subst_record. Qed.
-
-Lemma ground_nom : forall d n xs, ground d (TNom n xs) = TNom n (PublicTypeRead.smap (type_meanings d) xs).
-Proof. intros d n xs; unfold ground; apply subst_nom. Qed.
-
-Lemma nominal_value : forall H w n xs, value_typed W P H w (TNom n xs) -> exists inner, w = VTag n inner.
-Proof. intros H w n xs Typed; inversion Typed; subst; eauto. Qed.
-
-Lemma record_value : forall H w fs, value_typed W P H w (TRecord fs) ->
-  exists values, w = VRecord values /\ fields_typed W P H values fs.
-Proof. intros H w fs Typed; inversion Typed; subst; eauto. Qed.
-
 (* A block without a tail yields () or diverges. *)
 Lemma tailless_block : forall F C ss tl exp x t made,
   A.Blk W Prog F C ss tl exp x t made -> tl = None -> t = TUnit \/ t = A.never.
@@ -272,12 +250,6 @@ Proof.
   intros F C ss tl exp x t made D. induction D; intros Tail; try discriminate; auto.
   destruct (ty_eqb vt A.never); auto.
 Qed.
-
-Lemma fits_refl : forall t, A.fits t t.
-Proof. left; reflexivity. Qed.
-
-Lemma fits_never : forall t, A.fits A.never t.
-Proof. right; left; reflexivity. Qed.
 
 Lemma blke_branch_ty : forall F C b exp x t,
   A.BlkE W Prog F C b exp x t -> A.fits t (A.branch_ty b t) /\ A.opt_fits t exp.
@@ -397,26 +369,6 @@ Proof.
   intros F d H types s xs breaks sig g st State Locals Result.
   destruct sig; cbn in *; try contradiction; auto.
   exists H; repeat split; auto. intros ? ? E; exact E.
-Qed.
-
-Lemma fits_into_never : forall t, A.fits t A.never -> t = A.never.
-Proof.
-  intros t [E|[E|[ms [Ms Incl]]]]; auto.
-  unfold A.never in Ms. injection Ms as <-.
-  destruct t as [m|fs| |g|n xs|parts]; cbn in Incl;
-    try (exfalso; apply (Incl _ (or_introl eq_refl))).
-  destruct parts as [|p ps]; [reflexivity|exfalso; apply (Incl p); left; reflexivity].
-Qed.
-
-Lemma join_fits : forall a b exp t bt,
-  A.Join a b exp t -> A.fits bt a -> A.opt_fits bt exp -> A.opt_fits b exp ->
-  A.fits bt t /\ A.fits b t.
-Proof.
-  intros a b exp t bt Join FitsA FitsBt FitsB. destruct Join as [a b e|b|a b [Never|Same] NotNever].
-  - split; assumption.
-  - rewrite (fits_into_never _ FitsA). split; [apply fits_never|apply fits_refl].
-  - subst b. split; [exact FitsA|apply fits_never].
-  - subst b. split; [exact FitsA|apply fits_refl].
 Qed.
 
 Lemma let_breaks : forall st n ann y mu, A.LetStmt st n ann y mu -> A.Breaks y -> A.StmtBreaks st.
@@ -654,8 +606,8 @@ Proof.
       intros H1 g1 st1 w E1 Pre1 T1.
       pose proof Pre1 as [Frame [Ctx [L1 [S1 Abs]]]].
       assert (T1' : value_typed W P H1 w (ground d (A.canon C st))) by (rewrite Abs; exact T1).
-      destruct (arms_select F C _ arms exp xarms t d H1 w Darms Frame T1')
-        as [pat [body [bs [eb [binds [et [Sel [InArm [Dbr [FitsT [NamedB [Distinct LB]]]]]]]]]]]].
+      destruct (AR.arms_select W Prog P d H1 F C _ arms exp xarms t w Darms (ex_formed _ _ _ _ _ _ Ds) T1')
+        as [pat [body [bs [eb [binds [et [Sel [InArm [Dbr [FitsT [_ [NamedB [Distinct LB]]]]]]]]]]]]].
       rewrite Sel.
       assert (Len : List.length bs = List.length (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds))
         by exact (Forall2_length LB).
@@ -699,14 +651,14 @@ Proof.
       assert (Rec : exists values, I.get_field n w = A.slook n values /\
         fields_typed W P H1 values (map (fun q => (fst q, ground d (snd q))) ftys)).
       { destruct Rcd as [[s [xs [-> [K Pay]]]]|Same].
-        - rewrite ground_nom in T1. destruct (nominal_value _ _ _ _ T1) as [inner ->].
+        - rewrite ground_nom in T1. destruct (nominal_value W P _ _ _ _ T1) as [inner ->].
           destruct (tagged_payload_typed W P H1 s _ inner K T1) as [payload [Pay' Inner]].
           pose proof (payload_det W _ _ _ _ Pay' (payload_subst W (type_meanings d) _ _ _ Pay)) as ->.
           change (app_subst (type_meanings d) (TRecord ftys)) with (ground d (TRecord ftys)) in Inner.
           rewrite ground_record in Inner.
-          destruct (record_value _ _ _ Inner) as [values [-> Fs]].
+          destruct (record_value W P _ _ _ Inner) as [values [-> Fs]].
           exists values; split; [cbn; apply assoc_slook|exact Fs].
-        - rewrite <- Same, ground_record in T1. destruct (record_value _ _ _ T1) as [values [-> Fs]].
+        - rewrite <- Same, ground_record in T1. destruct (record_value W P _ _ _ T1) as [values [-> Fs]].
           exists values; split; [cbn; apply assoc_slook|exact Fs]. }
       destruct Rec as [values [Get Fs]].
       destruct (field_lookup_typed W P H1 values _ n (ground d t) Fs) as [value [Found TV]];

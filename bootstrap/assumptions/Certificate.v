@@ -13,11 +13,12 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicLocalsTyping PublicWorldRequirements SnapshotLoaderWitness
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
-  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice.
+  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms.
 
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host.
 Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims.
+Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host.
 
@@ -84,6 +85,7 @@ Definition certificate_roots :=
   @PublicBool.truthy_typed,
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
+  @PublicArmsI.arms_select,
   @PublicSafetyTop.stuck_entry_is_wrong,
   @NM.PublicSavedTypeExample.legacy_saved_and_emitted_reads_differ,
   @NM.PublicSavedTypeExample.alias_binding_preserves_old_generation,

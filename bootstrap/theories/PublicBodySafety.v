@@ -30,7 +30,46 @@ Proof.
     apply in_map_iff in In' as [part [<- Part]].
     eapply TypedUnion; [exact Member|apply in_map, Included, Part].
 Qed.
+Lemma nominal_value : forall H w n xs, value_typed W P H w (TNom n xs) -> exists inner, w = VTag n inner.
+Proof. intros H w n xs Typed; inversion Typed; subst; eauto. Qed.
+Lemma record_value : forall H w fs, value_typed W P H w (TRecord fs) ->
+  exists values, w = VRecord values /\ fields_typed W P H values fs.
+Proof. intros H w fs Typed; inversion Typed; subst; eauto. Qed.
 End Fits.
+
+Lemma slook_ground : forall d n (fs : list (string * ty)),
+  A.slook n (map (fun q => (fst q, ground d (snd q))) fs) = option_map (ground d) (A.slook n fs).
+Proof. intros d n fs; induction fs as [|[g t] r IH]; cbn; [reflexivity|]. destruct (String.eqb n g); auto. Qed.
+Lemma ground_record : forall d fs, ground d (TRecord fs) = TRecord (map (fun q => (fst q, ground d (snd q))) fs).
+Proof. intros d fs; unfold ground; apply subst_record. Qed.
+Lemma ground_nom : forall d n xs, ground d (TNom n xs) = TNom n (PublicTypeRead.smap (type_meanings d) xs).
+Proof. intros d n xs; unfold ground; apply subst_nom. Qed.
+
+Lemma fits_refl : forall t, A.fits t t.
+Proof. left; reflexivity. Qed.
+
+Lemma fits_never : forall t, A.fits A.never t.
+Proof. right; left; reflexivity. Qed.
+
+Lemma fits_into_never : forall t, A.fits t A.never -> t = A.never.
+Proof.
+  intros t [E|[E|[ms [Ms Incl]]]]; auto.
+  unfold A.never in Ms. injection Ms as <-.
+  destruct t as [m|fs| |g|n xs|parts]; cbn in Incl;
+    try (exfalso; apply (Incl _ (or_introl eq_refl))).
+  destruct parts as [|p ps]; [reflexivity|exfalso; apply (Incl p); left; reflexivity].
+Qed.
+
+Lemma join_fits : forall a b exp t bt,
+  A.Join a b exp t -> A.fits bt a -> A.opt_fits bt exp -> A.opt_fits b exp ->
+  A.fits bt t /\ A.fits b t.
+Proof.
+  intros a b exp t bt Join FitsA FitsBt FitsB. destruct Join as [a b e|b|a b [Never|Same] NotNever].
+  - split; assumption.
+  - rewrite (fits_into_never _ FitsA). split; [apply fits_never|apply fits_refl].
+  - subst b. split; [exact FitsA|apply fits_never].
+  - subst b. split; [exact FitsA|apply fits_refl].
+Qed.
 
 (* ---- frames and local stores ------------------------------------------ *)
 
