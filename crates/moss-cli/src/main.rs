@@ -23,6 +23,8 @@ const COMPILER_OPT: Opt = Opt::new(3, 0);
 #[cfg(moss_embedded_compiler)]
 static EMBEDDED_COMPILER: &[u8] = include_bytes!(env!("MOSS_COMPILER_CWASM"));
 
+const URL: &str = concat!("https://github.com/moss-lang/moss/tree/", env!("MOSS_REV"));
+
 enum CompilerModule {
     Wasm(Vec<u8>),
     #[cfg(moss_embedded_compiler)]
@@ -33,7 +35,7 @@ enum CompilerModule {
 }
 
 #[derive(Parser)]
-#[command(name = "moss", version, about = "The Moss compiler and program runner")]
+#[command(name = "moss", version = URL, about = "The Moss compiler and program runner")]
 struct Cli {
     /// Binaryen optimization level: 0, 1, 2, 3, 4, s, or z
     #[arg(short = 'O', value_name = "LEVEL", value_parser = parse_opt, global = true)]

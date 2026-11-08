@@ -13,6 +13,9 @@
       rust-overlay,
     }:
     let
+      # Dirty checkouts still link to their base commit. Source archives
+      # without Git metadata fall back to the default branch.
+      mossRev = self.rev or (nixpkgs.lib.removeSuffix "-dirty" (self.dirtyRev or "main"));
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -309,6 +312,7 @@
                 ];
                 BINARYEN_LIB_DIR = "${binaryen}/lib";
                 WASMTIME_LIB_DIR = "${wasmtime}/lib";
+                MOSS_REV = mossRev;
                 postInstall = installData;
               }
               // pkgs.lib.optionalAttrs (cwasm != null) { MOSS_COMPILER_CWASM = cwasm; }
@@ -495,6 +499,8 @@
             moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
             source=${./.}/examples/hello.moss
             "$moss" --help >/dev/null
+            test "$("$moss" --version)" = 'moss https://github.com/moss-lang/moss/tree/${mossRev}'
+            test "$("$moss" -V)" = 'moss https://github.com/moss-lang/moss/tree/${mossRev}'
             "$moss" -O3 "$source" | grep -qx 'Hello, world!'
             if "$moss" -O "$source" 2>/dev/null; then
               false
@@ -649,6 +655,7 @@
             ];
           BINARYEN_LIB_DIR = "${pkgs.binaryen}/lib";
           WASMTIME_LIB_DIR = "${pkgs.wasmtime.lib}/lib";
+          MOSS_REV = mossRev;
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.binaryen
             pkgs.wasmtime.lib
