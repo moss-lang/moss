@@ -133,15 +133,21 @@ hypotheses, each a named remaining obligation:
 | `method_case`, `unary_case`, `binary_case` | method calls and operators | T06, T14 |
 | `literal_case` | numeric literals through contextual arithmetic | T05, T06 |
 | `bind_case` | bind statements | T07, T15, T16 |
-| `tag_check` | checked tag construction from a typed payload | T24 premises |
 | `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
-| `Layouts`, `BoolSymbols` | platform layout and Bool symbols | from `Linked`/`ElaboratesIn` |
+| `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
 
 Arm selection is proved in [PublicArms.v](theories/PublicArms.v)
 (`arms_select`): a value typed at a formed scrutinee type selects an arm
 whose pattern binds typed, distinct, numbered locals, and exhaustiveness
 rules out falling through. It relies on the distinct-binder repair.
+
+Checked tag construction is proved in
+[PublicTagCheck.v](theories/PublicTagCheck.v) (`tag_check`), discharging
+T24's premises from the platform layouts. A cast tag (`Ref`/`Array`) reads
+its payload at its raw-handle requirement (`raw_payload`), so the runtime
+guard reads a complete argument, and an enabled guard makes the payload a
+handle type. Unit declarations have no cast entry.
 
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
@@ -155,4 +161,5 @@ only has to be preserved by heap extension.
 - Checkpoint 2 (19:37 to 19:51, about 14 minutes): the slice induction
   (`safe_all`), with loops, records, fields, match, let, assignment and
   constants. I had estimated a few hours.
-- Arm selection (19:51 to about 20:05): `PublicArms.arms_select`.
+- Arm selection (19:51 to 19:56): `PublicArms.arms_select`.
+- Tag checks (19:56 to 20:00): `PublicTagCheck.tag_check`.

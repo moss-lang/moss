@@ -10,7 +10,7 @@
    remaining obligation, not an assumption about accepted programs. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
-  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms.
+  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -20,6 +20,7 @@ Module AR := Arms Prims.
 Module O := AR.O.
 Module I := O.I.
 Module B := BoolTruthy Prims.
+Module TC := Checks Prims.
 
 Section Slice.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -104,16 +105,11 @@ Hypothesis bind_case : forall k, Below k -> forall F C its rest tl exp wrap C' F
   A.Blk W Prog F' C' rest tl exp xr t made' ->
   StepSafe k F C t (A.BlockBreaks (ABlock (ASBind its :: rest) tl)) (wrap xr).
 
-(* Checked tag construction from a typed payload (T24's premises). *)
-Hypothesis tag_check : forall d H s xs pay value,
-  (A.kind_sym W s = Some A.DKTag /\ A.PayloadOf W s xs pay) \/
-  (A.kind_sym W s = Some A.DKUnit /\ xs = [] /\ pay = TUnit) ->
-  value_typed W P H value (ground d pay) ->
-  match I.check_tag P d s xs value with
-  | Normal result => value_typed W P H result (ground d (TNom s xs))
-  | Trap _ => True
-  | _ => False
-  end.
+Hypothesis Reps : Platform.Representations W Prog.
+
+Lemma forall2_keys : forall (reqs : list nat) (xs : list (nat * ty)) (R : nat -> ty -> Prop),
+  Forall2 (fun r ra => fst ra = r /\ R r (snd ra)) reqs xs -> map fst xs = reqs.
+Proof. intros reqs xs R F; induction F as [|r ra rs ras [E _] _ IH]; cbn; [reflexivity|congruence]. Qed.
 
 (* Elaborated types are formed: a union has nominal members with distinct
    heads, also after canonicalization (T29). *)
@@ -549,7 +545,8 @@ Proof.
       apply (outcome_seq F C d types H lg lst TUnit _ False _ _ _ Pre0 (fun f => False_ind _ f) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      apply (tag_check d H1 s [] TUnit w); [right; repeat split; exact K|exact T1].
+      exact (TC.tag_check W Prog Layouts Reps argv read d H1 s [] TUnit w
+        (or_intror (conj K (conj eq_refl eq_refl))) T1).
     + (* val *) exact (val_case k Bel F C pa s dcl n t0 t NotLocal R Decl Ast Val d types H lg lst Pre0).
     + (* const *)
       destruct Init as [F0 [t' [Dx [Fits [Mod [Ret [This [Loop [Fresh [App [Pins Num]]]]]]]]]]].
@@ -566,7 +563,8 @@ Proof.
         (fun B => A.BkCall pa a [y] (or_introl eq_refl) B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      apply (tag_check d H1 s xs pay w); [left; split; [exact K|exact Pay]|exact T1].
+      exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs pay w
+        (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + exact (call_defined_case k Bel F C pa args f Cf ns sm sg xs wrap C' R K Def Ctx Dem Sat Sig Args d types H lg lst Pre0).
     + exact (call_abstract_case k Bel F C pa args f sg xs R K Abs Fn Args d types H lg lst Pre0).
     + exact (method_case k Bel F C o pa args ox ot x t Do Dm d types H lg lst Pre0).
@@ -642,7 +640,8 @@ Proof.
       apply (outcome_seq F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      apply (tag_check d H1 s xs (TRecord ftys) w); [left; split; [exact K|exact Pay]|exact T1].
+      exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs (TRecord ftys) w
+        (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + (* field *) cbn [I.eval].
       pose proof (sex F C o None ox ot Do d types H lg lst Pre0) as Out.
       apply (outcome_seq F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkField n B) Out).

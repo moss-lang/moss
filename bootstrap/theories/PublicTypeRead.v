@@ -1,7 +1,7 @@
 (* Type readings are functional for the public relation: TyOf, Brackets,
    SigOf and PayloadOf each determine their result. Ported from CtxMerge.v,
    which proves the same for ExecutionModel's copy of the relation. *)
-From Stdlib Require Import List String.
+From Stdlib Require Import List String Arith.
 From NM Require Import Audit.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -210,3 +210,37 @@ Proof.
   - f_equal. induction th as [|[x t] rest Tail]; cbn; [reflexivity|]. rewrite IH, Tail. reflexivity.
   - f_equal. induction ms as [|t rest Tail]; cbn; [reflexivity|]. rewrite IH, Tail. reflexivity.
 Qed.
+
+(* An abstract type read by TyOf is the receiver or a meaning in force. *)
+Section Abstract.
+Variable W : A.world.
+Import A.
+
+Lemma nlook_in : forall X k (l : list (nat * X)) v, nlook k l = Some v -> In (k, v) l.
+Proof.
+  intros X k l. induction l as [|[a x] r IH]; intros v Found; [discriminate|].
+  cbn in Found. destruct (Nat.eqb_spec k a) as [->|_]; [injection Found as <-; left; reflexivity|right; auto].
+Qed.
+
+Fixpoint tyof_abs p tm th a t (D : TyOf W p tm th a t) {struct D} :
+  forall g, t = TAbs g -> th = Some (TAbs g) \/ exists k, nlook k tm = Some (TAbs g)
+with br_abs p tm h x l (D : Brackets W p tm h x l) {struct D} :
+  forall k g, nlook k l = Some (TAbs g) -> exists k', nlook k' tm = Some (TAbs g).
+Proof.
+  - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
+                  |p tm th pa t tau R K L|p tm th pa a g0 k bs args R K Kk B F|p tm th pa a g0 d n body bs tau R D A B T];
+      intros g E; try discriminate.
+    + left; congruence.
+    + right; subst; eauto.
+    + destruct (tyof_abs _ _ _ _ _ T g E) as [Th|[k Found]]; [discriminate|].
+      rewrite nlook_app' in Found. destruct (nlook k bs) eqn:Inner.
+      * injection Found as ->. right. exact (br_abs _ _ _ _ _ B k g Inner).
+      * right; eauto.
+  - destruct D as [p tm h|p tm h bs l F]; intros k g Found; [discriminate|].
+    apply nlook_in in Found. apply (proj2 (in_rev _ _)) in Found.
+    clear br_abs. induction F as [|b0 tb bs' l' (sp & sa & E1 & E2 & E3 & E4 & Ht) Fr IH]; [contradiction|].
+    destruct Found as [E|Found]; [|exact (IH Found)].
+    subst tb. cbn in Ht.
+    destruct (tyof_abs _ _ _ _ _ Ht g eq_refl) as [Th|Some']; [discriminate|exact Some'].
+Qed.
+End Abstract.
