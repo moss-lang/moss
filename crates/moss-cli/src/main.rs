@@ -70,7 +70,7 @@ fn main() -> ExitCode {
     match real_main() {
         Ok(code) => ExitCode::from(code as u8),
         Err(error) => {
-            eprintln!("moss: {error:#}");
+            eprintln!("{error:#}");
             ExitCode::FAILURE
         }
     }
@@ -351,7 +351,7 @@ fn common_ancestor<'a>(left: &'a Path, right: &'a Path) -> Option<&'a Path> {
 /// cwd as relative paths; keep other paths absolute instead of adding `..`.
 /// Preserve any :line:column suffix, including for related notes.
 fn host_diagnostic_paths(output: Vec<u8>, filesystem_root: &Path, cwd: &Path) -> Result<Vec<u8>> {
-    if !output.starts_with(b"error[") {
+    if !output.starts_with(b"error: ") {
         return Ok(output);
     }
     let root = wasi_path(filesystem_root)?;
@@ -381,7 +381,7 @@ fn valid_wasm(bytes: Vec<u8>) -> Result<Vec<u8>> {
         Ok(bytes)
     } else {
         let diagnostics = String::from_utf8_lossy(&bytes);
-        if diagnostics.starts_with("error[") {
+        if diagnostics.starts_with("error: ") {
             bail!("{}", diagnostics.trim_end());
         }
         bail!(
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn source_diagnostics_are_reported_without_a_module_protocol_error() {
-        let report = "error[!B]: this name is not in scope: `missing`\n  --> main.moss:3:5\n";
+        let report = "error: this name is not in scope: `missing`\n  --> main.moss:3:5\n";
         assert_eq!(
             valid_wasm(report.as_bytes().to_vec())
                 .unwrap_err()
@@ -506,9 +506,9 @@ mod tests {
     #[test]
     fn diagnostic_paths_use_the_host_root_for_errors_and_related_notes() {
         let report = concat!(
-            "error[!E]: imports bind the same name to different declarations: `Base`\n",
+            "error: imports bind the same name to different declarations: `Base`\n",
             "  --> Users/samueles/github/samestep/phd-thesis/examples/moss/doubledouble.moss\n",
-            "error[!E]: imports bind the same name to different declarations: `Base`\n",
+            "error: imports bind the same name to different declarations: `Base`\n",
             "  --> Users/samueles/github/samestep/phd-thesis/examples/moss/shadow.moss:30:1\n",
             "   |\n",
             "30 | import \"./doubledouble.moss\" use Base, lift, BaseOps,\n",
@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn diagnostic_paths_support_nested_preopens_and_windows_roots() {
-        let report = b"error[!B]: this name is not in scope\n  --> project/main.moss:3:5\n";
+        let report = b"error: this name is not in scope\n  --> project/main.moss:3:5\n";
         for (root, cwd, expected) in [
             ("/home/sam", "/home/sam/project", "main.moss:3:5"),
             ("/home/sam", "/home/sam", "project/main.moss:3:5"),
@@ -553,7 +553,7 @@ mod tests {
                 host_diagnostic_paths(report.to_vec(), Path::new(root), Path::new(cwd)).unwrap();
             assert_eq!(
                 String::from_utf8(translated).unwrap(),
-                format!("error[!B]: this name is not in scope\n  --> {expected}\n")
+                format!("error: this name is not in scope\n  --> {expected}\n")
             );
         }
     }
@@ -561,13 +561,13 @@ mod tests {
     #[test]
     fn diagnostic_paths_choose_relative_and_absolute_locations_in_one_report() {
         let report = concat!(
-            "error[!A]: duplicate definition\n",
+            "error: duplicate definition\n",
             "  --> Users/sam/project/examples/main.moss:30:1\n",
             "note: previous definition is here\n",
             "  --> Users/sam/shared/original.moss:12:1\n",
-            "error[!O]: cannot read this source file\n",
+            "error: cannot read this source file\n",
             "  --> Users/sam/project/examples/missing.moss\n",
-            "error[!O]: cannot read this source file\n",
+            "error: cannot read this source file\n",
             "  --> Users/sam/project-other/missing.moss\n",
         );
         let translated = host_diagnostic_paths(
@@ -579,13 +579,13 @@ mod tests {
         assert_eq!(
             String::from_utf8(translated).unwrap(),
             concat!(
-                "error[!A]: duplicate definition\n",
+                "error: duplicate definition\n",
                 "  --> examples/main.moss:30:1\n",
                 "note: previous definition is here\n",
                 "  --> /Users/sam/shared/original.moss:12:1\n",
-                "error[!O]: cannot read this source file\n",
+                "error: cannot read this source file\n",
                 "  --> examples/missing.moss\n",
-                "error[!O]: cannot read this source file\n",
+                "error: cannot read this source file\n",
                 "  --> /Users/sam/project-other/missing.moss\n",
             )
         );

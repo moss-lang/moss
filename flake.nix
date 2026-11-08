@@ -510,6 +510,23 @@
             echo 'this is not Moss' > other/lib/prelude.moss
             cp "$source" other/src/hello.moss
             "$moss" other/src/hello.moss | grep -qx 'Hello, world!'
+            # Human diagnostics have plain, aligned headers, including the
+            # first error passing through the native launcher's error handler.
+            cat > invalid.moss <<'EOF'
+            fn main() {
+              missing();
+              missing();
+            }
+            EOF
+            if "$moss" build invalid.moss -o invalid.wasm 2>diagnostics.txt; then
+              false
+            fi
+            test ! -e invalid.wasm
+            test "$(grep -c '^error: this name is not in scope: `missing`$' diagnostics.txt)" -eq 2
+            head -n 1 diagnostics.txt | grep -qx 'error: this name is not in scope: `missing`'
+            ! grep -Eq '^(moss:|error\[)' diagnostics.txt
+            grep -qx '  --> invalid.moss:2:3' diagnostics.txt
+            grep -qx '  --> invalid.moss:3:3' diagnostics.txt
             # An invalid module is never written, optimized or not, nor run:
             # a stand-in compiler writes one, which the driver refuses before
             # Binaryen reads it.

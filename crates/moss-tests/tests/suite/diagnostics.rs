@@ -52,7 +52,7 @@ fn duplicate_declarations_point_to_the_second_definition() {
     let entry = format!("{dir}/main.moss");
     let got = report(&entry);
     assert!(
-        got.starts_with("error[!A]: duplicate definition: `Twice`\n"),
+        got.starts_with("error: duplicate definition: `Twice`\n"),
         "{got}"
     );
     assert!(got.contains(&format!("{entry}:2:1")), "{got}");
@@ -97,7 +97,7 @@ fn backend_errors_have_messages_and_expression_locations() {
     let entry = format!("{dir}/main.moss");
     let got = report(&entry);
     assert!(
-        got.starts_with("error[?U]: break is only allowed inside a loop"),
+        got.starts_with("error: break is only allowed inside a loop"),
         "{got}"
     );
     assert!(got.contains(&format!("{entry}:5:5")), "{got}");
@@ -112,7 +112,7 @@ fn missing_semicolons_name_the_expected_token() {
     let entry = format!("{dir}/main.moss");
     let got = report(&entry);
     assert!(
-        got.starts_with("error[!G]: invalid syntax: expected `;`"),
+        got.starts_with("error: invalid syntax: expected `;`"),
         "{got}"
     );
     assert!(got.contains(&format!("{entry}:6:5")), "{got}");
@@ -124,7 +124,7 @@ fn missing_main_has_a_path_without_an_invented_source_range() {
     let entry = format!("{dir}/main.moss");
     let got = report(&entry);
     assert!(
-        got.starts_with("error[?O]: no valid main function was found"),
+        got.starts_with("error: no valid main function was found"),
         "{got}"
     );
     assert!(got.contains(&format!("--> {entry}\n")), "{got}");
@@ -137,7 +137,7 @@ fn invalid_main_signatures_report_the_declaration() {
     let entry = format!("{dir}/main.moss");
     let got = report(&entry);
     assert!(
-        got.starts_with("error[?O]: no valid main function was found"),
+        got.starts_with("error: no valid main function was found"),
         "{got}"
     );
     assert!(got.contains(&format!("{entry}:1:1")), "{got}");
@@ -149,7 +149,7 @@ fn missing_functor_arrows_name_the_expected_token() {
     let dir = sources(&[("main.moss", "functor F: Int Int;\n")]);
     let got = report(&format!("{dir}/main.moss"));
     assert!(
-        got.starts_with("error[!G]: invalid syntax: expected `->`"),
+        got.starts_with("error: invalid syntax: expected `->`"),
         "{got}"
     );
 }
@@ -159,7 +159,12 @@ fn semantic_errors_found_in_codegen_keep_their_code_domain() {
     // Semantic e_incoherent and back-end c_unknown_op both have code 17.
     // A stale functor binding must never be described as an unknown Wasm op.
     let got = report("tests/wasi/functor_fixed_stale.moss");
-    assert!(got.contains("error[!R]: the available binding was provided at a different type instantiation: `Heap`"), "{got}");
+    assert!(
+        got.contains(
+            "error: the available binding was provided at a different type instantiation: `Heap`"
+        ),
+        "{got}"
+    );
     assert!(
         got.contains("tests/wasi/functor_fixed_stale.moss:15:5"),
         "{got}"

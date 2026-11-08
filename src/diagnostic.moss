@@ -83,10 +83,7 @@ assume Std {
 
   assume prog::Prog, ast::Ast, intern::Interner {
     fn report(phase: Int, code: Int, m: Int, start: Int, end: Int, name: Int, expected: Int) {
-      print("error[");
-      if phase == 0 { print("!"); } else { print("?"); }
-      putchar((char::A.code() + code).char());
-      print("]: ");
+      print("error: ");
       print(message(phase, code));
       if ast::is_some(expected) {
         print(": expected "); print(expected_token(expected));
