@@ -89,6 +89,11 @@ the local store. *C* and *F* are the static context and frame.
   `()` from a `Bool` function, and the oracle reports `stuck (XErr 10)`.
   `SBWhile` now counts the condition. The implementations still accept the
   program; that is [E22](proofs/build-run.md#e22).
+- **`else` branches are checked against the expected type.** `JoinExp`
+  adopts the expected type without checking the `else` branch. A block or
+  nested `if` checks its own type, and the parser produces nothing else
+  there, but the relation admitted any expression. `ExIfElse` now requires
+  `opt_fits et exp`, which rules out no parsed program.
 - **The receiver slot is reserved.** `ExThis` reads local 0, and `Numbering`
   allowed a name `"this"` to be numbered 0. A local named `this` would then
   shadow the receiver at a different type. The lexer makes `this` a keyword,

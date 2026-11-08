@@ -3871,7 +3871,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     Ex W P F C (AEIf c b None) exp (EIf cx' bx EUnit) TUnit
 | ExIfElse : forall F C exp c b y cx' bx bt ex' et t,
     Cond W P F C c cx' -> BlkE W P F C b exp bx bt ->
-    Branch W P F C y exp ex' et -> Join (branch_ty b bt) et exp t ->
+    Branch W P F C y exp ex' et -> opt_fits et exp -> Join (branch_ty b bt) et exp t ->
     Ex W P F C (AEIf c b (Some y)) exp (EIf cx' bx ex') t
 | ExMatch : forall F C exp s arms sx st xarms t,
     Ex W P F C s None sx st ->
