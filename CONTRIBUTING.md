@@ -1,7 +1,7 @@
 # Contributing to Moss
 
-Except for the `#dev` workflow below, commands in this file are assumed to be
-run within the Nix dev shell from the root of a clone of this repository:
+All commands in this file are assumed to be run within the Nix dev shell from
+the root of a clone of this repository:
 
 ```sh
 nix develop
@@ -39,39 +39,6 @@ itself. So:
   previous version lacks, land the feature first and its use after.
 - **CI runs the full `nix flake check`** on every platform, bootstrap
   included, so every merged commit is known to bootstrap from Rocq alone.
-
-### Trying a revision without a checkout
-
-The `#dev` package runs a selected revision using an existing compiler as its
-seed, without a checkout or `nix develop`. From your project's directory,
-obtain a seed once (or copy a previously built `mossc.wasm`):
-
-```sh
-mkdir -p scratch
-nix build github:moss-lang/moss#compiler -o result-compiler
-cp result-compiler scratch/mossc.wasm
-```
-
-Set the absolute seed path in your shell, or in your project's `.envrc`:
-
-```sh
-export MOSS_SEED="$PWD/scratch/mossc.wasm"
-```
-
-Then run a program with the latest compiler, or select a branch or commit
-whose flake includes `#dev`:
-
-```sh
-nix run github:moss-lang/moss#dev --refresh -- examples/main.moss
-nix run github:moss-lang/moss/REVISION#dev -- examples/main.moss
-```
-
-The package contains `bin/moss`, `share/moss/lib/` and `share/moss/src/`.
-Running or building a program first builds the selected compiler in memory
-from `MOSS_SEED`, with the same two self-compilations as the development
-launcher. It does not write a compiler cache. The current directory and program
-arguments are preserved, and the standard library comes from the selected
-compiler revision. Normal package builds and CI still use the Rocq bootstrap.
 
 Keep the bootstrap's dependency graph limited to the compiler and the
 libraries it needs. Future tools written in Moss, such as an LSP server,

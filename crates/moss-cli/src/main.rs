@@ -137,8 +137,13 @@ fn repository_root() -> Result<PathBuf> {
     if let Some(root) = env::var_os("MOSS_ROOT") {
         return Ok(PathBuf::from(root));
     }
-    if let Some(installed) = installed_root() {
-        return Ok(installed);
+    if let Ok(executable) = env::current_exe() {
+        if let Some(prefix) = executable.parent().and_then(Path::parent) {
+            let installed = prefix.join("share/moss");
+            if installed.join("lib/prelude.moss").is_file() {
+                return Ok(installed);
+            }
+        }
     }
     let cwd = env::current_dir()?;
     for candidate in cwd.ancestors() {
@@ -150,13 +155,6 @@ fn repository_root() -> Result<PathBuf> {
         }
     }
     bail!("cannot find a Moss source tree; set MOSS_ROOT")
-}
-
-fn installed_root() -> Option<PathBuf> {
-    let executable = env::current_exe().ok()?;
-    let prefix = executable.parent()?.parent()?;
-    let root = prefix.join("share/moss");
-    root.join("lib/prelude.moss").is_file().then_some(root)
 }
 
 fn compile(
@@ -237,12 +235,6 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> 
     }
     let target = root.join("target");
     let compiler = target.join("moss.wasm");
-    // The dev package supplies sources in a read-only installation. Build
-    // its compiler in memory; only a source checkout keeps a disk cache.
-    if installed_root().as_deref() == Some(root) {
-        let seed = seed_compiler(root, &compiler)?;
-        return Ok(CompilerModule::Wasm(build_compiler(engine, root, seed)?));
-    }
     let manifest = target.join("moss.inputs");
     let current = compiler_hash(root)?;
     if compiler.is_file() && fs::read_to_string(&manifest).ok().as_deref() == Some(&current) {
@@ -250,24 +242,11 @@ fn self_hosted_compiler(engine: &Engine, root: &Path) -> Result<CompilerModule> 
     }
 
     fs::create_dir_all(&target)?;
-    let seed = seed_compiler(root, &compiler)?;
-    let ready = build_compiler(engine, root, seed)?;
-
-    let compiler_tmp = target.join(format!("moss.wasm.{}", std::process::id()));
-    let manifest_tmp = target.join(format!("moss.inputs.{}", std::process::id()));
-    fs::write(&compiler_tmp, &ready)?;
-    fs::write(&manifest_tmp, &current)?;
-    fs::rename(compiler_tmp, &compiler)?;
-    fs::rename(manifest_tmp, manifest)?;
-    Ok(CompilerModule::Wasm(ready))
-}
-
-#[cfg(not(moss_embedded_compiler))]
-fn build_compiler(engine: &Engine, root: &Path, seed: Vec<u8>) -> Result<Vec<u8>> {
     eprintln!("Building the self-hosted Moss compiler...");
     // Two turns of the crank: the seed's compile of the source, and that
     // compiler's compile of it, which is what the source means however the
     // seed was built.
+    let seed = seed_compiler(root, &compiler)?;
     let mut ready = seed;
     for _ in 0..2 {
         let next = run_compiler(
@@ -279,7 +258,13 @@ fn build_compiler(engine: &Engine, root: &Path, seed: Vec<u8>) -> Result<Vec<u8>
         ready = optimized(engine, next, COMPILER_OPT)?;
     }
 
-    Ok(ready)
+    let compiler_tmp = target.join(format!("moss.wasm.{}", std::process::id()));
+    let manifest_tmp = target.join(format!("moss.inputs.{}", std::process::id()));
+    fs::write(&compiler_tmp, &ready)?;
+    fs::write(&manifest_tmp, &current)?;
+    fs::rename(compiler_tmp, &compiler)?;
+    fs::rename(manifest_tmp, manifest)?;
+    Ok(CompilerModule::Wasm(ready))
 }
 
 /// The compiler's machine code, if a package build installed it beside this

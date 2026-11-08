@@ -26,10 +26,6 @@ self-hosted compiler with one built before (see
 [`CONTRIBUTING.md`](CONTRIBUTING.md)); the packaged compiler already
 contains that result.
 
-To try a compiler revision without a checkout, set `MOSS_SEED` to a previously
-built `mossc.wasm` and run `nix run github:moss-lang/moss#dev --refresh -- PROGRAM`;
-see the [seed workflow](CONTRIBUTING.md#trying-a-revision-without-a-checkout).
-
 `nix build` produces the normal Nix package. `nix build .#standalone` produces
 a bundle for Linux or macOS that can be copied and used without Nix; an
 x86-64 Windows bundle can be cross-compiled from x86-64 Linux with
