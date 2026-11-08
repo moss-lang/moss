@@ -18,7 +18,8 @@ Definition scope (p : string) (ns : nspace) (n : string) : option ent :=
   else None.
 Definition world_main := World
   (fun s => if Nat.eqb s 1 then Some main_decl else None)
-  scope scope (fun _ _ => None) (fun _ => []) (Some "/lib/").
+  scope scope (fun _ _ => None) (fun _ => []) (Some "/lib/")
+  (fun s => if Nat.eqb s 1 then Some (Cx [] [] [] [], []) else None).
 
 Lemma reads_decl : forall s d, w_decl world_main s = Some d -> s = 1 /\ d = main_decl.
 Proof. intros s d H. cbn in H. destruct (Nat.eqb s 1) eqn:E; [|discriminate].
@@ -137,8 +138,8 @@ Proof.
     + split; [intros e1 e2 k H;contradiction|]. split.
       * intros. repeat rewrite subst_empty. reflexivity.
       * intros. rewrite subst_empty. reflexivity.
-    + split; [reflexivity|]. split; [constructor|]. intros k. split; [contradiction|].
-      intros [e [Member _]]. contradiction.
+    + split; [reflexivity|]. split; [split; [constructor|]; intros k; split; [contradiction|];
+        intros [e [Member _]]; contradiction|]. reflexivity.
 Qed.
 Lemma main_function : FnElab world_main AuditExamples.unit_program 1.
 Proof.

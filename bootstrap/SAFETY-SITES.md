@@ -71,7 +71,7 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
-- **Open: a merge can be oriented either way (needs a decision).**
+- **A merge could be oriented either way (fixed).**
   `MostGeneralMerge` leaves a merge between two generations unoriented. In
   [merge_order.moss](../tests/wasi/merge_order.moss), `B` and `C` are
   merged, and both `σ = {B ↦ C}` and `σ = {C ↦ B}` are idempotent most
@@ -88,14 +88,12 @@ the local store. *C* and *F* are the static context and frame.
   affects `FunCtx` between `LinkBody` and functor application sites, and
   `main`'s `CtxOf` between `ElaboratesIn` and `Platform.Linked`. Candidate
   repairs:
-  1. Let the world fix each symbol's context: `CtxOf W s C ns` and
-     `FunCtx W u C ns` additionally require `C` (and the needs) to be the
-     world's recorded context for that symbol. Any consistent choice
-     remains valid, so the implementation proof can record whatever its
-     elaborator computes.
-  2. Fix a canonical orientation in `MostGeneralMerge`, for example
-     generation-to-generation bindings point to the smaller symbol. The
-     elaborator would then have to be shown to follow that order.
+  **Decided** (user-approved): the world records each symbol's context and
+  needs (`w_context`), and `CtxOf` and `FunCtx` require them. Merging stays
+  symmetric, and any consistent orientation is allowed.
+  `function_context_unique` and `functor_context_unique` are checked.
+  Recording the implementation's contexts is
+  [E23](proofs/build-run.md#e23).
 - **Unit tags had no value typing (fixed).** `lib/bool.moss` declares `tag False;`
   and `tag True;`, and `Layouts` requires them to be `DKUnit`.
   `PublicValueTyping.value_typed` types tags only through
@@ -207,3 +205,4 @@ only has to be preserved by heap extension.
 - Semantic provision realization, vals, provided calls, methods and
   operators, `CodeSafe` and literals (20:00 to 20:10).
 - Found the merge-orientation gap while planning direct calls (20:10 to 20:12).
+- Recorded per-symbol contexts in the world, after approval.

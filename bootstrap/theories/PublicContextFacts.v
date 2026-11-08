@@ -43,3 +43,22 @@ Theorem formed_type_binding_preserves_alias_context : forall C d source tau,
   alias_context_agrees (A.set_ty C source (A.canon C tau))
     (bind_type d source (A.canon C tau)).
 Proof. intros; apply type_bind_preserves_alias_context; auto. Qed.
+
+(* The world fixes each symbol's context, so every rule reading it agrees. *)
+Theorem function_context_unique : forall W s C ns C' ns',
+  A.CtxOf W s C ns -> A.CtxOf W s C' ns' -> C = C' /\ ns = ns'.
+Proof.
+  intros W s C ns C' ns'
+    [d [es [tm [er [tmr [σ [_ [_ [_ [_ [_ [_ Recorded]]]]]]]]]]]]
+    [d' [es' [tm' [er' [tmr' [σ' [_ [_ [_ [_ [_ [_ Recorded']]]]]]]]]]]].
+  rewrite Recorded in Recorded'. injection Recorded' as <- <-. split; reflexivity.
+Qed.
+
+Theorem functor_context_unique : forall W u C ns C' ns',
+  A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
+Proof.
+  intros W u C ns C' ns' Ctx Ctx'.
+  destruct Ctx as [d [ps [a [r [b [es [tm [tm1 [σ [implicit [_ [_ [_ [_ [_ [_ [_ [_ Recorded]]]]]]]]]]]]]]]]]].
+  destruct Ctx' as [d' [ps' [a' [r' [b' [es' [tm' [tm1' [σ' [implicit' [_ [_ [_ [_ [_ [_ [_ [_ Recorded']]]]]]]]]]]]]]]]]].
+  rewrite Recorded in Recorded'. injection Recorded' as <- <-. split; reflexivity.
+Qed.

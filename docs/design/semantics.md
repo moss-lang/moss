@@ -587,6 +587,14 @@ them all. Related literature on the merging idea: ["Making a Type
 Difference: Subtraction on Intersection Types as Generalized Record
 Operations"](https://doi.org/10.1145/3571224) and the work it cites.
 
+In the audit model (bootstrap/theories/Audit.v), a merge is represented by
+a substitution that picks a representative, and canonical types and
+provision keys are written with it. Merging stays symmetric because any
+choice is allowed. But each symbol's context is formed once: the static
+world records it, and the callee's body, every call site and every
+provider use that one context. Otherwise a call site could install a
+method under `B`'s key while the body looks it up under `C`'s.
+
 *Implementation note (rev 6):* the bootstrap now implements this. The
 union-find lives in the environment's type map (an entry pointing anywhere
 but the symbol itself is a substitution edge); `merge` unifies duplicate

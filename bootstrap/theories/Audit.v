@@ -2397,6 +2397,31 @@ Definition filed_name (d : adecl) : option (nspace * name) :=
 (* What a name in a module's scope denotes: a symbol, or (an alias) a module. *)
 Inductive ent := ESym (s : nat) | EMod (p : string).
 
+(* A context in force at a point of a body.  Every table is keyed by
+   identity ([D62]): a val, fn or functor by its symbol, a method by its
+   receiver's canonical *type* and its symbol; a lookup takes the latest
+   entry.  `c_sub` is the merging substitution ([D43]) on generations;
+   types in the other tables are canonical (c_sub applied).  `c_apps`
+   records, for every provision, the instantiation it was made at ([D62],
+   [D71] coherence).  `c_funs` records, for each abstract functor in
+   force, what its fixed inputs X(F) denoted where it was provided ([D84]
+   rules 2 and 5). *)
+Inductive lmut := LLet | LVar | LCaptured.
+
+(* A provision's signature and its captured interpretation occupy one row.
+   Identity is the value/function/functor symbol or receiver-and-method pair;
+   type arguments belong to the provision, not to a parallel cache. *)
+Inductive provision :=
+| ProvidedVal (value_type : ty) (interpretation : inst)
+| ProvidedFn (signature : fsig) (interpretation : inst)
+| ProvidedMethod (signature : fsig) (interpretation : inst)
+| ProvidedFunctor (fixed : subst).
+Record cx := Cx {
+  c_ty : subst;
+  c_sub : subst;
+  c_provisions : list (item * provision);
+  c_locals : list (name * (ty * lmut))
+}.
 (* The static world: a reading of the bundle.  It is a witness: the
    relation asks only that one exist satisfying `WorldOf`. *)
 Record world := World {
@@ -2405,7 +2430,12 @@ Record world := World {
   w_exp   : string -> nspace -> name -> option ent;  (* what a module exports *)
   w_attached : nat -> name -> option nat;            (* receiver symbol, name -> attached method *)
   w_reqs  : nat -> list nat;                         (* a symbol's requirements (type symbols) *)
-  w_library : option string                         (* prelude's directory prefix *)
+  w_library : option string;                        (* prelude's directory prefix *)
+  (* The context and needs each fn, method or functor symbol forms. Merging
+     is symmetric but its substitution picks a representative ([D43]); every
+     rule reading a symbol's context uses this one, so call sites, providers
+     and bodies agree on canonical types and provision keys. *)
+  w_context : nat -> option (cx * list item)
 }.
 
 Definition kind_sym (W : world) (s : nat) : option dkind :=
@@ -2674,31 +2704,8 @@ with Brackets (W : world) : string -> list (nat * ty) -> nat -> option (list (pa
 (* V.3 Contexts in force, and their formation with merging                  *)
 (* ======================================================================== *)
 
-(* A context in force at a point of a body.  Every table is keyed by
-   identity ([D62]): a val, fn or functor by its symbol, a method by its
-   receiver's canonical *type* and its symbol; a lookup takes the latest
-   entry.  `c_sub` is the merging substitution ([D43]) on generations;
-   types in the other tables are canonical (c_sub applied).  `c_apps`
-   records, for every provision, the instantiation it was made at ([D62],
-   [D71] coherence).  `c_funs` records, for each abstract functor in
-   force, what its fixed inputs X(F) denoted where it was provided ([D84]
-   rules 2 and 5). *)
-Inductive lmut := LLet | LVar | LCaptured.
-
-(* A provision's signature and its captured interpretation occupy one row.
-   Identity is the value/function/functor symbol or receiver-and-method pair;
-   type arguments belong to the provision, not to a parallel cache. *)
-Inductive provision :=
-| ProvidedVal (value_type : ty) (interpretation : inst)
-| ProvidedFn (signature : fsig) (interpretation : inst)
-| ProvidedMethod (signature : fsig) (interpretation : inst)
-| ProvidedFunctor (fixed : subst).
-Record cx := Cx {
-  c_ty : subst;
-  c_sub : subst;
-  c_provisions : list (item * provision);
-  c_locals : list (name * (ty * lmut))
-}.
+(* The context types lmut, provision and cx are declared before the world
+   (V.1), which records each symbol's context. *)
 Definition c_vals (C : cx) : list (nat * ty) :=
   flat_map (fun q => match q with
     | (IVal v, ProvidedVal t _) => [(v,t)] | _ => [] end) (c_provisions C).
@@ -3075,7 +3082,8 @@ Definition CtxOf (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
     w_decl W s = Some d /\
     ItemsEntries W (d_mod d) [] [] (map assume_spec (d_assumes d)) es tm /\
     RootCtx W s es tm er tmr /\
-    MostGeneralMerge σ (es ++ er) /\ C = entries_cx σ tmr (es ++ er) /\ Needs σ (es ++ er) ns.
+    MostGeneralMerge σ (es ++ er) /\ C = entries_cx σ tmr (es ++ er) /\ Needs σ (es ++ er) ns /\
+    w_context W s = Some (C, ns).
 
 (* ======================================================================== *)
 (* V.4 Calls: needs, satisfaction maps and coherence                        *)
@@ -3136,7 +3144,8 @@ Definition FunCtx (W : world) (u : nat) (C : cx) (ns : list item) : Prop :=
     (* implicit inputs: only an abstract functor has them *)
     (forall t, In t implicit <-> (b = None /\ Mentions W u t /\ nlook t tm = None)) /\
     tm' = map (fun t => (t, TAbs t)) implicit ++ tm /\
-    MostGeneralMerge σ es /\ C = entries_cx σ tm' es /\ Needs σ es ns.
+    MostGeneralMerge σ es /\ C = entries_cx σ tm' es /\ Needs σ es ns /\
+    w_context W u = Some (C, ns).
 
 (* F's result, provided in context C with each output type t read as
    `out t` (a fresh generation at an application): the context grows by

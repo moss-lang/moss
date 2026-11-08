@@ -89,7 +89,7 @@ Proof. reflexivity. Qed.
 
 Definition no_library : world :=
   World (fun _ => None) (fun _ _ _ => None) (fun _ _ _ => None)
-    (fun _ _ => None) (fun _ => []) None.
+    (fun _ _ => None) (fun _ => []) None (fun _ => None).
 Lemma no_library_symbols : forall library ns name symbol,
   ~ LangSym no_library library ns name symbol.
 Proof. intros library ns name symbol [d [p [Impossible _]]]. discriminate. Qed.

@@ -2189,7 +2189,8 @@
         "E08",
         "E10",
         "E21",
-        "E22"
+        "E22",
+        "E23"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2595,6 +2596,28 @@
       }
     },
     {
+      "id": "E23",
+      "group": "E",
+      "title": "Record elaborated contexts in the world",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The public world read from an executable elaboration records, in w_context, the context and needs the elaborator formed for each fn, method and functor symbol, so every CtxOf and FunCtx use agrees with it.",
+      "approach": "PublicWorld.world_of currently records no contexts; supply the elaborator's per-symbol contexts (fn_info and functor readings) and prove they satisfy the remaining CtxOf/FunCtx conditions.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/PublicWorld.v"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved recording each symbol's context in the world: merging picks a representative, and independent CtxOf choices at a body and its call sites could disagree on provision keys.",
+        "sources": [
+          "SAFETY-SITES.md"
+        ]
+      }
+    },
+    {
       "id": "T23",
       "group": "T",
       "title": "Ground data and immutable heap typing",
@@ -2725,7 +2748,7 @@
       "status": "partial",
       "budget": "unknown",
       "goal": "WorldOf plus CtxOf/FunCtx establish canonicalization, semantic grounding, type scope/support and merge absorption needed by runtime realization.",
-      "approach": "Idempotence of actual function/functor contexts and its preservation by type/output updates are checked. Prove initial grounding, payload/signature formation and scope/support for active canonical types.",
+      "approach": "Idempotence of actual function/functor contexts and its preservation by type/output updates are checked. Prove initial grounding, payload/signature formation and scope/support for active canonical types. Contexts are now fixed per symbol by the world (function_context_unique, functor_context_unique).",
       "sources": [
         "theories/PublicContextFacts.v",
         "theories/Audit.v"

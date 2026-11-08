@@ -24,7 +24,7 @@ Definition world_of (W : M.world) : A.world :=
     (fun symbol => option_map declaration_of (M.w_decl W symbol))
     (fun path ns name => option_map entity_of (M.w_scope W path (implementation_namespace ns) name))
     (fun path ns name => option_map entity_of (M.w_exp W path (implementation_namespace ns) name))
-    (M.w_attached W) (M.w_reqs W) (M.w_library W).
+    (M.w_attached W) (M.w_reqs W) (M.w_library W) (fun _ => None).
 
 (* Field numbering is not part of the public world. Its arbitrary dummy
    value below is ignored by world_of and imposes no injectivity premise. *)

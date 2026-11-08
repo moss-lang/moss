@@ -65,6 +65,8 @@ Definition certificate_roots :=
   @NM.PublicContextFacts.function_context_canonical,
   @NM.PublicContextFacts.functor_context_canonical,
   @NM.PublicContextFacts.formed_type_binding_preserves_alias_context,
+  @NM.PublicContextFacts.function_context_unique,
+  @NM.PublicContextFacts.functor_context_unique,
   @NM.PublicCaptureScopeFacts.typed_capture_generation_lookup,
   @NM.PublicCaptureScopeFacts.typed_capture_alias_lookup,
   @NM.PublicGenerationCallExample.actual_application_exports_unchanged_formal_not_stale_capture,
