@@ -213,6 +213,9 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_entry = cell_int();
   bind codegen::cg_genv = cell_int();
   bind codegen::cg_gbase = cell_int();
+  bind codegen::cg_aenv = cell_int();
+  bind codegen::cg_agenv = cell_int();
+  bind codegen::cg_aon = cell_int();
   bind codegen::ch_run = int_list();
   bind codegen::ch_link = int_list();
   bind codegen::ch_head = int_list();

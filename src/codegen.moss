@@ -310,6 +310,15 @@ assume Std {
   # The generic environment at entry to this function or captured functor
   # body, before its local binds. Sparse assumed apps read this baseline.
   val cg_gbase: CellInt;
+  # D84 rule 7: while a call of a family member on demand is emitted, the
+  # caller's environments (`cg_aenv`, `cg_agenv`; `cg_aon` is 1 while they
+  # are set). The application is a scope around the call's *provision*
+  # only: its arguments are the caller's expressions, emitted in the
+  # caller's terms (`emit_args`), so that a `P(F)` symbol the application
+  # binds — `Item`, say — does not capture the caller's own.
+  val cg_aenv: CellInt;
+  val cg_agenv: CellInt;
+  val cg_aon: CellInt;
   val ch_run: IntList;
   val ch_link: IntList;
   val ch_head: IntList;
@@ -371,7 +380,7 @@ assume Std {
     un_sym, un_link, un_head, un_mark, un_last, un_stamp, un_meths, un_mlink, un_mhead,
     un_fstart, un_flags,
     un_used, un_listed, un_ustamp, ce_start, ce_len, ce_pool,
-    cg_lang, cg_genv, cg_gbase, ch_run, ch_link, ch_head,
+    cg_lang, cg_genv, cg_gbase, cg_aenv, cg_agenv, cg_aon, ch_run, ch_link, ch_head,
     lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt,
     fb_sym, ft_sym;
 
@@ -4879,6 +4888,15 @@ assume Std {
     }
 
     fn emit_args(body: IntList, run: Int, n: Int, m: Int, want: IntList) {
+      # D84 rule 7: the arguments of a call on demand are the caller's.
+      let on = cg_aon.read();
+      let env = cg_env.read();
+      let genv = cg_genv.read();
+      if on == 1 {
+        cg_env.write(cg_aenv.read());
+        cg_genv.write(cg_agenv.read());
+        cg_aon.write(0);
+      }
       var i = 0;
       while i < n {
         var expect = ast::none();
@@ -4887,6 +4905,11 @@ assume Std {
         }
         emit_as(body, ast::kid_at(run, i), m, expect);
         i = i + 1;
+      }
+      if on == 1 {
+        cg_env.write(env);
+        cg_genv.write(genv);
+        cg_aon.write(1);
       }
     }
 
@@ -7077,6 +7100,11 @@ assume Std {
       let pmark = pv_top.read();
       let floor = pv_floor.read();
       let smark = es_top.read();
+      let aon = cg_aon.read();
+      let aenv = cg_aenv.read();
+      let agenv = cg_agenv.read();
+      cg_aenv.write(emark);
+      cg_agenv.write(gmark);
       let concrete = int_list();
       var i = 0;
       while i < ts.length() {
@@ -7092,10 +7120,14 @@ assume Std {
       apply_abstract(body, e, fu, 0, bw_emit());
       var ret = ty_none();
       if ast::is_some(generic_row(recv_ty, sym)) {
+        cg_aon.write(1);
         ret = emit_provided_method(body, recv, recv_ty, sym, run, n, m, e);
       } else {
         semantic_error(prog::e_method(), prog::sym_name.get(sym));
       }
+      cg_aon.write(aon);
+      cg_aenv.write(aenv);
+      cg_agenv.write(agenv);
       cg_env.write(emark);
       cg_genv.write(gmark);
       pv_top.write(pmark);

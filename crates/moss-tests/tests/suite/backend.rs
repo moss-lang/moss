@@ -759,6 +759,9 @@ fn d84_functors_run() {
         ("functor_in_result_ok", "5\n"),
         ("arrays_on_demand", "33\n"),
         ("family_need", "55\n55\n6\n"),
+        // A call on demand whose argument mentions the caller's `Item`,
+        // which the application binds too: the argument stays the caller's.
+        ("family_arg_capture", "73\n"),
         ("functor_polyfill", "7\n"),
     ] {
         let entry = wasi(name);
