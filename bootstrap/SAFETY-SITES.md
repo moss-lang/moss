@@ -204,10 +204,11 @@ hypotheses, each a named remaining obligation:
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
-| `attached_defined_case` | defined attached methods (direct calls) | T03, T06, T14 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `bind_case` | bind statements | T07, T15, T16 |
+| `case_BFnLambda`, `case_BMethBind` | lambda and method binds | T07, T09 |
+| `case_BApplyBody`, `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and applications | T15, T16 |
+| `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
 | `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
@@ -250,6 +251,12 @@ realized from the caller's (`callee_realizes`):
   `Satisfies`' new type check, context formation (`ctxof_formed`,
   `ctx_provision_scoped`) and reading agreement (`tyof_rel`, `sig_rel`).
 
+Bind statements compose their items (`items_safe`). Type, value and
+function binds are proved (`type_bind_safe`, `val_bind_safe`,
+`fn_bind_safe`; a bound function is a defined function's closure or a
+forwarder, `provider_callable`). Defined attached methods are proved
+like direct calls (`attached_step`, `body_call_method`, `receiver_agree`).
+
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
 
@@ -288,5 +295,6 @@ without touching any proof.
 - Recorded per-symbol contexts in the world, after approval.
 - `Satisfies` type check after approval (20:58 to 21:03).
 - Context formation, call agreement and `callee_realizes` (21:07 to 21:28).
+- Bind framework, type/value/function binds, attached methods (21:33 to 22:05).
 - `tyof_rel`, `body_call`, `call_core`, and the merged-class counterexample
   (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).

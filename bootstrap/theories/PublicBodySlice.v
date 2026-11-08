@@ -131,21 +131,6 @@ Hypothesis family_method_case : forall k, Below k -> forall F C o ox ot0 m args 
   A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B
     (apply_expression u th sm (EMethod ox m (A.rkey C' (A.canon C ot0) m) xs)).
-(* A defined attached method: a direct call at the receiver's arguments (T03/T06/T14). *)
-Hypothesis attached_defined_case : forall k, Below k -> forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
-  ot = A.canon C ot0 ->
-  A.head ot = Some h -> A.Attached W h n att ->
-  ~ (exists m, A.w_scope W (A.fr_mod F) A.NSDetached n = Some (A.ESym m) /\ A.mlook ot m (A.c_mths C) <> None) ->
-  (exists rn ps rt b, A.ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
-  rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
-  A.CtxOf W att Ca ns ->
-  A.Demand W (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)
-    (map (A.at_site (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)) ns) []
-    (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
-  A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
-  A.Args W Prog F C args (A.sg_params g) xs ->
-  StepSafe k F C (A.sg_ret g) B (wrap (ECall att th sm (ox :: xs))).
 Hypothesis Reps : Platform.Representations W Prog.
 
 Lemma forall2_keys : forall (reqs : list nat) (xs : list (nat * ty)) (R : nat -> ty -> Prop),
@@ -1684,6 +1669,35 @@ Proof.
   intros n F [ty sub provs locs] [ty' sub' provs' locs'] d types H g st; cbn; intros -> -> -> Pre0. exact Pre0.
 Qed.
 
+Lemma receiver_agree : forall att Ca ns Cd th d' r args xs (rest : list (nat * ty)),
+  A.CtxOf W att Ca ns -> A.CallTheta W Cd Ca att th -> Absorbs Cd d' ->
+  NoDup (map fst xs) -> A.c_ty Cd = (rev xs ++ rest)%list ->
+  Forall2 (fun x xa => fst xa = x /\ A.nlook x (A.c_ty Ca) = Some (snd xa)) (A.w_reqs W r) args ->
+  map fst xs = A.w_reqs W r ->
+  app_subst (callee_meanings d' th) (TNom r args) = ground d' (TNom r xs).
+Proof.
+  intros att Ca ns Cd th d' r args xs rest Ctx CT Abs Nd Cty Args Keys.
+  destruct (ctxof_formed W att Ca ns Ctx) as [Form _].
+  pose proof CT as [ThKeys [Bound _]].
+  unfold ground. rewrite !subst_nom. f_equal.
+  assert (Gen : forall reqs args' xs', Forall2 (fun x xa => fst xa = x /\ A.nlook x (A.c_ty Ca) = Some (snd xa)) reqs args' ->
+    map fst xs' = reqs -> incl xs' xs ->
+    PublicTypeRead.smap (callee_meanings d' th) args' = PublicTypeRead.smap (type_meanings d') xs').
+  { intros reqs. induction reqs as [|x reqs IH]; intros args' xs' F Kx Sub; inversion F as [|? q ? args'' Hq Fr]; subst.
+    - destruct xs'; [reflexivity|discriminate].
+    - destruct q as [x' v]. destruct Hq as [Ex Lv].
+      destruct xs' as [|[x0 u] xs'']; [discriminate|]. cbn in Kx, Ex. injection Kx as -> Kx'. subst x'.
+      unfold PublicTypeRead.smap. cbn [map fst snd]. f_equal.
+      + f_equal. cbn [snd] in Lv. rewrite (Form x v Lv).
+        assert (Ix : In x (map fst (A.c_ty Ca))) by (apply nlook_in in Lv; change x with (fst (x, v)); apply in_map, Lv).
+        rewrite (merged_meaning W att Ca ns Cd th d' x Ctx CT Abs Ix).
+        assert (Lu : A.nlook x (A.c_ty Cd) = Some u).
+        { rewrite Cty. rewrite (nlook_rev_distinct _ xs rest x Nd). apply nlook_app_in; [exact Nd|]. apply Sub. left. reflexivity. }
+        cbn [app_subst]. rewrite (Bound x Ix ltac:(congruence)). cbn [app_subst]. rewrite lookup_subst_nlook', Lu. apply Abs.
+      + apply IH; [exact Fr|exact Kx'|intros q Iq; apply Sub; right; exact Iq]. }
+  exact (Gen _ args xs Args Keys (fun q Iq => Iq)).
+Qed.
+
 Section Step.
 Variable k : nat.
 Hypothesis Bel : Below k.
@@ -1733,6 +1747,71 @@ Proof.
       destruct (I.run_prim_at P p held ws st1) as [o st2] eqn:Run'.
       exact (outcome_prim F d H H1 types _ _ o st2 g1 E1 L1 POut).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
+Unshelve. all: exact TUnit.
+Qed.
+
+Lemma attached_step : forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd (B : Prop),
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  ot = A.canon C ot0 ->
+  A.head ot = Some h -> A.Attached W h n att ->
+  (exists rn ps rt b, A.ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
+  rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
+  A.CtxOf W att Ca ns ->
+  A.Demand W (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)
+    (map (A.at_site (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)) ns) []
+    (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
+  A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
+  A.Args W Prog F C args (A.sg_params g) xs ->
+  StepSafe k F C (A.sg_ret g) B (wrap (ECall att th sm (ox :: xs))).
+Proof.
+  intros F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA Ot Head Att Def Rargs Ctx Dem Sat CT Sig Args
+    d types H lg lst Pre0.
+  destruct Def as [rn [ps [rt [b Def]]]]. unfold A.ast_of in Def.
+  destruct (A.w_decl W att) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
+  pose proof (all_fn_elab att dcl (RAttached rn) n ps rt b Decl Ast dcl (RAttached rn) n ps rt b Decl Ast)
+    as (C0 & ns0 & this & g0 & F0 & x0 & t0 & _ & Rcv & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & View).
+  destruct Rcv as [r [args0 [Att0 [Kind _]]]].
+  pose proof (attached_unique h r n att Att Att0) as <-.
+  pose proof Head as Head'. rewrite Ot in Head'.
+  destruct (ex_nominal_formed F C o None ox ot0 Do h Head' Kind) as [xs0 [Eot Keys]].
+  rewrite <- Ot in Eot. rewrite Eot in Ot. subst ot. cbn in Rargs. subst rargs.
+  set (Cd0 := fold_left (fun C q => A.set_ty C (fst q) (snd q)) xs0 C) in *.
+  destruct (set_tys_fields xs0 C) as [Es [Ep [El Et]]].
+  assert (Nd : NoDup (map fst xs0)) by (rewrite Keys; destruct World as [bd Wo]; exact (A.wo_reqs_nodup Wo h)).
+  assert (Cty : A.c_ty Cd = (rev xs0 ++ A.c_ty C)%list) by (rewrite (demand_ty _ _ _ _ _ _ Dem); exact Et).
+  refine (demand_case k Bel F Cd0 _ Cd wrap (A.sg_ret g) B _ Dem _ d types H lg lst
+    (pre_ty_free _ _ C Cd0 _ _ _ _ _ Es Ep El Pre0)).
+  intros j Lj d' types' H' g' st' PreD PreD0.
+  assert (PreC : Pre j F C d' types' H' g' st')
+    by exact (pre_ty_free _ _ Cd0 C _ _ _ _ _ (eq_sym Es) (eq_sym Ep) (eq_sym El) PreD0).
+  destruct j as [|j]; [exact Logic.I|].
+  cbn [I.eval]. change (view_function P att) with (A.body_of Prog att). rewrite View.
+  assert (ArgsS : Forall2 (fun e t => CodeSafe k F C t B e) (ox :: xs) (TNom h xs0 :: A.sg_params g)).
+  { constructor; [|exact (args_code_of k Bel F C args _ xs Args B BrkA)].
+    apply (ex_code k Bel F C o None ox ot0 _ B Do); [right; right; exact Ot|exact BrkO]. }
+  pose proof (args_code k j ltac:(lia) F C B (ox :: xs) _ d' types' H' g' st' ArgsS (pre_lower PreC)) as AOut.
+  destruct (I.eval_arguments j P d' g' st' (ox :: xs)) as [[[ws g1] st1]|rr]; cbn in AOut.
+  2: { destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out]. }
+  destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
+  inversion T1 as [|w0 t0' ws' ts' Tw0 Tws]; subst.
+  pose proof PreD as [_ [_ [_ [_ RealD]]]].
+  destruct (callee_realizes j Cd d' H1 att Ca ns sm th (realizes_extends _ _ _ _ _ E1 RealD) Ctx Sat CT)
+    as [dc [Sel [Ag RealA]]].
+  rewrite Sel, (call_environment_callee d' _ sm dc Sel).
+  pose proof RealD as [AbsD _].
+  destruct (body_call_method j (Bel j ltac:(lia)) att dcl rn n ps rt b Ca ns _ H1 st1 w0 ws' d'
+    (TNom h xs0) (A.sg_params g) (A.sg_ret g) Decl Ast Ctx RealA S1) as [body [View' Run]].
+  - intros r' args' g0' Att' Reqs Sig0.
+    pose proof (attached_unique h r' n att Att Att') as <-.
+    assert (Recv : app_subst (callee_meanings d' th) (TNom h args') = ground d' (TNom h xs0))
+      by exact (receiver_agree att Ca ns Cd th d' h args' xs0 (A.c_ty C) Ctx CT AbsD Nd Cty Reqs Keys).
+    destruct (sig_rel W _ _ att _ _ (Some (TNom h args')) (Some (TNom h xs0)) g0' g Sig0 Sig Ag
+      (fun x1 x2 E1' E2' => ltac:(injection E1' as <-; injection E2' as <-; exact Recv))) as [Ps Rt].
+    split; [exact Recv|]. split; [exact Ps|exact Rt].
+  - exact Tw0.
+  - exact Tws.
+  - change (view_function P att) with (A.body_of Prog att) in View'. rewrite View in View'. injection View' as <-.
+    exact (outcome_ret_call F d' H' H1 types' _ _ _ g1 E1 L1 Run).
 Unshelve. all: exact TUnit.
 Qed.
 
@@ -1788,8 +1867,8 @@ Proof.
                    |F C ox ot n args h att x t Head Att NotWin Abs Prov
                    |F C ox ot n args m x t NoAtt Scope Prov]; subst ot;
     try exact (provided_step F C o ox ot0 _ args x t B Do BrkO BrkA Prov).
-  exact (attached_defined_case k Bel F C o ox ot0 _ n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA
-    eq_refl Head Att NotWin Def Rargs Ctx Dem Sat CT Sig Args).
+  exact (attached_step F C o ox ot0 _ n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA
+    eq_refl Head Att Def Rargs Ctx Dem Sat CT Sig Args).
 Qed.
 
 Fixpoint ex_step F C a exp x t (D : A.Ex W Prog F C a exp x t) {struct D} :
