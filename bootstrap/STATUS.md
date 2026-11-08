@@ -1,5 +1,9 @@
 # Verification milestone: partial source and runtime proofs
 
+The [proof roadmap](PROOFS.md) shows the five public targets as terminal
+nodes, distinguishes checked components from partial and open tasks, and
+links each task to its evidence or finish condition.
+
 This checkpoint contains a substantial proof development, not an end-to-end
 verified compiler. In particular, **source elaboration soundness and the
 universal runtime typing certificate remain open**. The public contract is

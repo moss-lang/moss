@@ -4793,7 +4793,9 @@ Module Public (Host : HOST).
   (* The five public obligations remain pending. Completeness covers builds
      for this platform and permits the implementation's own fresh symbols.
      Compatibility with the default interface follows from building;
-     other compatible interfaces are covered by the same run/safety claims. *)
+     other compatible interfaces are covered by the same run/safety claims.
+     Safety concerns Builds and Runs themselves; executable safety follows
+     by combining it with build_sound and run_sound. *)
   Module Type CORRECT.
     Parameter prelude : file_path.
     Parameter build : source -> file_path -> option program.
@@ -4820,12 +4822,11 @@ Module Public (Host : HOST).
       forall result, Runs program interface initial result ->
         exists fuel, run program interface initial fuel = Some result.
 
-    Axiom safety : forall source entry program,
-      build source entry = Some program ->
-      forall interface initial,
+    Axiom safety : forall program interface initial,
+      Admissible prelude program ->
       Compatible program interface ->
-      forall fuel code final,
-        run program interface initial fuel <> Some (Result (Wrong code) final).
+      forall code final,
+        ~ Runs program interface initial (Result (Wrong code) final).
   End CORRECT.
 End Public.
 

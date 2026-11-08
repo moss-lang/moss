@@ -19,6 +19,9 @@ src/main.moss --(theories/Parse.v: lexer, parser, module loader)--> bundle
 
 The [verification status](STATUS.md) describes the proved components and
 remaining source soundness and runtime typing obligations for this milestone.
+The [proof roadmap](PROOFS.md) presents the selected route to the five public
+theorems: direct public elaboration, a common runtime target, and measured
+bootstrap performance gates.
 
 The interpreted self-compile is expensive, so everyday work reuses a compiler
 built before ([`CONTRIBUTING.md`](../CONTRIBUTING.md)). The same program,
@@ -283,8 +286,12 @@ Its final module type, **Public.CORRECT**, has exactly five obligations:
   terminating implementation result satisfies Runs.
 - **run_complete**: under those conditions, every terminating Runs
   execution is reproduced.
-- **safety**: a built program supplied with a compatible interface excludes
-  an internal Wrong result at every finite observation.
+- **safety**: a program admitted by the declarative Builds relation cannot
+  have a Runs execution ending in Wrong when supplied with a compatible interface.
+
+Safety is a property of the language's semantics. Combining it with
+build_sound and run_sound shows that executable builds cannot go wrong
+when run with a compatible interface.
 
 Builds includes platform linking: source declarations, primitive signatures,
 GC and memory layouts, and generated platform-family bindings must agree

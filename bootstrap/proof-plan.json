@@ -1,0 +1,3120 @@
+{
+  "schema": 1,
+  "reviewed_base": "eaa31a208f15bbb71e6a81f69976072332b2556a",
+  "reviewed_date": "2026-11-08",
+  "groups": [
+    {
+      "id": "A",
+      "title": "Architecture and performance gates"
+    },
+    {
+      "id": "F",
+      "title": "Shared front end and direct completeness"
+    },
+    {
+      "id": "S",
+      "title": "Reusable internal source components"
+    },
+    {
+      "id": "P",
+      "title": "Existing representation groundwork"
+    },
+    {
+      "id": "E",
+      "title": "Direct public elaboration"
+    },
+    {
+      "id": "L",
+      "title": "Selected runtime lowering"
+    },
+    {
+      "id": "K",
+      "title": "Public platform checks"
+    },
+    {
+      "id": "H",
+      "title": "Default host"
+    },
+    {
+      "id": "T",
+      "title": "Public semantic safety"
+    },
+    {
+      "id": "X",
+      "title": "Common-target executable agreement"
+    },
+    {
+      "id": "B",
+      "title": "Public build"
+    },
+    {
+      "id": "G",
+      "title": "Five public obligations"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "F01",
+      "group": "F",
+      "title": "Lexer soundness",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Successful lexing implies Lexes.",
+      "approach": "Existing proof.",
+      "sources": [
+        "theories/FrontEnd.v"
+      ],
+      "witness": "lex_sound"
+    },
+    {
+      "id": "F02",
+      "group": "F",
+      "title": "Lexer completeness",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Lexes implies successful lexing of the specified tokens.",
+      "approach": "Existing proof.",
+      "sources": [
+        "theories/FrontEnd.v"
+      ],
+      "witness": "lex_complete"
+    },
+    {
+      "id": "F03",
+      "group": "F",
+      "title": "Parser soundness",
+      "requires": [
+        "F01"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "Successful parsing implies Derives.",
+      "approach": "Existing proof.",
+      "sources": [
+        "theories/FrontEnd.v"
+      ],
+      "witness": "parse_moss_sound"
+    },
+    {
+      "id": "F04",
+      "group": "F",
+      "title": "Parser completeness",
+      "requires": [
+        "F02"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "Derives implies successful parsing.",
+      "approach": "Existing proof.",
+      "sources": [
+        "theories/FrontEndComplete.v"
+      ],
+      "witness": "parse_moss_complete"
+    },
+    {
+      "id": "F05",
+      "group": "F",
+      "title": "Loader soundness",
+      "requires": [
+        "F03"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "Successful load implies Loader.Bundled.",
+      "approach": "Existing proof; no completeness claim.",
+      "sources": [
+        "theories/FrontEndLoader.v"
+      ],
+      "witness": "load_sound"
+    },
+    {
+      "id": "F07",
+      "group": "F",
+      "title": "Loader coverage invariant",
+      "requires": [
+        "A02",
+        "F04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "A loader worklist invariant covers every module of a finite-source Bundled witness with justified input-derived bounds.",
+      "approach": "Induct over the finite witness/rank using the source contract and algorithm established by A01/A02.",
+      "sources": [
+        "theories/FrontEndLoader.v",
+        "theories/Parse.v"
+      ]
+    },
+    {
+      "id": "F08",
+      "group": "F",
+      "title": "Loader import / prelude traversal",
+      "requires": [
+        "A02",
+        "F04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Traversal preserves path canonicalization, module uniqueness, explicit imports and implicit-prelude closure without losing required files.",
+      "approach": "Prove the worklist step cases under F07-compatible invariants.",
+      "sources": [
+        "theories/FrontEndLoader.v",
+        "theories/Parse.v"
+      ]
+    },
+    {
+      "id": "F09",
+      "group": "F",
+      "title": "Assemble loader completeness",
+      "requires": [
+        "F07",
+        "F08"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Every Bundled witness is accepted by the configured executable loader.",
+      "approach": "Combine coverage, path/import cases and the termination policy; conclude the whole loader result.",
+      "sources": [
+        "theories/FrontEndLoader.v",
+        "theories/ComponentContracts.v"
+      ]
+    },
+    {
+      "id": "F10",
+      "group": "F",
+      "title": "Direct elaborator resource policy",
+      "requires": [
+        "A02"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Replace or justify declaration/type/elaboration budgets for all public-buildable finite-source inputs.",
+      "approach": "Audit recursion in the direct public elaborator and derive bounds or terminating algorithms. A finite file list alone does not establish elaborator completeness.",
+      "sources": [
+        "theories/Elab.v"
+      ]
+    },
+    {
+      "id": "F11",
+      "group": "F",
+      "title": "Reverse world construction",
+      "requires": [
+        "F10",
+        "S01",
+        "E01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Construct an executable world/metadata reading from a public declarative world, up to the fresh names allowed by build completeness.",
+      "approach": "Invert public WorldOf using the direct metadata interpretation; split scope, shadowing and requirement cases.",
+      "sources": [
+        "theories/WorldSound.v",
+        "theories/ReqsTotal.v"
+      ]
+    },
+    {
+      "id": "F12",
+      "group": "F",
+      "title": "Reverse contexts and signatures",
+      "requires": [
+        "F11",
+        "E01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Public declarative contexts, signatures and type readings are accepted by the direct executable elaborator.",
+      "approach": "Prove the backward directions of the direct public context/checking operations; no whole-program model back-translation.",
+      "sources": [
+        "theories/CtxWalk.v",
+        "theories/ProviderSig.v",
+        "theories/ComponentContracts.v"
+      ]
+    },
+    {
+      "id": "F13",
+      "group": "F",
+      "title": "Reverse expression elaboration",
+      "requires": [
+        "F12",
+        "E02"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Public expression derivations admit successful direct executable elaboration, with the chosen fresh symbols.",
+      "approach": "Separate source expression constructors and expected-type checking once the direct context invariant is fixed.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "F14",
+      "group": "F",
+      "title": "Reverse bindings and selection",
+      "requires": [
+        "F12",
+        "E06"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Public binding/provider/family derivations yield successful direct executable checks with coherent captures and fresh outputs.",
+      "approach": "Split unified binding forms, selection and recursive demand against the public rules.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/ComponentContracts.v"
+      ]
+    },
+    {
+      "id": "S01",
+      "group": "S",
+      "title": "Source-world reading",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Successful internal elaboration constructs a correct source world and requirement reading.",
+      "approach": "Existing proof; field-number injection remains explicit.",
+      "sources": [
+        "theories/ReqsTotal.v"
+      ],
+      "witness": "elaborate_world_of"
+    },
+    {
+      "id": "S02",
+      "group": "S",
+      "title": "Conditional body dispatcher",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Pending follows from the existing construct lemmas assuming Hnonmethod_remainingbind and the section world hypotheses.",
+      "approach": "Existing conditional internal proof. Reuse its construct lemmas in E03; E11 closes the direct public port's remaining callbacks.",
+      "sources": [
+        "theories/BodyPending.v"
+      ],
+      "witness": "pending"
+    },
+    {
+      "id": "S03",
+      "group": "S",
+      "title": "Conditional fresh-link receipts",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Fresh execution supplies context, capture, body and allocation receipts under OneStep, invariants and final-state premises.",
+      "approach": "Existing conditional proof; excludes the output certificate.",
+      "sources": [
+        "theories/LinkBodySound.v"
+      ],
+      "witness": "link_body_fresh_data"
+    },
+    {
+      "id": "S04",
+      "group": "S",
+      "title": "Link-creator provenance",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Actual whole-program execution preserves authenticated cached-link creators.",
+      "approach": "Existing provenance proof, not semantic validity.",
+      "sources": [
+        "theories/LinkProgramPreserve.v"
+      ],
+      "witness": "elab_init_link_inv"
+    },
+    {
+      "id": "S05",
+      "group": "S",
+      "title": "Final functor rows",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Actual final and historical functor rows agree with the program tables.",
+      "approach": "Existing proof.",
+      "sources": [
+        "theories/FunctorRowsProgram.v"
+      ],
+      "witness": "elab_program_final_links"
+    },
+    {
+      "id": "S06",
+      "group": "S",
+      "title": "Private snapshot readings",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Scoped types retain their semantic lookup under the stated snapshot assumptions.",
+      "approach": "Existing helper proof; not actual link_body integration.",
+      "sources": [
+        "theories/InputGenerationScope.v"
+      ],
+      "witness": "scoped_type_read"
+    },
+    {
+      "id": "S07",
+      "group": "S",
+      "title": "Private scope allocation",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "A finite private generation scope is connected to actual fresh symbol allocations.",
+      "approach": "Existing allocation helpers.",
+      "sources": [
+        "theories/InputGenerationAllocate.v"
+      ],
+      "witness": "reserved_link_input_plan"
+    },
+    {
+      "id": "S08",
+      "group": "S",
+      "title": "Private merge action",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Private snapshots preserve the source merge action under their explicit scope assumptions.",
+      "approach": "Existing merge helpers.",
+      "sources": [
+        "theories/InputGenerationMerge.v"
+      ],
+      "witness": "private_canon_read"
+    },
+    {
+      "id": "S09",
+      "group": "S",
+      "title": "Private capture preservation",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Captured private meanings survive caller rebinding under the explicit transfer assumptions.",
+      "approach": "Existing helper theorem.",
+      "sources": [
+        "theories/InputGenerationRuntime.v"
+      ],
+      "witness": "private_capture_grounding_survives_caller_rebinding"
+    },
+    {
+      "id": "S10",
+      "group": "S",
+      "title": "Runtime result export meanings",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Result transfers install the exported type meaning at the caller generation.",
+      "approach": "Existing runtime repair and lookup/grounding proof.",
+      "sources": [
+        "theories/InputGenerationExports.v"
+      ],
+      "witness": "frame_result_private_grounding"
+    },
+    {
+      "id": "S29",
+      "group": "S",
+      "title": "Conditional function assembly",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Completed function traces yield FnElab under Pending, Later and final body agreement.",
+      "approach": "Existing conditional proof.",
+      "sources": [
+        "theories/FnElabExec.v"
+      ],
+      "witness": "completed_history_fn_elab"
+    },
+    {
+      "id": "P01",
+      "group": "P",
+      "title": "Type/value representation definitions",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Explicit type_represents and value_represents relations exist.",
+      "approach": "Definitions only; this done node claims no totality, simulation or whole-program correspondence.",
+      "sources": [
+        "theories/AuditRepresentation.v"
+      ],
+      "witness": "value_represents"
+    },
+    {
+      "id": "K01",
+      "group": "K",
+      "title": "Check primitive signatures",
+      "requires": [
+        "E01",
+        "K09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "A source primitive-signature checker agrees with public AtKey/MethodPrimitive conditions for the relevant entries.",
+      "approach": "Prove the checker clauses against the shared source world.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "K02",
+      "group": "K",
+      "title": "Check machine and tag layouts",
+      "requires": [
+        "E01",
+        "K09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "A layout checker agrees with public Layouts, including machine declarations and Bool/tag payload layouts.",
+      "approach": "Handle the finite designated layout cases using E01 lookups.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "K03",
+      "group": "K",
+      "title": "Check Ref/Array cast metadata",
+      "requires": [
+        "K02",
+        "K09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The cast metadata checker agrees with public Representations.",
+      "approach": "Combine CastEntry cases and exact generated metadata shape.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "K04",
+      "group": "K",
+      "title": "Check entry ABI",
+      "requires": [
+        "E01",
+        "K09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Executable entry checks agree with EntryPoint, including recursively zero-lane EntryResult cases.",
+      "approach": "Use signature lookup and structural result-layout checking.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/EntryShape.v"
+      ]
+    },
+    {
+      "id": "K05",
+      "group": "K",
+      "title": "Check initial platform provisions",
+      "requires": [
+        "E02",
+        "K01",
+        "K09"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The initial environment/family checker agrees with public Entry and Family judgments.",
+      "approach": "Generated platform-family bindings and provision keys may need further decomposition.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/ReifyPlatform.v"
+      ]
+    },
+    {
+      "id": "K06",
+      "group": "K",
+      "title": "Assemble link-check soundness",
+      "requires": [
+        "K01",
+        "K02",
+        "K03",
+        "K04",
+        "K05",
+        "E02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Successful public platform checking implies Linked in the elaboration world.",
+      "approach": "Assemble EntryPoint, Layouts, Representations and initial entries.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "K07",
+      "group": "K",
+      "title": "Assemble link-check completeness",
+      "requires": [
+        "K01",
+        "K02",
+        "K03",
+        "K04",
+        "K05"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Linked implies acceptance by the public platform checker under the chosen representation.",
+      "approach": "Compose the backward directions of the component checker equivalences.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "H01",
+      "group": "H",
+      "title": "Choose public host adapter",
+      "requires": [
+        "A07",
+        "L06"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Define the concrete public host/state adapter used by the fixed default interface.",
+      "approach": "Settle value/address conversion and failure behavior without assuming host laws.",
+      "sources": [
+        "theories/DefaultRuntime.v",
+        "theories/AuditRepresentation.v"
+      ]
+    },
+    {
+      "id": "H02",
+      "group": "H",
+      "title": "Numeric/structural primitive laws",
+      "requires": [
+        "H01",
+        "L06"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The public default host satisfies typed laws for non-memory numeric, record and tag operations.",
+      "approach": "Transport existing primitive cases through the chosen value relation; split operation groups if transport is not uniform.",
+      "sources": [
+        "theories/MossX.v",
+        "theories/DefaultRuntime.v"
+      ]
+    },
+    {
+      "id": "H03",
+      "group": "H",
+      "title": "Memory and I/O primitive laws",
+      "requires": [
+        "H01",
+        "L06"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Default linear-memory, arguments/file and I/O primitives preserve their public signatures and state behavior.",
+      "approach": "Reuse internal primitive laws through the host adapter.",
+      "sources": [
+        "theories/MossX.v",
+        "theories/DefaultRuntime.v"
+      ]
+    },
+    {
+      "id": "H04",
+      "group": "H",
+      "title": "Relate concrete heap states",
+      "requires": [
+        "H01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Specify/prove the public heap predicate corresponding to the concrete heap, including address and held-type readings.",
+      "approach": "Separate heap-store representation from primitive stepping; decompose after adapter selection.",
+      "sources": [
+        "theories/XHeapC.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "H05",
+      "group": "H",
+      "title": "Public heap empty/weakening laws",
+      "requires": [
+        "H04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The public default heap predicate has the required empty-heap and weakening properties.",
+      "approach": "Transport existing concrete heap_empty and heap_mono.",
+      "sources": [
+        "theories/XHeapC.v",
+        "theories/DefaultRuntime.v"
+      ]
+    },
+    {
+      "id": "H06",
+      "group": "H",
+      "title": "Public GC/cast heap laws",
+      "requires": [
+        "H04",
+        "L06"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Allocation, dereference, updates and checked casts satisfy public gc_pre/gc_post and heap preservation.",
+      "approach": "Establish held-type predicate conversion; split allocation/read/write/cast if it is not a uniform transport.",
+      "sources": [
+        "theories/XHeapC.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "H07",
+      "group": "H",
+      "title": "Assemble default-interface laws",
+      "requires": [
+        "H02",
+        "H03",
+        "H05",
+        "H06"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The chosen default interface satisfies every public interface_laws conjunct for every program view.",
+      "approach": "Assemble primitive, unsupported, non-GC and GC laws.",
+      "sources": [
+        "theories/DefaultRuntime.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T01",
+      "group": "T",
+      "title": "Internal typed-runtime safety",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "typed_runtime_program implies that internal run_main never returns XErr.",
+      "approach": "Existing proof; no assertion that all accepted programs have certificates.",
+      "sources": [
+        "theories/XElabTyped.v"
+      ],
+      "witness": "typed_runtime_never_err"
+    },
+    {
+      "id": "T02",
+      "group": "T",
+      "title": "Fix public runtime invariant",
+      "requires": [],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Define public typing/provision/store invariants strong enough for safety of all admissible semantic programs.",
+      "approach": "Work directly with Audit judgments and the existing internal safety proof as reference. Do not wait for an executable port, program encoder or whole-model refinement. Scope invariants to the code justified by semantic derivations.",
+      "sources": [
+        "theories/XTyping.v",
+        "theories/XSafety.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T03",
+      "group": "T",
+      "title": "Public type-substitution lemmas",
+      "requires": [
+        "T02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Public typing/grounding admits the substitution and grounding facts required by runtime calls and result exports.",
+      "approach": "Structural proofs over the settled typing and environment judgments.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XTyping.v"
+      ]
+    },
+    {
+      "id": "T04",
+      "group": "T",
+      "title": "Public lookup/provision lemmas",
+      "requires": [
+        "T03"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Typed environments provide correctly typed values, functions, methods and functors at the keys used by execution.",
+      "approach": "Invert the public environment/provision invariant.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XProvision.v"
+      ]
+    },
+    {
+      "id": "T05",
+      "group": "T",
+      "title": "Type basic source elaborations",
+      "requires": [
+        "T04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Public literal, record, tag and basic expression elaboration preserves the new runtime typing invariant.",
+      "approach": "Induct over the corresponding public elaboration rules.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T06",
+      "group": "T",
+      "title": "Type source call elaborations",
+      "requires": [
+        "T04"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Ordinary, method and family-call elaborations yield correctly typed runtime calls.",
+      "approach": "Split call forms, satisfaction maps and generated methods once T02 is fixed.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XBridge.v"
+      ]
+    },
+    {
+      "id": "T07",
+      "group": "T",
+      "title": "Type source bindings/captures",
+      "requires": [
+        "T04"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Public BindItems and provider derivations preserve runtime provision/capture typing.",
+      "approach": "Split the unified binding grammar, closure creation and fresh output exports.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XBridgeCtx.v"
+      ]
+    },
+    {
+      "id": "T08",
+      "group": "T",
+      "title": "Type source control constructs",
+      "requires": [
+        "T04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Match, loop, return and branch elaboration preserve runtime typing and control permissions.",
+      "approach": "Induct over source control rules using the settled frame invariant.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T09",
+      "group": "T",
+      "title": "Type generated providers",
+      "requires": [
+        "T06",
+        "T07"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Lambda, forwarder, wrapper and linked-provider derivations generate typed callable code with correct interfaces.",
+      "approach": "Separate generated-body forms and discharge their closure environments.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/ReifyContracts.v"
+      ]
+    },
+    {
+      "id": "T10",
+      "group": "T",
+      "title": "Derive program/entry invariants",
+      "requires": [
+        "T05",
+        "T06",
+        "T07",
+        "T08",
+        "T09",
+        "T21"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every public ElaboratesIn plus Linked witness establishes runtime code validity and a typed initial entry environment.",
+      "approach": "Assemble the public semantic derivation; cover all admissible programs, not just executable build outputs.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T11",
+      "group": "T",
+      "title": "Generic compatible primitive step",
+      "requires": [
+        "T02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Any compatible interface preserves the public typed result/store invariant for a primitive step.",
+      "approach": "Use Compatible.interface_laws; do not assume the interface is the default host.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T12",
+      "group": "T",
+      "title": "Runtime context extension lemmas",
+      "requires": [
+        "T03",
+        "T04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Grounding and provision typing survive the environment extensions and substitutions used by runtime evaluation.",
+      "approach": "Prove weakening and result-generation extension facts under explicit freshness.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XEnv.v"
+      ]
+    },
+    {
+      "id": "T13",
+      "group": "T",
+      "title": "Preserve basic runtime forms",
+      "requires": [
+        "T12",
+        "T11"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Variables, values, records, tags and primitive expressions preserve the public runtime invariant.",
+      "approach": "Prove evaluator case lemmas conditional on the smaller-fuel induction hypothesis.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XSafety.v"
+      ]
+    },
+    {
+      "id": "T14",
+      "group": "T",
+      "title": "Preserve call execution",
+      "requires": [
+        "T12",
+        "T06"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Function/method calls preserve runtime typing and caller state/environment obligations.",
+      "approach": "Adapt the call cases after argument/callable invariants are fixed; split direct and provision calls if needed.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XSafety.v"
+      ]
+    },
+    {
+      "id": "T15",
+      "group": "T",
+      "title": "Preserve functor bindings",
+      "requires": [
+        "T12",
+        "T07"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Executing unified functor/provider bindings produces correctly typed provision environments.",
+      "approach": "Split closure creation, input application and output-generation exports.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XSafety.v"
+      ]
+    },
+    {
+      "id": "T16",
+      "group": "T",
+      "title": "Preserve captures and exports",
+      "requires": [
+        "T15",
+        "T12"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Captured lexical meanings and caller output generations satisfy runtime invariants after binding/application.",
+      "approach": "Prove capture and fresh-result preservation directly for public runtime environments and bindings; no executable-elaborator or old-model generation repair is a prerequisite.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/InputGenerationRuntime.v"
+      ]
+    },
+    {
+      "id": "T17",
+      "group": "T",
+      "title": "Preserve typed GC stores",
+      "requires": [
+        "T12",
+        "T11"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Public heap operations preserve store typing, checked handles and non-GC state invariants for any compatible interface.",
+      "approach": "Use generic heap laws with the public held-type interpretation, not concrete-host behavior.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XHeap.v"
+      ]
+    },
+    {
+      "id": "T18",
+      "group": "T",
+      "title": "Preserve control-flow signals",
+      "requires": [
+        "T13",
+        "T14"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Match/loop/return/break cases preserve typing and rule out misplaced control signals at the entry boundary.",
+      "approach": "Case analysis using the frame/control permission invariant.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XSafety.v"
+      ]
+    },
+    {
+      "id": "T19",
+      "group": "T",
+      "title": "Close runtime preservation induction",
+      "requires": [
+        "T01",
+        "T13",
+        "T14",
+        "T16",
+        "T17",
+        "T18"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Assemble all public expression/binding/application preservation cases by fuel induction.",
+      "approach": "Port the internal induction pattern, exposing any missing evaluator cases as new tasks.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/XSafety.v"
+      ]
+    },
+    {
+      "id": "T20",
+      "group": "T",
+      "title": "Exclude entry Wrong signals",
+      "requires": [
+        "T19",
+        "T10"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "For an admissible public program and compatible interface, reference run_main cannot yield Stuck or escaping Breaking at any fuel.",
+      "approach": "Apply preservation to the typed entry environment; invert the allowed top-level signals.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "X01",
+      "group": "X",
+      "title": "Exact internal closure agreement",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Compiled closures equal internal run_main when the table equations hold.",
+      "approach": "Existing theorem with explicit table premise.",
+      "sources": [
+        "theories/LazyCloFacts.v"
+      ],
+      "witness": "crun_main_eq"
+    },
+    {
+      "id": "X02",
+      "group": "X",
+      "title": "Conditional optimized agreement",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "The production pruning/fast/closure path agrees with internal reference execution, allowing its stated fuel/stuck exceptions.",
+      "approach": "Existing bound contract, not agreement with public Runs.",
+      "sources": [
+        "theories/LazyOracle.v",
+        "theories/LazyCloFacts.v"
+      ],
+      "witness": "fast_engine_agrees"
+    },
+    {
+      "id": "X03",
+      "group": "X",
+      "title": "Choose interface-parametric engine",
+      "requires": [
+        "A07",
+        "L01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Parameterize the selected common-target engine by the actual supplied public interface and state.",
+      "approach": "Implement the interface strategy chosen at A07 while retaining the measured fast closure path; split remaining primitive dispatch/state operations.",
+      "sources": [
+        "theories/LazyOracle.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "X04",
+      "group": "X",
+      "title": "Simulate basic expression steps",
+      "requires": [
+        "X03",
+        "L02",
+        "L04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Public basic-expression execution and its compiled closures correspond under explicit fuel/environment hypotheses.",
+      "approach": "Prove structural compiler case lemmas, using the common public syntax rather than translating between complete semantic languages.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "X05",
+      "group": "X",
+      "title": "Simulate calls and captures",
+      "requires": [
+        "X03",
+        "L05"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Compiled function/method calls preserve public callable and lexical-capture semantics.",
+      "approach": "Use the selected callable/environment invariant for call entry and return.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "X06",
+      "group": "X",
+      "title": "Simulate functor binding steps",
+      "requires": [
+        "X03",
+        "L05"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Compiled unified binding, functor application and output scopes correspond to public execution.",
+      "approach": "Split closure creation, binding, application and export cases of the chosen compiler.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "X07",
+      "group": "X",
+      "title": "Simulate interface/state operations",
+      "requires": [
+        "L07"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Selected primitive/heap operations produce the same observed result and external state as the supplied public interface.",
+      "approach": "Apply the supplied-interface adapter theorem; retain heap/address conversion obligations only if the selected runtime needs them.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "X08",
+      "group": "X",
+      "title": "Relate observations and results",
+      "requires": [
+        "L06",
+        "X04",
+        "X05",
+        "X06",
+        "X07"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Translated normal/exit/trap/unsupported/wrong signals and states agree with the public observe function.",
+      "approach": "Exhaust the finite signal constructors; keep OutOfFuel as absence of an observation.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "X09",
+      "group": "X",
+      "title": "Forward finite-fuel adequacy",
+      "requires": [
+        "X08",
+        "X13"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every selected-engine result on an admissible public program has a public Runs derivation.",
+      "approach": "Combine common-target compiler correspondence with verified retained transformations and explicit budget translation.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/LazyOracle.v"
+      ]
+    },
+    {
+      "id": "X10",
+      "group": "X",
+      "title": "Reverse finite-fuel adequacy",
+      "requires": [
+        "X08",
+        "X13"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every public Runs derivation for an admissible program is reported by the selected engine at some finite budget.",
+      "approach": "Prove fuel adequacy for the common-target compiler and retained transformations. No reverse encoding into the old program language is required.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/LazyOracle.v"
+      ]
+    },
+    {
+      "id": "X11",
+      "group": "X",
+      "title": "Discharge compiled-table preparation",
+      "requires": [
+        "X01",
+        "L02"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The actual executable preparation supplies the table equations used by agreement, with the OCaml trust boundary stated precisely.",
+      "approach": "Discharge actual preparation equations for compilation from public programs, resolving the OCaml/extraction boundary explicitly; do not assume Prepared as the final guarantee.",
+      "sources": [
+        "theories/ComponentContracts.v",
+        "ocaml/moss_m2.ml"
+      ]
+    },
+    {
+      "id": "X12",
+      "group": "X",
+      "title": "Implement public run wrapper",
+      "requires": [
+        "X03",
+        "X11",
+        "L02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Define run on public programs, supplied interfaces, states and observation budgets using the selected executable path.",
+      "approach": "Compile the public program directly and connect the selected engine/preparer to observe; no old-model program encoder.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Certified.v"
+      ]
+    },
+    {
+      "id": "B01",
+      "group": "B",
+      "title": "Fix public build configuration",
+      "requires": [
+        "A02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Fix the intended prelude and canonical finite-source/path configuration for the public build implementation.",
+      "approach": "Apply the finite-source contract; preserve intended filesystem behavior and explicit error handling.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "B02",
+      "group": "B",
+      "title": "Wire direct public elaboration",
+      "requires": [
+        "F05",
+        "E02",
+        "K09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Implement loading, direct public-program emission and public platform checking as one executable build path.",
+      "approach": "Wire the code before waiting for all soundness proofs, allowing background integration/performance tests.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Parse.v",
+        "theories/Elab.v"
+      ]
+    },
+    {
+      "id": "B03",
+      "group": "B",
+      "title": "Define executable public build",
+      "requires": [
+        "B01",
+        "B02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Supply the real build field of Public.CORRECT, returning None on checked failure and public programs on success.",
+      "approach": "Define the real build function over the selected finite source snapshot, with no arbitrary-budget completeness loophole.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "B04",
+      "group": "B",
+      "title": "Prove default compatibility",
+      "requires": [
+        "K06",
+        "H07"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Public successful platform linkage implies compatibility with the chosen fixed default interface.",
+      "approach": "Combine Ready, full operation support and public interface laws.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/DefaultRuntime.v"
+      ]
+    },
+    {
+      "id": "B05",
+      "group": "B",
+      "title": "Assemble public build soundness",
+      "requires": [
+        "B03",
+        "B04",
+        "E11",
+        "F05"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Build success implies public Builds and default compatibility.",
+      "approach": "Unfold the wrapper and combine loader soundness, public refinement and platform/host facts.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "B06",
+      "group": "B",
+      "title": "Assemble public build completeness",
+      "requires": [
+        "F09",
+        "E12",
+        "K07",
+        "B03"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "A public Builds witness makes the configured build return some program.",
+      "approach": "Compose loader, direct public elaborator and platform-check completeness; no intermediate internal-language completeness or model back-translation.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "G01",
+      "group": "G",
+      "title": "build_sound",
+      "requires": [
+        "B05"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Implement the exact build_sound field of Audit.Public.CORRECT.",
+      "approach": "Bind the assembled proof without changing its public statement.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "G02",
+      "group": "G",
+      "title": "build_complete",
+      "requires": [
+        "B06"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Implement the exact build_complete field of Audit.Public.CORRECT.",
+      "approach": "Bind the assembled proof; only existential output, not equality with an arbitrary witness, is promised.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "G03",
+      "group": "G",
+      "title": "run_sound",
+      "requires": [
+        "X09",
+        "X12",
+        "X14"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Implement the exact run_sound field for admissible programs and compatible interfaces.",
+      "approach": "Connect the wrapper to forward execution adequacy.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "G04",
+      "group": "G",
+      "title": "run_complete",
+      "requires": [
+        "X10",
+        "X12",
+        "X14"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Implement the exact run_complete field with existential observation budget.",
+      "approach": "Connect the wrapper to reverse execution adequacy.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "G05",
+      "group": "G",
+      "title": "safety",
+      "requires": [
+        "T20"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Implement semantic safety: Admissible and Compatible imply no Runs result is Wrong.",
+      "approach": "Unfold Runs and observe, then contradict reference entry signal safety. This has no executable build/run prerequisite.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "A01",
+      "group": "A",
+      "title": "Specify finite-source contract",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Specify an explicit finite source snapshot, canonical path lookup and the intended Builds/build signatures, including how the executable receives its finite inventory.",
+      "approach": "Retain the five public obligations and intended finite-filesystem meaning. Record the exact proposed type/loader changes before implementing them.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Parse.v"
+      ]
+    },
+    {
+      "id": "A02",
+      "group": "A",
+      "title": "Implement finite-source lookup",
+      "requires": [
+        "A01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Implement the selected source representation and read adapter; establish lookup, uniqueness and finite-inventory facts without silently imposing arbitrary fuel caps.",
+      "approach": "Keep ordinary lexing/parsing shared. Split source constructors, path handling and loader adapter proofs after A01 fixes their statements.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Parse.v"
+      ]
+    },
+    {
+      "id": "A03",
+      "group": "A",
+      "title": "Prototype common semantic target",
+      "requires": [
+        "P01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Produce a precise direct-Audit elaborator target and runtime-lowering boundary, with a checked representative operation and capture/output-generation/GC-cast behavior evidence.",
+      "approach": "Use the difficult functor examples to test the boundary. This is a bounded architectural experiment, not a promise to port the entire elaborator in two hours. If incomplete, report the obstruction at the checkpoint.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/AuditRepresentation.v",
+        "../tests/regressions/functor_input_output_generations.moss",
+        "../tests/regressions/functor_output_generation_cast.moss"
+      ]
+    },
+    {
+      "id": "A04",
+      "group": "A",
+      "title": "Measure current bootstrap baseline",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Record source/executable hashes, elapsed time and compiler fixpoint for the current production pipeline on the local x86 VM, or a measured timeout/failure.",
+      "approach": "Run in the background with a one-hour cap. Earlier checkpoint timings are reference evidence, not measurements of current main.",
+      "sources": [
+        "../flake.nix",
+        "ocaml/moss_m2.ml"
+      ]
+    },
+    {
+      "id": "A05",
+      "group": "A",
+      "title": "Set up engine configuration comparison",
+      "requires": [
+        "X01",
+        "X02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Specify reproducible comparisons of the closure engine with optional fast-path/pruning passes enabled or disabled, including common inputs and expected results.",
+      "approach": "Use MOSS_FASTPATH/MOSS_PRUNE controls; distinguish exact closure agreement from outer optimization exceptions. Prepare capped background runs.",
+      "sources": [
+        "ocaml/moss_m2.ml",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "A06",
+      "group": "A",
+      "title": "Measure candidate engine configurations",
+      "requires": [
+        "A05"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Collect timed fixpoint/regression results, or explicit capped failures, for the candidate production configurations.",
+      "approach": "Run the expensive measurements in the background. Decompose the candidate matrix if it exceeds the checkpoint; no successful timing is presumed.",
+      "sources": [
+        "../flake.nix",
+        "ocaml/moss_m2.ml"
+      ]
+    },
+    {
+      "id": "A07",
+      "group": "A",
+      "title": "Choose measured implementation boundary",
+      "requires": [
+        "A03",
+        "A04",
+        "A06"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Choose the common public program target, exact lowering/closure boundary and required optimization passes using prototype and performance evidence.",
+      "approach": "Prefer the simplest measured viable configuration, retain the fast closure engine, and identify proof obligations of every retained transformation. X14 later validates the fully integrated pipeline.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LazyCloFacts.v",
+        "../flake.nix"
+      ]
+    },
+    {
+      "id": "E01",
+      "group": "E",
+      "title": "Interpret metadata in the public world",
+      "requires": [
+        "S01",
+        "A03"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Define the direct executable metadata/context reading into Audit worlds, using shared source syntax and one source-symbol reading.",
+      "approach": "Reuse unchanged declaration/scope/requirement facts; isolate public type/context differences without a second whole-program elaboration model.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/WorldSound.v"
+      ]
+    },
+    {
+      "id": "E02",
+      "group": "E",
+      "title": "Emit public programs directly",
+      "requires": [
+        "A03",
+        "E01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Make executable elaboration emit Audit programs, expressions and unified bindings, retaining implementation metadata needed for checks.",
+      "approach": "Port emission by constructor, starting with the prototype. Preserve CLI/tests while keeping the semantic target fixed.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v"
+      ]
+    },
+    {
+      "id": "E03",
+      "group": "E",
+      "title": "Prove direct contexts/basic expressions",
+      "requires": [
+        "E02",
+        "E01",
+        "S02"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Successful direct context/basic-expression operations implement the public elaboration rules, with explicit smaller-fuel hypotheses for recursive cases.",
+      "approach": "Port reusable component lemmas; decompose by source constructor. E11 must discharge all project callbacks in the global induction.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/BodyPending.v"
+      ]
+    },
+    {
+      "id": "E04",
+      "group": "E",
+      "title": "Prove direct call elaboration",
+      "requires": [
+        "E03"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Ordinary, method and family calls emitted by the executable satisfy the corresponding public judgments.",
+      "approach": "Port call lookup, satisfaction maps and demand cases directly to Audit; keep induction hypotheses explicit.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/CallDefinedAny.v"
+      ]
+    },
+    {
+      "id": "E05",
+      "group": "E",
+      "title": "Prove unified source bindings",
+      "requires": [
+        "E03"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Successful ordinary/provider bindings implement the public unified binding judgments under explicit recursive hypotheses.",
+      "approach": "Split value/type/method/lambda/functor cases. Capture/output cases are supplied by E06-E08.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/BindMethodExec.v"
+      ]
+    },
+    {
+      "id": "E06",
+      "group": "E",
+      "title": "Implement lexical capture/generation repair",
+      "requires": [
+        "E02",
+        "S06",
+        "S07",
+        "S08",
+        "S09",
+        "S10"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Actual public-target elaboration preserves lexical captures, fixed inputs and fresh outputs, including the known merged-input/output case.",
+      "approach": "Reuse private-generation preparations and the separate result-transfer repair. Integrate only what the direct public rules require; prove concrete receipts.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "../tests/regressions/functor_input_output_generations.moss"
+      ]
+    },
+    {
+      "id": "E13",
+      "group": "E",
+      "title": "Read public promised outputs",
+      "requires": [
+        "E05",
+        "E06",
+        "S03"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Actual fresh-link execution supplies the public promised-result reading at the target inputs and fresh output generations.",
+      "approach": "Adapt the existing output-reading lemmas directly to the selected public emission invariant.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LinkOutputProvide.v"
+      ]
+    },
+    {
+      "id": "E14",
+      "group": "E",
+      "title": "Prove public output availability",
+      "requires": [
+        "E13"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Every promised fresh-link key is provided at its correct post-body meaning.",
+      "approach": "Port checked output-presence reasoning and discharge its concrete key-reading premises.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LinkOutputPresence.v"
+      ]
+    },
+    {
+      "id": "E15",
+      "group": "E",
+      "title": "Prove public method refiling",
+      "requires": [
+        "E14"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Actual method aliases/refiling match the public renamed promised output keys.",
+      "approach": "Use the fixed public generation reading to prove the alias equality.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LinkOutputRefile.v"
+      ]
+    },
+    {
+      "id": "E16",
+      "group": "E",
+      "title": "Prove public result header",
+      "requires": [
+        "E13"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The emitted public result telescope agrees with declared outputs under the chosen fresh generations.",
+      "approach": "Port allocation/index/header reasoning without adding a whole-program representation layer.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LinkOutputIndex.v"
+      ]
+    },
+    {
+      "id": "E07",
+      "group": "E",
+      "title": "Assemble direct fresh-link validity",
+      "requires": [
+        "E13",
+        "E14",
+        "E15",
+        "E16"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Actual fresh-linked code satisfies public LinkBody, retaining only the ordinary induction/invariant premises.",
+      "approach": "Assemble promised reading, availability, aliases and emitted header.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LinkBodySound.v"
+      ]
+    },
+    {
+      "id": "E08",
+      "group": "E",
+      "title": "Prove direct cached/provider reuse",
+      "requires": [
+        "E07",
+        "E06",
+        "S04",
+        "S05"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Reusing cached generated bodies preserves the public link/provider judgments and their lexical generation readings.",
+      "approach": "Reuse authenticated creator/final-row facts where applicable; prove semantic validity directly in the public model.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LinkCacheInvariant.v"
+      ]
+    },
+    {
+      "id": "E09",
+      "group": "E",
+      "title": "Prove direct main/platform emission",
+      "requires": [
+        "E02",
+        "E03"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The actual emitted main, initial semantic provisions and Bool reading meet the public elaboration relation.",
+      "approach": "Adapt actual main/frame/Bool receipts to public program fields; keep executable platform checking separate.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/MainProgramTrace.v",
+        "theories/MainProgramBool.v"
+      ]
+    },
+    {
+      "id": "E17",
+      "group": "E",
+      "title": "Cover direct ordinary function bodies",
+      "requires": [
+        "E03",
+        "E04",
+        "S29"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every defined source function has a public function-elaboration receipt in the final program, under explicit global induction premises.",
+      "approach": "Port completed-body coverage and final lookup transport; keep final-state obligations visible.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/FnCompleted.v",
+        "theories/FnElabExec.v"
+      ]
+    },
+    {
+      "id": "E18",
+      "group": "E",
+      "title": "Cover direct generated provider bodies",
+      "requires": [
+        "E04",
+        "E05",
+        "E08"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Generated lambda, wrapper, forwarder and linked bodies have final public elaboration receipts.",
+      "approach": "Inventory emission forms and split their coverage proofs rather than assuming a generated-body callback.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/FinalLambdas.v",
+        "theories/FinalForwarders.v"
+      ]
+    },
+    {
+      "id": "E10",
+      "group": "E",
+      "title": "Assemble direct final-state coverage",
+      "requires": [
+        "E17",
+        "E18",
+        "E09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "One final public program/world contains all required source/generated body and initial-environment receipts.",
+      "approach": "Assemble coverage and monotonic final-table facts under clearly stated smaller-fuel assumptions.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/FunctionFrameProgram.v"
+      ]
+    },
+    {
+      "id": "E11",
+      "group": "E",
+      "title": "Close direct public elaboration soundness",
+      "requires": [
+        "E03",
+        "E04",
+        "E05",
+        "E07",
+        "E08",
+        "E10"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks.",
+      "approach": "Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v"
+      ]
+    },
+    {
+      "id": "E12",
+      "group": "E",
+      "title": "Direct public elaboration completeness",
+      "requires": [
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "E02"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every public-buildable bundle is accepted by direct elaboration, with the implementation fresh names permitted by the public contract.",
+      "approach": "Assemble backward rule proofs and justified resource bounds, including the direct entry environment.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v"
+      ]
+    },
+    {
+      "id": "L01",
+      "group": "L",
+      "title": "Specify selected runtime lowering",
+      "requires": [
+        "A07",
+        "X01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Fix the closure/lowering relation from public runtime code to the selected fast representation, including all valid-domain premises.",
+      "approach": "Keep a single semantic language. Any numeric IDs/maps/caches are local implementation choices with explicit correspondence lemmas.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "L02",
+      "group": "L",
+      "title": "Compile public expressions/bindings",
+      "requires": [
+        "L01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Implement selected closure compilation directly from public expressions and unified bindings.",
+      "approach": "Port constructors and callable tables; split nonstructural lowering operations after L01 fixes the representation.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LazyClo.v"
+      ]
+    },
+    {
+      "id": "L03",
+      "group": "L",
+      "title": "Define fast environment invariant",
+      "requires": [
+        "L01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Relate fast provision/type/local environments and caches to the public environments without a whole-program model translation.",
+      "approach": "Specify map lookup, deferred substitutions and captured environments separately.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LazyEnvFacts.v"
+      ]
+    },
+    {
+      "id": "L04",
+      "group": "L",
+      "title": "Prove fast environment operations",
+      "requires": [
+        "L03"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Selected lookup, append, instantiation and grounding operations preserve the public environment relation.",
+      "approach": "Adapt existing map/deferred-substitution lemmas to the selected representation.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LazyEnvFacts.v"
+      ]
+    },
+    {
+      "id": "L05",
+      "group": "L",
+      "title": "Prove callable captures/exports",
+      "requires": [
+        "L02",
+        "L04"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Compiled closures retain public lexical captures, callable input interfaces and output-generation exports.",
+      "approach": "Split closure creation, call entry and result export; this proof concerns public runtime behavior, independently of executable build success.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "L06",
+      "group": "L",
+      "title": "Relate runtime values/cast metadata",
+      "requires": [
+        "L01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Selected value/address/cast encodings preserve public value shapes and metadata lookups, or are proved identity where representations are shared.",
+      "approach": "Prove only conversions actually retained after A07; split checked-handle and record cases if necessary.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/AuditRepresentation.v"
+      ]
+    },
+    {
+      "id": "L07",
+      "group": "L",
+      "title": "Prove supplied-interface adapter",
+      "requires": [
+        "L06",
+        "X03"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The engine adapter invokes the same supplied interface and preserves its values, outcomes and external state.",
+      "approach": "Prove actual call correspondence for arbitrary compatible interfaces; typed signatures alone are insufficient.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/DefaultRuntime.v"
+      ]
+    },
+    {
+      "id": "K09",
+      "group": "K",
+      "title": "Implement public platform checker",
+      "requires": [
+        "A02",
+        "E01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Implement finite checks for public Linked using the same source world as direct elaboration.",
+      "approach": "Keep executable checker construction separate from its soundness/completeness proofs so runtime benchmarking can start early.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T21",
+      "group": "T",
+      "title": "Type semantic platform initialization",
+      "requires": [
+        "T02",
+        "T04"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Public Platform.Linked and the source context establish the typing of the semantic initial provisions and primitive families.",
+      "approach": "Invert the declarative platform rules. This proof does not require an executable platform checker or the concrete default-host implementation.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "X13",
+      "group": "X",
+      "title": "Verify retained optional transformations",
+      "requires": [
+        "A07",
+        "X02",
+        "T20"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The exact retained fast-path/pruning configuration preserves the observations needed by public run soundness and completeness.",
+      "approach": "Omitted passes need no port. For retained passes, adapt existing proofs and discharge fuel/stuck exceptions. If no passes are needed, prove the identity configuration.",
+      "sources": [
+        "theories/FastPath.v",
+        "theories/Prune.v",
+        "theories/LazyCloFacts.v"
+      ]
+    },
+    {
+      "id": "X14",
+      "group": "X",
+      "title": "Validate integrated one-hour bootstrap",
+      "requires": [
+        "A07",
+        "X12",
+        "B03",
+        "H01"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The fully integrated selected public-target pipeline bootstraps the pinned compiler to a matching fixpoint within one hour on the local x86 VM.",
+      "approach": "Record source/executable/configuration hashes and timings. This is a release/performance gate, not a premise added to the logical theorem. Run in the background and investigate a capped failure.",
+      "sources": [
+        "../flake.nix",
+        "ocaml/moss_m2.ml"
+      ]
+    }
+  ],
+  "superseded": [
+    {
+      "id": "F06",
+      "group": "F",
+      "title": "Resolve source / termination policy",
+      "requires": [],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Determine whether total build over a functional source map can meet unconditional completeness, including arbitrarily long import chains. Produce a justified algorithm/input contract or an explicit obstruction requiring a reviewed decision.",
+      "approach": "Analyze finite bundle witnesses versus the executable ability to discover a finite source. Do not silently restrict the public theorem.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Parse.v"
+      ],
+      "replaced_by": [
+        "A01",
+        "A02"
+      ],
+      "superseded_reason": "Finite source snapshots are the selected direction; replace the open-ended source-policy search with an explicit contract and implementation."
+    },
+    {
+      "id": "F15",
+      "group": "F",
+      "title": "Internal elaboration completeness",
+      "requires": [
+        "F10",
+        "F13",
+        "F14"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Implement COMPLETE.elaborate_complete for the internal elaboration relation.",
+      "approach": "Assemble world, bodies and initial environment; resolve remaining representation/renaming issues before estimating the assembly.",
+      "sources": [
+        "theories/ComponentContracts.v"
+      ],
+      "replaced_by": [
+        "E12",
+        "B06"
+      ],
+      "superseded_reason": "Prove completeness directly for the public elaborator instead of completing internal elaboration and then a second model bridge."
+    },
+    {
+      "id": "F16",
+      "group": "F",
+      "title": "Public build witness coverage",
+      "requires": [
+        "F15",
+        "P16"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "A public Builds witness yields a bundle and executable elaboration that will pass the public adapter/checks, possibly returning a differently named program.",
+      "approach": "Compose reverse representation with elaborator completeness. Do not assume exact equality with an arbitrary witness program.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/ComponentContracts.v"
+      ],
+      "replaced_by": [
+        "E12",
+        "B06"
+      ],
+      "superseded_reason": "Prove completeness directly for the public elaborator instead of completing internal elaboration and then a second model bridge."
+    },
+    {
+      "id": "P02",
+      "group": "P",
+      "title": "Choose concrete representation",
+      "requires": [
+        "P01",
+        "P18",
+        "P19",
+        "P20"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Fix collision-free field/machine encodings, heap addresses and scope hypotheses for a concrete representation.",
+      "approach": "Check coverage and fresh-name requirements before defining whole-code translation.",
+      "sources": [
+        "theories/AuditRepresentation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P03",
+      "group": "P",
+      "title": "Substitution commutes",
+      "requires": [
+        "P02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Represented types remain represented after related substitutions, under explicit domain/closedness conditions.",
+      "approach": "Structural induction on the chosen representation relation.",
+      "sources": [
+        "theories/AuditRepresentation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P04",
+      "group": "P",
+      "title": "Grounding commutes",
+      "requires": [
+        "P03"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Internal type grounding/normalization agrees with public ground on related environments.",
+      "approach": "Lift substitution correspondence through lookup and canonicalization.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P05",
+      "group": "P",
+      "title": "Keys and provision lookup agree",
+      "requires": [
+        "P03"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Translated keys preserve the provision lookup and matching operations actually used by calls/bindings.",
+      "approach": "Prove key translation and lookup lemmas separately from dynamic execution.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/KeyTranslation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P06",
+      "group": "P",
+      "title": "Value shape correspondence",
+      "requires": [
+        "P02",
+        "P04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Represented values preserve and reflect the relevant public value_shape predicates, including records and checked handles.",
+      "approach": "Induct on value representation using fixed machine/layout readings.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P07",
+      "group": "P",
+      "title": "Define environment/capture relation",
+      "requires": [
+        "P05",
+        "P06"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Specify nonvacuous relations for type meanings, provisions, locals and captured environments.",
+      "approach": "Resolve old combined entries versus separate public environments; expose all validity premises.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/ExecutionModel.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P08",
+      "group": "P",
+      "title": "Environment operations commute",
+      "requires": [
+        "P07",
+        "P04"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Lookup, append and instantiate on related environments agree.",
+      "approach": "Use P04/P05 pointwise; keep capture behavior for P09.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P09",
+      "group": "P",
+      "title": "Lexical capture correspondence",
+      "requires": [
+        "P08",
+        "S14",
+        "S15"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Captured public meanings agree with the integrated internal saved generations through later rebinding.",
+      "approach": "Resolve semantic differences in lexical capture before stating a complete binding translation.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P10",
+      "group": "P",
+      "title": "Translate expressions and bindings",
+      "requires": [
+        "P09"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Define a structural code relation covering all expression forms, unified bindings and exact literal expansions.",
+      "approach": "Inventory constructor mismatches; split any nonstructural transformations into new tasks.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v",
+        "theories/ExecutionModel.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P11",
+      "group": "P",
+      "title": "Translate program code tables",
+      "requires": [
+        "P10",
+        "S34"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Relate function/functor bodies, fresh input/output interfaces and generated code tables as whole programs.",
+      "approach": "Connect structural translation to actual final emission rather than arbitrary paired tables.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/ExecutionModel.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P12",
+      "group": "P",
+      "title": "Translate cast metadata",
+      "requires": [
+        "P02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Internal cast/type representation metadata yields the exact public cast specifications.",
+      "approach": "Prove correspondence of Ref/Array held types and handles under the chosen layout.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P13",
+      "group": "P",
+      "title": "Relate source worlds",
+      "requires": [
+        "S01",
+        "P02"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Translate the executable world to the public source world with the same declarations, shadowing, requirements and field reading.",
+      "approach": "Reuse shared syntax and internal reading proofs; isolate changed semantic fields.",
+      "sources": [
+        "theories/WorldSound.v",
+        "theories/AuditRepresentation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P14",
+      "group": "P",
+      "title": "Public elaboration refinement",
+      "requires": [
+        "P11",
+        "P13",
+        "K06"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Successful internal elaboration translates to public ElaboratesIn and Linked in one shared world.",
+      "approach": "Transport each changed elaboration judgment; this large gap needs further constructor-level decomposition.",
+      "sources": [
+        "theories/AuditRepresentation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P15",
+      "group": "P",
+      "title": "Construct public programs",
+      "requires": [
+        "P11",
+        "P12",
+        "P13"
+      ],
+      "status": "partial",
+      "budget": "unknown",
+      "goal": "Implement a deterministic raw-to-public program adapter, including code, initial environment and cast metadata.",
+      "approach": "Give its success theorem under the representation invariants; audit required metadata not retained by raw code.",
+      "sources": [
+        "theories/AuditRepresentation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P16",
+      "group": "P",
+      "title": "Reverse representation / fresh names",
+      "requires": [
+        "P10",
+        "P13",
+        "F15"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Establish representation coverage for declaratively buildable public programs, with an explicit fresh-name equivalence.",
+      "approach": "Determine what must be preserved exactly and what the existential build-completeness result permits renaming.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P17",
+      "group": "P",
+      "title": "Encode public programs for execution",
+      "requires": [
+        "P16",
+        "P11",
+        "P15"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Implement the public-to-engine code/environment encoding needed to run any admissible public program, with a proved round-trip relation.",
+      "approach": "Existential representation alone does not give an executable encoder. Split code, metadata and environment construction.",
+      "sources": [
+        "theories/AuditRepresentation.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P18",
+      "group": "P",
+      "title": "Finite field-name interning",
+      "requires": [
+        "P01"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Given a finite field-name list, construct a field_names table with unique names/numbers and lookup coverage for every listed field.",
+      "approach": "Deduplicate names, enumerate with a fresh natural interval, and prove NoDup and lookup facts.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P19",
+      "group": "P",
+      "title": "Fresh machine-head allocation",
+      "requires": [
+        "P01"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Given a finite reserved-symbol set, allocate the six machine heads injectively, nonzero and disjoint from that set.",
+      "approach": "Choose a base above the maximum reserved symbol, enumerate machine constructors, and prove the arithmetic bounds.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "P20",
+      "group": "P",
+      "title": "Injective heap-address encoding",
+      "requires": [
+        "P01"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Provide a concrete int-to-natural heap_address function and prove it injective.",
+      "approach": "Use the primitive integer numeric embedding and its inverse/nonnegativity properties.",
+      "sources": [
+        "theories/AuditRepresentation.v",
+        "theories/Audit.v"
+      ],
+      "replaced_by": [
+        "A03",
+        "L01",
+        "L02",
+        "L03",
+        "L06"
+      ],
+      "superseded_reason": "Replace whole-program two-model/reflection work with direct public emission and a selected runtime lowering/closure boundary. Optional numeric encodings are chosen after measurement."
+    },
+    {
+      "id": "S11",
+      "group": "S",
+      "title": "Fix integration invariant",
+      "requires": [
+        "S06",
+        "S07",
+        "S08",
+        "S09"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Settle an invariant separating rigid private input generations, mutable source names and emitted result keys through actual link execution.",
+      "approach": "Use the merged-input/output Moss reproducer and the existing preparatory helpers; turn each unresolved invariant into child tasks.",
+      "sources": [
+        "theories/InputGenerationPlan.v",
+        "../tests/regressions/functor_input_output_generations.moss"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S12",
+      "group": "S",
+      "title": "Install private input frames",
+      "requires": [
+        "S11"
+      ],
+      "status": "partial",
+      "budget": "unknown",
+      "goal": "Actual link_body allocates and enters private input/capture frames while preserving source lookup and argument labels.",
+      "approach": "Integrate the established invariant. The abandoned branch is useful material, not a finished proof on main.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/InputGenerationRuntime.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S13",
+      "group": "S",
+      "title": "Transport fixed types and captures",
+      "requires": [
+        "S12",
+        "S08"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Entry transfers preserve fixed-input equations and captured-value type checks after canonicalization.",
+      "approach": "Apply scope/merge lemmas to the integrated frame and its concrete transfer maps.",
+      "sources": [
+        "theories/LinkCaptureSound.v",
+        "theories/FunctorClosureCapture.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S14",
+      "group": "S",
+      "title": "Preserve runtime private captures",
+      "requires": [
+        "S13",
+        "S09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The integrated capture transfer instantiates private_capture_grounding_survives_caller_rebinding.",
+      "approach": "Discharge the helper theorem premises from execution receipts.",
+      "sources": [
+        "theories/InputGenerationRuntime.v",
+        "theories/Elab.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S15",
+      "group": "S",
+      "title": "Read saved output generations once",
+      "requires": [
+        "S12",
+        "S10"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Fixed-input and output meanings are resolved simultaneously without re-reading saved generations as rebound source names.",
+      "approach": "Connect integrated result/refiling maps to saved generation meanings; retain the GC and shadowing regressions.",
+      "sources": [
+        "theories/LinkOutputContext.v",
+        "theories/LinkOutputSubst.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S16",
+      "group": "S",
+      "title": "Restore mapped-engine agreement",
+      "requires": [
+        "S14",
+        "S15"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Any runtime changes required by private frames retain exact mapped-interpreter agreement, or establish that those semantics are unchanged.",
+      "approach": "Inspect the final integration delta, then split by affected environment operation/engine.",
+      "sources": [
+        "theories/FastX.v",
+        "theories/LazyInterpFacts.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S17",
+      "group": "S",
+      "title": "Restore compiled-engine agreement",
+      "requires": [
+        "S16"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The compiled closure engines retain their existing agreement statements after integration.",
+      "approach": "Reuse unchanged lemmas or split repairs by compiled environment operation; no weaker contract.",
+      "sources": [
+        "theories/LazyCloFacts.v",
+        "theories/CachedCloFacts.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S18",
+      "group": "S",
+      "title": "Preserve internal runtime safety",
+      "requires": [
+        "S14",
+        "S15"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "The existing core/heap safety contracts remain valid after integrated generation changes.",
+      "approach": "Determine whether execution semantics change; isolate any new preservation cases rather than assume them.",
+      "sources": [
+        "theories/XSafety.v",
+        "theories/XEnv.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S19",
+      "group": "S",
+      "title": "Read promised link outputs",
+      "requires": [
+        "S15",
+        "S03"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Construct the ProvideResult clause of link_output_certificate from actual execution.",
+      "approach": "Use the target input context and fresh result-generation reading.",
+      "sources": [
+        "theories/LinkBodySound.v",
+        "theories/LinkOutputProvide.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S20",
+      "group": "S",
+      "title": "Prove output-key availability",
+      "requires": [
+        "S19"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Every promised output key is provided at its post-body meaning, the second certificate clause.",
+      "approach": "Connect checked_body_outputs_provided to the exact renamed certificate keys.",
+      "sources": [
+        "theories/LinkOutputPresence.v",
+        "theories/LinkBodySound.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S21",
+      "group": "S",
+      "title": "Prove method refiling agreement",
+      "requires": [
+        "S20"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Actual link_trace_rebinds equals declarative refile for the renamed promised output keys.",
+      "approach": "Use output-role and alias/refiling lemmas after generation readings are fixed.",
+      "sources": [
+        "theories/LinkOutputRefile.v",
+        "theories/LinkBodySound.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S22",
+      "group": "S",
+      "title": "Prove emitted telescope agreement",
+      "requires": [
+        "S19"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Actual emitted result items equal the certificate telescope under output renaming.",
+      "approach": "Apply output-role/index/header lemmas to the final allocated generation map.",
+      "sources": [
+        "theories/LinkOutputIndex.v",
+        "theories/LinkOutputRoles.v",
+        "theories/LinkBodySound.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S23",
+      "group": "S",
+      "title": "Discharge fresh-link certificate",
+      "requires": [
+        "S19",
+        "S20",
+        "S21",
+        "S22"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Construct all four result-stage clauses and obtain LinkBody from fresh execution, retaining only ordinary induction/invariant premises.",
+      "approach": "Apply prepared_link_body_sound to the constructed certificate.",
+      "sources": [
+        "theories/LinkBodySound.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S24",
+      "group": "S",
+      "title": "Transport historical link readings",
+      "requires": [
+        "S04",
+        "S23"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "A cached creator keeps the same source world and saved generation readings at reuse.",
+      "approach": "Prove the historical-to-current context/lookup transport from provenance receipts.",
+      "sources": [
+        "theories/LinkHistoryRead.v",
+        "theories/LinkCacheInvariant.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S25",
+      "group": "S",
+      "title": "Prove cached LinkBody validity",
+      "requires": [
+        "S24",
+        "S05"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The cached branch returns code satisfying LinkBody at the current use.",
+      "approach": "Combine transported fresh validity with final-row lookup agreement.",
+      "sources": [
+        "theories/LinkCacheInvariant.v",
+        "theories/FunctorRowsProgram.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S26",
+      "group": "S",
+      "title": "Finish functor-closure binding",
+      "requires": [
+        "S13",
+        "S23",
+        "S25"
+      ],
+      "status": "partial",
+      "budget": "hour",
+      "goal": "Accepted abstract-to-defined closure bindings satisfy FunctorClosureStep with actual captures and linked bodies.",
+      "approach": "Assemble existing closure execution/capture receipts and fresh/cached link validity.",
+      "sources": [
+        "theories/FunctorClosureExec.v",
+        "theories/FunctorClosureCapture.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S27",
+      "group": "S",
+      "title": "Discharge residual binding callback",
+      "requires": [
+        "S26"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Derive NonMethodRemainingBindStep without assuming the functor-closure case.",
+      "approach": "Apply remaining_bindings_are_functor_closures to S26.",
+      "sources": [
+        "theories/FunctorRemainingDispatch.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S28",
+      "group": "S",
+      "title": "Close mutual body induction",
+      "requires": [
+        "S02",
+        "S27"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Obtain unconditional body soundness with the remaining callback discharged at smaller fuel.",
+      "approach": "Audit the OneStep/OK/Pending knot and close it by fuel induction; split any newly exposed callbacks.",
+      "sources": [
+        "theories/BodyPending.v",
+        "theories/BodySoundCore.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S30",
+      "group": "S",
+      "title": "Establish final-state invariants",
+      "requires": [
+        "S28",
+        "S04",
+        "S05"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "All historical function/provider receipts satisfy Later and final-body lookup agreement for one final program/world.",
+      "approach": "Separate monotonic table preservation from semantic obligations; resolve generated-code cases explicitly.",
+      "sources": [
+        "theories/ElabFrame.v",
+        "theories/InfoPreserve.v",
+        "theories/FinalLinks.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S31",
+      "group": "S",
+      "title": "Cover ordinary function bodies",
+      "requires": [
+        "S29",
+        "S30"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Every defined source function has a final FnElab witness.",
+      "approach": "Combine actual completed-source-body coverage with conditional function assembly.",
+      "sources": [
+        "theories/FnCompleted.v",
+        "theories/FnElabExec.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S32",
+      "group": "S",
+      "title": "Cover generated provider bodies",
+      "requires": [
+        "S30",
+        "S28"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Every demanded lambda, wrapper and forwarder used by the source proof has its final body receipt and typing/elaboration judgment.",
+      "approach": "Inventory the generated-body cases before splitting the remaining coverage proofs.",
+      "sources": [
+        "theories/FinalLambdas.v",
+        "theories/FinalForwarders.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S33",
+      "group": "S",
+      "title": "Assemble main and Bool reading",
+      "requires": [
+        "S31",
+        "S30"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Main lookup, initial provisions, entry signature and Bool symbols satisfy the whole-program relation.",
+      "approach": "Use actual main-program trace, frame and Bool theorems against the common final world.",
+      "sources": [
+        "theories/MainProgramTrace.v",
+        "theories/MainProgramBool.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    },
+    {
+      "id": "S34",
+      "group": "S",
+      "title": "Internal elaboration soundness",
+      "requires": [
+        "S28",
+        "S31",
+        "S32",
+        "S33",
+        "S16",
+        "S17",
+        "S18"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Successful internal elaboration implies ExecutionModel.Elaboration.Elaborates.",
+      "approach": "Assemble the world, all functions and entry environment; bind COMPLETE.elaborate_sound.",
+      "sources": [
+        "theories/ComponentContracts.v"
+      ],
+      "replaced_by": [
+        "E06",
+        "E07",
+        "E08",
+        "E11"
+      ],
+      "superseded_reason": "Adapt useful components directly to public emission; the old whole-internal-elaboration proof is not a required intermediate milestone."
+    }
+  ],
+  "strategy": {
+    "decisions": [
+      "Build from an explicit finite source snapshot. A01/A02 specify and implement the contract; this commit changes the plan, not the source type.",
+      "Make Audit the common semantic target. Executable elaboration emits public programs directly; selected runtime lowering compiles that representation to the fast engine.",
+      "Preserve the fast closure engine and measure which optional optimizations are required. Choose the exact boundary/configuration after the bounded prototype and background benchmarks.",
+      "Prove semantic safety directly against Audit. It can proceed independently of executable migration, host implementation and build/run agreement.",
+      "Defer certificate-producing elaboration and the optional staged immutable-lowering candidate. Reconsider them only if evidence favors that route."
+    ],
+    "checkpoint": "At two hours of active work, report the finite-source proposal, the precise common-target/lowering proposal and checked prototype operation or remaining obstruction, background bootstrap results/status, and the next concrete proof frontier. A checkpoint is not a promise to finish every architecture task; do not silently extend it.",
+    "performance": "Every local bootstrap run has a one-hour cap and runs in the background. Candidate timeouts are evidence for configuration selection; X14 must eventually pass for the fully integrated pipeline. Keep quiet full Rocq compilation around two minutes and use incremental checks during proof development."
+  }
+}
