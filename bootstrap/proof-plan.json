@@ -2186,7 +2186,8 @@
         "E07",
         "E08",
         "E10",
-        "E21"
+        "E21",
+        "E22"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2564,6 +2565,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/duplicate-field-binder.moss"
+        ]
+      }
+    },
+    {
+      "id": "E22",
+      "group": "E",
+      "title": "Count while-condition breaks",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators (Elab.v and src/) treat a break in a while condition as leaving the enclosing loop, as Audit's StmtBreaks now does, with a regression test.",
+      "approach": "Extend has_break_s (Elab.v) and the self-hosted equivalent; until then `loop { while break {} }` is accepted at type never by the implementation but not by Builds.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/while-condition-break.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "A break in a while condition leaves the enclosing loop at runtime, but StmtBreaks ignored it, so a loop could be typed never and still return; the implementations accept the example.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/while-condition-break.moss"
         ]
       }
     },

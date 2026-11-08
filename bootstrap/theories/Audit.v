@@ -3617,7 +3617,9 @@ with StmtBreaks : astmt -> Prop :=
 | SBVar : forall n t y, Breaks y -> StmtBreaks (ASVar n t y)
 | SBAssign : forall n y, Breaks y -> StmtBreaks (ASAssign n y)
 | SBExpr : forall y, Breaks y -> StmtBreaks (ASExpr y)
-| SBBind : forall its sp y, In (sp, Some y) its -> Breaks y -> StmtBreaks (ASBind its).
+| SBBind : forall its sp y, In (sp, Some y) its -> Breaks y -> StmtBreaks (ASBind its)
+(* a `while` condition is evaluated outside the loop it controls *)
+| SBWhile : forall c b, Breaks c -> StmtBreaks (ASWhile c b).
 
 (* The type a block has as a branch of an `if` or a `match` arm: its
    tail's, and `()` without a tail, even if it cannot fall through

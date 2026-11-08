@@ -81,6 +81,14 @@ the local store. *C* and *F* are the static context and frame.
   under `Layouts` and the Bool symbols that `ElaboratesIn` records, `truthy`
   reads every value typed at Bool. This closes the `e_bool` row, given a
   typed condition value.
+- **Counterexample: a `break` in a `while` condition (fixed).** At runtime
+  `EWhile` propagates a `Breaking` from its condition to the enclosing loop.
+  But `StmtBreaks` had no `ASWhile` case, so `loop { while break {} }`
+  satisfied `~ BlockBreaks` and `BlkLoopLast` typed it `never`.
+  [while-condition-break.moss](examples/while-condition-break.moss) returns
+  `()` from a `Bool` function, and the oracle reports `stuck (XErr 10)`.
+  `SBWhile` now counts the condition. The implementations still accept the
+  program; that is [E22](proofs/build-run.md#e22).
 - **The receiver slot is reserved.** `ExThis` reads local 0, and `Numbering`
   allowed a name `"this"` to be numbered 0. A local named `this` would then
   shadow the receiver at a different type. The lexer makes `this` a keyword,
