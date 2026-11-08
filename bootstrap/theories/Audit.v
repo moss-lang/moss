@@ -3125,12 +3125,18 @@ Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
    here gives its unbound members that meaning too, and a caller cannot
    bind two members of one class differently. *)
 Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
-  map fst th = w_reqs W s /\
-  (forall r, In r (w_reqs W s) -> nlook r (c_ty C) <> None ->
+  map fst th = map fst (c_ty Cs) /\
+  (forall r, In r (map fst (c_ty Cs)) -> nlook r (c_ty C) <> None ->
      lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
   (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
 
 (* A signature in Cs's terms, read here at instantiation th. *)
+(* A need of the callee, read here at instantiation th. *)
+Definition at_th (C : cx) (th : subst) (k : item) : item :=
+  match k with
+  | IMth r m a => IMth (canon C (app_subst th r)) m a
+  | _ => k
+  end.
 Definition sig_at (C : cx) (th : subst) (g : fsig) : fsig :=
   FSig (map (fun t => canon C (app_subst th t)) (sg_params g)) (canon C (app_subst th (sg_ret g))).
 Definition canon_sig (C : cx) (g : fsig) : fsig :=
@@ -3147,18 +3153,18 @@ Definition canon_sig (C : cx) (g : fsig) : fsig :=
 Definition Satisfies (C : cx) (Cs : cx) (th : subst) (ns : list item) (sm : smap) : Prop :=
   (* each need, by its run-time key in the callee, to the caller's
      provision of it read here, by its run-time key here (note 28) *)
-  sm = map (fun k => (rkey_of Cs k, rkey_of C (at_site C k))) ns /\
-  (forall k, In k ns -> provides C (at_site C k)) /\
+  sm = map (fun k => (rkey_of Cs k, rkey_of C (at_th C th k))) ns /\
+  (forall k, In k ns -> provides C (at_th C th k)) /\
   (* coherence: where both say what a requirement means, they agree *)
   (forall k a, In k ns -> ilook k (c_apps Cs) = Some a ->
      forall t want, In (t, Some want) a ->
-       match ilook (at_site C k) (c_apps C) with
+       match ilook (at_th C th k) (c_apps C) with
        | Some have => In (t, Some (canon C (app_subst th want))) have
        | None => True
        end) /\
   (* types: the provision selected here has the callee's view of it *)
   (forall k p, In k ns -> ilook k (c_provisions Cs) = Some p ->
-     exists p', ilook (at_site C k) (c_provisions C) = Some p' /\
+     exists p', ilook (at_th C th k) (c_provisions C) = Some p' /\
        option_map (canon_sig C) (provision_signature p') = option_map (sig_at C th) (provision_signature p)) /\
   (* merges: every equation of the callee's σ holds of the caller's meanings *)
   (forall g t, In (g, t) (c_sub Cs) ->

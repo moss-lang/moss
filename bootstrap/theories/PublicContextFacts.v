@@ -69,7 +69,7 @@ Qed.
 Theorem call_theta_merged : forall W C Cs s th g1 g2 z,
   canonical_context C -> A.CallTheta W C Cs s th ->
   In (g1, TAbs z) (A.c_sub Cs) -> In (g2, TAbs z) (A.c_sub Cs) ->
-  In g1 (A.w_reqs W s) -> In g2 (A.w_reqs W s) ->
+  In g1 (map fst (A.c_ty Cs)) -> In g2 (map fst (A.c_ty Cs)) ->
   A.nlook g1 (A.c_ty C) <> None -> A.nlook g2 (A.c_ty C) <> None ->
   A.canon C (app_subst (A.c_ty C) (TAbs g1)) = A.canon C (app_subst (A.c_ty C) (TAbs g2)).
 Proof.
