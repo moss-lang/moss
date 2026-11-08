@@ -63,6 +63,27 @@ errors and positions included.
     capture/output/cast example. These are not a full implementation certificate.
   - [`PublicCaptureFacts.v`](theories/PublicCaptureFacts.v): direct public
     capture-grounding facts supporting the pending semantic safety proof.
+  - [`SnapshotLoader.v`](theories/SnapshotLoader.v),
+    [`SnapshotLoaderBound.v`](theories/SnapshotLoaderBound.v), and
+    [`SnapshotLoaderWitness.v`](theories/SnapshotLoaderWitness.v): direct
+    typed loading from finite snapshots, input-derived bounds, soundness,
+    acceptance completeness and exact world/elaboration witness transport.
+  - [`PublicWorld.v`](theories/PublicWorld.v),
+    [`PublicWorldScope.v`](theories/PublicWorldScope.v), and
+    [`PublicWorldRequirements.v`](theories/PublicWorldRequirements.v): actual
+    accepted metadata forms a public `WorldOf`, without field numbering.
+  - [`PublicValueTyping.v`](theories/PublicValueTyping.v),
+    [`PublicLocalsTyping.v`](theories/PublicLocalsTyping.v),
+    [`PublicCastTyping.v`](theories/PublicCastTyping.v), and
+    [`PublicHeapTyping.v`](theories/PublicHeapTyping.v): checked ground
+    data, local-store, cast and allocation facts. Callable typing remains open.
+  - [`PublicGenerationFacts.v`](theories/PublicGenerationFacts.v),
+    [`PublicCaptureScopeFacts.v`](theories/PublicCaptureScopeFacts.v),
+    [`PublicAliasContext.v`](theories/PublicAliasContext.v), and
+    [`PublicContextFacts.v`](theories/PublicContextFacts.v): stable generation
+    interpretations, scoped capture, source alias agreement and canonicalization.
+    [The checkpoint notes](PUBLIC-SAFETY-CHECKPOINT.md) explain the repaired
+    boundary and the remaining source/runtime obligations.
   - [`Parse.v`](theories/Parse.v): the lexer, the parser, the parse dump
     and the module loader, from a file's bytes to the bundle specified in
     `Audit.v` Part I.

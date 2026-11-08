@@ -132,53 +132,54 @@
     {
       "id": "F07",
       "group": "F",
-      "title": "Loader coverage invariant",
+      "title": "Bound finite-snapshot traversal",
       "requires": [
         "A02",
         "F04"
       ],
-      "status": "open",
-      "budget": "hour",
-      "goal": "A loader worklist invariant covers every module of a finite-source Bundled witness with justified input-derived bounds.",
-      "approach": "Induct over the finite witness/rank using the source contract and algorithm established by A01/A02.",
+      "status": "done",
+      "budget": "done",
+      "goal": "A worklist potential decreases even for repeated pops, and the input-derived snapshot_fuel suffices for every closed readable witness reachable from the entry.",
+      "approach": "Count unseen registered paths weighted by maximum import/prelude degree, plus outstanding pops. Unused invalid files are not rejected.",
       "sources": [
-        "theories/FrontEndLoader.v",
-        "theories/Parse.v"
-      ]
+        "theories/SnapshotLoaderBound.v",
+        "theories/SnapshotLoader.v"
+      ],
+      "witness": "walk_accepts_closed_witness"
     },
     {
       "id": "F08",
       "group": "F",
-      "title": "Loader import / prelude traversal",
+      "title": "Direct typed-loader soundness",
       "requires": [
         "A02",
-        "F04"
+        "F03"
       ],
-      "status": "open",
-      "budget": "hour",
-      "goal": "Traversal preserves path canonicalization, module uniqueness, explicit imports and implicit-prelude closure without losing required files.",
-      "approach": "Prove the worklist step cases under F07-compatible invariants.",
+      "status": "done",
+      "budget": "done",
+      "goal": "The direct typed-AST loader returns only Bundled outputs with unique module paths and complete import/prelude closure.",
+      "approach": "Prove a worklist invariant and parser soundness; use canonical public paths. No dump/read conversion or dump-name restriction is present.",
       "sources": [
-        "theories/FrontEndLoader.v",
-        "theories/Parse.v"
-      ]
+        "theories/SnapshotLoader.v"
+      ],
+      "witness": "load_sound"
     },
     {
       "id": "F09",
       "group": "F",
-      "title": "Assemble loader completeness",
+      "title": "Direct loader acceptance completeness",
       "requires": [
         "F07",
         "F08"
       ],
-      "status": "open",
-      "budget": "hour",
-      "goal": "Every Bundled witness is accepted by the configured executable loader.",
-      "approach": "Combine coverage, path/import cases and the termination policy; conclude the whole loader result.",
+      "status": "done",
+      "budget": "done",
+      "goal": "Any Bundled witness for the finite source guarantees successful direct loading at the computed fuel bound.",
+      "approach": "Combine witness closure and parser completeness with the decreasing potential. Output is existential: the witness may contain irrelevant extra modules. CLI integration and transport to the actually loaded bundle are separate obligations.",
       "sources": [
-        "theories/FrontEndLoader.v",
-        "theories/ComponentContracts.v"
-      ]
+        "theories/SnapshotLoader.v"
+      ],
+      "witness": "load_complete"
     },
     {
       "id": "F10",
@@ -692,14 +693,23 @@
       "id": "T02",
       "group": "T",
       "title": "Fix public runtime invariant",
-      "requires": [],
-      "status": "open",
+      "requires": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T29",
+        "T30",
+        "T31"
+      ],
+      "status": "partial",
       "budget": "unknown",
       "goal": "Define public typing/provision/store invariants strong enough for safety of all admissible semantic programs.",
-      "approach": "Work directly with Audit judgments and the existing internal safety proof as reference. Do not wait for an executable port, program encoder or whole-model refinement. Scope invariants to the code justified by semantic derivations.",
+      "approach": "Assemble the checked data/heap/local invariant and generation protocol with source formation, generated-code provenance and inductive callable/environment realization. Use source derivations directly and fuel induction; do not build a second full expression typing calculus.",
       "sources": [
-        "theories/XTyping.v",
-        "theories/XSafety.v",
+        "theories/PublicValueTyping.v",
+        "theories/PublicCastTyping.v",
+        "theories/PublicHeapTyping.v",
         "theories/Audit.v"
       ]
     },
@@ -729,7 +739,7 @@
       "status": "open",
       "budget": "hour",
       "goal": "Typed environments provide correctly typed values, functions, methods and functors at the keys used by execution.",
-      "approach": "Invert the public environment/provision invariant.",
+      "approach": "Prove Satisfies_select_ready: exact public rkey agreement and typed selected provisions under instantiated semantic grounding. Invert inductive environment realization; keep source canonicalization/merge prerequisites explicit.",
       "sources": [
         "theories/Audit.v",
         "theories/XProvision.v"
@@ -776,7 +786,7 @@
       "status": "open",
       "budget": "unknown",
       "goal": "Public BindItems and provider derivations preserve runtime provision/capture typing.",
-      "approach": "Split the unified binding grammar, closure creation and fresh output exports.",
+      "approach": "Prove FnProvider_capture_ready, followed by method/lambda and functor variants: planned captures realize the certified code context and grounded signatures agree.",
       "sources": [
         "theories/Audit.v",
         "theories/XBridgeCtx.v"
@@ -929,7 +939,7 @@
       "status": "open",
       "budget": "unknown",
       "goal": "Captured lexical meanings and caller output generations satisfy runtime invariants after binding/application.",
-      "approach": "Prove capture and fresh-result preservation directly for public runtime environments and bindings; no executable-elaborator or old-model generation repair is a prerequisite.",
+      "approach": "Prove LinkBody_outputs_ready: source body/result/freshness premises make provision selection and result_environment succeed, extend caller realization and preserve all old supported generations.",
       "sources": [
         "theories/Audit.v",
         "theories/InputGenerationRuntime.v"
@@ -1230,7 +1240,8 @@
       "requires": [
         "F05",
         "E02",
-        "K09"
+        "K09",
+        "F17"
       ],
       "status": "open",
       "budget": "hour",
@@ -1283,7 +1294,7 @@
         "B03",
         "B04",
         "E11",
-        "F05"
+        "F08"
       ],
       "status": "open",
       "budget": "hour",
@@ -1301,7 +1312,8 @@
         "F09",
         "E12",
         "K07",
-        "B03"
+        "B03",
+        "F18"
       ],
       "status": "open",
       "budget": "unknown",
@@ -1515,16 +1527,19 @@
       "requires": [
         "S01",
         "A03",
-        "E19"
+        "E19",
+        "E20"
       ],
-      "status": "open",
-      "budget": "unknown",
-      "goal": "Define the direct executable metadata/context reading into Audit worlds, using shared source syntax and one source-symbol reading.",
-      "approach": "Reuse unchanged declaration/scope/requirement facts; isolate public type/context differences without a second whole-program elaboration model.",
+      "status": "done",
+      "budget": "done",
+      "goal": "Accepted executable elaboration supplies the public WorldOf reading of loaded metadata and its exact requirement lists.",
+      "approach": "Transport shared syntactic requirement predicates, extract raw ReqsReading, and combine with exact declarations/scopes/exports/attached/library facts. No field numbering or whole-program refinement is required; public context/code formation remains separate.",
       "sources": [
-        "theories/Audit.v",
-        "theories/WorldSound.v"
-      ]
+        "theories/PublicWorld.v",
+        "theories/PublicWorldScope.v",
+        "theories/PublicWorldRequirements.v"
+      ],
+      "witness": "elaborate_public_world_of"
     },
     {
       "id": "E02",
@@ -1603,7 +1618,8 @@
         "S07",
         "S08",
         "S09",
-        "S10"
+        "S10",
+        "T26"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2047,6 +2063,200 @@
         "theories/PublicCaptureFacts.v"
       ],
       "witness": "capture_ground_stable"
+    },
+    {
+      "id": "F17",
+      "group": "F",
+      "title": "Integrate the direct snapshot loader",
+      "requires": [
+        "F08",
+        "F09"
+      ],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The selected build/CLI path uses the verified direct typed loader and finite source inventory.",
+      "approach": "Replace the legacy bundle codec path at the public build boundary, preserving the snapshot input contract and diagnostics.",
+      "sources": [
+        "theories/SnapshotLoader.v",
+        "ocaml/moss_m2.ml"
+      ]
+    },
+    {
+      "id": "F18",
+      "group": "F",
+      "title": "Transport reachable bundle witnesses",
+      "requires": [
+        "F09"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "Relate the declarative build witness to the actual reachable bundle returned by the direct loader.",
+      "approach": "Prove any two Bundled witnesses for the same source agree on reachable modules. Transport WorldOf and Elaborates to the actual direct-loader output, preserving the same world and program.",
+      "sources": [
+        "theories/SnapshotLoaderWitness.v"
+      ],
+      "witness": "load_elaborates_complete"
+    },
+    {
+      "id": "E20",
+      "group": "E",
+      "title": "Read public declaration and scope metadata",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Read actual loaded metadata into public worlds, with declaration provenance/completeness, exact exports/scopes/attached methods and acyclic imports.",
+      "approach": "Reuse shared source predicates, without field numbering or whole elaboration refinement. The conditional WorldOf assembler explicitly retains all six public requirements premises.",
+      "sources": [
+        "theories/PublicWorld.v",
+        "theories/PublicWorldScope.v"
+      ],
+      "witness": "load_world_world_of_from_requirements"
+    },
+    {
+      "id": "T23",
+      "group": "T",
+      "title": "Ground data and immutable heap typing",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Define public ground data/handle/local-store typing and prove heap-extension monotonicity, typed lookup and assignment, lexical scope operations and tag/handle inversion.",
+      "approach": "Use explicit machine types and structural record fields. Heap cells retain immutable held types; callable/environment/source obligations remain in T02.",
+      "sources": [
+        "theories/PublicValueTyping.v",
+        "theories/PublicLocalsTyping.v"
+      ],
+      "witness": "typing_extends"
+    },
+    {
+      "id": "T24",
+      "group": "T",
+      "title": "Preserve checked public tag construction",
+      "requires": [
+        "T23"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "check_tag returns a typed tag or a defined trap given a correctly grounded payload and complete cast guard arguments.",
+      "approach": "Prove public type equality reflection and invert checked headers. The theorem explicitly assumes the ground payload; it does not assume source elaboration already provides it.",
+      "sources": [
+        "theories/PublicCastTyping.v",
+        "theories/PublicTypeFacts.v"
+      ],
+      "witness": "check_tag_preserves"
+    },
+    {
+      "id": "T25",
+      "group": "T",
+      "title": "Extend typed public heaps on allocation",
+      "requires": [
+        "T23"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "Public interface heap laws preserve immutable ghost typing on successful box and array allocation.",
+      "approach": "Lift old content predicates by value-typing monotonicity, extend the ghost heap at the fresh address, and apply the public heap weakening law.",
+      "sources": [
+        "theories/PublicHeapTyping.v"
+      ],
+      "witness": "array_preserves_heap"
+    },
+    {
+      "id": "T26",
+      "group": "T",
+      "title": "Separate generation, alias and output roles",
+      "requires": [
+        "T27",
+        "T28"
+      ],
+      "status": "done",
+      "budget": "done",
+      "goal": "The public runtime separates stable generation meanings, mutable aliases, explicit output destinations and scoped closure activation; checked helper laws preserve old supported types.",
+      "approach": "User-approved semantic correction with Moss examples. Prove live binding/output/capture laws, exact provider activation domains and direct/bound-call regressions. Global context/code/environment realization remains in T29/T30/T31.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/PublicGenerationFacts.v",
+        "theories/PublicCaptureScopeFacts.v",
+        "theories/PublicFunctorScopeExample.v",
+        "theories/PublicGenerationCallExample.v"
+      ],
+      "witness": "result_environment_preserves_supported_ground"
+    },
+    {
+      "id": "T27",
+      "group": "T",
+      "title": "Check and repair saved-generation example",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Retain the previous saved-type mismatch as an isolated legacy calculation and check the repaired actual binding/cast/output behavior.",
+      "approach": "A public BTypeBind derivation remains valid, while the saved F64 wrapper now traps and old output generations survive. These are local checked regressions, not a complete Admissible witness.",
+      "sources": [
+        "theories/PublicSavedTypeExample.v"
+      ],
+      "witness": "saved_f64_rejects_integer_handle"
+    },
+    {
+      "id": "T28",
+      "group": "T",
+      "title": "Preserve live generation helper meanings",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Actual Audit alias binding preserves grounding; successful fresh output export preserves all existing generation lookups and fully supported old types.",
+      "approach": "Prove disjoint snapshot writes and single-snapshot output reads directly for live helpers. Prove the BTypeBind context transition preserves alias agreement under explicit canonicalization idempotence; global source formation remains open.",
+      "sources": [
+        "theories/PublicGenerationFacts.v",
+        "theories/PublicAliasContext.v"
+      ],
+      "witness": "result_environment_preserves_supported_ground"
+    },
+    {
+      "id": "T29",
+      "group": "T",
+      "title": "Form source grounding and canonical scopes",
+      "requires": [],
+      "status": "partial",
+      "budget": "unknown",
+      "goal": "WorldOf plus CtxOf/FunCtx establish canonicalization, semantic grounding, type scope/support and merge absorption needed by runtime realization.",
+      "approach": "Idempotence of actual function/functor contexts and its preservation by type/output updates are checked. Prove initial grounding, payload/signature formation and scope/support for active canonical types.",
+      "sources": [
+        "theories/PublicContextFacts.v",
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T30",
+      "group": "T",
+      "title": "Certify source and generated code provenance",
+      "requires": [],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Give each reachable runtime code body its existing public source derivation or a small explicit generated-shape certificate.",
+      "approach": "Cover FnElab/BlkE, lambda capture prologues, FPForward, MPWrapped, LinkBody refiling and Platform.Family. Unused arbitrary table entries need no certificate; ordinary recursion is handled by smaller execution fuel.",
+      "sources": [
+        "theories/Audit.v"
+      ]
+    },
+    {
+      "id": "T31",
+      "group": "T",
+      "title": "Realize callable and provision environments",
+      "requires": [
+        "T23",
+        "T26",
+        "T29",
+        "T30"
+      ],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Define inductive environment/provision realization with an external semantic grounding, supported runtime type rows, exact provision keys and finite captured environments.",
+      "approach": "Function/method closures carry code provenance and grounded signature equality; forwarders need only inspected-code support. Functors carry link/copy-chain provenance and fixed-input agreement; primitives carry AtKey and held-header typing.",
+      "sources": [
+        "theories/PublicValueTyping.v",
+        "theories/PublicAliasContext.v",
+        "theories/PublicCaptureScopeFacts.v",
+        "theories/Audit.v"
+      ]
     }
   ],
   "superseded": [
@@ -3142,13 +3352,13 @@
   ],
   "strategy": {
     "decisions": [
-      "Build from an explicit finite source snapshot. A01/A02 now implement the public input contract and exact lookup/domain facts; loader and elaborator completeness remain open.",
+      "Build from an explicit finite source snapshot. Direct typed-loader soundness, acceptance completeness and exact world/elaboration witness transport are checked; CLI integration and executable elaborator correctness remain open.",
       "Make Audit the common semantic target. Executable elaboration emits public programs directly; selected runtime lowering compiles that representation to the fast engine.",
       "Retain lazy closures and both fast-path/pruning effects for the initial port: default passed in 38m08s and all three reduced configurations timed out at one hour. The fully integrated public-target pipeline must still pass X14.",
       "Prove semantic safety directly against Audit. It can proceed independently of executable migration, host implementation and build/run agreement.",
       "Defer certificate-producing elaboration and the optional staged immutable-lowering candidate. Reconsider them only if evidence favors that route."
     ],
-    "checkpoint": "The initial architecture checkpoint is complete ahead of its two-hour deadline; see PUBLIC-FOUNDATION.md and the pinned benchmark record. The next frontier is T02 public runtime invariants, E01 public metadata/world reading, and F07/F08 input-bounded loader traversal. At subsequent two-hour active-work checkpoints, report proved results, measurements and remaining obstructions; do not silently extend the checkpoint.",
+    "checkpoint": "This checkpoint closes direct finite-loader correctness and world/elaboration witness transport, plus the public WorldOf metadata boundary. Checked safety groundwork covers ground data/local/cast/heap facts and the user-approved generation/alias/output/capture repair. The next safety frontier is source grounding/formation (T29), small code-provenance certificates (T30), and inductive callable/environment realization (T31), feeding T02. Report evidence and remaining obstructions by each two-hour active-work checkpoint; do not silently extend it.",
     "performance": "Every local bootstrap run has a one-hour cap and runs in the background. Candidate timeouts are evidence for configuration selection; X14 must eventually pass for the fully integrated pipeline. Keep quiet full Rocq compilation around two minutes and use incremental checks during proof development."
   }
 }

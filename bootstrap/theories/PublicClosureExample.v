@@ -26,11 +26,10 @@ Definition initial := Environment [(2, TMachine MF64)]
 
 (* Capture seed, rebind the caller's seed, export a new meaning of Fresh,
    then check the old captured handle at that new output generation. *)
+Definition setup_bindings :=
+  [BFunctor 10 20 [] [(IVal 1,IVal 1)]; BValue 1 (EVal 4); BApply 10 [] [(2,7)] []].
 Definition expression :=
-  EBind (BFunctor 10 20 [] [(IVal 1,IVal 1)])
-    (EBind (BValue 1 (EVal 4))
-      (EBind (BApply 10 [(2,TAbs 7)] [])
-        (ETag 11 [(9,TAbs 7)] (EVal 3)))).
+  fold_right EBind (ETag 11 [(9,TAbs 7)] (EVal 3)) setup_bindings.
 
 Definition provider_compilation : {body : C.bcode |
   C.compile_bindings runtime (fun _ => None) provider_bindings = Some body}.
@@ -43,7 +42,7 @@ Lemma compiled_bodies_correct : C.tables_correct runtime compiled_bodies.
 Proof.
   intro h. unfold C.tables_correct, runtime, compiled_bodies; cbn [view_functor].
   destruct (Nat.eqb h 20); [|exact I]. split; [reflexivity|].
-  intros fuel [types provisions] g st.
+  intros fuel [types aliases provisions] g st.
   destruct fuel as [|[|[|fuel]]]; cbv [provider_compilation provider_bindings provider_code
     fc_bindings fc_outputs proj1_sig
     C.compile_bindings C.compile_step C.compile_atom C.bcons C.bnil R.eval_bindings
@@ -67,6 +66,20 @@ Qed.
 
 Example caller_started_with_another_type : ground initial (TAbs 2) = TMachine MF64.
 Proof. reflexivity. Qed.
+
+Definition setup_environment :=
+  match R.eval_bindings 30 runtime initial [] tt setup_bindings with
+  | inl (d, _, _) => Some d
+  | inr _ => None
+  end.
+
+Example output_preserves_old_generation :
+  option_map (fun d => ground d (TAbs 2)) setup_environment = Some (TMachine MF64).
+Proof. vm_compute; reflexivity. Qed.
+
+Example output_installs_fresh_generation :
+  option_map (fun d => ground d (TAbs 7)) setup_environment = Some (TMachine MI32).
+Proof. vm_compute; reflexivity. Qed.
 
 Example compiled_capture_output_cast :
   R.evaluation_signal (compiled 30 initial [] tt) = Normal (VTag 11 captured_handle).

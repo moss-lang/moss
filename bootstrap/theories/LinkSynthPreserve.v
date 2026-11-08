@@ -74,6 +74,17 @@ Local Lemma cached_link_unsupported : forall why,okL(unsupported why).
 Proof. intros;synth_link_quiet. Qed.
 Local Lemma cached_link_fn_info : forall g,okL(fn_info g).
 Proof. intros;synth_link_quiet. Qed.
+(* Share preservation proofs for repeated diagnostic and provider queries.
+   Re-running readonly traversals at every call site dominates this mutual
+   proof; the cached lemmas share those proofs without changing obligations. *)
+Local Lemma cached_link_err : forall A mi why,okL(@err A mi why).
+Proof. intros;synth_link_quiet. Qed.
+Local Lemma cached_link_require_needs : forall mi e g info,okL(require_needs mi e g info).
+Proof. intros;synth_link_quiet. Qed.
+Local Lemma cached_link_family_member : forall mi e r m,okL(family_member mi e r m).
+Proof. intros;synth_link_quiet. Qed.
+Local Lemma cached_link_expect_provider : forall c e y this,okL(expect_provider c e y this).
+Proof. intros;synth_link_quiet. Qed.
 Local Ltac cached_link_quiet := lazymatch goal with|-okL ?m=>let h:=head_of m in lazymatch h with
 | get => apply cached_link_get
 | show => apply cached_link_show
@@ -83,6 +94,10 @@ Local Ltac cached_link_quiet := lazymatch goal with|-okL ?m=>let h:=head_of m in
 | fld_id => apply cached_link_fld_id
 | unsupported => apply cached_link_unsupported
 | fn_info => apply cached_link_fn_info
+| @err => apply cached_link_err
+| require_needs => apply cached_link_require_needs
+| family_member => apply cached_link_family_member
+| expect_provider => apply cached_link_expect_provider
 end end.
 Local Ltac link_synth_tac previous Bind := repeat(fintros;first[
  solve[previous ()]|solve[cached_link_quiet]|

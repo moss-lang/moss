@@ -7,7 +7,15 @@ From NM Require Certified Parse FastPath Prune SlotX FoldX
   CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts LazyOracle XHeapC MainProgramBool BindMethodLambdaExec BindMethodDispatch BindMethodAllDispatch BindMethodExec BodyPending.
 
 From NM Require AuditExamples AuditBuildExample AuditRepresentation
-  SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts.
+  SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
+  SnapshotLoaderBound PublicWorld PublicTypeFacts PublicValueTyping PublicCastTyping
+  PublicSavedTypeExample PublicHeapTyping PublicWorldScope SnapshotLoader
+  PublicLocalsTyping PublicWorldRequirements SnapshotLoaderWitness
+  PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
+  PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts.
+
+Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims.
+Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -22,6 +30,53 @@ Definition certificate_roots :=
   @NM.SourceSnapshot.source_from_files_complete,
   @NM.SourceSnapshot.source_read_finite,
   @NM.SourceSnapshot.source_read_canonical,
+  @NM.SnapshotLoaderBound.snapshot_fuel_stable,
+  @NM.SnapshotLoaderBound.snapshot_success_at_bound,
+  @NM.SnapshotLoaderBound.load_snapshot_success_adequate,
+  @NM.SnapshotLoader.load_sound,
+  @NM.SnapshotLoader.load_complete,
+  @NM.SnapshotLoader.walk_stable,
+  @NM.SnapshotLoaderWitness.bundled_reachable_agreement,
+  @NM.SnapshotLoaderWitness.load_elaborates_complete,
+  @NM.PublicWorld.load_world_declarations,
+  @NM.PublicWorld.load_world_declaration_complete,
+  @NM.PublicWorld.load_world_resolves,
+  @NM.PublicWorldScope.load_world_world_of_from_requirements,
+  @NM.PublicWorldRequirements.elaborate_public_world_of,
+  @NM.PublicTypeFacts.ty_eqb_spec,
+  @NM.PublicValueTyping.typing_extends,
+  @NM.PublicValueTyping.field_lookup_typed,
+  @NM.PublicValueTyping.checked_header_typed,
+  @NM.PublicValueTyping.tagged_payload_typed,
+  @NM.PublicLocalsTyping.locals_lookup,
+  @NM.PublicLocalsTyping.locals_assign,
+  @NM.PublicLocalsTyping.locals_extends,
+  @NM.PublicGenerationFacts.bind_type_preserves_ground,
+  @NM.PublicGenerationFacts.result_environment_preserves_generation,
+  @NM.PublicGenerationFacts.result_environment_preserves_supported_ground,
+  @NM.PublicGenerationFacts.result_environment_exports_one_snapshot,
+  @NM.PublicAliasContext.public_type_bind_has_alias_context,
+  @NM.PublicContextFacts.function_context_canonical,
+  @NM.PublicContextFacts.functor_context_canonical,
+  @NM.PublicContextFacts.formed_type_binding_preserves_alias_context,
+  @NM.PublicCaptureScopeFacts.typed_capture_generation_lookup,
+  @NM.PublicCaptureScopeFacts.typed_capture_alias_lookup,
+  @NM.PublicGenerationCallExample.actual_application_exports_unchanged_formal_not_stale_capture,
+  @NM.PublicGenerationCallExample.ambient_generation_does_not_block_callee_first_output,
+  @NM.PublicGenerationCallExample.bound_function_ambient_generation_does_not_block_first_output,
+  @NM.PublicFunctorScopeExample.no_input_provider_application_succeeds,
+  @NM.PublicFunctorScopeExample.private_input_provider_application_exports_concrete_meaning,
+  @NM.PublicOutputTransferExample.prior_caller_output_does_not_occupy_callee_destination,
+  @NM.PublicGenerationPrototype.GenerationPrototype.fresh_export_preserves_supported_type,
+  @PublicCasts.check_tag_preserves,
+  @NM.PublicHeapTyping.allocation_predicates,
+  @PublicHeaps.box_preserves_heap,
+  @PublicHeaps.array_preserves_heap,
+  @NM.PublicSavedTypeExample.legacy_saved_and_emitted_reads_differ,
+  @NM.PublicSavedTypeExample.alias_binding_preserves_old_generation,
+  @NM.PublicSavedTypeExample.public_bind_boxed_from_saved,
+  @NM.PublicSavedTypeExample.saved_f64_rejects_integer_handle,
+  @NM.PublicSavedTypeExample.result_transfer_preserves_old_generation,
   @NM.PublicEmit.emit_full_substitution,
   @NM.PublicClosureExample.C.expression_correct,
   @NM.PublicClosureExample.compiled_bodies_correct,

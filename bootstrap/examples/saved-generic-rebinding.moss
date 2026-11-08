@@ -1,0 +1,33 @@
+import "../../lib/wasm.moss" as w use Wasm, Gc, Boxed, StructRef, .boxed;
+
+type T;
+type U;
+
+assume Wasm, Gc, U {
+  fn make(x: U): w::Ref[Boxed=U] {
+    bind Boxed=U;
+    bind w::Heap;
+    x.boxed()
+  }
+}
+
+assume Wasm, Gc, T {
+  fn probe(x: T) {
+    bind U=T;
+    bind T=w::F64;
+    let r=make(x);
+    let h=match r { w::Ref(h)=>h };
+    bind Boxed=w::F64;
+    bind w::Heap;
+    let b=w::Ref(h);
+    let y=b.deref();
+    w::f64_add(y,y);
+  }
+}
+
+assume Wasm, Gc {
+  fn main() {
+    bind T=w::I32;
+    probe(w::i32_one);
+  }
+}

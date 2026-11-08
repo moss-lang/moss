@@ -77,7 +77,7 @@ Example unit_program_runs : Model.Runs unit_program Model.default_interface init
     (Model.Result (Model.Returned VUnit) initial).
 Proof. exists 1. reflexivity. Qed.
 Example type_binding_is_unconditional :
-  bind_type empty_environment 7 TUnit = Environment [(7,TUnit)] [].
+  bind_type empty_environment 7 TUnit = EnvironmentWithAliases [] [(7,TUnit)] [].
 Proof. reflexivity. Qed.
 Example bool_requires_its_declared_wrapper :
   Reference.truthy unit_view (VTag 8 VUnit) = None.
@@ -135,11 +135,11 @@ Definition output_environment :=
   Environment [] [(IFun 3,FunctorClosure 2 [] empty_environment)].
 Example fresh_output_meaning_is_exported :
   Reference.apply_functor 6 (program_of output_program [] (fun _ => None))
-    output_environment 3 [(1,TAbs 9)] [] (Model.default_interface,initial) =
-  inl (Environment [(9,TMachine MI32);(1,TMachine MI32)] [],
+    output_environment 3 [] [(1,9)] [] (Model.default_interface,initial) =
+  inl (EnvironmentWithAliases [(9,TMachine MI32)] [(1,TMachine MI32)] [],
        (Model.default_interface,initial)).
 Proof. reflexivity. Qed.
 
 Example captured_interpretations_participate_in_freshness :
-  context_gens (Cx [] [] [(IFn 1,ProvidedFn (FSig [] TUnit) [(7,Some (TAbs 9))])] []) = [9].
-Proof. reflexivity. Qed.
+  In 9 (context_gens (Cx [] [] [(IFn 1,ProvidedFn (FSig [] TUnit) [(7,Some (TAbs 9))])] [])).
+Proof. cbn; auto. Qed.

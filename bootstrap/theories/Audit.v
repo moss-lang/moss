@@ -1332,6 +1332,13 @@ Inductive pattern : Type :=
 | PAny  : option var -> pattern                          (* _ or a binder *)
 | PHead : nsym -> option var -> list (fld * var) -> pattern.
 
+(* Code determines the generations and source aliases a closure uses.
+   Capture reads these expressions once, rather than copying ambient types. *)
+Record type_capture := TypeCapture {
+  capture_generations : subst;
+  capture_aliases : subst
+}.
+
 (* Expressions include calls, provision binding, records and control flow.
    Satisfaction maps identify the provisions passed to a call. Each binding
    has exactly one syntax form, used in expressions and in functor bodies. *)
@@ -1358,48 +1365,62 @@ Inductive expr : Type :=
 with binding : Type :=
 | BType                : tsym -> ty -> binding
 | BValue               : vsym -> expr -> binding
-| BFunction            : fsym -> fsym -> smap -> binding
-| BMethod              : ty -> msym -> subst -> fsym -> smap -> binding
+| BFunction            : fsym -> fsym -> type_capture -> smap -> binding
+| BMethod              : ty -> msym -> subst -> fsym -> type_capture -> smap -> binding
 | BFunctor             : usym -> usym -> smap -> smap -> binding
 | BCopyFunctor         : usym -> usym -> smap -> binding
-| BApply               : usym -> subst -> smap -> binding
+| BApply               : usym -> subst -> list (tsym * tsym) -> smap -> binding
 | BPrimitive           : item -> prim -> binding.
 
 (* Named builders are notation for the single binding form. *)
-Definition apply_expression u arguments inputs body := EBind (BApply u arguments inputs) body.
+Definition apply_expression u arguments inputs body := EBind (BApply u arguments [] inputs) body.
+Definition apply_output_expression u arguments outputs inputs body :=
+  EBind (BApply u arguments outputs inputs) body.
 Definition bind_type_expression t tau e := EBind (BType t tau) e.
 Definition bind_value_expression v value e := EBind (BValue v value) e.
-Definition bind_function_expression f body captures e := EBind (BFunction f body captures) e.
-Definition bind_method_expression receiver method application body captures e :=
-  EBind (BMethod receiver method application body captures) e.
+Definition bind_function_expression f body types captures e := EBind (BFunction f body types captures) e.
+Definition bind_method_expression receiver method application body types captures e :=
+  EBind (BMethod receiver method application body types captures) e.
 Definition bind_functor_expression u body linked captured e := EBind (BFunctor u body linked captured) e.
 Definition copy_functor_expression u provider inputs e := EBind (BCopyFunctor u provider inputs) e.
 Definition bind_primitive_expression key operation e := EBind (BPrimitive key operation) e.
 
 (* ===================== Runtime structures ================================ *)
 
-(* Runtime type meanings and executable provisions have separate namespaces.
-   A closure captures both; an ordinary lookup cannot hide a type meaning. *)
+(* Generation meanings are stable within an activation. Source aliases track
+   rebinding and final type outputs separately. A closure captures all three
+   namespaces; grounding never reads the mutable source aliases. *)
 Inductive provision_value : Type :=
 | ValueProvision : value -> provision_value
 | FunctionClosure : fsym -> environment -> provision_value
 | FunctorClosure : usym -> list smap -> environment -> provision_value
 | PrimitiveClosure : prim -> option ty -> provision_value
 with environment : Type :=
-| Environment : subst -> list (item * provision_value) -> environment.
-Definition type_meanings (d : environment) := match d with Environment ts _ => ts end.
-Definition provision_values (d : environment) := match d with Environment _ ps => ps end.
+| EnvironmentWithAliases : subst -> subst -> list (item * provision_value) -> environment.
+Definition Environment (types : subst) (provisions : list (item * provision_value)) :=
+  EnvironmentWithAliases types [] provisions.
+Definition type_meanings (d : environment) := match d with EnvironmentWithAliases ts _ _ => ts end.
+Definition type_aliases (d : environment) := match d with EnvironmentWithAliases _ aliases _ => aliases end.
+Definition provision_values (d : environment) := match d with EnvironmentWithAliases _ _ ps => ps end.
 Definition empty_environment := Environment [] [].
 Definition locals := list (var * value).
 Definition ground (d : environment) (tau : ty) : ty := app_subst (type_meanings d) tau.
 Definition append_environment (a b : environment) :=
-  Environment (type_meanings a ++ type_meanings b) (provision_values a ++ provision_values b).
+  EnvironmentWithAliases (type_meanings a ++ type_meanings b)
+    (type_aliases a ++ type_aliases b) (provision_values a ++ provision_values b).
 Definition install_provision (key : item) (entry : provision_value) (d : environment) :=
-  Environment (type_meanings d) ((key,entry) :: provision_values d).
+  EnvironmentWithAliases (type_meanings d) (type_aliases d) ((key,entry) :: provision_values d).
 Definition instantiate (d : environment) (th : subst) : environment :=
-  Environment (map (fun q => (fst q, ground d (snd q))) th) [].
+  let meanings := map (fun q => (fst q, ground d (snd q))) th in
+  EnvironmentWithAliases meanings meanings [].
+Definition typed_capture (d : environment) (types : type_capture) (dc : environment) : environment :=
+  EnvironmentWithAliases
+    (map (fun q => (fst q, ground d (snd q))) (capture_generations types))
+    (map (fun q => (fst q, ground d (snd q))) (capture_aliases types))
+    (provision_values dc).
 Definition capture_environment (d dc : environment) : environment :=
-  Environment (type_meanings dc ++ type_meanings d) (provision_values dc).
+  EnvironmentWithAliases (type_meanings dc ++ type_meanings d)
+    (type_aliases dc ++ type_aliases d) (provision_values dc).
 Definition primitive_closure (d : environment) (i : item) (p : prim) : provision_value :=
   PrimitiveClosure p (match p, i with
     | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (ground d tau)
@@ -1500,30 +1521,65 @@ Fixpoint lookup_cast (n : nsym) (cs : list (nsym * cast_spec)) : option cast_spe
   | (n', c) :: r => if Nat.eqb n n' then Some c else lookup_cast n r
   end.
 Definition bind_type (d : environment) (t : tsym) (tau : ty) : environment :=
-  Environment ((t, ground d tau) :: type_meanings d) (provision_values d).
+  EnvironmentWithAliases (type_meanings d) ((t, ground d tau) :: type_aliases d) (provision_values d).
 Definition call_environment (d : environment) (th : subst) (dc : environment) : environment :=
-  append_environment (instantiate d th) (capture_environment d dc).
+  (* A new activation receives its formals and lexical capture, rather than
+     unrelated ambient caller generations which may reuse its local names. *)
+  append_environment (instantiate d th) dc.
 
-(* A linked provider receives only its own formal type inputs. Extra
-   abstract-functor inputs must not override lexical captured meanings. *)
+Definition output_meaning (d : environment) (source : tsym) : option ty :=
+  match lookup_subst source (type_aliases d) with
+  | Some meaning => Some meaning
+  | None => lookup_subst source (type_meanings d)
+  end.
+(* Rebase exactly the provider's formal roles. Supplied inputs are read
+   here; private inputs use their captured source meanings. Unrelated
+   captured generations cannot occupy this activation's local output names. *)
 Definition application_environment (P : program_view) (d : environment) (h : usym) (th : subst) (dc : environment) : environment :=
-  call_environment d
-    (filter (fun p => existsb (Nat.eqb (fst p)) (match view_functor P h with Some code => fc_inputs code | None => [] end)) th) dc.
+  let meanings := map (fun source => (source,
+    match lookup_subst source th with
+    | Some meaning => ground d meaning
+    | None => match output_meaning dc source with
+      | Some meaning => meaning | None => TAbs source end
+    end)) (match view_functor P h with Some code => fc_inputs code | None => [] end) in
+  EnvironmentWithAliases meanings meanings (provision_values dc).
 
-(* Applying a functor exports the type meanings its result declares, beside
-   its executable non-type provisions. Captured input types remain private. *)
-Definition result_types (Dr : tele) (d : environment) : environment :=
-  Environment (filter (fun q => existsb (item_eqb (ITy (fst q))) Dr) (type_meanings d)) [].
-(* A result type also has a fresh name in the caller. Transfer its actual
-   meaning to that generation before the caller uses it in a GC cast. *)
-Definition result_generations (th : subst) (Dr : tele) : subst :=
-  flat_map (fun i => match i with
-    | ITy source => match lookup_subst source th with
-      | Some (TAbs fresh) => [(fresh, TAbs source)]
-      | _ => [] end
-    | _ => [] end) Dr.
-Definition result_environment (th : subst) (d3 : environment) (Dr : tele) (dr : environment) : environment :=
-  append_environment dr (append_environment (instantiate d3 (result_generations th Dr)) (result_types Dr d3)).
+(* Formal input interpretation and output destination roles are distinct.
+   Result provisions use the output roles in preference to input roles. *)
+Definition result_substitution (inputs : subst) (outputs : list (tsym * tsym)) : subst :=
+  map (fun q => (fst q, TAbs (snd q))) outputs ++ inputs.
+(* Read every output from one completed body snapshot before installing any
+   caller destination. An unchanged formal may be an output too. *)
+Fixpoint read_result_types (d : environment) (Dr : tele) (outputs : list (tsym * tsym))
+    : option (subst * subst) :=
+  match outputs with
+  | [] => Some ([], [])
+  | (source, destination) :: rest =>
+      if existsb (item_eqb (ITy source)) Dr then
+        match output_meaning d source, read_result_types d Dr rest with
+        | Some meaning, Some (writes, aliases) =>
+            Some ((destination, meaning) :: writes, (source, meaning) :: aliases)
+        | _, _ => None end
+      else None
+  end.
+Fixpoint fresh_result_types (writes occupied : subst) : bool :=
+  match writes with
+  | [] => true
+  | (destination, meaning) :: rest =>
+      match lookup_subst destination occupied with
+      | Some _ => false
+      | None => fresh_result_types rest ((destination, meaning) :: occupied)
+      end
+  end.
+Definition result_environment (caller : environment) (outputs : list (tsym * tsym))
+    (d3 : environment) (Dr : tele) (dr : environment) : option environment :=
+  match read_result_types d3 Dr outputs with
+  | Some (writes, aliases) =>
+      if fresh_result_types writes (type_meanings caller) then
+        Some (EnvironmentWithAliases writes aliases (provision_values dr))
+      else None
+  | None => None
+  end.
 
 (* Outcomes.  Normal/Stuck/OutOfFuel are the core's Ok/Err/OutOfFuel; Returning and Breaking
    are control transfers; Trap is a Wasm trap (well-defined failure),
@@ -1895,14 +1951,14 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
           | Evaluation (Normal w1) g1 st1 => eval_bindings k P (install_provision (IVal v) (ValueProvision w1) d) g1 st1 r
           | rr => inr rr
           end
-      | BFunction f f' sm :: r =>
+      | BFunction f f' types sm :: r =>
           match select_provisions d sm with
-          | Some dc => eval_bindings k P (install_provision (IFn f) (FunctionClosure f' (capture_environment d dc)) d) g st r
+          | Some dc => eval_bindings k P (install_provision (IFn f) (FunctionClosure f' (typed_capture d types dc)) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
-      | BMethod tauk m th f' sm :: r =>
+      | BMethod tauk m th f' types sm :: r =>
           match select_provisions d sm with
-          | Some dc => eval_bindings k P (install_provision (IMth tauk m th) (FunctionClosure f' (capture_environment d dc)) d) g st r
+          | Some dc => eval_bindings k P (install_provision (IMth tauk m th) (FunctionClosure f' (typed_capture d types dc)) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
       | BFunctor u h sm smc :: r =>
@@ -1916,8 +1972,8 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
               eval_bindings k P (install_provision (IFun u) (FunctorClosure h (sms ++ [sm]) dc) d) g st r
           | _ => inr (Evaluation (Stuck e_fun) g st)
           end
-      | BApply u th sm :: r =>
-          match apply_functor k P d u th sm st with
+      | BApply u th outputs sm :: r =>
+          match apply_functor k P d u th outputs sm st with
           | inl (dr, st1) => eval_bindings k P (append_environment dr d) g st1 r
           | inr rr => inr (with_g g rr)
           end
@@ -1925,7 +1981,7 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
       end
   end
 with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) (th : subst)
-    (sm : smap) (st : mstate) {struct fuel} : (environment * mstate) + evaluation :=
+    (outputs : list (tsym * tsym)) (sm : smap) (st : mstate) {struct fuel} : (environment * mstate) + evaluation :=
   match fuel with
   | 0 => inr (Evaluation OutOfFuel [] st)
   | S k =>
@@ -1941,8 +1997,10 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (inst_smap th Dr) with
-                          | Some dr => inl (result_environment th d3 Dr dr, st3)
+                          match select_provisions d3 (inst_smap (result_substitution th outputs) Dr) with
+                          | Some dr => match result_environment d outputs d3 Dr dr with
+                              | Some result => inl (result, st3)
+                              | None => inr (Evaluation (Stuck e_compose) [] st3) end
                           | None => inr (Evaluation (Stuck e_compose) [] st3)
                           end
                       | inr rr => inr rr
@@ -3038,6 +3096,9 @@ Definition at_site (C : cx) (k : item) : item :=
 Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
   map (fun r => (r, canon C (app_subst (c_ty C) (TAbs r)))) (w_reqs W s).
 
+Definition formal_capture (W : world) (C : cx) (callee : nat) : type_capture :=
+  TypeCapture (theta_at W C callee) (theta_at W C callee).
+
 (* [D20]/[D62]/[D71]: a call of callee s (assume context Cs, needs ns)
    from context C is answered by satisfaction map sm: sm sends each need
    (exactly once) to the caller's provision of it read here, which must be
@@ -3290,9 +3351,14 @@ Definition Fresh (W : world) (s : nat) : Prop := w_decl W s = None.
 (* A generation is fresh for this scope when it is absent from the source
    world and from every type currently reachable in the static environment. *)
 Definition context_gens (C : cx) : list nat :=
-  flat_map (fun q => gens (snd q)) (c_ty C) ++
-  flat_map (fun q => provision_gens (snd q)) (c_provisions C) ++
-  flat_map (fun q => gens (fst (snd q))) (c_locals C).
+  flat_map (fun q => gens (snd q) ++ gens (canon C (snd q))) (c_ty C) ++
+  flat_map (fun q => provision_gens (snd q) ++
+    provision_gens (provision_subst (c_sub C) (snd q))) (c_provisions C) ++
+  flat_map (fun q => gens (fst (snd q)) ++ gens (canon C (fst (snd q)))) (c_locals C).
+Definition lexical_capture (C : cx) : type_capture :=
+  TypeCapture
+    (map (fun generation => (generation, TAbs generation)) (context_gens C))
+    (map (fun q => (fst q, canon C (snd q))) (c_ty C)).
 Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
   NoDup gs /\ Forall (fun g => Fresh W g /\
     ~ In g (fr_fresh F ++ context_gens C ++
@@ -3610,18 +3676,18 @@ Definition ResultRealizes (body promised : cx) (rename : subst) (keys : list ite
 Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
   Forall (fun binding => match binding with
     | BValue _ _ => False
-    | BApply family _ _ => Family W family
+    | BApply family _ _ _ => Family W family
     | _ => True end) bindings.
 
 (* a method bind, filed also under each key it answers as another spelling
    (pairs: the body's key, the key as declared) *)
 Definition refile (pairs : list (item * item)) (b : binding) : list binding :=
   match b with
-  | BMethod t m th f sm =>
+  | BMethod t m th f types sm =>
       b :: flat_map (fun p => match p with
                               | (IMth t' m' _, IMth t0 _ th0) =>
                                   if ty_eqb t t' && Nat.eqb m m' && negb (item_eqb (IMth t0 m th0) (IMth t m th))
-                                  then [BMethod t0 m th0 f sm] else []
+                                  then [BMethod t0 m th0 f types sm] else []
                               | _ => [] end) pairs
   | _ => [b]
   end.
@@ -4032,12 +4098,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     BindItem W P F C (Spec (Some pa) None None, Some y) (bind_value_expression v x)
              (provide C (IVal v) a (set_val C v declared)) F []
 (* `bind f = g;`: g a defined fn whose signature, read here, is f's *)
-| BFnBind : forall F C pa f g sg pg sm a,
+| BFnBind : forall F C pa f g sg pg sm a types,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     SigOf W f (c_ty C) None sg ->
-    FnProvider W P F C (AEPath pg None) sg None g sm ->
+    FnProvider W P F C (AEPath pg None) sg None g types sm ->
     AppOf W f (c_ty C) a ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_function_expression f g sm)
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_function_expression f g types sm)
              (provide C (IFn f) a (set_fn C f sg)) F []
 (* [D70] `bind f = |ps| body;`: see LambdaProvider *)
 | BFnLambda : forall F C pa f sg ps rt body pid pre sm a,
@@ -4045,20 +4111,20 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     SigOf W f (c_ty C) None sg ->
     LambdaProvider W P F C ps rt body sg None pid pre sm ->
     AppOf W f (c_ty C) a ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AELam ps rt body)) (fun x => pre (bind_function_expression f pid sm x))
+    BindItem W P F C (Spec (Some pa) None None, Some (AELam ps rt body)) (fun x => pre (bind_function_expression f pid (lexical_capture C) sm x))
              (provide C (IFn f) a (set_fn C f sg)) F []
 (* [D61] `bind R.m[brackets] = provider;`: the key is R read here (under
    the brackets), the provider an attached defined method of R's head, a
    defined fn (eta-expanded to take the receiver, [D54]), or a lambda *)
-| BMethBind : forall F C pa dn a y r m bs rt sg target pre sm ap,
+| BMethBind : forall F C pa dn a y r m bs rt sg target pre sm ap types,
     resolve_sym W (fr_mod F) pa = Some r -> MethodNamed W (fr_mod F) r dn m ->
     Brackets W (fr_mod F) (c_ty C) m a bs ->
     TyOf W (fr_mod F) (bs ++ c_ty C) None (ATRef pa None) rt ->
     SigOf W m (bs ++ c_ty C) (Some rt) sg ->
-    MethProvider W P F C y sg rt target pre sm ->
+    MethProvider W P F C y sg rt target types pre sm ->
     AppOf W m (bs ++ c_ty C) ap ->
     BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
-             (fun x => pre (bind_method_expression (canon C rt) m (theta_of C ap) target sm x))
+             (fun x => pre (bind_method_expression (canon C rt) m (theta_of C ap) target types sm x))
              (provide C (mkey (canon C rt) m) ap (set_mth C (canon C rt) m sg)) F []
 (* [D55] `bind F;` for F with a body: F's binds, here, read in F's module *)
 | BApplyBody : forall F C pa u d n ps a r bodies wrap C' F' made,
@@ -4073,12 +4139,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
    X(F) must denote what they did where F was provided, else a static error;
    exactly F's result is then in force, its items at the application's
    generations. *)
-| BApplyAbstract : forall F C pa u fx Cu ns sm th gensof C' ks newgens,
+| BApplyAbstract : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
     resolve_sym W (fr_mod F) pa = Some u -> nlook u (c_funs C) = Some fx ->
     FunCtx W u Cu ns ->
     (* inputs in force here, and θ reads them *)
-    (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here, nlook t (c_ty C) = Some here /\
-        In (t, canon C here) th) ->
+    (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here, nlook t (c_ty C) = Some here) ->
+    th = map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cu) ->
     (* rule 5: fixed inputs unchanged since the provision *)
     (forall x tx, In (x, tx) fx -> exists here,
       nlook x (c_ty C) = Some here /\ canon C here = canon C tx) ->
@@ -4089,9 +4155,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* outputs: fresh where the symbol is already in force *)
     (forall t, FunOutputs W u t ->
        (nlook t (c_ty C) = None /\ gensof t = t) \/
-       (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens /\ In (t, TAbs (gensof t)) th)) ->
+       (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+    NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-    BindItem W P F C (Spec (Some pa) None None, None) (apply_expression u th sm) C' (with_fresh F newgens) newgens
+    BindItem W P F C (Spec (Some pa) None None, None)
+      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
+      C' (with_fresh F newgens) newgens
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx,
@@ -4129,22 +4198,22 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
 (* [D66] a fn provider: a defined fn (its needs answered here), or an
    abstract fn in force, through a fresh defined forwarder whose body calls
    it; its signature read here must be the bound fn's. *)
-with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> option ty -> nat -> smap -> Prop :=
+with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> option ty -> nat -> type_capture -> smap -> Prop :=
 | FPDefined : forall F C pa g sg Cg ns sm,
     resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
     (exists n ps rt b, ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W g Cg ns -> Satisfies C Cg ns sm ->
     SigOf W g (c_ty C) None (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    FnProvider W P F C (AEPath pa None) sg None g sm
+    FnProvider W P F C (AEPath pa None) sg None g (formal_capture W C g) sm
 | FPForward : forall F C pa g sg w n,
     resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
     (exists nm ps rt, ast_of W g = Some (ADFn RPlain nm ps rt None)) ->
     nlook g (c_fns C) = Some sg -> n = length (sg_params sg) ->
     Fresh W w -> body_of P w = Some (EInvoke g (map EVar (seq 0 n))) ->
-    FnProvider W P F C (AEPath pa None) sg None w [(IFn g, IFn g)]
+    FnProvider W P F C (AEPath pa None) sg None w (TypeCapture [] []) [(IFn g, IFn g)]
 
 (* a method provider (the receiver is the provider's first argument) *)
-with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty -> nat -> (expr -> expr) -> smap -> Prop :=
+with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty -> nat -> type_capture -> (expr -> expr) -> smap -> Prop :=
 | MPAttached : forall F C rp n rg att rt sg Ca ns sm,
     resolve_sym W (fr_mod F) rp = Some rg -> Attached W rg n att ->
     (exists rn ps r b, ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
@@ -4152,16 +4221,16 @@ with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty
     CtxOf W att Ca ns -> Satisfies C Ca ns sm ->
     SigOf W att (c_ty C) None
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (fun x => x) sm
-| MPWrapped : forall F C pa sg rt g sm w n Cg nsg,
-    FnProvider W P F C (AEPath pa None) sg None g sm ->
+    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (formal_capture W C att) (fun x => x) sm
+| MPWrapped : forall F C pa sg rt g sm w n Cg nsg types,
+    FnProvider W P F C (AEPath pa None) sg None g types sm ->
     CtxOf W g Cg nsg -> n = length (sg_params sg) ->
     Fresh W w ->
     body_of P w = Some (ECall g (theta_at W Cg g) (map (fun k => (rkey_of Cg k, rkey_of Cg k)) nsg) (map EVar (seq 1 n))) ->
-    MethProvider W P F C (AEPath pa None) sg rt w (fun x => x) sm
+    MethProvider W P F C (AEPath pa None) sg rt w types (fun x => x) sm
 | MPLambda : forall F C ps r body sg rt pid pre sm,
     LambdaProvider W P F C ps r body sg (Some rt) pid pre sm ->
-    MethProvider W P F C (AELam ps r body) sg rt pid pre sm
+    MethProvider W P F C (AELam ps r body) sg rt pid (lexical_capture C) pre sm
 
 (* [D70] an anonymous function at a bind: its parameters are the bound
    signature's (annotations, if any, must agree); each local of the
@@ -4232,6 +4301,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
     (forall t, In t outs <-> FunOutputs W u t) ->
+    (forall t, In t outs -> exists meaning, nlook t (c_ty Cb) = Some meaning) ->
     NoDup (map gen outs) ->
     (forall t, In t outs -> Fresh W (gen t)) ->
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
@@ -4447,7 +4517,7 @@ Definition Entry (W : world) (P : program) (C : cx)
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation
-  | IFun source, FunctorClosure code [] (Environment [] []) => Family W P source code
+  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) => Family W P source code
   | _, _ => False
   end.
 
@@ -4544,7 +4614,7 @@ with binding_primitives (binding : binding) : list prim :=
 Fixpoint entry_primitives (entry : provision_value) : list prim :=
   match entry with
   | PrimitiveClosure operation _ => [operation]
-  | FunctionClosure _ (Environment _ captured) | FunctorClosure _ _ (Environment _ captured) =>
+  | FunctionClosure _ (EnvironmentWithAliases _ _ captured) | FunctorClosure _ _ (EnvironmentWithAliases _ _ captured) =>
       flat_map (fun entry => entry_primitives (snd entry)) captured
   | _ => []
   end.

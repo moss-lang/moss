@@ -12,6 +12,16 @@ bootstrap in 38m08s; removing either optional transformation exceeded the
 one-hour cap. The public elaborator/interpreter port and all five public
 obligations remain open.
 
+The [public safety/frontier checkpoint](PUBLIC-SAFETY-CHECKPOINT.md) adds
+ground data/local/heap typing and checked cast/allocation preservation,
+direct typed-loader soundness and acceptance completeness, transport across
+reachable bundle witnesses, and a public `WorldOf` reading of accepted
+elaboration metadata. It also corrects a checked saved-generation mismatch:
+source aliases, stable generations and output destinations are now separate,
+and closure activations capture only the types justified by their code.
+All-fuel agreement for the partial public closure compiler remains checked.
+Full callable/environment realization and source preservation remain open.
+
 This checkpoint contains a substantial proof development, not an end-to-end
 verified compiler. In particular, **source elaboration soundness and the
 universal runtime typing certificate remain open**. The public contract is
@@ -23,7 +33,7 @@ default interface; execution and safety quantify over any compatible interface.
 [DefaultRuntime.v](theories/DefaultRuntime.v) proves the concrete runtime's
 primitive and heap laws for the internal `ExecutionModel`. The revised public
 semantics has explicit structural records and machine types, separate runtime
-type/provision environments, one binding grammar, exact literal expansions,
+generation/alias/provision namespaces, one binding grammar, exact literal expansions,
 checked representation metadata, lexical capture, and stronger freshness/result
 contracts. Existing component proofs are preserved against ExecutionModel;
 they are not automatically proofs of the revised Audit model.
