@@ -2199,7 +2199,8 @@
         "E23",
         "E24",
         "E25",
-        "E26"
+        "E26",
+        "E27"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2696,6 +2697,29 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/bracket-method-receiver.moss"
+        ]
+      }
+    },
+    {
+      "id": "E27",
+      "group": "E",
+      "title": "Call wrapped fns at their context's instantiation",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators (Elab.v and src/) emit a method wrapper's call of the fn it wraps at theta_ctx, the instantiation indexed by the fn's own context type table, as Audit's MPWrapped now requires.",
+      "approach": "Replace theta_at in the wrapper body (WrapperEtaExec.v) with the context-indexed instantiation; for a fn other than main only the order changes, for main the root context's types are added.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "theories/WrapperEtaExec.v"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved indexing the wrapper's instantiation by the wrapped fn's context after the safety proof found theta_at omits main's root types; a wrapped main runs correctly on both implementations.",
+        "sources": [
+          "SAFETY-SITES.md"
         ]
       }
     },

@@ -126,6 +126,19 @@ the local store. *C* and *F* are the static context and frame.
   weakening of absorption was considered and rejected: at calls, θ is
   unconstrained for requirements the caller leaves unbound, so a scoped
   absorption would need new constraints on θ as well.
+- **A wrapper calls its fn at the fn's own context (no counterexample).**
+  `MPWrapped`'s wrapper called `g` at `theta_at W Cg g`, which reads only
+  `w_reqs g`. Every other call reads θ over the callee's whole context
+  type table. For an ordinary fn the two hold the same types in another
+  order, but a fn in scope as `main` also has its root context's types,
+  which `w_reqs` omits. [wrapped-main.moss](examples/wrapped-main.moss)
+  wraps such a `main` that uses the root `Gc` functors; the oracle
+  and the native compiler both run it correctly, so the gap was only in
+  the relation. The wrapper now calls `g` at `theta_ctx Cg`, θ indexed by
+  `g`'s context type table (user-approved). The proof shows the call's
+  environment has exactly the outer call's meanings and provisions
+  (`self_meanings`, `realizes_transfer`). The implementation follow-up is
+  [E27](proofs/build-run.md#e27).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -243,7 +256,6 @@ hypotheses, each a named remaining obligation:
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BMethBind` | method binds by a wrapper (`MPWrapped`); attached and lambda providers are proved (`meth_bind_safe`), as are function lambdas (`lambda_fn_bind_safe`) | T07, T09 |
 | `case_BApplyBody`, `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and applications | T15, T16 |
 | `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
 | `lambda_keys_scoped` | a lambda's context lists method keys whose receivers mention only its generations | T29 |
@@ -349,3 +361,6 @@ without touching any proof.
 - Lambda capture freshness, the `context_gens` merge keys after approval,
   and lambda binds for fns and methods (`lambda_fn_bind_safe`,
   `lambda_meth_bind_safe`) (22:40 to 23:20).
+- Wrapped `main` test, `theta_ctx` after approval, and wrapper method
+  providers (`wrapped_callable`, `wrapped_meth_bind_safe`); method binds
+  are now fully proved (23:25 to 00:05).

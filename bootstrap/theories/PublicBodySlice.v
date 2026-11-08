@@ -1296,20 +1296,6 @@ Definition ItemWrap n F C (it : spec * option aexpr) (w : expr -> expr) (C' : A.
 
 (* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
 Local Close Scope string_scope.
-(* BMethBind *)
-Hypothesis case_BMethBind : forall k, Below k -> forall F C pa dn a y r m bs rt sg target pre sm ap types,
-  A.resolve_sym W (A.fr_mod F) pa = Some r -> A.MethodNamed W (A.fr_mod F) r dn m ->
-      A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
-      A.TyOf W (A.fr_mod F) (bs ++ A.c_ty C) None (ATRef pa None) rt ->
-      A.SigOf W m (bs ++ A.c_ty C) (Some rt) sg ->
-      A.MethProvider W Prog F C y sg rt target types pre sm ->
-      A.AppOf W m (bs ++ A.c_ty C) ap ->
-  (* attached-method and lambda providers are proved (meth_bind_safe) *)
-  (forall rp n0, y <> AEField (AEPath rp None) n0) -> (forall ps0 r0 b0, y <> AELam ps0 r0 b0) ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) (Some dn) a, Some y)
-             (fun x => pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) target types sm x))
-             (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
-
 (* BApplyBody *)
 Hypothesis case_BApplyBody : forall k, Below k -> forall F C pa u d n ps a r bodies wrap C' F' made,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.w_decl W u = Some d ->
@@ -2473,6 +2459,241 @@ Proof.
       cbn [map]. f_equal. symmetry. exact (Abs rt).
 Qed.
 
+(* ---- wrapper providers ------------------------------------------------------ *)
+
+Lemma lookup_keyed_in : forall (f : nat -> ty) (l : list (nat * ty)) x, In x (map fst l) ->
+  lookup_subst x (map (fun q => (fst q, f (fst q))) l) = Some (f x).
+Proof.
+  intros f l x. induction l as [|[a t] r IH]; intros Ix; [contradiction|]. cbn.
+  destruct (Nat.eqb_spec x a) as [->|Ne]; [reflexivity|]. destruct Ix as [E|Ix]; [cbn in E; congruence|exact (IH Ix)].
+Qed.
+
+Lemma lookup_keyed_out : forall (f : nat -> ty) (l : list (nat * ty)) x, ~ In x (map fst l) ->
+  lookup_subst x (map (fun q => (fst q, f (fst q))) l) = None.
+Proof.
+  intros f l x. induction l as [|[a t] r IH]; intros Ox; [reflexivity|]. cbn.
+  destruct (Nat.eqb_spec x a) as [->|Ne]; [exfalso; apply Ox; left; reflexivity|]. apply IH. intro I; apply Ox; right; exact I.
+Qed.
+
+Lemma lookup_map_snd : forall (f : ty -> ty) (l : list (nat * ty)) x,
+  lookup_subst x (map (fun q => (fst q, f (snd q))) l) = option_map f (lookup_subst x l).
+Proof. intros f l x. induction l as [|[a t] r IH]; [reflexivity|]. cbn. destruct (Nat.eqb x a); [reflexivity|exact IH]. Qed.
+
+(* Calling a symbol from inside its own context, at its own reading of
+   each type, leaves every meaning as it was. *)
+Lemma self_meanings : forall f Cg ns de, A.CtxOf W f Cg ns -> Absorbs Cg de ->
+  (forall x, ~ In x (map fst (A.c_ty Cg)) -> lookup_subst x (type_meanings de) = None) ->
+  forall t, app_subst (callee_meanings de (A.theta_ctx Cg)) t = ground de t.
+Proof.
+  intros f Cg ns de Ctx Abs Dom t. unfold ground. apply subst_agree_on. intros x _. cbn [app_subst].
+  destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cg))) as [Ix|Ox].
+  - assert (Lk : lookup_subst x (callee_meanings de (A.theta_ctx Cg)) =
+                 Some (ground de (A.canon Cg (app_subst (A.c_ty Cg) (TAbs x))))).
+    { unfold callee_meanings, A.theta_ctx. rewrite map_map.
+      exact (lookup_keyed_in (fun x => ground de (A.canon Cg (app_subst (A.c_ty Cg) (TAbs x)))) _ x Ix). }
+    rewrite Lk.
+    destruct (ctxof_formed W f Cg ns Ctx) as [Form _].
+    cbn [app_subst]. rewrite lookup_subst_nlook.
+    destruct (keys_in (A.c_ty Cg) x Ix) as [v Lv]. rewrite Lv. rewrite (Form x v Lv).
+    change (app_subst (A.c_sub Cg) (TAbs x)) with (A.canon Cg (TAbs x)). rewrite (Abs (A.canon Cg (TAbs x))), (Abs (TAbs x)).
+    reflexivity.
+  - assert (Lk : lookup_subst x (callee_meanings de (A.theta_ctx Cg)) = None).
+    { unfold callee_meanings, A.theta_ctx. rewrite map_map.
+      exact (lookup_keyed_out (fun x => ground de (A.canon Cg (app_subst (A.c_ty Cg) (TAbs x)))) _ x Ox). }
+    rewrite Lk, (Dom x Ox). reflexivity.
+Qed.
+
+(* Realization carries over to an environment with the same meanings and
+   the same provisions under the context's keys. *)
+Lemma realizes_transfer : forall n C d d' H, Realizes n C d H ->
+  (forall t, ground d' t = ground d t) ->
+  (forall k p, In (k, p) (A.c_provisions C) -> lookup_provision (A.rkey_of C k) d' = lookup_provision (A.rkey_of C k) d) ->
+  Realizes n C d' H.
+Proof.
+  intros n C d d' H [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] G Same.
+  assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
+  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|exact (conj Idem KM)]. split; [|split; [|split]].
+  - intros v t Found. destruct (Vals v t Found) as [w [Look T]]. exists w. rewrite G. split; [|exact T].
+    destruct (vals_ilook _ v t KM Found) as [a Il]. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
+  - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]]. exists pv. split.
+    + destruct (fns_ilook _ f g KM Found) as [a Il]. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
+    + exact (callable_transfer n n H d d' _ _ _ _ pv (le_n n) (Gm _) (eq_sym (G _)) Ok).
+  - intros r m g Found. destruct (Mths r m g Found) as [pv [Look Ok]]. exists pv. split.
+    + destruct (mths_ilook _ r m g KM Found) as [a Il]. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
+    + exact (callable_transfer n n H d d' _ _ _ _ pv (le_n n) (Gm _) (eq_sym (G _)) Ok).
+  - intros u fx Found. destruct (Funs u fx Found) as [h [sms [dc Look]]]. exists h, sms, dc.
+    pose proof (funs_ilook _ u fx KM Found) as Il. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
+Qed.
+
+(* Each need of a callee is found in the environment a call builds. *)
+Lemma callee_found : forall n C d H f Cf ns sm th dc,
+  Realizes (S n) C d H -> A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th ->
+  select_provisions d sm = Some dc ->
+  forall k, In k ns -> lookup_provision (A.rkey_of Cf k) (callee_env d th dc) <> None.
+Proof.
+  intros n C d H f Cf ns sm th dc [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT Sel k Ik.
+  destruct Sat as [SmEq [Prov _]].
+  destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
+  change (lookup_provision (A.rkey_of Cf k) (callee_env d th dc)) with (lookup_provision (A.rkey_of Cf k) dc).
+  rewrite (select_lookup d sm dc _ Sel), SmEq.
+  rewrite (sm_find_map (A.rkey_of Cf) (fun k' => A.rkey_of C (A.at_th C th k')) ns k Ik);
+    [|intros k' Ik' E; exact (rkey_of_injective Cf k' k (Shape k' Ik') (Shape k Ik) E)].
+  pose proof (Prov k Ik) as Pr. pose proof (Shape k Ik) as Sh.
+  destruct k as [t|v|f'|r m a|u]; cbn in Sh, Pr |- *; try contradiction.
+  - destruct (A.nlook v (A.c_vals C)) as [t|] eqn:L; [|congruence]. destruct (Vals v t L) as [w [Look _]]. congruence.
+  - destruct (A.nlook f' (A.c_fns C)) as [g|] eqn:L; [|congruence]. destruct (Fns f' g L) as [pv [Look _]]. congruence.
+  - destruct (A.mlook _ m (A.c_mths C)) as [g|] eqn:L; [|congruence]. destruct (Mths _ m g L) as [pv [Look _]]. congruence.
+  - destruct (A.nlook u (A.c_funs C)) as [fx|] eqn:L; [|congruence]. destruct (Funs u fx L) as [h [sms [dc' Look]]]. congruence.
+Qed.
+
+Lemma vars_args_from : forall i d g st start rest,
+  (forall q, q < List.length rest -> lookup_local (start + q) g = nth_error rest q) ->
+  I.eval_arguments i P d g st (map EVar (seq start (List.length rest))) = inl (rest, g, st) \/
+  exists l, I.eval_arguments i P d g st (map EVar (seq start (List.length rest))) = inr (I.Evaluation OutOfFuel l st).
+Proof.
+  intros i d g st. induction i as [|i IH]; intros start rest Look; [right; exists g; reflexivity|].
+  destruct rest as [|w rest]; [left; reflexivity|]. cbn [List.length seq map I.eval_arguments].
+  destruct i as [|i]; [right; exists g; reflexivity|].
+  pose proof (Look 0 ltac:(cbn; lia)) as L0. rewrite Nat.add_0_r in L0. cbn [nth_error] in L0.
+  cbn [I.eval]. rewrite L0.
+  destruct (IH (S start) rest) as [E|[l E]].
+  - intros q Lq. replace (S start + q) with (start + S q) by lia. exact (Look (S q) ltac:(cbn; lia)).
+  - rewrite E. left. reflexivity.
+  - rewrite E. right. eauto.
+Qed.
+
+Lemma eval_call_eq : forall j d g st f th sm args,
+  I.eval (S j) P d g st (ECall f th sm args) =
+  match view_function P f with
+  | Some body =>
+      match I.eval_arguments j P d g st args with
+      | inl (ws, g1, st1) =>
+          match select_provisions d sm with
+          | Some d' => I.ret_call g1 (I.eval j P (call_environment d th d') (parameter_values ws) st1 body)
+          | None => I.Evaluation (Stuck I.e_compose) g1 st1
+          end
+      | inr r => r
+      end
+  | None => I.Evaluation (Stuck I.e_nobody) g st
+  end.
+Proof. reflexivity. Qed.
+
+(* A wrapper's closure: the bound fn called from inside its own context. *)
+Lemma wrapped_callable : forall k, Below k -> forall jn, jn <= k ->
+  forall C sg g th Cg ns sm w recv d H dc,
+  (exists n ps rt b, A.ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
+  A.CtxOf W g Cg ns -> A.Satisfies C Cg th ns sm -> A.CallTheta W C Cg g th ->
+  A.SigOf W g (A.c_ty C) None (A.FSig (map (A.canon C) (A.sg_params sg)) (A.canon C (A.sg_ret sg))) ->
+  select_provisions d sm = Some dc ->
+  A.body_of Prog w = Some (ECall g (A.theta_ctx Cg) (map (fun k => (A.rkey_of Cg k, A.rkey_of Cg k)) ns)
+                                 (map EVar (seq 1 (List.length (A.sg_params sg))))) ->
+  Realizes (S jn) C d H ->
+  CallableOk jn H d (recv :: A.sg_params sg) (A.sg_ret sg) (FunctionClosure w (typed_capture d (TypeCapture th th) dc)).
+Proof.
+  intros k Bel jn Ljn C sg g th Cg ns sm w recv d H dc Def Ctx Sat CT Sig Sel BodyW Real.
+  pose proof Real as [Abs _].
+  destruct (callee_realizes jn C d H g Cg ns sm th Real Ctx Sat CT) as [dc0 [Sel0 [Ag RealG]]].
+  rewrite Sel in Sel0. injection Sel0 as <-.
+  set (de := typed_capture d (TypeCapture th th) dc).
+  assert (RealDe : Realizes jn Cg de H) by exact RealG.
+  pose proof RealDe as [AbsDe _].
+  destruct Def as [n0 [ps0 [rt0 [b0 Def]]]]. unfold A.ast_of in Def.
+  destruct (A.w_decl W g) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
+  pose proof (all_fn_elab g dcl RPlain n0 ps0 rt0 b0 Decl Ast dcl RPlain n0 ps0 rt0 b0 Decl Ast)
+    as (C0 & ns0 & this & g0 & F0 & x & t0 & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & View).
+  destruct (ctx_needs W g Cg ns Ctx) as [Nd [ProvNs Shape]].
+  pose proof CT as [ThKeys _].
+  cbn [CallableOk]. eexists. split; [change (view_function P w) with (A.body_of Prog w); exact BodyW|].
+  intros j Lj H' st ws E Sok Args.
+  inversion Args as [|w0 t0' ws' ts' Tw0 Tws]; subst.
+  destruct j as [|j]; [exact Logic.I|]. rewrite eval_call_eq.
+  change (view_function P g) with (A.body_of Prog g). rewrite View.
+  assert (Len : List.length ws' = List.length (A.sg_params sg)) by exact (Forall2_length Tws).
+  rewrite <- Len.
+  destruct (vars_args_from j de (parameter_values (w0 :: ws')) st 1 ws') as [Ea|[l Ea]].
+  { intros q Lq. unfold parameter_values.
+    exact (lookup_params_from (w0 :: ws') 0 (S q) ltac:(cbn; lia)). }
+  2: { rewrite Ea. exact Logic.I. }
+  rewrite Ea.
+  destruct (select_ok de (map (fun k => (A.rkey_of Cg k, A.rkey_of Cg k)) ns)) as [dc' Sel'].
+  { intros q Iq. apply in_map_iff in Iq as [k' [<- Ik]]. cbn [snd].
+    exact (callee_found jn C d H g Cg ns sm th dc Real Ctx Sat CT Sel k' Ik). }
+  rewrite Sel', (call_environment_callee de _ _ dc' Sel').
+  set (dn := callee_env de (A.theta_ctx Cg) dc').
+  assert (Gn : forall t, ground dn t = ground de t).
+  { intros t. apply (self_meanings g Cg ns de Ctx AbsDe). intros xo Ox.
+    change (type_meanings de) with (callee_meanings d th). unfold callee_meanings.
+    rewrite lookup_map_snd, lookup_subst_nlook, (keys_out th xo (fun Ix => Ox (eq_rect _ (fun l => In xo l) Ix _ ThKeys))). reflexivity. }
+  assert (Same : forall k0 p, In (k0, p) (A.c_provisions Cg) -> lookup_provision (A.rkey_of Cg k0) dn = lookup_provision (A.rkey_of Cg k0) de).
+  { intros k0 p I0. pose proof (ProvNs k0 p I0) as Ik.
+    change (lookup_provision (A.rkey_of Cg k0) dn) with (lookup_provision (A.rkey_of Cg k0) dc').
+    rewrite (select_lookup de _ dc' _ Sel').
+    rewrite (sm_find_map (A.rkey_of Cg) (A.rkey_of Cg) ns k0 Ik); [reflexivity|].
+    intros k' Ik' Ek. exact (rkey_of_injective Cg k' k0 (Shape k' Ik') (Shape k0 Ik) Ek). }
+  assert (RealN : Realizes j Cg dn H').
+  { apply (realizes_extends _ _ _ H); [exact E|]. apply (realizes_transfer j Cg de dn H); [|exact Gn|exact Same].
+    eapply realizes_lower; [|exact RealDe]. lia. }
+  destruct (body_call j (Bel j ltac:(lia)) g dcl n0 ps0 rt0 b0 Cg ns dn H' st ws' d (A.sg_params sg) (A.sg_ret sg)
+    Decl Ast Ctx RealN Sok) as [body [View' Run]].
+  - intros g' Sig'. destruct (sig_rel W _ _ g _ _ None None g' _ Sig' Sig Ag (fun _ _ E' _ => ltac:(discriminate E')))
+      as [Ps Rt]. cbn [A.sg_params A.sg_ret] in Ps, Rt. split.
+    + transitivity (map (ground de) (A.sg_params g')); [apply map_ext; exact Gn|].
+      etransitivity; [exact Ps|]. rewrite map_map. apply map_ext. intros u. apply Abs.
+    + rewrite Gn. etransitivity; [exact Rt|]. apply Abs.
+  - exact Tws.
+  - change (view_function P g) with (A.body_of Prog g) in View'. rewrite View in View'. injection View' as <-.
+    apply calloutcome_ret. exact Run.
+Qed.
+
+Lemma wrapped_meth_bind_safe : forall k, Below k -> forall n, n <= S k ->
+  forall F C sp pa m sg rt g types sm w n0 Cg nsg ap,
+  A.FnProvider W Prog F C (AEPath pa None) sg None g types sm ->
+  A.CtxOf W g Cg nsg -> n0 = List.length (A.sg_params sg) ->
+  A.body_of Prog w = Some (ECall g (A.theta_ctx Cg) (map (fun k => (A.rkey_of Cg k, A.rkey_of Cg k)) nsg) (map EVar (seq 1 n0))) ->
+  ItemWrap n F C (sp, Some (AEPath pa None))
+    (fun x => bind_method_expression (A.canon C rt) m (A.theta_of C ap) w types sm x)
+    (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
+Proof.
+  intros k Bel n Le F C sp pa m sg rt g types sm w n0 Cg nsg ap FP Ctx Len BodyW.
+  remember (AEPath pa None) as src eqn:Src. remember (@None ty) as none eqn:NoneE.
+  destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R K Abs' Fn Len' Fresh' Body'].
+  2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
+  destruct (PublicContextFacts.function_context_unique W g' Cg' ns' Cg nsg Ctx' Ctx) as [-> ->].
+  subst n0.
+  intros t B cont Safe [|j] Lj d types0 H lg st Pre0; [exact Logic.I|].
+  unfold bind_method_expression. rewrite eval_bind_eq.
+  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_method_eq.
+  pose proof Pre0 as [Frame [Ctx0 [L [St Real]]]].
+  destruct (callee_realizes (S j) C' d H g' Cg nsg sm' th ltac:(eapply realizes_lower; [|exact Real]; lia) Ctx Sat CT)
+    as [dc [Sel _]].
+  pose proof (wrapped_callable k Bel (S j) ltac:(lia) C' sg' g' th Cg nsg sm' w (A.canon C' rt) d H dc
+    Def Ctx Sat CT SigG Sel BodyW ltac:(eapply realizes_lower; [|exact Real]; lia)) as Ok.
+  rewrite Sel. destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
+  unfold A.set_mth in Safe.
+  rewrite (provide_set C' (A.mkey (A.canon C' rt) m) (A.ProvidedMethod sg' []) ap ltac:(intros; discriminate)) in Safe.
+  assert (Key : A.rkey (set_cx C' (A.mkey (A.canon C' rt) m) (A.ProvidedMethod sg' ap)) (A.canon C' rt) m =
+                IMth (A.canon C' rt) m (A.theta_of C' ap)).
+  { unfold A.rkey. rewrite capps_ilook. unfold set_cx. cbn [A.c_provisions].
+    rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). cbn [option_map A.provision_inst].
+    apply f_equal, theta_of_sub. reflexivity. }
+  set (d' := install_provision (IMth (A.canon C' rt) m (A.theta_of C' ap))
+    (FunctionClosure w (typed_capture d (TypeCapture th th) dc)) d).
+  apply (outcome_env F' d d' H types0 t _ _ eq_refl).
+  eapply O.outcome_breaks; [intro b; left; exact b|].
+  apply (Safe (S (S j)) ltac:(lia) d' types0 H lg st).
+  split; [exact Frame|]. split; [exact Ctx0|]. split; [exact L|]. split; [exact St|].
+  apply (realizes_set (S (S j)) C' d H (A.mkey (A.canon C' rt) m) (A.ProvidedMethod sg' ap)).
+  - eapply realizes_lower; [|exact Real]. lia.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. intro E. apply Ne. rewrite E. unfold A.mkey. cbn [A.rkey_of].
+    symmetry. exact Key.
+  - cbn [NewOk]. exists (FunctionClosure w (typed_capture d (TypeCapture th th) dc)).
+    split; [transitivity (lookup_provision (IMth (A.canon C' rt) m (A.theta_of C' ap)) d'); [f_equal; exact Key|]|].
+    { unfold d'. rewrite lookup_install, (proj2 (item_eqb_spec _ _) eq_refl). reflexivity. }
+    exact (callable_transfer (S (S j)) (S (S j)) H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
+Qed.
+
 Lemma meth_bind_safe : forall k, Below k -> forall n F C pa dn a y r m bs rt sg target pre sm ap types,
   A.resolve_sym W (A.fr_mod F) pa = Some r -> A.MethodNamed W (A.fr_mod F) r dn m ->
   A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
@@ -2485,11 +2706,11 @@ Lemma meth_bind_safe : forall k, Below k -> forall n F C pa dn a y r m bs rt sg 
     (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
 Proof.
   intros k Bel n F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App Le.
-  pose proof (fun Ne Nl => case_BMethBind k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App Ne Nl n Le)
-    as Other.
   pose proof (method_sig_scoped F C m a bs pa rt sg Br Ty Sig) as SigSc.
-  destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA| |F C ps r0 body sg rt pid pre sm LP];
-    [|apply Other; intros; discriminate|exact (lambda_meth_bind_safe k Bel n Le F C _ m sg rt ps r0 body pid pre sm ap LP SigSc)].
+  destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA
+    |F C pw sg rt g sm w n0 Cg nsg types FP Ctx Len Fresh Body|F C ps r0 body sg rt pid pre sm LP];
+    [|exact (wrapped_meth_bind_safe k Bel n Le F C _ pw m sg rt g types sm w n0 Cg nsg ap FP Ctx Len Body)
+     |exact (lambda_meth_bind_safe k Bel n Le F C _ m sg rt ps r0 body pid pre sm ap LP SigSc)].
   intros t B cont Safe [|j] Lj d types0 H lg st Pre0; [exact Logic.I|].
   unfold bind_method_expression. rewrite eval_bind_eq.
   destruct j as [|j]; [exact Logic.I|]. rewrite bindings_method_eq.

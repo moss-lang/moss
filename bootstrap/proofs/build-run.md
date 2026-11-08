@@ -8,7 +8,7 @@ Generated from [one canonical task plan](../proof-plan.json). Task IDs and finis
 
 [Task records](#task-records) · [Checkpoint history](#checkpoint-changes)
 
-Ready tasks with tentative hour estimates: [B01](#b01), [F17](#f17), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26).
+Ready tasks with tentative hour estimates: [B01](#b01), [F17](#f17), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26), [E27](#e27).
 
 Ready tasks needing decomposition: [F10](#f10), [E02](#e02), [L01](#l01), [K09](#k09).
 
@@ -190,6 +190,7 @@ flowchart TB
     E24["○ E24: Instantiate calls through merges"]:::open
     E25["○ E25: Check selected provision types"]:::open
     E26["○ E26: Enter bound attached methods at the key's receiver"]:::open
+    E27["○ E27: Call wrapped fns at their context's instantiation"]:::open
   end
   E01 --> E02
   E01 --> E03
@@ -231,6 +232,7 @@ flowchart TB
   E24 --> E11
   E25 --> E11
   E26 --> E11
+  E27 --> E11
   click E01 "#e01"
   click E02 "#e02"
   click E03 "#e03"
@@ -255,6 +257,7 @@ flowchart TB
   click E24 "#e24"
   click E25 "#e25"
   click E26 "#e26"
+  click E27 "#e27"
   classDef done stroke:#238636,stroke-width:2px
   classDef partial stroke:#b8860b,stroke-width:2px,stroke-dasharray:5 3
   classDef open stroke:#888,stroke-dasharray:2 3
@@ -542,7 +545,7 @@ to that record, including across diagrams and pages.
 | <a id="e17"></a> **E17** Cover direct ordinary function bodies | ○ open; ? Decompose | Every defined source function has a public function-elaboration receipt in the final program, under explicit global induction premises. | [E03](#e03), [E04](#e04), [S29](#s29) | Port completed-body coverage and final lookup transport; keep final-state obligations visible.  [Audit.v](../theories/Audit.v), [FnCompleted.v](../theories/FnCompleted.v), [FnElabExec.v](../theories/FnElabExec.v) |
 | <a id="e18"></a> **E18** Cover direct generated provider bodies | ○ open; ? Decompose | Generated lambda, wrapper, forwarder and linked bodies have final public elaboration receipts. | [E04](#e04), [E05](#e05), [E08](#e08) | Inventory emission forms and split their coverage proofs rather than assuming a generated-body callback.  [Audit.v](../theories/Audit.v), [FinalLambdas.v](../theories/FinalLambdas.v), [FinalForwarders.v](../theories/FinalForwarders.v) |
 | <a id="e10"></a> **E10** Assemble direct final-state coverage | ○ open; ≤1h, tentative | One final public program/world contains all required source/generated body and initial-environment receipts. | [E17](#e17), [E18](#e18), [E09](#e09) | Assemble coverage and monotonic final-table facts under clearly stated smaller-fuel assumptions.  [Audit.v](../theories/Audit.v), [FunctionFrameProgram.v](../theories/FunctionFrameProgram.v) |
-| <a id="e11"></a> **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | [E03](#e03), [E04](#e04), [E05](#e05), [E07](#e07), [E08](#e08), [E10](#e10), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26) | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
+| <a id="e11"></a> **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | [E03](#e03), [E04](#e04), [E05](#e05), [E07](#e07), [E08](#e08), [E10](#e10), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26), [E27](#e27) | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
 | <a id="e12"></a> **E12** Direct public elaboration completeness | ○ open; ? Decompose | Every public-buildable bundle is accepted by direct elaboration, with the implementation fresh names permitted by the public contract. | [F10](#f10), [F11](#f11), [F12](#f12), [F13](#f13), [F14](#f14), [E02](#e02) | Assemble backward rule proofs and justified resource bounds, including the direct entry environment.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
 | <a id="e19"></a> **E19** Emit public type metadata | ✓ done; Proved / defined | Direct type emission preserves structural field names and commutes with the existing input-bounded executable type substitution. | None | Verified emit_type and emit_full_substitution. This does not establish context meaning, machine initialization or whole elaboration soundness. Origin: refinement under [E02](#e02). Named result: `emit_full_substitution`.  [PublicEmit.v](../theories/PublicEmit.v) |
 | <a id="e20"></a> **E20** Read public declaration and scope metadata | ✓ done; Proved / defined | Read actual loaded metadata into public worlds, with declaration provenance/completeness, exact exports/scopes/attached methods and acyclic imports. | None | Reuse shared source predicates, without field numbering or whole elaboration refinement. The conditional WorldOf assembler explicitly retains all six public requirements premises. Origin: refinement under [E01](#e01). Named result: `load_world_world_of_from_requirements`.  [PublicWorld.v](../theories/PublicWorld.v), [PublicWorldScope.v](../theories/PublicWorldScope.v) |
@@ -552,6 +555,7 @@ to that record, including across diagrams and pages.
 | <a id="e24"></a> **E24** Instantiate calls through merges | ○ open; ≤1h, tentative | The executable elaborators (Elab.v and src/) choose each call's and provider's instantiation so that it satisfies CallTheta: caller meanings where bound and every callee merge, rejecting calls that bind one merged class inconsistently, with regression tests. | None | Read unbound members of a merged class through a bound member; reject when no such instantiation exists. bootstrap/examples/unbound-merge-representative.moss must be rejected and partially-bound-merge.moss accepted. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [unbound-merge-representative.moss](../examples/unbound-merge-representative.moss), [partially-bound-merge.moss](../examples/partially-bound-merge.moss) |
 | <a id="e25"></a> **E25** Check selected provision types | ○ open; ≤1h, tentative | The executable elaborators (Elab.v and src/) reject a call or functor application whose selected provision's type or signature differs from the callee's view read at the instantiation, as Audit's Satisfies now requires, with a regression test. | None | Compare the caller's canonical provision signature with the callee's entry signature substituted by θ. bootstrap/examples/stale-provision-type.moss must be rejected. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [stale-provision-type.moss](../examples/stale-provision-type.moss) |
 | <a id="e26"></a> **E26** Enter bound attached methods at the key's receiver | ○ open; ≤1h, tentative | The executable elaborators (Elab.v and src/) check an attached-method provider of a method bind with its requirements read as the bound key receiver's arguments, as Audit's MPAttached now requires, with a regression test. | None | Mirror the direct attached call: set the receiver's arguments as types before matching the provider's needs and signature. bootstrap/examples/bracket-method-receiver.moss must be rejected. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [bracket-method-receiver.moss](../examples/bracket-method-receiver.moss) |
+| <a id="e27"></a> **E27** Call wrapped fns at their context's instantiation | ○ open; ≤1h, tentative | The executable elaborators (Elab.v and src/) emit a method wrapper's call of the fn it wraps at theta_ctx, the instantiation indexed by the fn's own context type table, as Audit's MPWrapped now requires. | None | Replace theta_at in the wrapper body (WrapperEtaExec.v) with the context-indexed instantiation; for a fn other than main only the order changes, for main the root context's types are added. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [WrapperEtaExec.v](../theories/WrapperEtaExec.v) |
 
 ### Selected runtime lowering
 

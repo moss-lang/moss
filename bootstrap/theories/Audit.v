@@ -3116,6 +3116,10 @@ Definition at_site (C : cx) (k : item) : item :=
    meaning in C, or itself where C gives it none — canonically. *)
 Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
   map (fun r => (r, canon C (app_subst (c_ty C) (TAbs r)))) (w_reqs W s).
+(* A symbol's instantiation in its own context: each type in force there
+   as it reads there (a wrapper calling the symbol it wraps). *)
+Definition theta_ctx (C : cx) : subst :=
+  map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty C).
 
 (* The instantiation of a call of s (assume context Cs) from context C: a
    meaning for each of s's requirements, in their fixed order. Where C
@@ -4289,7 +4293,7 @@ with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty
     FnProvider W P F C (AEPath pa None) sg None g types sm ->
     CtxOf W g Cg nsg -> n = length (sg_params sg) ->
     Fresh W w ->
-    body_of P w = Some (ECall g (theta_at W Cg g) (map (fun k => (rkey_of Cg k, rkey_of Cg k)) nsg) (map EVar (seq 1 n))) ->
+    body_of P w = Some (ECall g (theta_ctx Cg) (map (fun k => (rkey_of Cg k, rkey_of Cg k)) nsg) (map EVar (seq 1 n))) ->
     MethProvider W P F C (AEPath pa None) sg rt w types (fun x => x) sm
 | MPLambda : forall F C ps r body sg rt pid pre sm,
     LambdaProvider W P F C ps r body sg (Some rt) pid pre sm ->

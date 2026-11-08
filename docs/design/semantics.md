@@ -1628,6 +1628,12 @@ Box.get;` under `T = Char` would hand `Box.get` a `Box[T=Bool]` while it
 reads its payload, and calls its needs, at `Char`
 (`bootstrap/examples/bracket-method-receiver.moss` is rejected).
 
+**A wrapped fn is called at its own context.** When `bind R.m = f;`
+binds a defined fn, the wrapper that takes the receiver calls `f` with each
+type in force in `f`'s context read as it reads there, as any call does,
+not just `f`'s requirements: a fn in scope as `main` also has its root
+context's types (`bootstrap/examples/wrapped-main.moss`).
+
 **[D62] DECIDED by the designer (provisions keyed by identity; first found by the mechanization).** The
 core-calculus soundness proof
 (then in `docs/design/core/`, now in

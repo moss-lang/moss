@@ -1,0 +1,18 @@
+# A fn in scope as `main` runs in the root context, with `Gc`; this one
+# uses `Heap`. wrapped-main.moss calls it directly and as a wrapped
+# method provider. Expected: 2, twice.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = Int;
+    bind Heap;
+    let r = (42).boxed();
+    putchar((r.deref() % 10 + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
