@@ -128,8 +128,7 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `val_case` | contextual vals (`EVal`) | T04 |
-| `call_defined_case`, `call_abstract_case` | calls, `Demand` wrappers | T06, T14 |
+| `call_defined_case` | direct calls of defined fns, `Demand` wrappers | T03, T06, T14 |
 | `method_case`, `unary_case`, `binary_case` | method calls and operators | T06, T14 |
 | `literal_case` | numeric literals through contextual arithmetic | T05, T06 |
 | `bind_case` | bind statements | T07, T15, T16 |
@@ -148,6 +147,17 @@ T24's premises from the platform layouts. A cast tag (`Ref`/`Array`) reads
 its payload at its raw-handle requirement (`raw_payload`), so the runtime
 guard reads a complete argument, and an enabled guard makes the payload a
 handle type. Unit declarations have no cast entry.
+
+Provisions are realized semantically, indexed by fuel (`EnvOk n`): every
+static val is a typed `ValueProvision` under its key, and every function or
+method provision is a closure that is `CallableOk n`. That means running it
+at any fuel below `n` on typed arguments never gets stuck and returns a
+value typed at the caller's reading of the signature. Fuel only decreases,
+so a closure available at fuel `n` is only ever invoked below `n`. A closure
+created at fuel `S k` therefore needs only `Below k`, with no separate
+provenance certificate and no recursion through captured environments. With
+this, contextual vals (`val_step`) and calls of provided functions
+(`invoke_step`, function and primitive closures) are proved.
 
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
