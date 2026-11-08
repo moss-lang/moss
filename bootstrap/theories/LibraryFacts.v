@@ -116,9 +116,8 @@ Lemma scope_decl : LoaderReading b W -> forall p ns n s,
   A.Loaded b p -> A.w_scope W p ns n = Some (A.ESym s) -> exists d, A.w_decl W s = Some d.
 Proof.
   intros L p ns n s Hl Hs. apply (proj1 (lr_scope _ _ L p ns n (A.ESym s) Hl)) in Hs.
-  remember (A.ESym s) as es eqn:Es in Hs.
-  destruct Hs as [p ns n e He|p m t imp ns n e Hm Hi Hg He];
-    exact (export_decl _ _ _ _ He s Es).
+  destruct (@A.scope_exports b W p ns n (A.ESym s) Hs) as [He|(m & t & imp & Hm & Hi & He)];
+    exact (export_decl _ _ _ _ He s eq_refl).
 Qed.
 End Declarations.
 

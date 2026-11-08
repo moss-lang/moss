@@ -363,14 +363,15 @@ Proof.
   fix IH 5. intros p ns n e H Hl.
   destruct H as [p x d ns n Hd _ _ | p m t imp u e ns Hm Hi _ _ _ Hor | p m t imp a Hm Hi _].
   - exists d. exact Hd.
-  - assert (Ht : Loaded b t) by (eapply LoadImport; eassumption).
+  - assert (Ht : Loaded b t) by (eapply LoadImport; [exact Hl|exact Hm|apply explicit_in_imports; exact Hi]).
     destruct Hor as [He | [_ [_ He]]]; exact (IH _ _ _ _ He Ht).
-  - eapply LoadImport; eassumption.
+  - eapply LoadImport; [exact Hl|exact Hm|apply explicit_in_imports; exact Hi].
 Qed.
 
 Lemma scope_ok : forall p ns n e, InScope b W p ns n e -> Loaded b p -> ent_ok e.
 Proof.
-  intros p ns n e H Hl. destruct H as [p ns n e He | p m t imp ns n e Hm Hi _ He].
+  intros p ns n e H Hl.
+  destruct (@scope_exports b W p ns n e H) as [He | (m & t & imp & Hm & Hi & He)].
   - exact (exports_ok _ _ _ _ He Hl).
   - apply (exports_ok _ _ _ _ He). eapply LoadImport; eassumption.
 Qed.
@@ -713,7 +714,8 @@ Proof.
     destruct Ha as [d [rn [ps [rt [body [Hd [Ha _]]]]]]].
     rewrite (kind_sym_decl _ _ Hd), Ha. reflexivity.
   - apply (wo_scope Hwo NSDetached n (ESym m) Hl) in Hs.
-    inversion Hs; subst; (eapply exports_detached; [eassumption | reflexivity | reflexivity]).
+    destruct (@scope_exports b W p NSDetached n (ESym m) Hs) as [He | (mod0 & target & imp & Hmod & Hin & He)];
+      (eapply exports_detached; [exact He|reflexivity|reflexivity]).
 Qed.
 
 (* The fixed inputs root context puts in force are declared types. *)

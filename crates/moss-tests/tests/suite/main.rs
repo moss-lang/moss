@@ -27,3 +27,4 @@ mod string_literals;
 mod typed_reference_unions;
 
 mod diagnostics;
+mod prelude_shadowing;

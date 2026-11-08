@@ -5044,3 +5044,23 @@ Importing `StdBase` through the prelude also brings the GC string
 implementation into the compiler's source bundle. The compiler still
 binds `WasiRawStd` and uses linear-memory strings; the old assertion that
 the bundle excludes `gcstring.moss` no longer applies.
+
+## Prelude names are defaults
+
+The implicit prelude is a fallback scope. A module's own declarations and
+all of its explicit imports, including explicit glob imports, take precedence
+over it in each namespace (ordinary names, detached methods, and module
+aliases). Explicit imports retain D44's collision rule: two different symbols
+under the same local name are errors, as are conflicting local declarations
+and explicit imports. Import order does not choose a winner.
+
+Only names absent from that ordinary scope are supplied by the implicit
+prelude. These fallback names are not re-exported. An explicit named import
+of a prelude name is still an explicit import and can be re-exported under
+D9. An explicit `import "prelude.moss" use *` is an ordinary glob import,
+not the implicit fallback, and retains ordinary import collision checks.
+
+This resolves the shadowing question recorded after D61 and amends D44's
+application to implicit prelude imports. In particular, a local `type Base;`
+or an explicit import of another module's `Base` shadows the standard
+prelude's `Base` context.

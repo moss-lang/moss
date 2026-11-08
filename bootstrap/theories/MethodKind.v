@@ -21,9 +21,8 @@ Lemma scope_detached_kind:LoaderReading b W->forall p n s,
  A.Loaded b p->A.w_scope W p A.NSDetached n=Some(A.ESym s)->A.kind_sym W s=Some A.DKMeth.
 Proof.
  intros L p n s Hl Hs. apply(proj1(lr_scope _ _ L p A.NSDetached n(A.ESym s)Hl))in Hs.
- remember(A.ESym s)as es eqn:E in Hs. remember A.NSDetached as nsp eqn:En in Hs.
- destruct Hs as[p ns n e He|p m t imp ns n e Hm Hi Hg He];
- exact(exports_detached_kind _ _ _ _ He s En E).
+ destruct(@A.scope_exports b W p A.NSDetached n(A.ESym s)Hs)as[He|(m&t&imp&Hm&Hi&He)];
+ exact(exports_detached_kind _ _ _ _ He s eq_refl eq_refl).
 Qed.
 End Exports.
 Theorem method_named_kind:forall b w R Fl mi r n m,

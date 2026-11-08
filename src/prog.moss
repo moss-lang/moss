@@ -577,10 +577,14 @@ assume Std {
 
     # D44: one local name may not refer to two different symbols.
     fn bind_entry(m: Int, ns: Int, name: Int, to: Int, pub: Int) {
-      let existing = lookup(m, ns, name);
-      if ast::is_some(existing) {
-        if existing != to {
+      let entry = find_entry(m, ns, name, false);
+      if ast::is_some(entry) {
+        if ent_to.get(entry) != to {
           error(e_collide(), m, name);
+        } else if pub == 1 {
+          # A named import re-exports an existing glob-imported binding
+          # too. Reusing the same symbol must not retain its private flag.
+          ent_pub.set(entry, 1);
         }
         return ();
       }
@@ -789,6 +793,25 @@ assume Std {
       }
     }
 
+    # The implicit prelude fills gaps after declarations and every explicit
+    # import have been linked. Explicit globs still use strict `link`.
+    # Fallback entries are private, like other glob-imported entries.
+    fn link_prelude(m: Int, target: Int) {
+      var i = 0;
+      while i < ent_mod.length() {
+        if ent_mod.get(i) == target {
+          if ent_pub.get(i) == 1 {
+            let ns = ent_ns.get(i);
+            let name = ent_name.get(i);
+            if !ast::is_some(lookup(m, ns, name)) {
+              push_entry(m, ns, name, ent_to.get(i), 0);
+            }
+          }
+        }
+        i = i + 1;
+      }
+    }
+
     # Resolution. A path is a symbol, or — when every segment but the
     # last names a module — an export of that module.
 
@@ -958,9 +981,6 @@ assume Std {
           }
           i = i + 1;
         }
-        if ast::is_some(prelude) {
-          link(m, prelude, ast::none(), 1, 0, 0);
-        }
         i = 0;
         while i < root_count(m) {
           let d = root_at(m, i);
@@ -976,6 +996,7 @@ assume Std {
           }
           i = i + 1;
         }
+        if ast::is_some(prelude) { link_prelude(m, prelude); }
         mstate.set(m, 2);
       }
 

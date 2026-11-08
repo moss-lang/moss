@@ -33,8 +33,9 @@ Proof.
   destruct H as [p s0 d0 ns n D M F|p m t imp u e ns Hm Hin Hg Hu Ens Hx|p m t imp a Hm Hin Ha];
     intros Hl s d Es Hd.
   - injection Es as ->. rewrite D in Hd. injection Hd as <-. left. auto.
-  - right. destruct (Hrank p m t imp Hl Hm Hin) as [_ Lt].
-    pose proof (@A.LoadImport b p m t imp Hl Hm Hin) as Hlt.
+  - right. pose proof (A.explicit_in_imports b m t imp Hin) as Hdep.
+    destruct (Hrank p m t imp Hl Hm Hdep) as [_ Lt].
+    pose proof (@A.LoadImport b p m t imp Hl Hm Hdep) as Hlt.
     destruct Hx as [Hx|(_ & _ & Hx)];
       (destruct (exports_rank _ _ _ _ Hx Hlt s d Es Hd) as [[E _]|L]; [rewrite E; exact Lt | lia]).
   - discriminate.
@@ -45,10 +46,11 @@ Qed.
 Lemma scope_own : forall p ns n s d, A.Loaded b p -> A.InScope b W p ns n (A.ESym s) ->
   A.w_decl W s = Some d -> A.d_mod d = p -> A.filed_name (A.d_ast d) = Some (ns, n).
 Proof.
-  intros p ns n s d Hl H Hd Hm. remember (A.ESym s) as es eqn:Es. destruct H as [p ns n e Hx|p m t imp ns n e Hm' Hin Hg Hx].
-  - destruct (exports_rank _ _ _ _ Hx Hl s d Es Hd) as [[_ F]|L]; [exact F | rewrite Hm in L; lia].
+  intros p ns n s d Hl H Hd Hm.
+  destruct (@A.scope_exports b W p ns n (A.ESym s) H) as [Hx|(m & t & imp & Hm' & Hin & Hx)].
+  - destruct (exports_rank _ _ _ _ Hx Hl s d eq_refl Hd) as [[_ F]|L]; [exact F | rewrite Hm in L; lia].
   - exfalso. destruct (Hrank p m t imp Hl Hm' Hin) as [_ Lt].
-    destruct (exports_rank _ _ _ _ Hx (@A.LoadImport b p m t imp Hl Hm' Hin) s d Es Hd) as [[E _]|L]; [rewrite Hm in E; subst t; lia | rewrite Hm in L; lia].
+    destruct (exports_rank _ _ _ _ Hx (@A.LoadImport b p m t imp Hl Hm' Hin) s d eq_refl Hd) as [[E _]|L]; [rewrite Hm in E; subst t; lia | rewrite Hm in L; lia].
 Qed.
 
 End Scope.

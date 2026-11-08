@@ -49,8 +49,11 @@ Exports are the module's own top-level declarations, its explicit `use`d
 names, and its `as` aliases — glob imports do not re-export. One local name
 may not refer to two different symbols; renames (`use .m as .m1`) resolve
 collisions, and `::` binds more tightly than `.`, so `x.b::m()` calls a
-module-qualified method. Every file implicitly glob-imports the prelude,
-except the standard library itself.
+module-qualified method. Every file implicitly receives names from the prelude,
+except the standard library itself. The implicit prelude supplies defaults:
+local declarations and explicit imports take precedence in each namespace.
+Two conflicting explicit imports remain errors, including explicit glob imports.
+Implicit prelude names are not re-exported.
 
 ## Declarations and types
 

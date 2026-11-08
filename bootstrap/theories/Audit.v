@@ -2436,9 +2436,23 @@ Definition opt_fits (t : ty) (exp : option ty) : Prop :=
 Definition module_of (b : bundle) (p : string) : option amodule :=
   find (fun m => String.eqb (am_path m) p) (b_mods b).
 
+Definition explicit_imports (m : amodule) : list (string * aimport) :=
+  combine (am_targets m) (f_imports (am_file m)).
+
 Definition imports_of (b : bundle) (m : amodule) : list (string * aimport) :=
   (if am_prelude m then [(b_prelude b, AImport (b_prelude b) None true [])] else [])
   ++ combine (am_targets m) (f_imports (am_file m)).
+
+Lemma explicit_in_imports : forall b m t imp,
+  In (t, imp) (explicit_imports m) -> In (t, imp) (imports_of b m).
+Proof.
+  intros b m t imp H. unfold imports_of, explicit_imports in *.
+  apply in_or_app. right. exact H.
+Qed.
+
+Lemma prelude_in_imports : forall b m, am_prelude m = true ->
+  In (b_prelude b, AImport (b_prelude b) None true []) (imports_of b m).
+Proof. intros b m H. unfold imports_of. rewrite H. left. reflexivity. Qed.
 
 Inductive Loaded (b : bundle) : string -> Prop :=
 | LoadEntry : Loaded b (b_entry b)
@@ -2513,14 +2527,14 @@ Definition mod_of (W : world) (s : nat) : string :=
 (* [D44]/[D61]/[D64]: what a module exports, and what its scope holds.
    A module exports its own declarations and what it imported by `use`
    (with the use's local name), not what a glob import brought in.  Its
-   scope holds what it exports, everything its glob imports export, and
-   the module aliases of its imports. *)
+   ordinary scope holds what it exports and everything its explicit glob
+   imports export. The implicit prelude fills only unbound names. *)
 Inductive Exports (b : bundle) (W : world) : string -> nspace -> name -> ent -> Prop :=
 | ExOwn : forall p s d ns n,
     w_decl W s = Some d -> d_mod d = p -> filed_name (d_ast d) = Some (ns, n) ->
     Exports b W p ns n (ESym s)
 | ExUse : forall p m t imp u e ns,
-    module_of b p = Some m -> In (t, imp) (imports_of b m) -> i_glob imp = false ->
+    module_of b p = Some m -> In (t, imp) (explicit_imports m) -> i_glob imp = false ->
     In u (i_uses imp) ->
     ns = (if u_dot u then NSDetached else NSName) ->
     (* a plain name is the symbol t exports under it, else the module alias
@@ -2530,14 +2544,40 @@ Inductive Exports (b : bundle) (W : world) : string -> nspace -> name -> ent -> 
     Exports b W p (match e with EMod _ => NSAlias | _ => ns end)
             (match u_alias u with Some (_, a) => a | None => u_name u end) e
 | ExAlias : forall p m t imp a,
-    module_of b p = Some m -> In (t, imp) (imports_of b m) -> i_alias imp = Some a ->
+    module_of b p = Some m -> In (t, imp) (explicit_imports m) -> i_alias imp = Some a ->
     Exports b W p NSAlias a (EMod t).
 
-Inductive InScope (b : bundle) (W : world) : string -> nspace -> name -> ent -> Prop :=
-| ScExported : forall p ns n e, Exports b W p ns n e -> InScope b W p ns n e
+Inductive OrdinaryScope (b : bundle) (W : world) : string -> nspace -> name -> ent -> Prop :=
+| ScExported : forall p ns n e, Exports b W p ns n e -> OrdinaryScope b W p ns n e
 | ScGlob : forall p m t imp ns n e,
-    module_of b p = Some m -> In (t, imp) (imports_of b m) -> i_glob imp = true ->
-    Exports b W t ns n e -> InScope b W p ns n e.
+    module_of b p = Some m -> In (t, imp) (explicit_imports m) -> i_glob imp = true ->
+    Exports b W t ns n e -> OrdinaryScope b W p ns n e.
+
+(* The prelude contributes only where no declaration or explicit import
+   already supplies this namespace/name. It does not contribute exports. *)
+Inductive InScope (b : bundle) (W : world) : string -> nspace -> name -> ent -> Prop :=
+| ScPrimary : forall p ns n e,
+    OrdinaryScope b W p ns n e -> InScope b W p ns n e
+| ScPrelude : forall p m ns n e,
+    module_of b p = Some m -> am_prelude m = true ->
+    Exports b W (b_prelude b) ns n e ->
+    (forall e', ~ OrdinaryScope b W p ns n e') -> InScope b W p ns n e.
+
+(* Every visible binding still originates in an export, either here or
+   in a dependency. Clients that only need declaration provenance need
+   not depend on the priority rules used to select that binding. *)
+Lemma scope_exports : forall b W p ns n e, InScope b W p ns n e ->
+  Exports b W p ns n e \/ exists m t imp, module_of b p = Some m /\
+    In (t, imp) (imports_of b m) /\ Exports b W t ns n e.
+Proof.
+  intros b W p ns n e H. destruct H as [p ns n e Hordinary | p m ns n e Hm Hpre Hexp Hnone].
+  - destruct Hordinary as [p ns n e Hexp | p m t imp ns n e Hm Hin Hg Hexp].
+    + left. exact Hexp.
+    + right. exists m, t, imp. split; [exact Hm|].
+      split; [apply explicit_in_imports; exact Hin|exact Hexp].
+  - right. exists m, (b_prelude b), (AImport (b_prelude b) None true []).
+    split; [exact Hm|]. split; [apply prelude_in_imports; exact Hpre|exact Hexp].
+Qed.
 
 (* Path resolution: the first segment in scope, the rest through exports. *)
 Fixpoint resolve_rest (W : world) (e : ent) (segs : list name) : option ent :=

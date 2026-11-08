@@ -343,6 +343,41 @@ Definition link (m : gmod) (target : gmod) (tidx : nat) (imp : aimport) : res gm
     Good (with_names m1 nm dt al (gm_exp_names m1) (gm_exp_detached m1) (gm_exp_aliases m1))
   else link_uses m1 target tidx (i_uses imp).
 
+(* Explicit imports remain strict. The implicit prelude is linked last
+   using left-biased lookup, without changing what the module exports. *)
+Definition prelude_fallback (m defaults : gmod) : gmod :=
+  with_names m (gm_names m +++ gm_exp_names defaults)
+               (gm_detached m +++ gm_exp_detached defaults)
+               (gm_aliases m +++ gm_exp_aliases defaults)
+               (gm_exp_names m) (gm_exp_detached m) (gm_exp_aliases m).
+
+Fixpoint link_modules (mods : nmap gmod) (m : gmod) (ds : list (nat * aimport)) : res gmod :=
+  match ds with
+  | [] => Good m
+  | (ti, imp) :: rest =>
+      match nget mods ti with
+      | Some tm => let* m' := link m tm ti imp in link_modules mods m' rest
+      | None => Bad "internal: module not loaded"
+      end
+  end.
+
+Definition primary_deps (has_prelude : bool) (ds : list (nat * aimport)) :=
+  if has_prelude then tl ds else ds.
+
+Definition link_imports (mods : nmap gmod) (has_prelude : bool)
+    (m : gmod) (ds : list (nat * aimport)) : res gmod :=
+  let* primary := link_modules mods m (primary_deps has_prelude ds) in
+  if has_prelude then
+    match ds with
+    | (ti, _) :: _ =>
+        match nget mods ti with
+        | Some defaults => Good (prelude_fallback primary defaults)
+        | None => Bad "internal: prelude not loaded"
+        end
+    | [] => Bad "internal: prelude dependency missing"
+    end
+  else Good primary.
+
 (* ---- load (collect.Loader.load) ---- *)
 
 Record load_st : Type := LSt {
@@ -392,16 +427,7 @@ Fixpoint load (fuel : nat) (b : bundle) (loading : list string) (p : string) (st
                 let* (deps, st1) := go deps0 st in
                 let mi := ls_next_mod st1 in
                 let* (m0, syms, next) := declare mi p f (ls_syms st1) (ls_next_sym st1) in
-                let fix links (m : gmod) (ds : list (nat * aimport)) : res gmod :=
-                  match ds with
-                  | [] => Good m
-                  | (ti, imp) :: r =>
-                      match nget (ls_mods st1) ti with
-                      | Some tm => let* m' := link m tm ti imp in links m' r
-                      | None => Bad "internal: module not loaded"
-                      end
-                  end in
-                let* m1 := links m0 deps in
+                let* m1 := link_imports (ls_mods st1) (am_prelude am) m0 deps in
                 Good (mi, LSt ((p, mi) :: ls_loaded st1) (nset (ls_mods st1) mi m1)
                               (nset (ls_files st1) mi f)
                               (ls_order st1 +++ [mi]) syms next (S mi))

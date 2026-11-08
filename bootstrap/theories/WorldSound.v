@@ -853,16 +853,7 @@ Proof.
     + intros [Hx|[[Hx|(E' & Hx)]|(E' & _)]]; [left; left; exact Hx | left; right; exact Hx | right; exact Hx | discriminate].
 Qed.
 
-Definition links_fn (mods : nmap gmod) :=
-  fix links (m : gmod) (ds : list (nat * aimport)) : res gmod :=
-    match ds with
-    | [] => Good m
-    | (ti, imp) :: r =>
-        match nget mods ti with
-        | Some tm => let* m' := link m tm ti imp in links m' r
-        | None => Bad "internal: module not loaded"
-        end
-    end.
+Definition links_fn := link_modules.
 
 Lemma links_spec : forall mods ds m m' RE RS, links_fn mods m ds = Good m' -> Rep m RE RS ->
   Rep m' (fun ns n x => RE ns n x \/ exists ti imp tm, In (ti, imp) ds /\ nget mods ti = Some tm /\ ImpRaw tm ti imp ns n x)
@@ -900,6 +891,74 @@ Proof.
       * right. exists ti', imp', tm'. auto.
 Qed.
 
+Definition WithFallback (primary defaults : Rel) : Rel := fun ns n x =>
+  primary ns n x \/ ((forall y, ~ primary ns n y) /\ defaults ns n x).
+
+Lemma fallback_ext : forall P Q P' Q',
+  (forall ns n x, P ns n x <-> P' ns n x) ->
+  (forall ns n x, Q ns n x <-> Q' ns n x) ->
+  forall ns n x, WithFallback P Q ns n x <-> WithFallback P' Q' ns n x.
+Proof. unfold WithFallback. intros P Q P' Q' EP EQ ns n x. setoid_rewrite EP. rewrite EQ. reflexivity. Qed.
+
+Lemma prelude_fallback_spec : forall m tm RE RS, Rep m RE RS ->
+  Rep (prelude_fallback m tm) RE
+    (WithFallback RS (fun ns n x => sassoc n (tbl tm true ns) = Some x)).
+Proof.
+  intros m tm RE RS R. constructor.
+  - intros ns n x. change (sassoc n (tbl m true ns) = Some x <-> RE ns n x).
+    apply (rep_exp _ _ _ R).
+  - intros ns n x.
+    assert (E : tbl (prelude_fallback m tm) false ns = tbl m false ns ++ tbl tm true ns)
+      by (destruct ns; reflexivity).
+    rewrite E, sassoc_app. unfold WithFallback.
+    destruct (sassoc n (tbl m false ns)) as [y|] eqn:Ep.
+    + split.
+      * intro H. injection H as <-. left. apply (rep_scope _ _ _ R). exact Ep.
+      * intros [H|[H _]].
+        -- apply (rep_scope _ _ _ R) in H. congruence.
+        -- exfalso. apply (H y), (rep_scope _ _ _ R). exact Ep.
+    + split.
+      * intro H. right. split; [|exact H]. intros y Hy.
+        apply (rep_scope _ _ _ R) in Hy. congruence.
+      * intros [H|[_ H]]; [apply (rep_scope _ _ _ R) in H; congruence|exact H].
+  - intros ns n x H. left. apply (rep_sub _ _ _ R). exact H.
+Qed.
+
+Definition LinkedExp mods ds (R : Rel) : Rel := fun ns n x =>
+  R ns n x \/ exists ti imp tm, In (ti, imp) ds /\ nget mods ti = Some tm /\ ImpRaw tm ti imp ns n x.
+Definition LinkedScope mods ds (R : Rel) : Rel := fun ns n x =>
+  R ns n x \/ exists ti imp tm, In (ti, imp) ds /\ nget mods ti = Some tm /\
+    (ImpRaw tm ti imp ns n x \/ GlobRaw tm imp ns n x).
+Definition DepPrelude (mods : nmap gmod) (has : bool) (ds : list (nat * aimport)) : Rel := fun ns n x =>
+  has = true /\ exists ti imp rest tm, ds = (ti, imp) :: rest /\
+    nget mods ti = Some tm /\ sassoc n (tbl tm true ns) = Some x.
+
+Lemma link_imports_spec : forall mods has ds m m' RE RS,
+  link_imports mods has m ds = Good m' -> Rep m RE RS ->
+  Rep m' (LinkedExp mods (primary_deps has ds) RE)
+    (WithFallback (LinkedScope mods (primary_deps has ds) RS) (DepPrelude mods has ds)) /\
+  gm_path m' = gm_path m /\ gm_attached m' = gm_attached m.
+Proof.
+  intros mods has ds m m' RE RS H R. unfold link_imports in H.
+  apply rbind_good in H as (primary & Hl & H).
+  destruct (links_spec _ _ _ _ _ _ Hl R) as (Rp & Pp & Ap).
+  change (Rep primary (LinkedExp mods (primary_deps has ds) RE)
+    (LinkedScope mods (primary_deps has ds) RS)) in Rp.
+  destruct has.
+  - destruct ds as [|[ti imp] rest]; [discriminate|].
+    destruct (nget mods ti) as [tm|] eqn:Et; [|discriminate]. injection H as <-.
+    split; [|cbn; auto].
+    eapply rep_ext; [apply prelude_fallback_spec; exact Rp| |].
+    + intros; reflexivity.
+    + apply fallback_ext; [intros; reflexivity|]. intros ns n x. unfold DepPrelude. split.
+      * intro Hx. split; [reflexivity|]. exists ti, imp, rest, tm. auto.
+      * intros (_ & ti' & imp' & rest' & tm' & E & Et' & Hx).
+        inversion E; subst. rewrite Et in Et'. injection Et' as <-. exact Hx.
+  - injection H as <-. split; [|auto].
+    eapply rep_ext; [exact Rp|intros; reflexivity|]. intros ns n x.
+    unfold WithFallback, DepPrelude. split; [auto|]. intros [Hx|[_ [E _]]]; [exact Hx|discriminate].
+Qed.
+
 Lemma forall2_in_r : forall X Y (R : X -> Y -> Prop) l1 l2, Forall2 R l1 l2 -> forall y, In y l2 -> exists x, In x l1 /\ R x y.
 Proof.
   intros X Y R l1 l2 H. induction H as [|x0 y0 r1 r2 Hr Hf IH]; intros y Hy; [destruct Hy|].
@@ -933,12 +992,21 @@ Definition OwnRaw (syms : nmap gsym) (i : nat) : Rel := fun ns n x =>
   exists g, nget syms x = Some g /\ gs_mod g = i /\ A.filed_name (gs_decl g) = Some (ns, n).
 
 Definition ImpsRaw (st : load_st) (am : amodule) : Rel := fun ns n x =>
-  exists t imp tj tm, In (t, imp) (A.imports_of b am) /\ In (t, tj) (ls_loaded st) /\
+  exists t imp tj tm, In (t, imp) (A.explicit_imports am) /\ In (t, tj) (ls_loaded st) /\
     nget (ls_mods st) tj = Some tm /\ ImpRaw tm tj imp ns n x.
 
 Definition GlobsRaw (st : load_st) (am : amodule) : Rel := fun ns n x =>
-  exists t imp tj tm, In (t, imp) (A.imports_of b am) /\ In (t, tj) (ls_loaded st) /\
+  exists t imp tj tm, In (t, imp) (A.explicit_imports am) /\ In (t, tj) (ls_loaded st) /\
     nget (ls_mods st) tj = Some tm /\ GlobRaw tm imp ns n x.
+
+Definition PreludeRaw (st : load_st) (am : amodule) : Rel := fun ns n x =>
+  am_prelude am = true /\ exists tj tm, In (b_prelude b, tj) (ls_loaded st) /\
+    nget (ls_mods st) tj = Some tm /\ sassoc n (tbl tm true ns) = Some x.
+
+Definition PrimaryRaw (st : load_st) (am : amodule) i : Rel := fun ns n x =>
+  OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x \/ GlobsRaw st am ns n x.
+Definition ScopeRaw (st : load_st) (am : amodule) i : Rel :=
+  WithFallback (PrimaryRaw st am i) (PreludeRaw st am).
 
 Definition keys (st : load_st) : list string := map fst (ls_loaded st).
 
@@ -973,7 +1041,7 @@ Record LInv (st : load_st) : Prop := {
   li_tables : forall p i m am, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
     A.module_of b p = Some am ->
     Rep m (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x)
-          (fun ns n x => OwnRaw (ls_syms st) i ns n x \/ ImpsRaw st am ns n x \/ GlobsRaw st am ns n x);
+          (ScopeRaw st am i);
   li_kind : forall s g, nget (ls_syms st) s = Some g -> KindOK g;
   li_recv : forall s g, nget (ls_syms st) s = Some g -> gs_recv g = None \/ gs_kind g = KMethod;
   li_receiver : forall s g,nget(ls_syms st)s=Some g->forall m,nget(ls_mods st)(gs_mod g)=Some m->ReceiverAt(gm_names m)g
@@ -1015,12 +1083,30 @@ Hypothesis Hmod : A.module_of b p = Some am.
 Hypothesis Hnew : ~ In p (keys st1).
 Hypothesis Hdeps : Forall2 (fun d e => snd e = snd d /\ In (fst d, fst e) (ls_loaded st1)) (A.imports_of b am) deps.
 Hypothesis Hdecl : declare (ls_next_mod st1) p (am_file am) (ls_syms st1) (ls_next_sym st1) = Good (m0, syms, next).
-Hypothesis Hlinks : links_fn (ls_mods st1) m0 deps = Good m1.
+Hypothesis Hlinks : link_imports (ls_mods st1) (am_prelude am) m0 deps = Good m1.
 
 Local Notation mi := (ls_next_mod st1).
 Local Notation st' := (LSt ((p, ls_next_mod st1) :: ls_loaded st1) (nset (ls_mods st1) (ls_next_mod st1) m1)
                (nset (ls_files st1) (ls_next_mod st1) (am_file am))
                (ls_order st1 ++ [ls_next_mod st1]) syms next (S (ls_next_mod st1))).
+
+Lemma normal_deps_rel : Forall2
+  (fun d e => snd e = snd d /\ In (fst d, fst e) (ls_loaded st1))
+  (A.explicit_imports am) (primary_deps (am_prelude am) deps).
+Proof.
+  pose proof Hdeps as Hd. unfold A.imports_of in Hd. unfold A.explicit_imports, primary_deps.
+  destruct (am_prelude am); cbn in Hd |- *.
+  - inversion Hd as [|d e ds es Hhead Htail]; subst. exact Htail.
+  - exact Hd.
+Qed.
+
+Lemma prelude_dep : am_prelude am = true -> exists ti rest,
+  deps = (ti, AImport (b_prelude b) None true []) :: rest /\ In (b_prelude b, ti) (ls_loaded st1).
+Proof.
+  intro Hpre. pose proof Hdeps as Hd. unfold A.imports_of in Hd. rewrite Hpre in Hd. cbn in Hd.
+  inversion Hd as [|d [ti imp] ds rest Hhead Htail]; subst.
+  cbn in Hhead. destruct Hhead as [-> Hl]. exists ti, rest. auto.
+Qed.
 
 Lemma add_old_lt : forall q i, In (q, i) (ls_loaded st1) -> i < mi.
 Proof. intros q i Hq. exact (proj1 (li_loaded _ H1 q i Hq)). Qed.
@@ -1089,7 +1175,7 @@ Proof.
   rewrite Hm in Hm'. injection Hm' as <-.
   unfold ImpsRaw. split.
   - intros (t & imp & tj & tm & Hin & Ht & Htm & Hr).
-    destruct (Himp t imp Hin) as (j & Hj & _).
+    destruct (Himp t imp (A.explicit_in_imports b am' t imp Hin)) as (j & Hj & _).
     pose proof (add_loaded_old t j Hj tj Ht) as ->.
     rewrite add_old_mods in Htm; [|exact (add_old_ne _ _ Hj)].
     exists t, imp, j, tm. auto.
@@ -1106,13 +1192,37 @@ Proof.
   rewrite Hm in Hm'. injection Hm' as <-.
   unfold GlobsRaw. split.
   - intros (t & imp & tj & tm & Hin & Ht & Htm & Hr).
-    destruct (Himp t imp Hin) as (j & Hj & _).
+    destruct (Himp t imp (A.explicit_in_imports b am' t imp Hin)) as (j & Hj & _).
     pose proof (add_loaded_old t j Hj tj Ht) as ->.
     rewrite add_old_mods in Htm; [|exact (add_old_ne _ _ Hj)].
     exists t, imp, j, tm. auto.
   - intros (t & imp & tj & tm & Hin & Ht & Htm & Hr).
     exists t, imp, tj, tm. split; [exact Hin|]. split; [right; exact Ht|].
     rewrite add_old_mods; [|exact (add_old_ne _ _ Ht)]. auto.
+Qed.
+
+Lemma add_prelude_old : forall am' q i, In (q, i) (ls_loaded st1) -> A.module_of b q = Some am' ->
+  forall ns n x, PreludeRaw st' am' ns n x <-> PreludeRaw st1 am' ns n x.
+Proof.
+  intros am' q i Hq Hm ns n x. unfold PreludeRaw. split.
+  - intros (Hpre & tj & tm & Ht & Htm & Hx).
+    destruct (li_loaded _ H1 q i Hq) as [_ (m & am'' & _ & _ & Hm' & Himp)].
+    rewrite Hm in Hm'. injection Hm' as <-.
+    destruct (Himp _ _ (A.prelude_in_imports b am' Hpre)) as (j & Hj & _).
+    pose proof (add_loaded_old _ _ Hj _ Ht) as ->.
+    rewrite add_old_mods in Htm; [|exact (add_old_ne _ _ Hj)].
+    split; [exact Hpre|]. exists j, tm. auto.
+  - intros (Hpre & tj & tm & Ht & Htm & Hx). split; [exact Hpre|].
+    exists tj, tm. split; [right; exact Ht|]. rewrite add_old_mods; [auto|exact (add_old_ne _ _ Ht)].
+Qed.
+
+Lemma add_scope_old : forall am' q i, In (q, i) (ls_loaded st1) -> A.module_of b q = Some am' -> i <> mi ->
+  forall ns n x, ScopeRaw st' am' i ns n x <-> ScopeRaw st1 am' i ns n x.
+Proof.
+  intros am' q i Hq Hm Hne. unfold ScopeRaw. apply fallback_ext.
+  - intros ns n x. unfold PrimaryRaw. cbn [ls_syms].
+    rewrite (add_own_old i Hne), (add_imps_old am' q i Hq Hm), (add_globs_old am' q i Hq Hm). reflexivity.
+  - apply (add_prelude_old am' q i Hq Hm).
 Qed.
 
 (* m0's tables are the module's own declarations. *)
@@ -1145,46 +1255,63 @@ Proof.
 Qed.
 
 Lemma add_imps_new : forall ns n x,
-  (exists ti imp tm, In (ti, imp) deps /\ nget (ls_mods st1) ti = Some tm /\ ImpRaw tm ti imp ns n x)
+  (exists ti imp tm, In (ti, imp) (primary_deps (am_prelude am) deps) /\ nget (ls_mods st1) ti = Some tm /\ ImpRaw tm ti imp ns n x)
   <-> ImpsRaw st' am ns n x.
 Proof.
   intros ns n x. unfold ImpsRaw. split.
   - intros (ti & imp & tm & Hin & Ht & Hr).
-    destruct (forall2_in_r _ _ _ _ _ Hdeps _ Hin) as ([t imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
+    destruct (forall2_in_r _ _ _ _ _ normal_deps_rel _ Hin) as ([t imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
     exists t, imp, ti, tm. split; [exact Hin'|]. split; [right; exact Hl|].
     rewrite add_old_mods; [|exact (add_old_ne _ _ Hl)]. auto.
   - intros (t & imp & tj & tm & Hin & Ht & Htm & Hr).
-    destruct (forall2_in_l _ _ _ _ _ Hdeps _ Hin) as ([ti imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
+    destruct (forall2_in_l _ _ _ _ _ normal_deps_rel _ Hin) as ([ti imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
     pose proof (add_loaded_old _ _ Hl _ Ht) as ->.
     rewrite add_old_mods in Htm; [|exact (add_old_ne _ _ Hl)].
     exists ti, imp, tm. auto.
 Qed.
 
 Lemma add_globs_new : forall ns n x,
-  (exists ti imp tm, In (ti, imp) deps /\ nget (ls_mods st1) ti = Some tm /\ GlobRaw tm imp ns n x)
+  (exists ti imp tm, In (ti, imp) (primary_deps (am_prelude am) deps) /\ nget (ls_mods st1) ti = Some tm /\ GlobRaw tm imp ns n x)
   <-> GlobsRaw st' am ns n x.
 Proof.
   intros ns n x. unfold GlobsRaw. split.
   - intros (ti & imp & tm & Hin & Ht & Hr).
-    destruct (forall2_in_r _ _ _ _ _ Hdeps _ Hin) as ([t imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
+    destruct (forall2_in_r _ _ _ _ _ normal_deps_rel _ Hin) as ([t imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
     exists t, imp, ti, tm. split; [exact Hin'|]. split; [right; exact Hl|].
     rewrite add_old_mods; [|exact (add_old_ne _ _ Hl)]. auto.
   - intros (t & imp & tj & tm & Hin & Ht & Htm & Hr).
-    destruct (forall2_in_l _ _ _ _ _ Hdeps _ Hin) as ([ti imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
+    destruct (forall2_in_l _ _ _ _ _ normal_deps_rel _ Hin) as ([ti imp'] & Hin' & E & Hl). cbn in E, Hl. subst imp'.
     pose proof (add_loaded_old _ _ Hl _ Ht) as ->.
     rewrite add_old_mods in Htm; [|exact (add_old_ne _ _ Hl)].
     exists ti, imp, tm. auto.
 Qed.
 
+Lemma add_prelude_new : forall ns n x,
+  DepPrelude (ls_mods st1) (am_prelude am) deps ns n x <-> PreludeRaw st' am ns n x.
+Proof.
+  intros ns n x. unfold DepPrelude, PreludeRaw. split.
+  - intros (Hpre & ti & imp & rest & tm & E & Htm & Hx).
+    destruct (prelude_dep Hpre) as (j & r & Ed & Hj). rewrite Ed in E. inversion E; subst.
+    split; [exact Hpre|]. exists ti, tm. split; [right; exact Hj|].
+    rewrite add_old_mods; [auto|exact (add_old_ne _ _ Hj)].
+  - intros (Hpre & tj & tm & Ht & Htm & Hx).
+    destruct (prelude_dep Hpre) as (ti & rest & Ed & Hi).
+    pose proof (add_loaded_old _ _ Hi _ Ht) as ->.
+    rewrite add_old_mods in Htm; [|exact (add_old_ne _ _ Hi)].
+    split; [exact Hpre|]. exists ti, (AImport (b_prelude b) None true []), rest, tm. auto.
+Qed.
+
 Lemma add_rep1 : Rep m1 (fun ns n x => OwnRaw syms mi ns n x \/ ImpsRaw st' am ns n x)
-                       (fun ns n x => OwnRaw syms mi ns n x \/ ImpsRaw st' am ns n x \/ GlobsRaw st' am ns n x)
+                       (ScopeRaw st' am mi)
                  /\ gm_path m1 = p /\ gm_attached m1 = gm_attached m0.
 Proof.
-  destruct (links_spec _ _ _ _ _ _ Hlinks add_rep0) as (R & P & At).
+  destruct (link_imports_spec _ _ _ _ _ _ _ Hlinks add_rep0) as (R & P & At).
   split; [|split; [rewrite P; exact (di_path _ _ _ _ _ _ add_dinv) | exact At]].
-  eapply rep_ext; [exact R| |]; intros ns n x.
-  - rewrite <- add_imps_new. reflexivity.
-  - rewrite <- add_imps_new, <- add_globs_new. split.
+  eapply rep_ext; [exact R| |].
+  - intros ns n x. unfold LinkedExp. rewrite <- add_imps_new. reflexivity.
+  - unfold ScopeRaw. apply fallback_ext; [|apply add_prelude_new].
+    intros ns n x. unfold LinkedScope, PrimaryRaw. cbn [ls_syms].
+    rewrite <- add_imps_new, <- add_globs_new. split.
     + intros [Hx|(ti & imp & tm & Hin & Ht & [Hr|Hr])].
       * left. exact Hx.
       * right. left. exists ti, imp, tm. auto.
@@ -1196,7 +1323,7 @@ Qed.
 Lemma add_names_transfer : forall n s, sassoc n (gm_names m0) = Some s -> sassoc n (gm_names m1) = Some s.
 Proof.
   intros n s H. destruct add_rep1 as (R & _ & _).
-  apply (rep_scope _ _ _ R A.NSName). left.
+  apply (rep_scope _ _ _ R A.NSName). left. left.
   exact (proj1 (rep_scope _ _ _ add_rep0 A.NSName n s) H).
 Qed.
 
@@ -1241,7 +1368,7 @@ Proof.
       exists m1, p, am. rewrite Hgm. split; [apply nget_nset_same|]. split; [left; reflexivity|].
       split; [exact Hmod|]. split; [exact Oc|]. split; [exact Kd|].
       split; [intros n Hf; apply add_names_transfer; exact (Fn n Hf)|].
-      split; [intros n Hf; apply (rep_scope _ _ _ R1 A.NSDetached); left; exists g; auto|].
+      split; [intros n Hf; apply (rep_scope _ _ _ R1 A.NSDetached); left; left; exists g; auto|].
       intros rn n ps rt body Ed.
       destruct (Fa ltac:(exists rn, n, ps, rt, body; exact Ed)) as (rn' & n' & ps' & rt' & body' & r & gr & E0 & E1 & E2 & _ & E4 & E5).
       rewrite Ed in E0. injection E0 as <- <- <- <- <-.
@@ -1267,9 +1394,9 @@ Proof.
     + rewrite Hm1 in Hm. injection Hm as <-. rewrite Hmod in Hma. injection Hma as <-. exact R1.
     + rewrite add_old_mods in Hm; [|exact Hne].
       pose proof (li_tables _ H1 q i m am' Hq' Hm Hma) as R.
-      eapply rep_ext; [exact R| |]; intros ns n x; cbn [ls_syms];
-        rewrite (add_own_old i Hne), (add_imps_old am' q i Hq' Hma); [reflexivity|].
-      rewrite (add_globs_old am' q i Hq' Hma). reflexivity.
+      eapply rep_ext; [exact R| |].
+      * intros ns n x. cbn [ls_syms]. rewrite (add_own_old i Hne), (add_imps_old am' q i Hq' Hma). reflexivity.
+      * intros ns n x. symmetry. apply (add_scope_old am' q i Hq' Hma Hne).
   - intros s g Hs. cbn [ls_syms] in Hs. destruct (add_syms_split _ _ Hs) as [Hs'|(Hle & _)].
     + exact (li_kind _ H1 s g Hs').
     + exact (di_kind _ _ _ _ _ _ DI s g Hs Hle).
@@ -1372,7 +1499,7 @@ Proof.
     destruct (go_deps_spec k loading p IH _ _ _ _ Hg Hi) as (L1 & M1 & F1 & R1 & N1).
     apply rbind_good in H as ([[m0 syms] next] & Hd & H).
     apply rbind_good in H as (m1 & Hl & H).
-    change (links_fn (ls_mods st1) m0 deps = Good m1) in Hl.
+    change (link_imports (ls_mods st1) (am_prelude am) m0 deps = Good m1) in Hl.
     injection H as <- <-.
     assert (Hnew : ~ In p (keys st1)) by (apply (N1 p (or_introl eq_refl)); apply sassoc_none; exact Ep).
     pose proof (add_linv st1 p am deps m0 m1 syms next L1 Ef Hnew F1 Hd Hl) as L2.
@@ -1535,10 +1662,10 @@ Proof.
   intro i. induction i as [i IH] using lt_wf_ind. intros p m am Hi Hm Hma.
   pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
   (* the targets: their exports are their tables *)
-  assert (Ht : forall t imp, In (t, imp) (A.imports_of b am) -> exists j tm, In (t, j) (ls_loaded st) /\
+  assert (Ht : forall t imp, In (t, imp) (A.explicit_imports am) -> exists j tm, In (t, j) (ls_loaded st) /\
              nget (ls_mods st) j = Some tm /\
              forall ns n e0, A.w_exp W t ns n = Some e0 <-> A.Exports b W t ns n e0).
-  { intros t imp Hin. destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm & Hj & Hlt & Htm).
+  { intros t imp Hin. destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm & Hj & Hlt & Htm).
     destruct (fin_path t j Hj) as (tm' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
     destruct (IH j Hlt t tm amt Hj Htm Hamt) as [T1 T2]. exists j, tm. split; [exact Hj|]. split; [exact Htm|].
     intros ns n e0. rewrite (fin_exp t j tm ns n Hj Htm). split.
@@ -1597,7 +1724,7 @@ Proof.
            rewrite (fin_exp t j tm _ _ Hj Htm) in En. cbn [tbl] in En.
            destruct (sassoc (u_name u) (gm_exp_names tm)); [discriminate | reflexivity].
     + rewrite Hma in Hma'. injection Hma' as <-.
-      destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm & Hj & _ & Htm).
+      destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm & Hj & _ & Htm).
       exists j. split.
       * apply (rep_exp _ _ _ Rp). right. exists t, imp, j, tm. split; [exact Hin|]. split; [exact Hj|].
         split; [exact Htm|]. left. auto.
@@ -1613,35 +1740,80 @@ Proof.
   - intro H. destruct (T2 ns n e0 H) as (x & Ex & ->). rewrite Ex. reflexivity.
 Qed.
 
+Lemma ordinary_scope_iff : forall p i m am ns n e0, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
+  A.module_of b p = Some am ->
+  (A.OrdinaryScope b W p ns n e0 <-> exists x, PrimaryRaw st am i ns n x /\ e0 = aent w ns x).
+Proof.
+  intros p i m am ns n e0 Hi Hm Hma.
+  pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
+  destruct (exports_at i p m am Hi Hm Hma) as [T1 T2].
+  split.
+  - intro H. inversion H as [p' ns' n' e' Hx | p' am' t imp ns' n' e' Hma' Hin Eg Hx]; subst.
+    + destruct (T2 ns n e0 Hx) as (x & Ex & ->). exists x. split; [|reflexivity].
+      apply (rep_exp _ _ _ Rp) in Ex as [Ho|Hu]; [left; exact Ho | right; left; exact Hu].
+    + rewrite Hma in Hma'. injection Hma' as <-.
+      destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm & Hj & _ & Htm).
+      destruct (fin_path t j Hj) as (tm' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
+      destruct (exports_at j t tm amt Hj Htm Hamt) as [_ U2].
+      destruct (U2 ns n e0 Hx) as (x & Ex & ->). exists x. split; [|reflexivity].
+      right. right. exists t, imp, j, tm. split; [exact Hin|].
+      split; [exact Hj|]. split; [exact Htm|]. split; [exact Eg|exact Ex].
+  - intros (x & [Ho|[Hu|(t & imp & tj & tm & Hin & Htj & Htm & Eg & Hx)]] & ->).
+    + apply A.ScExported. apply T1. apply (rep_exp _ _ _ Rp). left. exact Ho.
+    + apply A.ScExported. apply T1. apply (rep_exp _ _ _ Rp). right. exact Hu.
+    + destruct (fin_path t tj Htj) as (tm' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
+      destruct (exports_at tj t tm amt Htj Htm Hamt) as [U1 _].
+      eapply A.ScGlob; [exact Hma|exact Hin|exact Eg|exact (U1 ns n x Hx)].
+Qed.
+
+Lemma prelude_exports_sound : forall am ns n x, PreludeRaw b st am ns n x ->
+  A.Exports b W (b_prelude b) ns n (aent w ns x).
+Proof.
+  intros am ns n x (_ & j & tm & Hj & Htm & Hx).
+  destruct (fin_path _ j Hj) as (tm' & amt & Etm & _ & _ & Hamt).
+  rewrite Htm in Etm. injection Etm as <-.
+  destruct (exports_at j _ tm amt Hj Htm Hamt) as [T _]. exact (T ns n x Hx).
+Qed.
+
+Lemma prelude_exports_complete : forall p i am ns n e0,
+  In (p, i) (ls_loaded st) -> A.module_of b p = Some am -> am_prelude am = true ->
+  A.Exports b W (b_prelude b) ns n e0 ->
+  exists x, PreludeRaw b st am ns n x /\ e0 = aent w ns x.
+Proof.
+  intros p i am ns n e0 Hi Hma Hpre Hx.
+  destruct (fin_imports p i am _ _ Hi Hma (A.prelude_in_imports b am Hpre)) as (j & tm & Hj & _ & Htm).
+  destruct (fin_path _ j Hj) as (tm' & amt & Etm & _ & _ & Hamt).
+  rewrite Htm in Etm. injection Etm as <-.
+  destruct (exports_at j _ tm amt Hj Htm Hamt) as [_ T].
+  destruct (T ns n e0 Hx) as (x & Ex & ->). exists x. split; [|reflexivity].
+  split; [exact Hpre|]. exists j, tm. auto.
+Qed.
+
 Lemma scope_iff : forall p i m am ns n e0, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
   A.module_of b p = Some am -> (A.w_scope W p ns n = Some e0 <-> A.InScope b W p ns n e0).
 Proof.
   intros p i m am ns n e0 Hi Hm Hma.
   pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
-  destruct (exports_at i p m am Hi Hm Hma) as [T1 T2].
+  pose proof (ordinary_scope_iff p i m am ns n) as Ord.
   rewrite (fin_scope p i m ns n Hi Hm). split.
   - intro H. destruct (sassoc n (tbl m false ns)) as [x|] eqn:Ex; [|discriminate]. injection H as <-.
-    apply (rep_scope _ _ _ Rp) in Ex as [Ho|[Hm'|(t & imp & tj & tm & Hin & Htj & Htm & Eg & Hx)]].
-    + apply A.ScExported. apply T1. apply (rep_exp _ _ _ Rp). left. exact Ho.
-    + apply A.ScExported. apply T1. apply (rep_exp _ _ _ Rp). right. exact Hm'.
-    + destruct (fin_path t tj Htj) as (tm' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
-      destruct (exports_at tj t tm amt Htj Htm Hamt) as [U1 _].
-      eapply A.ScGlob; [exact Hma | exact Hin | exact Eg | exact (U1 ns n x Hx)].
-  - intro H. inversion H as [p' ns' n' e' Hx | p' am' t imp ns' n' e' Hma' Hin Eg Hx]; subst.
-    + destruct (T2 ns n e0 Hx) as (x & Ex & ->).
-      assert (Es : sassoc n (tbl m false ns) = Some x)
-        by (apply (rep_scope _ _ _ Rp); apply (rep_sub _ _ _ Rp); apply (rep_exp _ _ _ Rp); exact Ex).
-      rewrite Es. reflexivity.
+    apply (rep_scope _ _ _ Rp) in Ex as [Hx|[Hnone Hpre]].
+    + apply A.ScPrimary. apply (proj2 (Ord _ Hi Hm Hma)). exists x. auto.
+    + eapply A.ScPrelude; [exact Hma|exact (proj1 Hpre)|exact (prelude_exports_sound am ns n x Hpre)|].
+      intros entity HordinaryWitness. apply (proj1 (Ord _ Hi Hm Hma)) in HordinaryWitness as (y & Hy & _). exact (Hnone y Hy).
+  - intro H. inversion H as [p' ns' n' e' Ho | p' am' ns' n' e' Hma' Hpre HexportWitness Hnone]; subst.
+    + apply (proj1 (Ord _ Hi Hm Hma)) in Ho as (x & Hx & ->).
+      assert (Ex : sassoc n (tbl m false ns) = Some x)
+        by (apply (rep_scope _ _ _ Rp); left; exact Hx).
+      rewrite Ex. reflexivity.
     + rewrite Hma in Hma'. injection Hma' as <-.
-      destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm & Hj & _ & Htm).
-      destruct (fin_path t j Hj) as (tm' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
-      destruct (exports_at j t tm amt Hj Htm Hamt) as [_ U2].
-      destruct (U2 ns n e0 Hx) as (x & Ex & ->).
-      assert (Es : sassoc n (tbl m false ns) = Some x).
-      { apply (rep_scope _ _ _ Rp). right. right. exists t, imp, j, tm. split; [exact Hin|].
-        split; [exact Hj|]. split; [exact Htm|]. split; [exact Eg | exact Ex]. }
-      rewrite Es. reflexivity.
+      destruct (prelude_exports_complete p i am ns n e0 Hi Hma Hpre HexportWitness) as (x & Hx & ->).
+      assert (Ex : sassoc n (tbl m false ns) = Some x).
+      { apply (rep_scope _ _ _ Rp). right. split; [|exact Hx]. intros y Hy.
+        apply (Hnone (aent w ns y)), (proj2 (Ord _ Hi Hm Hma)). exists y. auto. }
+      rewrite Ex. reflexivity.
 Qed.
+
 
 Lemma filed_none_attached : forall d, A.filed_name d = None -> A.kind_of d <> None -> is_attached d.
 Proof.
@@ -1738,15 +1910,25 @@ Proof.
   pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
   assert (Hs : sassoc n (tbl m false A.NSAlias) = Some x)
     by (destruct ex; [apply (rep_scope _ _ _ Rp), (rep_sub _ _ _ Rp), (rep_exp _ _ _ Rp); exact Hx | exact Hx]).
-  apply (rep_scope _ _ _ Rp) in Hs as [(g & _ & _ & Hf)|[(t & imp & tj & tm & Hin & Htj & Htm & Hq9)|(t & imp & tj & tm & Hin & Htj & Htm & _ & Hq9)]].
+  apply (rep_scope _ _ _ Rp) in Hs.
+  destruct Hs as [Hs|[_ Hpre]].
+  2: {
+    destruct Hpre as (Enabled & tj & tm & Htj & Htm & Hq9).
+    destruct (fin_imports p i am _ _ Hi Hma (A.prelude_in_imports b am Enabled)) as (j & tm' & Hj & Hlt & _).
+    pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
+    destruct (fin_path _ j Hj) as (tm'' & amt & Etm & _ & _ & Hamt).
+    rewrite Htm in Etm. injection Etm as <-.
+    exact (IH j Hlt (b_prelude b) tm amt Hj Htm Hamt true n x Hq9).
+  }
+  destruct Hs as [(g & _ & _ & Hf)|[(t & imp & tj & tm & Hin & Htj & Htm & Hq9)|(t & imp & tj & tm & Hin & Htj & Htm & _ & Hq9)]].
   - exfalso. exact (filed_not_alias _ _ Hf).
-  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+  - destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm' & Hj & Hlt & _).
     pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
     destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
     destruct Hq9 as [(_ & _ & ->)|(_ & u & _ & _ & [(_ & E & _)|[(_ & E & _)|(_ & _ & _ & Ex)]])]; try discriminate.
     + exists t. exact Hj.
     + exact (IH j Hlt t tm amt Hj Htm Hamt true (u_name u) x Ex).
-  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+  - destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm' & Hj & Hlt & _).
     pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
     destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
     exact (IH j Hlt t tm amt Hj Htm Hamt true n x Hq9).
@@ -1823,16 +2005,26 @@ Proof.
   pose proof (li_tables _ _ HI p i m am Hi Hm Hma) as Rp.
   assert (Hs : sassoc n (tbl m false ns) = Some x)
     by (destruct ex; [apply (rep_scope _ _ _ Rp), (rep_sub _ _ _ Rp), (rep_exp _ _ _ Rp); exact Hx | exact Hx]).
-  apply (rep_scope _ _ _ Rp) in Hs as [(g & Hg & _)|[(t & imp & tj & tm & Hin & Htj & Htm & Hq9)|(t & imp & tj & tm & Hin & Htj & Htm & _ & Hq9)]].
+  apply (rep_scope _ _ _ Rp) in Hs.
+  destruct Hs as [Hs|[_ Hpre]].
+  2: {
+    destruct Hpre as (Enabled & tj & tm & Htj & Htm & Hq9).
+    destruct (fin_imports p i am _ _ Hi Hma (A.prelude_in_imports b am Enabled)) as (j & tm' & Hj & Hlt & _).
+    pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
+    destruct (fin_path _ j Hj) as (tm'' & amt & Etm & _ & _ & Hamt).
+    rewrite Htm in Etm. injection Etm as <-.
+    exact (IH j Hlt (b_prelude b) tm amt Hj Htm Hamt true ns n x Hns Hq9).
+  }
+  destruct Hs as [(g & Hg & _)|[(t & imp & tj & tm & Hin & Htj & Htm & Hq9)|(t & imp & tj & tm & Hin & Htj & Htm & _ & Hq9)]].
   - exists g. exact Hg.
-  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+  - destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm' & Hj & Hlt & _).
     pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
     destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
     destruct Hq9 as [(_ & E & _)|(_ & u & _ & _ & [(_ & -> & Ex)|[(_ & -> & Ex)|(_ & E & _)]])];
       try (exfalso; exact (Hns E)).
     + exact (IH j Hlt t tm amt Hj Htm Hamt true A.NSDetached (u_name u) x ltac:(discriminate) Ex).
     + exact (IH j Hlt t tm amt Hj Htm Hamt true A.NSName (u_name u) x ltac:(discriminate) Ex).
-  - destruct (fin_imports p i am t imp Hi Hma Hin) as (j & tm' & Hj & Hlt & _).
+  - destruct (fin_imports p i am t imp Hi Hma (A.explicit_in_imports b am t imp Hin)) as (j & tm' & Hj & Hlt & _).
     pose proof (loaded_fun _ _ _ _ _ HI Htj Hj) as ->.
     destruct (fin_path t j Hj) as (tm'' & amt & Etm & _ & _ & Hamt). rewrite Htm in Etm. injection Etm as <-.
     exact (IH j Hlt t tm amt Hj Htm Hamt true ns n x Hns Hq9).
