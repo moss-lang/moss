@@ -244,3 +244,140 @@ Proof.
     destruct (tyof_abs _ _ _ _ _ Ht g eq_refl) as [Th|Some']; [discriminate|exact Some'].
 Qed.
 End Abstract.
+
+(* Two readings of one type expression agree after substitution when their
+   meaning tables agree wherever both define a symbol. *)
+Section Relate.
+Variable W : A.world.
+Variables s1 s2 : subst.
+Import A.
+
+Ltac kmis := exfalso;
+  repeat match goal with
+  | H1 : resolve_sym W ?p ?pa = Some ?x, H2 : resolve_sym W ?p ?pa = Some ?y |- _ =>
+      assert_fails (constr_eq x y); assert (y = x) by congruence; subst y; clear H2
+  end;
+  unfold kind_sym in *;
+  repeat match goal with H : w_decl W _ = Some _ |- _ => rewrite H in *; clear H end;
+  repeat match goal with H : d_ast _ = _ |- _ => rewrite H in *; clear H end;
+  cbn in *; intuition congruence.
+
+Definition Agree (tm1 tm2 : list (nat * ty)) : Prop :=
+  forall k v1 v2, nlook k tm1 = Some v1 -> nlook k tm2 = Some v2 -> app_subst s1 v1 = app_subst s2 v2.
+
+Definition Rel (q1 q2 : nat * ty) : Prop := fst q1 = fst q2 /\ app_subst s1 (snd q1) = app_subst s2 (snd q2).
+
+Lemma rel_nlook : forall l1 l2, Forall2 Rel l1 l2 -> forall k,
+  (nlook k l1 = None <-> nlook k l2 = None) /\ Agree l1 l2.
+Proof.
+  intros l1 l2 F k. split.
+  - revert k. induction F as [|[a v] [b u] r1 r2 [E _] _ IH]; intros k; [split; reflexivity|].
+    cbn in E |- *. subst b. destruct (Nat.eqb k a); [split; discriminate|apply IH].
+  - clear k. induction F as [|[a v] [b u] r1 r2 [E V] _ IH]; intros k v1 v2 L1 L2; [discriminate|].
+    cbn in E, V, L1, L2. subst b. destruct (Nat.eqb k a).
+    + injection L1 as <-. injection L2 as <-. exact V.
+    + exact (IH k v1 v2 L1 L2).
+Qed.
+
+Lemma agree_app : forall l1 l2 tm1 tm2, Forall2 Rel l1 l2 -> Agree tm1 tm2 -> Agree (l1 ++ tm1) (l2 ++ tm2).
+Proof.
+  intros l1 l2 tm1 tm2 F A k v1 v2 L1 L2. rewrite nlook_app' in L1, L2.
+  destruct (rel_nlook l1 l2 F k) as [Same Ag].
+  destruct (nlook k l1) as [x1|] eqn:K1; destruct (nlook k l2) as [x2|] eqn:K2.
+  - injection L1 as <-. injection L2 as <-. exact (Ag k x1 x2 K1 K2).
+  - exfalso. destruct Same as [_ S2]. discriminate (S2 eq_refl).
+  - exfalso. destruct Same as [S1 _]. discriminate (S1 eq_refl).
+  - exact (A k v1 v2 L1 L2).
+Qed.
+
+Lemma smap_rel : forall (l1 l2 : list (nat * ty)), Forall2 Rel l1 l2 -> smap s1 l1 = smap s2 l2.
+Proof.
+  intros l1 l2 F. unfold smap. induction F as [|[a v] [b u] r1 r2 [E V] _ IH]; [reflexivity|].
+  cbn in E, V |- *. rewrite E, V, IH. reflexivity.
+Qed.
+
+Lemma forall2_rev : forall X Y (R : X -> Y -> Prop) l1 l2, Forall2 R l1 l2 -> Forall2 R (rev l1) (rev l2).
+Proof.
+  intros X Y R l1 l2 F. induction F; cbn; [constructor|].
+  apply Forall2_app; [exact IHF|repeat constructor; assumption].
+Qed.
+
+Fixpoint tyof_rel p tm1 th1 a t1 (D : TyOf W p tm1 th1 a t1) {struct D} :
+  forall tm2 th2 t2, TyOf W p tm2 th2 a t2 -> Agree tm1 tm2 ->
+  (forall x1 x2, th1 = Some x1 -> th2 = Some x2 -> app_subst s1 x1 = app_subst s2 x2) ->
+  app_subst s1 t1 = app_subst s2 t2
+with br_rel p tm1 g x l1 (D : Brackets W p tm1 g x l1) {struct D} :
+  forall tm2 l2, Brackets W p tm2 g x l2 -> Agree tm1 tm2 -> Forall2 Rel l1 l2.
+Proof.
+  - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
+                  |p tm th pa t tau R K L|p tm th pa a g k bs args R K Kk B F|p tm th pa a g d n body bs tau R D A B T];
+      intros tm2 th2 t2 D2 Ag This; inversion D2; subst; clear D2.
+    + reflexivity.
+    + reflexivity.
+    + apply This; reflexivity.
+    + rewrite !subst_record. f_equal.
+      match goal with H0 : Forall2 _ fs ?ts0 |- _ => assert_fails (constr_eq H0 F); rename H0 into F2; rename ts0 into ts2 end.
+      repeat match goal with H : NoDup _ |- _ => clear H end.
+      revert ts2 F2. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; intros ts2 F2;
+        inversion F2 as [|? ft2 ? ts2' [E2 Hft2] Fr2]; subst; [reflexivity|].
+      cbn. f_equal; [|apply IH; assumption].
+      destruct ft, ft2; cbn in *. f_equal; [congruence|].
+      exact (tyof_rel _ _ _ _ _ Hft _ _ _ Hft2 Ag This).
+    + match goal with H0 : Forall2 _ ms ?ts0 |- _ => rename H0 into F2; rename ts0 into ts2 end.
+      match goal with H0 : Forall _ (flat_map members ts2) |- _ => rename H0 into Fm2 end.
+      rewrite !subst_union. f_equal.
+      rewrite <- (flat_sub s1 ts Fm), <- (flat_sub s2 ts2 Fm2). f_equal.
+      clear Fm Fm2. repeat match goal with H : NoDup _ |- _ => clear H end. revert ts2 F2. induction F as [|m t ms' ts' Ht Fr IH]; intros ts2 F2;
+        inversion F2; subst; [reflexivity|].
+      cbn. f_equal; [|apply IH; assumption].
+      exact (tyof_rel _ _ _ _ _ Ht _ _ _ ltac:(eassumption) Ag This).
+    + match goal with H0 : resolve_sym W p pa = Some ?t' |- _ => assert (t' = t) by congruence; subst t' end.
+      eapply Ag; eassumption.
+    + kmis.
+    + kmis.
+    + kmis.
+    + assert (g0 = g) by congruence. subst g0.
+      match goal with H0 : Brackets _ _ _ _ _ ?bs0 |- _ => rename H0 into B2; rename bs0 into bs2 end.
+      pose proof (br_rel _ _ _ _ _ B _ _ B2 Ag) as BR.
+      pose proof (agree_app _ _ _ _ BR Ag) as Ag'.
+      rewrite !subst_nom. f_equal. apply smap_rel.
+      match goal with H0 : Forall2 _ (w_reqs W g) ?a0 |- _ => rename H0 into F2; rename a0 into args2 end.
+      clear B B2 BR. revert args2 F2.
+      induction F as [|r ra rs ras [E1 L1] Fr IH]; intros args2 F2; inversion F2 as [|? ra2 ? ras2 [E2 L2] Fr2]; subst;
+        constructor; [|apply IH; assumption].
+      split; [congruence|]. exact (Ag' _ _ _ L1 L2).
+    + kmis.
+    + kmis.
+    + kmis.
+    + assert (g0 = g) by congruence. subst g0. assert (d0 = d) by congruence. subst d0.
+      rewrite A in *. match goal with H0 : ADAlias _ _ = ADAlias _ _ |- _ => injection H0 as <- <- end.
+      match goal with H0 : Brackets _ _ _ _ _ ?bs0 |- _ => rename H0 into B2; rename bs0 into bs2 end.
+      pose proof (br_rel _ _ _ _ _ B _ _ B2 Ag) as BR.
+      exact (tyof_rel _ _ _ _ _ T _ _ _ ltac:(eassumption) (agree_app _ _ _ _ BR Ag)
+        (fun _ _ E _ => ltac:(discriminate E))).
+  - destruct D as [p tm g|p tm g bs l F]; intros tm2 l2 D2 Ag; inversion D2; subst; clear D2; [constructor|].
+    apply forall2_rev. rename l into l1.
+    match goal with H0 : Forall2 _ bs ?l0 |- _ => rename H0 into F2; rename l0 into l2' end.
+    revert l2' F2. induction F as [|b0 tb bs' l1' (sp & sa & E1 & R1 & K1 & Q1 & T1) Fr IH]; intros l2' F2;
+      inversion F2 as [|? tb2 ? l2'' (sp' & sa' & E2 & R2 & K2 & Q2 & T2) Fr2]; subst; constructor; [|apply IH; assumption].
+    rewrite E1 in E2. injection E2 as <- <-.
+    split; [congruence|].
+    exact (tyof_rel _ _ _ _ _ T1 _ _ _ T2 Ag (fun _ _ E _ => ltac:(discriminate E))).
+Qed.
+
+Lemma sig_rel : forall f tm1 tm2 th1 th2 g1 g2,
+  SigOf W f tm1 th1 g1 -> SigOf W f tm2 th2 g2 -> Agree tm1 tm2 ->
+  (forall x1 x2, th1 = Some x1 -> th2 = Some x2 -> app_subst s1 x1 = app_subst s2 x2) ->
+  map (app_subst s1) (sg_params g1) = map (app_subst s2) (sg_params g2) /\
+  app_subst s1 (sg_ret g1) = app_subst s2 (sg_ret g2).
+Proof.
+  intros f tm1 tm2 th1 th2 [ps1 r1] [ps2 r2] (d & rcv & n & ps & rt & body & D & Ast & P1 & R1)
+    (d' & rcv' & n' & ps' & rt' & body' & D' & Ast' & P2 & R2) Ag This.
+  rewrite D in D'. injection D' as <-. rewrite Ast in Ast'. injection Ast' as <- <- <- <- <-. cbn in *.
+  split.
+  - clear R1 R2 D Ast. revert ps2 P2. induction P1 as [|pt t ps0 ts Ht Fr IH]; intros ps2 P2;
+      inversion P2; subst; [reflexivity|]. cbn. f_equal; [|apply IH; assumption].
+    exact (tyof_rel _ _ _ _ _ Ht _ _ _ ltac:(eassumption) Ag This).
+  - destruct rt as [r|]; [exact (tyof_rel _ _ _ _ _ R1 _ _ _ R2 Ag This)|rewrite R1, R2; reflexivity].
+Qed.
+End Relate.

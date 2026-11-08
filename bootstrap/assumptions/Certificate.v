@@ -91,6 +91,8 @@ Definition certificate_roots :=
   @PublicArmsI.arms_select,
   @PublicTags.tag_check,
   @NM.PublicTypeRead.tyof_abs,
+  @NM.PublicTypeRead.tyof_rel,
+  @NM.PublicTypeRead.sig_rel,
   @PublicSafetyTop.stuck_entry_is_wrong,
   @NM.PublicSavedTypeExample.legacy_saved_and_emitted_reads_differ,
   @NM.PublicSavedTypeExample.alias_binding_preserves_old_generation,
