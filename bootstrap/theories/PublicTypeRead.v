@@ -202,3 +202,11 @@ Proof.
   exact (tyof_subst _ _ _ _ _ T _ (fun k => nlook_smap k _)).
 Qed.
 End Subst.
+
+Lemma app_subst_nil : forall t, app_subst [] t = t.
+Proof.
+  fix IH 1. intros [m|fields| |g|n th|ms]; cbn; try reflexivity.
+  - f_equal. induction fields as [|[f t] rest Tail]; cbn; [reflexivity|]. rewrite IH, Tail. reflexivity.
+  - f_equal. induction th as [|[x t] rest Tail]; cbn; [reflexivity|]. rewrite IH, Tail. reflexivity.
+  - f_equal. induction ms as [|t rest Tail]; cbn; [reflexivity|]. rewrite IH, Tail. reflexivity.
+Qed.

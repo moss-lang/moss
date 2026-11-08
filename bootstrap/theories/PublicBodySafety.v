@@ -163,3 +163,62 @@ Proof.
 Qed.
 End Outcome.
 End Outcomes.
+
+(* ---- distinct binders: order is irrelevant --------------------------------- *)
+
+Lemma nlook_app_in : forall X (l m : list (nat * X)) k v,
+  NoDup (map fst l) -> In (k, v) l -> A.nlook k (l ++ m) = Some v.
+Proof.
+  induction l as [|[a x] r IH]; intros m k v Distinct Found; [contradiction|].
+  cbn in Distinct |- *. inversion Distinct as [|? ? Absent Rest]; subst.
+  destruct Found as [Here|There].
+  - injection Here as -> ->. rewrite Nat.eqb_refl. reflexivity.
+  - destruct (Nat.eqb_spec k a) as [->|_]; [|exact (IH m k v Rest There)].
+    exfalso. apply Absent. change a with (fst (a, v)). apply in_map, There.
+Qed.
+
+Lemma nlook_app_out : forall X (l m : list (nat * X)) k,
+  ~ In k (map fst l) -> A.nlook k (l ++ m) = A.nlook k m.
+Proof.
+  induction l as [|[a x] r IH]; intros m k Absent; [reflexivity|].
+  cbn in Absent |- *. destruct (Nat.eqb_spec k a) as [->|_]; [exfalso; auto|].
+  apply IH. intro; auto.
+Qed.
+
+Lemma nlook_rev_distinct : forall X (l m : list (nat * X)) k,
+  NoDup (map fst l) -> A.nlook k (rev l ++ m) = A.nlook k (l ++ m).
+Proof.
+  intros X l m k Distinct.
+  assert (RevDistinct : NoDup (map fst (rev l))) by (rewrite map_rev; apply NoDup_rev; exact Distinct).
+  destruct (in_dec Nat.eq_dec k (map fst l)) as [Present|Absent].
+  - apply in_map_iff in Present as [[k' v] [Key Found]]; cbn in Key; subst k'.
+    rewrite (nlook_app_in _ _ _ _ _ Distinct Found).
+    apply nlook_app_in; [exact RevDistinct|apply in_rev; rewrite rev_involutive; exact Found].
+  - rewrite (nlook_app_out _ _ _ _ Absent). apply nlook_app_out.
+    rewrite map_rev. intro In'; apply Absent; apply in_rev; exact In'.
+Qed.
+
+Lemma ctx_locals_push_distinct : forall F binds C d types,
+  FrameOk F -> CtxLocals F C d types -> Forall (fun q => A.Named F (fst q)) binds ->
+  NoDup (map fst binds) ->
+  CtxLocals F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) d
+    (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds ++ types).
+Proof.
+  intros F binds C d types Frame Ctx Named Distinct.
+  pose proof (ctx_locals_push_all F binds C d types Frame Ctx Named) as [Locals Receiver].
+  set (l := map (fun q => (A.var_of F (fst q), ground d (snd q))) binds) in *.
+  assert (Vars : NoDup (map fst l)).
+  { subst l. rewrite map_map. cbn. clear Ctx Locals Receiver.
+    induction binds as [|[n t] rest IH]; cbn; [constructor|].
+    inversion Named as [|? ? Here Rest]; inversion Distinct as [|? ? Absent Others]; subst.
+    constructor; [|exact (IH Rest Others)].
+    intro In'. apply in_map_iff in In' as [[m u] [Same Found]]. cbn in Same.
+    apply Absent. replace n with m; [change m with (fst (m, u)); apply in_map, Found|].
+    apply (var_of_injective F); [exact Frame| |exact Here|exact Same].
+    rewrite Forall_forall in Rest. exact (Rest (m, u) Found). }
+  split.
+  - intros n t mu Found Hn. rewrite <- nlook_rev_distinct by exact Vars.
+    exact (Locals n t mu Found Hn).
+  - intros t This. rewrite <- nlook_rev_distinct by exact Vars.
+    exact (Receiver t This).
+Qed.
