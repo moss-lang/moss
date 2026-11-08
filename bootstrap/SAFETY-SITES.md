@@ -56,6 +56,23 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **Counterexample: a record pattern may bind one name twice.**
+  `FieldPats` does not require its bound names to be distinct. In
+  `Pair { a = y, b = y } => …`, the static context adds `y : Char` and then
+  `y : Bool`, so `y` reads as `Bool`. At runtime, `bind_fields` puts
+  `(y, a)` first, so `lookup_local` returns the `Char`. (The pun `b` in
+  `Pair { a = b, b }` has the same problem.)
+  [duplicate-field-binder.moss](examples/duplicate-field-binder.moss) is
+  accepted by the oracle built at `386e418`, which then reports
+  `stuck (XErr 10)`: `if y` reads a `Char` where the context promised a
+  `Bool`. As far as I can tell, the public relation admits the same
+  derivation, so `safety` is false as stated until this is decided. The
+  candidate repairs are below; the choice is a language decision.
+  1. Require distinct binders in `FieldPats`/`PatOf` (Audit.v, Elab.v,
+     src/), reporting a static error.
+  2. Make the runtime binding order agree with the static order, so the
+     last binder wins.
+
 - **Unit tags had no value typing (fixed).** `lib/bool.moss` declares `tag False;`
   and `tag True;`, and `Layouts` requires them to be `DKUnit`.
   `PublicValueTyping.value_typed` types tags only through

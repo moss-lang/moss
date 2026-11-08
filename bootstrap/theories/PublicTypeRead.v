@@ -95,3 +95,110 @@ Qed.
 Lemma payload_tag : forall s xs payload, PayloadOf W s xs payload -> kind_sym W s = Some DKTag.
 Proof. intros s xs payload [? ? d n ps t ? D A _]; unfold kind_sym; rewrite D, A; reflexivity. Qed.
 End Det.
+
+(* A type read with meanings tm and then substituted by s is the same
+   expression read with substituted meanings. Ported from TyOfSubst.v. *)
+Section Subst.
+Variable W : A.world.
+Variable s : subst.
+Import A.
+
+Definition smap (l : list (nat * ty)) : list (nat * ty) := map (fun q => (fst q, app_subst s (snd q))) l.
+
+Lemma subst_nom : forall n xs, app_subst s (TNom n xs) = TNom n (smap xs).
+Proof.
+  intros n xs. cbn. f_equal; try (induction xs as [|q r IH]; [reflexivity|]; cbn; rewrite IH; reflexivity).
+Qed.
+
+Lemma subst_union : forall ms, app_subst s (TUnion ms) = TUnion (map (app_subst s) ms).
+Proof.
+  intros ms. cbn. f_equal; try (induction ms as [|q r IH]; [reflexivity|]; cbn; rewrite IH; reflexivity).
+Qed.
+
+Lemma subst_record : forall fs, app_subst s (TRecord fs) = TRecord (map (fun q => (fst q, app_subst s (snd q))) fs).
+Proof.
+  intros fs. cbn. f_equal. induction fs as [|[f t] r IH]; [reflexivity|]. cbn. f_equal. exact IH.
+Qed.
+
+Lemma nlook_app' : forall X k (l m : list (nat * X)), nlook k (l ++ m) = match nlook k l with Some v => Some v | None => nlook k m end.
+Proof. intros X k l m. induction l as [|[a v] r IH]; [reflexivity|]. cbn. destruct (Nat.eqb k a); [reflexivity | exact IH]. Qed.
+
+Lemma nlook_smap : forall k l, nlook k (smap l) = option_map (app_subst s) (nlook k l).
+Proof. intros k l. induction l as [|[a v] r IH]; [reflexivity|]. cbn. destruct (Nat.eqb k a); [reflexivity | exact IH]. Qed.
+
+Definition SubRel (tm tm' : list (nat * ty)) : Prop := forall k, nlook k tm' = option_map (app_subst s) (nlook k tm).
+
+Lemma subrel_app : forall l tm tm', SubRel tm tm' -> SubRel (l ++ tm) (smap l ++ tm').
+Proof.
+  intros l tm tm' H k. rewrite !nlook_app', nlook_smap. destruct (nlook k l); [reflexivity | apply H].
+Qed.
+
+Lemma members_sub : forall t, (forall m, In m (members t) -> exists n xs, m = TNom n xs) ->
+  members (app_subst s t) = map (app_subst s) (members t).
+Proof.
+  intros [m|fs| |g|n xs|ms] H; cbn [members].
+  - destruct (H (TMachine m) (or_introl eq_refl)) as (? & ? & E). discriminate E.
+  - destruct (H (TRecord fs) (or_introl eq_refl)) as (? & ? & E). discriminate E.
+  - destruct (H TUnit (or_introl eq_refl)) as (? & ? & E). discriminate E.
+  - destruct (H (TAbs g) (or_introl eq_refl)) as (? & ? & E). discriminate E.
+  - rewrite subst_nom. reflexivity.
+  - rewrite subst_union. reflexivity.
+Qed.
+
+Lemma flat_sub : forall ts, Forall (fun m => exists n xs, m = TNom n xs) (flat_map members ts) ->
+  flat_map members (map (app_subst s) ts) = map (app_subst s) (flat_map members ts).
+Proof.
+  intros ts H. induction ts as [|t r IH]; [reflexivity|]. cbn [map flat_map] in *.
+  apply Forall_app in H as [H1 H2]. rewrite map_app, (IH H2). f_equal.
+  apply members_sub. intros m Hm. rewrite Forall_forall in H1. exact (H1 m Hm).
+Qed.
+
+Fixpoint tyof_subst p tm th t a (H : TyOf W p tm th t a) {struct H} :
+  forall tm', SubRel tm tm' -> TyOf W p tm' (option_map (app_subst s) th) t (app_subst s a)
+with br_subst p tm g x l (H : Brackets W p tm g x l) {struct H} :
+  forall tm', SubRel tm tm' -> Brackets W p tm' g x (smap l).
+Proof.
+  - destruct H as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
+                  |p tm th pa t tau R K L|p tm th pa a g k bs args R K Kk B F|p tm th pa a g d n body bs tau R D A B T];
+      intros tm' Hs.
+    + apply TyNever.
+    + apply TyUnit.
+    + apply TyThis.
+    + rewrite subst_record. apply TyRec.
+      * exact Nd.
+      * clear Nd. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [constructor|]. constructor; [|exact IH].
+        split; [exact E1 | exact (tyof_subst _ _ _ _ _ Hft tm' Hs)].
+    + subst flat. rewrite subst_union, <- (flat_sub ts Fm). apply TyUnion with (ts := map (app_subst s) ts).
+      * clear Fm Nd. induction F as [|m t ms' ts' Ht Fr IH]; [constructor|].
+        constructor; [exact (tyof_subst _ _ _ _ _ Ht tm' Hs) | exact IH].
+      * reflexivity.
+      * rewrite (flat_sub ts Fm). rewrite Forall_forall in Fm |- *. intros m Hm.
+        apply in_map_iff in Hm as (m0 & <- & Hm0). destruct (Fm m0 Hm0) as (n & xs & ->).
+        rewrite subst_nom. eauto.
+      * rewrite (flat_sub ts Fm), map_map.
+        replace (map (fun x => head (app_subst s x)) (flat_map members ts)) with (map head (flat_map members ts)); [exact Nd|].
+        apply map_ext_in. intros m Hm. rewrite Forall_forall in Fm. destruct (Fm m Hm) as (n & xs & ->).
+        rewrite subst_nom. reflexivity.
+    + eapply TyType; [exact R | exact K | rewrite Hs, L; reflexivity].
+    + rewrite subst_nom. eapply TyNom; [exact R | exact K | exact Kk | exact (br_subst _ _ _ _ _ B tm' Hs)|].
+      pose proof (subrel_app bs tm tm' Hs) as Hs'.
+      clear B. induction F as [|r ra rs ras [E1 E2] Fr IH]; [constructor|]. constructor; [|exact IH].
+      split; [exact E1|]. cbn [snd]. rewrite Hs', E2. reflexivity.
+    + eapply TyAlias; [exact R | exact D | exact A | exact (br_subst _ _ _ _ _ B tm' Hs)|].
+      exact (tyof_subst _ _ _ _ _ T _ (subrel_app bs tm tm' Hs)).
+  - destruct H as [p tm g|p tm g bs l F]; intros tm' Hs.
+    + apply BrNone.
+    + unfold smap. rewrite map_rev. apply BrSome.
+      induction F as [|b0 tb bs' l' (sp & sa & E1 & E2 & E3 & E4 & Ht) Fr IH]; [constructor|]. constructor; [|exact IH].
+      exists sp, sa. split; [exact E1|]. split; [exact E2|]. split; [exact E3|]. split; [exact E4|].
+      exact (tyof_subst _ _ _ _ _ Ht tm' Hs).
+Qed.
+
+Lemma payload_subst : forall n xs payload, PayloadOf W n xs payload ->
+  PayloadOf W n (smap xs) (app_subst s payload).
+Proof.
+  intros n xs payload Payload. destruct Payload as [? ? d nm ps t ? D A T].
+  econstructor; [exact D|exact A|].
+  exact (tyof_subst _ _ _ _ _ T _ (fun k => nlook_smap k _)).
+Qed.
+End Subst.
