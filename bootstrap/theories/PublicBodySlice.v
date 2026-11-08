@@ -939,7 +939,7 @@ Proof.
   intros j Sj att dcl rn n ps rt b Cf ns de H st w0 ws d recv params ret Decl Ast Ctx Real State Agree Recv Args.
   destruct (all_fn_elab att dcl (RAttached rn) n ps rt b Decl Ast dcl (RAttached rn) n ps rt b Decl Ast)
     as (C0 & ns0 & this & g0 & F0 & x & t0 & Ctx0 & Rcv & Sig & _ & Ret & FThis & Loop & _ & _ & _ & Num & Body & View).
-  destruct Rcv as [r [args [Att [-> Reqs]]]].
+  destruct Rcv as [r [args [Att [_ [-> Reqs]]]]].
   destruct (PublicContextFacts.function_context_unique W att C0 ns0 Cf ns Ctx0 Ctx) as [-> ->].
   exists x. split; [exact View|].
   destruct (Agree r args g0 Att Reqs Sig) as [This [Params Result]].
@@ -1637,6 +1637,51 @@ Proof.
     apply (wrap_breaks n F C t ((B \/ ItemsBreak r) \/ ItemBreaks it) _ (w1 (w2 x))); [|exact S1].
     intros [[b|[it' [I' Bi]]]|b]; [left; exact b|right; exists it'; split; [right; exact I'|exact Bi]|].
     right. exists it. split; [left; reflexivity|exact b].
+Qed.
+
+(* ---- attached method calls ---------------------------------------------------- *)
+
+Hypothesis World : exists b, A.WorldOf b W.
+
+(* Receiver types are formed: a nominal's arguments are keyed by its
+   requirements (T29). *)
+Hypothesis ex_nominal_formed : forall F C a exp x t, A.Ex W Prog F C a exp x t ->
+  forall h, A.head (A.canon C t) = Some h -> (A.kind_sym W h = Some A.DKTag \/ A.kind_sym W h = Some A.DKUnit) ->
+  exists xs, A.canon C t = TNom h xs /\ map fst xs = A.w_reqs W h.
+
+Lemma attached_unique : forall r r' n s, A.Attached W r n s -> A.Attached W r' n s -> r = r'.
+Proof.
+  intros r r' n s At At'. destruct World as [b Wo].
+  apply (proj1 (A.wo_attached Wo r n s)) in At. apply (proj1 (A.wo_attached Wo r' n s)) in At'.
+  destruct At as (d & rn & ps & rt & body & D & Ast & _ & Scope).
+  destruct At' as (d' & rn' & ps' & rt' & body' & D' & Ast' & _ & Scope').
+  rewrite D in D'. injection D' as <-. rewrite Ast in Ast'. injection Ast' as <- _ _ _.
+  congruence.
+Qed.
+
+Lemma set_tys_fields : forall (rargs : list (nat * ty)) C,
+  A.c_sub (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) = A.c_sub C /\
+  A.c_provisions (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) = A.c_provisions C /\
+  A.c_locals (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) = A.c_locals C /\
+  A.c_ty (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) = (rev rargs ++ A.c_ty C)%list.
+Proof.
+  induction rargs as [|[x t] rest IH]; intros C; [repeat split; reflexivity|].
+  cbn [fold_left fst snd]. destruct (IH (A.set_ty C x t)) as [E1 [E2 [E3 E4]]]. rewrite E1, E2, E3, E4.
+  cbn. rewrite <- app_assoc. repeat split; reflexivity.
+Qed.
+
+Lemma demand_ty : forall C0 wanted used C wrap C', A.Demand W C0 wanted used C wrap C' -> A.c_ty C' = A.c_ty C.
+Proof.
+  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th sm Cm wrap Cf NotUsed Step Rest IH];
+    [reflexivity|]. rewrite IH. destruct Step. reflexivity.
+Qed.
+
+(* Pre does not read the type table. *)
+Lemma pre_ty_free : forall n F C C' d types H g st,
+  A.c_sub C' = A.c_sub C -> A.c_provisions C' = A.c_provisions C -> A.c_locals C' = A.c_locals C ->
+  Pre n F C d types H g st -> Pre n F C' d types H g st.
+Proof.
+  intros n F [ty sub provs locs] [ty' sub' provs' locs'] d types H g st; cbn; intros -> -> -> Pre0. exact Pre0.
 Qed.
 
 Section Step.

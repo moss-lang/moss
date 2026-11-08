@@ -161,6 +161,14 @@ the local store. *C* and *F* are the static context and frame.
   nested `if` checks its own type, and the parser produces nothing else
   there, but the relation admitted any expression. `ExIfElse` now requires
   `opt_fits et exp`, which rules out no parsed program.
+- **Attached methods need a nominal receiver (Q5).** `FnElab` let an
+  attached method's receiver be any symbol. A method attached to an
+  abstract type would then see `this` as the nominal `TNom T []` while a
+  caller passes a value of the abstract type `T`. The implementation rejects
+  such declarations ([attached_on_abstract.moss](../tests/errors/attached_on_abstract.moss):
+  "requires a nominal receiver (Q5)"). `FnElab` now requires the receiver to
+  be a tag or unit declaration. This rules out no program the implementation
+  accepts, and `WorldOf` is unchanged.
 - **The receiver slot is reserved.** `ExThis` reads local 0, and `Numbering`
   allowed a name `"this"` to be numbered 0. A local named `this` would then
   shadow the receiver at a different type. The lexer makes `this` a keyword,

@@ -4391,7 +4391,9 @@ Definition FnElab (W : world) (P : program) (f : nat) : Prop :=
   exists C ns this g F x t,
     CtxOf W f C ns /\
     (match rcv with
-     | RAttached _ => exists r args, Attached W r n f /\ this = Some (TNom r args) /\
+     (* Q5: an attached method's receiver is nominal *)
+     | RAttached _ => exists r args, Attached W r n f /\ (kind_sym W r = Some DKTag \/ kind_sym W r = Some DKUnit) /\
+                        this = Some (TNom r args) /\
                         Forall2 (fun x xa => fst xa = x /\ nlook x (c_ty C) = Some (snd xa)) (w_reqs W r) args
      | _ => this = None end) /\
     SigOf W f (c_ty C) this g /\
