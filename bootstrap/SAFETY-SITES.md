@@ -56,13 +56,16 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
-- **Unit tags have no value typing.** `lib/bool.moss` declares `tag False;`
+- **Unit tags had no value typing (fixed).** `lib/bool.moss` declares `tag False;`
   and `tag True;`, and `Layouts` requires them to be `DKUnit`.
   `PublicValueTyping.value_typed` types tags only through
   `PayloadOf`, which covers `ADTag` declarations only. `VTag true VUnit` is
-  therefore untypable at `TNom true []`, and no Bool value is typable. T23
-  needs a unit-tag rule before the `Cond` case can be proved. This is an
-  incomplete invariant, not a counterexample.
+  therefore untypable at `TNom true []`, and no Bool value was typable.
+  `TypedUnitTag` now covers unit declarations.
+  [PublicBoolTyping.v](theories/PublicBoolTyping.v) proves `truthy_typed`:
+  under `Layouts` and the Bool symbols that `ElaboratesIn` records, `truthy`
+  reads every value typed at Bool. This closes the `e_bool` row, given a
+  typed condition value.
 - **Proof shape.** A defined function's closure carries its `FnElab`
   derivation and a realization of its context (T30/T31). The main lemma can
   then be proved by induction on fuel, inverting the derivation at each

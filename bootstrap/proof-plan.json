@@ -2550,10 +2550,12 @@
       "status": "done",
       "budget": "done",
       "goal": "Define public ground data/handle/local-store typing and prove heap-extension monotonicity, typed lookup and assignment, lexical scope operations and tag/handle inversion.",
-      "approach": "Use explicit machine types and structural record fields. Heap cells retain immutable held types; callable/environment/source obligations remain in T02.",
+      "approach": "Use explicit machine types and structural record fields. Heap cells retain immutable held types; callable/environment/source obligations remain in T02. Unit declarations (`tag True;`) are typed by TypedUnitTag; typed Bool values have the shape truthy reads (bool_value_shape, truthy_typed).",
       "sources": [
         "theories/PublicValueTyping.v",
-        "theories/PublicLocalsTyping.v"
+        "theories/PublicLocalsTyping.v",
+        "theories/PublicBoolTyping.v",
+        "theories/PublicTypeRead.v"
       ],
       "witness": "typing_extends",
       "origin": {
@@ -3989,5 +3991,11 @@
         }
       ]
     }
-  }
+  },
+  "revalidations": [
+    {
+      "id": "T23",
+      "reason": "The value typing omitted unit declarations, so no Bool value was typable. TypedUnitTag adds them; the existing T23 theorems were rechecked and tagged_payload_typed now requires a tag declaration. The finish condition is unchanged and remains met."
+    }
+  ]
 }
