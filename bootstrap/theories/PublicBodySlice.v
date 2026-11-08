@@ -55,14 +55,16 @@ Definition PrimOutcome (H : heap_types) (t : ty) (r : signal * Prims.mstate) : P
   end.
 
 (* A closure is callable below fuel n: fuel only decreases, so a closure
-   available at fuel n is only ever invoked at a smaller fuel. *)
-Definition CallableOk (n : nat) (d : environment) (params : list ty) (ret : ty) (pv : provision_value) : Prop :=
+   available at fuel n is only ever invoked at a smaller fuel. The ghost
+   heap only grows, so it is invoked at an extension of the heap H0 it was
+   available at, where its captured values are typed. *)
+Definition CallableOk (n : nat) (H0 : heap_types) (d : environment) (params : list ty) (ret : ty) (pv : provision_value) : Prop :=
   match pv with
   | FunctionClosure f df => exists body, view_function P f = Some body /\
-      forall j, j < n -> forall H st ws, state_ok H st ->
+      forall j, j < n -> forall H st ws, heap_extends H0 H -> state_ok H st ->
         Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
         CallOutcome H (ground d ret) (I.eval j P df (parameter_values ws) st body)
-  | PrimitiveClosure p held => forall H st ws, state_ok H st ->
+  | PrimitiveClosure p held => forall H st ws, heap_extends H0 H -> state_ok H st ->
         Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
         PrimOutcome H (ground d ret) (I.run_prim_at P p held ws st)
   | _ => False
@@ -73,9 +75,9 @@ Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop 
   (forall v t, A.nlook v (A.c_vals C) = Some t -> exists w,
      lookup_provision (IVal v) d = Some (ValueProvision w) /\ value_typed W P H w (ground d t)) /\
   (forall f g, A.nlook f (A.c_fns C) = Some g -> exists pv,
-     lookup_provision (IFn f) d = Some pv /\ CallableOk n d (A.sg_params g) (A.sg_ret g) pv) /\
+     lookup_provision (IFn f) d = Some pv /\ CallableOk n H d (A.sg_params g) (A.sg_ret g) pv) /\
   (forall r m g, A.mlook r m (A.c_mths C) = Some g -> exists pv,
-     lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n d (r :: A.sg_params g) (A.sg_ret g) pv) /\
+     lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
   (* functor closures: their realization is T15's *)
   (forall u fx, A.nlook u (A.c_funs C) = Some fx -> exists h sms dc,
      lookup_provision (IFun u) d = Some (FunctorClosure h sms dc)).
@@ -178,10 +180,10 @@ Proof.
     exists H2; split; [eapply extends_trans; eassumption|exact Rest].
 Qed.
 
-Lemma callable_lower : forall n m d params ret pv, m <= n ->
-  CallableOk n d params ret pv -> CallableOk m d params ret pv.
+Lemma callable_lower : forall n m H0 d params ret pv, m <= n ->
+  CallableOk n H0 d params ret pv -> CallableOk m H0 d params ret pv.
 Proof.
-  intros n m d params ret [| f df | |] Le Ok; cbn in *; auto.
+  intros n m H0 d params ret [| f df | |] Le Ok; cbn in *; auto.
   destruct Ok as [body [View Run]]. exists body; split; [exact View|].
   intros j Lt; apply Run; lia.
 Qed.
@@ -191,16 +193,30 @@ Proof.
   intros n m C d H Le [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|]. split; [|exact St].
   split; [exact Vals|]. split; [|split; [|exact Funs]].
   - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
-    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ Le Ok)].
+    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ _ Le Ok)].
   - intros r m' g Found. destruct (Mths r m' g Found) as [pv [Look Ok]].
-    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ Le Ok)].
+    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ _ Le Ok)].
+Qed.
+
+Lemma callable_extends : forall n H H' d params ret pv, heap_extends H H' ->
+  CallableOk n H d params ret pv -> CallableOk n H' d params ret pv.
+Proof.
+  intros n H H' d params ret [| f df | |] Ext Ok; cbn in *; auto.
+  - destruct Ok as [body [View Run]]. exists body; split; [exact View|].
+    intros j Lt Hc st ws E; apply Run; [exact Lt|exact (extends_trans _ _ _ Ext E)].
+  - intros Hc st ws E; apply Ok; exact (extends_trans _ _ _ Ext E).
 Qed.
 
 Lemma realizes_extends : forall n C d H H', heap_extends H H' -> Realizes n C d H -> Realizes n C d H'.
 Proof.
-  intros n C d H H' Ext [Abs [[Vals Rest] St]]. split; [exact Abs|]. split; [split; [|exact Rest]|exact St].
-  intros v t Found. destruct (Vals v t Found) as [w [Look T]].
-  exists w; split; [exact Look|eapply value_typed_extends; eassumption].
+  intros n C d H H' Ext [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|].
+  split; [|exact St]. split; [|split; [|split; [|exact Funs]]].
+  - intros v t Found. destruct (Vals v t Found) as [w [Look T]].
+    exists w; split; [exact Look|eapply value_typed_extends; eassumption].
+  - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
+    exists pv; split; [exact Look|exact (callable_extends _ _ _ _ _ _ _ Ext Ok)].
+  - intros r m g Found. destruct (Mths r m g Found) as [pv [Look Ok]].
+    exists pv; split; [exact Look|exact (callable_extends _ _ _ _ _ _ _ Ext Ok)].
 Qed.
 
 Lemma realizes_same : forall n C C' d H,
@@ -667,11 +683,11 @@ Proof.
   - destruct Ok as [body [View Run]]. rewrite View.
     destruct (I.eval_arguments n P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
-      exact (outcome_ret_call F d H H1 types _ _ _ g1 E1 L1 (Run n (Nat.lt_succ_diag_r n) H1 st1 ws S1 T1)).
+      exact (outcome_ret_call F d H H1 types _ _ _ g1 E1 L1 (Run n (Nat.lt_succ_diag_r n) H1 st1 ws E1 S1 T1)).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
   - destruct (I.eval_arguments n P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
-      pose proof (Ok H1 st1 ws S1 T1) as POut.
+      pose proof (Ok H1 st1 ws E1 S1 T1) as POut.
       destruct (I.run_prim_at P p held ws st1) as [o st2] eqn:Run'.
       exact (outcome_prim F d H H1 types _ _ o st2 g1 E1 L1 POut).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
@@ -697,7 +713,7 @@ Proof.
     destruct (I.eval_arguments n P d g0 st0 xs) as [[[ws g1] st1]|r]; cbn in AOut.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
       apply (outcome_ret_call F d H0 H1 types _ _ _ g1 E1 L1).
-      apply (Run n (Nat.lt_succ_diag_r n) H1 st1 (w0 :: ws) S1). constructor; [|exact T1].
+      apply (Run n (Nat.lt_succ_diag_r n) H1 st1 (w0 :: ws) (extends_trans _ _ _ E0 E1) S1). constructor; [|exact T1].
       eapply value_typed_extends; eassumption.
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
   - apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ (pre_lower Pre0) (fun b => b) ROut).
@@ -707,7 +723,7 @@ Proof.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
       assert (Args' : Forall2 (fun w t => value_typed W P H1 w (ground d t)) (w0 :: ws) (ot :: A.sg_params g)).
       { constructor; [|exact T1]. eapply value_typed_extends; eassumption. }
-      pose proof (Ok H1 st1 (w0 :: ws) S1 Args') as POut.
+      pose proof (Ok H1 st1 (w0 :: ws) (extends_trans _ _ _ E0 E1) S1 Args') as POut.
       destruct (I.run_prim_at P p held (w0 :: ws) st1) as [o' st2] eqn:Run'.
       exact (outcome_prim F d H0 H1 types _ _ o' st2 g1 E1 L1 POut).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
@@ -936,15 +952,15 @@ Proof.
   - injection E as _ E2. exact (IH ps E2).
 Qed.
 
-Lemma callable_transfer : forall n m d d' ps ps' r r' pv, m <= n ->
+Lemma callable_transfer : forall n m H0 d d' ps ps' r r' pv, m <= n ->
   map (ground d) ps = map (ground d') ps' -> ground d r = ground d' r' ->
-  CallableOk n d ps r pv -> CallableOk m d' ps' r' pv.
+  CallableOk n H0 d ps r pv -> CallableOk m H0 d' ps' r' pv.
 Proof.
-  intros n m d d' ps ps' r r' [w|f df|u sms dc|p held] Le Ps R Ok; cbn in Ok |- *; auto.
+  intros n m H0 d d' ps ps' r r' [w|f df|u sms dc|p held] Le Ps R Ok; cbn in Ok |- *; auto.
   - destruct Ok as [body [View Run]]. exists body. split; [exact View|].
-    intros j Lj H st ws S Args. rewrite <- R. apply (Run j ltac:(lia) H st ws S).
+    intros j Lj H st ws E S Args. rewrite <- R. apply (Run j ltac:(lia) H st ws E S).
     exact (forall2_map_eq H (ground d) (ground d') ws ps ps' Ps Args).
-  - intros H st ws S Args. rewrite <- R. apply (Ok H st ws S).
+  - intros H st ws E S Args. rewrite <- R. apply (Ok H st ws E S).
     exact (forall2_map_eq H (ground d) (ground d') ws ps ps' Ps Args).
 Qed.
 
@@ -1022,7 +1038,7 @@ Proof.
     clear Sig. rename Sig' into Sig.
     destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
     destruct (SigGround gf gc Sc Sig) as [Ps R].
-    exact (callable_transfer (S n) n d de _ _ _ _ pv (le_S _ _ (le_n n)) Ps R Ok).
+    exact (callable_transfer (S n) n H d de _ _ _ _ pv (le_S _ _ (le_n n)) Ps R Ok).
   - (* methods *) intros r m gf Found.
     destruct (mths_ilook _ r m gf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
     pose proof (ProvNs _ _ InP) as Ik.
@@ -1035,7 +1051,7 @@ Proof.
     clear Sig. rename Sig' into Sig.
     destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc Kr]. unfold provision_sig_gens in Sc. cbn in Sc, Kr.
     destruct (SigGround gf gc Sc Sig) as [Ps R].
-    apply (callable_transfer (S n) n d de (A.canon C (app_subst th r) :: A.sg_params gc) (r :: A.sg_params gf)
+    apply (callable_transfer (S n) n H d de (A.canon C (app_subst th r) :: A.sg_params gc) (r :: A.sg_params gf)
       (A.sg_ret gc) (A.sg_ret gf) pv (le_S _ _ (le_n n))); [|exact R|exact Ok].
     change (ground d (A.canon C (app_subst th r)) :: map (ground d) (A.sg_params gc) =
       ground de r :: map (ground de) (A.sg_params gf)).
@@ -1152,11 +1168,11 @@ Proof.
   - destruct Ok as [body [View Run]]. rewrite View.
     destruct (I.eval_arguments k P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
-      exact (outcome_ret_call F d H H1 types _ _ _ g1 E1 L1 (Run k (Nat.lt_succ_diag_r k) H1 st1 ws S1 T1)).
+      exact (outcome_ret_call F d H H1 types _ _ _ g1 E1 L1 (Run k (Nat.lt_succ_diag_r k) H1 st1 ws E1 S1 T1)).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
   - destruct (I.eval_arguments k P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
-      pose proof (Ok H1 st1 ws S1 T1) as POut.
+      pose proof (Ok H1 st1 ws E1 S1 T1) as POut.
       destruct (I.run_prim_at P p held ws st1) as [o st2] eqn:Run'.
       exact (outcome_prim F d H H1 types _ _ o st2 g1 E1 L1 POut).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
@@ -1185,7 +1201,7 @@ Proof.
     destruct (I.eval_arguments k P d g0 st0 xs) as [[[ws g1] st1]|r]; cbn in AOut.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
       apply (outcome_ret_call F d H0 H1 types _ _ _ g1 E1 L1).
-      apply (Run k (Nat.lt_succ_diag_r k) H1 st1 (w0 :: ws) S1). constructor; [|exact T1].
+      apply (Run k (Nat.lt_succ_diag_r k) H1 st1 (w0 :: ws) (extends_trans _ _ _ E0 E1) S1). constructor; [|exact T1].
       subst ot. rewrite Abs. eapply value_typed_extends; eassumption.
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
   - apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ (pre_lower Pre0) (fun b => b) ROut).
@@ -1196,7 +1212,7 @@ Proof.
     + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
       assert (Args' : Forall2 (fun w t => value_typed W P H1 w (ground d t)) (w0 :: ws) (ot :: A.sg_params g)).
       { constructor; [|exact T1]. subst ot. rewrite Abs. eapply value_typed_extends; eassumption. }
-      pose proof (Ok H1 st1 (w0 :: ws) S1 Args') as POut.
+      pose proof (Ok H1 st1 (w0 :: ws) (extends_trans _ _ _ E0 E1) S1 Args') as POut.
       destruct (I.run_prim_at P p held (w0 :: ws) st1) as [o' st2] eqn:Run'.
       exact (outcome_prim F d H0 H1 types _ _ o' st2 g1 E1 L1 POut).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
