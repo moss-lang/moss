@@ -71,6 +71,18 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
+- **Counterexample: a provision's type can go stale before a call (needs a
+  decision).**
+  [stale-provision-type.moss](examples/stale-provision-type.moss): `val v: T`
+  mentions `T`, but `T` is not one of `v`'s requirements (it has no assume
+  nesting), so `v`'s provisions record no meaning for it. The caller binds
+  `T = Char`, provides `v = char::x`, rebinds `T = Bool`, and calls
+  `f(): T { v }`. `Satisfies` checks only that `v` is provided and that
+  recorded requirement meanings agree, which is vacuous here. `f` reads `v`
+  at the call's `T`, so it returns the `Char` as a `Bool`. The oracle
+  accepts the program and reports `stuck (XErr 10)`. Functor applications
+  select inputs through `Satisfies` too, so they are likely affected the
+  same way.
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
