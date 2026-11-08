@@ -1038,13 +1038,14 @@
         "T11",
         "T24"
       ],
-      "status": "open",
+      "status": "partial",
       "budget": "hour",
       "goal": "Variables, values, records, tags and primitive expressions preserve the public runtime invariant.",
-      "approach": "Prove evaluator case lemmas conditional on the smaller-fuel induction hypothesis.",
+      "approach": "Prove evaluator case lemmas conditional on the smaller-fuel induction hypothesis. Checked conditionally in PublicBodySlice.safe_all: the slice induction proves these cases from the Pre invariant (positional local typing, merge absorption), with calls, vals, methods, operators, literals, binds, tag construction (tag_check) and arm selection (arms_select) as explicit Section hypotheses.",
       "sources": [
         "theories/Audit.v",
-        "theories/XSafety.v"
+        "theories/XSafety.v",
+        "theories/PublicBodySlice.v"
       ],
       "origin": {
         "kind": "baseline"
@@ -1140,13 +1141,14 @@
         "T13",
         "T14"
       ],
-      "status": "open",
+      "status": "partial",
       "budget": "hour",
       "goal": "Match/loop/return/break cases preserve typing and rule out misplaced control signals at the entry boundary.",
-      "approach": "Case analysis using the frame/control permission invariant.",
+      "approach": "Case analysis using the frame/control permission invariant. Checked conditionally in PublicBodySlice.safe_all: the slice induction proves these cases from the Pre invariant (positional local typing, merge absorption), with calls, vals, methods, operators, literals, binds, tag construction (tag_check) and arm selection (arms_select) as explicit Section hypotheses.",
       "sources": [
         "theories/Audit.v",
-        "theories/XSafety.v"
+        "theories/XSafety.v",
+        "theories/PublicBodySlice.v"
       ],
       "origin": {
         "kind": "baseline"

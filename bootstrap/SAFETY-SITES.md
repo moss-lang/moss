@@ -109,3 +109,44 @@ the local store. *C* and *F* are the static context and frame.
 - **`ExConst`** inlines code elaborated in an empty context with its own
   numbering. It is closed: it reads no locals, vals or provisions, and has
   no `return` or `break`.
+
+## Body-safety slice (checked, conditional)
+
+[PublicBodySlice.v](theories/PublicBodySlice.v) proves `safe_all`. For
+every fuel, the code of every `Ex`, `Blk`, `BlkE`, `Branch` and `Cond`
+derivation, run from a state satisfying `Pre`, produces an `Outcome`: never
+`Stuck`, a `Breaking` only where the source has a `break` leaving a loop,
+and typed values, stores and returns otherwise. `Pre` combines frame
+numbering, positional local typing, a valid state for a ghost heap, and
+merge absorption (`ground d (canon C t) = ground d t`).
+
+The proof is a strong induction on fuel. Each step is a mutual structural
+fixpoint over the derivation, which handles blocks and inlined constants
+that reuse the same code at the same fuel. The `while` and `loop` cases
+are inner fuel inductions. The following remain explicit Section
+hypotheses, each a named remaining obligation:
+
+| Hypothesis | Covers | Task |
+| --- | --- | --- |
+| `val_case` | contextual vals (`EVal`) | T04 |
+| `call_defined_case`, `call_abstract_case` | calls, `Demand` wrappers | T06, T14 |
+| `method_case`, `unary_case`, `binary_case` | method calls and operators | T06, T14 |
+| `literal_case` | numeric literals through contextual arithmetic | T05, T06 |
+| `bind_case` | bind statements | T07, T15, T16 |
+| `tag_check` | checked tag construction from a typed payload | T24 premises |
+| `arms_select` | arm selection and binder typing for a typed scrutinee | T08 |
+| `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
+| `Layouts`, `BoolSymbols` | platform layout and Bool symbols | from `Linked`/`ElaboratesIn` |
+
+`state_ok` is abstract here: the slice performs no primitive steps, so it
+only has to be preserved by heap extension.
+
+## Time log
+
+- Checkpoint 1 (18:47 to 19:31, about 45 minutes): the reduction, the
+  stuck-site table, unit-tag typing, type-reading lemmas, two
+  counterexamples and their repairs, and the frame/local foundations. I had
+  planned this as two hours.
+- Checkpoint 2 (19:37 to 19:53, about 16 minutes): the slice induction
+  (`safe_all`), with loops, records, fields, match, let, assignment and
+  constants. I had estimated a few hours.
