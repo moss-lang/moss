@@ -131,7 +131,7 @@ hypotheses, each a named remaining obligation:
 | `call_defined_case` | direct calls of defined fns, `Demand` wrappers | T03, T06, T14 |
 | `attached_defined_case` | defined attached methods (direct calls) | T03, T06, T14 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
-| `literal_case` | numeric literals through contextual arithmetic | T05, T06 |
+| `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
 | `bind_case` | bind statements | T07, T15, T16 |
 | `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
@@ -160,6 +160,10 @@ provenance certificate and no recursion through captured environments. With
 this, contextual vals (`val_step`), calls of provided functions
 (`invoke_step`, function and primitive closures), and calls of provided
 methods and operators (`provided_step`, `methcall_step`) are proved.
+`CodeSafe n` (code safe at every fuel up to `n`) lets the generic call lemmas
+(`invoke_code`, `method_code`) take any safe code as receiver and arguments.
+Numeric literals use them directly (`lit_step`, `lit_code`, by induction on
+fuel).
 
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
