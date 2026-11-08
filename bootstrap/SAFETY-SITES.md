@@ -251,7 +251,7 @@ Measured in the background on detached snapshots (`scratch/measure.sh`):
 
 | Commit | Clean `check.sh` | `nix build .#oracle` | Bootstrap |
 | --- | --- | --- | --- |
-| 3a302ab | 169s (overlapped another full build) | 307s | running |
+| 3a302ab | 169s (overlapped another full build) | 307s | 2237s (37 min, overlapping other builds) |
 
 A subagent remeasured on a quiet machine (32 cores, one core busy with the
 bootstrap): 118s at both 086a617 (`main`) and 3a302ab. The branch adds about

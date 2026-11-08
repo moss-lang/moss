@@ -922,6 +922,58 @@ Proof.
   - destruct Out as [_ [L _]]. rewrite Loop in L. discriminate.
 Qed.
 
+Lemma body_call_method : forall j, Safe j ->
+  forall att dcl rn n ps rt b Cf ns de H st w0 ws (d : environment) recv params ret,
+  A.w_decl W att = Some dcl -> A.d_ast dcl = ADFn (RAttached rn) n ps rt (Some b) ->
+  A.CtxOf W att Cf ns -> Realizes j Cf de H -> state_ok H st ->
+  (forall r args g0, A.Attached W r n att ->
+     Forall2 (fun x xa => fst xa = x /\ A.nlook x (A.c_ty Cf) = Some (snd xa)) (A.w_reqs W r) args ->
+     A.SigOf W att (A.c_ty Cf) (Some (TNom r args)) g0 ->
+     ground de (TNom r args) = ground d recv /\
+     map (ground de) (A.sg_params g0) = map (ground d) params /\ ground de (A.sg_ret g0) = ground d ret) ->
+  value_typed W P H w0 (ground d recv) ->
+  Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
+  exists body, view_function P att = Some body /\
+    CallOutcome H (ground d ret) (I.eval j P de (parameter_values (w0 :: ws)) st body).
+Proof.
+  intros j Sj att dcl rn n ps rt b Cf ns de H st w0 ws d recv params ret Decl Ast Ctx Real State Agree Recv Args.
+  destruct (all_fn_elab att dcl (RAttached rn) n ps rt b Decl Ast dcl (RAttached rn) n ps rt b Decl Ast)
+    as (C0 & ns0 & this & g0 & F0 & x & t0 & Ctx0 & Rcv & Sig & _ & Ret & FThis & Loop & _ & _ & _ & Num & Body & View).
+  destruct Rcv as [r [args [Att [-> Reqs]]]].
+  destruct (PublicContextFacts.function_context_unique W att C0 ns0 Cf ns Ctx0 Ctx) as [-> ->].
+  exists x. split; [exact View|].
+  destruct (Agree r args g0 Att Reqs Sig) as [This [Params Result]].
+  set (Cb := fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) (combine (map fst ps) (A.sg_params g0)) Cf).
+  set (all := ground de (TNom r args) :: map (ground de) (A.sg_params g0)).
+  set (types0 := combine (seq 0 (List.length all)) all).
+  assert (Pre0 : Pre j F0 Cb de types0 H (parameter_values (w0 :: ws)) st).
+  { split; [apply (numbering_frame F0 (map fst ps)); rewrite FThis; exact Num|].
+    split; [split|].
+    - intros pn t mu Found Named.
+      apply slook_params in Found; [|exact (ctxof_locals att Cf ns Ctx)].
+      apply in_combine_nth in Found as [i [Name Ty]].
+      destruct Num as [_ [_ [_ Positions]]]. pose proof (Positions i pn Name) as Slot.
+      unfold A.var_of. rewrite Slot. unfold types0.
+      exact (nlook_positions all (S i) (ground de t) 0 ltac:(cbn; rewrite nth_error_map, Ty; reflexivity)).
+    - intros t' This'. rewrite FThis in This'. injection This' as <-. unfold types0.
+      exact (nlook_positions all 0 _ 0 eq_refl).
+    - split; [|split; [exact State|]].
+      + unfold parameter_values, types0.
+        apply params_typed. unfold all. constructor; [rewrite This; exact Recv|].
+        rewrite Params. clear -Args. induction Args; constructor; auto.
+      + apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]. }
+  destruct Sj as [_ [_ [SBlkE _]]].
+  pose proof (SBlkE F0 Cb b (Some (A.sg_ret g0)) x t0 Body de types0 H (parameter_values (w0 :: ws)) st Pre0) as Out.
+  destruct (blke_branch_ty _ _ _ _ _ _ Body) as [_ Fits]. cbn in Fits.
+  destruct (I.eval j P de (parameter_values (w0 :: ws)) st x) as [[] g' st']; cbn in Out |- *; auto.
+  - destruct Out as [H' [E [S [_ T]]]]. exists H'; repeat split; auto.
+    rewrite <- Result. exact (fits_ground W P H' de _ _ _ Fits T).
+  - destruct Out as [H' [r' [R [E [S [_ T]]]]]]. rewrite Ret in R. injection R as <-.
+    exists H'; repeat split; auto. rewrite <- Result. exact T.
+  - destruct Out as [_ [L _]]. rewrite Loop in L. discriminate.
+Qed.
+
+
 (* ---- direct calls of defined functions -------------------------------------- *)
 
 (* The callee's environment: its formals read at the call, and the
