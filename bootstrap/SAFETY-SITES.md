@@ -245,6 +245,24 @@ realized from the caller's (`callee_realizes`):
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
 
+## Check and build timings
+
+Measured in the background on detached snapshots (`scratch/measure.sh`):
+
+| Commit | Clean `check.sh` | `nix build .#oracle` | Bootstrap |
+| --- | --- | --- | --- |
+| 3a302ab | 169s (overlapped another full build) | 307s | running |
+
+A subagent remeasured on a quiet machine (32 cores, one core busy with the
+bootstrap): 118s at both 086a617 (`main`) and 3a302ab. The branch adds about
+6s of CPU, none of it on the critical path. The overrun is pre-existing, and
+`main` has no headroom against the two-minute budget. The wall time is
+bounded by a chain of 32 dependent files ending in `LinkSynthPreserve.v`
+(14.4s, 9s of it one `all:` tactic block) and `LinkProgramPreserve.v`.
+Starting the two assumption audits as soon as their own dependencies are
+built, instead of after the whole build, would hide most of their 11s
+without touching any proof.
+
 ## Time log
 
 - Checkpoint 1 (18:47 to 19:31, about 45 minutes): the reduction, the
@@ -261,6 +279,6 @@ only has to be preserved by heap extension.
 - Found the merge-orientation gap while planning direct calls (20:10 to 20:12).
 - Recorded per-symbol contexts in the world, after approval.
 - `Satisfies` type check after approval (20:58 to 21:03).
-- Context formation, call agreement and `callee_realizes` (21:07 to 21:31).
+- Context formation, call agreement and `callee_realizes` (21:07 to 21:28).
 - `tyof_rel`, `body_call`, `call_core`, and the merged-class counterexample
   (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).
