@@ -3573,11 +3573,13 @@ Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> pattern -> list (nam
     PayloadOf W s xs pay ->
     resolve W (fr_mod F) [y] = None -> Named F y ->
     PatOf W F st (APTag pa (APPath [y])) (PHead s (Some (var_of F y)) []) [(y, pay)] [s] false
-(* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name *)
+(* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name.
+   The names it binds are distinct: a repeated binder would be typed by its
+   last field but read from its first (bootstrap/SAFETY-SITES.md). *)
 | PRecord : forall pa s xs fs ftys bs fxs,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
     PayloadOf W s xs (TRecord ftys) ->
-    FieldPats W F ftys fs bs fxs ->
+    FieldPats W F ftys fs bs fxs -> NoDup (map fst bs) ->
     PatOf W F st (APRec (Some pa) fs) (PHead s None fxs) bs [s] false.
 
 (* `let` binds an immutable local, `var` an assignable one. *)

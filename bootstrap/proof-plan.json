@@ -2185,7 +2185,8 @@
         "E05",
         "E07",
         "E08",
-        "E10"
+        "E10",
+        "E21"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2540,6 +2541,30 @@
         "kind": "refinement",
         "parent": "E01",
         "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
+    },
+    {
+      "id": "E21",
+      "group": "E",
+      "title": "Reject repeated pattern binders",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators (Elab.v and src/) reject a record pattern that binds a name twice, as Audit's PRecord now requires, with a tests/errors case.",
+      "approach": "Add the distinctness check to both pattern elaborators and the agreement corpus; until then such programs are accepted by the implementation but not by Builds.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/duplicate-field-binder.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved requiring distinct record-pattern binders in Audit after a repeated binder was typed by its last field but read from its first; the implementations still accept it.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/duplicate-field-binder.moss"
+        ]
       }
     },
     {

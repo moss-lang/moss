@@ -65,13 +65,11 @@ the local store. *C* and *F* are the static context and frame.
   [duplicate-field-binder.moss](examples/duplicate-field-binder.moss) is
   accepted by the oracle built at `386e418`, which then reports
   `stuck (XErr 10)`: `if y` reads a `Char` where the context promised a
-  `Bool`. As far as I can tell, the public relation admits the same
-  derivation, so `safety` is false as stated until this is decided. The
-  candidate repairs are below; the choice is a language decision.
-  1. Require distinct binders in `FieldPats`/`PatOf` (Audit.v, Elab.v,
-     src/), reporting a static error.
-  2. Make the runtime binding order agree with the static order, so the
-     last binder wins.
+  `Bool`. The public relation admitted the same derivation.
+  **Decided:** `PRecord` now requires `NoDup` of its bound names
+  (user-approved; [D34] in docs/design/semantics.md). The executable
+  elaborators still accept the program; that is
+  [E21](proofs/build-run.md#e21).
 
 - **Unit tags had no value typing (fixed).** `lib/bool.moss` declares `tag False;`
   and `tag True;`, and `Layouts` requires them to be `DKUnit`.

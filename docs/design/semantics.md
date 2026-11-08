@@ -1066,6 +1066,11 @@ requires `e : |`. Note `src/parse.moss`'s `tree()` matches a `Token` against
 only three heads with no wildcard — stale code under this rule (§12), and
 `src/lower.moss:103,106` omit `=>` — recorded as typos.
 
+A record destructure binds each name at most once: `S { a = y, b = y }`
+and `S { a = b, b }` are errors. A repeated binder would otherwise be
+typed by its last field and read from its first (the duplicate-binder
+counterexample in `bootstrap/SAFETY-SITES.md`).
+
 A unit or tag pattern, with or without a payload, must name a member of
 the scrutinee's generic type, so on an abstract scrutinee only a binder or
 `_` is legal, and a match's meaning cannot depend on a specialization

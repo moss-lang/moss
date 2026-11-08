@@ -8,7 +8,7 @@ Generated from [one canonical task plan](../proof-plan.json). Task IDs and finis
 
 [Task records](#task-records) · [Checkpoint history](#checkpoint-changes)
 
-Ready tasks with tentative hour estimates: [B01](#b01), [F17](#f17).
+Ready tasks with tentative hour estimates: [B01](#b01), [F17](#f17), [E21](#e21).
 
 Ready tasks needing decomposition: [F10](#f10), [E02](#e02), [L01](#l01), [K09](#k09).
 
@@ -184,6 +184,7 @@ flowchart TB
     E10["○ E10: Assemble direct final-state coverage"]:::open
     E11["○ ? E11: Close direct public elaboration soundness"]:::unknown
     E12["○ ? E12: Direct public elaboration completeness"]:::unknown
+    E21["○ E21: Reject repeated pattern binders"]:::open
   end
   E01 --> E02
   E01 --> E03
@@ -219,6 +220,7 @@ flowchart TB
   E16 --> E07
   E17 --> E10
   E18 --> E10
+  E21 --> E11
   click E01 "#e01"
   click E02 "#e02"
   click E03 "#e03"
@@ -237,6 +239,7 @@ flowchart TB
   click E16 "#e16"
   click E17 "#e17"
   click E18 "#e18"
+  click E21 "#e21"
   classDef done stroke:#238636,stroke-width:2px
   classDef partial stroke:#b8860b,stroke-width:2px,stroke-dasharray:5 3
   classDef open stroke:#888,stroke-dasharray:2 3
@@ -524,10 +527,11 @@ to that record, including across diagrams and pages.
 | <a id="e17"></a> **E17** Cover direct ordinary function bodies | ○ open; ? Decompose | Every defined source function has a public function-elaboration receipt in the final program, under explicit global induction premises. | [E03](#e03), [E04](#e04), [S29](#s29) | Port completed-body coverage and final lookup transport; keep final-state obligations visible.  [Audit.v](../theories/Audit.v), [FnCompleted.v](../theories/FnCompleted.v), [FnElabExec.v](../theories/FnElabExec.v) |
 | <a id="e18"></a> **E18** Cover direct generated provider bodies | ○ open; ? Decompose | Generated lambda, wrapper, forwarder and linked bodies have final public elaboration receipts. | [E04](#e04), [E05](#e05), [E08](#e08) | Inventory emission forms and split their coverage proofs rather than assuming a generated-body callback.  [Audit.v](../theories/Audit.v), [FinalLambdas.v](../theories/FinalLambdas.v), [FinalForwarders.v](../theories/FinalForwarders.v) |
 | <a id="e10"></a> **E10** Assemble direct final-state coverage | ○ open; ≤1h, tentative | One final public program/world contains all required source/generated body and initial-environment receipts. | [E17](#e17), [E18](#e18), [E09](#e09) | Assemble coverage and monotonic final-table facts under clearly stated smaller-fuel assumptions.  [Audit.v](../theories/Audit.v), [FunctionFrameProgram.v](../theories/FunctionFrameProgram.v) |
-| <a id="e11"></a> **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | [E03](#e03), [E04](#e04), [E05](#e05), [E07](#e07), [E08](#e08), [E10](#e10) | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
+| <a id="e11"></a> **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | [E03](#e03), [E04](#e04), [E05](#e05), [E07](#e07), [E08](#e08), [E10](#e10), [E21](#e21) | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
 | <a id="e12"></a> **E12** Direct public elaboration completeness | ○ open; ? Decompose | Every public-buildable bundle is accepted by direct elaboration, with the implementation fresh names permitted by the public contract. | [F10](#f10), [F11](#f11), [F12](#f12), [F13](#f13), [F14](#f14), [E02](#e02) | Assemble backward rule proofs and justified resource bounds, including the direct entry environment.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
 | <a id="e19"></a> **E19** Emit public type metadata | ✓ done; Proved / defined | Direct type emission preserves structural field names and commutes with the existing input-bounded executable type substitution. | None | Verified emit_type and emit_full_substitution. This does not establish context meaning, machine initialization or whole elaboration soundness. Origin: refinement under [E02](#e02). Named result: `emit_full_substitution`.  [PublicEmit.v](../theories/PublicEmit.v) |
 | <a id="e20"></a> **E20** Read public declaration and scope metadata | ✓ done; Proved / defined | Read actual loaded metadata into public worlds, with declaration provenance/completeness, exact exports/scopes/attached methods and acyclic imports. | None | Reuse shared source predicates, without field numbering or whole elaboration refinement. The conditional WorldOf assembler explicitly retains all six public requirements premises. Origin: refinement under [E01](#e01). Named result: `load_world_world_of_from_requirements`.  [PublicWorld.v](../theories/PublicWorld.v), [PublicWorldScope.v](../theories/PublicWorldScope.v) |
+| <a id="e21"></a> **E21** Reject repeated pattern binders | ○ open; ≤1h, tentative | The executable elaborators (Elab.v and src/) reject a record pattern that binds a name twice, as Audit's PRecord now requires, with a tests/errors case. | None | Add the distinctness check to both pattern elaborators and the agreement corpus; until then such programs are accepted by the implementation but not by Builds. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [duplicate-field-binder.moss](../examples/duplicate-field-binder.moss) |
 
 ### Selected runtime lowering
 
