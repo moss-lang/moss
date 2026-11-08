@@ -122,9 +122,9 @@ fn the_front_ends_accept_and_reject_alike() {
     programs.extend(moss_files("examples"));
     let mut failures = Vec::new();
     let mut counts = std::collections::BTreeMap::new();
-    for entry in &programs {
-        let mine = compiler(entry);
-        let (theirs, message) = oracle(entry);
+    let verdicts = super::parallel::map(&programs, |entry| (compiler(entry), oracle(entry)));
+    assert_eq!(verdicts.len(), programs.len());
+    for (entry, (mine, (theirs, message))) in programs.iter().zip(verdicts) {
         *counts.entry((mine, theirs)).or_insert(0) += 1;
         match GAPS.iter().find(|(e, ..)| e == entry) {
             Some((_, m, t, why)) => {

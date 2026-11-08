@@ -556,7 +556,7 @@ fn matches_the_bootstrap_on_behaviour() {
         ("exponents", EXPONENTS_OUT, PRELUDE),
         ("lists", LISTS_OUT, PRELUDE),
     ];
-    for (name, expected, prelude) in cases {
+    let checked = super::parallel::map(cases, |(name, expected, prelude)| {
         let entry = wasi(name);
         assert_eq!(run_moss(&entry, prelude), *expected, "{entry}");
         if *name == "gc_array_memory" {
@@ -566,7 +566,9 @@ fn matches_the_bootstrap_on_behaviour() {
         } else {
             assert_eq!(oracle_run(&entry, &[]), *expected, "{entry}");
         }
-    }
+    });
+    assert_eq!(checked.len(), cases.len());
+    eprintln!("behaviour agreement over {} programs", checked.len());
 }
 
 /// D75: a recursive tree through `Ref[Boxed=Expr]`, and the thesis's

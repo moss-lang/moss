@@ -70,6 +70,13 @@ moss-tests language::`, and run the whole suite before you commit. Its
 modules say what they check; `MOSS_BLESS=1` rewrites the goldens of
 [`tests/errors`](tests/errors).
 
+The acceptance and behaviour comparisons distribute their program lists
+over at most eight workers, limited by the available CPUs. Set
+`RUST_TEST_THREADS=1 cargo test` to run both these lists and the individual
+tests serially; `--test-threads=1` alone only controls the individual tests.
+Every corpus input is still checked, and acceptance diagnostics stay in
+source order.
+
 The oracle and the compiler must accept and reject the same programs, up
 to an explicit, commented list of known gaps
 ([`agreement.rs`](crates/moss-tests/tests/suite/agreement.rs)). A program

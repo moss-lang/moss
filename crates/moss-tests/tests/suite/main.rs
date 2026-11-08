@@ -16,6 +16,7 @@ mod language;
 mod selfhosted;
 mod runtime_platform;
 mod native_platform;
+mod parallel;
 mod validate;
 mod wasm_backend;
 
