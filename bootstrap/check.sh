@@ -14,11 +14,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 fail() { echo "check.sh: $*" >&2; exit 1; }
 
+rocq_check_started=$SECONDS
 echo "check.sh: compiling all Rocq theories (${DUNE_PROFILE:-dev} profile)" >&2
 dune_jobs=()
 if [ -n "${DUNE_JOBS:-}" ]; then dune_jobs=(-j "$DUNE_JOBS"); fi
 build_dir="${DUNE_BUILD_DIR:-_build}"
 dune build --build-dir "$build_dir" --profile "${DUNE_PROFILE:-dev}" "${dune_jobs[@]}" @theories/all
+echo "check.sh: Rocq theory build finished in $((SECONDS - rocq_check_started))s" >&2
+rocq_audit_started=$SECONDS
 echo "check.sh: auditing certificate assumptions and closed theorems" >&2
 # These audits inspect independent roots and write separate outputs.
 # Wait for both, and propagate a failure from either compiler process.
@@ -49,3 +52,5 @@ if sed '/^[[:space:]]*Module Type /,/^[[:space:]]*End /d' theories/*.v | grep -E
   fail "a Parameter or Axiom outside a module type"
 fi
 echo "check.sh: every file compiles, and the certificate assumes only the kernel's primitives"
+
+echo "check.sh: assumption audits finished in $((SECONDS - rocq_audit_started))s; complete Rocq check in $((SECONDS - rocq_check_started))s" >&2

@@ -183,4 +183,3 @@ Theorem binditems_erase_pins : forall F C its wrap Cout Fout made,
  A.BindItems W P (erase_pins F) C its wrap Cout (erase_pins Fout) made.
 Proof. exact erase_binditems. Qed.
 End Erasure.
-
