@@ -764,6 +764,8 @@ fn d84_functors_run() {
         ("family_arg_capture", "73\n"),
         // A family's binding made in `main` and applied in another frame.
         ("family_cross_frame", "55\n"),
+        // A linked method keyed at a type the family is fixed in.
+        ("family_fixed_linked", "1\n"),
         ("functor_polyfill", "7\n"),
     ] {
         let entry = wasi(name);

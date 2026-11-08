@@ -7330,8 +7330,15 @@ assume Std {
           # Generically, provided at the types applications supply (D84
           # 3c): read through the closure's own view, where each is the
           # application's (or, at the bind, fresh).
+          # Keyed as the binds read it: a type `F` is fixed in as where it
+          # was provided, one applications supply as here (`gout`), so a
+          # linked `Int.size` is found at the `Int` the binds see.
           let view = view_over(lower::env_a_of(e), decl_env, gout);
-          gout = lower::env_push(gout, lower::ek_fn(), key, sym, view, lower::full_app(sym, view));
+          var gkey = lower::env_recv_of(e);
+          if ast::is_some(gkey) {
+            gkey = instantiate_in(gout, gkey);
+          }
+          gout = lower::env_push(gout, lower::ek_fn(), gkey, sym, view, lower::full_app(sym, view));
         }
         e = lower::env_next_of(e);
       }

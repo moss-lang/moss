@@ -1,0 +1,37 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/access.moss" use Elem, Index, .length;
+import "../../lib/size.moss" use Size, Sizes, .size, .int;
+
+# D84 3b: `Lens` is fixed in `Int` (its result's bracket names it) and
+# takes `Size` from each application, and `Sizes`' `Int.size` is linked.
+# The binds read `Int` as where the binding was made and `Size` as where it
+# is applied, and the linked `Int.size` has to be found at that reading,
+# not at the application's own `Int` (which, in `go`, checked generically,
+# is `Int` assumed). Otherwise the call in the anonymous function finds
+# the bind site's `Int.size`, made at its `Size`, and is refused as
+# incoherent. Expected: 1.
+type Item;
+assume Int, zero, one, Size, Sizes, Item {
+  tag Lensed(Item);
+  fn lensed_length(x: Lensed): Int { one.size().int() }
+}
+
+functor Lens[Item]: Int, zero, one, Size, Sizes -> Lensed.length[Index=Int];
+functor LensImpl: Int, zero, one, Size, Sizes, Item -> Lensed.length[Index=Int] {
+  bind Lensed.length[Index=Int] = () => lensed_length(this);
+}
+
+assume Std, Lens {
+  fn go() {
+    let x = Lensed[Item=Float](1.5);
+    putchar((x.length() + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind Lens = LensImpl; go(); }
+}
