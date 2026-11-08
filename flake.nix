@@ -315,6 +315,15 @@
             pname = "moss-bin";
             extra.CARGO_PROFILE_RELEASE_LTO = "fat";
           };
+          # Run this revision using a compiler supplied at run time through
+          # MOSS_SEED. Only the driver and sources are build dependencies;
+          # the Rocq bootstrap remains a separate package and CI check.
+          dev = pkgs.runCommand "moss-dev" { meta.mainProgram = "moss"; } ''
+            mkdir -p $out/bin $out/share/moss
+            # Copy so current_exe finds this package's source and library.
+            cp ${driver}/bin/moss $out/bin/moss
+            cp -r ${compilerSource}/src ${compilerSource}/lib $out/share/moss/
+          '';
           # The two halves side by side. Copy rather than symlink the
           # executable: the driver finds the compiler through `current_exe`,
           # which resolves symlinks, and would otherwise look inside
@@ -455,6 +464,36 @@
               mkdir -p $out
               cp "$audit/Certificate.log" "$audit/Closed.log" $out/
             '';
+          dev = pkgs.runCommand "moss-dev-check" { } ''
+            package=${self.packages.${pkgs.stdenv.hostPlatform.system}.dev}
+            dev=$package/bin/moss
+            export MOSS_SEED=${self.packages.${pkgs.stdenv.hostPlatform.system}.compiler}
+            "$dev" --help >/dev/null
+            test -f "$package/share/moss/src/main.moss"
+            test ! -e "$package/libexec/moss/compiler.cwasm"
+            # Run away from the compiler sources and ignore a project's
+            # library: the selected revision supplies its own sources.
+            mkdir -p project/lib
+            echo 'this is not Moss' > project/lib/prelude.moss
+            cp ${./examples/hello.moss} project/hello.moss
+            cd project
+            "$dev" -O3 hello.moss > first.out 2> first.log
+            grep -qx 'Hello, world!' first.out
+            grep -q 'Building the self-hosted Moss compiler' first.log
+            "$dev" build hello.moss -o hello.wasm 2> build.log
+            test -s hello.wasm
+            grep -q 'Building the self-hosted Moss compiler' build.log
+            # Every invocation needs the seed; no compiler is written into
+            # the package or the calling project's directory.
+            test ! -e "$package/share/moss/target"
+            test ! -e target
+            unset MOSS_SEED
+            if "$dev" hello.moss 2> missing.log; then
+              false
+            fi
+            grep -q 'set MOSS_SEED' missing.log
+            touch $out
+          '';
           cli = pkgs.runCommand "moss-cli-check" { nativeBuildInputs = [ pkgs.wasm-tools ]; } ''
             moss=${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/moss
             source=${./.}/examples/hello.moss
