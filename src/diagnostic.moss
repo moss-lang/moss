@@ -1,0 +1,184 @@
+import "./ast.moss" as ast;
+import "./bytes.moss" use *;
+import "./codegen.moss" as codegen;
+import "./intern.moss" as intern;
+import "./prog.moss" as prog;
+import "./tcode.moss" use *;
+
+# Human presentation of the compiler's structured diagnostic tables.
+# Locations are half-open UTF-8 byte ranges in saved module snapshots;
+# presentation does not load files, resolve names, or mutate those tables.
+# Phase 0 uses prog's codes; phase 1 uses codegen's separate code space.
+assume Std {
+  fn number(n: Int) { put_int(n); }
+
+  fn padding(n: Int) {
+    if n >= 10 { padding(n / 10); }
+    print(" ");
+  }
+
+  fn message(phase: Int, code: Int): String {
+    if phase == 1 {
+      if code == codegen::c_no_main() { return "no valid main function was found"; }
+      if code == codegen::c_unsupported() { return "this construct is not supported by the compiler"; }
+      if code == codegen::c_unbound() { return "no binding provides this item in the current context"; }
+      if code == codegen::c_unknown_op() { return "unknown WebAssembly instruction"; }
+      if code == codegen::c_bad_type() { return "incompatible types"; }
+      if code == codegen::c_missing() { return "internal compiler error: missing function specialization"; }
+      if code == codegen::c_break() { return "break is only allowed inside a loop"; }
+      return "compilation failed";
+    }
+    if code == prog::e_dup() { return "duplicate definition"; }
+    if code == prog::e_scope() { return "this name is not in scope"; }
+    if code == prog::e_export() { return "the imported module does not export this name"; }
+    if code == prog::e_module() { return "this name refers to a value or declaration, not a module"; }
+    if code == prog::e_collide() { return "imports bind the same name to different declarations"; }
+    if code == prog::e_recv() { return "the method's receiver type is not in scope"; }
+    if code == prog::e_syntax() { return "invalid syntax"; }
+    if code == prog::e_body() { return "a detached method declaration cannot have a body"; }
+    if code == prog::e_cycle() { return "imports form a cycle"; }
+    if code == prog::e_type() { return "a type is required here"; }
+    if code == prog::e_method() { return "no matching method is available for this receiver"; }
+    if code == prog::e_deep() { return "context expansion is recursive or nested too deeply"; }
+    if code == prog::e_apply() { return "invalid bracket application or type binding"; }
+    if code == prog::e_shape() { return "this type has no finite runtime layout"; }
+    if code == prog::e_read() { return "cannot read this source file"; }
+    if code == prog::e_absent() { return "this item is not available in the current context"; }
+    if code == prog::e_irrelevant() { return "the bound type is not a parameter of this declaration"; }
+    if code == prog::e_incoherent() { return "the available binding was provided at a different type instantiation"; }
+    if code == prog::e_signature() { return "the provider's signature does not match the declaration"; }
+    if code == prog::e_this() { return "this is only allowed inside a method body"; }
+    if code == prog::e_lambda() { return "invalid anonymous function or assignment to a captured local"; }
+    if code == prog::e_listed() { return "the listed type parameter is not required by this declaration"; }
+    if code == prog::e_escape() { return "a type created by a binding cannot escape its block"; }
+    if code == prog::e_functor_sig() { return "the functor does not satisfy the required signature"; }
+    if code == prog::e_merge() { return "these context bindings require incompatible concrete types"; }
+    if code == prog::e_partial() { return "the functor does not bind every item its result promises"; }
+    if code == prog::e_family() { return "conflicting method bindings from a family"; }
+    if code == prog::e_self_apply() { return "a functor cannot apply itself through its own inputs"; }
+    if code == prog::e_union() { return "union members must be nominal types with distinct heads"; }
+    return "compilation failed";
+  }
+
+  fn expected_token(token: Int): String {
+    if token == tk_semi() { return "`;`"; }
+    if token == tk_equal() { return "`=`"; }
+    if token == tk_lbrace() { return "`{`"; }
+    if token == tk_rbrace() { return "`}`"; }
+    if token == tk_lparen() { return "`(`"; }
+    if token == tk_rparen() { return "`)`"; }
+    if token == tk_lbracket() { return "`[`"; }
+    if token == tk_rbracket() { return "`]`"; }
+    if token == tk_colon() { return "`:`"; }
+    if token == tk_comma() { return "`,`"; }
+    if token == tk_equal_greater() { return "`=>`"; }
+    if token == tk_hyphen_greater() { return "`->`"; }
+    if token == tk_else() { return "`else`"; }
+    if token == tk_bind() { return "`bind`"; }
+    if token == tk_in() { return "`in`"; }
+    if token == tk_name() { return "an identifier"; }
+    if token == tk_str() { return "a string literal"; }
+    return "a different token";
+  }
+
+  assume prog::Prog, ast::Ast, intern::Interner {
+    fn report(phase: Int, code: Int, m: Int, start: Int, end: Int, name: Int, expected: Int) {
+      print("error[");
+      if phase == 0 { print("!"); } else { print("?"); }
+      putchar((char::A.code() + code).char());
+      print("]: ");
+      print(message(phase, code));
+      if ast::is_some(expected) {
+        print(": expected "); print(expected_token(expected));
+      }
+      if ast::is_some(name) {
+        print(": `"); intern::put(name); print("`");
+      }
+      print("\n  --> ");
+      print(prog::module_path(m));
+      if ast::is_some(start) {
+        let index = prog::mtext.get(m);
+        if ast::is_some(index) {
+          excerpt(prog::sources.get(index), start, end);
+          return ();
+        }
+      }
+      print("\n\n");
+    }
+
+    fn previous_definition(node: Int) {
+      let m = ast::source_module(node);
+      if !ast::is_some(m) { return (); }
+      let start = ast::source_start(node);
+      if !ast::is_some(start) { return (); }
+      let index = prog::mtext.get(m);
+      if !ast::is_some(index) { return (); }
+      print("note: previous definition is here\n  --> ");
+      print(prog::module_path(m));
+      excerpt(prog::sources.get(index), start, ast::source_end(node));
+    }
+
+    # Columns count Unicode scalars. Tabs expand to four-column stops in
+    # both the displayed source and underline; ranges remain byte offsets.
+    fn continuation(c: Char): Bool {
+      if c.code() < 128 { return false; }
+      c.code() < 192
+    }
+
+    fn next_column(column: Int, c: Char): Int {
+      if c == char::tab { return column + 4 - column % 4; }
+      if continuation(c) { return column; }
+      column + 1
+    }
+
+    fn excerpt(text: String, from: Int, to: Int) {
+      var start = from;
+      if start > text.length() { start = text.length(); }
+      var line = 1;
+      var beginning = 0;
+      var i = 0;
+      var column = 0;
+      while i < start {
+        let c = text.get(i);
+        if c == char::newline { line = line + 1; beginning = i + 1; column = 0; }
+        else { column = next_column(column, c); }
+        i = i + 1;
+      }
+      print(":"); number(line); print(":"); number(column + 1);
+      print("\n"); padding(line); print(" |\n");
+      number(line); print(" | ");
+      var line_end = beginning;
+      var shown = 0;
+      while line_end < text.length() {
+        let c = text.get(line_end);
+        if c == char::newline { break; }
+        if c == char::cr {
+          # CRLF is one line ending, not a displayed control character.
+          if line_end + 1 < text.length() {
+            if text.get(line_end + 1) == char::newline { break; }
+          }
+        }
+        let next = next_column(shown, c);
+        if c == char::tab {
+          while shown < next { print(" "); shown = shown + 1; }
+        } else { putchar(c); shown = next; }
+        line_end = line_end + 1;
+      }
+      print("\n"); padding(line); print(" | ");
+      i = 0;
+      while i < column { print(" "); i = i + 1; }
+      var width = 0;
+      i = start;
+      while i < to {
+        if i >= line_end { break; }
+        let next = next_column(column + width, text.get(i));
+        width = next - column;
+        i = i + 1;
+      }
+      if width < 1 { width = 1; }
+      i = 0;
+      while i < width { print("^"); i = i + 1; }
+      print("\n\n");
+    }
+  }
+}

@@ -20,6 +20,7 @@ assume Std {
   val tok: CellInt;
   val tstart: CellInt;
   val tend: CellInt;
+  val previous_end: CellInt;
   val tok2: CellInt;
   val t2start: CellInt;
   val t2end: CellInt;
@@ -27,11 +28,14 @@ assume Std {
   # Syntax errors: how many, and where the first one was.
   val errs: CellInt;
   val errpos: CellInt;
+  val errend: CellInt;
+  val expected: CellInt;
 
-  context Cursor = tok, tstart, tend, tok2, t2start, t2end, errs, errpos;
+  context Cursor = tok, tstart, tend, previous_end, tok2, t2start, t2end, errs, errpos, errend, expected;
 
   assume Cursor, lexer::src, lexer::at, lexer::mark, intern::Interner, ast::Ast {
     fn advance() {
+      previous_end.write(tend.read());
       if tok2.read() >= 0 {
         tok.write(tok2.read());
         tstart.write(t2start.read());
@@ -67,9 +71,13 @@ assume Std {
       }
     }
 
-    fn fail() {
+    fn fail() { fail_expected(ast::none()); }
+
+    fn fail_expected(want: Int) {
       if errs.read() == 0 {
         errpos.write(tstart.read());
+        errend.write(tend.read());
+        expected.write(want);
       }
       errs.write(errs.read() + 1);
     }
@@ -78,7 +86,7 @@ assume Std {
       if accept(k) {
         ()
       } else {
-        fail();
+        fail_expected(k);
       }
     }
 
@@ -106,7 +114,7 @@ assume Std {
         advance();
         id
       } else {
-        fail();
+        fail_expected(tk_name());
         empty_name()
       }
     }
@@ -143,6 +151,12 @@ assume Std {
     }
 
     fn parse_spec(): Int {
+      let start = tstart.read();
+      let node = parse_spec_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_spec_inner(): Int {
       var p = ast::none();
       var dot = ast::none();
       if accept(tk_dot()) {
@@ -166,6 +180,12 @@ assume Std {
 
     # An assume item is a spec without an application (D24).
     fn parse_assume_item(): Int {
+      let start = tstart.read();
+      let node = parse_assume_item_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_assume_item_inner(): Int {
       let p = parse_path();
       var dot = ast::none();
       if accept(tk_dot()) {
@@ -189,6 +209,12 @@ assume Std {
     }
 
     fn parse_type(): Int {
+      let start = tstart.read();
+      let node = parse_type_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_type_inner(): Int {
       let leading = accept(tk_pipe());
       if leading {
         if !at_type_start() {
@@ -208,6 +234,12 @@ assume Std {
     }
 
     fn parse_type_atom(): Int {
+      let start = tstart.read();
+      let node = parse_type_atom_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_type_atom_inner(): Int {
       if accept(tk_this_type()) {
         return ast::node0(ast::k_ty_this());
       }
@@ -268,6 +300,12 @@ assume Std {
     # `no_rec` forbids a record expression at the top level, which is
     # what keeps `match x { ... }` from reading its arms as fields.
     fn parse_expr_at(no_rec: Bool): Int {
+      let start = tstart.read();
+      let node = parse_expr_at_inner(no_rec);
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_expr_at_inner(no_rec: Bool): Int {
       if accept(tk_if()) {
         return parse_if();
       }
@@ -358,7 +396,8 @@ assume Std {
     fn binary(op: Int, lhs: Int, rhs: Int): Int {
       let xs = int_list();
       xs.push(rhs);
-      ast::node3(ast::k_ex_binary(), op, lhs, ast::commit(xs))
+      let node = ast::node3(ast::k_ex_binary(), op, lhs, ast::commit(xs));
+      ast::located(node, ast::source_start(lhs), ast::source_end(rhs))
     }
 
     fn parse_operators(no_rec: Bool): Int {
@@ -434,6 +473,12 @@ assume Std {
     }
 
     fn parse_unary(no_rec: Bool): Int {
+      let start = tstart.read();
+      let node = parse_unary_inner(no_rec);
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_unary_inner(no_rec: Bool): Int {
       if here(tk_hyphen()) {
         advance();
         # `-1.abs()` would be `-(1.abs())`, which nobody means (D68).
@@ -511,6 +556,12 @@ assume Std {
     }
 
     fn parse_postfix(no_rec: Bool): Int {
+      let start = tstart.read();
+      let node = parse_postfix_inner(no_rec);
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_postfix_inner(no_rec: Bool): Int {
       var e = parse_primary(no_rec);
       loop {
         if !accept(tk_dot()) {
@@ -531,6 +582,12 @@ assume Std {
     # A literal's digits, as values, where the point fell, and its
     # exponent's value if it has one (D68).
     fn parse_literal(): Int {
+      let start = tstart.read();
+      let node = parse_literal_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_literal_inner(): Int {
       let decimal = here(tk_decimal());
       let xs = int_list();
       var fraction = 0;
@@ -712,6 +769,12 @@ assume Std {
     }
 
     fn parse_string_literal(): Int {
+      let start = tstart.read();
+      let node = parse_string_literal_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_string_literal_inner(): Int {
       let bytes = int_list();
       var i = tstart.read() + 1;
       if lexer::src.get(tstart.read()) == char::greater {
@@ -774,6 +837,12 @@ assume Std {
     }
 
     fn parse_primary(no_rec: Bool): Int {
+      let start = tstart.read();
+      let node = parse_primary_inner(no_rec);
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_primary_inner(no_rec: Bool): Int {
       if here(tk_str()) { return parse_string_literal(); }
       if accept(tk_this_value()) {
         return ast::node0(ast::k_ex_this());
@@ -917,6 +986,12 @@ assume Std {
     # Patterns.
 
     fn parse_pattern(): Int {
+      let start = tstart.read();
+      let node = parse_pattern_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_pattern_inner(): Int {
       if accept(tk_lbrace()) {
         return parse_record_pattern(ast::none());
       }
@@ -969,6 +1044,12 @@ assume Std {
     # record expression.
 
     fn parse_block(): Int {
+      let start = tstart.read();
+      let node = parse_block_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_block_inner(): Int {
       let stmts = int_list();
       var tail = ast::none();
       loop {
@@ -978,6 +1059,8 @@ assume Std {
         if here(tk_eof()) {
           break;
         }
+        let statement_start = tstart.read();
+        let statement_index = stmts.length();
         if here(tk_let()) {
           advance();
           stmts.push(parse_binding_stmt(ast::k_st_let()));
@@ -1024,9 +1107,12 @@ assume Std {
             # without a `;`.
             stmts.push(ast::node1(ast::k_st_expr(), e));
           } else {
-            fail();
+            fail_expected(tk_semi());
             stmts.push(ast::node1(ast::k_st_expr(), e));
           }
+        }
+        if stmts.length() > statement_index {
+          ast::located(stmts.get(statement_index), statement_start, previous_end.read());
         }
       }
       expect(tk_rbrace());
@@ -1042,6 +1128,12 @@ assume Std {
     # write as names, and the calls operator nodes (`ast::op_begin` and
     # on), so that they mean access.moss's methods whatever is in scope.
     fn parse_for(): Int {
+      let start = tstart.read();
+      let node = parse_for_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_for_inner(): Int {
       let nm = take_name();
       expect(tk_in());
       let coll = parse_expr_at(true);
@@ -1094,6 +1186,12 @@ assume Std {
     }
 
     fn parse_binding_stmt(kind: Int): Int {
+      let start = tstart.read();
+      let node = parse_binding_stmt_inner(kind);
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_binding_stmt_inner(kind: Int): Int {
       let nm = take_name();
       var ty = ast::none();
       if accept(tk_colon()) {
@@ -1108,6 +1206,12 @@ assume Std {
     # `bind` List[Spec (`=` Expr)?] `;`. An item with no `=` applies a
     # functor of that name (D55).
     fn parse_bind(): Int {
+      let start = tstart.read();
+      let node = parse_bind_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_bind_inner(): Int {
       let xs = int_list();
       loop {
         if here(tk_semi()) {
@@ -1133,6 +1237,12 @@ assume Std {
     # Declarations.
 
     fn parse_import(): Int {
+      let start = tstart.read();
+      let node = parse_import_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_import_inner(): Int {
       var text = lexer::src.slice(0, 0);
       if here(tk_str()) {
         if lexer::src.get(tstart.read()) != char::quote { fail(); }
@@ -1185,6 +1295,12 @@ assume Std {
     }
 
     fn parse_fn(): Int {
+      let start = tstart.read();
+      let node = parse_fn_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_fn_inner(): Int {
       var recv = ast::recv_plain();
       var nm = empty_name();
       if accept(tk_dot()) {
@@ -1246,6 +1362,12 @@ assume Std {
     }
 
     fn parse_functor(): Int {
+      let start = tstart.read();
+      let node = parse_functor_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_functor_inner(): Int {
       let nm = take_name();
       # D84 (draft): an abstract functor's polymorphic type inputs.
       var ps = ast::none();
@@ -1309,6 +1431,12 @@ assume Std {
     }
 
     fn parse_assume(): Int {
+      let start = tstart.read();
+      let node = parse_assume_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_assume_inner(): Int {
       let items = int_list();
       loop {
         if here(tk_lbrace()) {
@@ -1334,6 +1462,12 @@ assume Std {
     # A nominal type (D83): `tag X;` a unit, `tag X(T);` over a type,
     # `tag X { f: T, ... };` over a record.
     fn parse_tag(): Int {
+      let start = tstart.read();
+      let node = parse_tag_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_tag_inner(): Int {
       let nm = take_name();
       var ps = ast::none();
       var n = 0;
@@ -1383,6 +1517,12 @@ assume Std {
     }
 
     fn parse_decl(): Int {
+      let start = tstart.read();
+      let node = parse_decl_inner();
+      ast::located(node, start, previous_end.read())
+    }
+
+    fn parse_decl_inner(): Int {
       if accept(tk_import()) {
         return parse_import();
       }
@@ -1449,6 +1589,7 @@ assume Std {
     # the source and reset the lexer's position.
     fn parse_file(out: IntList) {
       tok2.write(ast::none());
+      tend.write(0);
       advance();
       parse_decls(out, tk_eof());
     }

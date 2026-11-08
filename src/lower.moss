@@ -592,6 +592,14 @@ assume Std {
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(spec)) { prog::location.write(spec + 1); }
+      let result = add_assume_item_inner(env, m, spec, recv, sym);
+      prog::location.write(saved);
+      result
+    }
+
+    fn add_assume_item_inner(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
       add_spec(env, m, spec, recv, sym, int_list(), int_list())
     }
 

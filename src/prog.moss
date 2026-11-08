@@ -52,6 +52,9 @@ assume Std {
   val mnroots: IntList;
   # 0 not started, 1 being loaded (so a second visit is a cycle), 2 done.
   val mstate: IntList;
+  # Immutable source snapshots, indexed per module after it is read.
+  val mtext: IntList;
+  val sources: StrList;
   # Empty, or holding the prelude's path. Every module outside the
   # prelude's own directory glob-imports it without saying so.
   val pinfo: StrList;
@@ -97,10 +100,18 @@ assume Std {
   val att_name: IntList;
   val att_sym: IntList;
 
-  # Diagnostics: a code, the module it was found in, and a name.
+  # Structured diagnostics: semantic code, module, optional name, source
+  # range, expected syntax token, and related declaration when available.
   val err_code: IntList;
   val err_mod: IntList;
   val err_name: IntList;
+  val err_start: IntList;
+  val err_end: IntList;
+  val err_expected: IntList;
+  val err_related: IntList;
+  # Current syntax node plus one; zero means no source context. Walkers
+  # save and restore this so a child cannot move its parent's diagnostic.
+  val location: CellInt;
 
   # An import cycle (D10).
   fn e_cycle(): Int { 8 }
@@ -219,26 +230,41 @@ assume Std {
   fn e_union(): Int { 16 + 12 }
 
   context Prog =
-    mpaths, mroots, mnroots, mstate, pinfo,
+    mpaths, mroots, mnroots, mstate, mtext, sources, pinfo,
     ent_head, ent_link,
     sym_mod, sym_name, sym_kind, sym_decl, sym_recv, sym_asm, sym_nasm,
     sym_param, sym_origin,
     ent_mod, ent_ns, ent_name, ent_to, ent_pub,
     att_mod, att_recv, att_name, att_sym,
-    err_code, err_mod, err_name;
+    err_code, err_mod, err_name, err_start, err_end, err_expected, err_related, location;
 
   assume Prog, ast::Ast, intern::Interner {
-    # A report says a code, a module and a name,
-    # so the same three twice say nothing more. They do come twice: the
-    # back end emits each body in two passes, and a type it elaborates
-    # there — a tag's brackets at a construction — is elaborated in both.
     fn error(code: Int, m: Int, name: Int) {
+      let node = location.read() - 1;
+      if ast::source_module(node) == m {
+        error_range(code, m, name, ast::source_start(node), ast::source_end(node));
+      } else {
+        error_range(code, m, name, ast::none(), ast::none());
+      }
+    }
+
+    # Keep the diagnostic's data separate from its presentation. The
+    # range is half-open and counts UTF-8 bytes in the module snapshot.
+    # Two specializations can report one source error, while two uses of
+    # the same missing name at different positions are distinct errors.
+    fn error_range(code: Int, m: Int, name: Int, start: Int, end: Int) {
+      error_related(code, m, name, start, end, ast::none());
+    }
+
+    fn error_related(code: Int, m: Int, name: Int, start: Int, end: Int, related: Int) {
       var i = 0;
       while i < err_code.length() {
         if err_code.get(i) == code {
           if err_mod.get(i) == m {
             if err_name.get(i) == name {
-              return ();
+              if err_start.get(i) == start {
+                if err_end.get(i) == end { return (); }
+              }
             }
           }
         }
@@ -247,6 +273,10 @@ assume Std {
       err_code.push(code);
       err_mod.push(m);
       err_name.push(name);
+      err_start.push(start);
+      err_end.push(end);
+      err_expected.push(ast::none());
+      err_related.push(related);
     }
 
     fn error_count(): Int { err_code.length() }
@@ -477,6 +507,7 @@ assume Std {
       mroots.push(0);
       mnroots.push(0);
       mstate.push(0);
+      mtext.push(ast::none());
       m
     }
 
@@ -587,6 +618,13 @@ assume Std {
     # Declaration, pass one: every plain name and detached method. An
     # attached method waits, because its receiver must be declared first.
     fn declare_decl(m: Int, d: Int, asm: Int, nasm: Int, pending: IntList) {
+      let saved = location.read();
+      location.write(d + 1);
+      declare_decl_inner(m, d, asm, nasm, pending);
+      location.write(saved);
+    }
+
+    fn declare_decl_inner(m: Int, d: Int, asm: Int, nasm: Int, pending: IntList) {
       let k = ast::kind_of(d);
       if k == ast::k_d_assume() {
         # The enclosing items grow by this block's, outermost first.
@@ -658,8 +696,10 @@ assume Std {
     # A module's own declarations are exported; a duplicate is an error
     # where it is written rather than where it is used.
     fn define(m: Int, ns: Int, name: Int, sym: Int) {
-      if ast::is_some(lookup(m, ns, name)) {
-        error(e_dup(), m, name);
+      let previous = lookup(m, ns, name);
+      if ast::is_some(previous) {
+        let node = location.read() - 1;
+        error_related(e_dup(), m, name, ast::source_start(node), ast::source_end(node), sym_decl.get(previous));
         return ();
       }
       push_entry(m, ns, name, sym, 1);
@@ -675,12 +715,15 @@ assume Std {
       i = 0;
       while i < pending.length() {
         let d = pending.get(i);
+        let saved = location.read();
+        location.write(d + 1);
         let recv_name = ast::fn_recv(d);
         let recv = lookup(m, ns_name(), recv_name);
         if !ast::is_some(recv) {
           error(e_recv(), m, recv_name);
         } else if ast::is_some(find_attached(m, recv, ast::fn_name(d))) {
-          error(e_dup(), m, ast::fn_name(d));
+          let previous = find_attached(m, recv, ast::fn_name(d));
+          error_related(e_dup(), m, ast::fn_name(d), ast::source_start(d), ast::source_end(d), sym_decl.get(previous));
         } else {
           att_mod.push(m);
           att_recv.push(recv);
@@ -690,6 +733,7 @@ assume Std {
             pending.get(i + 1), pending.get(i + 2)
           ));
         }
+        location.write(saved);
         i = i + 3;
       }
     }
@@ -872,14 +916,19 @@ assume Std {
           error(e_read(), m, ast::none());
           return ();
         }
-        bind lexer::src=path.read();
+        let text = path.read();
+        mtext.set(m, sources.length());
+        sources.push(text);
+        bind lexer::src=text;
+        ast::source_file.write(m);
         lexer::at.write(0);
         lexer::mark.write(0);
-        let before = syntax::errs.read();
+        syntax::errs.write(0);
         let roots = int_list();
         syntax::parse_file(roots);
-        if syntax::errs.read() > before {
-          error(e_syntax(), m, ast::none());
+        if syntax::errs.read() > 0 {
+          error_range(e_syntax(), m, ast::none(), syntax::errpos.read(), syntax::errend.read());
+          err_expected.set(err_expected.length() - 1, syntax::expected.read());
         }
         mroots.set(m, ast::commit(roots));
         mnroots.set(m, roots.length());
@@ -916,11 +965,14 @@ assume Std {
         while i < root_count(m) {
           let d = root_at(m, i);
           if ast::kind_of(d) == ast::k_d_import() {
+            let saved = location.read();
+            location.write(d + 1);
             link(
               m, find_module(resolve(module_path(m), ast::imp_text(d))),
               ast::imp_alias(d), ast::imp_star(d),
               ast::imp_uses(d), ast::imp_nuses(d)
             );
+            location.write(saved);
           }
           i = i + 1;
         }

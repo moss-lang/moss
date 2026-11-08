@@ -32,9 +32,9 @@ import "./wasmops.moss" as wops;
 
 assume Std {
 
-  # Back-end diagnostics, one code each. They continue where prog.moss's
-  # `e_` codes stop, because the back end reports both kinds through one
-  # list and two codes that print as the same letter cannot be told apart.
+  # Back-end diagnostics. These historical numbers overlap prog's codes;
+  # cg_err_phase distinguishes the domains when emission reports either.
+  # Keep the compact protocol's numbers stable.
   fn c_no_main(): Int { 14 }
   fn c_unsupported(): Int { 15 }   # a construct outside this slice
   fn c_unbound(): Int { 16 }       # abstract, and nothing provides it
@@ -218,6 +218,11 @@ assume Std {
   # diagnostic. The frame a complaint came from costs one symbol id and
   # identifies which function produced the error code.
   val cg_err_at: IntList;
+  val cg_err_start: IntList;
+  val cg_err_end: IntList;
+  val cg_err_mod: IntList;
+  val cg_err_phase: IntList;
+  val cg_entry: CellInt;
   val cg_where: CellInt;
 
   # Memoized `val_slots`: the val keys a (sym, env) specialization takes,
@@ -359,7 +364,7 @@ assume Std {
     rm_node, rm_genv, rm_recv, rm_meth, rm_sym, rm_link, rm_head,
     cg_depth, cg_loops, cg_ntop, cg_wasm, cg_wasi, cg_bool, cg_std,
     cg_i32, cg_i64, cg_f32, cg_f64, cg_boolty,
-    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_gc, cg_width, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_where,
+    cg_ref, cg_boxed, cg_structref, cg_box, cg_deref, cg_gc, cg_width, cg_memory, cg_errs, cg_err_name, cg_err_at, cg_err_start, cg_err_end, cg_err_mod, cg_err_phase, cg_entry, cg_where,
     vs_env, vs_start, vs_len, vs_link, vs_head, vs_pool,
     ck_entry, ck_inner, ck_link, ck_head,
     fl_start, fl_len, fl_types,
@@ -374,13 +379,29 @@ assume Std {
     emit::Emit, types::Types, lower::Lower {
     # Only the kept pass reports: the first one runs against indices that
     # do not exist yet, so anything it says would be said twice.
-    fn cg_error(code: Int, name: Int) {
+    fn cg_error(code: Int, name: Int) { record_error(1, code, name); }
+
+    # Collector codes and back-end codes overlap numerically. Keep their
+    # domains explicit even when a semantic error is found during emission.
+    fn semantic_error(code: Int, name: Int) { record_error(0, code, name); }
+
+    fn record_error(phase: Int, code: Int, name: Int) {
       if cg_real.read() == 0 {
         return ();
       }
       if cg_real.read() == 3 {
         return ();
       }
+      var node = prog::location.read() - 1;
+      if !ast::is_some(ast::source_start(node)) {
+        if ast::is_some(cg_where.read()) {
+          node = prog::sym_decl.get(cg_where.read());
+        }
+      }
+      let start = ast::source_start(node);
+      let end = ast::source_end(node);
+      var home = ast::source_module(node);
+      if !ast::is_some(home) { home = cg_entry.read(); }
       # Checked as written, a function says the same thing in every
       # specialization that reaches it; once is enough.
       var i = 0;
@@ -388,7 +409,13 @@ assume Std {
         if cg_errs.get(i) == code {
           if cg_err_name.get(i) == name {
             if cg_err_at.get(i) == cg_where.read() {
-              return ();
+              if cg_err_start.get(i) == start {
+                if cg_err_end.get(i) == end {
+                  if cg_err_mod.get(i) == home {
+                    if cg_err_phase.get(i) == phase { return (); }
+                  }
+                }
+              }
             }
           }
         }
@@ -397,6 +424,10 @@ assume Std {
       cg_errs.push(code);
       cg_err_name.push(name);
       cg_err_at.push(cg_where.read());
+      cg_err_start.push(start);
+      cg_err_end.push(end);
+      cg_err_mod.push(home);
+      cg_err_phase.push(phase);
     }
 
     fn cg_error_count(): Int { cg_errs.length() }
@@ -1801,7 +1832,7 @@ assume Std {
     # in force at the bind (D26), whatever has been rebound since.
     fn val_slots_walk(out: IntList, sym: Int, env: Int, depth: Int) {
       if depth > 32 {
-        cg_error(prog::e_deep(), prog::sym_name.get(sym));
+        semantic_error(prog::e_deep(), prog::sym_name.get(sym));
         return ();
       }
       var i = 0;
@@ -2908,7 +2939,7 @@ assume Std {
       let path = ast::a_of(ast::a_of(e));
       let sym = prog::resolve_path(m, path);
       if !ast::is_some(sym) {
-        cg_error(prog::e_scope(), ast::path_last(path));
+        semantic_error(prog::e_scope(), ast::path_last(path));
         return ty_none();
       }
       let nominal = tag_type(ast::a_of(e), sym, m);
@@ -2955,7 +2986,7 @@ assume Std {
           if ast::is_some(local) {
             load_local(body, local);
           } else {
-            cg_error(prog::e_scope(), name);
+            semantic_error(prog::e_scope(), name);
           }
         }
         f = f + 1;
@@ -3613,6 +3644,14 @@ assume Std {
     # for a block's tail type before emitting the block gives the wrong
     # answer.
     fn emit_expr(body: IntList, e: Int, m: Int): Int {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(e)) { prog::location.write(e + 1); }
+      let result = emit_expr_inner(body, e, m);
+      prog::location.write(saved);
+      result
+    }
+
+    fn emit_expr_inner(body: IntList, e: Int, m: Int): Int {
       let k = ast::kind_of(e);
       if k == ast::k_ex_unit() {
         return ty_none();
@@ -3804,7 +3843,7 @@ assume Std {
         if ast::is_some(fu) {
           return emit_literal_on_demand(body, recv_ty, slot, sym, fu, ts, tt);
         }
-        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        semantic_error(prog::e_method(), prog::sym_name.get(sym));
         return ty_none();
       }
       if !literal_method_signature(recv_ty, sym, row) {
@@ -3849,7 +3888,7 @@ assume Std {
       if ast::is_some(generic_row(recv_ty, sym)) {
         ret = emit_lang_method(body, recv_ty, slot);
       } else {
-        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        semantic_error(prog::e_method(), prog::sym_name.get(sym));
       }
       cg_env.write(emark);
       cg_genv.write(gmark);
@@ -3989,7 +4028,7 @@ assume Std {
         if ast::is_some(fu) {
           return emit_on_demand(body, recv, recv_ty, sym, run, n, m, e, fu, ts, tt);
         }
-        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        semantic_error(prog::e_method(), prog::sym_name.get(sym));
         return ty_none();
       }
       let bound = provision_at(recv_ty, sym);
@@ -4104,7 +4143,7 @@ assume Std {
         return ret;
       }
       if !ast::is_some(rm_sym.get(r)) {
-        cg_error(prog::e_method(), name);
+        semantic_error(prog::e_method(), name);
         return ty_none();
       }
       emit_provided_method(
@@ -4314,6 +4353,14 @@ assume Std {
     # its value, so that each branch injects rather than the whole
     # expression having to be widened after the fact.
     fn emit_as(body: IntList, e: Int, m: Int, want: Int): Int {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(e)) { prog::location.write(e + 1); }
+      let result = emit_as_inner(body, e, m, want);
+      prog::location.write(saved);
+      result
+    }
+
+    fn emit_as_inner(body: IntList, e: Int, m: Int, want: Int): Int {
       if !ast::is_some(want) {
         return emit_expr(body, e, m);
       }
@@ -4362,7 +4409,7 @@ assume Std {
       }
       let sym = prog::resolve_path(m, p);
       if !ast::is_some(sym) {
-        cg_error(prog::e_scope(), ast::path_last(p));
+        semantic_error(prog::e_scope(), ast::path_last(p));
         return ty_none();
       }
       # A `unit` value is its discriminant and nothing else (D59).
@@ -4415,7 +4462,7 @@ assume Std {
       let callee = ast::a_of(e);
       let sym = prog::resolve_path(m, ast::a_of(callee));
       if !ast::is_some(sym) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
         return ty_none();
       }
       # A nominal value *is* its payload (D58), so constructing one emits
@@ -5880,6 +5927,13 @@ assume Std {
     }
 
     fn walk_binds(body: IntList, s: Int, m: Int, mode: Int) {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(s)) { prog::location.write(s + 1); }
+      walk_binds_inner(body, s, m, mode);
+      prog::location.write(saved);
+    }
+
+    fn walk_binds_inner(body: IntList, s: Int, m: Int, mode: Int) {
       var i = 0;
       while i < ast::b_of(s) {
         walk_bind_item(body, ast::kid_at(ast::a_of(s), i), m, 0, mode);
@@ -5889,7 +5943,7 @@ assume Std {
 
     fn walk_bind_item(body: IntList, item: Int, m: Int, depth: Int, mode: Int) {
       if depth > 8 {
-        cg_error(prog::e_deep(), ast::none());
+        semantic_error(prog::e_deep(), ast::none());
         return ();
       }
       let spec = ast::a_of(item);
@@ -5910,7 +5964,7 @@ assume Std {
       }
       let sym = prog::resolve_path(m, ast::a_of(spec));
       if !ast::is_some(sym) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
       let kind = prog::sym_kind.get(sym);
@@ -6003,7 +6057,7 @@ assume Std {
       }
       let g = prog::resolve_path(m, ast::a_of(value));
       if !ast::is_some(g) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
         return ();
       }
       if prog::sym_kind.get(g) != prog::sk_fn() {
@@ -6058,7 +6112,7 @@ assume Std {
     fn bind_method(body: IntList, spec: Int, value: Int, m: Int, depth: Int, mode: Int) {
       let recv_sym = prog::resolve_path(m, ast::a_of(spec));
       if !ast::is_some(recv_sym) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
       # Keyed by the receiver's whole type as the bindings in force and the
@@ -6072,19 +6126,19 @@ assume Std {
       let head = types::head_of(recv);
       let detached = lower::find_method_decl(m, recv_sym, ast::b_of(spec));
       if !ast::is_some(detached) {
-        cg_error(prog::e_method(), ast::b_of(spec));
+        semantic_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
       # A union or a record takes a detached method only (as in
       # lower.moss's `add_method_item`).
       if !ast::is_some(head) {
         if ast::is_some(prog::sym_recv.get(detached)) {
-          cg_error(prog::e_method(), ast::b_of(spec));
+          semantic_error(prog::e_method(), ast::b_of(spec));
           return ();
         }
       }
       if !ast::is_some(detached) {
-        cg_error(prog::e_method(), ast::b_of(spec));
+        semantic_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
       # D84 rule 7 (O3 a): a member of a family in force is not bound
@@ -6519,7 +6573,7 @@ assume Std {
       }
       let sym = prog::resolve_path(m, ast::a_of(spec));
       if !ast::is_some(sym) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return ();
       }
       if prog::sym_kind.get(sym) != prog::sk_functor() {
@@ -6844,7 +6898,7 @@ assume Std {
             if found {
               # D84 rule 7 (strengthened): two items of one family share
               # this instance of their key.
-              cg_error(prog::e_family(), prog::sym_name.get(sym));
+              semantic_error(prog::e_family(), prog::sym_name.get(sym));
               return true;
             }
             found = true;
@@ -6880,7 +6934,7 @@ assume Std {
                 let t1 = int_list();
                 if family_theta(s, recv_ty, sym, genv, s1, t1) {
                   if ast::is_some(found) {
-                    cg_error(prog::e_family(), prog::sym_name.get(sym));
+                    semantic_error(prog::e_family(), prog::sym_name.get(sym));
                     return ast::none();
                   }
                   found = s;
@@ -7037,7 +7091,7 @@ assume Std {
       if ast::is_some(generic_row(recv_ty, sym)) {
         ret = emit_provided_method(body, recv, recv_ty, sym, run, n, m, e);
       } else {
-        cg_error(prog::e_method(), prog::sym_name.get(sym));
+        semantic_error(prog::e_method(), prog::sym_name.get(sym));
       }
       cg_env.write(emark);
       cg_genv.write(gmark);
@@ -7549,7 +7603,7 @@ assume Std {
         while k < xs.length() {
           let at = types::ty_of_symbol(types::kd_abstract(), xs.get(k));
           if lower::canon(gmade, at) != lower::canon(gmark, at) {
-            cg_error(prog::e_functor_sig(), prog::sym_name.get(xs.get(k)));
+            semantic_error(prog::e_functor_sig(), prog::sym_name.get(xs.get(k)));
           }
           k = k + 1;
         }
@@ -7561,7 +7615,7 @@ assume Std {
         if ast::is_some(want) {
           if ast::is_some(got) {
             if !made_as_promised(kinds.get(k), syms.get(k), got, mrecvs.get(k), want, recvs.get(k), gens, made_tys) {
-              cg_error(prog::e_functor_sig(), prog::sym_name.get(syms.get(k)));
+              semantic_error(prog::e_functor_sig(), prog::sym_name.get(syms.get(k)));
             }
           }
         }
@@ -7731,7 +7785,7 @@ assume Std {
       var i = mark;
       while i < es_top.read() {
         if ty_mentions(ty, es_made.get(i)) {
-          cg_error(prog::e_escape(), prog::sym_name.get(es_sym.get(i)));
+          semantic_error(prog::e_escape(), prog::sym_name.get(es_sym.get(i)));
         }
         i = i + 1;
       }
@@ -7803,7 +7857,7 @@ assume Std {
       syms: IntList, over: IntList, depth: Int
     ) {
       if depth > 2 * prog::sym_count() {
-        cg_error(prog::e_deep(), ast::none());
+        semantic_error(prog::e_deep(), ast::none());
         return ();
       }
       var i = 0;
@@ -7813,13 +7867,13 @@ assume Std {
         let inner = lower::app_view(outer, m, spec);
         let s = prog::resolve_path(m, ast::a_of(spec));
         if !ast::is_some(s) {
-          cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+          semantic_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
           return ();
         }
         if ast::is_some(ast::b_of(spec)) {
           let method = lower::find_method_decl(m, s, ast::b_of(spec));
           if !ast::is_some(method) {
-            cg_error(prog::e_method(), ast::b_of(spec));
+            semantic_error(prog::e_method(), ast::b_of(spec));
             return ();
           }
           kinds.push(lower::ek_fn());
@@ -7933,7 +7987,7 @@ assume Std {
       }
       let g = prog::resolve_path(m, ast::a_of(value));
       if !ast::is_some(g) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(value)));
         return ();
       }
       if prog::sym_kind.get(g) != prog::sk_functor() {
@@ -8342,7 +8396,7 @@ assume Std {
           had = lower::as_assumed(x);
         }
         if had != now {
-          cg_error(prog::e_incoherent(), prog::sym_name.get(fu));
+          semantic_error(prog::e_incoherent(), prog::sym_name.get(fu));
           return false;
         }
         i = i + 1;
@@ -8629,7 +8683,7 @@ assume Std {
         let t = fixed.get(i);
         let actual = lower::canon(held, types::ty_of_symbol(types::kd_abstract(), t));
         if !copy_match(lower::canon(fe, lower::as_assumed(t)), actual, vars, solved, values) {
-          cg_error(prog::e_functor_sig(), prog::sym_name.get(fu)); return false;
+          semantic_error(prog::e_functor_sig(), prog::sym_name.get(fu)); return false;
         }
         i = i + 1;
       }
@@ -8659,8 +8713,8 @@ assume Std {
         let t = gk.get(i);
         let ty = types::subst(lower::canon(ge, lower::as_assumed(t)), vars, replacements);
         let want = lower::canon(fv, types::ty_of_symbol(types::kd_abstract(), t));
-        if !contains(fk, t) { cg_error(prog::e_functor_sig(), prog::sym_name.get(t)); return false; }
-        if ty != want { cg_error(prog::e_functor_sig(), prog::sym_name.get(t)); return false; }
+        if !contains(fk, t) { semantic_error(prog::e_functor_sig(), prog::sym_name.get(t)); return false; }
+        if ty != want { semantic_error(prog::e_functor_sig(), prog::sym_name.get(t)); return false; }
         gv = lower::env_push(gv, lower::ek_type(), ast::none(), t, ty, ast::none());
         i = i + 1;
       }
@@ -8700,19 +8754,19 @@ assume Std {
               let want = lower::env_find(fv, kind, recv, sym);
               let got = lower::env_find(gv, kind, recv, sym);
               if !made_as_promised(kind, sym, got, recv, want, recv, int_list(), int_list()) {
-                cg_error(prog::e_functor_sig(), prog::sym_name.get(sym)); return false;
+                semantic_error(prog::e_functor_sig(), prog::sym_name.get(sym)); return false;
               }
               let deps = int_list(); lower::item_deps(sym, deps); var d = 0;
               while d < deps.length() {
                 let t = deps.get(d);
                 if lower::app_get(lower::env_b_of(got), t, gv) != lower::app_get(lower::env_b_of(want), t, fv) {
-                  cg_error(prog::e_functor_sig(), prog::sym_name.get(sym)); return false;
+                  semantic_error(prog::e_functor_sig(), prog::sym_name.get(sym)); return false;
                 }
                 d = d + 1;
               }
             } } } }
           }
-          if !found { cg_error(prog::e_functor_sig(), prog::sym_name.get(sym)); return false; }
+          if !found { semantic_error(prog::e_functor_sig(), prog::sym_name.get(sym)); return false; }
         }
       }
       true
@@ -8902,7 +8956,7 @@ assume Std {
     # The first that is not is reported, and it says whether all were.
     fn platform_needs(spec: Int, m: Int, depth: Int): Bool {
       if depth > 2 * prog::sym_count() {
-        cg_error(prog::e_deep(), ast::none());
+        semantic_error(prog::e_deep(), ast::none());
         return false;
       }
       if ast::is_some(ast::b_of(spec)) {
@@ -8910,7 +8964,7 @@ assume Std {
       }
       let s = prog::resolve_path(m, ast::a_of(spec));
       if !ast::is_some(s) {
-        cg_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
+        semantic_error(prog::e_scope(), ast::path_last(ast::a_of(spec)));
         return false;
       }
       let kind = prog::sym_kind.get(s);
@@ -9030,6 +9084,14 @@ assume Std {
     # bootstrap's `check_stmt` decides it: a `loop` no `break` leaves, or
     # an expression of type `|`.
     fn emit_stmt(body: IntList, s: Int, m: Int): Bool {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(s)) { prog::location.write(s + 1); }
+      let result = emit_stmt_inner(body, s, m);
+      prog::location.write(saved);
+      result
+    }
+
+    fn emit_stmt_inner(body: IntList, s: Int, m: Int): Bool {
       let k = ast::kind_of(s);
       if k == ast::k_st_let() {
         emit_binding(body, s, m);
@@ -9047,7 +9109,7 @@ assume Std {
           store_local(body, local);
         } else {
           emit_expr(body, ast::b_of(s), m);
-          cg_error(prog::e_scope(), ast::a_of(s));
+          semantic_error(prog::e_scope(), ast::a_of(s));
         }
       } else if k == ast::k_st_while() {
         op_block(body, bt_empty());
@@ -9116,6 +9178,7 @@ assume Std {
       let d = prog::sym_decl.get(sym);
       let m = prog::sym_mod.get(sym);
       cg_where.write(sym);
+      prog::location.write(d + 1);
       lc_base.write(lc_name.length());
       lc_visible.write(lc_name.length());
       cg_depth.write(0);
@@ -9306,6 +9369,7 @@ assume Std {
       }
       lower::set_needs(g, genv, nrecv, nsym, apps);
       cg_where.write(g);
+      prog::location.write(d + 1);
       lc_base.write(lc_name.length());
       lc_visible.write(lc_name.length());
       cg_depth.write(0);
@@ -9367,6 +9431,8 @@ assume Std {
     }
 
     fn compile(entry: Int, out: IntList) {
+      cg_entry.write(entry);
+      prog::location.write(0);
       cg_where.write(ast::none());
       find_primitive_modules();
       wops::install_wasm_ops();
@@ -9381,6 +9447,10 @@ assume Std {
       let mn = spelled();
       sp_main(mn);
       let main = prog::lookup(entry, prog::ns_name(), intern::intern_chars(mn));
+      # Entry-point validation is a reporting phase, not the silent
+      # specialization-discovery pass. Missing/invalid main used to leave
+      # the compiler's output empty because cg_error was suppressed here.
+      cg_real.write(1);
       if !ast::is_some(main) {
         cg_error(c_no_main(), ast::none());
         return ();
@@ -9397,10 +9467,10 @@ assume Std {
         runtime_entry_view(key, lower::env_of(main));
         rk = rk + 1;
       }
-      cg_real.write(0);
       # D39: `main` takes no parameters and returns the unit type, which
       # is what lets `_start` call it directly.
       let md = prog::sym_decl.get(main);
+      prog::location.write(md + 1);
       if ast::fn_nparams(md) > 0 {
         cg_error(c_no_main(), ast::none());
         return ();

@@ -2,6 +2,7 @@ import "./ast.moss" as ast;
 import "./boot.moss" use Boot, Compiler;
 import "./bytes.moss" use *;
 import "./codegen.moss" as codegen;
+import "./diagnostic.moss" as diagnostic;
 import "./intern.moss" as intern;
 import "./prog.moss" as prog;
 
@@ -16,7 +17,9 @@ import "./prog.moss" as prog;
 # Output is the module's bytes on standard output, or diagnostics — one
 # line each, a letter for the rule and the name that broke it. Keep this
 # compact diagnostic protocol stable; its codes are the `e_` and `c_`
-# constants of prog.moss and codegen.moss.
+# constants of prog.moss and codegen.moss. The native CLI requests
+# --diagnostics=human for messages and excerpts; direct compiler clients
+# retain the compact protocol unless they request that presentation.
 
 assume Std {
   fn cli() {
@@ -39,6 +42,7 @@ assume Std {
       # table has anything in it.
       if prog::error_count() > 0 {
         report_collect();
+        if human_diagnostics() { report_codegen(); }
         return ();
       }
       if codegen::cg_error_count() > 0 {
@@ -50,46 +54,109 @@ assume Std {
       put_bytes(out);
     }
 
+    fn human_diagnostics(): Bool {
+      if arg_count() < 3 { return false; }
+      prog::str_eq(arg_at(2), "--diagnostics=human")
+    }
+
     fn report_collect() {
+      if human_diagnostics() {
+        var e = 0;
+        while e < prog::error_count() {
+          diagnostic::report(0, prog::err_code.get(e), prog::err_mod.get(e),
+            prog::err_start.get(e), prog::err_end.get(e), prog::err_name.get(e), prog::err_expected.get(e));
+          diagnostic::previous_definition(prog::err_related.get(e));
+          e = e + 1;
+        }
+        return ();
+      }
+      report_collect_compact();
+    }
+
+    fn collect_duplicate(e: Int): Bool {
+      var i = 0;
+      while i < e {
+        if prog::err_code.get(i) == prog::err_code.get(e) {
+          if prog::err_mod.get(i) == prog::err_mod.get(e) {
+            if prog::err_name.get(i) == prog::err_name.get(e) { return true; }
+          }
+        }
+        i = i + 1;
+      }
+      false
+    }
+
+    fn report_collect_compact() {
       var e = 0;
       while e < prog::error_count() {
-        putchar(char::exclam);
-        putchar((char::A.code() + prog::err_code.get(e)).char());
-        putchar(char::space);
-        print(prog::module_path(prog::err_mod.get(e)));
-        if ast::is_some(prog::err_name.get(e)) {
+        if collect_duplicate(e) { e = e + 1; } else {
+          putchar(char::exclam);
+          putchar((char::A.code() + prog::err_code.get(e)).char());
           putchar(char::space);
-          intern::put(prog::err_name.get(e));
+          print(prog::module_path(prog::err_mod.get(e)));
+          if ast::is_some(prog::err_name.get(e)) {
+            putchar(char::space);
+            intern::put(prog::err_name.get(e));
+          }
+          putchar(char::newline);
+          e = e + 1;
         }
-        putchar(char::newline);
-        e = e + 1;
       }
     }
 
     fn report_codegen() {
+      if human_diagnostics() {
+        var e = 0;
+        while e < codegen::cg_error_count() {
+          diagnostic::report(codegen::cg_err_phase.get(e), codegen::cg_errs.get(e),
+            codegen::cg_err_mod.get(e), codegen::cg_err_start.get(e),
+            codegen::cg_err_end.get(e), codegen::cg_err_name.get(e), ast::none());
+          e = e + 1;
+        }
+        return ();
+      }
+      report_codegen_compact();
+    }
+
+    fn codegen_duplicate(e: Int): Bool {
+      var i = 0;
+      while i < e {
+        if codegen::cg_errs.get(i) == codegen::cg_errs.get(e) {
+          if codegen::cg_err_name.get(i) == codegen::cg_err_name.get(e) {
+            if codegen::cg_err_at.get(i) == codegen::cg_err_at.get(e) { return true; }
+          }
+        }
+        i = i + 1;
+      }
+      false
+    }
+
+    fn report_codegen_compact() {
       var e = 0;
       while e < codegen::cg_error_count() {
-        putchar(char::question);
-        putchar((char::A.code() + codegen::cg_errs.get(e)).char());
-        # Which frame was being emitted, as `module fn` — the nearest
-        # thing to a source position currently recorded.
-        let at = codegen::cg_err_at.get(e);
-        if ast::is_some(at) {
-          putchar(char::space);
-          print(prog::module_path(prog::sym_mod.get(at)));
-          putchar(char::space);
-          if ast::is_some(prog::sym_recv.get(at)) {
-            intern::put(prog::sym_name.get(prog::sym_recv.get(at)));
-            putchar(char::dot);
+        if codegen_duplicate(e) { e = e + 1; } else {
+          putchar(char::question);
+          putchar((char::A.code() + codegen::cg_errs.get(e)).char());
+          # Retain the historical `module fn` frame context in the
+          # compact protocol; the human renderer uses the source range.
+          let at = codegen::cg_err_at.get(e);
+          if ast::is_some(at) {
+            putchar(char::space);
+            print(prog::module_path(prog::sym_mod.get(at)));
+            putchar(char::space);
+            if ast::is_some(prog::sym_recv.get(at)) {
+              intern::put(prog::sym_name.get(prog::sym_recv.get(at)));
+              putchar(char::dot);
+            }
+            intern::put(prog::sym_name.get(at));
           }
-          intern::put(prog::sym_name.get(at));
+          if ast::is_some(codegen::cg_err_name.get(e)) {
+            putchar(char::space);
+            intern::put(codegen::cg_err_name.get(e));
+          }
+          putchar(char::newline);
+          e = e + 1;
         }
-        if ast::is_some(codegen::cg_err_name.get(e)) {
-          putchar(char::space);
-          intern::put(codegen::cg_err_name.get(e));
-        }
-        putchar(char::newline);
-        e = e + 1;
       }
     }
   }

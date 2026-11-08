@@ -30,6 +30,10 @@ functor Boot: Std -> Compiler {
   bind ast::nb = int_list();
   bind ast::nc = int_list();
   bind ast::nd = int_list();
+  bind ast::nfile = int_list();
+  bind ast::nstart = int_list();
+  bind ast::nend = int_list();
+  bind ast::source_file = cell_int();
   bind ast::kids = int_list();
   bind ast::pnames = int_list();
   bind ast::pstart = int_list();
@@ -49,16 +53,21 @@ functor Boot: Std -> Compiler {
   bind syntax::tok = cell_int();
   bind syntax::tstart = cell_int();
   bind syntax::tend = cell_int();
+  bind syntax::previous_end = cell_int();
   bind syntax::tok2 = cell_int();
   bind syntax::t2start = cell_int();
   bind syntax::t2end = cell_int();
   bind syntax::errs = cell_int();
   bind syntax::errpos = cell_int();
+  bind syntax::errend = cell_int();
+  bind syntax::expected = cell_int();
 
   bind prog::mpaths = str_list();
   bind prog::mroots = int_list();
   bind prog::mnroots = int_list();
   bind prog::mstate = int_list();
+  bind prog::mtext = int_list();
+  bind prog::sources = str_list();
   bind prog::pinfo = str_list();
   bind prog::sym_mod = int_list();
   bind prog::sym_name = int_list();
@@ -83,6 +92,11 @@ functor Boot: Std -> Compiler {
   bind prog::err_code = int_list();
   bind prog::err_mod = int_list();
   bind prog::err_name = int_list();
+  bind prog::location = cell_int();
+  bind prog::err_start = int_list();
+  bind prog::err_end = int_list();
+  bind prog::err_expected = int_list();
+  bind prog::err_related = int_list();
 
   bind emit::ft_params = int_list();
   bind emit::ft_pstart = int_list();
@@ -191,7 +205,12 @@ functor Boot: Std -> Compiler {
   bind codegen::cg_errs = int_list();
   bind codegen::cg_err_name = int_list();
   bind codegen::cg_err_at = int_list();
+  bind codegen::cg_err_start = int_list();
+  bind codegen::cg_err_end = int_list();
+  bind codegen::cg_err_mod = int_list();
+  bind codegen::cg_err_phase = int_list();
   bind codegen::cg_where = cell_int();
+  bind codegen::cg_entry = cell_int();
   bind codegen::cg_genv = cell_int();
   bind codegen::cg_gbase = cell_int();
   bind codegen::ch_run = int_list();

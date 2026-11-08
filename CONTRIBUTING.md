@@ -83,6 +83,19 @@ to an explicit, commented list of known gaps
 added to `tests/` that one accepts and the other rejects fails the suite
 until one of them is fixed or the gap is listed with its reason.
 
+The native CLI requests readable diagnostics from the self-hosted compiler.
+Direct users of `mossc.wasm ENTRY` retain the compact diagnostic protocol;
+`mossc.wasm ENTRY --diagnostics=human` selects messages and source excerpts.
+The `diagnostics` test module exercises that presentation, including UTF-8,
+tabs, CRLF, imported files, and repeated errors at different locations.
+
+Source ranges are half-open UTF-8 byte offsets into module snapshots. The AST
+retains them separately from its operands, and the diagnostic tables retain
+codes, code domains, names, and ranges separately from the renderer in
+[`src/diagnostic.moss`](src/diagnostic.moss). Preserve these distinctions when
+adding diagnostics so future tools can consume the data without parsing CLI
+output. Display columns count Unicode scalars, with tabs at four-column stops.
+
 Everything CI enforces is a flake check:
 
 ```sh

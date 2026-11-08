@@ -180,6 +180,14 @@ assume Std {
     # Elaboration. `m` is the module the type was written in.
 
     fn elab(t: Int, m: Int): Int {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(t)) { prog::location.write(t + 1); }
+      let result = elab_inner(t, m);
+      prog::location.write(saved);
+      result
+    }
+
+    fn elab_inner(t: Int, m: Int): Int {
       if !ast::is_some(t) {
         return ty_unit();
       }
@@ -314,6 +322,14 @@ assume Std {
     # The right-hand side of a type binding: a type by name, maybe applied
     # itself.
     fn elab_spec(spec: Int, m: Int): Int {
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(spec)) { prog::location.write(spec + 1); }
+      let result = elab_spec_inner(spec, m);
+      prog::location.write(saved);
+      result
+    }
+
+    fn elab_spec_inner(spec: Int, m: Int): Int {
       if ast::is_some(ast::b_of(spec)) {
         prog::error(prog::e_apply(), m, ast::b_of(spec));
         return ty_never();

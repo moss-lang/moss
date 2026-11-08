@@ -5,7 +5,7 @@ mod wasmtime;
 use std::{
     env, fs,
     io::{self, IsTerminal, Write},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::ExitCode,
 };
 
@@ -335,9 +335,10 @@ fn run_compiler(
     let argv = vec![
         wasi_path(prelude.strip_prefix(filesystem_root)?)?,
         wasi_path(entry.strip_prefix(filesystem_root)?)?,
+        "--diagnostics=human".to_owned(),
     ];
     let output = run_wasi_capture(engine, filesystem_root, compiler, &argv)?;
-    valid_wasm(output)
+    valid_wasm(host_diagnostic_paths(output, filesystem_root, &cwd)?)
 }
 
 fn common_ancestor<'a>(left: &'a Path, right: &'a Path) -> Option<&'a Path> {
@@ -345,11 +346,44 @@ fn common_ancestor<'a>(left: &'a Path, right: &'a Path) -> Option<&'a Path> {
         .find(|candidate| right.starts_with(candidate))
 }
 
+/// The compiler names files relative to its WASI preopen. Translate only
+/// human diagnostic location lines back to host paths. Prefer paths below
+/// cwd as relative paths; keep other paths absolute instead of adding `..`.
+/// Preserve any :line:column suffix, including for related notes.
+fn host_diagnostic_paths(output: Vec<u8>, filesystem_root: &Path, cwd: &Path) -> Result<Vec<u8>> {
+    if !output.starts_with(b"error[") {
+        return Ok(output);
+    }
+    let root = wasi_path(filesystem_root)?;
+    let root = root.trim_end_matches('/');
+    let cwd = wasi_path(cwd)?;
+    let mut rendered = String::with_capacity(output.len() + root.len());
+    for line in String::from_utf8_lossy(&output).split_inclusive('\n') {
+        if let Some(location) = line.strip_prefix("  --> ") {
+            let absolute = format!("{root}/{location}");
+            let path = Path::new(&absolute);
+            let relative = path.strip_prefix(Path::new(&cwd)).ok().filter(|relative| {
+                !relative
+                    .components()
+                    .any(|part| part == Component::ParentDir)
+            });
+            rendered.push_str("  --> ");
+            rendered.push_str(&wasi_path(relative.unwrap_or(path))?);
+        } else {
+            rendered.push_str(line);
+        }
+    }
+    Ok(rendered.into_bytes())
+}
+
 fn valid_wasm(bytes: Vec<u8>) -> Result<Vec<u8>> {
     if bytes.starts_with(b"\0asm\x01\0\0\0") {
         Ok(bytes)
     } else {
         let diagnostics = String::from_utf8_lossy(&bytes);
+        if diagnostics.starts_with("error[") {
+            bail!("{}", diagnostics.trim_end());
+        }
         bail!(
             "compiler did not write a WebAssembly module{}",
             if diagnostics.is_empty() {
@@ -452,6 +486,124 @@ mod tests {
         assert_eq!(args[1], "run");
         let cli = Cli::try_parse_from(args).unwrap();
         assert!(matches!(cli.command, Commands::Run { .. }));
+    }
+
+    #[test]
+    fn source_diagnostics_are_reported_without_a_module_protocol_error() {
+        let report = "error[!B]: this name is not in scope: `missing`\n  --> main.moss:3:5\n";
+        assert_eq!(
+            valid_wasm(report.as_bytes().to_vec())
+                .unwrap_err()
+                .to_string(),
+            report.trim_end()
+        );
+        assert!(valid_wasm(b"unexpected compiler output".to_vec())
+            .unwrap_err()
+            .to_string()
+            .contains("compiler did not write a WebAssembly module"));
+    }
+
+    #[test]
+    fn diagnostic_paths_use_the_host_root_for_errors_and_related_notes() {
+        let report = concat!(
+            "error[!E]: imports bind the same name to different declarations: `Base`\n",
+            "  --> Users/samueles/github/samestep/phd-thesis/examples/moss/doubledouble.moss\n",
+            "error[!E]: imports bind the same name to different declarations: `Base`\n",
+            "  --> Users/samueles/github/samestep/phd-thesis/examples/moss/shadow.moss:30:1\n",
+            "   |\n",
+            "30 | import \"./doubledouble.moss\" use Base, lift, BaseOps,\n",
+            "   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n",
+            "note: previous definition is here\n",
+            "  --> Users/samueles/github/samestep/phd-thesis/examples/moss/shadow.moss:12:1\n",
+        );
+        let translated = host_diagnostic_paths(
+            report.as_bytes().to_vec(),
+            Path::new("/"),
+            Path::new("/elsewhere"),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(translated).unwrap(),
+            report.replace("  --> Users/", "  --> /Users/")
+        );
+    }
+
+    #[test]
+    fn diagnostic_paths_support_nested_preopens_and_windows_roots() {
+        let report = b"error[!B]: this name is not in scope\n  --> project/main.moss:3:5\n";
+        for (root, cwd, expected) in [
+            ("/home/sam", "/home/sam/project", "main.moss:3:5"),
+            ("/home/sam", "/home/sam", "project/main.moss:3:5"),
+            ("/home/sam", "/home/sam/project/", "main.moss:3:5"),
+            (
+                "/home/sam",
+                "/home/sam/proj",
+                "/home/sam/project/main.moss:3:5",
+            ),
+            (
+                "/home/sam",
+                "/home/sam/project/subdir",
+                "/home/sam/project/main.moss:3:5",
+            ),
+            (r"C:\", r"C:\project", "main.moss:3:5"),
+            (r"C:\", r"C:\other", "C:/project/main.moss:3:5"),
+            ("/", "/", "project/main.moss:3:5"),
+        ] {
+            let translated =
+                host_diagnostic_paths(report.to_vec(), Path::new(root), Path::new(cwd)).unwrap();
+            assert_eq!(
+                String::from_utf8(translated).unwrap(),
+                format!("error[!B]: this name is not in scope\n  --> {expected}\n")
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_paths_choose_relative_and_absolute_locations_in_one_report() {
+        let report = concat!(
+            "error[!A]: duplicate definition\n",
+            "  --> Users/sam/project/examples/main.moss:30:1\n",
+            "note: previous definition is here\n",
+            "  --> Users/sam/shared/original.moss:12:1\n",
+            "error[!O]: cannot read this source file\n",
+            "  --> Users/sam/project/examples/missing.moss\n",
+            "error[!O]: cannot read this source file\n",
+            "  --> Users/sam/project-other/missing.moss\n",
+        );
+        let translated = host_diagnostic_paths(
+            report.as_bytes().to_vec(),
+            Path::new("/"),
+            Path::new("/Users/sam/project"),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(translated).unwrap(),
+            concat!(
+                "error[!A]: duplicate definition\n",
+                "  --> examples/main.moss:30:1\n",
+                "note: previous definition is here\n",
+                "  --> /Users/sam/shared/original.moss:12:1\n",
+                "error[!O]: cannot read this source file\n",
+                "  --> examples/missing.moss\n",
+                "error[!O]: cannot read this source file\n",
+                "  --> /Users/sam/project-other/missing.moss\n",
+            )
+        );
+    }
+
+    #[test]
+    fn diagnostic_path_translation_preserves_modules_and_compact_reports() {
+        for output in [b"\0asm\x01\0\0\0\xff".as_slice(), b"!B main.moss missing\n"] {
+            assert_eq!(
+                host_diagnostic_paths(
+                    output.to_vec(),
+                    Path::new("/home/sam"),
+                    Path::new("/home/sam/project")
+                )
+                .unwrap(),
+                output
+            );
+        }
     }
 
     #[test]

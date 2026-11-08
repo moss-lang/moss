@@ -139,7 +139,7 @@ assume Std {
     fn lex(): Token {
       loop {
         match peek() {
-          Eof => return Eof,
+          Eof => { mark.write(at.read()); return Eof; },
           Read(c) => {
             advance();
             if is_space(c) {

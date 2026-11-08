@@ -125,6 +125,12 @@ assume Std {
   val nc: IntList;
   val nd: IntList;
 
+  # Half-open UTF-8 byte ranges. Synthesized nodes have no source range.
+  val nfile: IntList;
+  val nstart: IntList;
+  val nend: IntList;
+  val source_file: CellInt;
+
   # Every variable-length run: argument lists, statement lists, and the
   # spilled operands of the wide declarations.
   val kids: IntList;
@@ -138,7 +144,7 @@ assume Std {
   # that is what the loader hands to `Path.join`.
   val itexts: StrList;
 
-  context Ast = nkind, na, nb, nc, nd, kids, pnames, pstart, plen, itexts;
+  context Ast = nkind, na, nb, nc, nd, nfile, nstart, nend, source_file, kids, pnames, pstart, plen, itexts;
 
   assume Ast {
     fn node4(kind: Int, a: Int, b: Int, c: Int, d: Int): Int {
@@ -148,7 +154,36 @@ assume Std {
       nb.push(b);
       nc.push(c);
       nd.push(d);
+      nfile.push(none());
+      nstart.push(none());
+      nend.push(none());
       id
+    }
+
+    fn located(node: Int, start: Int, end: Int): Int {
+      if !is_some(start) { return node; }
+      # Recovery can synthesize a node without consuming a token.
+      var finish = end;
+      if finish < start { finish = start; }
+      nfile.set(node, source_file.read());
+      nstart.set(node, start);
+      nend.set(node, finish);
+      node
+    }
+
+    fn source_module(node: Int): Int {
+      if !is_some(node) { return none(); }
+      nfile.get(node)
+    }
+
+    fn source_start(node: Int): Int {
+      if !is_some(node) { return none(); }
+      nstart.get(node)
+    }
+
+    fn source_end(node: Int): Int {
+      if !is_some(node) { return none(); }
+      nend.get(node)
     }
 
     fn node3(kind: Int, a: Int, b: Int, c: Int): Int {

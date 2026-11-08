@@ -55,6 +55,10 @@ assume Std {
     bind ast::nb=int_list();
     bind ast::nc=int_list();
     bind ast::nd=int_list();
+    bind ast::nfile=int_list();
+    bind ast::nstart=int_list();
+    bind ast::nend=int_list();
+    bind ast::source_file=cell_int();
     bind ast::kids=int_list();
     bind ast::pnames=int_list();
     bind ast::pstart=int_list();
@@ -72,11 +76,14 @@ assume Std {
     bind syntax::tok=cell_int();
     bind syntax::tstart=cell_int();
     bind syntax::tend=cell_int();
+    bind syntax::previous_end=cell_int();
     bind syntax::tok2=cell_int();
     bind syntax::t2start=cell_int();
     bind syntax::t2end=cell_int();
     bind syntax::errs=cell_int();
     bind syntax::errpos=cell_int();
+    bind syntax::errend=cell_int();
+    bind syntax::expected=cell_int();
     go();
   }
   assume ast::Ast, syntax::Cursor, intern::Interner,
