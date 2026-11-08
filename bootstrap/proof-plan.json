@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "reviewed_base": "049546be253ceabd177f15acfaba3b90d1241d00",
   "reviewed_date": "2026-11-08",
   "groups": [
@@ -65,7 +65,10 @@
       "sources": [
         "theories/FrontEnd.v"
       ],
-      "witness": "lex_sound"
+      "witness": "lex_sound",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F02",
@@ -79,7 +82,10 @@
       "sources": [
         "theories/FrontEnd.v"
       ],
-      "witness": "lex_complete"
+      "witness": "lex_complete",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F03",
@@ -95,7 +101,10 @@
       "sources": [
         "theories/FrontEnd.v"
       ],
-      "witness": "parse_moss_sound"
+      "witness": "parse_moss_sound",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F04",
@@ -111,7 +120,10 @@
       "sources": [
         "theories/FrontEndComplete.v"
       ],
-      "witness": "parse_moss_complete"
+      "witness": "parse_moss_complete",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F05",
@@ -127,7 +139,10 @@
       "sources": [
         "theories/FrontEndLoader.v"
       ],
-      "witness": "load_sound"
+      "witness": "load_sound",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F07",
@@ -145,7 +160,10 @@
         "theories/SnapshotLoaderBound.v",
         "theories/SnapshotLoader.v"
       ],
-      "witness": "walk_accepts_closed_witness"
+      "witness": "walk_accepts_closed_witness",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F08",
@@ -162,7 +180,10 @@
       "sources": [
         "theories/SnapshotLoader.v"
       ],
-      "witness": "load_sound"
+      "witness": "load_sound",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F09",
@@ -179,7 +200,10 @@
       "sources": [
         "theories/SnapshotLoader.v"
       ],
-      "witness": "load_complete"
+      "witness": "load_complete",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F10",
@@ -194,7 +218,10 @@
       "approach": "Audit recursion in the direct public elaborator and derive bounds or terminating algorithms. A finite file list alone does not establish elaborator completeness.",
       "sources": [
         "theories/Elab.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F11",
@@ -212,7 +239,10 @@
       "sources": [
         "theories/WorldSound.v",
         "theories/ReqsTotal.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F12",
@@ -230,7 +260,10 @@
         "theories/CtxWalk.v",
         "theories/ProviderSig.v",
         "theories/ComponentContracts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F13",
@@ -247,7 +280,10 @@
       "sources": [
         "theories/Elab.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "F14",
@@ -264,7 +300,10 @@
       "sources": [
         "theories/Elab.v",
         "theories/ComponentContracts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S01",
@@ -278,7 +317,10 @@
       "sources": [
         "theories/ReqsTotal.v"
       ],
-      "witness": "elaborate_world_of"
+      "witness": "elaborate_world_of",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S02",
@@ -292,7 +334,10 @@
       "sources": [
         "theories/BodyPending.v"
       ],
-      "witness": "pending"
+      "witness": "pending",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S03",
@@ -306,7 +351,10 @@
       "sources": [
         "theories/LinkBodySound.v"
       ],
-      "witness": "link_body_fresh_data"
+      "witness": "link_body_fresh_data",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S04",
@@ -320,7 +368,10 @@
       "sources": [
         "theories/LinkProgramPreserve.v"
       ],
-      "witness": "elab_init_link_inv"
+      "witness": "elab_init_link_inv",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S05",
@@ -334,7 +385,10 @@
       "sources": [
         "theories/FunctorRowsProgram.v"
       ],
-      "witness": "elab_program_final_links"
+      "witness": "elab_program_final_links",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S06",
@@ -348,7 +402,10 @@
       "sources": [
         "theories/InputGenerationScope.v"
       ],
-      "witness": "scoped_type_read"
+      "witness": "scoped_type_read",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S07",
@@ -362,7 +419,10 @@
       "sources": [
         "theories/InputGenerationAllocate.v"
       ],
-      "witness": "reserved_link_input_plan"
+      "witness": "reserved_link_input_plan",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S08",
@@ -376,7 +436,10 @@
       "sources": [
         "theories/InputGenerationMerge.v"
       ],
-      "witness": "private_canon_read"
+      "witness": "private_canon_read",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S09",
@@ -390,7 +453,10 @@
       "sources": [
         "theories/InputGenerationRuntime.v"
       ],
-      "witness": "private_capture_grounding_survives_caller_rebinding"
+      "witness": "private_capture_grounding_survives_caller_rebinding",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S10",
@@ -404,7 +470,10 @@
       "sources": [
         "theories/InputGenerationExports.v"
       ],
-      "witness": "frame_result_private_grounding"
+      "witness": "frame_result_private_grounding",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "S29",
@@ -418,7 +487,10 @@
       "sources": [
         "theories/FnElabExec.v"
       ],
-      "witness": "completed_history_fn_elab"
+      "witness": "completed_history_fn_elab",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "P01",
@@ -432,7 +504,10 @@
       "sources": [
         "theories/AuditRepresentation.v"
       ],
-      "witness": "value_represents"
+      "witness": "value_represents",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K01",
@@ -448,7 +523,10 @@
       "approach": "Prove the checker clauses against the shared source world.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K02",
@@ -464,7 +542,10 @@
       "approach": "Handle the finite designated layout cases using E01 lookups.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K03",
@@ -480,7 +561,10 @@
       "approach": "Combine CastEntry cases and exact generated metadata shape.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K04",
@@ -497,7 +581,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/EntryShape.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K05",
@@ -515,7 +602,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/ReifyPlatform.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K06",
@@ -535,7 +625,10 @@
       "approach": "Assemble EntryPoint, Layouts, Representations and initial entries.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K07",
@@ -554,7 +647,10 @@
       "approach": "Compose the backward directions of the component checker equivalences.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H01",
@@ -571,7 +667,10 @@
       "sources": [
         "theories/DefaultRuntime.v",
         "theories/AuditRepresentation.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H02",
@@ -588,7 +687,10 @@
       "sources": [
         "theories/MossX.v",
         "theories/DefaultRuntime.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H03",
@@ -605,7 +707,10 @@
       "sources": [
         "theories/MossX.v",
         "theories/DefaultRuntime.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H04",
@@ -621,7 +726,10 @@
       "sources": [
         "theories/XHeapC.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H05",
@@ -637,7 +745,10 @@
       "sources": [
         "theories/XHeapC.v",
         "theories/DefaultRuntime.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H06",
@@ -654,7 +765,10 @@
       "sources": [
         "theories/XHeapC.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "H07",
@@ -673,7 +787,10 @@
       "sources": [
         "theories/DefaultRuntime.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T01",
@@ -687,7 +804,10 @@
       "sources": [
         "theories/XElabTyped.v"
       ],
-      "witness": "typed_runtime_never_err"
+      "witness": "typed_runtime_never_err",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T02",
@@ -711,7 +831,10 @@
         "theories/PublicCastTyping.v",
         "theories/PublicHeapTyping.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T03",
@@ -727,7 +850,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XTyping.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T04",
@@ -743,7 +869,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XProvision.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T05",
@@ -758,7 +887,10 @@
       "approach": "Induct over the corresponding public elaboration rules.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T06",
@@ -774,7 +906,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XBridge.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T07",
@@ -790,7 +925,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XBridgeCtx.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T08",
@@ -805,7 +943,10 @@
       "approach": "Induct over source control rules using the settled frame invariant.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T09",
@@ -822,7 +963,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/ReifyContracts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T10",
@@ -842,7 +986,10 @@
       "approach": "Assemble the public semantic derivation; cover all admissible programs, not just executable build outputs.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T11",
@@ -857,7 +1004,10 @@
       "approach": "Use Compatible.interface_laws; do not assume the interface is the default host.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T12",
@@ -874,7 +1024,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XEnv.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T13",
@@ -882,7 +1035,8 @@
       "title": "Preserve basic runtime forms",
       "requires": [
         "T12",
-        "T11"
+        "T11",
+        "T24"
       ],
       "status": "open",
       "budget": "hour",
@@ -891,7 +1045,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XSafety.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T14",
@@ -908,7 +1065,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XSafety.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T15",
@@ -925,7 +1085,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XSafety.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T16",
@@ -943,7 +1106,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/InputGenerationRuntime.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T17",
@@ -951,7 +1117,8 @@
       "title": "Preserve typed GC stores",
       "requires": [
         "T12",
-        "T11"
+        "T11",
+        "T25"
       ],
       "status": "open",
       "budget": "unknown",
@@ -960,7 +1127,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XHeap.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T18",
@@ -977,7 +1147,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XSafety.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T19",
@@ -998,7 +1171,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/XSafety.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T20",
@@ -1014,7 +1190,10 @@
       "approach": "Apply preservation to the typed entry environment; invert the allowed top-level signals.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X01",
@@ -1028,7 +1207,10 @@
       "sources": [
         "theories/LazyCloFacts.v"
       ],
-      "witness": "crun_main_eq"
+      "witness": "crun_main_eq",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X02",
@@ -1043,7 +1225,10 @@
         "theories/LazyOracle.v",
         "theories/LazyCloFacts.v"
       ],
-      "witness": "fast_engine_agrees"
+      "witness": "fast_engine_agrees",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X03",
@@ -1060,7 +1245,10 @@
       "sources": [
         "theories/LazyOracle.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X04",
@@ -1078,7 +1266,10 @@
       "sources": [
         "theories/AuditRepresentation.v",
         "theories/LazyCloFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X05",
@@ -1095,7 +1286,10 @@
       "sources": [
         "theories/AuditRepresentation.v",
         "theories/LazyCloFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X06",
@@ -1112,7 +1306,10 @@
       "sources": [
         "theories/AuditRepresentation.v",
         "theories/LazyCloFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X07",
@@ -1128,7 +1325,10 @@
       "sources": [
         "theories/AuditRepresentation.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X08",
@@ -1147,7 +1347,10 @@
       "approach": "Exhaust the finite signal constructors; keep OutOfFuel as absence of an observation.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X09",
@@ -1164,7 +1367,10 @@
       "sources": [
         "theories/AuditRepresentation.v",
         "theories/LazyOracle.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X10",
@@ -1181,7 +1387,10 @@
       "sources": [
         "theories/AuditRepresentation.v",
         "theories/LazyOracle.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X11",
@@ -1198,7 +1407,10 @@
       "sources": [
         "theories/ComponentContracts.v",
         "ocaml/moss_m2.ml"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X12",
@@ -1216,7 +1428,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/Certified.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "B01",
@@ -1231,7 +1446,10 @@
       "approach": "Apply the finite-source contract; preserve intended filesystem behavior and explicit error handling.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "B02",
@@ -1251,7 +1469,10 @@
         "theories/Audit.v",
         "theories/Parse.v",
         "theories/Elab.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "B03",
@@ -1267,7 +1488,10 @@
       "approach": "Define the real build function over the selected finite source snapshot, with no arbitrary-budget completeness loophole.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "B04",
@@ -1284,7 +1508,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/DefaultRuntime.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "B05",
@@ -1302,7 +1529,10 @@
       "approach": "Unfold the wrapper and combine loader soundness, public refinement and platform/host facts.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "B06",
@@ -1321,7 +1551,10 @@
       "approach": "Compose loader, direct public elaborator and platform-check completeness; no intermediate internal-language completeness or model back-translation.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "G01",
@@ -1336,7 +1569,10 @@
       "approach": "Bind the assembled proof without changing its public statement.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "G02",
@@ -1351,7 +1587,10 @@
       "approach": "Bind the assembled proof; only existential output, not equality with an arbitrary witness, is promised.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "G03",
@@ -1368,7 +1607,10 @@
       "approach": "Connect the wrapper to forward execution adequacy.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "G04",
@@ -1385,7 +1627,10 @@
       "approach": "Connect the wrapper to reverse execution adequacy.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "G05",
@@ -1400,7 +1645,10 @@
       "approach": "Unfold Runs and observe, then contradict reference entry signal safety. This has no executable build/run prerequisite.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "A01",
@@ -1414,6 +1662,18 @@
       "sources": [
         "PUBLIC-FOUNDATION.md",
         "theories/Audit.v"
+      ],
+      "origin": {
+        "kind": "baseline"
+      },
+      "evidence": [
+        {
+          "summary": "Retain the five public obligations and intended finite-filesystem meaning. Record the exact proposed type/loader changes before implementing them.",
+          "sources": [
+            "PUBLIC-FOUNDATION.md",
+            "theories/Audit.v"
+          ]
+        }
       ]
     },
     {
@@ -1431,7 +1691,10 @@
         "theories/SourceSnapshot.v",
         "theories/AuditBuildExample.v"
       ],
-      "witness": "source_read_iff"
+      "witness": "source_read_iff",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "A03",
@@ -1450,7 +1713,10 @@
         "theories/PublicClosurePrototype.v",
         "theories/PublicClosureExample.v"
       ],
-      "witness": "all_fuel_agreement"
+      "witness": "all_fuel_agreement",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "A04",
@@ -1465,6 +1731,19 @@
         "benchmark-configs.py",
         "benchmarks/foundation-2026-11-08.json",
         "PUBLIC-FOUNDATION.md"
+      ],
+      "origin": {
+        "kind": "baseline"
+      },
+      "evidence": [
+        {
+          "summary": "The pinned current production pipeline passed the complete compiler fixpoint in 2287.697 seconds. The frozen oracle is byte-identical to the newly checked build; see the checkpoint record and raw benchmark outputs.",
+          "sources": [
+            "benchmark-configs.py",
+            "benchmarks/foundation-2026-11-08.json",
+            "PUBLIC-FOUNDATION.md"
+          ]
+        }
       ]
     },
     {
@@ -1483,6 +1762,19 @@
         "benchmark-configs.py",
         "ocaml/moss_m2.ml",
         "theories/LazyCloFacts.v"
+      ],
+      "origin": {
+        "kind": "baseline"
+      },
+      "evidence": [
+        {
+          "summary": "Use MOSS_FASTPATH/MOSS_PRUNE controls; distinguish exact closure agreement from outer optimization exceptions. Prepare capped background runs.",
+          "sources": [
+            "benchmark-configs.py",
+            "ocaml/moss_m2.ml",
+            "theories/LazyCloFacts.v"
+          ]
+        }
       ]
     },
     {
@@ -1499,6 +1791,18 @@
       "sources": [
         "benchmark-configs.py",
         "benchmarks/foundation-2026-11-08.json"
+      ],
+      "origin": {
+        "kind": "baseline"
+      },
+      "evidence": [
+        {
+          "summary": "Measured all four configurations against one frozen input/oracle: default passed in 2287.697 seconds; each reduced configuration timed out at one hour during S1 generation. Timed-out configurations are not eligible passing pipelines.",
+          "sources": [
+            "benchmark-configs.py",
+            "benchmarks/foundation-2026-11-08.json"
+          ]
+        }
       ]
     },
     {
@@ -1518,6 +1822,19 @@
         "PUBLIC-FOUNDATION.md",
         "benchmarks/foundation-2026-11-08.json",
         "theories/PublicClosurePrototype.v"
+      ],
+      "origin": {
+        "kind": "baseline"
+      },
+      "evidence": [
+        {
+          "summary": "Select direct public program emission and local closure/environment lowering. Retain lazy closures and both optional transformations for the initial port because reduced configurations missed the cap. Actual port correctness, concrete lowered invariants and integrated X14 performance remain open.",
+          "sources": [
+            "PUBLIC-FOUNDATION.md",
+            "benchmarks/foundation-2026-11-08.json",
+            "theories/PublicClosurePrototype.v"
+          ]
+        }
       ]
     },
     {
@@ -1539,7 +1856,10 @@
         "theories/PublicWorldScope.v",
         "theories/PublicWorldRequirements.v"
       ],
-      "witness": "elaborate_public_world_of"
+      "witness": "elaborate_public_world_of",
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E02",
@@ -1556,7 +1876,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/Elab.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E03",
@@ -1574,7 +1897,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/BodyPending.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E04",
@@ -1590,7 +1916,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/CallDefinedAny.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E05",
@@ -1606,7 +1935,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/BindMethodExec.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E06",
@@ -1629,7 +1961,10 @@
         "theories/Audit.v",
         "theories/Elab.v",
         "../tests/regressions/functor_input_output_generations.moss"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E13",
@@ -1647,7 +1982,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LinkOutputProvide.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E14",
@@ -1663,7 +2001,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LinkOutputPresence.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E15",
@@ -1679,7 +2020,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LinkOutputRefile.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E16",
@@ -1695,7 +2039,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LinkOutputIndex.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E07",
@@ -1714,7 +2061,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LinkBodySound.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E08",
@@ -1733,7 +2083,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LinkCacheInvariant.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E09",
@@ -1751,7 +2104,10 @@
         "theories/Audit.v",
         "theories/MainProgramTrace.v",
         "theories/MainProgramBool.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E17",
@@ -1770,7 +2126,10 @@
         "theories/Audit.v",
         "theories/FnCompleted.v",
         "theories/FnElabExec.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E18",
@@ -1789,7 +2148,10 @@
         "theories/Audit.v",
         "theories/FinalLambdas.v",
         "theories/FinalForwarders.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E10",
@@ -1807,7 +2169,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/FunctionFrameProgram.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E11",
@@ -1828,7 +2193,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/Elab.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E12",
@@ -1849,7 +2217,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/Elab.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L01",
@@ -1866,7 +2237,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LazyCloFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L02",
@@ -1882,7 +2256,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LazyClo.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L03",
@@ -1898,7 +2275,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LazyEnvFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L04",
@@ -1914,7 +2294,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LazyEnvFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L05",
@@ -1931,7 +2314,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/LazyCloFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L06",
@@ -1947,7 +2333,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/AuditRepresentation.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "L07",
@@ -1964,7 +2353,10 @@
       "sources": [
         "theories/Audit.v",
         "theories/DefaultRuntime.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "K09",
@@ -1980,7 +2372,10 @@
       "approach": "Keep executable checker construction separate from its soundness/completeness proofs so runtime benchmarking can start early.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "T21",
@@ -1996,7 +2391,10 @@
       "approach": "Invert the declarative platform rules. This proof does not require an executable platform checker or the concrete default-host implementation.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X13",
@@ -2015,7 +2413,10 @@
         "theories/FastPath.v",
         "theories/Prune.v",
         "theories/LazyCloFacts.v"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "X14",
@@ -2034,7 +2435,10 @@
       "sources": [
         "../flake.nix",
         "ocaml/moss_m2.ml"
-      ]
+      ],
+      "origin": {
+        "kind": "baseline"
+      }
     },
     {
       "id": "E19",
@@ -2048,7 +2452,12 @@
       "sources": [
         "theories/PublicEmit.v"
       ],
-      "witness": "emit_full_substitution"
+      "witness": "emit_full_substitution",
+      "origin": {
+        "kind": "refinement",
+        "parent": "E02",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T22",
@@ -2062,7 +2471,12 @@
       "sources": [
         "theories/PublicCaptureFacts.v"
       ],
-      "witness": "capture_ground_stable"
+      "witness": "capture_ground_stable",
+      "origin": {
+        "kind": "refinement",
+        "parent": "T16",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "F17",
@@ -2079,7 +2493,12 @@
       "sources": [
         "theories/SnapshotLoader.v",
         "ocaml/moss_m2.ml"
-      ]
+      ],
+      "origin": {
+        "kind": "refinement",
+        "parent": "B02",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "F18",
@@ -2095,7 +2514,12 @@
       "sources": [
         "theories/SnapshotLoaderWitness.v"
       ],
-      "witness": "load_elaborates_complete"
+      "witness": "load_elaborates_complete",
+      "origin": {
+        "kind": "refinement",
+        "parent": "B06",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "E20",
@@ -2110,7 +2534,12 @@
         "theories/PublicWorld.v",
         "theories/PublicWorldScope.v"
       ],
-      "witness": "load_world_world_of_from_requirements"
+      "witness": "load_world_world_of_from_requirements",
+      "origin": {
+        "kind": "refinement",
+        "parent": "E01",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T23",
@@ -2125,7 +2554,12 @@
         "theories/PublicValueTyping.v",
         "theories/PublicLocalsTyping.v"
       ],
-      "witness": "typing_extends"
+      "witness": "typing_extends",
+      "origin": {
+        "kind": "refinement",
+        "parent": "T02",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T24",
@@ -2142,7 +2576,12 @@
         "theories/PublicCastTyping.v",
         "theories/PublicTypeFacts.v"
       ],
-      "witness": "check_tag_preserves"
+      "witness": "check_tag_preserves",
+      "origin": {
+        "kind": "refinement",
+        "parent": "T13",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T25",
@@ -2158,14 +2597,18 @@
       "sources": [
         "theories/PublicHeapTyping.v"
       ],
-      "witness": "array_preserves_heap"
+      "witness": "array_preserves_heap",
+      "origin": {
+        "kind": "refinement",
+        "parent": "T17",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T26",
       "group": "T",
       "title": "Separate generation, alias and output roles",
       "requires": [
-        "T27",
         "T28"
       ],
       "status": "done",
@@ -2179,21 +2622,25 @@
         "theories/PublicFunctorScopeExample.v",
         "theories/PublicGenerationCallExample.v"
       ],
-      "witness": "result_environment_preserves_supported_ground"
-    },
-    {
-      "id": "T27",
-      "group": "T",
-      "title": "Check and repair saved-generation example",
-      "requires": [],
-      "status": "done",
-      "budget": "done",
-      "goal": "Retain the previous saved-type mismatch as an isolated legacy calculation and check the repaired actual binding/cast/output behavior.",
-      "approach": "A public BTypeBind derivation remains valid, while the saved F64 wrapper now traps and old output generations survive. These are local checked regressions, not a complete Admissible witness.",
-      "sources": [
-        "theories/PublicSavedTypeExample.v"
-      ],
-      "witness": "saved_f64_rejects_integer_handle"
+      "witness": "result_environment_preserves_supported_ground",
+      "origin": {
+        "kind": "discovery",
+        "parent": "T02",
+        "reason": "Checked saved-type and output-generation mismatches required a user-approved correction of Audit semantics.",
+        "sources": [
+          "PUBLIC-SAFETY-CHECKPOINT.md",
+          "theories/PublicSavedTypeExample.v"
+        ]
+      },
+      "evidence": [
+        {
+          "summary": "Retain the previous saved-type mismatch as an isolated legacy calculation and check the repaired actual binding/cast/output behavior.",
+          "sources": [
+            "theories/PublicSavedTypeExample.v"
+          ],
+          "witness": "saved_f64_rejects_integer_handle"
+        }
+      ]
     },
     {
       "id": "T28",
@@ -2208,7 +2655,12 @@
         "theories/PublicGenerationFacts.v",
         "theories/PublicAliasContext.v"
       ],
-      "witness": "result_environment_preserves_supported_ground"
+      "witness": "result_environment_preserves_supported_ground",
+      "origin": {
+        "kind": "refinement",
+        "parent": "T26",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T29",
@@ -2222,7 +2674,12 @@
       "sources": [
         "theories/PublicContextFacts.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "refinement",
+        "parent": "T02",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T30",
@@ -2235,7 +2692,12 @@
       "approach": "Cover FnElab/BlkE, lambda capture prologues, FPForward, MPWrapped, LinkBody refiling and Platform.Family. Unused arbitrary table entries need no certificate; ordinary recursion is handled by smaller execution fuel.",
       "sources": [
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "refinement",
+        "parent": "T02",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     },
     {
       "id": "T31",
@@ -2256,7 +2718,12 @@
         "theories/PublicAliasContext.v",
         "theories/PublicCaptureScopeFacts.v",
         "theories/Audit.v"
-      ]
+      ],
+      "origin": {
+        "kind": "refinement",
+        "parent": "T02",
+        "note": "Retrospectively identified as part of the existing obligation; not an additional previously planned task completed."
+      }
     }
   ],
   "superseded": [
@@ -3360,5 +3827,166 @@
     ],
     "checkpoint": "This checkpoint closes direct finite-loader correctness and world/elaboration witness transport, plus the public WorldOf metadata boundary. Checked safety groundwork covers ground data/local/cast/heap facts and the user-approved generation/alias/output/capture repair. The next safety frontier is source grounding/formation (T29), small code-provenance certificates (T30), and inductive callable/environment realization (T31), feeding T02. Report evidence and remaining obstructions by each two-hour active-work checkpoint; do not silently extend it.",
     "performance": "Every local bootstrap run has a one-hour cap and runs in the background. Candidate timeouts are evidence for configuration selection; X14 must eventually pass for the fully integrated pipeline. Keep quiet full Rocq compilation around two minutes and use incremental checks during proof development."
+  },
+  "policy": {
+    "adopted_from": "b4f827941bcd887095d35ae057f54b75390ef3ae",
+    "principle": "The DAG plans obligations; evidence and work history live alongside it."
+  },
+  "evidence_only": [
+    {
+      "id": "T27",
+      "group": "T",
+      "title": "Check and repair saved-generation example",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Retain the previous saved-type mismatch as an isolated legacy calculation and check the repaired actual binding/cast/output behavior.",
+      "approach": "A public BTypeBind derivation remains valid, while the saved F64 wrapper now traps and old output generations survive. These are local checked regressions, not a complete Admissible witness.",
+      "sources": [
+        "theories/PublicSavedTypeExample.v"
+      ],
+      "witness": "saved_f64_rejects_integer_handle",
+      "origin": {
+        "kind": "baseline"
+      },
+      "evidence_for": "T26",
+      "classification_reason": "A regression justifies and tests the repair; reproducing the old bug is not a prerequisite of the final safety proof."
+    }
+  ],
+  "updates": [
+    {
+      "title": "Foundation checkpoint",
+      "previously_planned_closed": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A05",
+        "A06",
+        "A07"
+      ],
+      "retrospective_refinements": [
+        "E19",
+        "T22"
+      ],
+      "decomposed": [],
+      "discoveries": [],
+      "note": "The two completed helper additions are retrospective decompositions, not two more previously planned tasks closed."
+    },
+    {
+      "title": "Safety and parallel frontier checkpoint",
+      "previously_planned_closed": [
+        "F07",
+        "F08",
+        "F09",
+        "E01"
+      ],
+      "retrospective_refinements": [
+        "F18",
+        "E20",
+        "T23",
+        "T24",
+        "T25",
+        "T28"
+      ],
+      "decomposed": [
+        "F17",
+        "T29",
+        "T30",
+        "T31"
+      ],
+      "discoveries": [
+        "T26"
+      ],
+      "note": "The former 29-to-41 green-node count mixed four existing task completions with eight completed additions. T27 is now evidence only; the other additions are classified by their parent or explicit discovery."
+    }
+  ],
+  "views": {
+    "overview": [
+      "F09",
+      "E01",
+      "E11",
+      "E12",
+      "B04",
+      "K07",
+      "X09",
+      "X10",
+      "X14",
+      "T02",
+      "T10",
+      "T19",
+      "G01",
+      "G02",
+      "G03",
+      "G04",
+      "G05"
+    ],
+    "safety": {
+      "groups": [
+        "T"
+      ],
+      "targets": [
+        "G05"
+      ],
+      "focus": [
+        "T02",
+        "T29",
+        "T30",
+        "T31"
+      ]
+    },
+    "build-run": {
+      "groups": [
+        "A",
+        "F",
+        "S",
+        "P",
+        "E",
+        "L",
+        "K",
+        "H",
+        "X",
+        "B"
+      ],
+      "targets": [
+        "G01",
+        "G02",
+        "G03",
+        "G04"
+      ],
+      "diagrams": [
+        {
+          "title": "Loading, platform checking and build",
+          "groups": [
+            "F",
+            "K",
+            "B"
+          ],
+          "targets": [
+            "G01",
+            "G02"
+          ]
+        },
+        {
+          "title": "Direct public elaboration",
+          "groups": [
+            "E"
+          ],
+          "targets": []
+        },
+        {
+          "title": "Runtime lowering, host and executable agreement",
+          "groups": [
+            "L",
+            "H",
+            "X"
+          ],
+          "targets": [
+            "G03",
+            "G04"
+          ]
+        }
+      ]
+    }
   }
 }
