@@ -2,7 +2,7 @@
    maps each of its type symbols to that symbol's canonical form, and its
    merge substitution and entries mention only those symbols. *)
 From Stdlib Require Import List String Arith Bool.
-From NM Require Import Audit PublicTypeRead.
+From NM Require Import Audit PublicTypeRead PublicTypeFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -303,3 +303,210 @@ Proof.
   rewrite callee_ground; [reflexivity|]. intros y [<-|[]]. apply lookup_subst_in. rewrite Keys. exact Ix'.
 Qed.
 End Calls.
+
+(* ---- provision tables ------------------------------------------------------ *)
+
+Lemma subst_eqb_spec : forall a b, subst_eqb a b = true <-> a = b.
+Proof.
+  induction a as [|[x t] r IH]; intros [|[y u] r']; cbn; try (split; congruence).
+  rewrite !andb_true_iff, Nat.eqb_eq, ty_eqb_spec, IH.
+  split; [intros [[E1 E2] E3]; subst; reflexivity|intros E; inversion E; subst; auto].
+Qed.
+
+Lemma item_eqb_spec : forall a b, item_eqb a b = true <-> a = b.
+Proof.
+  intros [t|v|f|r m th|u] [t'|v'|f'|r' m' th'|u']; cbn; try (split; congruence);
+    try (rewrite Nat.eqb_eq; split; congruence).
+  rewrite !andb_true_iff, ty_eqb_spec, Nat.eqb_eq, subst_eqb_spec.
+  split; [intros [[E1 E2] E3]; subst; reflexivity|intros E; inversion E; subst; auto].
+Qed.
+
+Section Tables.
+Import A.
+
+(* Every provision is filed under a key of its own kind. *)
+Definition KeysMatch (provs : list (item * provision)) : Prop :=
+  forall k p, In (k, p) provs ->
+  match k, p with
+  | IVal _, ProvidedVal _ _ | IFn _, ProvidedFn _ _ | IFun _, ProvidedFunctor _ => True
+  | IMth _ _ [], ProvidedMethod _ _ => True
+  | _, _ => False
+  end.
+
+Lemma keys_match_tail : forall q provs, KeysMatch (q :: provs) -> KeysMatch provs.
+Proof. intros q provs K k p I; exact (K k p (or_intror I)). Qed.
+
+Lemma vals_ilook : forall provs v t, KeysMatch provs ->
+  nlook v (flat_map (fun q => match q with (IVal v, ProvidedVal t _) => [(v,t)] | _ => [] end) provs) = Some t ->
+  exists a, ilook (IVal v) provs = Some (ProvidedVal t a).
+Proof.
+  induction provs as [|[k p] rest IH]; intros v t K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH v t (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a|g a|g a|fx]; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (Nat.eqb_spec v x) as [->|_]; [injection Found as <-; eauto|auto].
+Qed.
+
+Lemma ilook_vals : forall provs v t a, KeysMatch provs -> ilook (IVal v) provs = Some (ProvidedVal t a) ->
+  nlook v (flat_map (fun q => match q with (IVal v, ProvidedVal t _) => [(v,t)] | _ => [] end) provs) = Some t.
+Proof.
+  induction provs as [|[k p] rest IH]; intros v t a K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH v t a (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a'|g a'|g a'|fx]; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (Nat.eqb_spec v x) as [->|_]; [congruence|auto].
+Qed.
+
+Lemma fns_ilook : forall provs f g, KeysMatch provs ->
+  nlook f (flat_map (fun q => match q with (IFn f, ProvidedFn g _) => [(f,g)] | _ => [] end) provs) = Some g ->
+  exists a, ilook (IFn f) provs = Some (ProvidedFn g a).
+Proof.
+  induction provs as [|[k p] rest IH]; intros f g K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH f g (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a|g' a|g' a|fx]; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (Nat.eqb_spec f x) as [->|_]; [injection Found as <-; eauto|auto].
+Qed.
+
+Lemma ilook_fns : forall provs f g a, KeysMatch provs -> ilook (IFn f) provs = Some (ProvidedFn g a) ->
+  nlook f (flat_map (fun q => match q with (IFn f, ProvidedFn g _) => [(f,g)] | _ => [] end) provs) = Some g.
+Proof.
+  induction provs as [|[k p] rest IH]; intros f g a K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH f g a (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a'|g' a'|g' a'|fx]; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (Nat.eqb_spec f x) as [->|_]; [congruence|auto].
+Qed.
+
+Lemma mths_ilook : forall provs r m g, KeysMatch provs ->
+  mlook r m (flat_map (fun q => match q with (IMth r m _, ProvidedMethod g _) => [((r,m),g)] | _ => [] end) provs) = Some g ->
+  exists a, ilook (mkey r m) provs = Some (ProvidedMethod g a).
+Proof.
+  induction provs as [|[k p] rest IH]; intros r m g K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH r m g (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r' m' [|? ?]|x], p as [tv a|g' a|g' a|fx]; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (ty_eqb r r'); destruct (Nat.eqb m m'); cbn in Found |- *; try (injection Found as <-; eauto); auto.
+Qed.
+
+Lemma ilook_mths : forall provs r m g a, KeysMatch provs -> ilook (mkey r m) provs = Some (ProvidedMethod g a) ->
+  mlook r m (flat_map (fun q => match q with (IMth r m _, ProvidedMethod g _) => [((r,m),g)] | _ => [] end) provs) = Some g.
+Proof.
+  induction provs as [|[k p] rest IH]; intros r m g a K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH r m g a (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r' m' [|? ?]|x], p as [tv a'|g' a'|g' a'|fx]; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (ty_eqb r r'); destruct (Nat.eqb m m'); cbn in Found |- *; try congruence; auto.
+Qed.
+
+Lemma funs_ilook : forall provs u fx, KeysMatch provs ->
+  nlook u (flat_map (fun q => match q with (IFun u, ProvidedFunctor fx) => [(u,fx)] | _ => [] end) provs) = Some fx ->
+  ilook (IFun u) provs = Some (ProvidedFunctor fx).
+Proof.
+  induction provs as [|[k p] rest IH]; intros u fx K Found; [discriminate|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH u fx (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a|g a|g a|fx']; cbn in Kind; try contradiction; cbn in Found |- *; auto.
+  destruct (Nat.eqb_spec u x) as [->|_]; [congruence|auto].
+Qed.
+End Tables.
+
+(* ---- a function context's provisions are its needs -------------------------- *)
+
+Section Needs.
+Variable W : A.world.
+Import A.
+
+Definition NeedShape (k : item) : Prop :=
+  match k with ITy _ => False | IMth _ _ th => th = [] | _ => True end.
+
+Lemma entry_provision_key : forall σ freeze e k p,
+  In (k, p) (entry_provision σ freeze e) -> entry_key σ e = Some k.
+Proof. intros σ freeze [t|v t a|f g a|r m g a|u fx] k p I; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- _; reflexivity. Qed.
+
+Lemma entry_key_shape : forall σ e k, entry_key σ e = Some k -> NeedShape k.
+Proof. intros σ [t|v t a|f g a|r m g a|u fx] k E; cbn in E; try discriminate; injection E as <-; cbn; auto. Qed.
+
+Lemma ctx_keys_match : forall f Cf ns, CtxOf W f Cf ns -> KeysMatch (c_provisions Cf).
+Proof.
+  intros f Cf ns (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & _ & _) k p I. cbn in I.
+  apply in_flat_map in I as [e [_ I]]. destruct e as [t|v t a|f' g a|r m g a|u fx]; cbn in I;
+    try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
+Qed.
+
+Lemma ctx_needs : forall f Cf ns, CtxOf W f Cf ns ->
+  NoDup ns /\ (forall k p, In (k, p) (c_provisions Cf) -> In k ns) /\ (forall k, In k ns -> NeedShape k).
+Proof.
+  intros f Cf ns (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & [Nd Keys] & _).
+  split; [exact Nd|]. split.
+  - intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]]. apply Keys. exists e. split; [exact Ie|].
+    exact (entry_provision_key _ _ _ _ _ I).
+  - intros k Ik. destruct (proj1 (Keys k) Ik) as [e [_ E]]. exact (entry_key_shape _ _ _ E).
+Qed.
+End Needs.
+
+(* ---- selecting provisions --------------------------------------------------- *)
+
+Fixpoint sm_find (req : item) (sm : smap) : option item :=
+  match sm with
+  | [] => None
+  | (r, s) :: rest => if item_eqb req r then Some s else sm_find req rest
+  end.
+
+Lemma select_lookup : forall d sm dc req, select_provisions d sm = Some dc ->
+  lookup_provision req dc = match sm_find req sm with Some s => lookup_provision s d | None => None end.
+Proof.
+  intros d sm. induction sm as [|[r s] rest IH]; intros dc req Sel; cbn in Sel.
+  - injection Sel as <-. reflexivity.
+  - destruct (lookup_provision s d) as [en|] eqn:L; [|discriminate].
+    destruct (select_provisions d rest) as [d'|] eqn:Rest; [|discriminate]. injection Sel as <-.
+    change (lookup_provision req (install_provision r en d')) with
+      (if item_eqb req r then Some en else lookup_provision req d').
+    cbn [sm_find]. destruct (item_eqb req r); [rewrite L; reflexivity|exact (IH d' req eq_refl)].
+Qed.
+
+Lemma select_ok : forall d sm, (forall q, In q sm -> lookup_provision (snd q) d <> None) ->
+  exists dc, select_provisions d sm = Some dc.
+Proof.
+  intros d sm Ok. induction sm as [|q rest IH]; [eexists; reflexivity|].
+  destruct q as [rq sv]. cbn [select_provisions].
+  destruct (lookup_provision sv d) as [en|] eqn:L; [|exfalso; exact (Ok (rq, sv) (or_introl eq_refl) L)].
+  assert (RestOk : forall q, In q rest -> lookup_provision (snd q) d <> None) by (intros q Iq; apply Ok; right; exact Iq).
+  destruct (IH RestOk) as [d' E]. rewrite E. eauto.
+Qed.
+
+Lemma sm_find_map : forall (key : item -> item) (target : item -> item) ns k,
+  In k ns -> (forall k', In k' ns -> key k' = key k -> k' = k) ->
+  sm_find (key k) (map (fun k' => (key k', target k')) ns) = Some (target k).
+Proof.
+  intros key target ns k Ik Inj. induction ns as [|k' rest IH]; [contradiction|]. cbn.
+  destruct (item_eqb (key k) (key k')) eqn:E.
+  - apply item_eqb_spec in E. rewrite (Inj k' (or_introl eq_refl) (eq_sym E)). reflexivity.
+  - destruct Ik as [<-|Ik].
+    + rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
+    + apply IH; [exact Ik|intros k'' I; exact (Inj k'' (or_intror I))].
+Qed.
+
+Lemma rkey_of_injective : forall C k k', NeedShape k -> NeedShape k' -> A.rkey_of C k = A.rkey_of C k' -> k = k'.
+Proof.
+  intros C [t|v|f|r m th|u] [t'|v'|f'|r' m' th'|u'] S S' E; cbn in *; try contradiction; try discriminate; try congruence.
+  subst th th'. unfold A.rkey in E. injection E as -> -> _. reflexivity.
+Qed.
+
+(* ---- generations of a substituted type -------------------------------------- *)
+
+Lemma gens_subst : forall t s x, In x (A.gens (app_subst s t)) ->
+  exists y, In y (A.gens t) /\
+    ((lookup_subst y s = None /\ x = y) \/ (exists u, lookup_subst y s = Some u /\ In x (A.gens u))).
+Proof.
+  fix IH 1. intros [m|fields| |g|n th|ms] s x Ix.
+  - contradiction.
+  - rewrite subst_record in Ix. cbn in Ix |- *. induction fields as [|[f t] rest Tail]; [contradiction|].
+    cbn in Ix. apply in_app_or in Ix as [Ix|Ix].
+    + destruct (IH t s x Ix) as [y [Iy R]]. exists y. split; [apply in_or_app; left; exact Iy|exact R].
+    + destruct (Tail Ix) as [y [Iy R]]. exists y. split; [apply in_or_app; right; exact Iy|exact R].
+  - contradiction.
+  - exists g. split; [left; reflexivity|]. cbn in Ix.
+    destruct (lookup_subst g s) as [u|]; [right; eauto|left; destruct Ix as [<-|[]]; auto].
+  - rewrite subst_nom in Ix. unfold smap in Ix. cbn in Ix |- *. induction th as [|[y t] rest Tail]; [contradiction|].
+    cbn in Ix. apply in_app_or in Ix as [Ix|Ix].
+    + destruct (IH t s x Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; left; exact Iz|exact R].
+    + destruct (Tail Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; right; exact Iz|exact R].
+  - rewrite subst_union in Ix. cbn in Ix |- *. induction ms as [|t rest Tail]; [contradiction|].
+    cbn in Ix. apply in_app_or in Ix as [Ix|Ix].
+    + destruct (IH t s x Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; left; exact Iz|exact R].
+    + destruct (Tail Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; right; exact Iz|exact R].
+Qed.
