@@ -1252,15 +1252,6 @@ Definition ItemWrap n F C (it : spec * option aexpr) (w : expr -> expr) (C' : A.
 
 (* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
 Local Close Scope string_scope.
-(* BFnBind *)
-Hypothesis case_BFnBind : forall k, Below k -> forall F C pa f g sg pg sm a types,
-  A.resolve_sym W (A.fr_mod F) pa = Some f -> A.kind_sym W f = Some A.DKFn ->
-      A.SigOf W f (A.c_ty C) None sg ->
-      A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
-      A.AppOf W f (A.c_ty C) a ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_function_expression f g types sm)
-             (A.provide C (IFn f) a (A.set_fn C f sg)) F [].
-
 (* BFnLambda *)
 Hypothesis case_BFnLambda : forall k, Below k -> forall F C pa f sg ps rt body pid pre sm a,
   A.resolve_sym W (A.fr_mod F) pa = Some f -> A.kind_sym W f = Some A.DKFn ->
@@ -1434,6 +1425,132 @@ Proof.
   - exists v0. split; [cbn; rewrite Nat.eqb_refl; reflexivity|exact T1].
 Qed.
 
+Lemma bindings_function_eq : forall j d g st f f' types sm r,
+  I.eval_bindings (S j) P d g st (BFunction f f' types sm :: r) =
+  match select_provisions d sm with
+  | Some dc => I.eval_bindings j P (install_provision (IFn f) (FunctionClosure f' (typed_capture d types dc)) d) g st r
+  | None => inr (I.Evaluation (Stuck I.e_compose) g st)
+  end.
+Proof. reflexivity. Qed.
+
+Lemma calloutcome_ret : forall H t g r, CallOutcome H t r -> CallOutcome H t (I.ret_call g r).
+Proof. intros H t g [[] l st] Out; cbn in *; auto. Qed.
+
+Lemma calloutcome_prim : forall H t o st g, PrimOutcome H t (o, st) -> CallOutcome H t (I.Evaluation o g st).
+Proof. intros H t [] st g Out; cbn in *; auto; contradiction. Qed.
+
+Lemma lookup_params_from : forall ws base q, q < List.length ws ->
+  lookup_local (base + q) (combine (seq base (List.length ws)) ws) = nth_error ws q.
+Proof.
+  induction ws as [|w rest IH]; intros base q Lq; cbn in Lq; [lia|].
+  destruct q as [|q]; cbn [seq combine lookup_local nth_error List.length].
+  - rewrite Nat.add_0_r, Nat.eqb_refl. reflexivity.
+  - destruct (Nat.eqb_spec (base + S q) base) as [E|_]; [lia|].
+    replace (base + S q) with (S base + q) by lia. apply IH. lia.
+Qed.
+
+(* Reading the parameters back as arguments. *)
+Lemma vars_args : forall i d ws st,
+  I.eval_arguments i P d (parameter_values ws) st (map EVar (seq 0 (List.length ws))) = inl (ws, parameter_values ws, st) \/
+  exists l, I.eval_arguments i P d (parameter_values ws) st (map EVar (seq 0 (List.length ws))) = inr (I.Evaluation OutOfFuel l st).
+Proof.
+  intros i d ws st.
+  assert (Gen : forall i start rest,
+    (forall q, q < List.length rest -> lookup_local (start + q) (parameter_values ws) = nth_error rest q) ->
+    I.eval_arguments i P d (parameter_values ws) st (map EVar (seq start (List.length rest))) = inl (rest, parameter_values ws, st) \/
+    exists l, I.eval_arguments i P d (parameter_values ws) st (map EVar (seq start (List.length rest))) = inr (I.Evaluation OutOfFuel l st)).
+  { clear i. intros i. induction i as [|i IH]; intros start rest Look; [right; exists (parameter_values ws); reflexivity|].
+    destruct rest as [|w rest]; [left; reflexivity|]. cbn [List.length seq map I.eval_arguments].
+    destruct i as [|i]; [right; exists (parameter_values ws); reflexivity|].
+    pose proof (Look 0 ltac:(cbn; lia)) as L0. rewrite Nat.add_0_r in L0. cbn [nth_error] in L0.
+    cbn [I.eval]. rewrite L0.
+    destruct (IH (S start) rest) as [E|[l E]].
+    - intros q Lq. replace (S start + q) with (start + S q) by lia. exact (Look (S q) ltac:(cbn; lia)).
+    - rewrite E. left. reflexivity.
+    - rewrite E. right. eauto. }
+  apply (Gen i 0 ws). intros q Lq. unfold parameter_values. exact (lookup_params_from ws 0 q Lq).
+Qed.
+
+(* A closure bound from a provider is callable below the binding's fuel. *)
+Lemma provider_callable : forall k, Below k -> forall jn, jn <= k -> forall F C pa sg g types sm d H,
+  A.FnProvider W Prog F C (AEPath pa None) sg None g types sm ->
+  Realizes (S jn) C d H ->
+  exists dc, select_provisions d sm = Some dc /\
+    CallableOk jn H d (A.sg_params sg) (A.sg_ret sg) (FunctionClosure g (typed_capture d types dc)).
+Proof.
+  intros k Bel jn Ljn F C pa sg g types sm d H Prov Real.
+  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  remember (AEPath pa None) as src eqn:Src. remember (@None ty) as none eqn:NoThis.
+  destruct Prov as [F C pa' g sg Cg ns sm th R K Def Ctx Sat CT SigG|F C pa' g sg w n R K Abs' Fn Len Fresh Body].
+  - destruct (callee_realizes jn C d H g Cg ns sm th Real Ctx Sat CT) as [dc [Sel [Ag RealG]]].
+    exists dc. split; [exact Sel|].
+    destruct Def as [n0 [ps0 [rt0 [b0 Def]]]]. unfold A.ast_of in Def.
+    destruct (A.w_decl W g) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
+    pose proof (all_fn_elab g dcl RPlain n0 ps0 rt0 b0 Decl Ast dcl RPlain n0 ps0 rt0 b0 Decl Ast)
+      as (C0 & ns0 & this & g0 & F0 & x & t0 & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & View).
+    cbn [CallableOk]. exists x. split; [change (view_function P g) with (A.body_of Prog g); exact View|].
+    intros jj Ljj H' st ws E S Args.
+    assert (RealJ : Realizes jj Cg (callee_env d th dc) H').
+    { apply (realizes_extends _ _ _ H); [exact E|]. eapply realizes_lower; [|exact RealG]. lia. }
+    destruct (body_call jj (Bel jj ltac:(lia)) g dcl n0 ps0 rt0 b0 Cg ns (callee_env d th dc) H' st ws d
+      (A.sg_params sg) (A.sg_ret sg) Decl Ast Ctx RealJ S) as [body [View' Run]].
+    + intros g' Sig'. destruct (sig_rel W _ _ g _ _ None None g' _ Sig' SigG Ag (fun _ _ E' _ => ltac:(discriminate E')))
+        as [Ps Rt]. cbn [A.sg_params A.sg_ret] in Ps, Rt. split.
+      * change (map (app_subst (type_meanings (callee_env d th dc))) (A.sg_params g') =
+                map (ground d) (A.sg_params sg)). rewrite Ps, map_map. apply map_ext. intros u. apply Abs.
+      * change (app_subst (type_meanings (callee_env d th dc)) (A.sg_ret g') = ground d (A.sg_ret sg)).
+        rewrite Rt. apply Abs.
+    + exact Args.
+    + change (view_function P g) with (A.body_of Prog g) in View'. rewrite View in View'. injection View' as <-.
+      exact Run.
+  - (* forwarder *)
+    destruct (Fns g sg Fn) as [pv [Look Ok]].
+    exists (install_provision (IFn g) pv empty_environment). split; [cbn; rewrite Look; reflexivity|].
+    cbn [CallableOk]. exists (EInvoke g (map EVar (seq 0 n))). split; [change (view_function P w) with (A.body_of Prog w); exact Body|].
+    intros [|jj] Ljj H' st ws E S Args; [exact Logic.I|].
+    assert (Len' : List.length ws = n) by (pose proof (Forall2_length Args); congruence).
+    rewrite <- Len'. cbn [I.eval].
+    assert (L0 : lookup_provision (IFn g) (typed_capture d (TypeCapture [] []) (install_provision (IFn g) pv empty_environment)) = Some pv)
+      by (cbn; rewrite Nat.eqb_refl; reflexivity).
+    rewrite L0.
+    destruct pv as [w0|f' df|u sms dc|p held]; cbn [CallableOk] in Ok; try contradiction.
+    + destruct Ok as [body [View Run]]. rewrite View.
+      destruct (vars_args jj (typed_capture d (TypeCapture [] []) (install_provision (IFn g) (FunctionClosure f' df) empty_environment)) ws st)
+        as [Ea|[l Ea]]; rewrite Ea; [|exact Logic.I].
+      apply calloutcome_ret. exact (Run jj ltac:(lia) H' st ws E S Args).
+    + destruct (vars_args jj (typed_capture d (TypeCapture [] []) (install_provision (IFn g) (PrimitiveClosure p held) empty_environment)) ws st)
+        as [Ea|[l Ea]]; rewrite Ea; [|exact Logic.I].
+      pose proof (Ok H' st ws E S Args) as POut.
+      destruct (I.run_prim_at P p held ws st) as [o st2]. exact (calloutcome_prim _ _ _ _ _ POut).
+Qed.
+
+Lemma fn_bind_safe : forall k, Below k -> forall n, n <= S k -> forall F C sp f g sg pg types sm a,
+  A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
+  ItemWrap n F C (sp, Some (AEPath pg None)) (bind_function_expression f g types sm)
+    (A.provide C (IFn f) a (A.set_fn C f sg)) F [].
+Proof.
+  intros k Bel n Le F C sp f g sg pg types sm a Prov t B cont Safe [|j] Lj d types0 H lg st Pre0; [exact Logic.I|].
+  unfold bind_function_expression. rewrite eval_bind_eq.
+  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_function_eq.
+  pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
+  destruct (provider_callable k Bel (S j) ltac:(lia) F C pg sg g types sm d H Prov
+    ltac:(eapply realizes_lower; [|exact Real]; lia)) as [dc [Sel Ok]].
+  rewrite Sel. destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
+  unfold A.set_fn in Safe. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)) in Safe.
+  set (d' := install_provision (IFn f) (FunctionClosure g (typed_capture d types dc)) d).
+  apply (outcome_env F d d' H types0 t _ _ eq_refl).
+  eapply O.outcome_breaks; [intro b; left; exact b|].
+  apply (Safe (S (S j)) ltac:(lia) d' types0 H lg st).
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  apply (realizes_set (S (S j)) C d H (IFn f) (A.ProvidedFn sg a)).
+  - eapply realizes_lower; [|exact Real]. lia.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists (FunctionClosure g (typed_capture d types dc)). split; [cbn; rewrite Nat.eqb_refl; reflexivity|].
+    exact (callable_transfer (S (S j)) (S (S j)) H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
+Qed.
+
 Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
   A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks it) w.
 Proof.
@@ -1441,7 +1558,7 @@ Proof.
   destruct D.
   - intros t' B x Safe. apply (wrap_breaks n F C t' (B \/ False)); [tauto|]. apply type_bind_safe. exact Safe.
   - eapply val_bind_safe; eassumption.
-  - eapply case_BFnBind; eassumption.
+  - eapply fn_bind_safe; eassumption.
   - eapply case_BFnLambda; eassumption.
   - eapply case_BMethBind; eassumption.
   - eapply case_BApplyBody; eassumption.
