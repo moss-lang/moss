@@ -1,6 +1,6 @@
 (* Fuel extension preserves the entire generated body and metadata receipt. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabMono LambdaTrace.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabMono LambdaTrace.
 Import ListNotations.
 Lemma lambda_reify_mono:forall X owner(m1 m2:M X),le_m m1 m2->
  le_m(in_reify_code owner m1)(in_reify_code owner m2).

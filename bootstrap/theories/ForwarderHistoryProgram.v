@@ -1,6 +1,6 @@
 (* Actual whole-program history establishes final generated-body facts. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
  FnReadonly SymReadonly FnBound FnBoundProgram FnPresentStable FnPresentSynth FnPresentProgram
  ForwarderHistory ForwarderHistoryOps ForwarderHistoryEmit ForwarderHistorySynth ForwarderTrace ForwarderProgramTables.
 From NM Require Import ProgramTail ProgramTailPreserve.
@@ -56,8 +56,8 @@ Proof.
  apply gh_bind;[exact gh_lower_all|intro].
  exact program_tail_gh.
 Qed.
-Lemma nlook_source_lookup:forall A key(rows:list(nat*A)),Audit.Elaboration.nlook key rows=nassoc key rows.
-Proof. intros A key rows;induction rows as[|[k v]rows IH];cbn[Audit.Elaboration.nlook nassoc assoc];[reflexivity|].
+Lemma nlook_source_lookup:forall A key(rows:list(nat*A)),ExecutionModel.Elaboration.nlook key rows=nassoc key rows.
+Proof. intros A key rows;induction rows as[|[k v]rows IH];cbn[ExecutionModel.Elaboration.nlook nassoc assoc];[reflexivity|].
  destruct(Nat.eqb key k);[reflexivity|exact IH]. Qed.
 Lemma forwarder_initial_inv:forall b w,load_world b=Good w->Inv(s_init w).
 Proof.
@@ -76,7 +76,7 @@ Theorem elab_final_forwarders:forall b w p final,
  forall key g target,nget(st_syms final)key=Some g->gs_origin g=OForwarder target->
  exists tg,LoadedAbstract w tg /\gs_id tg=target/\gs_decl g=forwarder_decl tg/\
  gs_mod g=gs_mod tg/\gs_recv g=None/\
- Audit.Elaboration.body_of p key=Some(XCallA target(map XVar(seq 0(List.length(fn_params g))))).
+ ExecutionModel.Elaboration.body_of p key=Some(XCallA target(map XVar(seq 0(List.length(fn_params g))))).
 Proof.
  intros b w p final Load Run key g target Lookup Origin.
  assert(I:Inv(s_init w))by(eapply forwarder_initial_inv;exact Load).
@@ -85,7 +85,7 @@ Proof.
  pose proof(proj2(proj2 gh_elab_program)b w _ _ _ Load I(@fn_bound_init w)eq_refl Run)as Hist.
  destruct(@forwarder_history_final_facts w(s_init w)final Source Frame Hist key g target Lookup Origin)as[tg[LA[Id[Decl[Home[Recv Body]]]]]].
  exists tg;split;[exact LA|]. repeat split;try assumption.
- unfold Audit.Elaboration.body_of;rewrite(@forwarder_elab_program_tables _ _ _ Run),nlook_source_lookup;exact Body.
+ unfold ExecutionModel.Elaboration.body_of;rewrite(@forwarder_elab_program_tables _ _ _ Run),nlook_source_lookup;exact Body.
 Qed.
 Theorem elab_final_forwarder_nonzero:forall b w p final key g target,
  load_world b=Good w->elab_program(s_init w)=Good(p,final)->

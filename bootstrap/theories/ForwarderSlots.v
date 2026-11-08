@@ -1,6 +1,6 @@
 (* Parameter names and numbered slots are obtained from the actual reader. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderArgsCode.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderArgsCode.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL ety_of elab_type app_subst symbol_type].
 Lemma fn_sig_names:forall g tm e this s sg final,

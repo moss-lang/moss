@@ -1,6 +1,6 @@
 (* The checking-only prefix of a direct call leaves fn_info's cache alone. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame InfoPreserve.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL].
 Lemma ni_require_needs : forall mi e g info,NI(require_needs mi e g info).

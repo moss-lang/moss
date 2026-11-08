@@ -1,6 +1,6 @@
 (* The source branch for a defined attached method, without inferred outcomes. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame MethodCallCore ReceiverCallEnv.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame MethodCallCore ReceiverCallEnv.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL canon provided_call fn_info demand_needs check_args].
 Theorem attached_code_exec:forall f c e ox r att args s x t s' body,

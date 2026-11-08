@@ -1,6 +1,6 @@
 (* Actual whole-program history establishes final generated-body facts. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
  FnReadonly SymReadonly FnBound FnBoundProgram FnPresentStable FnPresentSynth FnPresentProgram
  ForwarderHistory LambdaCompletion LambdaCompletionOps LambdaCompletionEmit LambdaCompletionSynth ForwarderTrace ForwarderProgramTables.
 From NM Require Import ProgramTail ProgramTailPreserve.

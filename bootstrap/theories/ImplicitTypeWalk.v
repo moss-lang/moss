@@ -1,9 +1,9 @@
 (* Adding the type-only implicit inputs of a functor preserves walk tables. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore Merge CanonTypes
  SourceClean ContextClean CtxWalk.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma ws_add_type:forall Fl U e tm les needs n stamp,
  WS Fl U e tm les needs->
  WS Fl U(set_tn e n(YAbs n)stamp)((n,TAbs n)::tm)(les++[LTy n])needs.

@@ -1,6 +1,6 @@
 (* The post-body pin check preserves state and the target's result inputs. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound BodyTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodyTr.
 Import ListNotations.
 Theorem check_link_pins_success : forall mi e pins s final,
  check_link_pins mi e pins s=Good(tt,final)->

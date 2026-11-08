@@ -2,10 +2,10 @@
    these items. Check the common derivation once and reuse its certificate. *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged.
+From NM Require Import ExecutionModel CoreMoss MossX NMap Sx Elab RelSupport BxBridged.
 From NM Require Import RelExampleData RelExampleWasm RelSimpleItems.
 Import ListNotations.
-Import Audit.Elaboration.
+Import ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

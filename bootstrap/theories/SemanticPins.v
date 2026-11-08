@@ -1,9 +1,9 @@
 (* Pins restrict elaboration. A successful derivation remains valid when
    those restrictions are removed from its surrounding frame. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Definition erase_pins (F : A.frame) : A.frame :=
  A.Frame (A.fr_mod F) (A.fr_ret F) (A.fr_this F) (A.fr_loop F)
   (A.fr_var F) (A.fr_fresh F) (A.fr_applying F) [].

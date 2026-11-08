@@ -2,9 +2,9 @@
    cannot be formed. It cannot be applied, but binding the outer closure is
    valid source and must not force a fictitious schema for the capability. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit CoreMoss Sx Parse Elab ReifyData Reify ReifyProgram
+From NM Require Import ExecutionModel CoreMoss Sx Parse Elab ReifyData Reify ReifyProgram
  ReifyOpaqueFunctors ReifyProviderExamples.
-Import ListNotations Audit.Input.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition latent_inner_text:string:=
  "type T;tag U;assume T{fn offered():T|U;}functor Inner[T]:T->offered;val x:();functor Outer[]:Inner->x;functor G:Inner->x{bind x=();}fn main(){bind Outer=G;}".

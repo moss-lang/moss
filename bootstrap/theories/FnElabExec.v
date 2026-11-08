@@ -1,9 +1,9 @@
 (* The whole-function relation follows from the actual completed body trace. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant BodySound BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant BodySound BodyTr
  FnBodyContext FnBodyParameters FnBodyBlock ProviderSig CtxMerge FnHistory InfoCache.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Function.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.

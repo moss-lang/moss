@@ -1,10 +1,10 @@
 (* Literal arithmetic uses the same actual on-demand family application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyTr BodyTy
  CanonTypes NominalSupport TySupport SourceSupport MethodKeyTr EtyTyExec BodyLit LiteralDirect
  ProvideResultContext FamilySelectTrace FamilyMatchingCtx FamilyApplyRestore FamilySelectedApply ProvidedFamilyExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma provided_family_ab_phases:forall fuel c e ox T oy m s x t sf,
  get_mth e(canon e T)(gs_id m)=None->
  provided_call(S fuel)c e ox T m[AB oy T]s=Good((x,t),sf)->

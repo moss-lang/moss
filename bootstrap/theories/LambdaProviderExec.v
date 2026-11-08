@@ -1,14 +1,14 @@
 (* Actual lambda generation discharges every LP premise: lexical captures,
    fresh slots, checked annotations, exact body and finite provision keys. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  InfoPreserve CanonTypes NominalSupport MethodRows CtxMerge
  LambdaAnnotations LambdaPrefixExec LambdaTrace LambdaInputTrace LambdaEntryInv LambdaStageFrames
  LambdaCaptureNames LambdaCaptureContext LambdaCaptureFold LambdaCaptureTables LambdaCapturedLocals LambdaCapturedContext
  LambdaOwnContext LambdaBodyContext LambdaGeneratedExec LambdaGeneratedMono LambdaEmittedBody LambdaDeclarations
  LambdaLocalInterfaces LambdaKeysProvides LambdaKeyTranslation LambdaSmapIdentity ApplyFreshExec ProvideResultContext.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Provider.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.

@@ -1,9 +1,9 @@
 (* Detached-name resolution, including qualified module exports. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab WorldSound.
+From NM Require Import ExecutionModel NMap Sx Elab WorldSound.
 Import ListNotations.
 Set Implicit Arguments.
-Module DR:=Audit.Elaboration.
+Module DR:=ExecutionModel.Elaboration.
 
 Definition detached_final_world(b:bundle)(st:load_st)(entry:nat):Elab.world:=
  Elab.World(ls_mods st)(ls_order st)entry(ls_syms st)(ls_next_sym st)(ls_files st)

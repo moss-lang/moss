@@ -1,9 +1,9 @@
 (* A function provision retains the declaration reading at its own capture.
    Its type-name snapshot is deliberately independent of the current c_ty. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition FnSnapshots(W:A.world)(C:A.cx):Prop:=forall f sg,
  A.nlook f(A.c_fns C)=Some sg->exists tm a,
  A.SigOf W f tm None sg /\A.AppOf W f tm a /\A.ilook(IFn f)(A.c_apps C)=Some a.

@@ -1,8 +1,8 @@
 (* Marked receiver readings specialize to a completed semantic type table. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr TyOfSubst SourceReadingExtend PMatchComplete PMatchExec.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr TyOfSubst SourceReadingExtend PMatchComplete PMatchExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_marker_types(marks:list(nat*nat)):list(nat*ty):=
  map(fun q=>(fst q,TAbs(snd q)))(rev marks).
 Definition family_marker_subst(marks:list(nat*nat))(tm:list(nat*ty)):subst:=
@@ -28,7 +28,7 @@ Proof.
 Qed.
 Theorem family_marked_subrel:forall marks base target,
  NoDup(map snd marks)->
- (forall k y,A.nlook k base=Some y->Audit.app_subst(family_marker_subst marks target)y=y)->
+ (forall k y,A.nlook k base=Some y->ExecutionModel.app_subst(family_marker_subst marks target)y=y)->
  (forall k,A.nlook k(family_marker_types marks)=None->A.nlook k target=A.nlook k base)->
  SubRel(family_marker_subst marks target)(family_marker_types marks++base)
    (overlay_missing(family_marker_types marks)target).
@@ -39,7 +39,7 @@ Proof.
    unfold family_marker_types in InMarked;apply in_map_iff in InMarked as([p g]&Eq&Hin).
    cbn[fst snd]in Eq;injection Eq as <- <-.
    apply in_rev in Hin.
-   cbn[option_map Audit.app_subst];rewrite family_lookup_subst_nlook.
+   cbn[option_map ExecutionModel.app_subst];rewrite family_lookup_subst_nlook.
    rewrite(family_marker_subst_lookup marks target p g Nd Hin).
    destruct(A.nlook p target);reflexivity.
  - rewrite(Outside k Marked);destruct(A.nlook k base)as[y|]eqn:Base;cbn[option_map].

@@ -4,7 +4,7 @@
 From Stdlib Require Import List Bool Arith.
 From NM Require Import CoreMoss ReifySourceTypeFormation ReifyFormation.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition complete_nominal_signature(W:A.world)(base:gsig):gsig:=
  mkGsigInterfaces(g_ty base)(g_tag base)(g_val base)(g_fn base)(g_mth base)(g_fun base)
    (g_fixed base)(g_poly base)(g_cap base)

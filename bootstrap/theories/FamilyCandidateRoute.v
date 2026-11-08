@@ -1,11 +1,11 @@
 (* A semantic competitor's real scanned leaf cannot be skipped by matching. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy Merge CanonTypes
  NominalSupport TySupport SourceSupport SourceReadingExtend TyOfSubst PMatchComplete
  FamilySelectTrace FamilyRawSolution FamilyMarkedSubst FamilyCandidateComplete
  FamilyLeafScan FamilyScanSpecialize FamilyScanSupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_candidate_receiver_read:forall mi e em r mid u fg marks back found lmi rg mg sub s found' sf,
  family_candidate_step mi e em r mid u fg marks back found(lmi,rg,mg,sub)s=Good(found',sf)->
  Inv s->gs_id mg=mid->exists pat sp,

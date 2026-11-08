@@ -1,10 +1,10 @@
 (* Eta adapters use the provider's own canonical declaration context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  InfoInvariant InfoPreserve InfoCache BodySound BodyTy BodyTr Merge CtxMerge FnBodyContext
  WrapperInfoContext WrapperReceipt WrapperResult CallThetaExec SmapExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements canon].
 Section Eta.
 Variable w:Elab.world. Context{P:xprogram}.

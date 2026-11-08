@@ -1,8 +1,8 @@
 (* The body checker reads source types with their actual support invariant. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CanonBodyTy NominalSupport SourceSupport.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section BodyType.
 Variable w:Elab.world.
 Context {P:xprogram}.

@@ -1,7 +1,7 @@
 (* Do not demand interfaces of latent unused source providers. Keep actual
    profiles of reachable code and the marked constant occurrences it reads. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource ReifyReach
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource ReifyReach
   ReifyFunctors ReifyFunctorProfiles ReifyProfileGraph ReifyOpaqueFunctors.
 Import ListNotations.
 Fixpoint expr_constant_occurs (wanted:vsym)(e:xexpr):bool:=

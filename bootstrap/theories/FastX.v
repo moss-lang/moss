@@ -2,25 +2,25 @@
 (* FastX.v — MossX's interpreter with map-keyed runtime environments        *)
 (* (milestone 3, speed step 1).                                             *)
 (*                                                                           *)
-(* Audit.v's `XSem.xinterp` keeps the runtime environment (items to         *)
+(* ExecutionModel.v's `XSem.xinterp` keeps the runtime environment (items to         *)
 (* entries) as an association list, looked up with `item_eqb`.  Here the    *)
 (* same interpreter, clause for clause, keeps it as five binary tries keyed *)
 (* by the item's symbol (one per item kind; a method item's trie holds a    *)
 (* short bucket of (receiver type, θ) pairs per method symbol).  Nothing    *)
 (* else changes: locals, the machine, the program, the results.            *)
 (*                                                                           *)
-(* Proved, against MossX's instance XS of Audit's XSem:                     *)
+(* Proved, against MossX's instance XS of ExecutionModel's XSem:                     *)
 (*  - fxinterp_agrees: on related environments, `fxinterp` returns exactly  *)
 (*    what `XS.xinterp` returns (the very same `xres`), for every fuel;     *)
 (*  - frun_main_eq: `frun_main` = `XS.run_main`, on every program,          *)
 (*    main, initial environment, machine and fuel.                          *)
-(* So the oracle extracted from `frun_main` computes Audit's semantics, and *)
+(* So the oracle extracted from `frun_main` computes ExecutionModel's semantics, and *)
 (* every theorem about `XS.run_main` (e.g. xinterp_conservative) carries    *)
 (* over to it unchanged.                                                    *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit MossX.
+From NM Require Import ExecutionModel MossX.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -203,7 +203,7 @@ Fixpoint fchain (d1 : list (item * fentry)) (sms : list smap) : option (list (it
       end
   end.
 
-(* The initial environment, from Audit's list form. *)
+(* The initial environment, from ExecutionModel's list form. *)
 Fixpoint conv_entry (en : xdentry) : fentry :=
   match en with
   | XDVal w => FVal w
@@ -499,7 +499,7 @@ Qed.
 
 (* ===================== 4. The interpreter ================================ *)
 
-(* Over MossX's instance `XS` of Audit's `XSem` (the concrete primitive
+(* Over MossX's instance `XS` of ExecutionModel's `XSem` (the concrete primitive
    semantics), so that the agreement is with the very interpreter MossX.v's
    theorems (xinterp_conservative, ...) are about.  Nothing below depends on
    the primitives: `run_prim` is passed through untouched. *)

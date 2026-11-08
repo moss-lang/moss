@@ -1,6 +1,6 @@
 (* Actual fn_info cache entries retain their exact provision-application view. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore InfoCache.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore InfoCache.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Definition AppsShape(i:fninfo):Prop:=fi_apps i=

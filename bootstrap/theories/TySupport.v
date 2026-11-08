@@ -1,8 +1,8 @@
 (* Nominal support of semantic type readings and their source translations. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr NominalSupport BodyTy.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr NominalSupport BodyTy.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Set Implicit Arguments.
 Inductive TySupport (W:A.world) : ty -> Prop :=
 | TSUnit : TySupport W TUnit

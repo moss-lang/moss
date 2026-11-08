@@ -1,10 +1,10 @@
 (* Actual family applications provide exactly their declared method results. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  KeyTranslation NominalSupport FamilyShapeExec FamilyResultExec FamilyResultFold FamilyResultWalk
  ProvideResultContext ProvideResultFold TySupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Result.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

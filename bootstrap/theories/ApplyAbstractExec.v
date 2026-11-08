@@ -1,6 +1,6 @@
 (* Explicit phases of the actual abstract-functor application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx ReifyData Elab ElabSound ElabFrameCore BodySoundCore BodyTr CtxMerge FunctorFixedExec.
+From NM Require Import ExecutionModel NMap Sx ReifyData Elab ElabSound ElabFrameCore BodySoundCore BodyTr CtxMerge FunctorFixedExec.
 Import ListNotations.
 Local Open Scope list_scope.
 Definition abstract_info(ef:env)(needs:list key):fninfo:=

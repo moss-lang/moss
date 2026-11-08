@@ -47,15 +47,15 @@ Set Implicit Arguments.
 
 Local Open Scope nat_scope.
 
-(* [M1_values] moved to Audit.v *)
+(* [M1_values] moved to ExecutionModel.v *)
 
-(* emb_value: Audit.v, Part III.3. *)
+(* emb_value: ExecutionModel.v, Part III.3. *)
 
-(* [M2_prims] moved to Audit.v *)
+(* [M2_prims] moved to ExecutionModel.v *)
 
-(* [M3_syntax] moved to Audit.v *)
+(* [M3_syntax] moved to ExecutionModel.v *)
 
-(* [M4_runtime] moved to Audit.v *)
+(* [M4_runtime] moved to ExecutionModel.v *)
 
 (* The machine: a linear memory of 64 KiB pages, each a persistent array of
    bytes, and the output written so far (most recent byte first). *)
@@ -84,11 +84,11 @@ Record mstate : Type := MS {
   ms_nextfd : int
 }.
 
-(* [M4b_xprog] moved to Audit.v *)
+(* [M4b_xprog] moved to ExecutionModel.v *)
 
-(* [M4c_xout] moved to Audit.v *)
+(* [M4c_xout] moved to ExecutionModel.v *)
 
-(* [M4d_xres] moved to Audit.v *)
+(* [M4d_xres] moved to ExecutionModel.v *)
 
 (* ===================== 5. 32-bit arithmetic over int63 =================== *)
 
@@ -1045,7 +1045,7 @@ Definition run_prim0 (P : xprog) (p : prim) (ws : list xvalue) (st : mstate)
   | _, _ => ext_prim p ws st
   end.
 
-(* [M5_interp] moved to Audit.v: the interpreter is Audit.XSem, a functor
+(* [M5_interp] moved to ExecutionModel.v: the interpreter is ExecutionModel.XSem, a functor
    over the primitive semantics; here it is instantiated with the concrete
    one above. *)
 (* m4, D79 as amended: the memory instructions are `Addr`'s methods (the
@@ -1105,7 +1105,7 @@ Local Close Scope uint63_scope.
 
 (* ===================== 10. Conservativity over Core Moss ================= *)
 
-(* The embedding of the core (emb_*, res_agree) is audit-level: Audit.v, Part III.3. *)
+(* The embedding of the core (emb_*, res_agree) is audit-level: ExecutionModel.v, Part III.3. *)
 
 Lemma lookup_emb : forall i d,
   lookup_xdenv i (emb_denv d) = option_map emb_dentry (lookup_denv i d).
@@ -1438,7 +1438,7 @@ Proof.
     subst. specialize (Hunit w0 eq_refl). unfold value_has_unit_ty in Hunit. subst. reflexivity.
 Qed.
 
-(* [M6_primsig] moved to Audit.v *)
+(* [M6_primsig] moved to ExecutionModel.v *)
 
 Ltac args_shape :=
   repeat match goal with

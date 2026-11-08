@@ -1,6 +1,6 @@
 (* Shared environment posts for actual immutable closure-binding operations. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss XTyping ReifyMaps ReifyContracts ReifyEntries XProvision.
+From NM Require Import ExecutionModel CoreMoss XTyping ReifyMaps ReifyContracts ReifyEntries XProvision.
 Import ListNotations.
 Set Implicit Arguments.
 Section Bind.

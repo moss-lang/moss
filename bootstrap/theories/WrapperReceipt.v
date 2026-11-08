@@ -1,9 +1,9 @@
 (* Cached receiver adapters retain genuine emitted lambda provenance. *)
 From Stdlib Require Import List String Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame WorldSound
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame WorldSound
  InfoInvariant FinalLambdas ForwarderTrace.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma wrapper_entry_body:forall s p id P,
  WrapperEntry s p id->FinalLambdas P s->
  exists pv info th sm,

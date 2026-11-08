@@ -1,9 +1,9 @@
 (* Genuine source context rows give the finite graph its physical functor names. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap NMapEnum Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap NMapEnum Sx Elab ElabSound WorldSound ElabFrame
  BodySound FunctorDecl ForwarderHistory ReifyData ReifyOpaqueFunctors.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma functor_declaration_loaded:forall b w R Fl u,
  load_world b=Good w->FunctorDecl(W_read w R Fl)u->
  exists g,nget(w_syms w)u=Some g/\gs_kind g=KFunctor.

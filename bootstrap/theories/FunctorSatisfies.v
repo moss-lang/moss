@@ -1,9 +1,9 @@
 (* The actual application checker establishes satisfaction of functor inputs. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr
  CtxWalk CtxMerge FunctorContext NeedSatisfies InfoShape SmapExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Execution.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

@@ -1,6 +1,6 @@
 (* Body soundness uses the actual function scopes and actual emitted body. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  InfoInvariant InfoPreserve BodySound BodyConst BodyTr BodyTy CanonTypes ContextClean NominalSupport
  FnBodyContext FnBodyParameters FnBodyTrace FnBodyScope FnBodyReceiver ProviderSig LoadedContextSupport FnBodyOps.
 Import ListNotations.
@@ -19,7 +19,7 @@ Proof. intros;unfold in_reify_code;okt. Qed.
 Section Body.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
-Hypothesis Hworld:Audit.Elaboration.WorldOf b(BodySound.W w R Fl).
+Hypothesis Hworld:ExecutionModel.Elaboration.WorldOf b(BodySound.W w R Fl).
 Theorem actual_body_entry:forall g s info si this sr sg ss marker registered f block x t bt bodyFinal final,
  nget(w_syms w)(gs_id g)=Some g->
  fn_info g s=Good(info,si)->body_receiver g(fi_env info)si=Good(this,sr)->

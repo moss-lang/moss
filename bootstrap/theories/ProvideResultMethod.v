@@ -1,12 +1,12 @@
 (* Actual method output reads, including declaration selection and receiver
    instantiation.  Method output brackets do not use input relevance gates. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy CtxWalk MethodLookup MethodClean MethodKind SigSound
  FreeTypesExec MethodKeyTr ProvideResultReading ProvideResultFunction.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition provide_method_code(e:env)(mi:nat)(recv:gsym)(dn:name)
  (tm:list(nat*ety))(out:list key):M(env*list key):=
  let!mo:=find_method_decl mi recv dn in

@@ -1,6 +1,6 @@
 (* A successful real cache miss produces a completed, fresh forwarder body. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly
  FnBound ForwarderTrace ForwarderLowerCode.
 Import ListNotations.
 Local Open Scope string_scope.

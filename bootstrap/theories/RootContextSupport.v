@@ -1,12 +1,12 @@
 (* Nominal support through the platform's actual root-context visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy BodyTr
  WorldSound CanonTypes CtxWalk CtxMerge CtxMethodExec RootContextExec ContextWalkSupport
  ContextClean ContextSupport NominalSupport LibraryFacts ResultMentionsExact MethodCallCore XBridge.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements functor_fixed].
 Section Root.
 Variable w:Elab.world. Context{P:xprogram}.

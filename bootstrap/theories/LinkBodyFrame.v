@@ -1,6 +1,6 @@
 (* State frames for the named executable stages of fresh linking. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame LinkBodyTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame LinkBodyTrace.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 

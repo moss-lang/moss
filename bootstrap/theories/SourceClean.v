@@ -1,10 +1,10 @@
 (* Source types cannot construct the reserved nominal record head. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy CanonTypes.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy CanonTypes.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Definition TmClean (tm : list (nat * ety)) : Prop :=
   forall k y, nassoc k tm = Some y -> ety_ok y = true.

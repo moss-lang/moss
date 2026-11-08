@@ -1,7 +1,7 @@
 (* Family demands restore types and preserve the caller's merge substitution. *)
 From Stdlib Require Import List.
-From NM Require Import Audit.
-Module A:=Audit.Elaboration.
+From NM Require Import ExecutionModel.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_step_types:forall W C0 wanted C u matching th sm C',
  A.FamilyStep W C0 wanted C u matching th sm C'->A.c_ty C'=A.c_ty C/\A.c_sub C'=A.c_sub C.
 Proof.

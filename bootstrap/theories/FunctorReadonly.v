@@ -1,6 +1,6 @@
 (* Helpers that do not modify the functor body table. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabKeeps ReifyData ReifyHeader.
+From NM Require Import ExecutionModel NMap Sx Elab ElabKeeps ReifyData ReifyHeader.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 Lemma kfun_record_event : forall event, keeps st_funs (record_reify_event event).

@@ -1,9 +1,9 @@
 (* Defined applications recurse only into genuinely smaller bind executions. *)
 From Stdlib Require Import List String Bool Arith Lia Wf_nat.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy BodyDataHelpers
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy BodyDataHelpers
  InfoPreserve BindSequence BindCopyDispatch BindFnDispatch ApplyFunctorCases ApplyBodyExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition AbstractApplyStep(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat):Prop:=
  forall f c e F C pa g n names args res s xs e' c' sf,
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res None->

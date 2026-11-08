@@ -1,10 +1,10 @@
 (* The actual method assumption step satisfies ItemEntries and its tables. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy
  Merge CanonTypes SourceClean ContextClean ContextWalkClean CtxWalk CtxMethod CtxMethodTable
  MethodLookup MethodClean MethodKind SigSound FreeTypesExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Method.
 Variable w:Elab.world. Context{P:xprogram}.

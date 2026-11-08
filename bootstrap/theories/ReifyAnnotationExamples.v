@@ -2,8 +2,8 @@
    without rebinding the caller's mutable type names. Both accessor arities
    must select their exact checked annotations and lower successfully. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx Parse ReifyProgram ReifyProviderExamples Reify.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel Sx Parse ReifyProgram ReifyProviderExamples Reify.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition inferred_accessor_program(text:string):option xprogram:=
  match parse_moss text with

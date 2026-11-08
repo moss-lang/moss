@@ -1,6 +1,6 @@
 (* ------------------------------------------------------------------------ *)
 (* Merge.v — the merges a context makes ([D43]: Elab.unify, Elab.canon)    *)
-(* against Part V's σ (Track A, CtxOf; Audit note 55).                      *)
+(* against Part V's σ (Track A, CtxOf; ExecutionModel note 55).                      *)
 (*                                                                           *)
 (* The elaborator keeps its merges as a list `uf` of edges g ↦ t, each made *)
 (* by unify from a generation g not merged yet to a canonical type without  *)
@@ -15,14 +15,14 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodyTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodyTr.
 From NM Require CoreMoss.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
-Notation asub := Audit.app_subst.
-Notation tsubst := Audit.subst.
+Module A := ExecutionModel.Elaboration.
+Notation asub := ExecutionModel.app_subst.
+Notation tsubst := ExecutionModel.subst.
 
 Ltac noerr H := exfalso;
   solve [repeat (cbn beta iota zeta in H;
@@ -292,7 +292,7 @@ Proof.
   intros uf R t. induction t as [| |g|n xs IH|ms IH|fs IH] using ety_ind'.
   - reflexivity.
   - reflexivity.
-  - cbn [tr Audit.app_subst]. rewrite lookup_suf, (res_abs uf R g).
+  - cbn [tr ExecutionModel.app_subst]. rewrite lookup_suf, (res_abs uf R g).
     destruct (nassoc g uf) as [t'|] eqn:E; reflexivity.
   - cbn [tr]. rewrite app_subst_nom, res_nom. cbn [tr]. f_equal. rewrite !map_map. apply map_ext_in.
     intros p Hp. cbn [fst snd]. f_equal. rewrite Forall_forall in IH. exact (IH p Hp).
@@ -337,11 +337,11 @@ Lemma suf_idem : forall uf, RkOK uf -> forall t, asub (suf uf) (asub (suf uf) t)
 Proof.
   intros uf R t. induction t as [|g|n xs IH|ms IH] using CoreMoss.ty_ind'.
   - reflexivity.
-  - cbn [Audit.app_subst]. destruct (lookup_subst g (suf uf)) as [v|] eqn:E.
+  - cbn [ExecutionModel.app_subst]. destruct (lookup_subst g (suf uf)) as [v|] eqn:E.
     + rewrite lookup_suf in E. destruct (nassoc g uf); [|discriminate]. injection E as <-.
       apply app_subst_off. intros h Hh. rewrite gens_tr in Hh. rewrite lookup_suf.
       rewrite (res_canon uf R (YAbs g) h Hh). reflexivity.
-    + cbn [Audit.app_subst]. rewrite E. reflexivity.
+    + cbn [ExecutionModel.app_subst]. rewrite E. reflexivity.
   - rewrite !app_subst_nom, map_map. f_equal. apply map_ext_in. intros p Hp. cbn [fst snd]. f_equal.
     rewrite Forall_forall in IH. exact (IH p Hp).
   - rewrite !app_subst_union, map_map. f_equal. apply map_ext_in. intros m Hm.
@@ -379,7 +379,7 @@ Lemma resp_mg : forall s uf, RkOK uf -> RespE s uf ->
 Proof.
   intros s uf R H t. induction t as [|g|n xs IH|ms IH] using CoreMoss.ty_ind'.
   - reflexivity.
-  - cbn [Audit.app_subst]. rewrite lookup_suf. destruct (nassoc g uf) eqn:E; [|reflexivity]. cbn [option_map].
+  - cbn [ExecutionModel.app_subst]. rewrite lookup_suf. destruct (nassoc g uf) eqn:E; [|reflexivity]. cbn [option_map].
     rewrite (resp_res s uf H (YAbs g)). reflexivity.
   - rewrite app_subst_nom, !app_subst_nom, map_map. f_equal. apply map_ext_in. intros p Hp. cbn [fst snd]. f_equal.
     rewrite Forall_forall in IH. exact (IH p Hp).

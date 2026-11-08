@@ -1,6 +1,6 @@
 (* Exact, optional scalar-family preparation for closure execution. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss MossX SlotX InputGenerationExports.
+From NM Require Import ExecutionModel CoreMoss MossX SlotX InputGenerationExports.
 Import ListNotations.
 Definition scalar_rb(b:rbind):bool:=match b with
  |RBPrim _ p=>match p with PBox _|PArrNew _=>false|_=>true end|_=>false end.

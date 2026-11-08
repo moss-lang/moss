@@ -17,7 +17,7 @@ From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Ascii String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyDataHelpers BodyOps LiteralResult.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyDataHelpers BodyOps LiteralResult.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -25,7 +25,7 @@ Local Open Scope list_scope.
 
 From NM Require Import NominalSupport.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL].
 

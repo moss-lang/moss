@@ -1,7 +1,7 @@
 (* Executable staged lowering. This function is deliberately not wired into
    the driver until its raw-success and typing theorems are complete. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit CoreMoss Sx Elab ReifyData Reify ReifyPlan ReifyFunctors
+From NM Require Import ExecutionModel CoreMoss Sx Elab ReifyData Reify ReifyPlan ReifyFunctors
   ReifyProgramWalk ReifyPlatform ReifyJobs ReifyAssemble.
 Import ListNotations.
 

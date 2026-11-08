@@ -3,7 +3,7 @@
 (* the bundle loader.  It replaces the Python parser (bootstrap/mossc/      *)
 (* lex.py, parse.py, sexpr.py) and py/bundle.py in the oracle's pipeline:   *)
 (*                                                                           *)
-(*   source text --lex--> tokens --parse--> Audit.Input.afile --dump--> sx  *)
+(*   source text --lex--> tokens --parse--> ExecutionModel.Input.afile --dump--> sx  *)
 (*                                                                           *)
 (* `dump_file` yields exactly the s-expression that sexpr.py writes for the *)
 (* same file (and `print_sx` its text, byte for byte; see README, Part 1),  *)
@@ -21,9 +21,9 @@
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
 From NM Require Export Sx.
-From NM Require Import Audit DumpRoundTrip.
+From NM Require Import ExecutionModel DumpRoundTrip.
 Import ListNotations.
-Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
+Import ExecutionModel.Input ExecutionModel.Syntax Sx.Dump ExecutionModel.Loader.
 Local Open Scope string_scope.
 
 (* ######################################################################## *)
@@ -31,7 +31,7 @@ Local Open Scope string_scope.
 (* ######################################################################## *)
 
 (* Tokens, character classes, the keyword and symbol tables, and the token
-   readers `peek`/`kind`/`advance` are Audit.Syntax's: the specification
+   readers `peek`/`kind`/`advance` are ExecutionModel.Syntax's: the specification
    is stated in their terms. *)
 
 (* Python's repr of a one-character string (ASCII; a byte >= 0x80 is shown
@@ -185,7 +185,7 @@ Fixpoint line_col (cs : list byte) (off line col : nat) : nat * nat :=
 
 
 (* ######################################################################## *)
-(* Parser (parse.py), producing Audit.Input's surface AST                    *)
+(* Parser (parse.py), producing ExecutionModel.Input's surface AST                    *)
 (* ######################################################################## *)
 
 Inductive pr (A : Type) : Type :=
@@ -399,8 +399,8 @@ Definition mixed {A} (before : option string) (ts : list token) : pr A :=
 
 (* ===================== Expressions, statements, blocks ==================== *)
 
-(* A literal's text is normalized by Audit.Syntax.lit_norm, and `for` is
-   desugared by Audit.Syntax.for_desugar (D85). *)
+(* A literal's text is normalized by ExecutionModel.Syntax.lit_norm, and `for` is
+   desugared by ExecutionModel.Syntax.for_desugar (D85). *)
 
 Fixpoint parse_expr (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
@@ -912,7 +912,7 @@ Definition print_sx (x : sx) : string := String.concat "" (pr_sx x []).
 (* Bundles (py/bundle.py; collect.Loader's normalize, resolve, wants_prelude) *)
 (* ######################################################################## *)
 
-(* normalize, resolve and wants_prelude are Audit.Loader's. *)
+(* normalize, resolve and wants_prelude are ExecutionModel.Loader's. *)
 
 Record lmod := LMod { lm_path : string; lm_wants : bool; lm_targets : list string; lm_dump : sx }.
 

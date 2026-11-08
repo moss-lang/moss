@@ -1,6 +1,6 @@
 (* Whole elaboration preserves the real origin of every generated code row. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
  FnReadonly SymReadonly FnBound FnBoundEmit FnBoundSynth FnPresentStable FnPresentEmit FnPresentSynth
  ForwarderHistory ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit ReifyHeaderSynth
  ReifyHeaderPresent FnCompleted LambdaOrigin LambdaOriginOps LambdaOriginEmit LambdaOriginSynth

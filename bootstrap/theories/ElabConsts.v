@@ -1,6 +1,6 @@
 (* ------------------------------------------------------------------------ *)
 (* ElabConsts.v — every entry of const_val's cache, in a run's last state,  *)
-(* is its val's ExConst premises (Track A; Audit note 66, BodySound's      *)
+(* is its val's ExConst premises (Track A; ExecutionModel note 66, BodySound's      *)
 (* Later.lt_consts).                                                        *)
 (*                                                                           *)
 (* ElabInv.v's machinery, for st_consts: the cache's invariant is ConstInv   *)
@@ -20,13 +20,13 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import FinalLambdas Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySound BodyConst InfoPreserve ElabConstInput ElabProgramInput FinalForwarders FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv ForwarderTrace.
+From NM Require Import FinalLambdas ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySound BodyConst InfoPreserve ElabConstInput ElabProgramInput FinalForwarders FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv ForwarderTrace.
 From NM Require Import ReadonlyHelpers.
 From NM Require Import InfoInputs SemanticTraversal ProgramTail.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 

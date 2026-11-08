@@ -1,7 +1,7 @@
 (* Actual source unification preserves full physical type formation, not
    merely the shape predicate used by the source soundness proof. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Sx Elab ElabSound BodyTr CanonTypes Merge ReifyCanonFormation.
+From NM Require Import ExecutionModel CoreMoss Sx Elab ElabSound BodyTr CanonTypes Merge ReifyCanonFormation.
 Import ListNotations.
 Section Formation.
 Variables(Sg:gsig)(Phi:ctx)(Fl:String.string->nat)(rho:subst).

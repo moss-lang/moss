@@ -28,15 +28,15 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes ContextClean CtxWalk LFunPresence.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes ContextClean CtxWalk LFunPresence.
 From NM Require Export FnInfoCore TypeReadingInj.
 From NM Require Import KeyTranslation.
 Include KeyTranslation.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
-Notation asub := Audit.app_subst.
+Module A := ExecutionModel.Elaboration.
+Notation asub := ExecutionModel.app_subst.
 
 (* ======================================================================== *)
 (* 1. The reading is functional                                              *)
@@ -537,7 +537,7 @@ Qed.
 (* σ respects the merges it resolves *)
 Lemma suf_resp : forall U, Tri U -> RespE Fl (suf Fl U) U.
 Proof.
-  intros U T g t Hin. cbn [tr Audit.app_subst]. rewrite lookup_suf, (tri_nassoc U g t T Hin). cbn [option_map].
+  intros U T g t Hin. cbn [tr ExecutionModel.app_subst]. rewrite lookup_suf, (tri_nassoc U g t T Hin). cbn [option_map].
   rewrite (res_abs U (tri_rk U T) g), (tri_nassoc U g t T Hin). symmetry. exact (tr_res Fl U (tri_rk U T) t).
 Qed.
 
@@ -684,7 +684,7 @@ Qed.
 
 (* ---- the abstract functors in force ---- *)
 
-Definition cfuns (xs : list A.entry) : list (nat * Audit.subst) :=
+Definition cfuns (xs : list A.entry) : list (nat * ExecutionModel.subst) :=
   flat_map (fun e => match e with A.NFun u fx => [(u, A.fixed_subst σ fx)] | _ => [] end) xs.
 
 (* ---- the instantiation each provision is made at ---- *)
@@ -816,7 +816,7 @@ End Tables.
 (* ======================================================================== *)
 
 (* CtxOf with the enclosing brackets apart (IEs), the form the bridge track
-   gives ItemsEntries (Audit note 71 on proof-bridge). *)
+   gives ItemsEntries (ExecutionModel note 71 on proof-bridge). *)
 Definition CtxOfIE (W : A.world) (s : nat) (C : A.cx) (ns : list item) : Prop :=
   exists d es tm er tmr σ,
     A.w_decl W s = Some d /\

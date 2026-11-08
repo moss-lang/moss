@@ -1,7 +1,7 @@
 (* Reserve the pure input-generation plan in the actual symbol table. The
    existing linker does not call this preparation step yet. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ForwarderTrace
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ForwarderTrace
  InputGenerationScope InputGenerationMerge InputGenerationFresh InputGenerationPlan.
 Import ListNotations.
 Local Open Scope list_scope.

@@ -1,12 +1,12 @@
 (* ------------------------------------------------------------------------ *)
-(* RelFacts.v — facts about the DRAFT elaboration relation (Audit.v, Part V) *)
+(* RelFacts.v — facts about the DRAFT elaboration relation (ExecutionModel.v, Part V) *)
 (* that need no elaborator: D1, search-free method resolution.               *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit ComponentContracts.
+From NM Require Import ExecutionModel ComponentContracts.
 Import ListNotations.
-Import Audit.Elaboration.
+Import ExecutionModel.Elaboration.
 
 (* An attached method is one symbol per (receiver, name). *)
 Theorem attached_unique : forall b W r n a1 a2,

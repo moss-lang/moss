@@ -1,7 +1,7 @@
 (* Runtime output meanings must be transferred from the body's source-name
    slots to the fresh generation used by this particular application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit InputGenerationRuntime.
+From NM Require Import ExecutionModel InputGenerationRuntime.
 Import ListNotations.
 Local Open Scope list_scope.
 

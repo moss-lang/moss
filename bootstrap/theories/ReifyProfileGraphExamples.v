@@ -1,8 +1,8 @@
 (* A required nested formal need not have been provided or applied. Its
    interface comes from the checked declaration, not a fictitious provider. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx Parse ReifyProgram ReifyProviderExamples Reify.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel Sx Parse ReifyProgram ReifyProviderExamples Reify.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition nested_unprovided_interface_text:string:=
  "val x:();functor Inner:->x;functor Outer:Inner->x;functor G:Inner->x{bind x=();}fn main(){bind Outer=G;}".

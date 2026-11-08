@@ -1,10 +1,10 @@
 (* Method binds read the caller's visible types, including the receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore
  BodySoundCore BodyTy BodyTr Merge CanonBodyTy CanonTypes NominalSupport TySupport
  SourceClean SourceSupport NeedMapExec FnSigExec SigSound ProviderSig SigReadingSubst ProvideResultCanonical.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Section Signature.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Load : load_world b = Good w.
@@ -100,7 +100,7 @@ Proof.
  cbn [option_map] in Canonical.
  rewrite (tr_canon Fl e this Triangular) in Canonical.
  unfold CtxWalk.tr_sig in Canonical; cbn [A.sg_params A.sg_ret] in Canonical.
- assert (Parameters : map (Audit.app_subst (suf Fl (en_uf e)))
+ assert (Parameters : map (ExecutionModel.app_subst (suf Fl (en_uf e)))
    (map (fun p => tr Fl (snd p)) (sg_params sg)) =
    map (fun p => tr Fl (canon e (snd p))) (sg_params sg)).
  { rewrite map_map; apply map_ext; intro p; apply tr_canon; exact Triangular. }

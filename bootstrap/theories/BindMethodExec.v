@@ -1,14 +1,14 @@
 (* The complete method-binding rule, from actual execution and provider proofs. *)
 From NM Require Import BodyProofTools.
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTy EtyTyExec CanonBodyTy CanonTypes Merge MethodKeyTr MethodKind
  ProviderSig ProvideResultMethod BindSequence LambdaProviderExec
  BindMethodTrace BindMethodTarget BindMethodSuffix BindMethodSignature BindMethodBrackets MethodBindRead
  BindMethodLambdaExec BindMethodProviderExec.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
 Section Method.

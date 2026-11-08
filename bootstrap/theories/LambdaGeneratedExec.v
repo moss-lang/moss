@@ -1,11 +1,11 @@
 (* The generated lambda body satisfies the actual block judgment under its
    exact lexical context, at the type it really inferred. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve BodySoundCore BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame InfoPreserve BodySoundCore BodyTr
  CanonTypes NominalSupport LambdaTrace LambdaOwnContext LambdaCaptureTables LambdaCapturedLocals
  LambdaCaptureFold LambdaBodyContext LambdaNumbering LambdaGeneratedScope LambdaDeclarations.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma lambda_prefix_nodup:forall X(l r:list X),NoDup(l++r)->NoDup l.
 Proof.
  intros X l;induction l as[|x l IH];intros r Unique;[constructor|].

@@ -1,7 +1,7 @@
 (* Early runtime implementations and the public interpreter correctness binding. *)
 From Stdlib Require Import List.
 From NM Require Import ComponentContracts.
-From NM Require Import Audit CoreMoss MossX Elab Specialization RelFacts.
+From NM Require Import ExecutionModel CoreMoss MossX Elab Specialization RelFacts.
 From NM Require FastPath CachedClo CachedCloFacts SlotX FoldX Prune.
 Import ListNotations.
 

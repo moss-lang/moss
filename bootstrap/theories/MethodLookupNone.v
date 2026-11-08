@@ -1,8 +1,8 @@
 (* Successful absence agrees with the attached-first semantic lookup. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore MethodLookup MethodKind.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore MethodLookup MethodKind.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Theorem find_method_decl_none:forall b w R Fl mi recv n s s',
  load_world b=Good w->In mi(w_order w)->
  nget(w_syms w)(gs_id recv)=Some recv->st_w s=w->

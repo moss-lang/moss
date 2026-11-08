@@ -1,6 +1,6 @@
 (* Unwrap real metadata/parameter scopes without postulating body execution. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame.
 Import ListNotations.
 Set Implicit Arguments.
 Lemma with_vars_body_trace:forall A init(m:M A)s a final,

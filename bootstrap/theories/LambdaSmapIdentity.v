@@ -1,10 +1,10 @@
 (* The lambda's identity need list reads the actual recorded instantiations
    on both sides; the type arguments are not part of its provision key set. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore CtxMerge
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore CtxMerge
  MethodKeyTr LambdaKeyTranslation.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma ok_lambda_smap:forall ei eo pairs,ok(smap_at ei eo pairs).
 Proof.
  intros;unfold smap_at;apply ok_mmap;intros[a b].

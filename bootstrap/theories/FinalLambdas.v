@@ -1,11 +1,11 @@
 (* Final program bodies for every historical row of a generated lambda.
    Source recursion placeholders have other origins and are not included. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore.
 Import ListNotations.
 Definition FinalLambdas(P:xprogram)(s:st):Prop:=forall key body owner,
  In(key,body)(st_fns s)->nget(st_syms s)key=Some owner->gs_origin owner=OLambda->
- Audit.Elaboration.body_of P key=Some body.
+ ExecutionModel.Elaboration.body_of P key=Some body.
 Lemma final_lambdas_keep:forall P s final,
  (forall row,In row(st_fns s)->In row(st_fns final))->
  (forall key owner,nget(st_syms s)key=Some owner->nget(st_syms final)key=Some owner)->

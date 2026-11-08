@@ -1,7 +1,7 @@
 (* Loaded/source and synthetic forwarder bodies may emit recursion markers;
    their owners have non-lambda origins, so lambda history stays exact. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundSynth
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundSynth
  LambdaRows LambdaRowsPreserve LambdaRowsEmit ForwarderLowerCode.
 Import ListNotations.
 Set Implicit Arguments.

@@ -1,7 +1,7 @@
 (* S-expression codec for parsed files and module bundles. *)
 From Stdlib Require Import String Ascii List.
-From NM Require Export Audit.
-Export Audit.Input.
+From NM Require Export ExecutionModel.
+Export ExecutionModel.Input.
 Import ListNotations.
 Local Open Scope string_scope.
 

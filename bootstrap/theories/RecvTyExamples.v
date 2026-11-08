@@ -1,8 +1,8 @@
 (* Context method items on aliases read the alias's underlying type. *)
 From Stdlib Require Import List.
-From NM Require Import Audit Sx Elab.
+From NM Require Import ExecutionModel Sx Elab.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Example recvty_alias_reads_body : forall W tm r d n body t,
   A.nlook r tm = None -> A.w_decl W r = Some d -> A.d_ast d = ADAlias n body ->

@@ -1,9 +1,9 @@
 (* A successful family leaf scan contains methods and context wrappers only. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma false_family_fold:forall X(step:X->M bool)xs s,
  mfold(fun b x=>if negb b then ret false else step x)false xs s=Good(false,s).
 Proof.

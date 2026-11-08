@@ -1,6 +1,6 @@
 (* Actual complete source builds start and finish with authenticated link history. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
  InfoInvariant InfoPreserve InfoInputs FwdInvariant FwdReadonly FwdPreserve FwdSynthInv FwdProgramInv
  LinkCacheInvariant LinkReadonly LinkPreserve LinkConditional LinkBindPreserve LinkSynthPreserve
  ProviderPhysical WrapperKeyReadonly ProgramTail ProgramInfo ReadonlyHelpers.

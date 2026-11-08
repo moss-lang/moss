@@ -1,7 +1,7 @@
 (* A lambda invocation retains the body recursion's frames and installs its
    own real code-entry signature and creator receipt. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly FnBound FnBoundEmit FnBoundSynth FnPresentStable
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit ReifyHeaderSynth
  ReifyHeaderPresent ReifyFrameReady LambdaOrigin LambdaTrace LambdaHeader

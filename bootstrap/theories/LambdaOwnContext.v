@@ -1,9 +1,9 @@
 (* A lambda's own frame uses its checked target return/receiver types while
    retaining the lexical module, functor application and pinned inputs. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport LambdaTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore NominalSupport LambdaTrace.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition lambda_body_frame(Fl:string->nat)(e:env)(F:A.frame)(sg:fsig)
  (this:option ety)(vars:list(string*nat)):A.frame:=
  A.Frame(A.fr_mod F)(tr Fl(canon e(sg_ret sg)))(option_map(fun t=>tr Fl(canon e t))this)

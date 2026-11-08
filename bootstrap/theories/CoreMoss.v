@@ -116,14 +116,14 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Export Audit CoreInterp.
+From NM Require Export ExecutionModel CoreInterp.
 Import ListNotations.
 
 Set Implicit Arguments.
 
-(* [A_symbols] moved to Audit.v *)
+(* [A_symbols] moved to ExecutionModel.v *)
 
-(* [B_ty] moved to Audit.v *)
+(* [B_ty] moved to ExecutionModel.v *)
 
 (* A custom induction principle: the auto-generated one is useless for the
    nested lists inside TNom/TUnion. *)
@@ -153,7 +153,7 @@ Fixpoint ty_ind' (P : ty -> Prop)
             end) ms)
   end.
 
-(* [C_app_subst] moved to Audit.v *)
+(* [C_app_subst] moved to ExecutionModel.v *)
 
 Lemma app_subst_nil : forall tau, app_subst [] tau = tau.
 Proof.
@@ -164,7 +164,7 @@ Proof.
     rewrite H, IHForall. reflexivity.
 Qed.
 
-(* [D_ty_eqb] moved to Audit.v *)
+(* [D_ty_eqb] moved to ExecutionModel.v *)
 
 (* The abstract type symbols a type mentions.  (Used by the soundness
    development below, and by the merging unifier's occurs check.) *)
@@ -194,7 +194,7 @@ Fixpoint ty_size (tau : ty) : nat :=
             match l with [] => 0 | t' :: r => S (ty_size t' + go r) end) ms)
   end.
 
-(* [E_items] moved to Audit.v *)
+(* [E_items] moved to ExecutionModel.v *)
 
 (* ===================== 4. Contexts in force ============================== *)
 
@@ -212,7 +212,7 @@ Definition avail_b (Phi : ctx) (i : item) : bool :=
 
 Definition avail (Phi : ctx) (i : item) : Prop := avail_b Phi i = true.
 
-(* [F_is_ty_item] moved to Audit.v *)
+(* [F_is_ty_item] moved to ExecutionModel.v *)
 
 Definition tyreqs (D : tele) : list tsym :=
   flat_map (fun i => match i with ITy t => [t] | _ => [] end) D.
@@ -427,7 +427,7 @@ Definition empty_ctx : ctx := mkCtx [] [].
 
 Definition tele_ctx (D : tele) : option ctx := merge_tele empty_ctx D.
 
-(* [G_syntax] moved to Audit.v *)
+(* [G_syntax] moved to ExecutionModel.v *)
 
 (* The type symbols a val/fn requirement's own telescope mentions — the
    dependencies whose instantiations coherence must pin down (deviation 8). *)
@@ -1169,7 +1169,7 @@ Definition families_disjoint (Sg : gsig) (A : list item) : Prop :=
     is_prov_at [] rt m (app_subst_item th1 i1) ->
     is_prov_at [] rt m (app_subst_item th2 i2) -> u1 = u2.
 
-(* [H_dynamics] moved to Audit.v *)
+(* [H_dynamics] moved to ExecutionModel.v *)
 
 (* Type erasure (Proposition 4.3): drop type binds and applications.  Items
    are runtime *keys*, not consulted types, so the applications inside IMth

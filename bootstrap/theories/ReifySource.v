@@ -3,7 +3,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import CoreMoss Elab BodyTr ReifyData Reify NMap.
 Import ListNotations.
-Import Audit.Input.
+Import ExecutionModel.Input.
 Local Open Scope list_scope.
 
 Fixpoint reify_type_fields (t : ety) : list string :=
@@ -71,18 +71,18 @@ Definition reify_metadata_fields (metadata : reify_metadata ety key) : list stri
 (* Nominal payload schemas are lazy: record labels can occur in an unused
    schema even when no source expression has interned them yet.  Include all
    declaration type labels while preserving every previously allocated ID. *)
-Fixpoint reify_annotation_fields (t : Audit.Input.aty) : list string :=
+Fixpoint reify_annotation_fields (t : ExecutionModel.Input.aty) : list string :=
   match t with
-  | Audit.Input.ATRec fs => flat_map (fun p =>
+  | ExecutionModel.Input.ATRec fs => flat_map (fun p =>
       fst p :: reify_annotation_fields (snd p)) fs
-  | Audit.Input.ATUnion ms => flat_map reify_annotation_fields ms
+  | ExecutionModel.Input.ATUnion ms => flat_map reify_annotation_fields ms
   | _ => []
   end.
-Definition reify_decl_fields (d : Audit.Input.adecl) : list string :=
+Definition reify_decl_fields (d : ExecutionModel.Input.adecl) : list string :=
   match d with
-  | Audit.Input.ADAlias _ t | Audit.Input.ADTag _ _ t | Audit.Input.ADVal _ t _ =>
+  | ExecutionModel.Input.ADAlias _ t | ExecutionModel.Input.ADTag _ _ t | ExecutionModel.Input.ADVal _ t _ =>
       reify_annotation_fields t
-  | Audit.Input.ADFn _ _ ps rt _ =>
+  | ExecutionModel.Input.ADFn _ _ ps rt _ =>
       flat_map (fun p => reify_annotation_fields (snd p)) ps ++
       match rt with Some t => reify_annotation_fields t | None => [] end
   | _ => []
@@ -111,7 +111,7 @@ Definition reify_field_table (s : st) : list (string * nat) :=
 Definition reify_field_number (s : st) (name : string) : nat :=
   match reify_field_lookup name (reify_field_table s) with Some n => n | None => 0 end.
 Definition reify_source_type (s : st) (scope : reify_state) (t : ety) : ty :=
-  Audit.app_subst (rf_generations scope) (tr (reify_field_number s) t).
+  ExecutionModel.app_subst (rf_generations scope) (tr (reify_field_number s) t).
 
 Lemma reify_field_lookup_app : forall fields extra name n,
     reify_field_lookup name fields = Some n ->
@@ -194,7 +194,7 @@ Definition reify_code_for_symbol (s : st) (id : nat) : option (reify_code ety ke
 Definition reify_snapshot_subst (s : st) (scope : reify_scope ety key) : subst :=
   map (fun p => (fst p,tr (reify_field_number s) (snd p))) (rs_generations ety key scope).
 Definition reify_snapshot_type (s : st) (scope : reify_scope ety key) (t : ety) : ty :=
-  Audit.app_subst (reify_snapshot_subst s scope) (tr (reify_field_number s) t).
+  ExecutionModel.app_subst (reify_snapshot_subst s scope) (tr (reify_field_number s) t).
 Fixpoint reify_provision_arguments (k : key)
     (provisions : list (key * (list (tsym * option ety) * nat)))
     : list (tsym * option ety) :=

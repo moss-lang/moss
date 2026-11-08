@@ -1,6 +1,6 @@
 (* Link cache preservation with persistent physical input symbols. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabKeeps
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabKeeps
  InfoInvariant InfoPreserve FwdInvariant FwdSynthInv LinkCacheInvariant ProviderPhysical.
 Import ListNotations.
 Definition LinkStable(p:st->Prop):Prop:=forall s final,Fr s final->p s->p final.

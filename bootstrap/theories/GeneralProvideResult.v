@@ -1,13 +1,13 @@
 (* General actual result installation: only real application input availability
    and the generated output domain are required. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CtxMerge NominalSupport NestingTypesExec ApplyFreshExec OutputInstallContext
  ProvideResultExec ProvideResultContext ProvideResultDomain ProvideResultFold
  FamilyResultFold ResultWalkExec ResultItemsFold.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma result_output_map_old:forall C ts out t,
  A.nlook t(A.c_ty C)<>None->A.nlook t(A.output_type_map C ts out)<>None.
 Proof.

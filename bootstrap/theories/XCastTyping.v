@@ -1,6 +1,6 @@
 (* Local typing laws for native opaque heap handles and checked wrappers. *)
 From Stdlib Require Import List Bool PrimInt63 PeanoNat.
-From NM Require Import Audit CoreMoss HTrie MossX XHeap XTyping XCast.
+From NM Require Import ExecutionModel CoreMoss HTrie MossX XHeap XTyping XCast.
 Import ListNotations.
 Set Implicit Arguments.
 

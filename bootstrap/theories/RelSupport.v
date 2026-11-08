@@ -1,12 +1,12 @@
 (* ------------------------------------------------------------------------ *)
-(* RelSupport.v — support for RelExamples.v / RelNegative.v: evidence that the DRAFT relation (Audit.v, Part V) says  *)
+(* RelSupport.v — support for RelExamples.v / RelNegative.v: evidence that the DRAFT relation (ExecutionModel.v, Part V) says  *)
 (* what is intended: on small programs of tests/wasi, the elaborator's      *)
 (* output for a function is related to its source, and on ill-formed ones   *)
 (* no output is.                                                             *)
 (*                                                                           *)
 (* Method.  The bundle is elaborated inside Rocq (vm_compute).  The static  *)
 (* reading W is the elaborator's own (its symbol numbering, scopes, and     *)
-(* requirements), converted to Audit.Elaboration.world by `W_of` below.     *)
+(* requirements), converted to ExecutionModel.Elaboration.world by `W_of` below.     *)
 (* For each example function the body judgment FnElab W P f is then proved  *)
 (* — the context formation (CtxOf, with merging), the calls' satisfaction   *)
 (* maps and coherence, binds, functor application — leaving one thing      *)
@@ -15,9 +15,9 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab.
+From NM Require Import ExecutionModel CoreMoss MossX NMap Sx Elab.
 Import ListNotations.
-Import Audit.Elaboration.
+Import ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 
@@ -55,7 +55,7 @@ Fixpoint find_mod (w : Elab.world) (p : string) (l : list nat) : option gmod :=
 Definition has_kind (d : Input.adecl) : bool :=
   match kind_of d with Some _ => true | None => false end.
 
-(* The elaborator's world, as an Audit world. *)
+(* The elaborator's world, as an ExecutionModel world. *)
 Definition W_of (s : st) : Elaboration.world :=
   let w := st_w s in
   let scope (exp : bool) (p : string) (ns : nspace) (n : Input.name) : option ent :=
@@ -209,7 +209,7 @@ Definition coh_b (C Cs : cx) (ns : list item) : bool :=
                           | (t, Some want) =>
                               match ilook (at_site C k) (c_apps C) with
                               | Some have => existsb (fun h => Nat.eqb (fst h) t &&
-                                                       oty_eqb (snd h) (Some (canon C (Audit.app_subst (c_ty C) want)))) have
+                                                       oty_eqb (snd h) (Some (canon C (ExecutionModel.app_subst (c_ty C) want)))) have
                               | None => true
                               end
                           | (_, None) => true
@@ -438,7 +438,7 @@ Proof.
   - destruct (sassoc n (gm_aliases m)); discriminate.
 Qed.
 
-(* main's root context (Audit note 54): none, for a fn that is not its
+(* main's root context (ExecutionModel note 54): none, for a fn that is not its
    module's `main` or a reading with no `Gc`. Try the reflected scope
    check first: a failing notmain search can destruct a large world. *)
 Ltac rootctx :=

@@ -1,10 +1,10 @@
 (* The executable abstract-function branch, using the actual context table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore
+From NM Require Import InfoPreserve ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore
  EtyTyExec CanonTypes NominalSupport CallArgs.
 Import ListNotations.
 Set Implicit Arguments.
-Module AC := Audit.Elaboration.
+Module AC := ExecutionModel.Elaboration.
 Lemma kind_fn_ast : forall W fid, AC.kind_sym W fid=Some AC.DKFn ->
  exists n ps rt body, AC.ast_of W fid=Some(ADFn RPlain n ps rt body).
 Proof.

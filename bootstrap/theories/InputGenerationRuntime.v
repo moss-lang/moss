@@ -1,7 +1,7 @@
 (* Explicit transfer data for a privately scoped linked functor. These pure
    helpers specify transfer order without changing the language semantics. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
 Local Open Scope list_scope.
 

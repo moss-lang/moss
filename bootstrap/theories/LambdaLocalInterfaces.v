@@ -1,9 +1,9 @@
 (* Local binding order cannot alter the provision interface or its runtime keys. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab LambdaTrace LambdaCapturedLocals LambdaCaptureTables
+From NM Require Import ExecutionModel NMap Sx Elab LambdaTrace LambdaCapturedLocals LambdaCaptureTables
  LambdaBodyContext LambdaLocalOrder.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma lambda_local_rows_keys:forall rows e,
  all_keys(fold_left(fun en q=>set_local en(fst q)(fst(snd q))(snd(snd q)))rows e)=all_keys e.
 Proof. intro rows;induction rows as[|[n[t mu]]rows IH];intro e;[reflexivity|cbn[fold_left fst snd];rewrite IH;reflexivity]. Qed.

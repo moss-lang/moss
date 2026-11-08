@@ -1,9 +1,9 @@
 (* Closure compilation over LazyX's split environments. LazyCloFacts proves
-   exact agreement with LazyX, and thus Audit's interpreter, for every fuel.
+   exact agreement with LazyX, and thus ExecutionModel's interpreter, for every fuel.
    Child/list code is built before its evaluation closure; Extract2.v preserves
    that sharing by extracting this library with term optimizations disabled. *)
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit MossX LazyX LazyFold.
+From NM Require Import ExecutionModel MossX LazyX LazyFold.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.

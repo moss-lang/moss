@@ -15,7 +15,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss.
+From NM Require Import ExecutionModel CoreMoss.
 Import ListNotations.
 
 Section MergeWf.

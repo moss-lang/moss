@@ -1,6 +1,6 @@
 (* The actual mutual traversal preserves authenticated link history. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
  InfoInvariant InfoPreserve InfoInputs FwdInvariant FwdReadonly FwdPreserve FwdSynthInv
  LinkCacheInvariant LinkReadonly LinkPreserve LinkConditional LinkBindPreserve
  ProviderPhysical WrapperKeyReadonly LinkHigherPreserve ReadonlyHelpers.

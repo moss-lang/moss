@@ -1,7 +1,7 @@
 (* Prefix input invariants propagate forward through actual annotation,
    capture allocation and header registration; none is read backwards. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  InfoInvariant InfoPreserve WrapperReadonly FwdInvariant FwdReadonly FwdPreserve
  BodySoundCore LambdaAnnotations LambdaTrace.
 Import ListNotations.

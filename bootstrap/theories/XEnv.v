@@ -14,7 +14,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit MossX CoreMoss XTyping XRuntimeEnv XRuntimeCall XCast.
+From NM Require Import ExecutionModel MossX CoreMoss XTyping XRuntimeEnv XRuntimeCall XCast.
 Import ListNotations.
 
 Set Implicit Arguments.

@@ -1,11 +1,11 @@
 (* Every successful provider selection denotes the matching method provider. *)
 From NM Require Import BodyProofTools.
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTy NominalSupport CanonTypes ProviderSig BindMethodTrace LambdaProviderExec
  BindMethodWrappedExec BindMethodAttachedExec.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
 Lemma ok_method_bind_provider : forall fuel c e y this m sg ts,

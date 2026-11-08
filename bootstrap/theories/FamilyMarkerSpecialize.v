@@ -1,9 +1,9 @@
 (* The actual family parameters and markers supply the full semantic specialization. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
  TyOfSubst SourceReadingExtend FamilyKeysExec FamilyMarkersExec FamilyMarkerContext FamilyMarkedSubst ProvideResultContext FunctorScopeTypes FunctorContext NestingTypesExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_semantic_target(C:A.cx)(matching:subst):list(nat*ty):=
  smap(A.c_sub C)(A.c_ty(fold_left(fun C q=>A.set_ty C(fst q)(snd q))matching C)).
 Section Specialize.

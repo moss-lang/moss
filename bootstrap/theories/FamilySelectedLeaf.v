@@ -1,10 +1,10 @@
 (* A selected scanner leaf remains an output occurrence, even when already present. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv BodySoundCore BodyTr Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv BodySoundCore BodyTr Merge CanonTypes
  TyOfSubst SourceReadingExtend TySupport FamilyMatchReconstruct FamilyCandidateWitness FamilyMarkedSubst
  FamilyMatchingCtx FamilyMarkerSpecialize FamilyLeafComplete FamilyScanSpecialize FamilyLeafScan.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Selected.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
@@ -37,7 +37,7 @@ Proof.
  ob tm es tm' Reading leaf Member)as(sp&rt&mid&sg&ap&Hsp&Entry&Route).
  assert(Support:TySupport W rt).
  {rewrite Forall_forall in Supported;exact(Supported _ Entry). }
- assert(Identity:Audit.app_subst sigma(tr Fl pat)=rt).
+ assert(Identity:ExecutionModel.app_subst sigma(tr Fl pat)=rt).
  {eapply(family_scan_specializes w R Fl b Hload);[exact Route|exact Wo|exact Tri|exact UF|exact Types|
  exact Hmi|constructor|exact Support|exact SR|exact TE|exact Read|exact Ir|exact Wr|exact Lr]. }
  assert(Receiver:rt=tr Fl r).

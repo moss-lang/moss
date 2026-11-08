@@ -1,12 +1,12 @@
 (* A prepared fresh link already supplies the target context needed to read
    its promised output; the temporary roles remain to be renamed back. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr BodyTy KeyTranslation FunctorInputDomain FunctorBodyContext
  ApplyFreshExec LinkBodySound LinkOutputContext LinkOutputProvide LinkOutputRoles
  LinkOutputKeys LambdaKeyTranslation.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Section Result.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Load : load_world b = Good w.

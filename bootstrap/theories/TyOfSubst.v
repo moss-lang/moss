@@ -11,16 +11,16 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
-Notation asub := Audit.app_subst.
+Module A := ExecutionModel.Elaboration.
+Notation asub := ExecutionModel.app_subst.
 
 Section Subst.
 Variable W : A.world.
-Variable s : Audit.subst.
+Variable s : ExecutionModel.subst.
 Import A.
 
 Definition smap (l : list (nat * ty)) : list (nat * ty) := map (fun q => (fst q, asub s (snd q))) l.

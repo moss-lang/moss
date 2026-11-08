@@ -1,12 +1,12 @@
 (* Every loaded declaration's input context is valid, including main's
    implicit platform-root entries. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes CtxWalk CtxMerge CtxMethodExec ContextClean ContextSupport ContextWalkSupport
  ContextMergeSupport ContextFormationSupport NominalSupport InfoCache InfoPreserve
  LoaderOrigin MainRoot MainContextInfo RootContextSupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Loaded.
 Variable w:Elab.world. Context{P:xprogram}.

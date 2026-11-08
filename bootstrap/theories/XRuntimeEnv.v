@@ -1,6 +1,6 @@
 (* Runtime type meanings carried alongside executable context entries. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss XCast.
+From NM Require Import ExecutionModel CoreMoss XCast.
 Import ListNotations.
 Set Implicit Arguments.
 

@@ -1,14 +1,14 @@
 (* Fresh linking derives its input contexts, capture condition and body judgment
    from execution. Result interpretation is discharged by the output bridge. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr BodyTy KeyTranslation InfoInvariant InfoInputs InfoPreserve
  FwdReadonly ElabKeeps FwdInvariant FwdPreserve FwdSynthInv FunctorContext ResultMentionsExact
  NestingTypesExec BindSequence LinkBodyTrace LinkBodyFrame LinkBodyItems LinkCaptureSound SemanticPins FinalLinks
  FunctorBodyContext FunctorAbstractBodyContext ForwarderTrace LinkBindsExec
  ApplyFreshExec LinkOutputRoles LinkOutputFresh LinkPins.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 Section Sound.
 Variable w : Elab.world. Context {P : xprogram}.

@@ -1,7 +1,7 @@
 (* The immutable application's induction step. The callback is the smaller
    body evaluation supplied by the eventual mutual safety induction. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss MossX XTyping XEnv XHeapC XSafety
+From NM Require Import ExecutionModel CoreMoss MossX XTyping XEnv XHeapC XSafety
  ReifyMaps ReifyChains ReifyContracts ReifyEntries XProvision XProvisionPost.
 Import ListNotations.
 Set Implicit Arguments.

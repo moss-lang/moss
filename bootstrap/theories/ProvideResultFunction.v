@@ -1,11 +1,11 @@
 (* Actual function output installation reads its declaration and captures the
    instantiation at that read, before installing the next output occurrence. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy CtxWalk SigSound ProvideResultReading.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition provide_function_code(e:env)(g:gsym)(tm:list(nat*ety))(out:list key)
  :M(env*list key):=
  let!sg:=fn_sig g tm e None in

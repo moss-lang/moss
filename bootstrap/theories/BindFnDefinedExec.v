@@ -1,12 +1,12 @@
 From NM Require Import WrapperKeyReadonly.
 (* A real named defined provider closes the ordinary function-bind branch. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
  BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig FnProviderDefinedExec FnSigExec
  ProvideResultContext BindValue CallCacheExec SignatureLeavesExec.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 Ltac named_bind_noerr H:=exfalso;solve[repeat(cbn beta iota zeta in H;
  first[exact(err_not_good _ _ _ _ _ _ H)|discriminate H|apply bind_inv in H as(? &? &? &H)])].

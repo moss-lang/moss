@@ -39,6 +39,16 @@ errors and positions included.
 - [`theories/`](theories): the Rocq development, the dune theory `NM`.
   - [`Audit.v`](theories/Audit.v): what a reader has to trust, and nothing
     else (below). It imports only Rocq's standard library.
+  - [`ExecutionModel.v`](theories/ExecutionModel.v): the current bootstrap IR,
+    its interpreter and the component elaboration relation. Existing component
+    proofs and extraction use this internal representation. Source syntax is
+    shared with Audit.v; semantic equivalence remains to be proved.
+  - [`AuditRepresentation.v`](theories/AuditRepresentation.v): explicit type
+    and value representation relations, and the pending elaboration-refinement
+    property. It assumes no model equivalence.
+  - [`AuditExamples.v`](theories/AuditExamples.v) and
+    [`AuditBuildExample.v`](theories/AuditBuildExample.v): semantic regression
+    checks and a complete public build/run derivation.
   - [`Parse.v`](theories/Parse.v): the lexer, the parser, the parse dump
     and the module loader, from a file's bytes to the bundle specified in
     `Audit.v` Part I.
@@ -108,8 +118,8 @@ errors and positions included.
     complete for it; [`FrontEndLoader.v`](theories/FrontEndLoader.v): the
     loader against `Audit.Loader.Bundled`. [`FrontEndExamples.v`](theories/FrontEndExamples.v)
     checks the grammar on real files and on syntax errors of `tests/errors`.
-  - [`Certified.v`](theories/Certified.v): binds the implementation to the
-    obligations `Audit.v` states, as far as they are proved.
+  - [`Certified.v`](theories/Certified.v): binds the checked component
+    obligations for ExecutionModel. The public refinement remains pending.
 - [`ocaml/`](ocaml): the oracle. [`Extract2.v`](ocaml/Extract2.v) is
   the extraction to OCaml (`CachedClo.v` and `LazyClo.v` again on their own, with
   extraction's optimizations off; below), and `moss_m2.ml` the driver (it
@@ -178,7 +188,7 @@ types (`Audit.v`'s obligations).
 `MOSS_ENGINE` chooses what runs the elaborated program, which is first
 given the family fast path (`FastPath.fast_program`; `MOSS_FASTPATH=0`
 skips it), then pruned (`Prune.oracle_program`; `MOSS_PRUNE=0` skips it).
-Every engine is proved to compute exactly what Audit's interpreter
+Every engine is proved to compute exactly what ExecutionModel's interpreter
 (`XS.run_main`) computes, for every fuel, unless that run gets stuck
 (pruning's caveat, `Prune.oracle_agrees`) or, after the fast path, runs
 out of fuel (`FastPath.fast_run`):
@@ -251,7 +261,7 @@ out of fuel (`FastPath.fast_run`):
   `SlotX.slot_oracle_agrees`);
 - `slot`: `SlotX.rinterp` on the pre-resolved program
   (`SlotX.slot_oracle_agrees`);
-- `ref`: Audit's interpreter itself;
+- `ref`: ExecutionModel's interpreter itself;
 - `fast`: [`FastX.v`](theories/FastX.v)'s, with environments keyed by a
   map (`FastX.frun_main_eq`).
 
@@ -260,19 +270,21 @@ out of fuel (`FastPath.fast_run`):
 **[Audit.v](theories/Audit.v)** is the self-contained language model and public build/run
 contract. It defines source files, syntax, elaboration, reference execution,
 the host interface laws, and both semantic predicates in the same file.
-Public data types use lowercase names; file_path distinguishes absolute
-filesystem paths from syntax-level name paths.
+The reference language lives in `Audit.Semantics`; `Audit.Public` exposes
+its build/run contract. Source syntax stays in `Input`, `Syntax`, and `Loader`,
+shared with the current implementation. Public data types use lowercase names;
+`file_path` distinguishes filesystem paths from syntax-level name paths.
 Its final module type, **Public.CORRECT**, has exactly five obligations:
 
 - **build_sound**: every successful build satisfies Builds and produces a
   program compatible with the fixed default interface.
 - **build_complete**: every source admitted by Builds is accepted.
-- **run_sound**: for an admissible program, compatible interface and valid state, every
+- **run_sound**: for an admissible program and compatible interface, every
   terminating implementation result satisfies Runs.
 - **run_complete**: under those conditions, every terminating Runs
   execution is reproduced.
-- **safety**: building a program and supplying a compatible interface and
-  state excludes an internal Wrong result at every finite observation.
+- **safety**: a built program supplied with a compatible interface excludes
+  an internal Wrong result at every finite observation.
 
 Builds includes platform linking: source declarations, primitive signatures,
 GC and memory layouts, and generated platform-family bindings must agree
@@ -281,12 +293,13 @@ requires the interface to supply every installed primitive and satisfy the
 primitive and heap laws. Arguments and the read-only file snapshot belong
 to the world state, so the default interface is fixed across invocations.
 
-[DefaultRuntime.v](theories/DefaultRuntime.v) instantiates the public model
-with the executable's primitive implementation and heap invariant. It proves
-the default interface laws and compatibility for platform-linked programs.
-Its DefaultGuarantees functor derives default-interface safety from the
-five public obligations, without an extra compatibility premise for callers.
-These bindings are exposed by Certified.v and included in the assumption audit.
+[DefaultRuntime.v](theories/DefaultRuntime.v) proves the executable's
+primitive and heap laws for **ExecutionModel**, exposed by Certified.v and
+included in the assumption audit. These are component results. A concrete
+host adapter and program/execution refinement are still needed for the revised
+public model; no implementation of Audit.Public.CORRECT is supplied.
+Compatibility already guarantees validity of the empty store typing, so the
+public execution theorems need no separate initial-state premise.
 
 These end-to-end obligations are pending. Fuel represents finite
 observations of partial execution; fuel exhaustion is distinct from an
@@ -295,7 +308,7 @@ separate outcomes.
 
 **[ComponentContracts.v](theories/ComponentContracts.v)** retains the smaller contracts and pending proof
 milestones bound by [Certified.v](theories/Certified.v). **[CoreFragment.v](theories/CoreFragment.v)** contains the supporting
-core calculus. Their existing proofs and the executable extraction roots
+core calculus over ExecutionModel. Their existing proofs and the executable extraction roots
 remain covered by the assumption audits. These component results do not
 constitute an implementation of Public.CORRECT.
 

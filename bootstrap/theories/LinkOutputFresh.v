@@ -1,9 +1,9 @@
 (* Actual output-role allocations supply the fresh generation function in LB. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  ApplyFreshExec NestingTypesExec LinkOutputRoles LinkOutputProvide.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma link_output_role_member:forall (roles:list(nat*nat)) t g,
  NoDup(map fst roles)->In(t,g)roles->nassoc t roles=Some g.
 Proof.

@@ -1,5 +1,5 @@
 (* ======================================================================== *)
-(* FrontEndComplete.v — the parser is complete for Audit.Syntax.Derives:   *)
+(* FrontEndComplete.v — the parser is complete for ExecutionModel.Syntax.Derives:   *)
 (* every derivation is what Parse.parse_moss finds (Part VI's               *)
 (* parser_complete).                                                         *)
 (*                                                                           *)
@@ -15,9 +15,9 @@
 
 From Stdlib Require Import String Ascii List Bool Arith Lia.
 From Stdlib Require Import Strings.Byte.
-From NM Require Import Audit Parse FrontEnd.
+From NM Require Import ExecutionModel Parse FrontEnd.
 Import ListNotations.
-Import Audit.Input Audit.Syntax.
+Import ExecutionModel.Input ExecutionModel.Syntax.
 Local Open Scope string_scope.
 
 (* ===================== Tools ============================================== *)

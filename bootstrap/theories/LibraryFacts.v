@@ -1,9 +1,9 @@
 (* The language's library symbols are selected in the prelude's directory.
    Their scopes may reexport declarations, exactly as ordinary scopes do. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound MethodLookup.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound MethodLookup.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

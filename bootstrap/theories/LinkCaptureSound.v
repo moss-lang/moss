@@ -1,9 +1,9 @@
 (* The successful executable capture check implies LinkBody's value rule. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr KeyTranslation Merge CtxWalk
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr KeyTranslation Merge CtxWalk
  FunctorContext LinkBodyTrace LinkCaptureExec.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Theorem link_capture_values_sound : forall (W : A.world) Fl fg bg ef eg fneeds gneeds xf s u final Cu Cg,
  link_trace_capture_guard fg bg ef eg fneeds gneeds xf s = Good (u,final) ->

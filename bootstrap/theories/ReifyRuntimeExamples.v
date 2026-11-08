@@ -1,6 +1,6 @@
 (* Concrete execution controls for complete immutable application maps. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit MossX.
+From NM Require Import ExecutionModel MossX.
 Import ListNotations.
 Import XS.
 Definition reified_control : xprog :=

@@ -1,6 +1,6 @@
 (* Actual eta-provider lookup supplies the physical symbol used by the cache. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabFrameAtoms.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ElabFrameAtoms.
 Import ListNotations.
 Definition PhysicalProvider(s:st)(g:gsym):Prop:=nget(st_syms s)(gs_id g)=Some g.
 Lemma sym_physical_provider:forall key s g sf,

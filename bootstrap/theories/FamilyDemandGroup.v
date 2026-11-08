@@ -1,11 +1,11 @@
 (* A collected selection remains a valid family step after earlier groups. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  NominalSupport SourceSupport Merge CanonTypes RelFacts FamilyOnly FamilySelectTrace FamilyMatchingCtx
  FamilyApplyRestore FamilySelectedOccurrence FamilyProducedKey FamilyResultFold FamilyResultFrame
  FamilyMarkerSpecialize TySupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_set_types_sub:forall xs C,
  A.c_sub(fold_left(fun C q=>A.set_ty C(fst q)(snd q))xs C)=A.c_sub C.
 Proof. intro xs;induction xs as[|q xs IH];intro C;[reflexivity|cbn[fold_left];rewrite IH;reflexivity]. Qed.

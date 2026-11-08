@@ -1,6 +1,6 @@
 (* Canonical functor views retain distinct input and existential output roles. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource ReifyInterfaces ReifyRoles ReifyMaps ReifyTransfers ReifyWalkData BodyTr ReifyPlan ReifyInitial ReifyAnnotations.
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource ReifyInterfaces ReifyRoles ReifyMaps ReifyTransfers ReifyWalkData BodyTr ReifyPlan ReifyInitial ReifyAnnotations.
 Import ListNotations.
 
 Record reify_functor_view : Type := ReifyFunctorView {
@@ -51,9 +51,9 @@ Definition result_generation_equations (source : st) (scope : reify_scope ety ke
   filter (fun p => negb (existsb (Nat.eqb (fst p)) outputs)) (reify_snapshot_subst source scope).
 Definition render_functor_result_type (source : st) (scope : reify_scope ety key)
     (outputs : subst) (runtime : reify_state) (tau : ety) : ty :=
-  Audit.app_subst (rf_generations runtime)
-    (Audit.app_subst (result_generation_equations source scope (map fst outputs))
-      (Audit.app_subst outputs (tr (reify_field_number source) tau))).
+  ExecutionModel.app_subst (rf_generations runtime)
+    (ExecutionModel.app_subst (result_generation_equations source scope (map fst outputs))
+      (ExecutionModel.app_subst outputs (tr (reify_field_number source) tau))).
 
 Example result_generation_precedes_old_merge : forall source,
   let scope := ReifyScope ety key [(1,YAbs 1);(2,YAbs 2)]
@@ -319,11 +319,11 @@ Fixpoint pair_result_items (actual formal : tele) : option smap :=
    equations on a future invocation's own formal inputs and retain scope. *)
 Definition map_fixed_interpretation (fixed : list tsym) (sigma interpretation : subst) : subst :=
   map(fun p=>(fst p,if existsb(Nat.eqb(fst p))fixed
-      then Audit.app_subst sigma(snd p)else snd p))interpretation.
+      then ExecutionModel.app_subst sigma(snd p)else snd p))interpretation.
 Lemma map_fixed_interpretation_lookup : forall fixed sigma interpretation key,
   lookup_subst key(map_fixed_interpretation fixed sigma interpretation)=
   option_map(fun meaning=>if existsb(Nat.eqb key)fixed
-    then Audit.app_subst sigma meaning else meaning)(lookup_subst key interpretation).
+    then ExecutionModel.app_subst sigma meaning else meaning)(lookup_subst key interpretation).
 Proof.
  intros fixed sigma interpretation;induction interpretation as[|[name meaning]rest IH];intro key;cbn.
  - reflexivity.
@@ -412,7 +412,7 @@ Definition lower_checked_functor_application (source : st) (defaults : subst)
               match allocate_application_type_outputs (rfv_output_types view) output_arguments input_runtime with
               | None=>None
               | Some(type_outputs,output_types,typed_runtime)=>
-                  let render:=fun tau=>Audit.app_subst(rf_generations typed_runtime)
+                  let render:=fun tau=>ExecutionModel.app_subst(rf_generations typed_runtime)
                     (reify_snapshot_type source output_scope tau) in
                   match lower_result_first_order source output_scope render output_keys typed_runtime with
                   | None=>None
@@ -487,7 +487,7 @@ Definition solve_captured_fixed_types (scope : reify_scope ety key) (variables :
 Definition captured_fixed_interpretation (source : st) (roles : subst)
     (solution : list(tsym*ety)) (caller : reify_state) : subst :=
   flat_map(fun p=>match snd p,nassoc(fst p)solution with
-    | TAbs formal,Some actual=>[(formal,Audit.app_subst(rf_generations caller)
+    | TAbs formal,Some actual=>[(formal,ExecutionModel.app_subst(rf_generations caller)
         (tr(reify_field_number source)actual))]
     | _,_=>[] end)roles.
 Definition instantiate_functor_fixed_types (source : st) (scope : reify_scope ety key)
@@ -506,7 +506,7 @@ Proof.
  destruct role as[|formal_role|head args|members].
  - cbn in H;contradiction.
  - change (In (formal,tau) (match nassoc generation solution with
-     | Some actual => [(formal_role,Audit.app_subst(rf_generations caller)
+     | Some actual => [(formal_role,ExecutionModel.app_subst(rf_generations caller)
          (tr(reify_field_number source)actual))] | None => [] end)) in H.
    destruct(nassoc generation solution)as[actual|]eqn:E;[|contradiction].
    destruct H as[H|[]];injection H as <- <-;exists generation;exact Hin.

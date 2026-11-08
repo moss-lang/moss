@@ -1,6 +1,6 @@
 (* Link creator receipts transport final-program readings across local scopes. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ReqsSolve
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ReqsSolve
  InfoInvariant BodySoundCore FinalForwarders FinalLambdas FinalLinks LinkCacheInvariant.
 Import ListNotations.
 Lemma later_link_frame_back : forall w P R Fl s final,

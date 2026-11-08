@@ -1,6 +1,6 @@
 (* The first forwarder walk installs requirement names at their own meanings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodyTy CanonTypes InfoCache FnSnapshotAlign BodyTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodyTy CanonTypes InfoCache FnSnapshotAlign BodyTr.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].

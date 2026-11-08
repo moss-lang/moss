@@ -2,7 +2,7 @@
    Declaration names, nominal heads, argument labels, symbols and stamps retain
    their original identities. This is a snapshot operation, not a FunCtx rule. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr ElabSound.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr ElabSound.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
@@ -298,9 +298,9 @@ Proof.
  destruct(Nat.eqb g a);[reflexivity|exact IH].
 Qed.
 Lemma scoped_type_read : forall Fl rho t,
- tr Fl(scoped_type rho t)=Audit.app_subst(semantic_generation_substitution rho)(tr Fl t).
+ tr Fl(scoped_type rho t)=ExecutionModel.app_subst(semantic_generation_substitution rho)(tr Fl t).
 Proof.
- intros Fl rho t;induction t as[| |g|h args IH|ts IH|fs IH]using ety_ind';cbn[scoped_type tr Audit.app_subst];try reflexivity.
+ intros Fl rho t;induction t as[| |g|h args IH|ts IH|fs IH]using ety_ind';cbn[scoped_type tr ExecutionModel.app_subst];try reflexivity.
  - rewrite scope_semantic_lookup;unfold scoped_generation;destruct(nassoc g rho);reflexivity.
  - f_equal;induction IH as[|[label t]rest H IH IHr];cbn;[reflexivity|].
    cbn in H;rewrite H,IHr;reflexivity.

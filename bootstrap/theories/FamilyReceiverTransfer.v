@@ -1,8 +1,8 @@
 (* Specialization commutes with context brackets and the selected receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx CtxMerge TyOfSubst TySupport SourceReadingExtend ProvideResultSubst.
+From NM Require Import ExecutionModel Sx CtxMerge TyOfSubst TySupport SourceReadingExtend ProvideResultSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_forall2_det:forall X Y(R:X->Y->Prop),
  (forall x y z,R x y->R x z->y=z)->forall xs ys zs,
  Forall2 R xs ys->Forall2 R xs zs->ys=zs.
@@ -45,7 +45,7 @@ Theorem family_receiver_transfer:forall b W sigma r marked semantic completed pa
  A.WorldOf b W->TySupport W target->
  SubRel sigma marked completed->@TypeExtension W semantic completed->
  A.RecvTy W r marked pat->A.RecvTy W r semantic target->
- Audit.app_subst sigma pat=target.
+ ExecutionModel.app_subst sigma pat=target.
 Proof.
  intros b W sigma r marked semantic completed pat target Wo Supported SR TE Rm Rs.
  pose proof(output_receiver_subst W sigma r marked pat Rm completed SR)as Rm'.

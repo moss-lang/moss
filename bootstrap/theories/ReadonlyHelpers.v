@@ -2,7 +2,7 @@
    One traversal preserves function rows, forwarder rows, wrapper cache,
    constant cache and function headers; clients select their projection. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabKeeps ReifyData ReifyHeader.
+From NM Require Import ExecutionModel NMap Sx Elab ElabKeeps ReifyData ReifyHeader.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 Definition readonly_base (s : st) := (st_fns s, st_fwd s, st_wrappers s, st_consts s).

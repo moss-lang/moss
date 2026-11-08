@@ -1,9 +1,9 @@
 (* The actual need checker and satisfaction-map emitter establish Satisfies. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CtxWalk CtxMerge
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CtxWalk CtxMerge
  CanonTypes InstantiateTr NeedExec NeedMapExec SmapExec InfoShape.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Execution.
 Variable w:Elab.world. Context{P:xprogram}.

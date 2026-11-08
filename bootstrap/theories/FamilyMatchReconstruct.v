@@ -1,10 +1,10 @@
 (* The checked raw reconstruction is the semantic matching substitution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr Merge CanonTypes
  TyOfSubst PMatchComplete PMatchExec PMatchSemanticImage FamilyCandidateComplete FamilyCandidateWitness
  FamilyMarkedSubst FamilyMatchingCtx FamilyMarkerSpecialize FamilyScanSpecialize.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_set_types_member:forall xs C p y,
  NoDup(map fst xs)->A.nlook p xs=Some y->
  A.nlook p(A.c_ty(fold_left(fun C q=>A.set_ty C(fst q)(snd q))xs C))=Some y.
@@ -71,7 +71,7 @@ Theorem family_match_reconstructs:forall c e F C marks matching pat r,
  Forall(fun q=>canon e(snd q)=snd q)matching->canon e pat=pat->
  forallb(fun q=>is_some(nassoc(fst q)matching))(filter(fun q=>nmem(snd q)(ety_gens pat))marks)=true->
  canon e(ety_subst_full(family_raw_inst marks matching)pat)=r->
- Audit.app_subst(family_marker_subst marks(family_semantic_target C(family_matching Fl e matching)))(tr Fl pat)=tr Fl r.
+ ExecutionModel.app_subst(family_marker_subst marks(family_semantic_target C(family_matching Fl e matching)))(tr Fl pat)=tr Fl r.
 Proof.
  intros c e F C marks matching pat r HC Marks Unique Values Pat Mentioned Checked.
  set(theta:=fun p=>opt_default YUnit(nassoc p matching)).

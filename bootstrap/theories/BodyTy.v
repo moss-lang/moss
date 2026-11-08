@@ -12,11 +12,11 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore Merge CanonTypes TyOfSubst.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore Merge CanonTypes TyOfSubst.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
@@ -526,7 +526,7 @@ Proof.
     destruct (tn_get e k); cbn [option_map]; [rewrite tr_canon by exact T|]; reflexivity. }
   specialize (Ts SR). rewrite tr_canon in Ts by exact T.
   rewrite (cr_mod _ _ _ _ _ _ _ Hc), (cr_this _ _ _ _ _ _ _ Hc).
-  assert (Ethis : option_map (Audit.app_subst (suf Fl (en_uf e))) (option_map trF (cx_this c)) =
+  assert (Ethis : option_map (ExecutionModel.app_subst (suf Fl (en_uf e))) (option_map trF (cx_this c)) =
     option_map (fun y => trF (canon e y)) (cx_this c)).
   { destruct (cx_this c); cbn [option_map]; [rewrite tr_canon by exact T|]; reflexivity. }
   rewrite Ethis in Ts. exact Ts.

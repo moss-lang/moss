@@ -1,9 +1,9 @@
 (* The actual lambda capture filter has exactly the lexical names the rule
    requests, and preserves the real source local table's uniqueness. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit Sx Elab LambdaNameRead LambdaLocals.
+From NM Require Import ExecutionModel Sx Elab LambdaNameRead LambdaLocals.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition lambda_source_captures(c:cx)(e:env)(ps:list(name*option aty))(body:aexpr):=
  filter(fun q=>smem(fst q)(free_names_e 10000 body)&&negb(smem(fst q)(map fst ps)))
  (match cx_applying c with[]=>en_locals e|_=>[]end).

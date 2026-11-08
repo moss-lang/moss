@@ -1,8 +1,8 @@
 (* Bind-item derivations contain only core bind wrappers. *)
 From Stdlib Require Import List.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Binds.
 Variables(W:A.world)(P:xprogram).
 Lemma capture_prefix_binds : forall F qs tail endbinds,A.BindsOf tail endbinds ->

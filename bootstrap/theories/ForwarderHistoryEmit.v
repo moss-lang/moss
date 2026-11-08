@@ -1,5 +1,5 @@
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly SymReadonly FnPresentSynth FnBoundSynth
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly SymReadonly FnPresentSynth FnBoundSynth
  ForwarderHistory ForwarderHistoryOps ForwarderHistoryStep ForwarderExpectHistory.
 Import ListNotations.
 Set Implicit Arguments.

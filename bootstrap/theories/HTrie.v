@@ -11,7 +11,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool PrimInt63 Uint63.
-From NM Require Audit.
+From NM Require ExecutionModel.
 Import ListNotations.
 
 Inductive trie (A : Type) : Type :=
@@ -22,8 +22,8 @@ Arguments TN {A}.
 
 Local Open Scope uint63_scope.
 
-Notation key_go := Audit.HeapAddress.key_go.
-Notation key := Audit.HeapAddress.key.
+Notation key_go := ExecutionModel.HeapAddress.key_go.
+Notation key := ExecutionModel.HeapAddress.key.
 
 (* ---- the maps, by lists of bits ---- *)
 

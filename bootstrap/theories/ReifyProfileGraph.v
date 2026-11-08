@@ -2,7 +2,7 @@
    profiles. A missing interface is checked from its real declaration on an
    isolated source snapshot, with distinct output generations. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss NMap Sx Elab ReifyData ReifyFunctorProfiles.
+From NM Require Import ExecutionModel CoreMoss NMap Sx Elab ReifyData ReifyFunctorProfiles.
 Import ListNotations.
 Local Strategy opaque[FUEL ELAB_FUEL fun_env fresh_target_output_view result_types].
 Definition declared_functor_profile(source:st)(original:usym)

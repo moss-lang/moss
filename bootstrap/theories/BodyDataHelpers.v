@@ -1,8 +1,8 @@
 (* Static execution helpers, independent of record/match soundness. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabMono BodySoundCore Merge CanonTypes.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ElabMono BodySoundCore Merge CanonTypes.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Down.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
 

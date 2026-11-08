@@ -1,6 +1,6 @@
 (* Existing function scopes survive body compilation, including pending lambdas. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv ReifyHeader
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv ReifyHeader
  FnPresentStable FnPresentEmit.
 Import ListNotations.
 Set Implicit Arguments.

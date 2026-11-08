@@ -1,7 +1,7 @@
 (* Retain the source merge action in private generation space.  The name
    table is still materialized; these edges act only on generation leaves. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodyTr Merge CanonTypes InputGenerationScope.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodyTr Merge CanonTypes InputGenerationScope.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].

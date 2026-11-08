@@ -1,9 +1,9 @@
 (* Actual source type reading preserves declaration and argument support. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy SigSound CanonBodyTy PartialBodyTy SourceClean NominalSupport TySupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
 Lemma supported_map_tm : forall W Fl tm,

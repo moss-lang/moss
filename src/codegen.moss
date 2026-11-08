@@ -3682,6 +3682,9 @@ assume Std {
         }
         if ast::is_some(ast::a_of(e)) {
           emit_as(body, ast::a_of(e), m, cg_ret.read());
+        } else if canon_in(cg_env.read(), cg_ret.read()) != types::ty_unit() {
+          cg_error(c_bad_type(), ast::none());
+          return ty_none();
         }
         op_return(body);
         return types::ty_never();

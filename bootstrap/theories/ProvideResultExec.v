@@ -1,7 +1,7 @@
 (* Output keys are occurrences, in source order; unlike input needs, they
    need not be distinct.  These execution facts do not assume uniqueness. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -142,7 +142,7 @@ Proof.
  exists ts,st,et,se,n,sn;repeat split;try assumption.
 Qed.
 
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Scheme output_entry_mut := Minimality for A.OutputItemEntries Sort Prop
  with output_entries_mut := Minimality for A.OutputItemsEntries Sort Prop.
 Lemma output_items_types:forall W p ob tm specs es tm',

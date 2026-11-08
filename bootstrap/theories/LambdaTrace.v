@@ -1,6 +1,6 @@
 (* Actual anonymous-function stages, before semantic capture reasoning. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  LambdaAnnotationOps LambdaLocalNames SymReadonly FnReadonly.
 Import ListNotations.
 Local Open Scope string_scope.

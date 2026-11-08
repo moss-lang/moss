@@ -1,6 +1,6 @@
 (* XTag's type arguments use the context's solved merge. *)
 From Stdlib Require Import List.
-From NM Require Import Audit NMap Sx Elab.
+From NM Require Import ExecutionModel NMap Sx Elab.
 Import ListNotations.
 
 Example tag_theta_merged_argument : forall s,

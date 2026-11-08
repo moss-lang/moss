@@ -1,13 +1,13 @@
 (* Family callbacks use receipts genuinely retained from the accepted run. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx Elab ElabFrameCore BodySoundCore ProvidedDirect LiteralDirect
+From NM Require Import ExecutionModel Sx Elab ElabFrameCore BodySoundCore ProvidedDirect LiteralDirect
  ProvidedFamilyExec LiteralFamilyExec.
 Section Callbacks.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
-Hypothesis Hworld:Audit.Elaboration.WorldOf b(BodySoundCore.W w R Fl).
+Hypothesis Hworld:ExecutionModel.Elaboration.WorldOf b(BodySoundCore.W w R Fl).
 Theorem provided_family_step:forall fuel,OK w P R Fl fuel->ProvidedFamilyStep w P R Fl fuel.
 Proof.
  intros fuel IH c e ox r m args s x t sf Run F C Hi Ii Fi HC Post Wr Sr Miss.

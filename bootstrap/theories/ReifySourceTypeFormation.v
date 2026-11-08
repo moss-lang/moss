@@ -3,7 +3,7 @@
 From Stdlib Require Import List Bool Arith.
 From NM Require Import CoreMoss ReifyFormation ReifyTypeTransport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition source_nominal_schemas(W:A.world)(Sg:gsig):Prop:=
  forall n k,A.kind_sym W n=Some k->(k=A.DKTag\/k=A.DKUnit)->
  (exists payload,g_tag Sg n=Some(map ITy(A.w_reqs W n),payload))\/

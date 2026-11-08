@@ -2,10 +2,10 @@
    and value declarations are added. Only the genuinely emitted finite rows
    remain as declaration-formation obligations. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss NMap Elab ReifyData ReifySig ReifySigFormation
+From NM Require Import ExecutionModel CoreMoss NMap Elab ReifyData ReifySig ReifySigFormation
   ReifyNominal ReifyNominalWorld ReifyNominalWorldSource ReifySourceTypeFormation.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma reified_signature_type_extension : forall base declarations t,
  g_ty base t=true->g_ty(reify_signature_overlay base declarations)t=true.
 Proof.

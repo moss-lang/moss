@@ -1,11 +1,11 @@
 (* Declared signatures read in an explicit receiver context. Unlike the
    plain-function specialization, this also covers method context items. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore
   BodySoundCore BodyTy CtxWalk.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL].
 
 Section Signature.

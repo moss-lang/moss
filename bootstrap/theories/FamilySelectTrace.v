@@ -1,11 +1,11 @@
 (* The selected family is a genuinely classified loaded abstract target. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  FunctorDecl FunctorDeclExec NMapEnum FamilyKeysExec PMatchExec NominalSupport.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Notation "x +++ y":=(List.app x y)(at level 60,right associativity).
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_candidate:=(gsym*list(nat*ety))%type.
 Definition family_leaf:=(nat*gsym*gsym*list(nat*ety))%type.
 Definition family_candidate_step(mi:nat)(e em:env)(r:ety)(mid u:nat)(fg:gsym)

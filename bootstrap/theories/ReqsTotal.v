@@ -17,11 +17,11 @@
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ComponentContracts.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Import ComponentContracts.SourceReading.
 
 Local Strategy opaque [Nat.of_num_uint].
@@ -809,7 +809,7 @@ Proof.
 Qed.
 
 (* ======================================================================== *)
-(* 5. Every tag's listed parameters (Elab.check_listed, Audit note 40)       *)
+(* 5. Every tag's listed parameters (Elab.check_listed, ExecutionModel note 40)       *)
 (* ======================================================================== *)
 
 Lemma miter_each : forall X (f : X -> M unit) l s u s',

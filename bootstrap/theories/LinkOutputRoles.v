@@ -1,6 +1,6 @@
 (* The temporary result roles come from actual distinct symbol allocations. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ForwarderTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ForwarderTrace.
 Import ListNotations.
 Local Open Scope string_scope.
 Definition link_output_allocate(fg:gsym)(ts:list nat):M(list(nat*nat)):=

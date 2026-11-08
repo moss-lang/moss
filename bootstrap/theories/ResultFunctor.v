@@ -1,7 +1,7 @@
 (* Returned dictionaries keep their captured fixed meanings even when the
    enclosing provider creates a new output generation with the same name. *)
 From Stdlib Require Import List.
-From NM Require Import Audit Elab.
+From NM Require Import ExecutionModel Elab.
 Import ListNotations.
 
 Example returned_functor_old_capture_refused :

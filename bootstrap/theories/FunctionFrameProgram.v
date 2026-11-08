@@ -1,6 +1,6 @@
 (* Actual whole-source execution supplies frames for every reachable function. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  FnReadonly SymReadonly FnBound FnBoundEmit FnBoundSynth FnBoundProgram FnPresentStable
  FnCompleted FnCoverage ForwarderHistory ReifyHeader ReifyHeaderReadonly ReifyHeaderStable
  ReifyHeaderPresent ReifyHeaderProgram ReifyReach ReifyProgramWalk

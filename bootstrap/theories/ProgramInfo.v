@@ -1,6 +1,6 @@
 (* Reuse checked information-preservation certificates at program phase boundaries. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab.
+From NM Require Import ExecutionModel NMap Sx Elab.
 From NM Require Export InfoPreserve.
 Local Strategy opaque [fn_info].
 Lemma program_info_listed:okI check_listed.

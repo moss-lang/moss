@@ -1,5 +1,5 @@
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabFrame ElabInv FnReadonly FnPresentStable FnPresentEmit FnPresentSynth ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabFrame ElabInv FnReadonly FnPresentStable FnPresentEmit FnPresentSynth ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit.
 From NM Require Import SynthTraversal.
 Import ListNotations.
 Set Implicit Arguments.

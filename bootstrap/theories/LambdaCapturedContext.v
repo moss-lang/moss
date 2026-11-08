@@ -1,10 +1,10 @@
 (* The actual capture filter and allocation fold form the exact lexical
    context requested by LP, including every fresh capture slot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore
  LambdaTrace LambdaCaptureNames LambdaCaptureContext LambdaCaptureFold LambdaCaptureTables LambdaCapturedLocals.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma captured_names_rows:forall qs rows,Forall2 capture_row qs rows->
  map capture_name rows=map fst qs.
 Proof.

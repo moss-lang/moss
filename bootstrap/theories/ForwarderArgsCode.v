@@ -1,6 +1,6 @@
 (* Exact argument slots of a synthesized forwarder, from real execution. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderLocalCode.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderLocalCode.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].

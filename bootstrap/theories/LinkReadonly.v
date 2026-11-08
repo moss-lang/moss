@@ -1,6 +1,6 @@
 (* Quiet helpers leave linked-functor creation history unchanged. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabKeeps ReifyData.
+From NM Require Import ExecutionModel NMap Sx Elab ElabKeeps ReifyData.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].
 Lemma kl_record_event : forall event, keeps st_links (record_reify_event event).

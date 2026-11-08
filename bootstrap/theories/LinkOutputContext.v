@@ -1,8 +1,8 @@
 (* Freezing input meanings before installing roles preserves their semantic context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodySoundCore BodyTr BodyTy Merge CanonTypes NominalSupport.
+From NM Require Import ExecutionModel NMap Sx Elab BodySoundCore BodyTr BodyTy Merge CanonTypes NominalSupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma link_output_frozen_type:forall e t,
  tn_get(target_input_types e)t=option_map(canon e)(tn_get e t).
 Proof.

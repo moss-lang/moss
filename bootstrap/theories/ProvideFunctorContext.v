@@ -1,10 +1,10 @@
 (* Actual functor outputs install the fixed readings of the completed output
    scope, including bracket overrides, rather than an ambient approximation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  BindFunctorCtx FunctorDecl BodyTy ProvideResultFixed ResultMentionsExact ResultMentionsNoDup.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition provide_functor_code(e:env)(g:gsym)(tm:list(nat*ety))(out:list key):M(env*list key):=
  let!stamp:=fresh in let!xs:=functor_fixed g in
  let e:=set_fun e(gs_id g)stamp in let!sa:=fresh in

@@ -1,10 +1,10 @@
 (* Actual selection followed by application supplies every family-call premise. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy Merge CanonTypes
  NominalSupport TySupport SourceSupport RelFacts ProvideResultContext FamilySelectTrace FamilyMatchingCtx
  FamilyApplyRestore FamilyProducedKey FamilyResultFrame FamilyOnly.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Selected.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

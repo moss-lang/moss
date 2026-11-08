@@ -1,6 +1,6 @@
 (* Transport along checked complete maps for first-order provision slots. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit CoreMoss XTyping XEnv XRuntimeEnv ReifyMaps.
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv XRuntimeEnv ReifyMaps.
 Import ListNotations.
 Set Implicit Arguments.
 Section Transport.

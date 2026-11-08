@@ -19,11 +19,11 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint].
 

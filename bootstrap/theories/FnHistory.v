@@ -1,7 +1,7 @@
 (* Provenance of visible source-function bodies. Recursive XUnit markers are
    deliberately not treated as completed bodies or as a unique table row. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoInvariant FwdInvariant ReqsSolve.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame InfoInvariant FwdInvariant ReqsSolve.
 Import ListNotations.
 Set Implicit Arguments.
 

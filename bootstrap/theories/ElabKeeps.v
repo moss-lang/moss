@@ -1,8 +1,8 @@
 (* Projection preservation for the elaborator state. This layer depends only
    on the executable monad, so readonly proofs can precede frame soundness. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Elab.
-Import Audit.Input.
+From NM Require Import ExecutionModel Elab.
+Import ExecutionModel.Input.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint].
 

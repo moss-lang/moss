@@ -26,7 +26,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Ascii Bool Arith PrimInt63 Uint63.
-From NM Require Import Audit NMap Sx ReifyData.
+From NM Require Import ExecutionModel NMap Sx ReifyData.
 From NM Require Export Sx.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -984,7 +984,7 @@ Fixpoint mentioned_nominals (fuel : nat) (t : aty) (mi : nat) : M (list nat) :=
 (* the type symbols of an assume nesting, through contexts (V.1's
    SpecTypes): depth first, entering each context once (`fst acc`, the
    contexts seen), so contexts nest to any depth and a cycle of them reads
-   as the union of their items (Audit note 30).  The types come out in
+   as the union of their items (ExecutionModel note 30).  The types come out in
    order of first reaching, as the walk of every context each time did on
    the nestings it accepted.  Each call enters a context not seen before,
    so `walk_fuel` (one more than the symbols) is never used up. *)
@@ -1172,7 +1172,7 @@ Definition signature_type_syms (g : gsym) (rs : list nat) : M (list nat) :=
    mentions no generation merged at or before it.  Following them from a
    type therefore takes at most as many steps along any path as there are
    merges, and canon's fuel counts only those steps, not the type's depth:
-   it cannot run out on a type it has not resolved (Audit note 55). *)
+   it cannot run out on a type it has not resolved (ExecutionModel note 55). *)
 Fixpoint canon_go (fuel : nat) (uf : list (nat * ety)) (t : ety) {struct fuel} : ety :=
   match fuel with
   | 0 => t
@@ -1399,7 +1399,7 @@ Fixpoint unify (fuel : nat) (e : env) (mi : nat) (a b : ety) (why : string) : M 
       let mismatch := let! sa := show a in let! sb := show b in
                       err mi ("cannot merge `" ++ sa ++ "` with `" ++ sb ++ "`" ++ why ++ " (D43)") in
       (* occurs check: a generation is never merged with a type that
-         contains it, which no finite type unifies (Audit note 53) *)
+         contains it, which no finite type unifies (ExecutionModel note 53) *)
       let cyclic := let! sa := show a in let! sb := show b in
                     err mi ("cannot merge `" ++ sa ++ "` with `" ++ sb ++ "`" ++ why ++ ", which contains it (D43)") in
       match a, b with
@@ -1407,7 +1407,7 @@ Fixpoint unify (fuel : nat) (e : env) (mi : nat) (a b : ety) (why : string) : M 
       | _, YAbs g => if nmem g (ety_gens a) then cyclic else ret (set_uf e g a)
       | YNom n xs, YNom m ys =>
           (* one head has one argument list (its requirements, in their
-             order); compared for the proof (Audit note 55) *)
+             order); compared for the proof (ExecutionModel note 55) *)
           if Nat.eqb n m then
             if list_eq_dec Nat.eq_dec (map fst xs) (map fst ys)
             then mfold (fun e p => unify f e mi (fst p) (snd p) why) e
@@ -1513,13 +1513,13 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
                        | YAbs _ => let! s := show x in
                                    err mi ("union member `" ++ s ++ "` is abstract and not constrained to a nominal type (D15)")
                        | YNom h _ =>
-                           (* 0 is no symbol (records' reserved head, Audit
+                           (* 0 is no symbol (records' reserved head, ExecutionModel
                               note 34): never so; checked for the proof *)
                            if Nat.eqb h 0 then err mi "union member is not nominal (D15)" else
                            if ety_mem x out then let! s := show x in err mi ("duplicate union member `" ++ s ++ "`")
                            else
                              (* D15: no two members share a head, so a
-                                match arm's head names one member (Audit
+                                match arm's head names one member (ExecutionModel
                                 note 33) *)
                              match find (fun y => match y with YNom h' _ => Nat.eqb h h' | _ => false end) out with
                              | Some y => let! s := show x in let! s' := show y in
@@ -1529,7 +1529,7 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
                              end
                        | _ => let! s := show x in err mi ("union member `" ++ s ++ "` is not nominal (D15)")
                        end) out (members y)) [] ms in
-          (* a union of no members is `|` (Audit note 42) *)
+          (* a union of no members is `|` (ExecutionModel note 42) *)
           ret (match out with [] => YNever | _ => YUnion out end)
       | ATRef p a =>
           let! g := resolve_type_symbol mi p in
@@ -1540,7 +1540,7 @@ Fixpoint elab_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety)) (e 
               let! s := app_subst f e mi bs tm in
               let tm' := s +++ tm in
               check_totality mi g tm' e ;;
-              (* a type symbol takes no brackets, not even `T[]` (Audit
+              (* a type symbol takes no brackets, not even `T[]` (ExecutionModel
                  note 50) *)
               if kind_eqb (gs_kind g) KType then err mi ("type `" ++ gs_name g ++ "` takes no brackets") else
               symbol_type f mi g tm' e
@@ -1807,7 +1807,7 @@ Definition add_method_item (e : env) (mi : nat) (recv : gsym) (n : name) (subst 
    forever: the relation has no reading of it, and the elaborator reports
    it.  Each level of nesting takes two of the fuel, and an acyclic
    nesting enters each context at most once on the way down, so twice
-   `walk_fuel` runs out only on a cycle (Audit note 30). *)
+   `walk_fuel` runs out only on a cycle (ExecutionModel note 30). *)
 Definition ctx_fuel : M nat := let! n := walk_fuel in ret (2 * n).
 
 Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : list (nat * ety))
@@ -1894,7 +1894,7 @@ with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat *
                         end in
           (* D71: a bracket on a context, val or fn item binds a type
              symbol among the item's requirements, as on a type or a bind
-             (a method item's may bind any type symbol: Audit note 56) *)
+             (a method item's may bind any type symbol: ExecutionModel note 56) *)
           let relevant (g : gsym) : M unit :=
             match a with Some bs => check_relevant mi g bs | None => ret tt end in
           match d, p with
@@ -1910,7 +1910,7 @@ with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat *
               | Some (ESym s) =>
                   let! g := sym s in relevant g ;;
                   (* only a context, an assumed val and a fn take brackets
-                     here: the others introduce no reading of them (Audit
+                     here: the others introduce no reading of them (ExecutionModel
                      note 57) *)
                   let bracketless :=
                     match gs_kind g, gs_decl g with
@@ -1973,7 +1973,7 @@ Definition result_functor_fixed_ok (body promised : env) (made : list (nat * ety
 
 (* lower.merged_walk: rebuild until the walk adds no edge, at most 8
    times.  A walk that still adds one in its 9th round, the check of the
-   8th, is rejected: what it made is no merge of its telescope (Audit
+   8th, is rejected: what it made is no merge of its telescope (ExecutionModel
    note 52). *)
 Definition merged_walk (mi : nat) (walk : env -> M (env * list key)) : M (env * list key) :=
   let fix go (n : nat) (tne ufe : list (nat * ety)) : M (env * list key) :=
@@ -2046,7 +2046,7 @@ Definition add_root_context (e : env) (mi : nat) (needs : list key) : M (env * l
 (* lower.base_env + the bookkeeping of lower_fn: a function's needs, the
    instantiation it needs each at, and the merges its context made.  The
    cache is keyed by symbol, so the info is computed from the symbol table's
-   entry for it (Audit note 58). *)
+   entry for it (ExecutionModel note 58). *)
 Definition fn_info (g0 : gsym) : M fninfo :=
   let! x := get in
   match nget (st_info x) (gs_id g0) with
@@ -2371,7 +2371,7 @@ Definition check_assumes : M unit :=
 (* ===================== 12. Syntax helpers ================================= *)
 
 (* whether a `break` in x (or b) leaves the innermost enclosing loop: not
-   one inside a nested `while` or `loop` (Audit note 42: structural, so at
+   one inside a nested `while` or `loop` (ExecutionModel note 42: structural, so at
    any depth) *)
 Fixpoint has_break_e (x : aexpr) : bool :=
   match x with
@@ -3169,7 +3169,7 @@ Definition is_never (t : ety) : bool := match t with YNever => true | _ => false
 Definition is_unit_or_never (t : ety) : bool := match t with YNever | YUnit => true | _ => false end.
 
 (* Branches join on their canonical types (canon: the merges in force), as
-   the relation reads them; the message shows them as written (Audit
+   the relation reads them; the message shows them as written (ExecutionModel
    note 59). *)
 Definition join (mi : nat) (e : env) (a b : ety) (exp : option ety) : M ety :=
   match exp with
@@ -3226,7 +3226,7 @@ Definition compile_pattern (mi : nat) (e : env) (p : apat) (sty : ety) (heads : 
           let! g := sym s in
           if kind_eqb (gs_kind g) KUnit || kind_eqb (gs_kind g) KTag then
             (* a member of that head is the tag's (or unit's) application,
-               never an abstract type that shares its number (Audit note 61) *)
+               never an abstract type that shares its number (ExecutionModel note 61) *)
             if match nassoc s heads with Some (YNom _ _) => true | _ => false end then ret (XPHead s None [], [], [s], false)
             else let! ss := show sty in err mi ("`" ++ gs_name g ++ "` is not a member of `" ++ ss ++ "`")
           else err mi ("`" ++ show_path pp ++ "` is not a matchable pattern")
@@ -3321,7 +3321,7 @@ Definition parse_exp (l : list ascii) : bool * nat :=
 
 (* A literal's text as the parser writes it (Parse.lit_norm): digits, an
    optional `.` and digits, an optional `e`, `-` and digits; no `E` (Track A,
-   Audit note 65: Part V's lit_value reads only that form). *)
+   ExecutionModel note 65: Part V's lit_value reads only that form). *)
 Definition is_digit_char (c : ascii) : bool := Nat.leb 48 (nat_of_ascii c) && Nat.leb (nat_of_ascii c) 57.
 Definition digits_wf (l : list ascii) : bool :=
   match l with [] => false | _ => forallb is_digit_char l end.
@@ -3766,7 +3766,7 @@ Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {s
                 | None => err mi ("`this` is only legal inside method bodies" ++ cx_nothis c)
                 end
     | AEReturn None =>
-        if is_unit_or_never (canon e (sg_ret (cx_sig c))) then ret (XReturn XUnit, YNever)
+        if ety_eqb (canon e (sg_ret (cx_sig c))) YUnit then ret (XReturn XUnit, YNever)
         else let! s := show (sg_ret (cx_sig c)) in
              err mi ("`return` with no value, but the function returns `" ++ s ++ "`")
     | AEReturn (Some y) =>
@@ -3939,7 +3939,7 @@ with synth_match (fuel : nat) (c : cx) (e : env) (s : aexpr) (arms : list (apat 
   match fuel with 0 => deep | S f =>
   let mi := cx_mod c in
   let! (sx, sty0) := synth f c e s None in
-  (* the scrutinee's type as the merges in force read it (Audit note 59) *)
+  (* the scrutinee's type as the merges in force read it (ExecutionModel note 59) *)
   let sty := canon e sty0 in
   let heads := fold_left (fun hs m => match head m with Some h => aset Nat.eqb h m hs | None => hs end)
                          (members sty) [] in
@@ -4009,7 +4009,7 @@ with synth_path (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) {struct fu
   match local with
   | Some (n, t) => let! x := local_var n in ret (XVar x, t)
   | None =>
-      (* a value is not applied to brackets: no rule reads them (Audit note 45) *)
+      (* a value is not applied to brackets: no rule reads them (ExecutionModel note 45) *)
       match a with
       | Some _ => err mi ("`" ++ show_path p ++ "[…]`: only a type or a tag constructor takes brackets")
       | None =>
@@ -4154,7 +4154,7 @@ with synth_record (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (fs : li
           | _ :: _ => err mi ("missing field(s) " ++ String.concat ", " (map fst missing) ++ " of `" ++ gs_name g ++ "`")
           | [] =>
               (* every field given once: a payload that names a field twice
-                 has no record literal (Audit note 62) *)
+                 has no record literal (ExecutionModel note 62) *)
               if negb (Nat.eqb (List.length fs) (List.length ftys)) then
                 err mi ("`" ++ gs_name g ++ "` names a field twice, so no record literal builds it")
               else
@@ -4661,7 +4661,7 @@ with lower_body (fuel : nat) (g : gsym) {struct fuel} : M unit :=
       let e := fold_left (fun e p => set_local e (fst p) (snd p) LLet) (sg_params sg) e in
       let vars := (match this with Some _ => [("this", 0)] | None => [] end) in
       let vars := vars +++ combine (map fst (sg_params sg)) (seq (List.length vars) (List.length (sg_params sg))) in
-      (* parameters are numbered by name: no two may share one (Audit note 43) *)
+      (* parameters are numbered by name: no two may share one (ExecutionModel note 43) *)
       let fix dup (l : list string) : option string :=
         match l with [] => None | x :: r => if smem x r then Some x else dup r end in
       match dup (map fst vars) with
@@ -5147,11 +5147,11 @@ Definition ELAB_FUEL : nat := 100000.
 (* ===================== 14. The platform (translate.py's `entry`) ========= *)
 
 (* The name table (which library fn is which primitive), prim_of_name, is
-   audit-level: Audit.v, Part IV. *)
+   audit-level: ExecutionModel.v, Part IV. *)
 
 (* ===================== 15. The program =================================== *)
 
-(* xprogram, the elaborator's output, is audit-level: Audit.v, Part II. *)
+(* xprogram, the elaborator's output, is audit-level: ExecutionModel.v, Part II. *)
 
 (* Validate the binding as main reads it, after its own context merges. *)
 Definition check_platform_entry_view (e : env) (k : key) (entry : xdentry) : M unit :=
@@ -5242,7 +5242,7 @@ Definition lower_all : M unit :=
                  (module_function_ids m)) (w_order w).
 
 (* D73, of every tag, used or not: what it lists are types its assume
-   nesting requires (Audit note 40; solve_requirements checks it only of
+   nesting requires (ExecutionModel note 40; solve_requirements checks it only of
    the tags elaboration reaches) *)
 Definition check_listed : M unit :=
   let! s := get in
@@ -5348,7 +5348,7 @@ Definition elab_program : M xprogram :=
       let! s := get in
       let machines := runtime_machines sc (st_next s) in
       let! main_types := mmap (fun q => let! tau := ety_ty (canon (fi_env info) (snd q)) in
-                                        ret (fst q, Audit.app_subst machines tau)) (tymap (fi_env info)) in
+                                        ret (fst q, ExecutionModel.app_subst machines tau)) (tymap (fi_env info)) in
       ret (XProgram (st_fns s) (st_funs s) b t fl msym
              (xinst [] main_types +++ env0) prims (runtime_casts sc (st_next s)) input_types [] false [] [])
   end.

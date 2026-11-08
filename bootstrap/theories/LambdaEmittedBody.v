@@ -1,10 +1,10 @@
 (* The actual fresh lambda symbol and historical emit receipt identify its
    final program body via the proved whole-program lambda history. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore
  ForwarderTrace FinalLambdas.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Body.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat).
 Theorem lambda_emitted_body:forall mi name body s pid afterPid beforeEmit compiled emitted,

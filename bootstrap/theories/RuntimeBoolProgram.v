@@ -1,8 +1,8 @@
 (* Actual checked runtime selections read the source Bool namespace exactly. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame LibraryFacts RuntimeBoolSupport.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame LibraryFacts RuntimeBoolSupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Lemma selected_bool_scope:forall w R Fl p ns n x,
  A.LibraryModule(W_read w R Fl)"bool"p->

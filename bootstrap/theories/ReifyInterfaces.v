@@ -3,7 +3,7 @@
    Input/output phases allocate disjoint roles; current source names are
    rendered separately and may denote composite types or old generations. *)
 From Stdlib Require Import List Arith Lia.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifyRoles ReifySource PayloadInst.
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifyRoles ReifySource PayloadInst.
 Import ListNotations.
 
 Definition source_scope_type_keys (scope : reify_scope ety key) : list tsym :=
@@ -19,7 +19,7 @@ Record source_type_interface : Type := SourceTypeInterface {
 Definition source_role_equations (source : st) (scope : reify_scope ety key)
     (roles : subst) : subst :=
   flat_map (fun p => match snd p with
-    | TAbs role => [(role,Audit.app_subst roles
+    | TAbs role => [(role,ExecutionModel.app_subst roles
         (reify_snapshot_type source scope (YAbs (fst p))))]
     | _ => [] end) roles.
 
@@ -29,7 +29,7 @@ Definition source_role_equations (source : st) (scope : reify_scope ety key)
 Definition enter_source_generations (source : st) (scope : reify_scope ety key)
     (runtime : reify_state) : reify_state :=
   ReifyState (rf_next runtime) (rf_names runtime)
-    (map (fun p => (fst p,Audit.app_subst (rf_generations runtime)
+    (map (fun p => (fst p,ExecutionModel.app_subst (rf_generations runtime)
       (reify_snapshot_type source scope (snd p))))
       (rs_generations ety key scope) ++ rf_generations runtime)
     (rf_items runtime) (rf_declarations runtime).
@@ -51,7 +51,7 @@ Proof. intros. repeat split; reflexivity. Qed.
 Definition enter_source_names (source : st) (scope : reify_scope ety key)
     (runtime : reify_state) : reify_state :=
   ReifyState (rf_next runtime)
-    (map (fun p => (fst p,Audit.app_subst (rf_generations runtime)
+    (map (fun p => (fst p,ExecutionModel.app_subst (rf_generations runtime)
       (reify_snapshot_type source scope (snd p)))) (rs_names ety key scope) ++ rf_names runtime)
     (rf_generations runtime) (rf_items runtime) (rf_declarations runtime).
 
@@ -106,7 +106,7 @@ Fixpoint lower_scope_values (source : st) (scope : reify_scope ety key)
   | [] => ([],before)
   | (name,tau) :: rest =>
       let raw := reify_snapshot_type source scope tau in
-      let inputs := value_type_inputs (Audit.app_subst (rf_generations before) raw) in
+      let inputs := value_type_inputs (ExecutionModel.app_subst (rf_generations before) raw) in
       let '(slot,middle) := lower_value_provision name inputs raw before in
       let '(tail,after) := lower_scope_values source scope rest middle in
       (IVal slot :: tail,after)

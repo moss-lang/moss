@@ -5,7 +5,7 @@
 
 From Stdlib Require Import List.
 From NM Require Import ComponentContracts.
-From NM Require Import Audit CoreMoss MossX Sx Elab Specialization RelFacts.
+From NM Require Import ExecutionModel CoreMoss MossX Sx Elab Specialization RelFacts.
 From NM Require FastPath WorldSound ElabFrame ReqsTotal MethodLookup XBridgeCtx.
 From NM Require XTyping XSafety XExample XHeapC.
 From NM Require Parse FrontEnd FrontEndComplete FrontEndLoader DumpRoundTrip.
@@ -14,9 +14,9 @@ Import ListNotations.
 
 Module Certified := EarlyCertified.Certified.
 
-(* The fixed public platform uses the same primitives and heap invariant as
-   the executable. The generic build/run contract remains unimplemented. *)
-Module PublicRuntime := DefaultRuntime.Model.
+(* The concrete primitive/heap laws are for ExecutionModel, the executable
+   representation. They do not yet instantiate the revised Audit contract. *)
+Module ComponentRuntime := DefaultRuntime.Model.
 Definition default_interface := DefaultRuntime.default_interface.
 Definition default_interface_laws := DefaultRuntime.default_interface_laws.
 Definition default_compatible := DefaultRuntime.default_compatible.
@@ -74,7 +74,7 @@ Module FrontEndCertified <: FRONT_END.
 End FrontEndCertified.
 
 (* LOADER: a bundle the loader loads (Parse.load: load_bundle's modules,
-   their dumps read back) is what Audit.Loader.Bundled says
+   their dumps read back) is what ExecutionModel.Loader.Bundled says
    (FrontEndLoader.v). *)
 Module LoaderCertified <: LOADER.
   Definition load := Parse.load.

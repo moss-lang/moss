@@ -1,9 +1,9 @@
 (* Normalizing result type tables is justified by the actual context invariant. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr BodyTy Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr BodyTy Merge CanonTypes
  ProvideResultContext ProvideResultFold.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_result_tys(C:A.cx):list(nat*ty):=
  map(fun q=>(fst q,A.canon C(snd q)))(A.c_ty C).
 Definition family_types_stable(C:A.cx):Prop:=

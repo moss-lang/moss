@@ -1,7 +1,7 @@
 (* The elaborator's nested helpers never replace a visible loader function.
    Loaded lower_body calls are handled separately by their completed run. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnHistory FnReadonly.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnHistory FnReadonly.
 Import ListNotations.
 Set Implicit Arguments.
 

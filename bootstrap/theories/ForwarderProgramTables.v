@@ -1,11 +1,11 @@
 (* Exact final function table, independent of cache/body soundness. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Definition ForwarderProgramTables(m:M xprogram):Prop:=forall s p final,
- m s=Good(p,final)->Audit.xo_fns p=st_fns final.
+ m s=Good(p,final)->ExecutionModel.xo_fns p=st_fns final.
 Arguments ForwarderProgramTables:simpl never.
 Lemma forwarder_tables_bind:forall A(m:M A)(k:A->M xprogram),
  (forall a,ForwarderProgramTables(k a))->ForwarderProgramTables(mbind m k).
@@ -14,7 +14,7 @@ Proof.
 Qed.
 Lemma forwarder_tables_snapshot:forall A(m:st->M A)(make:st->A->xprogram),
  (forall s,keeps st_fns(m s))->
- (forall s a,Audit.xo_fns(make s a)=st_fns s)->
+ (forall s a,ExecutionModel.xo_fns(make s a)=st_fns s)->
  ForwarderProgramTables(mbind get(fun s=>mbind(m s)(fun a=>ret(make s a)))).
 Proof.
  intros A m make Keep Shape s p final Run.

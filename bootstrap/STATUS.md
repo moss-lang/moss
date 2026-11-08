@@ -8,9 +8,26 @@ run soundness and completeness, and safety. These five end-to-end
 obligations remain pending. Audit.v defines Builds, Runs and their semantic
 dependencies directly. Building also promises compatibility with the fixed
 default interface; execution and safety quantify over any compatible interface.
-[DefaultRuntime.v](theories/DefaultRuntime.v) proves the concrete default
-interface's primitive and heap laws. The source-to-platform link guarantee
-remains part of the pending build soundness proof.
+[DefaultRuntime.v](theories/DefaultRuntime.v) proves the concrete runtime's
+primitive and heap laws for the internal `ExecutionModel`. The revised public
+semantics has explicit structural records and machine types, separate runtime
+type/provision environments, one binding grammar, exact literal expansions,
+checked representation metadata, lexical capture, and stronger freshness/result
+contracts. Existing component proofs are preserved against ExecutionModel;
+they are not automatically proofs of the revised Audit model.
+
+[AuditRepresentation.v](theories/AuditRepresentation.v) defines type/value
+representation relations and names the pending elaboration-refinement property.
+The source grammar and module-loading relations are shared definitionally, so
+the existing front-end proofs still apply. Program, primitive-host and execution
+refinement remain open. No additional axiom asserts those refinements.
+[AuditBuildExample.v](theories/AuditBuildExample.v) proves one complete public
+build/run example; [AuditExamples.v](theories/AuditExamples.v) checks the repaired
+semantic boundaries. Neither constitutes universal source soundness.
+
+Bare `return;` now requires a unit return type in the model, elaborator and
+self-hosted compiler. A never-returning function cannot return unit and then
+supply it to an empty match; `tests/errors/return_never.moss` covers this bug.
 
 [Certified.v](theories/Certified.v) binds the existing component results in
 [ComponentContracts.v](theories/ComponentContracts.v).
@@ -95,15 +112,15 @@ successful elaboration, or record a fresh full-build result for this checkout.
 
 1. Close the remaining provider/binding cases in `BodyPending`, then assemble
    the actual common world, final-state facts, all function bodies and main
-   environment into `elaborate_sound` for the raw source elaboration relation.
+   environment into `elaborate_sound` for ExecutionModel’s raw source elaboration relation.
    The existing function theorem still takes `Pending` and `Later` as inputs.
 2. Prove that every successful `elaborate_with_metadata` run produces a
    successful immutable lowering with a well-typed runtime program. This
    includes the actual context/profile construction, callable interfaces,
    traversal typing and initial environment; executable candidate tests do
    not supply these universal proofs.
-3. Bind the completed source and runtime theorems to the final public
-   contract and executable path, and rerun the coherent proof/assumption and
+3. Prove program and execution refinement from ExecutionModel to Audit, bind
+   the completed results to the five public obligations, and rerun the coherent proof/assumption and
    regression checks.
 
 [`ReifyProgram.v`](theories/ReifyProgram.v) defines the staged runtime
@@ -174,7 +191,8 @@ input/output separation and has no additional assumption.
 ## Trust and validation boundaries
 
 [`Audit.v`](theories/Audit.v) states the syntax, semantics and proof
-obligations; the declarative elaboration relation remains a reviewed draft.
+obligations; the declarative elaboration relation remains a draft;
+existing component results concern ExecutionModel unless stated otherwise.
 The [design decision log](../docs/design/semantics.md) records language
 history, and a decision marked “DECIDED” is not a proof-completion marker.
 

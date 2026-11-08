@@ -1,6 +1,6 @@
 (* Raw local names are unique under the actual local setters and capture filter. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit Sx Elab.
+From NM Require Import ExecutionModel Sx Elab.
 Import ListNotations.
 Lemma local_keys_aset_member:forall X name(value:X)rows key,
  In key(map fst(aset String.eqb name value rows))->key=name\/In key(map fst rows).

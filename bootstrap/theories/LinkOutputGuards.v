@@ -1,6 +1,6 @@
 (* Successful post-body checks certify the actual output presence and readings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound BodySoundCore LinkBodyTrace NeedExec.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound BodySoundCore LinkBodyTrace NeedExec.
 Import ListNotations.
 Definition link_output_type_made(eg eb:env)(t:nat):bool:=
  match nassoc t(en_tn eb),nassoc t(en_tn eg)with

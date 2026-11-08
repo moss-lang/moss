@@ -1,9 +1,9 @@
 (* Regression controls for the lexical name visitor used by lambda capture. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
 Local Open Scope string_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma bracketed_path_is_not_local_mention:forall n brackets,
  ~A.Mentions_name(AEPath[n](Some brackets))n.
 Proof. intros n brackets H;inversion H;subst;inversion H0. Qed.

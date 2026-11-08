@@ -1,6 +1,6 @@
 (* The real eta writer creates one function row with a usable own frame. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly SymReadonly FnBound FnBoundEmit FnBoundSynth FnPresentStable
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit ReifyHeaderSynth
  ReifyHeaderPresent LambdaOrigin EtaHeader ReifyFrameReady FunctionFrameHistory FunctionFrameOps.

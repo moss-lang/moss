@@ -1,9 +1,9 @@
 (* The complete source name reader agrees with structural lexical mentions. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit Sx Elab SourceSyntaxInd.
+From NM Require Import ExecutionModel Sx Elab SourceSyntaxInd.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition NamesSoundE(x:aexpr):Prop:=forall n,In n(free_names_complete_e x)->A.Mentions_name x n.
 Definition NamesSoundB(b:ablock):Prop:=forall n,In n(free_names_complete_b b)->A.Mentions_name(AEBlock b)n.
 Definition NamesSoundS(s:astmt):Prop:=forall n,In n(free_names_complete_s s)->

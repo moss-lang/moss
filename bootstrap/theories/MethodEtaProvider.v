@@ -1,11 +1,11 @@
 (* The real plain-function-to-method provider branch, including cached eta. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame WorldSound
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame WorldSound
  InfoPreserve BodySound BodyTy BodyTr ProviderSig FnProviderDefinedExec
  WrapperEtaExec WrapperArity.
 Import ListNotations.
 Local Open Scope string_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Method.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

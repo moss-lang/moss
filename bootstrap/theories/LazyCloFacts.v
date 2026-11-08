@@ -1,6 +1,6 @@
 (* Closure compilation preserves the split-environment interpreter exactly. *)
 From Stdlib Require Import List Arith.
-From NM Require Import Audit MossX LazyX LazyClo LazyInterpFacts LazyFoldFacts.
+From NM Require Import ExecutionModel MossX LazyX LazyClo LazyInterpFacts LazyFoldFacts.
 From NM Require Prune FastPath.
 Import ListNotations.
 Set Implicit Arguments.

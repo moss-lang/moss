@@ -1,6 +1,6 @@
 (* Reading an authenticated cache entry identifies its actual source creator. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabKeeps
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabKeeps
  InfoInvariant InfoPreserve FwdInvariant LinkCacheInvariant LinkBodyTrace ProviderPhysical
  ForwarderTrace SymReadonly.
 Import ListNotations.

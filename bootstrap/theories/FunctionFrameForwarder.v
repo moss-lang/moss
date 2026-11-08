@@ -1,7 +1,7 @@
 (* A fresh abstract-function adapter delegates its row receipt to its real
    physical lower_body call. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly FnBound FnBoundEmit FnBoundSynth ForwarderTrace ReifyHeaderSynth
  ReifyHeaderPresent LambdaOrigin FunctionFrameHistory FunctionFrameOps.
 Import ListNotations.

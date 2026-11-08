@@ -1,10 +1,10 @@
 (* The actual result bracket reader, retaining type/dependency checks while
    allowing bindings that the result target itself does not mention. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTy.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Reading.
 Variable w:Elab.world. Context{P:xprogram}.

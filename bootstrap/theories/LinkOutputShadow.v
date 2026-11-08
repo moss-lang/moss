@@ -1,7 +1,7 @@
 (* Fresh output roles remain distinct from old, merged input meanings. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore BodyTr.
-Module A:=Audit.Elaboration.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore BodyTr.
+Module A:=ExecutionModel.Elaboration.
 Import ListNotations.
 Local Open Scope string_scope.
 Definition link_shadow_spec n:=Spec(Some[n])None None.

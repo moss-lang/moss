@@ -1,6 +1,6 @@
 (* Actual cache preservation for source execution, independent of body semantics. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore.
 From NM Require Export InfoInvariant.
 From NM Require Import ElabInv ProviderPhysical FnInfoResult ForwarderTrace ReifyData.
 From NM Require Export ElabInv WrapperReadonly.

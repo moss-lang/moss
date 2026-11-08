@@ -1,7 +1,7 @@
 (* Extraction of the M2 oracle: the Gallina elaborator and MossX.run_main. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
-From NM Require Import Audit CoreMoss MossX Sx Elab FastX Prune Parse SlotX FoldX FastPath CachedClo LazyX LazyClo.
+From NM Require Import ExecutionModel CoreMoss MossX Sx Elab FastX Prune Parse SlotX FoldX FastPath CachedClo LazyX LazyClo.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".

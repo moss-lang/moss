@@ -1,6 +1,6 @@
 (* One fresh lambda owner receives one body, after nested source compilation. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit FnBoundSynth
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit FnBoundSynth
  LambdaReadonly LambdaReadonlyEmit LambdaReadonlySynth LambdaRows LambdaRowsPreserve.
 Import ListNotations.
 Set Implicit Arguments.

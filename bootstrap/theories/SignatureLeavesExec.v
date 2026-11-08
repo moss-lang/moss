@@ -1,10 +1,10 @@
 (* Exact raw D78 signature leaves. Effective last output readings are a
    separate, stronger compatibility check (CopyOutputExec). *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma leaf_eqb_eq : forall a b,leaf_eqb a b=true ->a=b.
 Proof.
  intros [x dn] [y en] H;unfold leaf_eqb in H;cbn in H.
@@ -98,7 +98,7 @@ Notation path_of mi :=(gm_path(get_mod w mi)).
 Lemma signature_loaded_kind : forall x g,nget(w_syms w)x=Some g ->KindOK g.
 Proof.
  intros x g Hg. pose proof(kind_sym_read b w R Fl Hload x g Hg)as K.
- unfold Audit.Elaboration.kind_sym in K.
+ unfold ExecutionModel.Elaboration.kind_sym in K.
  rewrite(w_decl_read w R Fl x g Hg)in K;exact K.
 Qed.
 Lemma signature_already_provided : forall x g,nget(w_syms w)x=Some g ->

@@ -1,10 +1,10 @@
 (* The real collection and sequential family applications construct Demand. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  CtxMerge NominalSupport NeedReceiverFormation FamilyDemandTrace FamilyDemandCollect
  FamilyDemandDistinct FamilyDemandGroup FamilyMatchingCtx.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_applications_frame:forall f c e s groups pre e' sf,
  FamilyApplications f c e s groups pre e' sf->Inv s->Inv sf/\Fr s sf.
 Proof.

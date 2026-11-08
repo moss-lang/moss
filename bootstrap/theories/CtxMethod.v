@@ -1,9 +1,9 @@
 (* Method assumptions: table update and source reading. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean CtxWalk MethodClean MethodRows.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean CtxWalk MethodClean MethodRows.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Lemma get_mth_set_case : forall e r m sg rq mq,
   get_mth (set_mth e r m sg) rq mq =
@@ -28,7 +28,7 @@ Lemma ws_method_common : forall U e e1 tm les needs r m sg a,
     ety_ok (canon e1 rq) = true /\ exists g0, get_mth e1 (canon e1 rq) mq = Some g0 /\ SigCanon e1 gq g0) ->
   (forall rq mq g0, get_mth e1 rq mq = Some g0 -> exists r0 a0,
     In (LMth r0 mq g0 a0) (les ++ [LMth r m sg a]) /\
-    forall sb, RespE Fl sb (en_uf e1) -> Audit.app_subst sb (tr Fl r0) = Audit.app_subst sb (tr Fl rq)) ->
+    forall sb, RespE Fl sb (en_uf e1) -> ExecutionModel.app_subst sb (tr Fl r0) = ExecutionModel.app_subst sb (tr Fl rq)) ->
   (en_uf e1 = U -> forall k, nofun k = true -> option_map fst (get_app e1 k) = lfirst e1 k (les ++ [LMth r m sg a])) ->
   MethodRowsUnique e1 -> (en_uf e1 = U -> MethodRowsCanonical e1) ->
   WS Fl U e1 tm (les ++ [LMth r m sg a]) (add_need needs (KyMth (canon e r) m)).

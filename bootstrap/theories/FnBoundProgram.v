@@ -1,6 +1,6 @@
 (* Allocation bounds through the actual top-level source-function traversal. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit FnBoundSynth.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit FnBoundSynth.
 From NM Require Import ProgramTail ProgramInfo.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].

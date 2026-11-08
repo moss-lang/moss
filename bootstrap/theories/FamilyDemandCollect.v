@@ -1,9 +1,9 @@
 (* Every collected group retains a genuine selection made in the original environment. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  NominalSupport Merge CtxMerge CanonTypes InstantiateTr NeedReceiverFormation FamilyDemandTrace FamilySearchCompetitor MethodKeyTr.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_collect_step(c:cx)(e:env)(apps:list demand_group)(need:key):M(list demand_group):=
  let mi:=cx_mod c in
 

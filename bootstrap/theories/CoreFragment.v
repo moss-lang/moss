@@ -1,6 +1,6 @@
 (* Supporting core calculus for the component proofs. *)
 From Stdlib Require Import String List Bool Arith.
-From NM Require Export Audit.
+From NM Require Export ExecutionModel.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Open Scope nat_scope.
@@ -16,7 +16,7 @@ Definition member_head (tau : ty) : option nsym :=
   end.
 
 (* Signature support for the core proof fragment. Executable function and
-   functor bodies use Audit's xexpr and xbind; gsig also retains the core
+   functor bodies use ExecutionModel's xexpr and xbind; gsig also retains the core
    fragment's bodies for its separate safety and embedding proofs. *)
 Inductive expr : Type :=
 | EVar     : var -> expr
@@ -121,7 +121,7 @@ Definition runtime_signature (Sg : gsig) (P : xprog) : gsig :=
 (* Supporting core calculus                                                  *)
 (* ######################################################################## *)
 
-(* The executable language in Audit is MossX. This smaller calculus and its
+(* The executable language in ExecutionModel is MossX. This smaller calculus and its
    embedding support the core adequacy, specialization and safety contracts.
    They form a proof fragment rather than another compilation stage. *)
 

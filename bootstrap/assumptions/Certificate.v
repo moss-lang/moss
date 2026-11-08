@@ -6,10 +6,17 @@
 From NM Require Certified Parse FastPath Prune SlotX FoldX
   CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts LazyOracle XHeapC MainProgramBool BindMethodLambdaExec BindMethodDispatch BindMethodAllDispatch BindMethodExec BodyPending.
 
+From NM Require AuditExamples AuditBuildExample AuditRepresentation.
+
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
 Definition certificate_roots :=
- (@NM.BindMethodExec.check_bind_method,
+ (@NM.AuditExamples.bare_return_requires_unit,
+  @NM.AuditExamples.one_does_not_insert_a_multiply,
+  @NM.AuditExamples.an_arbitrary_cast_entry_is_rejected,
+  @NM.AuditBuildExample.public_build_is_inhabited,
+  @NM.AuditBuildExample.built_program_runs,
+  @NM.BindMethodExec.check_bind_method,
   @NM.BindMethodAllDispatch.residual_after_method_bindings,
   @NM.BindMethodLambdaExec.check_bind_method_lambda,
   @NM.BindMethodDispatch.residual_after_method_lambda,
@@ -82,7 +89,7 @@ Definition certificate_roots :=
 
 (* The legacy slot/fold engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
    fast path, pruning, pre-resolution, folding and closure compilation,
-   then the run; and the theorem that makes it Audit's semantics, given the tables the driver
+   then the run; and the theorem that makes it ExecutionModel's semantics, given the tables the driver
    builds (README.md, What is trusted). *)
   @NM.FastPath.fast_program,
   @NM.Prune.oracle_program,

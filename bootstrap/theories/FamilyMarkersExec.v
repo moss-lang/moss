@@ -1,6 +1,6 @@
 (* The actual marker list is injective and disjoint from all caller readings. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound FreshMarkerExec.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound FreshMarkerExec.
 Import ListNotations.
 Lemma family_marker_allocation:forall e receiver (ps:list nat) s marks sf,
  mmap(fun p=>let!k:=fresh_marker_for e receiver in ret(p,k))ps s=Good(marks,sf)->

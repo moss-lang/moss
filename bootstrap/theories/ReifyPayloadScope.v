@@ -2,7 +2,7 @@
    from its explicit formal-parameter meanings. This is actual execution,
    not an assumed payload-formation condition. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit CoreMoss NMap Sx Elab ElabSound BodyTr ReifyPayload ReifyNominalSource.
+From NM Require Import ExecutionModel CoreMoss NMap Sx Elab ElabSound BodyTr ReifyPayload ReifyNominalSource.
 Import ListNotations.
 Local Strategy opaque[FUEL ELAB_FUEL reqs].
 Definition generations_within(names:list nat)(t:ety):Prop:=incl(ety_gens t)names.

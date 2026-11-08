@@ -1,7 +1,7 @@
 (* Provider jobs are reserved before their bodies are traversed. Recursive
    source bindings therefore reuse the reserved code frame. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource
   ReifyFunctors ReifyProviders ReifyFunctorProfiles ReifyExports ReifyPlan ReifySig ReifyMaps
   ReifyWalkData ReifyWalk ReifyProgramWalk ReifyAnnotations ReifyOpaqueFunctors.
 Import ListNotations.

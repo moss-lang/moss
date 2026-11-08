@@ -1,6 +1,6 @@
 (* The tail allocates platform identities but no executable generated owners. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  FnPresentStable FnBound FnBoundEmit ReifyHeader ReifyHeaderStable
  LambdaCompletion LambdaCompletionOps ForwarderHistory ForwarderHistoryOps
  LambdaOrigin LambdaOriginOps LambdaRows LambdaRowsPreserve

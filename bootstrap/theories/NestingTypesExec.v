@@ -1,8 +1,8 @@
 (* The actual item-type enumeration, including nested contexts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Theorem load_world_nesting_types:forall b w R Fl,
  load_world b=Good w->forall mi specs s ts s',
  st_w s=w->(forall x g,nget(w_syms w)x=Some g->nget(st_syms s)x=Some g)->In mi(w_order w)->

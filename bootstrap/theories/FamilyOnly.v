@@ -1,9 +1,9 @@
 (* Actual successful unique-family selection excludes every semantic competitor. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy NominalSupport NMapEnum
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy NominalSupport NMapEnum
  FamilySelectTrace FamilySearchCompetitor FamilySearchRetains FamilyFoldExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Only.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

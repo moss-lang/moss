@@ -1,10 +1,10 @@
 (* The body of an anonymous function can infer a strict member of its
    checked result union; its frame retains the declared result type. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
 Local Open Scope string_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma lambda_union_member_fits:forall left right,
  A.fits(TNom left[])(TUnion[TNom left[];TNom right[]]).
 Proof.

@@ -1,8 +1,8 @@
 (* Actual attached-method lookup, including its redundant local-table fallback. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy MethodLookup MethodLookupNone MethodKind.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy MethodLookup MethodLookupNone MethodKind.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL].
 Theorem local_attached_receiver:forall b w,
  load_world b=Good w->forall mi r n att,

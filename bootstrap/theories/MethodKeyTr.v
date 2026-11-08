@@ -1,6 +1,6 @@
 (* Runtime provision keys read the actual checked instantiation table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore EtyTyExec CanonTypes Merge.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore EtyTyExec CanonTypes Merge.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque [Nat.of_num_uint FUEL ety_ty canon].
@@ -140,26 +140,26 @@ Proof.
  exact (@key_theta_loop a e s l sx Hmap Hi L).
 Qed.
 
-Definition read_inst (a : Elab.inst) : Audit.Elaboration.inst :=
+Definition read_inst (a : Elab.inst) : ExecutionModel.Elaboration.inst :=
  map (fun q => (fst q,option_map (tr Fl) (snd q))) a.
 
 Lemma read_known_ctx : forall e C a,
- Audit.Elaboration.c_sub C = suf Fl (en_uf e) -> Tri (en_uf e) ->
- read_known e a = Audit.Elaboration.theta_of C (read_inst a).
+ ExecutionModel.Elaboration.c_sub C = suf Fl (en_uf e) -> Tri (en_uf e) ->
+ read_known e a = ExecutionModel.Elaboration.theta_of C (read_inst a).
 Proof.
  intros e C a Sub TriU; induction a as [|[n [t|]] a IH];
- unfold read_known, read_inst, Audit.Elaboration.theta_of, Audit.Elaboration.known in *;
+ unfold read_known, read_inst, ExecutionModel.Elaboration.theta_of, ExecutionModel.Elaboration.known in *;
  cbn [flat_map map fst snd option_map List.app] in *;
  rewrite ?IH; try reflexivity.
- unfold Audit.Elaboration.canon; rewrite Sub, (tr_canon Fl e t TriU); reflexivity.
+ unfold ExecutionModel.Elaboration.canon; rewrite Sub, (tr_canon Fl e t TriU); reflexivity.
 Qed.
 
 Lemma key_item_at_tr : forall e C r m s it s',
  key_item_at e (KyMth r m) s = Good(it,s') -> Inv s -> Later w P R Fl s' ->
- Audit.Elaboration.c_sub C = suf Fl (en_uf e) -> Tri (en_uf e) ->
- Audit.Elaboration.ilook (Audit.Elaboration.mkey (tr Fl r) m) (Audit.Elaboration.c_apps C) =
+ ExecutionModel.Elaboration.c_sub C = suf Fl (en_uf e) -> Tri (en_uf e) ->
+ ExecutionModel.Elaboration.ilook (ExecutionModel.Elaboration.mkey (tr Fl r) m) (ExecutionModel.Elaboration.c_apps C) =
  option_map (fun p => read_inst (fst p)) (get_app e (KyMth r m)) ->
- it = Audit.Elaboration.rkey C (tr Fl r) m.
+ it = ExecutionModel.Elaboration.rkey C (tr Fl r) m.
 Proof.
  intros e C r m s it s' H Hi L Sub TriU Apps.
  unfold key_item_at in H.
@@ -172,7 +172,7 @@ Proof.
  pose proof (proj2 (Kok s1 th s2 Hi1 Hth)) as F2.
  rewrite (ety_ty_tr w P R Fl _ _ _ _ Hrt Hi (later_back w P R Fl _ _ F2 L)).
  rewrite (@key_theta_tr e (KyMth r m) s1 th s2 Hth Hi1 L).
- unfold Audit.Elaboration.rkey; rewrite Apps.
+ unfold ExecutionModel.Elaboration.rkey; rewrite Apps.
  destruct (get_app e (KyMth r m)) as [[a stamp]|]; cbn [option_map fst]; [|reflexivity].
  rewrite (read_known_ctx e C a Sub TriU); reflexivity.
 Qed.

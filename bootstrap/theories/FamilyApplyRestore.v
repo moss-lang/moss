@@ -1,11 +1,11 @@
 (* Actual automatic family application, including temporary type restoration. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  BodyTy NominalSupport CanonTypes FamilyMatchingCtx FamilyApplyExec ApplyAbstractExec
  ApplyThetaExec MethodKeyTr FunctorFixedExec FamilyResultExec ProvideResultExec FamilyResultFold TySupport.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[FUEL reqs type_requirements].
 Section FamilyRestore.
 Variable w:Elab.world. Context{P:xprogram}.

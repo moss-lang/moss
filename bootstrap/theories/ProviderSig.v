@@ -1,10 +1,10 @@
 (* Checked provider signature matching uses the actual canonical readings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  BodyTy SigSound TyOfSubst CanonTypes CanonBodyTy Merge.
 From NM Require Export SigReadingSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Definition canonical_sig(Fl:string->nat)(e:env)(sg:Elab.fsig):A.fsig:=
  A.FSig(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))(tr Fl(canon e(sg_ret sg))).
@@ -41,10 +41,10 @@ Proof.
  { intro k. rewrite(cr_ty _ _ _ _ _ _ _ Hc),nlook_trp,nassoc_tymap.
    destruct(tn_get e k);cbn[option_map];[rewrite tr_canon by exact(proj1(cr_uf _ _ _ _ _ _ _ Hc))|];reflexivity. }
  pose proof(sigof_subst WW(suf Fl(en_uf e))_ _ _ _ Sig _ SR)as S.
- assert(Ethis:option_map(Audit.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=option_map(fun y=>tr Fl(canon e y))this).
+ assert(Ethis:option_map(ExecutionModel.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=option_map(fun y=>tr Fl(canon e y))this).
  { destruct this;cbn[option_map];[rewrite tr_canon by exact(proj1(cr_uf _ _ _ _ _ _ _ Hc))|];reflexivity. }
  rewrite Ethis in S. unfold CtxWalk.tr_sig in S. cbn[A.sg_params A.sg_ret]in S.
- assert(Eps:map(Audit.app_subst(suf Fl(en_uf e)))(map(fun p=>tr Fl(snd p))(sg_params sg))=
+ assert(Eps:map(ExecutionModel.app_subst(suf Fl(en_uf e)))(map(fun p=>tr Fl(snd p))(sg_params sg))=
    map(fun p=>tr Fl(canon e(snd p)))(sg_params sg)).
  { rewrite map_map. apply map_ext. intro p. apply tr_canon;exact(proj1(cr_uf _ _ _ _ _ _ _ Hc)). }
  rewrite Eps,tr_canon in S by exact(proj1(cr_uf _ _ _ _ _ _ _ Hc)). exact S.

@@ -1,6 +1,6 @@
 (* Physical resolution authenticates the functor arguments of link_body. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
  InfoInvariant InfoPreserve InfoInputs FwdInvariant FwdReadonly FwdPreserve FwdSynthInv
  LinkCacheInvariant LinkReadonly LinkConditional ProviderPhysical WrapperKeyReadonly.
 Import ListNotations.

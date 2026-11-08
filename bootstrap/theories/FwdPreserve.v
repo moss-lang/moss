@@ -1,6 +1,6 @@
 (* The sole writer of st_fwd installs the symbol it just allocated. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FwdReadonly ForwarderTrace FwdInvariant.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FwdReadonly ForwarderTrace FwdInvariant.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].

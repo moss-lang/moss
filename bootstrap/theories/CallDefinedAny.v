@@ -3,11 +3,11 @@ From NM Require Import WrapperKeyReadonly.
 From NM Require Import CallFwdReadonly.
 (* Actual defined calls, including main; only real nonempty demand remains. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  CtxMerge MethodKeyTr CanonTypes CanonBodyTy NominalSupport EtyTyExec CallArgs ProviderSig SourceSatisfies
  LoaderOrigin MainRoot CallAbstract CallCacheExec DemandEmptyExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr CallDefined SourceSatisfiesAny.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
 Section Defined.
 Variable w:Elab.world. Context{P:xprogram}.

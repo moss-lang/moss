@@ -1,6 +1,6 @@
 (* Ordinary compiler operations compose genuine new-function receipts. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly SymReadonly FnBound FnBoundEmit FnPresentStable
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderEmit ReifyHeaderSynth
  ReifyHeaderPresent FunctionFrameHistory.

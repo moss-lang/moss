@@ -1,7 +1,7 @@
 (* Completion history only for NEW forwarder symbols. Existing rows are
    transported by the checked present-body frame, including generated rows. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore LoaderOrigin
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore LoaderOrigin
  FnPresentStable ForwarderTrace.
 Import ListNotations.
 Set Implicit Arguments.

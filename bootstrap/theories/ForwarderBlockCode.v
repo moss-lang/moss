@@ -1,6 +1,6 @@
 (* The generated empty-statement tail block is precisely an abstract call. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderArgsCode ForwarderCallCode.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderArgsCode ForwarderCallCode.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Ltac fwd_code_noerr H:=exfalso;solve[repeat(cbn beta iota zeta in H;

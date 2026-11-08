@@ -1,8 +1,8 @@
 (* A cached initializer's IR is reused at several source reads. Its binding
    annotations must occur at every corresponding position in the readers. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Parse Elab ReifyData.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel Parse Elab ReifyData.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 
 Definition repeated_constant_source : string :=

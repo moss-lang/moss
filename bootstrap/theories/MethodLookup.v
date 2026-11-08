@@ -1,9 +1,9 @@
 (* Context method lookup follows MethodNamed: an attached declaration in
    the receiver's file, otherwise a detached declaration in this scope. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Lemma loaded_scope_table : forall b w R Fl,
   load_world b = Good w -> forall mi ns n, In mi (w_order w) ->

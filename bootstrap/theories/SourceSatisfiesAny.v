@@ -1,9 +1,9 @@
 (* Actual callee satisfaction for both ordinary functions and entry main. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr
  Merge CtxWalk CtxMerge InfoCache InfoShape NeedSatisfies MethodKeyTr MainRoot MainContextInfo SourceSatisfiesAfter.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma is_main_total:forall g s,exists main,is_main g s=Good(main,s).
 Proof.

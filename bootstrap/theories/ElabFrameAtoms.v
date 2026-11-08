@@ -1,6 +1,6 @@
 (* The four emitting operations instantiate the shared traversal for frames. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL reqs fn_info check_assumed_requirements check_assumes].
 Lemma ok_wrapper_atom : forall fuel pv, ok (wrapper fuel pv).

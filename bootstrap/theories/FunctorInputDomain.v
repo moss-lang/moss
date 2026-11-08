@@ -1,8 +1,8 @@
 (* Every genuine abstract result dependency is installed as an input. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit.
-Import ListNotations Audit.Input.
-Module A:=Audit.Elaboration.
+From NM Require Import ExecutionModel.
+Import ListNotations ExecutionModel.Input.
+Module A:=ExecutionModel.Elaboration.
 Lemma input_type_map_member:forall xs t,In t xs->
  A.nlook t(map(fun x=>(x,TAbs x))xs)=Some(TAbs t).
 Proof.

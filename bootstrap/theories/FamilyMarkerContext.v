@@ -1,9 +1,9 @@
 (* Actual marked environments and the specialization's unchanged caller meanings. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound CoreMoss BodySoundCore BodyTr BindType
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound CoreMoss BodySoundCore BodyTr BindType
  CanonTypes NominalSupport FamilyMarkersExec FamilyMarkedSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_mark_env_step(e:env)(q:nat*nat):M env:=
  let! stamp:=fresh in ret(set_tn e(fst q)(YAbs(snd q))stamp).
 Lemma reify_scope_tn_value:forall e t raw stamp,
@@ -15,7 +15,7 @@ Qed.
 Lemma marker_subst_fixes_scope:forall Fl e receiver ps s marks sf target,
  mmap(fun p=>let!k:=fresh_marker_for e receiver in ret(p,k))ps s=Good(marks,sf)->
  forall raw,In raw(reify_scope_types e)->
- Audit.app_subst(family_marker_subst marks target)(tr Fl(canon e raw))=tr Fl(canon e raw).
+ ExecutionModel.app_subst(family_marker_subst marks target)(tr Fl(canon e raw))=tr Fl(canon e raw).
 Proof.
  intros Fl e receiver ps s marks sf target Alloc raw Hraw;apply app_subst_none.
  intros g Gens;apply lookup_subst_none;intro InKeys.
@@ -61,7 +61,7 @@ Proof.
 Qed.
 Theorem family_marker_subst_fixes_caller:forall c e receiver F C ps s marks sf target,
  mmap(fun p=>let!k:=fresh_marker_for e receiver in ret(p,k))ps s=Good(marks,sf)->CxRel w R Fl c e F C->
- forall k y,A.nlook k(A.c_ty C)=Some y->Audit.app_subst(family_marker_subst marks target)y=y.
+ forall k y,A.nlook k(A.c_ty C)=Some y->ExecutionModel.app_subst(family_marker_subst marks target)y=y.
 Proof.
  intros c e receiver F C ps s marks sf target Alloc HC k y Have.
  pose proof(cr_ty _ _ _ _ _ _ _ HC k)as Read;rewrite Have in Read.

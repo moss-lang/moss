@@ -1,10 +1,10 @@
 (* The emitted result telescope reads the actual completed output context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy
  CtxMerge EtyTyExec MethodKeyTr LambdaKeyTranslation LambdaSmapIdentity LinkBodyTrace LinkOutputRefile.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL nat_to_string nat_to_string_go canon instantiate ety_ty key_item_at tr].
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Index.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat).
 Lemma link_output_index_context:forall keys roles c e F C s indexed final,
@@ -57,10 +57,10 @@ Proof using w P R Fl.
  assert(Li:Later w P R Fl indexed).
  {destruct(output_role_item roles checked);injection Run as <- <-;exact Last. }
  pose proof(lambda_key_item_at w P R Fl c e F C(KyMth r mid)converted checked indexed Index Ic Li HC Valid)as Eq.
- rewrite Eq in Run;cbn[key_tr A.rkey_of A.rkey output_role_item Audit.app_subst_item]in Run.
+ rewrite Eq in Run;cbn[key_tr A.rkey_of A.rkey output_role_item ExecutionModel.app_subst_item]in Run.
  injection Run as <- <-.
  rewrite(ety_ty_tr w P R Fl _ _ _ _ Convert Hi(later_back w P R Fl _ _ Fi Li)).
- cbn[link_output_rename_pairs link_output_context_pair flat_map key_tr A.rkey_of A.rkey output_role_item Audit.app_subst_item];reflexivity.
+ cbn[link_output_rename_pairs link_output_context_pair flat_map key_tr A.rkey_of A.rkey output_role_item ExecutionModel.app_subst_item];reflexivity.
 Qed.
 Lemma link_output_renames_context:forall keys roles eb tys c e F C s renamed final,
  link_trace_renames e eb roles tys keys s=Good(renamed,final)->

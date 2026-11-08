@@ -95,6 +95,23 @@ fn unshadowed_prelude_defaults_remain_available() {
 }
 
 #[test]
+fn shadowing_does_not_change_bindings_in_other_modules() {
+    accepts(
+        &[
+            (
+                "helper.moss",
+                "assume Base { fn report() { bind StdBase; print(\"prelude\"); putchar(char::newline); } }\n",
+            ),
+            (
+                "main.moss",
+                "import \"./helper.moss\" use report;\nassume Base {\n  fn print() { bind StdBase; println(\"local\"); }\n  fn main() { bind StdBase; print(); report(); print(); }\n}\n",
+            ),
+        ],
+        "local\nprelude\nlocal\n",
+    );
+}
+
+#[test]
 fn conflicting_explicit_imports_still_fail_in_either_order() {
     for (first, second) in [("a", "b"), ("b", "a")] {
         for names in ["Base", "*"] {

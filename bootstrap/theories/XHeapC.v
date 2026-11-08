@@ -7,7 +7,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool PrimInt63 Uint63.
-From NM Require Import Audit HTrie MossX XHeap.
+From NM Require Import ExecutionModel HTrie MossX XHeap.
 Import ListNotations.
 
 (* loop_fuel is 2^34 as a nat: never compute it *)

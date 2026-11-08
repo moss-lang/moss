@@ -1,6 +1,6 @@
 (* Pure grounding contracts for complete immutable provision maps. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss ReifyMaps ReifyChains.
+From NM Require Import ExecutionModel CoreMoss ReifyMaps ReifyChains.
 Import ListNotations.
 Set Implicit Arguments.
 

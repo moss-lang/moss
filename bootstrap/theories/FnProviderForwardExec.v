@@ -1,10 +1,10 @@
 (* Forwarder signature matching uses actual prototype and captured app coherence. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes CtxWalk FnSnapshot FnSnapshotAlign FnProviderForwardSignature ForwarderTrace
  InfoInvariant InfoPreserve InfoCache ForwarderPrototype NeedMapExec InstantiateTr ProviderSig TyOfSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Ltac forward_exec_noerr H:=exfalso;solve[repeat(cbn beta iota zeta in H;
  first[exact(err_not_good _ _ _ _ _ _ H)|discriminate H|apply bind_inv in H as(? &? &? &H)])].

@@ -1,11 +1,11 @@
 (* Every remaining successful ordinary binding is an abstract-to-defined
    functor closure. Other syntax and kinds are rejected or already proved. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  BodyTy SignatureLeavesExec BindSequence BindCopyDispatch BindFnDispatch BindLambdaDispatch BindMethodAllDispatch InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements nat_to_string nat_to_string_go].
 Ltac residual_noerr H := exfalso; solve [repeat (cbn beta iota zeta in H;
  first [exact (err_not_good _ _ _ _ _ _ H)|discriminate H|apply bind_inv in H as (? & ? & ? & H)])].

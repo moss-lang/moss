@@ -1,8 +1,8 @@
 (* A family's semantic result updates method provisions only. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition FamilyMethodEntry(e:A.entry):Prop:=
  exists r m sg app,e=A.NMth r m sg app.
 Scheme family_output_item_ind:=Induction for A.OutputItemEntries Sort Prop

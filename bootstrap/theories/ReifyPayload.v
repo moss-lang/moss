@@ -2,8 +2,8 @@
    asking unresolved formal parameters to have concrete nominal heads.
    Source-instance formation remains the ordinary checked elaborator. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifySource PayloadInst.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel CoreMoss Elab ReifySource PayloadInst.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Local Infix "+++" := List.app (right associativity, at level 60).
 
@@ -34,7 +34,7 @@ Fixpoint skeleton_type (fuel : nat) (t : aty) (mi : nat) (tm : list (nat * ety))
               let! s := skeleton_arguments f e mi bs tm in
               let tm' := s +++ tm in
               check_totality mi g tm' e ;;
-              (* a type symbol takes no brackets, not even `T[]` (Audit
+              (* a type symbol takes no brackets, not even `T[]` (ExecutionModel
                  note 50) *)
               if kind_eqb (gs_kind g) KType then err mi ("type `" ++ gs_name g ++ "` takes no brackets") else
               skeleton_symbol f mi g tm' e

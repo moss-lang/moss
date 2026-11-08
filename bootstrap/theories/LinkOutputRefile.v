@@ -1,8 +1,8 @@
 (* The executable method aliases are precisely the declarative refile operation. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit NMap Sx Elab LinkBodyTrace.
+From NM Require Import ExecutionModel NMap Sx Elab LinkBodyTrace.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition link_output_rename_pairs(pairs:list(item*item)):list(ty*nat*(ty*subst)):=
  flat_map(fun p=>match p with
  |(IMth t m _,IMth t0 _ th0)=>[(t,m,(t0,th0))]|_=>[] end)pairs.

@@ -1,7 +1,7 @@
 (* Physical provenance of linked functor code. Entries retain actual creator
    executions; their source meaning is proved separately, not assumed here. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ReqsSolve ReqsStable ElabKeeps InfoInvariant InfoPreserve FwdInvariant.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ReqsSolve ReqsStable ElabKeeps InfoInvariant InfoPreserve FwdInvariant.
 Import ListNotations.
 Definition link_lookup (s : st) (target provider : nat) : option nat :=
  assoc (fun a b => Nat.eqb (fst a) (fst b) && Nat.eqb (snd a) (snd b))

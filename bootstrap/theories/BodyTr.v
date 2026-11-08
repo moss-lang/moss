@@ -7,12 +7,12 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab.
+From NM Require Import ExecutionModel NMap Sx Elab.
 From NM Require CoreMoss.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 (* ======================================================================== *)
 (* 1. Elaborated types as Part V's types                                     *)
@@ -84,7 +84,7 @@ Lemma members_tr : forall t, A.members (tr t) = map tr (Elab.members t).
 Proof. intros [| | | | |]; reflexivity. Qed.
 
 (* The types the elaborator makes.  `|` as it writes it: no type it makes
-   is a union of nothing, anywhere in it (elab_type, Audit note 42(d)), so
+   is a union of nothing, anywhere in it (elab_type, ExecutionModel note 42(d)), so
    is_never and the relation's never agree on its types and on the types
    inside them (a record's fields, a tag's arguments: BodyData.v); and a
    union's members are tag or unit applications ([D15]: elab_type, and

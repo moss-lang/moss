@@ -1,7 +1,7 @@
 (* The fixed public interface used by the executable's primitive runtime.
    Arguments and the file snapshot belong to Model.state, not the interface. *)
 From Stdlib Require Import List.
-From NM Require Import Audit MossX XHeapC.
+From NM Require Import ExecutionModel MossX XHeapC.
 
 Module Host <: HOST.
   Definition state := MossX.mstate.
@@ -39,23 +39,3 @@ Proof.
   intros program Ready. split; [exact Ready|].
   split; [intros; reflexivity|]. intros; apply default_interface_laws.
 Qed.
-
-(* Once the five public obligations are implemented, ordinary execution
-   needs no caller-supplied proof of interface compatibility. *)
-Module DefaultGuarantees (Implementation : Model.CORRECT).
-  Theorem accepted_default_compatible : forall source entry program,
-    Implementation.build source entry = Some program ->
-    Model.Compatible program default_interface.
-  Proof. intros source entry program Built; exact (proj2 (@Implementation.build_sound _ _ _ Built)). Qed.
-
-  Theorem accepted_default_safe : forall source entry program,
-    Implementation.build source entry = Some program ->
-    forall initial, Model.ValidState default_interface initial ->
-    forall fuel code final,
-      Implementation.run program default_interface initial fuel <>
-        Some (Model.Result (Model.Wrong code) final).
-  Proof.
-    intros source entry program Built initial Valid.
-    exact (@Implementation.safety _ _ _ Built _ _ (@accepted_default_compatible _ _ _ Built) Valid).
-  Qed.
-End DefaultGuarantees.

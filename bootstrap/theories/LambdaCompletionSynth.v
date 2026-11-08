@@ -1,5 +1,5 @@
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrame ElabInv FnReadonly SymReadonly LambdaCompletionOps LambdaCompletionEmit.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrame ElabInv FnReadonly SymReadonly LambdaCompletionOps LambdaCompletionEmit.
 From NM Require Import AllocationTraversal.
 Import ListNotations.
 Set Implicit Arguments.

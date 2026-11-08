@@ -2,7 +2,7 @@
    A copied abstract functor obtains its own checked generic profile from
    the actual copy annotation, without borrowing the provider's schema. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Sx Elab ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Sx Elab ReifyData Reify ReifySource
   ReifyInterfaces ReifyRoles ReifyFunctors ReifyPlan.
 Import ListNotations.
 

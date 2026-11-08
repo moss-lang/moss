@@ -1,9 +1,9 @@
 (* Complete declaration rereading agrees with semantic caller substitution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr Merge CanonTypes KeyTranslation.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr Merge CanonTypes KeyTranslation.
 Import ListNotations.
-Module A:=Audit.Elaboration.
-Lemma lookup_nlook : forall g s, Audit.lookup_subst g s=A.nlook g s.
+Module A:=ExecutionModel.Elaboration.
+Lemma lookup_nlook : forall g s, ExecutionModel.lookup_subst g s=A.nlook g s.
 Proof. intros g s;induction s as[|[k v]s IH];cbn;[reflexivity|]. destruct(Nat.eqb g k);auto. Qed.
 Lemma instantiate_normal : forall e t,Tri(en_uf e)->canon e(instantiate e t)=instantiate e t.
 Proof.
@@ -46,18 +46,18 @@ Variables(R:nat->list nat)(Fl:string->nat).
 Lemma instantiate_canonical : forall c e F C,
  CxRel w R Fl c e F C ->forall t,
  tr Fl(canon e(instantiate e t))=
- A.canon C(Audit.app_subst(A.c_ty C)(tr Fl t)).
+ A.canon C(ExecutionModel.app_subst(A.c_ty C)(tr Fl t)).
 Proof.
  intros c e F C H t.
  unfold A.canon. rewrite(cr_sub _ _ _ _ _ _ _ H).
  rewrite <-(tr_canon Fl e (instantiate e t)(proj1(cr_uf _ _ _ _ _ _ _ H))).
- induction t as[| |g|n xs IH|ms IH|fs IH]using ety_ind';cbn[instantiate tr Audit.app_subst];try reflexivity.
+ induction t as[| |g|n xs IH|ms IH|fs IH]using ety_ind';cbn[instantiate tr ExecutionModel.app_subst];try reflexivity.
  - rewrite lookup_nlook.
    rewrite(cr_ty _ _ _ _ _ _ _ H g). destruct(tn_get e g)as[y|]eqn:E;cbn[option_map].
    + reflexivity.
    + rewrite(tr_canon Fl e (canon e(YAbs g))(proj1(cr_uf _ _ _ _ _ _ _ H))).
      rewrite canon_idem by exact(proj1(cr_uf _ _ _ _ _ _ _ H)).
-     symmetry;change(Audit.app_subst(suf Fl(en_uf e))(tr Fl(YAbs g))=tr Fl(canon e(YAbs g)));apply tr_canon;exact(proj1(cr_uf _ _ _ _ _ _ _ H)).
+     symmetry;change(ExecutionModel.app_subst(suf Fl(en_uf e))(tr Fl(YAbs g))=tr Fl(canon e(YAbs g)));apply tr_canon;exact(proj1(cr_uf _ _ _ _ _ _ _ H)).
  - f_equal. induction IH as[|[k v]xs Hv Hr IHr];cbn in *;[reflexivity|].
    rewrite Hv,IHr;reflexivity.
  - f_equal. induction IH as[|v xs Hv Hr IHr];cbn in *;[reflexivity|].

@@ -1,7 +1,7 @@
 (* Closure compilation with cached runtime type projections.
    CachedEnvFacts and CachedCloFacts prove agreement with SlotX. *)
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Elab Prune SlotX FoldX CloScalar.
+From NM Require Import ExecutionModel CoreMoss MossX FastX Elab Prune SlotX FoldX CloScalar.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.
@@ -32,7 +32,7 @@ Fixpoint rchain (d : cached_env) (sms : list smap) : option cached_env :=
   | sm :: rest => match rchain d rest with
       | Some d' => rcompose_dyn d' sm | None => None end
   end.
-Definition rground d tau := Audit.app_subst (cache_types d) tau.
+Definition rground d tau := ExecutionModel.app_subst (cache_types d) tau.
 Definition rinst d th : cached_env :=
   let types := map (fun p => (fst p,rground d (snd p))) th in
   let rows := map (fun p => (ITy (fst p),QType (snd p))) types in

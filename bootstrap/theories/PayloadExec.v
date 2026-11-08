@@ -1,9 +1,9 @@
 (* The actual payload reader, before specializing its argument environment. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore
   BodySoundCore BodyTy SigSound.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL].
 Section Payload.
 Variable w : Elab.world.

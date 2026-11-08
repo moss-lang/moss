@@ -1,11 +1,11 @@
 From NM Require Import BodyProofTools.
 (* Actual value provisions retain the body context and checked application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  NominalSupport NominalMergeSupport CanonTypes CtxWalk.
 From NM Require Import InfoPreserve.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma get_app_value_other : forall e v a stamp r m,
  get_app(set_app e(KyVal v)a stamp)(KyMth r m)=get_app e(KyMth r m).
@@ -50,17 +50,17 @@ Proof.
  - intros x y Ey. unfold Elab.set_app,Elab.set_val in Ey. cbn[en_vals]in Ey.
    rewrite nget_nset in Ey. destruct(Nat.eqb x v);[injection Ey as <-;exact Wt|exact(Vwf _ _ Ey)].
  - apply env_support_app. exact(env_support_val v Es St).
- - intros r m Clean. cbn[A.provide A.c_apps A.ilook A.mkey Audit.item_eqb].
+ - intros r m Clean. cbn[A.provide A.c_apps A.ilook A.mkey ExecutionModel.item_eqb].
    rewrite get_app_value_other. exact(Apps r m Clean).
- - intro x. cbn[A.provide A.c_apps A.ilook Audit.item_eqb].
+ - intro x. cbn[A.provide A.c_apps A.ilook ExecutionModel.item_eqb].
    unfold get_app,Elab.set_app. cbn[en_apps].
    rewrite support_assoc_aset by apply CtxWalk.key_eqb_spec.
    cbn[key_eqb]. destruct(Nat.eqb x v);cbn[option_map fst];[rewrite Eapp;reflexivity|exact(Va x)].
- - intro x. cbn[A.provide A.c_apps A.ilook Audit.item_eqb].
+ - intro x. cbn[A.provide A.c_apps A.ilook ExecutionModel.item_eqb].
    unfold get_app,Elab.set_app. cbn[en_apps].
    rewrite support_assoc_aset by apply CtxWalk.key_eqb_spec.
    cbn[key_eqb]. exact(Fa x).
- - intro u;cbn[A.provide A.c_apps A.ilook Audit.item_eqb].
+ - intro u;cbn[A.provide A.c_apps A.ilook ExecutionModel.item_eqb].
    rewrite get_app_value_fun;exact(Fu u).
  - intros u fx x tx Lookup Hin.
    cbn[A.provide A.set_val A.c_funs]in Lookup.

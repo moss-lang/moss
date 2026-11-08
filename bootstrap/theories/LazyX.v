@@ -7,7 +7,7 @@
    environments keep their type projection, so entering a closure does not
    rescan its ordinary bindings. No new extraction directive or axiom is used. *)
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit MossX FastX.
+From NM Require Import ExecutionModel MossX FastX.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.

@@ -1,6 +1,6 @@
 (* Positive generated-symbol lookups can only come from the initial state. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore ElabKeeps SymReadonly ProgramTail.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore ElabKeeps SymReadonly ProgramTail.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].

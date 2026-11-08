@@ -1,8 +1,8 @@
 (* Source type judgments depend only on their relevant free type meanings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx BodyTy.
+From NM Require Import ExecutionModel Sx BodyTy.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Set Implicit Arguments.
 Section Restrict.
 Variable W : A.world.

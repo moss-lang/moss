@@ -1,11 +1,11 @@
 (* Successful automatic family selection and application really produce the key. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  BodyTy NominalSupport CanonTypes FamilyMatchingCtx FamilyApplyRestore FamilySelectTrace
  FamilyResultFrame RelFacts ProvideResultContext.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_matching_method_table:forall Fl e th C,
  A.c_mths(fold_left(fun C q=>A.set_ty C(fst q)(snd q))(family_matching Fl e th)C)=A.c_mths C.
 Proof.

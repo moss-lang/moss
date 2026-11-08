@@ -1,9 +1,9 @@
 (* The remaining binding callback excludes the now-proved fn-lambda branch. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BindSequence
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BindSequence
  BindType BindCopyDispatch BindFnDispatch BindFnLambdaExec InfoPreserve.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition function_lambda_bind(W:A.world)(F:A.frame)(sp:spec)(y:aexpr):bool:=
  match sp,y with
  |Spec(Some pp)None None,AELam _ _ _=>

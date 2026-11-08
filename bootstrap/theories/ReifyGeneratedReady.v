@@ -1,7 +1,7 @@
 (* Actual generated compiler invocations supply their final frames. *)
 (* Real compiler code headers discharge the finite frame allocator's input. *)
 From Stdlib Require Import List.
-From NM Require Import ReifyData Audit NMap Elab ReifyHeader ReifyWalkData ReifyReach ReifyEta ReifyProgramWalk.
+From NM Require Import ReifyData ExecutionModel NMap Elab ReifyHeader ReifyWalkData ReifyReach ReifyEta ReifyProgramWalk.
 From NM Require Import ReifyFrameReady.
 Import ListNotations.
 From NM Require Import Sx ElabFrame LambdaOrigin LambdaHeader EtaHeader ReifyBodyHeader LambdaOriginProgram.

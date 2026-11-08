@@ -1,9 +1,9 @@
 (* Actual made-item checks name provisions present in the completed body. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr KeyTranslation
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr KeyTranslation
  ContextAppsProvided LinkOutputGuards LinkBodyTrace CtxMerge CtxWalk.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Presence.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat).
 Lemma runtime_app_provided : forall c e F C key app stamp,

@@ -1,6 +1,6 @@
 (* Successful need resolution preserves exact caller keys and coherence checks. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr CtxWalk KeyTranslation Merge CanonTypes TySupport SourceSupport NominalSupport NeedExec InstantiateTr MethodKeyTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr CtxWalk KeyTranslation Merge CanonTypes TySupport SourceSupport NominalSupport NeedExec InstantiateTr MethodKeyTr.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma mmap_forall2_inv : forall X Y(f:X->M Y)(P:X->Y->Prop) l s ys s',
@@ -106,7 +106,7 @@ Lemma incoherent_semantic : forall e info need k have stamp c F C,
  forall t want,In(t,Some want)
  (map(fun q=>(fst q,option_map(tr Fl)(snd q)))
  (opt_default[](assoc key_eqb need(fi_apps info))))->
- In(t,Some(Audit.Elaboration.canon C(Audit.app_subst(Audit.Elaboration.c_ty C)want)))
+ In(t,Some(ExecutionModel.Elaboration.canon C(ExecutionModel.app_subst(ExecutionModel.Elaboration.c_ty C)want)))
  (map(fun q=>(fst q,option_map(tr Fl)(snd q)))have).
 Proof.
  intros e info need k have stamp c F C Hc E Eh t want Hin.
@@ -144,11 +144,11 @@ Proof.
 Qed.
 Lemma key_present_site_provides : forall c e F C k,
  CxRel w R Fl c e F C ->key_ok k=true->key_present e(site_key e k)=true->
- Audit.Elaboration.provides C(Audit.Elaboration.at_site C(key_tr Fl k)).
+ ExecutionModel.Elaboration.provides C(ExecutionModel.Elaboration.at_site C(key_tr Fl k)).
 Proof.
  intros c e F C k Hc Ok Present.
  rewrite <-(key_tr_site w R Fl c e F C k Hc).
- destruct k as[v|f|r m|u];cbn[site_key key_tr Audit.Elaboration.provides key_present]in *.
+ destruct k as[v|f|r m|u];cbn[site_key key_tr ExecutionModel.Elaboration.provides key_present]in *.
  - rewrite(cr_vals _ _ _ _ _ _ _ Hc). destruct(nget(en_vals e)v);[discriminate|discriminate Present].
  - rewrite(cr_fns _ _ _ _ _ _ _ Hc). destruct(nget(en_fns e)f);[discriminate|discriminate Present].
  - pose proof(site_key_clean c e F C(KyMth r m)Hc Ok)as Clean.
@@ -158,12 +158,12 @@ Proof.
    specialize(Mh Clean). rewrite Mh.
    destruct(get_mth e(canon e(instantiate e r))m);[discriminate|discriminate Present].
  - pose proof(cr_funspresent _ _ _ _ _ _ _ Hc u)as Fu.
-   rewrite Present in Fu. destruct(Audit.Elaboration.nlook u(Audit.Elaboration.c_funs C));[discriminate|discriminate Fu].
+   rewrite Present in Fu. destruct(ExecutionModel.Elaboration.nlook u(ExecutionModel.Elaboration.c_funs C));[discriminate|discriminate Fu].
 Qed.
 Lemma caller_key_apps : forall c e F C k,
  CxRel w R Fl c e F C ->key_ok k=true->
  match site_key e k with KyMth r m=>
- Audit.Elaboration.ilook(Audit.Elaboration.mkey(tr Fl r)m)(Audit.Elaboration.c_apps C)=
+ ExecutionModel.Elaboration.ilook(ExecutionModel.Elaboration.mkey(tr Fl r)m)(ExecutionModel.Elaboration.c_apps C)=
  option_map(fun p=>map(fun q=>(fst q,option_map(tr Fl)(snd q)))(fst p))(get_app e(site_key e k))
  |_=>True end.
 Proof.

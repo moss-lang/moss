@@ -1,5 +1,5 @@
 (* ======================================================================== *)
-(* FrontEndExamples.v — evidence that Audit.Syntax.Derives says what is     *)
+(* FrontEndExamples.v — evidence that ExecutionModel.Syntax.Derives says what is     *)
 (* meant: it relates real files of the tree to their ASTs, and it rejects  *)
 (* syntax errors of tests/errors.  The sources are the files' text,         *)
 (* verbatim (each double quote doubled, as Rocq writes it); regenerate    *)
@@ -7,8 +7,8 @@
 (* ======================================================================== *)
 
 From Stdlib Require Import String List.
-From NM Require Import Audit Parse FrontEnd FrontEndComplete.
-Import ListNotations Audit.Input Audit.Syntax.
+From NM Require Import ExecutionModel Parse FrontEnd FrontEndComplete.
+Import ListNotations ExecutionModel.Input ExecutionModel.Syntax.
 Local Open Scope string_scope.
 
 (* lib/int.moss *)

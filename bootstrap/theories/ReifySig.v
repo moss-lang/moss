@@ -139,13 +139,13 @@ Fixpoint reify_fixed_inst_table (ds : list (item * reify_decl))
   end.
 
 Lemma reify_fixed_keys_table_lookup : forall ds u,
-    (match Audit.Elaboration.nlook u (reify_fixed_keys_table ds) with
+    (match ExecutionModel.Elaboration.nlook u (reify_fixed_keys_table ds) with
      | Some keys => keys | None => [] end) = reify_fixed_keys ds u.
 Proof.
   induction ds as [|[i d]rest IH]; intro u; [reflexivity|].
   destruct i as [t|v|f|rt m th|target];
     cbn [reify_fixed_keys_table reify_fixed_keys lookup_reify_functor
-      lookup_reify_decl Audit.Elaboration.nlook item_eqb]; try exact (IH u).
+      lookup_reify_decl ExecutionModel.Elaboration.nlook item_eqb]; try exact (IH u).
   destruct (Nat.eqb u target) eqn:E.
   - destruct d; unfold reify_fixed_keys,lookup_reify_functor;
       cbn [lookup_reify_decl item_eqb]; rewrite E; reflexivity.
@@ -153,13 +153,13 @@ Proof.
     rewrite E. exact (IH u).
 Qed.
 Lemma reify_fixed_inst_table_lookup : forall ds u,
-    (match Audit.Elaboration.nlook u (reify_fixed_inst_table ds) with
+    (match ExecutionModel.Elaboration.nlook u (reify_fixed_inst_table ds) with
      | Some interpretation => interpretation | None => [] end) = reify_fixed_inst ds u.
 Proof.
   induction ds as [|[i d]rest IH]; intro u; [reflexivity|].
   destruct i as [t|v|f|rt m th|target];
     cbn [reify_fixed_inst_table reify_fixed_inst lookup_reify_functor
-      lookup_reify_decl Audit.Elaboration.nlook item_eqb]; try exact (IH u).
+      lookup_reify_decl ExecutionModel.Elaboration.nlook item_eqb]; try exact (IH u).
   destruct (Nat.eqb u target) eqn:E.
   - destruct d; unfold reify_fixed_inst,lookup_reify_functor;
       cbn [lookup_reify_decl item_eqb]; rewrite E; reflexivity.

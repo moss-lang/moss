@@ -1,9 +1,9 @@
 (* Operational link-cache facts. Cache provenance is not part of the current
    Inv/InfoInv/FwdInv/Later predicates; a hit cannot certify LinkBody. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore InfoInvariant InfoPreserve FwdInvariant BodySoundCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore InfoInvariant InfoPreserve FwdInvariant BodySoundCore.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL].
 Lemma link_body_cached : forall fuel fg bg s h,
  assoc (fun a b => Nat.eqb (fst a) (fst b) && Nat.eqb (snd a) (snd b))

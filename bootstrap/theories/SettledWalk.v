@@ -1,6 +1,6 @@
 (* Recover the final actual walk invariant without needing merge principality. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore Merge CanonTypes ContextClean CtxWalk CtxMerge NeedKeys.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore Merge CanonTypes ContextClean CtxWalk CtxMerge NeedKeys.
 Import ListNotations.
 Section Settled.
 Variable w:Elab.world. Context{P:xprogram}.

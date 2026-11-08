@@ -1,6 +1,6 @@
 (* Actual operational provenance at whole-program phase boundaries. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve ElabConstInput.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame InfoPreserve ElabConstInput.
 Local Strategy opaque [fn_info].
 From NM Require Export ProgramInfo.
 Include ProgramInfo.

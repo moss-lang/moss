@@ -2,11 +2,11 @@
    declared lexical context installs captures then parameters.  The successful
    frame-name check makes these two local views equivalent. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore NominalSupport SourceClean CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore NominalSupport SourceClean CanonTypes
  LambdaCaptureFold LambdaTrace LambdaOwnContext LambdaCaptureTables LambdaCapturedLocals LambdaLocalOrder LambdaNumbering.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition lambda_parameter_rows(ps:list(name*option aty))(sg:fsig):list(string*(ety*lmut)):=
  map(fun q=>(fst q,(snd q,LLet)))(combine(map fst ps)(map snd(sg_params sg))).
 Definition lambda_captured_rows(lets:list(string*nat*ety)):list(string*(ety*lmut)):=

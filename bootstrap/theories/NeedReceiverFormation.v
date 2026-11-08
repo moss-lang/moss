@@ -1,11 +1,11 @@
 (* Method requirements of real callee contexts have well formed supported receivers. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  CoreMoss Merge CanonTypes SourceClean ContextClean NominalSupport TypeReadingInj CtxWalk CtxMerge
  InfoInvariant InfoCache FnBodyContext LoadedContextSupport SourceSatisfiesAny MainContextInfo
  NeedInfoExec MainRoot LoaderOrigin NeedMapExec InstantiateTr.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma need_mlook_member:forall entries r m sg,
  In((r,m),sg)entries->exists got,A.mlook r m entries=Some got.
 Proof.

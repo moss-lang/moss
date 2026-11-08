@@ -1,9 +1,9 @@
 (* Context formation gives each functor row a functional fixed snapshot.
    Duplicate list occurrences do not create competing readings of a key. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit FunctorDecl.
+From NM Require Import ExecutionModel FunctorDecl.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition entries_fixed_readings(W:A.world)(es:list A.entry):Prop:=
  forall u fx,In(A.NFun u fx)es->exists tm,A.FixedReadings W u tm fx.
 Lemma entries_fixed_append:forall W a b,

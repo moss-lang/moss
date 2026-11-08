@@ -1,6 +1,6 @@
 (* Agreement of the cached closure compiler with the slot interpreter. *)
 From Stdlib Require Import List Arith Lia.
-From NM Require Import Audit CoreMoss MossX Prune SlotX FoldX CloScalar CachedClo CachedEnvFacts.
+From NM Require Import ExecutionModel CoreMoss MossX Prune SlotX FoldX CloScalar CachedClo CachedEnvFacts.
 From NM Require FastPath.
 Import ListNotations.
 Set Implicit Arguments.

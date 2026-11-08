@@ -1,6 +1,6 @@
 (* Runtime functor links retain their actual ordered maps and fixed meanings. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss ReifyMaps.
+From NM Require Import ExecutionModel CoreMoss ReifyMaps.
 Import ListNotations.
 Set Implicit Arguments.
 

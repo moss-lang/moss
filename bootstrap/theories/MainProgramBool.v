@@ -1,10 +1,10 @@
 (* The final Bool clause of Elaborates follows from the real program run,
    including the earlier library check and preservation of its selections. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel Sx Elab ElabSound WorldSound ElabFrame
  ProgramInfo MainProgramTrace RuntimeBoolSupport RuntimeBoolProgram.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL fn_info].
 

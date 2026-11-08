@@ -1,9 +1,9 @@
 (* Captured and prototype signature readings agree on their shared meanings.
    Unused requirement names need not be present in both snapshots. *)
 From Stdlib Require Import List Arith.
-From NM Require Import Audit Sx SourceReadingExtend TyOfSubst SigReadingSubst CtxMerge.
+From NM Require Import ExecutionModel Sx SourceReadingExtend TyOfSubst SigReadingSubst CtxMerge.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition LookupCompatible (left right:list(nat*ty)):Prop:=
  forall key x y,A.nlook key left=Some x->A.nlook key right=Some y->x=y.
 Lemma lookup_compatible_sym:forall left right,LookupCompatible left right->LookupCompatible right left.
@@ -59,8 +59,8 @@ Proof.
  eapply signature_compatible;[eapply compatible_from_recorded_application;eassumption|exact S1|exact S2].
 Qed.
 
-Definition substituted_signature (sb:Audit.subst)(sg:A.fsig):A.fsig:=
- A.FSig(map(Audit.app_subst sb)(A.sg_params sg))(Audit.app_subst sb(A.sg_ret sg)).
+Definition substituted_signature (sb:ExecutionModel.subst)(sg:A.fsig):A.fsig:=
+ A.FSig(map(ExecutionModel.app_subst sb)(A.sg_params sg))(ExecutionModel.app_subst sb(A.sg_ret sg)).
 Lemma signature_substituted_table:forall W f tm sg sb,
  A.SigOf W f tm None sg->
  A.SigOf W f(smap sb tm)None(substituted_signature sb sg).
@@ -83,24 +83,24 @@ Proof.
  cbn[requirement_snapshot map A.nlook existsb fst snd].
  destruct(Nat.eqb_spec key r)as[->|Ne];[reflexivity|exact(IH key)].
 Qed.
-Lemma lookup_subst_nlook:forall key tm,Audit.lookup_subst key tm=A.nlook key tm.
+Lemma lookup_subst_nlook:forall key tm,ExecutionModel.lookup_subst key tm=A.nlook key tm.
 Proof. intros key tm;induction tm as[|[k v]tm IH];[reflexivity|].
- cbn[Audit.lookup_subst A.nlook];destruct(Nat.eqb key k);[reflexivity|exact IH]. Qed.
+ cbn[ExecutionModel.lookup_subst A.nlook];destruct(Nat.eqb key k);[reflexivity|exact IH]. Qed.
 Lemma current_requirement_compatible:forall requirements meanings solved,
- (forall key value,A.nlook key meanings=Some value->Audit.app_subst solved value=value)->
+ (forall key value,A.nlook key meanings=Some value->ExecutionModel.app_subst solved value=value)->
  LookupCompatible(smap solved(smap meanings(requirement_snapshot requirements)))meanings.
 Proof.
  intros requirements meanings solved Fixed key x y X Y.
  rewrite !nlook_smap,requirement_snapshot_lookup in X.
  destruct(existsb(Nat.eqb key)requirements);[|discriminate].
  cbn[option_map]in X.
- assert(L:Audit.lookup_subst key meanings=Some y)by(rewrite lookup_subst_nlook;exact Y).
- cbn[Audit.app_subst]in X;rewrite L in X.
+ assert(L:ExecutionModel.lookup_subst key meanings=Some y)by(rewrite lookup_subst_nlook;exact Y).
+ cbn[ExecutionModel.app_subst]in X;rewrite L in X.
  rewrite(Fixed _ _ Y)in X;congruence.
 Qed.
 Theorem captured_signature_matches_current:forall W f requirements meanings solved snapshot recorded prototype_sig current_sig captured_sig,
  A.kind_sym W f<>Some A.DKMeth->A.AppOf W f snapshot recorded->
- (forall key value,A.nlook key meanings=Some value->Audit.app_subst solved value=value)->
+ (forall key value,A.nlook key meanings=Some value->ExecutionModel.app_subst solved value=value)->
  (forall key value,A.nlook key(smap solved(smap meanings(requirement_snapshot requirements)))=Some value->
    In(key,Some value)recorded)->
  A.SigOf W f(requirement_snapshot requirements)None prototype_sig->

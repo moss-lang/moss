@@ -1,7 +1,7 @@
 (* The actual abstract-provider branch selects its available target and
    returns its proven forwarder; no signature/body callback is assumed. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame FwdInvariant
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame FwdInvariant
  ForwarderSymbol FinalForwarders ForwarderHistory.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
@@ -27,7 +27,7 @@ Theorem abstract_provider_final_facts:forall w P fuel c e pa s provider final ta
  (exists sg,nget(en_fns e)(gs_id target)=Some sg)/\gs_id provider<>0/\
  exists tg,LoadedAbstract w tg /\gs_id tg=gs_id target/\
  gs_decl provider=ForwarderTrace.forwarder_decl tg/\gs_mod provider=gs_mod tg/\gs_recv provider=None/\
- Audit.Elaboration.body_of P(gs_id provider)=
+ ExecutionModel.Elaboration.body_of P(gs_id provider)=
  Some(XCallA(gs_id target)(map XVar(seq 0(List.length(fn_params provider))))).
 Proof.
  intros w P fuel c e pa s provider final target I FI Final Resolve Kind NoBody E.

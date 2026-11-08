@@ -1,7 +1,7 @@
 (* An unformable declaration interface is an uninhabitable capability, not
    a fabricated empty functor. Real checked provider profiles take priority. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss NMap Sx Elab ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss NMap Sx Elab ReifyData Reify ReifySource
  ReifyFunctors ReifyFunctorProfiles ReifyProfileGraph ReifySig.
 Import ListNotations.
 Definition source_functor_identity(source:st)(original:usym):bool:=

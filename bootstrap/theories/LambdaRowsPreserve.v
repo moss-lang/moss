@@ -1,7 +1,7 @@
 (* Actual preservation of the historical lambda-body invariant. A pending
    fresh owner may emit its first body once, after compiling nested code. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundEmit
  LambdaReadonly LambdaRows ForwarderTrace ForwarderHistory.
 Import ListNotations.
 Set Implicit Arguments.

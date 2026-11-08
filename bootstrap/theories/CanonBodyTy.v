@@ -1,8 +1,8 @@
 (* Source type readings in a context carrying a nonempty merge. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy SigSound Merge CanonTypes TyOfSubst.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy SigSound Merge CanonTypes TyOfSubst.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
 Section CanonicalReading.
@@ -36,7 +36,7 @@ Proof.
   { intro k. rewrite Htm, nlook_trp, nassoc_tymap.
     destruct (tn_get e k) as [y|]; [|reflexivity]. cbn [option_map]. rewrite tr_canon by exact T. reflexivity. }
   specialize (Ts SR). rewrite tr_canon in Ts by exact T.
-  assert (Ethis : option_map (Audit.app_subst (suf Fl (en_uf e))) (option_map trF this) =
+  assert (Ethis : option_map (ExecutionModel.app_subst (suf Fl (en_uf e))) (option_map trF this) =
     option_map (fun y => trF (canon e y)) this).
   { destruct this; cbn [option_map]; [rewrite tr_canon by exact T|]; reflexivity. }
   rewrite Ethis in Ts. exact Ts.

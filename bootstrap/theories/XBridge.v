@@ -16,7 +16,7 @@
 
 From Stdlib Require Import List Bool Arith Permutation String.
 
-From NM Require Import Audit CoreMoss XTyping MergeWf XBridgeCtx.
+From NM Require Import ExecutionModel CoreMoss XTyping MergeWf XBridgeCtx.
 Import ListNotations.
 Import Input Elaboration.
 
@@ -820,7 +820,7 @@ Proof.
   destruct e; simpl in Hkey, Hok; try discriminate; injection Hkey as <-; exact Hok.
 Qed.
 
-(* `main`'s root context (RootCtx, Audit note 54) adds Gc's abstract
+(* `main`'s root context (RootCtx, ExecutionModel note 54) adds Gc's abstract
    functors, declared as such, and the types they are fixed in. *)
 Definition entry_ok' (e : entry) : Prop :=
   match e with NTy _ => True | _ => entry_ok e end.
@@ -1397,7 +1397,7 @@ End FromWorld.
    now ask only the type part (all their proofs read), so A2' asks a val
    or fn need's needs nothing; its type requirements remain (dep_tys).
 
-   With brackets that do not outlive their item (Audit note 71), the
+   With brackets that do not outlive their item (ExecutionModel note 71), the
    IFun clause of need_ok fails for an accepted program whose functor's
    fixed input is in force only through a bracket (scratch probe f1:
    `assume X { context C = F; }`, `context O = C[X=Char];` for F fixed in

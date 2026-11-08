@@ -1,11 +1,11 @@
 (* Literal arithmetic at a method already in force. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore BodyLit
+From NM Require Import InfoPreserve ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore BodyLit
  EtyTyExec CanonTypes NominalSupport TySupport SourceSupport MethodKeyTr.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque [Nat.of_num_uint FUEL ety_ty canon].
-Module LD := Audit.Elaboration.
+Module LD := ExecutionModel.Elaboration.
 Section Direct.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
 Hypothesis Hload : load_world b=Good w.

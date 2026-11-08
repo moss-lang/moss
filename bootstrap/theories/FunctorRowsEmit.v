@@ -1,6 +1,6 @@
 (* The two functor-body insertion sites use a newly allocated symbol. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FinalLinks FunctorReadonly FunctorRows.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FinalLinks FunctorReadonly FunctorRows.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].
 Ltac ft_kept:=apply ft_keeps;[solve[auto with keepsdb]|solve[okt]].

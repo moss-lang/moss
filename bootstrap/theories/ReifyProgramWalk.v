@@ -1,7 +1,7 @@
 (* Finite source-code frames are allocated before any body walk. Every
    recursive call therefore sees the same immutable formal interface. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource
   ReifyInitial ReifyPlan ReifyReach ReifyFunctors ReifyFunctorProfiles
   ReifyProfileSupport ReifyOpaqueFunctors ReifyWalkData ReifyWalk ReifyEta ReifyTransfers ReifyInterfaces.
 Import ListNotations.

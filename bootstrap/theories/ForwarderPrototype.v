@@ -1,10 +1,10 @@
 (* Cached and newly computed forwarder contexts retain the actual identity
    application and a declaration signature read at requirement names. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr CtxWalk CtxMerge
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr CtxWalk CtxMerge
  InfoInvariant InfoPreserve InfoCache FnInfoCore ForwarderPrototypeSeed ForwarderPrototypeWalk FnSnapshotAlign.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Definition ForwarderPrototype(W:A.world)(t:nat)(info:fninfo):Prop:=
  (exists sg,A.SigOf W t(requirement_snapshot(A.w_reqs W t))None sg)/\

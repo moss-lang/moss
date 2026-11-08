@@ -1,8 +1,8 @@
 (* A semantic method result retains the written context/bracket route to its leaf. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx FamilyResultFrame.
+From NM Require Import ExecutionModel Sx FamilyResultFrame.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Inductive FamilyOutputLeaf(W:A.world):string->list(nat*ty)->list(nat*ty)->spec->ty->nat->Prop:=
 |FOLMethod:forall p ob tm pa dn a r m rt bs,
  A.resolve_sym W p pa=Some r->A.MethodNamed W p r dn m->

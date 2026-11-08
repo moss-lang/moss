@@ -1,9 +1,9 @@
 (* Real generated output-type installation forms the result reader's type table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy Merge CanonTypes
  NominalSupport BindType ProvideResultExec ProvideResultContext ApplyFreshExec FamilyResultFold.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition output_types_fold(f:nat->ty)(ts:list nat)(C:A.cx):A.cx:=
  fold_left(fun C t=>A.set_ty C t(f t))ts C.
 Lemma output_types_fold_lookup:forall ts f C k,
@@ -69,7 +69,7 @@ Proof.
    unfold A.output_type_map;rewrite map_app,map_map,nlook_app.
    rewrite output_type_values_lookup.
    destruct(nmem k ts);cbn.
-   + f_equal;unfold A.canon;rewrite(cr_sub _ _ _ _ _ _ _ HC);change(Audit.app_subst(suf Fl(en_uf e))(tr Fl(YAbs(generation_of gens k)))=tr Fl(canon e(YAbs(generation_of gens k)))).
+   + f_equal;unfold A.canon;rewrite(cr_sub _ _ _ _ _ _ _ HC);change(ExecutionModel.app_subst(suf Fl(en_uf e))(tr Fl(YAbs(generation_of gens k)))=tr Fl(canon e(YAbs(generation_of gens k)))).
      apply tr_canon;exact(proj1(cr_uf _ _ _ _ _ _ _ HC)).
    + rewrite family_normal_lookup;destruct(A.nlook k(A.c_ty C))as[y|]eqn:Read;[|reflexivity].
      cbn[option_map];f_equal;eapply output_context_type_stable;eassumption.

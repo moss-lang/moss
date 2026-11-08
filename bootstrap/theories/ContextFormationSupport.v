@@ -1,6 +1,6 @@
 (* Actual ordinary declaration contexts, including every merge rebuild. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  Merge CanonTypes SourceClean ContextClean CtxWalk CtxMerge NominalSupport
  ContextSupport ContextWalkSupport ContextMergeSupport InfoCache.
 Import ListNotations.

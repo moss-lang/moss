@@ -1,11 +1,11 @@
 (* A definitional view of the actual result-item visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  FreeVisitorCore ResultMentionsFold.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL free_type_syms type_requirements reqs].
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition mentions_add(l out:list nat):list nat:=
  fold_left(fun o x=>if nmem x o then o else o++[x])l out.
 Definition mention_item(f self mi:nat)(out:list nat)(sp:spec):M(list nat):=

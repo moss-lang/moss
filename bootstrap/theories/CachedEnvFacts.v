@@ -1,6 +1,6 @@
 (* Exact projection laws for the cached environments used by CachedClo. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss MossX SlotX CachedClo.
+From NM Require Import ExecutionModel CoreMoss MossX SlotX CachedClo.
 Import ListNotations.
 Set Implicit Arguments.
 Record cache_valid (d : cached_env) : Prop := CacheValid {

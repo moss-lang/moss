@@ -1,10 +1,10 @@
 (* Every loaded function body occurs in the actual lower_all traversal;
    all three declaration tables are included, independently of imports. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
   FnHistory FnStable FnEmitStable FnSynthStable FnReadonly FnCompleted ProgramInfo ProgramTail.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 #[local] Hint Resolve kf_entry_zero_width kf_check_main_signature : keepsdb.
 Local Strategy opaque [entry_zero_width].
 
@@ -227,7 +227,7 @@ Qed.
 Theorem elab_program_defined_bodies_present:forall b s p final id g receiver name parameters result body,
  Inv s ->load_world b=Good(st_w s)->elab_program s=Good(p,final)->
  nget(w_syms(st_w s))id=Some g ->gs_decl g=ADFn receiver name parameters result(Some body)->
- exists lowered,nassoc id(Audit.xo_fns p)=Some lowered.
+ exists lowered,nassoc id(ExecutionModel.xo_fns p)=Some lowered.
 Proof.
  intros b s p final id g receiver name parameters result body Inv Load Run Loaded Decl.
  destruct(proj1 elab_program_completes_defined s p final Inv Run)as[InvFinal Frame].
@@ -254,7 +254,7 @@ Theorem accepted_defined_functions_completed:forall b p,
  load_world b=Good w/\elab_program(s_init w)=Good(p,final)/\
  forall id g receiver name parameters result source_body,
  nget(w_syms w)id=Some g->gs_decl g=ADFn receiver name parameters result(Some source_body)->
- exists lowered,nassoc id(Audit.xo_fns p)=Some lowered/\completed_source_fn w final id lowered.
+ exists lowered,nassoc id(ExecutionModel.xo_fns p)=Some lowered/\completed_source_fn w final id lowered.
 Proof.
  intros b p Accepted;unfold elaborate in Accepted.
  destruct(load_world b)as[w|message]eqn:Load;cbn[rbind]in Accepted;[|discriminate].

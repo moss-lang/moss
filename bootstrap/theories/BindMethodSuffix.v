@@ -1,13 +1,13 @@
 (* The actual method-bind continuation installs the checked application and
    emits exactly the receiver and substitution read by BMethBind. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr BodyTy EtyTyExec CanonTypes NominalSupport NominalMergeSupport Merge CtxWalk MethodKeyTr
  ProvideResultReading ProvideResultFunction ProvideResultMethod ProvideResultCanonical ProvideResultSubst ProvideResultContext
  FreeTypesExec TySupport SourceSupport NeedMapExec BindSequence BindMethodTrace.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 Section Suffix.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).

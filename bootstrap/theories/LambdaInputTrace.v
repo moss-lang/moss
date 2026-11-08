@@ -1,7 +1,7 @@
 (* A single actual lambda trace retaining both frame-name validity and all
    operational/capture/body/emit receipts. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv BodySoundCore
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv BodySoundCore
  LambdaAnnotations LambdaLocalNames BodyTy SymReadonly FnReadonly LambdaTrace LambdaCaptureFold.
 Import ListNotations.
 Local Open Scope string_scope.

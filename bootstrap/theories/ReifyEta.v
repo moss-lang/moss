@@ -2,7 +2,7 @@
    lowering clones its code at each provision and gives receiver type inputs
    fresh roles, separate from the plain provider's own formal type roles. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab NMap ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab NMap ReifyData Reify ReifySource
   ReifyRoles ReifyPlan ReifyMaps.
 Import ListNotations.
 
@@ -30,13 +30,13 @@ Record eta_wrapper_plan : Type := EtaWrapperPlan {
 }.
 Definition reserve_eta_wrapper (receiver : ty) (provider : reify_function_frame)
     (before : reify_state) : eta_wrapper_plan :=
-  let actual_receiver := Audit.app_subst (rf_generations before) receiver in
+  let actual_receiver := ExecutionModel.app_subst (rf_generations before) receiver in
   let keys := nodup Nat.eq_dec (ty_frees actual_receiver) in
   let '(roles,receiver_map,allocated) := allocate_type_roles keys before in
   let code := rf_next allocated in
   let inputs := type_role_telescope roles ++ rff_inputs provider in
   let signature := mkSig
-      (Audit.app_subst roles actual_receiver :: fs_params (rff_signature provider))
+      (ExecutionModel.app_subst roles actual_receiver :: fs_params (rff_signature provider))
       (fs_ret (rff_signature provider)) in
   let body := XCallD (rff_code provider) [] (identity_smap (rff_inputs provider))
       (map XVar (seq 1 (length (fs_params (rff_signature provider))))) in

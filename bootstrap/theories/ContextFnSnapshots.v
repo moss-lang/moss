@@ -1,8 +1,8 @@
 (* Function context rows retain one shared signature/application snapshot. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit FnSnapshot TyOfSubst SigReadingSubst ProvideResultSubst SourceReadingExtend.
+From NM Require Import ExecutionModel FnSnapshot TyOfSubst SigReadingSubst ProvideResultSubst SourceReadingExtend.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition entries_fn_readings(W:A.world)(es:list A.entry):Prop:=
  forall f sg app,In(A.NFn f sg app)es->exists tm,A.SigOf W f tm None sg/\A.AppOf W f tm app.
 Lemma entries_fn_append:forall W a b,
@@ -41,7 +41,7 @@ Lemma root_fn_readings:forall W s es0 tm es tm',
  A.RootCtx W s es0 tm es tm'->entries_fn_readings W es.
 Proof. intros W s es0 tm es tm' H;destruct H;[intros f sg app[]|eapply root_items_fn_readings;eassumption]. Qed.
 Definition snapshot_inst(sigma:subst)(finaltm:list(nat*ty))(app:A.inst):A.inst:=
- map(fun q=>(fst q,option_map(Audit.app_subst sigma)
+ map(fun q=>(fst q,option_map(ExecutionModel.app_subst sigma)
   (match snd q with Some t=>Some t|None=>A.nlook(fst q)finaltm end)))app.
 Lemma frozen_fn_reading:forall W sigma finaltm f sg app rawtm,
  A.SigOf W f rawtm None sg->A.AppOf W f rawtm app->

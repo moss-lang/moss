@@ -38,7 +38,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame LambdaLocals.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame LambdaLocals.
 From NM Require Export BodyTr.
 From NM Require Import Merge CanonTypes TyOfSubst BodyUf NominalSupport NominalMergeSupport FunctorDecl.
 From NM Require CoreMoss.
@@ -293,9 +293,9 @@ Proof.
       split; [|split;[reflexivity|constructor]]. eapply A.ExReturn.
       * rewrite (cr_ret _ _ _ _ Hc). exact Ey.
       * rewrite (cr_ret _ _ _ _ Hc). exact (fits_tr e ty _ (cr_uf _ _ _ _ Hc) Ef).
-    + destruct (is_unit_or_never (canon e (sg_ret (cx_sig c)))) eqn:Eu; [|noerr H1]. injection H1 as <- <- <-.
+    + destruct (ety_eqb (canon e (sg_ret (cx_sig c))) YUnit) eqn:Eu; [|noerr H1]. injection H1 as <- <- <-.
       split; [|split;[reflexivity|constructor]]. apply A.ExReturnUnit. rewrite (cr_ret _ _ _ _ Hc).
-      destruct (canon e (sg_ret (cx_sig c))); try discriminate Eu; [left | right]; reflexivity.
+      destruct (canon e (sg_ret (cx_sig c))); try discriminate Eu; reflexivity.
   - (* break *) destruct (Nat.eqb (cx_loop c) 0) eqn:El; [noerr H1|]. injection H1 as <- <- <-.
     split; [|split;[reflexivity|constructor]]. apply A.ExBreak. rewrite (cr_loop _ _ _ _ Hc), El. reflexivity.
   - (* a block *) binv H1 as r3 s3 Hb. destruct r3 as [[vb tb] bt]. injection H1 as <- <- <-.

@@ -1,7 +1,7 @@
 (* Successful lambda generation checks all frame names, including captured
    locals and the implicit receiver, before compiling its body. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound LambdaTrace LambdaLocalNames LambdaCaptureFold.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound LambdaTrace LambdaLocalNames LambdaCaptureFold.
 Import ListNotations.
 Local Open Scope list_scope.
 Lemma lambda_frame_names:forall fuel c e ps rt body bound sg this what s pid pre sm final,

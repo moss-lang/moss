@@ -1,6 +1,6 @@
 (* A forwarder's renamed parameters retain the checked target signature. *)
 From Stdlib Require Import List String.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodyTr BodySoundCore CanonTypes Merge ProviderSig FnSigParallel ForwarderTrace.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodyTr BodySoundCore CanonTypes Merge ProviderSig FnSigParallel ForwarderTrace.
 Import ListNotations.
 Lemma canonical_signature_parameter_names:forall Fl e sg target,
  map snd(sg_params sg)=map snd(sg_params target)->sg_ret sg=sg_ret target->
@@ -27,8 +27,8 @@ Proof.
 Qed.
 
 Lemma caller_type_readings_fixed:forall w R Fl c e F C key value,
- CxRel w R Fl c e F C->Audit.Elaboration.nlook key(Audit.Elaboration.c_ty C)=Some value->
- Audit.app_subst(Audit.Elaboration.c_sub C)value=value.
+ CxRel w R Fl c e F C->ExecutionModel.Elaboration.nlook key(ExecutionModel.Elaboration.c_ty C)=Some value->
+ ExecutionModel.app_subst(ExecutionModel.Elaboration.c_sub C)value=value.
 Proof.
  intros w R Fl c e F C key value Hc Read.
  rewrite(cr_ty _ _ _ _ _ _ _ Hc)in Read.
@@ -50,7 +50,7 @@ Theorem match_forwarder_target_signature:forall fuel c e F C provider target wan
  gs_decl provider=forwarder_decl target->gs_mod provider=gs_mod target->
  match_fn_sig fuel c e provider wanted kind s=Good(sm,final)->
  Inv s->st_w s=w->CxRel w R Fl c e F C->Later w P R Fl final->
- Audit.Elaboration.SigOf(BodySoundCore.W w R Fl)(gs_id target)(Audit.Elaboration.c_ty C)None(canonical_sig Fl e wanted).
+ ExecutionModel.Elaboration.SigOf(BodySoundCore.W w R Fl)(gs_id target)(ExecutionModel.Elaboration.c_ty C)None(canonical_sig Fl e wanted).
 Proof.
  intros[|fuel]c e F C provider target wanted kind s sm final n ps rt Loaded Decl Copied Home Run Hi Hw Hc L;
  [discriminate|]. cbn[match_fn_sig]in Run.

@@ -1,7 +1,7 @@
 (* Provider code has one immutable frame per checked raw generated symbol.
    Its private type captures never reuse a polymorphic formal role by ID. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource
   ReifyInterfaces ReifyRoles ReifyPlan ReifyInitial ReifyFunctors ReifyFunctorProfiles BodyTr ReifyReach ReifyWalkData ReifyAnnotations ReifyTransfers ReifyMaps.
 Import ListNotations.
 
@@ -20,7 +20,7 @@ Proof. intros;cbn;rewrite Nat.eqb_refl;reflexivity. Qed.
 
 Definition canonical_input_meaning (source : st) (defaults : subst)
     (target : reify_functor_view) (raw : ety) : ty :=
-  Audit.app_subst(rfv_input_types target++defaults)
+  ExecutionModel.app_subst(rfv_input_types target++defaults)
     (reify_snapshot_type source(rfv_input_scope target)raw).
 
 (* A frozen old generation is not the mutable name which later replaced it.
@@ -89,7 +89,7 @@ Definition provider_capture_meaning (source : st) (scope : reify_scope ety key)
   | Some own=>
       if ty_eqb(reify_snapshot_type source scope own)(TAbs generation) then
         match assoc Nat.eqb generation arguments with
-        | Some actual=>Some(Audit.app_subst(rf_generations caller)
+        | Some actual=>Some(ExecutionModel.app_subst(rf_generations caller)
             (tr(reify_field_number source)actual))
         | None=>lookup_subst generation(rf_generations caller)end
       else lookup_subst generation(rf_generations caller)

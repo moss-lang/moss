@@ -4,7 +4,7 @@
    provider-resolution step. Quiet computations preserve symbols, function
    rows and function headers. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader SymReadonly ReifyData.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader SymReadonly ReifyData.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].

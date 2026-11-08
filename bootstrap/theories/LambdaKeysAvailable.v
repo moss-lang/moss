@@ -1,6 +1,6 @@
 (* Physical provision enumeration agrees with the actual environment readers. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound NMapEnum MethodRows.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound NMapEnum MethodRows.
 Import ListNotations.
 Local Open Scope list_scope.
 Definition LambdaKeyAvailable(e:env)(k:key):Prop:=

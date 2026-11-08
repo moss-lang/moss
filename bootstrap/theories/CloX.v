@@ -23,7 +23,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Elab Prune SlotX FoldX CloScalar.
+From NM Require Import ExecutionModel CoreMoss MossX FastX Elab Prune SlotX FoldX CloScalar.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -996,7 +996,7 @@ Proof.
   rewrite (cc_agrees R tbl ftbl Ht Hf). reflexivity.
 Qed.
 
-(* The closure engine on the compiled program computes Audit's semantics. *)
+(* The closure engine on the compiled program computes ExecutionModel's semantics. *)
 Theorem clo_run_main : forall p argv rd tbl ftbl fuel st0,
   tbl_ok (rprog_of p argv rd) tbl ftbl ->
   crun_main tbl fuel (xo_main p) (xo_env p) st0

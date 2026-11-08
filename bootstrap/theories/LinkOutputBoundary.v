@@ -1,12 +1,12 @@
 (* A loaded defined provider can create a fixed target type internally.
    The target's promises are therefore read in its own input context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore CoreMoss BodySoundCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore CoreMoss BodySoundCore.
 Import ListNotations.
 Local Open Scope string_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition link_boundary_out:=Spec(Some["out"])None None.
-Definition link_boundary_body:list(list(Audit.Input.spec*option aexpr)):=
+Definition link_boundary_body:list(list(ExecutionModel.Input.spec*option aexpr)):=
  [[(Spec(Some["T"])None None,Some(AEPath["Concrete"]None));
    (link_boundary_out,Some(AEPath["Concrete"]None))]].
 Definition link_boundary_bundle:bundle:=Bundle "/case.moss" ""

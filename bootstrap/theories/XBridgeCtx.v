@@ -1,9 +1,9 @@
 (* Context type meanings, including main's root context, follow from the
    declarative context walk. They need not be assumed by the bridge. *)
 From Stdlib Require Import List Arith.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
-Import Audit.Input Audit.Elaboration.
+Import ExecutionModel.Input ExecutionModel.Elaboration.
 Local Open Scope list_scope.
 
 Definition self_meanings (tm : list (nat * ty)) : Prop :=

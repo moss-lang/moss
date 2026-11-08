@@ -1,9 +1,9 @@
 (* Actual nominal-argument enumeration, independent of source bracket parsing. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore
   BodySoundCore BodyTy ReqsSolve.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 Section Args.
 Variable w : Elab.world.

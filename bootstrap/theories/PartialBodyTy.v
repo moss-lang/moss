@@ -1,6 +1,6 @@
 (* Actual type reading with ambient meanings included in the semantic context. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore Merge CanonTypes TyOfSubst BodyTy.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore Merge CanonTypes TyOfSubst BodyTy.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -14,7 +14,7 @@ Proof.
   destruct Hy as [<-|Hy]; [exists u1; exact H1|].
   exact (IH s u s' (fun z Hz => Hr z (or_intror Hz)) H2 y Hy).
 Qed.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 

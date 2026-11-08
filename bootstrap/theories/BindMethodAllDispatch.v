@@ -1,9 +1,9 @@
 (* All method bindings are handled before the remaining non-method cases. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore InfoPreserve
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore InfoPreserve
  BindSequence BindCopyDispatch BindFnDispatch BindLambdaDispatch BindMethodExec.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Definition method_bind (sp : spec) : bool :=
  match sp with
  | Spec (Some _) (Some _) _ => true

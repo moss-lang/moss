@@ -1,6 +1,6 @@
 (* Actual allocation and lowering traces for synthetic abstract-fn providers. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].

@@ -1,6 +1,6 @@
 (* Agreement laws for split environments with deferred runtime types. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit MossX FastX LazyX.
+From NM Require Import ExecutionModel MossX FastX LazyX.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.
@@ -24,9 +24,9 @@ Lemma flookup_merge : forall a b i,
  flookup i(fmerge a b)=match flookup i a with Some en=>Some en|None=>flookup i b end.
 Proof. intros [av atp am][bv btp bm]i;destruct i;cbn[flookup fmerge];auto using tlookup_app,dlookup_app;rewrite force_append;apply tlookup_app. Qed.
 Lemma ground_exact : forall tau get s,
- (forall t,get t=lookup_subst t s)->ground get tau=Audit.app_subst s tau.
+ (forall t,get t=lookup_subst t s)->ground get tau=ExecutionModel.app_subst s tau.
 Proof.
- fix IH 1;intros tau get s Read;destruct tau as[|t|n th|ts];cbn[ground Audit.app_subst].
+ fix IH 1;intros tau get s Read;destruct tau as[|t|n th|ts];cbn[ground ExecutionModel.app_subst].
  - reflexivity.
  - rewrite Read;reflexivity.
  - f_equal;induction th as[|[t tau]th Tail];cbn;[reflexivity|].

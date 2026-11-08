@@ -1,9 +1,9 @@
 (* The emitted application input theta reads the actual caller type table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy CanonTypes
  CtxMerge FunctorContext FunctorFixedExec ApplyAbstractExec EtyTyExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[ety_ty ety_ty_go].
 Section Theta.
 Variable w:Elab.world. Context{P:xprogram}.

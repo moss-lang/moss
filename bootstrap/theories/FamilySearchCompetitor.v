@@ -1,11 +1,11 @@
 (* A real bound semantic competitor is retained by its actual scanner visit. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  CanonBodyTy Merge CanonTypes TyOfSubst SourceReadingExtend FunctorDeclExec
  FamilySelectTrace FamilyClassifierReverse FamilyMarkerContext FamilyMarkerSpecialize FamilyMarkedSubst
  FamilyCandidateComplete FamilySemanticLeaf FamilyLeafScan FamilyScanSpecialize FamilyCandidateRoute FamilySearchRetains FamilyFoldExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 #[local]Hint Resolve ok_family_receiver ok_family_params ok_family_classify ok_family_candidate_step:okdb.
 Local Strategy opaque[family_candidate_step receiver_at family_params is_family].
 Lemma family_sym_id:forall u s g sf,sym u s=Good(g,sf)->Inv s->gs_id g=u.

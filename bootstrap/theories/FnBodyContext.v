@@ -2,13 +2,13 @@ From NM Require Import CanonBodyTy.
 (* A loaded declaration's own checked context is the body-level CxRel,
    before parameter locals are installed. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant
  BodySoundCore BodyTy BodyTr Merge CanonTypes CtxWalk CtxMerge CtxMethodExec InfoCache
  ContextClean ContextMergeSupport NominalSupport FnContextFunctors ContextFixed
  FunctorDecl MainRoot MainContextInfo SourceSatisfiesAny LoaderOrigin LoadedContextSupport
  FnSigExec ProviderSig SourceClean ContextSupport ContextFnSnapshots.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].

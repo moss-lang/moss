@@ -1,9 +1,9 @@
 (* Actual accepted source carries an unresolved nominal payload through a
    phantom constructor. The computed base keeps its real opaque identity. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit CoreMoss NMap Sx Parse Elab ReifyData Reify
+From NM Require Import ExecutionModel CoreMoss NMap Sx Parse Elab ReifyData Reify
   ReifyNominal ReifyProgram ReifyProviderExamples XTyping.
-Import ListNotations Audit.Input.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition opaque_phantom_text:string:=
  "type Broken=Broken;tag Bad(Broken);type T;assume T{tag Phantom[T](());}fn main(){Phantom[T=Bad](());}".

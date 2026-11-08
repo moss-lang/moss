@@ -1,7 +1,7 @@
 (* Every newly emitted function retains an actual completed invocation
    and a usable immutable frame, through the real synthesis visitor. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabFrame ElabInv FnReadonly SymReadonly
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabFrame ElabInv FnReadonly SymReadonly
  FnBound FnBoundEmit FnBoundSynth FnPresentStable ReifyHeader ReifyHeaderReadonly
  ReifyHeaderStable ReifyHeaderSynth ReifyHeaderPresent
  FunctionFrameHistory FunctionFrameOps FunctionFrameLower FunctionFrameWrapper FunctionFrameForwarder FunctionFrameLambda.

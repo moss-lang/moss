@@ -1,6 +1,6 @@
 (* Exact operational main/platform/output receipts from the real program visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame RuntimeBoolSupport.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame RuntimeBoolSupport.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL fn_info].
@@ -17,7 +17,7 @@ Definition main_provider_inputs(snapshot:st):M(list(nat*list nat)):=
  mmap(fun p=>let! ts:=runtime_provider_inputs(fst p)in ret(fst p,ts))(st_funs snapshot).
 Definition main_runtime_types(e:env)(sc:runtime_schema)(base:nat):M(list(nat*ty)):=
  mmap(fun q=>let! tau:=ety_ty(canon e(snd q))in
- ret(fst q,Audit.app_subst(runtime_machines sc base)tau))(tymap e).
+ ret(fst q,ExecutionModel.app_subst(runtime_machines sc base)tau))(tymap e).
 Theorem main_program_trace:forall initial p final,
  elab_program initial=Good(p,final)->
  exists listed contexts library lowered assumes mainid main info infos signature platform prims supplied sc inputstate inputs types,

@@ -1,9 +1,9 @@
 (* Derive a declarative result read from the actual fresh output-view visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  CtxMerge CanonTypes GeneralProvideResult NestingTypesExec ApplyFreshExec LinkOutputRoles.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma link_output_role_total:forall (roles:list(nat*nat)) t,
  In t(map fst roles)->nassoc t roles<>None.
 Proof.

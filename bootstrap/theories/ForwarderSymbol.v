@@ -1,6 +1,6 @@
 (* A real cache hit or miss returns the recorded forwarder symbol. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame FwdInvariant ForwarderTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame FwdInvariant ForwarderTrace.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Theorem forwarder_return_symbol:forall fuel tg s g final,

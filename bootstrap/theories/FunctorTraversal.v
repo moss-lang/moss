@@ -1,6 +1,6 @@
 (* Traversal preserving the functor row table invariant. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore ElabKeeps FunctorReadonly ReifyHeader ReifyData.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore ElabKeeps FunctorReadonly ReifyHeader ReifyData.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].

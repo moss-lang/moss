@@ -1,8 +1,8 @@
 (* Installing actual signature parameters preserves the complete body context. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySound BodyTr CanonTypes NominalSupport FnBodyContext FnBodySlots.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySound BodyTr CanonTypes NominalSupport FnBodyContext FnBodySlots.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope list_scope.
 Definition body_parameter_types Fl e (parameters:list(name*ety)):=
  map(fun p=>(fst p,tr Fl(canon e(snd p))))parameters.

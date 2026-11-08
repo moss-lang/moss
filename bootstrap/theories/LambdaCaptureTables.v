@@ -1,8 +1,8 @@
 (* Captured value provisions and captured-local views update separate tables. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore LambdaCaptureFold.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore LambdaCaptureFold.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition capture_local(Fl:string->nat)(original:env)(C:A.cx)(q:string*nat*ety):A.cx:=
  let '(n,_,t) :=q in A.add_local C n(tr Fl(canon original t))A.LCaptured.
 Definition capture_full(Fl:string->nat)(original:env)(C:A.cx)(q:string*nat*ety):A.cx:=

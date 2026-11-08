@@ -1,11 +1,11 @@
 (* Sequential result installation preserves occurrence order and last-wins tables. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  Merge CanonTypes NominalSupport CtxWalk CtxMerge FamilyShapeExec FamilyMethodExec FamilyMethodCtx FamilyResultFold TySupport
  FamilyOutputSubst ProvideResultExec ProvideResultFold.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Walk.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

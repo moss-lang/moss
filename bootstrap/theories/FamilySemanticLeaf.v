@@ -1,12 +1,12 @@
 (* Family result receivers are already canonical under the caller's resolved merges. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab BodySoundCore BodyTr CtxMerge Merge CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab BodySoundCore BodyTr CtxMerge Merge CanonTypes
  TyOfSubst ProvideResultSubst FamilyOutputLeaf FamilyReceiverTransfer FamilyMarkerSpecialize FamilyShapeExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_output_leaf_stable:forall W p ob tm sp rt mid,
  FamilyOutputLeaf W p ob tm sp rt mid->forall sigma,
- SubRel sigma(ob++tm)(ob++tm)->Audit.app_subst sigma rt=rt.
+ SubRel sigma(ob++tm)(ob++tm)->ExecutionModel.app_subst sigma rt=rt.
 Proof.
  intros W p ob tm sp rt mid Leaf;induction Leaf;intros sigma SR.
  - pose proof(output_brackets_subst W sigma p(ob++tm)a bs H1(ob++tm)SR)as Br.

@@ -1,6 +1,6 @@
 (* Actual method-binding stages, shared by anonymous and named providers. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame MethodKeyTr.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame MethodKeyTr.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.

@@ -1,9 +1,9 @@
 (* Actual defined input formation supplies the complete linked-body context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr BodyTy KeyTranslation FunctorDefinedContext FunctorOwnSupport FunctorBodyContext FunctorContext.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Entry.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

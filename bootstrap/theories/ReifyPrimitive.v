@@ -1,7 +1,7 @@
 (* Platform primitive bindings use the exact checked final source signature
    and frozen method key, rather than inferring a prototype from a name. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab BodyTr ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab BodyTr ReifyData Reify ReifySource
   ReifyInterfaces ReifyBindings ReifyWalkData.
 Import ListNotations.
 

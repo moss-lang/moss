@@ -1,6 +1,6 @@
 (* Completed runs account for the loaded bodies visible after lowering. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve ProgramInfo FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv LowerOne.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve ProgramInfo FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FwdReadonly FwdInvariant FwdPreserve FwdSynthInv FwdProgramInv LowerOne.
 From NM Require Import ProgramTail.
 Import ListNotations.
 Set Implicit Arguments.
@@ -196,7 +196,7 @@ Proof.
 Qed.
 
 Definition ProgramTables(m:M xprogram):Prop:=forall s p final,
- m s=Good(p,final)->Audit.xo_fns p=st_fns final.
+ m s=Good(p,final)->ExecutionModel.xo_fns p=st_fns final.
 Arguments ProgramTables:simpl never.
 Lemma tables_bind:forall A(m:M A)(k:A->M xprogram),
  (forall a,ProgramTables(k a))->ProgramTables(mbind m k).
@@ -205,7 +205,7 @@ Proof.
 Qed.
 Lemma tables_snapshot:forall A(m:st->M A)(make:st->A->xprogram),
  (forall s,keeps st_fns(m s))->
- (forall s a,Audit.xo_fns(make s a)=st_fns s)->
+ (forall s a,ExecutionModel.xo_fns(make s a)=st_fns s)->
  ProgramTables(mbind get(fun s=>mbind(m s)(fun a=>ret(make s a)))).
 Proof.
  intros A m make Keep Shape s p final Run.
@@ -227,7 +227,7 @@ Proof. unfold elab_program;tables_t. Qed.
 
 Theorem elab_completed_source_bodies:forall b w p final,
  load_world b=Good w ->Inv(s_init w)->elab_program(s_init w)=Good(p,final)->
- forall f body,loaded_fn_key w f ->nassoc f(Audit.xo_fns p)=Some body ->
+ forall f body,loaded_fn_key w f ->nassoc f(ExecutionModel.xo_fns p)=Some body ->
  completed_source_fn w final f body.
 Proof.
  intros b w p final Load InvS Run f body Loaded Lookup.

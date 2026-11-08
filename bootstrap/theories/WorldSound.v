@@ -1,9 +1,9 @@
 (* ------------------------------------------------------------------------ *)
 (* WorldSound.v — the elaborator's static reading of a bundle is a reading  *)
-(* in the sense of the DRAFT relation (Audit.v, Part V, V.1): the loader    *)
+(* in the sense of the DRAFT relation (ExecutionModel.v, Part V, V.1): the loader    *)
 (* half of `WorldOf`.                                                        *)
 (*                                                                           *)
-(* `W_read w R F` is the Audit world the loader's `w` (Elab.load_world)     *)
+(* `W_read w R F` is the ExecutionModel world the loader's `w` (Elab.load_world)     *)
 (* denotes: its symbols, scopes, exports and attached-method table, with    *)
 (* requirements R and field numbering F supplied from outside (the          *)
 (* elaborator computes both lazily, during elaboration).  Proved here:      *)
@@ -25,11 +25,11 @@
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ComponentContracts.
-From NM Require Import Audit NMap Sx Elab ElabSound.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 (* The elaborator's fuels are decimal literals (Nat.of_num_uint ...); left
    transparent, the kernel computes them in unary while checking that a
@@ -1516,7 +1516,7 @@ Qed.
 End Load.
 
 (* ======================================================================== *)
-(* 5. The Audit world the loader's world denotes                             *)
+(* 5. The ExecutionModel world the loader's world denotes                             *)
 (* ======================================================================== *)
 
 Fixpoint find_mod (w : Elab.world) (p : string) (l : list nat) : option gmod :=
@@ -1525,7 +1525,7 @@ Fixpoint find_mod (w : Elab.world) (p : string) (l : list nat) : option gmod :=
   | i :: r => let m := get_mod w i in if String.eqb (gm_path m) p then Some m else find_mod w p r
   end.
 
-(* A table entry as an Audit entity: a symbol, or (an alias) a module path. *)
+(* A table entry as an ExecutionModel entity: a symbol, or (an alias) a module path. *)
 Definition aent (w : Elab.world) (ns : A.nspace) (x : nat) : A.ent :=
   match ns with A.NSAlias => A.EMod (gm_path (get_mod w x)) | _ => A.ESym x end.
 
@@ -2227,7 +2227,7 @@ Proof.
     + intros y t [<-|Hy] Py; [apply I2, C1, Py | exact (C2 y t Hy Py)].
 Qed.
 
-(* ---- the walk of an assume nesting: each context entered once (Audit
+(* ---- the walk of an assume nesting: each context entered once (ExecutionModel
    note 30), so the walk is exact for nestings of any depth, cycles
    included ---- *)
 
@@ -2627,7 +2627,7 @@ Qed.
    computed by a Kleene iteration over the loader's symbols, so neither
    the depth nor the cycles of contexts matter), agreeing with the cache;
    and every tag's listed parameters, which the elaborator now checks of
-   every tag (Audit.v note 40).  ReqsTotal.elaborate_world_of: an accepted
+   every tag (ExecutionModel.v note 40).  ReqsTotal.elaborate_world_of: an accepted
    bundle's loader world, with those lists and any injective field
    numbering, is a WorldOf of it.
 

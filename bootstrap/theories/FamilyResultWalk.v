@@ -1,11 +1,11 @@
 (* Sequential actual result walks for method-only families. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes NominalSupport CtxWalk KeyTranslation FamilyShapeExec FamilyMethodExec FamilyMethodCtx FamilyResultFold TySupport
  FamilyOutputSubst ProvideResultExec ProvideResultFold.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Walk.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

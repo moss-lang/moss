@@ -1,6 +1,6 @@
 (* Real provider resolution supplies the loaded-target premise of GHF. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  FnReadonly SymReadonly FnBound FnBoundSynth FnPresentStable FnPresentSynth
  ResolveLoadedAny ForwarderHistory ForwarderHistoryOps ForwarderHistoryStep.
 Import ListNotations.

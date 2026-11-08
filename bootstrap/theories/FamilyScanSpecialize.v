@@ -1,9 +1,9 @@
 (* Recorded actual context brackets transport the matching substitution to the receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabInv BodySoundCore BodyTr BodyTy Merge CanonTypes CanonBodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ElabInv BodySoundCore BodyTr BodyTy Merge CanonTypes CanonBodyTy
  TyOfSubst SourceReadingExtend TySupport ProvideResultCanonical FamilyLeafScan FamilyReceiverExec FamilyReceiverTransfer.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_norm_types(Fl:string->nat)(e:env)(tm:list(nat*ety)):=
  map(fun q=>(fst q,tr Fl(canon e(snd q))))tm.
 Lemma family_norm_lookup:forall Fl e tm k,
@@ -58,7 +58,7 @@ Theorem family_scan_specializes:forall e mi outer ob tm sp target mid leaf,
  receiver_at e(let '(lmi,_,_,_) := leaf in lmi)(let '(_,rg,_,_) := leaf in rg)
   (let '(_,_,_,sub) := leaf in sub)sr=Good(pat,sf)->
  Inv sr->st_w sr=w->Later w P R Fl sf->
- Audit.app_subst sigma(tr Fl pat)=target.
+ ExecutionModel.app_subst sigma(tr Fl pat)=target.
 Proof.
  intros e mi outer ob tm sp target mid leaf Route;induction Route;
  intros Wo T UF Types Hmi Parts Supported sigma completed SR TE sr pat sf Read Hi Hw L.

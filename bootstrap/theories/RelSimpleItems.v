@@ -1,7 +1,7 @@
 (* A checked fast path for unbracketed scalar function/value context items. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit.
-Import ListNotations Audit.Input Audit.Elaboration.
+From NM Require Import ExecutionModel.
+Import ListNotations ExecutionModel.Input ExecutionModel.Elaboration.
 
 Definition scalar_ty (W : world) (p : string) (tm : list (nat * ty)) (a : aty) : option ty :=
   match a with

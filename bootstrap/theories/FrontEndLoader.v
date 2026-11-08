@@ -1,12 +1,12 @@
 (* ======================================================================== *)
 (* FrontEndLoader.v — the loader (Parse.load_bundle, read back as           *)
-(* Parse.load) against Audit.Loader.Bundled: Part VI's LOADER.              *)
+(* Parse.load) against ExecutionModel.Loader.Bundled: Part VI's LOADER.              *)
 (* ======================================================================== *)
 
 From Stdlib Require Import String Ascii List Bool Arith Lia.
-From NM Require Import Audit Sx Parse FrontEnd DumpRoundTrip.
+From NM Require Import ExecutionModel Sx Parse FrontEnd DumpRoundTrip.
 Import ListNotations.
-Import Audit.Input Audit.Syntax Sx.Dump Audit.Loader.
+Import ExecutionModel.Input ExecutionModel.Syntax Sx.Dump ExecutionModel.Loader.
 Local Open Scope string_scope.
 
 Section Walk.

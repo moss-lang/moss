@@ -1,10 +1,10 @@
 (* All real abstract-application obligations before the result reader. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx ReifyData Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx ReifyData Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  Merge CtxWalk CtxMerge FunctorContext FunctorSatisfies NeedSatisfiesGap FunctorFixedExec
  ApplyAbstractExec MethodKeyTr ApplyThetaExec ApplyFreshExec NestingTypesExec FunctorInputDomain.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Plan.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

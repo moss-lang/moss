@@ -1,9 +1,9 @@
 (* Real bracket and receiver executions preserve the supported nominal domains. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes CanonBodyTy NominalSupport SourceSupport FamilyLeafScan FamilyScanSpecialize FamilyReceiverExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma family_prefix_lookup:forall(Q:ety->Prop)e outer,
  Forall(fun q=>Q(snd q))outer->(forall k y,tn_get e k=Some y->Q y)->
  forall k y,nassoc k(outer++tymap e)=Some y->Q y.

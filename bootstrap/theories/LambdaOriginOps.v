@@ -1,6 +1,6 @@
 (* Composition of actual generated-code origins and header preservation. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly
  FnBound FnBoundEmit FnPresentStable FnPresentEmit ReifyHeaderStable ForwarderHistory ForwarderTrace LambdaOrigin ReifyHeader ReifyHeaderStable.
 Import ListNotations.
 Set Implicit Arguments.

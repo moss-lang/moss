@@ -1,7 +1,7 @@
 (* At top-level boundaries every generated lambda is complete. Thus any
    lambda reached by lower_all is already lowered and cannot get a marker. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv LoaderOrigin
  FnReadonly SymReadonly FnBound FnBoundEmit FnBoundSynth FnBoundProgram
  LambdaReadonly LambdaReadonlyEmit LambdaReadonlySynth FnPresentStable FnPresentSynth
  LambdaRows LambdaRowsPreserve LambdaRowsEmit LambdaRowsLower LambdaRowsSynth

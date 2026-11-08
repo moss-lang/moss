@@ -11,7 +11,7 @@
    Quiet base computations also preserve function headers; this lets one
    traversal serve both ordinary invariants and function-frame receipts. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader ReifyData.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader ReifyData.
 From NM Require Import InfoInputs.
 Import ListNotations.
 Set Implicit Arguments.

@@ -1,11 +1,11 @@
 (* The actual copy guards and setter retain the fixed-input context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr CanonTypes FunctorDecl BindFunctorCtx ProvideResultFixed CopyFixedExec
  ResultMentionsExact ResultMentionsNoDup.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Copy.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

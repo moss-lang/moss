@@ -1,11 +1,11 @@
 From NM Require Import BodyProofTools.
 (* Sequential argument checking, from the actual recursive expression step. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore CanonTypes NominalSupport.
+From NM Require Import InfoPreserve ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore CanonTypes NominalSupport.
 Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope string_scope.
-Module CA := Audit.Elaboration.
+Module CA := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL].
 
 Definition call_arg_step f c e nm (pa : (string * ety) * arg) : M xexpr :=

@@ -1,8 +1,8 @@
 (* A lambda begins with all enclosing provisions and no enclosing locals. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport FnSnapshot.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore NominalSupport FnSnapshot.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition lambda_clear_context(C:A.cx):A.cx:=
  A.Cx(A.c_ty C)(A.c_sub C)(A.c_vals C)(A.c_fns C)(A.c_mths C)(A.c_funs C)(A.c_apps C)[].
 Section Capture.

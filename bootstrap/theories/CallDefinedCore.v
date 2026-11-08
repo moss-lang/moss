@@ -1,6 +1,6 @@
 (* Defined calls with every need already in force have no family prefix. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame FnInfoCore NeedMapExec MethodKeyTr InstantiateTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame FnInfoCore NeedMapExec MethodKeyTr InstantiateTr.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma mfold_identity_checked : forall X Y(f:X->Y->M X) l,

@@ -1,9 +1,9 @@
 (* Actual fresh-frame slots number a lambda's parameters after its receiver. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore LambdaTrace LambdaOwnContext.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore LambdaTrace LambdaOwnContext.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma lambda_slot_names:forall(names:list string)start,
  map fst(combine names(seq start(List.length names)))=names.
 Proof. induction names;intro start;cbn;[reflexivity|rewrite IHnames;reflexivity]. Qed.

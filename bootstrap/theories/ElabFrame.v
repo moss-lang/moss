@@ -1,7 +1,7 @@
 (* Frame core and the shared synthesis traversal instance. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Export ElabFrameCore.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameAtoms SynthTraversal.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameAtoms SynthTraversal.
 Include ElabFrameCore.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint reqs fn_info check_assumed_requirements check_assumes].
@@ -230,7 +230,7 @@ Theorem elab_frame : forall b w p s, load_world b = Good w -> elab_program (s_in
   (* the loader's symbols are kept, unchanged *)
   (forall i g, nget (w_syms w) i = Some g -> nget (st_syms s) i = Some g) /\
   (* every symbol elaboration makes is no source symbol, and is fresh in the
-     reading of the bundle (Audit.v Part V's `Fresh`) *)
+     reading of the bundle (ExecutionModel.v Part V's `Fresh`) *)
   (forall i g, nget (w_syms w) i = None -> nget (st_syms s) i = Some g ->
      gs_origin g <> OSource /\ forall R F, A.Fresh (W_read w R F) i) /\
   (* record fields are numbered 1, 2, …, so fld_ext of them is injective *)

@@ -1,13 +1,13 @@
 (* Initial platform entries are transferred into main's immutable formal
    slots. Platform functors use the same real provider job mechanism. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource ReifySig
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource ReifySig
   ReifyFunctorProfiles ReifyTransfers ReifyRoles ReifyInitial ReifyPlan ReifyFunctors ReifyProviders ReifyProgramWalk.
 Import ListNotations.
 
 Definition initial_environment_grounding (environment : xdenv) : subst := xdtypes environment.
 Definition close_initial_captures (ground : subst) (arguments : subst) : xdenv :=
-  map(fun p=>(ITy(fst p),XDType(Audit.app_subst ground(snd p))))arguments.
+  map(fun p=>(ITy(fst p),XDType(ExecutionModel.app_subst ground(snd p))))arguments.
 Definition platform_linked_items (view : reify_functor_view) : smap :=
   map(fun p=>(fst p,fst p))(rfv_input_items view).
 

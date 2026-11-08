@@ -1,6 +1,6 @@
 (* Whole-program lowering preserves every body already completed on entry. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FwdReadonly FwdInvariant FwdPreserve FwdSynthInv.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FwdReadonly FwdInvariant FwdPreserve FwdSynthInv.
 From NM Require Import ProgramTail ProgramInfo.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].

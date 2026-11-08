@@ -1,10 +1,10 @@
 (* The actual D84 family classifier enforces receiver-determined polymorphism. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  FreeVisitorCore NestingTypesExec ResultMentionsExact FunctorContext FamilyShapeExec MethodLookup MethodLookupNone.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[FUEL reqs type_requirements free_type_syms].
 Lemma family_checked_keys:forall ps keyed said,
  negb(existsb(fun t=>nmem t ps&&negb(nmem t keyed))said)=true->

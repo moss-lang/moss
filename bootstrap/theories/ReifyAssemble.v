@@ -2,7 +2,7 @@
    actual declarations used for the Core erasure signature. No fixed key
    can disappear merely because Core's declaration field is erased. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss ReifyData Reify ReifySig ReifyMaps.
+From NM Require Import ExecutionModel CoreMoss ReifyData Reify ReifySig ReifyMaps.
 Import ListNotations.
 
 Definition assemble_reified_program (raw : xprogram) (main : fsym)

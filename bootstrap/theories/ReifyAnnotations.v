@@ -1,17 +1,17 @@
 (* Reusable source annotations are selected by identity and the current
    canonical type-name view. Checking chronology need not match IR nesting. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource BodyTr.
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource BodyTr.
 Import ListNotations.
 
 Definition annotation_type (source : st) (runtime : reify_state) (t : ety) : ty :=
-  Audit.app_subst (rf_generations runtime) (tr (reify_field_number source) t).
+  ExecutionModel.app_subst (rf_generations runtime) (tr (reify_field_number source) t).
 
 Definition annotation_arguments_match (source : st) (aliases : subst)
     (runtime : reify_state) (arguments : list (tsym * ety)) : bool :=
   forallb (fun p => match lookup_subst (fst p) (rf_names runtime) with
-    | Some meaning => ty_eqb (Audit.app_subst aliases meaning)
-        (Audit.app_subst aliases (annotation_type source runtime (snd p)))
+    | Some meaning => ty_eqb (ExecutionModel.app_subst aliases meaning)
+        (ExecutionModel.app_subst aliases (annotation_type source runtime (snd p)))
     | None => false end) arguments &&
   forallb (fun t => existsb (fun p => Nat.eqb t (fst p)) arguments)
     (map fst (rf_names runtime)).
@@ -20,15 +20,15 @@ Lemma annotation_match_meanings : forall source aliases runtime arguments,
     annotation_arguments_match source aliases runtime arguments = true ->
     forall name raw, In (name,raw) arguments ->
     exists meaning, lookup_subst name (rf_names runtime) = Some meaning /\
-      Audit.app_subst aliases meaning =
-      Audit.app_subst aliases (annotation_type source runtime raw).
+      ExecutionModel.app_subst aliases meaning =
+      ExecutionModel.app_subst aliases (annotation_type source runtime raw).
 Proof.
   intros source aliases runtime arguments H name raw Hin.
   apply andb_true_iff in H as [H _].
   apply forallb_forall with (x:=(name,raw)) in H; [|exact Hin].
   change (match lookup_subst name (rf_names runtime) with
-    | Some meaning => ty_eqb (Audit.app_subst aliases meaning)
-      (Audit.app_subst aliases (annotation_type source runtime raw))
+    | Some meaning => ty_eqb (ExecutionModel.app_subst aliases meaning)
+      (ExecutionModel.app_subst aliases (annotation_type source runtime raw))
     | None => false end = true) in H.
   destruct (lookup_subst name (rf_names runtime)) as [meaning|] eqn:E;
     [|discriminate].
@@ -93,7 +93,7 @@ Definition function_annotation_matches (source : st) (aliases : subst)
 Definition annotation_parameter_runtime (runtime : reify_state) (theta : subst)
     : reify_state :=
   ReifyState (rf_next runtime)
-    (map (fun p => (fst p,Audit.app_subst (rf_generations runtime) (snd p))) theta ++
+    (map (fun p => (fst p,ExecutionModel.app_subst (rf_generations runtime) (snd p))) theta ++
       rf_names runtime)
     (rf_generations runtime) (rf_items runtime) (rf_declarations runtime).
 
@@ -101,8 +101,8 @@ Lemma annotation_parameter_match_meaning : forall source aliases runtime theta a
   annotation_arguments_match source aliases
     (annotation_parameter_runtime runtime theta) arguments = true ->
   In (name,raw) arguments -> lookup_subst name theta = Some tau ->
-  Audit.app_subst aliases (Audit.app_subst (rf_generations runtime) tau) =
-    Audit.app_subst aliases (annotation_type source runtime raw).
+  ExecutionModel.app_subst aliases (ExecutionModel.app_subst (rf_generations runtime) tau) =
+    ExecutionModel.app_subst aliases (annotation_type source runtime raw).
 Proof.
   intros source aliases runtime theta arguments name raw tau Match Member Assigned.
   destruct (annotation_match_meanings _ _ _ _ Match _ _ Member)
@@ -110,7 +110,7 @@ Proof.
   cbn [annotation_parameter_runtime rf_names] in Lookup.
   rewrite lookup_subst_app in Lookup.
   change (match lookup_subst name
-    (map_snd (Audit.app_subst (rf_generations runtime)) theta) with
+    (map_snd (ExecutionModel.app_subst (rf_generations runtime)) theta) with
     | Some x => Some x | None => lookup_subst name (rf_names runtime) end = Some meaning) in Lookup.
   rewrite lookup_map_snd,Assigned in Lookup;injection Lookup as <-.
   exact Meaning.
@@ -123,7 +123,7 @@ Definition method_annotation_matches (source : st) (aliases : subst)
   | REMethod _ _ raw candidate code _ arguments =>
       Nat.eqb method candidate && Nat.eqb provider code &&
       ty_eqb (annotation_type source runtime raw)
-        (Audit.app_subst (rf_generations runtime) receiver) &&
+        (ExecutionModel.app_subst (rf_generations runtime) receiver) &&
       annotation_arguments_match source aliases (annotation_parameter_runtime runtime theta) arguments
   | _ => false end.
 Definition functor_annotation_matches (source : st) (aliases : subst)

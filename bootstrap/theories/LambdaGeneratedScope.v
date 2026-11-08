@@ -1,11 +1,11 @@
 (* Actual capture declarations and the lambda body inside their fresh variable
    scope retain all execution invariants needed by the body induction. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  InfoInvariant InfoPreserve FwdInvariant FwdReadonly FwdPreserve
  BodySoundCore FnBodyScope LambdaTrace LambdaNumbering.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition lambda_capture_declaration(q:string*nat*ety):M xstmt:=
  let '(n,v,_) :=q in let!slot:=local_var n in ret(SLet slot(XVl v)).
 Lemma ok_lambda_declaration:forall q,ok(lambda_capture_declaration q).

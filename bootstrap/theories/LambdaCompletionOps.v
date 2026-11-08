@@ -1,6 +1,6 @@
 (* Monadic composition of real new-forwarder completion histories. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly
  FnBound FnBoundEmit FnPresentStable FnPresentEmit ForwarderHistory ForwarderTrace LambdaCompletion.
 Import ListNotations.
 Set Implicit Arguments.

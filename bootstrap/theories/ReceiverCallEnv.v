@@ -1,9 +1,9 @@
 (* Receiver instantiation installs meanings without changing canonical types. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame InfoPreserve WorldSound BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame InfoPreserve WorldSound BodySoundCore BodyTr BodyTy
  BindType CanonTypes Merge NominalSupport TyOfRestrict ProviderSig.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon].
 Definition receiver_args(e:env)(r:ety):list(nat*ety):=
  match canon e r with YNom _ xs=>xs|_=>[]end.

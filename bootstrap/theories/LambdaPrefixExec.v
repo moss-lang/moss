@@ -1,9 +1,9 @@
 (* The successful lambda-provider prefix proves its annotation premises. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  LambdaAnnotations ForwarderLowerCode.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL ety_of].
 Section Prefix.
 Variable w:Elab.world. Context{P:xprogram}.

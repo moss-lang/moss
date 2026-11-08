@@ -17,13 +17,13 @@
 (* Proved (`run_main_pruned`): if `check R p` holds, running the pruned     *)
 (* program gives exactly the result of running p — unless running p gets   *)
 (* stuck (XErr).  A stuck reference run may become unstuck when pruned (a   *)
-(* dropped pair whose source was missing is no longer looked up).  Audit's  *)
+(* dropped pair whose source was missing is no longer looked up).  ExecutionModel's  *)
 (* pending obligation `accepted_never_err` says accepted programs never get *)
 (* stuck; with it the agreement is unconditional on accepted programs.      *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX FastX.
+From NM Require Import ExecutionModel CoreMoss MossX FastX.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -1009,7 +1009,7 @@ Proof.
 Qed.
 
 (* What the extracted oracle computes (FastX's interpreter on the pruned
-   program) is Audit's semantics of the elaborated program — unless the
+   program) is ExecutionModel's semantics of the elaborated program — unless the
    reference run gets stuck. *)
 Theorem oracle_agrees : forall p argv rd fuel st0,
   let P := program_of p argv rd in

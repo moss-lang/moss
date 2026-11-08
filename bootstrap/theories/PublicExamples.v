@@ -1,7 +1,7 @@
-(* Public-boundary examples: platform signature checking, operation
+(* Execution-representation examples (public semantics: AuditExamples.v): platform signature checking, operation
    requirements, world effects, and missing interface operations. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit DefaultRuntime.
+From NM Require Import ExecutionModel DefaultRuntime.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.

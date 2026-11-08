@@ -1,9 +1,9 @@
 (* Fixed inputs are present in an abstract functor's actual input context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr BodyTy CanonTypes
  CtxMerge FunctorContext XBridgeCtx NeedExec BindFunctorCtx.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma nlook_app_present:forall X k (a b:list(nat*X)),
  A.nlook k a<>None->A.nlook k(a++b)<>None.
 Proof.

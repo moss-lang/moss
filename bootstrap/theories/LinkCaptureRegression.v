@@ -3,11 +3,11 @@
    condition permits it. This regression checks the guard, not LinkBody's
    remaining body/code obligations. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit CoreMoss NMap Sx Elab ElabSound WorldSound BodySoundCore.
+From NM Require Import ExecutionModel CoreMoss NMap Sx Elab ElabSound WorldSound BodySoundCore.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Module FixedCapture.
 Definition pathspec n := Spec (Some [n]) None None.
 Definition ttype := ATRef ["T"] None.

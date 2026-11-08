@@ -1,9 +1,9 @@
 (* The actual captured rows supply the model's captured-local context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore NominalSupport
  LambdaCaptureFold LambdaCaptureTables.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition captured_row_available(original:env)(q:string*nat*ety):Prop:=
  let '(n,_,t) :=q in exists mu,sassoc n(en_locals original)=Some(t,mu).
 Lemma capture_rows_available:forall qs added original,

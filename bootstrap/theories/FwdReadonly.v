@@ -1,7 +1,7 @@
 (* Non-emitting type, context and signature helpers preserve the complete
    visible function table, including temporary recursion markers. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabKeeps.
+From NM Require Import ExecutionModel NMap Sx Elab ElabKeeps.
 From NM Require Import ReadonlyHelpers.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].

@@ -1,10 +1,10 @@
 (* Physical code signature formation comes from the actual checked source
    signature, including the receiver, under immutable generation meanings. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss Elab BodyTr ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab BodyTr ReifyData Reify ReifySource
  ReifySourceTypeFormation ReifySigFormation.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition source_checked_signature(source:st)(signature:reify_signature ety):A.fsig:=
  A.FSig(map(tr(reify_field_number source))(rsg_params ety signature))
    (tr(reify_field_number source)(rsg_result ety signature)).

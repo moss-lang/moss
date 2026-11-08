@@ -38,7 +38,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore LambdaLocals.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore LambdaLocals.
 From NM Require Export BodyTr.
 From NM Require Import Merge CanonTypes NominalSupport NominalMergeSupport FunctorDecl.
 From NM Require CoreMoss.
@@ -47,7 +47,7 @@ From NM Require Export ElabInv FwdInvariant FinalForwarders FinalLambdas FnSnaps
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL].
 
@@ -154,7 +154,7 @@ Section AInd.
     end.
 End AInd.
 
-(* The elaborator's has_break is BlockBreaks (Audit note 42). *)
+(* The elaborator's has_break is BlockBreaks (ExecutionModel note 42). *)
 Lemma existsb_iff : forall A (f : A -> bool) (P : A -> Prop) l,
   Forall (fun x => f x = true <-> P x) l -> (existsb f l = true <-> exists x, In x l /\ P x).
 Proof.

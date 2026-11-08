@@ -1,0 +1,5 @@
+# An expression that transfers control has no fallthrough value, but the
+# value returned to the caller must still satisfy the function's signature.
+type Never = |;
+fn stop(): Never { return; }
+fn main() { match stop() {}; }

@@ -3,12 +3,12 @@ From NM Require Import WrapperKeyReadonly.
 From NM Require Import CallFwdReadonly.
 (* Actual defined attached calls when every need is already in force. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr BodyTy
  CanonTypes EtyTyExec Merge InstantiateTr NominalSupport SourceSupport NeedMapExec MethodKeyTr CallArgs CallCacheExec
  CallDefinedCore CallThetaExec DemandEmptyExec ProviderSig ReceiverCallEnv ReceiverFnSig
  CtxWalk CtxMerge SourceSatisfiesAfter MethodSelectExec MethodCallCore MethodCallRoutes AttachedCallExec AttachedCallNoDemand NeedReceiverFormation FamilyDemandExec FamilyDemandFrame FamilyDemandGroup.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
 Lemma receiver_types_sub:forall Fl xs C,
  A.c_sub(fold_left(fun C p=>A.set_ty C(fst p)(tr Fl(snd p)))xs C)=A.c_sub C.

@@ -1,10 +1,10 @@
 (* Real physical method rows and the genuine semantic receiver domain close
    the finite provision-key interface required by a lambda. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr CtxMerge NMapEnum
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr CtxMerge NMapEnum
  MethodRows LambdaKeysAvailable.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition LambdaKeyCanonical(e:env)(k:key):Prop:=
  match k with KyMth r _=>ety_ok r=true/\canon e r=r|_=>True end.
 Lemma all_keys_canonical:forall e,MethodRowsCanonical e->Forall(LambdaKeyCanonical e)(all_keys e).
@@ -42,7 +42,7 @@ Qed.
 Theorem all_keys_provides:forall c e F C,
  CxRel w R Fl c e F C->MethodRowsUnique e->MethodRowsCanonical e->LambdaMethodDomain Fl e C->
  forall key,In key(map(key_tr Fl)(all_keys e))<->
- A.provides C key/\(match key with ITy _=>False|_=>True end)/\key=Audit.Elaboration.provision_id key.
+ A.provides C key/\(match key with ITy _=>False|_=>True end)/\key=ExecutionModel.Elaboration.provision_id key.
 Proof.
  intros c e F C HC Unique Clean Domain key;split.
  - intro Member;apply in_map_iff in Member as[k[Eq Hit]];subst key.

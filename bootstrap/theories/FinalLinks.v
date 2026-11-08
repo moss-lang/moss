@@ -1,10 +1,10 @@
 (* Historical functor rows, including linked closures, retain their final
    program bodies. The all-row formulation transports backwards by Fr. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore ElabKeeps MainProgramTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore ElabKeeps MainProgramTrace.
 Import ListNotations.
 Definition FinalLinks (P : xprogram) (s : st) : Prop := forall key code,
- In (key,code) (st_funs s) -> Audit.Elaboration.funbody_of P key = Some code.
+ In (key,code) (st_funs s) -> ExecutionModel.Elaboration.funbody_of P key = Some code.
 Definition FunctorRows (s : st) : Prop :=
  forall key code, In (key,code) (st_funs s) -> nassoc key (st_funs s) = Some code.
 Definition FunctorBound (s : st) : Prop :=
@@ -20,13 +20,13 @@ Proof.
  rewrite Tables;apply in_or_app;right;exact Row.
 Qed.
 Lemma functor_nlook_nassoc : forall A n (l:list(nat*A)),
- Audit.Elaboration.nlook n l = nassoc n l.
+ ExecutionModel.Elaboration.nlook n l = nassoc n l.
 Proof. intros A n l;induction l as[|[k v]xs IH];[reflexivity|];cbn;rewrite IH;reflexivity. Qed.
 Lemma final_links_table : forall P s,
  xo_funs P = st_funs s -> FunctorRows s -> FinalLinks P s.
 Proof.
  intros P s Tables Rows key code Row.
- unfold Audit.Elaboration.funbody_of;rewrite functor_nlook_nassoc,Tables;apply Rows;exact Row.
+ unfold ExecutionModel.Elaboration.funbody_of;rewrite functor_nlook_nassoc,Tables;apply Rows;exact Row.
 Qed.
 Lemma functor_rows_init : forall w, FunctorRows (s_init w).
 Proof. intros w key code Row;contradiction. Qed.

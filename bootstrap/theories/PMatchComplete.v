@@ -1,6 +1,6 @@
 (* Complete structural inference from a receiver pattern at a known solution. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab BodyTr PMatchExec FamilyMatchBudget.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr PMatchExec FamilyMatchBudget.
 Import ListNotations.
 Local Open Scope list_scope.
 Definition MatchAgrees(theta:nat->ety)(acc:list(nat*ety)):Prop:=
@@ -173,7 +173,7 @@ Proof.
 Qed.
 From NM Require Import NominalSupport.
 Lemma support_match_unique:forall W,
- (forall n,NoDup(Audit.Elaboration.w_reqs W n))->forall pat,Support W pat->MatchUnique pat.
+ (forall n,NoDup(ExecutionModel.Elaboration.w_reqs W n))->forall pat,Support W pat->MatchUnique pat.
 Proof.
  intros W Reqs pat;induction pat as[| |g|n xs IH|ms IH|fs IH]using ety_ind';intro Sup.
  - constructor.

@@ -1,6 +1,6 @@
 (* Final functor rows are derived from the executable whole-program pipeline. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FinalLinks FunctorReadonly FunctorRows FunctorRowsEmit FunctorTraversal.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FinalLinks FunctorReadonly FunctorRows FunctorRowsEmit FunctorTraversal.
 From NM Require Import ProgramTail ProgramInfo MainProgramTrace.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].

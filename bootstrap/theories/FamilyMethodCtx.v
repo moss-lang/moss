@@ -1,12 +1,12 @@
 (* Actual method output formation preserves the full source context invariant. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes CanonBodyTy TySupport CtxWalk MethodLookup MethodLookupNone MethodKind MethodKeyTr SigSound FreeTypesExec
  SourceClean SourceSupport FnSigExec NeedMapExec NominalSupport FamilyMethodExec
  FamilyResultFold ProvideResultMethod ProvideResultFunction ProvideResultReading ProvideResultContext.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[fn_sig symbol_type provision_app app_subst ety_of FUEL reqs type_requirements].
 #[local]Hint Resolve output_signature_ok output_provided_ok:okdb.
 Section MethodContext.

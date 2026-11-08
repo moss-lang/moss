@@ -1,6 +1,6 @@
 (* Body compilation preserves all earlier protected function headers. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly
  FnPresentStable FnPresentEmit FnPresentSynth ReifyHeader ReifyHeaderReadonly ReifyHeaderStable.
 Import ListNotations.
 Set Implicit Arguments.

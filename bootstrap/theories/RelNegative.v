@@ -4,9 +4,9 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxMisfit BxNonex.
+From NM Require Import ExecutionModel CoreMoss MossX NMap Sx Elab RelSupport BxMisfit BxNonex.
 Import ListNotations.
-Import Audit.Elaboration.
+Import ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

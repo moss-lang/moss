@@ -1,8 +1,8 @@
 (* New output generations are genuinely fresh in the loaded source world. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy ApplyAbstractExec.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy ApplyAbstractExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma new_sym_id:forall mi n k d o s id s',new_sym mi n k d o s=Good(id,s')->id=st_next s.
 Proof.
  intros mi n k d o s id s' E;unfold new_sym in E.

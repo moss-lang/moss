@@ -1,7 +1,7 @@
 (* Every successful symbol resolution in a real loader world is loaded,
    even without assuming the queried module index was valid in advance. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL nget nset].
 Lemma resolve_found_module:forall w mi pa key,
@@ -48,6 +48,6 @@ Proof.
  apply rbind_good in Load as[[entry st][Run End]];injection End as <-.
  destruct(load_spec b _ _ _ _ _ _ Run(linv_init b))as[LI _].
  pose proof(li_kind _ _ LI _ _ Loaded)as K;unfold KindOK in K;rewrite Kind in K.
- unfold fn_body in NoBody;destruct(gs_decl g);cbn[Audit.Elaboration.kind_of]in K;try discriminate K.
+ unfold fn_body in NoBody;destruct(gs_decl g);cbn[ExecutionModel.Elaboration.kind_of]in K;try discriminate K.
  destruct f;try discriminate K. destruct o0;[discriminate NoBody|]. repeat eexists;reflexivity.
 Qed.

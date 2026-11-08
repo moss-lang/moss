@@ -1,11 +1,11 @@
 (* The linked/captured split and the two maps of a defined functor closure. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr BodyTy Merge CanonTypes CtxWalk CtxMerge TypeReadingInj CoreMoss
  FunctorContext FunctorCopyMap SmapExec NeedExec NeedMapExec InstantiateTr.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
 Definition closure_linked (inputs needs : list key) : list key :=

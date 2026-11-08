@@ -5,7 +5,7 @@
    arguments without repeating the compiler traversal. Lower remains an
    independent owner-indexed property. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore ElabKeeps ReadonlyHelpers ReifyHeader.
 From NM Require Import SemanticTraversal InfoInputs.
 Import ListNotations.
 Set Implicit Arguments.

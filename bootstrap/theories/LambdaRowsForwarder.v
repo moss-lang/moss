@@ -1,6 +1,6 @@
 (* Forwarders have their own origin; lowering one cannot overwrite a lambda. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundSynth
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly FnBound FnBoundSynth
  LambdaRows LambdaRowsPreserve LambdaRowsEmit LambdaRowsLower ForwarderTrace.
 Import ListNotations.
 Set Implicit Arguments.

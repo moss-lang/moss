@@ -1,8 +1,8 @@
 (* Actual successful requirement checks retain their checked equations. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CanonTypes InstantiateTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore BodyTr Merge CanonTypes InstantiateTr.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma miter_checked : forall X(f:X->M unit) l s u s',
  miter f l s=Good(u,s')->forall x,In x l->exists sx ux sx',f x sx=Good(ux,sx').
@@ -38,8 +38,8 @@ Lemma require_merges_semantic : forall mi e callee info s u s' c F C Cs,
  CxRel w R Fl c e F C -> A.c_sub Cs=suf Fl(fi_merges info)->
  forall g t,In(g,t)(A.c_sub Cs)->
  (forall x,In x(g::A.gens t)->A.nlook x(A.c_ty C)<>None)->
- A.canon C(Audit.app_subst(A.c_ty C)(TAbs g))=
- A.canon C(Audit.app_subst(A.c_ty C)t).
+ A.canon C(ExecutionModel.app_subst(A.c_ty C)(TAbs g))=
+ A.canon C(ExecutionModel.app_subst(A.c_ty C)t).
 Proof.
  intros mi e callee info s u s' c F C Cs E Hc Sub g t Hin Hav.
  rewrite Sub in Hin. unfold suf in Hin.
@@ -51,7 +51,7 @@ Proof.
  { intros x Hx En. specialize(Hav x). rewrite(gens_tr Fl _)in Hav.
    specialize(Hav Hx). rewrite(cr_ty _ _ _ _ _ _ _ Hc),En in Hav. contradiction. }
  specialize(Same Avail).
- change(A.canon C(Audit.app_subst(A.c_ty C)(tr Fl(YAbs k)))=A.canon C(Audit.app_subst(A.c_ty C)(tr Fl(canon(env_with_edges[](fi_merges info))(YAbs k))))).
+ change(A.canon C(ExecutionModel.app_subst(A.c_ty C)(tr Fl(YAbs k)))=A.canon C(ExecutionModel.app_subst(A.c_ty C)(tr Fl(canon(env_with_edges[](fi_merges info))(YAbs k))))).
  rewrite <-(instantiate_canonical w R Fl c e F C Hc(YAbs k)),
    <-(instantiate_canonical w R Fl c e F C Hc(canon(env_with_edges[](fi_merges info))(YAbs k))).
  now rewrite Same.

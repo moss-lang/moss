@@ -1,6 +1,6 @@
 (* Native checked-cast helpers: executable metadata and grounding laws. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit MossX.
+From NM Require Import ExecutionModel MossX.
 Import ListNotations.
 
 Lemma xdtypes_app : forall d e,

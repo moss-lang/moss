@@ -1,7 +1,7 @@
 (* A finite private generation scope, allocated without changing any source
    symbol. The caller reserves [start,next) before using the resulting map. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab BodyTr InputGenerationScope InputGenerationMerge.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr InputGenerationScope InputGenerationMerge.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].

@@ -1,9 +1,9 @@
 (* A selected family carries an actual leaf and the successful reconstruction check. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTr BodyTy
  FamilySelectTrace FamilyMarkerContext FamilyCandidateComplete FamilyCandidateWitness FamilyFoldExec FamilySearchRetains.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Trace.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat).

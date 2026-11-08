@@ -17,7 +17,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith PrimInt63 Uint63 PArray.
-From NM Require Import Audit CoreMoss XTyping XEnv XSafety.
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv XSafety.
 From NM Require MossX.
 Import ListNotations.
 

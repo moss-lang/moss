@@ -1,10 +1,10 @@
 (* Output readers use the completed, canonical meaning table.  In particular,
    the model records the same frozen instantiation as actual provided_at. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore
  BodyTy Merge CanonTypes TyOfSubst ProvideResultReading ProvideResultSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma output_subrel:forall Fl e tm tmr,
  Tri(en_uf e)->
  (forall k,A.nlook k tmr=option_map(fun y=>tr Fl(canon e y))(nassoc k tm))->
@@ -39,7 +39,7 @@ Proof.
    E Hi Hw Hmi TR Wth L)as[Read Wd];split;[|exact Wd].
  pose proof(tyof_subst WW(suf Fl(en_uf e))_ _ _ _ _ Read tmr(output_subrel Fl e tm tmr T M))as H.
  rewrite tr_canon in H by exact T.
- assert(Th:option_map(Audit.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=
+ assert(Th:option_map(ExecutionModel.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=
    option_map(fun y=>tr Fl(canon e y))this).
  {destruct this;cbn[option_map];[rewrite tr_canon by exact T|];reflexivity. }
  rewrite Th in H;exact H.
@@ -110,13 +110,13 @@ Proof.
  destruct(fn_sig_rel_at w R Fl b Hload g tm(map(trp Fl)tm)e this s sg s' rcv n ps rt body
    E Hi Hw Hg D TR Wth L)as[Raw This].
  pose proof(sigof_subst WW(suf Fl(en_uf e))_ _ _ _ Raw tmr(output_subrel Fl e tm tmr T M))as Norm.
- assert(Sig:A.FSig(map(Audit.app_subst(suf Fl(en_uf e)))(A.sg_params(tr_sig Fl sg)))
-   (Audit.app_subst(suf Fl(en_uf e))(A.sg_ret(tr_sig Fl sg)))=A.FSig(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))(tr Fl(canon e(sg_ret sg)))).
+ assert(Sig:A.FSig(map(ExecutionModel.app_subst(suf Fl(en_uf e)))(A.sg_params(tr_sig Fl sg)))
+   (ExecutionModel.app_subst(suf Fl(en_uf e))(A.sg_ret(tr_sig Fl sg)))=A.FSig(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))(tr Fl(canon e(sg_ret sg)))).
  {unfold tr_sig;cbn[A.sg_params A.sg_ret];f_equal.
   - rewrite map_map;apply map_ext;intro p;apply tr_canon;exact T.
   - apply tr_canon;exact T. }
  rewrite Sig in Norm.
- assert(Th:option_map(Audit.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=
+ assert(Th:option_map(ExecutionModel.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=
    option_map(fun y=>tr Fl(canon e y))this).
  {destruct this;cbn[option_map];[rewrite tr_canon by exact T|];reflexivity. }
  rewrite Th in Norm;exact Norm.

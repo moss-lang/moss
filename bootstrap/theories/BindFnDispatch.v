@@ -1,8 +1,8 @@
 (* Dispatch the concrete named defined-provider case before remaining bind cases. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv InfoPreserve BodySoundCore BindSequence BindCopyDispatch BindFnDefinedExec BindFnAbstractExec.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv InfoPreserve BodySoundCore BindSequence BindCopyDispatch BindFnDefinedExec BindFnAbstractExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition named_function_bind(W:A.world)(F:A.frame)(sp:spec)(y:aexpr):bool:=
  match sp,y with
  |Spec(Some pp)None None,AEPath pg None=>

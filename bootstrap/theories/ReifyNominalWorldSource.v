@@ -1,11 +1,11 @@
 (* Final-state cache receipts connect real source interfaces to the source
    world's requirement reading. Unobserved heads are completed opaquely. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss NMap Sx Elab ElabFrame ReifyNominal
+From NM Require Import ExecutionModel CoreMoss NMap Sx Elab ElabFrame ReifyNominal
   ReifyNominalSource ReifyPayload ReifyNominalWorld ReifySourceTypeFormation
   ReifyPayloadScope ReifySource ReifyFormation BodyTr.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[FUEL ELAB_FUEL reqs skeleton_tag_payload].
 Definition cached_nominal_interface(source:st)(head:nsym):option(tele*option ty):=
  match nget(st_syms source)head with

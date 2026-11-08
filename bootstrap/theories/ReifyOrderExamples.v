@@ -2,8 +2,8 @@
    preludes wrap an already synthesized receiver. Events are annotations,
    not a linear token stream for a structural IR traversal. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Parse Elab ReifyData.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel Parse Elab ReifyData.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition reordered_source : string :=
   "tag T;fn q();fn T.m();functor F[]:->T.m;functor G:->T.m{bind T.m=()=>();}fn main(){bind F=G;({bind q=()=>();T}).m();}".

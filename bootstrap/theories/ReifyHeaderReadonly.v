@@ -1,6 +1,6 @@
 (* Type, context and signature helpers preserve function scope metadata. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabKeeps ReifyHeader.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabKeeps ReifyHeader.
 From NM Require Import ReadonlyHelpers.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL].

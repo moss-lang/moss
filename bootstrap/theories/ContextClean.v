@@ -1,6 +1,6 @@
 (* Validity carried by context tables while duplicate provisions merge. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound BodyTr Merge CanonTypes SourceClean.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound BodyTr Merge CanonTypes SourceClean.
 Import ListNotations.
 
 Record ContextClean (e : env) : Prop := {

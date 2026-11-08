@@ -1,9 +1,9 @@
 (* Loaded callee contexts discharge the execution view used by Satisfies. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  Merge CtxWalk CtxMerge CtxMethodExec InfoCache ContextFormationSupport NeedInfoExec InfoShape NeedSatisfies MethodKeyTr LoaderOrigin MainRoot.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Source.
 Variable w:Elab.world. Context{P:xprogram}.

@@ -1,14 +1,14 @@
 (* Renaming the temporary output-role generations in declarative result reads. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit TyOfSubst SigReadingSubst ProvideResultSubst ProvideResultExec.
+From NM Require Import ExecutionModel TyOfSubst SigReadingSubst ProvideResultSubst ProvideResultExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition link_output_entry (sb:subst)(ent:A.entry):A.entry:=
  match ent with
  |A.NTy t=>A.NTy t
- |A.NVal v ty a=>A.NVal v(Audit.app_subst sb ty)(output_app_subst sb a)
+ |A.NVal v ty a=>A.NVal v(ExecutionModel.app_subst sb ty)(output_app_subst sb a)
  |A.NFn f sg a=>A.NFn f(A.sig_subst sb sg)(output_app_subst sb a)
- |A.NMth rt m sg a=>A.NMth(Audit.app_subst sb rt)m(A.sig_subst sb sg)(output_app_subst sb a)
+ |A.NMth rt m sg a=>A.NMth(ExecutionModel.app_subst sb rt)m(A.sig_subst sb sg)(output_app_subst sb a)
  |A.NFun u fx=>A.NFun u(smap sb fx)
  end.
 Lemma link_output_fixed_subst:forall W sb u tm fx,

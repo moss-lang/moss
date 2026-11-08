@@ -1,6 +1,6 @@
 (* One environment interface for legacy and immutable MossX execution. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit CoreMoss XTyping XEnv XRuntimeEnv ReifyContracts ReifyEntries.
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv XRuntimeEnv ReifyContracts ReifyEntries.
 Import ListNotations.
 Set Implicit Arguments.
 

@@ -1,7 +1,7 @@
 (* Completing a callee's runtime type meanings from its explicit application
    and the caller's captured type environment. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit MossX CoreMoss XCast XRuntimeEnv.
+From NM Require Import ExecutionModel MossX CoreMoss XCast XRuntimeEnv.
 Import ListNotations.
 Set Implicit Arguments.
 

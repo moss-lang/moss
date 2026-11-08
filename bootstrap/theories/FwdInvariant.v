@@ -1,6 +1,6 @@
 (* Structural provenance for the cache of abstract-function forwarders. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore ElabInv FwdReadonly ForwarderTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore ElabInv FwdReadonly ForwarderTrace.
 Import ListNotations.
 Set Implicit Arguments.
 Definition FwdInv(s:st):Prop:=forall target provider,nget(st_fwd s)target=Some provider ->

@@ -2,7 +2,7 @@
    immutable provision. This matters when a provider reads the very source
    function name being rebound. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab BodyTr ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab BodyTr ReifyData Reify ReifySource
   ReifyInterfaces ReifyTransfers ReifyPlan ReifyAnnotations ReifyWalkData ReifyEta.
 Import ListNotations.
 
@@ -18,7 +18,7 @@ Definition prepare_value_binding (source : st) (events : list (reify_event ety k
   | None => None
   | Some raw =>
       let tau := tr (reify_field_number source) raw in
-      let deps := value_type_inputs (Audit.app_subst (rf_generations (rl_runtime before)) tau) in
+      let deps := value_type_inputs (ExecutionModel.app_subst (rf_generations (rl_runtime before)) tau) in
       let '(slot,after) := lower_value_provision name deps tau (rl_runtime before) in
       Some (slot,ReifyLocal after (rl_aliases before))
   end.

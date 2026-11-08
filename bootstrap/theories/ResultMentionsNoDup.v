@@ -1,6 +1,6 @@
 (* The executable result/fixed visitors collect each key once. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ResultMentionExec WorldSound.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ResultMentionExec WorldSound.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements free_type_syms result_mentions_go functor_fixed_go].
 Lemma mentions_add_nodup:forall xs out,NoDup out->NoDup(mentions_add xs out).

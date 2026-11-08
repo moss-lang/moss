@@ -1,11 +1,11 @@
 (* Completeness of the executable mutually recursive fixed-input visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  FreeVisitorCore ResultMentionExec ResultMentionsFold FixedInputsStep NestingTypesExec MethodLookup MethodLookupNone.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements free_type_syms result_mentions_go functor_fixed_go].
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition mention_here(f self mi:nat)(d:option string)(g:gsym):M(list nat):=
  match d with
  | Some dn=>let! mo:=find_method_decl mi g dn in

@@ -1,10 +1,10 @@
 (* The actual named abstract-provider branch builds a fresh typed forwarder. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CtxWalk
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CtxWalk
  CanonTypes InfoPreserve LoaderOrigin ForwarderTrace ForwarderHistory FinalForwarders
  FnProviderAbstractTrace FnProviderForwardSignature FnProviderForwardExec FnSnapshotAlign ProviderSig SignatureLeavesExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Abstract.
 Variable w:Elab.world. Context{P:xprogram}.

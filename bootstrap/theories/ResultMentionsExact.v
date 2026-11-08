@@ -1,11 +1,11 @@
 (* Soundness of the executable mutually recursive result/fixed visitor. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  FreeVisitorCore ResultMentionExec ResultMentionsFold ResultMentionsCover FixedInputsStep NestingTypesExec MethodLookup MethodLookupNone.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements free_type_syms result_mentions_go functor_fixed_go].
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Exact.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

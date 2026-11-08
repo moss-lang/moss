@@ -1,6 +1,6 @@
 (* Every functor entry has its recorded fixed-input app, including the empty app. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound CtxWalk.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound CtxWalk.
 Import ListNotations.
 Lemma lfirst_fun_present:forall e u les,
  lfirst e(KyFun u)les<>None<->exists fx,In(LFun u fx)les.

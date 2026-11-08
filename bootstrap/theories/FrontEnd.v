@@ -1,13 +1,13 @@
 (* ======================================================================== *)
-(* FrontEnd.v — Parse.v's lexer and parser against Audit.Syntax.Derives     *)
+(* FrontEnd.v — Parse.v's lexer and parser against ExecutionModel.Syntax.Derives     *)
 (* (Part VI's FRONT_END): soundness and completeness.                       *)
 (* ======================================================================== *)
 
 From Stdlib Require Import String Ascii List Bool Arith Lia.
 From Stdlib Require Import Strings.Byte.
-From NM Require Import Audit Parse.
+From NM Require Import ExecutionModel Parse.
 Import ListNotations.
-Import Audit.Input Audit.Syntax.
+Import ExecutionModel.Input ExecutionModel.Syntax.
 Local Open Scope string_scope.
 
 (* ######################################################################## *)

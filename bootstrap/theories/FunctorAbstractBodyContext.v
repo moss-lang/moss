@@ -1,13 +1,13 @@
 (* An abstract target's actual own input context, including implicit types. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTr BodyTy Merge CanonTypes SourceClean ContextClean CtxWalk CtxMerge
  FunctorContext FunctorMerge ResultMentionsExact NestingTypesExec FunctorScopeTypes ImplicitTypeWalk
  NeedKeys NominalSupport ContextSupport ContextMergeSupport FunctorOwnSupport
  BindFunctorCtx FunctorBodyContext.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 Lemma abstract_add_type_support : forall W e t stamp,
  EnvSupport W e -> EnvSupport W (set_tn e t (YAbs t) stamp).

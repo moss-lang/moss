@@ -1,6 +1,6 @@
 (* A completed body retains the actual scope and signature registered for it. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv
  FnReadonly ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderSynth
  FnBodySlots FnBodyTrace FnBodyOps.
 Import ListNotations.

@@ -1,9 +1,9 @@
 (* Method receiver types are read under the caller's canonical meanings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTy CanonBodyTy CanonTypes Merge TyOfSubst MethodBindRead MethodLookup MethodClean MethodKind.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Lemma method_receiver_canonical : forall W Fl e tm meanings home pa this,
  Tri (en_uf e) ->

@@ -1,7 +1,7 @@
 (* Component obligations and milestones, separate from the five public
-   build/run obligations in Audit.v. Existing bindings remain in Certified.v. *)
+   build/run obligations in Audit.v. These contracts concern ExecutionModel. Existing bindings remain in Certified.v. *)
 From Stdlib Require Import List String PrimInt63.
-From NM Require Export Audit CoreFragment.
+From NM Require Export ExecutionModel CoreFragment.
 From NM Require Sx.
 Import ListNotations.
 (* D1 as a property of the relation: which callee a method call means is
@@ -421,7 +421,7 @@ Module Type COMPLETE.
 End COMPLETE.
 
 Module HeapContracts.
-Import Audit.Heap.
+Import ExecutionModel.Heap.
 Module Type HEAP_LAWS (Import Prims : PRIM_SEMANTICS).
   Parameter heap_ok : hty -> mstate -> Prop.
 

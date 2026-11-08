@@ -1,6 +1,6 @@
 (* Runtime entries for immutable, completely mapped provision scopes. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss XTyping XEnv XRuntimeEnv XRuntimeCall XCast
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv XRuntimeEnv XRuntimeCall XCast
  ReifyMaps ReifyChains ReifyContracts XReifyEnv.
 Import ListNotations.
 Set Implicit Arguments.

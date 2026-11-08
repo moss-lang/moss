@@ -1,6 +1,6 @@
 (* Compositional execution posts for the shared environment invariant. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss XTyping XEnv ReifyContracts XProvision XSafety XHeapC MossX.
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv ReifyContracts XProvision XSafety XHeapC MossX.
 Import ListNotations.
 Set Implicit Arguments.
 Section Posts.

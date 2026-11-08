@@ -42,7 +42,7 @@ Proof. intros b p1 p2 H1 H2. rewrite H1 in H2. injection H2 as ->. reflexivity. 
 
 Definition prov_at_b (s : subst) (tau0 : ty) (m : msym) (i : item) : bool :=
   match app_subst_item s i with
-  | IMth r m' _ => ty_eqb r (Audit.app_subst s tau0) && Nat.eqb m m'
+  | IMth r m' _ => ty_eqb r (ExecutionModel.app_subst s tau0) && Nat.eqb m m'
   | _ => false
   end.
 

@@ -1,9 +1,9 @@
 (* Actual context update used by a source type binding. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  NatAssoc CanonBodyTy SourceSupport EtyTyExec NominalSupport NominalMergeSupport CanonTypes.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section TypeBinding.
 Variable w:Elab.world.
 Variables(R:nat->list nat)(Fl:string->nat).

@@ -1,7 +1,7 @@
 (* A shared private input frame for both sides of a reusable link.  This is
    preparation data: FunCtx remains the source-context judgment. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr Merge
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr Merge
  InputGenerationScope InputGenerationMerge InputGenerationFresh InputGenerationRuntime.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -69,7 +69,7 @@ Proof.
 Qed.
 Theorem link_input_readback : forall Fl start target provider e t,
  (e=target \/ e=provider)->In t(reify_scope_types e)->
- Audit.app_subst
+ ExecutionModel.app_subst
   (semantic_generation_substitution(inverse_generation_substitution(link_input_generations start target provider)))
   (tr Fl(scoped_type(link_input_generations start target provider)(canon e t)))=
  tr Fl(canon e t).
@@ -130,7 +130,7 @@ Theorem source_frame_name_readback : forall Fl start target provider name t,
  let rho:=link_input_generations start target provider in
  lookup_subst name(link_frame_names(source_input_frame Fl rho target provider))=
  Some(tr Fl(scoped_type rho(canon provider t))) /\
- Audit.app_subst(semantic_generation_substitution(inverse_generation_substitution rho))
+ ExecutionModel.app_subst(semantic_generation_substitution(inverse_generation_substitution rho))
   (tr Fl(scoped_type rho(canon provider t)))=tr Fl(canon provider t).
 Proof.
  intros;split;[eapply source_frame_name_read;eassumption|].

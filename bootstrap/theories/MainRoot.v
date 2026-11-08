@@ -6,15 +6,15 @@
 (*    from modules of lower rank).                                          *)
 (* 2. Elab.is_main against Part V's IsMainFn, for a symbol of the loader's: *)
 (*    a fn without receiver in scope as `main` in any loaded module,       *)
-(*    including an imported function renamed to main (Audit note 41).     *)
+(*    including an imported function renamed to main (ExecutionModel note 41).     *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySoundCore BodyTy Merge CtxWalk CtxMerge InfoCache MethodLookup.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame ReqsTotal BodySoundCore BodyTy Merge CtxWalk CtxMerge InfoCache MethodLookup.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 (* ======================================================================== *)
 (* 1. A module's own names                                                   *)

@@ -1,8 +1,8 @@
 (* Used semantic marker values are genuine subtypes of the raw receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab CoreMoss BodyTr.
+From NM Require Import ExecutionModel NMap Sx Elab CoreMoss BodyTr.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Inductive MatchTyWithin:ty->ty->Prop:=
 |MTWHere:forall t,MatchTyWithin t t
 |MTWNom:forall t n xs q,In q xs->MatchTyWithin t(snd q)->MatchTyWithin t(TNom n xs)
@@ -13,18 +13,18 @@ Fixpoint match_raw_subtypes(t:ety):list ety:=t::match t with
  |YRec fs=>flat_map(fun q=>match_raw_subtypes(snd q))fs
  |_=>[]end.
 Lemma match_subst_range_within:forall pat sub g value,
- In g(A.gens pat)->lookup_subst g sub=Some value->MatchTyWithin value(Audit.app_subst sub pat).
+ In g(A.gens pat)->lookup_subst g sub=Some value->MatchTyWithin value(ExecutionModel.app_subst sub pat).
 Proof.
  intro pat;induction pat as[|id|n xs IH|ms IH]using ty_ind';intros sub g value Gen Lookup.
  - contradiction.
- - cbn[A.gens]in Gen;destruct Gen as[<-|[]];cbn[Audit.app_subst];rewrite Lookup;constructor.
+ - cbn[A.gens]in Gen;destruct Gen as[<-|[]];cbn[ExecutionModel.app_subst];rewrite Lookup;constructor.
  - change(In g(flat_map(fun q=>A.gens(snd q))xs))in Gen.
    apply in_flat_map in Gen as(q&Hq&Gen);rewrite Forall_forall in IH.
-   eapply MTWNom with(q:=(fst q,Audit.app_subst sub(snd q))).
+   eapply MTWNom with(q:=(fst q,ExecutionModel.app_subst sub(snd q))).
    + apply in_map_iff;exists q;split;[reflexivity|exact Hq].
    + exact(IH q Hq sub g value Gen Lookup).
  - change(In g(flat_map A.gens ms))in Gen;apply in_flat_map in Gen as(t&Ht&Gen).
-   rewrite Forall_forall in IH;eapply MTWUnion with(m:=Audit.app_subst sub t).
+   rewrite Forall_forall in IH;eapply MTWUnion with(m:=ExecutionModel.app_subst sub t).
    + apply in_map_iff;exists t;split;[reflexivity|exact Ht].
    + exact(IH t Ht sub g value Gen Lookup).
 Qed.
@@ -134,10 +134,10 @@ Qed.
 Lemma match_mark_type_translation:forall Fl pat back theta sub,
  (forall g,In g(ety_gens pat)->
    match nassoc g back with Some p=>lookup_subst g sub=Some(tr Fl(theta p))|None=>lookup_subst g sub=None end)->
- Audit.app_subst sub(tr Fl pat)=tr Fl(mark_type back theta pat).
+ ExecutionModel.app_subst sub(tr Fl pat)=tr Fl(mark_type back theta pat).
 Proof.
  intros Fl pat;induction pat as[| |g|n xs IH|ms IH|fs IH]using ety_ind';intros back theta sub Read;
- cbn[tr mark_type Audit.app_subst];try reflexivity.
+ cbn[tr mark_type ExecutionModel.app_subst];try reflexivity.
  - pose proof(Read g(or_introl eq_refl))as R;destruct(nassoc g back);rewrite R;reflexivity.
  - f_equal;revert Read;induction IH as[|[k t]xs HT Hxs IHL];intro Read;[reflexivity|].
    cbn[map fst snd];f_equal.
@@ -158,7 +158,7 @@ Theorem match_semantic_raw_solution:forall Fl pat receiver back table sub,
    Some(match A.nlook p table with Some t=>t|None=>TAbs g end))->
  (forall g,nassoc g back=None->lookup_subst g sub=None)->
  (forall g p,nassoc g back=Some p->~In g(ety_gens receiver))->
- Audit.app_subst sub(tr Fl pat)=tr Fl receiver->
+ ExecutionModel.app_subst sub(tr Fl pat)=tr Fl receiver->
  mark_type back(match_decoded_theta Fl receiver table)pat=receiver.
 Proof.
  intros Fl pat receiver back table sub Finj PatOk ReceiverOk Marked Other Avoid Eq.

@@ -1,6 +1,6 @@
 (* Preservation of physical link history by actual link-body creation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ReqsSolve ElabInv ReifyData
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ReqsSolve ElabInv ReifyData
  InfoInvariant InfoPreserve InfoInputs FwdInvariant FwdPreserve FwdSynthInv
  LinkCacheInvariant LinkReadonly LinkBodyTrace WrapperKeyReadonly FwdReadonly.
 Import ListNotations.

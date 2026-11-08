@@ -1,10 +1,10 @@
 (* Lambda captures and parameters have disjoint names, so their local-table
    installation order is observationally identical. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore NominalSupport LambdaCaptureTables.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore NominalSupport LambdaCaptureTables.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition lambda_add_locals(rows:list(string*(ty*A.lmut)))(C:A.cx):A.cx:=
  fold_left(fun C q=>A.add_local C(fst q)(fst(snd q))(snd(snd q)))rows C.
 Lemma lambda_locals_shape:forall rows C,

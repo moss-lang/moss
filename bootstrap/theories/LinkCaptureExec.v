@@ -1,6 +1,6 @@
 (* Successful capture checks exclude the types supplied at each application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodyTr NeedExec LinkBodyTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodyTr NeedExec LinkBodyTrace.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque [canon canon_go].

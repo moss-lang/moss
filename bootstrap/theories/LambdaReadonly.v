@@ -1,7 +1,7 @@
 (* Existing lambda owners, including pending owners without a body yet,
    retain their function-table lookup throughout nested source elaboration. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly ForwarderHistory.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly ForwarderHistory.
 Import ListNotations.
 Set Implicit Arguments.
 Definition lambda_owner_rows(key:nat)(s:st):list(nat*xexpr):=

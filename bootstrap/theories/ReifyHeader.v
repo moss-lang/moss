@@ -1,6 +1,6 @@
 (* Annotation events and exports cannot replace a code owner's entry scope. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab.
 Import ListNotations.
 Definition code_header(code:reify_code ety key):=
  (rc_owner ety key code,rc_scope ety key code,rc_inputs ety key code,rc_signature ety key code).

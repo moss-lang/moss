@@ -1,6 +1,6 @@
 (* The real lambda frame-name check protects the implicit receiver slot. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import ReifyData Audit NMap Sx Elab.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab.
 Import ListNotations.
 Local Open Scope string_scope.
 Lemma lambda_duplicate_none_nodup:forall names,

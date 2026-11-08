@@ -1,9 +1,9 @@
 (* The actual fn_info walk of main, including the platform root context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  Merge CanonTypes CtxWalk CtxMerge CtxMethodExec RootContextExec FunctorMerge InfoCache MainRoot LoaderOrigin NeedKeys.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements merged_walk].
 Definition root_entry(e:A.entry):Prop:=match e with A.NTy _|A.NFun _ _=>True|_=>False end.

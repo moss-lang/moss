@@ -1,10 +1,10 @@
 (* A real completed loaded-body run satisfies the block judgment. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant InfoPreserve
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoInvariant InfoPreserve
  BodySound CtxWalk CtxMerge BodyTr BodyTy CanonTypes ContextClean NominalSupport FnBodyContext FnBodyParameters
  FnBodyTrace FnBodyScope FnBodyReceiver FnBodyExec ProviderSig LibraryFacts ForwarderSlots FnBodyAttached.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Section Body.

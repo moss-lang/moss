@@ -1,6 +1,6 @@
 (* The residual callback excludes all anonymous method binds, with or without brackets. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore InfoPreserve
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore InfoPreserve
  BindSequence BindCopyDispatch BindFnDispatch BindLambdaDispatch BindMethodLambdaExec.
 Import ListNotations.
 Definition method_lambda_bind (sp : spec) (y : aexpr) : bool :=

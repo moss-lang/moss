@@ -1,6 +1,6 @@
 (* Actual source function headers survive the entire successful elaboration. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  InfoInvariant InfoPreserve ProgramInfo FwdInvariant FwdPreserve FwdReadonly FwdSynthInv FwdProgramInv
  FnReadonly FnHistory FnStable FnEmitStable FnSynthStable FnCompleted
  ReifyHeader ReifyHeaderReadonly ReifyHeaderStable ReifyHeaderPresent ReifyHeaderHistory.
@@ -66,7 +66,7 @@ Proof.
 Qed.
 Theorem elab_completed_source_headers:forall b w p final,
  load_world b=Good w->Inv(s_init w)->elab_program(s_init w)=Good(p,final)->
- forall f body,loaded_fn_key w f->nassoc f(Audit.xo_fns p)=Some body->
+ forall f body,loaded_fn_key w f->nassoc f(ExecutionModel.xo_fns p)=Some body->
  completed_source_header w final f body.
 Proof.
  intros b w p final Load I Run f body Loaded Present.
@@ -80,7 +80,7 @@ Theorem accepted_defined_source_headers:forall b p final,
  load_world b=Good w/\elab_program(s_init w)=Good(p,final)/\
  forall id g receiver name parameters result source_body,
  nget(w_syms w)id=Some g->gs_decl g=ADFn receiver name parameters result(Some source_body)->
- exists lowered,nassoc id(Audit.xo_fns p)=Some lowered/\completed_source_header w final id lowered.
+ exists lowered,nassoc id(ExecutionModel.xo_fns p)=Some lowered/\completed_source_header w final id lowered.
 Proof.
  intros b p final Accepted;unfold elaborate_with_metadata in Accepted.
  destruct(load_world b)as[w|message]eqn:Load;cbn[rbind]in Accepted;[|discriminate].

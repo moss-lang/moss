@@ -4,7 +4,7 @@
           moss_m2 --dump OUTDIR FILE.moss...
    PROGRAM is FILE.moss, which is read, lexed, parsed and bundled by the
    Gallina front end (Parse.load_bundle; this driver only reads files), or
-   BUNDLE.bx, a bundle already in Audit.v's s-expression form (Part I),
+   BUNDLE.bx, a bundle already in ExecutionModel.v's s-expression form (Part I),
    which the OCaml tokenizer below reads.  The bundle is elaborated by the
    Gallina elaborator (Elab.elaborate_sx), and the result is given the
    family fast path (FastPath.fast_program), pruned
@@ -18,7 +18,7 @@
    for proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of
    fuel. *)
 
-open Audit
+open ExecutionModel
 open MossX
 open MossX.XS
 
@@ -175,7 +175,7 @@ let () =
   let t1 = Unix.gettimeofday () in
   if !elab_only then begin
     Printf.eprintf "[moss_m2: elaborated in %.3fs: %d fns, %d functor bodies]\n%!" (t1 -. t0)
-      (Stdlib.List.length p.Audit.xo_fns) (Stdlib.List.length p.Audit.xo_funs);
+      (Stdlib.List.length p.ExecutionModel.xo_fns) (Stdlib.List.length p.ExecutionModel.xo_funs);
     exit 0 end;
   (* MOSS_FASTPATH=0: run the elaborated program as is; default: each
      platform family applied keeping only the members used
@@ -231,8 +231,8 @@ let () =
       | XBApplyR (_, inputs, outputs) -> add "xb.applyr.in" inputs; add "xb.applyr.out" outputs
       | XBApplyBr (_, brs) -> Stdlib.List.iter (fun ((_, bs), pr) -> add "xb.applybr" pr; Stdlib.List.iter bx bs) brs
       | _ -> () in
-    Stdlib.List.iter (fun (_, b) -> ex b) p.Audit.xo_fns;
-    Stdlib.List.iter (fun (_, (_, bs)) -> Stdlib.List.iter bx bs) p.Audit.xo_funs;
+    Stdlib.List.iter (fun (_, b) -> ex b) p.ExecutionModel.xo_fns;
+    Stdlib.List.iter (fun (_, (_, bs)) -> Stdlib.List.iter bx bs) p.ExecutionModel.xo_funs;
     Stdlib.List.iter (fun (u, (dr, bs)) ->
       let kinds = String.concat " " (Stdlib.List.map (function
         | XBTy _ -> "ty" | XBVal _ -> "val" | XBFn (_,_,sm) -> Printf.sprintf "fn%d" (Stdlib.List.length sm)
@@ -241,7 +241,7 @@ let () =
         | XBFunA _ -> "funa" | XBApply (v,th,sm) -> Printf.sprintf "apply(u%d,%d)" v (Stdlib.List.length sm)
         | XBApplyR _ -> "applyr"
         | XBFunSym _ -> "funsym" | XBFunCopy _ -> "funcopy" | XBApplyBr _ -> "applybr" | XBPrim _ -> "prim") bs) in
-      Printf.eprintf "[moss_m2 stats: functor body u%d: |Dr|=%d binds: %s]\n" u (Stdlib.List.length dr) kinds) p.Audit.xo_funs;
+      Printf.eprintf "[moss_m2 stats: functor body u%d: |Dr|=%d binds: %s]\n" u (Stdlib.List.length dr) kinds) p.ExecutionModel.xo_funs;
     let rec sites e = match e with
       | XApply (u, th, sm, e1) -> Printf.eprintf "[moss_m2 stats: XApply u%d |th|=%d |sm|=%d body=%s]\n" u (Stdlib.List.length th) (Stdlib.List.length sm)
           (match e1 with XMeth _ -> "meth" | _ -> "other"); sites e1
@@ -256,8 +256,8 @@ let () =
       | XIf (a, b, c) -> sites a; sites b; sites c
       | XRec fs -> Stdlib.List.iter (fun (_, x) -> sites x) fs
       | XMatchP (a, arms) -> sites a; Stdlib.List.iter (fun (_, b) -> sites b) arms in
-    if Sys.getenv_opt "MOSS_STATS" = Some "2" then Stdlib.List.iter (fun (_, b) -> sites b) p.Audit.xo_fns;
-    Printf.eprintf "[moss_m2 stats: %d fns, %d functor bodies]\n" (Stdlib.List.length p.Audit.xo_fns) (Stdlib.List.length p.Audit.xo_funs);
+    if Sys.getenv_opt "MOSS_STATS" = Some "2" then Stdlib.List.iter (fun (_, b) -> sites b) p.ExecutionModel.xo_fns;
+    Printf.eprintf "[moss_m2 stats: %d fns, %d functor bodies]\n" (Stdlib.List.length p.ExecutionModel.xo_fns) (Stdlib.List.length p.ExecutionModel.xo_funs);
     Hashtbl.iter (fun k r ->
       let a = Array.of_list !r in Array.sort compare a; let n = Array.length a in
       let tot = Array.fold_left (+) 0 a in
@@ -265,23 +265,23 @@ let () =
         (float tot /. float (max n 1)) (if n = 0 then 0 else a.(n / 2)) (if n = 0 then 0 else a.(n - 1))) tbl
   end;
   let fns = Hashtbl.create 4096 in
-  Stdlib.List.iter (fun (f, b) -> Hashtbl.replace fns f b) (Stdlib.List.rev p.Audit.xo_fns);
+  Stdlib.List.iter (fun (f, b) -> Hashtbl.replace fns f b) (Stdlib.List.rev p.ExecutionModel.xo_fns);
   let funs = Hashtbl.create 64 in
-  Stdlib.List.iter (fun (u, b) -> Hashtbl.replace funs u b) (Stdlib.List.rev p.Audit.xo_funs);
-  let prims = Array.of_list p.Audit.xo_prims in
+  Stdlib.List.iter (fun (u, b) -> Hashtbl.replace funs u b) (Stdlib.List.rev p.ExecutionModel.xo_funs);
+  let prims = Array.of_list p.ExecutionModel.xo_prims in
   let argv0 = match !argv0_override with
     | Some a -> a
     | None -> Filename.remove_extension (Filename.basename file) ^ ".wasm" in
   let prog = {
     xp_fn = (fun f -> Hashtbl.find_opt fns f);
     xp_fun = (fun u -> Hashtbl.find_opt funs u);
-    xp_inputs = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_inputs with Some ts -> ts | None -> []);
-    xp_cast = p.Audit.xo_cast;
-    xp_exports = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_exports with Some sm -> sm | None -> []);
-    xp_immutable = p.Audit.xo_immutable;
-    xp_fixed_inst = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_fixed_inst with Some th -> th | None -> []);
-    xp_fixed_keys = (fun h -> match Stdlib.List.assoc_opt h p.Audit.xo_fixed_keys with Some keys -> keys | None -> []);
-    xp_bool = p.Audit.xo_bool; xp_true = p.Audit.xo_true; xp_false = p.Audit.xo_false;
+    xp_inputs = (fun h -> match Stdlib.List.assoc_opt h p.ExecutionModel.xo_inputs with Some ts -> ts | None -> []);
+    xp_cast = p.ExecutionModel.xo_cast;
+    xp_exports = (fun h -> match Stdlib.List.assoc_opt h p.ExecutionModel.xo_exports with Some sm -> sm | None -> []);
+    xp_immutable = p.ExecutionModel.xo_immutable;
+    xp_fixed_inst = (fun h -> match Stdlib.List.assoc_opt h p.ExecutionModel.xo_fixed_inst with Some th -> th | None -> []);
+    xp_fixed_keys = (fun h -> match Stdlib.List.assoc_opt h p.ExecutionModel.xo_fixed_keys with Some keys -> keys | None -> []);
+    xp_bool = p.ExecutionModel.xo_bool; xp_true = p.ExecutionModel.xo_true; xp_false = p.ExecutionModel.xo_false;
     xp_argv = Stdlib.List.map bytes_of_string (argv0 :: prog_args);
     xp_read = (fun name ->
       let path = String.init (Stdlib.List.length name)
@@ -291,14 +291,14 @@ let () =
   } in
   let st0 = init_state (Uint63.of_int !pages) in
   (* MOSS_ENGINE: which interpreter runs the program (pruned unless
-     MOSS_PRUNE=0).  Each is proved equal to Audit's interpreter:
+     MOSS_PRUNE=0).  Each is proved equal to ExecutionModel's interpreter:
      - fold: the program pre-resolved (SlotX), its calls to small
        fns folded (FoldX) and closure-compiled (CloX), run by
        CloX.crun_main; CloX.engine_agrees, on the pruned program;
      - clo: the same without folding (CloX.clo_oracle_agrees);
      - slot: SlotX.rrun_main on the pre-resolved program
        (SlotX.slot_oracle_agrees);
-     - ref: Audit's interpreter itself (XS.run_main);
+     - ref: ExecutionModel's interpreter itself (XS.run_main);
      - fast: FastX.frun_main, map-keyed environments (FastX.frun_main_eq);
      - lazy (default): split environments and deferred type substitutions, compiled
        directly to closures (LazyCloFacts.crun_main_eq);
@@ -314,21 +314,21 @@ let () =
      (the knot CloX.tbl_ok describes). *)
   let engine = match Sys.getenv_opt "MOSS_ENGINE" with Some e -> e | None -> "lazy" in
   let r = match engine with
-    | "lazy-ref" -> LazyX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
+    | "lazy-ref" -> LazyX.frun_main max_int prog p.ExecutionModel.xo_main p.ExecutionModel.xo_env st0
     | "lazy" ->
         (* LazyCloFacts.tbl_ok: the first body for a symbol wins, as in
            program_of's nlook. The compiled closures refer back to these
            arrays, which are completely populated before evaluation starts. *)
-        let nf = 1 + List.fold_left (fun n (f,_) -> max n f) 0 p.Audit.xo_fns in
-        let nu = 1 + List.fold_left (fun n (u,_) -> max n u) 0 p.Audit.xo_funs in
+        let nf = 1 + List.fold_left (fun n (f,_) -> max n f) 0 p.ExecutionModel.xo_fns in
+        let nu = 1 + List.fold_left (fun n (u,_) -> max n u) 0 p.ExecutionModel.xo_funs in
         let a = Array.make nf None and b = Array.make nu None in
         let tbl f = if f >= 0 && f < nf then a.(f) else None in
         let ftbl u = if u >= 0 && u < nu then b.(u) else None in
-        List.iter (fun (f,e) -> a.(f) <- Some (LazyClo.cc prog tbl ftbl e)) (List.rev p.Audit.xo_fns);
-        List.iter (fun (u,(dr,bs)) -> b.(u) <- Some (dr, LazyClo.ccbs prog tbl ftbl bs)) (List.rev p.Audit.xo_funs);
-        LazyClo.crun_main tbl max_int p.Audit.xo_main p.Audit.xo_env st0
-    | "fast" -> FastX.frun_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
-    | "ref" -> run_main max_int prog p.Audit.xo_main p.Audit.xo_env st0
+        List.iter (fun (f,e) -> a.(f) <- Some (LazyClo.cc prog tbl ftbl e)) (List.rev p.ExecutionModel.xo_fns);
+        List.iter (fun (u,(dr,bs)) -> b.(u) <- Some (dr, LazyClo.ccbs prog tbl ftbl bs)) (List.rev p.ExecutionModel.xo_funs);
+        LazyClo.crun_main tbl max_int p.ExecutionModel.xo_main p.ExecutionModel.xo_env st0
+    | "fast" -> FastX.frun_main max_int prog p.ExecutionModel.xo_main p.ExecutionModel.xo_env st0
+    | "ref" -> run_main max_int prog p.ExecutionModel.xo_main p.ExecutionModel.xo_env st0
     | "slot" | "clo" | "fold" ->
         let tc = Unix.gettimeofday () in
         let m = SlotX.shapes p in
@@ -346,10 +346,10 @@ let () =
         if engine = "slot" then begin
           if Sys.getenv_opt "MOSS_REF_TIME" <> None then
             Printf.eprintf "[moss_m2: slot-compiled in %.3fs]\n%!" (Unix.gettimeofday () -. tc);
-          SlotX.rrun_main max_int rp p.Audit.xo_main p.Audit.xo_env st0
+          SlotX.rrun_main max_int rp p.ExecutionModel.xo_main p.ExecutionModel.xo_env st0
         end else begin
           let afn, afun =
-            if engine <> "fold" || Audit.xreify prog then afn, afun else begin
+            if engine <> "fold" || ExecutionModel.xreify prog then afn, afun else begin
               let tb f = match rfn f with Some (bs, _) -> Some bs | None -> None in
               let m = 200 and n = 6 in
               Array.map (function
@@ -371,7 +371,7 @@ let () =
             | None -> ()) afun;
           if Sys.getenv_opt "MOSS_REF_TIME" <> None then
             Printf.eprintf "[moss_m2: closure-compiled in %.3fs]\n%!" (Unix.gettimeofday () -. tc);
-          CachedClo.crun_main tbl max_int p.Audit.xo_main p.Audit.xo_env st0
+          CachedClo.crun_main tbl max_int p.ExecutionModel.xo_main p.ExecutionModel.xo_env st0
         end
     | e -> Printf.eprintf "[moss_m2: unknown MOSS_ENGINE %s]\n" e; exit 2 in
   let t2 = Unix.gettimeofday () in

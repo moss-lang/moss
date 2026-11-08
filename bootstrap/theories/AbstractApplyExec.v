@@ -1,9 +1,9 @@
 (* The actual general abstract application, with its checked result reader. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  InfoPreserve BindSequence ApplyFreshExec AbstractApplyPlan AbstractApplyBind ApplyFunctorInduct GeneralProvideResult.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Execution.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).

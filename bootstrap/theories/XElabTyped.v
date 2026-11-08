@@ -1,7 +1,7 @@
 (* The staged target of the source-to-runtime typing bridge. Source
-   elaboration proves Audit.Elaboration.Elaborates for the raw program;
+   elaboration proves ExecutionModel.Elaboration.Elaborates for the raw program;
    immutable lowering produces the separately typed executable program. *)
-From NM Require Import Audit CoreMoss MossX XTyping XProvision XSafety Reify ReifyProgram Elab.
+From NM Require Import ExecutionModel CoreMoss MossX XTyping XProvision XSafety Reify ReifyProgram Elab.
 
 Definition typed_runtime_program (program : xprogram) : Prop :=
   forall argv read,

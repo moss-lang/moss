@@ -1,6 +1,6 @@
 (* The selected runtime Bool is a supported source nominal. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame BodySound NominalSupport LibraryFacts.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrame BodySound NominalSupport LibraryFacts.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
@@ -58,8 +58,8 @@ Proof.
  destruct(ety_eqb pay(YUnion[YNom t [];YNom f []])||ety_eqb pay(YUnion[YNom f [];YNom t []]));[|impossible H].
  injection H as <- <-.
  apply SupportNom.
- - right. change(Audit.Elaboration.kind_sym (W_read w R Fl) x=Some Audit.Elaboration.DKTag). rewrite(kind_sym_read b w R Fl Hload x g Hg),Kg. reflexivity.
- - cbn. unfold BodySound.W. cbn[Audit.Elaboration.w_reqs W_read].
+ - right. change(ExecutionModel.Elaboration.kind_sym (W_read w R Fl) x=Some ExecutionModel.Elaboration.DKTag). rewrite(kind_sym_read b w R Fl Hload x g Hg),Kg. reflexivity.
+ - cbn. unfold BodySound.W. cbn[ExecutionModel.Elaboration.w_reqs W_read].
    symmetry. apply Hfinal. exact(fr_ext _ _ Fpay x [] Cache).
  - constructor.
 Qed.
@@ -78,7 +78,7 @@ Proof.
  assert(Eb:runtime_id(map(fun q=>(q,runtime_symbol_value s0 q))runtime_names) "bool" "Bool"=Some x).
  { rewrite runtime_bool_id. unfold runtime_symbol_value. cbn[fst snd]. rewrite Hl,El,Hw0,Ex. reflexivity. }
  destruct(lang_symbol_scope b w R Fl Hload "bool" false "Bool" bi x El Ex)as(d&p&Hd&_).
- unfold W_read in Hd. cbn[Audit.Elaboration.w_decl]in Hd.
+ unfold W_read in Hd. cbn[ExecutionModel.Elaboration.w_decl]in Hd.
  destruct(nget(w_syms w)x)as[g|]eqn:Hg;[|discriminate Hd].
  exact(check_runtime_bool_support w R Fl b Hload _ _ _ _ _ _ Eb Hg H Hi Hw Hfinal).
 Qed.

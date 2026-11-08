@@ -1,8 +1,8 @@
 (* Recorded application rows always name provisions present in the context. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit Sx CoreMoss.
+From NM Require Import ExecutionModel Sx CoreMoss.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition AppsProvided(C:A.cx):Prop:=forall key app,In(key,app)(A.c_apps C)->
  match key with ITy _=>False|_=>A.provides C key end.
 Lemma context_nlook_member : forall X key(value:X)rows,
@@ -42,7 +42,7 @@ Proof.
  destruct entry as[t|v ty ap|f sg ap|r m sg ap|u fx];cbn[A.entry_key A.mkey]in Pair;
  try contradiction;destruct Pair as[Eq|[]];injection Eq as <- <-;
  cbn[A.provides A.entries_cx A.c_vals A.c_fns A.c_mths A.c_funs].
- - apply(context_nlook_member _ _ (Audit.app_subst sigma ty));apply in_flat_map;exists(A.NVal v ty ap);split;[exact Entry|left;reflexivity].
+ - apply(context_nlook_member _ _ (ExecutionModel.app_subst sigma ty));apply in_flat_map;exists(A.NVal v ty ap);split;[exact Entry|left;reflexivity].
  - apply(context_nlook_member _ _ (A.sig_subst sigma sg));apply in_flat_map;exists(A.NFn f sg ap);split;[exact Entry|left;reflexivity].
  - apply(context_mlook_member _ _ (A.sig_subst sigma sg));apply in_flat_map;exists(A.NMth r m sg ap);split;[exact Entry|left;reflexivity].
  - apply(context_nlook_member _ _ (A.fixed_subst sigma fx));apply in_flat_map;exists(A.NFun u fx);split;[exact Entry|left;reflexivity].

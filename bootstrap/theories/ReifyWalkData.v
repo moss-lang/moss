@@ -2,7 +2,7 @@
    tables. The substitution records the actual type-alias bindings emitted
    at this point; it is never a guessed runtime grounding. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss Reify.
+From NM Require Import ExecutionModel CoreMoss Reify.
 Import ListNotations.
 
 Record reify_local : Type := ReifyLocal {

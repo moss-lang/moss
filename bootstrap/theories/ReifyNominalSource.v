@@ -2,7 +2,7 @@
    opaque fallback retains the checked requirements without inventing a
    telescope or assuming that its formation is automatic. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss NMap Sx Elab ElabFrame ReqsStable ReifyPayload ReifyNominal ReifyFormation ReifyTypeTransport.
+From NM Require Import ExecutionModel CoreMoss NMap Sx Elab ElabFrame ReqsStable ReifyPayload ReifyNominal ReifyFormation ReifyTypeTransport.
 Import ListNotations.
 Local Strategy opaque[FUEL ELAB_FUEL reqs skeleton_tag_payload].
 Lemma actual_reifier_requirements_unique : forall b source head parameters after,

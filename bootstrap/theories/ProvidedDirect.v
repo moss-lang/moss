@@ -1,11 +1,11 @@
 (* Ordinary calls of a method already provided in the checked context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import InfoPreserve Audit NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore EtyTyExec
+From NM Require Import InfoPreserve ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabMono BodySoundCore EtyTyExec
  CanonTypes NominalSupport TySupport SourceSupport CallArgs MethodKeyTr.
 Import ListNotations.
 Set Implicit Arguments.
 Local Strategy opaque [Nat.of_num_uint FUEL ety_ty canon].
-Module PD := Audit.Elaboration.
+Module PD := ExecutionModel.Elaboration.
 Section Direct.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat).
 Notation WW := (BodySoundCore.W w R Fl).

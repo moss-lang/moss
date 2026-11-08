@@ -1,9 +1,9 @@
 (* A forwarder settles in its first context-walk round. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CtxWalk
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CtxWalk
  InfoPreserve InfoCache FnInfoCore ForwarderPrototypeSeed ForwarderPrototypeFn FnSnapshotAlign.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Walk.
 Variable w:Elab.world. Context{P:xprogram}.

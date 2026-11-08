@@ -1,10 +1,10 @@
 (* Successful lambda annotation checks produce the actual LP premises. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  LambdaTypeRead CanonTypes LambdaAnnotationOps.
 Import ListNotations.
 Local Open Scope string_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL ety_of].
 Definition lambda_parameter_check := LambdaAnnotationOps.lambda_parameter_check.
 Lemma ok_lambda_parameter_check:forall c e this what q,ok(lambda_parameter_check c e this what q).

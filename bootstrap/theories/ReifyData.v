@@ -2,7 +2,7 @@
    ghost data: the runtime consumes only the lowered program and export maps. *)
 From Stdlib Require Import List Arith Bool.
 From NM Require Import CoreFragment.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
 
 Record reify_functor_decl : Type := ReifyFunctorDecl {

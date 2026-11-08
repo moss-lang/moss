@@ -1,6 +1,6 @@
 (* Real compiler code headers discharge the finite frame allocator's input. *)
 From Stdlib Require Import List.
-From NM Require Import ReifyData Audit NMap Elab ReifyHeader ReifyWalkData ReifyReach ReifyEta ReifyProgramWalk.
+From NM Require Import ReifyData ExecutionModel NMap Elab ReifyHeader ReifyWalkData ReifyReach ReifyEta ReifyProgramWalk.
 Import ListNotations.
 Lemma function_header_signature_ready:forall source f owner scope inputs signature,
  function_header source f=Some(owner,scope,inputs,Some signature)->

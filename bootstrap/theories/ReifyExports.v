@@ -1,7 +1,7 @@
 (* Actual post-body source keys determine immutable exports. Output role
    placeholders are interpreted before the final checker generation map. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource
   ReifyFunctors ReifyProviders ReifyFunctorProfiles.
 Import ListNotations.
 

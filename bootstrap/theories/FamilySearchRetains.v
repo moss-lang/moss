@@ -1,6 +1,6 @@
 (* Successful candidate scanning never drops a family already found. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound FamilySelectTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound FamilySelectTrace.
 Import ListNotations.
 Lemma family_candidate_retains_old:forall mi e em r mid u fg marks back found lf s found' sf,
  family_candidate_step mi e em r mid u fg marks back found lf s=Good(found',sf)->

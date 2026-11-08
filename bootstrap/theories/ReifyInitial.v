@@ -1,7 +1,7 @@
 (* Initial unresolved generations have closed, distinct opaque identities.
    Opaque heads occupy a reserved prefix disjoint from all immutable slots. *)
 From Stdlib Require Import List Arith Lia String.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifyRoles ReifyInterfaces ReifySource.
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifyRoles ReifyInterfaces ReifySource.
 Import ListNotations.
 
 Definition initial_descriptors (machines : subst) (generations : list tsym)

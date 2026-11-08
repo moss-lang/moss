@@ -1,6 +1,6 @@
 (* Canonical provider lookup is observationally inert on every actual eta route. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ProviderPhysical.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ProviderPhysical.
 Import ListNotations.
 Definition legacy_wrapper(fuel:nat)(pv:gsym):M nat:=
  match fuel with 0=>deep|S _=>

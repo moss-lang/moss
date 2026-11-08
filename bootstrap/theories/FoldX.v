@@ -25,7 +25,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Elab Prune SlotX.
+From NM Require Import ExecutionModel CoreMoss MossX FastX Elab Prune SlotX.
 Import ListNotations.
 
 Set Implicit Arguments.

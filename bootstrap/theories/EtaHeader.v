@@ -1,6 +1,6 @@
 (* Fresh receiver adapters have exactly the recorded eta-call shape. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv
  FnReadonly SymReadonly ReifyHeader ReifyHeaderReadonly ReifyEta.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL fn_info smap_at].

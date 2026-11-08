@@ -1,6 +1,6 @@
 (* The forwarder's generated parameter paths compile to their existing slots. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Lemma synth_local_path_code:forall fuel c e n t mode exp s v out final slot,

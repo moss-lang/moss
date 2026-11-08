@@ -1,12 +1,12 @@
 (* A wrapper's retained fn_info receipt supplies its own declaration context,
    even if later cache activity has installed a different snapshot. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  InfoInvariant InfoPreserve InfoSnapshot BodySound FnBodyContext LoadedContextSupport
  InfoCache CtxWalk CtxMerge ContextClean NominalSupport Merge CanonTypes BodyTy BodyTr
  NeedInfoExec MainContextInfo MainRoot SourceSatisfiesAny LoaderOrigin.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma info_snapshot_later:forall w P R Fl s key info,
  Later w P R Fl s->Later w P R Fl(info_snapshot s key info).
 Proof. intros;destruct H;constructor;assumption. Qed.

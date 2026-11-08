@@ -1,10 +1,10 @@
 (* An old input representative can share the declared name of a new output.
    Fresh roles distinguish them until the code-header renaming. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabFrameCore BodyTr LinkBodyTrace LinkOutputShadow.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrameCore BodyTr LinkBodyTrace LinkOutputShadow.
 Import ListNotations.
 Local Open Scope string_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition link_capture_bundle:=Bundle "/case.moss" ""[AModule "/case.moss" false[](AFile[]
  [ADType"P";ADType"T";ADType"U";ADAssume[(["P"],None)][ADVal"seed"(ATRef["P"]None)None];
  ADCtx"Left"[link_shadow_spec"T";link_shadow_seed"T"];ADCtx"Right"[link_shadow_spec"U";link_shadow_seed"U"];

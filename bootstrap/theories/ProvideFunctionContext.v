@@ -1,11 +1,11 @@
 (* Function outputs retain the shared signature/application snapshot at their
    actual declaration read, then freeze both meanings canonically. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes TySupport SourceSupport SourceClean NominalSupport CanonBodyTy FnSigExec
  ProvideResultReading ProvideResultFunction ProvideResultCanonical ProvideResultContext.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[fn_sig ety_of reqs type_requirements FUEL].
 Section Function.
 Variable w:Elab.world. Context{P:xprogram}.

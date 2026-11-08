@@ -2,7 +2,7 @@
    type variable from the surrounding caller. Quote those meanings into fresh
    captured roles before constructing the adapter's local schemas. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss ReifyData Reify ReifyRoles ReifyFunctors ReifyProviders.
+From NM Require Import ExecutionModel CoreMoss ReifyData Reify ReifyRoles ReifyFunctors ReifyProviders.
 Import ListNotations.
 
 Definition effective_fixed_interpretation (schema : reify_functor_decl) : option subst :=

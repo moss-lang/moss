@@ -1,9 +1,9 @@
 (* The target provision in a first forwarder walk has an identity application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes CanonBodyTy CtxWalk SigSound InfoCache ForwarderPrototypeSeed FnSnapshotAlign.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section PrototypeFn.
 Variable w:Elab.world. Context{P:xprogram}.

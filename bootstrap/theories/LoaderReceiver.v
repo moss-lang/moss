@@ -1,7 +1,7 @@
 (* Receiver metadata agrees with the actual source declaration and table. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve LoaderOrigin MethodLookup.
-Module A:=Audit.Elaboration.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve LoaderOrigin MethodLookup.
+Module A:=ExecutionModel.Elaboration.
 Theorem loaded_attached_receiver:forall b w R Fl key g rn name parameters result body,
  load_world b=Good w->nget(w_syms w)key=Some g->
  gs_decl g=ADFn(RAttached rn)name parameters result body->

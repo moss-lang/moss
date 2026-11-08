@@ -1,6 +1,6 @@
 (* Every symbol the real loader creates retains its source origin. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint nget nset].

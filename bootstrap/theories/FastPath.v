@@ -1,6 +1,6 @@
 (* ------------------------------------------------------------------------ *)
 (* FastPath.v — applying a platform family keeping only the members used   *)
-(* (m4, speed; Audit.v DRAFT NOTE 24).                                       *)
+(* (m4, speed; ExecutionModel.v DRAFT NOTE 24).                                       *)
 (*                                                                           *)
 (* Under D84 rule 7, `XApply F θ sm e` runs F's body and composes its whole *)
 (* result at θ (inst_smap θ Dr) at every application, though e reads one   *)
@@ -30,7 +30,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Prune SlotX FoldX CloX.
+From NM Require Import ExecutionModel CoreMoss MossX FastX Prune SlotX FoldX CloX.
 From NM Require Import InputGenerationExports.
 Import ListNotations.
 
@@ -1286,7 +1286,7 @@ Proof.
   destruct (IH q) as [Hs|Hs]; [left; rewrite <- Hq; exact Hs|right; rewrite Hs; exact Hq].
 Qed.
 
-(* The default engine on the transformed, pruned program computes Audit's
+(* The default engine on the transformed, pruned program computes ExecutionModel's
    semantics of the elaborated program — unless that run runs out of fuel
    or gets stuck (Prune's caveat, CloX.engine_agrees). *)
 Theorem fast_engine_agrees : forall p argv rd fuel st0 tb M N R' tbl ftbl,

@@ -1,11 +1,11 @@
 (* The actual capture fold allocates distinct fresh slots and preserves the
    exact enclosing-local types, names, and generated binding order. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv BodySoundCore
  LambdaTrace LambdaCaptureStep LambdaCaptureContext NominalSupport.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition capture_id(q:string*nat*ety):nat:=let '(_,v,_) :=q in v.
 Definition capture_name(q:string*nat*ety):string:=let '(n,_,_) :=q in n.
 Definition capture_model(Fl:string->nat)(original:env)(C:A.cx)(q:string*nat*ety):A.cx:=

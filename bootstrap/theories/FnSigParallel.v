@@ -1,6 +1,6 @@
 (* Parameter spellings do not change the type reader or its actual effects. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ForwarderTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ForwarderTrace.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL ety_of].

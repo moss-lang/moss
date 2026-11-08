@@ -1,7 +1,7 @@
 (* Identity copies keep their actual existing interface.  Absence of a
    recomputed export profile records exactly that checked identity case. *)
 From Stdlib Require Import List Arith Bool.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound.
 Section Copy.
 Theorem copy_profile_none:forall mi site ef eg fg bg fixed fneeds gneeds s sf,
  (if Nat.eqb(gs_id fg)(gs_id bg)then ret None

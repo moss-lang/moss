@@ -1,6 +1,6 @@
 (* Injectivity of the source type reading, independent of context formation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr CanonTypes.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr CanonTypes.
 Import ListNotations.
 Local Open Scope list_scope.
 

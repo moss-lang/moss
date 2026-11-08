@@ -1,6 +1,6 @@
 (* Canonicalization uses only generations in the input and merge ranges. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr NominalSupport.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr NominalSupport.
 Import ListNotations.
 Definition GensIn(P:nat->Prop)(t:ety):Prop:=forall g,In g(ety_gens t)->P g.
 Lemma gens_nom_parts:forall P n xs,

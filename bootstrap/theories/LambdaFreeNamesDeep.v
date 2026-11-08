@@ -1,6 +1,6 @@
 (* Direct AST control: lexical capture never silently drops a deep suffix. *)
 From Stdlib Require Import List String Arith.
-From NM Require Import Audit Sx Elab.
+From NM Require Import ExecutionModel Sx Elab.
 Import ListNotations.
 Local Open Scope string_scope.
 Fixpoint deep_local_reference(depth:nat):aexpr:=
@@ -18,8 +18,8 @@ Example compatibility_fuel_does_not_truncate:
  free_names_e 0(deep_local_reference 10001)=["captured"].
 Proof. apply deep_local_reference_names. Qed.
 Lemma deep_local_reference_is_mentioned:forall depth,
- Audit.Elaboration.Mentions_name(deep_local_reference depth)"captured".
+ ExecutionModel.Elaboration.Mentions_name(deep_local_reference depth)"captured".
 Proof.
- induction depth;[apply Audit.Elaboration.MNPath|].
- eapply Audit.Elaboration.MNSub;[apply Audit.Elaboration.SubBlockT|exact IHdepth].
+ induction depth;[apply ExecutionModel.Elaboration.MNPath|].
+ eapply ExecutionModel.Elaboration.MNSub;[apply ExecutionModel.Elaboration.SubBlockT|exact IHdepth].
 Qed.

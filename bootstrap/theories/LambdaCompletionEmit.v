@@ -1,6 +1,6 @@
 (* Actual lambda/eta allocation returns after its own body has been emitted. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly SymReadonly
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly SymReadonly
  FnBound FnBoundEmit FnBoundSynth FnPresentStable FnPresentEmit FnPresentSynth
  LambdaCompletion LambdaCompletionOps ForwarderTrace.
 Import ListNotations.

@@ -5,8 +5,8 @@
 (* elaborator emits beyond the core: machine numbers, structs (a tag over a *)
 (* record), `var` and assignment, `if`, `while`, `loop`, `break`, `return`, *)
 (* pattern matches with field patterns, and primitives bound as providers,  *)
-(* typed by their signatures (Audit.v Part IV, `prim_sig`).  Like `has_ty`  *)
-(* it is a proof device: Audit.v does not mention it.  XSafety.v proves it  *)
+(* typed by their signatures (ExecutionModel.v Part IV, `prim_sig`).  Like `has_ty`  *)
+(* it is a proof device: ExecutionModel.v does not mention it.  XSafety.v proves it  *)
 (* sound for `xinterp` at every fuel.                                        *)
 (*                                                                           *)
 (* Scope.  Everything of the core, abstract functors and Rule A's captures *)
@@ -39,7 +39,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss HTrie PayloadInst PayloadInstCore ReifyMaps ReifyContracts.
+From NM Require Import ExecutionModel CoreMoss HTrie PayloadInst PayloadInstCore ReifyMaps ReifyContracts.
 Import ListNotations.
 
 Set Implicit Arguments.

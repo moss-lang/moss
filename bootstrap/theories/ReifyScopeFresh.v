@@ -34,7 +34,7 @@ Proof.
  - inversion E;subst;exact Initial.
  - cbn[lower_scope_values]in E.
    destruct(lower_value_provision name
-     (value_type_inputs(Audit.app_subst(rf_generations before)(reify_snapshot_type source scope tau)))
+     (value_type_inputs(ExecutionModel.app_subst(rf_generations before)(reify_snapshot_type source scope tau)))
      (reify_snapshot_type source scope tau)before)as[slot middle]eqn:M.
    destruct(lower_scope_values source scope rest middle)as[tail final]eqn:T.
    inversion E;subst;eapply IH;[eapply value_provision_preserves_allocation;eassumption|exact T].
@@ -88,8 +88,8 @@ Proof.
    destruct(lower_scope_values source scope rest
      (ReifyState(S(rf_next before))(rf_names before)(rf_generations before)
        ((IVal name,IVal(rf_next before))::rf_items before)
-       ((IVal(rf_next before),RDValue(value_type_inputs(Audit.app_subst(rf_generations before)
-          (reify_snapshot_type source scope tau)))(Audit.app_subst(rf_generations before)
+       ((IVal(rf_next before),RDValue(value_type_inputs(ExecutionModel.app_subst(rf_generations before)
+          (reify_snapshot_type source scope tau)))(ExecutionModel.app_subst(rf_generations before)
           (reify_snapshot_type source scope tau)))::rf_declarations before)))
      as[tail final]eqn:T.
    inversion E;subst;pose proof(IH _ _ _ T)as Tail;cbn in Tail |- *;f_equal;exact Tail.

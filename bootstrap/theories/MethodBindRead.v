@@ -1,10 +1,10 @@
 (* Actual method-bind target readings.  Method brackets admit every type
    key, while their right sides keep the caller's canonical readings. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySound BodyTy
  Merge CanonBodyTy CanonTypes TyOfSubst ProvideResultReading ProvideResultCanonical FamilyMethodExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma method_output_brackets:forall W p tm m a bs,
  A.kind_sym W m=Some A.DKMeth->A.OutputBrackets W p tm a bs->A.Brackets W p tm m a bs.
 Proof.

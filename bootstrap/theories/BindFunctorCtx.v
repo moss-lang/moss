@@ -1,8 +1,8 @@
 (* Installing a functor retains its actual fixed-input snapshot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr NominalSupport NominalMergeSupport FunctorDecl.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr NominalSupport NominalMergeSupport FunctorDecl.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition fun_tr_inst(Fl:string->nat)(a:Elab.inst):A.inst:=
  map(fun q=>(fst q,option_map(tr Fl)(snd q)))a.
 Lemma fun_inst_lookup:forall Fl a x,
@@ -83,13 +83,13 @@ Proof.
  pose proof(cr_fun_decls _ _ _ _ _ _ _ H)as DeclOld.
  destruct H;constructor;auto.
  - apply fun_env_support_app;apply env_support_fun;exact Support.
- - intros r m Clean;cbn[A.set_fun A.c_apps A.ilook A.mkey Audit.item_eqb].
+ - intros r m Clean;cbn[A.set_fun A.c_apps A.ilook A.mkey ExecutionModel.item_eqb].
    rewrite fun_app_other by reflexivity;exact(Ma r m Clean).
- - intro v;cbn[A.set_fun A.c_apps A.ilook Audit.item_eqb].
+ - intro v;cbn[A.set_fun A.c_apps A.ilook ExecutionModel.item_eqb].
    rewrite fun_app_other by reflexivity;exact(Va v).
- - intro f;cbn[A.set_fun A.c_apps A.ilook Audit.item_eqb].
+ - intro f;cbn[A.set_fun A.c_apps A.ilook ExecutionModel.item_eqb].
    rewrite fun_app_other by reflexivity;exact(Fa f).
- - intro v;cbn[A.set_fun A.c_apps A.ilook Audit.item_eqb].
+ - intro v;cbn[A.set_fun A.c_apps A.ilook ExecutionModel.item_eqb].
    destruct(Nat.eqb v u)eqn:E;[apply Nat.eqb_eq in E;subst v;rewrite fun_app_same;cbn[option_map fst];f_equal;exact(eq_sym Apps)|].
    rewrite fun_app_other by exact E;exact(Ua v).
  - intro v;cbn[A.set_fun A.c_funs A.nlook set_app set_fun en_funs].

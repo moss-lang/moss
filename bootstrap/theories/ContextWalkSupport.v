@@ -1,6 +1,6 @@
 (* Declaration support through actual assumption walking. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  CtxWalk Merge CanonTypes SourceClean ContextClean MethodClean ContextWalkClean
  NominalSupport NominalMergeSupport SourceSupport ContextSupport.
 Import ListNotations.

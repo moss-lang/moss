@@ -2,7 +2,7 @@
    but immutable runtime declarations need only executable code reachable
    from main and the actual platform environment. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
 
 Inductive reify_node : Type := RnFunction (f : fsym) | RnFunctor (h : usym).

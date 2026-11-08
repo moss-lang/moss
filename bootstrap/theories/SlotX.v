@@ -1,7 +1,7 @@
 (* ------------------------------------------------------------------------ *)
 (* SlotX.v — MossX's interpreter on a pre-resolved program.                  *)
 (*                                                                           *)
-(* Audit.v's `XSem.xinterp` finds every runtime entry by scanning the       *)
+(* ExecutionModel.v's `XSem.xinterp` finds every runtime entry by scanning the       *)
 (* environment (an association list) with `item_eqb`, finds every fn body   *)
 (* by symbol, and composes every callee's context the same way.  In the     *)
 (* self-hosted compiler's run that is about a quarter of the time           *)
@@ -32,12 +32,12 @@
 (*    machine and fuel;                                                     *)
 (*  - slot_run_main: the same for `rprog_of p` (the compiled `xprogram`)    *)
 (*    against `program_of p`, whatever `shapes` guessed.                    *)
-(* Nothing here touches Audit.v's definitions; the guess `shapes` is        *)
+(* Nothing here touches ExecutionModel.v's definitions; the guess `shapes` is        *)
 (* untrusted (a wrong guess only means the dynamic body runs).              *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia PrimInt63.
-From NM Require Import Audit CoreMoss MossX FastX Elab Prune.
+From NM Require Import ExecutionModel CoreMoss MossX FastX Elab Prune.
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -94,7 +94,7 @@ Definition renv := list (item * rentry).
 
 Fixpoint rdtypes (d : renv) : subst :=
   match d with [] => [] | (ITy t, QType tau) :: r => (t,tau)::rdtypes r | _::r => rdtypes r end.
-Definition rground d tau := Audit.app_subst (rdtypes d) tau.
+Definition rground d tau := ExecutionModel.app_subst (rdtypes d) tau.
 Fixpoint rtype_env (d : renv) : renv :=
   match d with [] => [] | (ITy t,QType tau)::r => (ITy t,QType tau)::rtype_env r | _::r => rtype_env r end.
 (* Read precisely the type projection: malformed rows never shadow a
@@ -130,7 +130,7 @@ Definition rinst d th : renv :=
      if rinst_all_abs th then
        map (fun p => (ITy (fst p), QType (rinst_abs d (snd p)))) th
      else let types:=rdtypes d in
-       map(fun p=>(ITy(fst p),QType(Audit.app_subst types(snd p))))th
+       map(fun p=>(ITy(fst p),QType(ExecutionModel.app_subst types(snd p))))th
  end.
 Lemma rinst_abs_map : forall d th,
   rinst_all_abs th = true ->
@@ -140,7 +140,7 @@ Proof.
   intros d th; induction th as [|[key tau] rest IH]; intros Good; [reflexivity|].
   cbn [rinst_all_abs forallb snd] in Good; apply andb_true_iff in Good as [This Rest].
   destruct tau; try discriminate This.
-  cbn [map fst snd rinst_abs rground Audit.app_subst].
+  cbn [map fst snd rinst_abs rground ExecutionModel.app_subst].
   rewrite rlookup_type_exact, (IH Rest); reflexivity.
 Qed.
 Lemma rinst_map : forall d th,
@@ -1698,7 +1698,7 @@ Proof.
 Qed.
 
 (* With pruning (Prune.oracle_program), what the driver's default engine
-   computes is Audit's semantics of the elaborated program, unless the
+   computes is ExecutionModel's semantics of the elaborated program, unless the
    reference run gets stuck (Prune.oracle_agrees). *)
 Theorem slot_oracle_agrees : forall p argv rd fuel st0,
   let P := program_of p argv rd in

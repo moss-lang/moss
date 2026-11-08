@@ -1,12 +1,12 @@
 (* A defined functor's own context comes only from its declared inputs;
    result mentions do not become implicit requirements of its body. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame
  BodySoundCore BodyTy Merge CanonTypes CtxWalk CtxMerge FunctorContext
  ResultMentionsExact NestingTypesExec FunctorScopeTypes NeedKeys.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 Section Context.
 Variables (w : Elab.world) (P : xprogram) (R : nat -> list nat) (Fl : string -> nat) (b : bundle).

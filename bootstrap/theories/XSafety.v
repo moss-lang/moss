@@ -18,7 +18,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit CoreMoss XTyping XEnv XHeap HTrie XCastTyping XRuntimeEnv XRuntimeCall PayloadInst PayloadInstCore XProvision XProvisionBind ReifyEntries ReifyContracts ReifyMaps ReifyUninhabited.
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv XHeap HTrie XCastTyping XRuntimeEnv XRuntimeCall PayloadInst PayloadInstCore XProvision XProvisionBind ReifyEntries ReifyContracts ReifyMaps ReifyUninhabited.
 Import ListNotations.
 
 Set Implicit Arguments.

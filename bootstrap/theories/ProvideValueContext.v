@@ -1,11 +1,11 @@
 (* Actual value result installation, including canonical declaration reading
    and the full outgoing context relation. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy
  Merge CanonTypes BindValue SourceSupport NominalSupport ProvideResultReading ProvideResultCanonical
  ProvideResultSubst TyOfSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[ety_of reqs type_requirements FUEL].
 Section Value.
 Variable w:Elab.world. Context{P:xprogram}.

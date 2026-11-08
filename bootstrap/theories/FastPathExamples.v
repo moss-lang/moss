@@ -1,7 +1,7 @@
 (* A narrowed scalar application must leave type instantiation, type exports
    from other families, and checked casts unchanged. *)
 From Stdlib Require Import List PrimInt63.
-From NM Require Import Audit MossX FastPath.
+From NM Require Import ExecutionModel MossX FastPath.
 Import ListNotations.
 Import MossX.XS.
 Local Open Scope nat_scope.

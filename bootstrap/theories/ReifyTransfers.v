@@ -2,7 +2,7 @@
    Materialized type entries are lexical temporaries; runtime direct calls
    use theta=[] so no second override path can erase these meanings. *)
 From Stdlib Require Import List Arith.
-From NM Require Import Audit CoreMoss Reify.
+From NM Require Import ExecutionModel CoreMoss Reify.
 Import ListNotations.
 
 (* Source argument keys name mutable aliases; role keys name immutable

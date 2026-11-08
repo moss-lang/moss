@@ -1,6 +1,6 @@
 (* Exact call code in a forwarder's tail; success cannot change the slots. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderArgsCode.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ForwarderArgsCode.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL].
 Theorem synth_call_abstract_code:forall fuel c e pa names slots s v t final target g,

@@ -1,6 +1,6 @@
 (* Operational annotation checks, independent of body judgments. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame.
 Import ListNotations.
 Local Open Scope string_scope.
 Lemma ok_ety_of_trace:forall t mi tm e this,ok(ety_of t mi tm e this).

@@ -1,8 +1,8 @@
-(* Bind the default closure engine to Audit's interpreter contract.
+(* Bind the default closure engine to ExecutionModel's interpreter contract.
    Optional scalar folding is proved within LazyClo's expression compiler. *)
 From Stdlib Require Import List.
 From NM Require Import ComponentContracts.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 From NM Require EarlyCertified LazyX LazyClo LazyInterpFacts LazyCloFacts FastPath Prune.
 
 Module Type DIRECT_PIPELINE := ORACLE_PIPELINE.

@@ -1,8 +1,8 @@
 (* The actual statement-to-bind visitor agrees with the declarative wrappers. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound BindItemBinds.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BindItemBinds.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition link_statement_binds(xs:list xstmt):M(list xbind):=
  mmap(fun x=>match stmt_bind x with Some b=>ret b|None=>fail "internal: a functor body made a statement" end)xs.
 Lemma link_statement_binds_exact : forall xs s raw final,

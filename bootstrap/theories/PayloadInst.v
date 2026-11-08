@@ -2,7 +2,7 @@
    flatten after parameter substitution, while parameter values themselves
    remain opaque: their nominal argument/layout identity is preserved. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
 
 Fixpoint payload_atoms (tau : ty) : list ty :=

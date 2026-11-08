@@ -1,7 +1,7 @@
 (* Every lambda allocated during a completed helper has a completed body.
    Initially pending owners are allowed; they are preserved separately. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame FnPresentStable ForwarderHistory.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame FnPresentStable ForwarderHistory.
 Import ListNotations.
 Set Implicit Arguments.
 Definition NewLambdas(initial final:st):Prop:=forall key owner,

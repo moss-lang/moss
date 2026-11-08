@@ -1,10 +1,10 @@
 (* Type declarations and already-defined outputs add no runtime slot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy
  CtxWalk CtxMerge NominalSupport OutputScopeExec ProvideResultFold FamilyResultFold.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma already_provided_shape:forall g,already_provided g=true->
  gs_kind g=KUnit\/gs_kind g=KTag\/gs_kind g=KAlias\/
  (gs_kind g=KVal/\exists n t body,gs_decl g=ADVal n t(Some body))\/

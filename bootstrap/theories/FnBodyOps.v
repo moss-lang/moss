@@ -1,6 +1,6 @@
 (* Operational frames used by traces and semantic body proofs. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame FnBodyTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame FnBodyTrace.
 Lemma ok_body_receiver:forall g e,ok(body_receiver g e).
 Proof. intros;unfold body_receiver,nominal_args;okt. Qed.
 Lemma ok_fn_sig_body:forall g tm e this,ok(fn_sig g tm e this).

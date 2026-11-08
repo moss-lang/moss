@@ -1,9 +1,9 @@
 (* Temporary inferred type readings installed by an actual family application. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr NatAssoc BindType
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr NatAssoc BindType
  NominalSupport NominalMergeSupport CanonTypes.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_install_step(e:env)(q:nat*ety):M env:=
  let! stamp:=fresh in ret(set_tn e(fst q)(snd q)stamp).
 Definition family_matching(Fl:string->nat)(e:env)(th:list(nat*ety)):=

@@ -1,6 +1,6 @@
 (* Executable receipts for binding a defined functor as a closure. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Open Scope string_scope.

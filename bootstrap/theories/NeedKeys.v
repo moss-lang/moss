@@ -1,6 +1,6 @@
 (* Settled actual context needs have structurally clean method receivers. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodySoundCore CtxWalk CtxMerge.
+From NM Require Import ExecutionModel NMap Sx Elab BodySoundCore CtxWalk CtxMerge.
 Import ListNotations.
 Lemma ws_needs_ok:forall Fl U e tm les needs,
  WS Fl U e tm les needs->en_uf e=U->Forall(fun k=>key_ok k=true)needs.

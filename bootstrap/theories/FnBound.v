@@ -1,6 +1,6 @@
 (* Allocation bounds for function rows, established from the real empty table. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly ForwarderTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabInv FnReadonly ForwarderTrace.
 Import ListNotations.
 Set Implicit Arguments.
 Definition FnBound(s:st):Prop:=forall key body,In(key,body)(st_fns s)->key<st_next s.

@@ -1,9 +1,9 @@
 (* Method-table extension, including duplicate-signature unification. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  Merge CanonTypes SourceClean ContextClean CtxWalk CtxMethod MethodRows.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Table.
 Variable Fl:string->nat.
 Lemma ws_mth:forall U e e1 e2 tm les needs r m sg a s0 s0',

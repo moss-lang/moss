@@ -1,10 +1,10 @@
 (* Canonical semantic readings of the actual family method output setter. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes CanonBodyTy CtxWalk TyOfSubst SigReadingSubst ProvideResultMethod ProvideResultFunction ProvideResultReading ProvideResultCanonical ProvideResultSubst ProvideResultContext.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[fn_sig provided_at symbol_type app_subst ety_of FUEL].
 Lemma provide_spec_method_phases:forall f e fg mi pa dn a outer out s e' keys s',
  provide_spec(S f)e fg mi(Spec(Some pa)(Some dn)a)outer out s=Good((e',keys),s')->
@@ -89,8 +89,8 @@ Proof.
  rewrite tr_canon in Rc by exact T.
  pose proof(sigof_subst W(suf Fl(en_uf e))_ _ _ _ Sig tmr SR)as Sg.
  cbn[option_map]in Sg;rewrite tr_canon in Sg by exact T.
- assert(SigEq:A.FSig(map(Audit.app_subst(suf Fl(en_uf e)))(A.sg_params(tr_sig Fl sg)))
- (Audit.app_subst(suf Fl(en_uf e))(A.sg_ret(tr_sig Fl sg)))=output_sig Fl e sg).
+ assert(SigEq:A.FSig(map(ExecutionModel.app_subst(suf Fl(en_uf e)))(A.sg_params(tr_sig Fl sg)))
+ (ExecutionModel.app_subst(suf Fl(en_uf e))(A.sg_ret(tr_sig Fl sg)))=output_sig Fl e sg).
  {unfold output_sig,tr_sig;cbn[A.sg_params A.sg_ret];f_equal.
   - rewrite map_map;apply map_ext;intro p;apply tr_canon;exact T.
   - apply tr_canon;exact T. }
@@ -115,8 +115,8 @@ Proof.
  rewrite tr_canon in Rc by exact T.
  pose proof(sigof_subst W(suf Fl(en_uf e))_ _ _ _ Sig tmr SR)as Sg.
  cbn[option_map]in Sg;rewrite tr_canon in Sg by exact T.
- assert(SigEq:A.FSig(map(Audit.app_subst(suf Fl(en_uf e)))(A.sg_params(tr_sig Fl sg)))
- (Audit.app_subst(suf Fl(en_uf e))(A.sg_ret(tr_sig Fl sg)))=output_sig Fl e sg).
+ assert(SigEq:A.FSig(map(ExecutionModel.app_subst(suf Fl(en_uf e)))(A.sg_params(tr_sig Fl sg)))
+ (ExecutionModel.app_subst(suf Fl(en_uf e))(A.sg_ret(tr_sig Fl sg)))=output_sig Fl e sg).
  {unfold output_sig,tr_sig;cbn[A.sg_params A.sg_ret];f_equal.
   - rewrite map_map;apply map_ext;intro p;apply tr_canon;exact T.
   - apply tr_canon;exact T. }

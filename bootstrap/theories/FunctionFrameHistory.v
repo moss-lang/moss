@@ -2,7 +2,7 @@
    symbol-table classification. Pending own-body markers are handled by
    the complete lower_body invocation. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly ReifyHeaderReadonly
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv FnReadonly ReifyHeaderReadonly
  FnBound FnPresentStable ReifyHeader ReifyHeaderStable ReifyHeaderPresent ReifyFrameReady
  ReifyWalkData ReifyReach ReifyEta ReifyProgramWalk LambdaOrigin.
 Import ListNotations.

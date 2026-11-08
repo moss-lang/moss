@@ -1,11 +1,11 @@
 (* Source grouping never repeats an inferred substitution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr BodyTy
  NominalSupport TySupport SourceSupport CtxMerge Merge CanonTypes TypeReadingInj PMatchComplete PMatchExec
  InstantiateTr NeedReceiverFormation FamilyDemandTrace FamilyDemandCollect FamilySelectTrace
  FamilyMatchCanonical FamilyMatchingCtx MethodKeyTr FamilySearchCompetitor.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_group_raw(q:demand_group):nat*list(nat*ety):=(gs_id(fst(fst q)),snd(fst q)).
 Definition family_group_sem(Fl:string->nat)(e:env)(q:demand_group):nat*subst:=
  (gs_id(fst(fst q)),family_matching Fl e(snd(fst q))).

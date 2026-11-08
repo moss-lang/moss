@@ -2,7 +2,7 @@
    an actual provider body, applying the captured old value through complete
    input/output maps. Ambient fixed meanings are quoted before that body. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource ReifySig
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource ReifySig
   ReifyFunctors ReifyProviders ReifyFunctorProfiles ReifyQuotes ReifyMaps
   ReifyRoles ReifyTransfers ReifyInterfaces ReifyPlan ReifyWalkData ReifyAnnotations ReifyExports.
 Import ListNotations.
@@ -41,7 +41,7 @@ Fixpoint adapter_match_input_items (declarations : list(item*reify_decl))
       | Some actual,Some supplied=>
           match adapter_item_types declarations actual,adapter_item_types declarations supplied with
           | Some patterns,Some meanings=>
-              match adapter_match_types variables patterns(map(Audit.app_subst pins)meanings)solutions with
+              match adapter_match_types variables patterns(map(ExecutionModel.app_subst pins)meanings)solutions with
               | Some next=>adapter_match_input_items declarations variables pins provider target rest next
               | None=>None end
           | _,_=>None end
@@ -49,13 +49,13 @@ Fixpoint adapter_match_input_items (declarations : list(item*reify_decl))
   end.
 Definition adapter_name_arguments (source : st) (defaults pins : subst)
     (target : reify_functor_view) : subst :=
-  map(fun p=>(fst p,Audit.app_subst pins(canonical_input_meaning source defaults target(snd p))))
+  map(fun p=>(fst p,ExecutionModel.app_subst pins(canonical_input_meaning source defaults target(snd p))))
     (rs_names ety key(rfv_input_scope target)).
 Definition adapter_name_patterns (source : st) (provider : reify_functor_view) : subst :=
   map(fun p=>(fst p,reify_snapshot_type source(rfv_input_scope provider)(snd p)))
     (rs_names ety key(rfv_input_scope provider)).
 Definition adapter_formal_patterns (source : st) (defaults : subst) (provider : reify_functor_view) : subst :=
-  map(fun p=>(fst p,Audit.app_subst(rfv_input_types provider++defaults)(snd p)))
+  map(fun p=>(fst p,ExecutionModel.app_subst(rfv_input_types provider++defaults)(snd p)))
     (adapter_name_patterns source provider).
 Definition adapter_input_solutions (source : st) (defaults pins : subst)
     (target provider : reify_functor_view) (source_map : smap)
@@ -96,12 +96,12 @@ Fixpoint adapter_output_placeholders (provider target : reify_functor_view)
   end.
 Definition adapter_input_source_meanings (defaults solutions : subst)
     (provider : reify_functor_view) : subst :=
-  map(fun p=>(fst p,Audit.app_subst solutions(snd p)))(rfv_input_types provider)++defaults.
+  map(fun p=>(fst p,ExecutionModel.app_subst solutions(snd p)))(rfv_input_types provider)++defaults.
 Definition adapter_render_source_type (source : st) (pins outputs input_meanings : subst)
     (scope : reify_scope ety key) (meaning : ty) : ty :=
-  Audit.app_subst pins(Audit.app_subst input_meanings
-    (Audit.app_subst(result_generation_equations source scope(map fst outputs))
-      (Audit.app_subst outputs meaning))).
+  ExecutionModel.app_subst pins(ExecutionModel.app_subst input_meanings
+    (ExecutionModel.app_subst(result_generation_equations source scope(map fst outputs))
+      (ExecutionModel.app_subst outputs meaning))).
 Definition adapter_render_source_item (render : ty->ty) (entry : item) : item :=
   match entry with
   | IMth receiver method theta=>IMth(render receiver)method

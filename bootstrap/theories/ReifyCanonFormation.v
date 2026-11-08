@@ -1,10 +1,10 @@
 (* Canonical source unions retain their checked nominal heads. This keeps
    physical type formation stronger than the older WFty shape invariant. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss Elab BodyTr MergeWf.
+From NM Require Import ExecutionModel CoreMoss Elab BodyTr MergeWf.
 Import ListNotations.
 Definition source_type_read(Fl:String.string->nat)(rho:subst)(raw:ety):ty:=
- Audit.app_subst rho(tr Fl raw).
+ ExecutionModel.app_subst rho(tr Fl raw).
 Definition source_arguments_read(Fl:String.string->nat)(rho:subst)(args:list(nat*ety)):
  list(nat*ty):=map(fun p=>(fst p,source_type_read Fl rho(snd p)))args.
 Lemma source_nominal_read : forall Fl rho n args,

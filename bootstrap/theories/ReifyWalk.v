@@ -2,7 +2,7 @@
    environment transfers and reusable checked source annotations. Functor
    builders are integrated separately; no raw fallback is executed here. *)
 From Stdlib Require Import List Arith.
-From NM Require Import Audit CoreMoss Elab ReifyData Reify ReifySource ReifyPlan
+From NM Require Import ExecutionModel CoreMoss Elab ReifyData Reify ReifySource ReifyPlan
   ReifyAnnotations ReifyWalkData ReifyBindings ReifyFunctors ReifyPrimitive ReifyProviders ReifyAdapters.
 Import ListNotations.
 
@@ -25,7 +25,7 @@ Definition restore_walk_scope (before after : walk_cursor) : walk_cursor :=
 Definition finish_walk (before : walk_cursor) (body : xexpr) (after : walk_cursor)
     : option (xexpr * walk_cursor) := Some (body,restore_walk_scope before after).
 Definition walk_theta (before : walk_cursor) (theta : subst) : subst :=
-  map (fun p => (fst p,Audit.app_subst
+  map (fun p => (fst p,ExecutionModel.app_subst
     (rf_generations (rl_runtime (walk_local before))) (snd p))) theta.
 
 Definition bind_expression (binding : xbind) (body : xexpr) : xexpr :=

@@ -1,8 +1,8 @@
 (* The abstract application rule, once its actual result reader has formed. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabFrame BodySoundCore BindSequence ApplyFreshExec.
+From NM Require Import ExecutionModel NMap Sx Elab ElabFrame BodySoundCore BindSequence ApplyFreshExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Binding.
 Variable w:Elab.world. Context{P:xprogram}.
 Variables(R:nat->list nat)(Fl:string->nat).

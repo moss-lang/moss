@@ -2,9 +2,9 @@
    once, then expose its data and an opaque proof for the example tactics. *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged.
+From NM Require Import ExecutionModel CoreMoss MossX NMap Sx Elab RelSupport BxBridged.
 From NM Require Import RelExampleData RelSimpleItems.
-Import ListNotations. Import Audit.Elaboration.
+Import ListNotations. Import ExecutionModel.Elaboration.
 Local Open Scope string_scope. Local Open Scope list_scope.
 Ltac items_hook ::= scalar_items_prefix; items.
 

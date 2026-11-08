@@ -1,8 +1,8 @@
 (* Substitution of output bracket readings, without input relevance gates. *)
 From Stdlib Require Import List Bool.
-From NM Require Import Audit TyOfSubst.
+From NM Require Import ExecutionModel TyOfSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma output_brackets_subst:forall W sb p tm a bs,
  A.OutputBrackets W p tm a bs ->forall tm',SubRel sb tm tm' ->
  A.OutputBrackets W p tm' a(smap sb bs).
@@ -16,7 +16,7 @@ Proof.
 Qed.
 
 Definition output_app_subst(sb:subst)(a:A.inst):A.inst:=
- map(fun q=>(fst q,option_map(Audit.app_subst sb)(snd q)))a.
+ map(fun q=>(fst q,option_map(ExecutionModel.app_subst sb)(snd q)))a.
 Lemma output_appof_subst:forall W sb g tm a,
  A.AppOf W g tm a->forall tm',SubRel sb tm tm'->
  A.AppOf W g tm'(output_app_subst sb a).
@@ -38,7 +38,7 @@ Proof.
 Qed.
 Lemma output_receiver_subst:forall W sb r tm tau,
  A.RecvTy W r tm tau->forall tm',SubRel sb tm tm'->
- A.RecvTy W r tm'(Audit.app_subst sb tau).
+ A.RecvTy W r tm'(ExecutionModel.app_subst sb tau).
 Proof.
  intros W sb r tm tau R tm' SR;unfold A.RecvTy in R|-*;rewrite SR.
  destruct(A.nlook r tm)as[t|]eqn:L;cbn[option_map].

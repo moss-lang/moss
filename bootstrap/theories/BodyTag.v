@@ -16,14 +16,14 @@ From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import LibraryFacts Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyData Merge CanonTypes PatternSubst.
+From NM Require Import LibraryFacts ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyData Merge CanonTypes PatternSubst.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
 
 From NM Require Import TagArgsExec NominalSupport.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 (* Proof predicates for identifying platform reference tags and libraries. *)
 Definition PlatformRefTag (W : A.world) (s : nat) : Prop :=

@@ -1,11 +1,11 @@
 From NM Require Import WrapperKeyReadonly.
 (* The actual on-demand method branch, including original-context arguments. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyTr BodyTy
  InfoPreserve FwdInvariant FwdReadonly FwdPreserve FwdSynthInv CanonTypes NominalSupport TySupport SourceSupport MethodKeyTr EtyTyExec CallArgs ProvidedDirect
  ProvideResultContext FamilySelectTrace FamilyMatchingCtx FamilyApplyRestore FamilySelectedApply.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma provided_family_aa_phases:forall fuel c e ox r m args s x t sf,
  get_mth e(canon e r)(gs_id m)=None->
  provided_call(S fuel)c e ox r m(map AA args)s=Good((x,t),sf)->

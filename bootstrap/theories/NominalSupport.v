@@ -1,10 +1,10 @@
 (* Declaration support and complete nominal type arguments, independent of
    shape validity. This property is preserved by canonical type resolution. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodyTr.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr.
 Import ListNotations.
 Set Implicit Arguments.
-Module SA := Audit.Elaboration.
+Module SA := ExecutionModel.Elaboration.
 
 Inductive Support (W : SA.world) : ety -> Prop :=
 | SupportUnit : Support W YUnit

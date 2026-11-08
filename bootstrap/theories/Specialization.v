@@ -52,7 +52,7 @@ Set Implicit Arguments.
 
 (* ===================== 1. Specialization of code ========================= *)
 
-(* `spec` (specialization of code) is audit-level: Audit.v, Part III.1. *)
+(* `spec` (specialization of code) is audit-level: ExecutionModel.v, Part III.1. *)
 
 (* Plain substitution of the annotations of (already specialized) code: what
    instantiating an application's result types does to the code after it. *)

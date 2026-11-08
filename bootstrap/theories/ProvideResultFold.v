@@ -1,8 +1,8 @@
 (* The output tables are a sequential, last-occurrence-wins update. *)
 From Stdlib Require Import List.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma output_cx_append:forall C tm es1 es2,
  A.output_cx C tm(es1++es2)=A.output_cx(A.output_cx C tm es1)tm es2.
 Proof.

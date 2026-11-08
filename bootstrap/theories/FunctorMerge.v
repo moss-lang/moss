@@ -1,8 +1,8 @@
 (* Type-only implicit inputs do not change a telescope's merge obligations. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore Merge CanonTypes SourceClean ContextClean CtxWalk CtxMerge.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore Merge CanonTypes SourceClean ContextClean CtxWalk CtxMerge.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma unifies_append_types:forall sb es ts,
  A.Unifies sb(es++map A.NTy ts)<->A.Unifies sb es.
 Proof.

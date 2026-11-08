@@ -17,7 +17,7 @@ From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore Merge CanonTypes PatternSubst.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore Merge CanonTypes PatternSubst.
 From NM Require CoreMoss.
 From NM Require Export EtyTyExec.
 From NM Require Import TagArgsCore TagArgsExec PayloadExec NominalSupport NominalMergeSupport SourceSupport.
@@ -26,7 +26,7 @@ From NM Require Import BodyDataHelpers.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL].
 
@@ -268,7 +268,7 @@ Proof.
 Qed.
 
 Lemma smap_trb : forall e bs, Tri (en_uf e) ->
-  map (fun q => (fst q,Audit.app_subst (suf Fl (en_uf e)) (snd q))) (trb bs) = trbC e bs.
+  map (fun q => (fst q,ExecutionModel.app_subst (suf Fl (en_uf e)) (snd q))) (trb bs) = trbC e bs.
 Proof.
   intros e bs T. unfold trb, trbC. rewrite map_map. apply map_ext. intros [n y]. cbn [fst snd]. rewrite tr_canon by exact T. reflexivity.
 Qed.

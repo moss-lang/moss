@@ -1,10 +1,10 @@
 (* A functor's own input context is the initial context for its linked body. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTr BodyTy
  FunctorContext FunctorContextFacts CtxWalk CtxMerge ContextClean CanonTypes
  FnSnapshot FunctorDecl KeyTranslation NominalSupport Merge SourceClean.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Definition functor_body_context(g:gsym)(pins:list nat):cx:=
  Cx(gs_mod g)(FSig [] YUnit None)None 0[]""[]pins.

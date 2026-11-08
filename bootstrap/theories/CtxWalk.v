@@ -18,13 +18,13 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean ResultMentionsCover ResultMentionsExact MethodRows.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean ResultMentionsCover ResultMentionsExact MethodRows.
 Import ListNotations.
 Local Open Scope list_scope.
 
-Module A := Audit.Elaboration.
-Notation asub := Audit.app_subst.
-Notation tsubst := Audit.subst.
+Module A := ExecutionModel.Elaboration.
+Notation asub := ExecutionModel.app_subst.
+Notation tsubst := ExecutionModel.subst.
 
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
 
@@ -71,7 +71,7 @@ Definition tr_sig (g : Elab.fsig) : A.fsig := A.FSig (map (fun p => trF (snd p))
 
 Definition raw_fixed_app (fx : list (nat * ety)) : Elab.inst :=
   map (fun q => (fst q, Some (snd q))) fx.
-Definition tr_fixed (fx : list (nat * ety)) : Audit.subst :=
+Definition tr_fixed (fx : list (nat * ety)) : ExecutionModel.subst :=
   map (fun q => (fst q, trF (snd q))) fx.
 
 Definition tr_ent (l : lent) : A.entry :=

@@ -1,9 +1,9 @@
 (* Fixed output functors capture precisely the meanings present at output
    installation, retaining the visitor's actual order of fixed inputs. *)
 From Stdlib Require Import List.
-From NM Require Import Audit.
+From NM Require Import ExecutionModel.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition output_fixed_values(tm:list(nat*ty))(xs:list nat):subst:=
  map(fun x=>(x,match A.nlook x tm with Some t=>t|None=>TUnit end))xs.
 Lemma output_fixed_values_exact:forall W u tm xs,

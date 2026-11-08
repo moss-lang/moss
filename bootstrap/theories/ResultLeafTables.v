@@ -1,10 +1,10 @@
 (* Normalized result leaves update exactly the table produced by the actual
    source setter; occurrence order is retained by the surrounding fold. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodySoundCore BodyTy
  ProvideResultFold FamilyResultFold.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma result_value_output:forall C v ty app,
  family_types_stable C->A.canon C ty=ty->
  A.output_cx C(A.c_ty C)[A.NVal v ty app]=

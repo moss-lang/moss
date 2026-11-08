@@ -1,6 +1,6 @@
 (* Historical lambda rows never disagree with their visible body. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame FnBound LambdaReadonly.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame FnBound LambdaReadonly.
 Import ListNotations.
 Definition LambdaRows(s:st):Prop:=forall key body owner,
  In(key,body)(st_fns s)->nget(st_syms s)key=Some owner->gs_origin owner=OLambda->

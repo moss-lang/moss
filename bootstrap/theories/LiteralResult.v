@@ -1,6 +1,6 @@
 (* A checked arithmetic call keeps its literal receiver's source type. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements show].
 

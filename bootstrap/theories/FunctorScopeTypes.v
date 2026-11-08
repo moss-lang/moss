@@ -1,10 +1,10 @@
 (* The static typed-world fact used by the executable implicit-input scan.
    XBridge.resultmentions_type captures only WorldOf, no runtime interface. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  ResultMentionsExact XBridge.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Theorem actual_result_mentions_types:forall b w R Fl P g n names args res body s found s',
  load_world b=Good w->A.WorldOf b(BodySoundCore.W w R Fl)->
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFunctor n names args res body->

@@ -1,8 +1,8 @@
 (* Existing source type readings survive the addition of previously absent meanings. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit TyOfSubst ProvideResultSubst TySupport.
+From NM Require Import ExecutionModel TyOfSubst ProvideResultSubst TySupport.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition LookupExtends(tm tm':list(nat*ty)):Prop:=
  forall x y,A.nlook x tm=Some y->A.nlook x tm'=Some y.
 Lemma lookup_extends_app:forall bs tm tm',LookupExtends tm tm'->LookupExtends(bs++tm)(bs++tm').
@@ -118,7 +118,7 @@ Proof.
    pose proof TyKind as Kind;unfold A.kind_sym in Kind.
    destruct(A.w_decl W r)as[d|]eqn:Decl;[|discriminate Kind].
    destruct(A.d_ast d)eqn:Ast;cbn[A.kind_of]in Kind;try discriminate Kind.
-   all:try solve[match goal with rcv:Audit.Input.fnrecv|-_=>destruct rcv;discriminate Kind end].
+   all:try solve[match goal with rcv:ExecutionModel.Input.fnrecv|-_=>destruct rcv;discriminate Kind end].
    unfold A.RecvTy in Read;rewrite Head,Decl,Ast in Read.
    destruct Read as(args&Eq&F);subst ty.
    assert(Nz:r<>A.rec_head)by(exact(proj1(@A.wo_decl_sound b W Wo r d Decl))).

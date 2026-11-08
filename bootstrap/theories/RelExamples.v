@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* RelExamples.v — evidence that the DRAFT relation (Audit.v, Part V) says  *)
+(* RelExamples.v — evidence that the DRAFT relation (ExecutionModel.v, Part V) says  *)
 (* what is intended: for functions of tests/wasi/bridged.moss (and the      *)
 (* app.moss and bridge.moss it imports), the elaborator's output is related  *)
 (* to the source.  Method: RelSupport.v.  Stated, not proved: WorldOf b W   *)
@@ -7,9 +7,9 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit CoreMoss MossX NMap Sx Elab RelSupport BxBridged RelExampleData RelExampleWasm RelExampleWasi.
+From NM Require Import ExecutionModel CoreMoss MossX NMap Sx Elab RelSupport BxBridged RelExampleData RelExampleWasm RelExampleWasi.
 Import ListNotations.
-Import Audit.Elaboration.
+Import ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

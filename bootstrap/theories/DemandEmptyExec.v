@@ -1,6 +1,6 @@
 (* An empty emitted demand prefix cannot have applied a family. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements ety_ty].
 Ltac unpack_success H :=

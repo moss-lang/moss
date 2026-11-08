@@ -2,12 +2,12 @@ From NM Require Import BodyProofTools.
 (* A successful anonymous-function bind uses the actual complete lambda
    provider and the actual target signature/application snapshot. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
  BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig FnSigExec ProvideResultContext BindValue
  BindSequence CallCacheExec SignatureLeavesExec LambdaProviderExec.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Ltac lambda_bind_noerr H:=exfalso;solve[repeat(cbn beta iota zeta in H;
  first[exact(err_not_good _ _ _ _ _ _ H)|discriminate H|apply bind_inv in H as(? &? &? &H)])].

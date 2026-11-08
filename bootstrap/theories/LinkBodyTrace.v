@@ -1,6 +1,6 @@
 (* Exact executable stages of the fresh link-body path. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound LinkPins.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound LinkPins.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Infix "+++" := List.app (right associativity, at level 60).

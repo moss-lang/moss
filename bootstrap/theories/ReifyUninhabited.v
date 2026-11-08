@@ -1,7 +1,7 @@
 (* A missing functor schema has no runtime inhabitants.  This lemma is
    independent of how source-only opaque interfaces are recorded. *)
 From Stdlib Require Import List.
-From NM Require Import Audit CoreMoss XTyping XEnv ReifyEntries XProvision.
+From NM Require Import ExecutionModel CoreMoss XTyping XEnv ReifyEntries XProvision.
 Import ListNotations.
 
 Lemma provision_missing_functor_impossible : forall Sg Rp P Fb H g A d u,

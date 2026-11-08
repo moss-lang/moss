@@ -2,7 +2,7 @@
    calls refer to already reserved immutable code and context slots. The
    remaining functor items are explicit work for schema/view preparation. *)
 From Stdlib Require Import List Arith Lia.
-From NM Require Import Audit CoreFragment Elab ReifyData Reify ReifySource ReifyInterfaces ReifyRoles ReifyReach ReifyInitial ReifyMaps ReifyTransfers.
+From NM Require Import ExecutionModel CoreFragment Elab ReifyData Reify ReifySource ReifyInterfaces ReifyRoles ReifyReach ReifyInitial ReifyMaps ReifyTransfers.
 Import ListNotations.
 
 Record reify_function_frame : Type := ReifyFunctionFrame {

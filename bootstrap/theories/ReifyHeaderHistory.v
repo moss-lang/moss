@@ -1,6 +1,6 @@
 (* Completed source runs retain their own checked headers in later states. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant
  InfoPreserve FwdInvariant FnHistory FnCompleted FnStable ReifyHeader ReifyHeaderPresent.
 Import ListNotations.
 Set Implicit Arguments.

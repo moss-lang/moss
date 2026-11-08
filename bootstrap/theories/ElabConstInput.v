@@ -2,7 +2,7 @@
    InfoInv travels forward through actual prefixes (okI); unlike the final
    static facts in ca_L, it is never pulled backwards from the last state. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve BodySoundCore FwdInvariant FwdReadonly FwdPreserve FwdSynthInv FwdProgramInv.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv InfoInvariant InfoPreserve BodySoundCore FwdInvariant FwdReadonly FwdPreserve FwdSynthInv FwdProgramInv.
 Import ListNotations.
 (* Restoring local-variable slots leaves the two provenance tables intact. *)
 Local Lemma input_info_vars:forall vs n s,InfoInv s->InfoInv(s_vars vs n s).

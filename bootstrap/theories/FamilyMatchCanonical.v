@@ -1,6 +1,6 @@
 (* Inferred matching values are canonical subtypes of the canonical receiver. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit NMap Sx Elab ElabSound BodyTr Merge CanonTypes PMatchExec FamilySelectTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodyTr Merge CanonTypes PMatchExec FamilySelectTrace.
 Import ListNotations.
 Lemma pmatch_canonical_parts:forall uf,PmatchParts(Canon uf).
 Proof.

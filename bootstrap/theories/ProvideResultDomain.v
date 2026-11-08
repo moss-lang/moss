@@ -1,9 +1,9 @@
 (* Result mention availability descends through context output lists and
    supplies the fixed inputs of functor outputs, including bracket overrides. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Lemma output_domain_lookup_app:forall V k(l r:list(nat*V)),
  A.nlook k(l++r)=match A.nlook k l with Some v=>Some v|None=>A.nlook k r end.
 Proof.

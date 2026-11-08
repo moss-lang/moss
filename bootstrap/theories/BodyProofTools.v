@@ -1,6 +1,6 @@
 (* Cache and forwarder invariant tools, independent of the body correctness induction. *)
 From Stdlib Require Import List.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ReqsSolve.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ReqsSolve.
 From NM Require Export BodySoundCore InfoPreserve ElabInv FwdReadonly FwdInvariant FwdPreserve FwdSynthInv.
 Import ListNotations.
 

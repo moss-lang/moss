@@ -11,7 +11,7 @@
    with the original state. LazyFoldFacts proves exact agreement for all fuel,
    environments and machine states, including reified runtime types. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit MossX LazyX.
+From NM Require Import ExecutionModel MossX LazyX.
 Import ListNotations.
 Set Implicit Arguments.
 Definition lk := option item.

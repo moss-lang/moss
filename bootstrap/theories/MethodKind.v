@@ -1,8 +1,8 @@
 (* Chosen methods are function declarations in the method namespace. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound BodySoundCore BodyTy MethodLookup.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound BodySoundCore BodyTy MethodLookup.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Section Exports.
 Variables(b:bundle)(W:A.world).
 Fixpoint exports_detached_kind p ns n e(H:A.Exports b W p ns n e){struct H}:

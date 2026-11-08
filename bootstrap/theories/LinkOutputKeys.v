@@ -1,7 +1,7 @@
 (* Returned output method keys retain real method slots. Their validity follows
    from the completed executable context, independently of source ordering. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodySoundCore
  ElabKeeps CtxWalk CtxMethod MethodKeyTr ProvideResultExec LambdaKeyTranslation.
 Import ListNotations.
 Local Open Scope list_scope.

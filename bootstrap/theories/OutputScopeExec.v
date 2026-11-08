@@ -1,11 +1,11 @@
 (* Every result item reads brackets in the current complete output scope.
    This execution package applies to values, functions, methods and contexts. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame BodySoundCore BodyTy
  CanonBodyTy CanonTypes Merge SourceSupport NominalSupport FamilyMethodExec.
 Import ListNotations.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[app_subst ety_of FUEL reqs type_requirements].
 Section Scope.
 Variable w:Elab.world. Context{P:xprogram}.

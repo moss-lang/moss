@@ -1,11 +1,11 @@
 (* The actual platform-root context visitor, including its implicit types. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  Merge CanonTypes CtxWalk CtxMerge CtxMethodExec LibraryFacts ResultMentionsExact ResultMentionsNoDup MethodCallCore XBridge.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements functor_fixed].
 Section Root.
 Variable w:Elab.world. Context{P:xprogram}.

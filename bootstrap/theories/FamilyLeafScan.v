@@ -1,9 +1,9 @@
 (* The actual scanner retains the semantic leaf's bracket/context route. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  MethodLookup MethodLookupNone MethodKind FamilySelectTrace FamilyOutputLeaf.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition family_spec_scan(f:nat)(e:env)(mi:nat)(outer:list(nat*ety))(sp:spec):M(list family_leaf):=
  match sp with Spec p d a=>
  let! sub:=match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end in

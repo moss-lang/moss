@@ -1,6 +1,6 @@
 (* Readonly completion phases extracted from the actual program pipeline. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabFrameCore ElabKeeps
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore ElabKeeps
   ReadonlyHelpers ReifyHeader InfoPreserve ProgramInfo.
 Import ListNotations.
 Local Strategy opaque [Nat.of_num_uint FUEL ELAB_FUEL reqs type_requirements].

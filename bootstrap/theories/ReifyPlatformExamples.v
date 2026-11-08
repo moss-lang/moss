@@ -1,6 +1,6 @@
 From Stdlib Require Import List String.
-From NM Require Import Audit Sx Parse Elab ReifyData Reify ReifyProgram ReifyProviderExamples.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel Sx Parse Elab ReifyData Reify ReifyProgram ReifyProviderExamples.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition scalar_platform_candidate : option xprogram :=
   match parse_moss "type I32;assume I32{val i32_one:I32;fn i32_add(x:I32,y:I32):I32;}context Wasm=I32,i32_one,i32_add;",

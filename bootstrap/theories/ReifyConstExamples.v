@@ -1,9 +1,9 @@
 (* An actual successful source check, frame allocation, and immutable walk.
    The reader's extra type binding does not change cached initializer scope. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit Parse Elab ReifyData Reify ReifySource ReifyInitial
+From NM Require Import ExecutionModel Parse Elab ReifyData Reify ReifySource ReifyInitial
   ReifyInterfaces ReifyPlan ReifyWalk ReifyFunctors ReifyWalkData ReifyProgramWalk.
-Import ListNotations Audit.Input.
+Import ListNotations ExecutionModel.Input.
 Local Open Scope string_scope.
 Definition constant_scope_source : string :=
   "type T;tag A;fn q();val v:()={bind q=()=>();};fn main(){bind T=A;v;v;}".

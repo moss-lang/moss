@@ -1,7 +1,7 @@
 (* Fresh input/output schema roles. Each role allocation is disjoint even
    when a source type name occurs in both the input and output interfaces. *)
 From Stdlib Require Import List Arith Lia.
-From NM Require Import Audit ReifyData Reify.
+From NM Require Import ExecutionModel ReifyData Reify.
 Import ListNotations.
 
 Fixpoint allocate_type_roles (source : list tsym) (s : reify_state)

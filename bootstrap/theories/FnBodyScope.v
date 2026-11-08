@@ -1,7 +1,7 @@
 From NM Require Import BodyProofTools.
 (* Recover the real body run and its preserved invariants inside scoped state. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ReifyData Audit NMap Sx Elab ElabSound ElabFrame ReqsSolve ReqsStable InfoInvariant InfoPreserve BodySoundCore BodyConst.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound ElabFrame ReqsSolve ReqsStable InfoInvariant InfoPreserve BodySoundCore BodyConst.
 Import ListNotations.
 Lemma info_reify_state:forall change s,InfoInv s->InfoInv(s_reify change s).
 Proof.

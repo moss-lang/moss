@@ -1,6 +1,6 @@
 (* Information-table stability of type/context helpers, independent of the synthesis traversal. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound ElabKeeps.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabKeeps.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL].
 Definition NI {A} (m : M A) : Prop := forall s a s', m s = Good (a, s') -> st_info s' = st_info s.

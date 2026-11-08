@@ -1,10 +1,10 @@
 (* Lambda annotations read in the enclosing type context, with their
    explicit receiver rather than the enclosing function's receiver. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes Merge CanonBodyTy SigSound TyOfSubst.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Section Read.
 Variable w:Elab.world. Context{P:xprogram}.
@@ -29,7 +29,7 @@ Proof.
   destruct(tn_get e k);cbn[option_map];[rewrite tr_canon by exact(proj1(cr_uf _ _ _ _ _ _ _ Hc))|];reflexivity. }
  pose proof(tyof_subst WW(suf Fl(en_uf e))_ _ _ _ _ Ty _ SR)as Substituted.
  rewrite tr_canon in Substituted by exact(proj1(cr_uf _ _ _ _ _ _ _ Hc)).
- assert(This:option_map(Audit.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=
+ assert(This:option_map(ExecutionModel.app_subst(suf Fl(en_uf e)))(option_map(tr Fl)this)=
  option_map(fun y=>tr Fl(canon e y))this).
  {destruct this;cbn[option_map];[rewrite tr_canon by exact(proj1(cr_uf _ _ _ _ _ _ _ Hc))|];reflexivity. }
  rewrite This,<-(cr_mod _ _ _ _ _ _ _ Hc)in Substituted;exact Substituted.

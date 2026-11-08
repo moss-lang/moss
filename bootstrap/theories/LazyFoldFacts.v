@@ -2,7 +2,7 @@
    No type-erasure hypothesis: ordinary source lookups commute with call-time
    type instantiation, and checked casts remain outside the translation. *)
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import Audit MossX LazyX LazyEnvFacts LazyFold.
+From NM Require Import ExecutionModel MossX LazyX LazyEnvFacts LazyFold.
 From NM Require FastPath.
 Import ListNotations.
 Set Implicit Arguments.

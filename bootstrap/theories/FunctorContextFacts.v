@@ -1,9 +1,9 @@
 (* The ordinary snapshot facts also hold for a functor's own input context. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab BodySoundCore BodyTr BodyTy FnSnapshot
+From NM Require Import ExecutionModel NMap Sx Elab BodySoundCore BodyTr BodyTy FnSnapshot
  ContextFnSnapshots ContextFixed FunctorDecl BindFunctorCtx CtxWalk FnContextFunctors KeyTranslation.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 
 Lemma functx_fn_snapshots : forall W u C ns,
  A.FunCtx W u C ns -> FnSnapshots W C.

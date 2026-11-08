@@ -4,7 +4,7 @@ From NM Require Import BodyProofTools.
 (* BodySoundCore.v's Pending, pd_synth for AEUnary and AEBinary).              *)
 (*                                                                           *)
 (* An operator is its library's detached method on the (left) operand      *)
-(* ([D68], and [D85]'s `for.` operators: Audit note 60), called as any     *)
+(* ([D68], and [D85]'s `for.` operators: ExecutionModel note 60), called as any     *)
 (* provided method is.  What this file assumes (section hypotheses):       *)
 (*   Hlang      the library modules the elaborator reads (lang_modules) are *)
 (*              Part V's LangSym: the generalization of BodySoundCore's Hbool; *)
@@ -13,7 +13,7 @@ From NM Require Import BodyProofTools.
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyDataHelpers Merge CanonTypes.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore BodyDataHelpers Merge CanonTypes.
 From NM Require Import InfoPreserve.
 Import ListNotations.
 Local Open Scope list_scope.
@@ -31,7 +31,7 @@ Ltac nogood H := exfalso;
 Ltac okstep' H L Hi Hi' Fs' := destruct (L _ _ _ Hi H) as [Hi' Fs'].
 
 
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Local Strategy opaque [Nat.of_num_uint FUEL].
 

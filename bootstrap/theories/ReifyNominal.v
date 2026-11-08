@@ -2,8 +2,8 @@
    Unobserved/unresolved payloads stay genuinely opaque. No substitute
    payload is invented. Synthetic machine heads are opaque nullary types. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit CoreMoss NMap BodyTr Elab ReifyData ReifySource ReifyPayload XTyping.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel CoreMoss NMap BodyTr Elab ReifyData ReifySource ReifyPayload XTyping.
+Import ListNotations ExecutionModel.Input.
 Local Strategy opaque[FUEL ELAB_FUEL reqs skeleton_tag_payload].
 Definition reify_machine_head(source:st)(head:nsym):bool:=
  existsb(Nat.eqb head)(seq(st_next source)6).

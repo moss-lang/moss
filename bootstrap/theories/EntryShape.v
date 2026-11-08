@@ -1,8 +1,8 @@
 (* Accepted entry signatures supply the empty argument environment used by
    run_main. The return classifier also preserves native zero-lane ABI. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit Elab.
-Import ListNotations Audit.Input.
+From NM Require Import ExecutionModel Elab.
+Import ListNotations ExecutionModel.Input.
 
 Lemma check_main_signature_empty_parameters : forall g info before after,
     check_main_signature g info before = Good (tt,after) -> fn_params g = [].

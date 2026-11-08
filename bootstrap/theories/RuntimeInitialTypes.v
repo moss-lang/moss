@@ -1,9 +1,9 @@
 (* The initial runtime type scaffold represents the checked source context. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySound
  LibraryFacts MethodLookup RuntimeBoolSupport PayloadInst EtyTyExec CtxMerge CanonBodyTy.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Local Open Scope string_scope.
 Definition wasm_scope_symbol(W:A.world)(name:string):option nat:=
  match A.w_library W with
@@ -79,9 +79,9 @@ Section MainTypes.
 Variables(w:Elab.world)(P:xprogram)(R:nat->list nat)(Fl:string->nat).
 Lemma runtime_main_types_read:forall e machines s types final,
  mmap(fun q=>let! tau:=ety_ty(canon e(snd q))in
- ret(fst q,Audit.app_subst machines tau))(tymap e)s=Good(types,final)->
+ ret(fst q,ExecutionModel.app_subst machines tau))(tymap e)s=Good(types,final)->
  Inv s->Later w P R Fl final->
- types=map(fun q=>(fst q,Audit.app_subst machines(tr Fl(canon e(snd q)))))(tymap e).
+ types=map(fun q=>(fst q,ExecutionModel.app_subst machines(tr Fl(canon e(snd q)))))(tymap e).
 Proof.
  intros e machines s types final Run I Late.
  eapply(mmap_pure _ _ _ _ (Later w P R Fl));[exact Run|exact I|exact Late| | |].
@@ -93,9 +93,9 @@ Qed.
 Lemma runtime_main_types_lookup:forall c e F C machines s types final,
  CxRel w R Fl c e F C->
  mmap(fun q=>let! tau:=ety_ty(canon e(snd q))in
- ret(fst q,Audit.app_subst machines tau))(tymap e)s=Good(types,final)->
+ ret(fst q,ExecutionModel.app_subst machines tau))(tymap e)s=Good(types,final)->
  Inv s->Later w P R Fl final->forall key,
- A.nlook key types=option_map(Audit.app_subst machines)(A.nlook key(A.c_ty C)).
+ A.nlook key types=option_map(ExecutionModel.app_subst machines)(A.nlook key(A.c_ty C)).
 Proof.
  intros c e F C machines s types final Context Run I Late key.
  rewrite(runtime_main_types_read _ _ _ _ _ Run I Late).
@@ -109,7 +109,7 @@ Theorem runtime_initial_types:forall b w P R Fl c e F C s sc types final,
  load_world b=Good w->Inv s->st_w s=w->st_lang s=lang_modules w->0<st_next s->
  runtime_symbols s=Good(sc,s)->CxRel w R Fl c e F C->
  mmap(fun q=>let! tau:=ety_ty(canon e(snd q))in
- ret(fst q,Audit.app_subst(runtime_machines sc(st_next s))tau))(tymap e)s=Good(types,final)->
+ ret(fst q,ExecutionModel.app_subst(runtime_machines sc(st_next s))tau))(tymap e)s=Good(types,final)->
  Later w P R Fl final->A.InitialTypes(W_read w R Fl)C types.
 Proof.
  intros b w P R Fl c e F C s sc types final Load I World Lang Positive Runtime Context Run Late.

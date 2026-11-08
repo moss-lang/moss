@@ -1,8 +1,8 @@
 (* Canonical readings of elaborated types under a triangular merge. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodyTr Merge.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodyTr Merge.
 Import ListNotations.
-Module A := Audit.Elaboration.
+Module A := ExecutionModel.Elaboration.
 
 Lemma canon_uf : forall e e', en_uf e' = en_uf e -> forall t, canon e' t = canon e t.
 Proof. intros e e' E t. unfold canon. rewrite E. reflexivity. Qed.
@@ -35,7 +35,7 @@ Lemma canon_wf : forall e t, UfWF (en_uf e) -> WFty t -> WFty (canon e t).
 Proof. intros e t U W0. exact (canon_go_wf _ U _ t W0). Qed.
 
 Lemma tr_canon : forall Fl e t, Tri (en_uf e) ->
-  Audit.app_subst (suf Fl (en_uf e)) (tr Fl t) = tr Fl (canon e t).
+  ExecutionModel.app_subst (suf Fl (en_uf e)) (tr Fl t) = tr Fl (canon e t).
 Proof. intros Fl e t T. rewrite (tr_res Fl _ (tri_rk _ T)), canon_res. reflexivity. Qed.
 
 Lemma fits_canon_tr : forall Fl e t x, fits e t x = true ->

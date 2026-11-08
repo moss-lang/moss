@@ -1,6 +1,6 @@
 (* A newly found family identifier records an actual successful pattern match. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound BodyTr FamilySelectTrace.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound BodyTr FamilySelectTrace.
 Import ListNotations.
 Definition family_found_ids(found:list family_candidate):list nat:=map(fun q=>gs_id(fst q))found.
 Definition family_raw_inst(marks:list(nat*nat))(matching:list(nat*ety)):=

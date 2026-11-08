@@ -1,8 +1,8 @@
 (* Functor environment rows name declared abstract targets, not implementation IDs. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit Sx.
+From NM Require Import ExecutionModel Sx.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition FunctorDecl(W:A.world)(u:nat):Prop:=
  exists d n names args res,A.w_decl W u=Some d/\A.d_ast d=ADFunctor n names args res None.
 Definition EntriesFunctorDecl(W:A.world)(es:list A.entry):Prop:=

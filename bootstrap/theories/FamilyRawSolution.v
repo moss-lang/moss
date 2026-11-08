@@ -1,12 +1,12 @@
 (* Decode an actual fresh-marker specialization back to the raw structural matcher. *)
 From Stdlib Require Import List.
-From NM Require Import Audit NMap Sx Elab BodyTr PMatchComplete PMatchExec PMatchSemanticImage FamilyMarkedSubst FamilyMarkersExec.
+From NM Require Import ExecutionModel NMap Sx Elab BodyTr PMatchComplete PMatchExec PMatchSemanticImage FamilyMarkedSubst FamilyMarkersExec.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Theorem family_semantic_raw_solution:forall Fl e receiver ps s marks sf table pat,
  (forall x y,Fl x=Fl y->x=y)->ety_ok pat=true->ety_ok receiver=true->
  mmap(fun p=>let!k:=fresh_marker_for e receiver in ret(p,k))ps s=Good(marks,sf)->
- Audit.app_subst(family_marker_subst marks table)(tr Fl pat)=tr Fl receiver->
+ ExecutionModel.app_subst(family_marker_subst marks table)(tr Fl pat)=tr Fl receiver->
  mark_type(map(fun q=>(snd q,fst q))marks)(match_decoded_theta Fl receiver table)pat=receiver.
 Proof.
  intros Fl e receiver ps s marks sf table pat Finj Clean Receiver Alloc Eq.
@@ -25,7 +25,7 @@ Theorem family_candidate_semantic_complete:forall Fl mi e em r mid u fg marks fo
  family_candidate_step mi e em r mid u fg marks(family_marker_back marks)found(lmi,rg,m,sub)s=Good(found',sf)->
  receiver_at em lmi rg sub s=Good(pat,sp)->gs_id m=mid->gs_id fg=u->
  MatchUnique pat->canon e r=r->
- Audit.app_subst(family_marker_subst marks table)(tr Fl pat)=tr Fl r->
+ ExecutionModel.app_subst(family_marker_subst marks table)(tr Fl pat)=tr Fl r->
  exists other th,In(other,th)found'/\gs_id other=gs_id fg.
 Proof.
  intros Fl mi e em r mid u fg marks found lmi rg m sub s pat sp found' sf ps seed sm table

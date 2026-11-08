@@ -1,6 +1,6 @@
 (* Actual signature reads with an explicit method receiver retain validity/support. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CanonTypes
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr CanonTypes
  CanonBodyTy NominalSupport TySupport SourceSupport SourceClean NeedMapExec FnSigExec.
 Import ListNotations.
 Section Receiver.

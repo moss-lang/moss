@@ -1,11 +1,11 @@
 From NM Require Import BodyProofTools.
 (* Source bind-item sequencing, with actual context and continuation updates. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
  BodyDataHelpers BindType BindValue.
 From NM Require Import InfoPreserve.
 Import ListNotations.
-Module A:=Audit.Elaboration.
+Module A:=ExecutionModel.Elaboration.
 Definition bind_one(f:nat)(c:cx)(e:env)(it:spec*option aexpr):M(list xstmt*env*cx):=
  match it with(sp,None)=>apply_functor f c e sp|(sp,Some y)=>check_bind f c e sp y end.
 Definition bind_fold_step(f:nat)(acc:list xstmt*env*cx)(it:spec*option aexpr):M(list xstmt*env*cx):=
