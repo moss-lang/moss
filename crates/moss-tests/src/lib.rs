@@ -19,7 +19,8 @@
 //! Every external tool is a hard requirement: a missing one is an
 //! environment bug, not a reason to pass. The Nix dev shell provides
 //! `wasmtime`, `wasm-opt`, `wasm-dis` and `wasm-tools`; CONTRIBUTING.md
-//! says where the seed and the oracle come from.
+//! says where the seed comes from. The harness builds the current oracle
+//! through Nix unless `MOSS_ORACLE` explicitly selects one (as in CI).
 
 pub mod gensrc;
 
@@ -30,16 +31,34 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
-/// The repository root, which every path the compiler sees is relative to:
-/// it is the directory Wasmtime preopens as `.`.
+/// The repository root, which every path the compiler sees is relative to.
+/// Cargo supplies the manifest directory at run time, so a reused Rust
+/// artifact cannot retain another checkout's source path.
 pub fn repo() -> &'static Path {
     static REPO: OnceLock<PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+        let manifest = std::env::var_os("CARGO_MANIFEST_DIR")
+            .expect("run the Moss tests or source generator through Cargo");
+        let root = Path::new(&manifest)
             .join("../..")
             .canonicalize()
-            .expect("the repository root")
+            .expect("the repository root");
+        assert!(
+            root.join("crates/moss-tests/Cargo.toml").is_file()
+                && root.join("src/main.moss").is_file(),
+            "not a Moss checkout: {}",
+            root.display()
+        );
+        provenance("sources", &root);
+        root
     })
+}
+
+fn provenance(name: &str, path: &Path) {
+    // Write directly so the selected inputs are visible even when libtest
+    // captures the individual tests' output.
+    writeln!(std::io::stderr(), "Moss tests {name}: {}", path.display())
+        .expect("report the test inputs");
 }
 
 /// A directory for the modules and sources this process writes. It is
@@ -298,16 +317,22 @@ pub fn run_module(module: &[u8], args: &[&str]) -> String {
 /// else `result-compiler` at the repository root (`nix build .#compiler -o
 /// result-compiler`).
 pub fn seed() -> PathBuf {
-    let path = std::env::var_os("MOSS_SEED")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| repo().join("result-compiler"));
-    assert!(
-        path.is_file(),
-        "no seed compiler at {}: set MOSS_SEED to a previously built mossc.wasm, \
-         or run `nix build .#compiler -o result-compiler` (CONTRIBUTING.md)",
-        path.display()
-    );
-    path
+    static SEED: OnceLock<PathBuf> = OnceLock::new();
+    SEED.get_or_init(|| {
+        let path = std::env::var_os("MOSS_SEED")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| repo().join("result-compiler"));
+        assert!(
+            path.is_file(),
+            "no seed compiler at {}: set MOSS_SEED to a previously built mossc.wasm, \
+             or run `nix build .#compiler -o result-compiler` (CONTRIBUTING.md)",
+            path.display()
+        );
+        let path = path.canonicalize().expect("the seed compiler path");
+        provenance("seed", &path);
+        path
+    })
+    .clone()
 }
 
 /// One generation: `compiler` (a path to a module) run on the compiler's
@@ -383,26 +408,46 @@ pub fn rejects_with(entry: &str, prelude: &str) -> String {
     out.text()
 }
 
-/// The oracle, from `MOSS_ORACLE`, else `result-oracle/bin/moss_m2` (`nix
-/// build .#oracle -o result-oracle`), else
-/// `bootstrap/_build/default/ocaml/moss_m2.exe` (`dune build` in `bootstrap`).
+/// The current oracle, built through Nix once per test process. CI and
+/// deliberate comparisons can select an explicit build with `MOSS_ORACLE`.
 pub fn oracle_path() -> PathBuf {
-    if let Some(path) = std::env::var_os("MOSS_ORACLE") {
-        return PathBuf::from(path);
-    }
-    for candidate in [
-        "result-oracle/bin/moss_m2",
-        "bootstrap/_build/default/ocaml/moss_m2.exe",
-    ] {
-        let path = repo().join(candidate);
-        if path.is_file() {
-            return path;
+    // Remember failures too: parallel tests must not each retry a failed build.
+    static ORACLE: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    ORACLE.get_or_init(|| {
+        let path = if let Some(path) = std::env::var_os("MOSS_ORACLE") {
+            PathBuf::from(path)
+        } else {
+            let out = Command::new("nix")
+                .args([
+                    "build",
+                    "--no-link",
+                    "--print-out-paths",
+                    "--print-build-logs",
+                ])
+                .arg(format!("{}#oracle", repo().display()))
+                .stderr(Stdio::inherit())
+                .output()
+                .map_err(|error| format!(
+                    "cannot build the current Rocq oracle: {error}; install Nix or set MOSS_ORACLE explicitly"
+                ))?;
+            if !out.status.success() {
+                return Err(format!("building the current Rocq oracle failed: {}", out.status));
+            }
+            let store = String::from_utf8(out.stdout)
+                .map_err(|error| format!("invalid oracle store path: {error}"))?;
+            Path::new(store.trim()).join("bin/moss_m2")
+        };
+        if !path.is_file() {
+            return Err(format!("no Rocq oracle at {}", path.display()));
         }
-    }
-    panic!(
-        "no oracle: set MOSS_ORACLE, or run `nix build .#oracle -o result-oracle` \
-         or `dune build` in `bootstrap` (CONTRIBUTING.md)"
-    )
+        let path = path.canonicalize()
+            .map_err(|error| format!("cannot resolve oracle {}: {error}", path.display()))?;
+        provenance("oracle", &path);
+        Ok(path)
+    })
+    .as_ref()
+    .unwrap_or_else(|error| panic!("{error}"))
+    .clone()
 }
 
 /// The oracle's exit statuses (`bootstrap/ocaml/moss_m2.ml`).

@@ -53,13 +53,23 @@ files do not invalidate an otherwise unchanged compiler bootstrap.
 ## Tests
 
 The test suite is the Rust crate [`crates/moss-tests`](crates/moss-tests).
-It needs a seed (above) and the oracle (`MOSS_ORACLE`, else
-`result-oracle/bin/moss_m2`, else
-`bootstrap/_build/default/ocaml/moss_m2.exe`):
+It needs a seed (above):
 
 ```sh
 cargo test
 ```
+
+Before the first test that needs the Rocq oracle, the harness runs
+`nix build .#oracle` for the current checkout and uses that exact executable.
+Nix reuses an existing build when its inputs have not changed. This builds
+the interpreter and audits its proofs; it does not bootstrap the Moss
+compiler. Old `result-oracle` links and local Dune executables are not
+selected automatically. To test a particular interpreter deliberately,
+set `MOSS_ORACLE` to its executable; CI also supplies this explicitly.
+
+The harness reports the source root, seed and oracle paths as it selects
+them. It gets the source root from Cargo's run-time manifest directory,
+so reusing a Rust build artifact does not select another checkout.
 
 That runs the whole workspace: the driver's unit tests and the suite,
 which compiles `src/` with the seed, checks that the result is a fixpoint
