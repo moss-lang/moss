@@ -145,8 +145,11 @@ the production elaborator; their public runtime fixtures are checked in
 [PublicCaptureScopeFacts.v](theories/PublicCaptureScopeFacts.v) proves exact
 planned-row lookup, including absence of unplanned ambient rows. The lexical
 capture domain and freshness checks use the same `context_gens`, covering
-both stored types and their canonical readings. They do not copy irrelevant
-merge-substitution keys.
+both stored types and their canonical readings. It also covers the merge
+substitution's keys and the generations of their values, so a captured
+context keeps the meaning of a merged-away key (its representative's), and
+fresh generations avoid merge keys. (Earlier the merge keys were left out;
+the safety proof needed them, see SAFETY-SITES.md.)
 
 [PublicGenerationFacts.v](theories/PublicGenerationFacts.v) proves these
 live helper properties, including preservation of existing generation

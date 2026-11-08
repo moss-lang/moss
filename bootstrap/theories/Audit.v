@@ -3402,8 +3402,11 @@ Definition funbody_of (P : program) (h : nat) : option functor_code := nlook h (
 Definition Fresh (W : world) (s : nat) : Prop := w_decl W s = None.
 
 (* A generation is fresh for this scope when it is absent from the source
-   world and from every type currently reachable in the static environment. *)
+   world and from every type currently reachable in the static environment,
+   including its merges: a merged-away key keeps its meaning (that of its
+   representative) wherever the context is captured. *)
 Definition context_gens (C : cx) : list nat :=
+  flat_map (fun q => fst q :: gens (snd q)) (c_sub C) ++
   flat_map (fun q => gens (snd q) ++ gens (canon C (snd q))) (c_ty C) ++
   flat_map (fun q => provision_gens (snd q) ++
     provision_gens (provision_subst (c_sub C) (snd q))) (c_provisions C) ++

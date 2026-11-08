@@ -112,6 +112,20 @@ the local store. *C* and *F* are the static context and frame.
   context (user-approved). Both implementations already use new symbols:
   the oracle draws them from one global counter, and the native compiler
   uses slots.
+- **Lambda captures keep merge keys (no counterexample).** A lambda's
+  closure keeps the meanings of `context_gens C`, the generations in the
+  context's stored types. Those types are already canonical, so a key the
+  context merged away (`T`, merged into `U`) was not captured. The closure
+  then gave `U` its meaning but left `T` unbound. That is unobservable,
+  but the realization invariant's merge absorption
+  (`ground (canon t) = ground t` for every `t`) failed at `TAbs T`.
+  `context_gens` now also lists each merge key and the generations of its
+  value (user-approved). Capture and freshness share it, so fresh
+  generations also avoid merge keys. Absorption for the closure then
+  follows from the enclosing context's (`capture_absorbs`). A proof-side
+  weakening of absorption was considered and rejected: at calls, θ is
+  unconstrained for requirements the caller leaves unbound, so a scoped
+  absorption would need new constraints on θ as well.
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -229,9 +243,10 @@ hypotheses, each a named remaining obligation:
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BFnLambda`, `case_BMethBind` | lambda binds; method binds by wrapper or lambda (attached providers are proved: `meth_bind_safe`) | T07, T09 |
+| `case_BMethBind` | method binds by a wrapper (`MPWrapped`); attached and lambda providers are proved (`meth_bind_safe`), as are function lambdas (`lambda_fn_bind_safe`) | T07, T09 |
 | `case_BApplyBody`, `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and applications | T15, T16 |
 | `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
+| `lambda_keys_scoped` | a lambda's context lists method keys whose receivers mention only its generations | T29 |
 | `bind_nominal_formed` | a method bind's nominal key receiver has its arguments keyed by its requirements | T29 |
 | `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
@@ -302,6 +317,13 @@ Starting the two assumption audits as soon as their own dependencies are
 built, instead of after the whole build, would hide most of their 11s
 without touching any proof.
 
+## Later cleanup
+
+- `LambdaProvider` now requires captured vals both undeclared (`Fresh W`)
+  and unprovided in the context. These overlap. Once the safety proof is
+  done, state freshness once, and look for similar redundancies the
+  tightenings above introduced.
+
 ## Time log
 
 - Checkpoint 1 (18:47 to 19:31, about 45 minutes): the reduction, the
@@ -324,3 +346,6 @@ without touching any proof.
   (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).
 - Bracketed attached-method counterexample, fix after approval, and
   `meth_bind_safe` for attached providers (22:10 to 22:27).
+- Lambda capture freshness, the `context_gens` merge keys after approval,
+  and lambda binds for fns and methods (`lambda_fn_bind_safe`,
+  `lambda_meth_bind_safe`) (22:40 to 23:20).
