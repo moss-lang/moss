@@ -156,3 +156,66 @@ Proof.
     intros g Ig. rewrite flat_map_app in Ig. apply in_app_or in Ig as [Ig|Ig]; [exact (Sub2 g (Es1 g Ig))|exact (Es2 g Ig)].
 Qed.
 End Formation.
+
+Section Contexts.
+Variable W : A.world.
+Import A.
+
+Lemma add_tys_formed : forall xs tm, IdForm tm ->
+  IdForm (add_tys xs tm) /\ incl (map fst tm) (map fst (add_tys xs tm)) /\ incl xs (map fst (add_tys xs tm)).
+Proof.
+  induction xs as [|x rest IH]; intros tm Id; cbn.
+  { split; [exact Id|]. split; [intros y Iy; exact Iy|intros y []]. }
+  destruct (nlook x tm) as [v|] eqn:Found.
+  - destruct (IH tm Id) as [Id' [Sub Xs]]. split; [exact Id'|]. split; [exact Sub|].
+    intros y [E|Iy]; [subst y|exact (Xs y Iy)]. apply Sub. apply nlook_in in Found.
+    change x with (fst (x, v)). apply in_map, Found.
+  - assert (Id1 : IdForm ((x, TAbs x) :: tm)) by (constructor; [reflexivity|exact Id]).
+    destruct (IH _ Id1) as [Id' [Sub Xs]]. split; [exact Id'|]. split.
+    + intros y Iy. apply Sub. right. exact Iy.
+    + intros y [<-|Iy]; [apply Sub; left; reflexivity|exact (Xs y Iy)].
+Qed.
+
+Lemma root_formed : forall q es0 tm its es tm', RootItems W q es0 tm its es tm' ->
+  IdForm tm -> IdForm tm' /\ incl (map fst tm) (map fst tm') /\ Scoped tm' (flat_map entry_gens es).
+Proof.
+  intros q es0 tm its es tm' Root. induction Root as
+    [es0 tm|es0 tm p a rest u du n ps args res xs fx es tm' R D Ast Fresh Nd Xs FR Rest IH|es0 tm sp rest es tm' Skip Rest IH];
+    intros Id.
+  - split; [exact Id|]. split; [intros x Ix; exact Ix|]. intros g [].
+  - destruct (add_tys_formed xs tm Id) as [IdA [SubA XsA]].
+    destruct (IH IdA) as [Id' [Sub' Es']]. split; [exact Id'|]. split; [intros x Ix; exact (Sub' x (SubA x Ix))|].
+    intros g Ig. rewrite flat_map_app in Ig. apply in_app_or in Ig as [Ig|Ig].
+    + apply in_flat_map in Ig as [e [Ie Ig]]. apply in_map_iff in Ie as [x [<- Ix]]. cbn in Ig.
+      destruct Ig as [E|[]]. subst g. exact (Sub' x (XsA x Ix)).
+    + cbn in Ig. apply in_app_or in Ig as [Ig|Ig]; [|exact (Es' g Ig)].
+      apply in_flat_map in Ig as [[x tx] [Iq Ig]].
+      destruct (proj1 (FR x tx) Iq) as [_ L]. exact (Sub' g (idform_gens _ g IdA (nlook_gens _ _ _ _ L Ig))).
+  - exact (IH Id).
+Qed.
+
+(* A function's context: each type symbol means its canonical self, and
+   the merge maps only its type symbols, to types over them. *)
+Theorem ctxof_formed : forall f Cf ns, CtxOf W f Cf ns ->
+  (forall k v, nlook k (c_ty Cf) = Some v -> v = app_subst (c_sub Cf) (TAbs k)) /\
+  (forall g t, In (g, t) (c_sub Cf) -> In g (map fst (c_ty Cf)) /\ incl (gens t) (map fst (c_ty Cf))).
+Proof.
+  intros f Cf ns (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
+  assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
+  { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
+    - split; [exact IdT|]. split; [intros x Ix; exact Ix|]. intros g [].
+    - exact (root_formed _ _ _ _ _ _ RI IdT). }
+  destruct Tmr as [IdR [SubR ErR]].
+  assert (Keys : map fst (c_ty (entries_cx σ tmr (es ++ er))) = map fst tmr).
+  { cbn. rewrite map_map. reflexivity. }
+  split.
+  - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
+    rewrite nlook_smap in Found. destruct (nlook k tmr) as [u|] eqn:L; [|discriminate].
+    injection Found as <-. rewrite (idform_nlook _ _ _ IdR L). reflexivity.
+  - intros g t Ig. rewrite Keys. cbn in Ig. destruct MGM as [_ [_ [_ Dom]]]. destruct (Dom g t Ig) as [Gg Gt].
+    assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
+    { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
+    split; [exact (All g Gg)|intros x Ix; exact (All x (Gt x Ix))].
+Qed.
+End Contexts.
