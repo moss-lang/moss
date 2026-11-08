@@ -71,6 +71,21 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
+- **Open: a call can bind only part of a callee's merged class (needs a decision).**
+  `theta_at` gives a callee requirement the caller's meaning of the same
+  symbol, or the symbol itself when the caller has none. `Satisfies`
+  checks the callee's merge equations only when every generation in the
+  equation is in force at the caller. In
+  [partially-bound-merge.moss](examples/partially-bound-merge.moss),
+  `f`'s context merges `X` with `Y`, and the caller binds `X = Char` but not
+  `Y`. If `f`'s recorded context represents the class by `Y`, then `f`'s
+  parameter `x: X` reads as `Y`, which the call instantiates to the
+  meaningless generation `Y` rather than `Char`. The oracle accepts the
+  program and prints `k`; the behavior is fine here, since `f` only passes
+  `x` through. But the invariant can no longer relate `f`'s view of the
+  value to the caller's. A meaningless generation is also a single global
+  name shared by every activation that leaves it unbound, which is the
+  shape of the earlier saved-type bug.
 - **A merge could be oriented either way (fixed).**
   `MostGeneralMerge` leaves a merge between two generations unoriented. In
   [merge_order.moss](../tests/wasi/merge_order.moss), `B` and `C` are
