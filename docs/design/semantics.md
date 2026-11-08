@@ -1618,6 +1618,16 @@ else stood in the way: what the compiler reported about its own source
 once the library was right was two bugs in `codegen.moss`'s local
 numbering, not a missing construct.
 
+**A bound attached method is entered at the key's receiver.** When
+`bind R.m[brackets] = R'.n;` binds an attached method, the method runs on
+receivers of the key's type, `R` read under the brackets. Its requirements
+are therefore read as that receiver's arguments, as at a direct call
+([D74]): the provisions it needs and its signature are checked there, not
+at the surrounding context's meanings. Otherwise `bind Box.m[T=Bool] =
+Box.get;` under `T = Char` would hand `Box.get` a `Box[T=Bool]` while it
+reads its payload, and calls its needs, at `Char`
+(`bootstrap/examples/bracket-method-receiver.moss` is rejected).
+
 **[D62] DECIDED by the designer (provisions keyed by identity; first found by the mechanization).** The
 core-calculus soundness proof
 (then in `docs/design/core/`, now in

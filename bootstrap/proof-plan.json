@@ -2198,7 +2198,8 @@
         "E22",
         "E23",
         "E24",
-        "E25"
+        "E25",
+        "E26"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2671,6 +2672,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/stale-provision-type.moss"
+        ]
+      }
+    },
+    {
+      "id": "E26",
+      "group": "E",
+      "title": "Enter bound attached methods at the key's receiver",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators (Elab.v and src/) check an attached-method provider of a method bind with its requirements read as the bound key receiver's arguments, as Audit's MPAttached now requires, with a regression test.",
+      "approach": "Mirror the direct attached call: set the receiver's arguments as types before matching the provider's needs and signature. bootstrap/examples/bracket-method-receiver.moss must be rejected.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/bracket-method-receiver.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved reading a bound attached method's instantiation at the key's receiver after an accepted program bound Box.m[T=Bool] = Box.get under T = Char and got stuck.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/bracket-method-receiver.moss"
         ]
       }
     },

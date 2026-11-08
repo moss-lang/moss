@@ -4271,12 +4271,15 @@ with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> opti
 
 (* a method provider (the receiver is the provider's first argument) *)
 with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty -> nat -> type_capture -> (expr -> expr) -> smap -> Prop :=
-| MPAttached : forall F C rp n rg att rt sg Ca ns sm th,
+| MPAttached : forall F C rp n rg att rt sg Ca ns sm th rargs Cd,
     resolve_sym W (fr_mod F) rp = Some rg -> Attached W rg n att ->
     (exists rn ps r b, ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
-    head rt = Some rg ->
-    CtxOf W att Ca ns -> Satisfies C Ca th ns sm -> CallTheta W C Ca att th ->
-    SigOf W att (c_ty C) None
+    canon C rt = TNom rg rargs ->
+    (* as at a direct call, the method is entered at the key's receiver:
+       its requirements read as the receiver's arguments *)
+    Cd = fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C ->
+    CtxOf W att Ca ns -> Satisfies Cd Ca th ns sm -> CallTheta W Cd Ca att th ->
+    SigOf W att (c_ty Cd) (Some (canon C rt))
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
     MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (TypeCapture th th) (fun x => x) sm
 | MPWrapped : forall F C pa sg rt g sm w n Cg nsg types,

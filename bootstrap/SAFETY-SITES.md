@@ -89,6 +89,19 @@ the local store. *C* and *F* are the static context and frame.
   through `θ` as well. `MostGeneralMerge` now states, as its comment
   always said, that σ maps only generations of the telescope to types over
   them. The implementation check is [E25](proofs/build-run.md#e25).
+- **Counterexample: a bound attached method entered at the wrong receiver (fixed).**
+  [bracket-method-receiver.moss](examples/bracket-method-receiver.moss):
+  under `T = Char`, `bind Box.m[T=Bool] = Box.get;` files the attached
+  `Box.get` under the key `Box[T=Bool].m`. `MPAttached` read the method's
+  instantiation θ and its needs in the surrounding context, so `Box.get`'s
+  need `T.k` was answered by `Char.k`, and only the receiver's head was
+  checked. `b.m()` on `Box[T=Bool](true)` then calls `Char.k` on a `Bool`.
+  The oracle accepts the program and reports `stuck (XErr 14)`. The native
+  compiler prints `1`, reading `true` as a character code.
+  **Decided** (user-approved): as at a direct call (`MCAttachedDefined`),
+  the provider's `Satisfies`, `CallTheta` and signature are read in the
+  context with the key receiver's arguments set as types. The
+  implementation check is [E26](proofs/build-run.md#e26).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -206,9 +219,10 @@ hypotheses, each a named remaining obligation:
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BFnLambda`, `case_BMethBind` | lambda and method binds | T07, T09 |
+| `case_BFnLambda`, `case_BMethBind` | lambda binds; method binds by wrapper or lambda (attached providers are proved: `meth_bind_safe`) | T07, T09 |
 | `case_BApplyBody`, `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and applications | T15, T16 |
 | `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
+| `bind_nominal_formed` | a method bind's nominal key receiver has its arguments keyed by its requirements | T29 |
 | `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
@@ -298,3 +312,5 @@ without touching any proof.
 - Bind framework, type/value/function binds, attached methods (21:33 to 22:05).
 - `tyof_rel`, `body_call`, `call_core`, and the merged-class counterexample
   (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).
+- Bracketed attached-method counterexample, fix after approval, and
+  `meth_bind_safe` for attached providers (22:10 to 22:27).
