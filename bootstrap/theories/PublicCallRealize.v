@@ -510,3 +510,60 @@ Proof.
     + destruct (IH t s x Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; left; exact Iz|exact R].
     + destruct (Tail Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; right; exact Iz|exact R].
 Qed.
+
+Section Support2.
+Variable W : A.world.
+Import A.
+
+Lemma subst_scoped : forall (K : list nat) s t,
+  (forall g u, In (g, u) s -> incl (gens u) K) -> incl (gens t) K -> incl (gens (app_subst s t)) K.
+Proof.
+  intros K s t Range Sc x Ix. destruct (gens_subst t s x Ix) as [y [Iy [[_ ->]|[u [L Iu]]]]]; [exact (Sc y Iy)|].
+  exact (Range y u (lookup_subst_in_pair _ _ _ L) x Iu).
+Qed.
+
+Definition provision_sig_gens (p : provision) : list nat :=
+  match provision_signature p with Some g => sig_gens g | None => [] end.
+Definition key_gens (k : item) : list nat := match k with IMth r _ _ => gens r | _ => [] end.
+
+Lemma sig_subst_scoped : forall (K : list nat) s g,
+  (forall x u, In (x, u) s -> incl (gens u) K) -> incl (sig_gens g) K -> incl (sig_gens (sig_subst s g)) K.
+Proof.
+  intros K s [ps r] Range Sc x Ix. unfold sig_gens in *. cbn in Ix |- *. cbn in Sc.
+  apply in_app_or in Ix as [Ix|Ix].
+  - exact (subst_scoped K s r Range (fun y Iy => Sc y (in_or_app _ _ _ (or_introl Iy))) x Ix).
+  - rewrite flat_map_concat_map, map_map in Ix. apply in_concat in Ix as [l [Il Ix]].
+    apply in_map_iff in Il as [t [<- It]].
+    apply (subst_scoped K s t Range); [|exact Ix].
+    intros y Iy. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
+Qed.
+
+Theorem ctx_provision_scoped : forall f Cf ns, CtxOf W f Cf ns ->
+  forall k p, In (k, p) (c_provisions Cf) ->
+  incl (provision_sig_gens p) (map fst (c_ty Cf)) /\ incl (key_gens k) (map fst (c_ty Cf)).
+Proof.
+  intros f Cf ns Ctx. pose proof (ctxof_formed W f Cf ns Ctx) as [_ Dom].
+  destruct Ctx as (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
+  assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
+  { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
+    - split; [exact IdT|]. split; [intros x Ix; exact Ix|]. intros g [].
+    - exact (root_formed W _ _ _ _ _ _ RI IdT). }
+  destruct Tmr as [IdR [SubR ErR]].
+  assert (Keys : map fst (c_ty (entries_cx σ tmr (es ++ er))) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
+  rewrite Keys in Dom |- *.
+  assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
+  { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
+  assert (Range : forall g u, In (g, u) σ -> incl (gens u) (map fst tmr)) by (intros g u I; exact (proj2 (Dom g u I))).
+  intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]].
+  assert (Eg : incl (entry_gens e) (map fst tmr)).
+  { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
+  destruct e as [t|v t a|f' g a|r m g a|u fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
+    unfold provision_sig_gens, key_gens; cbn [provision_signature]; split; try (intros x []).
+  - apply (sig_subst_scoped _ σ (FSig [] t) Range). intros x Ix. apply Eg. cbn. unfold sig_gens in Ix. cbn in Ix.
+    rewrite app_nil_r in Ix. apply in_or_app. left. exact Ix.
+  - apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
+  - apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn. apply in_or_app. right. apply in_or_app. left. exact Ix.
+  - apply (subst_scoped _ σ r Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
+Qed.
+End Support2.
