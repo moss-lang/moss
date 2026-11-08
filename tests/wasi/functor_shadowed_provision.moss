@@ -1,0 +1,48 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A functor's binds take effect as if written where it is applied, so an
+# anonymous function they bind captures what is in force there: `Loud`'s
+# `note` names the `note` it shadows, which is `main`'s, and that one
+# captured the local `k`. `Loud` assumes only `Std`, but the function it
+# binds still needs the `note` it provides, and with it the val that
+# provider captured. Output: `5`, `1105`.
+
+assume Std {
+  fn note(n: Int);
+
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+  fn print_line(n: Int) {
+    print_int(n);
+    putchar(char::newline);
+  }
+}
+
+functor Loud: Std -> note {
+  bind note = (n) => {
+    print_line(n);
+    note(n + 100);
+  };
+}
+
+assume Std, note {
+  fn shout(n: Int) {
+    bind Loud;
+    note(n);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let k = 1000;
+    bind note = (n) => print_line(n + k);
+    shout(5);
+  }
+}

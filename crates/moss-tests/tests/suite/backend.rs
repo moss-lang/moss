@@ -1044,6 +1044,16 @@ fn rebinding_on_the_recursive_path_terminates() {
     assert_eq!(oracle_run(&entry, &[]), "2\n1\n0\n11\n");
 }
 
+/// A functor's binds are as if written in place: an anonymous function
+/// they bind can name the provision it shadows, and so needs it, with the
+/// val that provider captured, though the functor does not assume it.
+#[test]
+fn a_functor_provision_captures_the_one_it_shadows() {
+    let entry = wasi("functor_shadowed_provision");
+    assert_eq!(run_moss(&entry, PRELUDE), "5\n1105\n");
+    assert_eq!(oracle_run(&entry, &[]), "5\n1105\n");
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a

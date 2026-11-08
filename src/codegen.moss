@@ -280,10 +280,12 @@ assume Std {
   val un_flags: IntList;
   # One function's needs at a time, by symbol, for `callee_chain`:
   # stamped `un_ustamp` in `un_listed` where it lists one, and in
-  # `un_used` where one it lists is reached.
+  # `un_used` where one it lists is reached; and the `un_mark` stamp of
+  # what it reaches at all, for the fns it does not list (0: unknown).
   val un_used: IntList;
   val un_listed: IntList;
   val un_ustamp: CellInt;
+  val un_reach: CellInt;
   # `callee_chain`'s runs, indexed by symbol (`ce_start` is the start
   # plus one).
   val ce_start: IntList;
@@ -384,7 +386,7 @@ assume Std {
     fl_start, fl_len, fl_types,
     un_sym, un_link, un_head, un_mark, un_last, un_stamp, un_meths, un_mlink, un_mhead,
     un_fstart, un_flags,
-    un_used, un_listed, un_ustamp, ce_start, ce_len, ce_pool,
+    un_used, un_listed, un_ustamp, un_reach, ce_start, ce_len, ce_pool,
     cg_lang, cg_genv, cg_gbase, cg_aenv, cg_agenv, cg_aon, cg_fbody, ch_run, ch_link, ch_head,
     lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt,
     fb_sym, ft_sym;
@@ -2228,6 +2230,32 @@ assume Std {
       }
     }
 
+    # Stamps, in `un_mark`, every symbol `f` can reach — itself, what its
+    # body names, and what those reach in turn — and returns the stamp.
+    fn uw_reach(f: Int): Int {
+      let stamp = un_stamp.read() + 1;
+      un_stamp.write(stamp);
+      let todo = int_list();
+      todo.push(f);
+      un_mark.set(f, stamp);
+      var t = 0;
+      while t < todo.length() {
+        var r = un_head.get(todo.get(t));
+        while r > 0 {
+          let s = un_sym.get(r - 1);
+          if un_mark.get(s) != stamp {
+            un_mark.set(s, stamp);
+            if prog::sym_kind.get(s) != prog::sk_val() {
+              todo.push(s);
+            }
+          }
+          r = un_link.get(r - 1);
+        }
+        t = t + 1;
+      }
+      stamp
+    }
+
     # Whether `f`'s `i`th need is a val it can reach. Answered for all of
     # `f`'s needs at once, by one walk from `f`, and kept.
     fn need_used(f: Int, i: Int): Bool {
@@ -2236,26 +2264,7 @@ assume Std {
         return true;
       }
       if un_fstart.get(f) == 0 {
-        let stamp = un_stamp.read() + 1;
-        un_stamp.write(stamp);
-        let todo = int_list();
-        todo.push(f);
-        un_mark.set(f, stamp);
-        var t = 0;
-        while t < todo.length() {
-          var r = un_head.get(todo.get(t));
-          while r > 0 {
-            let s = un_sym.get(r - 1);
-            if un_mark.get(s) != stamp {
-              un_mark.set(s, stamp);
-              if prog::sym_kind.get(s) != prog::sk_val() {
-                todo.push(s);
-              }
-            }
-            r = un_link.get(r - 1);
-          }
-          t = t + 1;
-        }
+        let stamp = uw_reach(f);
         un_fstart.set(f, un_flags.length() + 1);
         var j = 0;
         while j < lower::needs_count(f) {
@@ -2332,17 +2341,38 @@ assume Std {
         }
         j = j + 1;
       }
+      # Its environment may hold a fn it does not list — an anonymous
+      # function in a functor's binds lists only that functor's items
+      # (`make_lambda`), though made where everything is in force. Such
+      # an entry is kept only if `f` can reach the symbol at all: one kept
+      # though unreachable would carry its provider's captures into the
+      # specialization's key, and a provision that shadows it on a
+      # recursive path would make a new key at every depth
+      # (`rebind_recursive`). The walk comes last, as `need_used`'s
+      # overwrite `un_mark`.
+      if f < un_fstart.length() {
+        un_reach.write(uw_reach(f));
+      } else {
+        un_reach.write(0);
+      }
       stamp
     }
 
     # Whether the function `fn_needs_used` last stamped can reach its fn
-    # need `sym`. A symbol it does not list among its needs is kept, to
-    # be safe.
+    # need `sym`. A symbol it does not list among its needs is kept if it
+    # can reach the symbol at all, and if that is not known — a function
+    # made after the walk — kept, to be safe.
     fn fn_need_used(stamp: Int, sym: Int): Bool {
       if un_used.get(sym) == stamp {
         true
+      } else if un_listed.get(sym) == stamp {
+        false
+      } else if un_reach.read() == 0 {
+        true
+      } else if sym >= un_mark.length() {
+        true
       } else {
-        un_listed.get(sym) != stamp
+        un_mark.get(sym) == un_reach.read()
       }
     }
 
@@ -6431,8 +6461,10 @@ assume Std {
         if ast::is_some(fbody) {
           let fd = prog::sym_decl.get(fbody);
           lower::assume_items(prog::sym_mod.get(fbody), ast::fu_args(fd), ast::fu_nargs(fd), ins_recv, ins_sym);
-          # And what it provides: a provision bound here captures the one
-          # it shadows (`rebind_recursive`).
+          # And what it provides: its binds are as if written in place,
+          # so a provision they bind can name the one it shadows, which
+          # it captures (`functor_shadowed_provision`). As a need, that
+          # provider's own captured vals travel with it as slots.
           let rkinds = int_list();
           let rrecvs = int_list();
           result_keys(prog::sym_mod.get(fbody), ast::fu_res(fd), ast::fu_nres(fd), genv, rkinds, rrecvs, ins_sym, 0);

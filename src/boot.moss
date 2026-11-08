@@ -249,6 +249,7 @@ functor Boot: Std -> Compiler {
   bind codegen::un_used = int_list();
   bind codegen::un_listed = int_list();
   bind codegen::un_ustamp = cell_int();
+  bind codegen::un_reach = cell_int();
   bind codegen::ce_start = int_list();
   bind codegen::ce_len = int_list();
   bind codegen::ce_pool = int_list();
