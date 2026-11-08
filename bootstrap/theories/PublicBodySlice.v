@@ -118,20 +118,30 @@ Hypothesis call_defined_case : forall k, Below k -> forall F C pa args f Cf ns s
   A.Args W Prog F C' args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) (A.Breaks (AECall pa None args))
     (wrap (ECall f (A.theta_at W C' f) sm xs)).
-Hypothesis method_case : forall k, Below k -> forall F C o pa args ox ot x t,
-  A.Ex W Prog F C o None ox ot ->
-  A.MethCall W Prog F C ox (A.canon C ot) pa args x t ->
-  StepSafe k F C t (A.Breaks (AEMeth o pa args)) x.
-Hypothesis unary_case : forall k, Below k -> forall F C op y lib n m ox ot x t,
-  A.operator_method op true = Some (lib, n) -> A.LangSym W lib A.NSDetached n m ->
-  A.Ex W Prog F C y None ox ot -> A.head (A.canon C ot) <> None ->
-  A.Provided W Prog F C ox (A.canon C ot) m [] x t ->
-  StepSafe k F C t (A.Breaks (AEUnary op y)) x.
-Hypothesis binary_case : forall k, Below k -> forall F C op l r lib n m ox ot x t,
-  A.operator_method op false = Some (lib, n) -> A.LangSym W lib A.NSDetached n m ->
-  A.Ex W Prog F C l None ox ot -> A.head (A.canon C ot) <> None ->
-  A.Provided W Prog F C ox (A.canon C ot) m [r] x t ->
-  StepSafe k F C t (A.Breaks (AEBinary op l r)) x.
+(* A method a family supplies at the call: a functor application (T15/T16). *)
+Hypothesis family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
+  A.FamilyApplication W C u matching th sm C' ks ->
+  In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
+  A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
+  StepSafe k F C (A.sg_ret g) B
+    (apply_expression u th sm (EMethod ox m (A.rkey C' (A.canon C ot0) m) xs)).
+(* A defined attached method: a direct call at the receiver's arguments (T03/T06/T14). *)
+Hypothesis attached_defined_case : forall k, Below k -> forall F C o ox ot0 ot n args h att Ca ns sm g xs rargs wrap Cd (B : Prop),
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  ot = A.canon C ot0 ->
+  A.head ot = Some h -> A.Attached W h n att ->
+  ~ (exists m, A.w_scope W (A.fr_mod F) A.NSDetached n = Some (A.ESym m) /\ A.mlook ot m (A.c_mths C) <> None) ->
+  (exists rn ps rt b, A.ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
+  rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
+  A.CtxOf W att Ca ns ->
+  A.Demand W (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)
+    (map (A.at_site (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)) ns) []
+    (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
+  A.Satisfies Cd Ca ns sm -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
+  A.Args W Prog F C args (A.sg_params g) xs ->
+  StepSafe k F C (A.sg_ret g) B (wrap (ECall att (A.theta_at W Cd att) sm (ox :: xs))).
 Hypothesis literal_case : forall k, Below k -> forall F C text x t,
   A.NumericText text -> A.Literal W C (A.literal_tree_of text) x t ->
   StepSafe k F C t (A.Breaks (AELit text)) x.
@@ -656,6 +666,62 @@ Proof.
 Unshelve. all: exact TUnit.
 Qed.
 
+Lemma provided_step : forall F C o ox ot0 m args x t (B : Prop),
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Provided W Prog F C ox (A.canon C ot0) m args x t -> StepSafe k F C t B x.
+Proof.
+  intros F C o ox ot0 m args x t B Do BrkO BrkA Prov.
+  remember (A.canon C ot0) as ot eqn:Ot.
+  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th sm C' ks g xs None' Fam InK Only Found Args].
+  2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
+          None' Fam InK Only Found Args). }
+  intros d types H lg lst Pre0.
+  pose proof Pre0 as [_ [_ [_ [_ [Abs [_ [_ Mths]]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  pose proof (O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ BrkO (sex F C o None ox ot0 Do d types H lg lst (pre_lower Pre0))) as ROut.
+  cbn [I.eval]. rewrite Look.
+  destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
+  - destruct Ok as [body [View Run]]. rewrite View.
+    apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ (pre_lower Pre0) (fun b => b) ROut).
+    intros H0 g0 st0 w0 E0 Pre1 T0.
+    pose proof (args_safe k Bel k (le_n k) F C B xs (A.sg_params g) d types H0 g0 st0
+      (args_argsafe F C args _ xs Args _ BrkA) Pre1) as AOut.
+    destruct (I.eval_arguments k P d g0 st0 xs) as [[[ws g1] st1]|r]; cbn in AOut.
+    + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
+      apply (outcome_ret_call F d H0 H1 types _ _ _ g1 E1 L1).
+      apply (Run k (Nat.lt_succ_diag_r k) H1 st1 (w0 :: ws) S1). constructor; [|exact T1].
+      subst ot. rewrite Abs. eapply value_typed_extends; eassumption.
+    + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
+  - apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ (pre_lower Pre0) (fun b => b) ROut).
+    intros H0 g0 st0 w0 E0 Pre1 T0.
+    pose proof (args_safe k Bel k (le_n k) F C B xs (A.sg_params g) d types H0 g0 st0
+      (args_argsafe F C args _ xs Args _ BrkA) Pre1) as AOut.
+    destruct (I.eval_arguments k P d g0 st0 xs) as [[[ws g1] st1]|r]; cbn in AOut.
+    + destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
+      assert (Args' : Forall2 (fun w t => value_typed W P H1 w (ground d t)) (w0 :: ws) (ot :: A.sg_params g)).
+      { constructor; [|exact T1]. subst ot. rewrite Abs. eapply value_typed_extends; eassumption. }
+      pose proof (Ok H1 st1 (w0 :: ws) S1 Args') as POut.
+      destruct (I.run_prim_at P p held (w0 :: ws) st1) as [o' st2] eqn:Run'.
+      exact (outcome_prim F d H0 H1 types _ _ o' st2 g1 E1 L1 POut).
+    + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
+Unshelve. all: exact TUnit.
+Qed.
+
+Lemma methcall_step : forall F C o ox ot0 pa args x t (B : Prop),
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.MethCall W Prog F C ox (A.canon C ot0) pa args x t -> StepSafe k F C t B x.
+Proof.
+  intros F C o ox ot0 pa args x t B Do BrkO BrkA Meth.
+  remember (A.canon C ot0) as ot eqn:Ot.
+  destruct Meth as [F C ox ot pa args m x t Long Det Prov
+                   |F C ox ot n args h att m x t Head Att Scope Mth Prov
+                   |F C ox ot n args h att Ca ns sm g xs rargs wrap Cd Head Att NotWin Def Rargs Ctx Dem Sat Sig Args
+                   |F C ox ot n args h att x t Head Att NotWin Abs Prov
+                   |F C ox ot n args m x t NoAtt Scope Prov]; subst ot;
+    try exact (provided_step F C o ox ot0 _ args x t B Do BrkO BrkA Prov).
+  exact (attached_defined_case k Bel F C o ox ot0 _ n args h att Ca ns sm g xs rargs wrap Cd B Do BrkO BrkA
+    eq_refl Head Att NotWin Def Rargs Ctx Dem Sat Sig Args).
+Qed.
+
 Fixpoint ex_step F C a exp x t (D : A.Ex W Prog F C a exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
   Outcome F d H types t (A.Breaks a) (I.eval (S k) P d g st x)
@@ -733,9 +799,12 @@ Proof.
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + exact (call_defined_case k Bel F C pa args f Cf ns sm sg xs wrap C' R K Def Ctx Dem Sat Sig Args d types H lg lst Pre0).
     + exact (invoke_step F C pa args f sg xs Fn Args d types H lg lst Pre0).
-    + exact (method_case k Bel F C o pa args ox ot x t Do Dm d types H lg lst Pre0).
-    + exact (unary_case k Bel F C op y lib n m ox ot x t Op Lang Dy Head Prov d types H lg lst Pre0).
-    + exact (binary_case k Bel F C op l r lib n m ox ot x t Op Lang Dl Head Prov d types H lg lst Pre0).
+    + refine (methcall_step F C o ox ot pa args x t _ Do _ _ Dm d types H lg lst Pre0);
+        [intro B0; apply A.BkMethRecv; exact B0|intros a' In' B0; eapply A.BkMethArg; [exact In'|exact B0]].
+    + refine (provided_step F C y ox ot m [] x t _ Dy _ _ Prov d types H lg lst Pre0);
+        [intro B0; apply A.BkUnary; exact B0|intros a' []].
+    + refine (provided_step F C l ox ot m [r] x t _ Dl _ _ Prov d types H lg lst Pre0);
+        [intro B0; apply A.BkBinL; exact B0|intros a' [<-|[]] B0; apply A.BkBinR; exact B0].
     + exact (literal_case k Bel F C text x t Num Lit d types H lg lst Pre0).
     + (* if-then *) cbn [I.eval].
       destruct (scond F C c cx' Dc d types H lg lst (pre_lower Pre0)) as [bsym [Lang Out]].

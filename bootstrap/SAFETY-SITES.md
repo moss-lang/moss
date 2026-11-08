@@ -129,7 +129,8 @@ hypotheses, each a named remaining obligation:
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
 | `call_defined_case` | direct calls of defined fns, `Demand` wrappers | T03, T06, T14 |
-| `method_case`, `unary_case`, `binary_case` | method calls and operators | T06, T14 |
+| `attached_defined_case` | defined attached methods (direct calls) | T03, T06, T14 |
+| `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_case` | numeric literals through contextual arithmetic | T05, T06 |
 | `bind_case` | bind statements | T07, T15, T16 |
 | `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
@@ -156,8 +157,9 @@ value typed at the caller's reading of the signature. Fuel only decreases,
 so a closure available at fuel `n` is only ever invoked below `n`. A closure
 created at fuel `S k` therefore needs only `Below k`, with no separate
 provenance certificate and no recursion through captured environments. With
-this, contextual vals (`val_step`) and calls of provided functions
-(`invoke_step`, function and primitive closures) are proved.
+this, contextual vals (`val_step`), calls of provided functions
+(`invoke_step`, function and primitive closures), and calls of provided
+methods and operators (`provided_step`, `methcall_step`) are proved.
 
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
