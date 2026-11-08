@@ -381,3 +381,110 @@ Proof.
   - destruct rt as [r|]; [exact (tyof_rel _ _ _ _ _ R1 _ _ _ R2 Ag This)|rewrite R1, R2; reflexivity].
 Qed.
 End Relate.
+
+(* Two composed substitutions agree on a type when they agree on each
+   generation it mentions. *)
+Theorem subst2_agree : forall t s1 s2 s3 s4,
+  (forall x, In x (A.gens t) -> app_subst s1 (app_subst s2 (TAbs x)) = app_subst s3 (app_subst s4 (TAbs x))) ->
+  app_subst s1 (app_subst s2 t) = app_subst s3 (app_subst s4 t).
+Proof.
+  fix IH 1. intros [m|fields| |g|n th|ms] s1 s2 s3 s4 Agree; cbn [A.gens] in Agree.
+  - reflexivity.
+  - rewrite !subst_record. rewrite !map_map. f_equal.
+    induction fields as [|[f t] rest Tail]; [reflexivity|]. cbn in Agree |- *. f_equal.
+    + f_equal. apply IH. intros x Ix. apply Agree. apply in_or_app. left. exact Ix.
+    + apply Tail. intros x Ix. apply Agree. apply in_or_app. right. exact Ix.
+  - reflexivity.
+  - apply Agree. left. reflexivity.
+  - rewrite !subst_nom. unfold smap. rewrite !map_map. f_equal.
+    induction th as [|[x t] rest Tail]; [reflexivity|]. cbn in Agree |- *. f_equal.
+    + f_equal. apply IH. intros y Iy. apply Agree. apply in_or_app. left. exact Iy.
+    + apply Tail. intros y Iy. apply Agree. apply in_or_app. right. exact Iy.
+  - rewrite !subst_union. rewrite !map_map. f_equal.
+    induction ms as [|t rest Tail]; [reflexivity|]. cbn in Agree |- *. f_equal.
+    + apply IH. intros y Iy. apply Agree. apply in_or_app. left. exact Iy.
+    + apply Tail. intros y Iy. apply Agree. apply in_or_app. right. exact Iy.
+Qed.
+
+Corollary subst_agree_on : forall t s1 s2,
+  (forall x, In x (A.gens t) -> app_subst s1 (TAbs x) = app_subst s2 (TAbs x)) ->
+  app_subst s1 t = app_subst s2 t.
+Proof.
+  intros t s1 s2 Agree. rewrite <- (app_subst_nil t) at 1 2.
+  apply subst2_agree. intros x Ix. cbn [app_subst lookup_subst]. exact (Agree x Ix).
+Qed.
+
+(* Grounding through an instantiation map composes. *)
+Corollary subst_through : forall t s th,
+  (forall x, In x (A.gens t) -> lookup_subst x th <> None) ->
+  app_subst (map (fun q => (fst q, app_subst s (snd q))) th) t = app_subst s (app_subst th t).
+Proof.
+  intros t s th Dom. rewrite <- (app_subst_nil t) at 1.
+  apply subst2_agree. intros x Ix. cbn [app_subst lookup_subst].
+  specialize (Dom x Ix). clear Ix. induction th as [|[y u] rest IH]; cbn in *; [congruence|].
+  destruct (Nat.eqb x y); [reflexivity|]. apply IH. exact Dom.
+Qed.
+
+(* The generations a reading produces come from its meanings or receiver. *)
+Section Support.
+Variable W : A.world.
+Import A.
+
+Definition tm_gens (tm : list (nat * ty)) : list nat := flat_map (fun q => gens (snd q)) tm.
+
+Lemma tm_gens_app : forall l m g, In g (tm_gens (l ++ m)) <-> In g (tm_gens l) \/ In g (tm_gens m).
+Proof. intros l m g. unfold tm_gens. rewrite flat_map_app. apply in_app_iff. Qed.
+
+Lemma nlook_gens : forall tm k v g, nlook k tm = Some v -> In g (gens v) -> In g (tm_gens tm).
+Proof.
+  intros tm k v g Found Ig. apply nlook_in in Found. unfold tm_gens. apply in_flat_map.
+  exists (k, v). split; assumption.
+Qed.
+
+Lemma member_gens : forall t m g, In m (members t) -> In g (gens m) -> In g (gens t).
+Proof.
+  intros [m0|fs| |h|n xs|ms] m g Mem Ig; cbn in Mem; try (destruct Mem as [<-|[]]; exact Ig).
+  cbn. induction ms as [|m1 rest IH]; [contradiction|]. apply in_or_app.
+  destruct Mem as [<-|Mem]; [left; exact Ig|right; exact (IH Mem)].
+Qed.
+
+Fixpoint tyof_gens p tm th a t (D : TyOf W p tm th a t) {struct D} :
+  forall g, In g (gens t) -> In g (tm_gens tm) \/ (exists x, th = Some x /\ In g (gens x))
+with br_gens p tm h x l (D : Brackets W p tm h x l) {struct D} :
+  forall g, In g (tm_gens l) -> In g (tm_gens tm).
+Proof.
+  - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
+                  |p tm th pa t tau R K L|p tm th pa a g0 k bs args R K Kk B F|p tm th pa a g0 d n body bs tau R D A B T];
+      intros g Ig; cbn [gens] in Ig.
+    + contradiction.
+    + contradiction.
+    + right. eauto.
+    + clear Nd. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [contradiction|].
+      destruct ft as [f t]. cbn in Ig. apply in_app_or in Ig as [Here|There];
+        [exact (tyof_gens _ _ _ _ _ Hft g Here)|exact (IH There)].
+    + subst flat. clear Fm Nd.
+      assert (Flat : exists m, In m (flat_map members ts) /\ In g (gens m)).
+      { clear F. induction (flat_map members ts) as [|m rest IH]; [contradiction|].
+        cbn in Ig. apply in_app_or in Ig as [Here|There]; [exists m; split; [left; reflexivity|exact Here]|].
+        destruct (IH There) as [m' [Im Ig']]. exists m'; split; [right; exact Im|exact Ig']. }
+      destruct Flat as [m [Im Ig']]. apply in_flat_map in Im as [t [It Mem]].
+      pose proof (member_gens t m g Mem Ig') as Igt. clear Ig Ig' Mem.
+      induction F as [|a t' ms' ts' Ht Fr IH]; [contradiction|].
+      destruct It as [<-|It]; [exact (tyof_gens _ _ _ _ _ Ht g Igt)|exact (IH It)].
+    + left. exact (nlook_gens _ _ _ _ L Ig).
+    + left. assert (Args : In g (tm_gens args)).
+      { clear -Ig. induction args as [|[r v] rest IH]; [contradiction|]. cbn in Ig |- *.
+        apply in_app_or in Ig as [Here|There]; apply in_or_app; [left; exact Here|right; exact (IH There)]. }
+      clear Ig. induction F as [|r ra rs ras [E1 L1] Fr IH]; [contradiction|].
+      destruct ra as [r' v]. cbn in Args. apply in_app_or in Args as [Here|There]; [|exact (IH There)].
+      cbn in L1. pose proof (nlook_gens _ _ _ _ L1 Here) as Ibt. apply tm_gens_app in Ibt as [InB|InT];
+        [exact (br_gens _ _ _ _ _ B g InB)|exact InT].
+    + left. destruct (tyof_gens _ _ _ _ _ T g Ig) as [Ibt|[x [E _]]]; [|discriminate].
+      apply tm_gens_app in Ibt as [InB|InT]; [exact (br_gens _ _ _ _ _ B g InB)|exact InT].
+  - destruct D as [p tm h|p tm h bs l F]; intros g Ig; [contradiction|].
+    apply in_flat_map in Ig as [q [Iq Ig]]. apply (proj2 (in_rev _ _)) in Iq.
+    clear br_gens. induction F as [|b0 tb bs' l' (sp & sa & E1 & R1 & K1 & Q1 & T1) Fr IH]; [contradiction|].
+    destruct Iq as [<-|Iq]; [|exact (IH Iq)].
+    destruct (tyof_gens _ _ _ _ _ T1 g Ig) as [In'|[x [E _]]]; [exact In'|discriminate].
+Qed.
+End Support.
