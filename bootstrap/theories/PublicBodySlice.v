@@ -74,10 +74,26 @@ Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop 
   (forall f g, A.nlook f (A.c_fns C) = Some g -> exists pv,
      lookup_provision (IFn f) d = Some pv /\ CallableOk n d (A.sg_params g) (A.sg_ret g) pv) /\
   (forall r m g, A.mlook r m (A.c_mths C) = Some g -> exists pv,
-     lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n d (r :: A.sg_params g) (A.sg_ret g) pv).
+     lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n d (r :: A.sg_params g) (A.sg_ret g) pv) /\
+  (* functor closures: their realization is T15's *)
+  (forall u fx, A.nlook u (A.c_funs C) = Some fx -> exists h sms dc,
+     lookup_provision (IFun u) d = Some (FunctorClosure h sms dc)).
+
+(* Every provision is filed under a key of its own kind. *)
+Definition KeysMatch (C : A.cx) : Prop :=
+  forall k p, In (k, p) (A.c_provisions C) ->
+  match k, p with
+  | IVal _, A.ProvidedVal _ _ | IFn _, A.ProvidedFn _ _ | IFun _, A.ProvidedFunctor _ => True
+  | IMth _ _ [], A.ProvidedMethod _ _ => True
+  | _, _ => False
+  end.
+
+(* Static facts of a context in force (T29). *)
+Definition StaticOk (C : A.cx) : Prop :=
+  (forall t, A.canon C (A.canon C t) = A.canon C t) /\ KeysMatch C.
 
 Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
-  Absorbs C d /\ EnvOk n C d H.
+  Absorbs C d /\ EnvOk n C d H /\ StaticOk C.
 
 Definition Pre n F C d types H g st : Prop :=
   FrameOk F /\ CtxLocals F C d types /\ locals_typed W P H g types /\ state_ok H st /\ Realizes n C d H.
@@ -177,7 +193,8 @@ Qed.
 
 Lemma realizes_lower : forall n m C d H, m <= n -> Realizes n C d H -> Realizes m C d H.
 Proof.
-  intros n m C d H Le [Abs [Vals [Fns Mths]]]. split; [exact Abs|]. split; [exact Vals|]. split.
+  intros n m C d H Le [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|]. split; [|exact St].
+  split; [exact Vals|]. split; [|split; [|exact Funs]].
   - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
     exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ Le Ok)].
   - intros r m' g Found. destruct (Mths r m' g Found) as [pv [Look Ok]].
@@ -186,7 +203,7 @@ Qed.
 
 Lemma realizes_extends : forall n C d H H', heap_extends H H' -> Realizes n C d H -> Realizes n C d H'.
 Proof.
-  intros n C d H H' Ext [Abs [Vals Rest]]. split; [exact Abs|]. split; [|exact Rest].
+  intros n C d H H' Ext [Abs [[Vals Rest] St]]. split; [exact Abs|]. split; [split; [|exact Rest]|exact St].
   intros v t Found. destruct (Vals v t Found) as [w [Look T]].
   exists w; split; [exact Look|eapply value_typed_extends; eassumption].
 Qed.
@@ -648,7 +665,7 @@ Lemma invoke_code : forall n F C (B : Prop) f g xs d types H lg lst,
   Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EInvoke f xs)).
 Proof.
   intros n F C B f g xs d types H lg lst Found Args Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [_ [Fns _]]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [_ [[_ [Fns _]] _]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
   pose proof (args_code n n (le_n n) F C B xs (A.sg_params g) d types H lg lst Args (pre_lower Pre0)) as AOut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -674,7 +691,7 @@ Lemma method_code : forall n F C (B : Prop) ot m g ox xs d types H lg lst,
   Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EMethod ox m (A.rkey C ot m) xs)).
 Proof.
   intros n F C B ot m g ox xs d types H lg lst Found Recv Args Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [Abs [_ [_ Mths]]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [Abs [[_ [_ [Mths _]]] _]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
   pose proof (Recv n (le_n n) d types H lg lst (pre_lower Pre0)) as ROut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -766,9 +783,9 @@ Proof.
         (IHc F C a x' t Da) (IHc F C b y t Db) None' Fam InK Only Found d types H lg lst Pre0). }
   destruct D as [z t Lang Val|o t Lang Val|a b x y result t m Da Db Lang Lop|a b x y result t m Da Db Lang Lop
                 |a b x y result t m Da Db Lang Lop|a x ti tp t f Da Lang Fn Fits].
-  - pose proof Pre0 as [_ [_ [_ [_ [_ [Vals _]]]]]]. destruct (Vals z t Val) as [w [Look T]].
+  - pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals z t Val) as [w [Look T]].
     cbn [I.eval]. rewrite Look. eapply outcome_now; eassumption.
-  - pose proof Pre0 as [_ [_ [_ [_ [_ [Vals _]]]]]]. destruct (Vals o t Val) as [w [Look T]].
+  - pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals o t Val) as [w [Look T]].
     cbn [I.eval]. rewrite Look. eapply outcome_now; eassumption.
   - exact (Op a b x y result m Da Db Lop).
   - exact (Op a b x y result m Da Db Lop).
@@ -1002,7 +1019,7 @@ Lemma val_step : forall F C pa s t, A.nlook s (A.c_vals C) = Some t ->
   StepSafe k F C t (A.Breaks (AEPath pa None)) (EVal s).
 Proof.
   intros F C pa s t Found d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [Vals _]]]]]]. destruct (Vals s t Found) as [w [Look T]].
+  pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals s t Found) as [w [Look T]].
   cbn [I.eval]. rewrite Look. eapply outcome_now; eassumption.
 Qed.
 
@@ -1011,7 +1028,7 @@ Lemma invoke_step : forall F C pa args f g xs,
   StepSafe k F C (A.sg_ret g) (A.Breaks (AECall pa None args)) (EInvoke f xs).
 Proof.
   intros F C pa args f g xs Found Args d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [_ [Fns _]]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [_ [[_ [Fns _]] _]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
   pose proof (args_safe k Bel k (le_n k) F C (A.Breaks (AECall pa None args)) xs (A.sg_params g) d types H lg lst
     (args_argsafe F C args _ xs Args _ (fun a In' B => A.BkCall pa None args In' B)) (pre_lower Pre0)) as AOut.
   cbn [I.eval]. rewrite Look.
@@ -1040,7 +1057,7 @@ Proof.
   2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
           None' Fam InK Only Found Args). }
   intros d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [Abs [_ [_ Mths]]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [Abs [[_ [_ [Mths _]]] _]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
   pose proof (O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ BrkO (sex F C o None ox ot0 Do d types H lg lst (pre_lower Pre0))) as ROut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -1151,8 +1168,10 @@ Proof.
       * apply (numbering_frame F0 []). rewrite This. exact Num.
       * split; [intros n' t1 mu Found; discriminate|intros t1 This'; congruence].
       * split; [intros t1; unfold A.canon; cbn; rewrite app_subst_nil; reflexivity|].
-        split; [intros v' t1 Found; discriminate|].
-        split; [intros f g Found; discriminate|intros r m g Found; discriminate].
+        split; [split; [intros v' t1 Found; discriminate|]|].
+        { split; [intros f g Found; discriminate|]. split; [intros r m g Found; discriminate|].
+          intros u fx Found; discriminate. }
+        split; [intros t1; unfold A.canon; cbn; rewrite !app_subst_nil; reflexivity|intros k0 p0 []].
     + (* tag *) subst args. cbn [I.eval].
       pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits (sex F C y _ v vty Dy d types H lg lst (pre_lower Pre0))) as Out.
       apply (outcome_seq _ F C d types H lg lst pay _ (A.Breaks y) _ _ _ Pre0
