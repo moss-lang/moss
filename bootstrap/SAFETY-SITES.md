@@ -71,7 +71,18 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
-- **Open: a call can bind only part of a callee's merged class (needs a decision).**
+- **Counterexample: a call can bind a callee's merged class inconsistently
+  (needs a decision).**
+  [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
+  `f`'s context merges `X`, `Y` and `Z` into one type. The caller binds
+  `X = Char` and `Y = Bool` and leaves `Z` unbound. The merge equations each
+  mention the representative, and `Satisfies` skips an equation unless all of
+  its generations are bound at the caller, so no equation is checked. `f`
+  returns its `X` argument as a `Y`; the oracle built at `386e418` accepts
+  the program and reports `stuck (XErr 10)` when `if` reads the `Char` as a
+  `Bool`. Binding `Z = Char` as well makes the oracle reject the call. The
+  implementation is affected, not only the audit relation.
+- **A call can bind only part of a callee's merged class.**
   `theta_at` gives a callee requirement the caller's meaning of the same
   symbol, or the symbol itself when the caller has none. `Satisfies`
   checks the callee's merge equations only when every generation in the
