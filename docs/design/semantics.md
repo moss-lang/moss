@@ -603,6 +603,13 @@ call gives its unbound members the same meaning, and a caller cannot bind
 two members of one class to different types
 (`bootstrap/examples/unbound-merge-representative.moss` is rejected).
 
+Each provision a call selects must also have the type the callee expects:
+the caller's type or signature for it equals the callee's, read at θ. A
+provision's type can mention types that are not its requirements, so the
+requirement meanings it records do not determine it. A caller that
+rebinds such a type after providing the item cannot pass it on at the new
+meaning (`bootstrap/examples/stale-provision-type.moss` is rejected).
+
 *Implementation note (rev 6):* the bootstrap now implements this. The
 union-find lives in the environment's type map (an entry pointing anywhere
 but the symbol itself is a substitution edge); `merge` unifies duplicate

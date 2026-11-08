@@ -71,8 +71,7 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
-- **Counterexample: a provision's type can go stale before a call (needs a
-  decision).**
+- **Counterexample: a provision's type could go stale before a call (fixed).**
   [stale-provision-type.moss](examples/stale-provision-type.moss): `val v: T`
   mentions `T`, but `T` is not one of `v`'s requirements (it has no assume
   nesting), so `v`'s provisions record no meaning for it. The caller binds
@@ -83,6 +82,13 @@ the local store. *C* and *F* are the static context and frame.
   accepts the program and reports `stuck (XErr 10)`. Functor applications
   select inputs through `Satisfies` too, so they are likely affected the
   same way.
+  **Decided** (user-approved): `Satisfies` takes the instantiation `θ`
+  (`CallTheta` at calls and providers, the input reading at functor
+  applications). Each selected provision must have, canonically, the
+  callee's type or signature read at `θ` (`sig_at`). Coherence reads
+  through `θ` as well. `MostGeneralMerge` now states, as its comment
+  always said, that σ maps only generations of the telescope to types over
+  them. The implementation check is [E25](proofs/build-run.md#e25).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -244,5 +250,6 @@ only has to be preserved by heap extension.
   operators, `CodeSafe` and literals (20:00 to 20:10).
 - Found the merge-orientation gap while planning direct calls (20:10 to 20:12).
 - Recorded per-symbol contexts in the world, after approval.
+- `Satisfies` type check after approval (20:58 to 21:03).
 - `tyof_rel`, `body_call`, `call_core`, and the merged-class counterexample
   (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).

@@ -2193,7 +2193,8 @@
         "E21",
         "E22",
         "E23",
-        "E24"
+        "E24",
+        "E25"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2642,6 +2643,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/unbound-merge-representative.moss"
+        ]
+      }
+    },
+    {
+      "id": "E25",
+      "group": "E",
+      "title": "Check selected provision types",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators (Elab.v and src/) reject a call or functor application whose selected provision's type or signature differs from the callee's view read at the instantiation, as Audit's Satisfies now requires, with a regression test.",
+      "approach": "Compare the caller's canonical provision signature with the callee's entry signature substituted by θ. bootstrap/examples/stale-provision-type.moss must be rejected.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/stale-provision-type.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved checking selected provision types in Satisfies after an accepted program passed a value provided at T = Char to a callee reading T = Bool and got stuck.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/stale-provision-type.moss"
         ]
       }
     },

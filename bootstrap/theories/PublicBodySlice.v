@@ -130,7 +130,7 @@ Hypothesis attached_defined_case : forall k, Below k -> forall F C o ox ot0 ot n
   A.Demand W (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)
     (map (A.at_site (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)) ns) []
     (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
-  A.Satisfies Cd Ca ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
+  A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
   A.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B (wrap (ECall att th sm (ox :: xs))).
 Hypothesis bind_case : forall k, Below k -> forall F C its rest tl exp wrap C' F' xr t made made',
@@ -911,7 +911,7 @@ Definition callee_env (d : environment) (th : subst) (dc : environment) : enviro
    its environment agrees with the caller's, and the callee's context is
    realized there. *)
 Hypothesis callee_realizes : forall n C' d H f Cf ns sm th,
-  Realizes (S n) C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf ns sm -> A.CallTheta W C' Cf f th ->
+  Realizes (S n) C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
   exists dc, select_provisions d sm = Some dc /\
     Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
     Realizes n Cf (callee_env d th dc) H.
@@ -936,7 +936,7 @@ Qed.
 
 Lemma call_core : forall j, Below j -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
-  A.CtxOf W f Cf ns -> A.Satisfies C Cf ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
+  A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
   A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
   StepSafe j F C (A.sg_ret g) B (ECall f th sm xs).
 Proof.
@@ -968,7 +968,7 @@ Hypothesis demand_case : forall k, Below k -> forall F C wanted C' wrap t (B : P
 
 Lemma call_code : forall k, Below k -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
-  A.CtxOf W f Cf ns -> A.Satisfies C Cf ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
+  A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
   A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
   CodeSafe k F C (A.sg_ret g) B (ECall f th sm xs).
 Proof.

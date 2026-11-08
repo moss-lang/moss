@@ -3009,10 +3009,23 @@ Definition Unifies (s : subst) (es : list entry) : Prop :=
   forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
     entry_sig s e1 = entry_sig s e2.
 
+Definition inst_gens (a : inst) : list nat :=
+  flat_map (fun q => match snd q with Some t => gens t | None => [] end) a.
+Definition sig_gens (g : fsig) : list nat := flat_map gens (sg_ret g :: sg_params g).
+Definition entry_gens (e : entry) : list nat :=
+  match e with
+  | NTy t => [t]
+  | NVal _ t a => gens t ++ inst_gens a
+  | NFn _ g a => sig_gens g ++ inst_gens a
+  | NMth r _ g a => gens r ++ sig_gens g ++ inst_gens a
+  | NFun _ fx => flat_map (fun q => gens (snd q)) fx
+  end.
 Definition MostGeneralMerge (s : subst) (es : list entry) : Prop :=
   Unifies s es /\
   (forall t, app_subst s (app_subst s t) = app_subst s t) /\
-  (forall s', Unifies s' es -> (forall t, app_subst s' (app_subst s t) = app_subst s' t)).
+  (forall s', Unifies s' es -> (forall t, app_subst s' (app_subst s t) = app_subst s' t)) /\
+  (* σ maps only generations of the telescope, to types over them *)
+  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)).
 
 (* The context a merged telescope makes: its tables are the entries read
    under σ.  Instantiations keep None for a requirement not in force where
@@ -3117,12 +3130,21 @@ Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
      lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
   (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
 
+(* A signature in Cs's terms, read here at instantiation th. *)
+Definition sig_at (C : cx) (th : subst) (g : fsig) : fsig :=
+  FSig (map (fun t => canon C (app_subst th t)) (sg_params g)) (canon C (app_subst th (sg_ret g))).
+Definition canon_sig (C : cx) (g : fsig) : fsig :=
+  FSig (map (canon C) (sg_params g)) (canon C (sg_ret g)).
+
 (* [D20]/[D62]/[D71]: a call of callee s (assume context Cs, needs ns)
-   from context C is answered by satisfaction map sm: sm sends each need
-   (exactly once) to the caller's provision of it read here, which must be
-   in force, at the instantiation the callee needs it at (coherence); and
-   the callee's merges ([D43]) must hold here. *)
-Definition Satisfies (C : cx) (Cs : cx) (ns : list item) (sm : smap) : Prop :=
+   from context C at instantiation th is answered by satisfaction map sm:
+   sm sends each need (exactly once) to the caller's provision of it read
+   here, which must be in force, at the instantiation the callee needs it
+   at (coherence), with the type or signature the callee's context gives
+   it read at th; and the callee's merges ([D43]) must hold here. A
+   provision's type can mention types that are not its requirements, so
+   recorded requirement meanings alone do not determine it. *)
+Definition Satisfies (C : cx) (Cs : cx) (th : subst) (ns : list item) (sm : smap) : Prop :=
   (* each need, by its run-time key in the callee, to the caller's
      provision of it read here, by its run-time key here (note 28) *)
   sm = map (fun k => (rkey_of Cs k, rkey_of C (at_site C k))) ns /\
@@ -3131,9 +3153,13 @@ Definition Satisfies (C : cx) (Cs : cx) (ns : list item) (sm : smap) : Prop :=
   (forall k a, In k ns -> ilook k (c_apps Cs) = Some a ->
      forall t want, In (t, Some want) a ->
        match ilook (at_site C k) (c_apps C) with
-       | Some have => In (t, Some (canon C (app_subst (c_ty C) want))) have
+       | Some have => In (t, Some (canon C (app_subst th want))) have
        | None => True
        end) /\
+  (* types: the provision selected here has the callee's view of it *)
+  (forall k p, In k ns -> ilook k (c_provisions Cs) = Some p ->
+     exists p', ilook (at_site C k) (c_provisions C) = Some p' /\
+       option_map (canon_sig C) (provision_signature p') = option_map (sig_at C th) (provision_signature p)) /\
   (* merges: every equation of the callee's σ holds of the caller's meanings *)
   (forall g t, In (g, t) (c_sub Cs) ->
      (forall x, In x (g :: gens t) -> nlook x (c_ty C) <> None) ->
@@ -3484,7 +3510,7 @@ Definition FamilyApplication (W : world) (C : cx) (u : usym)
         (app_subst (c_ty (family_context C matching)) (TAbs (fst q))))) (c_ty formal) /\
     (forall t, In t (map fst (c_ty formal)) -> nlook t (c_ty (family_context C matching)) <> None) /\
     FixedAgreement W (family_context C matching) u /\
-    Satisfies (family_context C matching) formal needs inputs /\
+    Satisfies (family_context C matching) formal arguments needs inputs /\
     ProvideResult W u (family_context C matching) (fun t => TAbs t) result keys /\
     NoDup (map provision_id keys).
 
@@ -3853,7 +3879,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns ->
     Demand W C (map (at_site C) ns) [] C wrap C' ->
-    Satisfies C' Cf ns sm -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
+    Satisfies C' Cf th ns sm -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
     Args W P F C' args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp
        (wrap (ECall f th sm xs)) (sg_ret g)
@@ -4000,7 +4026,7 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
       (map (at_site (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)) ns) []
       (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
-    Satisfies Cd Ca ns sm -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
+    Satisfies Cd Ca th ns sm -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
     MethCall W P F C ox ot [n] args
       (wrap (ECall att th sm (ox :: xs))) (sg_ret g)
@@ -4173,7 +4199,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* rule 5: fixed inputs unchanged since the provision *)
     (forall x tx, In (x, tx) fx -> exists here,
       nlook x (c_ty C) = Some here /\ canon C here = canon C tx) ->
-    Satisfies C Cu ns sm ->
+    Satisfies C Cu th ns sm ->
     FreshFor W F C newgens ->
     (* Repeated output roles share a generation; distinct roles do not. *)
     (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
@@ -4227,7 +4253,7 @@ with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> opti
 | FPDefined : forall F C pa g sg Cg ns sm th,
     resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
     (exists n ps rt b, ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W g Cg ns -> Satisfies C Cg ns sm -> CallTheta W C Cg g th ->
+    CtxOf W g Cg ns -> Satisfies C Cg th ns sm -> CallTheta W C Cg g th ->
     SigOf W g (c_ty C) None (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
     FnProvider W P F C (AEPath pa None) sg None g (TypeCapture th th) sm
 | FPForward : forall F C pa g sg w n,
@@ -4243,7 +4269,7 @@ with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty
     resolve_sym W (fr_mod F) rp = Some rg -> Attached W rg n att ->
     (exists rn ps r b, ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
     head rt = Some rg ->
-    CtxOf W att Ca ns -> Satisfies C Ca ns sm -> CallTheta W C Ca att th ->
+    CtxOf W att Ca ns -> Satisfies C Ca th ns sm -> CallTheta W C Ca att th ->
     SigOf W att (c_ty C) None
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
     MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (TypeCapture th th) (fun x => x) sm
