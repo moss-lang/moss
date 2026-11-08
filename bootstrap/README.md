@@ -22,6 +22,8 @@ remaining source soundness and runtime typing obligations for this milestone.
 The [proof roadmap](PROOFS.md) presents the selected route to the five public
 theorems: direct public elaboration, a common runtime target, and measured
 bootstrap performance gates.
+The [first foundation checkpoint](PUBLIC-FOUNDATION.md) records the finite
+source contract, checked common-target prototype and configuration measurements.
 
 The interpreted self-compile is expensive, so everyday work reuses a compiler
 built before ([`CONTRIBUTING.md`](../CONTRIBUTING.md)). The same program,
@@ -52,6 +54,15 @@ errors and positions included.
   - [`AuditExamples.v`](theories/AuditExamples.v) and
     [`AuditBuildExample.v`](theories/AuditBuildExample.v): semantic regression
     checks and a complete public build/run derivation.
+  - [`SourceSnapshot.v`](theories/SourceSnapshot.v): checked finite-source
+    construction and exact lookup/domain properties.
+  - [`PublicEmit.v`](theories/PublicEmit.v),
+    [`PublicClosurePrototype.v`](theories/PublicClosurePrototype.v), and
+    [`PublicClosureExample.v`](theories/PublicClosureExample.v): direct type
+    emission and a partial closure compiler over public syntax, with a closed
+    capture/output/cast example. These are not a full implementation certificate.
+  - [`PublicCaptureFacts.v`](theories/PublicCaptureFacts.v): direct public
+    capture-grounding facts supporting the pending semantic safety proof.
   - [`Parse.v`](theories/Parse.v): the lexer, the parser, the parse dump
     and the module loader, from a file's bytes to the bundle specified in
     `Audit.v` Part I.

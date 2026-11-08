@@ -192,10 +192,13 @@ Proof.
 Qed.
 
 Definition main_text := "fn main() {}".
-Definition main_source : source := fun path =>
-  if String.eqb (path_text path) "/lib/main.moss" then Some main_text else None.
 Definition entry : file_path := AbsolutePath "/lib/main.moss" eq_refl.
 Definition prelude : file_path := AbsolutePath "/lib/prelude.moss" eq_refl.
+Definition main_source : source.
+Proof.
+  refine (Source [(entry, main_text)] _).
+  repeat constructor; simpl; tauto.
+Defined.
 Lemma main_bundled : Loader.Bundled (source_read main_source) "/"
     "/lib/prelude.moss" "/lib/main.moss" main_bundle.
 Proof.

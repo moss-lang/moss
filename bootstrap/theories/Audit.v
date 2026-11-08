@@ -4629,7 +4629,12 @@ Record file_path := AbsolutePath {
   path_text : string;
   path_canonical : canonical_path path_text = true
 }.
-Definition source := file_path -> option string.
+(* A build receives an explicit finite snapshot, not an oracle for an
+   unbounded filesystem. Distinct entries have distinct canonical paths. *)
+Record source := Source {
+  source_files : list (file_path * string);
+  source_unique : NoDup (map (fun file => path_text (fst file)) source_files)
+}.
 (* program is the concrete code representation. Admissible below states
    its source-level typechecking condition; arbitrary code records may
    still be malformed. *)
@@ -4641,14 +4646,14 @@ Proof.
   - exact None.
 Defined.
 
-Definition source_read (source : source) (name : string) : option string :=
-  match path_of_string name with
+Definition source_lookup (snapshot : source) (name : string) : option string :=
+  option_map snd (find (fun file => String.eqb name (path_text (fst file)))
+    (source_files snapshot)).
+
+Definition source_read (snapshot : source) (name : string) : option string :=
+  match source_lookup snapshot name with
+  | Some text => if Syntax.string_utf8_valid text then Some text else None
   | None => None
-  | Some path =>
-      match source path with
-      | Some text => if Syntax.string_utf8_valid text then Some text else None
-      | None => None
-      end
   end.
 
 (* The concrete host chooses the primitive-managed state and operations.
@@ -4835,6 +4840,9 @@ End Semantics.
 (* Public entry points; detailed definitions live in the model's namespace. *)
 Definition file_path := Semantics.file_path.
 Definition source := Semantics.source.
+Definition Source := Semantics.Source.
+Definition source_files := Semantics.source_files.
+Definition source_lookup := Semantics.source_lookup.
 Definition program := Semantics.program.
 Definition path_text := Semantics.path_text.
 Definition path_canonical := Semantics.path_canonical.

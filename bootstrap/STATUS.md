@@ -4,6 +4,14 @@ The [proof roadmap](PROOFS.md) shows the five public targets as terminal
 nodes, distinguishes checked components from partial and open tasks, and
 links each task to its evidence or finish condition.
 
+The [first public foundation checkpoint](PUBLIC-FOUNDATION.md) implements
+finite public source snapshots, proves direct type-emission/capture facts,
+and checks a partial public-syntax closure compiler with a concrete table.
+The production interpreter is unchanged. Its default configuration passed
+bootstrap in 38m08s; removing either optional transformation exceeded the
+one-hour cap. The public elaborator/interpreter port and all five public
+obligations remain open.
+
 This checkpoint contains a substantial proof development, not an end-to-end
 verified compiler. In particular, **source elaboration soundness and the
 universal runtime typing certificate remain open**. The public contract is

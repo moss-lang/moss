@@ -163,8 +163,11 @@ def render(plan):
         lines.append("")
     lines += [
         "## Scope and unresolved decisions", "",
-        "Finite sources are the selected direction; the public source type has not yet",
-        "been changed. A01/A02 must make the snapshot and inventory contract explicit.",
+        *( ["The finite source snapshot and exact read/domain facts are implemented;",
+            "see [SourceSnapshot.v](theories/SourceSnapshot.v) and the A01/A02 evidence."]
+           if nodes["A02"]["status"] == "done" else
+           ["Finite sources are the selected direction; the public source type has not yet",
+            "been changed. A01/A02 must make the snapshot and inventory contract explicit."] ),
         "F10 must still justify elaborator recursion/budgets: finite files alone do not",
         "prove elaboration completeness. No arbitrary fixed bound is silently added to Builds.", "",
         "A03/A07 settle the exact common-target/lowering boundary with evidence. The",

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_base": "eaa31a208f15bbb71e6a81f69976072332b2556a",
+  "reviewed_base": "049546be253ceabd177f15acfaba3b90d1241d00",
   "reviewed_date": "2026-11-08",
   "groups": [
     {
@@ -923,7 +923,8 @@
       "title": "Preserve captures and exports",
       "requires": [
         "T15",
-        "T12"
+        "T12",
+        "T22"
       ],
       "status": "open",
       "budget": "unknown",
@@ -1394,13 +1395,13 @@
       "group": "A",
       "title": "Specify finite-source contract",
       "requires": [],
-      "status": "open",
-      "budget": "hour",
+      "status": "done",
+      "budget": "done",
       "goal": "Specify an explicit finite source snapshot, canonical path lookup and the intended Builds/build signatures, including how the executable receives its finite inventory.",
       "approach": "Retain the five public obligations and intended finite-filesystem meaning. Record the exact proposed type/loader changes before implementing them.",
       "sources": [
-        "theories/Audit.v",
-        "theories/Parse.v"
+        "PUBLIC-FOUNDATION.md",
+        "theories/Audit.v"
       ]
     },
     {
@@ -1410,14 +1411,15 @@
       "requires": [
         "A01"
       ],
-      "status": "open",
-      "budget": "unknown",
+      "status": "done",
+      "budget": "done",
       "goal": "Implement the selected source representation and read adapter; establish lookup, uniqueness and finite-inventory facts without silently imposing arbitrary fuel caps.",
       "approach": "Keep ordinary lexing/parsing shared. Split source constructors, path handling and loader adapter proofs after A01 fixes their statements.",
       "sources": [
-        "theories/Audit.v",
-        "theories/Parse.v"
-      ]
+        "theories/SourceSnapshot.v",
+        "theories/AuditBuildExample.v"
+      ],
+      "witness": "source_read_iff"
     },
     {
       "id": "A03",
@@ -1426,29 +1428,31 @@
       "requires": [
         "P01"
       ],
-      "status": "open",
-      "budget": "unknown",
+      "status": "done",
+      "budget": "done",
       "goal": "Produce a precise direct-Audit elaborator target and runtime-lowering boundary, with a checked representative operation and capture/output-generation/GC-cast behavior evidence.",
-      "approach": "Use the difficult functor examples to test the boundary. This is a bounded architectural experiment, not a promise to port the entire elaborator in two hours. If incomplete, report the obstruction at the checkpoint.",
+      "approach": "The proposal, direct type emitter and partial public closure compiler are implemented. The closed capture/output/cast fixture discharges its table premise. Full language emission, recursive tables, fast caches and production integration remain separate tasks.",
       "sources": [
-        "theories/Audit.v",
-        "theories/AuditRepresentation.v",
-        "../tests/regressions/functor_input_output_generations.moss",
-        "../tests/regressions/functor_output_generation_cast.moss"
-      ]
+        "PUBLIC-FOUNDATION.md",
+        "theories/PublicEmit.v",
+        "theories/PublicClosurePrototype.v",
+        "theories/PublicClosureExample.v"
+      ],
+      "witness": "all_fuel_agreement"
     },
     {
       "id": "A04",
       "group": "A",
       "title": "Measure current bootstrap baseline",
       "requires": [],
-      "status": "open",
-      "budget": "hour",
+      "status": "done",
+      "budget": "done",
       "goal": "Record source/executable hashes, elapsed time and compiler fixpoint for the current production pipeline on the local x86 VM, or a measured timeout/failure.",
-      "approach": "Run in the background with a one-hour cap. Earlier checkpoint timings are reference evidence, not measurements of current main.",
+      "approach": "The pinned current production pipeline passed the complete compiler fixpoint in 2287.697 seconds. The frozen oracle is byte-identical to the newly checked build; see the checkpoint record and raw benchmark outputs.",
       "sources": [
-        "../flake.nix",
-        "ocaml/moss_m2.ml"
+        "benchmark-configs.py",
+        "benchmarks/foundation-2026-11-08.json",
+        "PUBLIC-FOUNDATION.md"
       ]
     },
     {
@@ -1459,11 +1463,12 @@
         "X01",
         "X02"
       ],
-      "status": "open",
-      "budget": "hour",
+      "status": "done",
+      "budget": "done",
       "goal": "Specify reproducible comparisons of the closure engine with optional fast-path/pruning passes enabled or disabled, including common inputs and expected results.",
       "approach": "Use MOSS_FASTPATH/MOSS_PRUNE controls; distinguish exact closure agreement from outer optimization exceptions. Prepare capped background runs.",
       "sources": [
+        "benchmark-configs.py",
         "ocaml/moss_m2.ml",
         "theories/LazyCloFacts.v"
       ]
@@ -1475,13 +1480,13 @@
       "requires": [
         "A05"
       ],
-      "status": "open",
-      "budget": "unknown",
+      "status": "done",
+      "budget": "done",
       "goal": "Collect timed fixpoint/regression results, or explicit capped failures, for the candidate production configurations.",
-      "approach": "Run the expensive measurements in the background. Decompose the candidate matrix if it exceeds the checkpoint; no successful timing is presumed.",
+      "approach": "Measured all four configurations against one frozen input/oracle: default passed in 2287.697 seconds; each reduced configuration timed out at one hour during S1 generation. Timed-out configurations are not eligible passing pipelines.",
       "sources": [
-        "../flake.nix",
-        "ocaml/moss_m2.ml"
+        "benchmark-configs.py",
+        "benchmarks/foundation-2026-11-08.json"
       ]
     },
     {
@@ -1493,14 +1498,14 @@
         "A04",
         "A06"
       ],
-      "status": "open",
-      "budget": "hour",
+      "status": "done",
+      "budget": "done",
       "goal": "Choose the common public program target, exact lowering/closure boundary and required optimization passes using prototype and performance evidence.",
-      "approach": "Prefer the simplest measured viable configuration, retain the fast closure engine, and identify proof obligations of every retained transformation. X14 later validates the fully integrated pipeline.",
+      "approach": "Select direct public program emission and local closure/environment lowering. Retain lazy closures and both optional transformations for the initial port because reduced configurations missed the cap. Actual port correctness, concrete lowered invariants and integrated X14 performance remain open.",
       "sources": [
-        "theories/Audit.v",
-        "theories/LazyCloFacts.v",
-        "../flake.nix"
+        "PUBLIC-FOUNDATION.md",
+        "benchmarks/foundation-2026-11-08.json",
+        "theories/PublicClosurePrototype.v"
       ]
     },
     {
@@ -1509,7 +1514,8 @@
       "title": "Interpret metadata in the public world",
       "requires": [
         "S01",
-        "A03"
+        "A03",
+        "E19"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2013,6 +2019,34 @@
         "../flake.nix",
         "ocaml/moss_m2.ml"
       ]
+    },
+    {
+      "id": "E19",
+      "group": "E",
+      "title": "Emit public type metadata",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Direct type emission preserves structural field names and commutes with the existing input-bounded executable type substitution.",
+      "approach": "Verified emit_type and emit_full_substitution. This does not establish context meaning, machine initialization or whole elaboration soundness.",
+      "sources": [
+        "theories/PublicEmit.v"
+      ],
+      "witness": "emit_full_substitution"
+    },
+    {
+      "id": "T22",
+      "group": "T",
+      "title": "Preserve closed captured meanings",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "Public grounding of a type is unchanged by a new caller behind a complete captured type scope; captured provision lookups are unchanged.",
+      "approach": "Prove substitution agreement on mentioned generations and left-prefix lookup stability directly against Audit. Completeness of the captured scope remains explicit; semantic binding validity must still establish it.",
+      "sources": [
+        "theories/PublicCaptureFacts.v"
+      ],
+      "witness": "capture_ground_stable"
     }
   ],
   "superseded": [
@@ -3108,13 +3142,13 @@
   ],
   "strategy": {
     "decisions": [
-      "Build from an explicit finite source snapshot. A01/A02 specify and implement the contract; this commit changes the plan, not the source type.",
+      "Build from an explicit finite source snapshot. A01/A02 now implement the public input contract and exact lookup/domain facts; loader and elaborator completeness remain open.",
       "Make Audit the common semantic target. Executable elaboration emits public programs directly; selected runtime lowering compiles that representation to the fast engine.",
-      "Preserve the fast closure engine and measure which optional optimizations are required. Choose the exact boundary/configuration after the bounded prototype and background benchmarks.",
+      "Retain lazy closures and both fast-path/pruning effects for the initial port: default passed in 38m08s and all three reduced configurations timed out at one hour. The fully integrated public-target pipeline must still pass X14.",
       "Prove semantic safety directly against Audit. It can proceed independently of executable migration, host implementation and build/run agreement.",
       "Defer certificate-producing elaboration and the optional staged immutable-lowering candidate. Reconsider them only if evidence favors that route."
     ],
-    "checkpoint": "At two hours of active work, report the finite-source proposal, the precise common-target/lowering proposal and checked prototype operation or remaining obstruction, background bootstrap results/status, and the next concrete proof frontier. A checkpoint is not a promise to finish every architecture task; do not silently extend it.",
+    "checkpoint": "The initial architecture checkpoint is complete ahead of its two-hour deadline; see PUBLIC-FOUNDATION.md and the pinned benchmark record. The next frontier is T02 public runtime invariants, E01 public metadata/world reading, and F07/F08 input-bounded loader traversal. At subsequent two-hour active-work checkpoints, report proved results, measurements and remaining obstructions; do not silently extend the checkpoint.",
     "performance": "Every local bootstrap run has a one-hour cap and runs in the background. Candidate timeouts are evidence for configuration selection; X14 must eventually pass for the fully integrated pipeline. Keep quiet full Rocq compilation around two minutes and use incremental checks during proof development."
   }
 }

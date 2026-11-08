@@ -6,7 +6,8 @@
 From NM Require Certified Parse FastPath Prune SlotX FoldX
   CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts LazyOracle XHeapC MainProgramBool BindMethodLambdaExec BindMethodDispatch BindMethodAllDispatch BindMethodExec BodyPending.
 
-From NM Require AuditExamples AuditBuildExample AuditRepresentation.
+From NM Require AuditExamples AuditBuildExample AuditRepresentation
+  SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -16,6 +17,19 @@ Definition certificate_roots :=
   @NM.AuditExamples.an_arbitrary_cast_entry_is_rejected,
   @NM.AuditBuildExample.public_build_is_inhabited,
   @NM.AuditBuildExample.built_program_runs,
+  @NM.SourceSnapshot.source_read_iff,
+  @NM.SourceSnapshot.source_from_files_sound,
+  @NM.SourceSnapshot.source_from_files_complete,
+  @NM.SourceSnapshot.source_read_finite,
+  @NM.SourceSnapshot.source_read_canonical,
+  @NM.PublicEmit.emit_full_substitution,
+  @NM.PublicClosureExample.C.expression_correct,
+  @NM.PublicClosureExample.compiled_bodies_correct,
+  @NM.PublicClosureExample.all_fuel_agreement,
+  @NM.PublicClosureExample.compiled_capture_output_cast,
+  @NM.PublicCaptureFacts.substitution_agrees_on_generations,
+  @NM.PublicCaptureFacts.capture_ground_stable,
+  @NM.PublicCaptureFacts.capture_provision_stable,
   @NM.BindMethodExec.check_bind_method,
   @NM.BindMethodAllDispatch.residual_after_method_bindings,
   @NM.BindMethodLambdaExec.check_bind_method_lambda,

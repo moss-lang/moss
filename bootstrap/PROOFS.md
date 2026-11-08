@@ -1,13 +1,13 @@
 # Roadmap to the five public theorems
 
-Reviewed against `origin/main` at `eaa31a2` on 2026-11-08.
+Reviewed against `origin/main` at `049546b` on 2026-11-08.
 Targets: the five fields of [`Audit.Public.CORRECT`](theories/Audit.v).
 All five remain unproved. The safety statement on this branch concerns
 declarative `Admissible`/`Runs`, independently of executable build/run.
 
-**118 nodes:** 20 done, 0 partial, 98 open.
-Of the unfinished nodes, **47** have a tentative ≤1h estimate once their
-prerequisites are discharged; **51** are explicitly **? needs decomposition**.
+**120 nodes:** 29 done, 0 partial, 91 open.
+Of the unfinished nodes, **43** have a tentative ≤1h estimate once their
+prerequisites are discharged; **48** are explicitly **? needs decomposition**.
 These counts are not a total time estimate. Completed component results
 are kept at useful statement granularity, rather than split into historical hour-sized work.
 
@@ -25,18 +25,18 @@ not measured or guaranteed bounds. They assume the prerequisites supply
 the invariant/representation they promise. If a node overruns an hour,
 report the remaining obstruction and refine its prerequisites before continuing autonomously.
 
-**Ready frontier:** tentative hour tasks: A01, A04, A05.
-Ready tasks requiring decomposition: T02, A03.
+**Ready frontier:** tentative hour tasks: F07, F08, B01.
+Ready tasks requiring decomposition: F10, T02, E01, L01.
 
 ## Selected plan and next checkpoint
 
-- Build from an explicit finite source snapshot. A01/A02 specify and implement the contract; this commit changes the plan, not the source type.
+- Build from an explicit finite source snapshot. A01/A02 now implement the public input contract and exact lookup/domain facts; loader and elaborator completeness remain open.
 - Make Audit the common semantic target. Executable elaboration emits public programs directly; selected runtime lowering compiles that representation to the fast engine.
-- Preserve the fast closure engine and measure which optional optimizations are required. Choose the exact boundary/configuration after the bounded prototype and background benchmarks.
+- Retain lazy closures and both fast-path/pruning effects for the initial port: default passed in 38m08s and all three reduced configurations timed out at one hour. The fully integrated public-target pipeline must still pass X14.
 - Prove semantic safety directly against Audit. It can proceed independently of executable migration, host implementation and build/run agreement.
 - Defer certificate-producing elaboration and the optional staged immutable-lowering candidate. Reconsider them only if evidence favors that route.
 
-At two hours of active work, report the finite-source proposal, the precise common-target/lowering proposal and checked prototype operation or remaining obstruction, background bootstrap results/status, and the next concrete proof frontier. A checkpoint is not a promise to finish every architecture task; do not silently extend it.
+The initial architecture checkpoint is complete ahead of its two-hour deadline; see PUBLIC-FOUNDATION.md and the pinned benchmark record. The next frontier is T02 public runtime invariants, E01 public metadata/world reading, and F07/F08 input-bounded loader traversal. At subsequent two-hour active-work checkpoints, report proved results, measurements and remaining obstructions; do not silently extend the checkpoint.
 
 Every local bootstrap run has a one-hour cap and runs in the background. Candidate timeouts are evidence for configuration selection; X14 must eventually pass for the fully integrated pipeline. Keep quiet full Rocq compilation around two minutes and use incremental checks during proof development.
 
@@ -52,13 +52,13 @@ selected deliverable. They are not extra hypotheses in the five theorem statemen
 ```mermaid
 flowchart TB
   subgraph A_group["Architecture and performance gates"]
-    A01["○ A01: Specify finite-source contract"]:::open
-    A02["○ ? A02: Implement finite-source lookup"]:::unknown
-    A03["○ ? A03: Prototype common semantic target"]:::unknown
-    A04["○ A04: Measure current bootstrap baseline"]:::open
-    A05["○ A05: Set up engine configuration comparison"]:::open
-    A06["○ ? A06: Measure candidate engine configurations"]:::unknown
-    A07["○ A07: Choose measured implementation boundary"]:::open
+    A01["✓ A01: Specify finite-source contract"]:::done
+    A02["✓ A02: Implement finite-source lookup"]:::done
+    A03["✓ A03: Prototype common semantic target"]:::done
+    A04["✓ A04: Measure current bootstrap baseline"]:::done
+    A05["✓ A05: Set up engine configuration comparison"]:::done
+    A06["✓ A06: Measure candidate engine configurations"]:::done
+    A07["✓ A07: Choose measured implementation boundary"]:::done
   end
   subgraph F_group["Shared front end and direct completeness"]
     F01["✓ F01: Lexer soundness"]:::done
@@ -110,6 +110,7 @@ flowchart TB
     E10["○ E10: Assemble direct final-state coverage"]:::open
     E11["○ ? E11: Close direct public elaboration soundness"]:::unknown
     E12["○ ? E12: Direct public elaboration completeness"]:::unknown
+    E19["✓ E19: Emit public type metadata"]:::done
   end
   subgraph L_group["Selected runtime lowering"]
     L01["○ ? L01: Specify selected runtime lowering"]:::unknown
@@ -161,6 +162,7 @@ flowchart TB
     T19["○ ? T19: Close runtime preservation induction"]:::unknown
     T20["○ T20: Exclude entry Wrong signals"]:::open
     T21["○ ? T21: Type semantic platform initialization"]:::unknown
+    T22["✓ T22: Preserve closed captured meanings"]:::done
   end
   subgraph X_group["Common-target executable agreement"]
     X01["✓ X01: Exact internal closure agreement"]:::done
@@ -273,6 +275,7 @@ flowchart TB
   T07 --> T15
   T15 --> T16
   T12 --> T16
+  T22 --> T16
   T12 --> T17
   T11 --> T17
   T13 --> T18
@@ -344,6 +347,7 @@ flowchart TB
   A06 --> A07
   S01 --> E01
   A03 --> E01
+  E19 --> E01
   A03 --> E02
   E01 --> E02
   E02 --> E03
@@ -432,13 +436,13 @@ an estimate of one hour just because its final assembly has a short name.
 
 | Task | Status / budget | Finish condition | Strategy and evidence |
 | --- | --- | --- | --- |
-| **A01** Specify finite-source contract | ○ open; ≤1h, tentative | Specify an explicit finite source snapshot, canonical path lookup and the intended Builds/build signatures, including how the executable receives its finite inventory. | Retain the five public obligations and intended finite-filesystem meaning. Record the exact proposed type/loader changes before implementing them. [Audit.v](theories/Audit.v), [Parse.v](theories/Parse.v) |
-| **A02** Implement finite-source lookup | ○ open; ? Decompose | Implement the selected source representation and read adapter; establish lookup, uniqueness and finite-inventory facts without silently imposing arbitrary fuel caps. | Keep ordinary lexing/parsing shared. Split source constructors, path handling and loader adapter proofs after A01 fixes their statements. [Audit.v](theories/Audit.v), [Parse.v](theories/Parse.v) |
-| **A03** Prototype common semantic target | ○ open; ? Decompose | Produce a precise direct-Audit elaborator target and runtime-lowering boundary, with a checked representative operation and capture/output-generation/GC-cast behavior evidence. | Use the difficult functor examples to test the boundary. This is a bounded architectural experiment, not a promise to port the entire elaborator in two hours. If incomplete, report the obstruction at the checkpoint. [Audit.v](theories/Audit.v), [AuditRepresentation.v](theories/AuditRepresentation.v), [functor_input_output_generations.moss](../tests/regressions/functor_input_output_generations.moss), [functor_output_generation_cast.moss](../tests/regressions/functor_output_generation_cast.moss) |
-| **A04** Measure current bootstrap baseline | ○ open; ≤1h, tentative | Record source/executable hashes, elapsed time and compiler fixpoint for the current production pipeline on the local x86 VM, or a measured timeout/failure. | Run in the background with a one-hour cap. Earlier checkpoint timings are reference evidence, not measurements of current main. [flake.nix](../flake.nix), [moss_m2.ml](ocaml/moss_m2.ml) |
-| **A05** Set up engine configuration comparison | ○ open; ≤1h, tentative | Specify reproducible comparisons of the closure engine with optional fast-path/pruning passes enabled or disabled, including common inputs and expected results. | Use MOSS_FASTPATH/MOSS_PRUNE controls; distinguish exact closure agreement from outer optimization exceptions. Prepare capped background runs. [moss_m2.ml](ocaml/moss_m2.ml), [LazyCloFacts.v](theories/LazyCloFacts.v) |
-| **A06** Measure candidate engine configurations | ○ open; ? Decompose | Collect timed fixpoint/regression results, or explicit capped failures, for the candidate production configurations. | Run the expensive measurements in the background. Decompose the candidate matrix if it exceeds the checkpoint; no successful timing is presumed. [flake.nix](../flake.nix), [moss_m2.ml](ocaml/moss_m2.ml) |
-| **A07** Choose measured implementation boundary | ○ open; ≤1h, tentative | Choose the common public program target, exact lowering/closure boundary and required optimization passes using prototype and performance evidence. | Prefer the simplest measured viable configuration, retain the fast closure engine, and identify proof obligations of every retained transformation. X14 later validates the fully integrated pipeline. [Audit.v](theories/Audit.v), [LazyCloFacts.v](theories/LazyCloFacts.v), [flake.nix](../flake.nix) |
+| **A01** Specify finite-source contract | ✓ done; Proved / defined | Specify an explicit finite source snapshot, canonical path lookup and the intended Builds/build signatures, including how the executable receives its finite inventory. | Retain the five public obligations and intended finite-filesystem meaning. Record the exact proposed type/loader changes before implementing them. [PUBLIC-FOUNDATION.md](PUBLIC-FOUNDATION.md), [Audit.v](theories/Audit.v) |
+| **A02** Implement finite-source lookup | ✓ done; Proved / defined | Implement the selected source representation and read adapter; establish lookup, uniqueness and finite-inventory facts without silently imposing arbitrary fuel caps. | Keep ordinary lexing/parsing shared. Split source constructors, path handling and loader adapter proofs after A01 fixes their statements. Named result: `source_read_iff`. [SourceSnapshot.v](theories/SourceSnapshot.v), [AuditBuildExample.v](theories/AuditBuildExample.v) |
+| **A03** Prototype common semantic target | ✓ done; Proved / defined | Produce a precise direct-Audit elaborator target and runtime-lowering boundary, with a checked representative operation and capture/output-generation/GC-cast behavior evidence. | The proposal, direct type emitter and partial public closure compiler are implemented. The closed capture/output/cast fixture discharges its table premise. Full language emission, recursive tables, fast caches and production integration remain separate tasks. Named result: `all_fuel_agreement`. [PUBLIC-FOUNDATION.md](PUBLIC-FOUNDATION.md), [PublicEmit.v](theories/PublicEmit.v), [PublicClosurePrototype.v](theories/PublicClosurePrototype.v), [PublicClosureExample.v](theories/PublicClosureExample.v) |
+| **A04** Measure current bootstrap baseline | ✓ done; Proved / defined | Record source/executable hashes, elapsed time and compiler fixpoint for the current production pipeline on the local x86 VM, or a measured timeout/failure. | The pinned current production pipeline passed the complete compiler fixpoint in 2287.697 seconds. The frozen oracle is byte-identical to the newly checked build; see the checkpoint record and raw benchmark outputs. [benchmark-configs.py](benchmark-configs.py), [foundation-2026-11-08.json](benchmarks/foundation-2026-11-08.json), [PUBLIC-FOUNDATION.md](PUBLIC-FOUNDATION.md) |
+| **A05** Set up engine configuration comparison | ✓ done; Proved / defined | Specify reproducible comparisons of the closure engine with optional fast-path/pruning passes enabled or disabled, including common inputs and expected results. | Use MOSS_FASTPATH/MOSS_PRUNE controls; distinguish exact closure agreement from outer optimization exceptions. Prepare capped background runs. [benchmark-configs.py](benchmark-configs.py), [moss_m2.ml](ocaml/moss_m2.ml), [LazyCloFacts.v](theories/LazyCloFacts.v) |
+| **A06** Measure candidate engine configurations | ✓ done; Proved / defined | Collect timed fixpoint/regression results, or explicit capped failures, for the candidate production configurations. | Measured all four configurations against one frozen input/oracle: default passed in 2287.697 seconds; each reduced configuration timed out at one hour during S1 generation. Timed-out configurations are not eligible passing pipelines. [benchmark-configs.py](benchmark-configs.py), [foundation-2026-11-08.json](benchmarks/foundation-2026-11-08.json) |
+| **A07** Choose measured implementation boundary | ✓ done; Proved / defined | Choose the common public program target, exact lowering/closure boundary and required optimization passes using prototype and performance evidence. | Select direct public program emission and local closure/environment lowering. Retain lazy closures and both optional transformations for the initial port because reduced configurations missed the cap. Actual port correctness, concrete lowered invariants and integrated X14 performance remain open. [PUBLIC-FOUNDATION.md](PUBLIC-FOUNDATION.md), [foundation-2026-11-08.json](benchmarks/foundation-2026-11-08.json), [PublicClosurePrototype.v](theories/PublicClosurePrototype.v) |
 
 ### Shared front end and direct completeness
 
@@ -502,6 +506,7 @@ an estimate of one hour just because its final assembly has a short name.
 | **E10** Assemble direct final-state coverage | ○ open; ≤1h, tentative | One final public program/world contains all required source/generated body and initial-environment receipts. | Assemble coverage and monotonic final-table facts under clearly stated smaller-fuel assumptions. [Audit.v](theories/Audit.v), [FunctionFrameProgram.v](theories/FunctionFrameProgram.v) |
 | **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement. [Audit.v](theories/Audit.v), [Elab.v](theories/Elab.v) |
 | **E12** Direct public elaboration completeness | ○ open; ? Decompose | Every public-buildable bundle is accepted by direct elaboration, with the implementation fresh names permitted by the public contract. | Assemble backward rule proofs and justified resource bounds, including the direct entry environment. [Audit.v](theories/Audit.v), [Elab.v](theories/Elab.v) |
+| **E19** Emit public type metadata | ✓ done; Proved / defined | Direct type emission preserves structural field names and commutes with the existing input-bounded executable type substitution. | Verified emit_type and emit_full_substitution. This does not establish context meaning, machine initialization or whole elaboration soundness. Named result: `emit_full_substitution`. [PublicEmit.v](theories/PublicEmit.v) |
 
 ### Selected runtime lowering
 
@@ -565,6 +570,7 @@ an estimate of one hour just because its final assembly has a short name.
 | **T19** Close runtime preservation induction | ○ open; ? Decompose | Assemble all public expression/binding/application preservation cases by fuel induction. | Port the internal induction pattern, exposing any missing evaluator cases as new tasks. [Audit.v](theories/Audit.v), [XSafety.v](theories/XSafety.v) |
 | **T20** Exclude entry Wrong signals | ○ open; ≤1h, tentative | For an admissible public program and compatible interface, reference run_main cannot yield Stuck or escaping Breaking at any fuel. | Apply preservation to the typed entry environment; invert the allowed top-level signals. [Audit.v](theories/Audit.v) |
 | **T21** Type semantic platform initialization | ○ open; ? Decompose | Public Platform.Linked and the source context establish the typing of the semantic initial provisions and primitive families. | Invert the declarative platform rules. This proof does not require an executable platform checker or the concrete default-host implementation. [Audit.v](theories/Audit.v) |
+| **T22** Preserve closed captured meanings | ✓ done; Proved / defined | Public grounding of a type is unchanged by a new caller behind a complete captured type scope; captured provision lookups are unchanged. | Prove substitution agreement on mentioned generations and left-prefix lookup stability directly against Audit. Completeness of the captured scope remains explicit; semantic binding validity must still establish it. Named result: `capture_ground_stable`. [PublicCaptureFacts.v](theories/PublicCaptureFacts.v) |
 
 ### Common-target executable agreement
 
@@ -608,8 +614,8 @@ an estimate of one hour just because its final assembly has a short name.
 
 ## Scope and unresolved decisions
 
-Finite sources are the selected direction; the public source type has not yet
-been changed. A01/A02 must make the snapshot and inventory contract explicit.
+The finite source snapshot and exact read/domain facts are implemented;
+see [SourceSnapshot.v](theories/SourceSnapshot.v) and the A01/A02 evidence.
 F10 must still justify elaborator recursion/budgets: finite files alone do not
 prove elaboration completeness. No arbitrary fixed bound is silently added to Builds.
 

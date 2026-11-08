@@ -1,0 +1,127 @@
+{
+  "source_commit": "049546be253ceabd177f15acfaba3b90d1241d00",
+  "oracle_sha256": "982ea335582de4749555434cc340b93f0889e41c07c779f51af05692748a8e23",
+  "source_hash_manifest_sha256": "8a9af4704c94c1fe5445f18fd4909e0d98e42dd8edd1c17309c01bec17764f47",
+  "flake_lock_sha256": "819867595662e6e7710bc777f7c76bcd3b5fc4040290c0857cc11c34809e5654",
+  "architecture": "x86_64",
+  "available_cpus": 32,
+  "concurrent_configurations": 4,
+  "started_utc": "2026-11-08T13:44:25Z",
+  "timeout_seconds_per_configuration": 3600,
+  "tools": {
+    "wasm-tools": "wasm-tools 1.262.0",
+    "wasm-opt": "wasm-opt version 133",
+    "wasmtime": "wasmtime 50.0.0"
+  },
+  "configurations": {
+    "default": {
+      "elapsed_seconds": 2287.69736599701,
+      "phases": [
+        {
+          "phase": "interpret",
+          "elapsed_seconds": 2273.975769478013
+        },
+        {
+          "phase": "validate",
+          "elapsed_seconds": 2273.9841519290057
+        },
+        {
+          "phase": "optimize",
+          "elapsed_seconds": 2286.0777453200135
+        },
+        {
+          "phase": "self-compile",
+          "elapsed_seconds": 2287.6962126870058
+        }
+      ],
+      "status": "passed",
+      "engine": "lazy",
+      "fastpath": true,
+      "prune": true,
+      "compiler_sha256": "316fe4be55b176f978a8e8309c0c85829b6e7ba87c72c2ea32ffca20f20a459d"
+    },
+    "closure-only": {
+      "elapsed_seconds": 3600.0859585230064,
+      "phases": [],
+      "status": "timeout",
+      "engine": "lazy",
+      "fastpath": false,
+      "prune": false
+    },
+    "prune-only": {
+      "elapsed_seconds": 3600.0563622110058,
+      "phases": [],
+      "status": "timeout",
+      "engine": "lazy",
+      "fastpath": false,
+      "prune": true
+    },
+    "fastpath-only": {
+      "elapsed_seconds": 3600.0842364900163,
+      "phases": [],
+      "status": "timeout",
+      "engine": "lazy",
+      "fastpath": true,
+      "prune": false
+    }
+  },
+  "snapshot_unchanged": true,
+  "selection": "Retain lazy closures with both fast-path and pruning for the initial public-target port.",
+  "scope": "Existing production pipeline; performance of the fully ported public pipeline remains the separate X14 gate.",
+  "profiles": {
+    "closure-only": "Five-second sample: about 80% of CPU cycles in two LazyX.look functions.",
+    "fastpath-only": "Five-second sample: about 78% in the same two LazyX.look functions.",
+    "prune-only": "Five-second sample: about 39% in ExecutionModel type equality/related traversal; no completion within the cap."
+  },
+  "raw_artifacts": "scratch/foundation-bootstrap",
+  "microbenchmark": {
+    "scope": "One public capture/output/cast fixture, with varying input addresses; not a bootstrap prediction.",
+    "results": [
+      {
+        "engine": "compiled-public-fragment",
+        "iterations": 1000000,
+        "elapsed_seconds": 0.175203,
+        "allocated_bytes": 2864000096
+      },
+      {
+        "engine": "reference-public-fragment",
+        "iterations": 1000000,
+        "elapsed_seconds": 0.193049,
+        "allocated_bytes": 2736000096
+      },
+      {
+        "engine": "compiled-public-fragment",
+        "iterations": 1000000,
+        "elapsed_seconds": 0.161974,
+        "allocated_bytes": 2864000096
+      },
+      {
+        "engine": "reference-public-fragment",
+        "iterations": 1000000,
+        "elapsed_seconds": 0.185894,
+        "allocated_bytes": 2736000096
+      },
+      {
+        "engine": "compiled-public-fragment",
+        "iterations": 1000000,
+        "elapsed_seconds": 0.165902,
+        "allocated_bytes": 2864000096
+      },
+      {
+        "engine": "reference-public-fragment",
+        "iterations": 1000000,
+        "elapsed_seconds": 0.184154,
+        "allocated_bytes": 2736000096
+      }
+    ]
+  },
+  "validation": {
+    "full_nix_oracle_build": "passed",
+    "rocq_theory_seconds": 118,
+    "assumption_audit_seconds": 10,
+    "full_rocq_check_seconds": 128,
+    "total_nix_build_seconds": 146.5,
+    "new_oracle_matches_benchmark": true,
+    "log": "scratch/foundation-final-nix.log"
+  }
+}
