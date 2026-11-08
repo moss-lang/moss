@@ -10,7 +10,7 @@
    remaining obligation, not an assumption about accepted programs. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
-  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck.
+  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -799,6 +799,113 @@ Proof.
     + exact (IH Bel' F C tree x t D j Small d types H g st Pre0).
     + assert (j = S (S n)) as -> by lia.
       exact (lit_step (S n) Bel (fun F' C' tree' x' t' D' => IH Bel' F' C' tree' x' t' D') F C tree x t D d types H g st Pre0).
+Qed.
+
+(* ---- running a defined function's body ------------------------------------ *)
+
+Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
+  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
+
+Lemma ctxof_locals : forall f C ns, A.CtxOf W f C ns -> A.c_locals C = [].
+Proof.
+  intros f C ns [d [es [tm [er [tmr [σ [_ [_ [_ [_ [-> _]]]]]]]]]]]. reflexivity.
+Qed.
+
+Lemma slook_params : forall (names : list name) (ts : list ty) C n t mu,
+  A.c_locals C = [] ->
+  A.slook n (A.c_locals (fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) (combine names ts) C)) = Some (t, mu) ->
+  In (n, t) (combine names ts).
+Proof.
+  intros names ts C n t mu Empty.
+  assert (General : forall l C, (forall t mu, A.slook n (A.c_locals C) = Some (t, mu) -> In (n, t) l) ->
+    forall l', (forall q, In q l' -> In q l) ->
+    A.slook n (A.c_locals (fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) l' C)) = Some (t, mu) ->
+    In (n, t) l).
+  { intros l. intros C0 Base l'. revert C0 Base. induction l' as [|[m u] rest IH]; intros C0 Base Sub Found.
+    - exact (Base t mu Found).
+    - apply (IH (A.add_local C0 m u A.LLet)); [|intros q Iq; apply Sub; right; exact Iq|exact Found].
+      intros t' mu' F'. cbn in F'. destruct (String.eqb_spec n m) as [->|_].
+      + injection F' as <- _. apply Sub. left. reflexivity.
+      + exact (Base t' mu' F'). }
+  apply (General (combine names ts) C); [|intros q Iq; exact Iq].
+  intros t' mu' F'. rewrite Empty in F'. discriminate.
+Qed.
+
+Lemma in_combine_nth : forall X Y (xs : list X) (ys : list Y) x y,
+  In (x, y) (combine xs ys) -> exists i, nth_error xs i = Some x /\ nth_error ys i = Some y.
+Proof.
+  induction xs as [|a xs IH]; intros [|b ys] x y In'; cbn in In'; try contradiction.
+  destruct In' as [E|In']; [injection E as -> ->; exists 0; auto|].
+  destruct (IH ys x y In') as [i [E1 E2]]. exists (S i); auto.
+Qed.
+
+Lemma nlook_positions : forall (ts : list ty) i t start,
+  nth_error ts i = Some t ->
+  A.nlook (start + i) (combine (seq start (List.length ts)) ts) = Some t.
+Proof.
+  induction ts as [|u ts IH]; intros i t start Found; [destruct i; discriminate|].
+  destruct i as [|i]; cbn in Found |- *.
+  - injection Found as ->. rewrite Nat.add_0_r, Nat.eqb_refl. reflexivity.
+  - destruct (Nat.eqb_spec (start + S i) start) as [E|_]; [lia|].
+    replace (start + S i) with (S start + i) by lia. exact (IH i t (S start) Found).
+Qed.
+
+Lemma params_typed : forall H ws (ts : list ty) start,
+  Forall2 (fun w t => value_typed W P H w t) ws ts ->
+  locals_typed W P H (combine (seq start (List.length ws)) ws) (combine (seq start (List.length ts)) ts).
+Proof.
+  intros H ws ts start F. revert start. induction F as [|w t ws ts T Rest IH]; intros start; cbn;
+    constructor; [split; [reflexivity|exact T]|apply IH].
+Qed.
+
+
+(* The body of a defined plain function, entered with a realized context and
+   typed arguments, behaves as a call at the caller's types. *)
+Lemma body_call : forall j, Safe j ->
+  forall f dcl n ps rt b Cf ns de H st ws (d : environment) params ret,
+  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn RPlain n ps rt (Some b) ->
+  A.CtxOf W f Cf ns -> Realizes j Cf de H -> state_ok H st ->
+  (forall g0, A.SigOf W f (A.c_ty Cf) None g0 ->
+     map (ground de) (A.sg_params g0) = map (ground d) params /\ ground de (A.sg_ret g0) = ground d ret) ->
+  Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
+  exists body, view_function P f = Some body /\
+    CallOutcome H (ground d ret) (I.eval j P de (parameter_values ws) st body).
+Proof.
+  intros j Sj f dcl n ps rt b Cf ns de H st ws d params ret Decl Ast Ctx Real State Agree Args.
+  destruct (all_fn_elab f dcl RPlain n ps rt b Decl Ast dcl RPlain n ps rt b Decl Ast)
+    as [C0 [ns0 [this [g0 [F0 [x [t0 [Ctx0 [This [Sig [_ [Ret [FThis [Loop [_ [_ [_ [Num [Body View]]]]]]]]]]]]]]]]]]].
+  cbn in This. subst this.
+  destruct (PublicContextFacts.function_context_unique W f C0 ns0 Cf ns Ctx0 Ctx) as [-> ->].
+  exists x. split; [exact View|].
+  destruct (Agree g0 Sig) as [Params Result].
+  set (Cb := fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) (combine (map fst ps) (A.sg_params g0)) Cf).
+  set (types0 := combine (seq 0 (List.length (A.sg_params g0))) (map (ground de) (A.sg_params g0))).
+  assert (Pre0 : Pre j F0 Cb de types0 H (parameter_values ws) st).
+  { split; [apply (numbering_frame F0 (map fst ps)); rewrite FThis; exact Num|].
+    split; [split|].
+    - intros pn t mu Found Named.
+      apply slook_params in Found; [|exact (ctxof_locals f Cf ns Ctx)].
+      apply in_combine_nth in Found as [i [Name Ty]].
+      destruct Num as [_ [_ [_ Positions]]]. pose proof (Positions i pn Name) as Slot.
+      unfold A.var_of. rewrite Slot. unfold types0.
+      rewrite <- (map_length (ground de)).
+      exact (nlook_positions (map (ground de) (A.sg_params g0)) i (ground de t) 0
+        ltac:(rewrite nth_error_map, Ty; reflexivity)).
+    - intros t' This'. congruence.
+    - split; [|split; [exact State|]].
+      + unfold parameter_values, types0. rewrite <- (map_length (ground de)).
+        apply params_typed. rewrite Params.
+        clear -Args. induction Args; constructor; auto.
+      + apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]. }
+  destruct Sj as [_ [_ [SBlkE _]]].
+  pose proof (SBlkE F0 Cb b (Some (A.sg_ret g0)) x t0 Body de types0 H (parameter_values ws) st Pre0) as Out.
+  destruct (blke_branch_ty _ _ _ _ _ _ Body) as [_ Fits]. cbn in Fits.
+  destruct (I.eval j P de (parameter_values ws) st x) as [[] g' st']; cbn in Out |- *; auto.
+  - destruct Out as [H' [E [S [_ T]]]]. exists H'; repeat split; auto.
+    rewrite <- Result. exact (fits_ground W P H' de _ _ _ Fits T).
+  - destruct Out as [H' [r [R [E [S [_ T]]]]]]. rewrite Ret in R. injection R as <-.
+    exists H'; repeat split; auto. rewrite <- Result. exact T.
+  - destruct Out as [_ [L _]]. rewrite Loop in L. discriminate.
 Qed.
 
 Section Step.
