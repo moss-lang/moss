@@ -146,11 +146,6 @@ Hypothesis attached_defined_case : forall k, Below k -> forall F C o ox ot0 ot n
   A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
   A.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B (wrap (ECall att th sm (ox :: xs))).
-Hypothesis bind_case : forall k, Below k -> forall F C its rest tl exp wrap C' F' xr t made made',
-  A.BindItems W Prog F C its wrap C' F' made ->
-  A.Blk W Prog F' C' rest tl exp xr t made' ->
-  StepSafe k F C t (A.BlockBreaks (ABlock (ASBind its :: rest) tl)) (wrap xr).
-
 Hypothesis Reps : Platform.Representations W Prog.
 
 Lemma forall2_keys : forall (reqs : list nat) (xs : list (nat * ty)) (R : nat -> ty -> Prop),
@@ -1127,6 +1122,184 @@ Proof.
     Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0).
 Qed.
 
+(* ---- bind statements --------------------------------------------------------- *)
+
+Definition ItemBreaks (it : spec * option aexpr) : Prop :=
+  match snd it with Some y => A.Breaks y | None => False end.
+Definition ItemsBreak (its : list (spec * option aexpr)) : Prop :=
+  exists it, In it its /\ ItemBreaks it.
+
+(* A bind's wrapper turns safe continuation code into safe code. *)
+Definition WrapSafe n F C F' C' (Bi : Prop) (w : expr -> expr) : Prop :=
+  forall t (B : Prop) x, CodeSafe n F' C' t B x -> CodeSafe n F C t (B \/ Bi) (w x).
+
+Definition ItemWrap n F C (it : spec * option aexpr) (w : expr -> expr) (C' : A.cx) (F' : A.frame) (made : list nat) : Prop :=
+  WrapSafe n F C F' C' (ItemBreaks it) w.
+
+(* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
+Local Close Scope string_scope.
+(* BValBind *)
+Hypothesis case_BValBind : forall k, Below k -> forall F C pa v d n t0 i declared y x xt a,
+  A.resolve_sym W (A.fr_mod F) pa = Some v -> A.w_decl W v = Some d -> A.d_ast d = ADVal n t0 i ->
+      A.TyOf W (A.d_mod d) (A.c_ty C) None t0 declared ->
+      A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
+      A.AppOf W v (A.c_ty C) a ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some y) (bind_value_expression v x)
+             (A.provide C (IVal v) a (A.set_val C v declared)) F [].
+
+(* BFnBind *)
+Hypothesis case_BFnBind : forall k, Below k -> forall F C pa f g sg pg sm a types,
+  A.resolve_sym W (A.fr_mod F) pa = Some f -> A.kind_sym W f = Some A.DKFn ->
+      A.SigOf W f (A.c_ty C) None sg ->
+      A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
+      A.AppOf W f (A.c_ty C) a ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_function_expression f g types sm)
+             (A.provide C (IFn f) a (A.set_fn C f sg)) F [].
+
+(* BFnLambda *)
+Hypothesis case_BFnLambda : forall k, Below k -> forall F C pa f sg ps rt body pid pre sm a,
+  A.resolve_sym W (A.fr_mod F) pa = Some f -> A.kind_sym W f = Some A.DKFn ->
+      A.SigOf W f (A.c_ty C) None sg ->
+      A.LambdaProvider W Prog F C ps rt body sg None pid pre sm ->
+      A.AppOf W f (A.c_ty C) a ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AELam ps rt body)) (fun x => pre (bind_function_expression f pid (A.lexical_capture C) sm x))
+             (A.provide C (IFn f) a (A.set_fn C f sg)) F [].
+
+(* BMethBind *)
+Hypothesis case_BMethBind : forall k, Below k -> forall F C pa dn a y r m bs rt sg target pre sm ap types,
+  A.resolve_sym W (A.fr_mod F) pa = Some r -> A.MethodNamed W (A.fr_mod F) r dn m ->
+      A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
+      A.TyOf W (A.fr_mod F) (bs ++ A.c_ty C) None (ATRef pa None) rt ->
+      A.SigOf W m (bs ++ A.c_ty C) (Some rt) sg ->
+      A.MethProvider W Prog F C y sg rt target types pre sm ->
+      A.AppOf W m (bs ++ A.c_ty C) ap ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) (Some dn) a, Some y)
+             (fun x => pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) target types sm x))
+             (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
+
+(* BApplyBody *)
+Hypothesis case_BApplyBody : forall k, Below k -> forall F C pa u d n ps a r bodies wrap C' F' made,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.w_decl W u = Some d ->
+      A.d_ast d = ADFunctor n ps a r (Some bodies) -> ~ In u (A.fr_applying F) ->
+      A.BindItems W Prog (A.with_mod F (A.d_mod d) u) C (List.concat bodies) wrap C' F' made ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, None) wrap C'
+             (A.Frame (A.fr_mod F) (A.fr_ret F) (A.fr_this F) (A.fr_loop F) (A.fr_var F) (A.fr_fresh F') (A.fr_applying F) (A.fr_pins F)) made.
+
+(* BApplyAbstract *)
+Hypothesis case_BApplyAbstract : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
+      A.FunCtx W u Cu ns ->
+      
+      (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
+      th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) ->
+      
+      (forall x tx, In (x, tx) fx -> exists here,
+        A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
+      A.Satisfies C Cu th ns sm ->
+      A.FreshFor W F C newgens ->
+      
+      (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
+      
+      (forall t, A.FunOutputs W u t ->
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+      NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
+      A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, None)
+      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
+      C' (A.with_fresh F newgens) newgens.
+
+(* BFunCopy *)
+Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
+      A.nlook h (A.c_funs C) <> None ->
+      A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+      
+      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
+      (forall x, A.Fixed W h x -> A.Fixed W u x) ->
+      A.FixedAgreement W C h ->
+      A.SameResult W u h ->
+      sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
+      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (A.set_fun C u fx) F [].
+
+(* BFunClosure *)
+Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
+      (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
+      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
+      A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+      
+      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
+      A.SameResult W u gg ->
+      A.LinkBody W Prog u gg h ->
+      sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
+      smc = map (fun k => (A.rkey_of Cg k, A.rkey_of C (A.at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
+      (forall k k', In (k, k') smc -> A.provides C k') ->
+      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h sm smc) (A.set_fun C u fx) F [].
+
+
+Local Open Scope string_scope.
+
+Lemma wrap_breaks : forall n F C t (B B' : Prop) x, (B -> B') -> CodeSafe n F C t B x -> CodeSafe n F C t B' x.
+Proof. intros n F C t B B' x Imp Safe j Le d types H g st Pre0. exact (O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ Imp (Safe j Le d types H g st Pre0)). Qed.
+
+Lemma eval_bind_eq : forall j d g st b x,
+  I.eval (S j) P d g st (EBind b x) =
+  match I.eval_bindings j P d g st [b] with
+  | inl (d1, g1, st1) => I.eval j P d1 g1 st1 x
+  | inr r => r
+  end.
+Proof. reflexivity. Qed.
+
+Lemma bindings_nil_eq : forall j d g st, I.eval_bindings (S j) P d g st [] = inl (d, g, st).
+Proof. reflexivity. Qed.
+
+Lemma bindings_type_eq : forall j d g st t tau r,
+  I.eval_bindings (S j) P d g st (BType t tau :: r) = I.eval_bindings j P (bind_type d t tau) g st r.
+Proof. reflexivity. Qed.
+
+Lemma type_bind_safe : forall n F C t0 tau,
+  WrapSafe n F C F (A.set_ty C t0 (A.canon C tau)) False (bind_type_expression t0 (A.canon C tau)).
+Proof.
+  intros n F C t0 tau t B x Safe [|[|[|i]]] Le d types H g st Pre0; [exact Logic.I| | |];
+    unfold bind_type_expression; rewrite eval_bind_eq; [reflexivity|..].
+  - rewrite bindings_type_eq. exact Logic.I.
+  - rewrite bindings_type_eq, bindings_nil_eq.
+    eapply O.outcome_breaks; [intro b; left; exact b|].
+    exact (Safe (S (S i)) ltac:(lia) (bind_type d t0 (A.canon C tau)) types H g st (pre_lower Pre0)).
+Qed.
+
+Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
+  A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks it) w.
+Proof.
+  intros k Bel n F C it w C' F' m D Le.
+  destruct D.
+  - intros t' B x Safe. apply (wrap_breaks n F C t' (B \/ False)); [tauto|]. apply type_bind_safe. exact Safe.
+  - eapply case_BValBind; eassumption.
+  - eapply case_BFnBind; eassumption.
+  - eapply case_BFnLambda; eassumption.
+  - eapply case_BMethBind; eassumption.
+  - eapply case_BApplyBody; eassumption.
+  - eapply case_BApplyAbstract; eassumption.
+  - eapply case_BFunCopy; eassumption.
+  - eapply case_BFunClosure; eassumption.
+Qed.
+
+Lemma items_safe : forall k, Below k -> forall n F C its w C' F' m,
+  A.BindItems W Prog F C its w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemsBreak its) w.
+Proof.
+  intros k Bel n F C its w C' F' m D Le. induction D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest IH].
+  - intros t B x Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
+  - intros t B x Safe.
+    pose proof (IH t B x Safe) as S2.
+    pose proof (item_safe k Bel n F C it w1 C1 F1 m1 D1 Le t _ (w2 x) S2) as S1.
+    apply (wrap_breaks n F C t ((B \/ ItemsBreak r) \/ ItemBreaks it) _ (w1 (w2 x))); [|exact S1].
+    intros [[b|[it' [I' Bi]]]|b]; [left; exact b|right; exists it'; split; [right; exact I'|exact Bi]|].
+    right. exists it. split; [left; reflexivity|exact b].
+Qed.
+
 Section Step.
 Variable k : nat.
 Hypothesis Bel : Below k.
@@ -1482,7 +1655,16 @@ Proof.
       destruct (I.eval k P d lg lst (ELoop bx)) as [[] g1 st1]; cbn in Out, Normal' |- *; auto; try contradiction;
         try (destruct Out as [[] _]).
       exfalso. exact (NotBreaks (Normal' v eq_refl)).
-    + exact (bind_case k Bel F C its rest tl exp wrap C' F' xr t made made' Ditems Drest d types H lg lst Pre0).
+    + (* bind *)
+      assert (XR : CodeSafe (S k) F' C' t (A.BlockBreaks (ABlock rest tl)) xr).
+      { intros j Le d' types' H' g' st' Pre'. destruct (Nat.eq_dec j (S k)) as [->|Ne].
+        - exact (blk_step F' C' rest tl exp xr t made' Drest d' types' H' g' st' Pre').
+        - destruct (Bel j ltac:(lia)) as [_ [SBj _]]. exact (SBj F' C' rest tl exp xr t made' Drest d' types' H' g' st' Pre'). }
+      pose proof (items_safe k Bel (S k) F C its wrap C' F' made Ditems (le_n _) t _ xr XR (S k) (le_n _)
+        d types H lg lst Pre0) as Out.
+      eapply O.outcome_breaks; [|exact Out].
+      intros [Rest|[[sp oy] [Iit Bi]]]; [apply block_breaks_cons; exact Rest|].
+      destruct oy as [y|]; [|contradiction]. apply stmt_breaks_block. eapply A.SBBind; [exact Iit|exact Bi].
   (* ---------------- BlkE ---------------- *)
   - destruct D as [F C ss tl exp x t made Dblk Escape Fits]. exact (blk_step F C ss tl exp x t made Dblk).
   (* ---------------- Branch ---------------- *)
