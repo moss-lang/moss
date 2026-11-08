@@ -46,7 +46,7 @@ flowchart TB
     G02[["○ G02: build_complete"]]:::open
     G03[["○ G03: run_sound"]]:::open
     G04[["○ G04: run_complete"]]:::open
-    G05[["○ G05: safety"]]:::open
+    G05[["◐ G05: safety"]]:::partial
   end
   B04 --> G01
   E01 --> B04

@@ -1639,12 +1639,13 @@
       "requires": [
         "T20"
       ],
-      "status": "open",
+      "status": "partial",
       "budget": "hour",
       "goal": "Implement semantic safety: Admissible and Compatible imply no Runs result is Wrong.",
-      "approach": "Unfold Runs and observe, then contradict reference entry signal safety. This has no executable build/run prerequisite.",
+      "approach": "Unfold Runs and observe, then contradict reference entry signal safety. This has no executable build/run prerequisite. Checked: safety_from_entry derives the CORRECT.safety statement from entry_never_stuck (T20's statement; run_main never returns Breaking), and stuck_entry_is_wrong shows the reduction is exact. G05 closes when T20 is proved.",
       "sources": [
-        "theories/Audit.v"
+        "theories/Audit.v",
+        "theories/PublicSafety.v"
       ],
       "origin": {
         "kind": "baseline"

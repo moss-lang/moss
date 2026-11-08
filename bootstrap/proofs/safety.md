@@ -51,7 +51,7 @@ flowchart TB
     T31["○ ? T31: Realize callable and provision environments"]:::unknown
   end
   subgraph G_group["Five public obligations"]
-    G05[["○ G05: safety"]]:::open
+    G05[["◐ G05: safety"]]:::partial
   end
   T01 --> T19
   T02 --> T03
@@ -190,7 +190,7 @@ to that record, including across diagrams and pages.
 
 | Task | Status / budget | Finish condition | Prerequisites | Strategy and evidence |
 | --- | --- | --- | --- | --- |
-| <a id="g05"></a> **G05** safety | ○ open; ≤1h, tentative | Implement semantic safety: Admissible and Compatible imply no Runs result is Wrong. | [T20](#t20) | Unfold Runs and observe, then contradict reference entry signal safety. This has no executable build/run prerequisite.  [Audit.v](../theories/Audit.v) |
+| <a id="g05"></a> **G05** safety | ◐ partial; ≤1h, tentative | Implement semantic safety: Admissible and Compatible imply no Runs result is Wrong. | [T20](#t20) | Unfold Runs and observe, then contradict reference entry signal safety. This has no executable build/run prerequisite. Checked: safety_from_entry derives the CORRECT.safety statement from entry_never_stuck (T20's statement; run_main never returns Breaking), and stuck_entry_is_wrong shows the reduction is exact. G05 closes when T20 is proved.  [Audit.v](../theories/Audit.v), [PublicSafety.v](../theories/PublicSafety.v) |
 
 ## Regression evidence outside the DAG
 

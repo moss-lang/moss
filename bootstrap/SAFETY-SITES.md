@@ -1,0 +1,74 @@
+# Where the reference interpreter can go wrong
+
+Working notes for semantic safety ([G05](proofs/safety.md#g05)), started at
+`086a617`. They list every way the public reference interpreter
+(`Audit.Semantics.Interpreter`) can produce a `Wrong` outcome. For each one
+they name the source premise that has to rule it out. This is the
+specification that the runtime invariant ([T02](proofs/safety.md#t02)) must
+meet. The table is a reading of `Audit.v`, not a checked result.
+
+## The reduction (checked)
+
+[PublicSafety.v](theories/PublicSafety.v) proves `safety_from_entry`.
+`Public.CORRECT.safety` follows from `entry_never_stuck`, which says that for
+an admissible program and a compatible interface, `run_main`'s signal is never
+`Stuck` at any fuel. No other premise is needed:
+
+- `observe` maps exactly `Stuck` and `Breaking` to `Wrong`.
+- `ret_call` turns a `Breaking` that escapes a call into `Stuck e_break`, so
+  `run_main` never returns `Breaking` (`run_main_not_breaking`).
+- Conversely, a `Stuck` entry signal is observed as `Wrong`
+  (`stuck_entry_is_wrong`). The reduction is therefore exact, and T20 is
+  precisely what remains.
+
+## Stuck sites
+
+"Static" names the elaboration rule that produces the runtime construct and
+the premise that excludes the failure. *d* is the runtime environment and *g*
+the local store. *C* and *F* are the static context and frame.
+
+| Site | Code | Fails when | Constructed by | Static premise that must exclude it |
+| --- | --- | --- | --- | --- |
+| `EVar x` | `e_var` (1) | `x` not in *g* | `ExLocal`, `ExThis` (`EVar 0`), lambda prologue `ELet` | `Named F n` and `n ∈ c_locals C` (`Numbering` gives `this = 0`). Invariant: every static local's `var_of F n` is bound in *g*, at its first occurrence. |
+| `EVal v` | `e_val` (2) | `IVal v` absent or not a `ValueProvision` | `ExVal`; lambda capture prologue `EVal capval` | `nlook v (c_vals C)`. Invariant: each static val provision is realized by the **first** runtime entry at `IVal v`. |
+| `ECall f` | `e_nobody` (4) | no body for `f` | `ExCallD`, `MCAttachedDefined`, `MPWrapped` body | `FnElab` for each defined fn gives `body_of P f`, and `program_of`'s `view_function` is `nlook` over `program_functions` (T30). |
+| `ECall f … sm` | `e_compose` (3) | `select_provisions d sm` fails | same | `Satisfies C' Cf ns sm` gives `provides C' (at_site k)` and `sm`'s targets are `rkey_of C' (at_site C' k)`. Needs exact runtime-key agreement (T04). |
+| `EInvoke f` | `e_entry` (6), `e_nobody` (4) | `IFn f` absent, not a closure, or its code missing | `ExCallA`, `FPForward` body `EInvoke g` | `nlook f (c_fns C)`. The closure carries code provenance (T30/T31). |
+| `EMethod … prov` | `e_entry` (6), `e_nobody` (4) | `prov` absent, or not a function or primitive closure | `PrIn` (`rkey C ot m`), `PrFamily` (`rkey C' ot m`) | `mlook ot m (c_mths C)`. The runtime key includes θ = `theta_of C a` from `c_apps`, so the realization must file method provisions under exactly `rkey` (T04). |
+| `EAssign x` | `e_assign` (9) | `x` not in *g* | `BlkAssign` | `slook n (c_locals C) = Some (_, LVar)` and `Named F n`; same local invariant as `EVar`. |
+| `EIf`, `EWhile` | `e_bool` (10) | condition not `VTag bool (VTag true/false VUnit)` | `Cond` | `LangSym "bool" "Bool" b`, the condition fits `TNom b []`, and `program_bool P = b`. Needs value typing for Bool and `Layouts` (see the gap below). |
+| `EField` | `e_field` (11) | field absent | `ExField` | The receiver is a tag with a record payload or a bare record, and the field is in `ftys`; uses `field_lookup_typed`. |
+| `EMatch` | `e_pat` (14) | no arm, or `PBad` | `ArmsEmptyNever`, `ArmsSome` | Exhaustive: a catch-all, or every member's head covered. Abstract scrutinees need a catch-all, since `PatOf` heads are nominal. `PBad` is excluded by the payload record typing in `PRecord`/`FieldPats`; `never` has no values. |
+| `ret_call` | `e_break` (5) | `Breaking` escapes a body | every call and `run_main` | `ExBreak` needs `fr_loop F`. `FnElab`, `LambdaProvider`, `LinkBody` and `ExConst` frames all start with `fr_loop = false`; `BApplyBody` keeps the caller's frame, but its code is inlined at that point. |
+| `BFunction`, `BMethod`, `BFunctor` | `e_compose` (3) | capture `sm` selection fails | `FPDefined`/`MPAttached` (`Satisfies`), `LP` (keys provided by `Cl`), `BFunClosure` (`smc` keys provided) | Key agreement, as for calls (T04/T07). |
+| `BCopyFunctor u u'` | `e_fun` (13) | `IFun u'` not a functor closure | `BFunCopy` | `nlook h (c_funs C)`. Invariant: functor provisions are realized by closures (T31). |
+| `apply_functor` | `e_fun` (13), `e_nobody` (4) | no closure for `IFun u`, or no code | `BApplyAbstract`, `PrFamily`/`Demand` (`apply_expression`) | `nlook u (c_funs C)`, plus closure provenance (`LinkBody`'s `funbody_of`, or `PEFun`/`Platform.Family`). |
+| `apply_functor` | `e_compose` (3) | input `sm` selection fails | same | `Satisfies C Cu ns sm`. |
+| `apply_functor` | `e_chain` (8) | `adapt_provisions` along a copy chain fails | `BFunCopy` smaps over `incl nsh nsu` | Copy-chain provenance: each `sms` step selects keys provided by the previous step (T31, "link/copy-chain provenance"). |
+| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every refiled result key (T15/T16). |
+| `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable or its destination is occupied | `BApplyAbstract` `FreshFor` and the output clauses | Fresh destinations are absent from the caller's runtime `type_meanings` (T16). Needs runtime generations ⊆ static `context_gens`. |
+| primitive call | `e_missing_primitive` (15) | `supports interface p = false` | `BPrimitive`, platform entries, `Platform.Family` bodies | `Compatible` requires every operation in `required_primitives`. Invariant: every runtime `PrimitiveClosure` came from program code or the initial environment. |
+| primitive result | interface laws | ill-shaped arguments, or a missing `gc_pre` | `AtKey`/`PrimitiveSignature`, `MethodPrimitive` | Arguments typed at the signature yield `value_shape` (T11); GC arguments satisfy `gc_pre` under the ghost heap (T17). |
+| `run_main` | `e_nobody` (4) | no body for `main` | `ElaboratesIn` | `main` is a defined fn, so `FnElab` gives its body. |
+
+`ETag` and `check_tag` only `Trap`; `ELet`, `ESeq`, `ELoop`, `EReturn`,
+`ERecord` and `eval_arguments` only propagate.
+
+## Observations so far
+
+- **Unit tags have no value typing.** `lib/bool.moss` declares `tag False;`
+  and `tag True;`, and `Layouts` requires them to be `DKUnit`.
+  `PublicValueTyping.value_typed` types tags only through
+  `PayloadOf`, which covers `ADTag` declarations only. `VTag true VUnit` is
+  therefore untypable at `TNom true []`, and no Bool value is typable. T23
+  needs a unit-tag rule before the `Cond` case can be proved. This is an
+  incomplete invariant, not a counterexample.
+- **Proof shape.** A defined function's closure carries its `FnElab`
+  derivation and a realization of its context (T30/T31). The main lemma can
+  then be proved by induction on fuel, inverting the derivation at each
+  step, with no step-indexed logical relation. `BindItems … wrap` is stated
+  in continuation-passing form: `wrap` maps continuations that are safe under
+  `C'`/`F'` to expressions that are safe under `C`/`F`.
+- **`ExConst`** inlines code elaborated in an empty context with its own
+  numbering. It is closed: it reads no locals, vals or provisions, and has
+  no `return` or `break`.
