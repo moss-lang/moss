@@ -10,7 +10,8 @@
    remaining obligation, not an assumption about accepted programs. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
-  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts.
+  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
+  PublicCallRealize.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -80,13 +81,7 @@ Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop 
      lookup_provision (IFun u) d = Some (FunctorClosure h sms dc)).
 
 (* Every provision is filed under a key of its own kind. *)
-Definition KeysMatch (C : A.cx) : Prop :=
-  forall k p, In (k, p) (A.c_provisions C) ->
-  match k, p with
-  | IVal _, A.ProvidedVal _ _ | IFn _, A.ProvidedFn _ _ | IFun _, A.ProvidedFunctor _ => True
-  | IMth _ _ [], A.ProvidedMethod _ _ => True
-  | _, _ => False
-  end.
+Definition KeysMatch (C : A.cx) : Prop := PublicCallRealize.KeysMatch (A.c_provisions C).
 
 (* Static facts of a context in force (T29). *)
 Definition StaticOk (C : A.cx) : Prop :=
@@ -924,14 +919,135 @@ Definition callee_env (d : environment) (th : subst) (dc : environment) : enviro
   EnvironmentWithAliases (map (fun q => (fst q, ground d (snd q))) th)
     (map (fun q => (fst q, ground d (snd q))) th) (provision_values dc).
 
-(* T03/T04: Satisfies selects every need, the callee's type table read in
-   its environment agrees with the caller's, and the callee's context is
-   realized there. *)
-Hypothesis callee_realizes : forall n C' d H f Cf ns sm th,
+Lemma ilook_in : forall k (provs : list (item * A.provision)) p, A.ilook k provs = Some p -> In (k, p) provs.
+Proof.
+  intros k provs p. induction provs as [|[k' p'] rest IH]; intros L; [discriminate|].
+  cbn in L. destruct (item_eqb k k') eqn:E; [apply item_eqb_spec in E; subst k'; injection L as ->; left; reflexivity|].
+  right. exact (IH L).
+Qed.
+
+Lemma forall2_map_eq : forall H (f g : ty -> ty) ws (ps ps' : list ty),
+  map f ps = map g ps' -> Forall2 (fun w t => value_typed W P H w (g t)) ws ps' ->
+  Forall2 (fun w t => value_typed W P H w (f t)) ws ps.
+Proof.
+  intros H f g ws ps ps' E F. revert ps E. induction F as [|w t ws ts T Rest IH]; intros [|p ps] E; cbn in E;
+    try discriminate; constructor.
+  - injection E as E1 _. rewrite E1. exact T.
+  - injection E as _ E2. exact (IH ps E2).
+Qed.
+
+Lemma callable_transfer : forall n m d d' ps ps' r r' pv, m <= n ->
+  map (ground d) ps = map (ground d') ps' -> ground d r = ground d' r' ->
+  CallableOk n d ps r pv -> CallableOk m d' ps' r' pv.
+Proof.
+  intros n m d d' ps ps' r r' [w|f df|u sms dc|p held] Le Ps R Ok; cbn in Ok |- *; auto.
+  - destruct Ok as [body [View Run]]. exists body. split; [exact View|].
+    intros j Lj H st ws S Args. rewrite <- R. apply (Run j ltac:(lia) H st ws S).
+    exact (forall2_map_eq H (ground d) (ground d') ws ps ps' Ps Args).
+  - intros H st ws S Args. rewrite <- R. apply (Ok H st ws S).
+    exact (forall2_map_eq H (ground d) (ground d') ws ps ps' Ps Args).
+Qed.
+
+(* T03/T04: a call's selected provisions realize the callee's context. *)
+Lemma callee_realizes : forall n C' d H f Cf ns sm th,
   Realizes (S n) C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
   exists dc, select_provisions d sm = Some dc /\
     Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
     Realizes n Cf (callee_env d th dc) H.
+Proof.
+  intros n C d H f Cf ns sm th [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT.
+  destruct Sat as [SmEq [Prov [_ [Types _]]]].
+  destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
+  pose proof (ctx_keys_match W f Cf ns Ctx) as KMf.
+  pose proof CT as [Keys [_ _]].
+  (* the caller's provision of each need *)
+  assert (Caller : forall k, In k ns -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k)) d = Some pv).
+  { intros k Ik. pose proof (Prov k Ik) as Pr. pose proof (Shape k Ik) as Sh.
+    destruct k as [t|v|f'|r m a|u]; cbn in Sh, Pr |- *; try contradiction.
+    - destruct (A.nlook v (A.c_vals C)) as [t|] eqn:L; [|congruence]. destruct (Vals v t L) as [w [Look _]]. eauto.
+    - destruct (A.nlook f' (A.c_fns C)) as [g|] eqn:L; [|congruence]. destruct (Fns f' g L) as [pv [Look _]]. eauto.
+    - destruct (A.mlook _ m (A.c_mths C)) as [g|] eqn:L; [|congruence]. destruct (Mths _ m g L) as [pv [Look _]]. eauto.
+    - destruct (A.nlook u (A.c_funs C)) as [fx|] eqn:L; [|congruence]. destruct (Funs u fx L) as [h [sms [dc Look]]]. eauto. }
+  destruct (select_ok d sm) as [dc Sel].
+  { rewrite SmEq. intros q Iq. apply in_map_iff in Iq as [k [<- Ik]]. cbn. destruct (Caller k Ik) as [pv ->]. discriminate. }
+  exists dc. split; [exact Sel|].
+  set (de := callee_env d th dc).
+  assert (Meanings : type_meanings de = callee_meanings d th) by reflexivity.
+  (* each callee key finds the caller's provision *)
+  assert (Find : forall k, In k ns -> lookup_provision (A.rkey_of Cf k) de = lookup_provision (A.rkey_of C (A.at_th C th k)) d).
+  { intros k Ik. change (lookup_provision (A.rkey_of Cf k) de) with (lookup_provision (A.rkey_of Cf k) dc).
+    rewrite (select_lookup d sm dc _ Sel), SmEq.
+    rewrite (sm_find_map (A.rkey_of Cf) (fun k' => A.rkey_of C (A.at_th C th k')) ns k Ik); [reflexivity|].
+    intros k' Ik' E. exact (rkey_of_injective Cf k' k (Shape k' Ik') (Shape k Ik) E). }
+  assert (Dom : forall t, incl (A.gens t) (map fst (A.c_ty Cf)) -> forall x, In x (A.gens t) -> lookup_subst x th <> None).
+  { intros t Sc x Ix. apply lookup_subst_in. rewrite Keys. exact (Sc x Ix). }
+  assert (GroundDe : forall t, incl (A.gens t) (map fst (A.c_ty Cf)) -> ground de t = ground d (A.canon C (app_subst th t))).
+  { intros t Sc. unfold ground. rewrite Meanings, (callee_ground d th t (Dom t Sc)). symmetry. apply Abs. }
+  assert (SigGround : forall gf gc, incl (A.sig_gens gf) (map fst (A.c_ty Cf)) ->
+    A.canon_sig C gc = A.sig_at C th gf ->
+    map (ground d) (A.sg_params gc) = map (ground de) (A.sg_params gf) /\ ground d (A.sg_ret gc) = ground de (A.sg_ret gf)).
+  { intros [psf rf] [psc rc] Sc E. unfold A.canon_sig, A.sig_at in E. cbn [A.sg_params A.sg_ret] in E |- *. injection E as Ep Er.
+    unfold A.sig_gens in Sc. cbn [A.sg_params A.sg_ret flat_map] in Sc. split.
+    - transitivity (map (fun t => ground d (A.canon C t)) psc); [apply map_ext; intros t; symmetry; apply Abs|].
+      rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. apply GroundDe.
+      intros x Ix. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
+    - rewrite <- Abs, Er. symmetry. apply GroundDe. intros x Ix. apply Sc. apply in_or_app. left. exact Ix. }
+  split; [exact (call_agree W f Cf ns C th d Ctx CT Abs Idem)|].
+  split; [intros t; unfold ground; rewrite Meanings; exact (call_absorbs W f Cf ns C th d Ctx CT Abs t)|].
+  split; [|split; [exact (PublicContextFacts.function_context_canonical W f Cf ns Ctx)|exact KMf]].
+  split; [|split; [|split]].
+  - (* vals *) intros v tf Found.
+    destruct (vals_ilook _ v tf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
+    pose proof (ProvNs _ _ InP) as Ik.
+    destruct (Types (IVal v) _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
+    pose proof (KM _ _ (ilook_in _ _ _ Il')) as Kind.
+    destruct p' as [tc a'|g a'|g a'|fx]; cbn in Kind; try contradiction.
+    pose proof (ilook_vals _ v tc a' KM Il') as Lc. destruct (Vals v tc Lc) as [w [Look T]].
+    exists w. pose proof (Find (IVal v) Ik) as F'; cbn [A.rkey_of A.at_th A.mkey] in F'; rewrite F'. split; [exact Look|].
+    assert (Sig' : A.sg_ret (A.canon_sig C (A.FSig [] tc)) = A.sg_ret (A.sig_at C th (A.FSig [] tf)))
+      by (cbn [option_map A.provision_signature] in Sig; congruence).
+    change (A.canon C tc = A.canon C (app_subst th tf)) in Sig'. clear Sig. rename Sig' into Sig.
+    destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens, A.sig_gens in Sc. cbn in Sc.
+    rewrite GroundDe; [|intros x Ix; apply Sc; rewrite app_nil_r; exact Ix].
+    rewrite <- Sig, Abs. exact T.
+  - (* fns *) intros f' gf Found.
+    destruct (fns_ilook _ f' gf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
+    pose proof (ProvNs _ _ InP) as Ik.
+    destruct (Types (IFn f') _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
+    pose proof (KM _ _ (ilook_in _ _ _ Il')) as Kind.
+    destruct p' as [tc a'|gc a'|gc a'|fx]; cbn in Kind; try contradiction.
+    pose proof (ilook_fns _ f' gc a' KM Il') as Lc. destruct (Fns f' gc Lc) as [pv [Look Ok]].
+    exists pv. pose proof (Find (IFn f') Ik) as F'; cbn [A.rkey_of A.at_th A.mkey] in F'; rewrite F'. split; [exact Look|].
+    assert (Sig' : A.canon_sig C gc = A.sig_at C th gf) by (cbn [option_map A.provision_signature] in Sig; congruence).
+    clear Sig. rename Sig' into Sig.
+    destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
+    destruct (SigGround gf gc Sc Sig) as [Ps R].
+    exact (callable_transfer (S n) n d de _ _ _ _ pv (le_S _ _ (le_n n)) Ps R Ok).
+  - (* methods *) intros r m gf Found.
+    destruct (mths_ilook _ r m gf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
+    pose proof (ProvNs _ _ InP) as Ik.
+    destruct (Types (A.mkey r m) _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
+    pose proof (KM _ _ (ilook_in _ _ _ Il')) as Kind.
+    destruct p' as [tc a'|gc a'|gc a'|fx]; cbn in Kind; try contradiction.
+    pose proof (ilook_mths _ _ m gc a' KM Il') as Lc. destruct (Mths _ m gc Lc) as [pv [Look Ok]].
+    exists pv. pose proof (Find (A.mkey r m) Ik) as F'; cbn [A.rkey_of A.at_th A.mkey] in F'; rewrite F'. split; [exact Look|].
+    assert (Sig' : A.canon_sig C gc = A.sig_at C th gf) by (cbn [option_map A.provision_signature] in Sig; congruence).
+    clear Sig. rename Sig' into Sig.
+    destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc Kr]. unfold provision_sig_gens in Sc. cbn in Sc, Kr.
+    destruct (SigGround gf gc Sc Sig) as [Ps R].
+    apply (callable_transfer (S n) n d de (A.canon C (app_subst th r) :: A.sg_params gc) (r :: A.sg_params gf)
+      (A.sg_ret gc) (A.sg_ret gf) pv (le_S _ _ (le_n n))); [|exact R|exact Ok].
+    change (ground d (A.canon C (app_subst th r)) :: map (ground d) (A.sg_params gc) =
+      ground de r :: map (ground de) (A.sg_params gf)).
+    rewrite Ps, (GroundDe r Kr). reflexivity.
+  - (* functors *) intros u fx Found.
+    pose proof (funs_ilook _ u fx KMf Found) as Il. pose proof (ilook_in _ _ _ Il) as InP.
+    pose proof (ProvNs _ _ InP) as Ik.
+    pose proof (Prov (IFun u) Ik) as Pr. cbn in Pr.
+    destruct (A.nlook u (A.c_funs C)) as [fx'|] eqn:L; [|congruence].
+    destruct (Funs u fx' L) as [h [sms [dc' Look']]]. exists h, sms, dc'.
+    pose proof (Find (IFun u) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'. exact Look'.
+Qed.
 
 Lemma select_provisions_empty : forall d sm dc, select_provisions d sm = Some dc ->
   type_meanings dc = [] /\ type_aliases dc = [].

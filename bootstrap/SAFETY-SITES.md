@@ -195,7 +195,7 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `call_defined_case` | direct calls of defined fns, `Demand` wrappers | T03, T06, T14 |
+| `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `attached_defined_case` | defined attached methods (direct calls) | T03, T06, T14 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
@@ -232,6 +232,16 @@ methods and operators (`provided_step`, `methcall_step`) are proved.
 Numeric literals use them directly (`lit_step`, `lit_code`, by induction on
 fuel).
 
+Direct calls of defined functions are proved (`call_core`). The callee's
+body, entered at the call's `θ` with the satisfaction map's provisions, is
+realized from the caller's (`callee_realizes`):
+- every need is selected;
+- the callee's type table agrees with the caller's (`call_agree`);
+- the callee's merges hold in its environment (`call_absorbs`);
+- every callee provision is the caller's, at the callee's type. This uses
+  `Satisfies`' new type check, context formation (`ctxof_formed`,
+  `ctx_provision_scoped`) and reading agreement (`tyof_rel`, `sig_rel`).
+
 `state_ok` is abstract here: the slice performs no primitive steps, so it
 only has to be preserved by heap extension.
 
@@ -251,5 +261,6 @@ only has to be preserved by heap extension.
 - Found the merge-orientation gap while planning direct calls (20:10 to 20:12).
 - Recorded per-symbol contexts in the world, after approval.
 - `Satisfies` type check after approval (20:58 to 21:03).
+- Context formation, call agreement and `callee_realizes` (21:07 to 21:31).
 - `tyof_rel`, `body_call`, `call_core`, and the merged-class counterexample
   (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).

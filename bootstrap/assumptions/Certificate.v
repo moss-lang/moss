@@ -13,7 +13,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicLocalsTyping PublicWorldRequirements SnapshotLoaderWitness
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
-  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck.
+  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize.
 
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host.
@@ -89,6 +89,10 @@ Definition certificate_roots :=
   @PublicBool.truthy_typed,
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
+  @PublicSlice.callee_realizes,
+  @NM.PublicCallRealize.ctxof_formed,
+  @NM.PublicCallRealize.call_agree,
+  @NM.PublicCallRealize.call_absorbs,
   @PublicArmsI.arms_select,
   @PublicTags.tag_check,
   @NM.PublicTypeRead.tyof_abs,
