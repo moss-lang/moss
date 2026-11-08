@@ -1,0 +1,44 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
+import "../../lib/access.moss" use Elem, Index, .get;
+import "../../lib/size.moss" use Size, Sizes, .size;
+
+# D84 6: a family's binding made in one frame (`main`) and applied in
+# another (`go`), on demand and by `bind Pairs;`. The anonymous function
+# bound in `PairsImpl` assumes `PairsImpl`'s inputs and what it provides,
+# not everything in force where `bind Pairs = PairsImpl;` is written: there
+# that is all of `Std`, whose providers capture vals (`zero`, here) that
+# the function never reaches and that are not carried into `go` under the
+# function's keys. Expected: 5 twice.
+assume Int, zero, Size, Sizes, ArrayHandle, Item, Arrays {
+  tag Pair { a: Array, n: Size };
+  fn pair_first(p: Pair): Item { match p { Pair { a, n } => a.get(zero.size()) } }
+}
+
+functor Pairs[Item]: Int, zero, Size, Sizes, ArrayHandle, Arrays -> Pair.get[Elem=Item, Index=Int];
+functor PairsImpl: Int, zero, Size, Sizes, ArrayHandle, Arrays, Item -> Pair.get[Elem=Item, Index=Int] {
+  bind Pair.get[Elem=Item, Index=Int] = (i) => pair_first(this);
+}
+
+assume Std, Pairs {
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+
+  fn go() {
+    let p = Pair[Item=Float] { a = 5.0.arrayed(1.size()), n = 1.size() };
+    digit(p.get(0).round());
+    {
+      bind Item = Float;
+      bind Pairs;
+      let q = Pair { a = 5.0.arrayed(1.size()), n = 1.size() };
+      digit(q.get(0).round());
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind Pairs = PairsImpl; go(); }
+}

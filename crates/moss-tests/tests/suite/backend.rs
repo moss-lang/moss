@@ -762,6 +762,8 @@ fn d84_functors_run() {
         // A call on demand whose argument mentions the caller's `Item`,
         // which the application binds too: the argument stays the caller's.
         ("family_arg_capture", "73\n"),
+        // A family's binding made in `main` and applied in another frame.
+        ("family_cross_frame", "55\n"),
         ("functor_polyfill", "7\n"),
     ] {
         let entry = wasi(name);

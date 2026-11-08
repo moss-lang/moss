@@ -319,6 +319,11 @@ assume Std {
   val cg_aenv: CellInt;
   val cg_agenv: CellInt;
   val cg_aon: CellInt;
+  # The functor whose binds `run_functor` is running (none outside one):
+  # an anonymous function bound there assumes that functor's inputs and
+  # what its earlier binds made, not everything its application captured
+  # (`make_lambda`).
+  val cg_fbody: CellInt;
   val ch_run: IntList;
   val ch_link: IntList;
   val ch_head: IntList;
@@ -380,7 +385,7 @@ assume Std {
     un_sym, un_link, un_head, un_mark, un_last, un_stamp, un_meths, un_mlink, un_mhead,
     un_fstart, un_flags,
     un_used, un_listed, un_ustamp, ce_start, ce_len, ce_pool,
-    cg_lang, cg_genv, cg_gbase, cg_aenv, cg_agenv, cg_aon, ch_run, ch_link, ch_head,
+    cg_lang, cg_genv, cg_gbase, cg_aenv, cg_agenv, cg_aon, cg_fbody, ch_run, ch_link, ch_head,
     lm_node, lm_genv, lm_sym, lm_recv, lm_cstart, lm_clen, lm_cap, cg_capt,
     fb_sym, ft_sym;
 
@@ -6338,6 +6343,15 @@ assume Std {
       lm_sym.get(row)
     }
 
+    # Whether an anonymous function bound in a functor's binds needs the
+    # entry `e`: one those binds made (`made`, the rows above the body's
+    # base), or one of the functor's inputs, by symbol (`ins_sym`). The
+    # symbol alone over-approximates a method input to every receiver,
+    # which is safe (more needs, never fewer) and reads no types.
+    fn lambda_keeps(e: Int, made: IntList, ins_sym: IntList): Bool {
+      types::contains_sym(made, e) | types::contains_sym(ins_sym, lower::env_sym_of(e))
+    }
+
     # The function an anonymous function is, made once per bind site and
     # generic environment. `view` reads the bound declaration's types
     # here, generically.
@@ -6405,10 +6419,46 @@ assume Std {
       let recvs = int_list();
       let syms = int_list();
       let apps = int_list();
+      # In a functor's binds, only that functor's inputs and what its
+      # earlier binds made (D84 3b): everything else its application
+      # captured is not the anonymous function's to need, and needing it
+      # would carry values captured by providers it never calls.
+      let fbody = cg_fbody.read() - 1;
+      let ins_recv = int_list();
+      let ins_sym = int_list();
+      let made = int_list();
+      if depth > 0 {
+        if ast::is_some(fbody) {
+          let fd = prog::sym_decl.get(fbody);
+          lower::assume_items(prog::sym_mod.get(fbody), ast::fu_args(fd), ast::fu_nargs(fd), ins_recv, ins_sym);
+          # And what it provides: a provision bound here captures the one
+          # it shadows (`rebind_recursive`).
+          let rkinds = int_list();
+          let rrecvs = int_list();
+          result_keys(prog::sym_mod.get(fbody), ast::fu_res(fd), ast::fu_nres(fd), genv, rkinds, rrecvs, ins_sym, 0);
+          var x = genv;
+          while ast::is_some(x) {
+            if x == cg_gbase.read() {
+              x = ast::none();
+            } else {
+              made.push(x);
+              x = lower::env_next_of(x);
+            }
+          }
+        }
+      }
       var e = lenv;
       while ast::is_some(e) {
         let kind = lower::env_kind_of(e);
-        if kind != lower::ek_type() {
+        var keep = kind != lower::ek_type();
+        if keep {
+          if depth > 0 {
+            if ast::is_some(fbody) {
+              keep = lambda_keeps(e, made, ins_sym);
+            }
+          }
+        }
+        if keep {
           var seen = false;
           var q = 0;
           while q < syms.length() {
@@ -6619,6 +6669,8 @@ assume Std {
     fn run_functor(body: IntList, sym: Int, depth: Int, mode: Int) {
       let held = cg_gbase.read();
       cg_gbase.write(cg_genv.read());
+      let held_fbody = cg_fbody.read();
+      cg_fbody.write(sym + 1);
       let d = prog::sym_decl.get(sym);
       let home = prog::sym_mod.get(sym);
       var i = 0;
@@ -6633,6 +6685,7 @@ assume Std {
         }
         i = i + 1;
       }
+      cg_fbody.write(held_fbody);
       cg_gbase.write(held);
     }
 
