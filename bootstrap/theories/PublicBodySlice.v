@@ -109,15 +109,6 @@ Definition StepSafe (k : nat) F C t (breaks : Prop) (x : expr) : Prop :=
   forall d types H g st, Pre (S k) F C d types H g st ->
   Outcome F d H types t breaks (I.eval (S k) P d g st x).
 
-Hypothesis call_defined_case : forall k, Below k -> forall F C pa args f Cf ns sm g xs wrap C',
-  A.resolve_sym W (A.fr_mod F) pa = Some f -> A.kind_sym W f = Some A.DKFn ->
-  (exists n ps rt b, A.ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
-  A.CtxOf W f Cf ns ->
-  A.Demand W C (map (A.at_site C) ns) [] C wrap C' ->
-  A.Satisfies C' Cf ns sm -> A.SigOf W f (A.c_ty C') None g ->
-  A.Args W Prog F C' args (A.sg_params g) xs ->
-  StepSafe k F C (A.sg_ret g) (A.Breaks (AECall pa None args))
-    (wrap (ECall f (A.theta_at W C' f) sm xs)).
 (* A method a family supplies at the call: a functor application (T15/T16). *)
 Hypothesis family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
   A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
@@ -908,6 +899,85 @@ Proof.
   - destruct Out as [_ [L _]]. rewrite Loop in L. discriminate.
 Qed.
 
+(* ---- direct calls of defined functions -------------------------------------- *)
+
+(* The callee's environment: its formals read at the call, and the
+   provisions the satisfaction map selects. *)
+Definition callee_env (d : environment) (th : subst) (dc : environment) : environment :=
+  EnvironmentWithAliases (map (fun q => (fst q, ground d (snd q))) th)
+    (map (fun q => (fst q, ground d (snd q))) th) (provision_values dc).
+
+(* T03/T04: Satisfies selects every need, the callee's type table read in
+   its environment agrees with the caller's, and the callee's context is
+   realized there. *)
+Hypothesis callee_realizes : forall n C' d H f Cf ns sm,
+  Realizes (S n) C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf ns sm ->
+  exists dc, select_provisions d sm = Some dc /\
+    Agree (type_meanings (callee_env d (A.theta_at W C' f) dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
+    Realizes n Cf (callee_env d (A.theta_at W C' f) dc) H.
+
+Lemma select_provisions_empty : forall d sm dc, select_provisions d sm = Some dc ->
+  type_meanings dc = [] /\ type_aliases dc = [].
+Proof.
+  intros d sm. induction sm as [|[req s] rest IH]; intros dc Sel; cbn in Sel.
+  - injection Sel as <-. split; reflexivity.
+  - destruct (lookup_provision s d); [|discriminate].
+    destruct (select_provisions d rest) as [d'|] eqn:Rest; [|discriminate].
+    injection Sel as <-. exact (IH d' eq_refl).
+Qed.
+
+Lemma call_environment_callee : forall d th sm dc, select_provisions d sm = Some dc ->
+  call_environment d th dc = callee_env d th dc.
+Proof.
+  intros d th sm dc Sel. destruct (select_provisions_empty d sm dc Sel) as [M Al].
+  unfold call_environment, append_environment, instantiate, callee_env.
+  destruct dc as [m al ps]; cbn in *. subst m al. rewrite !app_nil_r. reflexivity.
+Qed.
+
+Lemma call_core : forall j, Below j -> forall F C args f n0 ps0 rt0 b0 Cf ns sm g xs (B : Prop),
+  A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
+  A.CtxOf W f Cf ns -> A.Satisfies C Cf ns sm -> A.SigOf W f (A.c_ty C) None g ->
+  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
+  StepSafe j F C (A.sg_ret g) B (ECall f (A.theta_at W C f) sm xs).
+Proof.
+  intros j Bel F C args f n0 ps0 rt0 b0 Cf ns sm g xs B Ast Ctx Sat Sig Args Brk d types H lg lst Pre0.
+  unfold A.ast_of in Ast. destruct (A.w_decl W f) as [dcl|] eqn:Decl; [|discriminate]. injection Ast as Ast.
+  pose proof (all_fn_elab f dcl RPlain n0 ps0 rt0 b0 Decl Ast dcl RPlain n0 ps0 rt0 b0 Decl Ast)
+    as (C0 & ns0 & this & g0 & F0 & x & t0 & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & View).
+  pose proof (args_code j j (le_n j) F C B xs (A.sg_params g) d types H lg lst
+    (args_code_of j Bel F C args _ xs Args B Brk) (pre_lower Pre0)) as AOut.
+  cbn [I.eval]. change (view_function P f) with (A.body_of Prog f). rewrite View.
+  destruct (I.eval_arguments j P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
+  2: { destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out]. }
+  destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
+  pose proof Pre0 as [_ [_ [_ [_ Real]]]].
+  destruct (callee_realizes j C d H1 f Cf ns sm (realizes_extends _ _ _ _ _ E1 Real) Ctx Sat)
+    as [dc [Sel [Ag RealF]]].
+  rewrite Sel, (call_environment_callee d _ sm dc Sel).
+  destruct (body_call j (Bel j (le_n j)) f dcl n0 ps0 rt0 b0 Cf ns _ H1 st1 ws d (A.sg_params g) (A.sg_ret g)
+    Decl Ast Ctx RealF S1) as [body [View' Run]].
+  - intros g' Sig'. exact (sig_rel W _ _ f _ _ None None g' g Sig' Sig Ag (fun _ _ E _ => ltac:(discriminate E))).
+  - exact T1.
+  - change (view_function P f) with (A.body_of Prog f) in View'. rewrite View in View'. injection View' as <-.
+    exact (outcome_ret_call F d H H1 types _ _ _ g1 E1 L1 Run).
+Qed.
+
+(* Family applications a call demands wrap it in functor applications (T15/T16). *)
+Hypothesis demand_case : forall k, Below k -> forall F C wanted C' wrap t (B : Prop) x,
+  A.Demand W C wanted [] C wrap C' -> CodeSafe k F C' t B x -> StepSafe k F C t B (wrap x).
+
+Lemma call_code : forall k, Below k -> forall F C args f n0 ps0 rt0 b0 Cf ns sm g xs (B : Prop),
+  A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
+  A.CtxOf W f Cf ns -> A.Satisfies C Cf ns sm -> A.SigOf W f (A.c_ty C) None g ->
+  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
+  CodeSafe k F C (A.sg_ret g) B (ECall f (A.theta_at W C f) sm xs).
+Proof.
+  intros k Bel F C args f n0 ps0 rt0 b0 Cf ns sm g xs B Ast Ctx Sat Sig Args Brk [|j] Le d types H lg lst Pre0;
+    [exact Logic.I|].
+  exact (call_core j (fun i Li => Bel i ltac:(lia)) F C args f n0 ps0 rt0 b0 Cf ns sm g xs B
+    Ast Ctx Sat Sig Args Brk d types H lg lst Pre0).
+Qed.
+
 Section Step.
 Variable k : nat.
 Hypothesis Bel : Below k.
@@ -1091,7 +1161,10 @@ Proof.
       apply outcome_tag; [exact S1|exact L1|].
       exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs pay w
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
-    + exact (call_defined_case k Bel F C pa args f Cf ns sm sg xs wrap C' R K Def Ctx Dem Sat Sig Args d types H lg lst Pre0).
+    + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
+      exact (demand_case k Bel F C _ C' wrap (A.sg_ret sg) _ _ Dem
+        (call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm sg xs _ Def Ctx Sat Sig Args
+          (fun a In' B0 => A.BkCall pa None args In' B0)) d types H lg lst Pre0).
     + exact (invoke_step F C pa args f sg xs Fn Args d types H lg lst Pre0).
     + refine (methcall_step F C o ox ot pa args x t _ Do _ _ Dm d types H lg lst Pre0);
         [intro B0; apply A.BkMethRecv; exact B0|intros a' In' B0; eapply A.BkMethArg; [exact In'|exact B0]].
