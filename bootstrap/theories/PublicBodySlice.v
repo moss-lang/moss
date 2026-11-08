@@ -1122,6 +1122,120 @@ Proof.
     Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0).
 Qed.
 
+(* ---- adding a provision -------------------------------------------------------- *)
+
+Definition NewOk n C' d' H (k0 : item) (p0 : A.provision) : Prop :=
+  match k0, p0 with
+  | IVal v, A.ProvidedVal t _ => exists w, lookup_provision (IVal v) d' = Some (ValueProvision w) /\ value_typed W P H w (ground d' t)
+  | IFn f, A.ProvidedFn g _ => exists pv, lookup_provision (IFn f) d' = Some pv /\ CallableOk n H d' (A.sg_params g) (A.sg_ret g) pv
+  | IMth r m _, A.ProvidedMethod g _ => exists pv, lookup_provision (A.rkey C' r m) d' = Some pv /\ CallableOk n H d' (r :: A.sg_params g) (A.sg_ret g) pv
+  | IFun u, A.ProvidedFunctor _ => exists h sms dc, lookup_provision (IFun u) d' = Some (FunctorClosure h sms dc)
+  | _, _ => False
+  end.
+
+Definition set_cx (C : A.cx) (k0 : item) (p0 : A.provision) : A.cx :=
+  A.Cx (A.c_ty C) (A.c_sub C) (set_list k0 p0 (A.c_provisions C)) (A.c_locals C).
+
+Lemma ilook_map_snd : forall X (f : A.provision -> X) k l,
+  A.ilook k (map (fun q => (fst q, f (snd q))) l) = option_map f (A.ilook k l).
+Proof. intros X f k l. induction l as [|[k' p] r IH]; [reflexivity|]. cbn. destruct (item_eqb k k'); [reflexivity|exact IH]. Qed.
+
+Lemma capps_ilook : forall C k, A.ilook k (A.c_apps C) = option_map A.provision_inst (A.ilook k (A.c_provisions C)).
+Proof.
+  intros [ty sub provs locs] k. unfold A.c_apps. cbn [A.c_provisions].
+  induction provs as [|[k' p] r IH]; [reflexivity|]. cbn. destruct (item_eqb k k'); [|exact IH].
+  destruct p; reflexivity.
+Qed.
+
+Lemma rkey_set : forall C k0 p0 r m, item_eqb (A.mkey r m) k0 = false ->
+  A.rkey (set_cx C k0 p0) r m = A.rkey C r m.
+Proof.
+  intros C k0 p0 r m Ne. unfold A.rkey. rewrite !capps_ilook.
+  unfold set_cx. cbn [A.c_provisions]. rewrite ilook_set, Ne. reflexivity.
+Qed.
+
+Lemma rkey_of_kind : forall C k k', A.rkey_of C k = k' ->
+  match k' with IVal v => k = IVal v | IFn f => k = IFn f | IFun u => k = IFun u
+  | IMth r m _ => exists th, k = IMth r m th | ITy t => k = ITy t end.
+Proof. intros C [t|v|f|r m th|u] k' <-; cbn; eauto. Qed.
+
+Lemma realizes_set : forall n C d H k0 p0 d',
+  Realizes n C d H -> PublicCallRealize.KeysMatch [(k0, p0)] ->
+  type_meanings d' = type_meanings d ->
+  (forall k, k <> A.rkey_of (set_cx C k0 p0) k0 -> lookup_provision k d' = lookup_provision k d) ->
+  NewOk n (set_cx C k0 p0) d' H k0 p0 ->
+  Realizes n (set_cx C k0 p0) d' H.
+Proof.
+  intros n C d H k0 p0 d' [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] K0 Meq Other New.
+  assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Meq; reflexivity).
+  assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
+  pose proof (keys_match_set k0 p0 _ KM K0) as KM'.
+  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|split; [exact Idem|exact KM']].
+  split; [|split; [|split]].
+  - intros v t Found. change (A.c_vals (set_cx C k0 p0)) with (vals_of (set_list k0 p0 (A.c_provisions C))) in Found.
+    rewrite vals_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
+    destruct (item_eqb (IVal v) k0) eqn:E.
+    + apply item_eqb_spec in E. subst k0. destruct p0 as [t' a|g a|g a|fx]; try discriminate. injection Found as <-.
+      exact New.
+    + change (match A.ilook (IVal v) (A.c_provisions C) with Some (A.ProvidedVal t _) => Some t | _ => None end = Some t) in Found.
+      rewrite <- vals_by_ilook in Found by exact KM. destruct (Vals v t Found) as [w [Look T]].
+      exists w. rewrite G. split; [|exact T]. rewrite Other; [exact Look|].
+      intro E'. symmetry in E'. pose proof (rkey_of_kind _ _ _ E') as Kd. cbn in Kd. subst k0.
+      rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
+  - intros f g Found. change (A.c_fns (set_cx C k0 p0)) with (fns_of (set_list k0 p0 (A.c_provisions C))) in Found.
+    rewrite fns_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
+    destruct (item_eqb (IFn f) k0) eqn:E.
+    + apply item_eqb_spec in E. subst k0. destruct p0 as [t' a|g' a|g' a|fx]; try discriminate. injection Found as <-.
+      exact New.
+    + change (match A.ilook (IFn f) (A.c_provisions C) with Some (A.ProvidedFn g _) => Some g | _ => None end = Some g) in Found.
+      rewrite <- fns_by_ilook in Found by exact KM. destruct (Fns f g Found) as [pv [Look Ok]].
+      exists pv. split; [rewrite Other; [exact Look|]|].
+      * intro E'. symmetry in E'. pose proof (rkey_of_kind _ _ _ E') as Kd. cbn in Kd. subst k0.
+        rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
+      * exact (callable_transfer n n H d d' _ _ _ _ pv (le_n n) (Gm _) (eq_sym (G _)) Ok).
+  - intros r m g Found. change (A.c_mths (set_cx C k0 p0)) with (mths_of (set_list k0 p0 (A.c_provisions C))) in Found.
+    rewrite mths_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
+    destruct (item_eqb (A.mkey r m) k0) eqn:E.
+    + apply item_eqb_spec in E. subst k0. destruct p0 as [t' a|g' a|g' a|fx]; try discriminate. injection Found as <-.
+      exact New.
+    + change (match A.ilook (A.mkey r m) (A.c_provisions C) with Some (A.ProvidedMethod g _) => Some g | _ => None end = Some g) in Found.
+      rewrite <- mths_by_ilook in Found by exact KM. destruct (Mths r m g Found) as [pv [Look Ok]].
+      exists pv. rewrite (rkey_set C k0 p0 r m E). split; [rewrite Other; [exact Look|]|].
+      * intro E'. pose proof (rkey_of_kind (set_cx C k0 p0) k0 _ (eq_sym E')) as Kd. cbn in Kd.
+        destruct Kd as [th0 ->]. pose proof (K0 _ _ (or_introl eq_refl)) as Kind. cbn in Kind.
+        destruct th0; [|destruct p0; contradiction].
+        rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
+      * exact (callable_transfer n n H d d' _ _ _ _ pv (le_n n) (Gm _) (eq_sym (G _)) Ok).
+  - intros u fx Found. change (A.c_funs (set_cx C k0 p0)) with (funs_of (set_list k0 p0 (A.c_provisions C))) in Found.
+    rewrite funs_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
+    destruct (item_eqb (IFun u) k0) eqn:E.
+    + apply item_eqb_spec in E. subst k0. destruct p0 as [t' a|g a|g a|fx']; try discriminate. exact New.
+    + change (match A.ilook (IFun u) (A.c_provisions C) with Some (A.ProvidedFunctor fx) => Some fx | _ => None end = Some fx) in Found.
+      rewrite <- funs_by_ilook in Found by exact KM. destruct (Funs u fx Found) as [h [sms [dc Look]]].
+      exists h, sms, dc. rewrite Other; [exact Look|].
+      intro E'. symmetry in E'. pose proof (rkey_of_kind _ _ _ E') as Kd. cbn in Kd. subst k0.
+      rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
+Qed.
+
+Lemma filter_idem : forall X (p : X -> bool) l, filter p (filter p l) = filter p l.
+Proof.
+  intros X p l. induction l as [|x r IH]; [reflexivity|]. cbn.
+  destruct (p x) eqn:E; cbn; [rewrite E, IH; reflexivity|exact IH].
+Qed.
+
+Lemma provide_set : forall C k p0 a,
+  (forall t a', p0 = A.ProvidedVal t a' -> exists v, k = IVal v) ->
+  match p0 with A.ProvidedVal t _ => A.provide C k a (A.set_provision C k p0) = set_cx C k (A.ProvidedVal t a)
+  | A.ProvidedFn g _ => A.provide C k a (A.set_provision C k p0) = set_cx C k (A.ProvidedFn g a)
+  | A.ProvidedMethod g _ => A.provide C k a (A.set_provision C k p0) = set_cx C k (A.ProvidedMethod g a)
+  | A.ProvidedFunctor _ => True end.
+Proof.
+  intros C k p0 a _. pose proof (proj2 (item_eqb_spec k k) eq_refl) as Kk.
+  unfold A.provide, A.set_provision, set_cx, set_list. cbn [A.c_provisions A.ilook fst snd]. rewrite Kk.
+  destruct p0 as [t a'|g a'|g a'|fx]; auto; cbn [A.c_provisions A.c_ty A.c_sub A.c_locals filter fst];
+    rewrite Kk; cbn [negb]; rewrite filter_idem; reflexivity.
+Qed.
+
 (* ---- bind statements --------------------------------------------------------- *)
 
 Definition ItemBreaks (it : spec * option aexpr) : Prop :=
@@ -1138,15 +1252,6 @@ Definition ItemWrap n F C (it : spec * option aexpr) (w : expr -> expr) (C' : A.
 
 (* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
 Local Close Scope string_scope.
-(* BValBind *)
-Hypothesis case_BValBind : forall k, Below k -> forall F C pa v d n t0 i declared y x xt a,
-  A.resolve_sym W (A.fr_mod F) pa = Some v -> A.w_decl W v = Some d -> A.d_ast d = ADVal n t0 i ->
-      A.TyOf W (A.d_mod d) (A.c_ty C) None t0 declared ->
-      A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
-      A.AppOf W v (A.c_ty C) a ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some y) (bind_value_expression v x)
-             (A.provide C (IVal v) a (A.set_val C v declared)) F [].
-
 (* BFnBind *)
 Hypothesis case_BFnBind : forall k, Below k -> forall F C pa f g sg pg sm a types,
   A.resolve_sym W (A.fr_mod F) pa = Some f -> A.kind_sym W f = Some A.DKFn ->
@@ -1271,13 +1376,71 @@ Proof.
     exact (Safe (S (S i)) ltac:(lia) (bind_type d t0 (A.canon C tau)) types H g st (pre_lower Pre0)).
 Qed.
 
+Lemma bindings_value_eq : forall j d g st v e r,
+  I.eval_bindings (S j) P d g st (BValue v e :: r) =
+  match I.eval j P d g st e with
+  | I.Evaluation (Normal w1) g1 st1 => I.eval_bindings j P (install_provision (IVal v) (ValueProvision w1) d) g1 st1 r
+  | rr => inr rr
+  end.
+Proof. reflexivity. Qed.
+
+Lemma lookup_install : forall k k0 pv d, lookup_provision k (install_provision k0 pv d) =
+  if item_eqb k k0 then Some pv else lookup_provision k d.
+Proof. reflexivity. Qed.
+
+Lemma install_other : forall k0 pv d k, k <> k0 -> lookup_provision k (install_provision k0 pv d) = lookup_provision k d.
+Proof.
+  intros k0 pv d k Ne. rewrite lookup_install. destruct (item_eqb k k0) eqn:E; [|reflexivity].
+  apply item_eqb_spec in E. contradiction.
+Qed.
+
+Lemma outcome_env : forall F d d' H types t (b : Prop) r, type_meanings d' = type_meanings d ->
+  Outcome F d' H types t b r -> Outcome F d H types t b r.
+Proof.
+  intros F d d' H types t b r Meq Out. assert (G : forall u, ground d' u = ground d u) by (intros u; unfold ground; rewrite Meq; reflexivity).
+  destruct r as [[] g st]; cbn in *; auto.
+  - destruct Out as [H' [E [S [L T]]]]. exists H'; repeat split; auto. rewrite <- G. exact T.
+  - destruct Out as [H' [ret [R [E [S [L T]]]]]]. exists H', ret; repeat split; auto. rewrite <- G. exact T.
+Qed.
+
+Lemma val_bind_safe : forall k, Below k -> forall n, n <= S k -> forall F C sp v declared y x xt a,
+  A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
+  ItemWrap n F C (sp, Some y) (bind_value_expression v x) (A.provide C (IVal v) a (A.set_val C v declared)) F [].
+Proof.
+  intros k Bel n Le F C sp v declared y x xt a Dy Fits t B cont Safe [|j] Lj d types H g st Pre0; [exact Logic.I|].
+  unfold bind_value_expression. rewrite eval_bind_eq.
+  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_value_eq.
+  destruct (Bel j ltac:(lia)) as [SEx _].
+  pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits
+    (SEx F C y _ x xt Dy d types H g st (pre_lower (pre_lower Pre0)))) as Out.
+  destruct (I.eval j P d g st x) as [[] g1 st1] eqn:E;
+    try (lazymatch goal with |- O.Outcome _ _ _ _ _ _ _ _ _ ?r => let r' := eval cbn in r in change r with r' end;
+         refine (outcome_pass F d H types declared t (A.Breaks y) _ _ (fun b => or_intror b) _ Out);
+         cbn; congruence).
+  destruct Out as [H1 [E1 [S1 [L1 T1]]]].
+  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
+  unfold A.set_val in Safe. rewrite (provide_set C (IVal v) (A.ProvidedVal declared []) a ltac:(intros; eauto)) in Safe.
+  eapply outcome_heap; [exact E1|].
+  eapply O.outcome_breaks; [intro b; left; exact b|].
+  apply (outcome_env F d (install_provision (IVal v) (ValueProvision v0) d) H1 types t B _ eq_refl).
+  apply (Safe (S (S j)) ltac:(lia) _ types H1 g1 st1).
+  pose proof (pre_after _ _ _ _ _ _ _ _ _ _ _ Pre0 E1 S1 L1) as [Frame [Ctx [_ [_ Real]]]].
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L1|]. split; [exact S1|].
+  apply (realizes_set (S (S j)) C d H1 (IVal v) (A.ProvidedVal declared a)).
+  - eapply realizes_lower; [|exact Real]. lia.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists v0. split; [cbn; rewrite Nat.eqb_refl; reflexivity|exact T1].
+Qed.
+
 Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
   A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks it) w.
 Proof.
   intros k Bel n F C it w C' F' m D Le.
   destruct D.
   - intros t' B x Safe. apply (wrap_breaks n F C t' (B \/ False)); [tauto|]. apply type_bind_safe. exact Safe.
-  - eapply case_BValBind; eassumption.
+  - eapply val_bind_safe; eassumption.
   - eapply case_BFnBind; eassumption.
   - eapply case_BFnLambda; eassumption.
   - eapply case_BMethBind; eassumption.

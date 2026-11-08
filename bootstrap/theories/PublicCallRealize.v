@@ -567,3 +567,73 @@ Proof.
   - apply (subst_scoped _ σ r Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
 Qed.
 End Support2.
+
+(* ---- tables read through the provision list ------------------------------- *)
+
+Section ByIlook.
+Import A.
+
+Definition vals_of (l : list (item * provision)) := flat_map (fun q => match q with (IVal v, ProvidedVal t _) => [(v,t)] | _ => [] end) l.
+Definition fns_of (l : list (item * provision)) := flat_map (fun q => match q with (IFn f, ProvidedFn g _) => [(f,g)] | _ => [] end) l.
+Definition mths_of (l : list (item * provision)) := flat_map (fun q => match q with (IMth r m _, ProvidedMethod g _) => [((r,m),g)] | _ => [] end) l.
+Definition funs_of (l : list (item * provision)) := flat_map (fun q => match q with (IFun u, ProvidedFunctor fx) => [(u,fx)] | _ => [] end) l.
+
+Lemma vals_by_ilook : forall l v, KeysMatch l ->
+  nlook v (vals_of l) = match ilook (IVal v) l with Some (ProvidedVal t _) => Some t | _ => None end.
+Proof.
+  induction l as [|[k p] rest IH]; intros v K; [reflexivity|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH v (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a|g a|g a|fx]; cbn in Kind; try contradiction;
+    unfold vals_of in *; cbn in IH |- *; try exact IH.
+  destruct (Nat.eqb v x); [reflexivity|exact IH].
+Qed.
+
+Lemma fns_by_ilook : forall l f, KeysMatch l ->
+  nlook f (fns_of l) = match ilook (IFn f) l with Some (ProvidedFn g _) => Some g | _ => None end.
+Proof.
+  induction l as [|[k p] rest IH]; intros f K; [reflexivity|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH f (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a|g a|g a|fx]; cbn in Kind; try contradiction;
+    unfold fns_of in *; cbn in IH |- *; try exact IH.
+  destruct (Nat.eqb f x); [reflexivity|exact IH].
+Qed.
+
+Lemma mths_by_ilook : forall l r m, KeysMatch l ->
+  mlook r m (mths_of l) = match ilook (mkey r m) l with Some (ProvidedMethod g _) => Some g | _ => None end.
+Proof.
+  induction l as [|[k p] rest IH]; intros r m K; [reflexivity|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH r m (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r' m' [|? ?]|x], p as [tv a|g a|g a|fx]; cbn in Kind; try contradiction;
+    unfold mths_of in *; cbn in IH |- *; try exact IH.
+  destruct (ty_eqb r r'); destruct (Nat.eqb m m'); cbn; first [reflexivity|exact IH].
+Qed.
+
+Lemma funs_by_ilook : forall l u, KeysMatch l ->
+  nlook u (funs_of l) = match ilook (IFun u) l with Some (ProvidedFunctor fx) => Some fx | _ => None end.
+Proof.
+  induction l as [|[k p] rest IH]; intros u K; [reflexivity|].
+  pose proof (K k p (or_introl eq_refl)) as Kind. specialize (IH u (keys_match_tail _ _ K)).
+  destruct k as [x|x|x|r m [|? ?]|x], p as [tv a|g a|g a|fx]; cbn in Kind; try contradiction;
+    unfold funs_of in *; cbn in IH |- *; try exact IH.
+  destruct (Nat.eqb u x); [reflexivity|exact IH].
+Qed.
+
+Definition set_list (k0 : item) (p0 : provision) (l : list (item * provision)) :=
+  (k0, p0) :: filter (fun q => negb (item_eqb k0 (fst q))) l.
+
+Lemma ilook_set : forall k k0 p0 l,
+  ilook k (set_list k0 p0 l) = if item_eqb k k0 then Some p0 else ilook k l.
+Proof.
+  intros k k0 p0 l. unfold set_list. cbn. destruct (item_eqb k k0) eqn:E; [reflexivity|].
+  induction l as [|[k' p'] rest IH]; [reflexivity|]. cbn.
+  destruct (item_eqb k0 k') eqn:E0; cbn.
+  - apply item_eqb_spec in E0. subst k'. rewrite E. exact IH.
+  - destruct (item_eqb k k'); [reflexivity|exact IH].
+Qed.
+
+Lemma keys_match_set : forall k0 p0 l, KeysMatch l -> KeysMatch [(k0, p0)] -> KeysMatch (set_list k0 p0 l).
+Proof.
+  intros k0 p0 l K K0 k p [E|I]; [injection E as E1 E2; subst; exact (K0 _ _ (or_introl eq_refl))|].
+  apply filter_In in I as [I _]. exact (K k p I).
+Qed.
+End ByIlook.
