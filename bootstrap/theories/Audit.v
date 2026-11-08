@@ -3306,7 +3306,9 @@ Definition Named (F : frame) (n : name) : Prop := slook n (fr_var F) <> None.
 (* the numbering is injective, and numbers the parameters 0, 1, … after `this` *)
 Definition Numbering (F : frame) (this : option ty) (params : list name) : Prop :=
   NoDup (map fst (fr_var F)) /\ NoDup (map snd (fr_var F)) /\
-  (match this with Some _ => forall n, slook n (fr_var F) = Some 0 -> n = "this"
+  (* `this` is a keyword, never a numbered name: with a receiver, slot 0
+     is the receiver alone, so no local can shadow it. *)
+  (match this with Some _ => forall n, slook n (fr_var F) <> Some 0
                    | None => True end) /\
   (forall i pn, nth_error params i = Some pn ->
      slook pn (fr_var F) = Some (match this with Some _ => S i | None => i end)).

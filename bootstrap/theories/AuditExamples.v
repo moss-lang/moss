@@ -24,9 +24,7 @@ Example bare_return_requires_unit : forall W P F C exp code t,
 Proof. intros W P F C exp code t Never Related. inversion Related; subst; unfold never in *; congruence. Qed.
 Example receiver_slot_is_reserved : forall F receiver,
   Numbering F (Some receiver) [] -> slook "x" (fr_var F) <> Some 0.
-Proof. intros F receiver [_ [_ [Reserved _]]] Collision.
-  specialize (Reserved "x" Collision). discriminate.
-Qed.
+Proof. intros F receiver [_ [_ [Reserved _]]]. exact (Reserved "x"). Qed.
 Example generations_cannot_repeat : forall W F C g,
   ~ FreshFor W F C [g;g].
 Proof. intros W F C g [Distinct _]. inversion Distinct; subst. apply H1. simpl; auto. Qed.

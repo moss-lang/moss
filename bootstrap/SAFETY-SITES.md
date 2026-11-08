@@ -81,6 +81,12 @@ the local store. *C* and *F* are the static context and frame.
   under `Layouts` and the Bool symbols that `ElaboratesIn` records, `truthy`
   reads every value typed at Bool. This closes the `e_bool` row, given a
   typed condition value.
+- **The receiver slot is reserved.** `ExThis` reads local 0, and `Numbering`
+  allowed a name `"this"` to be numbered 0. A local named `this` would then
+  shadow the receiver at a different type. The lexer makes `this` a keyword,
+  so no parsed program does this, but the relation relied on that silently.
+  `Numbering` now numbers no name 0 when there is a receiver. This rules out
+  no parsed program and keeps the safety argument independent of the lexer.
 - **Proof shape.** A defined function's closure carries its `FnElab`
   derivation and a realization of its context (T30/T31). The main lemma can
   then be proved by induction on fuel, inverting the derivation at each
