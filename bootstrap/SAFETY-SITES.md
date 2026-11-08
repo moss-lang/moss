@@ -71,6 +71,31 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
+- **Open: a merge can be oriented either way (needs a decision).**
+  `MostGeneralMerge` leaves a merge between two generations unoriented. In
+  [merge_order.moss](../tests/wasi/merge_order.moss), `B` and `C` are
+  merged, and both `σ = {B ↦ C}` and `σ = {C ↦ B}` are idempotent most
+  general unifiers. `CtxOf` (and `FunCtx`) is chosen independently by each
+  rule that mentions it: `FnElab` for the callee's body, and `ExCallD`,
+  `FPDefined`, `MPAttached` and so on at each call or provider site.
+  Method keys and needs are read under σ: a need is
+  `mkey (app_subst σ r) m`, and the body's calls use `rkey C (canon C ot) m`.
+  So a program whose call site installs `IMth C w θ` while the callee's
+  body looks up `IMth B w θ` satisfies `ElaboratesIn`, and gets stuck with
+  `e_entry` when the body calls `b.w()`. The oracle picks one orientation
+  consistently, so it does not exhibit this; the gap is in the
+  declarative relation that `safety` quantifies over. The same independence
+  affects `FunCtx` between `LinkBody` and functor application sites, and
+  `main`'s `CtxOf` between `ElaboratesIn` and `Platform.Linked`. Candidate
+  repairs:
+  1. Let the world fix each symbol's context: `CtxOf W s C ns` and
+     `FunCtx W u C ns` additionally require `C` (and the needs) to be the
+     world's recorded context for that symbol. Any consistent choice
+     remains valid, so the implementation proof can record whatever its
+     elaborator computes.
+  2. Fix a canonical orientation in `MostGeneralMerge`, for example
+     generation-to-generation bindings point to the smaller symbol. The
+     elaborator would then have to be shown to follow that order.
 - **Unit tags had no value typing (fixed).** `lib/bool.moss` declares `tag False;`
   and `tag True;`, and `Layouts` requires them to be `DKUnit`.
   `PublicValueTyping.value_typed` types tags only through
@@ -179,3 +204,6 @@ only has to be preserved by heap extension.
   constants. I had estimated a few hours.
 - Arm selection (19:51 to 19:56): `PublicArms.arms_select`.
 - Tag checks (19:56 to 20:00): `PublicTagCheck.tag_check`.
+- Semantic provision realization, vals, provided calls, methods and
+  operators, `CodeSafe` and literals (20:00 to 20:10).
+- Found the merge-orientation gap while planning direct calls (20:10 to 20:12).
