@@ -1107,14 +1107,21 @@ Proof.
 Qed.
 
 (* Family applications a call demands wrap it in functor applications (T15/T16). *)
+(* Code inside the wrapper may rely on both the demanding context and the
+   context after the families: an attached call's receiver and arguments are
+   elaborated before the families it demands. With no family the wrapper is
+   the identity, so the inner code runs at the same fuel. *)
 Hypothesis demand_case : forall k, Below k -> forall F C wanted C' wrap t (B : Prop) x,
-  A.Demand W C wanted [] C wrap C' -> CodeSafe k F C' t B x -> StepSafe k F C t B (wrap x).
+  A.Demand W C wanted [] C wrap C' ->
+  (forall j, j <= S k -> forall d types H g st, Pre j F C' d types H g st -> Pre j F C d types H g st ->
+     Outcome F d H types t B (I.eval j P d g st x)) ->
+  StepSafe k F C t B (wrap x).
 
 Lemma call_code : forall k, Below k -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
   A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
-  CodeSafe k F C (A.sg_ret g) B (ECall f th sm xs).
+  CodeSafe (S k) F C (A.sg_ret g) B (ECall f th sm xs).
 Proof.
   intros k Bel F C args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk [|j] Le d types H lg lst Pre0;
     [exact Logic.I|].
@@ -1767,8 +1774,8 @@ Proof.
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       exact (demand_case k Bel F C _ C' wrap (A.sg_ret sg) _ _ Dem
-        (call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
-          (fun a In' B0 => A.BkCall pa None args In' B0)) d types H lg lst Pre0).
+        (fun j Lj d' types' H' g' st' Pre' _ => call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
+          (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st' Pre') d types H lg lst Pre0).
     + exact (invoke_step F C pa args f sg xs Fn Args d types H lg lst Pre0).
     + refine (methcall_step F C o ox ot pa args x t _ Do _ _ Dm d types H lg lst Pre0);
         [intro B0; apply A.BkMethRecv; exact B0|intros a' In' B0; eapply A.BkMethArg; [exact In'|exact B0]].
