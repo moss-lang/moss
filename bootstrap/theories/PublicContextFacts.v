@@ -62,3 +62,19 @@ Proof.
   destruct Ctx' as [d' [ps' [a' [r' [b' [es' [tm' [tm1' [σ' [implicit' [_ [_ [_ [_ [_ [_ [_ [_ Recorded']]]]]]]]]]]]]]]]]].
   rewrite Recorded in Recorded'. injection Recorded' as <- <-. split; reflexivity.
 Qed.
+
+(* A call's instantiation cannot bind two members of one merged class
+   differently: if the callee merges g1 and g2 into z, their meanings at a
+   caller that binds both agree. *)
+Theorem call_theta_merged : forall W C Cs s th g1 g2 z,
+  canonical_context C -> A.CallTheta W C Cs s th ->
+  In (g1, TAbs z) (A.c_sub Cs) -> In (g2, TAbs z) (A.c_sub Cs) ->
+  In g1 (A.w_reqs W s) -> In g2 (A.w_reqs W s) ->
+  A.nlook g1 (A.c_ty C) <> None -> A.nlook g2 (A.c_ty C) <> None ->
+  A.canon C (app_subst (A.c_ty C) (TAbs g1)) = A.canon C (app_subst (A.c_ty C) (TAbs g2)).
+Proof.
+  intros W C Cs s th g1 g2 z Canonical [_ [Bound Merges]] M1 M2 R1 R2 F1 F2.
+  pose proof (Merges g1 (TAbs z) M1) as E1. pose proof (Merges g2 (TAbs z) M2) as E2.
+  cbn [app_subst] in E1, E2. rewrite (Bound g1 R1 F1) in E1. rewrite (Bound g2 R2 F2) in E2.
+  rewrite Canonical in E1, E2. congruence.
+Qed.

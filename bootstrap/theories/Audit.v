@@ -3104,8 +3104,18 @@ Definition at_site (C : cx) (k : item) : item :=
 Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
   map (fun r => (r, canon C (app_subst (c_ty C) (TAbs r)))) (w_reqs W s).
 
-Definition formal_capture (W : world) (C : cx) (callee : nat) : type_capture :=
-  TypeCapture (theta_at W C callee) (theta_at W C callee).
+(* The instantiation of a call of s (assume context Cs) from context C: a
+   meaning for each of s's requirements, in their fixed order. Where C
+   gives a requirement a meaning, θ reads it here (theta_at). Every merge
+   of s's context ([D43]) must hold of θ, including for requirements C
+   leaves unbound: merged types are one type, so a merged class bound
+   here gives its unbound members that meaning too, and a caller cannot
+   bind two members of one class differently. *)
+Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
+  map fst th = w_reqs W s /\
+  (forall r, In r (w_reqs W s) -> nlook r (c_ty C) <> None ->
+     lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
+  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
 
 (* [D20]/[D62]/[D71]: a call of callee s (assume context Cs, needs ns)
    from context C is answered by satisfaction map sm: sm sends each need
@@ -3838,15 +3848,15 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     Ex W P F C (AECall pa a args) exp (ETag s xs v) (TNom s xs)
 (* [D20]/[D21] a defined fn: its needs answered from here (sm), its
    signature read with the meanings here *)
-| ExCallD : forall F C exp pa args f Cf ns sm g xs wrap C',
+| ExCallD : forall F C exp pa args f Cf ns sm th g xs wrap C',
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns ->
     Demand W C (map (at_site C) ns) [] C wrap C' ->
-    Satisfies C' Cf ns sm -> SigOf W f (c_ty C') None g ->
+    Satisfies C' Cf ns sm -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
     Args W P F C' args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp
-       (wrap (ECall f (theta_at W C' f) sm xs)) (sg_ret g)
+       (wrap (ECall f th sm xs)) (sg_ret g)
 (* an abstract fn: whatever provides it here *)
 | ExCallA : forall F C exp pa args f g xs,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
@@ -3981,7 +3991,7 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     MethCall W P F C ox ot [n] args x t
 (* [D61] rule 1, a defined attached method: a direct call, at the
    receiver's instantiation ([D74]) *)
-| MCAttachedDefined : forall F C ox ot n args h att Ca ns sm g xs rargs wrap Cd,
+| MCAttachedDefined : forall F C ox ot n args h att Ca ns sm th g xs rargs wrap Cd,
     head ot = Some h -> Attached W h n att ->
     ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
     (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
@@ -3990,10 +4000,10 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
       (map (at_site (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)) ns) []
       (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
-    Satisfies Cd Ca ns sm -> SigOf W att (c_ty Cd) (Some ot) g ->
+    Satisfies Cd Ca ns sm -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
     MethCall W P F C ox ot [n] args
-      (wrap (ECall att (theta_at W Cd att) sm (ox :: xs))) (sg_ret g)
+      (wrap (ECall att th sm (ox :: xs))) (sg_ret g)
 (* an abstract attached method: a key the context provides ([D36]) *)
 | MCAttachedAbstract : forall F C ox ot n args h att x t,
     head ot = Some h -> Attached W h n att ->
@@ -4214,12 +4224,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
    abstract fn in force, through a fresh defined forwarder whose body calls
    it; its signature read here must be the bound fn's. *)
 with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> option ty -> nat -> type_capture -> smap -> Prop :=
-| FPDefined : forall F C pa g sg Cg ns sm,
+| FPDefined : forall F C pa g sg Cg ns sm th,
     resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
     (exists n ps rt b, ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W g Cg ns -> Satisfies C Cg ns sm ->
+    CtxOf W g Cg ns -> Satisfies C Cg ns sm -> CallTheta W C Cg g th ->
     SigOf W g (c_ty C) None (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    FnProvider W P F C (AEPath pa None) sg None g (formal_capture W C g) sm
+    FnProvider W P F C (AEPath pa None) sg None g (TypeCapture th th) sm
 | FPForward : forall F C pa g sg w n,
     resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
     (exists nm ps rt, ast_of W g = Some (ADFn RPlain nm ps rt None)) ->
@@ -4229,14 +4239,14 @@ with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> opti
 
 (* a method provider (the receiver is the provider's first argument) *)
 with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty -> nat -> type_capture -> (expr -> expr) -> smap -> Prop :=
-| MPAttached : forall F C rp n rg att rt sg Ca ns sm,
+| MPAttached : forall F C rp n rg att rt sg Ca ns sm th,
     resolve_sym W (fr_mod F) rp = Some rg -> Attached W rg n att ->
     (exists rn ps r b, ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
     head rt = Some rg ->
-    CtxOf W att Ca ns -> Satisfies C Ca ns sm ->
+    CtxOf W att Ca ns -> Satisfies C Ca ns sm -> CallTheta W C Ca att th ->
     SigOf W att (c_ty C) None
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (formal_capture W C att) (fun x => x) sm
+    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (TypeCapture th th) (fun x => x) sm
 | MPWrapped : forall F C pa sg rt g sm w n Cg nsg types,
     FnProvider W P F C (AEPath pa None) sg None g types sm ->
     CtxOf W g Cg nsg -> n = length (sg_params sg) ->

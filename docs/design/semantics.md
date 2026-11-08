@@ -595,6 +595,14 @@ world records it, and the callee's body, every call site and every
 provider use that one context. Otherwise a call site could install a
 method under `B`'s key while the body looks it up under `C`'s.
 
+A call instantiates the callee's requirements with a θ that respects the
+callee's merges. Where the caller binds a requirement, θ is the caller's
+meaning. Every merged equation must hold of θ, including for
+requirements the caller leaves unbound. So a merged class bound at the
+call gives its unbound members the same meaning, and a caller cannot bind
+two members of one class to different types
+(`bootstrap/examples/unbound-merge-representative.moss` is rejected).
+
 *Implementation note (rev 6):* the bootstrap now implements this. The
 union-find lives in the environment's type map (an entry pointing anywhere
 but the symbol itself is a substitution edge); `merge` unifies duplicate

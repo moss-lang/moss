@@ -899,13 +899,15 @@
       "requires": [
         "T04"
       ],
-      "status": "open",
+      "status": "partial",
       "budget": "unknown",
       "goal": "Ordinary, method and family-call elaborations yield correctly typed runtime calls.",
-      "approach": "Split call forms, satisfaction maps and generated methods once T02 is fixed.",
+      "approach": "Split call forms, satisfaction maps and generated methods once T02 is fixed. Checked conditionally: PublicBodySlice.call_core proves direct calls from callee_realizes (T03/T04) and demand_case; calls use CallTheta (call_theta_merged).",
       "sources": [
         "theories/Audit.v",
-        "theories/XBridge.v"
+        "theories/XBridge.v",
+        "theories/PublicBodySlice.v",
+        "theories/PublicTypeRead.v"
       ],
       "origin": {
         "kind": "baseline"
@@ -2190,7 +2192,8 @@
         "E10",
         "E21",
         "E22",
-        "E23"
+        "E23",
+        "E24"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2614,6 +2617,31 @@
         "reason": "The user approved recording each symbol's context in the world: merging picks a representative, and independent CtxOf choices at a body and its call sites could disagree on provision keys.",
         "sources": [
           "SAFETY-SITES.md"
+        ]
+      }
+    },
+    {
+      "id": "E24",
+      "group": "E",
+      "title": "Instantiate calls through merges",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators (Elab.v and src/) choose each call's and provider's instantiation so that it satisfies CallTheta: caller meanings where bound and every callee merge, rejecting calls that bind one merged class inconsistently, with regression tests.",
+      "approach": "Read unbound members of a merged class through a bound member; reject when no such instantiation exists. bootstrap/examples/unbound-merge-representative.moss must be rejected and partially-bound-merge.moss accepted.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/unbound-merge-representative.moss",
+        "examples/partially-bound-merge.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved requiring a call's instantiation to satisfy the callee's merges after an accepted program bound one merged class to Char and Bool and got stuck.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/unbound-merge-representative.moss"
         ]
       }
     },

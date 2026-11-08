@@ -71,8 +71,8 @@ the local store. *C* and *F* are the static context and frame.
   elaborators still accept the program; that is
   [E21](proofs/build-run.md#e21).
 
-- **Counterexample: a call can bind a callee's merged class inconsistently
-  (needs a decision).**
+- **Counterexample: a call could bind a callee's merged class inconsistently
+  (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
   `f`'s context merges `X`, `Y` and `Z` into one type. The caller binds
   `X = Char` and `Y = Bool` and leaves `Z` unbound. The merge equations each
@@ -82,7 +82,7 @@ the local store. *C* and *F* are the static context and frame.
   the program and reports `stuck (XErr 10)` when `if` reads the `Char` as a
   `Bool`. Binding `Z = Char` as well makes the oracle reject the call. The
   implementation is affected, not only the audit relation.
-- **A call can bind only part of a callee's merged class.**
+- **A call can bind only part of a callee's merged class (resolved by `CallTheta`).**
   `theta_at` gives a callee requirement the caller's meaning of the same
   symbol, or the symbol itself when the caller has none. `Satisfies`
   checks the callee's merge equations only when every generation in the
@@ -232,3 +232,5 @@ only has to be preserved by heap extension.
   operators, `CodeSafe` and literals (20:00 to 20:10).
 - Found the merge-orientation gap while planning direct calls (20:10 to 20:12).
 - Recorded per-symbol contexts in the world, after approval.
+- `tyof_rel`, `body_call`, `call_core`, and the merged-class counterexample
+  (20:23 to 20:41). `CallTheta` after approval (20:42 to 20:55).
