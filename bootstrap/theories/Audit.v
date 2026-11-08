@@ -4310,6 +4310,9 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
     (* captured: the enclosing locals it mentions, less its parameters *)
     (forall n, In n caps <-> (Mentions_name W F body n /\ slook n (c_locals C) <> None /\ ~ In n (map fst ps) /\ fr_applying F = [])) ->
     NoDup caps -> length capvals = length caps -> Forall (Fresh W) capvals -> NoDup capvals ->
+    (* new symbols: no val the context provides is reused, so the
+       prefix that binds them leaves every provision in force as it was *)
+    Forall (fun v => ilook (IVal v) (c_provisions C) = None) capvals ->
     Fresh W pid ->
     (* the provider's own context: everything here, the captured vals in
        force (as LCaptured locals: not assignable), no other locals *)

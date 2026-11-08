@@ -2471,8 +2471,9 @@ A lambda has no name, so it cannot call itself; recursion takes a named fn.
 
 Elaboration — pure sugar over the core calculus, so the soundness proof of
 `CoreMoss.v` (now `bootstrap/theories/CoreMoss.v`) covers it unchanged (as for [D66]): each
-captured local `k` becomes a fresh val symbol bound to `k`'s value
-immediately before the bind (`EBindVal`), and the lambda becomes a fresh
+captured local `k` becomes a fresh val symbol (new: neither declared nor
+already provided where the bind is, as in an enclosing lambda's captures)
+bound to `k`'s value immediately before the bind (`EBindVal`), and the lambda becomes a fresh
 defined function, assuming the context items and vals it uses, whose body
 is the lambda's (with captured locals read through their vals), bound as an
 ordinary provider (`EBindFn`; for a method, `EBindMth`, whose rule

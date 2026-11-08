@@ -102,6 +102,16 @@ the local store. *C* and *F* are the static context and frame.
   the provider's `Satisfies`, `CallTheta` and signature are read in the
   context with the key receiver's arguments set as types. The
   implementation check is [E26](proofs/build-run.md#e26).
+- **Captured vals are new symbols (precise freshness, no counterexample).**
+  `LambdaProvider` required captured val symbols only to be undeclared
+  (`Fresh W`), so a derivation could reuse a val an enclosing lambda
+  captured. That is unobservable, since only a lambda's own prefix reads
+  its captured vals, but it leaves the context listing a val whose runtime
+  value has another type, which the realization invariant rules out. The
+  rule now also requires each captured val to be unprovided in the current
+  context (user-approved). Both implementations already use new symbols:
+  the oracle draws them from one global counter, and the native compiler
+  uses slots.
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
