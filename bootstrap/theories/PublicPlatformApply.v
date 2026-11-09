@@ -229,7 +229,8 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
     Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key /\
-    Platform.HandlesRead W outputs key) keys bindings.
+    Platform.HandlesRead W outputs key) keys bindings /\
+  Platform.MethodsDistinct W keys.
 
 Lemma family_data : forall u code, Platform.Family W Prog u code ->
   exists inputs needs outputs keys bindings, FamilyData u code inputs needs outputs keys bindings.
@@ -348,7 +349,7 @@ Qed.
 Lemma platform_not_linked : PlatformNotLinked.
 Proof.
   intros h0 code u gg fc Fam LB FB.
-  destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & (_ & _ & _ & FBf & Binds)).
+  destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & (_ & _ & _ & FBf & Binds & _)).
   rewrite FBf in FB. injection FB as <-. cbn [fc_bindings].
   destruct LB. match goal with
     | Bo : A.BindsOf (?w EUnit) ?b0, Bi : A.BindItems _ _ _ _ _ ?w _ _ _, Fh : A.funbody_of _ _ = Some _ |- _ =>
@@ -482,7 +483,7 @@ Proof.
   intros k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
     code sms h0 Ch0 needs outputs keys bindings Look FD Kin NoOut Agree Adapt rest.
   pose proof AP as (R & Fx & FC & Inp & Th & Fixed & Sat & FreshG & Uniq & Outs & NdO & OutsIff & PR).
-  pose proof FD as (FC0 & _ & PRf & FB & Binds).
+  pose proof FD as (FC0 & _ & PRf & FB & Binds & _).
   assert (Onil : outs = []).
   { destruct outs as [|t0 r0]; [reflexivity|]. exfalso. exact (NoOut t0 (proj1 (OutsIff t0) (or_introl eq_refl))). }
   subst outs.
@@ -681,7 +682,7 @@ Proof.
        |(h0' & gf0' & Chn' & _ & Fam' & Ok0)].
   - (* a linked root: the family's code has no bindings *)
     destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
-    pose proof FD as (FC0 & _ & _ & FB & Binds).
+    pose proof FD as (FC0 & _ & _ & FB & Binds & _).
     pose proof (platform_not_linked h0 code h0' gg _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
     inversion Binds; subst keys.
     destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP gfx sms h0 gf0 Chn
@@ -756,7 +757,7 @@ Lemma family_result_agrees : FamilyKeysTyped -> forall C u matching th sm Cr ks,
   ItemsAgree (A.family_context C matching) Cr Cu outputs th
     (fun r m g => In (A.mkey r m) ks /\ A.mlook r m (A.c_mths Cr) = Some g) keys.
 Proof.
-  intros KT C u matching th sm Cr ks FA Idem code Cu needs outputs keys bindings (FC & NoOut & PRf & _ & Binds).
+  intros KT C u matching th sm Cr ks FA Idem code Cu needs outputs keys bindings (FC & NoOut & PRf & _ & Binds & _).
   apply (PublicFamilyAgree.family_items_agree W C u matching th sm Cr ks Cu needs outputs keys FA FC NoOut PRf).
   - intros key Ik. destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
     destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).
@@ -780,7 +781,7 @@ Proof.
   intros k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0 code Look Fam.
   pose proof FA as (fx & Cu & ns & Fx & _ & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (family_data u code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
-  pose proof FD as (FC0 & _ & PRf & FB & Binds).
+  pose proof FD as (FC0 & _ & PRf & FB & Binds & _).
   destruct (S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.

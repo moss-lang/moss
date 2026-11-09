@@ -4730,6 +4730,21 @@ Definition MachinesFixed (W : world) (source : usym) (inputs outputs : cx) (key 
   | _ => True
   end.
 
+(* A platform family's items have pairwise distinct methods, and at most
+   one of them is a detached method (lib/wasm.moss: Heap's `.boxed`,
+   Arrays' `.arrayed`; every other item is an attached method of its own).
+   A copy of the family (`bind F = H;`, BFunCopy) is checked one way only
+   (CopyOutputs: each of F's items is one of H's); with this, H's items
+   are each one of F's too, since F has an item on each of H's leaves
+   (SameResult), resolving to H's method there (an attached method is the
+   receiver's, and the one detached method is the only one left). *)
+Definition DetachedMethod (W : world) (m : nat) : Prop :=
+  exists d n ps rt body, w_decl W m = Some d /\ d_ast d = ADFn RDetached n ps rt body.
+Definition MethodsDistinct (W : world) (keys : list item) : Prop :=
+  forall k1 k2 r1 r2 m1 m2 a1 a2, In k1 keys -> In k2 keys ->
+    k1 = IMth r1 m1 a1 -> k2 = IMth r2 m2 a2 ->
+    (m1 = m2 \/ (DetachedMethod W m1 /\ DetachedMethod W m2)) -> k1 = k2.
+
 Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
@@ -4744,7 +4759,8 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
-      HandlesRead W outputs key) keys bindings.
+      HandlesRead W outputs key) keys bindings /\
+    MethodsDistinct W keys.
 
 (* main's context reads each machine type a platform functor fixes as
    itself (the oracle's check_platform_entry_view: "platform functor has an

@@ -616,6 +616,24 @@ the local store. *C* and *F* are the static context and frame.
   pattern, which both implementations accept. `ResultRealizes` now compares
   at the body's meanings of the outputs, as the oracle's
   `promised_result_type` does (scratch/orch/results-AUDIT.md).
+- **A platform family's items have distinct methods (`Platform.MethodsDistinct`).**
+  `ChainResultAgrees` needs every item of a closure's root platform
+  family to be one of the caller's new methods (`ItemsAgree`'s clause B;
+  `family_core` uses it to rule out a primitive shadowing an old method).
+  A copy (`BFunCopy`) checks only one direction (`CopyOutputs`, as the
+  oracle's `copy_outputs_match`): each of F's items is one of H's. With
+  `SameResult` (same leaves), F has an item on each of H's leaves, but a
+  leaf (receiver symbol, name) does not fix the key: F's module may
+  resolve a detached `.m` to another method, and brackets add keys. So
+  `Platform.Family` now asks that the family's items have pairwise
+  distinct methods, at most one of them detached. Then the method F
+  resolves on each leaf is H's (an attached method is global; the one
+  detached method is the only detached candidate), and every root item is
+  matched. It constrains only the platform world: the oracle provides
+  platform families only for lib/wasm.moss's functors (Elab.v
+  `platform_fun`, `plat`), and Heap, Mutable, Arrays and Memories each
+  have distinct methods, one detached at most (`.boxed`, `.arrayed`).
+  Details in scratch/orch/chainagree-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 

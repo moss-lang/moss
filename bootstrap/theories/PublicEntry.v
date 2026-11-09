@@ -353,7 +353,7 @@ Definition PlatformSigsFixed (W : A.world) (Prog : program) : Prop :=
 Lemma platform_sigs_fixed : forall W Prog, PlatformSigsFixed W Prog.
 Proof.
   intros W Prog u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is.
-  pose proof FD as (_ & _ & _ & _ & Binds).
+  pose proof FD as (_ & _ & _ & _ & Binds & _).
   destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op' [_ [_ [_ [MF _]]]]]]].
   rewrite Ek in MF. exact (MF gf Mgf name mach sym Inm Lang Is).
 Qed.
@@ -382,7 +382,7 @@ Qed.
 Lemma platform_handles_formed : forall W Prog, (exists b, A.WorldOf b W) -> PlatformHandlesFormed W Prog.
 Proof.
   intros W Prog [b Wo] u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf.
-  pose proof FD as (FC & _ & PRf & _ & Binds).
+  pose proof FD as (FC & _ & PRf & _ & Binds & _).
   destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op' [_ [_ [_ [_ HR]]]]]]].
   rewrite Ek in HR. pose proof (HR gf Mgf) as Raws.
   pose proof (PublicFormation.functx_cx_formed W (PublicWorldFormation.merge_formed_of W)
