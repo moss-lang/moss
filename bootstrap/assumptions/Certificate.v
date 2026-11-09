@@ -198,10 +198,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicCopyFresh.ground_app_subst);
   root (@NM.PublicCopyFresh.result_gens);
   root (@NM.PublicCopyFresh.copy_outputs_read);
-  root (@NM.PublicLinkPins.items_dests_pins);
-  root (@NM.PublicLinkPins.link_dests_avoid);
+  root (@NM.PublicLinkPins.items_dests_made);
   root (@NM.PublicLinkRun.app_env_meaning);
-  root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_mentioned);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_input);
   root (@NM.PublicLinkPins.link_dests_out);
   root (@NM.PublicCallerKeys.provide_result_key_news);

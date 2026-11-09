@@ -6,9 +6,9 @@
      reading is a linked input θ covers.
    - [body_meaning_kept]: a run of binds changes no type meaning outside
      its destinations (PublicChainCore.bindings_writes).
-   - With PublicLinkPins.link_dests_avoid (no destination is a declared
-     symbol of M(F)), the body's final meanings of F's mentioned inputs are
-     the application's. *)
+   - With PublicLinkPins.link_dests_out (no destination is an input of
+     F, by LinkBody's made clause), the body's final meanings of F's
+     inputs are the application's. *)
 From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicCallRealize PublicCopyFresh.
 From NM Require PublicChainCore PublicLinkPins PublicFamilyAgree.
@@ -72,19 +72,6 @@ Proof.
   destruct (CC.bindings_writes j Pv d g st bs d' g' st' E) as [[w [Ew Iw]] _].
   rewrite Ew, lookup_subst_app'. destruct (lookup_subst x w) as [v|] eqn:L; [|reflexivity].
   exfalso. apply Nx, Iw. change x with (fst (x, v)). apply in_map. exact (lookup_subst_in_pair _ _ _ L).
-Qed.
-
-(* In a body bound to F, a declared symbol of M(F) keeps its meaning. *)
-Lemma body_meaning_mentioned : forall W Prog u Fg Cg its wrap Cb Fb made binds,
-  (forall x, In x (A.fr_pins Fg) <-> A.Mentions W u x) ->
-  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
-  forall j Pv d g st d' g' st', CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
-  forall x, A.Mentions W u x -> ~ A.Fresh W x ->
-  lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d).
-Proof.
-  intros W Prog u Fg Cg its wrap Cb Fb made binds Pins D B j Pv d g st d' g' st' E x Mx Nf.
-  apply (body_meaning_kept j Pv d g st binds d' g' st' E). intros Ix.
-  exact (PublicLinkPins.link_dests_avoid W Prog u Fg Cg its wrap Cb Fb made binds Pins D B x Ix Mx Nf).
 Qed.
 
 (* With LinkBody's made clause: every input of F keeps its meaning. *)

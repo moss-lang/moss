@@ -133,6 +133,19 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **BApplyAbstract no longer keeps a kept output out of the pins (consol).**
+  realize2's conjunct `~ In t (fr_pins F)` in the kept-output case is
+  dropped. For a linked body's own binds (the only place the proof used
+  it, `PublicLinkPins`), LinkBody's made clause implies it: M(F) is among
+  F's inputs, and nothing the body makes is one. Elsewhere it was too
+  strict: a frame's pins reach blocks nested in the body, whose `made`
+  stays in the block, so the conjunct rejected
+  [block-kept-output-pin.moss](examples/block-kept-output-pin.moss),
+  which the oracle and native both accept and run (7). Audit now accepts
+  it. `PublicLinkPins` tracks destinations through `made` only
+  (`items_dests_made`); `link_dests_avoid` and
+  `PublicLinkRun.body_meaning_mentioned` are gone. See
+  scratch/consol-STATUS.md.
 - **FamilyCopyRealizeOk assumes the family application's table is scoped (realize5).**
   `FS.FamilyCopyRealizeOk` and `FS.FamilyCopyApplyOk` gain the premise
   `PublicFormation.TysScoped W C`, which `FamilyLinkResultsOk` and

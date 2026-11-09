@@ -1,6 +1,6 @@
 # realize2: control for link-kept-output-pin.moss: the caller binds T = Char,
 # so the body's meaning agrees. The oracle runs it and prints 48 and 10. Audit
-# (kept output at a pin) and native reject it.
+# (LinkBody: the body makes T, an input of F) and native reject it.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

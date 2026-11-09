@@ -345,13 +345,21 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
   is done.
 
 ### 13. A linked body does not keep an output at an input of F (268bf3a, 4d55710)
-- **Rule now.**
-  - 268bf3a: `BApplyAbstract`'s kept-output case also requires
+- **Rule now.** `LinkBody` requires that nothing the body makes is an
+  input of F (`forall t, In t made -> nlook t (c_ty Cu) = None`, 4d55710).
+- **History.**
+  - 268bf3a: `BApplyAbstract`'s kept-output case also required
     `~ In t (fr_pins F)`.
-  - 4d55710: `LinkBody` requires that nothing the body makes is an input
-    of F (`forall t, In t made -> nlook t (c_ty Cu) = None`). This implies
-    the pin clause for linked bodies. The pin clause was kept because it
-    had been approved.
+  - 4d55710 added the made clause, which implies the pin clause for a
+    linked body's own binds. The pin clause was kept because it had been
+    approved.
+  - **Removed in consolidation (ob-consol, "Drop BApplyAbstract's pin
+    clause").** Outside the body's own binds the pin clause was stricter
+    than both implementations: a block nested in a linked body keeps its
+    `made` to itself, but the frame's pins still reached it.
+    [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) was
+    rejected by Audit only; the oracle and native both print 7. Audit now
+    accepts it. This is a relaxation toward both implementations.
 - **Why.** `CN.ChainRealizeOk` was false. G's `bind Make;` installed Make's
   output T (Char) as itself, where T is F's input, and G bound `T.m` on
   it. The caller, with T = Bool, filed it under `Bool.m`. The pins M(F)
@@ -990,9 +998,8 @@ On copy-capture, Audit matches both implementations.
       restated to give callability at every grounding.
   - Estimate: "days, not hours". If it is done, revert 642490e's
     conjunct, and the two programs are accepted again.
-- **Drop the redundant pin clause (#13).** `LinkBody`'s made clause
-  implies `~ In t (fr_pins F)` for linked bodies. It was kept only because
-  it had been approved.
+- **Drop the redundant pin clause (#13).** Done in consolidation (see
+  #13).
 - **Pin merge representatives as the oracle does (#14, option a).** This
   is smaller, but it rejects m5-XT, which native runs.
 - **3b over every unmerged entry (#11, option a).** It rejects the same
