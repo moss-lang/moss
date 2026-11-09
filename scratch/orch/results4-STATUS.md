@@ -1,6 +1,6 @@
 # results4: ChainNewOk / FamilyLinkNewOk — STATUS
 
-Branch ob-results4, safety (7b39518) merged. check.sh passes.
+Branch ob-results4, safety (1a7d125) merged. check.sh passes.
 
 ## Step 0: the CopyOutputs direction question — a real gap, fixed in Audit
 
@@ -82,3 +82,31 @@ takes `CC := CN.CC`):
 ## Time
 
 About 3 hours.
+
+## Round 2 (coordinator's list)
+
+1. E33 corpus check: done. The LinkBody premise rejects
+   tests/regressions/functor_input_output_generations.moss, an existing
+   regression the project runs natively (`yn`) and ignores on the oracle
+   (known generation-capture bug, E06/S11). Details and the size of the
+   "separate output roles" alternative: results4-AUDIT.md (not small:
+   FunctorCode gains the role map, apply_functor substitutes roles, proof
+   repair across PublicLinkResults/ChainCore/PlatformApply/BodySlice;
+   about half a day to a day). Reported; awaiting the decision, since
+   ChainKeysOk's and ChainRealizeOk's statements (output_renaming, Θ)
+   depend on it.
+2-4. Not started (blocked on that decision for the key/type
+   correspondence). Notes for whoever continues:
+   - Threading the run fact: `app_step` (PublicBodySlice ~line 4767)
+     destructs `chain_run`'s result as `[_ [E3 [_ [Pre3 Run0]]]]`; the
+     third component is `MeaningsGrow made de d3` (de = the application
+     environment). Adding it as a premise to `LinkResultsOk`,
+     `ChainResultsOk` (PublicCopyApply; its copy-chain users run the root
+     the same way), `ChainCoreOk`, `ChainNewOk`, `ChainRealizeOk` is
+     mechanical. It still needs a static fact that `made` (BindItems'
+     made list) avoids the root's inputs, and an alias fact for
+     receivers read through at_site Cb (bindings_writes' alias half).
+   - ChainRealizeOk needs the same static correspondence as ChainKeysOk
+     (SigRel/TyRel from family_entries_rel generalised to outputs), plus
+     the provisions' equality along copies (CopyOutputs' forward clause),
+     so do ChainKeysOk's length-zero case first.
