@@ -127,7 +127,7 @@ Example no_return_without_a_function : forall W P F C exp code t,
 Proof. intros W P F C exp code t NoTarget Related. inversion Related; subst; congruence. Qed.
 
 Definition output_program := Program []
-  [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine MI32)])]
+  [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine MI32)] [])]
   0 0 0 0 empty_environment [] [].
 Definition output_environment :=
   Environment [] [(IFun 3,FunctorClosure 2 [] empty_environment)].

@@ -67,50 +67,20 @@ lookup_subst x [] with ... end` reduces to `base x`). On a `LinkBody` code
 (`LinkData` now has `(A.c_ty Cg)` as the table), use
 `PublicBodySlice.link_entry`, which no longer needs a merge clause.
 
-## 2. An output not in force counts as made by `bind F;` (block escape)
+## 2. Block escape of an output not in force (superseded by `safety`)
 
-**What.** `BApplyAbstract`'s `made` is now `newgens ++ unforced C outs`
-(`unforced C ts`: the symbols of ts not in force in C, a new Definition
-before `Ex`). It also takes a premise that the frame's types (`fr_ret`,
-`fr_this`) do not mention those outputs, the analogue of `FreshFor`'s frame
-clause for `newgens`.
+While checking Task C's `DeclaredInForce`, I found that it was false:
+`let y = { bind F; make() };` with F's output T not in force left
+`y : T` where T is not in force, because `BApplyAbstract` counted only
+fresh generations as made. I fixed it in commit b2c4a90 (made := newgens
+plus the outputs not in force, with a frame premise). The `safety` branch
+(family agent, examples/output-escape.moss) had meanwhile made the same
+repair (made := `map gensof outs`, the frame premise inside the outputs
+clause), so the merge takes `safety`'s version and drops mine.
 
-**Why.** Task C needs `DeclaredInForce` (every declared symbol a context
-mentions is in force) as an invariant of every context the slice reaches.
-It was false: an output T of F not in force where `bind F;` runs stands for
-itself (`gensof T = T`), so T was not among the generations the bind made,
-and BlkE's escape check let a value of type T leave the block:
-`let y = { bind F; make() };` left `y : T` in a context where T is not in
-force. examples/block-output-escape.moss is this program. The oracle
-rejects it ("this block yields `T`, which mentions `T`, a type `bind F;`
-made in it ... (D78)"), and so does native ("a type created by a binding
-cannot escape its block: `T`"); so does the statement variant
-`{ bind F; make() };` in both. The oracle's own `made` (the checker's
-`cx_fresh` growth) already includes such T, so Audit now mirrors it, and
-BodySound (whose bind statements are pending) is unaffected.
-
-The frame premise rejects nothing: the frame's types are read where the
-body starts, so they mention only types in force there, and a body never
-removes a key from its type table, so an output not in force at the bind
-was not in force at the start either. It is what the slice needs to keep
-`FrameAvoids made F` (a bind may change the meaning of what it made, and
-the frame's return and receiver types must not move).
-
-**Alternatives considered.**
-- A BlkE premise "the block's type mentions only declared symbols in
-  force around it": same verdicts, but BodySound constructs `BlkECheck`
-  from the elaborator's escape check, which is phrased over made types,
-  so it would need a new elaborator fact.
-- Always making a fresh generation for an output (even when not in
-  force): changes the meaning of programs both implementations accept
-  (examples/captured-output-scope.moss reads T itself afterwards).
-
-**Side note for the results branch.** `LinkResultsOk` concludes
-`MeaningsGrow newgens d (append_environment result d)`. The result's
-writes are keyed by `gensof t` for every output, so for an output not in
-force (`gensof t = t`, not in newgens) that conclusion looks false; with
-this change the slice only needs `MeaningsGrow (newgens ++ unforced C outs)`
-(`stepout_more`), so the lead may want to weaken that obligation
-accordingly.
-
-**Evidence.** check.sh passes; oracle and native outputs above.
+Extra evidence for that repair: native also rejects the program ("a type
+created by a binding cannot escape its block: `T`"), as does the variant
+`{ bind F; make() };` as a statement (oracle and native both). I ran
+native as moss-safety's `target/release/moss run` from this worktree,
+with moss-safety's `target/moss.wasm` copied into this worktree's
+`target/` (ignored).

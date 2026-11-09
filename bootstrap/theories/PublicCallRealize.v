@@ -213,7 +213,7 @@ Proof.
   - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
     rewrite nlook_smap in Found. destruct (nlook k tmr) as [u|] eqn:L; [|discriminate].
     injection Found as <-. rewrite (idform_nlook _ _ _ IdR L). reflexivity.
-  - intros g t Ig. rewrite Keys. cbn in Ig. destruct MGM as [_ [_ [_ Dom]]]. destruct (Dom g t Ig) as [Gg Gt].
+  - intros g t Ig. rewrite Keys. cbn in Ig. destruct MGM as [_ [_ [_ [Dom _]]]]. destruct (Dom g t Ig) as [Gg Gt].
     assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
     { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
     split; [exact (All g Gg)|intros x Ix; exact (All x (Gt x Ix))].
@@ -687,7 +687,7 @@ Proof.
   assert (All : Scoped tmr (flat_map entry_gens es)).
   { intros x Ix. unfold tmr. rewrite map_app. apply in_or_app. right. exact (EsT x Ix). }
   assert (KeysE : map fst (c_ty (entries_cx σ tmr es)) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
-  destruct MGM as [_ [_ [_ Dom]]].
+  destruct MGM as [_ [_ [_ [Dom _]]]].
   assert (Range : forall g t, In (g, t) σ -> incl (gens t) (map fst tmr)).
   { intros g t I x Ix. exact (All x (proj2 (Dom g t I) x Ix)). }
   split; [|split; [|split; [|split; [exact Nd|split; [|split]]]]].
