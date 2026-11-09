@@ -4515,11 +4515,16 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
        In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
        nlook t (c_ty Cu) <> None -> Fixed W u t) ->
     (* G reads each need F links as F does, and its readings of F's inputs
-       hold in F's context (the oracle: linked input interpretation, D84) *)
+       hold in F's context (the oracle: linked input interpretation, D84).
+       An input of F reads in G as a type over F's inputs: G's merges may
+       not send a linked input to a type only G has, which the closure
+       captures at the bind while each application supplies the input
+       afresh (the oracle's 3b sees the first unmerged reading;
+       examples/link-merge-captured.moss, scratch/orch/cap3b-AUDIT.md) *)
     (forall k, In k nsg -> In k nsu ->
        ilook (provision_id k) (c_provisions Cg) = ilook (provision_id k) (c_provisions Cu)) ->
     (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
-       (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) -> canon Cu (TAbs x) = canon Cu tx) ->
+       (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\ canon Cu (TAbs x) = canon Cu tx) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
     fr_this Fg = None -> fr_loop Fg = false ->
     (* its locals are numbered as a body's are *)

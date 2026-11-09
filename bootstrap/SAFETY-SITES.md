@@ -122,6 +122,32 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A linked input reads in G as a type over F's inputs (cap3b).**
+  LinkBody's input condition used to assume that G's reading of an input x
+  of F mentions only F's inputs, so it held vacuously when G's context
+  merged x into a type Y that only G has (orientation x := Y).
+  [link-merge-captured.moss](examples/link-merge-captured.moss) is the
+  hunt's `ChainRealizeOk` counterexample.
+  - Audit's 3b reads the captured `A.gimme` under σ, so it sees Y, not X.
+  - G's body therefore reads X as the captured Y (Bool), while each
+    application supplies X (Char). `out = true` is installed at the
+    caller's Char.
+  - The oracle rejects it (D84 3b, on the first unmerged reading), and so
+    does native ("incompatible types").
+
+  The condition now concludes that x's reading mentions only F's inputs.
+  With the σ-read 3b, which covers the orientation Y := x, a linked input
+  no longer meets a captured-only type in either orientation.
+  - Mirroring the oracle's 3b exactly would not be sound. It reads one
+    stored signature per captured fn or method.
+    [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss)
+    reads `gimme` at Y and then at X: the oracle accepts it, and the
+    reference interpreter gets stuck. Native rejects it, and so does Audit.
+  - An oracle variant with the new check differs from the oracle on
+    nothing in the corpus except these counterexamples, which the oracle
+    already rejects.
+
+  See scratch/orch/cap3b-AUDIT.md.
 - **A family's listed polymorphic inputs are type symbols (family4).**
   `FamilyShape` requires each name in `F[...]` to resolve to a type
   symbol, as the oracle's `functor_params` does (D84 rule 1).
