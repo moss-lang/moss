@@ -16,7 +16,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
-  PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkPins.
+  PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkPins PublicLinkRun.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -30,6 +30,7 @@ Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
 Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
 Module PublicChainCoreI := PublicChainCore.ChainCore PublicClosureExample.Prims PublicInterp.
+Module PublicLinkRunI := PublicLinkRun.LinkRun PublicClosureExample.Prims PublicInterp.
 Module PublicChainNewI := PublicChainNew.ChainNew PublicClosureExample.Prims PublicInterp.
 Module PublicChainFwdI := PublicChainFwd.ChainFwd PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
@@ -158,6 +159,8 @@ Definition certificate_roots :=
   @NM.PublicCopyFresh.copy_outputs_read,
   @NM.PublicLinkPins.items_dests_pins,
   @NM.PublicLinkPins.link_dests_avoid,
+  @NM.PublicLinkRun.app_env_meaning,
+  @PublicLinkRunI.body_meaning_mentioned,
   @NM.PublicCallerKeys.provide_result_key_news,
   @PublicChainCoreI.selection_news,
   @PublicCopy.chain_sources_range,
