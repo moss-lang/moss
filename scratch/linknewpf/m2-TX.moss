@@ -1,0 +1,21 @@
+# Family F[X] whose inputs merge X with T (two readings of A.gimme).
+# The linked body G rebinds T (not mentioned by F's result, so not
+# pinned) and binds the method at T, now Bool.
+type Foo;
+type A;
+type T;
+type X;
+tag Concrete;
+fn .gimme(): Foo;
+fn .m();
+context Merge = A, X, T, A.gimme[Foo=T], A.gimme[Foo=X];
+functor F[X]: Merge -> X.m;
+functor G: Merge -> X.m { bind T = Bool; bind T.m = () => { if this { } }; }
+fn main() {
+  bind A = Concrete;
+  bind T = Concrete;
+  bind Foo = Concrete;
+  bind A.gimme = () => Concrete;
+  bind F = G;
+  Concrete.m();
+}
