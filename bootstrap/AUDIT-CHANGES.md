@@ -1123,7 +1123,8 @@ details are in `scratch/consol-STATUS.md`.
   as the statement #20 refers to.
 - **Owner-decided principles, analysed but not implemented** (proposals
   5–7 in `scratch/consol-STATUS.md`):
-  - *Merge orientation:* LinkBody's 3b (#7) and #11 split one condition
+  - *Merge orientation* (**open**, proposals item 4 not done; design in
+    scratch/proposals-STATUS.md, git-ignored): LinkBody's 3b (#7) and #11 split one condition
     by orientation (G merging an input of F with a symbol only G has is
     rejected under one representative and can be accepted under the
     other), `fc_table` makes the run time follow the representative, and
@@ -1131,9 +1132,15 @@ details are in `scratch/consol-STATUS.md`.
     restatements make every orientation agree without changing which
     programs some orientation accepts.
   - *Principal θ:* `CallTheta` lets an unbound requirement take any type
-    that satisfies the callee's merges. Requiring the principal θ
-    rejects partially-bound-merge.moss (as the oracle does since
-    61040f2; native accepts), settling E24.
+    that satisfies the callee's merges. **Open (proposals item 5,
+    stopped):** read through a bound member of the *callee's* merge
+    class, the principal θ keeps partially-bound-merge.moss accepted (f
+    merges X with Y, the caller binds X, so θ Y is Char, as today's merge
+    clause already forces); only the oracle's reading (each requirement
+    "here, or itself", i.e. the caller's class) rejects it, and that
+    reading makes the merge clause reject calls whose callee merges two
+    requirements the caller leaves unbound, which the oracle accepts. The
+    owner should choose the class; E24 is unchanged.
   - *Ambiguous family read-off:* resolved by item 6 (#31): the
     matching item must be unique, as the oracle's `family_member` asks.
 - **#14 after fc75de7, by reading (not run):** Audit still accepts
