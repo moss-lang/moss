@@ -474,9 +474,10 @@ Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th
 Hypothesis family_step : FamilyStepOk.
 
 (* HYPOTHESIS (T29). The code's own context, formed, agrees with any
-   family applied around it where they share a run-time key. Elaboration
-   reads both a listed need and a family member as the method's declared
-   signature at θ, but Pre does not carry that as an invariant. *)
+   family applied around it where they share a run-time key. Both are the
+   method's declared signature read at θ; a formed context carries that
+   for its method provisions (PublicScoping.MethsRead, in CxScoped).
+   Proved: PublicFamilyCoherent.family_coherent. *)
 Definition FamilyCoherentOk : Prop := forall F C, Formed F C ->
   forall C1 u matching th sm Cr ks, A.c_sub C1 = A.c_sub C -> incl (A.c_provisions C) (A.c_provisions C1) ->
   A.FamilyApplication W C1 u matching th sm Cr ks -> FamilyCoherent C Cr ks.
@@ -2563,11 +2564,12 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
   PublicFormation.FormedCx W C -> PublicFormation.SigOk W sg -> PublicFormation.OptOk W this ->
   PublicScoping.LocalsScoped W C -> PublicScoping.ProvsScoped W C ->
   (forall t, In t (this_list this ++ A.sg_ret sg :: A.sg_params sg)%list -> PublicFormation.ScopedTy W C t) ->
+  PublicScoping.MethsRead W C ->
   CallableOk jn H d1 (this_list this ++ A.sg_params sg)%list (A.sg_ret sg)
     (FunctionClosure pid (typed_capture d1 (A.lexical_capture C) dc)).
 Proof.
   intros k Bel jn Ljn C ps sg this body pid caps capvals Cl Fl lbody ltype d1 H dc keys
-    Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps SigSc FcC SgOk ThOk LsC PsC SigS.
+    Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps SigSc FcC SgOk ThOk LsC PsC SigS MrC.
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (qs := combine caps capvals) in *.
   set (K := A.context_gens C).
@@ -2658,7 +2660,8 @@ Proof.
         * split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 SgOk)|rewrite FThis; exact ThOk]|].
           unfold Cb. rewrite ClE. apply (PublicScoping.lambda_cxscoped W C caps capvals Fl (map fst ps) (A.sg_params sg) LsC PsC).
           -- intros t Et. refine (SigS t _). rewrite <- FThis, Et. cbn. left. reflexivity.
-          -- intros t It. exact (SigS t ltac:(apply in_or_app; right; right; exact It)). }
+          -- intros t It. exact (SigS t ltac:(apply in_or_app; right; right; exact It)).
+          -- exact MrC. }
   destruct (Bel j' ltac:(lia)) as [_ [_ [SBlkE _]]].
   pose proof (SBlkE Fl Cb _ _ lbody ltype Blk de _ H' g' st Pre0) as Out.
   assert (Gr : ground de (A.sg_ret sg) = ground d1 (A.sg_ret sg)).
@@ -4445,7 +4448,7 @@ Proof.
       Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst
       (sigof_scoped f C sg Sig) (proj1 FmdC) SgOk (PublicFormation.optok_none W)
       (proj1 (proj2 (proj2 FmdC))) (proj1 (proj2 (proj2 (proj2 FmdC))))
-      (PublicScoping.sig_scoped_none W C f sg Sig)) as Ok.
+      (PublicScoping.sig_scoped_none W C f sg Sig) (proj2 (proj2 (proj2 (proj2 (proj2 FmdC)))))) as Ok.
     cbn [this_list app] in Ok.
     set (d'' := install_provision (IFn f) (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc)) d).
     exists d'', g, st, H. split; [intros a0 c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|].
@@ -4631,7 +4634,7 @@ Proof.
       pose proof (lambda_callable k Bel rr Lr C ps sg (Some rt) body pid caps capvals Cl Fl lbody ltype d H dc keys
         Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst SigSc
         FcC SgOk (PublicFormation.optok_some W _ OkRt) (proj1 CsC) (proj1 (proj2 CsC))
-        (PublicScoping.meth_sig_scoped W C _ _ m a bs _ rt sg Br Ty Sig)) as Ok.
+        (PublicScoping.meth_sig_scoped W C _ _ m a bs _ rt sg Br Ty Sig) (proj2 (proj2 (proj2 CsC)))) as Ok.
       cbn [this_list app] in Ok.
       assert (Ok' : CallableOk rr H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg)
         (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc))).
@@ -5138,7 +5141,8 @@ Proof.
            - split; [constructor; [intros x9 u9 []|intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
              split; [intros r9 m9 th9 p9 []|intros x9 []].
            - split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
-             split; [intros n9 t9 mu9 []|split; [intros k9 p9 []|intros t9 E9; rewrite This in E9; discriminate]]. }
+             split; [intros n9 t9 mu9 []|split; [intros k9 p9 []|split; [intros t9 E9; rewrite This in E9; discriminate|]]].
+             split; [intros t9; unfold A.canon; cbn; rewrite !app_subst_nil; reflexivity|split; [intros x9 v9 []|intros r9 m9 g9 a9 []]]. }
       * apply (numbering_frame F0 []). rewrite This. exact Num.
       * split; [intros n' t1 mu Found; discriminate|split; [intros t1 This'; congruence|intros x1 tx1 Lx1; discriminate]].
       * split; [intros t1; unfold A.canon; cbn; rewrite app_subst_nil; reflexivity|].
@@ -5303,7 +5307,7 @@ Proof.
         * destruct Decl as [_ E0]. subst t0. destruct ann as [a|]; cbn in Ann; [|discriminate].
           destruct Ann as [dd [Td E]]. injection E as <-.
           split; [exact (PublicFormation.tyof_ok W _ _ _ _ _ Td (PublicFormation.cf_ty _ _ (proj1 (proj1 Fmd1))) (proj2 (proj1 (proj2 Fmd1))))|].
-          exact (PublicScoping.tyof_scoped_ctx W C _ _ _ _ Td (proj2 (proj2 (proj2 (proj2 Fmd1))))).
+          exact (PublicScoping.tyof_scoped_ctx W C _ _ _ _ Td (proj1 (proj2 (proj2 (proj2 (proj2 Fmd1)))))).
         * subst t0. split; [exact (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Dy (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W))|].
           exact (ex_scoped F C y v vt Dy Fmd1). }
       split; [exact (PublicFormation.add_local_formed W C n t0 mu (proj1 Fmd1) (proj1 T0))|].
