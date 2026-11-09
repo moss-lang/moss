@@ -7,9 +7,9 @@
 
    The signature's machine types are read through the meanings in force
    (MachinesGround), and its handle tags (Ref, Array, Addr) are formed with
-   their raw-handle requirement read as itself (HandleFormed). PUnreachable
-   needs one law Public.interface_laws lacks (UnreachableStops): see the
-   comment there. *)
+   their raw-handle requirement read as itself (HandleFormed). An operation
+   declared to return `|` has the result shape ShapeNever, which no value
+   has, so the result law forbids it to return normally. *)
 From Stdlib Require Import List String Arith Bool PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
   PublicHeapTyping PublicBoolTyping PublicTagCheck.
@@ -307,6 +307,7 @@ Proof.
     destruct Shape as [->| ->]; cbn; auto.
   - destruct (addr_input H t w VT Formed Typed) as [s [n ->]]; exact I.
   - destruct VT as [symbol [args ->]]. rewrite subst_nom in Typed. inversion Typed; exact I.
+  - subst t. exfalso. exact (empty_union_uninhabited W P H w Typed).
 Qed.
 
 (* A result of a signature's shape is typed at its grounded type. *)
@@ -320,6 +321,7 @@ Proof.
   - rewrite (machine_ground "F64" MF64 t ltac:(in_list) VT). destruct w; try contradiction; constructor.
   - subst t. destruct w; try contradiction; constructor.
   - destruct VT as [symbol [Sym ->]]. cbn. exact (bool_typed H symbol w Sym Shape).
+  - cbn in Shape. contradiction.
 Qed.
 
 Lemma shapes_params : forall H params inputs ws,
@@ -351,12 +353,12 @@ Proof.
 Qed.
 
 Lemma signature_cases : forall W p params ret, Platform.PrimitiveSignature W p params ret ->
-  (exists c, p = PUnsupported c) \/ (p = PUnreachable /\ params = []) \/
+  (exists c, p = PUnsupported c) \/
   Platform.Signature W params ret (prim_sig p) \/ Platform.Signature W params ret (prim_msig p) \/
   Platform.GCSignature W p params ret.
 Proof.
   intros W p params ret Sig. destruct p;
-    first [left; eexists; reflexivity | right; left; split; [reflexivity|exact Sig] | right; right; exact Sig].
+    first [left; eexists; reflexivity | right; exact Sig].
 Qed.
 
 (* The closure's held header, as primitive_closure records it: the ground
@@ -436,13 +438,6 @@ Definition prim_outcome (W : A.world) (P : program_view) (iface : M.interface)
       | _ => False
       end
   end.
-
-(* Missing from Public.interface_laws: prim_sig gives `unreachable` the
-   result shape Unit, so the laws let it return VUnit, while its source
-   signature (`fn unreachable(): |;`) promises no value at all. *)
-Definition UnreachableStops (P : program_view) (iface : M.interface) : Prop :=
-  forall values state,
-    match fst (M.primitive iface P PUnreachable values state) with Normal _ => False | _ => True end.
 
 Lemma heap_extends_refl : forall H, heap_extends H H.
 Proof. intros H a c F; exact F. Qed.
@@ -612,7 +607,6 @@ Qed.
 Theorem primitive_safe : forall W Prog argv read iface p held params ret m H st ws,
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
   M.interface_laws (program_of Prog argv read) iface -> M.supports iface p = true ->
-  UnreachableStops (program_of Prog argv read) iface ->
   Platform.PrimitiveSignature W p params ret ->
   MachinesGround W m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
   state_ok W (program_of Prog argv read) iface H st ->
@@ -620,21 +614,16 @@ Theorem primitive_safe : forall W Prog argv read iface p held params ret m H st 
   prim_outcome W (program_of Prog argv read) iface H (app_subst m ret)
     (M.Reference.run_prim_at (program_of Prog argv read) p held ws st).
 Proof.
-  intros W Prog argv read iface p held params ret m H [i s] ws Layouts Reps Bools Laws Supp Unreachable
+  intros W Prog argv read iface p held params ret m H [i s] ws Layouts Reps Bools Laws Supp
     Sig Ground Formed Held [Ei Valid] Args.
   cbn in Ei, Valid. subst i.
-  destruct (signature_cases W p params ret Sig) as [[c ->]|[[-> ->]|[Plain|[Plain|GCSig]]]];
-    [| | | |exact (gc_safe W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp
+  destruct (signature_cases W p params ret Sig) as [[c ->]|[Plain|[Plain|GCSig]]];
+    [| | |exact (gc_safe W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp
                     GCSig Ground Formed Held Valid Args)].
   - rewrite run_supported by exact Supp. destruct Laws as [_ [_ [Unsupported _]]].
     specialize (Unsupported c (M.Reference.primitive_arguments (PUnsupported c) ws) (M.external s) Supp).
     destruct (M.primitive iface _ (PUnsupported c) _ (M.external s)) as [out next].
     cbn in Unsupported. subst out. destruct held; exact I.
-  - rewrite run_supported by exact Supp. inversion Args; subst. rewrite args_plain by reflexivity.
-    destruct Laws as [Law _]. specialize (Law PUnreachable [] ShapeUnit [] (M.external s) Supp eq_refl (Forall2_nil _)).
-    specialize (Unreachable [] (M.external s)).
-    destruct (M.primitive iface _ PUnreachable [] (M.external s)) as [out next].
-    cbn in Law, Unreachable. destruct held; [rewrite alloc_plain by reflexivity|]; destruct out; try contradiction; exact I.
   - assert (GC : Heap.is_gc p = false) by exact (signature_plain W params ret p _ (or_introl eq_refl) Plain).
     destruct Plain as [ins [out [Sig' [VTs VT]]]].
     destruct Laws as [Law [_ [_ [_ [_ [Keep _]]]]]].

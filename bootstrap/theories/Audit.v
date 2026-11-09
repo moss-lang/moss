@@ -2032,7 +2032,10 @@ End Interpreter.
 Inductive shape : Type := ShapeI32 | ShapeI64 | ShapeF32 | ShapeF64 | ShapeUnit | ShapeBool
 (* Track B: an address as `Memories`' members receive it (an `Addr`, a tag
    over an I32), and any tag (the memory a member is a method of) *)
-| ShapeAddress | ShapeTag.
+| ShapeAddress | ShapeTag
+(* no value: the result of an operation declared to return `|`, so the
+   result law (`primitive_result`) forbids it to return normally *)
+| ShapeNever.
 
 Definition value_shape (P : program_view) (w : value) (t : shape) : Prop :=
   match t, w with
@@ -2041,6 +2044,7 @@ Definition value_shape (P : program_view) (w : value) (t : shape) : Prop :=
   | ShapeBool, VTag b (VTag t' VUnit) => b = view_bool P /\ (t' = view_true P \/ t' = view_false P)
   | ShapeAddress, VTag _ (VI32 _) => True
   | ShapeTag, VTag _ _ => True
+  | ShapeNever, _ => False
   | _, _ => False
   end.
 
@@ -2063,7 +2067,7 @@ Definition prim_sig (p : prim) : option (list shape * shape) :=
   | PMemSize => Some ([], ShapeI32)
   | PMemGrow => Some ([ShapeI32], ShapeI32)
   | PMemCopy | PMemFill => Some ([ShapeI32; ShapeI32; ShapeI32], ShapeUnit)
-  | PUnreachable => Some ([], ShapeUnit)
+  | PUnreachable => Some ([], ShapeNever)
   | PFdWrite => Some ([ShapeI32; ShapeI32; ShapeI32; ShapeI32], ShapeI32)
   | PProcExit => Some ([ShapeI32], ShapeUnit)
   | PArgsSizesGet | PArgsGet => Some ([ShapeI32; ShapeI32], ShapeI32)
@@ -4511,6 +4515,7 @@ Definition ValueType (W : world) (t : ty) (shape : shape) : Prop :=
   | ShapeBool => exists symbol, LangSym W "bool" NSName "Bool" symbol /\ t = TNom symbol []
   | ShapeAddress => NominalType W "wasm" "Addr" t
   | ShapeTag => exists symbol args, t = TNom symbol args
+  | ShapeNever => t = never
   end.
 Definition Signature (W : world) (params : list ty) (result : ty)
     (signature : option (list shape * shape)) : Prop :=
@@ -4546,9 +4551,8 @@ Definition GCSignature (W : world) (operation : prim) (params : list ty)
 Definition PrimitiveSignature (W : world) (operation : prim)
     (params : list ty) (result : ty) : Prop :=
   match operation with
-  (* These operations never return a value, so impose no result type. *)
+  (* An unsupported operation never returns a value, so imposes no result type. *)
   | PUnsupported _ => True
-  | PUnreachable => params = []
   | _ => Signature W params result (prim_sig operation) \/
       Signature W params result (prim_msig operation) \/ GCSignature W operation params result
   end.

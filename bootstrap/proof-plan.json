@@ -2201,7 +2201,8 @@
         "E25",
         "E26",
         "E27",
-        "E28"
+        "E28",
+        "E29"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2745,6 +2746,28 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/functor-body-break.moss"
+        ]
+      }
+    },
+    {
+      "id": "E29",
+      "group": "E",
+      "title": "Never-returning primitives",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The default host satisfies the interface law for ShapeNever (its unreachable never returns normally), and the executable link check accepts unreachable's declared `|` result as Platform.PrimitiveSignature now requires.",
+      "approach": "Check the host's PUnreachable traps; extend the link-check correspondence with ShapeNever and the never type.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/PublicPrimitiveSafety.v"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved a ShapeNever result shape after the primitives proof found that interface_laws let unreachable, declared to return `|`, return ().",
+        "sources": [
+          "SAFETY-SITES.md"
         ]
       }
     },

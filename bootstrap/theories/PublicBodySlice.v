@@ -997,13 +997,13 @@ Proof.
 Qed.
 
 (* T03/T04: a call's selected provisions realize the callee's context. *)
-Lemma callee_realizes : forall n C' d H f Cf ns sm th,
-  Realizes (S n) C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
+Lemma callee_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
+  Realizes n0 C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
   exists dc, select_provisions d sm = Some dc /\
     Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
     Realizes n Cf (callee_env d th dc) H.
 Proof.
-  intros n C d H f Cf ns sm th [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT.
+  intros n0 n C d H f Cf ns sm th Le [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT.
   destruct Sat as [SmEq [Prov [_ [Types _]]]].
   destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
   pose proof (ctx_keys_match W f Cf ns Ctx) as KMf.
@@ -1070,7 +1070,7 @@ Proof.
     clear Sig. rename Sig' into Sig.
     destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
     destruct (SigGround gf gc Sc Sig) as [Ps R].
-    exact (callable_transfer (S n) n H d de _ _ _ _ pv (le_S _ _ (le_n n)) Ps R Ok).
+    exact (callable_transfer n0 n H d de _ _ _ _ pv Le Ps R Ok).
   - (* methods *) intros r m gf Found.
     destruct (mths_ilook _ r m gf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
     pose proof (ProvNs _ _ InP) as Ik.
@@ -1083,8 +1083,8 @@ Proof.
     clear Sig. rename Sig' into Sig.
     destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc Kr]. unfold provision_sig_gens in Sc. cbn in Sc, Kr.
     destruct (SigGround gf gc Sc Sig) as [Ps R].
-    apply (callable_transfer (S n) n H d de (A.canon C (app_subst th r) :: A.sg_params gc) (r :: A.sg_params gf)
-      (A.sg_ret gc) (A.sg_ret gf) pv (le_S _ _ (le_n n))); [|exact R|exact Ok].
+    apply (callable_transfer n0 n H d de (A.canon C (app_subst th r) :: A.sg_params gc) (r :: A.sg_params gf)
+      (A.sg_ret gc) (A.sg_ret gf) pv Le); [|exact R|exact Ok].
     change (ground d (A.canon C (app_subst th r)) :: map (ground d) (A.sg_params gc) =
       ground de r :: map (ground de) (A.sg_params gf)).
     rewrite Ps, (GroundDe r Kr). reflexivity.
@@ -1096,6 +1096,13 @@ Proof.
     destruct (Funs u fx' L) as [h [sms [dc' Look']]]. exists h, sms, dc'.
     pose proof (Find (IFun u) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'. exact Look'.
 Qed.
+
+Lemma callee_realizes : forall n C' d H f Cf ns sm th,
+  Realizes (S n) C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
+  exists dc, select_provisions d sm = Some dc /\
+    Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
+    Realizes n Cf (callee_env d th dc) H.
+Proof. intros n C' d H f Cf ns sm th. exact (callee_realizes_le (S n) n C' d H f Cf ns sm th (le_S _ _ (le_n n))). Qed.
 
 Lemma select_provisions_empty : forall d sm dc, select_provisions d sm = Some dc ->
   type_meanings dc = [] /\ type_aliases dc = [].
@@ -1877,9 +1884,9 @@ Qed.
 
 (* The closure realizes the lambda's context: what it captured is what
    the context provides, at the same meanings. *)
-Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
+Lemma lambda_realizes_le : forall n0 n C qs Cl d1 H dc keys, n <= n0 ->
   Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []) ->
-  Realizes (S n) C d1 H -> NoDup (map snd qs) ->
+  Realizes n0 C d1 H -> NoDup (map snd qs) ->
   (forall q, In q qs -> exists t mu w, A.slook (fst q) (A.c_locals C) = Some (t, mu) /\
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
   (forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C)) ->
@@ -1887,7 +1894,7 @@ Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
   select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
 Proof.
-  intros n C qs Cl d1 H dc keys ClE Real Nd Caps KScoped Keys Sel.
+  intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps KScoped Keys Sel.
   pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (K := A.context_gens C).
@@ -1940,8 +1947,8 @@ Proof.
     pose proof (Find _ Ik) as F'. cbn [A.rkey_of] in F'. rewrite F'. split; [exact Look|].
     destruct (sig_provision_gens (A.ProvidedFn g a) g eq_refl) as [Sr Sp].
     pose proof (prov_context_gens C _ _ (ilook_in _ _ _ Il)) as Sc.
-    apply (callable_transfer (S n) n H d1 de (A.sg_params g) (A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv
-      (le_S _ _ (le_n n))); [| |exact Ok].
+    apply (callable_transfer n0 n H d1 de (A.sg_params g) (A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv
+      Le); [| |exact Ok].
     + apply map_ext_in. intros t It. symmetry. apply G. intros x Ix. exact (Sc x (Sp t It x Ix)).
     + symmetry. apply G. intros x Ix. exact (Sc x (Sr x Ix)).
   - (* methods *) intros r m g Found.
@@ -1957,8 +1964,8 @@ Proof.
     destruct (sig_provision_gens (A.ProvidedMethod g a) g eq_refl) as [Sr Sp].
     pose proof (prov_context_gens C _ _ (ilook_in _ _ _ Il)) as Sc.
     pose proof (KScoped r m [] _ (ilook_in _ _ _ Il)) as Kr.
-    apply (callable_transfer (S n) n H d1 de (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv
-      (le_S _ _ (le_n n))); [| |exact Ok].
+    apply (callable_transfer n0 n H d1 de (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv
+      Le); [| |exact Ok].
     + apply map_ext_in. intros t [<-|It]; symmetry; apply G; [exact Kr|].
       intros x Ix. exact (Sc x (Sp t It x Ix)).
     + symmetry. apply G. intros x Ix. exact (Sc x (Sr x Ix)).
@@ -1971,6 +1978,17 @@ Proof.
     destruct (Funs u fx Lu) as [h [sms [dc' Look]]]. exists h, sms, dc'.
     pose proof (Find _ Ik) as F'. cbn [A.rkey_of] in F'. rewrite F'. exact Look.
 Qed.
+
+Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
+  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []) ->
+  Realizes (S n) C d1 H -> NoDup (map snd qs) ->
+  (forall q, In q qs -> exists t mu w, A.slook (fst q) (A.c_locals C) = Some (t, mu) /\
+     lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
+  (forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C)) ->
+  (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
+  Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
+Proof. intros n C qs Cl d1 H dc keys. exact (lambda_realizes_le (S n) n C qs Cl d1 H dc keys (le_S _ _ (le_n n))). Qed.
 
 (* ---- running a lambda's body ------------------------------------------------ *)
 

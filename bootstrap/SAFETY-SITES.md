@@ -177,6 +177,20 @@ the local store. *C* and *F* are the static context and frame.
   take the world and module, and a new `ItemBreaks` counts `bind F;` as
   breaking when an item of `F`'s body does (in `F`'s module). The oracle's
   follow-up is [E28](proofs/build-run.md#e28).
+- **Gap: a primitive declared to return `|` could return (fixed).** The
+  primitives proof (`PublicPrimitiveSafety.v`) found that `interface_laws`
+  gave `unreachable` (`fn unreachable(): |;`) the result shape `ShapeUnit`.
+  A compatible interface could then return `()` from it, and a program
+  using `unreachable()` as, say, an I32 operand reaches a primitive with an
+  ill-shaped argument, on which the laws allow `Stuck`. `PrimitiveSignature`
+  special-cased `unreachable` and checked no result type.
+  **Decided** (user-approved): a new shape `ShapeNever`, which no value has,
+  corresponds to `|` (`ValueType`), and `prim_sig PUnreachable` is
+  `([], ShapeNever)`. The general result law then forbids any primitive
+  declared to return `|` from returning normally, and `unreachable` is
+  checked like every other primitive. The implementation side is
+  [E29](proofs/build-run.md#e29): the default host's `unreachable` must
+  not return, and the link check must accept its `|` result.
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -407,3 +421,6 @@ without touching any proof.
   (00:05 to 00:50).
 - Functor design (binding-level refactor needed), the `INTERP` refactor,
   and the entry assembly `entry_safe` (00:55 to 02:00).
+- Primitives (T11/T17) by a background agent (`primitive_safe`), merged;
+  `ShapeNever` after approval; realization without a fuel drop
+  (`callee_realizes_le`, `lambda_realizes_le`) (02:00 to 03:00).
