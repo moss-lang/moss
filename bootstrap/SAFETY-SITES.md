@@ -230,6 +230,14 @@ the local store. *C* and *F* are the static context and frame.
   (`Numbering Fg None []`), as `FnElab` and `LambdaProvider` do; without it a
   value bind with nested `let`s could put two live locals in one slot. The
   implementation follow-up is [E30](proofs/build-run.md#e30).
+- **Gap: 3b covered only captured values (fixed).**
+  [captured-linked-fn.moss](examples/captured-linked-fn.moss): G captures
+  `fn g(x: T): T` while F links T, so g, bound at T = Int, would be called at
+  an application's T = Bool. `LinkBody`'s 3b only constrained captured
+  values. Both implementations reject the program (the oracle's message is
+  D84 3b for any captured item). **Decided** (user-approved): 3b now
+  covers every captured item's type or signature, recorded instantiation
+  and method receiver. Covered by [E30](proofs/build-run.md#e30).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):

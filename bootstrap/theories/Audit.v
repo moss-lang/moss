@@ -4378,13 +4378,13 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
 | LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
-    (* 3b: a captured value may mention fixed or privately captured types,
-       but no target input type supplied afresh by each application. *)
-    (forall k t, In k nsg -> ~ In k nsu ->
-       match k with
-       | IVal v => forall vt, nlook v (c_vals Cg) = Some vt -> In t (gens vt) ->
-           nlook t (c_ty Cu) <> None -> Fixed W u t
-       | _ => True end) ->
+    (* 3b: a captured item (value, fn, method or functor) may mention fixed
+       or privately captured types, but no target input type supplied afresh
+       by each application: not in its type or signature, its recorded
+       instantiation, or a method's receiver. *)
+    (forall k p t, In k nsg -> ~ In k nsu -> ilook (provision_id k) (c_provisions Cg) = Some p ->
+       In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
+       nlook t (c_ty Cu) <> None -> Fixed W u t) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
     fr_this Fg = None -> fr_loop Fg = false ->
     (* its locals are numbered as a body's are *)
