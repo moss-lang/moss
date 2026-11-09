@@ -206,6 +206,16 @@ the local store. *C* and *F* are the static context and frame.
   checked like every other primitive. The implementation side is
   [E29](proofs/build-run.md#e29): the default host's `unreachable` must
   not return, and the link check must accept its `|` result.
+- **A lambda's frame keeps the generations in scope (precise freshness).**
+  A lambda's closure keeps the meanings of `context_gens C`, which can
+  include generations an earlier `bind F;` made. `FreshFor` in the lambda's
+  body only avoided the body frame's `fr_fresh` and the current context's
+  generations, so after a bind dropped the last provision mentioning such a
+  generation, an application there could make it anew, and at runtime
+  `result_environment` finds it occupied (Stuck). Both implementations draw
+  generations from a global counter. `LambdaProvider` now requires the body
+  frame's `fr_fresh` to include `fr_fresh F` and `context_gens C`
+  (user-approved; see Later cleanup).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -398,10 +408,15 @@ without touching any proof.
 
 ## Later cleanup
 
-- `LambdaProvider` now requires captured vals both undeclared (`Fresh W`)
-  and unprovided in the context. These overlap. Once the safety proof is
-  done, state freshness once, and look for similar redundancies the
-  tightenings above introduced.
+- Freshness is stated locally in several places: `Fresh W` (undeclared),
+  captured vals unprovided in the context, `FreshFor` (avoiding `fr_fresh`
+  and the context's generations), and a lambda frame's `fr_fresh`
+  inheriting the generations in scope where it is made. These overlap, and
+  each was added because a local condition let a derivation reuse a name the
+  runtime still holds. Both implementations draw new symbols and
+  generations from one global counter. Once the safety proof is done,
+  replace these with one global notion of a new symbol or generation, and
+  look for similar redundancies the tightenings above introduced.
 
 ## Time log
 

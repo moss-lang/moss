@@ -4344,6 +4344,9 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
                    (Cx (c_ty C) (c_sub C) (c_provisions C) []) ->
     (* its frame: numbered afresh, parameters (after `this`) from 0 *)
     fr_mod Fl = fr_mod F -> fr_ret Fl = Some (sg_ret sg) -> fr_this Fl = this -> fr_loop Fl = false ->
+    (* the generations in scope here stay taken in its body: the closure
+       keeps their meanings, so no application there may make them anew *)
+    incl (fr_fresh F ++ context_gens C) (fr_fresh Fl) ->
     Numbering Fl this (map fst ps) -> Forall (Named Fl) caps -> Forall (Named F) caps ->
     BlkE W P Fl (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
                            (combine (map fst ps) (sg_params sg)) Cl)

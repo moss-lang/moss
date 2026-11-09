@@ -2332,7 +2332,7 @@ Proof.
   pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
   remember (@None ty) as none eqn:NoneE in LP.
   destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
-    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
   subst sm this.
   assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
     by exact ClE.
@@ -2410,7 +2410,7 @@ Proof.
   pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
   remember (Some rt) as recv eqn:RecvE in LP.
   destruct LP as [F C ps r body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
-    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
   subst sm this.
   assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
     by exact ClE.
