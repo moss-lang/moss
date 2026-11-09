@@ -261,7 +261,8 @@ Proof.
   intros n F C ns g types platform H0 st0 Mf Mt Ctx Frame This Ret Sig St Types Real.
   destruct (PublicFormation.fn_body_formed W _ C ns None g [] Mf Mt Ctx Sig (PublicFormation.optok_none W)) as [Sg Fc].
   split; [exact Frame|]. split; [split|split; [apply Forall2_nil|split; [exact St|split; [exact Real|]]]].
-  3: { split; [exact Fc|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite This; apply PublicFormation.optok_none]. }
+  3: { split; [exact Fc|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite This; apply PublicFormation.optok_none]|].
+       exact (PublicScoping.fn_body_cxscoped W _ C ns F None g [] Ctx Sig This (PublicScoping.optscoped_none W C)). }
   - intros m t mu Found. rewrite (S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
   - split; [intros t E; congruence|]. apply S.alias_none; [reflexivity|exact (proj1 Real)| |].
     + exact (proj1 (ctxof_formed W _ C ns Ctx)).
@@ -586,6 +587,25 @@ Proof.
     cbn in Tag. destruct Tag as [E|[E|[E|[]]]]; injection E as <- <- <-; cbn; auto.
 Qed.
 
+(* ---- scoping of elaborated types (PublicScoping) ------------------------------ *)
+
+Lemma ex_scoped_ok : forall W Prog, (exists b, A.WorldOf b W) -> S.ExScopedOk W Prog.
+Proof.
+  intros W Prog [b Wo] F C a x t D [Fc [Ff Cs]].
+  exact (PublicScoping.ex_scoped W Prog (PublicFormation.units_bare_of W b Wo) (PublicFamilySig.family_sig_ok_readoff W)
+    F C a None x t D Fc Ff Cs (PublicScoping.optscoped_none W C)).
+Qed.
+
+Lemma lit_scoped_ok : forall W, S.LitScopedOk W.
+Proof. intros W F C tr x t L [_ [_ Cs]]. exact (PublicScoping.literal_scoped W C tr x t L (proj1 (proj2 Cs))). Qed.
+
+Lemma demand_scoped_ok : forall W b, A.WorldOf b W -> S.DemandScopedOk W.
+Proof.
+  intros W b Wo F C X f Cf ns r m [Fc _] Tin Es Ctx I.
+  exact (PublicScoping.demand_at_site_scoped W C X f Cf ns r m (PublicWorldFormation.merge_formed_of W)
+    (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es Tin Ctx I).
+Qed.
+
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
    ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
@@ -613,8 +633,8 @@ Theorem safety_obligations : forall prelude,
      CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
      PA.FamilyKeysTyped W /\
-     (* a family's receiver is in scope, and agrees with the code's context *)
-     S.FamilyCoherentOk W /\ S.ExScopedOk W Prog /\ S.LitScopedOk W /\ S.DemandScopedOk W) ->
+     (* a family agrees with the code's context *)
+     S.FamilyCoherentOk W) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -622,7 +642,10 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CK [CRz [KU [RA [FLN [FCA [FRA [FCo [ExS [LitS DemS]]]]]]]]]]].
+    as [CIF [CK [CRz [KU [RA [FLN [FCA [FRA FCo]]]]]]]].
+  pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
+  pose proof (lit_scoped_ok W) as LitS.
+  pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.
   pose proof (CC.chain_results_of_new W Prog _ _ _ (CN.chain_new_ok W Prog _ _ _ CK CRz) KU) as CR.
   pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Elab as (Wo & AllFn & _).

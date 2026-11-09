@@ -171,17 +171,18 @@ Qed.
 Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
-  PublicFormation.TyOk W ot -> incl (A.gens ot) (PublicFormation.scope_gens C0) ->
+  PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot ->
   (forall x v, In (x, v) (A.c_ty C) ->
-     PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0)) ->
+     PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.ScopedTy W C0 (A.canon C v)) ->
   PublicFormation.FormedCx W C0 ->
   PublicFormation.FormedCx W (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_provisions Cr) (A.c_locals Cr)).
 Proof.
   intros W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin [Cf0 [Ks0 Ts0]].
   pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
+  set (K := PublicFormation.GenScoped W C0).
   assert (Mt : forall x v, In (x, v) matching ->
-    PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0)).
+    PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.GensIn K (A.gens (A.canon C v))).
   { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot).
     intros x v Iq. assert (Ix : In x (A.gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
     pose proof (PublicFormation.sub_subst (A.c_sub C) _ _
@@ -191,16 +192,16 @@ Proof.
   set (Cf := A.family_context C matching) in *.
   assert (CanF : forall t, A.canon Cf t = A.canon C t) by (intros t; unfold A.canon; rewrite Esub; reflexivity).
   assert (P1 : PublicFormation.TmOk W (A.c_sub Cf)) by (rewrite Esub, Es; exact (PublicFormation.cf_sub W C0 Cf0)).
-  assert (P2 : forall g v, In (g, v) (A.c_sub Cf) -> incl (A.gens v) (PublicFormation.scope_gens C0)).
-  { intros g v Iq y Iy. rewrite Esub, Es in Iq. exact (PublicFormation.scope_sub C0 g v y Iq Iy). }
+  assert (P2 : forall g v, In (g, v) (A.c_sub Cf) -> PublicFormation.GensIn K (A.gens v)).
+  { intros g v Iq y Iy. rewrite Esub, Es in Iq. left. exact (PublicFormation.scope_sub C0 g v y Iq Iy). }
   assert (P3 : forall x v, In (x, v) (A.c_ty Cf) ->
-    PublicFormation.TyOk W (A.canon Cf v) /\ incl (A.gens (A.canon Cf v)) (PublicFormation.scope_gens C0)).
+    PublicFormation.TyOk W (A.canon Cf v) /\ PublicFormation.GensIn K (A.gens (A.canon Cf v))).
   { intros x v Iq. rewrite CanF. rewrite Ety in Iq. apply in_app_or in Iq as [Iq|Iq];
       [apply (proj2 (in_rev _ _)) in Iq; exact (Mt x v Iq)|exact (Tin x v Iq)]. }
   assert (P4 : forall t, A.FunOutputs W u t -> PublicFormation.TyOk W (A.canon Cf (TAbs t)) /\
-    incl (A.gens (A.canon Cf (TAbs t))) (PublicFormation.scope_gens C0)).
+    PublicFormation.GensIn K (A.gens (A.canon Cf (TAbs t)))).
   { intros t Ft. exfalso. exact (PublicFormation.family_no_outputs W u t Shape Ft). }
-  destruct (PublicFormation.provide_result_ok W u Cf (fun t => TAbs t) Cr ks (PublicFormation.scope_gens C0) PR P1 P2 P3 P4)
+  destruct (PublicFormation.provide_result_ok W u Cf (fun t => TAbs t) Cr ks K PR P1 P2 P3 P4)
     as [SubR [LoR [_ PrR]]].
   assert (ScE : PublicFormation.scope_gens (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_provisions Cr) (A.c_locals Cr))
     = PublicFormation.scope_gens C0) by (apply PublicFormation.scope_gens_ext; [reflexivity|cbn; rewrite SubR, Esub, Es; reflexivity]).
@@ -210,7 +211,7 @@ Proof.
   - cbn. intros k p Iq. destruct (PrR k p Iq) as [Iq'|[Kk [Pk _]]];
       [rewrite Epr, Ep in Iq'; exact (PublicFormation.cf_prov W C0 Cf0 k p Iq')|exact (conj Kk Pk)].
   - cbn. intros n t mu Iq. rewrite LoR, Elo, El in Iq. exact (PublicFormation.cf_locals W C0 Cf0 n t mu Iq).
-  - intros r m' th' p Iq. rewrite ScE. cbn in Iq. destruct (PrR _ _ Iq) as [Iq'|[_ [_ Kr]]];
+  - intros r m' th' p Iq. apply (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE)). cbn in Iq. destruct (PrR _ _ Iq) as [Iq'|[_ [_ Kr]]];
       [rewrite Epr, Ep in Iq'; exact (Ks0 r m' th' p Iq')|exact (Kr r m' th' eq_refl)].
   - intros x Ix. rewrite ScE. exact (Ts0 x Ix).
 Qed.
@@ -395,7 +396,8 @@ Proof.
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
     4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
-         split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
+         split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
+         apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (BS.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
     - apply BS.alias_self; [reflexivity|exact (proj1 RealG)| |].
@@ -561,11 +563,11 @@ Lemma pre_same_table : forall rr F C0 Cw d d' types H H' g st st',
   Pre rr F C0 d types H g st -> type_meanings d' = type_meanings d -> type_aliases d' = type_aliases d ->
   A.c_ty Cw = A.c_ty C0 -> A.c_locals Cw = A.c_locals C0 ->
   Realizes rr Cw d' H' -> heap_extends H H' -> state_ok H' st' -> PublicFormation.FormedCx W Cw ->
-  Pre rr F Cw d' types H' g st'.
+  PublicScoping.CxScoped W F Cw -> Pre rr F Cw d' types H' g st'.
 Proof.
-  intros rr F C0 Cw d d' types H H' g st st' [Frame [[Lo [Re Al]] [L [St [Real [Fc Ff]]]]]] Em Ea Ety Elo Real' Ext St' Fw.
+  intros rr F C0 Cw d d' types H H' g st st' [Frame [[Lo [Re Al]] [L [St [Real [Fc [Ff _]]]]]]] Em Ea Ety Elo Real' Ext St' Fw Cw'.
   assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Em; reflexivity).
-  split; [exact Frame|]. split; [split; [|split]|split; [exact (locals_extends W P H H' g types Ext L)|split; [exact St'|split; [exact Real'|exact (conj Fw Ff)]]]].
+  split; [exact Frame|]. split; [split; [|split]|split; [exact (locals_extends W P H H' g types Ext L)|split; [exact St'|split; [exact Real'|exact (conj Fw (conj Ff Cw'))]]]].
   - intros n t mu Found Nm. rewrite Elo in Found. rewrite G. exact (Lo n t mu Found Nm).
   - intros t Th. rewrite G. exact (Re t Th).
   - intros x tx Lx. rewrite Ety in Lx. unfold cmeaning, output_meaning. rewrite Ea, Em. rewrite G. exact (Al x tx Lx).
@@ -582,14 +584,16 @@ Proof.
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [Elo _]]]].
   assert (Em' : type_meanings (append_environment dr d) = type_meanings d) by (cbn; rewrite Em; reflexivity).
   assert (Ea' : type_aliases (append_environment dr d) = type_aliases d) by (cbn; rewrite Ea; reflexivity).
-  pose proof Pre0 as [_ [_ [_ [_ [Real0 [Fc0 Ff0]]]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [Real0 [Fc0 [Ff0 Cs0]]]]]]].
   exists (append_environment dr d), st', H'.
   split; [exact E|]. split; [exact Em'|]. split; [exact Ea'|].
   split; [|split; [exact (keep_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA E Res)|exact Run]].
   apply (pre_same_table rr F C0 (BS.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
     eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real0 E Res)
-    |exact E|exact St'|].
-  exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
+    |exact E|exact St'| |].
+  - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
+  - exact (PublicScoping.family_result_cxscoped W F C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc
+      (fun x v I => proj2 (Tin x v I)) Cs0).
 Qed.
 
 End Fam.

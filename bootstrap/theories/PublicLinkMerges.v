@@ -129,7 +129,8 @@ Proof.
 Qed.
 
 Theorem captured_in_force_of : forall C gg Cu nsu Cg nsg smc,
-  MentionsTyped W -> FunCtx W gg Cg nsg -> KeysScoped C -> DeclaredInForce C ->
+  MentionsTyped W -> FunCtx W gg Cg nsg ->
+  (forall r m th p, In (IMth r m th, p) (c_provisions C) -> incl (gens r) (scope_gens C)) -> DeclaredInForce C ->
   Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
     (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
   forall k p x, In k (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) -> ilook (provision_id k) (c_provisions Cg) = Some p ->

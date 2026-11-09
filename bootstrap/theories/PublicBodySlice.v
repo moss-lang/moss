@@ -12,7 +12,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize.
-From NM Require PublicFormation.
+From NM Require PublicFormation PublicScoping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -231,7 +231,7 @@ Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Pr
 
 (* The context and frame are formed (T29). *)
 Definition Formed (F : A.frame) (C : A.cx) : Prop :=
-  PublicFormation.FormedCx W C /\ PublicFormation.FrameFormed W F.
+  PublicFormation.FormedCx W C /\ PublicFormation.FrameFormed W F /\ PublicScoping.CxScoped W F C.
 
 Definition Pre n F C d types H g st : Prop :=
   FrameOk F /\ CtxLocals F C d types /\ locals_typed W P H g types /\ state_ok H st /\ Realizes n C d H /\ Formed F C.
@@ -443,7 +443,7 @@ Proof. reflexivity. Qed.
    each entry ok and mentioning only C0's generations. *)
 Definition FamilyTableIn (C C0 : A.cx) : Prop :=
   forall x v, In (x, v) (A.c_ty C) ->
-    PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0).
+    PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.ScopedTy W C0 (A.canon C v).
 
 (* A context's method provisions agree with a family's new provision at
    the same receiver, method and θ (so at the same run-time key). *)
@@ -462,7 +462,7 @@ Definition FamilyCoherent (Cx Cr : A.cx) (ks : list item) : Prop :=
 Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
-  PublicFormation.TyOk W ot -> incl (A.gens ot) (PublicFormation.scope_gens C0) -> FamilyTableIn C C0 ->
+  PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot -> FamilyTableIn C C0 ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
   (exists d' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\ type_aliases d' = type_aliases d /\
      Pre rr F (with_ty C0 Cr) d' types H' g st' /\
@@ -483,18 +483,20 @@ Definition FamilyCoherentOk : Prop := forall F C, Formed F C ->
 Hypothesis family_coherent : FamilyCoherentOk.
 
 (* HYPOTHESES (T29). A demanded family key's receiver is in the code's
-   scope: an elaborated expression's or literal's type mentions only the
-   context's generations, and so does a callee's need read at the call
-   site. Formed does not record that locals' and provisions' types are
-   scoped (only ok), and a callee need's symbol the caller leaves unbound
-   reads as itself (theta_at), so these are not yet derivable. *)
-Definition ExScopedOk : Prop := forall F C a exp x t, A.Ex W Prog F C a exp x t -> Formed F C ->
-  incl (A.gens t) (PublicFormation.scope_gens C).
+   scope, up to declared type symbols (PublicFormation.ScopedTy): an
+   elaborated expression's or literal's type is scoped, and so is a
+   callee's need read at the call site (at a table X with the code's
+   merge). A callee need's symbol the caller leaves unbound reads as
+   itself (theta_at), a declared symbol outside the table, so the
+   statements are up to declared symbols (examples/family-unbound-need.moss).
+   Proved: PublicScoping (ex_scoped, literal_scoped, demand_at_site_scoped). *)
+Definition ExScopedOk : Prop := forall F C a x t, A.Ex W Prog F C a None x t -> Formed F C ->
+  PublicFormation.ScopedTy W C t.
 Definition LitScopedOk : Prop := forall F C tree x t, A.Literal W C tree x t -> Formed F C ->
-  incl (A.gens t) (PublicFormation.scope_gens C).
+  PublicFormation.ScopedTy W C t.
 Definition DemandScopedOk : Prop := forall F C X f Cf ns r m, Formed F C -> FamilyTableIn X C ->
-  A.CtxOf W f Cf ns -> In (A.mkey r m) (map (A.at_site X) ns) ->
-  PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens C).
+  A.c_sub X = A.c_sub C -> A.CtxOf W f Cf ns -> In (A.mkey r m) (map (A.at_site X) ns) ->
+  PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C r.
 Hypothesis ex_scoped : ExScopedOk.
 Hypothesis lit_scoped : LitScopedOk.
 Hypothesis demand_scoped : DemandScopedOk.
@@ -503,14 +505,14 @@ Lemma table_in_self : forall F C, Formed F C -> FamilyTableIn C C.
 Proof.
   intros F C [Fc _] x v Iq. split.
   - exact (PublicFormation.canon_ok W C v (proj1 Fc) (PublicFormation.cf_ty W C (proj1 Fc) x v Iq)).
-  - intros y Iy. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
+  - intros y Iy. left. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
 Qed.
 
 (* Code after a family application runs with the families' provisions
    and the code's own context both realized. *)
 Lemma family_then : forall k, Below k -> forall C u matching th sm Cr ks ot m F t (B : Prop) x,
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
-  (Formed F C -> PublicFormation.TyOk W ot /\ incl (A.gens ot) (PublicFormation.scope_gens C)) ->
+  (Formed F C -> PublicFormation.TyOk W ot /\ PublicFormation.ScopedTy W C ot) ->
   (forall j, j <= k -> forall d types H g st, Pre j F (with_ty C Cr) d types H g st -> Pre j F C d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C t B (EBind (BApply u th [] sm) x).
@@ -1059,7 +1061,7 @@ Lemma family_method_case : forall k, Below k -> forall F C o ox ot0 m args u mat
   A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
   A.FamilyApplication W C u matching th sm C' ks -> A.FamilyReadOff W C u (A.canon C ot0) m matching ->
-  (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ incl (A.gens (A.canon C ot0)) (PublicFormation.scope_gens C)) ->
+  (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ PublicFormation.ScopedTy W C (A.canon C ot0)) ->
   In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
   A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B
@@ -1081,7 +1083,7 @@ Lemma literal_family_case : forall n, Below n -> forall F C t m ox oy u matching
   CodeSafe n F C t False ox -> CodeSafe n F C t False oy ->
   A.mlook t m (A.c_mths C) = None -> A.FamilyApplication W C u matching th sm C' ks ->
   A.FamilyReadOff W C u t m matching ->
-  (Formed F C -> PublicFormation.TyOk W t /\ incl (A.gens t) (PublicFormation.scope_gens C)) ->
+  (Formed F C -> PublicFormation.TyOk W t /\ PublicFormation.ScopedTy W C t) ->
   In (A.mkey t m) ks -> A.OnlyFamily W C u (A.mkey t m) -> A.mlook t m (A.c_mths C') = Some (A.FSig [t] t) ->
   StepSafe n F C t False (apply_expression u th sm (EMethod ox m (A.rkey C' t m) [oy])).
 Proof.
@@ -1256,7 +1258,8 @@ Proof.
       + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]|].
         destruct (PublicFormation.fn_body_formed W f Cf ns None g0 (map fst ps) merge_formed mentions_typed Ctx Sig
           (PublicFormation.optok_none W)) as [Sg FBf].
-        split; [exact FBf|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; apply PublicFormation.optok_none]. }
+        split; [exact FBf|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; apply PublicFormation.optok_none]|].
+        exact (PublicScoping.fn_body_cxscoped W f Cf ns F0 None g0 (map fst ps) Ctx Sig FThis (PublicScoping.optscoped_none W Cf)). }
   destruct Sj as [_ [_ [SBlkE _]]].
   pose proof (SBlkE F0 Cb b (Some (A.sg_ret g0)) x t0 Body de types0 H (parameter_values ws) st Pre0) as Out.
   destruct (blke_branch_ty _ _ _ _ _ _ Body) as [_ Fits]. cbn in Fits.
@@ -1317,7 +1320,9 @@ Proof.
         { apply PublicFormation.optok_some. exact (PublicFormation.attached_this_ok W Cf r args (proj1 Fc) Reqs). }
         destruct (PublicFormation.fn_body_formed W att Cf ns (Some (TNom r args)) g0 (map fst ps) merge_formed mentions_typed Ctx Sig Ot)
           as [Sg FBf].
-        split; [exact FBf|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; exact Ot]. }
+        split; [exact FBf|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; exact Ot]|].
+        apply (PublicScoping.fn_body_cxscoped W att Cf ns F0 (Some (TNom r args)) g0 (map fst ps) Ctx Sig FThis).
+        intros t E. injection E as <-. exact (PublicScoping.attached_this_scoped W Cf r args Reqs). }
   destruct Sj as [_ [_ [SBlkE _]]].
   pose proof (SBlkE F0 Cb b (Some (A.sg_ret g0)) x t0 Body de types0 H (parameter_values (w0 :: ws)) st Pre0) as Out.
   destruct (blke_branch_ty _ _ _ _ _ _ Body) as [_ Fits]. cbn in Fits.
@@ -1620,7 +1625,7 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   A.c_sub C = A.c_sub Cc -> A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
   incl (A.c_provisions Corig) (A.c_provisions Cc) -> A.c_sub Corig = A.c_sub Cc ->
   FamilyTableIn C Cc ->
-  (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens Cc)) ->
+  (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W Cc r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty Cc C') d types H g st -> Pre j F Corig d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   forall n, n <= S k -> forall d types H g st, Pre n F Cc d types H g st -> Pre n F Corig d types H g st ->
@@ -1650,10 +1655,10 @@ Proof.
       apply (IH F (with_ty Cc Cr) Corig t B x eq_refl eq_refl eq_refl).
       * intros q I. apply IncCr. rewrite Ep. exact (Inc q I).
       * cbn. rewrite SubCr, Es. exact Eo.
-      * intros x0 v Iq. cbn in Iq. rewrite ScE.
+      * intros x0 v Iq. cbn in Iq.
         replace (A.canon (A.family_restore C Cr) v) with (A.canon C v) by (unfold A.canon; cbn; rewrite SubCr; reflexivity).
-        exact (Tin x0 v Iq).
-      * intros r0 m0 I0. rewrite ScE. exact (Wk r0 m0 I0).
+        destruct (Tin x0 v Iq) as [O1 S1]. exact (conj O1 (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE) S1)).
+      * intros r0 m0 I0. destruct (Wk r0 m0 I0) as [O1 S1]. exact (conj O1 (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE) S1)).
       * exact Cont.
       * lia.
       * exact (pre_lower PreN).
@@ -1665,7 +1670,7 @@ Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Pro
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.Demand W C wanted [] C wrap C' ->
   (Formed F C0 -> FamilyTableIn C C0 /\
-     forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens C0)) ->
+     forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C0 r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty C0 C') d types H g st -> Pre j F C0 d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C0 t B (wrap x).
@@ -1973,14 +1978,17 @@ Proof. destruct World as [b Wo]. exact (PublicFormation.units_bare_of W b Wo). Q
 (* A bind item leaves a formed context (T29, PublicFormation). *)
 Lemma item_formed : forall F C it w C' F' m, A.BindItem W Prog F C it w C' F' m -> Formed F C -> Formed F' C'.
 Proof.
-  intros F C it w C' F' m D [Fc Ff]. exact (PublicFormation.binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff).
+  intros F C it w C' F' m D [Fc [Ff Cs]].
+  destruct (PublicFormation.binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff) as [Fc' Ff'].
+  exact (conj Fc' (conj Ff' (proj1 (PublicScoping.binditem_scoped W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff Cs)))).
 Qed.
 
 (* Fewer provisions keep a context formed. *)
 Lemma formed_narrow : forall F C C', A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_locals C' = A.c_locals C ->
   incl (A.c_provisions C') (A.c_provisions C) -> Formed F C -> Formed F C'.
 Proof.
-  intros F C C' Ety Esub Eloc Inc [[[Ty Sub Pr Lo] [Ks Ts]] Ff]. split; [|exact Ff].
+  intros F C C' Ety Esub Eloc Inc [[[Ty Sub Pr Lo] [Ks Ts]] [Ff Cs]].
+  split; [|split; [exact Ff|exact (PublicScoping.cxscoped_narrow W F C C' Ety Esub Eloc Inc Cs)]].
   assert (Sc : PublicFormation.scope_gens C' = PublicFormation.scope_gens C)
     by (unfold PublicFormation.scope_gens, A.canon; rewrite Ety, Esub; reflexivity).
   split; [constructor|split].
@@ -1988,7 +1996,7 @@ Proof.
   - rewrite Esub. exact Sub.
   - intros k p I. exact (Pr k p (Inc _ I)).
   - rewrite Eloc. exact Lo.
-  - intros r m th p I. rewrite Sc. exact (Ks r m th p (Inc _ I)).
+  - intros r m th p I. exact (PublicFormation.scoped_ext W _ _ _ (eq_sym Sc) (Ks r m th p (Inc _ I))).
   - intros x Ix. unfold PublicFormation.TysScoped in *. rewrite Ety in Ix. rewrite Sc. exact (Ts x Ix).
 Qed.
 
@@ -2534,11 +2542,13 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
      value_typed W P H w (ground d1 (capty C (fst q)))) ->
   (forall t, In t (this_list this ++ A.sg_ret sg :: A.sg_params sg)%list -> incl (A.gens t) (A.context_gens C)) ->
   PublicFormation.FormedCx W C -> PublicFormation.SigOk W sg -> PublicFormation.OptOk W this ->
+  PublicScoping.LocalsScoped W C -> PublicScoping.ProvsScoped W C ->
+  (forall t, In t (this_list this ++ A.sg_ret sg :: A.sg_params sg)%list -> PublicFormation.ScopedTy W C t) ->
   CallableOk jn H d1 (this_list this ++ A.sg_params sg)%list (A.sg_ret sg)
     (FunctionClosure pid (typed_capture d1 (A.lexical_capture C) dc)).
 Proof.
   intros k Bel jn Ljn C ps sg this body pid caps capvals Cl Fl lbody ltype d1 H dc keys
-    Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps SigSc FcC SgOk ThOk.
+    Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps SigSc FcC SgOk ThOk LsC PsC SigS.
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (qs := combine caps capvals) in *.
   set (K := A.context_gens C).
@@ -2626,7 +2636,10 @@ Proof.
       + split.
         * unfold Cb. apply (PublicFormation.params_formed W Cl (map fst ps) (A.sg_params sg)); [|exact (proj1 SgOk)].
           rewrite ClE. exact (PublicFormation.lambda_cx_formed W C caps capvals FcC).
-        * split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 SgOk)|rewrite FThis; exact ThOk]. }
+        * split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 SgOk)|rewrite FThis; exact ThOk]|].
+          unfold Cb. rewrite ClE. apply (PublicScoping.lambda_cxscoped W C caps capvals Fl (map fst ps) (A.sg_params sg) LsC PsC).
+          -- intros t Et. refine (SigS t _). rewrite <- FThis, Et. cbn. left. reflexivity.
+          -- intros t It. exact (SigS t ltac:(apply in_or_app; right; right; exact It)). }
   destruct (Bel j' ltac:(lia)) as [_ [_ [SBlkE _]]].
   pose proof (SBlkE Fl Cb _ _ lbody ltype Blk de _ H' g' st Pre0) as Out.
   assert (Gr : ground de (A.sg_ret sg) = ground d1 (A.sg_ret sg)).
@@ -3182,7 +3195,7 @@ Proof.
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
   split; [|split; [apply (PublicFormation.set_fun_formed W C u fx (proj1 Fmd)); intros x0 tx0 I0; exact (proj2 (proj1 (Fx x0 tx0) I0))
-    |exact (proj2 Fmd)]].
+    |split; [exact (proj1 (proj2 Fmd))|exact (PublicScoping.set_fun_scoped W F C u fx (proj2 (proj2 Fmd)) (fun x0 tx0 I0 => proj2 (proj1 (Fx x0 tx0) I0)))]]].
   apply (realizes_set rr C d H (IFun u) (A.ProvidedFunctor fx)).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -3415,7 +3428,7 @@ Proof.
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
   split; [|split; [apply (PublicFormation.set_fun_formed W C u fx (proj1 Fmd)); intros x0 tx0 I0; exact (proj2 (proj1 (Fx x0 tx0) I0))
-    |exact (proj2 Fmd)]].
+    |split; [exact (proj1 (proj2 Fmd))|exact (PublicScoping.set_fun_scoped W F C u fx (proj2 (proj2 Fmd)) (fun x0 tx0 I0 => proj2 (proj1 (Fx x0 tx0) I0)))]]].
   apply (realizes_set rr C d H (IFun u) (A.ProvidedFunctor fx)).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -4234,8 +4247,12 @@ Qed.
 Lemma cap_formed : forall F C n v, A.slook n (A.c_locals C) <> None -> Formed F C ->
   Formed F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])).
 Proof.
-  intros F C n v L [Fc Ff]. split; [|exact Ff].
-  change (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) with (A.set_provision C (IVal v) (A.ProvidedVal (capty C n) [])).
+  intros F C n v L [Fc [Ff Cs]].
+  change (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) with (A.set_val C v (capty C n)).
+  split; [|split; [exact Ff|]].
+  2: { apply (PublicScoping.set_val_scoped W F C v _ Cs). unfold capty.
+       destruct (A.slook n (A.c_locals C)) as [[t mu]|] eqn:Ls; [|congruence].
+       exact (proj1 Cs n t mu (PublicFormation.slook_in _ _ _ _ Ls)). }
   apply PublicFormation.set_provision_formed; [exact Fc|exact Logic.I| |intros r m th E; discriminate].
   unfold capty. destruct (A.slook n (A.c_locals C)) as [[t mu]|] eqn:Ls; [|congruence].
   pose proof (PublicFormation.cf_locals W _ (proj1 Fc) n t mu (PublicFormation.slook_in _ _ _ _ Ls)) as Ot.
@@ -4402,7 +4419,9 @@ Proof.
     pose proof (PublicFormation.sigof_ok W _ _ _ _ Sig (PublicFormation.cf_ty _ _ (proj1 (proj1 FmdC))) (PublicFormation.optok_none W)) as SgOk.
     pose proof (lambda_callable k Bel r Lr C ps sg None body pid caps capvals Cl Fl lbody ltype d H dc keys
       Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst
-      (sigof_scoped f C sg Sig) (proj1 FmdC) SgOk (PublicFormation.optok_none W)) as Ok.
+      (sigof_scoped f C sg Sig) (proj1 FmdC) SgOk (PublicFormation.optok_none W)
+      (proj1 (proj2 (proj2 FmdC))) (proj1 (proj2 (proj2 (proj2 FmdC))))
+      (PublicScoping.sig_scoped_none W C f sg Sig)) as Ok.
     cbn [this_list app] in Ok.
     set (d'' := install_provision (IFn f) (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc)) d).
     exists d'', g, st, H. split; [intros a0 c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|].
@@ -4579,7 +4598,7 @@ Proof.
       destruct (lambda_select rr C qs Cl d H keys ClE' RealC Inst Ndq
         (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
       rewrite Sel. left.
-      pose proof PreC as [_ [_ [_ [_ [_ [FcC _]]]]]].
+      pose proof PreC as [_ [_ [_ [_ [_ [FcC [_ CsC]]]]]]].
       assert (TmC : PublicFormation.TmOk W (bs ++ A.c_ty C)%list).
       { apply PublicFormation.tmok_app; [|exact (PublicFormation.cf_ty _ _ (proj1 FcC))].
         exact (PublicFormation.br_ok W _ _ _ _ _ Br (PublicFormation.cf_ty _ _ (proj1 FcC))). }
@@ -4587,7 +4606,8 @@ Proof.
       pose proof (PublicFormation.sigof_ok W _ _ _ _ Sig TmC (PublicFormation.optok_some W _ OkRt)) as SgOk.
       pose proof (lambda_callable k Bel rr Lr C ps sg (Some rt) body pid caps capvals Cl Fl lbody ltype d H dc keys
         Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst SigSc
-        FcC SgOk (PublicFormation.optok_some W _ OkRt)) as Ok.
+        FcC SgOk (PublicFormation.optok_some W _ OkRt) (proj1 CsC) (proj1 (proj2 CsC))
+        (PublicScoping.meth_sig_scoped W C _ _ m a bs _ rt sg Br Ty Sig)) as Ok.
       cbn [this_list app] in Ok.
       assert (Ok' : CallableOk rr H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg)
         (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc))).
@@ -4781,7 +4801,8 @@ Proof.
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
     4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
-         split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
+         split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
+         apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (functx_locals _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
     - apply alias_self; [reflexivity|exact (proj1 RealG)| |].
@@ -4905,7 +4926,7 @@ Proof.
   destruct Rcv as [r [args0 [Att0 [Kind _]]]].
   pose proof (attached_unique h r n att Att Att0) as <-.
   pose proof Head as Head'. rewrite Ot in Head'.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [FcA FfA]]]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [_ [FcA [FfA _]]]]]]].
   destruct (PublicFormation.ex_nominal_formed' W Prog units_bare family_sig_ok F C o None ox ot0 Do FcA FfA
     (PublicFormation.optok_none W) h Head' Kind) as [xs0 [Eot Keys]].
   rewrite <- Ot in Eot. rewrite Eot in Ot. subst ot. cbn in Rargs. subst rargs.
@@ -4915,19 +4936,19 @@ Proof.
   assert (Cty : A.c_ty Cd = (rev xs0 ++ A.c_ty C)%list) by (rewrite (demand_ty _ _ _ _ _ _ Dem); exact Et).
   refine (demand_case k Bel F C Cd0 _ Cd wrap (A.sg_ret g) B _ Es Ep El Dem _ _ d types H lg lst Pre0).
   { intros Fm.
-    assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ incl (A.gens (TNom h xs0)) (PublicFormation.scope_gens C)).
+    assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ PublicFormation.ScopedTy W C (TNom h xs0)).
     { rewrite Ot. split.
       - exact (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
-          (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj2 Fm) (PublicFormation.optok_none W))).
-      - exact (PublicFormation.canon_scope C ot0 (ex_scoped F C o None ox ot0 Do Fm)). }
+          (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W))).
+      - exact (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o ox ot0 Do Fm)). }
     assert (Tin : FamilyTableIn Cd0 C).
     { intros xq v Iq. replace (A.canon Cd0 v) with (A.canon C v) by (unfold A.canon, Cd0; rewrite Es; reflexivity).
       unfold Cd0 in Iq. rewrite Et in Iq. apply in_app_or in Iq as [Iq|Iq]; [|exact (table_in_self F C Fm xq v Iq)].
       apply (proj2 (in_rev _ _)) in Iq. destruct Rok as [Ok Sc].
       split; [exact (PublicFormation.canon_ok W C v (proj1 (proj1 Fm)) (proj2 (PublicFormation.nom_ok_elim W h xs0 Ok) xq v Iq))|].
-      apply PublicFormation.canon_scope. intros y Iy. apply Sc. rewrite PublicFormation.gens_nom.
+      apply PublicFormation.canon_scoped. intros y Iy. apply Sc. rewrite PublicFormation.gens_nom.
       exact (PublicFormation.in_tm_gens _ _ _ _ Iq Iy). }
-    split; [exact Tin|]. intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Ctx I0). }
+    split; [exact Tin|]. intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Es Ctx I0). }
   intros j Lj d' types' H' g' st' PreD PreC.
   destruct j as [|j]; [exact Logic.I|].
   cbn [I.eval]. change (view_function P att) with (A.body_of Prog att). rewrite View.
@@ -4970,8 +4991,8 @@ Proof.
   2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
           None' Fam Ro
           (fun Fm => conj (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
-              (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj2 Fm) (PublicFormation.optok_none W)))
-            (PublicFormation.canon_scope C ot0 (ex_scoped F C o None ox ot0 Do Fm)))
+              (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W)))
+            (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o ox ot0 Do Fm)))
           InK Only Found Args). }
   intros d types H lg lst Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
@@ -5085,7 +5106,8 @@ Proof.
       4: { split.
            - split; [constructor; [intros x9 u9 []|intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
              split; [intros r9 m9 th9 p9 []|intros x9 []].
-           - split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
+           - split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
+             split; [intros n9 t9 mu9 []|split; [intros k9 p9 []|intros t9 E9; rewrite This in E9; discriminate]]. }
       * apply (numbering_frame F0 []). rewrite This. exact Num.
       * split; [intros n' t1 mu Found; discriminate|split; [intros t1 This'; congruence|intros x1 tx1 Lx1; discriminate]].
       * split; [intros t1; unfold A.canon; cbn; rewrite app_subst_nil; reflexivity|].
@@ -5103,7 +5125,7 @@ Proof.
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl Dem
-        (fun Fm => conj (table_in_self F C Fm) (fun r0 m0 I0 => demand_scoped F C C f Cf ns r0 m0 Fm (table_in_self F C Fm) Ctx I0))
+        (fun Fm => conj (table_in_self F C Fm) (fun r0 m0 I0 => demand_scoped F C C f Cf ns r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx I0))
         (fun j Lj d' types' H' g' st' Pre' _ => call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
           (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre')) d types H lg lst Pre0).
@@ -5149,10 +5171,10 @@ Proof.
       intros H1 g1 st1 w E1 Pre1 T1.
       pose proof Pre1 as [Frame [Ctx [L1 [S1 [Real Fmd1]]]]].
       assert (T1' : value_typed W P H1 w (ground d (A.canon C st))) by (rewrite (proj1 Real); exact T1).
-      pose proof (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj2 Fmd1)
+      pose proof (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj1 (proj2 Fmd1))
         (PublicFormation.optok_none W)) as OkSt.
       destruct (AR.arms_select W Prog P d H1 F C _ arms exp xarms t w Darms
-        (PublicFormation.ex_formed' W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj2 Fmd1) (PublicFormation.optok_none W)) T1')
+        (PublicFormation.ex_formed' W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W)) T1')
         as [pat [body [bs [eb [binds [et [Sel [InArm [Dbr [FitsT [_ [[NamedB [Distinct LB]] [xp [hs [ca PO]]]]]]]]]]]]]]].
       rewrite Sel.
       assert (Len : List.length bs = List.length (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds))
@@ -5165,8 +5187,11 @@ Proof.
         split; [apply Forall2_app; [exact LB|exact L1]|]. split; [exact S1|].
         apply (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k))) in Real. split.
         -- refine (realizes_same _ C _ _ _ _ _ _ Real); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions].
-        -- split; [|exact (proj2 Fmd1)]. apply (PublicFormation.add_locals_formed W); [exact (proj1 Fmd1)|].
-           exact (PublicFormation.patof_ok W _ _ _ _ _ _ _ PO (PublicFormation.canon_ok W C st (proj1 (proj1 Fmd1)) OkSt)).
+        -- split; [apply (PublicFormation.add_locals_formed W); [exact (proj1 Fmd1)|];
+             exact (PublicFormation.patof_ok W _ _ _ _ _ _ _ PO (PublicFormation.canon_ok W C st (proj1 (proj1 Fmd1)) OkSt))|].
+           split; [exact (proj1 (proj2 Fmd1))|].
+           apply (PublicScoping.add_locals_scoped W F A.LLet binds C (proj2 (proj2 Fmd1))).
+           exact (PublicScoping.patof_scoped W C F _ _ _ _ _ _ PO (PublicFormation.canon_scoped W C st (ex_scoped F C sc sx st Ds Fmd1))).
     + (* block *)
       destruct (blke_branch_ty _ _ _ _ _ _ Db) as [_ FitsExp].
       apply (O.outcome_fits W P state_ok _ _ _ _ t).
@@ -5242,12 +5267,16 @@ Proof.
       apply (sblk F _ rest tl exp xr t made Drest Avoid d _ H1 _ st1).
       split; [exact Frame|]. split; [exact (ctx_locals_push F C d types n t0 mu Frame Ctx Named)|].
       split; [exact (locals_push W P H1 g1 types _ w _ L1 T1)|]. split; [exact S1|split; [exact (realizes_same _ C _ _ _ eq_refl eq_refl eq_refl (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k)) Abs))|]].
-      split; [|exact (proj2 Fmd1)]. apply (PublicFormation.add_local_formed W); [exact (proj1 Fmd1)|].
-      destruct declared as [dt|]; cbn in Decl.
-      * destruct Decl as [_ E0]. subst t0. destruct ann as [a|]; cbn in Ann; [|discriminate].
-        destruct Ann as [dd [Td E]]. injection E as <-.
-        exact (PublicFormation.tyof_ok W _ _ _ _ _ Td (PublicFormation.cf_ty _ _ (proj1 (proj1 Fmd1))) (proj2 (proj2 Fmd1))).
-      * subst t0. exact (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Dy (proj1 Fmd1) (proj2 Fmd1) (PublicFormation.optok_none W)).
+      assert (T0 : PublicFormation.TyOk W t0 /\ PublicFormation.ScopedTy W C t0).
+      { destruct declared as [dt|]; cbn in Decl.
+        * destruct Decl as [_ E0]. subst t0. destruct ann as [a|]; cbn in Ann; [|discriminate].
+          destruct Ann as [dd [Td E]]. injection E as <-.
+          split; [exact (PublicFormation.tyof_ok W _ _ _ _ _ Td (PublicFormation.cf_ty _ _ (proj1 (proj1 Fmd1))) (proj2 (proj1 (proj2 Fmd1))))|].
+          exact (PublicScoping.tyof_scoped_ctx W C _ _ _ _ Td (proj2 (proj2 (proj2 (proj2 Fmd1))))).
+        * subst t0. split; [exact (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Dy (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W))|].
+          exact (ex_scoped F C y v vt Dy Fmd1). }
+      split; [exact (PublicFormation.add_local_formed W C n t0 mu (proj1 Fmd1) (proj1 T0))|].
+      split; [exact (proj1 (proj2 Fmd1))|exact (PublicScoping.add_local_scoped W F C n t0 mu (proj2 (proj2 Fmd1)) (proj2 T0))].
     + (* assign *) cbn [I.eval].
       pose proof (assign_eval k Bel F C n y tv v vt d types H lg lst Found Named Dy Fits (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0

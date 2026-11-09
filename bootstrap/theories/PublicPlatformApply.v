@@ -686,7 +686,7 @@ Proof.
       injection Lx as <-. rewrite lookup_subst_nlook in L0.
       change (output_meaning d x = Some (ground d (A.canon C (A.canon C t0)))). rewrite !Abs. exact (Al x t0 L0). }
   split; [exact Lt|]. split; [exact St|]. split; [exact RealC'|].
-  split; [|exact (proj2 Fmd)].
+  split; [|split; [exact (proj1 (proj2 Fmd))|exact (PublicScoping.apply_abstract_cxscoped W F _ C u gensof C' ks PR eq_refl (proj2 (proj2 Fmd)))]].
   apply (PublicFormation.apply_abstract_formed W C u gensof C' ks (proj1 Fmd)); [|exact PR].
   intros t Ft. exfalso. exact (NoOut t Ft).
 Qed.
