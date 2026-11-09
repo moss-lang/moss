@@ -19,333 +19,332 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy.
 
-Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
-Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
-Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims PublicInterp.
-Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
-Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
-Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
-Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.Prims PublicInterp.
-Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
-Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
-Module PublicChainCoreI := PublicChainCore.ChainCore PublicClosureExample.Prims PublicInterp.
-Module PublicLinkRunI := PublicLinkRun.LinkRun PublicClosureExample.Prims PublicInterp.
-Module PublicChainNewI := PublicChainNew.ChainNew PublicClosureExample.Prims PublicInterp.
-Module PublicChainFwdI := PublicChainFwd.ChainFwd PublicClosureExample.Prims PublicInterp.
-Module PublicFamilyLinkI := PublicFamilyLink.FamilyLink PublicClosureExample.Prims PublicInterp.
-Module PublicChainSigsI := PublicChainSigs.ChainSigs PublicClosureExample.Prims PublicInterp.
-Module PublicChainRealizeI := PublicChainRealize.ChainRealize PublicClosureExample.Prims PublicInterp.
-Module PublicFamilyCopyI := PublicFamilyCopy.FamilyCopy PublicClosureExample.Prims PublicInterp.
-Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
-Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
-Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
-Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
+Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Prims PublicInterp.
+(* public_safety's instance. Every functor of the body-safety chain is
+   instantiated inside it exactly once (PublicFamilyCopy contains
+   PublicChainRealize, which contains PublicChainSigs, and so on down to
+   PublicBodySlice), so the roots below are taken from that one instance
+   by full path: a separate instance of each would copy the chain again,
+   and Print Assumptions would traverse every copy; and even a top-level
+   `Module X := PublicEntryTop.FCp` is a copy of that submodule, not an
+   alias. Paths: FCp PublicFamilyCopy, CRz PublicChainRealize, CSg
+   PublicChainSigs, FL PublicFamilyLink (LRn PublicLinkRun), CF
+   PublicChainFwd, CN PublicChainNew, CC PublicChainCore, LR
+   PublicLinkResults, PA PublicPlatformApply, FS PublicFamilyStep, CopyA
+   PublicCopyApply, S PublicBodySlice (AR PublicArms, B PublicBoolTyping,
+   TC PublicTagCheck, TC.CT PublicCastTyping); SR PublicSafety, PS
+   PublicPrimitiveSafety. *)
+Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 
-(* One dependency traversal computes the union for every field below.
+(* One dependency traversal computes the union for every root below. The
+   roots are a list, not a tuple: a nested pair repeats the types of all
+   the roots before it, so a tuple of n roots has a term quadratic in n.
    Closed.v separately checks the roots that must not assume primitives. *)
-Definition certificate_roots :=
- (@NM.AuditExamples.bare_return_requires_unit,
-  @NM.AuditExamples.one_does_not_insert_a_multiply,
-  @NM.AuditExamples.an_arbitrary_cast_entry_is_rejected,
-  @NM.AuditBuildExample.public_build_is_inhabited,
-  @NM.AuditBuildExample.built_program_runs,
-  @NM.SourceSnapshot.source_read_iff,
-  @NM.SourceSnapshot.source_from_files_sound,
-  @NM.SourceSnapshot.source_from_files_complete,
-  @NM.SourceSnapshot.source_read_finite,
-  @NM.SourceSnapshot.source_read_canonical,
-  @NM.SnapshotLoaderBound.snapshot_fuel_stable,
-  @NM.SnapshotLoaderBound.snapshot_success_at_bound,
-  @NM.SnapshotLoaderBound.load_snapshot_success_adequate,
-  @NM.SnapshotLoader.load_sound,
-  @NM.SnapshotLoader.load_complete,
-  @NM.SnapshotLoader.walk_stable,
-  @NM.SnapshotLoaderWitness.bundled_reachable_agreement,
-  @NM.SnapshotLoaderWitness.load_elaborates_complete,
-  @NM.PublicWorld.load_world_declarations,
-  @NM.PublicWorld.load_world_declaration_complete,
-  @NM.PublicWorld.load_world_resolves,
-  @NM.PublicWorldScope.load_world_world_of_from_requirements,
-  @NM.PublicWorldRequirements.elaborate_public_world_of,
-  @NM.PublicTypeFacts.ty_eqb_spec,
-  @NM.PublicValueTyping.typing_extends,
-  @NM.PublicValueTyping.field_lookup_typed,
-  @NM.PublicValueTyping.checked_header_typed,
-  @NM.PublicValueTyping.tagged_payload_typed,
-  @NM.PublicLocalsTyping.locals_lookup,
-  @NM.PublicLocalsTyping.locals_assign,
-  @NM.PublicLocalsTyping.locals_extends,
-  @NM.PublicGenerationFacts.bind_type_preserves_ground,
-  @NM.PublicGenerationFacts.result_environment_preserves_generation,
-  @NM.PublicGenerationFacts.result_environment_preserves_supported_ground,
-  @NM.PublicGenerationFacts.result_environment_exports_one_snapshot,
-  @NM.PublicAliasContext.public_type_bind_has_alias_context,
-  @NM.PublicContextFacts.function_context_canonical,
-  @NM.PublicContextFacts.functor_context_canonical,
-  @NM.PublicContextFacts.formed_type_binding_preserves_alias_context,
-  @NM.PublicContextFacts.function_context_unique,
-  @NM.PublicContextFacts.functor_context_unique,
-  @NM.PublicContextFacts.call_theta_merged,
-  @NM.PublicCaptureScopeFacts.typed_capture_generation_lookup,
-  @NM.PublicCaptureScopeFacts.typed_capture_alias_lookup,
-  @NM.PublicGenerationCallExample.actual_application_exports_unchanged_formal_not_stale_capture,
-  @NM.PublicGenerationCallExample.ambient_generation_does_not_block_callee_first_output,
-  @NM.PublicGenerationCallExample.bound_function_ambient_generation_does_not_block_first_output,
-  @NM.PublicFunctorScopeExample.no_input_provider_application_succeeds,
-  @NM.PublicFunctorScopeExample.private_input_provider_application_exports_concrete_meaning,
-  @NM.PublicOutputTransferExample.prior_caller_output_does_not_occupy_callee_destination,
-  @NM.PublicGenerationPrototype.GenerationPrototype.fresh_export_preserves_supported_type,
-  @PublicCasts.check_tag_preserves,
-  @NM.PublicHeapTyping.allocation_predicates,
-  @PublicHeaps.box_preserves_heap,
-  @PublicHeaps.array_preserves_heap,
-  @PublicSafetyTop.safety_from_entry,
-  @NM.PublicTypeRead.tyof_det,
-  @NM.PublicTypeRead.payload_det,
-  @NM.PublicValueTyping.unit_tag_typed,
-  @NM.PublicBoolTyping.bool_value_shape,
-  @PublicBool.truthy_typed,
-  @NM.PublicBodySafety.ctx_locals_push_distinct,
-  @PublicSlice.safe_all,
-  @PublicFamily.family_step_ok,
-  @PublicCopy.copy_apply_ok,
-  @PublicCopy.link_results_of_chain,
-  @PublicCopy.platform_apply_of_chain,
-  @PublicEntryTop.entry_safe,
-  @PublicEntryTop.safety_public,
-  @PublicEntryTop.safety_obligations,
-  @PublicEntryTop.public_safety,
-  @PublicEntryTop.handles_formed,
-  @NM.PublicWorldFormation.merge_formed_of,
-  @NM.PublicWorldFormation.mentions_typed_of,
-  @NM.PublicFamilySig.family_sig_ok_readoff,
-  @NM.PublicScoping.ex_scoped,
-  @NM.PublicScoping.demand_at_site_scoped,
-  @PublicEntryTop.ex_scoped_ok,
-  @PublicEntryTop.demand_scoped_ok,
-  @PublicEntryTop.entry_primitive,
-  @PublicEntryTop.platform_prims_public,
-  @PublicEntryTop.platform_sigs_fixed,
-  @PublicEntryTop.platform_handles_formed,
-  @PublicPlatform.chain_platform_ok,
-  @PublicPlatform.family_platform_ok,
-  @PublicPlatform.chain_prims_of_ground,
-  @PublicPlatform.chain_core_premises,
-  @PublicPlatform.family_core,
-  @NM.PublicChainAgree.chain_cover,
-  @NM.PublicChainAgree.copy_news_methods,
-  @PublicPlatform.family_result_agrees,
-  @NM.PublicFamilyAgree.family_items_agree,
-  @NM.PublicFamilyAgree.items_agree_gen,
-  @NM.PublicFamilyAgree.items_agree_pos,
-  @NM.PublicFamilyAgree.family_items_pos,
-  @NM.PublicCallerKeys.same_kind_entries,
-  @NM.PublicCallerKeys.provide_result_length,
-  @NM.PublicCallerKeys.selection_last,
-  @PublicChainFwdI.chain_forward_sigs,
-  @NM.PublicChainFwd.news_method_key,
-  @NM.PublicFamilyAgree.family_entries_rel,
-  @PublicPlatform.platform_not_linked,
-  @PublicEntryTop.entry_realizes,
-  @PublicSlice.callee_realizes,
-  @PublicLinkRes.chain_results_scoped,
-  @PublicLinkRes.kept_outputs_unmentioned,
-  @PublicChainCoreI.chain_core_ok,
-  @PublicChainCoreI.chain_results_of_new,
-  @PublicChainCoreI.family_link_results_ok,
-  @PublicChainCoreI.body_provides,
-  @PublicChainCoreI.bindings_writes,
-  @PublicChainNewI.chain_new_ok,
-  @NM.PublicCopyFresh.copy_outputs_at,
-  @NM.PublicLinkWalk.family_binds_no_dests,
-  @NM.PublicLinkScope.items_scope,
-  @PublicFamilyLinkI.family_link_new_ok,
-  @PublicChainSigsI.chain_forward_copy_sigs,
-  @PublicChainSigsI.chain_sigs,
-  @PublicChainRealizeI.chain_real,
-  @PublicChainRealizeI.chain_realize_ok,
-  @PublicFamilyCopyI.family_copy_realize_ok,
-  @PublicFamilyCopyI.family_top,
-  @PublicFamilyCopyI.platform_level,
-  @PublicChainRealizeI.root_level,
-  @PublicChainRealizeI.top_envok,
-  @NM.PublicChainRealize.level_rel,
-  @NM.PublicChainRealize.pos_last_all,
-  @NM.PublicChainSigs.pos_last,
-  @NM.PublicChainSigs.result_gens_vals,
-  @NM.PublicChainSigs.entries_rel_kinds,
-  @NM.PublicCopyFresh.ground_app_subst,
-  @NM.PublicCopyFresh.result_gens,
-  @NM.PublicCopyFresh.copy_outputs_read,
-  @NM.PublicLinkPins.items_dests_pins,
-  @NM.PublicLinkPins.link_dests_avoid,
-  @NM.PublicLinkRun.app_env_meaning,
-  @PublicLinkRunI.body_meaning_mentioned,
-  @PublicLinkRunI.body_meaning_input,
-  @NM.PublicLinkPins.link_dests_out,
-  @NM.PublicCallerKeys.provide_result_key_news,
-  @PublicChainCoreI.selection_news,
-  @PublicCopy.chain_sources_range,
-  @PublicFamily.family_copy_apply_of_realize,
-  @PublicFamily.apply_functor_keys,
-  @PublicLinkRes.pre_junk_meaning,
-  @NM.PublicGenerationFacts.result_environment_shadows_occupied,
-  @NM.PublicOutputSubst.output_entries_rel,
-  @NM.PublicOutputSubst.provide_result_rel,
-  @PublicLinkMergesI.captured_in_force_ok,
-  @NM.PublicLinkMerges.captured_mentioned,
-  @NM.PublicFormation.family_keys_typed,
-  @NM.PublicCallRealize.ctxof_formed,
-  @NM.PublicCallRealize.call_agree,
-  @NM.PublicCallRealize.call_absorbs,
-  @NM.PublicFormation.ex_ok,
-  @NM.PublicFormation.ex_formed',
-  @NM.PublicFormation.ex_nominal_formed',
-  @NM.PublicFormation.keys_scoped,
-  @NM.PublicFormation.table_keys_scoped,
-  @NM.PublicFormation.ctxof_cx_formed,
-  @NM.PublicFormation.functx_cx_formed,
-  @NM.PublicFormation.demand_formed_cx,
-  @NM.PublicFormation.apply_abstract_formed,
-  @NM.PublicFormation.lambda_cx_formed,
-  @NM.PublicFormation.fn_body_formed,
-  @NM.PublicFormation.units_bare_of,
-  @PublicArmsI.arms_select,
-  @PublicTags.tag_check,
-  @PublicPrims.primitive_safe,
-  @PublicPrims.state_ok_initial,
-  @NM.PublicTypeRead.tyof_abs,
-  @NM.PublicTypeRead.tyof_rel,
-  @NM.PublicTypeRead.sig_rel,
-  @PublicSafetyTop.stuck_entry_is_wrong,
-  @NM.PublicSavedTypeExample.legacy_saved_and_emitted_reads_differ,
-  @NM.PublicSavedTypeExample.alias_binding_preserves_old_generation,
-  @NM.PublicSavedTypeExample.public_bind_boxed_from_saved,
-  @NM.PublicSavedTypeExample.saved_f64_rejects_integer_handle,
-  @NM.PublicSavedTypeExample.result_transfer_preserves_old_generation,
-  @NM.PublicEmit.emit_full_substitution,
-  @NM.PublicClosureExample.C.expression_correct,
-  @NM.PublicClosureExample.compiled_bodies_correct,
-  @NM.PublicClosureExample.all_fuel_agreement,
-  @NM.PublicClosureExample.compiled_capture_output_cast,
-  @NM.PublicCaptureFacts.substitution_agrees_on_generations,
-  @NM.PublicCaptureFacts.capture_ground_stable,
-  @NM.PublicCaptureFacts.capture_provision_stable,
-  @NM.BindMethodExec.check_bind_method,
-  @NM.BindMethodAllDispatch.residual_after_method_bindings,
-  @NM.BindMethodLambdaExec.check_bind_method_lambda,
-  @NM.BindMethodDispatch.residual_after_method_lambda,
-  @NM.BodyPending.pending,
-  @NM.MainProgramBool.main_program_bool,
-  @NM.MainProgramBool.elaborate_bool,
-  @NM.Certified.Certified.elaborate,
-  @NM.Certified.elaborate_sx_reads,
-  @NM.Certified.default_interface_laws,
-  @NM.Certified.default_compatible,
-  @NM.Certified.Certified.eval_deterministic,
-  @NM.Certified.Certified.interp_sound,
-  @NM.Certified.Certified.interp_complete,
-  @NM.Certified.Certified.spec_eval,
-  @NM.Certified.Certified.xinterp_conservative,
-  @NM.Certified.Certified.prim_law,
-  @NM.Certified.Certified.prim_mlaw,
-  @NM.Certified.Certified.prim_ulaw,
-  @NM.Certified.Certified.Typed,
-  @NM.Certified.Certified.typed_safe,
-  @NM.Certified.Certified.typed_inhabited,
-  @NM.Certified.Certified.method_choice_unique,
-  @NM.Certified.RuntimeCertified.expression_safe,
-  @NM.Certified.RuntimeCertified.main_safe,
-  @NM.Certified.RuntimeCertified.main_typing_inhabited,
-  @NM.Certified.RuntimeCertified.heap_example,
-  @NM.XHeapC.ConcreteHeap.heap_mono,
-  @NM.XHeapC.ConcreteHeap.heap_empty,
-  @NM.XHeapC.ConcreteHeap.heap_other,
-  @NM.XHeapC.ConcreteHeap.heap_gc,
-  @NM.Certified.FrontEndCertified.lexer_sound,
-  @NM.Certified.FrontEndCertified.lexer_complete,
-  @NM.Certified.FrontEndCertified.parse,
-  @NM.Certified.FrontEndCertified.parser_sound,
-  @NM.Certified.FrontEndCertified.parser_complete,
-  @NM.Certified.LoaderCertified.load,
-  @NM.Certified.LoaderCertified.load_sound,
-  @NM.Certified.elaborate_sx,
-  @NM.Certified.run_main,
-  @NM.Certified.OracleCertified.interpreter_correct,
+Import Stdlib.Lists.List.ListNotations.
+Definition root {T : Type} (x : T) : {T : Type & T} := existT (fun T => T) T x.
+Definition certificate_roots : list {T : Type & T} := [
+ root (@NM.AuditExamples.bare_return_requires_unit);
+  root (@NM.AuditExamples.one_does_not_insert_a_multiply);
+  root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
+  root (@NM.AuditBuildExample.public_build_is_inhabited);
+  root (@NM.AuditBuildExample.built_program_runs);
+  root (@NM.SourceSnapshot.source_read_iff);
+  root (@NM.SourceSnapshot.source_from_files_sound);
+  root (@NM.SourceSnapshot.source_from_files_complete);
+  root (@NM.SourceSnapshot.source_read_finite);
+  root (@NM.SourceSnapshot.source_read_canonical);
+  root (@NM.SnapshotLoaderBound.snapshot_fuel_stable);
+  root (@NM.SnapshotLoaderBound.snapshot_success_at_bound);
+  root (@NM.SnapshotLoaderBound.load_snapshot_success_adequate);
+  root (@NM.SnapshotLoader.load_sound);
+  root (@NM.SnapshotLoader.load_complete);
+  root (@NM.SnapshotLoader.walk_stable);
+  root (@NM.SnapshotLoaderWitness.bundled_reachable_agreement);
+  root (@NM.SnapshotLoaderWitness.load_elaborates_complete);
+  root (@NM.PublicWorld.load_world_declarations);
+  root (@NM.PublicWorld.load_world_declaration_complete);
+  root (@NM.PublicWorld.load_world_resolves);
+  root (@NM.PublicWorldScope.load_world_world_of_from_requirements);
+  root (@NM.PublicWorldRequirements.elaborate_public_world_of);
+  root (@NM.PublicTypeFacts.ty_eqb_spec);
+  root (@NM.PublicValueTyping.typing_extends);
+  root (@NM.PublicValueTyping.field_lookup_typed);
+  root (@NM.PublicValueTyping.checked_header_typed);
+  root (@NM.PublicValueTyping.tagged_payload_typed);
+  root (@NM.PublicLocalsTyping.locals_lookup);
+  root (@NM.PublicLocalsTyping.locals_assign);
+  root (@NM.PublicLocalsTyping.locals_extends);
+  root (@NM.PublicGenerationFacts.bind_type_preserves_ground);
+  root (@NM.PublicGenerationFacts.result_environment_preserves_generation);
+  root (@NM.PublicGenerationFacts.result_environment_preserves_supported_ground);
+  root (@NM.PublicGenerationFacts.result_environment_exports_one_snapshot);
+  root (@NM.PublicAliasContext.public_type_bind_has_alias_context);
+  root (@NM.PublicContextFacts.function_context_canonical);
+  root (@NM.PublicContextFacts.functor_context_canonical);
+  root (@NM.PublicContextFacts.formed_type_binding_preserves_alias_context);
+  root (@NM.PublicContextFacts.function_context_unique);
+  root (@NM.PublicContextFacts.functor_context_unique);
+  root (@NM.PublicContextFacts.call_theta_merged);
+  root (@NM.PublicCaptureScopeFacts.typed_capture_generation_lookup);
+  root (@NM.PublicCaptureScopeFacts.typed_capture_alias_lookup);
+  root (@NM.PublicGenerationCallExample.actual_application_exports_unchanged_formal_not_stale_capture);
+  root (@NM.PublicGenerationCallExample.ambient_generation_does_not_block_callee_first_output);
+  root (@NM.PublicGenerationCallExample.bound_function_ambient_generation_does_not_block_first_output);
+  root (@NM.PublicFunctorScopeExample.no_input_provider_application_succeeds);
+  root (@NM.PublicFunctorScopeExample.private_input_provider_application_exports_concrete_meaning);
+  root (@NM.PublicOutputTransferExample.prior_caller_output_does_not_occupy_callee_destination);
+  root (@NM.PublicGenerationPrototype.GenerationPrototype.fresh_export_preserves_supported_type);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.CT.check_tag_preserves);
+  root (@NM.PublicHeapTyping.allocation_predicates);
+  root (@PublicHeaps.box_preserves_heap);
+  root (@PublicHeaps.array_preserves_heap);
+  root (@PublicEntryTop.SR.safety_from_entry);
+  root (@NM.PublicTypeRead.tyof_det);
+  root (@NM.PublicTypeRead.payload_det);
+  root (@NM.PublicValueTyping.unit_tag_typed);
+  root (@NM.PublicBoolTyping.bool_value_shape);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.B.truthy_typed);
+  root (@NM.PublicBodySafety.ctx_locals_push_distinct);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.safe_all);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.family_step_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_apply_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.link_results_of_chain);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.platform_apply_of_chain);
+  root (@PublicEntryTop.entry_safe);
+  root (@PublicEntryTop.safety_public);
+  root (@PublicEntryTop.safety_obligations);
+  root (@PublicEntryTop.public_safety);
+  root (@PublicEntryTop.handles_formed);
+  root (@NM.PublicWorldFormation.merge_formed_of);
+  root (@NM.PublicWorldFormation.mentions_typed_of);
+  root (@NM.PublicFamilySig.family_sig_ok_readoff);
+  root (@NM.PublicScoping.ex_scoped);
+  root (@NM.PublicScoping.demand_at_site_scoped);
+  root (@PublicEntryTop.ex_scoped_ok);
+  root (@PublicEntryTop.demand_scoped_ok);
+  root (@PublicEntryTop.entry_primitive);
+  root (@PublicEntryTop.platform_prims_public);
+  root (@PublicEntryTop.platform_sigs_fixed);
+  root (@PublicEntryTop.platform_handles_formed);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.chain_platform_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.family_platform_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.chain_prims_of_ground);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.chain_core_premises);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.family_core);
+  root (@NM.PublicChainAgree.chain_cover);
+  root (@NM.PublicChainAgree.copy_news_methods);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.family_result_agrees);
+  root (@NM.PublicFamilyAgree.family_items_agree);
+  root (@NM.PublicFamilyAgree.items_agree_gen);
+  root (@NM.PublicFamilyAgree.items_agree_pos);
+  root (@NM.PublicFamilyAgree.family_items_pos);
+  root (@NM.PublicCallerKeys.same_kind_entries);
+  root (@NM.PublicCallerKeys.provide_result_length);
+  root (@NM.PublicCallerKeys.selection_last);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.chain_forward_sigs);
+  root (@NM.PublicChainFwd.news_method_key);
+  root (@NM.PublicFamilyAgree.family_entries_rel);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.platform_not_linked);
+  root (@PublicEntryTop.entry_realizes);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.callee_realizes);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.chain_results_scoped);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.kept_outputs_unmentioned);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.chain_core_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.chain_results_of_new);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.family_link_results_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.body_provides);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.bindings_writes);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.chain_new_ok);
+  root (@NM.PublicCopyFresh.copy_outputs_at);
+  root (@NM.PublicLinkWalk.family_binds_no_dests);
+  root (@NM.PublicLinkScope.items_scope);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.family_link_new_ok);
+  root (@PublicEntryTop.FCp.CRz.CSg.chain_forward_copy_sigs);
+  root (@PublicEntryTop.FCp.CRz.CSg.chain_sigs);
+  root (@PublicEntryTop.FCp.CRz.chain_real);
+  root (@PublicEntryTop.FCp.CRz.chain_realize_ok);
+  root (@PublicEntryTop.FCp.family_copy_realize_ok);
+  root (@PublicEntryTop.FCp.family_top);
+  root (@PublicEntryTop.FCp.platform_level);
+  root (@PublicEntryTop.FCp.CRz.root_level);
+  root (@PublicEntryTop.FCp.CRz.top_envok);
+  root (@NM.PublicChainRealize.level_rel);
+  root (@NM.PublicChainRealize.pos_last_all);
+  root (@NM.PublicChainSigs.pos_last);
+  root (@NM.PublicChainSigs.result_gens_vals);
+  root (@NM.PublicChainSigs.entries_rel_kinds);
+  root (@NM.PublicCopyFresh.ground_app_subst);
+  root (@NM.PublicCopyFresh.result_gens);
+  root (@NM.PublicCopyFresh.copy_outputs_read);
+  root (@NM.PublicLinkPins.items_dests_pins);
+  root (@NM.PublicLinkPins.link_dests_avoid);
+  root (@NM.PublicLinkRun.app_env_meaning);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_mentioned);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_input);
+  root (@NM.PublicLinkPins.link_dests_out);
+  root (@NM.PublicCallerKeys.provide_result_key_news);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.selection_news);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.family_copy_apply_of_realize);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.apply_functor_keys);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.pre_junk_meaning);
+  root (@NM.PublicGenerationFacts.result_environment_shadows_occupied);
+  root (@NM.PublicOutputSubst.output_entries_rel);
+  root (@NM.PublicOutputSubst.provide_result_rel);
+  root (@PublicLinkMergesI.captured_in_force_ok);
+  root (@NM.PublicLinkMerges.captured_mentioned);
+  root (@NM.PublicFormation.family_keys_typed);
+  root (@NM.PublicCallRealize.ctxof_formed);
+  root (@NM.PublicCallRealize.call_agree);
+  root (@NM.PublicCallRealize.call_absorbs);
+  root (@NM.PublicFormation.ex_ok);
+  root (@NM.PublicFormation.ex_formed');
+  root (@NM.PublicFormation.ex_nominal_formed');
+  root (@NM.PublicFormation.keys_scoped);
+  root (@NM.PublicFormation.table_keys_scoped);
+  root (@NM.PublicFormation.ctxof_cx_formed);
+  root (@NM.PublicFormation.functx_cx_formed);
+  root (@NM.PublicFormation.demand_formed_cx);
+  root (@NM.PublicFormation.apply_abstract_formed);
+  root (@NM.PublicFormation.lambda_cx_formed);
+  root (@NM.PublicFormation.fn_body_formed);
+  root (@NM.PublicFormation.units_bare_of);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.arms_select);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_check);
+  root (@PublicEntryTop.PS.primitive_safe);
+  root (@PublicEntryTop.PS.state_ok_initial);
+  root (@NM.PublicTypeRead.tyof_abs);
+  root (@NM.PublicTypeRead.tyof_rel);
+  root (@NM.PublicTypeRead.sig_rel);
+  root (@PublicEntryTop.SR.stuck_entry_is_wrong);
+  root (@NM.PublicSavedTypeExample.legacy_saved_and_emitted_reads_differ);
+  root (@NM.PublicSavedTypeExample.alias_binding_preserves_old_generation);
+  root (@NM.PublicSavedTypeExample.public_bind_boxed_from_saved);
+  root (@NM.PublicSavedTypeExample.saved_f64_rejects_integer_handle);
+  root (@NM.PublicSavedTypeExample.result_transfer_preserves_old_generation);
+  root (@NM.PublicEmit.emit_full_substitution);
+  root (@NM.PublicClosureExample.C.expression_correct);
+  root (@NM.PublicClosureExample.compiled_bodies_correct);
+  root (@NM.PublicClosureExample.all_fuel_agreement);
+  root (@NM.PublicClosureExample.compiled_capture_output_cast);
+  root (@NM.PublicCaptureFacts.substitution_agrees_on_generations);
+  root (@NM.PublicCaptureFacts.capture_ground_stable);
+  root (@NM.PublicCaptureFacts.capture_provision_stable);
+  root (@NM.BindMethodExec.check_bind_method);
+  root (@NM.BindMethodAllDispatch.residual_after_method_bindings);
+  root (@NM.BindMethodLambdaExec.check_bind_method_lambda);
+  root (@NM.BindMethodDispatch.residual_after_method_lambda);
+  root (@NM.BodyPending.pending);
+  root (@NM.MainProgramBool.main_program_bool);
+  root (@NM.MainProgramBool.elaborate_bool);
+  root (@NM.Certified.Certified.elaborate);
+  root (@NM.Certified.elaborate_sx_reads);
+  root (@NM.Certified.default_interface_laws);
+  root (@NM.Certified.default_compatible);
+  root (@NM.Certified.Certified.eval_deterministic);
+  root (@NM.Certified.Certified.interp_sound);
+  root (@NM.Certified.Certified.interp_complete);
+  root (@NM.Certified.Certified.spec_eval);
+  root (@NM.Certified.Certified.xinterp_conservative);
+  root (@NM.Certified.Certified.prim_law);
+  root (@NM.Certified.Certified.prim_mlaw);
+  root (@NM.Certified.Certified.prim_ulaw);
+  root (@NM.Certified.Certified.Typed);
+  root (@NM.Certified.Certified.typed_safe);
+  root (@NM.Certified.Certified.typed_inhabited);
+  root (@NM.Certified.Certified.method_choice_unique);
+  root (@NM.Certified.RuntimeCertified.expression_safe);
+  root (@NM.Certified.RuntimeCertified.main_safe);
+  root (@NM.Certified.RuntimeCertified.main_typing_inhabited);
+  root (@NM.Certified.RuntimeCertified.heap_example);
+  root (@NM.XHeapC.ConcreteHeap.heap_mono);
+  root (@NM.XHeapC.ConcreteHeap.heap_empty);
+  root (@NM.XHeapC.ConcreteHeap.heap_other);
+  root (@NM.XHeapC.ConcreteHeap.heap_gc);
+  root (@NM.Certified.FrontEndCertified.lexer_sound);
+  root (@NM.Certified.FrontEndCertified.lexer_complete);
+  root (@NM.Certified.FrontEndCertified.parse);
+  root (@NM.Certified.FrontEndCertified.parser_sound);
+  root (@NM.Certified.FrontEndCertified.parser_complete);
+  root (@NM.Certified.LoaderCertified.load);
+  root (@NM.Certified.LoaderCertified.load_sound);
+  root (@NM.Certified.elaborate_sx);
+  root (@NM.Certified.run_main);
+  root (@NM.Certified.OracleCertified.interpreter_correct);
 (* Supporting lemmas for the source soundness proof. *)
-  @NM.Certified.world_reads,
-  @NM.Certified.elaborate_world_reads,
-  @NM.Certified.world_of_reading,
-  @NM.Certified.world_resolves,
-  @NM.Certified.context_method_named,
-  @NM.Certified.context_type_meanings,
-  @NM.Certified.dump_reads,
-  @NM.Certified.elaboration_frame,
-  @NM.Certified.assume_types_exact,
+  root (@NM.Certified.world_reads);
+  root (@NM.Certified.elaborate_world_reads);
+  root (@NM.Certified.world_of_reading);
+  root (@NM.Certified.world_resolves);
+  root (@NM.Certified.context_method_named);
+  root (@NM.Certified.context_type_meanings);
+  root (@NM.Certified.dump_reads);
+  root (@NM.Certified.elaboration_frame);
+  root (@NM.Certified.assume_types_exact);
 
 (* Partial verification milestone: actual function-frame coverage and
    runtime safety given an explicit typing certificate. These do not assert
    that every accepted source program supplies that certificate. *)
-  @NM.Certified.SourceCertified.elaborate_metadata_projects,
-  @NM.Certified.SourceCertified.loader_reads,
-  @NM.Certified.SourceCertified.world_of_reading,
-  @NM.Certified.SourceCertified.world_resolves,
-  @NM.Certified.SourceCertified.elaborate_world_of,
-  @NM.Certified.SourceCertified.context_type_meanings,
-  @NM.Certified.SourceCertified.function_frames_total,
-  @NM.Certified.RuntimeCertified.typed_runtime_never_err,
-  @NM.Certified.RuntimeCertified.certified_reification_never_err,
+  root (@NM.Certified.SourceCertified.elaborate_metadata_projects);
+  root (@NM.Certified.SourceCertified.loader_reads);
+  root (@NM.Certified.SourceCertified.world_of_reading);
+  root (@NM.Certified.SourceCertified.world_resolves);
+  root (@NM.Certified.SourceCertified.elaborate_world_of);
+  root (@NM.Certified.SourceCertified.context_type_meanings);
+  root (@NM.Certified.SourceCertified.function_frames_total);
+  root (@NM.Certified.RuntimeCertified.typed_runtime_never_err);
+  root (@NM.Certified.RuntimeCertified.certified_reification_never_err);
 
 (* The front end moss_m2.ml runs on a source file: the Gallina lexer,
    parser and bundler (the driver only reads files), whose output the
    elaborator above reads. *)
-  @NM.Parse.load_bundle,
-  @NM.Parse.bundle_sx,
+  root (@NM.Parse.load_bundle);
+  root (@NM.Parse.bundle_sx);
 
 (* The legacy slot/fold engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
    fast path, pruning, pre-resolution, folding and closure compilation,
    then the run; and the theorem that makes it ExecutionModel's semantics, given the tables the driver
    builds (README.md, What is trusted). *)
-  @NM.FastPath.fast_program,
-  @NM.Prune.oracle_program,
-  @NM.SlotX.shapes,
-  @NM.SlotX.compile_fns,
-  @NM.SlotX.compile_funs,
-  @NM.FoldX.fold_e,
-  @NM.FoldX.fold_b,
-  @NM.CachedClo.cc,
-  @NM.CachedClo.ccbs,
-  @NM.CloScalar.prepare_scalar,
-  @NM.CloScalar.prepared_scalar_execution,
-  @NM.CachedClo.crun_main,
-  @NM.CachedCloFacts.engine_agrees,
-  @NM.CachedCloFacts.fast_engine_agrees,
+  root (@NM.FastPath.fast_program);
+  root (@NM.Prune.oracle_program);
+  root (@NM.SlotX.shapes);
+  root (@NM.SlotX.compile_fns);
+  root (@NM.SlotX.compile_funs);
+  root (@NM.FoldX.fold_e);
+  root (@NM.FoldX.fold_b);
+  root (@NM.CachedClo.cc);
+  root (@NM.CachedClo.ccbs);
+  root (@NM.CloScalar.prepare_scalar);
+  root (@NM.CloScalar.prepared_scalar_execution);
+  root (@NM.CachedClo.crun_main);
+  root (@NM.CachedCloFacts.engine_agrees);
+  root (@NM.CachedCloFacts.fast_engine_agrees);
 
 (* The default deferred-type engine (MOSS_ENGINE=lazy) and its AST reference,
    with exact environment/compiler agreement and
    the same fast-path and pruning exceptions as the original pipeline. *)
-  @NM.LazyX.frun_main,
-  @NM.LazyClo.cc,
-  @NM.LazyClo.ccbs,
-  @NM.LazyClo.crun_main,
-  @NM.LazyInterpFacts.frun_main_eq,
-  @NM.LazyCloFacts.crun_main_eq,
-  @NM.LazyCloFacts.engine_agrees,
-  @NM.LazyCloFacts.fast_engine_agrees,
+  root (@NM.LazyX.frun_main);
+  root (@NM.LazyClo.cc);
+  root (@NM.LazyClo.ccbs);
+  root (@NM.LazyClo.crun_main);
+  root (@NM.LazyInterpFacts.frun_main_eq);
+  root (@NM.LazyCloFacts.crun_main_eq);
+  root (@NM.LazyCloFacts.engine_agrees);
+  root (@NM.LazyCloFacts.fast_engine_agrees);
 
 (* Scalar folding preserves checked composition, runtime types and fuel. *)
-  @NM.LazyFold.fold_call,
-  @NM.LazyFoldFacts.fold_call_agrees,
+  root (@NM.LazyFold.fold_call);
+  root (@NM.LazyFoldFacts.fold_call_agrees);
 
 (* The direct engine bound to its explicit pipeline/table contract. *)
-  @NM.LazyOracle.Certified.mapped_engine_agrees,
-  @NM.LazyOracle.Certified.compiled_engine_agrees,
-  @NM.LazyOracle.Certified.fast_path_agrees,
-  @NM.LazyOracle.Certified.engine_agrees,
-  @NM.LazyOracle.Certified.fast_engine_agrees).
+  root (@NM.LazyOracle.Certified.mapped_engine_agrees);
+  root (@NM.LazyOracle.Certified.compiled_engine_agrees);
+  root (@NM.LazyOracle.Certified.fast_path_agrees);
+  root (@NM.LazyOracle.Certified.engine_agrees);
+  root (@NM.LazyOracle.Certified.fast_engine_agrees)].
 
 Print Assumptions certificate_roots.
 
