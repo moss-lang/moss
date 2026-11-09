@@ -27,8 +27,8 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the formation premises, `HandleFormed`, and the functor and
 family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
-`PlatformApplyOk`), with the slice's elaboration and link facts read off
+`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`, and,
+for `PlatformApplyOk`, `PlatformResultAgrees` and `PlatformSigsOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
 
@@ -397,6 +397,22 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
+- **Counterexamples: a platform family filed its items under bare keys,
+  and could have a type output (fixed).** `Platform.Family` installed each
+  primitive, and returned the result, under the result's static key
+  (`mkey`, no instantiation). A caller reads a method provision under its
+  run-time key (`rkey`), which carries the instantiation the item was made
+  at: `Ref.deref` mentions `Boxed`, so after `bind Heap;` at `Boxed = Int`
+  the call `r.deref()` looks for `IMth Ref[..] deref [Boxed=Int]` and finds
+  nothing ([platform-family-keys.moss](examples/platform-family-keys.moss);
+  the oracle and native run it and exit 0, filing the items under
+  `key_item_at`, `Elab.v` `platform_fun`). `PlatformApplyOk` was false.
+  Now the family's code and result use `rkey_of outputs`, as a linked
+  body's do. Separately, nothing forbade a type output, which the code
+  cannot return (`read_result_types` is stuck); `Platform.Family` now
+  requires none. The oracle provides method items only ("the platform
+  cannot provide a non-method item"), so neither change rejects anything
+  it accepts. Recorded in `scratch/orch/platform-AUDIT.md`.
 
 ## Body-safety slice (checked, conditional)
 
@@ -419,7 +435,8 @@ hypotheses, each a named remaining obligation:
 | `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it | T15, T16 |
 | `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
-| `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
+| `copy_apply` | applying a copy runs its source at the source's interface | T15 |
+| `platform_apply` | applying a platform family installs its primitives. Proved ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `platform_apply_ok`) from `PlatformResultAgrees` (the caller's and the family's ProvideResult list the same method items at θ, under the run-time keys the family files them at; needs a substitution lemma for result readings) and `PlatformPrimsOk` (the primitives are callable at their `AtKey` signatures), which `PublicEntry.platform_prims_public` discharges for the reference host from `PlatformSigsOk` (handle formation of the family signatures, and their machine symbols read as machines where the family's code runs) | T15, T11, T29 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigOk`); `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
