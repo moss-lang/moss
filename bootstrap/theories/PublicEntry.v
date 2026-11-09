@@ -149,7 +149,11 @@ Proof.
   - intros u fx Found. pose proof (funs_ilook _ u fx KM Found) as Il.
     destruct (Find (IFun u) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u' sms dc|p held]; cbn in En; try contradiction.
-    exists u', sms, dc. exact L.
+    destruct sms; [|contradiction]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction.
+    eexists (FunctorClosure u' [] (EnvironmentWithAliases [] [] [])), (S.ground_fixed _ fx).
+    split; [exact L|]. split; [apply S.CPlatform; exact En|].
+    destruct (ctx_fun_fixed W _ C ns Ctx u fx (S.ilook_in _ _ _ Il)) as [Cov [_ Fun]]. split; [exact Cov|].
+    intros x tx I. exact (S.lookup_ground_fixed _ fx x tx Fun I).
 Qed.
 
 (* main's body runs from its frame and context, with no locals. *)

@@ -70,6 +70,87 @@ Definition CallableOk (n : nat) (H0 : heap_types) (d : environment) (params : li
   | _ => False
   end.
 
+(* ---- functor closures (T15) ---------------------------------------------- *)
+
+(* An environment that only grounds types. *)
+Definition denv (gm : subst) : environment := EnvironmentWithAliases gm gm [].
+
+(* What an application gives a captured input: its meaning in the closure. *)
+Definition cmeaning (dc : environment) (x : nat) : ty :=
+  match output_meaning dc x with Some t => t | None => TAbs x end.
+
+Definition captured (nsu nsg : list item) : list item :=
+  filter (fun k => negb (existsb (item_eqb k) nsu)) nsg.
+Definition linked_needs (nsu nsg : list item) : list item :=
+  filter (fun k => existsb (item_eqb k) nsu) nsg.
+Definition captured_funs (Cg : A.cx) (caps : list item) : list (nat * subst) :=
+  flat_map (fun k => match k with
+    | IFun u => match A.nlook u (A.c_funs Cg) with Some fx => [(u, fx)] | None => [] end
+    | _ => [] end) caps.
+Definition ground_fixed (gm : subst) (fx : subst) : subst :=
+  map (fun q => (fst q, app_subst gm (snd q))) fx.
+
+(* The meanings an application reads a linked body's types at: u's fixed
+   inputs as gfx says, its captured inputs at the closure's meanings. (Its
+   other linked inputs are never mentioned by what it captures, D84 3b.) *)
+Definition AppMeanings (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx gm : subst) : Prop :=
+  (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gm = lookup_subst x gfx) /\
+  (forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> lookup_subst x gm = Some (cmeaning dc x)).
+
+(* A functor closure is applicable (structurally: its captured functors
+   are subterms). ClosureOk n H0 u gfx pv: pv, provided for u with its
+   fixed inputs meaning what gfx says, is a body linked for u whose
+   captures are realized at n and H0 under any application's meanings, a
+   copy of an applicable closure, or a platform family. *)
+Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_value -> Prop :=
+| CLink : forall u gg h Cu nsu Cg nsg dc gfx,
+    A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+    (forall gm, AppMeanings u Cu Cg dc gfx gm ->
+      (forall v t, In (IVal v) (captured nsu nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
+         lookup_provision (IVal v) dc = Some (ValueProvision w) /\ value_typed W P H0 w (app_subst gm t)) /\
+      (forall f g, In (IFn f) (captured nsu nsg) -> A.nlook f (A.c_fns Cg) = Some g -> exists pv,
+         lookup_provision (IFn f) dc = Some pv /\ CallableOk n H0 (denv gm) (A.sg_params g) (A.sg_ret g) pv) /\
+      (forall r m a g, In (IMth r m a) (captured nsu nsg) -> A.mlook r m (A.c_mths Cg) = Some g -> exists pv,
+         lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv)) ->
+    (forall gm, AppMeanings u Cu Cg dc gfx gm ->
+      CapturedFuns n H0 gm dc (captured_funs Cg (captured nsu nsg))) ->
+    ClosureOk n H0 u gfx (FunctorClosure h
+      [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs nsu nsg)] dc)
+| CCopy : forall u h Cu nsu Ch nsh code sms dc gfx gfh,
+    ClosureOk n H0 h gfh (FunctorClosure code sms dc) ->
+    A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+    (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
+    ClosureOk n H0 u gfx (FunctorClosure code
+      (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list dc)
+| CPlatform : forall u code gfx, Platform.Family W Prog u code ->
+    ClosureOk n H0 u gfx (FunctorClosure code [] (EnvironmentWithAliases [] [] []))
+with CapturedFuns (n : nat) (H0 : heap_types) : subst -> environment -> list (nat * subst) -> Prop :=
+| CFNil : forall gm dc, CapturedFuns n H0 gm dc []
+| CFCons : forall gm dc u fx pv gfx rest,
+    lookup_provision (IFun u) dc = Some pv -> ClosureOk n H0 u gfx pv ->
+    (forall x tx, In (x, tx) fx -> lookup_subst x gfx = Some (app_subst gm tx)) ->
+    CapturedFuns n H0 gm dc rest -> CapturedFuns n H0 gm dc ((u, fx) :: rest).
+
+Lemma lookup_ground_fixed : forall gm fx x tx, (forall x t t', In (x, t) fx -> In (x, t') fx -> t = t') ->
+  In (x, tx) fx -> lookup_subst x (ground_fixed gm fx) = Some (app_subst gm tx).
+Proof.
+  intros gm fx x tx Fun. induction fx as [|[y t] rest IH]; intros I; [contradiction|]. cbn.
+  destruct (Nat.eqb_spec x y) as [->|Ne].
+  - destruct I as [E|I]; [injection E as <-; reflexivity|].
+    rewrite (Fun y t tx (or_introl eq_refl) (or_intror I)). reflexivity.
+  - destruct I as [E|I]; [injection E as E; congruence|].
+    apply IH; [intros a b c I1 I2; exact (Fun a b c (or_intror I1) (or_intror I2))|exact I].
+Qed.
+
+(* A functor's fixed inputs, as a context records them (fx), read in d. *)
+Definition FixedMeans (u : nat) (d : environment) (fx gfx : subst) : Prop :=
+  (forall x, A.Fixed W u x -> exists tx, In (x, tx) fx) /\
+  (forall x tx, In (x, tx) fx -> lookup_subst x gfx = Some (ground d tx)).
+
+Scheme closure_ok_ind' := Induction for ClosureOk Sort Prop
+with captured_funs_ind' := Induction for CapturedFuns Sort Prop.
+Combined Scheme closure_ok_mut from closure_ok_ind', captured_funs_ind'.
+
 (* The static provisions, realized under their runtime keys (T31). *)
 Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
   (forall v t, A.nlook v (A.c_vals C) = Some t -> exists w,
@@ -78,9 +159,9 @@ Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop 
      lookup_provision (IFn f) d = Some pv /\ CallableOk n H d (A.sg_params g) (A.sg_ret g) pv) /\
   (forall r m g, A.mlook r m (A.c_mths C) = Some g -> exists pv,
      lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
-  (* functor closures: their realization is T15's *)
-  (forall u fx, A.nlook u (A.c_funs C) = Some fx -> exists h sms dc,
-     lookup_provision (IFun u) d = Some (FunctorClosure h sms dc)).
+  (* functor closures, applicable with their fixed inputs read here *)
+  (forall u fx, A.nlook u (A.c_funs C) = Some fx -> exists pv gfx,
+     lookup_provision (IFun u) d = Some pv /\ ClosureOk n H u gfx pv /\ FixedMeans u d fx gfx).
 
 (* Every provision is filed under a key of its own kind. *)
 Definition KeysMatch (C : A.cx) : Prop := PublicCallRealize.KeysMatch (A.c_provisions C).
@@ -168,15 +249,6 @@ Proof.
   intros j Lt; apply Run; lia.
 Qed.
 
-Lemma realizes_lower : forall n m C d H, m <= n -> Realizes n C d H -> Realizes m C d H.
-Proof.
-  intros n m C d H Le [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|]. split; [|exact St].
-  split; [exact Vals|]. split; [|split; [|exact Funs]].
-  - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
-    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ _ Le Ok)].
-  - intros r m' g Found. destruct (Mths r m' g Found) as [pv [Look Ok]].
-    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ _ Le Ok)].
-Qed.
 
 Lemma callable_extends : forall n H H' d params ret pv, heap_extends H H' ->
   CallableOk n H d params ret pv -> CallableOk n H' d params ret pv.
@@ -187,16 +259,60 @@ Proof.
   - intros Hc st ws E; apply Ok; exact (extends_trans _ _ _ Ext E).
 Qed.
 
+Lemma callable_lower_extends : forall n m H0 H1 d params ret pv, m <= n -> heap_extends H0 H1 ->
+  CallableOk n H0 d params ret pv -> CallableOk m H1 d params ret pv.
+Proof.
+  intros n m H0 H1 d params ret pv Le Ext Ok.
+  exact (callable_extends _ _ _ _ _ _ _ Ext (callable_lower _ _ _ _ _ _ _ Le Ok)).
+Qed.
+
+(* Applicable closures stay applicable below their index, on a larger heap. *)
+Lemma closure_lower : forall n m H0 H1, m <= n -> heap_extends H0 H1 ->
+  (forall u gfx pv, ClosureOk n H0 u gfx pv -> ClosureOk m H1 u gfx pv) /\
+  (forall gm dc l, CapturedFuns n H0 gm dc l -> CapturedFuns m H1 gm dc l).
+Proof.
+  intros n m H0 H1 Le Ext.
+  apply (closure_ok_mut n H0 (fun u gfx pv _ => ClosureOk m H1 u gfx pv) (fun gm dc l _ => CapturedFuns m H1 gm dc l)).
+  - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg Caps _ IH.
+    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg); [|exact IH].
+    intros gm Am. destruct (Caps gm Am) as [Vals [Fns Mths]]. split; [|split].
+    + intros v t I L. destruct (Vals v t I L) as [w [Look T]]. exists w. split; [exact Look|].
+      eapply value_typed_extends; eassumption.
+    + intros f g I L. destruct (Fns f g I L) as [pv [Look Ok]]. exists pv. split; [exact Look|].
+      exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
+    + intros r m' a g I L. destruct (Mths r m' a g I L) as [pv [Look Ok]]. exists pv. split; [exact Look|].
+      exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
+  - intros u h Cu nsu Ch nsh code sms dc gfx gfh _ IH FCu FCh Incl Fx.
+    exact (CCopy m H1 u h Cu nsu Ch nsh code sms dc gfx gfh IH FCu FCh Incl Fx).
+  - intros u code gfx Fam. exact (CPlatform m H1 u code gfx Fam).
+  - intros gm dc. constructor.
+  - intros gm dc u fx pv gfx rest Look _ IH1 Fx _ IH2. exact (CFCons m H1 gm dc u fx pv gfx rest Look IH1 Fx IH2).
+Qed.
+
+Lemma realizes_lower : forall n m C d H, m <= n -> Realizes n C d H -> Realizes m C d H.
+Proof.
+  intros n m C d H Le [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|]. split; [|exact St].
+  split; [exact Vals|]. split; [|split; [|intros u fx Found; destruct (Funs u fx Found) as [pv [gfx [Look [Ok Fm]]]];
+    exists pv, gfx; split; [exact Look|split; [exact (proj1 (closure_lower n m H H Le (fun a c L => L)) _ _ _ Ok)|exact Fm]]]].
+  - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
+    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ _ Le Ok)].
+  - intros r m' g Found. destruct (Mths r m' g Found) as [pv [Look Ok]].
+    exists pv; split; [exact Look|exact (callable_lower n m _ _ _ _ _ Le Ok)].
+Qed.
+
+
 Lemma realizes_extends : forall n C d H H', heap_extends H H' -> Realizes n C d H -> Realizes n C d H'.
 Proof.
   intros n C d H H' Ext [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|].
-  split; [|exact St]. split; [|split; [|split; [|exact Funs]]].
+  split; [|exact St]. split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [Look T]].
     exists w; split; [exact Look|eapply value_typed_extends; eassumption].
   - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
     exists pv; split; [exact Look|exact (callable_extends _ _ _ _ _ _ _ Ext Ok)].
   - intros r m g Found. destruct (Mths r m g Found) as [pv [Look Ok]].
     exists pv; split; [exact Look|exact (callable_extends _ _ _ _ _ _ _ Ext Ok)].
+  - intros u fx Found. destruct (Funs u fx Found) as [pv [gfx [Look [Ok Fm]]]].
+    exists pv, gfx; split; [exact Look|split; [exact (proj1 (closure_lower n n H H' (le_n n) Ext) _ _ _ Ok)|exact Fm]].
 Qed.
 
 Lemma realizes_same : forall n C C' d H,
@@ -996,6 +1112,22 @@ Proof.
     exact (forall2_map_eq H (ground d) (ground d') ws ps ps' Ps Args).
 Qed.
 
+Lemma ilook_apps_fun : forall C u fx, A.ilook (IFun u) (A.c_provisions C) = Some (A.ProvidedFunctor fx) ->
+  A.ilook (IFun u) (A.c_apps C) = Some (A.fixed_app fx).
+Proof.
+  intros [ty sub provs locs] u fx. unfold A.c_apps. cbn. induction provs as [|[k p] rest IH]; intros L; [discriminate|].
+  destruct k as [a|a|a|r m a|a]; cbn in L |- *; try exact (IH L).
+  destruct (Nat.eqb u a); [injection L as ->; reflexivity|exact (IH L)].
+Qed.
+
+Lemma fixed_app_in : forall fx x t, In (x, t) fx -> In (x, Some t) (A.fixed_app fx).
+Proof. intros fx x t I. unfold A.fixed_app. apply in_map_iff. exists (x, t). split; [reflexivity|exact I]. Qed.
+
+Lemma fixed_app_out : forall fx x t, In (x, Some t) (A.fixed_app fx) -> In (x, t) fx.
+Proof.
+  intros fx x t I. unfold A.fixed_app in I. apply in_map_iff in I as [[y v] [E I]]. cbn in E. injection E as -> ->. exact I.
+Qed.
+
 (* T03/T04: a call's selected provisions realize the callee's context. *)
 Lemma callee_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
   Realizes n0 C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
@@ -1004,7 +1136,7 @@ Lemma callee_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
     Realizes n Cf (callee_env d th dc) H.
 Proof.
   intros n0 n C d H f Cf ns sm th Le [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT.
-  destruct Sat as [SmEq [Prov [_ [Types _]]]].
+  destruct Sat as [SmEq [Prov [Coh [Types _]]]].
   destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
   pose proof (ctx_keys_match W f Cf ns Ctx) as KMf.
   pose proof CT as [Keys [_ _]].
@@ -1015,7 +1147,7 @@ Proof.
     - destruct (A.nlook v (A.c_vals C)) as [t|] eqn:L; [|congruence]. destruct (Vals v t L) as [w [Look _]]. eauto.
     - destruct (A.nlook f' (A.c_fns C)) as [g|] eqn:L; [|congruence]. destruct (Fns f' g L) as [pv [Look _]]. eauto.
     - destruct (A.mlook _ m (A.c_mths C)) as [g|] eqn:L; [|congruence]. destruct (Mths _ m g L) as [pv [Look _]]. eauto.
-    - destruct (A.nlook u (A.c_funs C)) as [fx|] eqn:L; [|congruence]. destruct (Funs u fx L) as [h [sms [dc Look]]]. eauto. }
+    - destruct (A.nlook u (A.c_funs C)) as [fx|] eqn:L; [|congruence]. destruct (Funs u fx L) as [pv [gfx [Look _]]]. eauto. }
   destruct (select_ok d sm) as [dc Sel].
   { rewrite SmEq. intros q Iq. apply in_map_iff in Iq as [k [<- Ik]]. cbn. destruct (Caller k Ik) as [pv ->]. discriminate. }
   exists dc. split; [exact Sel|].
@@ -1093,8 +1225,16 @@ Proof.
     pose proof (ProvNs _ _ InP) as Ik.
     pose proof (Prov (IFun u) Ik) as Pr. cbn in Pr.
     destruct (A.nlook u (A.c_funs C)) as [fx'|] eqn:L; [|congruence].
-    destruct (Funs u fx' L) as [h [sms [dc' Look']]]. exists h, sms, dc'.
-    pose proof (Find (IFun u) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'. exact Look'.
+    destruct (Funs u fx' L) as [pv [gfx [Look' [Ok Fm]]]]. exists pv, gfx.
+    pose proof (Find (IFun u) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'. split; [exact Look'|].
+    split; [exact (proj1 (closure_lower n0 n H H Le (fun a c L => L)) _ _ _ Ok)|].
+    destruct (ctx_fun_fixed W f Cf ns Ctx u fx InP) as [Cov [Sc _]]. split; [exact Cov|].
+    intros x tf Ixt.
+    assert (Ia : A.ilook (IFun u) (A.c_apps Cf) = Some (A.fixed_app fx)) by (apply ilook_apps_fun; exact Il).
+    assert (Ic : A.ilook (IFun u) (A.c_apps C) = Some (A.fixed_app fx')) by (apply ilook_apps_fun; exact (funs_ilook _ u fx' KM L)).
+    pose proof (Coh (IFun u) _ Ik Ia x tf (fixed_app_in _ _ _ Ixt)) as Have. cbn [A.at_th] in Have. rewrite Ic in Have.
+    apply fixed_app_out in Have. destruct Fm as [_ Vm]. rewrite (Vm x _ Have).
+    f_equal. symmetry. apply GroundDe. exact (Sc x tf Ixt).
 Qed.
 
 Lemma callee_realizes : forall n C' d H f Cf ns sm th,
@@ -1180,7 +1320,7 @@ Definition NewOk n C' d' H (k0 : item) (p0 : A.provision) : Prop :=
   | IVal v, A.ProvidedVal t _ => exists w, lookup_provision (IVal v) d' = Some (ValueProvision w) /\ value_typed W P H w (ground d' t)
   | IFn f, A.ProvidedFn g _ => exists pv, lookup_provision (IFn f) d' = Some pv /\ CallableOk n H d' (A.sg_params g) (A.sg_ret g) pv
   | IMth r m _, A.ProvidedMethod g _ => exists pv, lookup_provision (A.rkey C' r m) d' = Some pv /\ CallableOk n H d' (r :: A.sg_params g) (A.sg_ret g) pv
-  | IFun u, A.ProvidedFunctor _ => exists h sms dc, lookup_provision (IFun u) d' = Some (FunctorClosure h sms dc)
+  | IFun u, A.ProvidedFunctor fx => exists pv gfx, lookup_provision (IFun u) d' = Some pv /\ ClosureOk n H u gfx pv /\ FixedMeans u d' fx gfx
   | _, _ => False
   end.
 
@@ -1260,10 +1400,11 @@ Proof.
   - intros u fx Found. change (A.c_funs (set_cx C k0 p0)) with (funs_of (set_list k0 p0 (A.c_provisions C))) in Found.
     rewrite funs_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
     destruct (item_eqb (IFun u) k0) eqn:E.
-    + apply item_eqb_spec in E. subst k0. destruct p0 as [t' a|g a|g a|fx']; try discriminate. exact New.
+    + apply item_eqb_spec in E. subst k0. destruct p0 as [t' a|g a|g a|fx']; try discriminate. injection Found as <-. exact New.
     + change (match A.ilook (IFun u) (A.c_provisions C) with Some (A.ProvidedFunctor fx) => Some fx | _ => None end = Some fx) in Found.
-      rewrite <- funs_by_ilook in Found by exact KM. destruct (Funs u fx Found) as [h [sms [dc Look]]].
-      exists h, sms, dc. rewrite Other; [exact Look|].
+      rewrite <- funs_by_ilook in Found by exact KM. destruct (Funs u fx Found) as [pv [gfx [Look [Ok [Cov Vm]]]]].
+      exists pv, gfx. split; [|split; [exact Ok|split; [exact Cov|intros x tx I; rewrite G; exact (Vm x tx I)]]].
+      rewrite Other; [exact Look|].
       intro E'. symmetry in E'. pose proof (rkey_of_kind _ _ _ E') as Kd. cbn in Kd. subst k0.
       rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
 Qed.
@@ -1850,8 +1991,13 @@ Proof.
     rewrite Other in Found by (intros q Iq E; discriminate).
     assert (Lu : A.nlook u (A.c_funs C) = Some fx)
       by (change (A.c_funs C) with (funs_of (A.c_provisions C)); rewrite (funs_by_ilook _ u KM); exact Found).
-    destruct (Funs u fx Lu) as [h [sms [dc' Look]]]. exists h, sms, dc'.
-    pose proof (Find _ Ik) as F'. cbn [A.rkey_of] in F'. rewrite F'. exact Look.
+    destruct (Funs u fx Lu) as [pv [gfx [Look [Ok [Cov Vm]]]]]. exists pv, gfx.
+    pose proof (Find _ Ik) as F'. cbn [A.rkey_of] in F'. rewrite F'. split; [exact Look|].
+    split; [exact (proj1 (closure_lower n0 n H H Le (fun a c L => L)) _ _ _ Ok)|]. split; [exact Cov|].
+    pose proof (funs_ilook _ u fx KM Lu) as Il.
+    pose proof (prov_context_gens C _ _ (ilook_in _ _ _ Il)) as Sc.
+    intros x tx I. rewrite (Vm x tx I). f_equal. symmetry. apply G. intros y Iy. apply Sc. cbn.
+    apply in_flat_map. exists (x, Some tx). split; [exact (fixed_app_in _ _ _ I)|exact Iy].
 Qed.
 
 Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
@@ -2095,8 +2241,8 @@ Proof.
     split; [rewrite install_other; [exact Look|discriminate]|exact Ok].
   - intros r m g Found. destruct (Mths r m g Found) as [pv' [Look Ok]]. exists pv'.
     split; [rewrite install_other; [exact Look|unfold A.rkey; discriminate]|exact Ok].
-  - intros u fx Found. destruct (Funs u fx Found) as [h [sms [dc Look]]]. exists h, sms, dc.
-    rewrite install_other; [exact Look|discriminate].
+  - intros u fx Found. destruct (Funs u fx Found) as [pv' [gfx [Look Rest]]]. exists pv', gfx.
+    split; [rewrite install_other; [exact Look|discriminate]|exact Rest].
 Qed.
 
 Definition Installed (C : A.cx) (qs : list (name * vsym)) (d : environment) (H : heap_types) : Prop :=
@@ -2151,7 +2297,7 @@ Proof.
     destruct (A.ilook (IFun u) (A.c_provisions C)) as [[t a|g a|g a|fx]|] eqn:Il; try congruence.
     assert (Lu : A.nlook u (A.c_funs C) = Some fx)
       by (change (A.c_funs C) with (funs_of (A.c_provisions C)); rewrite (funs_by_ilook _ u KM), Il; reflexivity).
-    destruct (Funs u fx Lu) as [h [sms [dc Look]]]. congruence.
+    destruct (Funs u fx Lu) as [pv [gfx [Look _]]]. congruence.
 Qed.
 
 (* The method keys a lambda's context lists have receivers over its
@@ -2244,7 +2390,8 @@ Proof.
   - intros r m g Found. destruct (Mths r m g Found) as [pv [Look Ok]]. exists pv. split.
     + destruct (mths_ilook _ r m g KM Found) as [a Il]. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
     + exact (callable_transfer n n H d d' _ _ _ _ pv (le_n n) (Gm _) (eq_sym (G _)) Ok).
-  - intros u fx Found. destruct (Funs u fx Found) as [h [sms [dc Look]]]. exists h, sms, dc.
+  - intros u fx Found. destruct (Funs u fx Found) as [pv [gfx [Look [Ok [Cov Vm]]]]]. exists pv, gfx.
+    split; [|split; [exact Ok|split; [exact Cov|intros x tx I; rewrite G; exact (Vm x tx I)]]].
     pose proof (funs_ilook _ u fx KM Found) as Il. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
 Qed.
 
@@ -2266,7 +2413,7 @@ Proof.
   - destruct (A.nlook v (A.c_vals C)) as [t|] eqn:L; [|congruence]. destruct (Vals v t L) as [w [Look _]]. congruence.
   - destruct (A.nlook f' (A.c_fns C)) as [g|] eqn:L; [|congruence]. destruct (Fns f' g L) as [pv [Look _]]. congruence.
   - destruct (A.mlook _ m (A.c_mths C)) as [g|] eqn:L; [|congruence]. destruct (Mths _ m g L) as [pv [Look _]]. congruence.
-  - destruct (A.nlook u (A.c_funs C)) as [fx|] eqn:L; [|congruence]. destruct (Funs u fx L) as [h [sms [dc' Look]]]. congruence.
+  - destruct (A.nlook u (A.c_funs C)) as [fx|] eqn:L; [|congruence]. destruct (Funs u fx L) as [pv [gfx [Look _]]]. congruence.
 Qed.
 
 Lemma vars_args_from : forall i d g st start rest,
