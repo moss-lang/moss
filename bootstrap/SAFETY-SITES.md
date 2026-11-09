@@ -464,6 +464,7 @@ Measured in the background on detached snapshots (`scratch/measure.sh`):
 | Commit | Clean `check.sh` | `nix build .#oracle` | Bootstrap |
 | --- | --- | --- | --- |
 | 3a302ab | 169s (overlapped another full build) | 307s | 2237s (37 min, overlapping other builds) |
+| 93a2b00 (check-time merged) | 110s (overlapped proof builds) | 211s | pending |
 
 A subagent remeasured on a quiet machine (32 cores, one core busy with the
 bootstrap): 118s at both 086a617 (`main`) and 3a302ab. The branch adds about
@@ -535,3 +536,14 @@ without touching any proof.
 - Functor invariant design (step-indexing problem, structural closure
   invariant), the captured-merge gap and functor body numbering after
   approval (02:09 to 02:45).
+- Family matchings read off the key (`FamilyReadOff`), proving
+  `demand_formed_cx` without its hypothesis (02:45 to 02:52).
+- Binding steps capped by eval fuel and `AppAt` as an argument (02:52 to
+  03:00); the copy-capture counterexample and `fc_linked` after discussion
+  (to 03:12).
+- `ClosureOk` in `EnvOk`, copies (`case_BFunCopy`), `AliasOk`, and closures
+  (`case_BFunClosure`, with `captured_in_force`) (03:12 to 03:39); the
+  check-time branch merged.
+- The linked and copy interpretation gaps: tests, two oracle variants
+  compared over the corpus, and the premises after approval (03:40 to
+  04:11).
