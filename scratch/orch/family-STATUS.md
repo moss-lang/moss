@@ -81,3 +81,45 @@ argument plus preserving the invariant. `PublicFamilyStep.v`'s run part is
 unaffected.
 
 Time: about 1h40m.
+
+## Follow-up (coordinator: restate FamilyStepOk, SigCoherent in Formed): blocked
+
+Before restating, I checked whether "elaborated types are scoped"
+(`incl (gens t) (scope_gens C)` for `Ex`) is true. Under Audit as it
+stands, it is not, and the reason is an Audit gap of its own.
+
+- `BApplyAbstract`'s `made` is `newgens`, the fresh generations for
+  outputs already in force. An output not in force is installed as itself
+  (`gensof t = t`, table entry `(t, TAbs t)`) and is not in `made`. So
+  `BlkE`'s escape check (`made` not in the block's type) lets a value of
+  that output type leave the block. Outside, `t` is not in the table, so
+  the block's type is not in scope.
+- The oracle rejects this: `scratch/t/escape.moss` gives "this block
+  yields `T`, which mentions `T`, a type `bind F;` made in it: a value of
+  that type cannot leave the block (D78)". I could not run native: the
+  moss-safety checkout has no built compiler (`MOSS_SEED` unset).
+- Runtime consequence: `result_environment` writes the meaning of `T`
+  (the destination `gensof T = T`). So `LinkResultsOk`'s
+  `MeaningsGrow newgens d d'` is false for such applications: another
+  obligation that is false for programs Audit accepts and the oracle
+  rejects.
+- Likely fix (Audit): `BApplyAbstract`'s `made` should be every output
+  destination, `map gensof outs` (or `newgens` plus the not-in-force
+  outputs), and `with_fresh` should be adjusted to match. This touches
+  `LinkResultsOk`/`AppAt`/`BindStep` (`MeaningsGrow made`), so it belongs
+  with the link-results owner. I have not made the change.
+
+Even with that fix, restating `FamilyStepOk` with scoped receivers needs a
+new mutual "Ex types are scoped" fixpoint in PublicFormation. That
+fixpoint needs scoping invariants that `FormedCx` lacks today (locals'
+types and val/fn provision types are only `TyOk`, not scoped). Call
+demands also need their wanted keys' receivers in scope. `at_site` re-reads
+a callee need's receiver at the caller's table and leaves symbols the
+caller has not bound as `TAbs x`, which need not be in scope. Whether
+CallTheta/Satisfies rule that out needs its own check.
+
+`SigCoherent` in `Formed` would change what `RefileRunOk`/`LinkResultsOk`/
+`CopyApplyOk` must deliver (they conclude `Pre`), and must be preserved at
+every step of the slice that produces `Pre`.
+
+I stopped here to report, rather than start these changes.
