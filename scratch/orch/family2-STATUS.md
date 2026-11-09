@@ -159,3 +159,23 @@ whether rewriting `T ↦ m` regrounds the provision `T.foo`, is results2's
   `incl (gens ot) (scope_gens C0)` and `FamilyTableIn` relax to
   `ScopedTy`, and `PublicFamilyStep.family_formed` follows
   `family_application_ok` as restated in the diff.
+
+## Also for the next agent (coordinator, after d6a3e86)
+
+- **`PA.FamilyKeysTyped W`** (PublicPlatformApply.v:745) should be
+  discharged by the scoping invariant.
+  - Keys of `family_context C matching` are the matching's keys (P(F)
+    symbols, via `FamilyApplication`'s `Poly`) and C's table keys.
+  - `TysScoped` gives scope-or-declared for C's keys. For a key that a
+    path resolves to (`resolve_sym ... = Some x`) to be `DKType`, the
+    invariant needs the strict form: every table key is a declared type
+    symbol or a fresh generation. A fresh generation is never the
+    result of `resolve_sym`.
+  - As stated, it has no formation premise on C (it quantifies over every
+    C with a `FamilyApplication`), so it would need restating with
+    `FormedCx W C` (or the new key fact) before it is provable.
+  - I have not started it.
+- **`KeptOutputsUnmentioned`** (PublicLinkResults.v) is left for the
+  user. Do not prove it.
+
+`safety` d6a3e86 is merged (fcfddd6).
