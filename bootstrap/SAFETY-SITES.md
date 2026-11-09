@@ -31,7 +31,8 @@ obligations (the functor and family obligations
 `PublicChainCore.chain_results_of_new`, from `ChainNewOk`, the
 formal/caller result correspondence for the result's new provisions
 (selection, outputs, aliases, kinds and the provisions kept from the
-caller are proved: `chain_core_ok`), and `KeptOutputsUnmentioned`, an
+caller are proved: `chain_core_ok`; ChainNewOk itself from the static
+`ChainKeysOk` and `ChainRealizeOk`: `PublicChainNew.chain_new_ok`), and `KeptOutputsUnmentioned`, an
 open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
@@ -676,7 +677,8 @@ likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
-| `ChainNewOk` (PublicChainCore) | what is left of `ChainCoreOk` (`chain_core_ok` proves the rest): in a linked root's application through a copy chain, every key the result selection `dr` fills is the run-time key of a new provision of the caller's result C', and C''s new provisions are realized after the application (`EnvOkOn` the new keys). It is the caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`) | T15, T16 |
+| `ChainKeysOk` (PublicChainNew) | static, ChainNewOk's first clause (`chain_new_ok` proves that clause from it): at an application of F through a copy chain to a root h0, each key of h0's formal result, its output roles renamed back and substituted as the selection does (outputs to destinations, inputs by θ), is `rkey_of C'` of a key of F's result as the caller reads it. Needs `CopyOutputs` both ways (copy-extra-key.moss) | T15, T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk's second clause: C''s new provisions are realized after the application (`EnvOkOn` the new keys). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`) | T15, T16 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |

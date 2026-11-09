@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module CC := PublicChainCore.ChainCore M.ReferenceHost M.Reference.
+Module CN := PublicChainNew.ChainNew M.ReferenceHost M.Reference.
+Module CC := CN.CC.
 Module LRes := CC.LR.
 Module PA := LRes.PA.
 Module FS := PA.FS.
@@ -586,9 +587,11 @@ Theorem safety_obligations : forall prelude,
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
      S.CapturedInForceOk /\
-     (* ChainResultsOk, from PublicChainCore.chain_results_of_new: the new
-        provisions of the caller's result are realized *)
-     CC.ChainNewOk W Prog argv read so /\
+     (* ChainResultsOk, from PublicChainCore.chain_results_of_new and
+        PublicChainNew.chain_new_ok: the root's result keys are the
+        caller's (static), and the new provisions of the caller's result
+        are realized *)
+     CN.ChainKeysOk W /\ CN.ChainRealizeOk W Prog argv read so /\
      (* a kept output is unmentioned by the context: open, for the user to
         decide (scratch/orch/results2-AUDIT.md section 2) *)
      LRes.KeptOutputsUnmentioned W /\
@@ -608,8 +611,8 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CN [KU [RA [FLN [FCA [FRA [FCo [ExS [LitS DemS]]]]]]]]]].
-  pose proof (CC.chain_results_of_new W Prog _ _ _ CN KU) as CR.
+    as [CIF [CK [CRz [KU [RA [FLN [FCA [FRA [FCo [ExS [LitS DemS]]]]]]]]]]].
+  pose proof (CC.chain_results_of_new W Prog _ _ _ (CN.chain_new_ok W Prog _ _ _ CK CRz) KU) as CR.
   pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
