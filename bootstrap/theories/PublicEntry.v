@@ -21,13 +21,6 @@ Module FS := PA.FS.
 Module CopyA := PA.CopyA.
 Module S := PA.S.
 
-(* PREMISE (T29). main's context merges no machine type symbol away, so
-   its initial table reads each as its machine type. *)
-Definition MainMachinesUnmerged (W : A.world) (Prog : program) : Prop :=
-  forall C ns, A.CtxOf W (program_main Prog) C ns ->
-  forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-  lookup_subst x (A.c_sub C) = None.
-
 Lemma machine_lookup : forall W name mach x, Platform.Layouts W -> In (name, mach) A.initial_machines ->
   A.LangSym W "wasm" A.NSName name x -> lookup_subst x (A.initial_machine_subst W) = Some (TMachine mach).
 Proof.
@@ -146,7 +139,7 @@ Qed.
 
 (* The platform's provisions realize main's context, given the machine
    types' meanings and its primitives' callability. *)
-Lemma entry_realizes : forall n C ns types platform H0, Platform.Layouts W -> MainMachinesUnmerged W Prog ->
+Lemma entry_realizes : forall n C ns types platform H0, Platform.Layouts W ->
   A.CtxOf W (program_main Prog) C ns -> A.InitialTypes W C types ->
   map fst platform = map (A.rkey_of C) ns ->
   Forall (fun ie => Platform.Entry W Prog C (fst ie) (snd ie)) platform ->
@@ -156,7 +149,7 @@ Lemma entry_realizes : forall n C ns types platform H0, Platform.Layouts W -> Ma
        (PrimitiveClosure op None)) ->
   S.Realizes W Prog argv read state_ok n C (Environment types platform) H0.
 Proof.
-  intros n C ns types platform H0 Lay Unm Ctx Types Keys Entries Prims.
+  intros n C ns types platform H0 Lay Ctx Types Keys Entries Prims.
   pose proof (ctx_keys_match W _ C ns Ctx) as KM.
   destruct (ctx_needs W _ C ns Ctx) as [_ [ProvNs _]].
   rewrite Forall_forall in Entries.
@@ -198,17 +191,20 @@ Proof.
     exists (FunctorClosure u' [] (EnvironmentWithAliases [] [] [])),
       (S.ground_fixed (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)) fx).
     destruct (ctx_fun_fixed W _ C ns Ctx u fx (S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
-    split; [exact L|]. split; [apply S.CPlatform; [exact En|]|].
+    split; [exact L|]. split; [apply S.CPlatform; [exact (proj1 En)|]|].
     { (* main's table reads a fixed machine input as its machine type *)
       intros name mach x Inm Lang Fx. destruct (Cov x Fx) as [tx Itx].
       rewrite (S.lookup_ground_fixed _ fx x tx Fun Itx).
       pose proof (ctx_fun_self W _ C ns Ctx u fx (S.ilook_in _ _ _ Il) x tx Itx) as Etx.
-      pose proof (Unm C ns Ctx name mach x Inm Lang) as Nx.
-      cbn [app_subst] in Etx. rewrite Nx in Etx. subst tx.
+      destruct En as [_ FMR]. pose proof (FMR fx Found name mach x tx Inm Lang Itx) as Ct.
+      assert (Cx : A.canon C (TAbs x) = TAbs x).
+      { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
+        rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
+      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Etx. rewrite Cx in Etx. subst tx.
       assert (Ix : In x (map fst (A.c_ty C))) by (apply (Sc x (TAbs x) Itx); left; reflexivity).
       destruct (keys_in (A.c_ty C) x Ix) as [v Lv].
       destruct (ctxof_formed W _ C ns Ctx) as [Form _]. pose proof (Form x v Lv) as Ev.
-      cbn [app_subst] in Ev. rewrite Nx in Ev. subst v.
+      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ev. rewrite Cx in Ev. subst v.
       cbn [app_subst]. rewrite S.lookup_map_snd, lookup_subst_nlook, Lv. cbn [option_map app_subst].
       rewrite (machine_lookup W name mach x Lay Inm Lang). reflexivity. }
     split; [exact Cov|].
@@ -473,7 +469,7 @@ Theorem entry_safe : forall prelude
   (forall Prog iface initial bundle W, M.Compatible Prog iface ->
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W /\ MainMachinesUnmerged W Prog) /\
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
      exists H0, state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface H0 (iface, initial) /\
        forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> A.InitialTypes W C types ->
          program_environment Prog = Environment types platform ->
@@ -485,7 +481,7 @@ Theorem entry_safe : forall prelude
   SR.entry_never_stuck prelude.
 Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
-  destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [[Mf [Mt Unm]] [H0 [St Prims]]]].
+  destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [[Mf Mt] [H0 [St Prims]]]].
   pose proof Link as (_ & Lay & _).
   pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys & _) & _).
   destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries).
@@ -499,7 +495,7 @@ Proof.
   - intros C0 ns0 Ctx0 F g Frame This Ret Sig.
     destruct (function_context_unique Wd _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
     apply (entry_pre Wd Prog _ _ _ fuel F C ns g types platform H0 _ Mf Mt Ctx Frame This Ret Sig St).
-    apply (entry_realizes Wd Prog _ _ _ fuel C ns types platform H0 Lay Unm Ctx Types Keys Entries).
+    apply (entry_realizes Wd Prog _ _ _ fuel C ns types platform H0 Lay Ctx Types Keys Entries).
     intros f op sg Ip Found At. exact (Prims fuel C ns types platform Ctx Types Env f op sg Ip Found At).
 Qed.
 (* The entry with the reference host's state invariant and its primitives:
@@ -510,7 +506,7 @@ Theorem entry_safe_public : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial)
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W /\ MainMachinesUnmerged W Prog) /\
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
   SR.entry_never_stuck prelude.
@@ -537,7 +533,7 @@ Theorem safety_public : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial)
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W /\ MainMachinesUnmerged W Prog) /\
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
   forall program interface initial,
@@ -590,7 +586,6 @@ Theorem safety_obligations : forall prelude,
      S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
      CopyA.ChainResultsOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
-     MainMachinesUnmerged W Prog /\
      PA.ChainResultAgrees W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
@@ -604,7 +599,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [LM [BM [CIF [CR [Unm [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]].
+    as [LM [BM [CIF [CR [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
@@ -619,7 +614,7 @@ Proof.
   pose proof (CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.
   assert (FSt : S.FamilyStepOk W Prog _ _ _)
     by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) LM BM CIF LR CA PA FLR FCA FPA).
-  split; [|split; [split; [|split]; assumption|exact (handles_formed bundle W Prog Elab Link)]].
+  split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
     (ex_intro _ bundle Wo) LM BM CIF LR CA PA).
 Qed.
