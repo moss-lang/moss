@@ -93,6 +93,19 @@ Definition AppMeanings (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx gm : sub
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gm = lookup_subst x gfx) /\
   (forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> lookup_subst x gm = Some (cmeaning dc x)).
 
+(* An abstract functor's context lists every symbol it mentions. *)
+Lemma fixed_in_functx : forall u Cu ns x, (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
+  A.FunCtx W u Cu ns -> A.Fixed W u x -> In x (map fst (A.c_ty Cu)).
+Proof.
+  intros u Cu ns x [n [ps [a [r Ast]]]] (d & ps' & a' & r' & b & es & tm & tm' & σ & implicit & D & FP & _ & Imp & -> & _ & -> & _ & _)
+    [Mn _].
+  unfold A.ast_of in Ast. rewrite D in Ast. injection Ast as Ast. rewrite Ast in FP. injection FP as _ _ _ <-.
+  cbn. rewrite map_map. cbn. rewrite map_app, map_map. cbn. apply in_or_app.
+  destruct (A.nlook x tm) as [v|] eqn:L.
+  - right. apply nlook_in in L. change x with (fst (x, v)). apply in_map, L.
+  - left. rewrite map_id. apply Imp. split; [reflexivity|split; [exact Mn|exact L]].
+Qed.
+
 (* A functor closure is applicable (structurally: its captured functors
    are subterms). ClosureOk n H0 u gfx pv: pv, provided for u with its
    fixed inputs meaning what gfx says, is a body linked for u whose
@@ -101,6 +114,7 @@ Definition AppMeanings (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx gm : sub
 Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_value -> Prop :=
 | CLink : forall u gg h Cu nsu Cg nsg dc gfx,
     A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+    (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
       (forall v t, In (IVal v) (captured nsu nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
          lookup_provision (IVal v) dc = Some (ValueProvision w) /\ value_typed W P H0 w (app_subst gm t)) /\
@@ -275,8 +289,8 @@ Lemma closure_lower : forall n m H0 H1, m <= n -> heap_extends H0 H1 ->
 Proof.
   intros n m H0 H1 Le Ext.
   apply (closure_ok_mut n H0 (fun u gfx pv _ => ClosureOk m H1 u gfx pv) (fun gm dc l _ => CapturedFuns m H1 gm dc l)).
-  - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg Caps _ IH.
-    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg); [|exact IH].
+  - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps _ IH.
+    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn); [|exact IH].
     intros gm Am. destruct (Caps gm Am) as [Vals [Fns [Mths Mg]]]. split; [|split; [|split; [|exact Mg]]].
     + intros v t I L. destruct (Vals v t I L) as [w [Look T]]. exists w. split; [exact Look|].
       eapply value_typed_extends; eassumption.
@@ -2796,19 +2810,22 @@ Qed.
 
 (* BFunClosure *)
 (* HYPOTHESIS. A merge of G's context that touches an input F links (and
-   does not fix) stays among F's inputs; any other merge involves only
-   symbols in force where G is bound. The item causing a merge mentions
-   both sides: linked, it reads as F's (LinkBody); captured, 3b fixes
-   F's inputs it mentions. *)
-Hypothesis link_merges : forall C u gg h Cu nsu Cg nsg smc,
+   does not fix) stays among F's inputs (link_merges); any other merge
+   involves only symbols in force where G is bound (bind_merges). The item
+   causing a merge mentions both sides: linked, it reads as F's
+   (LinkBody); captured, 3b fixes F's inputs it mentions. *)
+Hypothesis link_merges : forall u gg h Cu nsu Cg nsg,
+  A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+  forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
+  (exists y, In y (x :: A.gens tx) /\ In y (map fst (A.c_ty Cu)) /\ ~ A.Fixed W u y) ->
+  incl (x :: A.gens tx) (map fst (A.c_ty Cu)).
+Hypothesis bind_merges : forall C u gg h Cu nsu Cg nsg smc,
   A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
     (captured nsu nsg) smc ->
   forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
-  ((exists y, In y (x :: A.gens tx) /\ In y (map fst (A.c_ty Cu)) /\ ~ A.Fixed W u y) ->
-     incl (x :: A.gens tx) (map fst (A.c_ty Cu))) /\
-  ((forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
-     forall y, In y (x :: A.gens tx) -> ~ In y (map fst (A.c_ty Cu)) -> A.nlook y (A.c_ty C) <> None).
+  (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
+  forall y, In y (x :: A.gens tx) -> ~ In y (map fst (A.c_ty Cu)) -> A.nlook y (A.c_ty C) <> None.
 
 (* HYPOTHESIS (T29). What a closure captures from where it is bound
    mentions, among G's own inputs, only fixed inputs and types in force
@@ -2838,6 +2855,35 @@ Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds
     Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
   exists Cu, nsu, Cg, nsg. split; [exact FCu|]. split; [exact FCg|exact B3].
+Qed.
+
+(* What an application reads of a linked body. *)
+Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
+  A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
+  (forall k, In k nsg -> In k nsu -> A.ilook (A.provision_id k) (A.c_provisions Cg) = A.ilook (A.provision_id k) (A.c_provisions Cu)) /\
+  (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) -> A.canon Cu (TAbs x) = A.canon Cu tx) /\
+  A.w_decl W gg = Some dg /\ A.d_ast dg = ADFunctor n ps a r (Some bodies) /\
+  A.fr_mod Fg = A.d_mod dg /\ A.fr_ret Fg = None /\ A.fr_this Fg = None /\ A.fr_loop Fg = false /\
+  A.Numbering Fg None [] /\
+  A.BindItems W Prog Fg Cg (List.concat bodies) wrap Cb Fb made /\
+  (forall t, In t outs <-> A.FunOutputs W u t) /\
+  (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
+  NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
+  A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
+  A.ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks /\
+  A.BindsOf (wrap EUnit) binds0 /\
+  A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
+      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg)))
+      (map ITy outs ++ map (fun k => A.output_renaming outs gen (A.rkey_of Cr k)) ks)%list
+      (flat_map (A.refile (map (fun k =>
+         (A.at_site Cb (A.output_renaming outs gen k), A.output_renaming outs gen (A.rkey_of Cr k))) ks)) binds0)).
+Proof.
+  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Eb Fam FrH FB].
+  subst binds. exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
+  refine (conj FCu (conj FCg (conj LPeq (conj LRd (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
+    (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO FB))))))))))))))))))).
 Qed.
 
 Lemma functx_unique : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
@@ -2958,6 +3004,7 @@ Proof.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure h [sm] dc), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
     + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg).
+      { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
       * intros gm Am. split; [|split; [|split]].
         -- (* vals *) intros v t Ik Lt.
            destruct (vals_ilook _ v t KMg Lt) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
@@ -3022,8 +3069,7 @@ Proof.
               change (A.canon C rc) with (app_subst (A.c_sub C) rc). rewrite Er. symmetry. exact (Gt rf (or_intror (or_introl eq_refl))).
         -- (* G's merges among fixed and captured inputs *)
            intros x tx Lt NoLin. destruct Am as [Am1 Am2].
-           destruct (link_merges C u gg h Cu nsu Cg nsg smc LB FCu FCg SatC' x tx Lt) as [_ InF].
-           pose proof (InF NoLin) as InF'. clear InF.
+           pose proof (bind_merges C u gg h Cu nsu Cg nsg smc LB FCu FCg SatC' x tx Lt NoLin) as InF'.
            assert (Kg : forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cg))).
            { intros y Iy. rewrite (CanG x tx Lt) in Iy. cbn [app_subst] in Iy.
              assert (Ix : In x (map fst (A.c_ty Cg))) by (apply nlook_in in Lt; change x with (fst (x, tx)); apply in_map, Lt).
