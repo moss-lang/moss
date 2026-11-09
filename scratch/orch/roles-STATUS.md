@@ -80,3 +80,103 @@ ChainKeysOk unnecessary).
 
 ## Time
 About 1.5 hours.
+
+## Round 2: caller-keyed install (decided) — NOT started; design handoff
+
+`safety` c60e2b7 merged (fast-forward; it already holds cff9949 and
+48e5106). I stopped here because my context is too tight for a refactor
+of this size. Nothing was changed for round 2; the tree is clean at the
+merge. Below is the design I worked out, for the next agent.
+
+### Audit.v
+1. `functor_code`: drop `fc_roles`. `fc_sources : list item` holds the
+   body's key for each position of the root's declared result (the i-th
+   key of its `ResultKeys`). `fc_outputs` is only read by
+   `read_result_types` (the `ITy` membership) and `result_environment`,
+   so linked code gets `map ITy outs` and a family's code gets `[]`.
+   - LinkBody: `fc_sources = map (fun k => rkey_of Cb (at_site Cb (output_renaming outs gen k))) ks`
+     (body side as now). The caller-side keys no longer appear in the
+     code, so the roles and output_renaming problem (E33) disappears.
+   - Platform.Family: `fc_sources = map (rkey_of outputs) keys`, which
+     is what its BPrimitive bindings install.
+2. Positions are context-independent: `ResultKeys s es ks` is a
+   flat_map of `entry_key s e`, and `entry_key` is None exactly for
+   `NTy` (Audit.v ~3046), independent of s. So F's ks at the caller (C)
+   and at F's own context (Cu) align when the entries come from the
+   same declaration. Lemma needed: two OutputItemsEntries of one result
+   have Forall2 entries of the same kind (PublicFamilyAgree's
+   `family_entries_rel` already shows Forall2 of EntryRelM, which pins
+   kinds; a kind-only version is easier).
+3. `BApply u th outputs sm rs`, where `rs : list item` holds the caller's
+   key for each position of F's declared result. Emitters:
+   - `BApplyAbstract`: `rs = map (rkey_of C') ks`. C' and ks come from
+     the rule's ProvideResult at C, so these are the keys the caller's
+     static context records.
+   - `LitOpFamily`, the Demand family rule (~3945) and the Provided
+     family rule (~4186) use `apply_expression u th sm` and need
+     `map (rkey_of C') ks` from their FamilyApplication. Change the
+     `apply_expression`/`apply_output_expression` signatures.
+4. Copies: `BCopyFunctor u u' sm rm` with `rm : list nat`. For each
+   position i of F's result, rm gives the position j in H's result.
+   `FunctorClosure h sms dc rms`, and a copy appends: `rms ++ [rm]`.
+   Translate the root's sources through the chain:
+   `chain_sources rms srcs := fold_left (fun s rm => map (fun j => nth j s (ITy 0)) rm) rms srcs`.
+   The default is unreachable statically. At run time it gives Stuck
+   e_compose, because no provision has key `ITy 0`.
+5. `apply_functor`:
+   `select_provisions d3 (combine rs (chain_sources rms (fc_sources code)))`
+   replaces the result_smap selection. Delete result_smap/inst_smap/
+   source_key/role_outputs/output_destination if unused.
+   `read_result_types` and `result_environment` stay the same.
+6. `BFunCopy`/`CopyOutputs`: CopyOutputs gains `rm`. Revert results4's
+   converse conjunct (E32), since extra H keys are simply never
+   installed. Then require `length rm = length ks` and, for each i with
+   `nth_error ks i = Some k`, some j with `nth_error rm i = Some j`,
+   `nth_error ks' j = Some k'`, and `provision_id k' = provision_id k`.
+   Keep the existing provision equality under sigma.
+   - Open point: is provision_id enough? E32's H has `Box.m[T=Bool]` and
+     `Box.m[T=Char]`, which share a provision_id. A witness that maps
+     F's `[T=Bool]` to H's `[T=Char]` would install the wrong closure
+     under the caller's key, and ChainRealizeOk would be false for that
+     witness, because Audit is relational and accepts any witness.
+   - Suggested extra condition: `app_subst_item sigma k' = app_subst_item sigma k`,
+     with keys as read at Cu with roles gen. Check it against
+     linked-copy-bracket.moss: F's `Array.length[I32 = Z]` vs Arrays'
+     `Array.length`. Z is fixed, and sigma reads it as I32 at the copy
+     site, so they should agree. Run the corpus comparison
+     (results4-cmp.sh style) before relying on it.
+   - The BFunCopy rule picks rm existentially and emits it.
+
+### Proofs (expected work)
+- Mechanical: every `FunctorClosure h sms dc` pattern or term gains
+  rms (~70 sites: PublicBodySlice ~22, PublicCopyApply, PublicChainCore,
+  PublicPlatformApply, PublicFamilyStep, PublicLinkResults,
+  PublicChainNew, PublicEntry, examples, PublicClosurePrototype).
+  Every BApply/BCopyFunctor term gains its field. ClosureOk's CCopy and
+  CopyChain's CCStep carry rm and the new CopyOutputs.
+- Becomes true by construction: the keys dr fills are exactly
+  `map (rkey_of C') ks`, by select_provisions/combine. This covers
+  ChainNewOk clause (a), so ChainKeysOk (PublicChainNew) goes, and
+  PublicPlatformApply's ChainForwardKeys plus PublicChainFwd's
+  ChainForwardCopyKeys go. What remains is a value/type premise: the
+  provision at `chain_sources ... [i]` in d3 realizes the caller's
+  provision for `ks[i]`. That is the ChainRealizeOk/ChainForwardAgrees
+  realization half. It now needs only ground-meaning agreement, which
+  chainfwd says holds (CapturedFuns, FixedMeans).
+- PublicPlatformApply's family selection proofs (`sm'`, `Filt`, `Inst`
+  around lines 540-575 and 960-990) are rebuilt for
+  `combine (map (rkey_of C') ks) (map (rkey_of outputs) keys)`.
+  `last_prim`/`installs_lookup` still give the existence of each source.
+- Remove `fc_roles` uses from the cff9949 restatements. Also remove
+  `role_subst_*` and `output_destination_map` (PublicChainNew) and the
+  two PublicSavedTypeExample role examples, or restate them.
+
+### Tests to add (bootstrap/examples, header comments)
+- `copy-extra-key.moss` (E32) must be accepted again and print 31 as
+  native does. The oracle prints 21 (E32 oracle bug).
+- `linked-copy-bracket.moss` (from ob-chainfwd; native 42, oracle stuck).
+- `output-merge-key.moss` and
+  tests/regressions/functor_input_output_generations.moss (native 7 and
+  `yn`; oracle stuck, E33/E06).
+- Oracle: no change. The oracle-relating proofs are untouched for the
+  same reason as in round 1.
