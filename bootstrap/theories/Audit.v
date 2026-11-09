@@ -4295,6 +4295,9 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     (* and H's result reads as F's (the oracle: output interpretation, D78) *)
     CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu ->
+    (* H's inputs, implicit ones too, are among F's (the oracle's input
+       interpretation check fails on one F lacks) *)
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are

@@ -72,3 +72,34 @@ copy and is unchanged).
 `ClosureOk`'s `CCopy` records it (`exists sg m, A.CopyOutputs W sg u h Cu /\
 gfx = ground_fixed m sg`); `case_BFunCopy` provides it (sg from fx, m the
 type meanings, by merge absorption). `closure_cases` is unchanged.
+
+# Audit change 2 by "copy": a copy's source takes no input its target lacks
+
+## What
+
+`Audit.v` `BFunCopy`, new last premise:
+
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None)
+
+H's inputs (its type table: explicit and implicit inputs) are among F's.
+`CCopy` records it.
+
+## Why (argument)
+
+`incl nsh nsu` covers H's explicit inputs only: implicit inputs (types only
+H's result mentions) are not needs. An application of F supplies θ for F's
+inputs only; `application_environment` reads a linked input of the root
+body that F lacks from the closure's captured meanings instead, so the
+proof could not read the root's context at the application's θ (the
+linked case's `link_entry` needs every linked input read from θ). The
+comment on BFunCopy already says "H's inputs are among F's".
+
+## Mirrors
+
+The oracle's `copy_output_compatible` (Elab.v) checks each entry of H's
+type table against F's formals and fails (`| None => false`, "its input
+interpretation differs (D78)") on one F lacks. So this rejects nothing
+the oracle accepts (assuming the oracle's functor env lists the same
+inputs as Audit's FunCtx table, implicit ones included). Corpus copies
+(bootstrap/examples/copy-*.moss, tests/wasi/*identity*copy*.moss) satisfy
+it: H's inputs are F's or a subset.

@@ -410,6 +410,13 @@ the local store. *C* and *F* are the static context and frame.
   roles, H's result gives each of F's keys F's provision, F's fixed inputs
   read as they are in force. Details and the remaining differences from
   the oracle's check: scratch/orch/copy-AUDIT.md.
+- **A copy's source takes no input its target lacks (now in Audit).**
+  `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
+  inputs (types only H's result mentions). An application of F reads its
+  root body's linked inputs from θ, which covers only F's inputs.
+  `BFunCopy` now requires H's type table to be among F's, as the oracle's
+  input interpretation check does (it fails on an input of H that F
+  lacks). Details: scratch/orch/copy-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 
