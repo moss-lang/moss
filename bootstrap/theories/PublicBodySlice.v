@@ -1139,17 +1139,46 @@ Proof.
   intros fx x t I. unfold A.fixed_app in I. apply in_map_iff in I as [[y v] [E I]]. cbn in E. injection E as -> ->. exact I.
 Qed.
 
+(* What a call reads of the callee's context. *)
+Definition CtxStatic (Cf : A.cx) (ns : list item) : Prop :=
+  TableFormed Cf /\ PublicContextFacts.canonical_context Cf /\ PublicCallRealize.KeysMatch (A.c_provisions Cf) /\
+  NoDup ns /\ (forall k p, In (k, p) (A.c_provisions Cf) -> In k ns) /\ (forall k, In k ns -> NeedShape k) /\
+  (forall k p, In (k, p) (A.c_provisions Cf) ->
+     incl (provision_sig_gens p) (map fst (A.c_ty Cf)) /\ incl (key_gens k) (map fst (A.c_ty Cf))) /\
+  (forall u fx, In (IFun u, A.ProvidedFunctor fx) (A.c_provisions Cf) ->
+     (forall x, A.Fixed W u x -> exists t, In (x, t) fx) /\ (forall x t, In (x, t) fx -> incl (A.gens t) (map fst (A.c_ty Cf)))).
+
+Lemma ctxof_static : forall f Cf ns, A.CtxOf W f Cf ns -> CtxStatic Cf ns.
+Proof.
+  intros f Cf ns Ctx. destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
+  split; [exact (ctx_table_formed W f Cf ns Ctx)|]. split; [exact (PublicContextFacts.function_context_canonical W f Cf ns Ctx)|].
+  split; [exact (ctx_keys_match W f Cf ns Ctx)|]. split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
+  split; [exact (ctx_provision_scoped W f Cf ns Ctx)|].
+  intros u fx I. destruct (ctx_fun_fixed W f Cf ns Ctx u fx I) as [Cov [Sc _]]. split; assumption.
+Qed.
+
+Lemma functx_static : forall u Cf ns, A.FunCtx W u Cf ns -> CtxStatic Cf ns.
+Proof.
+  intros u Cf ns FC. destruct (functx_scoped W u Cf ns FC) as [Can [Sc [KM [Nd [ProvNs [Shape Dom]]]]]].
+  split; [split; [exact Can|exact Dom]|]. split; [exact (PublicContextFacts.functor_context_canonical W u Cf ns FC)|].
+  split; [exact KM|]. split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
+  split; [intros k p I; destruct (Sc k p I) as [S1 [S2 _]]; split; assumption|].
+  intros u' fx I. split.
+  - exact (functx_fun_cover W u Cf ns FC u' fx I).
+  - intros x t It. exact (proj2 (proj2 (Sc _ _ I)) x t It).
+Qed.
+
 (* T03/T04: a call's selected provisions realize the callee's context. *)
-Lemma callee_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
-  Realizes n0 C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
+Lemma static_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
+  Realizes n0 C' d H -> CtxStatic Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
   exists dc, select_provisions d sm = Some dc /\
     Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
     Realizes n Cf (callee_env d th dc) H.
 Proof.
-  intros n0 n C d H f Cf ns sm th Le [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT.
+  intros n0 n C d H f Cf ns sm th Le [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] St Sat CT.
+  destruct St as [TfC [CanC [KMf [NdC [ProvC [ShapeC [ScC FixC]]]]]]].
   destruct Sat as [SmEq [Prov [Coh [Types _]]]].
-  destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
-  pose proof (ctx_keys_match W f Cf ns Ctx) as KMf.
+  pose proof NdC as Nd. pose proof ProvC as ProvNs. pose proof ShapeC as Shape.
   pose proof CT as [Keys [_ _]].
   (* the caller's provision of each need *)
   assert (Caller : forall k, In k ns -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k)) d = Some pv).
@@ -1183,9 +1212,9 @@ Proof.
       rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. apply GroundDe.
       intros x Ix. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
     - rewrite <- Abs, Er. symmetry. apply GroundDe. intros x Ix. apply Sc. apply in_or_app. left. exact Ix. }
-  split; [exact (call_agree W f Cf ns C th d Ctx CT Abs Idem)|].
-  split; [intros t; unfold ground; rewrite Meanings; exact (call_absorbs W f Cf ns C th d Ctx CT Abs t)|].
-  split; [|split; [exact (PublicContextFacts.function_context_canonical W f Cf ns Ctx)|exact KMf]].
+  split; [exact (call_agree_tf W f Cf C th d TfC CT Abs Idem)|].
+  split; [intros t; unfold ground; rewrite Meanings; exact (call_absorbs_tf W f Cf C th d TfC CT Abs t)|].
+  split; [|split; [exact CanC|exact KMf]].
   split; [|split; [|split]].
   - (* vals *) intros v tf Found.
     destruct (vals_ilook _ v tf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
@@ -1198,7 +1227,7 @@ Proof.
     assert (Sig' : A.sg_ret (A.canon_sig C (A.FSig [] tc)) = A.sg_ret (A.sig_at C th (A.FSig [] tf)))
       by (cbn [option_map A.provision_signature] in Sig; congruence).
     change (A.canon C tc = A.canon C (app_subst th tf)) in Sig'. clear Sig. rename Sig' into Sig.
-    destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens, A.sig_gens in Sc. cbn in Sc.
+    destruct (ScC _ _ InP) as [Sc _]. unfold provision_sig_gens, A.sig_gens in Sc. cbn in Sc.
     rewrite GroundDe; [|intros x Ix; apply Sc; rewrite app_nil_r; exact Ix].
     rewrite <- Sig, Abs. exact T.
   - (* fns *) intros f' gf Found.
@@ -1211,7 +1240,7 @@ Proof.
     exists pv. pose proof (Find (IFn f') Ik) as F'; cbn [A.rkey_of A.at_th A.mkey] in F'; rewrite F'. split; [exact Look|].
     assert (Sig' : A.canon_sig C gc = A.sig_at C th gf) by (cbn [option_map A.provision_signature] in Sig; congruence).
     clear Sig. rename Sig' into Sig.
-    destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
+    destruct (ScC _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
     destruct (SigGround gf gc Sc Sig) as [Ps R].
     exact (callable_transfer n0 n H d de _ _ _ _ pv Le Ps R Ok).
   - (* methods *) intros r m gf Found.
@@ -1224,7 +1253,7 @@ Proof.
     exists pv. pose proof (Find (A.mkey r m) Ik) as F'; cbn [A.rkey_of A.at_th A.mkey] in F'; rewrite F'. split; [exact Look|].
     assert (Sig' : A.canon_sig C gc = A.sig_at C th gf) by (cbn [option_map A.provision_signature] in Sig; congruence).
     clear Sig. rename Sig' into Sig.
-    destruct (ctx_provision_scoped W f Cf ns Ctx _ _ InP) as [Sc Kr]. unfold provision_sig_gens in Sc. cbn in Sc, Kr.
+    destruct (ScC _ _ InP) as [Sc Kr]. unfold provision_sig_gens in Sc. cbn in Sc, Kr.
     destruct (SigGround gf gc Sc Sig) as [Ps R].
     apply (callable_transfer n0 n H d de (A.canon C (app_subst th r) :: A.sg_params gc) (r :: A.sg_params gf)
       (A.sg_ret gc) (A.sg_ret gf) pv Le); [|exact R|exact Ok].
@@ -1239,13 +1268,22 @@ Proof.
     destruct (Funs u fx' L) as [pv [gfx [Look' [Ok Fm]]]]. exists pv, gfx.
     pose proof (Find (IFun u) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'. split; [exact Look'|].
     split; [exact (proj1 (closure_lower n0 n H H Le (fun a c L => L)) _ _ _ Ok)|].
-    destruct (ctx_fun_fixed W f Cf ns Ctx u fx InP) as [Cov [Sc _]]. split; [exact Cov|].
+    destruct (FixC u fx InP) as [Cov Sc]. split; [exact Cov|].
     intros x tf Ixt.
     assert (Ia : A.ilook (IFun u) (A.c_apps Cf) = Some (A.fixed_app fx)) by (apply ilook_apps_fun; exact Il).
     assert (Ic : A.ilook (IFun u) (A.c_apps C) = Some (A.fixed_app fx')) by (apply ilook_apps_fun; exact (funs_ilook _ u fx' KM L)).
     pose proof (Coh (IFun u) _ Ik Ia x tf (fixed_app_in _ _ _ Ixt)) as Have. cbn [A.at_th] in Have. rewrite Ic in Have.
     apply fixed_app_out in Have. destruct Fm as [_ Vm]. rewrite (Vm x _ Have).
     f_equal. symmetry. apply GroundDe. exact (Sc x tf Ixt).
+Qed.
+
+Lemma callee_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
+  Realizes n0 C' d H -> A.CtxOf W f Cf ns -> A.Satisfies C' Cf th ns sm -> A.CallTheta W C' Cf f th ->
+  exists dc, select_provisions d sm = Some dc /\
+    Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
+    Realizes n Cf (callee_env d th dc) H.
+Proof.
+  intros n0 n C d H f Cf ns sm th Le Real Ctx. exact (static_realizes_le n0 n C d H f Cf ns sm th Le Real (ctxof_static f Cf ns Ctx)).
 Qed.
 
 Lemma callee_realizes : forall n C' d H f Cf ns sm th,
@@ -2828,7 +2866,7 @@ Proof.
   change (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) with (captured nsu nsg) in SatC.
   pose proof SatC as SatC'. set (caps := captured nsu nsg) in *.
   destruct SatC as [SmEq [Prov [Coh [Types _]]]].
-  destruct (functx_scoped W gg Cg nsg FCg) as [CanG [ScG [KMg [NdG [ProvNsG ShapeG]]]]].
+  destruct (functx_scoped W gg Cg nsg FCg) as [CanG [ScG [KMg [NdG [ProvNsG [ShapeG _]]]]]].
   assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ ~ In k0 nsu).
   { intros k0 I. unfold caps, captured in I. apply filter_In in I as [I E]. split; [exact I|].
     intros I'. apply negb_true_iff in E. rewrite (proj2 (existsb_exists _ _) (ex_intro _ k0 (conj I' (proj2 (item_eqb_spec _ _) eq_refl)))) in E.

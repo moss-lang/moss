@@ -224,6 +224,16 @@ Section Calls.
 Variable W : A.world.
 Import A.
 
+(* What the call lemmas read of a callee's context: its table is canonical
+   self-reference and its merge maps only its keys, to types over them. *)
+Definition TableFormed (Cf : cx) : Prop :=
+  (forall k v, nlook k (c_ty Cf) = Some v -> v = app_subst (c_sub Cf) (TAbs k)) /\
+  (forall g t, In (g, t) (c_sub Cf) -> In g (map fst (c_ty Cf)) /\ incl (gens t) (map fst (c_ty Cf))).
+
+
+Lemma ctx_table_formed : forall f Cf ns, CtxOf W f Cf ns -> TableFormed Cf.
+Proof. intros f Cf ns Ctx. exact (ctxof_formed W f Cf ns Ctx). Qed.
+
 Definition callee_meanings (d : environment) (th : subst) : subst :=
   map (fun q => (fst q, ground d (snd q))) th.
 
@@ -246,40 +256,40 @@ Lemma callee_ground : forall d th t,
   app_subst (callee_meanings d th) t = ground d (app_subst th t).
 Proof. intros d th t Dom. exact (subst_through t (type_meanings d) th Dom). Qed.
 
-Lemma merge_image_dom : forall f Cf ns th x,
-  CtxOf W f Cf ns -> map fst th = map fst (c_ty Cf) ->
+Lemma merge_image_dom_tf : forall Cf th x,
+  TableFormed Cf -> map fst th = map fst (c_ty Cf) ->
   In x (map fst (c_ty Cf)) -> forall y, In y (gens (app_subst (c_sub Cf) (TAbs x))) -> lookup_subst y th <> None.
 Proof.
-  intros f Cf ns th x Ctx Keys Ix y Iy. apply lookup_subst_in. rewrite Keys.
-  destruct (ctxof_formed W f Cf ns Ctx) as [_ Dom]. cbn in Iy.
+  intros Cf th x [_ Dom] Keys Ix y Iy. apply lookup_subst_in. rewrite Keys.
+  cbn in Iy.
   destruct (lookup_subst x (c_sub Cf)) as [t|] eqn:L.
   - apply lookup_subst_in_pair in L. exact (proj2 (Dom x t L) y Iy).
   - destruct Iy as [<-|[]]. exact Ix.
 Qed.
 
-Lemma merged_meaning : forall f Cf ns C th d x,
-  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
+Lemma merged_meaning_tf : forall f Cf C th d x,
+  TableFormed Cf -> CallTheta W C Cf f th ->
   (forall t, ground d (canon C t) = ground d t) ->
   In x (map fst (c_ty Cf)) ->
   app_subst (callee_meanings d th) (app_subst (c_sub Cf) (TAbs x)) = ground d (app_subst th (TAbs x)).
 Proof.
-  intros f Cf ns C th d x Ctx [Keys [_ Merges]] Abs Ix.
-  rewrite callee_ground by exact (merge_image_dom f Cf ns th x Ctx Keys Ix).
+  intros f Cf C th d x Tf [Keys [_ Merges]] Abs Ix.
+  rewrite callee_ground by exact (merge_image_dom_tf Cf th x Tf Keys Ix).
   replace (app_subst (c_sub Cf) (TAbs x)) with
     (match lookup_subst x (c_sub Cf) with Some t => t | None => TAbs x end) by reflexivity.
   destruct (lookup_subst x (c_sub Cf)) as [t|] eqn:L; [|reflexivity].
   apply lookup_subst_in_pair in L. rewrite <- (Abs (app_subst th t)), <- (Merges x t L), Abs. reflexivity.
 Qed.
 
-Theorem call_agree : forall f Cf ns C th d,
-  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
+Theorem call_agree_tf : forall f Cf C th d,
+  TableFormed Cf -> CallTheta W C Cf f th ->
   (forall t, ground d (canon C t) = ground d t) -> (forall t, canon C (canon C t) = canon C t) ->
   Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
 Proof.
-  intros f Cf ns C th d Ctx CT Abs Idem k v1 v2 L1 L2.
-  destruct (ctxof_formed W f Cf ns Ctx) as [Form _]. rewrite (Form k v1 L1).
+  intros f Cf C th d Tf CT Abs Idem k v1 v2 L1 L2.
+  pose proof Tf as [Form _]. rewrite (Form k v1 L1).
   assert (Ik : In k (map fst (c_ty Cf))) by (apply nlook_in in L1; change k with (fst (k, v1)); apply in_map, L1).
-  rewrite (merged_meaning f Cf ns C th d k Ctx CT Abs Ik).
+  rewrite (merged_meaning_tf f Cf C th d k Tf CT Abs Ik).
   destruct CT as [Keys [Bound _]].
   assert (Th : lookup_subst k th = Some (canon C v2)).
   { rewrite (Bound k Ik ltac:(congruence)). cbn. rewrite lookup_subst_nlook', L2. reflexivity. }
@@ -287,21 +297,45 @@ Proof.
   rewrite <- (Abs v2). reflexivity.
 Qed.
 
-Theorem call_absorbs : forall f Cf ns C th d,
-  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
+Theorem call_absorbs_tf : forall f Cf C th d,
+  TableFormed Cf -> CallTheta W C Cf f th ->
   (forall t, ground d (canon C t) = ground d t) ->
   forall t, app_subst (callee_meanings d th) (canon Cf t) = app_subst (callee_meanings d th) t.
 Proof.
-  intros f Cf ns C th d Ctx CT Abs t. unfold canon. rewrite <- (app_subst_nil t) at 2.
+  intros f Cf C th d Tf CT Abs t. unfold canon. rewrite <- (app_subst_nil t) at 2.
   apply subst2_agree. intros x Ix. rewrite app_subst_nil.
   destruct (lookup_subst x (c_sub Cf)) as [u|] eqn:L.
   2: { replace (app_subst (c_sub Cf) (TAbs x)) with (TAbs x) by (cbn; rewrite L; reflexivity). reflexivity. }
   pose proof (lookup_subst_in_pair _ _ _ L) as InL.
-  destruct (ctxof_formed W f Cf ns Ctx) as [_ Dom]. destruct (Dom x u InL) as [Ix' _].
-  pose proof (merged_meaning f Cf ns C th d x Ctx CT Abs Ix') as M.
+  pose proof Tf as [_ Dom]. destruct (Dom x u InL) as [Ix' _].
+  pose proof (merged_meaning_tf f Cf C th d x Tf CT Abs Ix') as M.
   rewrite M. destruct CT as [Keys _].
   rewrite callee_ground; [reflexivity|]. intros y [<-|[]]. apply lookup_subst_in. rewrite Keys. exact Ix'.
 Qed.
+
+Lemma merge_image_dom : forall f Cf ns th x,
+  CtxOf W f Cf ns -> map fst th = map fst (c_ty Cf) ->
+  In x (map fst (c_ty Cf)) -> forall y, In y (gens (app_subst (c_sub Cf) (TAbs x))) -> lookup_subst y th <> None.
+Proof. intros f Cf ns th x Ctx. exact (merge_image_dom_tf Cf th x (ctx_table_formed f Cf ns Ctx)). Qed.
+
+Lemma merged_meaning : forall f Cf ns C th d x,
+  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
+  (forall t, ground d (canon C t) = ground d t) ->
+  In x (map fst (c_ty Cf)) ->
+  app_subst (callee_meanings d th) (app_subst (c_sub Cf) (TAbs x)) = ground d (app_subst th (TAbs x)).
+Proof. intros f Cf ns C th d x Ctx. exact (merged_meaning_tf f Cf C th d x (ctx_table_formed f Cf ns Ctx)). Qed.
+
+Theorem call_agree : forall f Cf ns C th d,
+  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
+  (forall t, ground d (canon C t) = ground d t) -> (forall t, canon C (canon C t) = canon C t) ->
+  Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
+Proof. intros f Cf ns C th d Ctx. exact (call_agree_tf f Cf C th d (ctx_table_formed f Cf ns Ctx)). Qed.
+
+Theorem call_absorbs : forall f Cf ns C th d,
+  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
+  (forall t, ground d (canon C t) = ground d t) ->
+  forall t, app_subst (callee_meanings d th) (canon Cf t) = app_subst (callee_meanings d th) t.
+Proof. intros f Cf ns C th d Ctx. exact (call_absorbs_tf f Cf C th d (ctx_table_formed f Cf ns Ctx)). Qed.
 End Calls.
 
 (* ---- provision tables ------------------------------------------------------ *)
@@ -642,7 +676,8 @@ Theorem functx_scoped : forall u C ns, FunCtx W u C ns ->
      incl (provision_sig_gens p) (map fst (c_ty C)) /\ incl (key_gens k) (map fst (c_ty C)) /\
      match p with ProvidedFunctor fx => forall x t, In (x, t) fx -> incl (gens t) (map fst (c_ty C)) | _ => True end) /\
   KeysMatch (c_provisions C) /\
-  NoDup ns /\ (forall k p, In (k, p) (c_provisions C) -> In k ns) /\ (forall k, In k ns -> NeedShape k).
+  NoDup ns /\ (forall k p, In (k, p) (c_provisions C) -> In k ns) /\ (forall k, In k ns -> NeedShape k) /\
+  (forall g t, In (g, t) (c_sub C) -> In g (map fst (c_ty C)) /\ incl (gens t) (map fst (c_ty C))).
 Proof.
   intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & [Nd Keys] & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
@@ -655,7 +690,7 @@ Proof.
   destruct MGM as [_ [_ [_ Dom]]].
   assert (Range : forall g t, In (g, t) σ -> incl (gens t) (map fst tmr)).
   { intros g t I x Ix. exact (All x (proj2 (Dom g t I) x Ix)). }
-  split; [|split; [|split; [|split; [exact Nd|split]]]].
+  split; [|split; [|split; [|split; [exact Nd|split; [|split]]]]].
   - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
     rewrite nlook_smap in Found. destruct (nlook k tmr) as [v0|] eqn:L; [|discriminate].
     injection Found as <-. rewrite (idform_nlook _ _ _ IdR L). reflexivity.
@@ -679,6 +714,18 @@ Proof.
   - intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]]. apply Keys. exists e. split; [exact Ie|].
     exact (entry_provision_key _ _ _ _ _ I).
   - intros k Ik. destruct (proj1 (Keys k) Ik) as [e [_ E]]. exact (entry_key_shape _ _ _ E).
+  - rewrite KeysE. intros g t I. cbn in I. destruct (Dom g t I) as [Gg Gt].
+    split; [exact (All g Gg)|intros x Ix; exact (All x (Gt x Ix))].
+Qed.
+Theorem functx_fun_cover : forall u C ns, FunCtx W u C ns -> forall u' fx, In (IFun u', ProvidedFunctor fx) (c_provisions C) ->
+  forall x, Fixed W u' x -> exists t, In (x, t) fx.
+Proof.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _) u' fx I.
+  pose proof (proj2 entries_cover _ _ _ _ _ _ IE) as Cov. cbn in I. apply in_flat_map in I as [e [Ie I]].
+  pose proof (proj1 (Forall_forall _ _) Cov e Ie) as Ce.
+  destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx0]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
+  injection E as <- <-. cbn in Ce. destruct Ce as [Cv _]. intros x Fx. destruct (Cv x Fx) as [t It].
+  exists (app_subst σ t). unfold fixed_subst. apply in_map_iff. exists (x, t). split; [reflexivity|exact It].
 Qed.
 End Support2.
 
