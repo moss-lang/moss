@@ -4,8 +4,7 @@
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
-  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
-  PublicRefile.
+  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -14,10 +13,7 @@ Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
 Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
-(* The slice, as the refile proof instantiates it (one copy, so that its
-   chains are the ones refile_run_ok speaks of). *)
-Module RF := PublicRefile.Refile M.ReferenceHost M.Reference.
-Module S := RF.S.
+Module S := BodySlice M.ReferenceHost M.Reference.
 
 Section Entry.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -395,7 +391,7 @@ Theorem safety_obligations : forall prelude,
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg)) /\
      S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
-     RF.RefileShadowOk W Prog argv read so /\ S.LinkResultsOk W Prog argv read so /\
+     S.LinkResultsOk W Prog argv read so /\
      S.CopyApplyOk W Prog argv read so /\ S.PlatformApplyOk W Prog argv read so) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
@@ -404,12 +400,12 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [[Mf [Mt Fs]] [Handles [FSt [LM [BM [CIF [RR [LR [CA PA]]]]]]]]].
+    as [[Mf [Mt Fs]] [Handles [FSt [LM [BM [CIF [LR [CA PA]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   split; [|split; [split; assumption|exact Handles]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF (RF.refile_run_ok W Prog _ _ _ RR) LR CA PA).
+    (ex_intro _ bundle Wo) LM BM CIF LR CA PA).
 Qed.
 
 End EntrySafety.

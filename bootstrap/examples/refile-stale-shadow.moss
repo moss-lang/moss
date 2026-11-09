@@ -1,13 +1,15 @@
-# Refile shadows a stale provision (RefileRunOk is false as stated).
+# Refile shadowed a stale provision (Audit change; RefileRunOk was false).
 # F promises `T.out` for its output T; G's body binds `T.out` while T is
-# still G's input (receiver TAbs T), then `Int.out`, then T = Int. LinkBody
-# refiles `Int.out` under F's key for T.out, `IMth (TAbs T) out []`, right
-# after its bind; that is also the runtime key of the stale `T.out` the
-# body's context still lists. `seed.out()` (seed: T = Bool at run time) then
-# runs `Int.out` with a Bool receiver: the reference interpreter on the
-# oracle's program stops Stuck (`moss_ref: stuck (XErr 14)`; with
-# `() => 8` instead it prints 8), native prints 7. The caller's `T.out`
-# is `Int.out` in both (see scratch/orch/refile-STATUS.md).
+# still G's input (receiver TAbs T), then `Int.out`, then T = Int. The old
+# LinkBody refiled `Int.out` under F's key for T.out, `IMth (TAbs T) out []`,
+# right after its bind; that is also the runtime key of the stale `T.out`
+# the body's context still lists. `seed.out()` (seed: T = Bool at run time)
+# then runs `Int.out` with a Bool receiver: the reference interpreter on the
+# oracle's program stops Stuck (`moss_ref: stuck (XErr 14)`; with `() => 8`
+# instead it prints 8), native prints 7. Audit now runs the body's own binds
+# and reads F's `T.out` from the body's key `Int.out` when selecting the
+# result (fc_sources), as native does; the caller's `T.out` is `Int.out` in
+# both implementations. The oracle's fix is task E31.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

@@ -27,7 +27,7 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the formation premises, `HandleFormed`, and the functor and
 family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileShadowOk` (which gives `RefileRunOk`), `LinkResultsOk`, `CopyApplyOk`,
+`CapturedInForceOk`, `LinkResultsOk`, `CopyApplyOk`,
 `PlatformApplyOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
@@ -94,7 +94,7 @@ the local store. *C* and *F* are the static context and frame.
 | `apply_functor` | `e_fun` (13), `e_nobody` (4) | no closure for `IFun u`, or no code | `BApplyAbstract`, `PrFamily`/`Demand` (`apply_expression`) | `nlook u (c_funs C)`, plus closure provenance (`LinkBody`'s `funbody_of`, or `PEFun`/`Platform.Family`). |
 | `apply_functor` | `e_compose` (3) | input `sm` selection fails | same | `Satisfies C Cu ns sm`. |
 | `apply_functor` | `e_chain` (8) | `adapt_provisions` along a copy chain fails | `BFunCopy` smaps over `incl nsh nsu` | Copy-chain provenance: each `sms` step selects keys provided by the previous step (T31, "link/copy-chain provenance"). |
-| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every refiled result key (T15/T16). |
+| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every result item at its source key (`fc_sources`, T15/T16). |
 | `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable or its destination is occupied | `BApplyAbstract` `FreshFor` and the output clauses | Fresh destinations are absent from the caller's runtime `type_meanings` (T16). Needs runtime generations ⊆ static `context_gens`. |
 | primitive call | `e_missing_primitive` (15) | `supports interface p = false` | `BPrimitive`, platform entries, `Platform.Family` bodies | `Compatible` requires every operation in `required_primitives`. Invariant: every runtime `PrimitiveClosure` came from program code or the initial environment. |
 | primitive result | interface laws | ill-shaped arguments, or a missing `gc_pre` | `AtKey`/`PrimitiveSignature`, `MethodPrimitive` | Arguments typed at the signature yield `value_shape` (T11); GC arguments satisfy `gc_pre` under the ghost heap (T17). |
@@ -397,22 +397,23 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
-- **Refile can shadow a stale provision (open).** `LinkBody` files a
-  result method again under F's key right after its bind (`refile`). F's
-  key spells an output T as `TAbs T`; when T is also an input of G, the
-  body can bind `T.out` before rebinding T, and that stale provision has
-  the same runtime key. [examples/refile-stale-shadow.moss](examples/refile-stale-shadow.moss)
+- **Refile shadowed a stale provision (now in Audit: no refile).**
+  `LinkBody` used to file each result method again under F's key right
+  after its bind (`refile`). F's key spells an output T as `TAbs T`; when
+  T is also an input of G, the body can bind `T.out` before rebinding T,
+  and that stale provision has the same runtime key.
+  [examples/refile-stale-shadow.moss](examples/refile-stale-shadow.moss)
   binds `T.out`, then `Int.out`, then `T = Int`, and calls `seed.out()`
   in between: the reference interpreter on the oracle's program stops
-  `Stuck` (`Int.out` on a Bool), native prints 7. So `RefileRunOk` is
-  false for an accepted program. [PublicRefile.v](theories/PublicRefile.v)
-  proves `RefileRunOk` from `RefileShadowOk` (`refile_run_ok`): every
-  chain of a linked body leaves, after each method bind, no provision
-  under one of refile's extra keys. No Audit change yet: forbidding the
-  pattern rejects a program native accepts, and installing the aliases
-  after the body (as native behaves) changes the oracle's refile, which
-  `LinkBodySound`'s certificate equates with Audit's. Details in
-  scratch/orch/refile-STATUS.md.
+  `Stuck` (`Int.out` on a Bool), native prints 7, so `RefileRunOk` was
+  false. Now, as native behaves, a linked body runs only its own binds
+  (`binds0`), and `functor_code` names each result item's source key
+  (`fc_sources`, default the item itself): the application selects
+  `result_smap θ' Dr sources`, reading F's key for a result method from
+  the body's runtime key `rkey_of Cb (at_site Cb (output_renaming outs gen k))`.
+  `RefileRunOk` and `refile_run` are gone; `app_step` runs the body with
+  `chain_run`. The oracle still refiles at bind time (task E31).
+  Details in scratch/orch/refile-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 
@@ -433,8 +434,7 @@ hypotheses, each a named remaining obligation:
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
 | `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it | T15, T16 |
-| `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does. Proved from `RefileShadowOk` ([PublicRefile.v](theories/PublicRefile.v) `refile_run_ok`; `safety_obligations` now takes `RefileShadowOk`): after each method bind no provision of the context is filed under one of refile's extra keys. False for examples/refile-stale-shadow.moss | T15 |
-| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
+| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |

@@ -77,7 +77,8 @@ Definition compiled_apply (fuel : nat) (d : environment) (u : usym) (th : subst)
                   | Some d2 =>
                       match body k (application_environment P d h th (append_environment d2 dc)) [] st with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (inst_smap (result_substitution th destinations) outputs) with
+                          match select_provisions d3 (result_smap (result_substitution th destinations) outputs
+                                  (match view_functor P h with Some code => fc_sources code | None => [] end)) with
                           | Some dr =>
                               match result_environment d destinations d3 outputs dr with
                               | Some delta => inl (delta, st3)

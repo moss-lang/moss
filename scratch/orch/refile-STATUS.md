@@ -1,106 +1,50 @@
-# refile: status of `RefileRunOk`
+# refile: status
 
-## Verdict
+## Outcome
 
-`RefileRunOk` is false for a program both implementations accept, so it
-cannot be proved for the current Audit. I proved it from a sharper
-condition, `RefileShadowOk`, and `safety_obligations` now takes that
-condition in place of `RefileRunOk`. Audit.v is unchanged: each fix I
-found breaks a rule (see "Fix options"), so the choice is left to the
-orchestrator.
+`RefileRunOk` was false, and it is now removed rather than proved. Audit
+behaves like native: a linked body runs only its own binds, and the
+result is selected from the body's own keys (scratch/orch/refile-AUDIT.md).
+`app_step` runs the body directly with `chain_run`. `safety_obligations`
+has one fewer obligation, and check.sh passes.
 
-## Counterexample
+## How result selection works now (for LinkResultsOk / ob-results and ob-platform)
 
-`bootstrap/examples/refile-stale-shadow.moss`. F is `Std, T, seed -> T,
-T.out, r`. G has the same context and result, and its body is:
+- Functor code has `fc_sources : list (item * item)`.
+- `apply_functor`, after running `fc_bindings code` to d3, selects
+  `select_provisions d3 (result_smap θ' (fc_outputs code) (fc_sources code))`
+  where `θ' = result_substitution th outputs` and
+  `result_smap θ' D src = map (fun q => (fst q, source_key src (snd q))) (inst_smap θ' D)`.
+  Each non-type item i of D gives the entry `(app_subst_item θ' i, source_key src i)`.
+  The caller's key is i read at θ', and it is looked up in d3 under `source_key src i`.
+  `source_key` returns the first pair whose left side is `item_eqb`-equal to i, else i itself.
+- `result_environment d outputs d3 Dr dr` is unchanged.
+- Linked body (LinkBody / `S.LinkData`): `fc_outputs = map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks`,
+  `fc_bindings = binds0`, and `fc_sources = S.link_sources Cb outs gen Cr ks`, which is
+  `map (fun k => (output_renaming outs gen (rkey_of Cr k), rkey_of Cb (at_site Cb (output_renaming outs gen k)))) ks`.
+  - For a method k, the source is the body's runtime key `rkey Cb r m` of its receiver read in the body. EnvOk at Cb finds that key in d3, since ResultRealizes gives the method in `c_provisions Cb`.
+  - For vals, fns and functors, `at_site`, `output_renaming` and `rkey_of` leave the key unchanged (up to the renaming of output types, which these keys do not mention).
+- Lemmas in PublicBodySlice:
+  - `result_smap_in`: an entry (a, b) comes from some i ∈ D with `is_ty_item i = false`, `a = app_subst_item θ' i` and `b = source_key src i`.
+  - `link_source_of`: for k ∈ ks, there is a k' ∈ ks with the same F-key such that
+    `source_key (link_sources ...) (F-key k) = rkey_of Cb (at_site Cb (output_renaming outs gen k'))`.
+    This is the first such k'. Distinct ks with the same F-key are possible only if the keys coincide.
+- `LinkResultsOk` now assumes `I.eval_bindings j' P de [] st binds0 = inl (d3, g3, st3)`
+  and concludes with `select_provisions d3 (result_smap ... (link_sources Cb outs' gen Cr ks')) = Some dr`.
+- Platform families (`Family`): `fc_sources = []`, so every output is read under its own key.
 
-    bind T.out = () => 7;          # receiver TAbs T: T is still G's input
-    bind Int.out = () => this + 1; # the body's T.out once T = Int
-    bind r = seed.out();           # seed: T, Bool at run time
-    bind T = Int;
+## Commits on ob-refile
 
-LinkBody's pairs map the body key `IMth Int out` to F's key
-`IMth (TAbs T) out []`. Right after `Int.out`, `refile` installs
-`Int.out`'s closure under F's key. That is also the runtime key of the
-first, stale `T.out`, which the context still lists (EnvOk requires it at
-receiver T). `seed.out()` then runs `Int.out` on a Bool.
-
-- oracle + reference interpreter (`moss_m2.exe FILE`):
-  `[moss_ref: stuck (XErr 14)]`. With `() => 8` in place of
-  `this + 1`, it prints 8, which shows the call reaches the refiled
-  closure.
-- native (`moss run`, moss-safety's binary, with lib imports pointing at
-  moss-safety/lib): prints 7.
-- In variant v4 (scratch/refile/v4.moss), the caller calls `made.out()`
-  after `bind F`. Both implementations print 6, so the caller's `T.out` is
-  `Int.out` in both. Native therefore files the result under F's key too,
-  but the alias is not visible inside the body.
-
-## What is proved (bootstrap/theories/PublicRefile.v, functor `Refile`)
-
-- `refile_extras`, `refile_split`: `A.refile pairs b = b :: refile_extras pairs b`.
-- `NoShadow pairs b C1`: no method provision of C1 has a runtime key
-  (`A.rkey C1 r m`) equal to one of b's extra keys. `RChain` is `S.Chain`
-  with `NoShadow` for the context each step leaves, and `rchain_chain`
-  forgets that extra condition.
-- `refile_rchain_run`: the analogue of chain_run over
-  `flat_map (A.refile pairs) bs`. The run either completes in the chain's
-  last context, with `Pre`, a heap extension and `MeaningsGrow`, or stops
-  with an Outcome. Helper lemmas:
-  - `realizes_install_free` and `pre_install_free`: an install under a
-    free method key keeps `Realizes` and `Pre`.
-  - `select_install`: a capture selection survives an install.
-  - `extras_run`: runs the extra installs.
-
-  The method step's resulting environment is read off the step's own run
-  with an empty rest, which gives `install (IMth t m th) clo d`.
-- `RefileShadowOk` (the remaining obligation): for `LinkData` and any
-  `Chain` of the body, the chain is an `RChain` for the refile pairs.
-- `refile_run_ok : RefileShadowOk -> S.RefileRunOk`.
-- PublicEntry: `Module RF := PublicRefile.Refile ...; Module S := RF.S`, so
-  there is one slice instance, because chains are inductives.
-  `safety_obligations` takes `RF.RefileShadowOk` in place of
-  `S.RefileRunOk`. Certificate.v roots now include `refile_run_ok` and
-  `refile_rchain_run`.
+- 2a9a80f: the example.
+- 0afa8e7: the first approach, PublicRefile.v with `RefileShadowOk`, now superseded.
+- The final commit: the Audit change, the slice and entry update, the
+  deletion of PublicRefile.v, E31 in proof-plan.json, and the docs.
 
 ## Not done
 
-- The results lemma: the F-view key found in d3 with the method's closure.
-  It does not follow from an abstract chain. Later steps (another method
-  bind or a nested BApply) are known only through `BindStep`, which says
-  nothing about keys their context does not list, so they may overwrite
-  either key. The extra installs also re-select `sm` after the bind's own
-  install. If `sm` selects the bind's own key, the extra closure's capture
-  differs from the bind's. Stating that lemma needs a frame condition on
-  steps (the keys a step writes), which `BindStep` does not carry.
-- `RefileShadowOk` itself. It is false for the example above, so an Audit
-  fix comes first. Even after a fix, it quantifies over arbitrary chains,
-  whose intermediate contexts are constrained only by being realized. A
-  proof would need either the slice to build an `RChain` directly in
-  `item_chain`, with the `NoShadow` fact at each method bind taken from a
-  LinkBody premise over the body's contexts, or a parametricity argument:
-  remove the key from `d`, and since nothing writes it, no realized
-  context can list it.
-
-## Fix options (Audit), for the orchestrator
-
-1. A LinkBody premise forbidding the shadow: no provision of the body's
-   contexts has a refiled F-view key as its runtime key, except the
-   method's own. This mirrors nothing either implementation checks, and it
-   rejects the example, which native accepts and runs correctly
-   (rule 2 says not to do that). It is the smallest change, and it fits
-   the existing `link_output_certificate`: add a conjunct there.
-2. Install the aliases after the body instead of after each bind, for
-   example with a binding that copies a provision from one key to
-   another. This matches native, and the body never sees F's keys. But
-   the oracle's `link_trace_rebinds` refiles at bind time, and
-   LinkBodySound's certificate equates the two, so the oracle would need
-   the same change. Pre at Cb would also still need the stale provision's
-   signature to agree with the alias at the end, or a Cb-only premise.
-3. "Refile only when the key is new" is unsound. The caller would then
-   select the stale `T.out`, which is typed at G's input T and not at the
-   output.
+- The oracle fix (E31). The oracle's `link_trace_rebinds` still refiles at bind time.
+- `LinkResultsOk` itself. That is the results agent's task.
 
 ## Time
 
-About 2h15m (the investigation and counterexample took about 1h15m).
+About 3h in total.
