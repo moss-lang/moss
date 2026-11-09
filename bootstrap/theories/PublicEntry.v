@@ -191,16 +191,17 @@ Lemma entry_pre : forall n F C ns g types platform H0 st0,
   PublicFormation.MergeFormed W -> PublicFormation.MentionsTyped W ->
   A.CtxOf W (program_main Prog) C ns -> FrameOk F -> A.fr_this F = None ->
   A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
-  state_ok H0 st0 -> S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
+  state_ok H0 st0 -> A.InitialTypes W C types -> S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
   S.Pre W Prog argv read state_ok n F C (Environment types platform) [] H0 [] st0.
 Proof.
-  intros n F C ns g types platform H0 st0 Mf Mt Ctx Frame This Ret Sig St Real.
+  intros n F C ns g types platform H0 st0 Mf Mt Ctx Frame This Ret Sig St Types Real.
   destruct (PublicFormation.fn_body_formed W _ C ns None g [] Mf Mt Ctx Sig (PublicFormation.optok_none W)) as [Sg Fc].
   split; [exact Frame|]. split; [split|split; [apply Forall2_nil|split; [exact St|split; [exact Real|]]]].
   3: { split; [exact Fc|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite This; apply PublicFormation.optok_none]. }
   - intros m t mu Found. rewrite (S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
-  - split; [intros t E; congruence|]. apply S.alias_none; [reflexivity|exact (proj1 Real)|].
-    exact (proj1 (ctxof_formed W _ C ns Ctx)).
+  - split; [intros t E; congruence|]. apply S.alias_none; [reflexivity|exact (proj1 Real)| |].
+    + exact (proj1 (ctxof_formed W _ C ns Ctx)).
+    + unfold A.InitialTypes in Types. subst types. exact (S.keys_meant_map C _ (A.c_ty C) eq_refl).
 Qed.
 End Entry.
 
@@ -337,7 +338,7 @@ Proof.
   - exact MainDecl.
   - intros C0 ns0 Ctx0 F g Frame This Ret Sig.
     destruct (function_context_unique Wd _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
-    apply (entry_pre Wd Prog _ _ _ fuel F C ns g types platform H0 _ Mf Mt Ctx Frame This Ret Sig St).
+    apply (entry_pre Wd Prog _ _ _ fuel F C ns g types platform H0 _ Mf Mt Ctx Frame This Ret Sig St Types).
     apply (entry_realizes Wd Prog _ _ _ fuel C ns types platform H0 Ctx Types Keys Entries).
     intros f op sg Ip Found At. exact (Prims fuel C ns types platform Ctx Types Env f op sg Ip Found At).
 Qed.

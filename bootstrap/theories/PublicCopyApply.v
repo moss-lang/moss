@@ -377,8 +377,11 @@ Proof.
          split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
     - intros n1 t mu Found. rewrite (S.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply S.alias_self; [reflexivity|exact (proj1 RealG)|].
-      destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
+    - apply S.alias_self; [reflexivity|exact (proj1 RealG)| |].
+      + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
+      + intros k0 v0 L0. unfold de, application_environment. change (view_functor P code) with (A.funbody_of Prog code).
+        rewrite FB. cbn [type_meanings fc_inputs]. rewrite S.lookup_map_nat; [discriminate|].
+        change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
   intros rest. rewrite S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }

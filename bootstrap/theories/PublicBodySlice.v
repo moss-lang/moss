@@ -1170,11 +1170,16 @@ Qed.
 
 (* An environment whose aliases are its meanings reads a canonical type
    table in its aliases. *)
+(* Every symbol of the type table has a meaning in d. *)
+Definition KeysMeant (C : A.cx) (d : environment) : Prop :=
+  forall k v, A.nlook k (A.c_ty C) = Some v -> lookup_subst k (type_meanings d) <> None.
+
 Lemma alias_self : forall C d, type_aliases d = type_meanings d -> Absorbs C d ->
-  (forall k v, A.nlook k (A.c_ty C) = Some v -> v = A.canon C (TAbs k)) -> AliasOk C d.
+  (forall k v, A.nlook k (A.c_ty C) = Some v -> v = A.canon C (TAbs k)) -> KeysMeant C d -> AliasOk C d.
 Proof.
-  intros C d Al Abs Can x tx L. rewrite (Can x tx L). rewrite (Abs (TAbs x)).
-  unfold cmeaning, output_meaning. rewrite Al. unfold ground. cbn. destruct (lookup_subst x (type_meanings d)); reflexivity.
+  intros C d Al Abs Can Km x tx L. rewrite (Can x tx L). rewrite (Abs (TAbs x)).
+  unfold output_meaning. rewrite Al. unfold ground. cbn.
+  destruct (lookup_subst x (type_meanings d)) eqn:E; [reflexivity|exfalso; exact (Km x tx L E)].
 Qed.
 
 (* The body of a defined plain function, entered with a realized context and
@@ -1182,14 +1187,14 @@ Qed.
 Lemma body_call : forall j, Safe j ->
   forall f dcl n ps rt b Cf ns de H st ws (d : environment) params ret,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn RPlain n ps rt (Some b) ->
-  A.CtxOf W f Cf ns -> Realizes j Cf de H -> state_ok H st -> type_aliases de = type_meanings de ->
+  A.CtxOf W f Cf ns -> Realizes j Cf de H -> state_ok H st -> type_aliases de = type_meanings de -> KeysMeant Cf de ->
   (forall g0, A.SigOf W f (A.c_ty Cf) None g0 ->
      map (ground de) (A.sg_params g0) = map (ground d) params /\ ground de (A.sg_ret g0) = ground d ret) ->
   Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
   exists body, view_function P f = Some body /\
     CallOutcome H (ground d ret) (I.eval j P de (parameter_values ws) st body).
 Proof.
-  intros j Sj f dcl n ps rt b Cf ns de H st ws d params ret Decl Ast Ctx Real State Ali Agree Args.
+  intros j Sj f dcl n ps rt b Cf ns de H st ws d params ret Decl Ast Ctx Real State Ali Km Agree Args.
   destruct (all_fn_elab f dcl RPlain n ps rt b Decl Ast dcl RPlain n ps rt b Decl Ast)
     as [C0 [ns0 [this [g0 [F0 [x [t0 [Ctx0 [This [Sig [_ [Ret [FThis [Loop [_ [_ [_ [Num [Body View]]]]]]]]]]]]]]]]]]].
   cbn in This. subst this.
@@ -1203,7 +1208,8 @@ Proof.
     split; [split; [|split; [|apply alias_self;
       [exact Ali|intros t; unfold Cb, A.canon; rewrite add_locals_sub; exact (proj1 Real t)
       |intros k0 v0 L0; unfold Cb in L0 |- *; rewrite add_locals_ty in L0; unfold A.canon; rewrite add_locals_sub;
-       exact (proj1 (ctxof_formed W _ Cf ns Ctx) k0 v0 L0)]]]|].
+       exact (proj1 (ctxof_formed W _ Cf ns Ctx) k0 v0 L0)
+      |intros k0 v0 L0; unfold Cb in L0; rewrite add_locals_ty in L0; exact (Km k0 v0 L0)]]]|].
     - intros pn t mu Found Named.
       apply slook_params in Found; [|exact (ctxof_locals f Cf ns Ctx)].
       apply in_combine_nth in Found as [i [Name Ty]].
@@ -1235,7 +1241,7 @@ Qed.
 Lemma body_call_method : forall j, Safe j ->
   forall att dcl rn n ps rt b Cf ns de H st w0 ws (d : environment) recv params ret,
   A.w_decl W att = Some dcl -> A.d_ast dcl = ADFn (RAttached rn) n ps rt (Some b) ->
-  A.CtxOf W att Cf ns -> Realizes j Cf de H -> state_ok H st -> type_aliases de = type_meanings de ->
+  A.CtxOf W att Cf ns -> Realizes j Cf de H -> state_ok H st -> type_aliases de = type_meanings de -> KeysMeant Cf de ->
   (forall r args g0, A.Attached W r n att ->
      Forall2 (fun x xa => fst xa = x /\ A.nlook x (A.c_ty Cf) = Some (snd xa)) (A.w_reqs W r) args ->
      A.SigOf W att (A.c_ty Cf) (Some (TNom r args)) g0 ->
@@ -1246,7 +1252,7 @@ Lemma body_call_method : forall j, Safe j ->
   exists body, view_function P att = Some body /\
     CallOutcome H (ground d ret) (I.eval j P de (parameter_values (w0 :: ws)) st body).
 Proof.
-  intros j Sj att dcl rn n ps rt b Cf ns de H st w0 ws d recv params ret Decl Ast Ctx Real State Ali Agree Recv Args.
+  intros j Sj att dcl rn n ps rt b Cf ns de H st w0 ws d recv params ret Decl Ast Ctx Real State Ali Km Agree Recv Args.
   destruct (all_fn_elab att dcl (RAttached rn) n ps rt b Decl Ast dcl (RAttached rn) n ps rt b Decl Ast)
     as (C0 & ns0 & this & g0 & F0 & x & t0 & Ctx0 & Rcv & Sig & _ & Ret & FThis & Loop & _ & _ & _ & Num & Body & View).
   destruct Rcv as [r [args [Att [_ [-> Reqs]]]]].
@@ -1261,7 +1267,8 @@ Proof.
     split; [split; [|split; [|apply alias_self;
       [exact Ali|intros t; unfold Cb, A.canon; rewrite add_locals_sub; exact (proj1 Real t)
       |intros k0 v0 L0; unfold Cb in L0 |- *; rewrite add_locals_ty in L0; unfold A.canon; rewrite add_locals_sub;
-       exact (proj1 (ctxof_formed W _ Cf ns Ctx) k0 v0 L0)]]]|].
+       exact (proj1 (ctxof_formed W _ Cf ns Ctx) k0 v0 L0)
+      |intros k0 v0 L0; unfold Cb in L0; rewrite add_locals_ty in L0; exact (Km k0 v0 L0)]]]|].
     - intros pn t mu Found Named.
       apply slook_params in Found; [|exact (ctxof_locals att Cf ns Ctx)].
       apply in_combine_nth in Found as [i [Name Ty]].
@@ -1300,6 +1307,18 @@ Qed.
 Definition callee_env (d : environment) (th : subst) (dc : environment) : environment :=
   EnvironmentWithAliases (map (fun q => (fst q, ground d (snd q))) th)
     (map (fun q => (fst q, ground d (snd q))) th) (provision_values dc).
+
+Lemma keys_meant_map : forall (C : A.cx) (f : ty -> ty) (th : subst), map fst th = map fst (A.c_ty C) ->
+  forall k v, A.nlook k (A.c_ty C) = Some v -> lookup_subst k (map (fun q => (fst q, f (snd q))) th) <> None.
+Proof.
+  intros C f th Keys k v L. apply lookup_subst_in.
+  assert (E : map fst (map (fun q => (fst q, f (snd q))) th) = map fst th) by (rewrite map_map; apply map_ext; reflexivity).
+  rewrite E, Keys.
+  change k with (fst (k, v)). apply in_map. exact (nlook_in _ _ _ _ L).
+Qed.
+
+Lemma keys_meant_callee : forall C d th dc, map fst th = map fst (A.c_ty C) -> KeysMeant C (callee_env d th dc).
+Proof. intros C d th dc Keys. exact (keys_meant_map C (ground d) th Keys). Qed.
 
 Lemma ilook_in : forall k (provs : list (item * A.provision)) p, A.ilook k provs = Some p -> In (k, p) provs.
 Proof.
@@ -1539,7 +1558,7 @@ Proof.
     as [dc [Sel [Ag RealF]]].
   rewrite Sel, (call_environment_callee d _ sm dc Sel).
   destruct (body_call j (Bel j (le_n j)) f dcl n0 ps0 rt0 b0 Cf ns _ H1 st1 ws d (A.sg_params g) (A.sg_ret g)
-    Decl Ast Ctx RealF S1 eq_refl) as [body [View' Run]].
+    Decl Ast Ctx RealF S1 eq_refl (keys_meant_callee Cf d th dc (proj1 CT))) as [body [View' Run]].
   - intros g' Sig'. exact (sig_rel W _ _ f _ _ None None g' g Sig' Sig Ag (fun _ _ E _ => ltac:(discriminate E))).
   - exact T1.
   - change (view_function P f) with (A.body_of Prog f) in View'. rewrite View in View'. injection View' as <-.
@@ -1882,7 +1901,7 @@ Proof.
     assert (RealJ : Realizes jj Cg (callee_env d th dc) H').
     { apply (realizes_extends _ _ _ H); [exact E|]. eapply realizes_lower; [|exact RealG]. lia. }
     destruct (body_call jj (Bel jj ltac:(lia)) g dcl n0 ps0 rt0 b0 Cg ns (callee_env d th dc) H' st ws d
-      (A.sg_params sg) (A.sg_ret sg) Decl Ast Ctx RealJ S eq_refl) as [body [View' Run]].
+      (A.sg_params sg) (A.sg_ret sg) Decl Ast Ctx RealJ S eq_refl (keys_meant_callee Cg d th dc (proj1 CT))) as [body [View' Run]].
     + intros g' Sig'. destruct (sig_rel W _ _ g _ _ None None g' _ Sig' SigG Ag (fun _ _ E' _ => ltac:(discriminate E')))
         as [Ps Rt]. cbn [A.sg_params A.sg_ret] in Ps, Rt. split.
       * change (map (app_subst (type_meanings (callee_env d th dc))) (A.sg_params g') =
@@ -2049,7 +2068,7 @@ Proof.
   assert (RealJ : Realizes jj Ca (callee_env d th dc) H').
   { apply (realizes_extends _ _ _ H); [exact E|]. eapply realizes_lower; [|exact RealA]. lia. }
   destruct (body_call_method jj (Bel jj ltac:(lia)) att dcl rn n ps rt0 b Ca ns _ H' st w0 ws' d
-    (A.canon C rt) (A.sg_params sg) (A.sg_ret sg) Decl Ast Ctx RealJ S eq_refl) as [body [View' Run]].
+    (A.canon C rt) (A.sg_params sg) (A.sg_ret sg) Decl Ast Ctx RealJ S eq_refl (keys_meant_callee Ca d th dc (proj1 CT))) as [body [View' Run]].
   - intros r' args' g0' Att' Reqs Sig0.
     pose proof (attached_unique rg r' n att Att Att') as <-.
     assert (Recv : app_subst (callee_meanings d th) (TNom rg args') = ground d (TNom rg rargs))
@@ -2431,10 +2450,11 @@ Proof. intros f l x. induction l as [|[a t] r IH]; [reflexivity|]. cbn. destruct
 
 (* An environment without aliases reads a canonical table in its meanings. *)
 Lemma alias_none : forall C d, type_aliases d = [] -> Absorbs C d ->
-  (forall k v, A.nlook k (A.c_ty C) = Some v -> v = A.canon C (TAbs k)) -> AliasOk C d.
+  (forall k v, A.nlook k (A.c_ty C) = Some v -> v = A.canon C (TAbs k)) -> KeysMeant C d -> AliasOk C d.
 Proof.
-  intros C d Al Abs Can x tx L. rewrite (Can x tx L). rewrite (Abs (TAbs x)).
-  unfold cmeaning, output_meaning. rewrite Al. unfold ground. cbn. destruct (lookup_subst x (type_meanings d)); reflexivity.
+  intros C d Al Abs Can Km x tx L. rewrite (Can x tx L). rewrite (Abs (TAbs x)).
+  unfold output_meaning. rewrite Al. unfold ground. cbn.
+  destruct (lookup_subst x (type_meanings d)) eqn:E; [reflexivity|exfalso; exact (Km x tx L E)].
 Qed.
 
 Lemma alias_ty : forall C C' d, A.c_ty C' = A.c_ty C -> AliasOk C d -> AliasOk C' d.
@@ -2444,9 +2464,9 @@ Proof. intros C C' d E Al x tx L. rewrite E in L. exact (Al x tx L). Qed.
    aliases. *)
 Lemma alias_capture : forall C d1 dc, Absorbs C d1 -> AliasOk C (typed_capture d1 (A.lexical_capture C) dc).
 Proof.
-  intros C d1 dc Abs x tx L. unfold cmeaning, output_meaning. cbn [type_aliases typed_capture A.lexical_capture capture_aliases].
+  intros C d1 dc Abs x tx L. unfold output_meaning. cbn [type_aliases typed_capture A.lexical_capture capture_aliases].
   rewrite map_map. cbn [fst snd].
-  rewrite (lookup_map_snd (fun t => ground d1 (A.canon C t))), lookup_subst_nlook', L. cbn [option_map].
+  rewrite (lookup_map_snd (fun t => ground d1 (A.canon C t))), lookup_subst_nlook', L. cbn [option_map]. f_equal.
   unfold ground at 2. rewrite typed_capture_meanings, ground_capture.
   - exact (Abs tx).
   - intros y Iy. apply tm_context_gens. unfold tm_gens. apply in_flat_map. exists (x, tx). split; [|exact Iy].
@@ -2868,7 +2888,7 @@ Proof.
   { apply (realizes_extends _ _ _ H); [exact E|]. apply (realizes_transfer j Cg de dn H); [|exact Gn|exact Same].
     eapply realizes_lower; [|exact RealDe]. lia. }
   destruct (body_call j (Bel j ltac:(lia)) g dcl n0 ps0 rt0 b0 Cg ns dn H' st ws' d (A.sg_params sg) (A.sg_ret sg)
-    Decl Ast Ctx RealN Sok eq_refl) as [body [View' Run]].
+    Decl Ast Ctx RealN Sok eq_refl (keys_meant_callee Cg de (A.theta_ctx Cg) dc' ltac:(unfold A.theta_ctx; rewrite map_map; reflexivity))) as [body [View' Run]].
   - intros g' Sig'. destruct (sig_rel W _ _ g _ _ None None g' _ Sig' Sig Ag (fun _ _ E' _ => ltac:(discriminate E')))
       as [Ps Rt]. cbn [A.sg_params A.sg_ret] in Ps, Rt. split.
     + transitivity (map (ground de) (A.sg_params g')); [apply map_ext; exact Gn|].
@@ -3365,7 +3385,7 @@ Proof.
         destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate. }
       rewrite (Am1 x Fu (Sc x Ix)). unfold gfx. rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
       reflexivity.
-    - rewrite (Am2 x (Sc x Ix) Ou), CmEq. exact (Al x tx Lx). }
+    - rewrite (Am2 x (Sc x Ix) Ou), CmEq. exact (alias_cmeaning C d x tx Al Lx). }
   set (d' := install_provision (IFun u) (FunctorClosure h [sm] dc) d).
   exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
@@ -3461,7 +3481,7 @@ Proof.
                cbn [app_subst]. rewrite lookup_subst_nlook', Ly. reflexivity.
              - pose proof (InF' y Iy Ou) as Iny. destruct (A.nlook y (A.c_ty C)) as [ty|] eqn:Ly; [|congruence].
                split; [|congruence]. rewrite (Am2 y (Kg y Iy) Ou), CmEq. f_equal.
-               rewrite (Al y ty Ly). cbn [app_subst]. rewrite lookup_subst_nlook', Ly. reflexivity. }
+               rewrite (alias_cmeaning C d y ty Al Ly). cbn [app_subst]. rewrite lookup_subst_nlook', Ly. reflexivity. }
            assert (Through : forall s, incl (A.gens s) (x :: A.gens tx) -> app_subst gm s = ground d (app_subst (A.c_ty C) s)).
            { intros s Sc. unfold ground. rewrite <- (subst_through s (type_meanings d) (A.c_ty C)).
              - apply subst_agree_on. intros y Iy. cbn [app_subst]. rewrite (proj1 (Val y (Sc y Iy))).
@@ -4699,8 +4719,11 @@ Proof.
          split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
     - intros n1 t mu Found. rewrite (functx_locals _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply alias_self; [reflexivity|exact (proj1 RealG)|].
-      destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
+    - apply alias_self; [reflexivity|exact (proj1 RealG)| |].
+      + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
+      + intros k0 v0 L0. unfold de, application_environment. change (view_functor P h) with (A.funbody_of Prog h).
+        rewrite FB. cbn [type_meanings fc_inputs]. rewrite lookup_map_nat; [discriminate|].
+        change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
   destruct (items_chain (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply bindsof_fold in BO. subst binds0.
   rewrite apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
@@ -4857,7 +4880,7 @@ Proof.
   rewrite Sel, (call_environment_callee d' _ sm dc Sel).
   pose proof RealD as [AbsD _].
   destruct (body_call_method j (Bel j ltac:(lia)) att dcl rn n ps rt b Ca ns _ H1 st1 w0 ws' d'
-    (TNom h xs0) (A.sg_params g) (A.sg_ret g) Decl Ast Ctx RealA S1 eq_refl) as [body [View' Run]].
+    (TNom h xs0) (A.sg_params g) (A.sg_ret g) Decl Ast Ctx RealA S1 eq_refl (keys_meant_callee Ca d' th dc (proj1 CT))) as [body [View' Run]].
   - intros r' args' g0' Att' Reqs Sig0.
     pose proof (attached_unique h r' n att Att Att') as <-.
     assert (Recv : app_subst (callee_meanings d' th) (TNom h args') = ground d' (TNom h xs0))
