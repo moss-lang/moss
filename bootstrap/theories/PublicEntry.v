@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module CF := PublicChainFwd.ChainFwd M.ReferenceHost M.Reference.
+Module FL := PublicFamilyLink.FamilyLink M.ReferenceHost M.Reference.
+Module CF := FL.CF.
 Module CN := CF.CN.
 Module CC := CN.CC.
 Module LRes := CC.LR.
@@ -652,8 +653,9 @@ Theorem safety_obligations : forall prelude,
         signature agreement at each position *)
      CF.ChainForwardCopySigs W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
-     (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
-     CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyRealizeOk W Prog argv read so
+     (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok,
+        its FamilyLinkNewOk from PublicFamilyLink.family_link_new_ok *)
+     FS.FamilyCopyRealizeOk W Prog argv read so
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok
         (its FamilyKeysTyped proved: family_keys_typed_ok) *)
      (* FamilyCoherentOk, from family_coherent_ok *)) ->
@@ -664,7 +666,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CRz [RAc [FLN FCA]]].
+    as [CRz [RAc FCA]].
   pose proof (family_coherent_ok W bundle (proj1 Elab)) as FCo.
   pose proof (CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.
@@ -677,8 +679,11 @@ Proof.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.
   pose proof (CC.chain_results_of_new W Prog _ _ _ (CN.chain_new_ok W Prog _ _ _ CRz) KU) as CR.
-  pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Elab as (Wo & AllFn & _).
+  pose proof (FL.family_link_new_ok W Prog (M.arguments initial) (M.read_file initial)
+    (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface)
+    (ex_intro _ bundle Wo) (PublicWorldFormation.merge_formed_of W) (PublicWorldFormation.mentions_typed_of bundle W Wo)) as FLN.
+  pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
   pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.

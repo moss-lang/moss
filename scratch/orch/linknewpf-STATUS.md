@@ -35,72 +35,51 @@ against Audit in full; I read the rules by hand.
 - It cannot occur for a family body, since FamilyBindings allows only
   family applications, and families have no outputs.
 
-## FamilyLinkNewOk: in progress
+## FamilyLinkNewOk: proved
 
-### Proved so far
+`CC.FamilyLinkNewOk` is no longer in `safety_obligations`.
 
-- **theories/PublicLinkWalk.v.** `family_binds_no_dests` (with
-  `items_applies`, `bindsof_applies`): for a family body,
+- **theories/PublicFamilyLink.v**, module `FamilyLink`. It is now the
+  root instance: PublicEntry takes `CF := FL.CF`.
+  - `family_link_new_ok : CC.FamilyLinkNewOk`, under the premises
+    WorldOf, MergeFormed and MentionsTyped. PublicEntry discharges all
+    three.
+  - Helpers: `link_body_parts` (a LinkBody's FunCtx, cap3b's input
+    condition, FamilyBindings and funbody_of), `functx_table_in` (a
+    FunCtx table entry is `σ (TAbs x)`), `sig_subst_gens`,
+    `forall2_cons_inv`, `subst_nil_item`.
+- **theories/PublicLinkWalk.v.** `family_binds_no_dests`, with
+  `items_applies` and `bindsof_applies`: for a family body,
   `made = []`, `binding_dests binds = []`, and every BApply has
   `outs = []`.
-- **theories/PublicLinkScope.v.** `items_scope` (with `step_provide`,
-  `step_set_fun`, `step_trans`, `provide_set_in`): every provision a run
-  of bind items adds has its gens and key gens in `scope_gens` of the
-  result; scope grows only by `made`; c_sub is unchanged.
-  - Unlike PublicScoping's GenScoped, there is no declared-symbol
-    escape.
-  - Premises: UnitsBare and FamilySigReadOffOk (for binditem_ok).
-- **Statement change (no weakening of the top-level theorem).**
+- **theories/PublicLinkScope.v.** `items_scope`, with `step_provide`,
+  `step_set_fun`, `step_trans` and `provide_set_in`:
+  - every provision a run of bind items adds has its gens and key gens
+    in `scope_gens` of the result;
+  - scope grows only by `made`;
+  - c_sub is unchanged;
+  - unlike PublicScoping's GenScoped, there is no declared-symbol
+    escape;
+  - premises: UnitsBare and FamilySigReadOffOk.
+- **Statement change (the top-level assumptions only shrink).**
   `FS.FamilyLinkResultsOk` and `CC.FamilyLinkNewOk` gained
   `PublicFormation.TysScoped W C`, as `FamilyPlatformApplyOk` already
-  has. `family_run` supplies it. It is needed for
-  family_items_pos/agree's KeysT (PublicFormation.family_keys_typed).
-
-### Remaining: the main proof
-
-Planned file theories/PublicFamilyLink.v. Premises: WorldOf, MergeFormed
-and MentionsTyped, all available in PublicEntry. Steps:
-
-1. **outs' = [].** From LD's OutsR and family_no_outputs.
-2. **Recover the full LinkBody.** Use closure_cases on Ok: the copy and
-   platform branches are impossible by the closure's shape. Match its
-   funbody_of with LD's FB to get c_ty Cg and binds0. This gives
-   FamilyBindings binds0 and cap3b's strong input condition.
-3. **The run fact.** `family_binds_no_dests` on LD's Items/BO and
-   `bindings_writes` give `type_meanings d3 = type_meanings de`. Compute
-   de's meanings as link_entry does (Mde/MeanL). Then, for x in dom Cg
-   and dom Cu, x's meaning is ground d (θ (c_ty Cg x)) = ground d (θ x):
-   cap3b's condition, plus PublicFamilyAgree.th_sigma with the
-   FamilyApplication parts.
-4. **Positions.**
-   - PublicFamilyAgree.family_items_pos and family_items_agree, with
-     outputs := Cr' and keys := ks'. PRf is LD's PR' with outs = [].
-   - KeysM: ks' are methods, from family_news's NewM via
-     provide_result_kinds/same_kind_keys. DKMeth comes from
-     PublicFamilyCoherent.family_member (WorldOf).
-   - KeysT: family_keys_typed with Ts.
-   - Selection: PublicCallerKeys.selection_at and selection_last, as in
-     PublicPlatformApply.family_platform_ok.
-5. **The body.** body_provides at `A.link_site Cg Cb []` (Real3 by
-   conversion; RR) gives pv at the source with BodyReal.
-6. **R2: gens ⊆ dom Cg.** The gens of gf's types and of rf lie in dom Cg.
-   - From RR at key1: the signatures are equal under c_sub Cb = c_sub
-     Cg, which is scoped in dom Cg.
-   - The actual provision is Cg's (functx_scoped:
-     provision_sig_gens/key_gens ⊆ dom Cg), or new, with gens in
-     scope_gens Cb ⊆ scope_gens Cg (items_scope, made = []) ⊆ dom Cg.
-   - For the receiver, use gens_keep: a y outside dom Cg survives
-     c_ty Cg and canon Cb.
-7. **Transfer.** callable_transfer from d3 to d:
-   - sig types: ground d3 tf = ground d (θ tf) = ground d tc (SigAgree,
-     Absorbs at C0);
-   - receiver: Absorbs Cb, then step 3 on app_subst (c_ty Cg) rf.
-8. **PublicEntry.** Instantiate the new theorem, drop CC.FamilyLinkNewOk
-   from safety_obligations, and add the file to Certificate roots.
+  has. `family_run` supplies it. It is needed for KeysT in
+  family_items_pos/agree.
+- **Proof shape** (realize2 may reuse it):
+  1. The run fact `RunFact`: ground d3 t = ground d (θ t) for t over
+     dom Cg ∩ dom Cu, from the application environment's meanings
+     (Mde), cap3b's condition and PublicFamilyAgree.th_sigma.
+  2. Positions: family_items_pos and family_items_agree at
+     outputs := Cr', keys := ks'.
+  3. body_provides at `A.link_site Cg Cb []`.
+  4. R2, F's signature and receiver gens ⊆ dom Cg: ResultRealizes
+     with items_scope and functx_scoped.
+  5. callable_transfer.
 
 ## CF.ChainForwardCopySigs
 
-Not started; after FamilyLinkNewOk. copyfresh (CopyOutputs) is merged.
+Not started yet (next).
 
 ## Time
 
