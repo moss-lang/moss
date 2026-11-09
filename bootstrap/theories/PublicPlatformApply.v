@@ -432,7 +432,7 @@ Lemma chain_keys : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 
   forall Cu nsu Ch0 nsh0, A.FunCtx W u Cu nsu -> A.FunCtx W h0 Ch0 nsh0 ->
   incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)).
 Proof.
-  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh _ _ _ _ _ Sub _];
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh _ _ _ _ _ Sub _ _];
     intros Cu' nsu' Ch0 nsh0 FCu' FC0.
   - destruct (S.functx_unique W _ _ _ _ _ FCu' FC0) as [-> _]. intros x I. exact I.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu') as [<- _].
@@ -446,7 +446,7 @@ Lemma chain_adapt : forall u gfx sms h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 
   exists e2, adapt_provisions e1 sms = Some e2.
 Proof.
   intros u gfx sms h0 gf0 Ch. remember [] as sms0 eqn:E0.
-  induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh Incl _ SN ST _ Sub _];
+  induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh Incl _ SN ST _ Sub _ _];
     intros rr H d f Cu' nsu' e1 FCu' Real.
   - subst sms. exists e1. reflexivity.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu') as [<- <-].
@@ -717,14 +717,14 @@ Definition ChainForwardKeys : Prop :=
 Lemma chain_leaves_back : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
   forall l, A.ResultLeaf W u l -> A.ResultLeaf W h0 l.
 Proof.
-  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same];
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same _];
     intros l L; [exact L|]. exact (IH l (proj1 (Same l) L)).
 Qed.
 
 Lemma chain_no_outputs : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
   (forall t, ~ A.FunOutputs W h0 t) -> forall t, ~ A.FunOutputs W u t.
 Proof.
-  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same];
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same _];
     intros N t Ft; [exact (N t Ft)|]. exact (IH N t (proj1 (S.same_result_outputs W u h Same t) Ft)).
 Qed.
 
@@ -732,7 +732,7 @@ Qed.
 Lemma chain_leaves : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
   forall l, A.ResultLeaf W h0 l -> A.ResultLeaf W u l.
 Proof.
-  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same];
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same _];
     intros l L; [exact L|]. exact (proj2 (Same l) (IH l L)).
 Qed.
 

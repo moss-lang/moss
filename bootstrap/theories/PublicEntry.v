@@ -193,7 +193,7 @@ Proof.
     exists (FunctorClosure u' [] (EnvironmentWithAliases [] [] [])),
       (S.ground_fixed (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)) fx).
     destruct (ctx_fun_fixed W _ C ns Ctx u fx (S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
-    split; [exact L|]. split; [apply S.CPlatform; [exact (proj1 En)|]|].
+    split; [exact L|]. split; [apply S.CPlatform; [exact (proj1 En)| |]|].
     { (* main's table reads a fixed machine input as its machine type *)
       intros name mach x Inm Lang Fx. destruct (Cov x Fx) as [tx Itx].
       rewrite (S.lookup_ground_fixed _ fx x tx Fun Itx).
@@ -209,6 +209,16 @@ Proof.
       change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ev. rewrite Cx in Ev. subst v.
       cbn [app_subst]. rewrite S.lookup_map_snd, lookup_subst_nlook, Lv. cbn [option_map app_subst].
       rewrite (machine_lookup W name mach x Lay Inm Lang). reflexivity. }
+    { (* the same, syntactically: main records a fixed machine input as itself *)
+      exists fx, (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)).
+      split; [reflexivity|]. split; [exact Cov|]. split; [exact Fun|].
+      intros name mach x tx Inm Lang Itx.
+      pose proof (ctx_fun_self W _ C ns Ctx u fx (S.ilook_in _ _ _ Il) x tx Itx) as Etx.
+      destruct En as [_ FMR]. pose proof (FMR fx Found name mach x tx Inm Lang Itx) as Ct.
+      assert (Cx : A.canon C (TAbs x) = TAbs x).
+      { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
+        rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
+      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Etx. rewrite Cx in Etx. exact Etx. }
     split; [exact Cov|].
     intros x tx I. exact (S.lookup_ground_fixed _ fx x tx Fun I).
 Qed.
