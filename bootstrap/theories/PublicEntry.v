@@ -14,8 +14,9 @@ Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
 Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
-(* The slice, as the platform-family application step (PA) instantiates it. *)
+(* The slice, as the copy step and the platform-family step instantiate it. *)
 Module PA := PlatformApply M.ReferenceHost M.Reference.
+Module CopyA := PA.CopyA.
 Module S := PA.S.
 
 (* PREMISE (T29). main's context merges no machine type symbol away, so
@@ -353,25 +354,26 @@ Definition PlatformSigsFixed (W : A.world) (Prog : program) : Prop :=
     In sym (flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)) ->
     A.Fixed W u sym /\ In sym (map fst (A.c_ty inputs))).
 
-(* A platform family's primitives are typed calls (PlatformPrimsOk) for the
+(* A platform family's primitives are typed calls (ChainPrimsOk) for the
    reference host, from primitive_safe, as main's are (entry_primitive). *)
 Lemma platform_prims_public : forall W Prog argv read iface,
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
   M.interface_laws (program_of Prog argv read) iface ->
   (forall op, In op (required_primitives Prog) -> M.supports iface op = true) ->
   PlatformHandlesFormed W Prog -> PlatformSigsFixed W Prog ->
-  PA.PlatformPrimsOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface).
+  PA.ChainPrimsOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface).
 Proof.
   intros W Prog argv read iface Lay Reps Bools Laws Supp [_ Handles] Fixed F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
-    rr d types H g st Pre0 code Look needs outputs keys bindings FD d1 Sel key op rf m a gf Ik Ib MP AK Ek Mgf.
-  pose proof (Handles u Cu outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf) as Formed.
+    rr d types H g st Pre0 code sms gfx Look Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD d1 key op rf m a gf
+    Ik Ib MP AK Ek Mgf.
+  pose proof (Handles h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf) as Formed.
   assert (Mach : forall name mach sym, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name sym ->
     In sym (flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)) ->
     ground (PA.app_env Prog argv read d code th d1) (TAbs sym) = TMachine mach).
   { intros name mach sym Inm Lang Is.
-    destruct (Fixed u Cu outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is) as [Fx Ix].
-    exact (PA.platform_fixed_ground W Prog argv read _ F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
-      rr d types H g st Pre0 code Look needs outputs keys bindings FD d1 name mach sym Inm Lang Fx Ix). }
+    destruct (Fixed h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is) as [Fx Ix].
+    exact (PA.chain_fixed_ground W Prog argv read _ F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
+      rr d types H g st Pre0 code sms gfx Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD d1 name mach sym Inm Lang Fx Ix). }
   pose proof AK as AK'. rewrite Ek in AK'. destruct AK' as [sg' [M' Sig]]. rewrite Mgf in M'. injection M' as <-.
   set (de := PA.app_env Prog argv read d code th d1) in *.
   set (K := flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)).
@@ -393,7 +395,7 @@ Proof.
   assert (Supported : M.supports iface op = true).
   { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
     pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
-    apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Cu)) (map fst (A.c_ty Cu))
+    apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0))
       (map (A.rkey_of outputs) keys) bindings). split; [exact (nlook_in _ _ _ _ FB)|].
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
@@ -497,7 +499,9 @@ Theorem safety_public : forall prelude,
 Proof. intros prelude Remaining. exact (SR.safety_from_entry prelude (entry_safe_public prelude Remaining)). Qed.
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
-   ElaboratesIn and Linked. *)
+   ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
+   and PlatformApplyOk, follow from the obligations about a closure's root
+   read through its copy chain (PublicCopyApply). *)
 Theorem safety_obligations : forall prelude,
   (forall Prog iface initial bundle W, M.Compatible Prog iface ->
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
@@ -507,9 +511,8 @@ Theorem safety_obligations : forall prelude,
       MainMachinesUnmerged W Prog) /\
      PlatformHandlesFormed W Prog /\
      S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
-     S.RefileRunOk W Prog argv read so /\ S.LinkResultsOk W Prog argv read so /\
-     S.CopyApplyOk W Prog argv read so /\
-     PA.PlatformResultAgrees W Prog /\ PlatformSigsFixed W Prog) ->
+     S.RefileRunOk W Prog argv read so /\ CopyA.ChainResultsOk W Prog argv read so /\
+     PA.ChainResultAgrees W Prog /\ PA.PlatformNotLinked W Prog /\ PlatformSigsFixed W Prog) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -517,16 +520,18 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [[Mf [Mt [Fs Unm]]] [Handles [FSt [LM [BM [CIF [RR [LR [CA [RA Sigs]]]]]]]]]].
+    as [[Mf [Mt [Fs Unm]]] [Handles [FSt [LM [BM [CIF [RR [CR [RA [NL Sigs]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof Compat as [_ [Supports Laws]].
-  pose proof (PA.platform_apply_ok W Prog _ _ _
+  pose proof (PA.chain_platform_ok W Prog _ _ _ LM RA
     (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Handles Sigs)
-    RA) as PlA.
+    NL) as CP.
   split; [|split; [split; [|split]; assumption|exact (proj1 Handles)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR LR CA PlA).
+    (ex_intro _ bundle Wo) LM BM CIF RR (CopyA.link_results_of_chain W Prog _ _ _ CR)
+    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF RR CR CP)
+    (CopyA.platform_apply_of_chain W Prog _ _ _ CP)).
 Qed.
 
 End EntrySafety.

@@ -24,7 +24,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
-From NM Require PublicFormation.
+From NM Require PublicFormation PublicCopyApply.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -94,7 +94,9 @@ Qed.
 End FixedSelf.
 
 Module PlatformApply (Prims : PRIMITIVES) (I0 : INTERP Prims).
-Module S := BodySlice Prims I0.
+(* The slice as the copy step (PublicCopyApply) instantiates it. *)
+Module CopyA := PublicCopyApply.CopyApply Prims I0.
+Module S := CopyA.S.
 
 (* ---- the family's code runs its installs ------------------------------------- *)
 
@@ -227,45 +229,69 @@ Proof. intros u code (i & n & o & k & b & D). exists i, n, o, k, b. exact D. Qed
 Definition app_env (d : environment) (code : usym) (th : subst) (d1 : environment) : environment :=
   application_environment P d code th (append_environment d1 (EnvironmentWithAliases [] [] [])).
 
-(* PREMISE (primitive behaviour, T11/T17). A primitive a platform family
-   installs is callable, at its AtKey signature, in the environment the
-   family's code runs in at an application. *)
-Definition PlatformPrimsOk : Prop :=
-  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st, Pre rr F C d types H g st ->
-  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
-  forall needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
-  forall d1, select_provisions d sm = Some d1 ->
-  forall key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
-  Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
-  key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
-  CallableOk rr H (app_env d code th d1) (rf :: A.sg_params gf) (A.sg_ret gf)
-    (primitive_closure (app_env d code th d1) (A.rkey_of outputs key) op).
+(* A caller's signature type and a family's, read at θ: the family's
+   type over the inputs of its code (Ch0's table). *)
+Definition SigAgree (C Ch0 : A.cx) (th : subst) (tc tf : ty) : Prop :=
+  incl (A.gens tf) (map fst (A.c_ty Ch0)) /\ A.canon C tc = A.canon C (app_subst th tf).
 
-(* A caller's signature type and a family's, read at θ. *)
-Definition SigAgree (C Cu : A.cx) (th : subst) (tc tf : ty) : Prop :=
-  incl (A.gens tf) (map fst (A.c_ty Cu)) /\ A.canon C tc = A.canon C (app_subst th tf).
-
-(* PREMISE (static correspondence, T15/T16). Applying F at θ, the caller's
-   result C' (ProvideResult at the caller, outputs fresh) and the family's
-   own result (ProvideResult at F's inputs Cu) agree: C' adds to C's
-   provisions methods only (news; the first conjunct is output_cx's shape),
-   each filed under the run-time key a family item gets at θ and read with
-   that item's signature at θ, and every family item is one of them. *)
-Definition PlatformResultAgrees : Prop :=
-  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall code needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
+(* The caller's result C' (at θ) and a family's own result (outputs, at
+   its inputs Ch0) agree: C' adds to C's provisions methods only (news;
+   the first conjunct is output_cx's shape), each filed under the run-time
+   key a family item gets at θ and read with that item's signature at θ,
+   and every family item is one of them. *)
+Definition ResultAgree (C C' Ch0 outputs : A.cx) (th : subst) (keys : list item) : Prop :=
   exists news, A.c_provisions C' = (news ++ A.c_provisions C)%list /\
     (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a) /\
     (forall r m g, A.mlook r m (mths_of news) = Some g ->
        (exists key, In key keys /\ app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m) /\
        (forall key rf a gf, In key keys -> key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
           app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m ->
-          Forall2 (SigAgree C Cu th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf))) /\
+          Forall2 (SigAgree C Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf))) /\
     (forall key, In key keys -> exists r m g,
        A.mlook r m (mths_of news) = Some g /\ app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m).
+
+(* PREMISE (static correspondence, T15/T16). Applying F at θ, where F's
+   closure is a copy chain down to a platform family h0 (u = h0 for the
+   empty chain): F has no type output (h0 has none, and a copy reads its
+   result as its source does), and the caller's result agrees with the
+   family's (ResultAgree). Proving it needs a substitution lemma for the
+   result readings (OutputItemsEntries, RecvTy, SigOf, AppOf) between the
+   family's table and the caller's, through the chain's CopyOutputs. *)
+Definition ChainResultAgrees : Prop :=
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall gfx sms h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  forall code Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
+  (forall t, ~ A.FunOutputs W u t) /\ ResultAgree C C' Ch0 outputs th keys.
+
+(* PREMISE (primitive behaviour, T11/T17). A primitive a platform family
+   installs is callable, at its AtKey signature, in the environment the
+   family's code runs in at an application of F, F's closure a copy chain
+   down to the family's (CopyChain, the root's ClosureOk). The slice knows
+   nothing of primitives; PublicEntry discharges it for the reference host
+   (platform_prims_public). *)
+Definition ChainPrimsOk : Prop :=
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr d types H g st, Pre rr F C d types H g st ->
+  forall code sms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env) ->
+  S.FixedMeans W u d fx gfx ->
+  forall h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [] CopyA.empty_env) ->
+  forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
+  forall e key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
+  Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
+  key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
+  CallableOk rr H (app_env d code th e) (rf :: A.sg_params gf) (A.sg_ret gf)
+    (primitive_closure (app_env d code th e) (A.rkey_of outputs key) op).
+
+(* PREMISE (static). A platform family's code with a primitive is no
+   linked body's code: the platform mints its own code symbol for each
+   family (Elab.v platform_fun), and a linked body's binds come from source
+   items, none a primitive. Needed only to tell a closure's root apart. *)
+Definition PlatformNotLinked : Prop :=
+  forall h0 code u gg fc, Platform.Family W Prog h0 code -> A.LinkBody W Prog u gg code ->
+  A.funbody_of Prog code = Some fc -> fc_bindings fc = [].
 
 Lemma forall2_in_l : forall X Y (R : X -> Y -> Prop) l l' x, Forall2 R l l' -> In x l -> exists y, In y l' /\ R x y.
 Proof.
@@ -275,51 +301,87 @@ Proof.
 Qed.
 
 (* The family's code reads a type of its inputs as the caller's θ does. *)
-Lemma app_env_ground : forall d code th d1 (Cu : A.cx) (f : nat -> ty) Dr bs,
-  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Cu)) (map fst (A.c_ty Cu)) Dr bs) ->
-  th = map (fun q => (fst q, f (fst q))) (A.c_ty Cu) ->
-  forall t, incl (A.gens t) (map fst (A.c_ty Cu)) -> ground (app_env d code th d1) t = ground d (app_subst th t).
+Lemma app_env_ground : forall d code th e (Ch0 Cu : A.cx) (f : nat -> ty) Dr bs,
+  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) Dr bs) ->
+  th = map (fun q => (fst q, f (fst q))) (A.c_ty Cu) -> incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)) ->
+  forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground (app_env d code th e) t = ground d (app_subst th t).
 Proof.
-  intros d code th d1 Cu f Dr bs FB -> t Sc.
+  intros d code th e Ch0 Cu f Dr bs FB -> Kin t Sc.
   unfold app_env, application_environment. change (view_functor P code) with (A.funbody_of Prog code). rewrite FB.
   cbn [fc_linked fc_inputs]. unfold ground. cbn [type_meanings].
   match goal with |- app_subst ?m t = _ => rewrite <- (PublicTypeRead.app_subst_nil (app_subst m t)) end.
   apply subst2_agree. intros x Ix. pose proof (Sc x Ix) as Kx.
-  assert (E : existsb (Nat.eqb x) (map fst (A.c_ty Cu)) = true)
+  assert (E : existsb (Nat.eqb x) (map fst (A.c_ty Ch0)) = true)
     by (apply existsb_exists; exists x; split; [exact Kx|apply Nat.eqb_refl]).
   cbn [app_subst]. erewrite S.lookup_map_nat by exact Kx. cbv beta.
-  rewrite E, (S.lookup_on_keys f _ x Kx). apply PublicTypeRead.app_subst_nil.
+  rewrite E, (S.lookup_on_keys f _ x (Kin x Kx)). apply PublicTypeRead.app_subst_nil.
 Qed.
 
-(* At an application of a platform closure, the family's code reads each
-   fixed machine-type input of F as its machine type: the closure records
-   it (PlatformFixed), the caller's θ reads a fixed input as it was read
-   where the closure was provided (FixedMeans, the application's fixed
-   agreement), and the code reads its inputs through θ. *)
-Lemma platform_fixed_ground : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+(* A copy chain's root reads only inputs its top has. *)
+Lemma chain_keys : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
+  forall Cu nsu Ch0 nsh0, A.FunCtx W u Cu nsu -> A.FunCtx W h0 Ch0 nsh0 ->
+  incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)).
+Proof.
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh _ _ _ _ _ Sub];
+    intros Cu' nsu' Ch0 nsh0 FCu' FC0.
+  - destruct (S.functx_unique W _ _ _ _ _ FCu' FC0) as [-> _]. intros x I. exact I.
+  - destruct (S.functx_unique W _ _ _ _ _ FCu FCu') as [<- _].
+    intros x I. exact (CopyA.keys_sub _ _ Sub x (IH Ch nsh Ch0 nsh0 FCh FC0 x I)).
+Qed.
+
+(* Down a copy chain the needs are selected again by each copy's smap. *)
+Lemma chain_adapt : forall u gfx sms h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  forall rr H d f Cu nsu e1, A.FunCtx W u Cu nsu ->
+  S.Realizes W Prog argv read state_ok rr Cu (S.callee_env d (CopyA.thof f Cu) e1) H ->
+  exists e2, adapt_provisions e1 sms = Some e2.
+Proof.
+  intros u gfx sms h0 gf0 Ch. remember [] as sms0 eqn:E0.
+  induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh Incl _ SN ST _ Sub];
+    intros rr H d f Cu' nsu' e1 FCu' Real.
+  - subst sms. exists e1. reflexivity.
+  - destruct (S.functx_unique W _ _ _ _ _ FCu FCu') as [<- <-].
+    destruct (CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl SN ST Sub Real)
+      as [e1' [Sel RealH]].
+    destruct (IH E0 rr H d f Ch nsh e1' FCh RealH) as [e2 A2].
+    exists e2. rewrite CopyA.adapt_snoc, Sel. exact A2.
+Qed.
+
+(* At an application of a closure whose copy chain ends at a platform
+   family, the family's code reads each fixed machine-type input of the
+   root as its machine type: the root closure records it (PlatformFixed),
+   the chain keeps the root's fixed inputs as F's (chain_fixed), the
+   caller's θ reads a fixed input as where the closure was provided
+   (FixedMeans, the application's fixed agreement), and the code reads its
+   inputs through θ. *)
+Lemma chain_fixed_ground : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st, Pre rr F C d types H g st ->
-  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
-  forall needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
-  forall d1 name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-  A.Fixed W u x -> In x (map fst (A.c_ty Cu)) ->
-  ground (app_env d code th d1) (TAbs x) = TMachine mach.
+  forall code sms gfx, S.FixedMeans W u d fx gfx ->
+  forall h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [] CopyA.empty_env) ->
+  forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
+  forall e name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
+  A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) ->
+  ground (app_env d code th e) (TAbs x) = TMachine mach.
 Proof.
-  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code Look
-    needs outputs keys bindings FD d1 name mach x Inm Lang Fx Ix.
+  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx [Cov Vm]
+    h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e name mach x Inm Lang F0 Ix0.
   pose proof AP as (R & Lf & FC & Inp & Th & Fixed & _).
-  pose proof FD as (_ & _ & _ & FB & _).
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [[_ [_ [_ Funs]]] _]] & _).
-  destruct (Funs u fx Lf) as [pv [gfx [Look' [Ok [Cov Vm]]]]]. rewrite Look in Look'. injection Look' as <-.
-  destruct (S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok) as [CL|[CC|CP]].
+  pose proof FD as (FC0 & _ & _ & FB & _).
+  pose proof Pre0 as (_ & _ & _ & _ & [Abs _] & _).
+  pose proof (chain_keys _ _ _ _ _ _ Chn _ _ _ _ FC FC0) as Kin.
+  pose proof (Kin x Ix0) as Ix.
+  destruct (CopyA.chain_fixed W _ _ _ _ _ _ Chn x F0) as [Fx Egf].
+  destruct (S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok0) as [CL|[CC|CP]].
   - destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E as _ E _. discriminate.
-  - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms & dc & gfh & E & _). injection E as _ E _.
-    destruct sms; discriminate.
+  - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & gfh & E & _). injection E as _ E _.
+    destruct sms'; discriminate.
   - destruct CP as (code' & _ & _ & Mach).
-    destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx. rewrite (Mach name mach x Inm Lang Fx) in Gx.
+    destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx.
+    rewrite <- Egf, (Mach name mach x Inm Lang F0) in Gx.
     injection Gx as Gx. destruct (Fixed x tx Itx) as [here [Lh Eh]].
-    rewrite (app_env_ground d code th d1 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ FB Th (TAbs x)
-      ltac:(intros y [<-|[]]; exact Ix)).
+    rewrite (app_env_ground d code th e Ch0 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ FB Th Kin (TAbs x)
+      ltac:(intros y [<-|[]]; exact Ix0)).
     unfold ground. change (app_subst th (TAbs x)) with (match lookup_subst x th with Some t => t | None => TAbs x end).
     assert (Lt : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x))))
       by (rewrite Th; exact (S.lookup_on_keys (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ x Ix)).
@@ -328,16 +390,33 @@ Proof.
     rewrite lookup_subst_nlook, Lh. fold (ground d (A.canon C here)). rewrite Eh, (Abs tx). exact (eq_sym Gx).
 Qed.
 
-Hypothesis prims_ok : PlatformPrimsOk.
-Hypothesis result_agrees : PlatformResultAgrees.
-
-Theorem platform_apply_ok : S.PlatformApplyOk W Prog argv read state_ok.
+(* One application of a closure whose code is a platform family's (h0's,
+   reached through sms): a safe binding step, given the result agreement,
+   the needs re-selected through sms, and the primitives callable. *)
+Lemma family_core : forall k, S.Below W Prog argv read state_ok k ->
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> Pre rr F C d types H g st ->
+  forall code sms h0 Ch0 needs outputs keys bindings,
+  lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env) ->
+  FamilyData h0 code Ch0 needs outputs keys bindings ->
+  incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)) ->
+  (forall t, ~ A.FunOutputs W u t) -> ResultAgree C C' Ch0 outputs th keys ->
+  (forall d1, select_provisions d sm = Some d1 ->
+     S.Realizes W Prog argv read state_ok rr Cu (S.callee_env d th d1) H ->
+     exists d2, adapt_provisions d1 sms = Some d2 /\
+     forall key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
+       Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
+       key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
+       CallableOk rr H (app_env d code th d2) (rf :: A.sg_params gf) (A.sg_ret gf)
+         (primitive_closure (app_env d code th d2) (A.rkey_of outputs key) op)) ->
+  S.StepOut W Prog argv read state_ok rr F (A.with_fresh F newgens) C' False newgens
+    (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 Proof.
-  intros k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0 code Look Fam rest.
+  intros k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
+    code sms h0 Ch0 needs outputs keys bindings Look FD Kin NoOut Agree Adapt rest.
   pose proof AP as (R & Fx & FC & Inp & Th & Fixed & Sat & FreshG & Uniq & Outs & NdO & OutsIff & PR).
-  destruct (family_data u code Fam) as (Cu0 & needs & outputs & keys & bindings & FD).
-  pose proof FD as (FCu & NoOut & PRf & FB & Binds).
-  destruct (S.functx_unique W u Cu ns Cu0 needs FC FCu) as [<- <-].
+  pose proof FD as (FC0 & _ & PRf & FB & Binds).
   assert (Onil : outs = []).
   { destruct outs as [|t0 r0]; [reflexivity|]. exfalso. exact (NoOut t0 (proj1 (OutsIff t0) (or_introl eq_refl))). }
   subst outs.
@@ -350,12 +429,13 @@ Proof.
   rewrite FB. cbn [fc_bindings fc_outputs].
   pose proof Th as Th'. subst th.
   destruct (S.static_realizes_le W Prog argv read state_ok rr rr C d H u Cu ns sm _ (le_n _) Real
-    (S.functx_static W u Cu ns FC) Sat (S.apply_theta W C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel _]].
+    (S.functx_static W u Cu ns FC) Sat (S.apply_theta W C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
   set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) in *.
-  rewrite Sel. cbn [adapt_provisions].
+  destruct (Adapt d1 Sel RealU) as [d2 [Ad Prims]].
+  rewrite Sel, Ad.
   change (application_environment (program_of Prog argv read) d code th
-    (append_environment d1 (EnvironmentWithAliases [] [] []))) with (app_env d code th d1).
-  set (de := app_env d code th d1).
+    (append_environment d2 CopyA.empty_env)) with (app_env d code th d2).
+  set (de := app_env d code th d2).
   assert (AllPrim : Forall IsPrim bindings).
   { clear -Binds. induction Binds as [|key b keys' bs' [op [-> _]] _ IH]; constructor; [do 2 eexists; reflexivity|exact IH]. }
   destruct (installs_run (program_of Prog argv read) j1 bindings de [] st AllPrim) as [Run|Run]; rewrite Run.
@@ -406,8 +486,7 @@ Proof.
     change (lookup_provision k0 (EnvironmentWithAliases [] [] (provision_values dr))) with (lookup_provision k0 dr).
     rewrite (select_lookup _ _ _ k0 Sdr), Fs. reflexivity. }
   (* the caller's new provisions *)
-  destruct (result_agrees F C pa u fx Cu ns sm th gensof C' ks newgens [] AP code ns outputs keys bindings FD)
-    as (news & Eprov & NewM & NewSig & NewAll).
+  destruct Agree as (news & Eprov & NewM & NewSig & NewAll).
   destruct (PublicFormation.provide_result_shape W u C _ C' ks PR) as [Esub [Eloc [outs' [OI Ety]]]].
   assert (Onil' : outs' = []).
   { destruct outs' as [|t0 r0]; [reflexivity|]. exfalso. exact (NoOut t0 (proj1 (OI t0) (or_introl eq_refl))). }
@@ -457,12 +536,11 @@ Proof.
           injection Ek1 as _ Em _. exact (eq_sym Em). }
         subst m2.
         pose proof (AllSig key2 rf a2 gf Ik2 Ek2 Mgf ltac:(rewrite <- Es2, <- Ek1; reflexivity)) as Agr.
-        pose proof (prims_ok F C pa u fx Cu ns sm th gensof C' ks newgens [] AP rr d types H g st Pre0
-          code Look ns outputs keys bindings FD d1 Sel key2 op rf m a2 gf Ik2 ltac:(rewrite <- Es2; exact (last_prim_in _ _ _ Lp))
+        pose proof (Prims key2 op rf m a2 gf Ik2 ltac:(rewrite <- Es2; exact (last_prim_in _ _ _ Lp))
           MP AK Ek2 Mgf) as Call.
-        assert (GE : forall tc tf, SigAgree C Cu th tc tf -> ground de tf = ground d' tc).
+        assert (GE : forall tc tf, SigAgree C Ch0 th tc tf -> ground de tf = ground d' tc).
         { intros tc tf [Sc Ec]. unfold de.
-          rewrite (app_env_ground d code th d1 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ FB eq_refl tf Sc).
+          rewrite (app_env_ground d code th d2 Ch0 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ FB eq_refl Kin tf Sc).
           change (ground d' tc) with (ground d tc). rewrite <- (Abs (app_subst th tf)), <- Ec, (Abs tc). reflexivity. }
         exists (primitive_closure de (A.rkey_of outputs key2) op). split.
         * rewrite (Fd _ s Fs), installs_lookup, Lp, Es2. reflexivity.
@@ -501,6 +579,66 @@ Proof.
   split; [|exact (proj2 Fmd)].
   apply (PublicFormation.apply_abstract_formed W C u gensof C' ks (proj1 Fmd)); [|exact PR].
   intros t Ft. exfalso. exact (NoOut t Ft).
+Qed.
+
+Hypothesis link_merges : S.LinkMergesOk W Prog.
+Hypothesis chain_agrees : ChainResultAgrees.
+Hypothesis chain_prims : ChainPrimsOk.
+Hypothesis not_linked : PlatformNotLinked.
+
+(* ChainPlatformOk (PublicCopyApply): applying a closure whose copy chain
+   ends at a platform family is a safe binding step. The root is read off
+   the closure's derivation (chain_entry): a platform family, whose
+   primitives the code installs, or a linked body sharing the family's
+   code, which then has no bindings. *)
+Theorem chain_platform_ok : CopyA.ChainPlatformOk W Prog argv read state_ok.
+Proof.
+  intros k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
+    code sms gfx h0 gf0 Look Ok Fm Chn Fam.
+  pose proof AP as (R & Lf & FC & Inp & Th & Fixed & Sat & _).
+  pose proof Pre0 as (_ & _ & _ & _ & Real & _).
+  pose proof Real as [Abs [_ [Idem _]]].
+  set (f := fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))).
+  assert (Thf : th = CopyA.thof f Cu) by exact Th.
+  assert (CT : A.CallTheta W C Cu u th) by (rewrite Th; exact (S.apply_theta W C u Cu ns sm FC Idem Inp ltac:(rewrite <- Th; exact Sat))).
+  destruct (S.static_realizes_le W Prog argv read state_ok rr rr C d H u Cu ns sm th (le_n _) Real
+    (S.functx_static W u Cu ns FC) Sat CT) as [d1 [Sel [_ RealU]]].
+  assert (Fixd : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (f x))).
+  { intros x Fx. destruct Fm as [Cov Vm]. destruct (Cov x Fx) as [tx Itx]. rewrite (Vm x tx Itx).
+    destruct (Fixed x tx Itx) as [here [Lh Eh]]. unfold f.
+    change (app_subst (A.c_ty C) (TAbs x)) with (match lookup_subst x (A.c_ty C) with Some t => t | None => TAbs x end).
+    rewrite lookup_subst_nlook, Lh. f_equal. change (ground d tx = ground d (A.canon C here)).
+    rewrite Eh, (Abs tx). reflexivity. }
+  assert (RealF : S.Realizes W Prog argv read state_ok rr Cu (S.callee_env d (CopyA.thof f Cu) d1) H)
+    by (rewrite <- Thf; exact RealU).
+  destruct (CopyA.chain_entry W Prog argv read state_ok link_merges rr H u gfx _ Ok code sms CopyA.empty_env eq_refl
+    d f Cu ns d1 FC RealF Fixd)
+    as [(h0' & gf0' & gg & Ch0' & nsh0 & Cg & nsg & e2 & Chn' & Ok0 & LB & FC0' & FCg & Keys & A2 & RealG)
+       |(h0' & gf0' & Chn' & _ & Fam' & Ok0)].
+  - (* a linked root: the family's code has no bindings *)
+    destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
+    pose proof FD as (FC0 & _ & _ & FB & Binds).
+    pose proof (not_linked h0 code h0' gg _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
+    inversion Binds; subst keys.
+    destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP gfx sms h0 gf0 Chn
+      code Ch0 needs outputs [] [] FD) as [NoOut Agree].
+    apply (family_core k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
+      code sms h0 Ch0 needs outputs [] [] Look FD (chain_keys _ _ _ _ _ _ Chn _ _ _ _ FC FC0) NoOut Agree).
+    intros d1' Sel' _. rewrite Sel in Sel'. injection Sel' as <-. exists e2. split; [exact A2|].
+    intros key op rf m a gf [].
+  - (* a platform root *)
+    destruct (family_data h0' code Fam') as (Ch0 & needs & outputs & keys & bindings & FD).
+    pose proof FD as (FC0 & _ & _ & _ & _).
+    destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP gfx sms h0' gf0' Chn'
+      code Ch0 needs outputs keys bindings FD) as [NoOut Agree].
+    apply (family_core k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
+      code sms h0' Ch0 needs outputs keys bindings Look FD (chain_keys _ _ _ _ _ _ Chn' _ _ _ _ FC FC0) NoOut Agree).
+    intros d1' Sel' RealU'. rewrite Thf in RealU'.
+    destruct (chain_adapt _ _ _ _ _ Chn' rr H d f Cu ns d1' FC RealU') as [d2 A2].
+    exists d2. split; [exact A2|].
+    intros key op rf m a gf Ik Ib MP AK Ek Mgf.
+    exact (chain_prims F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
+      code sms gfx Look Fm h0' gf0' Chn' Ok0 Ch0 needs outputs keys bindings FD d2 key op rf m a gf Ik Ib MP AK Ek Mgf).
 Qed.
 
 End Platform.
