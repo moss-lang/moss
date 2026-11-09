@@ -1,6 +1,13 @@
 # Status: PlatformApplyOk / ChainPlatformOk ("platform")
 
-Branch ob-platform, which now also contains ob-copy (merged at 9abedeb,
+Branch ob-platform, merged with safety at 3a869cf (worldform, copy,
+refile, family). The platform step's slice is FS.CopyA.S (PublicFamilyStep);
+platform codes have fc_sources = []; ChainPlatformOk's made list is
+map gensof outs (D78). Main's HandleFormed is now proved (handles_formed),
+so PlatformHandlesFormed covers the families only. FamilyPlatformApplyOk
+(PublicFamilyStep) is not discharged: its static setting (family_context,
+FamilyStepOut) differs enough that family_core does not apply directly.
+Earlier: ob-platform also contains ob-copy (merged at 9abedeb,
 since ChainPlatformOk and the copy chain live there; conflicts resolved:
 PublicBodySlice's ClosureOk constructors, PublicEntry's obligation list,
 Certificate roots, SAFETY-SITES; `chain_entry` in PublicCopyApply.v passes

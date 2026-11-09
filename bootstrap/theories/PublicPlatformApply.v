@@ -24,7 +24,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
-From NM Require PublicFormation PublicCopyApply.
+From NM Require PublicFormation PublicCopyApply PublicFamilyStep.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -94,8 +94,10 @@ Qed.
 End FixedSelf.
 
 Module PlatformApply (Prims : PRIMITIVES) (I0 : INTERP Prims).
-(* The slice as the copy step (PublicCopyApply) instantiates it. *)
-Module CopyA := PublicCopyApply.CopyApply Prims I0.
+(* The slice as the family and copy steps (PublicFamilyStep,
+   PublicCopyApply) instantiate it. *)
+Module FS := PublicFamilyStep.FamilyStep Prims I0.
+Module CopyA := FS.CopyA.
 Module S := CopyA.S.
 
 (* ---- the family's code runs its installs ------------------------------------- *)
@@ -410,7 +412,7 @@ Lemma family_core : forall k, S.Below W Prog argv read state_ok k ->
        key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
        CallableOk rr H (app_env d code th d2) (rf :: A.sg_params gf) (A.sg_ret gf)
          (primitive_closure (app_env d code th d2) (A.rkey_of outputs key) op)) ->
-  S.StepOut W Prog argv read state_ok rr F (A.with_fresh F newgens) C' False newgens
+  S.StepOut W Prog argv read state_ok rr F (A.with_fresh F newgens) C' False (map gensof outs)
     (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 Proof.
   intros k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0

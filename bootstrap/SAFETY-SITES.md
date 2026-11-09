@@ -25,12 +25,16 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
-obligations (the functor and family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
+obligations (the functor and family obligations `LinkMergesOk`, `BindMergesOk`,
 `CapturedInForceOk`, and `ChainResultsOk` from
-[PublicCopyApply.v](theories/PublicCopyApply.v), which prove the slice's
-`CopyApplyOk` and `LinkResultsOk`, and, for its `ChainPlatformOk` (hence
-`PlatformApplyOk`), the platform premises of
-[PublicPlatformApply.v](theories/PublicPlatformApply.v)), with the slice's elaboration and link facts read off
+[PublicCopyApply.v](theories/PublicCopyApply.v), which with
+`ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
+`PlatformApplyOk`; for `ChainPlatformOk`, proved in
+[PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
+premises; for `FamilyStepOk`, proved in
+[PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`,
+`FamilyCopyApplyOk`, `FamilyPlatformApplyOk`; and the slice's
+`FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. The formation premises and main's `HandleFormed` are
 proved (PublicWorldFormation, PublicFamilySig, `handles_formed`). It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
@@ -485,6 +489,35 @@ the local store. *C* and *F* are the static context and frame.
   `chain_run`. The oracle still refiles at bind time (task E31).
   Details in scratch/orch/refile-AUDIT.md.
 
+- **Counterexample: an output type left its block (fixed).** `BApplyAbstract`
+  returned only the fresh generations (`newgens`) as made. An output not
+  in force is installed as itself, and the application writes its meaning,
+  but it was not made, so `BlkE` let a value of that type leave the block.
+  [output-escape.moss](examples/output-escape.moss) does this. The oracle
+  rejects it (D78). Native was not run: no built compiler in that
+  checkout. `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
+  applications. The rule now makes every output destination
+  (`map gensof outs`), and requires that the frame's return and receiver
+  types not mention an output installed as itself (they are read where
+  their symbols are in force, so this rejects nothing). Details are in
+  scratch/orch/family-AUDIT.md.
+- **`FamilyStepOk` was too general (statement restated).** It quantified
+  over every `FamilyApplication` and every realized C0. (1) Without
+  `FamilyReadOff`, the matching is arbitrary on P(F) symbols that the needs
+  do not mention, for example `T = TAbs g` for a generation g outside C0's
+  scope. The family's key is then not `KeysScoped`, so `Formed` fails
+  after an application that completes. (2) `Pre` does not say that C0's
+  method provisions are readings of the declared signature at their θ, so
+  a family closure can shadow one of them at the same run-time key with
+  another signature. `FamilyStepOk` now takes `FamilyReadOff` with an ok,
+  in-scope receiver and C's table read in C0's scope, and its keep clause
+  requires `FamilyCoherent`. It is proved. What the callers need moved to
+  the slice's `family_coherent` and `*_scoped` hypotheses, each stated
+  over formed contexts. Like `FamilyStepOk` before, they hold for
+  elaborated contexts but not for every formed one. Proving them needs
+  invariants in `Formed` (scoped local and provision types, signature
+  coherence) preserved through the slice.
+
 ## Body-safety slice (checked, conditional)
 
 [PublicBodySlice.v](theories/PublicBodySlice.v) proves `safe_all`. For
@@ -503,8 +536,10 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it | T15, T16 |
-| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized | T15, T16 |
+| `family_step` | one family application, as a binding, its matching read off (`FamilyReadOff`) a receiver that is ok and in the code's scope: it completes with the family's provisions added, the code's table formed and realized, and every context among the code's provisions that agrees with the family at a shared run-time key (`FamilyCoherent`) still realized; or it stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it. Proved (`family_step_ok`, [PublicFamilyStep.v](theories/PublicFamilyStep.v)) from the abstract application machinery (`chain_run`) and family versions of the application obligations (`FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`) | T15, T16 |
+| `family_coherent` | the code's formed context agrees with a family applied around it at a shared run-time key (same receiver, method and θ, same signature). It is true of elaborated contexts (both are `SigOf` readings at θ), but `Pre` does not carry that as an invariant | T29 |
+| `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
+| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
 | `copy_apply` | applying a copy runs its source at the source's interface | T15 |
 | `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, and F has no type output; needs a substitution lemma for result readings), `PlatformNotLinked` (a family's code with primitives is no linked body's) and `ChainPrimsOk`, which `PublicEntry.platform_prims_public` discharges for the reference host from `PlatformHandlesFormed` (the families' handle formation, as `handles_formed` proves main's) and `PlatformSigsFixed` (machine symbols a family signature mentions are its fixed inputs). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `MainMachinesUnmerged` | T15, T11, T29 |
 

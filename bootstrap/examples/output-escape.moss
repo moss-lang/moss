@@ -1,0 +1,30 @@
+# A value of a functor's output type leaves the block that bound it (D78).
+# T is not in force in demo, so `bind F;` installs T as itself rather than
+# as a fresh generation; Audit's BApplyAbstract listed only fresh
+# generations as made, so BlkE let `{ bind F; v }` (of type T) escape,
+# although the application writes T's meaning only inside the block.
+# The oracle rejects it: "this block yields `T`, which mentions `T`, a type
+# `bind F;` made in it: a value of that type cannot leave the block (D78)".
+# Native was not run (no built compiler in the moss-safety checkout).
+# Audit now counts every output destination as made.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type T;
+val v: T;
+functor F: Std -> T, v;
+functor Impl: Std -> T, v { bind T = Int; bind v = 3; }
+assume Std {
+  fn demo() {
+    bind F = Impl;
+    let x = { bind F; v };
+    let y = x;
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

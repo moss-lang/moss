@@ -289,7 +289,7 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
     select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
-    S.MeaningsGrow newgens d (append_environment result d).
+    S.MeaningsGrow (map gensof outs) d (append_environment result d).
 
 (* HYPOTHESIS (T15). PlatformApplyOk read through copies: applying a copy
    of a platform family installs the family's primitives. With the empty
@@ -301,7 +301,7 @@ Definition ChainPlatformOk : Prop := forall k, S.Below W Prog argv read state_ok
   forall code sms gfx h0 gf0, lookup_provision (IFun u) d = Some (FunctorClosure code sms empty_env) ->
   ClosureOk rr H u gfx (FunctorClosure code sms empty_env) -> S.FixedMeans W u d fx gfx ->
   CopyChain u gfx sms h0 gf0 [] -> Platform.Family W Prog h0 code ->
-  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+  StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs) (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 
 Lemma link_results_of_chain : ChainResultsOk -> S.LinkResultsOk W Prog argv read state_ok.
 Proof.

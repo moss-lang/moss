@@ -4271,15 +4271,22 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     FreshFor W F C newgens ->
     (* Repeated output roles share a generation; distinct roles do not. *)
     (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-    (* outputs: fresh where the symbol is already in force *)
+    (* outputs: fresh where the symbol is already in force; one not in
+       force is installed as itself, and the frame's return and receiver
+       types (read where every symbol they mention is in force) do not
+       mention it *)
     (forall t, FunOutputs W u t ->
-       (nlook t (c_ty C) = None /\ gensof t = t) \/
+       (nlook t (c_ty C) = None /\ gensof t = t /\
+          ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+                  (match fr_this F with Some r => gens r | None => [] end))) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+    (* [D78]: every output destination, fresh or not, is made here: a
+       value of its type may not leave the block *)
     BindItem W P F C (Spec (Some pa) None None, None)
       (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
-      C' (with_fresh F newgens) newgens
+      C' (with_fresh F newgens) (map gensof outs)
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx,
