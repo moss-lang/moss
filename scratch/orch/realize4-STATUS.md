@@ -79,7 +79,26 @@ is abstract: `(exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None))`.
 
 ## Remaining: `FS.FamilyCopyRealizeOk`
 
-Not started. Plan, reusing this file:
+Not started. **A missing premise first (for the coordinator).**
+`FamilyCopyRealizeOk` (and `FamilyCopyApplyOk`) lack the premise
+`PublicFormation.TysScoped W C` that `FamilyLinkResultsOk` and
+`FamilyPlatformApplyOk` both have.
+- The realization needs it. Relating the caller's reading of the family's
+  result at Cf to the family's own needs `DomT`'s second clause, as
+  `level_rel`, `entries_rel_kinds` and `family_items_pos` all do:
+  "an extra key of Cf's table that a path names is a type symbol". The only
+  source is `PublicFormation.family_keys_typed`, which takes `TysScoped W C`.
+- Without it, C's table is unconstrained beyond FamilyApplication. A key of
+  C's table that a result path names as a method receiver could read (in
+  RecvTy) as its table meaning at C and nominally in the family's own
+  context. I did not build a program that does this.
+- Fix: add `PublicFormation.TysScoped W C ->` after `A.FamilyApplication ...`
+  in both definitions (PublicFamilyStep.v). `family_run` has `Ts` at the
+  FamilyCopyApplyOk call and would pass it; `family_copy_apply_of_realize`
+  passes it through. This changes an obligation's statement, so it needs
+  approval. I did not make it.
+
+Plan once that is settled, reusing this file:
 - The realization part is `chain_real` with outs = []: LevelReal for the
   family at its own context, then a family version of `top_key`/`top_envok`
   at the family context Cf (Parts from FamilyApplication, as in
@@ -103,5 +122,7 @@ Not started. Plan, reusing this file:
 
 ## Checks
 
-check.sh is green at the final commit (see the commit message; about
-200 s for a full build).
+check.sh is green at 70765ca and at the final commit (about 240 s for a
+full build). Commits: b7cfa8b (chain induction, the CLink change), 70765ca
+(ChainRealizeOk proved and removed from safety_obligations), and the final
+status commit.
