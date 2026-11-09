@@ -99,3 +99,26 @@ context where each raw handle (StructRef, ArrayRef, I32) means itself; it
 checks each with check_runtime_primitive.
 
 Test: none executable (no implementation provides another family).
+
+## 5. main reads a platform functor's fixed machine types as themselves (FixedMachinesRead)
+
+What: `Platform.Entry`'s `IFun` case is now
+`Family W P source code /\ FixedMachinesRead W C source`: each machine
+type symbol among the functor's fixed readings in main's context (its
+`c_funs` entry) reads, canonically in main's context, as itself.
+
+Why: the platform's family code exists only at the machine types; a merge
+of main's context (MostGeneralMerge may pick either side as the
+representative) could read a fixed I32 as Bool, and the family's
+primitives would then be typed at Bool. The proof needed this as the
+premise MainMachinesUnmerged (main's merge leaves the machine symbols
+alone); this is the narrower check the oracle actually makes.
+
+Test: bootstrap/examples/platform-fixed-merge.moss (a context listing
+`ff[I32 = Bool], ff`, so main's merge makes I32 Bool). Oracle: rejects,
+"platform functor has an incompatible assumed fixed type"
+(check_platform_entry_view, the XDFun case, which this mirrors). Native:
+rejects, "incompatible types: `Memories`".
+
+Rejects nothing accepted: it is the oracle's own check on platform functor
+entries, stated on the recorded fixed readings.

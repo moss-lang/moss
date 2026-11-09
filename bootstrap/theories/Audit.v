@@ -4711,13 +4711,24 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
       AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
       HandlesRead W outputs key) keys bindings.
 
+(* main's context reads each machine type a platform functor fixes as
+   itself (the oracle's check_platform_entry_view: "platform functor has an
+   incompatible assumed fixed type"): the platform's provision exists only
+   at the machine types, so a merge of main's context may not read one as
+   another type. *)
+Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
+  forall fixed, nlook source (c_funs C) = Some fixed ->
+  forall name machine symbol t, In (name, machine) initial_machines ->
+    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed -> canon C t = TAbs symbol.
+
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
-  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) => Family W P source code
+  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) =>
+      Family W P source code /\ FixedMachinesRead W C source
   | _, _ => False
   end.
 
