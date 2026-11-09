@@ -1,0 +1,36 @@
+; The assumption audits (check.sh). Each compiles as soon as the theory
+; files it requires are built, overlapping the rest of the theory build:
+; `rocq dep` lists the .vo files it requires, and its compiler output (the
+; `Print Assumptions` answers) is the log check.sh inspects.
+
+(rule
+ (target Certificate.deps)
+ (deps Certificate.v (glob_files ../theories/*.v))
+ (action
+  (with-stdout-to %{target}
+   (pipe-stdout
+    (run rocq dep -Q ../theories NM Certificate.v)
+    (system "tr ' ' '\\n' | grep '^\\.\\./theories/.*\\.vo$' || true")))))
+
+(rule
+ (targets Certificate.log Certificate.vo)
+ (deps Certificate.v %{read-lines:Certificate.deps})
+ (action
+  (with-stdout-to Certificate.log
+   (run rocq c -q -no-glob -Q ../theories NM -o Certificate.vo Certificate.v))))
+
+(rule
+ (target Closed.deps)
+ (deps Closed.v (glob_files ../theories/*.v))
+ (action
+  (with-stdout-to %{target}
+   (pipe-stdout
+    (run rocq dep -Q ../theories NM Closed.v)
+    (system "tr ' ' '\\n' | grep '^\\.\\./theories/.*\\.vo$' || true")))))
+
+(rule
+ (targets Closed.log Closed.vo)
+ (deps Closed.v %{read-lines:Closed.deps})
+ (action
+  (with-stdout-to Closed.log
+   (run rocq c -q -no-glob -Q ../theories NM -o Closed.vo Closed.v))))
