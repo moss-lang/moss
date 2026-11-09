@@ -245,28 +245,47 @@ Definition app_env (d : environment) (code : usym) (th : subst) (d1 : environmen
 Notation SigAgree := PublicFamilyAgree.SigAgree.
 Notation ItemsAgree := PublicFamilyAgree.ItemsAgree.
 
+(* The chain's agreement is read at the ground meanings of the state d
+   the application runs from: a copy step relates its two results only up
+   to the copy site's readings of the fixed inputs (CopyOutputs), which the
+   state grounds as the application's (FixedMeans), not syntactically. *)
+Definition SigAgreeG (d : environment) (Ch0 : A.cx) (th : subst) (tc tf : ty) : Prop :=
+  incl (A.gens tf) (map fst (A.c_ty Ch0)) /\ ground d tc = ground d (app_subst th tf).
+
+(* ItemsAgree with SigAgreeG for SigAgree. *)
+Definition ItemsAgreeG (d : environment) (Cr Ch0 outputs : A.cx) (th : subst) (New : ty -> nat -> A.fsig -> Prop)
+    (keys : list item) : Prop :=
+  (forall r m g, New r m g ->
+     (exists key, In key keys /\ app_subst_item th (A.rkey_of outputs key) = A.rkey Cr r m) /\
+     (forall key rf a gf, In key keys -> key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
+        app_subst_item th (A.rkey_of outputs key) = A.rkey Cr r m ->
+        Forall2 (SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf))) /\
+  (forall key, In key keys -> exists r m g,
+     New r m g /\ app_subst_item th (A.rkey_of outputs key) = A.rkey Cr r m).
+
 (* The caller's result C' (at θ) and a family's own result (outputs, at
    its inputs Ch0) agree: C' adds to C's provisions methods only (news;
    the first conjunct is output_cx's shape), and these agree with the
-   family's items (ItemsAgree). *)
-Definition ResultAgree (C C' Ch0 outputs : A.cx) (th : subst) (keys : list item) : Prop :=
+   family's items (ItemsAgreeG, at the state d). *)
+Definition ResultAgree (d : environment) (C C' Ch0 outputs : A.cx) (th : subst) (keys : list item) : Prop :=
   exists news, A.c_provisions C' = (news ++ A.c_provisions C)%list /\
     (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a) /\
-    ItemsAgree C C' Ch0 outputs th (fun r m g => A.mlook r m (mths_of news) = Some g) keys.
+    ItemsAgreeG d C' Ch0 outputs th (fun r m g => A.mlook r m (mths_of news) = Some g) keys.
 
-(* PREMISE (static correspondence, T15/T16). Applying F at θ, where F's
-   closure is a copy chain down to a platform family h0 (u = h0 for the
-   empty chain): F has no type output (h0 has none, and a copy reads its
-   result as its source does), and the caller's result agrees with the
-   family's (ResultAgree). Proving it needs a substitution lemma for the
-   result readings (OutputItemsEntries, RecvTy, SigOf, AppOf) between the
-   family's table and the caller's, through the chain's CopyOutputs. *)
+(* PREMISE (static correspondence, T15/T16). Applying F at θ from a state
+   d realizing C, where F's closure (in d) is a copy chain down to a
+   platform family h0 (u = h0 for the empty chain): F has no type output
+   (h0 has none, and a copy reads its result as its source does), and the
+   caller's result agrees with the family's (ResultAgree at d). *)
 Definition ChainResultAgrees : Prop :=
   forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall gfx sms h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
-  forall code Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
-  (forall t, ~ A.FunOutputs W u t) /\ ResultAgree C C' Ch0 outputs th keys.
+  forall rr d types H g st, Pre rr F C d types H g st ->
+  forall code sms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env) ->
+  S.FixedMeans W u d fx gfx ->
+  forall h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
+  (forall t, ~ A.FunOutputs W u t) /\ ResultAgree d C C' Ch0 outputs th keys.
 
 (* PREMISE (primitive behaviour, T11/T17). A primitive a platform family
    installs is callable, at its AtKey signature, in the environment the
@@ -468,7 +487,7 @@ Lemma family_core : forall k, S.Below W Prog argv read state_ok k ->
   lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env) ->
   FamilyData h0 code Ch0 needs outputs keys bindings ->
   incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)) ->
-  (forall t, ~ A.FunOutputs W u t) -> ResultAgree C C' Ch0 outputs th keys ->
+  (forall t, ~ A.FunOutputs W u t) -> ResultAgree d C C' Ch0 outputs th keys ->
   (forall d1, select_provisions d sm = Some d1 ->
      S.Realizes W Prog argv read state_ok rr Cu (S.callee_env d th d1) H ->
      exists d2, adapt_provisions d1 sms = Some d2 /\
@@ -605,10 +624,10 @@ Proof.
         pose proof (AllSig key2 rf a2 gf Ik2 Ek2 Mgf ltac:(rewrite <- Es2, <- Ek1; reflexivity)) as Agr.
         pose proof (Prims key2 op rf m a2 gf Ik2 ltac:(rewrite <- Es2; exact (last_prim_in _ _ _ Lp))
           MP AK Ek2 Mgf) as Call.
-        assert (GE : forall tc tf, SigAgree C Ch0 th tc tf -> ground de tf = ground d' tc).
+        assert (GE : forall tc tf, SigAgreeG d Ch0 th tc tf -> ground de tf = ground d' tc).
         { intros tc tf [Sc Ec]. unfold de.
           rewrite (app_env_ground d code th d2 Ch0 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ FB eq_refl Kin tf Sc).
-          change (ground d' tc) with (ground d tc). rewrite <- (Abs (app_subst th tf)), <- Ec, (Abs tc). reflexivity. }
+          change (ground d' tc) with (ground d tc). exact (eq_sym Ec). }
         exists (primitive_closure de (A.rkey_of outputs key2) op). split.
         * rewrite (Fd _ s Fs), installs_lookup, Lp, Es2. reflexivity.
         * inversion Agr as [|t1 t2 l1 l2 Aret Rest]; subst.
@@ -685,8 +704,8 @@ Proof.
     pose proof FD as (FC0 & _ & _ & FB & Binds & _).
     pose proof (platform_not_linked h0 code h0' gg _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
     inversion Binds; subst keys.
-    destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP gfx sms h0 gf0 Chn
-      code Ch0 needs outputs [] [] FD) as [NoOut Agree].
+    destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx Look Fm h0 gf0 Chn
+      Ch0 needs outputs [] [] FD) as [NoOut Agree].
     apply (family_core k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
       code sms h0 Ch0 needs outputs [] [] Look FD (chain_keys _ _ _ _ _ _ Chn _ _ _ _ FC FC0) NoOut Agree).
     intros d1' Sel' _. rewrite Sel in Sel'. injection Sel' as <-. exists e2. split; [exact A2|].
@@ -694,8 +713,8 @@ Proof.
   - (* a platform root *)
     destruct (family_data h0' code Fam') as (Ch0 & needs & outputs & keys & bindings & FD).
     pose proof FD as (FC0 & _ & _ & _ & _).
-    destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP gfx sms h0' gf0' Chn'
-      code Ch0 needs outputs keys bindings FD) as [NoOut Agree].
+    destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx Look Fm h0' gf0' Chn'
+      Ch0 needs outputs keys bindings FD) as [NoOut Agree].
     apply (family_core k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
       code sms h0' Ch0 needs outputs keys bindings Look FD (chain_keys _ _ _ _ _ _ Chn' _ _ _ _ FC FC0) NoOut Agree).
     intros d1' Sel' RealU'. rewrite Thf in RealU'.

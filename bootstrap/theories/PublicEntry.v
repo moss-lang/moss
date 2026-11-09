@@ -591,7 +591,7 @@ Theorem safety_obligations : forall prelude,
         decide (scratch/orch/results2-AUDIT.md section 2) *)
      LRes.KeptOutputsUnmentioned W /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
-     PA.ChainResultAgrees W Prog /\
+     PA.ChainResultAgrees W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
