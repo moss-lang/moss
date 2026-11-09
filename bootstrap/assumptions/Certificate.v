@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety.
+  PublicEntry PublicPrimitiveSafety PublicFormation.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -102,6 +102,18 @@ Definition certificate_roots :=
   @NM.PublicCallRealize.ctxof_formed,
   @NM.PublicCallRealize.call_agree,
   @NM.PublicCallRealize.call_absorbs,
+  @NM.PublicFormation.ex_ok,
+  @NM.PublicFormation.ex_formed',
+  @NM.PublicFormation.ex_nominal_formed',
+  @NM.PublicFormation.keys_scoped,
+  @NM.PublicFormation.table_keys_scoped,
+  @NM.PublicFormation.ctxof_cx_formed,
+  @NM.PublicFormation.functx_cx_formed,
+  @NM.PublicFormation.demand_formed_cx,
+  @NM.PublicFormation.apply_abstract_formed,
+  @NM.PublicFormation.lambda_cx_formed,
+  @NM.PublicFormation.fn_body_formed,
+  @NM.PublicFormation.units_bare_of,
   @PublicArmsI.arms_select,
   @PublicTags.tag_check,
   @PublicPrims.primitive_safe,
