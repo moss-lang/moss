@@ -37,7 +37,9 @@ open premise for the user to decide: results2-AUDIT section 2), which with
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
 [PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
 premises; for `FamilyStepOk`, proved in
-[PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`,
+[PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`
+(its selection proved, `PublicChainCore.family_link_results_ok`, from
+`FamilyLinkNewOk`: the family's new methods installed by the selection),
 `FamilyCopyApplyOk`, and `FamilyKeysTyped` (for
 `FamilyPlatformApplyOk`, proved in PublicPlatformApply.v); and the slice's
 `FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off

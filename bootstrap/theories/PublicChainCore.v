@@ -163,6 +163,7 @@ Module LR := PublicLinkResults.LinkResults Prims I0.
 Module PA := LR.PA.
 Module CA := LR.CA.
 Module S := LR.S.
+Module FS := PA.FS.
 
 Section Core.
 Variable W : A.world.
@@ -438,6 +439,116 @@ Qed.
    kept-output premise. *)
 Corollary chain_results_of_new : ChainNewOk -> LR.KeptOutputsUnmentioned W -> CA.ChainResultsOk W Prog argv read state_ok.
 Proof. intros New Ku. exact (LR.chain_results_scoped W Prog argv read state_ok (chain_core_ok New Ku) Ku). Qed.
+
+(* ---- what the body provides at each result key ------------------------------- *)
+
+(* A result key k (renamed into the body's terms), promised as p by the
+   formal result, is realized in the body's final state by pv: p's types
+   read at the body's meanings of the renamed outputs (rr, read_rename),
+   a method's receiver as the body's site reads it. *)
+Definition BodyReal (n : nat) (H3 : heap_types) (d3 : environment) (Cb : A.cx) (rr : subst) (k : item)
+    (p : A.provision) (pv : provision_value) : Prop :=
+  match p with
+  | A.ProvidedVal t _ => exists w, pv = ValueProvision w /\ value_typed W P H3 w (ground d3 (app_subst rr t))
+  | A.ProvidedFn g _ => CallableOk n H3 d3 (map (app_subst rr) (A.sg_params g)) (app_subst rr (A.sg_ret g)) pv
+  | A.ProvidedMethod g _ => exists rb m i, A.at_site Cb k = IMth rb m i /\
+      CallableOk n H3 d3 (rb :: map (app_subst rr) (A.sg_params g)) (app_subst rr (A.sg_ret g)) pv
+  | A.ProvidedFunctor fx => exists u gfx, k = IFun u /\ ClosureOk n H3 u gfx pv /\
+      forall x tx, In (x, tx) fx -> lookup_subst x gfx = Some (ground d3 (app_subst rr tx))
+  end.
+
+Lemma absorbs_sub : forall Cb d3 t t', S.Absorbs Cb d3 -> app_subst (A.c_sub Cb) t = app_subst (A.c_sub Cb) t' ->
+  ground d3 t = ground d3 t'.
+Proof. intros Cb d3 t t' Abs E. rewrite <- (Abs t), <- (Abs t'). unfold A.canon. rewrite E. reflexivity. Qed.
+
+Lemma absorbs_sub_map : forall Cb d3 ts ts', S.Absorbs Cb d3 -> map (app_subst (A.c_sub Cb)) ts = map (app_subst (A.c_sub Cb)) ts' ->
+  map (ground d3) ts = map (ground d3) ts'.
+Proof.
+  intros Cb d3 ts. induction ts as [|t r IH]; intros [|t' r'] Abs E; cbn in E; try discriminate; [reflexivity|].
+  injection E as E1 E2. cbn. rewrite (absorbs_sub Cb d3 t t' Abs E1), (IH r' Abs E2). reflexivity.
+Qed.
+
+Lemma body_provides : forall n Cb d3 H3 Cr ks ren,
+  S.Realizes W Prog argv read state_ok n Cb d3 H3 -> A.ResultRealizes Cb Cr ren ks ->
+  forall k, In k ks -> exists p pv, A.ilook (A.provision_id k) (A.c_provisions Cr) = Some p /\
+    lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item ren k))) d3 = Some pv /\
+    BodyReal n H3 d3 Cb (A.read_rename Cb ren) (app_subst_item ren k) p pv.
+Proof.
+  intros n Cb d3 H3 Cr ks ren [Abs [[Vals [Fns [Mths Funs]]] [_ KM]]] RR k Ik.
+  destruct (RR k Ik) as [req [act [Lr [La [Kind [Sig Inst]]]]]].
+  pose proof (KM _ _ (S.ilook_in _ _ _ La)) as Kd.
+  exists req.
+  destruct k as [x|v|f|rf m i|u0]; cbn [app_subst_item A.at_site A.provision_id] in La, Kd |- *;
+    destruct act as [tb ab|gb ab|gb ab|fxb]; cbn in Kd; try contradiction;
+    destruct req as [t a|g a|g a|fx]; cbn in Kind; try contradiction.
+  - (* val *)
+    pose proof (ilook_vals _ v tb ab KM La) as Lv. destruct (Vals v tb Lv) as [w [Look T]].
+    exists (ValueProvision w). split; [exact Lr|]. split; [exact Look|]. exists w. split; [reflexivity|].
+    cbn in Sig. injection Sig as Sig. rewrite (absorbs_sub Cb d3 _ _ Abs Sig). exact T.
+  - (* fn *)
+    pose proof (ilook_fns _ f gb ab KM La) as Lf. destruct (Fns f gb Lf) as [pv [Look Ok]].
+    exists pv. split; [exact Lr|]. split; [exact Look|]. cbn in Sig. injection Sig as Sp Sr.
+    refine (S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
+    + symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
+    + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
+  - (* method *)
+    clear Kd.
+    set (rb := A.canon Cb (app_subst (map (fun q => (fst q, snd q)) (A.c_ty Cb)) (app_subst ren rf))) in *.
+    pose proof (ilook_mths _ rb m gb ab KM La) as Lm. destruct (Mths rb m gb Lm) as [pv [Look Ok]].
+    exists pv. split; [exact Lr|]. split; [exact Look|]. exists rb, m, (map_snd (app_subst ren) i). split; [reflexivity|].
+    cbn in Sig. injection Sig as Sp Sr.
+    refine (S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
+    + cbn [map]. f_equal. symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
+    + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
+  - (* functor *)
+    assert (Lu : A.nlook u0 (A.c_funs Cb) = Some fxb).
+    { change (A.c_funs Cb) with (funs_of (A.c_provisions Cb)). rewrite (funs_by_ilook _ u0 KM), La. reflexivity. }
+    destruct (Funs u0 fxb Lu) as [pv [gfx [Look [Ok [_ Vm]]]]].
+    exists pv. split; [exact Lr|]. split; [exact Look|]. exists u0, gfx. split; [reflexivity|]. split; [exact Ok|].
+    intros x tx Ix.
+    assert (Ip : In (x, Some (app_subst (A.c_sub Cb) (app_subst (A.read_rename Cb ren) tx)))
+      (A.provision_inst (A.provision_subst (A.c_sub Cb) (A.provision_subst (A.read_rename Cb ren) (A.ProvidedFunctor fx))))).
+    { cbn. rewrite !map_map. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Ix]. }
+    pose proof (Inst _ _ Ip) as Ia. cbn in Ia. rewrite map_map in Ia. apply in_map_iff in Ia as [[x' tb] [E Ib]].
+    injection E as -> E. rewrite (Vm x tb Ib). f_equal. symmetry. exact (absorbs_sub Cb d3 _ _ Abs (eq_sym E)).
+Qed.
+
+(* ---- FamilyLinkResultsOk: the selection ------------------------------------- *)
+
+
+(* PREMISE (T15). FamilyLinkResultsOk, its selection discharged: the
+   family's new methods are installed by what the body selection dr
+   finds (the correspondence with no type outputs). *)
+Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
+  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.FamilyApplication W C u matching th sm Cr ks ->
+  forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
+    d1 d2 d3 g3 st3 H3 j',
+  S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc) ->
+  S.FixedMeans W u d fx gfx ->
+  S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
+  select_provisions d sm = Some d1 ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)) = Some d2 ->
+  S.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
+  heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
+  forall dr, select_provisions d3 (result_smap (result_substitution th [])
+      (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr' k0)) ks')%list
+      (S.link_sources Cb outs' gen Cr' ks')) = Some dr ->
+  FS.FamilyNewOk W Prog argv read state_ok rr Cr ks d dr H3.
+
+Theorem family_link_results_ok : FamilyLinkNewOk -> FS.FamilyLinkResultsOk W Prog argv read state_ok.
+Proof.
+  intros New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+    Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
+  pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
+  pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
+  destruct (chain_selection rr Cb d3 H3 u Cu _ outs' gen Cr' ks' (result_substitution th []) Real3 PR' RR) as [dr Sdr].
+  exists dr. split; [exact Sdr|].
+  exact (New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+    Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).
+Qed.
 
 End Core.
 End ChainCore.

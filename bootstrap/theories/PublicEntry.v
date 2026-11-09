@@ -595,7 +595,8 @@ Theorem safety_obligations : forall prelude,
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
      PA.ChainResultAgrees W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
-     FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
+     (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
+     CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
      PA.FamilyKeysTyped W /\
      (* a family's receiver is in scope, and agrees with the code's context *)
@@ -607,8 +608,9 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CN [KU [RA [FLR [FCA [FRA [FCo [ExS [LitS DemS]]]]]]]]]].
+    as [CIF [CN [KU [RA [FLN [FCA [FRA [FCo [ExS [LitS DemS]]]]]]]]]].
   pose proof (CC.chain_results_of_new W Prog _ _ _ CN KU) as CR.
+  pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.

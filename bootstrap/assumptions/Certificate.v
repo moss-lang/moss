@@ -128,6 +128,8 @@ Definition certificate_roots :=
   @PublicLinkRes.chain_results_scoped,
   @PublicChainCoreI.chain_core_ok,
   @PublicChainCoreI.chain_results_of_new,
+  @PublicChainCoreI.family_link_results_ok,
+  @PublicChainCoreI.body_provides,
   @PublicLinkRes.pre_junk_meaning,
   @NM.PublicGenerationFacts.result_environment_shadows_occupied,
   @NM.PublicOutputSubst.output_entries_rel,
