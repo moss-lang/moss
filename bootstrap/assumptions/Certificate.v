@@ -112,6 +112,7 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.platform_prims_public,
   @PublicEntryTop.platform_sigs_fixed,
+  @PublicEntryTop.platform_handles_formed,
   @PublicPlatform.chain_platform_ok,
   @PublicPlatform.platform_not_linked,
   @PublicEntryTop.entry_realizes,

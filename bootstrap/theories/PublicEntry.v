@@ -336,10 +336,9 @@ Definition FamilySig (W : A.world) (Prog : program) (u : nat) (inputs outputs : 
   forall key op rf m a gf, In key keys -> Platform.AtKey W outputs key op ->
   key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf -> P gf rf.
 
-(* PREMISE (T29). A platform family's primitive signatures (AtKey in its
-   result) have their handle tags formed, as main's platform fns' are
-   (handles_formed, from Platform.HandlesRead); Platform.Family asks no
-   HandlesRead of its items yet. *)
+(* A platform family's primitive signatures (AtKey in its result) have
+   their handle tags formed (platform_handles_formed), as main's platform
+   fns' are (handles_formed). *)
 Definition PlatformHandlesFormed (W : A.world) (Prog : program) : Prop :=
   forall u inputs outputs keys, FamilySig W Prog u inputs outputs keys
     (fun gf rf => Forall (HandleFormed W) (A.sg_ret gf :: rf :: A.sg_params gf)).
@@ -359,6 +358,47 @@ Proof.
   pose proof FD as (_ & _ & _ & _ & Binds).
   destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op' [_ [_ [_ [MF _]]]]]]].
   rewrite Ek in MF. exact (MF gf Mgf name mach sym Inm Lang Is).
+Qed.
+
+Lemma mlook_in_key : forall r m (l : list ((ty * nat) * A.fsig)) g, A.mlook r m l = Some g -> In ((r, m), g) l.
+Proof.
+  intros r m l g. induction l as [|[[r' m'] g'] rest IH]; intros Found; [discriminate|]. cbn in Found.
+  destruct (ty_eqb r r') eqn:Er; destruct (Nat.eqb_spec m m') as [->|_]; cbn in Found;
+    try (right; exact (IH Found)).
+  apply PublicTypeFacts.ty_eqb_spec in Er. subst r'. injection Found as <-. left. reflexivity.
+Qed.
+
+(* A method's receiver in a formed context is ok. *)
+Lemma mths_recv_ok : forall W C r m g, PublicFormation.CxFormed W C -> A.mlook r m (A.c_mths C) = Some g ->
+  PublicFormation.TyOk W r.
+Proof.
+  intros W C r m g Cf L. pose proof (mlook_in_key _ _ _ _ L) as I. unfold A.c_mths in I.
+  apply in_flat_map in I as [[k p] [Iq Ik]].
+  destruct (PublicFormation.cf_prov _ _ Cf k p Iq) as [Kk _].
+  destruct k, p; cbn in Ik; try contradiction; destruct Ik as [E|[]]; injection E as -> _ _. exact Kk.
+Qed.
+
+(* A platform family's signatures have their handles formed: each item
+   reads its raw handles as themselves (Platform.HandlesRead), and is
+   formed, since the family's result context is. *)
+Lemma platform_handles_formed : forall W Prog, (exists b, A.WorldOf b W) -> PlatformHandlesFormed W Prog.
+Proof.
+  intros W Prog [b Wo] u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf.
+  pose proof FD as (FC & _ & PRf & _ & Binds).
+  destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op' [_ [_ [_ [_ HR]]]]]]].
+  rewrite Ek in HR. pose proof (HR gf Mgf) as Raws.
+  pose proof (PublicFormation.functx_cx_formed W (PublicWorldFormation.merge_formed_of W)
+    (PublicWorldFormation.mentions_typed_of b W Wo) u inputs needs FC) as Fi.
+  pose proof (PublicFormation.apply_abstract_formed W inputs u (fun t => t) outputs keys Fi
+    (fun t _ => or_introl eq_refl) PRf) as Fo.
+  pose proof (PublicFormation.mths_ok W outputs rf m gf (proj1 Fo) Mgf) as [Fp Fr].
+  pose proof (mths_recv_ok W outputs rf m gf (proj1 Fo) Mgf) as Fv.
+  assert (Formed : Forall (PublicFormation.TyOk W) (A.sg_ret gf :: rf :: A.sg_params gf)) by (constructor; [exact Fr|constructor; [exact Fv|exact Fp]]).
+  rewrite Forall_forall in Formed, Raws |- *. intros t It name param handle symbol args Tag Sym ->.
+  split.
+  - destruct (Formed _ It) as [Ft _]. exact (proj1 (proj1 (PublicFormation.nom_formed W symbol args) Ft)).
+  - apply (Raws _ It name handle symbol args); [|exact Sym|reflexivity].
+    cbn in Tag. destruct Tag as [E|[E|[E|[]]]]; injection E as <- <- <-; cbn; auto.
 Qed.
 
 (* A platform family's primitives are typed calls (ChainPrimsOk) for the
@@ -550,7 +590,7 @@ Theorem safety_obligations : forall prelude,
      S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
      CopyA.ChainResultsOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
-     MainMachinesUnmerged W Prog /\ PlatformHandlesFormed W Prog /\
+     MainMachinesUnmerged W Prog /\
      PA.ChainResultAgrees W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
@@ -564,7 +604,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [LM [BM [CIF [CR [Unm [Handles [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]]].
+    as [LM [BM [CIF [CR [Unm [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
@@ -572,7 +612,7 @@ Proof.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].
   pose proof (PA.chain_platform_ok W Prog _ _ _ LM RA
-    (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Handles (platform_sigs_fixed W Prog))
+    (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo)) (platform_sigs_fixed W Prog))
     ) as CP.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP) as CA.
