@@ -2965,13 +2965,14 @@ Definition FunOutputs (W : world) (u : nat) (t : nat) : Prop :=
 
 (* M(F) ([D84] rule 1, with DECISIONS.md's correction): the type symbols the
    result items mention — a val's or fn's requirements (its dependencies,
-   for a fn its whole telescope), a method's receiver and the requirements
-   its signature mentions, less what brackets bind, plus the brackets'
-   right sides; closed through relevance (w_reqs); less F's outputs. *)
+   for a fn its whole telescope), a method's receiver, and every type
+   symbol a fn's or method's signature mentions (sigclose, #12b), less
+   what brackets bind, plus the brackets' right sides; closed through
+   relevance (w_reqs); less F's outputs. *)
 Inductive ResultMentions (W : world) : nat -> string -> spec -> nat -> Prop :=
 | RMValFn : forall self p pa a s t,
     resolve_sym W p pa = Some s -> (kind_sym W s = Some DKVal \/ kind_sym W s = Some DKFn) ->
-    In t (w_reqs W s) ->
+    (In t (w_reqs W s) \/ kind_sym W s = Some DKFn /\ SigMentions W s t) ->
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
     ResultMentions W self p (Spec (Some pa) None a) t
 | RMReceiver : forall self p pa dn a r t,

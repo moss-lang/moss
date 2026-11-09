@@ -142,7 +142,7 @@ Proof.
  split.
  - exists fdecl,(Some []),[pathspec "T"],[pathspec "out"],None,(pathspec "out").
    split;[exact fdecl_read|]. split;[reflexivity|]. split;[left;reflexivity|]. split.
-   + apply A.RMValFn with(s:=3);[reflexivity|right;reflexivity|left;reflexivity|intros[x[[] _]]].
+   + apply A.RMValFn with(s:=3);[reflexivity|right;reflexivity|left;left;reflexivity|intros[x[[] _]]].
    + apply f_no_outputs.
  - intros (d&name&names&args&res&Decl&Ast&Member).
    rewrite fdecl_read in Decl;injection Decl as <-.
@@ -170,7 +170,18 @@ Proof.
  | H:A.d_ast outdecl=ADFunctor _ _ _ _ _|-_=>discriminate H
  | H:In _ []|-_=>contradiction
  end.
- match goal with H:In t(A.w_reqs model 3)|-_=>change(In t[1])in H;destruct H as[<-|[]];reflexivity end.
+ match goal with Hr:In t(A.w_reqs model 3)\/_|-_=>destruct Hr as[Hq|[_ SM]] end.
+ - change(In t[1])in Hq;destruct Hq as[<-|[]];reflexivity.
+ - destruct SM as(d&rcv&n&ps&rt&body&D&Ast&Sides).
+   rewrite outdecl_read in D;injection D as <-.
+   cbn[outdecl A.d_ast] in Ast;injection Ast as <- <- <- <- <-.
+   destruct Sides as[(pt&[]&_)|(r&Er&Fr)];injection Er as <-.
+   inversion Fr;subst;
+   repeat match goal with
+   | R:A.resolve_sym model _ ["T"]=Some ?x|-_=>change(Some 1=Some x)in R;injection R as <-
+   | K:A.kind_sym model 1<>Some A.DKType|-_=>exfalso;apply K;vm_compute;reflexivity
+   | H:In _ []|-_=>contradiction
+   end;reflexivity.
 Qed.
 Lemma f_context : A.FunCtx model 4 cf [].
 Proof.

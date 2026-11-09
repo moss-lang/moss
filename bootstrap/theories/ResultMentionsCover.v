@@ -14,7 +14,8 @@ Definition mention_here(f self mi:nat)(d:option string)(g:gsym):M(list nat):=
    ret(rr++ms)
  | None=>match gs_kind g,gs_decl g with
    | KCtx,ADCtx _ its=>result_mentions_go f self(gs_mod g)its[]
-   | KVal,_|KFn,_=>reqs(gs_id g)
+   | KVal,_=>reqs(gs_id g)
+   | KFn,_=>let! rs:=reqs(gs_id g)in let! ms:=signature_type_syms g rs in ret(rs++ms)
    | KFunctor,ADFunctor _ _ _ _ None=>if Nat.eqb(gs_id g)self then ret[]else functor_fixed_go f g
    | _,_=>ret[]end
  end.
@@ -41,13 +42,26 @@ Qed.
 Lemma here_valfn:forall f self mi g s found s' t,
  nget(w_syms w)(gs_id g)=Some g->
  (A.kind_sym WW(gs_id g)=Some A.DKVal\/A.kind_sym WW(gs_id g)=Some A.DKFn)->
- mention_here f self mi None g s=Good(found,s')->Inv s->Later w P R Fl s'->
- In t(R(gs_id g))->In t found.
+ mention_here f self mi None g s=Good(found,s')->Inv s->st_w s=w->Later w P R Fl s'->
+ (In t(R(gs_id g))\/A.kind_sym WW(gs_id g)=Some A.DKFn/\A.SigMentions WW(gs_id g)t)->In t found.
 Proof.
- intros f self mi g s found s' t Hg K H Hi L Ht.
- rewrite(kind_sym_rd w R Fl b Hload _ _ Hg)in K.
- unfold mention_here in H. destruct(gs_kind g);try(solve[destruct K;discriminate]);
- destruct(gs_decl g);try(exact(eq_ind _ (fun rs=>In t rs) Ht _ (reqs_R w R Fl _ _ _ _ Hi H L))).
+ intros f self mi g s found s' t Hg K H Hi Hw L Ht.
+ pose proof(kind_sym_rd w R Fl b Hload _ _ Hg)as Kr. rewrite Kr in K.
+ pose proof(load_world_kind b w Hload _ _ Hg)as KO. unfold KindOK in KO.
+ unfold mention_here in H. destruct(gs_kind g)eqn:Kg;try(solve[destruct K;discriminate]).
+ - destruct Ht as[Ht|[Kf _]];[|rewrite Kr in Kf;discriminate Kf].
+   destruct(gs_decl g);exact(eq_ind _ (fun rs=>In t rs) Ht _ (reqs_R w R Fl _ _ _ _ Hi H L)).
+ - destruct(gs_decl g)as[| | | | | |rcv nm ps rt body| |]eqn:D;try(cbn in KO;discriminate KO).
+   apply bind_inv in H as(rs&s1&Hr&H). apply bind_inv in H as(ms&s2&Hs&H);injection H as <- <-.
+   destruct(ok_reqs(gs_id g)s rs s1 Hi Hr)as[I1 F1].
+   assert(W1:st_w s1=w)by(rewrite(fr_w _ _ F1);exact Hw).
+   destruct(signature_type_syms_filter w (P:=P) R Fl b Hload g rcv nm ps rt body rs s1 ms s2 Hg D Hs I1 W1 L)
+    as(test&extra&->&Htest&_&Hextra).
+   assert(Er:R(gs_id g)=rs)
+    by exact(reqs_R w R Fl _ _ _ _ Hi Hr(later_back w P R Fl _ _(proj2(ok_signature_syms_frame g rs _ _ _ I1 Hs))L)).
+   destruct(in_dec Nat.eq_dec t rs)as[In'|Nin];[apply in_or_app;left;exact In'|].
+   destruct Ht as[Ht|[_ Hsig]];[rewrite Er in Ht;contradiction|].
+   apply in_or_app;right;apply in_or_app;right;apply Hextra;split;[exact Hsig|exact Nin].
 Qed.
 Lemma here_receiver:forall f self mi dn g s found s' t,
  nget(w_syms w)(gs_id g)=Some g->
@@ -177,7 +191,7 @@ Proof.
  |self0 p pa0 a0 c dc nm its sp0 x Hr Hd D Hin HM N
  |self0 p pa0 a0 u du nm names args res sp0 x Hr Hd D Nself Hin HM Nout Nnames N];subst;
  try(rewrite Rt in Hr;injection Hr as <-).
- - apply in_or_app;left;apply filter_In;split;[eapply(here_valfn f self mi);eassumption|apply Keep;exact N].
+ - apply in_or_app;left;apply filter_In;split;[eapply(here_valfn f self mi);try eassumption;exact W2|apply Keep;exact N].
  - apply in_or_app;left;apply filter_In;split;[eapply(here_receiver f self mi);eassumption|apply Keep;exact N].
  - apply in_or_app;left;apply filter_In;split;[eapply(here_method f self mi);eassumption|apply Keep;exact N].
  - apply in_or_app;right;apply RHS;right;exists(bp,Spec(Some sp0)dr sa);split;[exact Hin|exact Hfree].

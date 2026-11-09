@@ -133,6 +133,20 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **M(F) counts every type symbol a fn's signature mentions (proposals,
+  #12b).** `RMValFn` adds, for a fn, its `SigMentions` (as `RMMeth` has
+  done for methods since sigclose), in Audit, ExecutionModel and the
+  oracle's `result_mentions_go`. A functor whose result lists `fn mk(): U`
+  with U outside mk's assume nesting can now read its result in its own
+  context; U is a fixed input, read where F is bound. Criterion: stability
+  (criteria.md section 5); native already behaves so
+  (examples/fn-sig-nonreq.moss prints 7 on native and now on the oracle;
+  examples/fn-sig-nonreq-rebind.moss is rejected by rule 5 everywhere).
+  A fn's θ is not widened (its key carries none). The oracle-soundness
+  proofs (ResultMentionsCover's `here_valfn`, ResultMentionsExact's
+  `here_fn_sound`) cover the new symbols. Corpus (old oracle against new,
+  elaboration and full runs): 412 same, 2 diff, the two new programs.
+  See AUDIT-CHANGES.md #12.
 - **A mentioned output is fresh (proposals, #10 option (b)).** In
   `BApplyAbstract` an output that is not in force but is mentioned in
   scope (`context_gens C ++ key_receiver_gens C`, the proof's

@@ -37,7 +37,9 @@ Definition mention_item(f self mi:nat)(out:list nat)(sp:spec):M(list nat):=
                   | None =>
                       match gs_kind g, gs_decl g with
                       | KCtx, ADCtx _ its => result_mentions_go f self (gs_mod g) its []
-                      | KVal, _ | KFn, _ => reqs (gs_id g)
+                      | KVal, _ => reqs (gs_id g)
+                      | KFn, _ => let! rs := reqs (gs_id g) in
+                                  let! ms := signature_type_syms g rs in ret (rs ++ ms)
                       (* m4, D84 rule 1: an abstract functor item G mentions X(G) *)
                       | KFunctor, ADFunctor _ _ _ _ None =>
                           if Nat.eqb (gs_id g) self then ret [] else functor_fixed_go f g

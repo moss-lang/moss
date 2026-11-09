@@ -53,7 +53,7 @@ entry they belong to.
 | 9 | A family's listed polymorphic inputs are types | f6ca908 | B |
 | 10 | A kept output is unmentioned by the context; since option (b), a mentioned output is fresh | 642490e, proposals | B, then none |
 | 11 | A linked input reads in G over F's inputs (cap3b) | 807bbbf | B |
-| 12 | A method's θ records every signature type symbol (sigclose) | 61040f2 | B |
+| 12 | A method's θ records every signature type symbol (sigclose); M(F) counts a fn's too (#12b) | 61040f2, proposals | B; #12b a relaxation |
 | 13 | A linked body does not keep an output at an input of F | 268bf3a, 4d55710 | B |
 | 14 | `link_site`: result keys read inputs at G's table | 94d89ce, fc75de7 | C |
 | 15 | Lambda captures keep merge keys | a5b081c | D |
@@ -368,6 +368,46 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
 - **Class B.** It rejects partially-bound-merge.moss, which native accepts
   and the old oracle ran. It also changes run-time keys (a D aspect). E35
   is done.
+
+- **#12b: M(F) counts every type symbol a fn's signature mentions
+  (proposals, owner-approved).** `ResultMentions`' `RMValFn` now also
+  counts, for a fn, every type symbol its signature mentions
+  (`SigMentions`, as `RMMeth` does for a method). A fn's θ is *not*
+  widened: its key `IFn f` carries no θ, and `Satisfies` already compares
+  the signature at θ (`sig_at`).
+  - **Why.** With `RMValFn` on `w_reqs` only, a functor whose result lists
+    `fn mk(): U` (U outside mk's assume nesting) had no U among its inputs,
+    so its result could not be read in its own context (ProvideResult's
+    `SigOf` fails) and it was unusable. The oracle had the same asymmetry.
+  - **Criterion: stability** (criteria.md section 5): U becomes a fixed
+    input X(F), so it keeps the meaning it had where F was bound (rule 5),
+    as native does.
+  - **Oracle changed too.** `Elab.result_mentions_go` lists a fn's
+    requirements followed by `signature_type_syms` (the same sorted
+    remainder as for a method). The oracle-soundness proofs follow:
+    `ResultMentionExec`/`ResultMentionsCover` restate the visitor,
+    `here_valfn` (cover) and `here_fn_sound` (exact) handle the new symbols;
+    PublicWorldFormation, XBridge, LinkOutputBoundary and
+    LinkCaptureRegression take the new disjunct. `ExecutionModel.v`'s copy
+    of `ResultMentions` changes alike.
+  - **Native first.** Native already treats such a U as a fixed input of F:
+    [fn-sig-nonreq.moss](examples/fn-sig-nonreq.moss) prints 7, and
+    [fn-sig-nonreq-rebind.moss](examples/fn-sig-nonreq-rebind.moss) (U
+    rebound before `bind F;`) is rejected ("the available binding was
+    provided at a different type instantiation: `F`").
+  - **Tests.**
+
+    | program | oracle before | oracle now | native | Audit now |
+    |---|---|---|---|---|
+    | [fn-sig-nonreq.moss](examples/fn-sig-nonreq.moss) | rejects (U not available) | 7 | 7 | accepts (reading) |
+    | [fn-sig-nonreq-rebind.moss](examples/fn-sig-nonreq-rebind.moss) | rejects (U not available) | rejects (rule 5) | rejects | rejects (rule 5) |
+
+  - **Corpus.** The new oracle against the old over `tests/`, `examples/`,
+    `bootstrap/examples/` and the new programs (elaboration verdicts): 412
+    same, 2 diff, exactly the two programs above. Full runs (stdout,
+    stderr, exit status): also 412 same, 2 diff, the same two.
+  - **Class.** A relaxation toward native (Audit and the oracle accepted
+    no such program before).
 
 ### 13. A linked body does not keep an output at an input of F (268bf3a, 4d55710)
 - **Rule now.** `LinkBody` requires that nothing the body makes is an
@@ -1015,11 +1055,8 @@ details are in `scratch/consol-STATUS.md`.
   Since only a linked body's own binds can reach its result, pins could
   be scoped to them.
 - **M(F) counts a method's non-requirement signature symbols (#12), not
-  a fn's.** `RMMeth` uses `SigMentions`; `RMValFn` uses `w_reqs`. A
-  functor whose result lists `fn mk(): U` (U outside mk's assume nesting)
-  has no U among its inputs, so its result cannot be read in its own
-  context. The oracle has the same asymmetry ("type `U` is not available
-  in the context here").
+  a fn's.** Resolved by #12b: `RMValFn` counts a fn's `SigMentions` too,
+  in Audit and the oracle.
 - **Leftovers kept.** `result_environment` ignores its `caller` argument,
   and `fresh_result_types` is only a statement (#20). `fc_outputs`
   carries the non-type result keys, which no application reads.

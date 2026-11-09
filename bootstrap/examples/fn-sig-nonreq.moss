@@ -1,0 +1,40 @@
+# #12b (fns' signature symbols in M(F)): F's result lists `fn mk(): U`,
+# where U is not a requirement of mk (mk's assume nesting is A only). Before,
+# M(F) counted only mk's requirements (RMValFn on w_reqs), so U was not an
+# input of F, F's result could not be read in F's own context (ProvideResult's
+# SigOf), and the functor was unusable; the oracle said "type `U` is not
+# available in the context here". Now RMValFn also counts every type symbol
+# a fn's signature mentions (SigMentions, as RMMeth does for a method), so U
+# is a fixed input of F (X(F), outside the brackets), read where F is bound.
+# Verdicts: Audit accepts (by reading); oracle prints 7 (since #12b, Elab's
+# result_mentions mirrors it; before: rejected); native prints 7.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type U;
+val u0: U;
+assume A {
+  fn mk(): U;
+}
+functor F[A]: Std -> mk;
+functor G: A, U, u0, Std -> mk { bind mk = () => u0; }
+assume Std {
+  fn demo() {
+    bind A = Int;
+    bind U = Int;
+    bind u0 = 7;
+    bind F = G;
+    bind F;
+    print_int(mk());
+    putchar(char::newline);
+  }
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

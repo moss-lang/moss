@@ -79,7 +79,8 @@ Proof.
    all: try contradiction.
    all: match goal with Resolve:A.resolve_sym _ _ _=Some _|-_=>vm_compute in Resolve;injection Resolve as <- end.
    all: first[
-    match goal with Req:In ?ty(A.w_reqs _ 2)|-_=>change(In ty[1])in Req;destruct Req as[Eq|[]];symmetry;exact Eq end
+    match goal with Req:In ?ty(A.w_reqs _ 2)\/_|-_=>destruct Req as[Req|[Kf _]];
+      [change(In ty[1])in Req;destruct Req as[Eq|[]];symmetry;exact Eq|vm_compute in Kf;discriminate] end
    |match goal with Decl:A.w_decl _ _=Some _|-_=>vm_compute in Decl;injection Decl as <-;cbn[A.d_ast]in *;discriminate end].
  - intros ->.
    exists(A.Decl "/case.moss"(ADFunctor "Target"(Some[])[][link_boundary_out]None)[]),
@@ -88,7 +89,7 @@ Proof.
    + eapply A.RMValFn with(s:=2).
      * vm_compute;reflexivity.
      * left;reflexivity.
-     * left;reflexivity.
+     * left;left;reflexivity.
      * intros[b[Bad _]];contradiction.
    + apply link_boundary_no_outputs.
 Qed.

@@ -4453,7 +4453,9 @@ result mentions (`X = ∅`).
    on an abstract functor only; `F[]` is legal) lists `P(F)`. `M(F)` is
    the type symbols the items of `Outputs` mention — for a val or fn, its
    dependencies: the type symbols of its whole `assume` nesting, which is
-   what coherence compares it on ([D71], [D79]), not only its signature's;
+   what coherence compares it on ([D71], [D79]), not only its signature's,
+   and for a fn also every type symbol its signature mentions (so its
+   result can be read in `F`'s own context; AUDIT-CHANGES #12b);
    for a method, its receiver, its brackets' right-hand sides and its
    signature, less the bracketed symbols; for an abstract functor item
    `G`, `X(G)` — closed through relevant parameters ([D71], [D73]), less

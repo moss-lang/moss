@@ -740,7 +740,9 @@ Lemma resultmentions_type : forall self p sp t,
   Loaded b p -> ResultMentions W self p sp t -> kind_sym W t = Some DKType.
 Proof.
   intros self p sp t Hl H. revert Hl. induction H; intro Hl.
-  - destruct H0 as [Hk|Hk]; exact (reqs_are_types s _ Hk t H1).
+  - destruct H1 as [H1|[_ (d & rcv & n & ps & rt & body & Hd & _ & [(pt & _ & F)|(rr & _ & F)])]];
+      [destruct H0 as [Hk|Hk]; exact (reqs_are_types s _ Hk t H1)| |];
+      exact (freein_types_all _ _ _ (decl_loaded s d Hd) F).
   - destruct H0 as [[-> Hk]|[_ Hreq]]; [exact Hk|].
     destruct (resolve_sym_declared p pa r Hl H) as [d Hd].
     destruct (declared_kind r d Hd) as [k Hk].

@@ -56,6 +56,30 @@ Proof.
  - apply filter_In in Hin as[_ Test]. apply Htest;exact Test.
  - apply Hextra in Hin as[Hs _]. exact Hs.
 Qed.
+(* #12b: a fn item mentions its requirements and every type symbol its
+   signature mentions. *)
+Lemma here_fn_sound:forall g s found s' t,
+ nget(w_syms w)(gs_id g)=Some g->gs_kind g=KFn->
+ (let! rs:=reqs(gs_id g)in let! ms:=signature_type_syms g rs in ret(rs++ms))s=Good(found,s')->
+ Inv s->st_w s=w->Later w P R Fl s'->In t found->
+ In t(R(gs_id g))\/A.kind_sym WW(gs_id g)=Some A.DKFn/\A.SigMentions WW(gs_id g)t.
+Proof.
+ intros g s found s' t Hg K H Hi Hw L Hin.
+ pose proof(load_world_kind b w Hload _ _ Hg)as KO. unfold KindOK in KO. rewrite K in KO.
+ destruct(gs_decl g)as[| | | | | |rcv nm ps rt body| |]eqn:D;try(cbn in KO;discriminate KO).
+ apply bind_inv in H as(rs&s1&Hr&H). apply bind_inv in H as(ms&s2&Hs&H);injection H as <- <-.
+ destruct(ok_reqs(gs_id g)s rs s1 Hi Hr)as[I1 F1].
+ assert(W1:st_w s1=w)by(rewrite(fr_w _ _ F1);exact Hw).
+ destruct(signature_type_syms_filter w (P:=P) R Fl b Hload g rcv nm ps rt body rs s1 ms s2 Hg D Hs I1 W1 L)
+  as(test&extra&->&Htest&_&Hextra).
+ apply in_app_or in Hin as[Hin|Hin].
+ - left. rewrite(reqs_R w R Fl _ _ _ _ Hi Hr(later_back w P R Fl _ _(proj2(ok_signature_syms_frame g rs _ _ _ I1 Hs))L)).
+   exact Hin.
+ - right. split;[rewrite(kind_sym_rd w R Fl b Hload _ _ Hg),K;reflexivity|].
+   apply in_app_or in Hin as[Hin|Hin].
+   + apply filter_In in Hin as[_ T]. apply Htest;exact T.
+   + apply Hextra in Hin as[Hs' _]. exact Hs'.
+Qed.
 Lemma here_sound:forall f,MentionSound f->FixedSound f->
  forall self mi d g pa a s found s',
  nget(w_syms w)(gs_id g)=Some g->A.resolve_sym WW(gm_path(get_mod w mi))pa=Some(gs_id g)->
@@ -91,7 +115,8 @@ Proof.
  - unfold mention_here in H.
    destruct(gs_kind g)eqn:K;destruct(gs_decl g)as[asm decls|tn|an aliasTy|tag pars pay|un|vn vt init|rcv fnn ps rt body|cn its|fgn names args0 res body]eqn:D;
    try solve[injection H as <- <-;destruct Hin];
-   try solve[eapply A.RMValFn;[exact Resolve|rewrite(kind_sym_rd w R Fl b Hload _ _ Hg),K;cbn;tauto|change(In t(R(gs_id g)));rewrite(reqs_R w R Fl _ _ _ _ Hi H L);exact Hin|exact N]].
+   try solve[eapply A.RMValFn;[exact Resolve|rewrite(kind_sym_rd w R Fl b Hload _ _ Hg),K;cbn;tauto|left;change(In t(R(gs_id g)));rewrite(reqs_R w R Fl _ _ _ _ Hi H L);exact Hin|exact N]];
+   try solve[eapply A.RMValFn;[exact Resolve|rewrite(kind_sym_rd w R Fl b Hload _ _ Hg),K;cbn;tauto|exact(here_fn_sound g s found s' t Hg K H Hi Hw L Hin)|exact N]].
    + destruct(IH self(gs_mod g)its[]s found s' H Hi Hw(loader_mod_in w R Fl b Hload _ _ Hg)L t Hin)as[[]|(sp&Hsp&HM)].
      eapply A.RMCtx with(dc:=A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g)).
      * exact Resolve.

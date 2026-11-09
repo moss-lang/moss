@@ -195,7 +195,8 @@ Proof.
     [self p pa a s t Rs K I _|self p pa dn a r t Rs Cases _|self p pa dn a r m t Rs Mn SM _
     |self p pa d a bp sp dr sa t _ _ F|self p pa a c dc n its sp t Rs Dc _ _ _ IH _
     |self p pa a u du n names args res sp t Rs Du _ _ _ _ IH _ _ _]; intros Lp.
-  - destruct K as [K|K]; exact (reqs_plain_typed s _ t K ltac:(discriminate) ltac:(discriminate) I).
+  - destruct I as [I|[_ SM]]; [|exact (sig_mentions_typed s t SM)].
+    destruct K as [K|K]; exact (reqs_plain_typed s _ t K ltac:(discriminate) ltac:(discriminate) I).
   - destruct Cases as [[-> K]|[_ I]]; [exact K|].
     exact (reqs_typed r t (resolve_sym_declared _ _ _ Lp Rs) I).
   - exact (sig_mentions_typed m t SM).
