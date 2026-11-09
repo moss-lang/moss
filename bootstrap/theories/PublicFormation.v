@@ -434,11 +434,12 @@ Definition ScopedTy (C : cx) (t : ty) : Prop := forall y, In y (gens t) -> GenSc
 Definition KeysScoped (C : cx) : Prop :=
   forall r m th p, In (IMth r m th, p) (c_provisions C) -> ScopedTy C r.
 
-(* (b') a type-table key is a generation in scope or a declared type symbol
-   (`bind T = τ;` may bind a type symbol not in force, so not every key is
-   in `context_gens`; but a fresh generation is never a declared symbol) *)
+(* (b') a type-table key is a declared type symbol: every key elaboration
+   makes is one (`bind T = τ;`, an output, a requirement of a context or a
+   functor), never a fresh generation (`bind T = τ;` may bind a type symbol
+   not in force, so not every key is in `context_gens`) *)
 Definition TysScoped (C : cx) : Prop :=
-  forall x, In x (map fst (c_ty C)) -> In x (scope_gens C) \/ kind_sym W x = Some DKType.
+  forall x, In x (map fst (c_ty C)) -> kind_sym W x = Some DKType.
 
 Definition FormedCx (C : cx) : Prop := CxFormed C /\ KeysScoped C /\ TysScoped C.
 
@@ -561,7 +562,7 @@ Proof. intros C t v Ks r m th p Iq y Iy. exact (inscope_mono _ _ y (scope_set_ty
 Lemma set_ty_formed : forall C t v, FormedCx C -> TyOk W v -> kind_sym W t = Some DKType -> FormedCx (set_ty C t v).
 Proof.
   intros C t v [Cf [Ks Ts]] Ok K. split; [exact (set_ty_cxformed _ _ _ Cf Ok)|split; [exact (set_ty_keys _ _ _ Ks)|]].
-  intros x [E|Ix]; [subst x; right; exact K|]. destruct (Ts x Ix) as [S|S]; [left; exact (scope_set_ty _ _ _ _ S)|right; exact S].
+  intros x [E|Ix]; [subst x; exact K|exact (Ts x Ix)].
 Qed.
 
 Lemma fold_set_ty_shape : forall l C,
@@ -821,13 +822,39 @@ Proof.
   cbn [entries_cx c_ty c_sub]. apply in_map_iff. exists (x, TAbs x). split; [reflexivity|exact Iq].
 Qed.
 
+(* A telescope's type keys are declared type symbols. *)
+Definition KeysDecl (tm : list (nat * ty)) : Prop := forall x, In x (map fst tm) -> kind_sym W x = Some DKType.
+
+Lemma entries_keys_decl :
+  (forall p ob tm sp es tm', ItemEntries W p ob tm sp es tm' -> KeysDecl tm -> KeysDecl tm') /\
+  (forall p ob tm sps es tm', ItemsEntries W p ob tm sps es tm' -> KeysDecl tm -> KeysDecl tm').
+Proof.
+  apply (ies_mut W (fun p ob tm sp es tm' _ => KeysDecl tm -> KeysDecl tm')
+                   (fun p ob tm sps es tm' _ => KeysDecl tm -> KeysDecl tm'));
+    intros; try assumption.
+  - destruct (nlook t tm); [assumption|]. intros x [<-|Ix]; [assumption|auto].
+  - auto.
+  - auto.
+Qed.
+
+Lemma root_keys_decl : forall q es0 tm its es tm', RootItems W q es0 tm its es tm' -> KeysDecl tm -> KeysDecl tm'.
+Proof.
+  intros q es0 tm its es tm' Root. induction Root as
+    [es0 tm|es0 tm p a rest u du n ps args res xs fx es tm' R D Ast Fresh Nd Xs FR Rest IH|es0 tm sp rest es tm' Skip Rest IH];
+    intros Kt.
+  - exact Kt.
+  - apply IH. intros x Ix. destruct (add_tys_keys xs tm x Ix) as [Ix'|Ix']; [|exact (Kt x Ix')].
+    apply (mentions_typed u). exact (proj1 (proj1 (Xs x) Ix')).
+  - exact (IH Kt).
+Qed.
+
 Lemma entries_cx_formed : forall σ tm es,
-  IdForm tm -> KeysAbstract tm -> Forall (EntryP (TyOk W)) es ->
+  IdForm tm -> KeysAbstract tm -> KeysDecl tm -> Forall (EntryP (TyOk W)) es ->
   (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
   (forall g t, In (g, t) σ -> TyFormed W t /\ incl (gens t) (map fst tm)) ->
   FormedCx W (entries_cx σ tm es).
 Proof.
-  intros σ tm es Id Ka Es Eg Sg.
+  intros σ tm es Id Ka Kd Es Eg Sg.
   assert (So : TmOk W σ).
   { intros g t Iq. destruct (Sg g t Iq) as [Ft Gt]. split; [exact Ft|]. intros y Iy. exact (Ka y (Gt y Iy)). }
   pose proof (idform_ok _ Id Ka) as Tm.
@@ -851,7 +878,7 @@ Proof.
     assert (Sc : incl (gens r0) (scope_gens (entries_cx σ tm es))).
     { intros y Iy. apply idform_scope; [exact Id|]. apply (Eg _ Ie). cbn. apply in_or_app. left. exact Iy. }
     exact (scoped_of_incl W _ _ (canon_scope (entries_cx σ tm es) r0 Sc)).
-  - intros x Ix. left. cbn in Ix. rewrite map_map in Ix. cbn in Ix. exact (idform_scope σ tm es x Id Ix).
+  - intros x Ix. cbn in Ix. rewrite map_map in Ix. cbn in Ix. exact (Kd x Ix).
 Qed.
 
 (* The context a fn or method's assumes form is formed. *)
@@ -870,7 +897,10 @@ Proof.
   assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
   { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
   assert (Ok : Forall (EntryP (TyOk W)) (es ++ er)) by (apply Forall_app; split; assumption).
-  apply entries_cx_formed; [exact IdR|exact KaR|exact Ok| |].
+  assert (KdR : KeysDecl tmr).
+  { pose proof (proj2 entries_keys_decl _ _ _ _ _ _ IE (fun y (Iy : In y []) => match Iy with end)) as Kt.
+    destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI]; [exact Kt|exact (root_keys_decl _ _ _ _ _ _ RI Kt)]. }
+  apply entries_cx_formed; [exact IdR|exact KaR|exact KdR|exact Ok| |].
   - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
   - intros g t Iq. split.
     + exact (merge_formed σ (es ++ er) MGM (Forall_impl _ entry_ok_formed Ok) g t Iq).
@@ -890,7 +920,11 @@ Proof.
     apply typed_abstract. apply (mentions_typed u). exact (proj1 (proj2 (proj1 (Imp x) Ix))). }
   assert (Sub : forall x, In x (map fst tm) -> In x (map fst (map (fun t => (t, TAbs t)) implicit ++ tm))).
   { intros x Ix. rewrite map_app. apply in_or_app. right. exact Ix. }
-  apply entries_cx_formed; [exact Id'|exact Ka'|exact OkT| |].
+  assert (Kd' : KeysDecl (map (fun t => (t, TAbs t)) implicit ++ tm)).
+  { intros x Ix. rewrite map_app, map_map in Ix. cbn in Ix. rewrite map_id in Ix. apply in_app_or in Ix as [Ix|Ix].
+    - exact (mentions_typed u x (proj1 (proj2 (proj1 (Imp x) Ix)))).
+    - exact (proj2 entries_keys_decl _ _ _ _ _ _ IE (fun y (Iy : In y []) => match Iy with end) x Ix). }
+  apply entries_cx_formed; [exact Id'|exact Ka'|exact Kd'|exact OkT| |].
   - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
   - intros g t Iq. split.
     + exact (merge_formed σ es MGM (Forall_impl _ entry_ok_formed OkT) g t Iq).
@@ -1234,7 +1268,7 @@ Qed.
 Lemma demand_tys : forall C0 wanted used C wrap Cf, Demand W C0 wanted used C wrap Cf -> TysScoped W C -> TysScoped W Cf.
 Proof.
   intros C0 wanted used C wrap Cf Dm Ts x Ix. destruct (demand_shape _ _ _ _ _ _ Dm) as [E1 E2].
-  rewrite (scope_gens_ext Cf C E1 E2). rewrite E1 in Ix. exact (Ts x Ix).
+  rewrite E1 in Ix. exact (Ts x Ix).
 Qed.
 
 (* `bind F;` of an abstract F in force: the result context is formed. *)
@@ -1291,9 +1325,9 @@ Proof.
     rewrite Ety in Iq. apply in_map_iff in Iq as [[y v] [E Iq]]. cbn in E. injection E as -> _.
     unfold output_type_map in Iq. apply in_map_iff in Iq as [[z v0] [E Iq]]. cbn in E. injection E as -> _.
     apply in_app_or in Iq as [Iq|Iq].
-    + apply in_map_iff in Iq as [t [E It]]. injection E as <- _. right. exact (outputs_typed _ _ (proj1 (OutsI t) It)).
+    + apply in_map_iff in Iq as [t [E It]]. injection E as <- _. exact (outputs_typed _ _ (proj1 (OutsI t) It)).
     + assert (Ix : In x (map fst (c_ty C))) by (change x with (fst (x, v0)); apply in_map, Iq).
-      destruct (Ts x Ix) as [S|S]; [left; exact (Scope x S)|right; exact S].
+      exact (Ts x Ix).
 Qed.
 
 End Results.
@@ -1603,9 +1637,7 @@ Qed.
 Theorem table_keys_scoped : forall W C x, FormedCx W C -> In x (map fst (A.c_ty C)) ->
   In x (A.context_gens C) \/ A.kind_sym W x = Some A.DKType.
 Proof.
-  intros W C x [_ [_ Ts]] Ix. destruct (Ts x Ix) as [Sc|K]; [left|right; exact K].
-  unfold scope_gens in Sc. unfold A.context_gens.
-  apply in_app_or in Sc as [Sc|Sc]; apply in_or_app; [left; exact Sc|right; apply in_or_app; left; exact Sc].
+  intros W C x [_ [_ Ts]] Ix. right. exact (Ts x Ix).
 Qed.
 
 (* The context a family demand leaves (ExCallD's and MCAttachedDefined's

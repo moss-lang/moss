@@ -1997,7 +1997,7 @@ Proof.
   - intros k p I. exact (Pr k p (Inc _ I)).
   - rewrite Eloc. exact Lo.
   - intros r m th p I. exact (PublicFormation.scoped_ext W _ _ _ (eq_sym Sc) (Ks r m th p (Inc _ I))).
-  - intros x Ix. unfold PublicFormation.TysScoped in *. rewrite Ety in Ix. rewrite Sc. exact (Ts x Ix).
+  - intros x Ix. unfold PublicFormation.TysScoped in *. rewrite Ety in Ix. exact (Ts x Ix).
 Qed.
 
 

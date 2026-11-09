@@ -57,9 +57,7 @@ Lemma fresh_not_key : forall F C gs g, PublicFormation.FormedCx W C -> A.FreshFo
   ~ In g (map fst (A.c_ty C)).
 Proof.
   intros F C gs g [_ [_ Ts]] [_ Fr] Ig Ik. rewrite Forall_forall in Fr. destruct (Fr g Ig) as [Fresh Out].
-  destruct (Ts g Ik) as [Sc|Ks].
-  - apply Out. apply in_or_app. right. apply in_or_app. left. exact (scope_context_gens C g Sc).
-  - unfold A.Fresh in Fresh. unfold A.kind_sym in Ks. rewrite Fresh in Ks. discriminate.
+  pose proof (Ts g Ik) as Ks. unfold A.Fresh in Fresh. unfold A.kind_sym in Ks. rewrite Fresh in Ks. discriminate.
 Qed.
 
 End Made.

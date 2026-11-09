@@ -213,7 +213,7 @@ Proof.
   - cbn. intros n t mu Iq. rewrite LoR, Elo, El in Iq. exact (PublicFormation.cf_locals W C0 Cf0 n t mu Iq).
   - intros r m' th' p Iq. apply (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE)). cbn in Iq. destruct (PrR _ _ Iq) as [Iq'|[_ [_ Kr]]];
       [rewrite Epr, Ep in Iq'; exact (Ks0 r m' th' p Iq')|exact (Kr r m' th' eq_refl)].
-  - intros x Ix. rewrite ScE. exact (Ts0 x Ix).
+  - intros x Ix. exact (Ts0 x Ix).
 Qed.
 
 Module FamilyStep (Prims : PRIMITIVES) (I0 : INTERP Prims).
