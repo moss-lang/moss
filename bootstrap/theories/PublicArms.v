@@ -13,8 +13,8 @@ Definition UnionFormed (st : ty) : Prop :=
   forall ms, st = TUnion ms ->
     Forall (fun m => exists n xs, m = TNom n xs) ms /\ NoDup (map A.head ms).
 
-Module Arms (Prims : PRIMITIVES).
-Module O := Outcomes Prims.
+Module Arms (Prims : PRIMITIVES) (I0 : INTERP Prims).
+Module O := Outcomes Prims I0.
 Module I := O.I.
 
 Section Arms.

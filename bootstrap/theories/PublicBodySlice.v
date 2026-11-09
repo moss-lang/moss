@@ -16,12 +16,12 @@ Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
-Module BodySlice (Prims : PRIMITIVES).
-Module AR := Arms Prims.
+Module BodySlice (Prims : PRIMITIVES) (I0 : INTERP Prims).
+Module AR := Arms Prims I0.
 Module O := AR.O.
 Module I := O.I.
-Module B := BoolTruthy Prims.
-Module TC := Checks Prims.
+Module B := BoolTruthy Prims I0.
+Module TC := Checks Prims I0.
 
 Section Slice.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -365,7 +365,7 @@ Proof.
   destruct OutC as [H1 [E1 [S1 [L1 T1]]]].
   assert (Bool : value_typed W (program_of Prog argv read) H1 v (TNom bsym [])) by exact T1.
   destruct (B.truthy_typed W Prog argv read H1 bsym v Bools Layouts Lang Bool) as [bit Bit].
-  replace (I.truthy P v) with (Some bit) by (rewrite truthy_same; symmetry; exact Bit). destruct bit.
+  replace (I.truthy P v) with (Some bit) by (symmetry; exact Bit). destruct bit.
   - pose proof (pre_lower (pre_after _ _ _ _ _ _ _ _ H1 g1 st1 Pre0 E1 S1 L1)) as Pre1.
     pose proof (SBlkE (A.with_loop F) C b None bx bt Body d types H1 g1 st1 (pre_loop _ _ _ _ _ _ _ _ Pre1)) as OutB.
     destruct (I.eval j P d g1 st1 bx) as [sig2 g2 st2] eqn:EB.
@@ -3072,7 +3072,7 @@ Proof.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkIfC b None B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
       destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Layouts Lang T1) as [bit Bit].
-      replace (I.truthy P w) with (Some bit) by (rewrite truthy_same; symmetry; exact Bit).
+      replace (I.truthy P w) with (Some bit) by (symmetry; exact Bit).
       destruct bit.
       * apply (O.outcome_fits W P state_ok _ _ _ _ bt).
         { destruct Bt as [-> | ->]; [apply fits_refl|apply fits_never]. }
@@ -3084,7 +3084,7 @@ Proof.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkIfC b (Some y) B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
       destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Layouts Lang T1) as [bit Bit].
-      replace (I.truthy P w) with (Some bit) by (rewrite truthy_same; symmetry; exact Bit).
+      replace (I.truthy P w) with (Some bit) by (symmetry; exact Bit).
       destruct (blke_branch_ty _ _ _ _ _ _ Db) as [FitsA FitsBt].
       destruct (join_fits _ _ _ _ _ Join FitsA FitsBt FitsE) as [Left Right].
       destruct bit.

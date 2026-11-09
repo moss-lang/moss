@@ -155,8 +155,8 @@ Qed.
 
 (* ---- outcomes ------------------------------------------------------------ *)
 
-Module Outcomes (Prims : PRIMITIVES).
-Module I := Interpreter Prims.
+Module Outcomes (Prims : PRIMITIVES) (I0 : INTERP Prims).
+Module I := I0.
 
 Section Outcome.
 Variables (W : A.world) (P : program_view).

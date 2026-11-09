@@ -164,3 +164,10 @@ Proof.
 Qed.
 
 End Values.
+
+(* An interpreter instance, kept transparent: a functor over it computes
+   with the instance it is given (e.g. Public's Reference), so results
+   about it are results about that instance, not about a copy. *)
+Module Type INTERP (Prims : PRIMITIVES).
+  Include Interpreter Prims.
+End INTERP.

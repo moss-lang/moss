@@ -13,15 +13,18 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicLocalsTyping PublicWorldRequirements SnapshotLoaderWitness
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
-  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize.
+  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
+  PublicEntry.
 
-Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims.
+Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
+Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host.
-Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims.
-Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims.
-Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims.
-Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims.
+Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims PublicInterp.
+Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
+Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
+Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host.
+Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -89,6 +92,8 @@ Definition certificate_roots :=
   @PublicBool.truthy_typed,
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
+  @PublicEntryTop.entry_safe,
+  @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @NM.PublicCallRealize.ctxof_formed,
   @NM.PublicCallRealize.call_agree,

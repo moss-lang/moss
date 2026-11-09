@@ -36,8 +36,8 @@ Proof.
   unfold type_argument. rewrite lookup_ground_arguments, Found. reflexivity.
 Qed.
 
-Module CastTyping (Primitives : PRIMITIVES).
-Module R := Interpreter Primitives.
+Module CastTyping (Primitives : PRIMITIVES) (R0 : INTERP Primitives).
+Module R := R0.
 
 Theorem check_tag_preserves : forall W P H d tag arguments value payload,
   A.PayloadOf W tag (ground_arguments d arguments) payload ->

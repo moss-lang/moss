@@ -21,6 +21,32 @@ an admissible program and a compatible interface, `run_main`'s signal is never
   (`stuck_entry_is_wrong`). The reduction is therefore exact, and T20 is
   precisely what remains.
 
+## The entry (checked, conditional)
+
+[PublicEntry.v](theories/PublicEntry.v) proves `entry_safe`:
+`entry_never_stuck` follows from three premises, stated for every
+admissible program, compatible interface and initial state:
+
+- the slice's safety at every fuel (`Safe`, which `safe_all` proves from
+  the slice's remaining hypotheses);
+- an initial ghost heap that the initial state realizes (`state_ok`);
+- callable platform primitives at their `AtKey` signatures (T11/T17).
+
+The rest is proved. `main_not_stuck` runs main's body from its frame, and
+a `Breaking` cannot escape, because main's frame is not in a loop.
+`entry_realizes` shows that the initial environment realizes main's
+context. Merge absorption comes from `InitialTypes` (`entry_absorbs`). The
+`I32` constants are typed by `initial_machine_subst`, since val types in a
+function context are canonical. Main's context has no method needs,
+because `Platform.Entry` has no method entries. Functor needs are platform
+closures.
+
+The slice now takes its interpreter instance as a parameter (`INTERP`, in
+[PublicValueTyping.v](theories/PublicValueTyping.v)). The entry
+instantiates it with `Public(Host).Reference`, the interpreter the safety
+statement is about. Separate instances of `Interpreter` have distinct
+`evaluation` types and cannot be related.
+
 ## Stuck sites
 
 "Static" names the elaboration rule that produces the runtime construct and
@@ -379,3 +405,5 @@ without touching any proof.
 - Functor design reading; functor-body `break` counterexample, `Breaks`
   with the world after approval, and `bind F;` for a functor with a body
   (00:05 to 00:50).
+- Functor design (binding-level refactor needed), the `INTERP` refactor,
+  and the entry assembly `entry_safe` (00:55 to 02:00).

@@ -80,8 +80,8 @@ Lemma elaborates_bool_symbols : forall bundle W program,
   A.ElaboratesIn bundle W program -> BoolSymbols W program.
 Proof. intros bundle W program (_ & _ & _ & _ & _ & Bool); exact Bool. Qed.
 
-Module BoolTruthy (Prims : PRIMITIVES).
-Module I := Interpreter Prims.
+Module BoolTruthy (Prims : PRIMITIVES) (I0 : INTERP Prims).
+Module I := I0.
 
 (* A condition elaborated by Cond has a Bool type; any typed value of it
    is read by truthy. *)

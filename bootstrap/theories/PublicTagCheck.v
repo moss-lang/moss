@@ -135,9 +135,9 @@ Qed.
 
 End Layout.
 
-Module Checks (Prims : PRIMITIVES).
-Module CT := CastTyping Prims.
-Module R := CT.R.
+Module Checks (Prims : PRIMITIVES) (R0 : INTERP Prims).
+Module CT := CastTyping Prims R0.
+Module R := R0.
 
 Theorem tag_check : forall W Prog, Platform.Layouts W -> Platform.Representations W Prog ->
   forall argv read d H s xs pay value,
