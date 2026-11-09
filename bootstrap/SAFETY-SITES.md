@@ -593,7 +593,9 @@ the local store. *C* and *F* are the static context and frame.
   the oracle prints 7. `ChainKeysOk` was false. `LinkBody` now requires
   that no result key read at F's inputs (`rkey_of Cr k`) mention an output
   symbol (only output roles `gen t`). Native accepts the program, so this
-  rejects something native runs; the faithful alternative is to keep the
+  rejects something native runs, including the corpus regression
+  tests/regressions/functor_input_output_generations.moss (native `yn`;
+  the oracle is stuck there too, a known ignored test); the faithful alternative is to keep the
   roles distinct in the code's keys (an interpreter change). Oracle bug:
   E33. Details: scratch/orch/results4-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
