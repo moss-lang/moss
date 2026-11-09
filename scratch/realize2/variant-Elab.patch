@@ -1,0 +1,26 @@
+--- bootstrap/theories/Elab.v	2026-11-09 15:13:46.462196458 +0000
++++ scratch/realize2/varsrc/bootstrap/theories/Elab.v	2026-11-09 15:21:40.357515417 +0000
+@@ -3758,9 +3758,12 @@
+ 
+ (* D84 3d also constrains type changes made by abstract applications:
+    checking direct type binds alone does not preserve the result's inputs. *)
+-Definition check_link_pins (mi : nat) (after : env) (pins : list nat) : M unit :=
++Definition check_link_pins (mi : nat) (before after : env) (pins : list nat) : M unit :=
+   miter (fun t =>
+-    if ety_eqb (canon after (opt_default (YAbs t) (tn_get after t)))
++    if match tn_get before t, tn_get after t with None, Some _ => true | _, _ => false end
++    then let! g := sym t in
++         err mi ("realize2 variant: a functor body installs the result input `" ++ gs_name g ++ "` (kept output)")
++    else if ety_eqb (canon after (opt_default (YAbs t) (tn_get after t)))
+                (canon after (YAbs t))
+     then ret tt
+     else let! g := sym t in
+@@ -5068,7 +5071,7 @@
+       let owner := ROLink (gs_id fg) (gs_id bg) in
+       register_reify_code owner eg gneeds None ;;
+       let! (xs, eb, _) := in_reify_code owner (with_vars [] (apply_body f c eg bg)) in
+-      check_link_pins mi eb (cx_pins c) ;;
++      check_link_pins mi eg eb (cx_pins c) ;;
+       let! binds := mmap (fun x => match stmt_bind x with
+                                    | Some b => ret b
+                                    | None => fail "internal: a functor body made a statement"

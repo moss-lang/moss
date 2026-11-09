@@ -4414,12 +4414,17 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
        types (read where every symbol they mention is in force) do not
        mention it, nor does the context or a method key's receiver (the
        result's write would re-ground what mentions it; stricter than the
-       oracle and native, scratch/orch/chainfwd-AUDIT.md section 2) *)
+       oracle and native, scratch/orch/chainfwd-AUDIT.md section 2).
+       In a body bound to F, a kept output is not one of the pins M(F):
+       each application supplies M(F)'s meanings, which the body's write
+       would replace under a key the caller files at its own reading
+       ([D84] 3d, as `bind T` is; examples/link-kept-output-pin.moss,
+       scratch/orch/realize2-AUDIT.md; native rejects it) *)
     (forall t, FunOutputs W u t ->
        (nlook t (c_ty C) = None /\ gensof t = t /\
           ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
                   (match fr_this F with Some r => gens r | None => [] end)) /\
-          ~ In t (context_gens C ++ key_receiver_gens C)) \/
+          ~ In t (context_gens C ++ key_receiver_gens C) /\ ~ In t (fr_pins F)) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->

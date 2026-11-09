@@ -93,7 +93,7 @@ Lemma kept_outputs_unmentioned : KeptOutputsUnmentioned.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft None'.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & Outs & _).
-  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[N _]]; [exact Nm|congruence].
+  destruct (Outs t Ft) as [[_ [_ [_ [Nm _]]]]|[N _]]; [exact Nm|congruence].
 Qed.
 
 (* Each output destination is out of scope at the application: no key of
