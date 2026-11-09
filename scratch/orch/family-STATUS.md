@@ -220,3 +220,48 @@ I stopped here to report, rather than start these changes.
   A generalization of `AppPremises` to "read at a context Ca with the
   state's merge and provisions, no path" would serve both. I did not do
   this within the time box.
+
+## Follow-up 3: discharging the four named premises (findings; not discharged)
+
+- **`DemandScopedOk` is false for an accepted program.**
+  `bootstrap/examples/family-unbound-need.moss`:
+  - A callee lists `T, T.foo`, and main calls it without binding T.
+  - The need reads at the site as `TAbs T` (T itself), and family F is
+    applied at `A := TAbs T`.
+  - The installed key mentions T. T is a declared type symbol that is not
+    in main's table, so it is outside `scope_gens`, and the post-family
+    context is not `KeysScoped`.
+  - The oracle accepts and runs it. Native was not run (no built
+    compiler).
+  This is a gap in a formation invariant, not in Audit. `KeysScoped`
+  should, like `TysScoped`, admit declared type symbols
+  (`In y (scope_gens C) \/ kind_sym W y = Some DKType`).
+- **Cost of relaxing `KeysScoped`.** Its only consumer outside
+  PublicFormation is lambda capture (`keys_scoped` gives `context_gens`,
+  which `lambda_realizes_le` uses to show that a captured method key's
+  receiver grounds the same in the captured environment). With a declared
+  symbol y outside `context_gens`, that needs y to have no meaning in the
+  current environment. Nothing in `Pre` says so today. It would need a new
+  invariant: "every key of `type_meanings d` is in `context_gens C` or in
+  C's table".
+- **`ExScopedOk` / `LitScopedOk`.** Elaborated and literal types can
+  mention such declared symbols too (e.g. a call result at an unbound
+  callee requirement), so they too should be stated up to declared type
+  symbols. Proving them needs new conjuncts in `FormedCx`: locals' types
+  and val/fn/method provision types scoped (up to declared symbols). Today
+  `FormedCx` checks these only for being ok. They would have to be
+  preserved through all of PublicFormation's `ex_ok`/`binditems_ok`
+  family, the slice's `Formed` steps, and the obligations that conclude
+  `Pre`.
+- **`FamilyCoherentOk`.** Needs a `SigCoherent` conjunct (each method
+  provision's signature is the declared `SigOf` reading at its θ),
+  established at body entries and preserved likewise.
+- **Plan, if wanted.**
+  1. Relax `KeysScoped`/`ExScoped`/`DemandScoped` to admit declared type
+     symbols, and add the meanings-keys invariant to `Pre` for lambda
+     capture.
+  2. Add `TypesScoped` (locals and provisions) to `FormedCx`, with a
+     mutual scoping fixpoint alongside `ex_ok`.
+  3. Add `SigCoherent` to `Formed`.
+  Each is multi-hour and changes what `LinkResultsOk`/`ChainResultsOk`
+  must deliver.

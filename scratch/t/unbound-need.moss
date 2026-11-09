@@ -1,0 +1,10 @@
+type A;
+type T;
+assume A { fn .foo(); }
+functor F[A]: A -> A.foo;
+functor G: A -> A.foo { bind A.foo = () => (); }
+assume T, T.foo { fn use_it() { } }
+fn main() {
+  bind F = G;
+  use_it();
+}
