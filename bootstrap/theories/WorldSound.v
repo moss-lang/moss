@@ -2617,7 +2617,7 @@ Qed.
 (* world_todo: what WorldOf needed (now all proved)                         *)
 (* ======================================================================== *)
 
-(* With s the elaborator's final state (RelSupport.run_elab keeps it) and
+(* With s the elaborator's final state and
    w = st_w s the loader's world:
 
    TODO_reqs_reading: DONE.  (a) ElabFrame.v's ReqOK: the cached lists of

@@ -1,8 +1,7 @@
 # Audit design notes
 
 Historical review notes moved from [Audit.v](../../bootstrap/theories/Audit.v).
-Its definitions and theorem contracts specify the current formal model;
-[STATUS.md](../../bootstrap/STATUS.md) records verification progress. These
+Its definitions and theorem contracts specify the current formal model. These
 notes preserve known gaps, counterexamples, and earlier design decisions.
 
 DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
@@ -61,8 +60,7 @@ DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
       in the current module has been removed together with note 57's
       detached-method fallback.
 
-   CHANGES THE PROOF WORK FORCED (RelFacts.v, RelExamples.v, RelNegative.v,
-   RelFamily.v), recorded for the designer:
+   CHANGES THE PROOF WORK FORCED (RelFacts.v), recorded for the designer:
   13. Attached methods are a table of the world (w_attached, with
       wo_attached tying it to the declarations), not an existential over
       all symbols: otherwise "the attached method of Box named get" could
@@ -600,8 +598,7 @@ DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
       (lt_consts, ConstFact; BodyConst.v proves pd_const).  That the last
       state of a run holds only such entries is an obligation of the
       whole run (each entry is made by const_val's fresh case, which
-      BodyConst.const_fresh relates, from an earlier state), proved in
-      ElabConsts.v (elab_consts: every step keeps the cache valid).
+      BodyConst.const_fresh relates, from an earlier state).
   67. (elaborator, for the proof; no change in behaviour) lang_call (a
       literal's `.add`/`.mul`/`.div`, note 64) called provided_call also
       when no provision was in force and no family produced the key, for
@@ -656,8 +653,7 @@ DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
       item is read at `ob ++ tm` (its own brackets at `bs ++ ob ++ tm`),
       IECtx walks C's items under `bs ++ ob` with tm threaded alone, and
       IEType consults and extends tm only.  CtxOf, FunCtx and
-      ProvideResult start with no brackets.  The elaborator is unchanged;
-      the relation's worked examples (RelSupport's tactic) bracket no
-      context item, so their proofs stand.  Track B: what makes
+      ProvideResult start with no brackets.  The elaborator is unchanged.
+      Track B: what makes
       BRIDGE-A2's "each requirement means its own generation, and only
       requirements have meanings" true of Part V.

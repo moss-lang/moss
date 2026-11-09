@@ -306,7 +306,7 @@ let () =
        (LazyInterpFacts.frun_main_eq).
      The arrays below are trusted driver code, as the Hashtbl realizing
      program_of's xp_fn above is: they are the hypotheses of
-     CloX.engine_agrees (README.md, What is trusted).  `table` realizes
+     CloX.engine_agrees.  `table` realizes
      SlotX.rprog_of's `nlook f (compile_fns sh p)` (the first entry for a
      symbol wins, as nlook); tb is the static bodies of that program, the
      arrays afn'/afun' its bodies folded (R'), and tbl/ftbl the closure

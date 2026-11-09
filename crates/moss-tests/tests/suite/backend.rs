@@ -735,7 +735,7 @@ fn native_functor_outputs_preserve_merged_input_generations() {
 
 /// The oracle still captures the old input representative in its output keys.
 #[test]
-#[ignore = "Known oracle generation-capture bug; see bootstrap/STATUS.md"]
+#[ignore = "Known oracle generation-capture bug"]
 fn oracle_functor_outputs_preserve_merged_input_generations() {
     let entry = "tests/regressions/functor_input_output_generations.moss";
     assert_eq!(oracle_run(entry, &[]), "yn");

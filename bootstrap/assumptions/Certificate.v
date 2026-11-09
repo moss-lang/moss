@@ -328,7 +328,7 @@ Definition certificate_roots : list {T : Type & T} := [
 (* The legacy slot/fold engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
    fast path, pruning, pre-resolution, folding and closure compilation,
    then the run; and the theorem that makes it ExecutionModel's semantics, given the tables the driver
-   builds (README.md, What is trusted). *)
+   builds. *)
   root (@NM.FastPath.fast_program);
   root (@NM.Prune.oracle_program);
   root (@NM.SlotX.shapes);

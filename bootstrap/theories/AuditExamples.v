@@ -1,5 +1,5 @@
-(* Executable and negative checks of the public model. Implementation-model
-   examples remain in PublicExamples.v; no model equivalence is assumed. *)
+(* Executable and negative checks of the public model. No model
+   equivalence is assumed. *)
 From Stdlib Require Import List String Arith Lia.
 From NM Require Import Audit.
 Import Audit.Semantics.

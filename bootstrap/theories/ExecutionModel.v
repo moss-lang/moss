@@ -1261,7 +1261,7 @@ End PrimNames.
 
 (* STATUS: DRAFT, for the designer's review.  The elaborator (Elab.v) is
    neither shown sound nor complete for it. Both are pending obligations
-   in ComponentContracts.v. RelExamples.v checks it on examples. Proved toward soundness
+   in ComponentContracts.v. Proved toward soundness
    (WorldSound.v, bound as SourceCertified.loader_reads): the loader's reading of
    an accepted bundle meets every condition of WorldOf (V.1) except the
    requirement lists and the field numbering.

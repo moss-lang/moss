@@ -1,7 +1,7 @@
 # A family lists `g`, a fn, as a polymorphic input. D84 rule 1 makes P(F)
 # type symbols; the oracle rejects it ("`g`, listed as a polymorphic input
 # of `F`, is not a type in scope (D84)"), native accepts and runs it
-# (exit 0; proof-plan E34). Audit's FamilyShape now requires the listed
+# (exit 0; E34). Audit's FamilyShape now requires the listed
 # names to be types (family4-AUDIT.md section 2), so the demand in main
 # finds no family and Audit rejects it too.
 type A;

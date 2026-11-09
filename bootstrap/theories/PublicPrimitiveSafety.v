@@ -1,4 +1,4 @@
-(* Primitive closures behave as typed calls (proof-plan T11/T17). A
+(* Primitive closures behave as typed calls. A
    primitive whose platform signature satisfies Platform.PrimitiveSignature,
    run by the reference interpreter under any interface satisfying
    Public.interface_laws that supports it, either stops (trap, exit,

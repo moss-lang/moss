@@ -13,7 +13,7 @@ Extraction NoInline PrimArray.array.
    branch runs.  In XS.xinterp that includes the incoming machine state `st`
    of every active frame, so the whole PArray version chain of linear memory
    since the oldest frame's entry stays reachable (17 GB on the
-   self-compile; see README, Memory).  Inlined, `st` dies at its last use. *)
+   self-compile).  Inlined, `st` dies at its last use. *)
 Extract Inductive nat => int [ "0" "Stdlib.Int.succ" ]
  "(fun fO fS n -> if n=0 then (fO[@inlined]) () else (fS[@inlined]) (n-1))".
 Extract Constant loop_fuel => "max_int".

@@ -5,7 +5,7 @@ import "./lex.moss" as lexer;
 import "./spell.moss" use *;
 import "./tcode.moss" use *;
 
-# Recursive descent over the whole grammar of docs/reference/syntax.md —
+# Recursive descent over the whole grammar —
 # types, expressions, statements, patterns and declarations — building
 # the arenas of ast.moss.
 #

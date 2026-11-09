@@ -118,19 +118,19 @@ fn hello_world() {
 mod errors {
     use super::*;
 
-    /// hello.md: a name nobody declared is a *scope* error.
+    /// A name nobody declared is a *scope* error.
     #[test]
     fn not_in_scope() {
         refused(&prog("", "foo();"), "not in scope");
     }
 
-    /// hello.md: a declared but unassumed function is a *context* error.
+    /// A declared but unassumed function is a *context* error.
     #[test]
     fn not_in_context() {
         refused(&source("fn example();\nfn main() { example(); }"), "not available in the context");
     }
 
-    /// hello.md's example: `main` may assume only what the platform
+    /// `main` may assume only what the platform
     /// provides (D39, D52). The self-hosted compiler refuses it; the
     /// oracle runs `main` in the platform's root context and reports
     /// anything beyond it unsupported rather than judging it (as for

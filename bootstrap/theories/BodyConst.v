@@ -69,7 +69,7 @@ Proof. intros vs n s Hi. destruct Hi; constructor; assumption. Qed.
 
 (* A val elaborated now: its initializer, synthesized at fuel f from the
    declared type's state, is ExConst's premises, given what the state
-   after the synthesis keeps (ElabConsts.v uses this at the cache write). *)
+   after the synthesis keeps. *)
 Lemma const_fresh : forall f, OK w P R Fl f -> forall g n t0 i s declared s2 v0 vt s8,
   nget (w_syms w) (gs_id g) = Some g -> gs_assumes g = [] -> gs_decl g = ADVal n t0 (Some i) -> Inv s -> InfoInv s -> FwdInv s ->
   ety_of t0 (gs_mod g) [] empty_env None s = Good (declared, s2) ->

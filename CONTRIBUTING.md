@@ -116,8 +116,7 @@ That includes `bootstrap-rocq`, which depends on the audited oracle build.
 The oracle compiles every Rocq theory, audits the assumptions of what it
 certifies, and extracts the executable in the same release build tree;
 `bootstrap/check.sh` runs the same in `nix develop .#bootstrap`, where
-`dune build` in `bootstrap` builds the oracle
-([`bootstrap/README.md`](bootstrap/README.md)).
+`dune build` in `bootstrap` builds the oracle.
 
 For a proof edit, build the individual module so Dune reuses its unchanged
 dependencies (choose a job count that fits available memory):

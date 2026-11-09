@@ -128,8 +128,7 @@ assume Std {
     # rather than over the rows: `en_head` buckets on the key symbol, and
     # a row in a bucket needs no `sym` comparison at all. Scanning the
     # whole table here cost a flat half-second on this compiler's own
-    # sources, which is the shape D51-era arenas invite and the reason
-    # selfhosting.md's "The idiom" now names indexing outright.
+    # sources, which is the shape D51-era arenas invite.
     fn env_push(env: Int, kind: Int, recv: Int, sym: Int, a: Int, b: Int): Int {
       let key = sym + 1;
       while en_head.length() <= key {

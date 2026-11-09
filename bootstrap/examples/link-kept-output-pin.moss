@@ -15,7 +15,7 @@
 # G's table), and the caller, with T = Bool, files it under Bool.m. So
 # `true.m()` runs Char's `code` on a Bool.
 # Oracle (ob-sigclose var moss_m2): elaborates; the run is stuck
-#   (`[moss_ref: stuck (XErr 14)]`, exit 3). Filed as proof-plan E37.
+#   (`[moss_ref: stuck (XErr 14)]`, exit 3). Filed as E37.
 # Native (ob-family, seed 1h1710x0): rejects at `bind F = G`, "compilation
 #   failed: `T`".
 # Control (link-kept-output-pin-control.moss, the caller's T = Char): the

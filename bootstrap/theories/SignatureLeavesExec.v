@@ -1,5 +1,5 @@
 (* Exact raw D78 signature leaves. Effective last output readings are a
-   separate, stronger compatibility check (CopyOutputExec). *)
+   separate, stronger compatibility check. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.

@@ -14,14 +14,14 @@
 ; The OCaml must be flambda: only flambda honours the `[@inlined]` in
 ; Extract2.v's `nat_case`, without which the interpreter keeps every
 ; frame's incoming machine state alive, and the self-compile takes more
-; than 17 GB instead of 3 (README.md).
+; than 17 GB instead of 3.
 
 (rule
  (target flambda)
  (action
   (progn
    (system
-    "test %{ocaml-config:flambda} = true || { echo 'moss_m2 needs a flambda OCaml: without it the interpreter retains every version of linear memory (README.md)' >&2; exit 1; }")
+    "test %{ocaml-config:flambda} = true || { echo 'moss_m2 needs a flambda OCaml: without it the interpreter retains every version of linear memory' >&2; exit 1; }")
    (write-file %{target} ""))))
 
 (executable

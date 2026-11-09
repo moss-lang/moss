@@ -19,7 +19,7 @@ Every decision point is tagged:
 
 Section 13 indexes all PROPOSED/OPEN points for easy discussion.
 
-**Revision 2** incorporated the designer's feedback in [`notes.md`](notes.md):
+**Revision 2** incorporated the designer's feedback in `notes.md`:
 points confirmed there were re-tagged DECIDED; D22, D24, D29, D31, D33, and
 D35 were revised or replaced; §9 was rewritten around the attached/detached
 method model with questions **Q1**–**Q7**.
@@ -71,7 +71,7 @@ in `bootstrap/tests/`), and that is what "the bootstrap", "its
 interpreter", "its back end", "its native `Std`" and, mostly, "both
 compilers" (it and the self-hosted compiler under `src/`) mean in the
 entries before [D86]. That compiler and its tests have since been deleted,
-replaced by the Rocq bootstrap ([`bootstrap/`](../../bootstrap/README.md):
+replaced by the Rocq bootstrap ([`bootstrap/`](../../bootstrap):
 a front end, elaborator and interpreter written in Rocq and extracted to
 OCaml, the *oracle*), and the test suite is now Rust
 ([`crates/moss-tests`](../../crates/moss-tests)). The entries are a record
@@ -82,7 +82,7 @@ against the same decisions and reproduces the Python bootstrap's error
 messages, but where an entry says what the bootstrap did, only the
 self-hosted compiler is claimed to still do it. Likewise
 `docs/design/core/`, the home of the core calculus: its Rocq files
-(`CoreMoss.v`, `Narrowing.v`, `KeyOnly.v`) are now in
+(`CoreMoss.v`, `Narrowing.v`) are now in
 [`bootstrap/theories/`](../../bootstrap/theories), and the paper
 `core-moss.tex` is no longer kept (it is in the history, at
 `docs/design/core/core-moss.tex` as of 5ea4e2e).
@@ -1096,8 +1096,7 @@ only three heads with no wildcard — stale code under this rule (§12), and
 
 A record destructure binds each name at most once: `S { a = y, b = y }`
 and `S { a = b, b }` are errors. A repeated binder would otherwise be
-typed by its last field and read from its first (the duplicate-binder
-counterexample in `bootstrap/SAFETY-SITES.md`).
+typed by its last field and read from its first.
 
 A unit or tag pattern, with or without a payload, must name a member of
 the scrutinee's generic type, so on an abstract scrutinee only a binder or
@@ -1279,7 +1278,7 @@ core.
 
 *This section describes the Python bootstrap compiler (`bootstrap/mossc/`),
 which was built to this plan, Wasm back end included, and has since been
-replaced by the Rocq bootstrap ([D86]; [`bootstrap/README.md`](../../bootstrap/README.md)).
+replaced by the Rocq bootstrap ([D86]).
 It is kept as the record of the design.*
 
 The agreed shape, answering "checker + tree-walking interpreter vs
@@ -1620,12 +1619,10 @@ declaration should instead shadow a glob import is a question this log has
 not asked; nothing in `lib/` or `src/` needs it.
 
 `lib/prelude.moss` had already been made to import `.not`, the one
-detached name `src/` called with nothing at all in scope; and
-`docs/reference/semantics.md` states the two rules, which it previously
-blurred into one sentence that sanctioned the fallback.
+detached name `src/` called with nothing at all in scope.
 
 **What it bought.** The compiler compiles itself, and `S1 == S2` byte for
-byte — see [selfhosting.md](../implementation/selfhosting.md). Nothing
+byte. Nothing
 else stood in the way: what the compiler reported about its own source
 once the library was right was two bugs in `codegen.moss`'s local
 numbering, not a missing construct.
@@ -1875,8 +1872,7 @@ still be a defined fn or an attached method. An abstract method there
 would want the same treatment, but it falls out of neither
 implementation and nothing needs it yet. Running the motivating program
 also relied on the back-end change just before this one — a val need is
-passed only if the function can reach it (selfhosting.md, "Keeping it out
-of quadratic time") — which is not a language change. Standing test:
+passed only if the function can reach it — which is not a language change. Standing test:
 `tests/wasi/forward.moss`.
 
 **[D67] DECIDED by the designer (floating point).** [D59] said every
@@ -2338,8 +2334,7 @@ instantiations that agree on the relevant parameters
 already narrowed (`wf_ty_narrowed`), and soundness holds for it
 (`narrowed_soundness`, an instance of the existing theorem, which never
 needed a tag's telescope to be its whole assume nesting). These are now
-in the tracked development: `Narrowing.v`, with the
-counterexample below as `KeyOnly.v`, both built and audited by the
+in the tracked development: `Narrowing.v`, built and audited by the
 `core-calculus-rocq` flake check (then in `docs/design/core/`; now in
 `bootstrap/theories/`, checked by the `bootstrap-rocq` flake check).
 
@@ -2350,8 +2345,8 @@ the instantiation it was made at ([D62]), and a val or fn requirement
 answered from the context must agree with it on the symbols the requirement
 mentions (`sat_at`). The implementations matched a method need by
 `(receiver, method)` alone, which is unsound with or without narrowing — a
-copy of the rules with that one change admits a program that goes wrong
-(`KeyOnly.v`), and the bootstrap compiled one that read a `Char` as an `Int`.
+copy of the rules with that one change admits a program that goes wrong,
+and the bootstrap compiled one that read a `Char` as an `Int`.
 Narrowing widens the hole, since it removes the receiver parameter that
 used to pin θ. So both compilers check coherence **in the front end**, on
 `(receiver, method, θ)` with θ restricted to the symbols the method's
@@ -4840,12 +4835,8 @@ Decided:
    from it must write S1 again from `src/`, byte for byte. That one
    comparison holds the interpreted and the compiled compiler to each
    other, and the compiler to its own fixpoint. It takes about 35 minutes
-   and 3 GB per platform. What of the oracle is proved, and what is still
-   an obligation (the elaborator's soundness and completeness for the
-   draft elaboration relation, and the parser's for a grammar), is in [`bootstrap/README.md`](/bootstrap/README.md);
-   its contract is `bootstrap/theories/Audit.v`. The current partial-proof
-   milestone and remaining obligations are listed in
-   [`bootstrap/STATUS.md`](../../bootstrap/STATUS.md).
+   and 3 GB per platform. The oracle's contract is
+   `bootstrap/theories/Audit.v`.
 2. **The Python bootstrap is removed**, with its unit tests of its own
    lexer, parser, loader and float helpers. Statements in this log about
    what "the bootstrap" did refer to it where they predate this entry.
@@ -4989,8 +4980,7 @@ construction protocol apply; import paths remain double-quoted.
 
 This sacrifices line-leading spaced greater-than comparisons while
 preserving `>=`, `>>`, and `>value`. It avoids disturbing the established
-line-leading union-type syntax that a `|` marker would displace. See the
-[syntax reference](../reference/syntax.md#raw-multiline-strings) for examples.
+line-leading union-type syntax that a `|` marker would displace.
 
 The bootstrap specifies this syntax as a source expansion to parenthesized,
 escaped quoted expressions before the existing token grammar. The expansion

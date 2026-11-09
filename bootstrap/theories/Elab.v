@@ -19,7 +19,7 @@
 (*  - its output is MossX terms directly (the bootstrap's IR plus           *)
 (*    translate.py, fused).                                                  *)
 (*                                                                           *)
-(* Deferred, with the place each slots in (see README.md):                  *)
+(* Deferred, with the place each slots in:                                 *)
 (*  - D84 rule 7 (family members on demand): `provided_call`, at the miss.   *)
 (*  - `Size` and `for`: `synth_literal` / a new statement form.              *)
 (*  - bracketed functor syntax `F[P…]`: `fun_poly` (today: all of M(F)).     *)

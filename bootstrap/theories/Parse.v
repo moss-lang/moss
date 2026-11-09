@@ -6,7 +6,7 @@
 (*   source text --lex--> tokens --parse--> ExecutionModel.Input.afile --dump--> sx  *)
 (*                                                                           *)
 (* `dump_file` yields exactly the s-expression that sexpr.py writes for the *)
-(* same file (and `print_sx` its text, byte for byte; see README, Part 1),  *)
+(* same file (and `print_sx` its text, byte for byte),                      *)
 (* so the elaborator (`Elab.elaborate_sx`) is fed what it was fed before.   *)
 (* `load_bundle` is py/bundle.py: it walks the imports in the same order,   *)
 (* resolves them as collect.Loader does (D64), and reads files through an   *)

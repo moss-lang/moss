@@ -17,8 +17,7 @@
 (* A cache is a `Cache` record (its projection, L, Q, and how they meet    *)
 (* ElabFrame's frame); `keepst` proves `keeps` of a function that never    *)
 (* writes the projection, and `okqt` decomposes `okq` down to the steps    *)
-(* that write it, which are the caller's (ElabConsts.v is the instance for  *)
-(* st_consts).                                                              *)
+(* that write it, which are the caller's.                                   *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
@@ -147,7 +146,7 @@ Ltac qfixind3 :=
 (* Decompose `okq C t` down to the steps that write the cache, which stay
    goals (or are hints of okqdb, or hypotheses: a group's induction
    hypothesis).  `ext` is tried first at each step (a caller's rule for
-   what okq alone does not see, e.g. ElabConsts.v's symbol reads); `okqt`
+   what okq alone does not see); `okqt`
    is `okqt_with fail`. *)
 Ltac okqt_with ext :=
   repeat (fintros; first [ ext | lazymatch goal with

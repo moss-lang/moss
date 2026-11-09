@@ -72,7 +72,7 @@ It has three parts:
    resolution, Kennedy and Pierce's expansive cycles). Without it the
    property is false: `Specialization.polyrec_infinite`. `Audit.v` states
    the check as `NoExpandingCycle`, part of `ElaboratesIn`; neither
-   compiler implements it yet (proof-plan E38).
+   compiler implements it yet.
 3. **A behaviour-preserving specialization.** A translation removes every
    run-time type computation and preserves behaviour. Together with safety,
    specialized programs are safe too.
@@ -102,8 +102,7 @@ correctly, and it accepts nothing that both reject.
   example programs on the oracle and on native, and by comparing an oracle
   variant over the test corpus.
 - Where the implementations disagree with each other, the first five
-  criteria decide, and the implementation that is wrong gets a proof-plan
-  entry.
+  criteria decide.
 - A rule that breaks this criterion only to make a proof easier is a debt.
   It should be listed with its alternative, as the kept-output clause was in
   [`bootstrap/AUDIT-CHANGES.md`](../../bootstrap/AUDIT-CHANGES.md) (#10) until

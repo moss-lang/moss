@@ -1,5 +1,12 @@
 # Changes to Audit.v during the `public_safety` proof (G05)
 
+> [!NOTE]
+> The commit hashes cited below, and the records `SAFETY-SITES.md` and
+> `proof-plan.json` (with its E-numbers), are from the branch merged as
+> [PR #49](https://github.com/moss-lang/moss/pull/49). GitHub keeps that
+> PR's commits reachable as `refs/pull/49/head`; the two records, since
+> deleted, are also in git history.
+
 This document is for review. It lists every change made to
 [theories/Audit.v](theories/Audit.v) on branch `safety`, from the baseline
 086a617 ("Keep the proof DAG focused on stable obligations") to 55b1b15.
@@ -12,8 +19,8 @@ entry they belong to.
 - The commits themselves (`git show`).
 - The agent records `scratch/orch/*-AUDIT.md`, with the comparison
   scripts and outputs `scratch/orch/*-cmp.{sh,out}`.
-- [SAFETY-SITES.md](SAFETY-SITES.md), "Observations so far".
-- [proof-plan.json](proof-plan.json), E21–E37.
+- `SAFETY-SITES.md`, "Observations so far".
+- `proof-plan.json`, E21–E37.
 - The header comments of [examples/](examples/).
 
 **Reading notes.**
@@ -388,8 +395,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     remainder as for a method). The oracle-soundness proofs follow:
     `ResultMentionExec`/`ResultMentionsCover` restate the visitor,
     `here_valfn` (cover) and `here_fn_sound` (exact) handle the new symbols;
-    PublicWorldFormation, XBridge, LinkOutputBoundary and
-    LinkCaptureRegression take the new disjunct. `ExecutionModel.v`'s copy
+    PublicWorldFormation and XBridge take the new disjunct. `ExecutionModel.v`'s copy
     of `ResultMentions` changes alike.
   - **Native first.** Native already treats such a U as a fixed input of F:
     [fn-sig-nonreq.moss](examples/fn-sig-nonreq.moss) prints 7, and
@@ -1154,7 +1160,7 @@ details are in `scratch/consol-STATUS.md`.
 
 ## Implementation bugs filed (E31–E37)
 
-All of these come from [proof-plan.json](proof-plan.json).
+All of these come from `proof-plan.json`.
 
 | ID | Title | Who must change | Status | Example | Entry |
 |---|---|---|---|---|---|

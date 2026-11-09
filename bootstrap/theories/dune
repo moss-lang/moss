@@ -1,4 +1,4 @@
-; The Rocq development, under the logical prefix NM (README.md).
+; The Rocq development, under the logical prefix NM.
 
 (rocq.theory
  (name NM)

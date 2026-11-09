@@ -116,7 +116,7 @@ End Input.
    used by Builds. FrontEnd.v and FrontEndComplete.v prove the executable
    lexer and parser sound and complete for it.
 
-   It is in two layers, as docs/reference/syntax.md is:
+   It is in two layers:
 
    1. Lexical structure (`Lexes`): the bytes are a sequence of whitespace,
       comments and tokens, each token the longest that fits (`Lexeme`).
@@ -3781,7 +3781,7 @@ Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> pattern -> list (nam
     PatOf W F st (APTag pa (APPath [y])) (PHead s (Some (var_of F y)) []) [(y, pay)] [s] false
 (* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name.
    The names it binds are distinct: a repeated binder would be typed by its
-   last field but read from its first (bootstrap/SAFETY-SITES.md). *)
+   last field but read from its first. *)
 | PRecord : forall pa s xs fs ftys bs fxs,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
     PayloadOf W s xs (TRecord ftys) ->

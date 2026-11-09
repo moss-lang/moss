@@ -277,7 +277,7 @@ Definition elab_sound_core : Prop :=
            exists D S e, g_fn Sg f = Some (D, S, Some e) /\ emb_expr e = body.
 
 (* The lemmas it needs, as statements (each is a Prop the proof of
-   elab_sound_core would establish; see README.md for the plan):
+   elab_sound_core would establish):
 
    TODO_sigma_of: the elaborator can return Σ alongside the program — each
      symbol's telescope is its fn_info's base environment (type items from

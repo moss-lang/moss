@@ -34,7 +34,7 @@
         );
       # The oracle's toolchain: an OCaml with flambda, the only one that
       # honours the `[@inlined]` the extracted interpreter relies on to keep
-      # its memory in check (bootstrap/README.md); Rocq and its standard
+      # its memory in check; Rocq and its standard
       # library built with it (a few minutes); and dune. The extracted code
       # links Rocq's runtime library for the primitive integers, floats and
       # arrays, and flambda cannot link what another OCaml compiled, so
@@ -125,7 +125,7 @@
             ];
           };
           # The bootstrap: the Rocq front end, elaborator and interpreter,
-          # extracted to OCaml (bootstrap/README.md).
+          # extracted to OCaml.
           oracle = pkgs.stdenv.mkDerivation {
             pname = "moss-oracle";
             version = "0.0.0";
