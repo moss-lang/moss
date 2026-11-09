@@ -32,7 +32,8 @@ formal/caller result correspondence for the result's new provisions
 (selection, outputs, aliases, kinds and the provisions kept from the
 caller are proved: `chain_core_ok`; that the selection fills only the
 caller's keys is by construction, so ChainNewOk is `ChainRealizeOk`:
-`PublicChainNew.chain_new_ok`), and `KeptOutputsUnmentioned`, an
+`PublicChainNew.chain_new_ok`; `ChainRealizeOk` itself is proved,
+`PublicChainRealize.chain_realize_ok`, realize4), and `KeptOutputsUnmentioned`, an
 open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in

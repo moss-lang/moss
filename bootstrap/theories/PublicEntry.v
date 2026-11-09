@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module CSg := PublicChainSigs.ChainSigs M.ReferenceHost M.Reference.
+Module CRz := PublicChainRealize.ChainRealize M.ReferenceHost M.Reference.
+Module CSg := CRz.CSg.
 Module FL := CSg.FL.
 Module CF := FL.CF.
 Module CN := CF.CN.
@@ -646,8 +647,8 @@ Theorem safety_obligations : forall prelude,
      (* ChainResultsOk, from PublicChainCore.chain_results_of_new and
         PublicChainNew.chain_new_ok: the new provisions of the caller's
         result are realized (the keys are the caller's by construction,
-        Audit.result_selection) *)
-     CN.ChainRealizeOk W Prog argv read so /\
+        Audit.result_selection), proved in
+        PublicChainRealize.chain_realize_ok *)
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
         ChainForwardSigs from PublicChainFwd.chain_forward_sigs: the empty
         chain is proved; a chain with a copy is ChainForwardCopySigs,
@@ -665,8 +666,12 @@ Theorem safety_obligations : forall prelude,
 Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
-  destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CRz FCA].
+  pose proof (Obl Prog iface initial bundle W Compat Elab Link) as FCA.
+  assert (CRz : CN.ChainRealizeOk W Prog (M.arguments initial) (M.read_file initial)
+    (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
+    by exact (CRz.chain_realize_ok W Prog _ _ _ (ex_intro _ bundle (proj1 Elab)) (PublicWorldFormation.merge_formed_of W)
+      (PublicWorldFormation.mentions_typed_of bundle W (proj1 Elab))).
+
   assert (RAc : CF.ChainForwardCopySigs W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
     by exact (CSg.chain_forward_copy_sigs W (PublicWorldFormation.merge_formed_of W)
