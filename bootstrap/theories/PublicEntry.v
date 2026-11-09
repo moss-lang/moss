@@ -398,28 +398,27 @@ Proof.
     cbn in Tag. destruct Tag as [E|[E|[E|[]]]]; injection E as <- <- <-; cbn; auto.
 Qed.
 
-(* A platform family's primitives are typed calls (ChainPrimsOk) for the
-   reference host, from primitive_safe, as main's are (entry_primitive). *)
+(* A platform family's primitives are typed calls (PrimsGroundOk, so
+   ChainPrimsOk and the family application's) for the reference host,
+   from primitive_safe, as main's are (entry_primitive). *)
 Lemma platform_prims_public : forall W Prog argv read iface,
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
   M.interface_laws (program_of Prog argv read) iface ->
   (forall op, In op (required_primitives Prog) -> M.supports iface op = true) ->
   PlatformHandlesFormed W Prog -> PlatformSigsFixed W Prog ->
-  PA.ChainPrimsOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface).
+  PA.PrimsGroundOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface).
 Proof.
-  intros W Prog argv read iface Lay Reps Bools Laws Supp Handles Fixed F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
-    rr d types H g st Pre0 code sms gfx Look Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD d1 key op rf m a gf
+  intros W Prog argv read iface Lay Reps Bools Laws Supp Handles Fixed
+    rr H de code h0 Ch0 needs outputs keys bindings FD MachG key op rf m a gf
     Ik Ib MP AK Ek Mgf.
   pose proof (Handles h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf) as Formed.
   assert (Mach : forall name mach sym, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name sym ->
     In sym (flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)) ->
-    ground (PA.app_env Prog argv read d code th d1) (TAbs sym) = TMachine mach).
+    ground de (TAbs sym) = TMachine mach).
   { intros name mach sym Inm Lang Is.
     destruct (Fixed h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is) as [Fx Ix].
-    exact (PA.chain_fixed_ground W Prog argv read _ F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
-      rr d types H g st Pre0 code sms gfx Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD d1 name mach sym Inm Lang Fx Ix). }
+    exact (MachG name mach sym Inm Lang Fx Ix). }
   pose proof AK as AK'. rewrite Ek in AK'. destruct AK' as [sg' [M' Sig]]. rewrite Mgf in M'. injection M' as <-.
-  set (de := PA.app_env Prog argv read d code th d1) in *.
   set (K := flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)).
   set (m' := (S.capture_meanings de K ++ A.initial_machine_subst W)%list).
   assert (OnK : forall x, In x K -> app_subst m' (TAbs x) = ground de (TAbs x)).
@@ -590,7 +589,8 @@ Theorem safety_obligations : forall prelude,
      PA.ChainResultAgrees W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
-     FS.FamilyPlatformApplyOk W Prog argv read so /\
+     (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
+     PA.FamilyResultAgrees W Prog /\
      (* a family's receiver is in scope, and agrees with the code's context *)
      S.FamilyCoherentOk W /\ S.ExScopedOk W Prog /\ S.LitScopedOk W /\ S.DemandScopedOk W) ->
   forall program interface initial,
@@ -600,16 +600,18 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CR [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]].
+    as [CIF [CR [RA [FLR [FCA [FRA [FCo [ExS [LitS DemS]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
   pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].
-  pose proof (PA.chain_platform_ok W Prog _ _ _ RA
-    (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo)) (platform_sigs_fixed W Prog))
-    ) as CP.
+  pose proof (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps
+    (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo))
+    (platform_sigs_fixed W Prog)) as PG.
+  pose proof (PA.chain_platform_ok W Prog _ _ _ RA (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
+  pose proof (PA.family_platform_ok W Prog _ _ _ PG FRA) as FPA.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
   pose proof (CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.

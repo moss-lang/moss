@@ -116,6 +116,8 @@ Definition certificate_roots :=
   @PublicEntryTop.platform_sigs_fixed,
   @PublicEntryTop.platform_handles_formed,
   @PublicPlatform.chain_platform_ok,
+  @PublicPlatform.family_platform_ok,
+  @PublicPlatform.chain_prims_of_ground,
   @PublicPlatform.platform_not_linked,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
