@@ -134,10 +134,11 @@ Proof. decide equality. Defined.
 
 Lemma appof_det : forall s tm a1 a2, AppOf W s tm a1 -> AppOf W s tm a2 -> a1 = a2.
 Proof.
-  intros s tm a1 a2 (rs1 & _ & -> & N1 & M1) (rs2 & _ & -> & N2 & M2). f_equal.
+  intros s tm a1 a2 (rs1 & -> & N1 & M1) (rs2 & -> & N2 & M2). f_equal.
   destruct (kind_sym W s) as [k|] eqn:K; [destruct (dkind_eq_dec' k DKMeth) as [->|Ne]|].
-  - destruct (M1 eq_refl) as (ms1 & -> & F1). destruct (M2 eq_refl) as (ms2 & -> & F2).
-    rewrite (bools_iff_det _ _ _ _ _ F1 F2). reflexivity.
+  - destruct (M1 eq_refl) as (ms1 & ex1 & -> & F1 & O1). destruct (M2 eq_refl) as (ms2 & ex2 & -> & F2 & O2).
+    assert (Ee : ex1 = ex2) by (eapply sig_outside_det; eassumption).
+    rewrite (bools_iff_det _ _ _ _ _ F1 F2), Ee. reflexivity.
   - rewrite (N1 ltac:(congruence)), (N2 ltac:(congruence)). reflexivity.
   - rewrite (N1 ltac:(discriminate)), (N2 ltac:(discriminate)). reflexivity.
 Qed.

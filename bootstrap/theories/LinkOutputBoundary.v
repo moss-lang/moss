@@ -158,7 +158,7 @@ Proof.
      * reflexivity.
      * constructor.
      * eapply A.TyType with(t:=1);vm_compute;reflexivity.
-     * exists[1];split;[apply incl_refl|];split;[reflexivity|];split;[intro;reflexivity|intro Bad;discriminate Bad].
+     * exists[1];split;[reflexivity|];split;[intro;reflexivity|intro Bad;discriminate Bad].
    + split;reflexivity.
 Qed.
 Definition link_boundary_method_context:=A.Cx[(1,TNom 3[])][][][]

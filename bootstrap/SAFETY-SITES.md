@@ -21,13 +21,49 @@ an admissible program and a compatible interface, `run_main`'s signal is never
   (`stuck_entry_is_wrong`). The reduction is therefore exact, and T20 is
   precisely what remains.
 
-## The entry (checked, conditional)
+## The entry (checked)
 
-[PublicEntry.v](theories/PublicEntry.v) proves `safety_public`, which is
-`CORRECT.safety` for any `Public` instance, from two premises:
+[PublicEntry.v](theories/PublicEntry.v) proves `public_safety`:
+`CORRECT.safety` for any `Public` instance and every prelude, with no
+hypotheses (realize5; it is in the Certificate.v roots, so check.sh
+confirms it assumes only the kernel's primitives). It is
+`safety_obligations`, whose premise of remaining obligations is now empty:
+every functor and family obligation below is proved (the functor and
+family obligations: `ChainResultsOk` from
+[PublicCopyApply.v](theories/PublicCopyApply.v) (itself proved,
+`PublicChainCore.chain_results_of_new`, from `ChainNewOk`, the
+formal/caller result correspondence for the result's new provisions
+(selection, outputs, aliases, kinds and the provisions kept from the
+caller are proved: `chain_core_ok`; that the selection fills only the
+caller's keys is by construction, so ChainNewOk is `ChainRealizeOk`:
+`PublicChainNew.chain_new_ok`; `ChainRealizeOk` itself is proved,
+`PublicChainRealize.chain_realize_ok`, realize4), and `KeptOutputsUnmentioned`, an
+open premise for the user to decide: results2-AUDIT section 2), which with
+`ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
+`PlatformApplyOk`; for `ChainPlatformOk`, proved in
+[PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
+premise `ChainForwardSigs` (at the caller's last position for a key, the
+caller's method agrees with the root family's item there; the keys are the
+caller's by construction; the empty chain proved,
+`PublicChainFwd.chain_forward_sigs`, the copy case `ChainForwardCopySigs`
+proved, `PublicChainSigs.chain_forward_copy_sigs`); for `FamilyStepOk`, proved in
+[PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`
+(its selection proved, `PublicChainCore.family_link_results_ok`, from
+`FamilyLinkNewOk`: the family's new methods installed by the selection,
+callable; proved, `PublicFamilyLink.family_link_new_ok`), `FamilyCopyRealizeOk` (`FamilyCopyApplyOk`'s realization half;
+its key half is by construction, `family_copy_apply_of_realize`; proved,
+`PublicFamilyCopy.family_copy_realize_ok`, realize5), and
+`FamilyKeysTyped` (for
+`FamilyPlatformApplyOk`, proved in PublicPlatformApply.v); and the slice's
+`FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off
+`ElaboratesIn` and `Linked`. The formation premises and main's `HandleFormed` are
+proved (PublicWorldFormation, PublicFamilySig, `handles_formed`). It goes through `safety_public`, which is
+`CORRECT.safety` from three premises:
 
 - the slice's safety at every fuel, with the reference host's state
   invariant (`PublicPrimitiveSafety.state_ok`);
+- context formation's premises (`MergeFormed`, `MentionsTyped`), so main
+  starts in a formed context and frame;
 - handle formation of the platform signatures in main's context
   (`HandleFormed`, a T29 fact).
 
@@ -86,8 +122,8 @@ the local store. *C* and *F* are the static context and frame.
 | `apply_functor` | `e_fun` (13), `e_nobody` (4) | no closure for `IFun u`, or no code | `BApplyAbstract`, `PrFamily`/`Demand` (`apply_expression`) | `nlook u (c_funs C)`, plus closure provenance (`LinkBody`'s `funbody_of`, or `PEFun`/`Platform.Family`). |
 | `apply_functor` | `e_compose` (3) | input `sm` selection fails | same | `Satisfies C Cu ns sm`. |
 | `apply_functor` | `e_chain` (8) | `adapt_provisions` along a copy chain fails | `BFunCopy` smaps over `incl nsh nsu` | Copy-chain provenance: each `sms` step selects keys provided by the previous step (T31, "link/copy-chain provenance"). |
-| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every refiled result key (T15/T16). |
-| `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable or its destination is occupied | `BApplyAbstract` `FreshFor` and the output clauses | Fresh destinations are absent from the caller's runtime `type_meanings` (T16). Needs runtime generations ⊆ static `context_gens`. |
+| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every result item at its source key (`fc_sources`, T15/T16). |
+| `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable | `LinkBody` (outputs bound in the body) | The body's final environment has a meaning for each output (T16). An occupied destination is no longer Stuck: the writes shadow (results2, below). |
 | primitive call | `e_missing_primitive` (15) | `supports interface p = false` | `BPrimitive`, platform entries, `Platform.Family` bodies | `Compatible` requires every operation in `required_primitives`. Invariant: every runtime `PrimitiveClosure` came from program code or the initial environment. |
 | primitive result | interface laws | ill-shaped arguments, or a missing `gc_pre` | `AtKey`/`PrimitiveSignature`, `MethodPrimitive` | Arguments typed at the signature yield `value_shape` (T11); GC arguments satisfy `gc_pre` under the ghost heap (T17). |
 | `run_main` | `e_nobody` (4) | no body for `main` | `ElaboratesIn` | `main` is a defined fn, so `FnElab` gives its body. |
@@ -96,6 +132,327 @@ the local store. *C* and *F* are the static context and frame.
 `ERecord` and `eval_arguments` only propagate.
 
 ## Observations so far
+
+- **FamilyCopyRealizeOk assumes the family application's table is scoped (realize5).**
+  `FS.FamilyCopyRealizeOk` and `FS.FamilyCopyApplyOk` gain the premise
+  `PublicFormation.TysScoped W C`, which `FamilyLinkResultsOk` and
+  `FamilyPlatformApplyOk` already had. Not an Audit change, and the slice
+  is unchanged: `family_run` has it at the call (its own premise), so
+  `family_step_ok`'s assumptions do not grow.
+  - Why: the realization relates the caller's reading of the family's
+    result at the family context to the family's own reading
+    (`PublicChainRealize.level_rel`), whose `DomT` clause asks that an
+    extra key of the family context's table that a path names is a type
+    symbol; its only source is `PublicFormation.family_keys_typed`, from
+    `TysScoped W C` (realize4's handoff; approved by the lead).
+- **A copy's target is abstract (fwdsigs).** BFunCopy did not require
+  `bind F = H;`'s F to be abstract, though BFunClosure does and the oracle's
+  `bind_functor` rejects a target with a body ("`F` has a body, so it is
+  applied ..., not bound; only an abstract functor is bound (D78)").
+  - [copy-into-body.moss](examples/copy-into-body.moss): rejected by the
+    oracle (that message) and by native ("not supported ... `bind F = H;`");
+    the control without F's body prints 7 on both.
+  - The proof needs it: `CF.ChainForwardCopySigs` relates each copy's
+    result read in two contexts (PublicFamilyAgree.entries_rel), which asks
+    that every symbol the result mentions is one of the copy's inputs; only
+    an abstract functor has implicit inputs.
+  - Fix: BFunCopy gains `exists n ps a r, ast_of W u = Some (ADFunctor n ps a
+    r None)`, carried in `S.CopySite`. It mirrors the oracle's check, so it
+    rejects nothing the oracle accepts. See scratch/orch/fwdsigs-AUDIT.md.
+- **A linked body's result keys read F's input symbols at G's table, the output roles at the body's (realize3).**
+  `CN.ChainRealizeOk` was false (by hand reading) for
+  [link-output-input-rep.moss](examples/link-output-input-rep.moss).
+  - T is an input and an output of F, and a world's merge for F picks T
+    as X's representative, so F's key X.m reads as T.m with the input T.
+  - G rebinds `T = Char`. That is a BTypeBind, so `made = []`, and T is not
+    a pin.
+  - The old link_site read every output symbol at the body's final table,
+    the input occurrence included. So G's Char.m was accepted, and the
+    caller filed it under Bool.m.
+
+  Repair: link_site's table sends the roles `gen t` to the body's
+  meanings, and every symbol to G's table. LinkBody's renaming is the
+  identity on the roles (`link_renaming`). The oracle already reads this
+  way (Elab.v `made_tys`/`body_key`).
+  - The oracle and native reject the example.
+  - The control (link-output-input-rebind-control.moss) is accepted by
+    all three.
+  - Corpus (oracle against a variant reading as the old rule): 414 the
+    same, 1 different. The difference is output-merge-key.moss, which the
+    old rule rejected and the oracle accepts. See
+    scratch/orch/realize3-AUDIT.md.
+- **A linked body may not install an input of F as a kept output (realize2).**
+  `CN.ChainRealizeOk` was false for a linked root (linknewpf's m7, made
+  observable).
+  - G does not take F's input T, and G's body applies Make, whose output
+    T is not in force in G. `BApplyAbstract` installed T as itself, and
+    at run time it meant Char.
+  - G binds `T.m` on it. The caller, with T = Bool, files it under Bool.m.
+  - The pins M(F) (D84 3d) stopped `bind T` only.
+  - [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): the
+    oracle elaborates it and is stuck at run time (XErr 14, proof-plan
+    E37); native rejects it.
+
+  Repair: BApplyAbstract's kept-output case also asks `~ In t (fr_pins F)`,
+  so every destination of a linked body avoids M(F). That was not enough:
+  [link-kept-output-rep.moss](examples/link-kept-output-rep.moss) keeps
+  an output at T, an unmentioned merge representative of X, which a world
+  may pick. So `LinkBody` also asks that nothing the body makes is an input
+  of F: `forall t, In t made -> nlook t (c_ty Cu) = None`. The oracle and
+  native reject that program.
+  - The control (link-kept-output-pin-control.moss, where the meanings
+    agree) is rejected too. Native rejects it; the oracle runs it.
+  - Corpus (oracle against a variant whose `check_link_pins` rejects a
+    pin, or input of F, installed by the body as itself): 401 the same,
+    5 different (the new programs). See scratch/orch/realize2-AUDIT.md.
+- **A linked body's result keys are read at G's readings of the inputs (linknewpf).**
+  `CC.FamilyLinkNewOk` was false, and so, very likely, was
+  `CN.ChainRealizeOk` for a linked root.
+  - LinkBody looked each result key up at `at_site Cb`, which re-reads
+    the receiver through the body's final table.
+  - A body may rebind an input that F's result does not mention, since
+    the pins (D84 3d) are M(F). If that input is the merge representative
+    of a mentioned one, the key follows the rebind.
+  - But an input's meaning at an application is the caller's, and
+    `bind T = ...` writes only the alias.
+  - [link-merge-rep-rebind.moss](examples/link-merge-rep-rebind.moss):
+    F[X]'s and G's contexts merge X with T, with representative T.
+    Audit's world picks the representative freely, since `w_context` is
+    a witness.
+    - G binds T = Bool and then `T.m`, and the key `X.m` (T.m at F's
+      inputs) was found at Bool.m.
+    - main's demand of Concrete.m installed that closure, and `if this`
+      ran on a Concrete.
+    - Both implementations reject the program.
+
+  Fix (the faithful option): `A.link_site Cg Cb outs` reads outputs at
+  the body's table and every other symbol at G's own (`c_ty Cg`).
+  - LinkBody's ResultRealizes and the code's sources use it. It has
+    Cb's provisions and merges, so it is realized and keys as Cb does.
+  - The m2 variants are now rejected, as both implementations reject
+    them.
+  - scratch/linknewpf/m5-*.moss (G also binds `X.m`) is accepted, and
+    the application now selects G's `X.m`, as native does. The oracle
+    rejects the XT order through its pins, which include the
+    representatives of M(F) (Elab.v `mf`).
+  - Proof repair: LinkData and the result selections in the obligations
+    read `S.link_sources (A.link_site Cg Cb outs') ...`.
+
+  See scratch/orch/linknewpf-AUDIT.md.
+- **A copy's fresh symbols avoid sigma's image (realizepf).**
+  `CN.ChainRealizeOk` (and, by the same rule, `FS.FamilyCopyRealizeOk`)
+  was still false after copyfresh's repair.
+  - `cg y` was only `Fresh W`, but sigma's image (F's fixed readings at the
+    copy site) can mention a fresh application generation: after
+    `bind Z = Bool; bind K;`, Z reads as a fresh g.
+  - The witness `cg I := g` then made F's `get[I = Z]` and H's `get` equal
+    again.
+  - [copy-fresh-collide.moss](examples/copy-fresh-collide.moss): the oracle
+    and native reject at the copy; old Audit accepted, and `show(get())`
+    ran Char's `code` on a Bool.
+  - Repair: `CopyOutputs` requires each `cg y` and each output role to
+    avoid the generations of sigma's image, as the oracle's `@copy` symbols
+    do. The role half is untested; `PublicCopyFresh.copy_outputs_at` needs
+    it.
+  - Corpus (oracle against a colliding variant): 397 the same, 1 different
+    (the new example). See scratch/orch/realizepf-AUDIT.md.
+- **A copy reads F's non-fixed inputs as fresh symbols (copyfresh).**
+  `CN.ChainRealizeOk` and `FS.FamilyCopyRealizeOk` were false (moss-safety
+  scratch/hunt/hunt2-chain and hunt2-family). BFunCopy's `CopyOutputs`
+  compared F's and H's result provisions after the copy site's readings
+  of F's fixed inputs alone (sigma). Such a reading can name a symbol
+  that is also one of F's non-fixed inputs, which every application
+  supplies afresh, and the check identified the two.
+  - [copy-bracket-nonfixed.moss](examples/copy-bracket-nonfixed.moss):
+    F[]'s `get[I = Z]` with Z read as demo's I equalled H[I]'s `get`
+    (`(): I`), and the application installed H's body at I = Bool under a
+    key the caller reads at Char.
+  - [copy-fixed-reads-poly.moss](examples/copy-fixed-reads-poly.moss): F's
+    `A.m[U = A]` (A poly) equalled H's `A.m[U = Y]` with Y read as go's A.
+  - Both: oracle rejects the copy ("effective output interpretation
+    differs (D78)"); native rejects (the first at the copy, the second at
+    the use of F).
+
+  `CopyOutputs` now also chooses, for every generation of F's input
+  readings that sigma does not read, a fresh symbol `cg y` (distinct
+  from each other and from the output roles), and compares the
+  provisions after `sigma ++ [y := cg y]`. This is the oracle's
+  `copy_output_compatible`, which sends every unsolved generation to a
+  fresh `@copy` symbol. The alternative (sigma's image mentions none of
+  F's inputs) is not equivalent: copy-fixed-bracket.moss reads its fixed
+  Z as I32, itself a fixed input of F.
+  - Statements are unchanged (CopySite, CCopy and BFunCopy pass the
+    same sigma); one destructuring in PublicCopyApply.v gains the two
+    witnesses.
+  - copy-extra-key, linked-copy-bracket, copy-fixed-bracket and
+    family-copy-linked-bracket still satisfy CopyOutputs (each argued in
+    scratch/orch/copyfresh-AUDIT.md).
+
+  See scratch/orch/copyfresh-AUDIT.md.
+
+- **A method's θ records every type symbol its signature mentions (sigclose, E35).**
+  `S.FamilyCoherentOk` was false.
+  [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss) declares
+  `fn .m(): U` under `assume A`, so U was not a requirement of `.m`, and
+  AppOf's θ (the requirements the signature mentions) was `[]`.
+  - `demo` binds `Int.m` at U = Int, rebinds U = Bool and puts family F
+    in force. F's result also has `Int.m`, read at U = Bool, so the two
+    provisions shared a run-time key while their signatures differed.
+  - The oracle ran F's closure for `k.m()` and got stuck (XErr 14);
+    native prints 42.
+
+  Decision (D20, the user's choice): a signature is closed over its
+  requirements, which include every type symbol it mentions. A method's
+  θ now lists the requirements its signature mentions, in their fixed
+  order, then the other type symbols it mentions, ascending
+  (`SigOutside`). `ResultMentions`' `RMMeth` counts every such symbol.
+  - Audit.v and ExecutionModel.v change alike, and
+    `Elab.signature_type_syms` mirrors them, so the oracle is fixed too.
+    The example now prints 42 on the oracle.
+  - `w_reqs` is unchanged. Fns are not widened: their provision keys
+    carry no θ, and widening their requirements would change functors'
+    fixed inputs and the elaborator's requirement cache.
+  - Corpus (scratch/orch/sigclose-cmp.out, full runs): three files
+    differ, all where a caller leaves a signature type of a provided
+    method unbound. sig-nonreq-shadow goes from stuck to 42.
+    unbound-merge-representative (stuck, XErr 10) and
+    partially-bound-merge (printed k) are now rejected by D62's "a
+    provision serves only the instantiation it was made at", since `C.w`
+    is bound at Foo = Char and `f` needs it at the unbound Y. Binding
+    Y = Char makes partially-bound-merge accepted again. merge.moss and
+    bridged.moss (through signature.moss) are unchanged.
+
+  See scratch/orch/sigclose-AUDIT.md.
+- **A linked input reads in G as a type over F's inputs (cap3b).**
+  LinkBody's input condition used to assume that G's reading of an input x
+  of F mentions only F's inputs, so it held vacuously when G's context
+  merged x into a type Y that only G has (orientation x := Y).
+  [link-merge-captured.moss](examples/link-merge-captured.moss) is the
+  hunt's `ChainRealizeOk` counterexample.
+  - Audit's 3b reads the captured `A.gimme` under σ, so it sees Y, not X.
+  - G's body therefore reads X as the captured Y (Bool), while each
+    application supplies X (Char). `out = true` is installed at the
+    caller's Char.
+  - The oracle rejects it (D84 3b, on the first unmerged reading), and so
+    does native ("incompatible types").
+
+  The condition now concludes that x's reading mentions only F's inputs.
+  With the σ-read 3b, which covers the orientation Y := x, a linked input
+  no longer meets a captured-only type in either orientation.
+  - Mirroring the oracle's 3b exactly would not be sound. It reads one
+    stored signature per captured fn or method.
+    [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss)
+    reads `gimme` at Y and then at X: the oracle accepts it, and the
+    reference interpreter gets stuck. Native rejects it, and so does Audit.
+  - An oracle variant with the new check differs from the oracle on
+    nothing in the corpus except these counterexamples, which the oracle
+    already rejects.
+
+  See scratch/orch/cap3b-AUDIT.md.
+- **A family's listed polymorphic inputs are type symbols (family4).**
+  `FamilyShape` requires each name in `F[...]` to resolve to a type
+  symbol, as the oracle's `functor_params` does (D84 rule 1).
+  [family-poly-nontype.moss](examples/family-poly-nontype.moss) lists a fn:
+  the oracle rejects it, native accepts it (proof-plan E34). With it and
+  `TysScoped` (a formed context's keys are declared type symbols, now
+  strict), `FamilyKeysTyped` and `AppKeysTyped` are proved
+  (scratch/orch/family4-AUDIT.md section 2).
+- **A functor closure captures types as a lambda does (family4).**
+  `BFunctor` carries a `type_capture`, and `BFunClosure` gives it
+  `lexical_capture C`: the closure keeps the table's readings as aliases
+  and the meanings of `context_gens C ++ key_receiver_gens C`, where it
+  used to keep all of `d`'s meanings and aliases (`capture_environment`).
+  A captured need can be keyed at a declared symbol not in force where G
+  is bound ([functor-captured-unbound.moss](examples/functor-captured-unbound.moss):
+  `bind H = P;` in an argument of a call that demands family F at
+  `A := T`, T unbound; oracle and native accept and run it). G's
+  application reads such an input from the capture, and with all of `d`
+  that was its alias, which need not be its meaning in inlined const code.
+  Now it is its meaning, so the captured readings agree by construction
+  (`cmeaning_capture`). Run-time only; nothing is rejected. The oracle's
+  `xclose` keeps the whole type environment, with one map, so it agrees
+  with itself either way. `CapturedInForceOk` is restated (a `FunCtx`
+  premise; conclusion "in force or in `capture_gens C`") and proved
+  statically (`PublicLinkMerges.captured_mentioned`); it has left
+  `safety_obligations`. This supersedes `captured_in_force_unprovable`,
+  `captured_in_force_of` and `DeclaredInForce` below
+  (scratch/orch/family4-AUDIT.md).
+- **Lambda capture keeps method-key receivers' meanings (family2,
+  coordinator-approved option (c)).** `lexical_capture C` now captures
+  `context_gens C ++ key_receiver_gens C`. A callee requirement the caller
+  leaves unbound is read at the call site as itself, so a family demand can
+  key a method at a declared T that only that key mentions
+  ([family-unbound-need.moss](examples/family-unbound-need.moss)). A lambda
+  over that context used to drop T's meaning while keeping the key, so the
+  captured provision was realized at another grounding whenever T had a
+  meaning. In a body that is never the case; in a defined val's inlined
+  initializer it can be
+  ([const-family-unbound.moss](examples/const-family-unbound.moss)).
+  Run-time only: nothing is rejected. The oracle captures the whole type
+  environment (`ExecutionModel.xclose`) and keys methods symbolically, so
+  this mirrors it. With it, `lambda_realizes_le` needs no key-scoping
+  premise, and option (b)'s relaxed `KeysScoped` needs no run-time "no
+  meaning" fact. Details: scratch/orch/family2-AUDIT.md.
+
+- **Removed: b4f8279's runtime freshness check on functor results
+  (results2, coordinator-approved).** `result_environment` was Stuck when
+  an output destination already had a meaning in the caller
+  (`fresh_result_types`, added by the user's commit b4f8279, "preserve
+  type generations"). Audit accepts programs that reach it, and the
+  oracle (which shadows: `dr ++ d`) runs them:
+  [const-kept-output.moss](examples/const-kept-output.moss) (a defined
+  val's initializer is elaborated in the empty context, so its `bind F;`
+  keeps output T, and it is inlined where T already has a meaning; the
+  oracle runs it, and native rejects the use of the val for an unrelated
+  reason), and
+  [lambda-declared-output.moss](examples/lambda-declared-output.moss) (a
+  lambda's capture gives a meaning to a declared T its demand context
+  mentions; oracle and native run it). The writes now shadow. The safety
+  argument moves from the runtime check into the proof: `dest_scope`
+  (PublicLinkResults) keeps every destination out of the caller's
+  context and frame types, so no typed local, provision or return value
+  is re-grounded (`ground_grow`). For outputs installed as themselves this
+  still relies on the named premise `DeclaredScoped` (a declared symbol
+  the context mentions is a table key). `family-unbound-need.moss` shows
+  that premise is false, so the kept-output case needs its own fix: an
+  Audit kept-output clause `~ In t (context_gens C)`, which would reject
+  lambda-declared-output.moss, or a proof that re-grounding an unbound
+  declared symbol is harmless. With the check gone, `MeaningsScoped` and
+  the formation hypothesis planned for it are not needed.
+  `PublicGenerationFacts` keeps generation preservation as a theorem
+  under the freshness the static rules give. Its examples, and
+  `PublicGenerationCallExample`'s, now check shadowing.
+  scratch/orch/results2-AUDIT.md has the details.
+- **A merge could carry a shadowed, unformed pair (fixed).**
+  `MostGeneralMerge` constrained σ only through `app_subst`. A second pair
+  for a generation is never read, but it stays in the context's `c_sub`,
+  and formation (`cf_sub`) quantifies over every pair. So
+  `PublicFormation.MergeFormed` was false by definition. Example:
+  `s = [(g, TAbs g); (g, TUnion [TAbs g])]` merges `[NTy g]`.
+  **Decided:** σ is a function (`In (g, t) σ -> lookup_subst g σ = Some t`),
+  as the elaborator's union-find σ is. MergeFormed is now proved
+  (PublicWorldFormation.merge_formed_of): most generality alone forces σ's
+  values to be formed, by probing σ with a marking unifier. MentionsTyped is
+  proved from WorldOf (mentions_typed_of). Details are in
+  scratch/orch/worldform-AUDIT.md.
+- **Counterexample: a platform fn could read its raw handle as another type (fixed).**
+  [handle-rebind.moss](examples/handle-rebind.moss):
+  `context Store = ..., i64_store[I32 = Addr[I32 = I64]]` gives main a
+  platform i64_store at an Addr whose raw handle reads as I64. That is still
+  a Platform signature for PI64Store (prim_msig). The oracle rejects the
+  program (D20/D62 assumed-requirement coherence). Native accepts it, since
+  main never calls i64_store.
+  **Decided:** `Platform.Entry` asks each platform fn's signature to read
+  its raw handles as themselves (`HandlesRead`), so `HandleFormed` is
+  proved (PublicEntry.handles_formed).
+- **Counterexample: FamilySigOk was false as stated.**
+  [family-bracket-leaf.moss](examples/family-bracket-leaf.moss) is accepted
+  by both implementations. A family's context leaf `Ctx[X = Foo]` carries a
+  P(F) symbol into a signature that the key does not determine. A
+  FamilyApplication whose matching is not read off the key then gives a
+  non-ok signature. Every use already has FamilyReadOff, so the hypothesis
+  is now `FamilySigReadOffOk`, proved in
+  PublicFamilySig.family_sig_ok_readoff. Audit is unchanged.
 
 - **Counterexample: a record pattern may bind one name twice.**
   `FieldPats` does not require its bound names to be distinct. In
@@ -206,6 +563,38 @@ the local store. *C* and *F* are the static context and frame.
   checked like every other primitive. The implementation side is
   [E29](proofs/build-run.md#e29): the default host's `unreachable` must
   not return, and the link check must accept its `|` result.
+- **A lambda's frame keeps the generations in scope (precise freshness).**
+  A lambda's closure keeps the meanings of `context_gens C`, which can
+  include generations an earlier `bind F;` made. `FreshFor` in the lambda's
+  body only avoided the body frame's `fr_fresh` and the current context's
+  generations, so after a bind dropped the last provision mentioning such a
+  generation, an application there could make it anew, and at runtime
+  `result_environment` finds it occupied (Stuck). Both implementations draw
+  generations from a global counter. `LambdaProvider` now requires the body
+  frame's `fr_fresh` to include `fr_fresh F` and `context_gens C`
+  (user-approved; see Later cleanup).
+- **Gap: a functor closure's captured needs were unchecked (fixed).**
+  [captured-merge.moss](examples/captured-merge.moss): `bind F = G;`
+  captures G's needs that F does not take from the binding site, and
+  `BFunClosure` only required each to be provided there. G's context merges
+  `X` with `Y`, here `X = Char` and `Y = Bool`, so G's body would call
+  Bool's `not` on a Char. Both implementations reject the program (the
+  oracle checks captured readings, D84 3b), but the relation accepted it.
+  **Decided** (user-approved): the captured needs must satisfy G's context
+  as a call's needs do (`Satisfies`, at G's inputs read here). Its merge
+  clause covers every merge of G's context whose types are in force here.
+  Also `LinkBody` now requires a functor body's frame to number its locals
+  (`Numbering Fg None []`), as `FnElab` and `LambdaProvider` do; without it a
+  value bind with nested `let`s could put two live locals in one slot. The
+  implementation follow-up is [E30](proofs/build-run.md#e30).
+- **Gap: 3b covered only captured values (fixed).**
+  [captured-linked-fn.moss](examples/captured-linked-fn.moss): G captures
+  `fn g(x: T): T` while F links T, so g, bound at T = Int, would be called at
+  an application's T = Bool. `LinkBody`'s 3b only constrained captured
+  values. Both implementations reject the program (the oracle's message is
+  D84 3b for any captured item). **Decided** (user-approved): 3b now
+  covers every captured item's type or signature, recorded instantiation
+  and method receiver. Covered by [E30](proofs/build-run.md#e30).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -301,6 +690,328 @@ the local store. *C* and *F* are the static context and frame.
 - **`ExConst`** inlines code elaborated in an empty context with its own
   numbering. It is closed: it reads no locals, vals or provisions, and has
   no `return` or `break`.
+- **A family's matching is read off the demanded key.** `FamilyApplication`
+  constrained the matching θ only to P(F) symbols. A symbol that the demanded
+  key's receiver does not mention could be matched to any type, even an
+  unformed one or one naming generations outside the context, and the
+  application then installed provisions keyed by it. D84 rule 7 says θ is
+  read off the key, and the oracle does exactly that
+  (`family_candidate_step` in
+  [FamilySelectTrace.v](theories/FamilySelectTrace.v)): it reads the
+  receiver with each P(F) symbol as a marker and matches it against the key.
+  The new `FamilyReadOff` (a premise of `PrFamily`, `FamilyStep` and
+  `LitOpFamily`) states the same: θ's domain is exactly the P(F) symbols
+  that the formal receiver mentions, with no duplicates, and
+  `canon C (app_subst θ rf)` is the key's receiver. Each value is then a
+  subterm of an ok, scoped receiver (`family_matching_scoped`), so
+  `demand_formed_cx` no longer assumes this. It rules out no program the
+  implementations accept.
+- **Counterexample: a copy's extra input replaced a captured type
+  (fixed).** `application_environment` read every input of a functor body
+  from the application's θ first. After `bind F0 = G; bind F1 = F0;`
+  where G captures `X` and `v: X` but only F1 takes `X`, applying F1 at
+  `X = F64` gave G's body `X = F64` while `v` is an i32.
+  [copy-capture.moss](examples/copy-capture.moss) then boxes `v` at F64,
+  rebuilds it at `Ref[Boxed=F64]` and hands `f64_add` an i32, which is
+  stuck under Audit. Both implementations keep the captured `X = I32`
+  (the oracle's `runtime_provider_inputs` passes θ only for the linked
+  inputs), so the rebuild traps with a cast failure. `functor_code` now
+  records `fc_linked` (G's inputs that the functor it was bound to takes;
+  all inputs for a platform family), and only those are read from θ.
+  After discussion: a captured value has a fixed representation, and a
+  copy should behave as its source does at the source's inputs.
+- **Counterexamples: a linked body or a copy read F's needs differently
+  (fixed).** `LinkBody` checked G's body only in G's terms. In
+  [linked-merge.moss](examples/linked-merge.moss) G's context merges X,
+  which F links, with Y, which G captures, so G reads the linked `vx: X`
+  as a Y. Bound at X = Y = Bool and applied at X = Char, the body calls the
+  captured Bool `not` on 'a'. This depends on which representative the
+  merge picks: with X, 3b rejects the program. Copies had the same gap:
+  `BFunCopy` compared needs only as keys, and in
+  [copy-merge.moss](examples/copy-merge.moss) H merges X with Y while F
+  does not. The oracle rejects both programs (`defined_link_inputs_compatible`,
+  D84; `copy_output_compatible`, D78), and native rejects them with type
+  errors. Now `LinkBody` requires each need F links to have the same
+  provision in G's context as in F's, and G's readings of F's inputs to
+  hold in F's context. `BFunCopy` requires the same of H's needs and
+  inputs. An oracle variant with these simpler checks gives the same
+  verdict as the oracle on all 353 test programs.
+- **A family member is not bound directly (rule 7, now in Audit).**
+  Rule 7 forbids binding a method key that a family in force produces
+  (`family_direct`). Both implementations enforce it: the oracle in `Elab.v`
+  ("is a member of the family … it cannot be bound directly"), native in
+  the test `family_direct` (`crates/moss-tests/tests/suite/backend.rs`).
+  Audit's `BMethBind` did not, so a family application could shadow a
+  directly bound provision under the same key. `BMethBind` now requires
+  `~ FamilyProduces` for every family, after discussion. It rejects nothing
+  the implementations accept, and family applications no longer need an
+  argument that the shadowed provision has the same signature.
+- **Counterexamples: two closure-merge obligations are false (repaired in Audit, next entry).**
+  `LinkMergesOk` and `BindMergesOk` (PublicBodySlice) claim that each
+  merge of a linked body's context either stays among F's (non-fixed)
+  inputs or involves only fixed inputs and symbols in force at the bind.
+  [linked-merge-captured.moss](examples/linked-merge-captured.moss): G
+  merges Y, which it captures, into X, which F links (merge Y := X), so
+  LinkBody holds and 3b does not apply. [bind-merge-unbound.moss](examples/bind-merge-unbound.moss):
+  G merges Y into Z, F takes neither, and Y is not in force where G is
+  bound, so Satisfies' merge clause does not apply to it. Audit, the oracle
+  and native accept both (they print 7). In each, an application's
+  environment reads the merged-away Y from the bind site, not as its
+  representative, so it does not realize G's context (absorption fails),
+  although nothing in G's body reads Y. A premise rejecting these would
+  reject programs both implementations accept; the proposed repair is in
+  the runtime: `application_environment` should read each of G's inputs
+  through G's table (its representative under the merge), after which
+  `link_entry`'s merge clause holds by construction and both obligations
+  can go. `CapturedInForceOk` as stated is false
+  (`PublicLinkMerges.captured_in_force_unprovable`: nothing ties the bind
+  context to a program); `captured_in_force_of` proves it at a bind
+  context with `KeysScoped` (in `Pre`) and `DeclaredInForce` (every
+  declared symbol the context mentions is in force), an invariant `Pre`
+  does not carry yet (T29).
+- **An application reads G's inputs through G's table (Audit change,
+  repairs the two closure-merge counterexamples).** `functor_code` has a
+  new field `fc_table`, and `application_environment` reads each input x
+  as `app_subst base t` when the table maps x to t, where `base` is the
+  old per-input meaning (θ for a linked input, the capture otherwise); an
+  input the table omits reads as `base x`, as before. `LinkBody` records
+  G's canonical table `c_ty Cg`; a platform family's code records `[]`, so
+  its behaviour is unchanged by definition. A merged-away input now reads
+  as its representative, so G's merges hold in the body's environment by
+  construction (`link_entry`, via `GD : ground de t = app_subst base
+  (canon Cg t)` and idempotence). This is unobservable by elaborated code:
+  G's provisions and every type its body elaborates are canonical in G's
+  table (`functx_canon_prov`), so they mention only representatives, whose
+  meanings did not change. A premise would have been the wrong fix: the
+  programs are safe, both implementations accept them, and the failure was
+  only that the model's run-time environment ignored a merge the static
+  context had made. `LinkMergesOk`, `BindMergesOk`, their hypotheses, and
+  `ClosureOk`'s merge clause are gone. See scratch/orch/repair-AUDIT.md.
+- **Counterexamples: a platform family filed its items under bare keys,
+  and could have a type output (fixed).** `Platform.Family` installed each
+  primitive, and returned the result, under the result's static key
+  (`mkey`, no instantiation). A caller reads a method provision under its
+  run-time key (`rkey`), which carries the instantiation the item was made
+  at: `Ref.deref` mentions `Boxed`, so after `bind Heap;` at `Boxed = Int`
+  the call `r.deref()` looks for `IMth Ref[..] deref [Boxed=Int]` and finds
+  nothing ([platform-family-keys.moss](examples/platform-family-keys.moss);
+  the oracle and native run it and exit 0, filing the items under
+  `key_item_at`, `Elab.v` `platform_fun`). `PlatformApplyOk` was false.
+  Now the family's code and result use `rkey_of outputs`, as a linked
+  body's do. Separately, nothing forbade a type output, which the code
+  cannot return (`read_result_types` is stuck); `Platform.Family` now
+  requires none. The oracle provides method items only ("the platform
+  cannot provide a non-method item"), so neither change rejects anything
+  it accepts. Recorded in `scratch/orch/platform-AUDIT.md`.
+- **Counterexample: a copy whose result reads differently (fixed).**
+  `BFunCopy` compared results only leaf by leaf (`SameResult`). In
+  [copy-output-order.moss](examples/copy-output-order.moss) F lists
+  `out[P=U], out[P=V]` and H `out[P=V], out[P=U]`: the same leaves, but
+  the last setter types `out` as V after `bind F;` and as U for H. Applying
+  the copy runs G's body, which provides a U, so the caller's match on V is
+  stuck. The oracle rejects the copy ("effective output interpretation
+  differs (D78)", `copy_outputs_match`), and so does native (test
+  `copied_functors_compare_final_output_interpretations`). `BFunCopy` now
+  requires `CopyOutputs`: read in F's context with the same fresh output
+  roles, H's result gives each of F's keys F's provision, F's fixed inputs
+  read as they are in force. Details and the remaining differences from
+  the oracle's check: scratch/orch/copy-AUDIT.md.
+- **Counterexample: a copy's source with an extra result key (fixed).**
+  `CopyOutputs` checked one direction only, as the oracle's
+  `copy_outputs_match` does: each key of F's result is one of H's. Leaves
+  drop a method item's brackets, so H may have two items on one leaf
+  (`Box.m[T=Bool], Box.m[T=Char]`) where F has one. An application of F
+  runs the root body and selects every key of the root's result
+  (`fc_outputs`), so the extra key overwrites the caller's own provision
+  of it. [copy-extra-key.moss](examples/copy-extra-key.moss) binds
+  `Box.m[T=Char]` to 3 and applies F: native keeps exactly F's result
+  (docs/reference/semantics.md, Functors) and prints 31; the oracle
+  installs G's `Box.m[T=Char]` and prints 21. The caller's static context
+  no longer describes its environment, and `ChainNewOk`'s first clause
+  (every key the selection fills is a new provision's) was false.
+  `CopyOutputs` now also requires every key of H's result to be one of
+  F's. The oracle should check the same converse (task E32); over the
+  corpus, an oracle with that converse gives the same verdicts. Native
+  accepts the program (correctly), so Audit is stricter than native here.
+  Details: scratch/orch/results4-AUDIT.md.
+- **Counterexample: a result key spelled through an output's input
+  meaning (fixed in Audit: separate output roles).** F's merges can make an input X read as an input T
+  that is also an output of F (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
+  merge representative). F's result key `X.m`, read at F's inputs, is then
+  `T.m` with the input T. `LinkBody`'s code renames the output roles back
+  to the output symbols (`output_renaming`), so the code's key reads, at
+  the application, as the new T, while the caller keys `X.m` at X's
+  meaning (the old T). [output-merge-key.moss](examples/output-merge-key.moss):
+  the reference interpreter on the oracle's program stops `stuck (XErr 6)`
+  (e_entry) at `x.m()`; native prints 7; with the representative swapped
+  the oracle prints 7. `ChainKeysOk` was false. A `LinkBody` premise forbidding such keys was
+  tried and REVERTED: it rejects the corpus regression
+  tests/regressions/functor_input_output_generations.moss (native `yn`;
+  the oracle is stuck there, its ignored test, E06). Decided fix (pending):
+  keep the output roles in the code's keys and map them at the
+  application (results4-AUDIT.md, change 3). Until then Audit's
+  application is wrong for this shape and `ChainKeysOk` is false for it.
+  Oracle bug: E33. Details: scratch/orch/results4-AUDIT.md.
+  **Fixed (roles):** `functor_code` gains `fc_roles` (output symbol t,
+  its role gen t; `Platform.Family`: none). `LinkBody` files the result
+  keys `rkey_of Cr k` with the roles kept (no `output_renaming`; the body
+  side `rkey_of Cb (at_site Cb (output_renaming outs gen k))` is
+  unchanged), and `apply_functor` selects
+  `result_smap (result_substitution θ (role_outputs (fc_roles code) outputs))`:
+  each role reads as its output's destination, a raw symbol (an input,
+  even one spelled as an output) by θ. So `X.m` (spelled `T.m`, input T)
+  installs at the caller's old T and the output's `T.m` at the new T
+  (PublicSavedTypeExample `output_role_key_goes_to_destination`,
+  `merged_input_key_stays_input`). Audit now runs both
+  output-merge-key.moss and functor_input_output_generations.moss as
+  native does. Restated with it: `LinkData`, `LinkResultsOk`,
+  `ChainResultsOk`, `ChainCoreOk`, `ChainNewOk`, `ChainKeysOk` (no
+  `output_renaming`), `ChainRealizeOk`, `FamilyLinkResultsOk`,
+  `FamilyLinkNewOk`; no proof needed more than the new terms. The oracle
+  is unchanged: its runtime is ExecutionModel's (XBApply, Elab.v
+  link_body), whose LinkBody/LinkBodySound/LinkOutputFresh proofs do not
+  mention Audit's functor code, so nothing oracle-relating broke; the
+  oracle still gets this shape stuck (E06/E33, an oracle-conformance
+  gap). Details: scratch/orch/roles-AUDIT.md.
+- **A copy's source takes no input its target lacks (now in Audit).**
+  `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
+  inputs (types only H's result mentions). An application of F reads its
+  root body's linked inputs from θ, which covers only F's inputs.
+  `BFunCopy` now requires H's type table to be among F's, as the oracle's
+  input interpretation check does (it fails on an input of H that F
+  lacks). Details: scratch/orch/copy-AUDIT.md.
+- **Refile shadowed a stale provision (now in Audit: no refile).**
+  `LinkBody` used to file each result method again under F's key right
+  after its bind (`refile`). F's key spells an output T as `TAbs T`; when
+  T is also an input of G, the body can bind `T.out` before rebinding T,
+  and that stale provision has the same runtime key.
+  [examples/refile-stale-shadow.moss](examples/refile-stale-shadow.moss)
+  binds `T.out`, then `Int.out`, then `T = Int`, and calls `seed.out()`
+  in between: the reference interpreter on the oracle's program stops
+  `Stuck` (`Int.out` on a Bool), native prints 7, so `RefileRunOk` was
+  false. Now, as native behaves, a linked body runs only its own binds
+  (`binds0`), and `functor_code` names each result item's source key
+  (`fc_sources`, default the item itself): the application selects
+  `result_smap θ' Dr sources`, reading F's key for a result method from
+  the body's runtime key `rkey_of Cb (at_site Cb (output_renaming outs gen k))`.
+  `RefileRunOk` and `refile_run` are gone; `app_step` runs the body with
+  `chain_run`. The oracle still refiles at bind time (task E31).
+  Details in scratch/orch/refile-AUDIT.md.
+
+- **Counterexample: an output type left its block (fixed).** `BApplyAbstract`
+  returned only the fresh generations (`newgens`) as made. An output not
+  in force is installed as itself, and the application writes its meaning,
+  but it was not made, so `BlkE` let a value of that type leave the block.
+  [output-escape.moss](examples/output-escape.moss) does this. The oracle
+  rejects it (D78), and native too ("a type created by a binding cannot
+  escape its block"). `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
+  applications. The rule now makes every output destination
+  (`map gensof outs`), and requires that the frame's return and receiver
+  types not mention an output installed as itself (they are read where
+  their symbols are in force, so this rejects nothing). Details are in
+  scratch/orch/family-AUDIT.md.
+- **`FamilyStepOk` was too general (statement restated).** It quantified
+  over every `FamilyApplication` and every realized C0. (1) Without
+  `FamilyReadOff`, the matching is arbitrary on P(F) symbols that the needs
+  do not mention, for example `T = TAbs g` for a generation g outside C0's
+  scope. The family's key is then not `KeysScoped`, so `Formed` fails
+  after an application that completes. (2) `Pre` does not say that C0's
+  method provisions are readings of the declared signature at their θ, so
+  a family closure can shadow one of them at the same run-time key with
+  another signature. `FamilyStepOk` now takes `FamilyReadOff` with an ok,
+  in-scope receiver and C's table read in C0's scope, and its keep clause
+  requires `FamilyCoherent`. It is proved. What the callers need moved to
+  the slice's `family_coherent` and `*_scoped` hypotheses, each stated
+  over formed contexts. Like `FamilyStepOk` before, they hold for
+  elaborated contexts but not for every formed one. Proving them needs
+  invariants in `Formed` (scoped local and provision types, signature
+  coherence) preserved through the slice.
+- **Gap: a linked body could not rebind an output its result mentions (fixed).**
+  [result-output-meaning.moss](examples/result-output-meaning.moss): G binds
+  `T = Bool` and provides F's `fn mk(): T`. G's body files `mk` at
+  `() -> Bool`, but `ResultRealizes` compared it with F's promise renamed to
+  `() -> T`, so `LinkBody` failed and Audit rejected the standard functor
+  pattern, which both implementations accept. `ResultRealizes` now compares
+  at the body's meanings of the outputs, as the oracle's
+  `promised_result_type` does (scratch/orch/results-AUDIT.md).
+- **A platform family's items have distinct methods (`Platform.MethodsDistinct`).**
+  `ChainResultAgrees` needs every item of a closure's root platform
+  family to be one of the caller's new methods (`ItemsAgree`'s clause B;
+  `family_core` uses it to rule out a primitive shadowing an old method).
+  A copy (`BFunCopy`) checks only one direction (`CopyOutputs`, as the
+  oracle's `copy_outputs_match`): each of F's items is one of H's. With
+  `SameResult` (same leaves), F has an item on each of H's leaves, but a
+  leaf (receiver symbol, name) does not fix the key: F's module may
+  resolve a detached `.m` to another method, and brackets add keys. So
+  `Platform.Family` now asks that the family's items have pairwise
+  distinct methods, at most one of them detached. Then the method F
+  resolves on each leaf is H's (an attached method is global; the one
+  detached method is the only detached candidate), and every root item is
+  matched. It constrains only the platform world: the oracle provides
+  platform families only for lib/wasm.moss's functors (Elab.v
+  `platform_fun`, `plat`), and Heap, Mutable, Arrays and Memories each
+  have distinct methods, one detached at most (`.boxed`, `.arrayed`).
+  Details in scratch/orch/chainagree-AUDIT.md.
+- **A platform family is abstract, with distinct items (`Platform.Family`).**
+  The empty-chain case of `ChainForwardKeys` reads F's result at θ in
+  the caller's context against the family's own
+  (`PublicFamilyAgree.items_agree_gen`). That needs:
+  - the family to be an abstract functor, so every symbol its result
+    mentions is one of its inputs (implicit inputs);
+  - its result's keys to be distinct, since AppPremises, unlike a
+    family application, does not check `NoDup` of the caller's keys.
+
+  `Platform.Family` now asks both: a declaration with no body, and
+  `NoDup (map provision_id keys)`. They constrain only the platform
+  world. The oracle builds a platform family only for a `KyFun` whose
+  `functor_parts` body is `None` in the platform module (Elab.v
+  `platform_entry`). lib/wasm.moss's Heap, Mutable, Arrays and Memories
+  declare distinct items (Memories' 27 `Addr.*` methods have no
+  duplicate). Details in scratch/orch/chainfwd-AUDIT.md.
+- **Audit now rejects two correct programs: a kept output must be unmentioned (`BApplyAbstract`).**
+  The premise `KeptOutputsUnmentioned` was false for
+  `examples/lambda-declared-output.moss` and
+  `examples/kept-output-family-method.moss`, which Audit accepted. That
+  made `safety_obligations` vacuous. `bind F;` keeps an output T that is
+  not in force, while the context mentions T as an unbound declared
+  symbol in family method keys and signatures.
+  - BApplyAbstract now asks that such an output not be in `context_gens
+    C ++ key_receiver_gens C`, and `kept_outputs_unmentioned` proves the
+    premise from it.
+  - **This rejects both programs, which the oracle and native accept and
+    run correctly.** It is an incompleteness, chosen by the coordinator.
+  - An oracle variant with the same check differs from the oracle on
+    exactly these two of 378 corpus files.
+  - Alternative: the parametricity proof (results2-AUDIT.md section 2,
+    days), which would keep them.
+
+  Details in scratch/orch/chainfwd-AUDIT.md section 2.
+
+- **The caller-keyed result install (callerkeys, E32/E33).** An
+  application now installs exactly F's declared result, position by
+  position, under the caller's keys (`BApply`'s new field, `map (rkey_of
+  C') ks`), reading position i from the root's source for it through each
+  copy's position map (`BCopyFunctor`'s new field, `FunctorClosure`'s
+  `rms`, `chain_sources`, `result_selection`). `fc_sources` lists the
+  root's body key for each position; `fc_roles`, `result_smap`,
+  `inst_smap`, `role_outputs` are gone. `CopyOutputs` records, for each of
+  F's positions, the last position of H's result with the same provision
+  id (whose provision agrees after the copy site's substitution), and
+  results4's converse conjunct is reverted. A later position wins at the
+  caller, as its static context reads a repeated key at the last setter.
+  - Fixes three false obligations: `ChainForwardCopyKeys`
+    (examples/linked-copy-bracket.moss), `ChainKeysOk` (the same shape) and
+    `FamilyCopyApplyOk`'s key half (examples/family-copy-linked-bracket.moss,
+    hunt t11). All three keys are now the caller's by construction; the
+    obligations are deleted or reduced to their realization halves
+    (`ChainRealizeOk`, `ChainForwardCopySigs`, `FamilyCopyRealizeOk`).
+  - examples/copy-extra-key.moss is accepted again and, under Audit's
+    semantics, prints 31 as native does (the oracle prints 21, E32).
+  - The copy check accepts what it accepted before E32: an oracle variant
+    matching F's keys to H's by key equality plus agreement after the copy
+    substitution agrees with the oracle on all 398 corpus files
+    (scratch/orch/callerkeys2-AUDIT.md, scratch/ck/cmp.out).
+  - The oracle is unchanged (E32, E33 stay oracle-conformance gaps).
 
 ## Body-safety slice (checked, conditional)
 
@@ -320,14 +1031,29 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
-| `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
-| `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and abstract applications (`bind F;` for F with a body is proved in `item_safe`) | T15, T16 |
-| `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
-| `lambda_keys_scoped` | a lambda's context lists method keys whose receivers mention only its generations | T29 |
-| `bind_nominal_formed` | a method bind's nominal key receiver has its arguments keyed by its requirements | T29 |
-| `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
+| `family_step` | one family application, as a binding, its matching read off (`FamilyReadOff`) a receiver that is ok and in the code's scope: it completes with the family's provisions added, the code's table formed and realized, and every context among the code's provisions that agrees with the family at a shared run-time key (`FamilyCoherent`) still realized; or it stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it. Proved (`family_step_ok`, [PublicFamilyStep.v](theories/PublicFamilyStep.v)) from the abstract application machinery (`chain_run`) and family versions of the application obligations (`FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`) | T15, T16 |
+| `family_coherent` | the code's formed context agrees with a family applied around it at a shared run-time key (same receiver, method and θ, same signature). Both are `SigOf` readings at θ; `CxScoped` carries that for a formed context (`PublicScoping.MethsRead`). Proved: `PublicFamilyCoherent.family_coherent`, instance `PublicEntry.family_coherent_ok` | T29 |
+| `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
+| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
+| `copy_apply` | applying a copy runs its source at the source's interface | T15 |
+| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainForwardSigs` (at the caller's last position for a key, the caller's method and the root family's item at the chain's source agree in name and signature at the state's ground meanings; the keys are the caller's by construction, `Audit.result_selection`) and `ChainPrimsOk`. No outputs and methods only come from the chain's `SameResult` (`PublicChainAgree.copy_news_methods`), each position's source in range from `CopyOutputs` (`PublicCopyApply.chain_sources_range`); `chain_core_premises` assembles them. `ChainForwardSigs`'s copy case, `ChainForwardCopySigs`, is proved in [PublicChainSigs.v](theories/PublicChainSigs.v) (`chain_forward_copy_sigs`: one valuation T, the application's ground meanings of u's inputs, reads every level of the chain; each copy step agrees at T by `copy_outputs_at`, each level's two readings correspond entry by entry by `entries_rel_kinds`/`pos_last`); `ChainPrimsOk` `PublicEntry.platform_prims_public` discharges for the reference host (`platform_handles_formed`, `platform_sigs_fixed`, from Platform.Family's `HandlesRead` and `MachinesFixed`). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `Platform.Entry`'s `FixedMachinesRead`; a linked root never shares a family's primitives (`platform_not_linked`). The family application's version `FamilyPlatformApplyOk` is proved too (`family_platform_ok`), from `FamilyKeysTyped` (an extra key of the family context's table that a path names is a type symbol; with it `PublicFamilyAgree.family_items_agree` proves that Cr's new methods agree with the family's own items at θ, and `family_items_pos` that they do so position by position) and `PrimsGroundOk` (the primitive half of `ChainPrimsOk`, for any environment reading the fixed machine inputs as the machine types; `platform_prims_public` now discharges it, and `chain_prims_of_ground` gives `ChainPrimsOk`). The machine grounding comes from `FixedAgreement` at the family context and the closure's `PlatformFixed` | T15, T11, T29 |
+
+`copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
+(`copy_apply_ok`): a closure's derivation is followed down its copy chain
+(`CopyChain`, `chain_entry`), each copy's context realized where its
+target's is (`copy_step_realizes`), to the root. A linked root's body runs
+as in the linked case (`link_entry`, `chain_run`); what it provides at
+the application, and a platform root, are the two obligations read
+through the chain: `ChainResultsOk` (`link_results` with a copy chain in
+between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
+likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
+it fixes the caller's functor to the body's own (its `LinkData`, closure
+shape and `AppPremises` all name u), and a copy's caller has neither.
+| `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. It was still false after that repair (examples/copy-fresh-collide.moss: `cg y` equal to a fresh generation in sigma's image), which realizepf's CopyOutputs repair addresses (the fresh symbols avoid sigma's image). It was also false for a linked body whose application keeps an output at an input of F (examples/link-kept-output-pin.moss), which realize2's BApplyAbstract pin clause addresses. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
+| `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses. It (and `FamilyCopyApplyOk`) now assumes `PublicFormation.TysScoped W C`, as `FamilyLinkResultsOk` and `FamilyPlatformApplyOk` do (`family_run` has it). Proved (realize5, [PublicFamilyCopy.v](theories/PublicFamilyCopy.v), `family_copy_realize_ok`): the run is `copy_apply_ok`'s; the root's level (`root_level` for a linked root, `platform_level` for a platform family: each position is the primitive installed for the family's own item, `PrimsGroundOk`) is carried up the chain by `chain_real` with no outputs, and `family_top` reads the caller's new methods at the family context against u's result at its own (`level_rel`, with `family_keys_typed`) | T15 |
+| `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
+| `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
 
@@ -385,6 +1111,7 @@ Measured in the background on detached snapshots (`scratch/measure.sh`):
 | Commit | Clean `check.sh` | `nix build .#oracle` | Bootstrap |
 | --- | --- | --- | --- |
 | 3a302ab | 169s (overlapped another full build) | 307s | 2237s (37 min, overlapping other builds) |
+| 93a2b00 (check-time merged) | 110s (overlapped proof builds) | 211s | 2113s (35 min) |
 
 A subagent remeasured on a quiet machine (32 cores, one core busy with the
 bootstrap): 118s at both 086a617 (`main`) and 3a302ab. The branch adds about
@@ -398,10 +1125,15 @@ without touching any proof.
 
 ## Later cleanup
 
-- `LambdaProvider` now requires captured vals both undeclared (`Fresh W`)
-  and unprovided in the context. These overlap. Once the safety proof is
-  done, state freshness once, and look for similar redundancies the
-  tightenings above introduced.
+- Freshness is stated locally in several places: `Fresh W` (undeclared),
+  captured vals unprovided in the context, `FreshFor` (avoiding `fr_fresh`
+  and the context's generations), and a lambda frame's `fr_fresh`
+  inheriting the generations in scope where it is made. These overlap, and
+  each was added because a local condition let a derivation reuse a name the
+  runtime still holds. Both implementations draw new symbols and
+  generations from one global counter. Once the safety proof is done,
+  replace these with one global notion of a new symbol or generation, and
+  look for similar redundancies the tightenings above introduced.
 
 ## Time log
 
@@ -430,14 +1162,61 @@ without touching any proof.
   `lambda_meth_bind_safe`) (22:40 to 23:20).
 - Wrapped `main` test, `theta_ctx` after approval, and wrapper method
   providers (`wrapped_callable`, `wrapped_meth_bind_safe`); method binds
-  are now fully proved (23:25 to 00:05).
+  are now fully proved (23:21 to 23:35, by commit times).
 - Functor design reading; functor-body `break` counterexample, `Breaks`
   with the world after approval, and `bind F;` for a functor with a body
-  (00:05 to 00:50).
+  (23:35 to 00:01).
 - Functor design (binding-level refactor needed), the `INTERP` refactor,
-  and the entry assembly `entry_safe` (00:55 to 02:00).
+  and the entry assembly `entry_safe` (00:01 to 00:17).
 - Primitives (T11/T17) by a background agent (`primitive_safe`), merged;
   `ShapeNever` after approval; realization without a fuel drop
-  (`callee_realizes_le`, `lambda_realizes_le`) (02:00 to 03:00).
+  (`callee_realizes_le`, `lambda_realizes_le`) (00:17 to 01:23, mostly
+  discussion of `ShapeNever`).
 - `PUBLIC` refactor; primitives at the entry (`machine_lookup`,
-  `entry_primitive`) and `safety_public` (03:00 to 03:40).
+  `entry_primitive`) and `safety_public` (01:23 to 01:27).
+- Binding-level refactor: `BindStep`/`Chain` with generations made,
+  `chain_wrap`/`chain_run`, every non-functor bind as a chain, functor
+  hypotheses restated as steps (01:27 to 02:09, with the formation agent
+  running in parallel). Earlier entries in this log written from my own
+  estimate rather than commit times overstated durations; these are
+  corrected to commit times.
+- Functor invariant design (step-indexing problem, structural closure
+  invariant), the captured-merge gap and functor body numbering after
+  approval (02:09 to 02:45).
+- Family matchings read off the key (`FamilyReadOff`), proving
+  `demand_formed_cx` without its hypothesis (02:45 to 02:52).
+- Binding steps capped by eval fuel and `AppAt` as an argument (02:52 to
+  03:00); the copy-capture counterexample and `fc_linked` after discussion
+  (to 03:12).
+- `ClosureOk` in `EnvOk`, copies (`case_BFunCopy`), `AliasOk`, and closures
+  (`case_BFunClosure`, with `captured_in_force`) (03:12 to 03:39); the
+  check-time branch merged.
+- The linked and copy interpretation gaps: tests, two oracle variants
+  compared over the corpus, and the premises after approval (03:40 to
+  04:11).
+- Merges recorded in closures (`link_merges`, `bind_merges`), the body
+  entry (`link_entry`), `apply_theta`, and the application step's structure
+  (`case_BApplyAbstract` with `refile_run`, `link_results`, `copy_apply`,
+  `platform_apply`) (04:11 to 04:34).
+- Formation through `Pre`, discharging `ex_formed`, `ex_nominal_formed`,
+  `bind_nominal_formed` and `lambda_keys_scoped` (04:34 to 04:51).
+- Rule 7's `family_direct` in Audit after approval, the family cases from
+  one `family_step`, and `safety_obligations` (04:51 to 05:03).
+- Orchestration with obligation agents in separate worktrees (05:03 to
+  06:36): worldform, copy, refile, family, platform, repair and results
+  branches merged into `safety` in turn (per-agent notes in
+  `scratch/orch/*-STATUS.md` and `*-AUDIT.md`); results handed to a fresh
+  agent (results2), the family platform step to another (famplat).
+- Orchestration continued (06:36 to 07:25): famplat, results2,
+  results3 and family2 merged; Audit changes for result shadowing
+  (removing `fresh_result_types`), `MachinesFixed`/`HandlesRead` in
+  families, and key-receiver capture in lambdas; `KeptOutputsUnmentioned`
+  left for the user; fresh agents results4, family3 and chainagree started.
+- Falsification hunts and the last obligations (from 08:30, with breaks,
+  to 18:31): two hunt rounds, Audit fixes (caller-keyed install,
+  LinkBody input condition, method θ widening, copy fresh symbols and their
+  avoidance, link_site, kept outputs avoid pins, nothing made is an input,
+  abstract copy targets), and the proofs of FamilyCoherentOk,
+  FamilyLinkNewOk, ChainForwardCopySigs, ChainRealizeOk and
+  FamilyCopyRealizeOk. `public_safety` is closed: Print Assumptions lists
+  only PrimInt63.int and PrimFloat.float. check.sh: 914s (15m14s).

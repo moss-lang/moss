@@ -1,0 +1,39 @@
+# A defined val's initializer is elaborated in the empty context, so the
+# output T of its `bind F;` is installed as itself (destination T), and
+# the initializer is inlined and evaluated in the caller's environment.
+# demo's own `bind F;` has already given T a meaning there. Audit's
+# result_environment used to be Stuck here (fresh_result_types, b4f8279),
+# though Audit accepts the program. The oracle shadows (dr ++ d) and runs
+# it (exit 0). Native rejects the use of K ("no binding provides this
+# item"), for an unrelated reason: it does not inline defined vals this way.
+# Audit now shadows too (results2-AUDIT.md).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+tag Concrete;
+fn mk(): T;
+
+functor F: -> T, mk;
+functor FM: -> T, mk { bind T = Concrete; bind mk = () => Concrete; }
+
+val K: () = { bind F = FM; bind F; let y = mk(); };
+
+assume Std {
+  fn demo() {
+    bind F = FM;
+    bind F;
+    let z = mk();
+    let w = K;
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

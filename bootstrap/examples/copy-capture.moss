@@ -1,0 +1,50 @@
+# G captures X = I32 and v: X. F1, a copy of F0 = G, also takes X; applying
+# F1 at X = F64 must not change the X that G captured. Both implementations
+# keep X = I32, so rebuilding the box at Ref[Boxed=F64] traps (cast
+# failure). Audit read every input of G from the application, which made
+# the box at F64 and handed f64_add an i32 (stuck); fc_linked fixes that.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" as w use Wasm, Gc, Boxed, StructRef, .boxed;
+import "../../lib/wasip1.moss" use Wasi;
+
+type X;
+
+assume X {
+  val v: X;
+}
+
+assume {
+  fn get();
+}
+
+# F0 takes no input; F1 takes X.
+functor F0: -> get;
+functor F1: X -> get;
+
+# G captures X and v (and the platform's Heap); its body boxes v at X.
+functor G: Wasm, Gc, X, v -> get {
+  bind Boxed = X;
+  bind w::Heap;
+  bind get = () => {
+    let raw = match v.boxed() { w::Ref(raw) => raw };
+    bind Boxed = w::F64;
+    bind w::Heap;
+    let bad = w::Ref(raw);
+    let y = bad.deref();
+    w::f64_add(y, y);
+  };
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind X = w::I32;
+    bind v = w::i32_one;
+    bind F0 = G;
+    bind F1 = F0;
+    bind X = w::F64;
+    bind F1;
+    get();
+  }
+}

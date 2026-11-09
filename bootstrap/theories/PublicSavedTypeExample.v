@@ -88,13 +88,6 @@ Example result_transfer_preserves_old_generation :
   ground caller_after_result (TAbs 4) = ground runtime_before (TAbs 4).
 Proof. reflexivity. Qed.
 
-(* One substitution cannot disambiguate an input role and output role of
-   the same source symbol by list membership alone. The helpers use the
-   first matching entry. *)
-Example output_role_is_separate_from_input_role :
-  result_substitution [(4,TAbs 5)] [(4,6)] = [(4,TAbs 6);(4,TAbs 5)].
-Proof. reflexivity. Qed.
-
 (* Previous behavior, isolated from the repaired semantics. *)
 Definition legacy_bind_type (d : environment) symbol meaning :=
   Environment ((symbol, ground d meaning)::type_meanings d) (provision_values d).

@@ -3,7 +3,7 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame ElabInv ReifyData
  InfoInvariant InfoPreserve InfoInputs FwdInvariant FwdReadonly FwdPreserve FwdSynthInv
  LinkCacheInvariant LinkReadonly LinkPreserve LinkConditional LinkBindPreserve
- ProviderPhysical WrapperKeyReadonly LinkHigherPreserve ReadonlyHelpers.
+ ProviderPhysical WrapperKeyReadonly LinkHigherPreserve ReadonlyHelpers LinkSynthCache.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL ELAB_FUEL nat_to_string nat_to_string_go].
 Lemma okL_deep : forall A,@okL A deep.
@@ -31,21 +31,6 @@ Proof.
    destruct(sym_physical_provider _ _ _ _ Sym Valid)as[-> Physical].
    exact(proj2(proj2(K g))s a final Valid Cached Forwarded Links Physical Tail).
 Qed.
-Local Lemma kws_ety_ty : forall t,keeps st_fwd(ety_ty t).
-Proof. intro t;unfold ety_ty;apply kw_ety_ty_go. Qed.
-Local Lemma kls_ety_ty : forall t,keeps st_links(ety_ty t).
-Proof. intro t;unfold ety_ty;apply kl_ety_ty_go. Qed.
-#[local] Hint Resolve kws_ety_ty kls_ety_ty:keepsdb.
-Local Lemma kws_key_theta : forall e k,keeps st_fwd(key_theta e k).
-Proof. intros;unfold key_theta;keepst. Qed.
-Local Lemma kls_key_theta : forall e k,keeps st_links(key_theta e k).
-Proof. intros;unfold key_theta;keepst. Qed.
-#[local] Hint Resolve kws_key_theta kls_key_theta:keepsdb.
-Local Lemma kws_key_item : forall e k,keeps st_fwd(key_item_at e k).
-Proof. intros;unfold key_item_at;keepst. Qed.
-Local Lemma kls_key_item : forall e k,keeps st_links(key_item_at e k).
-Proof. intros;unfold key_item_at;keepst. Qed.
-#[local] Hint Resolve kws_key_item kls_key_item:keepsdb.
 Lemma okL_readonly : forall A(m:M A),keeps readonly_state m->NI m->keeps st_links m->ok m->okL m.
 Proof.
  intros A m Read Info Links Valid;apply okL_keeps.
@@ -55,50 +40,6 @@ Proof.
    eapply keeps_projection with(p:=readonly_state)(q:=fun x=>snd(fst(fst(fst x))));exact Read.
  - exact Links.
 Qed.
-Local Ltac synth_link_quiet := first[solve[apply okL_readonly;[auto with keepsdb|auto with nidb|auto with keepsdb|auto with okdb]]|apply okL_keeps;
- [first[solve[auto with okIdb]|apply okI_ni;[solve[okt]|solve[nit]|solve[keepst]]]|
-  first[solve[auto with fwdb]|apply okF_readonly;[solve[okt]|solve[keepst]]]|solve[keepst]]].
-Local Lemma cached_link_get : okL get.
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_show : forall t,okL(show t).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_show_key : forall k,okL(show_key k).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_fresh : okL fresh.
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_local_var : forall name,okL(local_var name).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_fld_id : forall name,okL(fld_id name).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_unsupported : forall why,okL(unsupported why).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_fn_info : forall g,okL(fn_info g).
-Proof. intros;synth_link_quiet. Qed.
-(* Share preservation proofs for repeated diagnostic and provider queries.
-   Re-running readonly traversals at every call site dominates this mutual
-   proof; the cached lemmas share those proofs without changing obligations. *)
-Local Lemma cached_link_err : forall A mi why,okL(@err A mi why).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_require_needs : forall mi e g info,okL(require_needs mi e g info).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_family_member : forall mi e r m,okL(family_member mi e r m).
-Proof. intros;synth_link_quiet. Qed.
-Local Lemma cached_link_expect_provider : forall c e y this,okL(expect_provider c e y this).
-Proof. intros;synth_link_quiet. Qed.
-Local Ltac cached_link_quiet := lazymatch goal with|-okL ?m=>let h:=head_of m in lazymatch h with
-| get => apply cached_link_get
-| show => apply cached_link_show
-| show_key => apply cached_link_show_key
-| fresh => apply cached_link_fresh
-| local_var => apply cached_link_local_var
-| fld_id => apply cached_link_fld_id
-| unsupported => apply cached_link_unsupported
-| fn_info => apply cached_link_fn_info
-| @err => apply cached_link_err
-| require_needs => apply cached_link_require_needs
-| family_member => apply cached_link_family_member
-| expect_provider => apply cached_link_expect_provider
-end end.
 Local Ltac link_synth_tac previous Bind := repeat(fintros;first[
  solve[previous ()]|solve[cached_link_quiet]|
  lazymatch goal with

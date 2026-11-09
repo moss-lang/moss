@@ -188,10 +188,10 @@ Proof.
     rewrite assume_types_iff.
     apply (ComponentContracts.SourceReading.rr_plain _ Reading symbol (implementation_kind kind)).
     + apply kind_symbol_iff; exact Kind.
-    + destruct kind; cbn in *; congruence.
-    + destruct kind; cbn in *; congruence.
-    + destruct kind; cbn in *; congruence.
-    + destruct kind; cbn in *; congruence.
+    + destruct kind; cbn in NotTag, NotAlias, NotType, NotUnit |- *; congruence.
+    + destruct kind; cbn in NotTag, NotAlias, NotType, NotUnit |- *; congruence.
+    + destruct kind; cbn in NotTag, NotAlias, NotType, NotUnit |- *; congruence.
+    + destruct kind; cbn in NotTag, NotAlias, NotType, NotUnit |- *; congruence.
   - intros symbol Kind. apply (ComponentContracts.SourceReading.rr_none _ Reading symbol).
     destruct Kind as [TypeCase|UnitCase].
     + left. exact (proj1 (kind_symbol_iff W symbol A.DKType) TypeCase).

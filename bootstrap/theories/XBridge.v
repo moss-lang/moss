@@ -745,7 +745,8 @@ Proof.
     destruct (resolve_sym_declared p pa r Hl H) as [d Hd].
     destruct (declared_kind r d Hd) as [k Hk].
     exact (reqs_are_types r k Hk t Hreq).
-  - exact (reqs_are_types m DKMeth (named_meth p r dn m Hl H0) t H1).
+  - destruct H1 as (d & rcv & n & ps & rt & body & Hd & _ & [(pt & _ & F)|(rr & _ & F)]);
+      exact (freein_types_all _ _ _ (decl_loaded m d Hd) F).
   - eapply freein_types_all; [exact Hl|eassumption].
   - apply IHResultMentions. exact (decl_loaded c dc H0).
   - apply IHResultMentions. exact (decl_loaded u du H0).

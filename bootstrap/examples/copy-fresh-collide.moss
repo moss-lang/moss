@@ -1,0 +1,86 @@
+# realizepf (scratch/orch/realizepf-AUDIT.md): REJECTED at `bind F = H`.
+# CopyOutputs now requires each cg y and each output role to avoid the
+# generations of sigma's image, so the witness below is no longer allowed.
+# Original header: COUNTEREXAMPLE to CN.ChainRealizeOk (and, by the same
+# rule, FS.FamilyCopyRealizeOk) after copyfresh's CopyOutputs repair.
+# Variant of copy-bracket-nonfixed.moss. CopyOutputs reads F's non-fixed
+# inputs ys as symbols cg y that are only required to be `Fresh W`
+# (undeclared) and distinct from each other and from the output roles. But
+# sigma's image (F's fixed readings at the copy site) can itself mention an
+# undeclared generation: here `bind Z = Bool; bind K;` rebinds the output Z
+# of K, so at the copy site Z reads as a fresh application generation g.
+# Then sigma = [Z := TAbs g], ys = [I], and the witness cg I := g is allowed:
+# F's `get[I = Z]` is (): g [I := g] after sigma ++ [I := cg I], and H's
+# `get` is (): cg I [I := cg I] = (): g [I := g]. They are equal, so
+# CopyOutputs (and BFunCopy) holds and Audit accepts the copy, which
+# again identifies F's input I with the site's meaning of Z.
+# At `bind F;`: I is linked at θ I = Bool, so the installed get returns
+# `true`; C' types get as (): TAbs g, which grounds to Char (KB's Z), and
+# `show(get())` runs Char's `code` on a Bool. EnvOkOn fails for IFn get.
+# (Untested: choosing an output role gen t equal to a generation in sigma's
+# image could likewise identify an output with a fixed input.)
+# Oracle (ob-sigclose var moss_m2): rejects at `bind F = H`, "`H` cannot be
+#   copied to `F`: its effective output interpretation differs (D78)"
+#   (its @copy symbols are fresh for everything).
+# Native (ob-family, seed 1h1710x0): rejects at the copy, "the functor does
+#   not satisfy the required signature: `get`".
+# Control (scratch/realizepf/control.moss: F[I] and no bracket): the oracle
+#   and native both accept and print 7, so everything up to the copy,
+#   including `bind Z = Bool; bind K;`, is accepted.
+# Repair (made): CopyOutputs also requires each cg y and each gen t to
+# avoid the generations of sigma's image (`~ In (cg y) (flat_map (fun q =>
+# gens (snd q)) sigma)`), as the oracle's fresh symbols do.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type I;
+type Z;
+assume { val kk: Int; }
+
+assume I {
+  fn get(): I;
+  val vi: I;
+}
+fn show(x: Z);
+
+functor H[I]: Std, I, vi -> kk, get;
+functor F[]: Std, I, Z, vi -> kk, get[I = Z];
+functor G: Std, I, vi -> kk, get {
+  bind kk = 1;
+  bind get = () => vi;
+}
+functor K: Std -> Z, show;
+functor KB: Std -> Z, show {
+  bind Z = Char;
+  bind show = (x) => { print_int(x.code()); putchar(char::newline); };
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind Z = Bool;
+    bind K = KB;
+    bind K;
+    bind H = G;
+    bind F = H;
+    bind I = Bool;
+    bind vi = true;
+    bind F;
+    show(get());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

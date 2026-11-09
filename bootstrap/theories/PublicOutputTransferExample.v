@@ -10,14 +10,14 @@ Definition run_prim (_ : program_view) (_ : prim) (_ : list value) (st : unit) :
 End Prims.
 Module R := Interpreter Prims.
 
-Definition output_code := FunctorCode [] [ITy 2] [BType 2 (TMachine MI32)].
-Definition output_binding := BApply 1 [] [(2,2)] [].
+Definition output_code := FunctorCode [] [] [] [ITy 2] [BType 2 (TMachine MI32)] [].
+Definition output_binding := BApply 1 [] [(2,2)] [] [].
 Definition callee := EBind output_binding EUnit.
 Definition runtime := ProgramView
   (fun f => if Nat.eqb f 10 then Some callee else None)
   (fun h => if Nat.eqb h 20 then Some output_code else None)
   0 0 0 [] (fun _ => None) [].
-Definition initial := Environment [] [(IFun 1,FunctorClosure 20 [] empty_environment)].
+Definition initial := Environment [] [(IFun 1,FunctorClosure 20 [] empty_environment [])].
 Definition call := ECall 10 [] [(IFun 1,IFun 1)] [].
 
 Example callee_application_succeeds_without_prior_caller_output :

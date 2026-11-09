@@ -1,0 +1,44 @@
+# CC.FamilyLinkNewOk counterexample (scratch/orch/linknewpf-STATUS.md).
+# F's and G's contexts merge X with T (two readings of A.gimme). Audit's
+# world picks the merge representative freely (w_context is a witness);
+# take T, for both F and G. F's result key `X.m` is then read at F's inputs
+# as T.m. M(F) = {X}, so G's pins (D84 3d) are {X}: G may rebind T.
+# G binds T = Bool, then `T.m`, keyed Bool.m. LinkBody's ResultRealizes
+# looks the result key up at the body's site, `at_site Cb (T.m)`, which
+# re-reads the receiver through G's final table: Bool.m. So Audit accepts
+# G, and the closure's result source for position 0 is G's Bool.m.
+# main demands Concrete.m (X := Concrete; the merge holds since T =
+# Concrete there). The application installs G's Bool.m closure under the
+# caller's Concrete.m, and `if this` runs on a Concrete: stuck.
+# The trouble is the receiver: a linked input's meaning is the caller's,
+# but at_site reads the body's alias for it (bind T = ... writes the alias
+# only). Signatures are compared under c_sub only, so they are not hit.
+# Oracle: rejects ("functor `G` does not bind `X.m`"); with the other
+# context order it also rejects. Native: rejects ("the functor does not
+# bind every item its result promises: `m`").
+# Audit now reads result keys at A.link_site (inputs at G's own table),
+# so T.m stays T.m, which G does not bind: rejected, as both
+# implementations reject it (scratch/orch/linknewpf-AUDIT.md).
+# Variant (link-merge-rep-rebind-both.moss, scratch/linknewpf/m5-*.moss): G also binds `X.m` (keyed T.m).
+# Audit, at representative T, still selects Bool.m. The oracle rejects it
+# when its representative is T (its pins include the representative,
+# "`bind T` ... changes a type its result mentions (D84 3d)") and accepts
+# it when it is X; native accepts both orders and runs them (exit 0).
+type Foo;
+type A;
+type T;
+type X;
+tag Concrete;
+fn .gimme(): Foo;
+fn .m();
+context Merge = A, X, T, A.gimme[Foo=X], A.gimme[Foo=T];
+functor F[X]: Merge -> X.m;
+functor G: Merge -> X.m { bind T = Bool; bind T.m = () => { if this { } }; }
+fn main() {
+  bind A = Concrete;
+  bind T = Concrete;
+  bind Foo = Concrete;
+  bind A.gimme = () => Concrete;
+  bind F = G;
+  Concrete.m();
+}

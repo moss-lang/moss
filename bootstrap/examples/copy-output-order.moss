@@ -1,0 +1,26 @@
+# H's result sets `out` at P=V, then at P=U, so applying H provides out: U.
+# F lists the same leaves in the other order, so F's result reads out: V.
+# Both results have the same leaves (SameResult), and Audit's BFunCopy
+# compared nothing else, so it accepted `bind F = H;`. The application of F
+# then runs G's body, which binds out to a U, and F's caller reads it as a
+# V: the match has no arm for it (stuck under Audit). The oracle rejects the
+# copy ("effective output interpretation differs (D78)", copy_outputs_match)
+# and native rejects it (test copied_functors_compare_final_output_interpretations).
+type P;
+tag U;
+tag V;
+assume P {
+  val out: P;
+}
+functor F[]: -> out[P=U], out[P=V];
+functor H[]: -> out[P=V], out[P=U];
+functor G: -> out[P=V], out[P=U] {
+  bind P = U;
+  bind out = U;
+}
+fn main() {
+  bind H = G;
+  bind F = H;
+  bind F;
+  match out { V => () };
+}

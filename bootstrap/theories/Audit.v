@@ -1367,22 +1367,26 @@ with binding : Type :=
 | BValue               : vsym -> expr -> binding
 | BFunction            : fsym -> fsym -> type_capture -> smap -> binding
 | BMethod              : ty -> msym -> subst -> fsym -> type_capture -> smap -> binding
-| BFunctor             : usym -> usym -> smap -> smap -> binding
-| BCopyFunctor         : usym -> usym -> smap -> binding
-| BApply               : usym -> subst -> list (tsym * tsym) -> smap -> binding
+| BFunctor             : usym -> usym -> type_capture -> smap -> smap -> binding
+(* `bind F = H;`: the closure of H, its needs read through the smap and
+   each position of F's declared result read at the given position of H's *)
+| BCopyFunctor         : usym -> usym -> smap -> list nat -> binding
+(* an application: θ, the output destinations, the needs, and the caller's
+   key for each position of F's declared result *)
+| BApply               : usym -> subst -> list (tsym * tsym) -> smap -> list item -> binding
 | BPrimitive           : item -> prim -> binding.
 
 (* Named builders are notation for the single binding form. *)
-Definition apply_expression u arguments inputs body := EBind (BApply u arguments [] inputs) body.
-Definition apply_output_expression u arguments outputs inputs body :=
-  EBind (BApply u arguments outputs inputs) body.
+Definition apply_expression u arguments inputs results body := EBind (BApply u arguments [] inputs results) body.
+Definition apply_output_expression u arguments outputs inputs results body :=
+  EBind (BApply u arguments outputs inputs results) body.
 Definition bind_type_expression t tau e := EBind (BType t tau) e.
 Definition bind_value_expression v value e := EBind (BValue v value) e.
 Definition bind_function_expression f body types captures e := EBind (BFunction f body types captures) e.
 Definition bind_method_expression receiver method application body types captures e :=
   EBind (BMethod receiver method application body types captures) e.
-Definition bind_functor_expression u body linked captured e := EBind (BFunctor u body linked captured) e.
-Definition copy_functor_expression u provider inputs e := EBind (BCopyFunctor u provider inputs) e.
+Definition bind_functor_expression u body types linked captured e := EBind (BFunctor u body types linked captured) e.
+Definition copy_functor_expression u provider inputs positions e := EBind (BCopyFunctor u provider inputs positions) e.
 Definition bind_primitive_expression key operation e := EBind (BPrimitive key operation) e.
 
 (* ===================== Runtime structures ================================ *)
@@ -1393,7 +1397,8 @@ Definition bind_primitive_expression key operation e := EBind (BPrimitive key op
 Inductive provision_value : Type :=
 | ValueProvision : value -> provision_value
 | FunctionClosure : fsym -> environment -> provision_value
-| FunctorClosure : usym -> list smap -> environment -> provision_value
+(* code, needs adaptations, captures, result positions (one list per copy) *)
+| FunctorClosure : usym -> list smap -> environment -> list (list nat) -> provision_value
 | PrimitiveClosure : prim -> option ty -> provision_value
 with environment : Type :=
 | EnvironmentWithAliases : subst -> subst -> list (item * provision_value) -> environment.
@@ -1487,8 +1492,22 @@ Record cast_spec : Type := CastSpec {
    model does not implement (PUnsupported i is the i-th). *)
 Record functor_code := FunctorCode {
   fc_inputs : list tsym;
+  (* the inputs each application supplies (the rest are captured) *)
+  fc_linked : list tsym;
+  (* the body's type table (G's canonical c_ty): an input it maps to a
+     type reads as that type over the inputs' meanings, so the body's
+     environment absorbs G's merges; an input it omits reads as itself *)
+  fc_table : list (tsym * ty);
+  (* the result telescope; an application reads only its type items *)
   fc_outputs : tele;
-  fc_bindings : list binding
+  fc_bindings : list binding;
+  (* where the body left each item of the declared result, position by
+     position (the declared result's keys, ResultKeys): the body's own key
+     for it. An application installs the item at position i under the
+     caller's key for position i, so no key of the body's is read in the
+     caller's terms (tests/regressions/functor_input_output_generations.moss,
+     examples/copy-extra-key.moss, examples/linked-copy-bracket.moss) *)
+  fc_sources : list item
 }.
 Record program : Type := Program {
   program_functions : list (nat * expr);
@@ -1532,22 +1551,48 @@ Definition output_meaning (d : environment) (source : tsym) : option ty :=
   | Some meaning => Some meaning
   | None => lookup_subst source (type_meanings d)
   end.
-(* Rebase exactly the provider's formal roles. Supplied inputs are read
-   here; private inputs use their captured source meanings. Unrelated
-   captured generations cannot occupy this activation's local output names. *)
+(* Rebase exactly the provider's formal roles. Linked inputs (fc_linked)
+   are read from θ here; the rest, including an input that only a copy of
+   the functor takes, use their captured source meanings. Unrelated
+   captured generations cannot occupy this activation's local output names.
+   An input the body's table (fc_table) maps to a type then reads as that
+   type over those meanings: a merged-away input reads as its
+   representative, so the body's merges hold by construction. Elaborated
+   code reads types through that table, so it never sees the difference. *)
 Definition application_environment (P : program_view) (d : environment) (h : usym) (th : subst) (dc : environment) : environment :=
-  let meanings := map (fun source => (source,
-    match lookup_subst source th with
+  let linked := match view_functor P h with Some code => fc_linked code | None => [] end in
+  let inputs := match view_functor P h with Some code => fc_inputs code | None => [] end in
+  let table := match view_functor P h with Some code => fc_table code | None => [] end in
+  let base source :=
+    match (if existsb (Nat.eqb source) linked then lookup_subst source th else None) with
     | Some meaning => ground d meaning
     | None => match output_meaning dc source with
       | Some meaning => meaning | None => TAbs source end
-    end)) (match view_functor P h with Some code => fc_inputs code | None => [] end) in
+    end in
+  let bases := map (fun source => (source, base source)) inputs in
+  let meanings := map (fun source => (source,
+    match lookup_subst source table with
+    | Some t => app_subst bases t
+    | None => base source
+    end)) inputs in
   EnvironmentWithAliases meanings meanings (provision_values dc).
 
-(* Formal input interpretation and output destination roles are distinct.
-   Result provisions use the output roles in preference to input roles. *)
-Definition result_substitution (inputs : subst) (outputs : list (tsym * tsym)) : subst :=
-  map (fun q => (fst q, TAbs (snd q))) outputs ++ inputs.
+(* A closure's result positions: the root's sources, read through each
+   copy's positions in turn (the first copy made first). Each position of
+   a copy names a position of its source's declared result; the default
+   is unreachable for a checked program (CopyOutputs), and no provision is
+   keyed by a type item, so a stray position makes the selection stuck. *)
+Definition chain_sources (rms : list (list nat)) (sources : list item) : list item :=
+  fold_left (fun s rm => map (fun j => nth j s (ITy 0)) rm) rms sources.
+(* An application's selection: the caller's key for each position, read
+   from that position's source. A later position wins, as the caller's
+   static context reads a repeated key at its last setter (output_cx's
+   `rev es`), so the run-time provision under a repeated caller key is the
+   one its static type describes, whatever the sources of the earlier
+   positions (two of F's keys may meet only at the caller: A.m and B.m
+   with A and B read as one type). *)
+Definition result_selection (rs : list item) (rms : list (list nat)) (sources : list item) : smap :=
+  rev (combine rs (chain_sources rms sources)).
 (* Read every output from one completed body snapshot before installing any
    caller destination. An unchanged formal may be an output too. *)
 Fixpoint read_result_types (d : environment) (Dr : tele) (outputs : list (tsym * tsym))
@@ -1571,13 +1616,18 @@ Fixpoint fresh_result_types (writes occupied : subst) : bool :=
       | None => fresh_result_types rest ((destination, meaning) :: occupied)
       end
   end.
+(* The writes shadow any meaning the caller has for a destination, as the
+   oracle's (dr ++ d) does. Audit's static rules keep every destination out
+   of the caller's context and frame types (FreshFor, the output clauses),
+   so nothing typed in scope is re-grounded; an occupied destination can
+   still occur at run time (an inlined defined val's kept output, a
+   lambda's capture of a declared symbol it mentions), so a freshness check
+   here would make accepted programs Stuck (scratch/orch/results2-AUDIT.md).
+   [fresh_result_types] stays as the check's statement. *)
 Definition result_environment (caller : environment) (outputs : list (tsym * tsym))
     (d3 : environment) (Dr : tele) (dr : environment) : option environment :=
   match read_result_types d3 Dr outputs with
-  | Some (writes, aliases) =>
-      if fresh_result_types writes (type_meanings caller) then
-        Some (EnvironmentWithAliases writes aliases (provision_values dr))
-      else None
+  | Some (writes, aliases) => Some (EnvironmentWithAliases writes aliases (provision_values dr))
   | None => None
   end.
 
@@ -1599,10 +1649,12 @@ Inductive signal : Type :=
 (* Part III. Dynamic semantics                                               *)
 (* ######################################################################## *)
 
-(* Rule A: an application at θ files each result entry under the result
-   item read at θ — the key its scope refers to it by. *)
-Definition inst_smap (th : subst) (D : tele) : smap :=
-  map (fun i => (app_subst_item th i, i)) (filter (fun i => negb (is_ty_item i)) D).
+(* Rule A: an application files each item of F's declared result under
+   the caller's key for it (the key its scope refers to it by), read from
+   the body where the root left it (chain_sources, result_selection).
+   Exactly F's declared result is installed, as `bind F;` keeps exactly
+   F's result (examples/copy-extra-key.moss), and no key of the body's is
+   read in the caller's terms (examples/linked-copy-bracket.moss). *)
 
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
@@ -1961,19 +2013,19 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
           | Some dc => eval_bindings k P (install_provision (IMth tauk m th) (FunctionClosure f' (typed_capture d types dc)) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
-      | BFunctor u h sm smc :: r =>
+      | BFunctor u h types sm smc :: r =>
           match select_provisions d smc with
-          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (capture_environment d dc)) d) g st r
+          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc) []) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
-      | BCopyFunctor u u' sm :: r =>
+      | BCopyFunctor u u' sm rm :: r =>
           match lookup_provision (IFun u') d with
-          | Some (FunctorClosure h sms dc) =>
-              eval_bindings k P (install_provision (IFun u) (FunctorClosure h (sms ++ [sm]) dc) d) g st r
+          | Some (FunctorClosure h sms dc rms) =>
+              eval_bindings k P (install_provision (IFun u) (FunctorClosure h (sms ++ [sm]) dc (rms ++ [rm])) d) g st r
           | _ => inr (Evaluation (Stuck e_fun) g st)
           end
-      | BApply u th outputs sm :: r =>
-          match apply_functor k P d u th outputs sm st with
+      | BApply u th outputs sm rs :: r =>
+          match apply_functor k P d u th outputs sm rs st with
           | inl (dr, st1) => eval_bindings k P (append_environment dr d) g st1 r
           | inr rr => inr (with_g g rr)
           end
@@ -1981,12 +2033,13 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
       end
   end
 with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) (th : subst)
-    (outputs : list (tsym * tsym)) (sm : smap) (st : mstate) {struct fuel} : (environment * mstate) + evaluation :=
+    (outputs : list (tsym * tsym)) (sm : smap) (rs : list item) (st : mstate) {struct fuel}
+    : (environment * mstate) + evaluation :=
   match fuel with
   | 0 => inr (Evaluation OutOfFuel [] st)
   | S k =>
       match lookup_provision (IFun u) d with
-      | Some (FunctorClosure h sms dc) =>
+      | Some (FunctorClosure h sms dc rms) =>
           match view_functor P h with
           | Some code =>
               let Dr := fc_outputs code in
@@ -1997,7 +2050,7 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (inst_smap (result_substitution th outputs) Dr) with
+                          match select_provisions d3 (result_selection rs rms (fc_sources code)) with
                           | Some dr => match result_environment d outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
@@ -2809,7 +2862,7 @@ Definition SigOf (W : world) (s : nat) (tm : list (nat * ty)) (this : option ty)
     Forall2 (fun pt t => TyOf W (d_mod d) tm this (snd pt) t) ps (sg_params g) /\
     match rt with Some r => TyOf W (d_mod d) tm this r (sg_ret g) | None => sg_ret g = TUnit end.
 
-(* A requirement t of fn or method s that its signature (a parameter's or
+(* A type symbol t that the signature of fn or method s (a parameter's or
    the result's type) mentions (note 51). *)
 Definition SigMentions (W : world) (s : nat) (t : nat) : Prop :=
   exists d rcv n ps rt body, w_decl W s = Some d /\ d_ast d = ADFn rcv n ps rt body /\
@@ -2825,10 +2878,54 @@ Inductive Select {A : Type} (P : A -> Prop) : list A -> list A -> Prop :=
     Select P (x :: xs) (x :: selected)
 | SelectDrop : forall x xs selected, ~ P x -> Select P xs selected ->
     Select P (x :: xs) selected.
+(* [D20], sigclose: a method's signature is closed over its requirements,
+   which include every type symbol it mentions, so θ records each. The
+   mentioned symbols outside its assume nesting (w_reqs) follow the
+   nesting's, ascending: a list fixed by its members. *)
+Fixpoint Ascending (l : list nat) : Prop :=
+  match l with
+  | x :: ((y :: _) as r) => x < y /\ Ascending r
+  | _ => True
+  end.
+Definition SigOutside (W : world) (s : nat) (extra : list nat) : Prop :=
+  Ascending extra /\ forall t, In t extra <-> SigMentions W s t /\ ~ In t (w_reqs W s).
+Lemma ascending_tail : forall x r, Ascending (x :: r) -> Ascending r.
+Proof. intros x [|y r] H; [exact I | exact (proj2 H)]. Qed.
+Lemma ascending_lt : forall r x, Ascending (x :: r) -> forall y, In y r -> x < y.
+Proof.
+  induction r as [|z r IH]; intros x H y Hy; [destruct Hy|]. destruct H as [Hxz Hr].
+  destruct Hy as [<-|Hy]; [exact Hxz | exact (Nat.lt_trans _ _ _ Hxz (IH z Hr y Hy))].
+Qed.
+(* An ascending list is fixed by its members. *)
+Lemma ascending_det : forall l1 l2, Ascending l1 -> Ascending l2 ->
+  (forall t, In t l1 <-> In t l2) -> l1 = l2.
+Proof.
+  induction l1 as [|x r1 IH]; intros [|y r2] A1 A2 E.
+  - reflexivity.
+  - exfalso. exact (proj2 (E y) (or_introl eq_refl)).
+  - exfalso. exact (proj1 (E x) (or_introl eq_refl)).
+  - assert (Exy : x = y).
+    { destruct (proj1 (E x) (or_introl eq_refl)) as [->|Hx]; [reflexivity|].
+      destruct (proj2 (E y) (or_introl eq_refl)) as [->|Hy]; [reflexivity|].
+      exfalso. exact (Nat.lt_asymm _ _ (ascending_lt r2 y A2 x Hx) (ascending_lt r1 x A1 y Hy)). }
+    subst y. f_equal. apply IH; [exact (ascending_tail _ _ A1) | exact (ascending_tail _ _ A2)|].
+    intro t. split; intro Ht.
+    + destruct (proj1 (E t) (or_intror Ht)) as [Ex|H]; [|exact H].
+      exfalso. rewrite <- Ex in Ht. exact (Nat.lt_irrefl _ (ascending_lt r1 x A1 x Ht)).
+    + destruct (proj2 (E t) (or_intror Ht)) as [Ex|H]; [|exact H].
+      exfalso. rewrite <- Ex in Ht. exact (Nat.lt_irrefl _ (ascending_lt r2 x A2 x Ht)).
+Qed.
+Lemma sig_outside_det : forall W s e1 e2, SigOutside W s e1 -> SigOutside W s e2 -> e1 = e2.
+Proof.
+  intros W s e1 e2 [A1 M1] [A2 M2]. apply ascending_det; [exact A1 | exact A2|].
+  intro t. rewrite M1, M2. reflexivity.
+Qed.
 Definition AppOf (W : world) (s : nat) (tm : subst) (a : inst) : Prop :=
   exists requirements,
     a = map (fun r => (r, nlook r tm)) requirements /\
-    ((kind_sym W s = Some DKMeth /\ Select (SigMentions W s) (w_reqs W s) requirements) \/
+    ((kind_sym W s = Some DKMeth /\ exists selected extra,
+        Select (SigMentions W s) (w_reqs W s) selected /\ SigOutside W s extra /\
+        requirements = selected ++ extra) \/
      (kind_sym W s <> Some DKMeth /\ requirements = w_reqs W s)).
 
 (* The receiver type of a method item `R.m`: R's meaning if R is a type
@@ -2885,7 +2982,7 @@ Inductive ResultMentions (W : world) : nat -> string -> spec -> nat -> Prop :=
     ResultMentions W self p (Spec (Some pa) (Some dn) a) t
 | RMMeth : forall self p pa dn a r m t,
     resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
-    In t (w_reqs W m) -> SigMentions W m t ->
+    SigMentions W m t ->
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
     ResultMentions W self p (Spec (Some pa) (Some dn) a) t
 | RMBracket : forall self p pa d a bp sp dr sa t,
@@ -3007,7 +3104,9 @@ Definition entry_sig (s : subst) (e : entry) : option fsig :=
    one key (read under σ) have one signature under σ.  The merge of a
    telescope is a most general such σ that is idempotent (no cyclic merge:
    a finding of the mechanization, [D43] calculus note), mapping only
-   generations of the telescope.  A merge identifying two distinct
+   generations of the telescope, each to one value (as the elaborator's
+   union-find does; a shadowed second value would never be read, but
+   would still sit in the context's substitution).  A merge identifying two distinct
    concrete heads has no unifier, so the telescope does not form. *)
 Definition Unifies (s : subst) (es : list entry) : Prop :=
   forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
@@ -3029,7 +3128,9 @@ Definition MostGeneralMerge (s : subst) (es : list entry) : Prop :=
   (forall t, app_subst s (app_subst s t) = app_subst s t) /\
   (forall s', Unifies s' es -> (forall t, app_subst s' (app_subst s t) = app_subst s' t)) /\
   (* σ maps only generations of the telescope, to types over them *)
-  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)).
+  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)) /\
+  (* σ is a function: no generation has a second, shadowed value *)
+  (forall g t, In (g, t) s -> lookup_subst g s = Some t).
 
 (* The context a merged telescope makes: its tables are the entries read
    under σ.  Instantiations keep None for a requirement not in force where
@@ -3306,9 +3407,13 @@ Inductive FamilyResult (W : world) : string -> spec -> Prop :=
     Forall (FamilyResult W (d_mod d)) its ->
     FamilyResult W mi (Spec (Some pa) None br).
 
+(* A family's listed polymorphic inputs are type symbols ([D84] rule 1; the
+   oracle's functor_params rejects any other, examples/family-poly-nontype.moss). *)
 Definition FamilyShape (W : world) (u : nat) : Prop :=
   exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None /\
-    Forall (FamilyResult W (d_mod d)) r.
+    Forall (FamilyResult W (d_mod d)) r /\
+    (forall names x t, ps = Some names -> In x names -> resolve_sym W (d_mod d) [x] = Some t ->
+       kind_sym W t = Some DKType).
 
 Definition FamilyBracketBound (W : world) (p : string)
     (a : option (list (path * spec))) (t : nat) : Prop :=
@@ -3419,9 +3524,16 @@ Definition context_gens (C : cx) : list nat :=
   flat_map (fun q => provision_gens (snd q) ++
     provision_gens (provision_subst (c_sub C) (snd q))) (c_provisions C) ++
   flat_map (fun q => gens (fst (snd q)) ++ gens (canon C (fst (snd q)))) (c_locals C).
+(* The generations a method key's receiver mentions. A callee requirement
+   the caller leaves unbound is read at the call site as itself, so a family
+   demand can key a method at a declared symbol that nothing else in the
+   context mentions (examples/family-unbound-need.moss); a lambda keeps
+   its meaning too (family2-AUDIT.md). *)
+Definition key_receiver_gens (C : cx) : list nat :=
+  flat_map (fun q => match fst q with IMth r _ _ => gens r | _ => [] end) (c_provisions C).
 Definition lexical_capture (C : cx) : type_capture :=
   TypeCapture
-    (map (fun generation => (generation, TAbs generation)) (context_gens C))
+    (map (fun generation => (generation, TAbs generation)) (context_gens C ++ key_receiver_gens C))
     (map (fun q => (fst q, canon C (snd q))) (c_ty C)).
 Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
   NoDup gs /\ Forall (fun g => Fresh W g /\
@@ -3531,6 +3643,21 @@ Definition FamilyApplication (W : world) (C : cx) (u : usym)
     ProvideResult W u (family_context C matching) (fun t => TAbs t) result keys /\
     NoDup (map provision_id keys).
 
+(* [D84] rule 7: θ is read off the demanded key.  The result is formed once
+   with each P(F) symbol standing for itself (the oracle's markers), and the
+   demanded method's formal receiver there is matched against the key's
+   receiver: θ's domain is exactly the P(F) symbols that receiver mentions,
+   and each value is the part of the key at that symbol. *)
+Definition FamilyReadOff (W : world) (C : cx) (u : usym) (ot : ty) (m : nat)
+    (matching : subst) : Prop :=
+  exists marks formal_result formal_keys rf a,
+    (forall t, Poly W u t <-> In t marks) /\
+    ProvideResult W u (family_context C (map (fun t => (t, TAbs t)) marks))
+      (fun t => TAbs t) formal_result formal_keys /\
+    In (IMth rf m a) formal_keys /\
+    (forall t, In t (map fst matching) <-> In t marks /\ In t (gens rf)) /\
+    NoDup (map fst matching) /\ canon C (app_subst matching rf) = ot.
+
 (* A literal's binary arithmetic call uses a provision already in force,
    or a unique family applied in a scope around that call ([D84] rule 7).
    Its one parameter and result are exactly the literal's own type. *)
@@ -3540,10 +3667,10 @@ Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr ->
     LitOp W C t m ox oy (EMethod ox m (rkey C t m) [oy])
 | LitOpFamily : forall u matching th sm C' ks,
     mlook t m (c_mths C) = None ->
-    FamilyApplication W C u matching th sm C' ks ->
+    FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u t m matching ->
     In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
     mlook t m (c_mths C') = Some (FSig [t] t) ->
-    LitOp W C t m ox oy (apply_expression u th sm (EMethod ox m (rkey C' t m) [oy])).
+    LitOp W C t m ox oy (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' t m) [oy])).
 
 (* Interpret exactly the prescribed tree through contextual arithmetic.
    A family may supply an operation, using the same rule as an explicit call. *)
@@ -3738,36 +3865,93 @@ Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
 
+(* [D78] (the oracle's copy_outputs_match): read at F's inputs with the
+   same fresh output roles, H's result gives each key of F's result the
+   provision F's result gives it (each key's last setter), F's fixed
+   inputs read as sigma says (as they are in force where F is bound).
+   rm records, for each position i of F's result, the position j of H's
+   whose item F's i-th is: a position with the same provision id (the
+   keys are read at Cu, so this is the same key there), whose provision
+   agrees with F's after the copy site's substitution sigma (the clause
+   above, at each key's last setter), and the last such position (the
+   oracle's `find ... (rev gkeys)`), so repeated positions of F read one
+   source. An application of F installs exactly F's result, position by
+   position under the caller's keys (Rule A, result_selection), so a key
+   H has and F lacks is never installed (examples/copy-extra-key.moss;
+   results4's converse conjunct, which rejected that copy, is reverted).
+   Every other generation of F's input readings (one sigma does not read:
+   F's non-fixed inputs, which each application supplies afresh) reads as
+   its own fresh symbol cg y, as the oracle's copy_output_compatible
+   replaces each unsolved generation by a fresh `@copy` symbol: sigma's
+   readings are the copy site's and may name a symbol that is also one of
+   F's inputs, which must not be identified with it
+   (examples/copy-bracket-nonfixed.moss, copy-fixed-reads-poly.moss;
+   scratch/orch/copyfresh-AUDIT.md). Fresh means fresh for sigma's image
+   too, as the oracle's @copy symbols are: a copy site can read a fixed
+   input as a fresh application generation, and a cg y or output role
+   equal to it would identify it with F's input or output again
+   (examples/copy-fresh-collide.moss, scratch/orch/realizepf-AUDIT.md). *)
+Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : list nat) : Prop :=
+  exists outs gen ys cg Cr ks Cr' ks',
+    (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs ++ map cg ys) /\
+    (forall z, In z (flat_map (fun q => gens (snd q)) sigma) -> ~ In z (map gen outs ++ map cg ys)) /\
+    (forall t, In t outs -> Fresh W (gen t)) /\
+    (forall y, In y ys -> Fresh W (cg y)) /\
+    (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
+                          lookup_subst y sigma = None) /\
+    ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
+    ProvideResult W h Cu (fun t => TAbs (gen t)) Cr' ks' /\
+    (forall k, In k ks -> exists p p',
+       ilook (provision_id k) (c_provisions Cr) = Some p /\
+       ilook (provision_id k) (c_provisions Cr') = Some p' /\
+       provision_subst (sigma ++ map (fun y => (y, TAbs (cg y))) ys) p =
+       provision_subst (sigma ++ map (fun y => (y, TAbs (cg y))) ys) p') /\
+    length rm = length ks /\
+    (forall i k, nth_error ks i = Some k -> exists j k',
+       nth_error rm i = Some j /\ nth_error ks' j = Some k' /\ provision_id k' = provision_id k /\
+       (forall j' k'', j < j' -> nth_error ks' j' = Some k'' -> provision_id k'' <> provision_id k)).
+
 (* Restore fresh output generations to their declared symbols when filing
    the reusable code body. Input meanings remain those of the target. *)
 Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
   app_subst_item (map (fun t => (gen t, TAbs t)) outs) k.
 
+(* A promised item is compared with the body's at the body's meanings of
+   the renamed symbols (each output role at what the body's type table
+   makes of its output, canonically), as the oracle's promised_result_type
+   does: a body that binds `T = Bool` provides `mk(): T` as `mk(): Bool`.
+   The key is read at the body's site (at_site re-reads its receiver). *)
+Definition read_rename (body : cx) (rename : subst) : subst :=
+  map (fun q => (fst q, canon body (app_subst (c_ty body) (snd q)))) rename.
+(* Where a linked body's result key is read (LinkBody): an output role
+   (gen t) at the body's final table (a body that binds T = Bool provides
+   T.m as Bool.m), every symbol at G's own readings. An input's meaning at
+   an application is the caller's, and a rebind in the body writes only its
+   alias, so a key's receiver may not follow it (an unpinned merge
+   representative, examples/link-merge-rep-rebind.moss; the oracle's
+   check is by written leaf, scratch/orch/linknewpf-AUDIT.md). That holds
+   for an input of F that is also an output: its input occurrences (a
+   merge representative's) read at G's table, only its role at the body's
+   (examples/link-output-input-rep.moss, scratch/orch/realize3-AUDIT.md).
+   The roles stay in the keys and promised types (link_renaming is the
+   identity on them), so the site's table alone reads them. *)
+Definition link_site (Cg Cb : cx) (outs : list nat) (gen : nat -> nat) : cx :=
+  Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ c_ty Cg)
+     (c_sub Cb) (c_provisions Cb) (c_locals Cb).
+Definition link_renaming (outs : list nat) (gen : nat -> nat) : subst :=
+  map (fun t => (gen t, TAbs (gen t))) outs.
 Definition ResultRealizes (body promised : cx) (rename : subst) (keys : list item) : Prop :=
   forall k, In k keys -> exists required actual,
     ilook (provision_id k) (c_provisions promised) = Some required /\
     ilook (provision_id (at_site body (app_subst_item rename k))) (c_provisions body) = Some actual /\
     provision_refines
-      (provision_subst (c_sub body) (provision_subst rename required))
+      (provision_subst (c_sub body) (provision_subst (read_rename body rename) required))
       (provision_subst (c_sub body) actual).
 Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
   Forall (fun binding => match binding with
     | BValue _ _ => False
-    | BApply family _ _ _ => Family W family
+    | BApply family _ _ _ _ => Family W family
     | _ => True end) bindings.
-
-(* a method bind, filed also under each key it answers as another spelling
-   (pairs: the body's key, the key as declared) *)
-Definition refile (pairs : list (item * item)) (b : binding) : list binding :=
-  match b with
-  | BMethod t m th f types sm =>
-      b :: flat_map (fun p => match p with
-                              | (IMth t' m' _, IMth t0 _ th0) =>
-                                  if ty_eqb t t' && Nat.eqb m m' && negb (item_eqb (IMth t0 m th0) (IMth t m th))
-                                  then [BMethod t0 m th0 f types sm] else []
-                              | _ => [] end) pairs
-  | _ => [b]
-  end.
 
 Inductive BindsOf : expr -> list binding -> Prop :=
 | BOEnd : BindsOf EUnit []
@@ -3840,12 +4024,13 @@ Definition family_restore (C Cr : cx) : cx :=
   Cx (c_ty C) (c_sub Cr) (c_provisions Cr) (c_locals Cr).
 
 Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
-    : cx -> nat -> subst -> subst -> smap -> cx -> Prop :=
+    : cx -> nat -> subst -> subst -> smap -> list item -> cx -> Prop :=
 | FamilyStepApply : forall C ot m u matching th sm Cr ks,
     In (mkey ot m) wanted -> mlook ot m (c_mths C0) = None ->
     OnlyFamily W C0 u (mkey ot m) ->
-    FamilyApplication W C u matching th sm Cr ks -> In (mkey ot m) ks ->
-    FamilyStep W C0 wanted C u matching th sm (family_restore C Cr).
+    FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+    In (mkey ot m) ks ->
+    FamilyStep W C0 wanted C u matching th sm (map (rkey_of Cr) ks) (family_restore C Cr).
 
 (* Group identity is the inferred matching substitution.  Distinct groups
    may emit equal complete type arguments after reading the other inputs. *)
@@ -3853,10 +4038,10 @@ Inductive Demand (W : world) (C0 : cx) (wanted : list item)
     : list (nat * subst) -> cx -> (expr -> expr) -> cx -> Prop :=
 | DemandDone : forall used C,
     Demand W C0 wanted used C (fun x => x) C
-| DemandApply : forall used C u matching th sm Cm wrap Cf,
-    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th sm Cm ->
+| DemandApply : forall used C u matching th sm rs Cm wrap Cf,
+    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th sm rs Cm ->
     Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
-    Demand W C0 wanted used C (fun x => apply_expression u th sm (wrap x)) Cf.
+    Demand W C0 wanted used C (fun x => apply_expression u th sm rs (wrap x)) Cf.
 
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
@@ -4084,10 +4269,10 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
    at most one family in a context produces a key (DECISIONS.md, rule 7). *)
 | PrFamily : forall F C ox ot m args u matching th sm C' ks g xs,
     mlook ot m (c_mths C) = None ->
-    FamilyApplication W C u matching th sm C' ks ->
+    FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks -> OnlyFamily W C u (mkey ot m) ->
     mlook ot m (c_mths C') = Some g -> Args W P F C args (sg_params g) xs ->
-    Provided W P F C ox ot m args (apply_expression u th sm (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
+    Provided W P F C ox ot m args (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
 
 (* a block whose type is checked against `exp` and may not let a value of
    a generation it made escape ([D78]) *)
@@ -4200,6 +4385,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     SigOf W m (bs ++ c_ty C) (Some rt) sg ->
     MethProvider W P F C y sg rt target types pre sm ->
     AppOf W m (bs ++ c_ty C) ap ->
+    (* [D84] rule 7: a member of a family in force is not bound directly *)
+    (forall u, ~ FamilyProduces W C u (mkey (canon C rt) m)) ->
     BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
              (fun x => pre (bind_method_expression (canon C rt) m (theta_of C ap) target types sm x))
              (provide C (mkey (canon C rt) m) ap (set_mth C (canon C rt) m sg)) F []
@@ -4229,19 +4416,37 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     FreshFor W F C newgens ->
     (* Repeated output roles share a generation; distinct roles do not. *)
     (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-    (* outputs: fresh where the symbol is already in force *)
+    (* outputs: fresh where the symbol is already in force; one not in
+       force is installed as itself, and the frame's return and receiver
+       types (read where every symbol they mention is in force) do not
+       mention it, nor does the context or a method key's receiver (the
+       result's write would re-ground what mentions it; stricter than the
+       oracle and native, scratch/orch/chainfwd-AUDIT.md section 2).
+       In a body bound to F, a kept output is not one of the pins M(F):
+       each application supplies M(F)'s meanings, which the body's write
+       would replace under a key the caller files at its own reading
+       ([D84] 3d, as `bind T` is; examples/link-kept-output-pin.moss,
+       scratch/orch/realize2-AUDIT.md; native rejects it) *)
     (forall t, FunOutputs W u t ->
-       (nlook t (c_ty C) = None /\ gensof t = t) \/
+       (nlook t (c_ty C) = None /\ gensof t = t /\
+          ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+                  (match fr_this F with Some r => gens r | None => [] end)) /\
+          ~ In t (context_gens C ++ key_receiver_gens C) /\ ~ In t (fr_pins F)) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+    (* [D78]: every output destination, fresh or not, is made here: a
+       value of its type may not leave the block *)
     BindItem W P F C (Spec (Some pa) None None, None)
-      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
-      C' (with_fresh F newgens) newgens
+      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm (map (rkey_of C') ks))
+      C' (with_fresh F newgens) (map gensof outs)
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
-| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx,
+| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
+    (* only an abstract functor is bound (D78; the oracle's bind_functor,
+       examples/copy-into-body.moss) *)
+    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh -> incl nsh nsu ->
     (* Copying requires the target fixed inputs now and preserves every
@@ -4250,13 +4455,27 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x, Fixed W h x -> Fixed W u x) ->
     FixedAgreement W C h ->
     SameResult W u h ->
+    (* H reads its needs and inputs as F does (the oracle: input
+       interpretation, D78) *)
+    (forall k, In k nsh -> ilook (provision_id k) (c_provisions Ch) = ilook (provision_id k) (c_provisions Cu)) ->
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> canon Cu (TAbs x) = canon Cu tx) ->
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (set_fun C u fx) F []
+    (* and H's result reads as F's (the oracle: output interpretation, D78) *)
+    CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu rm ->
+    (* H's inputs, implicit ones too, are among F's (the oracle's input
+       interpretation check fails on one F lacks) *)
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are
    captured here (vals by value) and must be in force here; G's body is
-   checked once, in its own terms, as the core functor body h (LinkBody). *)
+   checked once, in its own terms, as the core functor body h (LinkBody).
+   The closure keeps types as a lambda does (`lexical_capture`): the
+   table's readings and the meanings of what the context mentions, method
+   keys' receivers included, so a captured need keyed at a declared symbol
+   not in force reads as it was provided (examples/functor-captured-unbound.moss,
+   family4-AUDIT.md). *)
 | BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
@@ -4267,10 +4486,13 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     SameResult W u gg ->
     LinkBody W P u gg h ->
     sm = map (fun k => (rkey_of Cg k, rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
-    smc = map (fun k => (rkey_of Cg k, rkey_of C (at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
-    (forall k k', In (k, k') smc -> provides C k') ->
+    (* 3b: the captured needs are answered here as a call would answer
+       them, at G's inputs read here: provided, coherent, at G's view of
+       their types, and G's merges holding of the meanings here *)
+    Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
+      (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h sm smc) (set_fun C u fx) F []
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
 
 (* [D66] a fn provider: a defined fn (its needs answered here), or an
    abstract fn in force, through a fresh defined forwarder whose body calls
@@ -4344,6 +4566,9 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
                    (Cx (c_ty C) (c_sub C) (c_provisions C) []) ->
     (* its frame: numbered afresh, parameters (after `this`) from 0 *)
     fr_mod Fl = fr_mod F -> fr_ret Fl = Some (sg_ret sg) -> fr_this Fl = this -> fr_loop Fl = false ->
+    (* the generations in scope here stay taken in its body: the closure
+       keeps their meanings, so no application there may make them anew *)
+    incl (fr_fresh F ++ context_gens C) (fr_fresh Fl) ->
     Numbering Fl this (map fst ps) -> Forall (Named Fl) caps -> Forall (Named F) caps ->
     BlkE W P Fl (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
                            (combine (map fst ps) (sg_params sg)) Cl)
@@ -4369,38 +4594,58 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
    that applications supply; 3d: pins may not rebind M(F); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
 with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds,
+| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
-    (* 3b: a captured value may mention fixed or privately captured types,
-       but no target input type supplied afresh by each application. *)
-    (forall k t, In k nsg -> ~ In k nsu ->
-       match k with
-       | IVal v => forall vt, nlook v (c_vals Cg) = Some vt -> In t (gens vt) ->
-           nlook t (c_ty Cu) <> None -> Fixed W u t
-       | _ => True end) ->
+    (* 3b: a captured item (value, fn, method or functor) may mention fixed
+       or privately captured types, but no target input type supplied afresh
+       by each application: not in its type or signature, its recorded
+       instantiation, or a method's receiver. *)
+    (forall k p t, In k nsg -> ~ In k nsu -> ilook (provision_id k) (c_provisions Cg) = Some p ->
+       In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
+       nlook t (c_ty Cu) <> None -> Fixed W u t) ->
+    (* G reads each need F links as F does, and its readings of F's inputs
+       hold in F's context (the oracle: linked input interpretation, D84).
+       An input of F reads in G as a type over F's inputs: G's merges may
+       not send a linked input to a type only G has, which the closure
+       captures at the bind while each application supplies the input
+       afresh (the oracle's 3b sees the first unmerged reading;
+       examples/link-merge-captured.moss, scratch/orch/cap3b-AUDIT.md) *)
+    (forall k, In k nsg -> In k nsu ->
+       ilook (provision_id k) (c_provisions Cg) = ilook (provision_id k) (c_provisions Cu)) ->
+    (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
+       (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\ canon Cu (TAbs x) = canon Cu tx) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
     fr_this Fg = None -> fr_loop Fg = false ->
+    (* its locals are numbered as a body's are *)
+    Numbering Fg None [] ->
     (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
+    (* no generation the body makes is an input of F: each application
+       supplies F's inputs, and a body write would replace one under a
+       key the caller files at its own reading (a kept output at an
+       unmentioned merge representative, examples/link-kept-output-rep.moss;
+       scratch/orch/realize2-AUDIT.md) *)
+    (forall t, In t made -> nlook t (c_ty Cu) = None) ->
     (forall t, In t outs <-> FunOutputs W u t) ->
     (forall t, In t outs -> exists meaning, nlook t (c_ty Cb) = Some meaning) ->
     NoDup (map gen outs) ->
     (forall t, In t outs -> Fresh W (gen t)) ->
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* Every output has the promised signature and known type meanings. *)
-    ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks ->
+    ResultRealizes (link_site Cg Cb outs gen) Cr (link_renaming outs gen) ks ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
-    (* a result method item is filed under its key as F declares it too
-       (receiver and θ in F's terms, note 28) *)
-    binds = flat_map (refile (map (fun k =>
-      (at_site Cb (output_renaming outs gen k),
-       output_renaming outs gen (rkey_of Cr k))) ks)) binds0 ->
-    (Family W u -> FamilyBindings W binds) ->
+    (Family W u -> FamilyBindings W binds0) ->
     Fresh W h ->
+    (* each item of F's declared result, position by position, is read
+       where the body bound it: a method under the body's runtime key for
+       its receiver read at link_site (the application installs it under
+       the caller's key for that position) *)
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
-      (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds) ->
+      (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
+      (map ITy outs ++ map (rkey_of Cr) ks) binds0
+      (map (fun k => rkey_of (link_site Cg Cb outs gen) (at_site (link_site Cg Cb outs gen) (app_subst_item (link_renaming outs gen) k))) ks)) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
@@ -4451,7 +4696,7 @@ Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> P
     PlatformEntry W P (IFn f) (PrimitiveClosure (PUnsupported i) None)
 | PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
-    PlatformEntry W P (IFun u) (FunctorClosure h [] empty_environment).
+    PlatformEntry W P (IFun u) (FunctorClosure h [] empty_environment []).
 
 (* The runtime type prefix is a representation of the source context,
    separate from the values and code supplied by the platform. Its machine
@@ -4587,22 +4832,96 @@ Definition MethodPrimitive (W : world) (key : item) (operation : prim) : Prop :=
     | RPlain => False
     end.
 
+(* The handle tags carry a raw machine handle (Ref a StructRef, Array an
+   ArrayRef, Addr an I32), which the primitives read as that machine value.
+   A platform fn's signature must read that requirement as itself: a
+   context item can bracket it (`i64_store[I32 = Addr[I32 = I64]]`), which
+   would type a handle whose payload is not the raw machine type. *)
+Definition raw_handles : list (string * string) :=
+  [("Ref", "StructRef"); ("Array", "ArrayRef"); ("Addr", "I32")].
+Definition RawHandleRead (W : world) (t : ty) : Prop :=
+  forall name handle symbol args, In (name, handle) raw_handles ->
+    LangSym W "wasm" NSName name symbol -> t = TNom symbol args ->
+    forall raw, LangSym W "wasm" NSName handle raw -> nlook raw args = Some (TAbs raw).
+Definition HandlesRead (W : world) (C : cx) (key : item) : Prop :=
+  match key with
+  | IFn f => forall signature, nlook f (c_fns C) = Some signature ->
+      Forall (RawHandleRead W) (sg_ret signature :: sg_params signature)
+  (* a platform family's method item, its receiver among the parameters *)
+  | IMth receiver method _ => forall signature, mlook receiver method (c_mths C) = Some signature ->
+      Forall (RawHandleRead W) (sg_ret signature :: receiver :: sg_params signature)
+  | _ => True
+  end.
+
+(* The machine types a platform item's signature mentions are fixed
+   inputs of its functor, in its context: the platform's provision exists
+   only at the machine types, so it may not be polymorphic in one
+   (lib/wasm.moss: Heap, Mutable, Arrays and Memories bracket only Boxed,
+   Arrayed and Memory). *)
+Definition MachinesFixed (W : world) (source : usym) (inputs outputs : cx) (key : item) : Prop :=
+  match key with
+  | IMth receiver method _ => forall signature, mlook receiver method (c_mths outputs) = Some signature ->
+      forall name machine symbol, In (name, machine) initial_machines -> LangSym W "wasm" NSName name symbol ->
+      In symbol (flat_map gens (sg_ret signature :: receiver :: sg_params signature)) ->
+      Fixed W source symbol /\ In symbol (map fst (c_ty inputs))
+  | _ => True
+  end.
+
+(* A platform family's items have pairwise distinct methods, and at most
+   one of them is a detached method (lib/wasm.moss: Heap's `.boxed`,
+   Arrays' `.arrayed`; every other item is an attached method of its own).
+   A copy of the family (`bind F = H;`, BFunCopy) is checked one way only
+   (CopyOutputs: each of F's items is one of H's); with this, H's items
+   are each one of F's too, since F has an item on each of H's leaves
+   (SameResult), resolving to H's method there (an attached method is the
+   receiver's, and the one detached method is the only one left). *)
+Definition DetachedMethod (W : world) (m : nat) : Prop :=
+  exists d n ps rt body, w_decl W m = Some d /\ d_ast d = ADFn RDetached n ps rt body.
+Definition MethodsDistinct (W : world) (keys : list item) : Prop :=
+  forall k1 k2 r1 r2 m1 m2 a1 a2, In k1 keys -> In k2 keys ->
+    k1 = IMth r1 m1 a1 -> k2 = IMth r2 m2 a2 ->
+    (m1 = m2 \/ (DetachedMethod W m1 /\ DetachedMethod W m2)) -> k1 = k2.
+
 Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
+    (* the platform provides method items only (Elab.v platform_fun): no
+       type output, which its code could not return *)
+    (forall t, ~ FunOutputs W source t) /\
     ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
-    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) keys bindings) /\
+    (* each item is installed and returned under its run-time key, the
+       instantiation it is made at (rkey_of), as a linked body's are *)
+    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) []
+      (map (rkey_of outputs) keys) bindings (map (rkey_of outputs) keys)) /\
     Forall2 (fun key binding => exists operation,
-      binding = BPrimitive key operation /\ MethodPrimitive W key operation /\
-      AtKey W outputs key operation) keys bindings.
+      binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
+      AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
+      HandlesRead W outputs key) keys bindings /\
+    MethodsDistinct W keys /\
+    (* an abstract functor (the oracle's platform_entry: KyFun with no
+       body), whose items are distinct (lib/wasm.moss: each its own
+       declaration) *)
+    (forall d ps a r b, w_decl W source = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None) /\
+    NoDup (map provision_id keys).
+
+(* main's context reads each machine type a platform functor fixes as
+   itself (the oracle's check_platform_entry_view: "platform functor has an
+   incompatible assumed fixed type"): the platform's provision exists only
+   at the machine types, so a merge of main's context may not read one as
+   another type. *)
+Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
+  forall fixed, nlook source (c_funs C) = Some fixed ->
+  forall name machine symbol t, In (name, machine) initial_machines ->
+    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed -> canon C t = TAbs symbol.
 
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
-  | IFn _, PrimitiveClosure operation None => AtKey W C key operation
-  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) => Family W P source code
+  | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
+  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) [] =>
+      Family W P source code /\ FixedMachinesRead W C source
   | _, _ => False
   end.
 
@@ -4699,7 +5018,7 @@ with binding_primitives (binding : binding) : list prim :=
 Fixpoint entry_primitives (entry : provision_value) : list prim :=
   match entry with
   | PrimitiveClosure operation _ => [operation]
-  | FunctionClosure _ (EnvironmentWithAliases _ _ captured) | FunctorClosure _ _ (EnvironmentWithAliases _ _ captured) =>
+  | FunctionClosure _ (EnvironmentWithAliases _ _ captured) | FunctorClosure _ _ (EnvironmentWithAliases _ _ captured) _ =>
       flat_map (fun entry => entry_primitives (snd entry)) captured
   | _ => []
   end.

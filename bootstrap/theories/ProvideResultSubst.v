@@ -21,8 +21,8 @@ Lemma output_appof_subst:forall W sb g tm a,
  A.AppOf W g tm a->forall tm',SubRel sb tm tm'->
  A.AppOf W g tm'(output_app_subst sb a).
 Proof.
- intros W sb g tm a(rs&Incl&Eq&Ord&Meth)tm' SR.
- exists rs;split;[exact Incl|];split;[|split;assumption].
+ intros W sb g tm a(rs&Eq&Ord&Meth)tm' SR.
+ exists rs;split;[|split;assumption].
  unfold output_app_subst;rewrite Eq,map_map;apply map_ext;intro r;cbn[fst snd].
  f_equal;symmetry;apply SR.
 Qed.

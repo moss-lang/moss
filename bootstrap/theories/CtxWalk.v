@@ -388,7 +388,7 @@ Proof.
   intros g tm tmr e s a s' Hi H L Ht Hk. unfold provision_app in H. apply bind_inv in H as (rs & s1 & H1 & H).
   cbn beta iota in H. apply bind_inv in H as (rs' & s2 & H2 & H). injection H2 as <- <-. injection H as <- <-.
   assert (Er : R (gs_id g) = rs) by exact (reqs_R w R Fl _ s rs s1 Hi H1 L).
-  exists rs. split; [rewrite <- Er; apply incl_refl|]. split; [|split; [intros _; exact (eq_sym Er) | intro E; contradiction]].
+  exists rs. split; [|split; [intros _; exact (eq_sym Er) | intro E; contradiction]].
   unfold tr_inst. rewrite map_map. apply map_ext. intro r. cbn [fst snd]. f_equal. symmetry. apply (proj1 Ht).
 Qed.
 

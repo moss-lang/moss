@@ -1,0 +1,38 @@
+# A copy of a platform family with a bracket on a non-receiver
+# requirement (`Array.length[I32 = Z]`), Z a fixed input of F read as
+# `I32` at the copy site: CopyOutputs equates the two instantiations up to
+# the copy site's readings, and the caller's run-time key matches the
+# family's, since Z's reading is pinned at the application too (rebinding
+# Z before `bind F;` is rejected: oracle "applying `F` here reads `Z` as
+# `Bool`, but `F` is fixed in it ...", native "provided at a different type
+# instantiation"). Oracle and native print 42.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch, Num, raw;
+import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Z;
+
+functor F[Arrayed]: Wasm, Arrayed, Z ->
+  Arrayed.arrayed, Array.length[I32 = Z], Array.get, Array.set, Array.fill, Array.copy;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Z = I32;
+    bind F = Arrays;
+    bind Arrayed = Int;
+    bind F;
+    let xs = 42.arrayed(raw(3));
+    let l = xs.length();
+    print_int(xs.get(raw(2)));
+    putchar(char::newline);
+  }
+}

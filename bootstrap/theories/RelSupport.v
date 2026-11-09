@@ -293,21 +293,26 @@ Ltac sigmentions :=
         | (right; eexists; split; [reflexivity | freein]) ].
 
 (* a method's requirements, each mentioned by its signature *)
+(* a type symbol a method's signature mentions is among its requirements:
+   each example that needs it supplies the proof (Ltac sig_in_reqs ::= ...) *)
+Ltac sig_in_reqs := fail "no proof that the signature is closed over its requirements".
+
 Ltac appof_meth :=
   first [ let HH := fresh "HH" in intro HH; vm_compute in HH; discriminate HH | appof_meth' ]
 with appof_meth' :=
   match goal with
-  | |- _ -> exists ms, ?rs = _ /\ _ =>
+  | |- _ -> exists ms extra, ?rs = _ /\ _ =>
       intros _; let v := eval vm_compute in rs in
-      exists (map (fun _ => true) v); split; [vm_compute; reflexivity|];
-      change rs with v; simpl map;
-      repeat (apply Forall2_cons; [split; [intros _; sigmentions | intros _; reflexivity] |]); apply Forall2_nil
+      exists (map (fun _ => true) v), []; split; [vm_compute; reflexivity|];
+      split; [change rs with v; simpl map;
+              repeat (apply Forall2_cons; [split; [intros _; sigmentions | intros _; reflexivity] |]); apply Forall2_nil|];
+      split; [exact I|]; intro t; split; [intros []|intros [Hs Hn]; exfalso; apply Hn; sig_in_reqs]
   end.
 
 Ltac appof :=
   match goal with
   | |- AppOf ?W ?s ?tm ?a =>
-      exists (w_reqs W s); split; [apply incl_refl | split; [ reflexivity | split; [intros _; reflexivity | appof_meth] ] ]
+      exists (w_reqs W s); split; [ reflexivity | split; [intros _; reflexivity | appof_meth] ]
   end.
 
 Ltac recvty :=

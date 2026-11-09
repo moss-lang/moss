@@ -24,14 +24,13 @@ Proof.
  destruct(ok_signature_syms_frame g rs _ _ _ I1 H2)as[_ F2].
  pose proof(reqs_R w R Fl _ s rs s1 Hi H1(later_back w P R Fl _ _ F2 L))as Er.
  destruct(signature_type_syms_filter w R Fl b Hload g rcv n ps rt body rs s1 rs' s2 Hg D H2 I1
-  ltac:(rewrite(fr_w _ _ F1);exact Hw)L)as(test&Etest&Mtest).
+  ltac:(rewrite(fr_w _ _ F1);exact Hw)L)as(test&extra&Etest&Mtest&Asc&Mextra).
  exists rs'. split.
- - change(incl rs'(R(gs_id g))). rewrite Er,Etest. intros x Hx. apply filter_In in Hx as[Hx _]. exact Hx.
- - split.
-   + unfold tr_inst. rewrite map_map. apply map_ext. intro r. cbn[fst snd]. f_equal. symmetry;apply(proj1 TR).
-   + split;[intro Hnot;exfalso;apply Hnot;exact Hmeth|intros _].
-     change(A.w_reqs WW)with R. rewrite Er. exists(map test rs). split.
-     * rewrite filter_mask. exact Etest.
-     * clear -Mtest. induction rs as[|r rs IH];[constructor|]. constructor;[exact(Mtest r)|exact IH].
+ - unfold tr_inst. rewrite map_map. apply map_ext. intro r. cbn[fst snd]. f_equal. symmetry;apply(proj1 TR).
+ - split;[intro Hnot;exfalso;apply Hnot;exact Hmeth|intros _].
+   change(A.w_reqs WW)with R. rewrite Er. exists(map test rs),extra. split;[|split].
+   + rewrite filter_mask. exact Etest.
+   + clear -Mtest. induction rs as[|r rs IH];[constructor|]. constructor;[exact(Mtest r)|exact IH].
+   + split;[exact Asc|]. intro x. change(A.w_reqs WW)with R. rewrite Er. exact(Mextra x).
 Qed.
 End Visitor.

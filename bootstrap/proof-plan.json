@@ -2202,7 +2202,15 @@
         "E26",
         "E27",
         "E28",
-        "E29"
+        "E29",
+        "E30",
+        "E31",
+        "E32",
+        "E33",
+        "E34",
+        "E35",
+        "E36",
+        "E37"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2768,6 +2776,210 @@
         "reason": "The user approved a ShapeNever result shape after the primitives proof found that interface_laws let unreachable, declared to return `|`, return ().",
         "sources": [
           "SAFETY-SITES.md"
+        ]
+      }
+    },
+    {
+      "id": "E30",
+      "group": "E",
+      "title": "Check captured functor needs and body numbering",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators' checks of a functor closure's captured needs (the oracle's D84 3b) imply Audit's Satisfies for them at the closure's inputs read where it is bound, and a functor body's frame numbers its locals, as Audit's BFunClosure and LinkBody now require.",
+      "approach": "Relate the D84 3b frozen-interpretation check to Satisfies' coherence, type and merge clauses; check the body frame's numbering. bootstrap/examples/captured-merge.moss is rejected by both implementations already.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/captured-merge.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved checking a closure's captured needs with Satisfies and numbering functor bodies after the relation accepted a program whose captured needs violate the functor's merges.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/captured-merge.moss"
+        ]
+      }
+    },
+    {
+      "id": "E31",
+      "group": "E",
+      "title": "Read linked result methods from the body's keys",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's linked bodies file each result method as Audit's LinkBody now does: the body runs its own binds only, and the result selection reads each result key (as F declares it) from the body's runtime key for it (fc_sources), so a stale provision under F's spelling of the key is never overwritten inside the body.",
+      "approach": "Replace link_trace_rebinds (which refiles each result method under F's key right after its bind) by result sources in the emitted functor code, as native behaves; update LinkBodySound's link_output_certificate and LinkOutputRefile. bootstrap/examples/refile-stale-shadow.moss gets stuck on the oracle (moss_ref: stuck (XErr 14)) and prints 7 natively.",
+      "sources": [
+        "theories/LinkBodyTrace.v",
+        "theories/LinkBodySound.v",
+        "theories/LinkOutputRefile.v",
+        "theories/Audit.v",
+        "examples/refile-stale-shadow.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The refile obligation (RefileRunOk) was false: the oracle's refile at bind time overwrote a stale provision the body's context still listed, and a later call through it ran Int.out on a Bool. The coordinator chose native's behaviour for Audit.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/refile-stale-shadow.moss"
+        ]
+      }
+    },
+    {
+      "id": "E32",
+      "group": "E",
+      "title": "Install exactly F's result at a copy's application",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's application of a copy installs exactly F's declared result, position by position under the caller's keys, as native does and as Audit does since callerkeys (Audit.result_selection, BCopyFunctor's position map), so bootstrap/examples/copy-extra-key.moss prints 31 rather than 21. The converse CopyOutputs check that results4 added to Audit (rejecting that copy) is reverted, so the oracle should not add it either.",
+      "approach": "Mirror Audit: the oracle's link_body files the root body's key for each position of the declared result; a copy records, for each of F's positions, the last position of H's result it reads (copy_outputs_match already finds it, `find ... (rev gkeys)`); the runtime application installs position i under the caller's key for it. bootstrap/examples/copy-extra-key.moss prints 21 on the oracle (the extra key overwrites the caller's Box[T=Char].m) and 31 natively. The Audit side, its tests and corpus comparison: scratch/orch/callerkeys2-AUDIT.md.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/CopyOutputExec.v",
+        "theories/Audit.v",
+        "examples/copy-extra-key.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "ChainNewOk's first clause was false: an application of a copy installs every key of the root body's result, and a one-directional CopyOutputs let the root have a key F's result lacks, overwriting the caller's provision of it.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/copy-extra-key.moss"
+        ]
+      }
+    },
+    {
+      "id": "E33",
+      "group": "E",
+      "title": "No result key spelled through an output's input meaning",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "A linked functor whose result key, read at F's inputs, mentions an input symbol that is also an output (through F's merges) is filed and applied correctly: the code keeps output roles distinct from input symbols and the application maps the roles (decided fix; Audit and oracle), so output-merge-key.moss prints 7 and functor_input_output_generations.moss prints yn (cf. E06).",
+      "approach": "Audit (callerkeys, superseding the role map fc_roles of results4/roles): an application installs each position of F's declared result under the caller's key for it, read from the root body's key for that position (fc_sources), so no body key is read in the caller's terms and the input/output spelling of a key no longer matters (scratch/orch/callerkeys2-AUDIT.md). The oracle runs ExecutionModel code, so its link_body and runtime change the same way (E32). bootstrap/examples/output-merge-key.moss: oracle `moss_ref: stuck (XErr 6)`, native prints 7; tests/regressions/functor_input_output_generations.moss: oracle stuck after `n`, native `yn`.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/output-merge-key.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "ChainKeysOk was false: a merge made F's result key X.m read as T.m with T an input that is also an output, and output_renaming made the code's key the new T's.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/output-merge-key.moss"
+        ]
+      }
+    },
+    {
+      "id": "E34",
+      "group": "E",
+      "title": "Native: a family's listed polymorphic inputs are types",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Native rejects an abstract functor whose bracket list names a symbol that is not a type in scope, as the oracle's functor_params does and as Audit's FamilyShape now requires (D84 rule 1: P(F) are type symbols).",
+      "approach": "Add the kind check where native resolves a functor's polymorphic inputs. bootstrap/examples/family-poly-nontype.moss: oracle rejects (`g`, listed as a polymorphic input of `F`, is not a type in scope), native accepts and exits 0.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/family-poly-nontype.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "FamilyKeysTyped needs a family's matching keys to be type symbols or inputs of F; Audit did not constrain a listed P(F) name's kind, and native accepts a fn there.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/family-poly-nontype.moss"
+        ]
+      }
+    },
+    {
+      "id": "E35",
+      "group": "E",
+      "title": "Oracle: a method's θ records every type symbol its signature mentions",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "The oracle keys a method provision at a θ that determines the method's signature, so a family's provision and a caller's provision read at different meanings of a signature type are never filed under one run-time key.",
+      "approach": "Fixed with the Audit change (sigclose): Elab.signature_type_syms returns the requirements the signature mentions, then the other type symbols it mentions, ascending (Audit AppOf/SigOutside, ResultMentions RMMeth). bootstrap/examples/sig-nonreq-shadow.moss: `fn .m(): U` under `assume A`; demo binds Int.m at U = Int, rebinds U = Bool and puts family F in force, whose Int.m reads at U = Bool; both were keyed at θ [], the oracle ran F's closure for k.m() and got `moss_ref: stuck (XErr 14)`; native prints 42. Now the keys are θ [U := Int] and [U := Bool] and the oracle prints 42. Corpus (scratch/orch/sigclose-cmp.out): two other verdicts change, both to a D62 rejection where the caller leaves part of a merged class unbound (partially-bound-merge.moss, which printed k; unbound-merge-representative.moss, which was stuck).",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/sig-nonreq-shadow.moss"
+      ],
+      "evidence": [
+        {
+          "summary": "examples/sig-nonreq-shadow.moss prints 42 on the oracle and native; the corpus comparison is scratch/orch/sigclose-cmp.out.",
+          "sources": [
+            "theories/Elab.v",
+            "examples/sig-nonreq-shadow.moss"
+          ]
+        }
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "hunt-coherent found S.FamilyCoherentOk false: AppOf's θ for a method did not record signature types outside its assume nesting, and the oracle shared the defect.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/sig-nonreq-shadow.moss"
+        ]
+      }
+    },
+    {
+      "id": "E36",
+      "group": "E",
+      "title": "Oracle 3b: check every reading of a captured fn or method",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's D84 3b (link_body, Elab.v) rejects a functor closure G bound to F that captures a fn or method one of whose readings in G's context mentions a type each application of F supplies, not only the one stored signature (key_sig eg k), so link-merge-captured-fn.moss is rejected as native and Audit reject it.",
+      "approach": "In link_body's 3b, check the canonical signature (canon eg) of each captured fn/method key, as it already does for vals and functors, or check every unmerged reading; alternatively add Audit's LinkBody input condition (each input of F that G has reads in G as a type over F's inputs; variant in scratch/orch/cap3b-cmp.sh, same corpus verdicts). bootstrap/examples/link-merge-captured-fn.moss: G reads the captured `gimme` at Y then at X, merging X (an input of F) with Y; the oracle's 3b sees only the first reading (Y), accepts, and gets `moss_ref: stuck (XErr 14)`; native rejects (incompatible types); Audit rejects.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/link-merge-captured-fn.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "While repairing ChainRealizeOk's counterexample (cap3b), the oracle's 3b turned out to read one stored signature per captured fn or method, so mirroring it in Audit would not be sound; the oracle accepts a neighbour and is stuck at run time.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/link-merge-captured-fn.moss"
+        ]
+      }
+    },
+    {
+      "id": "E37",
+      "group": "E",
+      "title": "Oracle 3d: a linked body may not install an input of F as a kept output",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's D84 3d (link_body, Elab.v) rejects a functor closure G bound to F whose body applies an abstract functor with an output T that is an input of F (M(F)) not in force in G, so that the application installs T as itself. link-kept-output-pin.moss is then rejected, as native and Audit reject it.",
+      "approach": "check_link_pins compares only the table's reading of each pin before and after. A kept output installs T at TAbs T, so that check passes. Also reject a pin that the body's final table has and G's own table lacks (variant: scratch/realize2/varsrc, check_link_pins with `before`; corpus scratch/orch/realize2-cmp.out). bootstrap/examples/link-kept-output-pin.moss: F: T, Std -> T.m, done; G: Make, Std -> T.m, done applies Make, whose output T is Char at run time, and binds T.m on it. The caller's T = Bool files it under Bool.m, so `true.m()` runs Char's code on a Bool. The oracle elaborates it and gets `moss_ref: stuck (XErr 14)`. Native rejects it (\"compilation failed: `T`\"). Audit rejects it (BApplyAbstract's kept case: ~ In t (fr_pins F)).",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/link-kept-output-pin.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "While proving ChainRealizeOk (realize2), the body's new generations had to avoid F's inputs. The oracle and Audit allowed a kept output at a pin, and the oracle is stuck at run time (linknewpf's m7, made observable).",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/link-kept-output-pin.moss"
         ]
       }
     },

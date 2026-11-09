@@ -1,0 +1,21 @@
+# A functor closure bound inside a call argument captures a family method
+# keyed at a declared type symbol that is not in force (CapturedInForceOk,
+# family3-STATUS goal 3). use_it's context lists T and T.twice[A=T]; main
+# does not bind T, so the call reads the need at the site as T itself and
+# family F is applied at A := T. The argument block is checked in that
+# demand context: `bind H = P;` captures P's need T.twice, at receiver T,
+# which is not a key of the type table there.
+type A;
+type T;
+assume A { fn .twice(): A; }
+functor F[A]: -> A.twice;
+functor G: A -> A.twice { bind A.twice = () => this; }
+fn run();
+functor H: -> run;
+functor P: T, T.twice[A=T] -> run { bind run = () => (); }
+context Need = T, T.twice[A=T];
+assume Need { fn use_it(x: ()) { } }
+fn main() {
+  bind F = G;
+  use_it({ bind H = P; bind H; run() });
+}

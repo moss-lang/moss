@@ -87,7 +87,7 @@ Proof.
  cbn beta iota in E. apply bind_inv in E as(rs0 & s2 & Eret & E).
  injection Eret as <- <-. injection E as <- <-.
  pose proof(reqs_R w R Fl _ _ _ _ Hi Er L)as Req.
- exists rs. split;[change(incl rs(R(gs_id g)));rewrite Req;apply incl_refl|].
+ exists rs.
  split.
  - unfold bind_inst,freeze_app. rewrite !map_map. apply map_ext. intro r. cbn[fst snd].
    f_equal. rewrite(cr_ty _ _ _ _ _ _ _ Hc),<-nassoc_tymap.

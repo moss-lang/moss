@@ -1151,7 +1151,20 @@ with listed_params (fuel : nat) (g : gsym) : M (list nat) :=
 
 Definition reqs (s : nat) : M (list nat) := type_requirements 200 s.
 
-(* the requirements a method's or fn's signature mentions *)
+(* Ascending insertion sort of symbol numbers, without repeats: the fixed order of a
+   method's signature types outside its assume nesting (AppOf). *)
+Fixpoint nsort_insert (x : nat) (l : list nat) : list nat :=
+  match l with
+  | [] => [x]
+  | y :: r => if Nat.ltb x y then x :: l else if Nat.eqb x y then l else y :: nsort_insert x r
+  end.
+Definition nsort (l : list nat) : list nat := fold_right nsort_insert [] l.
+
+(* The type symbols a method's provision is made at (its θ): the
+   requirements its signature mentions, in their fixed order, then the
+   other type symbols it mentions, ascending ([D20]: a method's signature
+   is closed over its requirements, which include every type symbol it
+   mentions). *)
 (* Recompute from the declaration: a memo entry is not an independent
    source of signature requirements. Keep the write for diagnostics. *)
 Definition signature_type_syms (g : gsym) (rs : list nat) : M (list nat) :=
@@ -1162,7 +1175,7 @@ Definition signature_type_syms (g : gsym) (rs : list nat) : M (list nat) :=
         match ret_ with Some r => free_type_syms 200 r (gs_mod g) o | None => ret o end
     | _ => ret []
     end in
-  let l := filter (fun t => nmem t found) rs in
+  let l := filter (fun t => nmem t found) rs +++ nsort (filter (fun t => negb (nmem t rs)) found) in
   upd (s_sigsyms (fun m => nset m (gs_id g) l)) ;; ret l.
 
 (* ===================== 7. Merging and type elaboration =================== *)

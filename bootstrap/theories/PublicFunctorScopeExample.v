@@ -13,9 +13,9 @@ Module R := Interpreter Prims.
 
 (* F=1, T=2, Outer=3, U=4, Concrete=99. *)
 Definition concrete := TNom 99 [].
-Definition maker := FunctorCode [] [ITy 2] [BType 2 concrete].
-Definition no_input_provider := FunctorCode [] [ITy 2] [BApply 1 [] [(2,2)] []].
-Definition private_input_provider := FunctorCode [2] [ITy 4] [BType 4 (TAbs 2)].
+Definition maker := FunctorCode [] [] [] [ITy 2] [BType 2 concrete] [].
+Definition no_input_provider := FunctorCode [] [] [] [ITy 2] [BApply 1 [] [(2,2)] [] []] [].
+Definition private_input_provider := FunctorCode [2] [2] [] [ITy 4] [BType 4 (TAbs 2)] [].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some maker else
     if Nat.eqb h 21 then Some no_input_provider else
@@ -29,10 +29,10 @@ Definition runtime := ProgramView (fun _ => None)
 
    Provider's own inputs contain F but no type T. Its captured provision F
    remains usable; the ambient stable T must not occupy its local output. *)
-Definition initial := Environment [] [(IFun 1,FunctorClosure 20 [] empty_environment)].
+Definition initial := Environment [] [(IFun 1,FunctorClosure 20 [] empty_environment [])].
 Definition no_input_setup :=
   match R.eval_bindings 30 runtime initial [] tt
-    [BApply 1 [] [(2,2)] []; BFunctor 3 21 [] [(IFun 1,IFun 1)]] with
+    [BApply 1 [] [(2,2)] [] []; BFunctor 3 21 (TypeCapture [] []) [] [(IFun 1,IFun 1)]] with
   | inl (d,_,_) => d
   | inr _ => empty_environment
   end.
@@ -46,7 +46,7 @@ Example no_input_provider_ignores_ambient_generations :
 Proof. reflexivity. Qed.
 
 Example no_input_provider_application_succeeds :
-  R.apply_functor 40 runtime no_input_setup 3 [] [(2,7)] [] tt =
+  R.apply_functor 40 runtime no_input_setup 3 [] [(2,7)] [] [] tt =
   inl (EnvironmentWithAliases [(7,concrete)] [(2,concrete)] [],tt).
 Proof. reflexivity. Qed.
 
@@ -54,11 +54,12 @@ Proof. reflexivity. Qed.
    functor Outer: -> U; functor Provider: T -> U { bind U=T; }
    fn main() { bind T=Concrete; bind Outer=Provider; bind Outer; }
 
-   T is a private provider input, captured as an already-read source alias.
+   T is a private provider input, captured as an already-read source alias
+   (main's `lexical_capture`, whose table reads T as Concrete).
    A new activation initializes the formal role T from that alias. *)
 Definition private_alias := bind_type empty_environment 2 concrete.
 Definition private_input_setup :=
-  match R.eval_bindings 15 runtime private_alias [] tt [BFunctor 3 22 [] []] with
+  match R.eval_bindings 15 runtime private_alias [] tt [BFunctor 3 22 (TypeCapture [] [(2,concrete)]) [] []] with
   | inl (d,_,_) => d
   | inr _ => empty_environment
   end.
@@ -72,7 +73,7 @@ Example private_formal_receives_captured_meaning :
 Proof. reflexivity. Qed.
 
 Example private_input_provider_application_exports_concrete_meaning :
-  R.apply_functor 30 runtime private_input_setup 3 [] [(4,7)] [] tt =
+  R.apply_functor 30 runtime private_input_setup 3 [] [(4,7)] [] [] tt =
   inl (EnvironmentWithAliases [(7,concrete)] [(4,concrete)] [],tt).
 Proof. reflexivity. Qed.
 

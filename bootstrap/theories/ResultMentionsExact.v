@@ -39,7 +39,7 @@ Lemma method_sig_reqs_sound:forall mi g dn mo s0 s rs s' t,
  find_method_decl mi g dn s0=Good(mo,s0)->Inv s0->st_w s0=w->
  (match mo with Some m=>let! rr:=reqs(gs_id m)in signature_type_syms m rr|None=>ret[]end)s=Good(rs,s')->
  Inv s->st_w s=w->Later w P R Fl s'->In t rs->
- exists m,A.MethodNamed WW(gm_path(get_mod w mi))(gs_id g)dn m/\In t(R m)/\A.SigMentions WW m t.
+ exists m,A.MethodNamed WW(gm_path(get_mod w mi))(gs_id g)dn m/\A.SigMentions WW m t.
 Proof.
  intros mi g dn mo s0 s rs s' t Hmi Hg Hm I0 W0 H Hi Hw L Hin.
  destruct mo as[m|];[|injection H as <- <-;destruct Hin].
@@ -50,11 +50,11 @@ Proof.
  destruct(ok_reqs(gs_id m)s rr s1 Hi Hr)as[I1 F1].
  assert(W1:st_w s1=w)by(rewrite(fr_w _ _ F1);exact Hw).
  destruct(signature_type_syms_filter w (P:=P) R Fl b Hload m rcv nm ps rt body rr s1 rs s' Hmload D H I1 W1 L)
- as[test[-> Htest]].
- apply filter_In in Hin as[Hin Test].
- exists(gs_id m);split;[exact HM|split].
- - rewrite(reqs_R w R Fl _ _ _ _ Hi Hr(later_back w P R Fl _ _(proj2(ok_signature_syms_frame m rr _ _ _ I1 H))L));exact Hin.
- - apply Htest;exact Test.
+ as(test&extra&->&Htest&_&Hextra).
+ exists(gs_id m);split;[exact HM|].
+ apply in_app_or in Hin as[Hin|Hin].
+ - apply filter_In in Hin as[_ Test]. apply Htest;exact Test.
+ - apply Hextra in Hin as[Hs _]. exact Hs.
 Qed.
 Lemma here_sound:forall f,MentionSound f->FixedSound f->
  forall self mi d g pa a s found s',
@@ -86,8 +86,8 @@ Proof.
    apply in_app_or in Hin as[Hin|Hin].
    + eapply A.RMReceiver;[exact Resolve| |exact N].
      exact(receiver_reqs_sound g s rr s2 Hg Hr Hi(later_back w P R Fl _ _ Fs L)t Hin).
-   + destruct(method_sig_reqs_sound mi g dn mo s s2 ms s3 t Hmi Hg Hm Hi Hw Hs I2 W2 L Hin)as[m[HM[Ht HS]]].
-     eapply A.RMMeth;[exact Resolve|exact HM|exact Ht|exact HS|exact N].
+   + destruct(method_sig_reqs_sound mi g dn mo s s2 ms s3 t Hmi Hg Hm Hi Hw Hs I2 W2 L Hin)as[m[HM HS]].
+     eapply A.RMMeth;[exact Resolve|exact HM|exact HS|exact N].
  - unfold mention_here in H.
    destruct(gs_kind g)eqn:K;destruct(gs_decl g)as[asm decls|tn|an aliasTy|tag pars pay|un|vn vt init|rcv fnn ps rt body|cn its|fgn names args0 res body]eqn:D;
    try solve[injection H as <- <-;destruct Hin];

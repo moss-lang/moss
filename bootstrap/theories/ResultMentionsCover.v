@@ -113,10 +113,10 @@ Proof.
 Qed.
 Lemma here_method:forall f self mi dn g m s found s' t,
  nget(w_syms w)(gs_id g)=Some g->In mi(w_order w)->
- A.MethodNamed WW(gm_path(get_mod w mi))(gs_id g)dn m->In t(R m)->A.SigMentions WW m t->
+ A.MethodNamed WW(gm_path(get_mod w mi))(gs_id g)dn m->A.SigMentions WW m t->
  mention_here f self mi(Some dn)g s=Good(found,s')->Inv s->st_w s=w->Later w P R Fl s'->In t found.
 Proof.
- intros f self mi dn g m s found s' t Hg Hmi HM Ht Hsig H Hi Hw L.
+ intros f self mi dn g m s found s' t Hg Hmi HM Hsig H Hi Hw L.
  unfold mention_here in H. apply bind_inv in H as(mo&s1&Hm&H).
  destruct mo as[mg|].
  2:{destruct(find_method_decl_none b w R Fl mi g dn s s1 Hload Hmi Hg Hw Hm)as[_ N];exfalso;exact(N m HM). }
@@ -134,10 +134,10 @@ Proof.
  destruct(ok_reqs(gs_id mg)s2 rs s4 I2 Hrs)as[I4 F4].
  assert(W4:st_w s4=w)by(rewrite(fr_w _ _ F4);exact W2).
  destruct(signature_type_syms_filter w (P:=P) R Fl b Hload mg rcv nm ps rt body rs s4 ms s3 Hmg D Hs I4 W4 L)
-  as[test[-> Htest]].
- apply filter_In;split.
- - rewrite<-(reqs_R w R Fl _ _ _ _ I2 Hrs(later_back w P R Fl _ _(proj2(ok_signature_syms_frame mg rs _ _ _ I4 Hs))L));exact Ht.
- - apply Htest;exact Hsig.
+  as(test&extra&->&Htest&_&Hextra).
+ apply in_or_app. destruct(in_dec Nat.eq_dec t rs)as[Ht|Ht].
+ - left. apply filter_In;split;[exact Ht|apply Htest;exact Hsig].
+ - right. apply Hextra. split;[exact Hsig|exact Ht].
 Qed.
 Lemma mention_item_covers:forall f,
  MentionCovers w (P:=P) R Fl f->FixedCovers f->
@@ -172,7 +172,7 @@ Proof.
  inversion Ht as
  [self0 p pa0 a0 v x Hr K Hin N
  |self0 p pa0 dn a0 r x Hr K N
- |self0 p pa0 dn a0 r m x Hr HM Hin Hsig N
+ |self0 p pa0 dn a0 r m x Hr HM Hsig N
  |self0 p pa0 d0 a0 bp sp0 dr sa x Hr Hin Hfree
  |self0 p pa0 a0 c dc nm its sp0 x Hr Hd D Hin HM N
  |self0 p pa0 a0 u du nm names args res sp0 x Hr Hd D Nself Hin HM Nout Nnames N];subst;

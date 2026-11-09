@@ -78,7 +78,7 @@ Definition scalar_app W s (tm : list (nat * ty)) :=
 Lemma scalar_app_sound : forall W s tm,
   kind_sym W s <> Some DKMeth -> AppOf W s tm (scalar_app W s tm).
 Proof.
-  intros W s tm K; exists (w_reqs W s); split; [apply incl_refl|].
+  intros W s tm K; exists (w_reqs W s).
   split; [reflexivity|]. split; [reflexivity|]. intros E; contradiction.
 Qed.
 

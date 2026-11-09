@@ -50,7 +50,7 @@ Proof.
  cbn beta iota in E;apply bind_inv in E as(rs'&ss&Es&E).
  injection Es as <- <-;injection E as <- <-.
  pose proof(reqs_R w R Fl _ _ _ _ Hi Er L)as Eq.
- exists rs;split;[change(incl rs(R(gs_id g)));rewrite Eq;apply incl_refl|].
+ exists rs.
  split;[|split;[intros _;symmetry;exact Eq|intro X;contradiction]].
  unfold output_inst;rewrite map_map;apply map_ext;intro t;cbn[fst snd].
  f_equal;symmetry;apply(proj1 T).
