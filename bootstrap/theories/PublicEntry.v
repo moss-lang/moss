@@ -595,7 +595,7 @@ Theorem safety_obligations : forall prelude,
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
-     PA.FamilyResultAgrees W Prog /\
+     PA.FamilyKeysTyped W /\
      (* a family's receiver is in scope, and agrees with the code's context *)
      S.FamilyCoherentOk W /\ S.ExScopedOk W Prog /\ S.LitScopedOk W /\ S.DemandScopedOk W) ->
   forall program interface initial,
