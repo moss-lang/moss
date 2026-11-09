@@ -545,7 +545,7 @@ Theorem safety_obligations : forall prelude,
      CopyA.ChainResultsOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
      MainMachinesUnmerged W Prog /\ PlatformHandlesFormed W Prog /\
-     PA.ChainResultAgrees W Prog /\ PA.PlatformNotLinked W Prog /\ PlatformSigsFixed W Prog /\
+     PA.ChainResultAgrees W Prog /\ PlatformSigsFixed W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      FS.FamilyPlatformApplyOk W Prog argv read so /\
@@ -558,7 +558,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [LM [BM [CIF [CR [Unm [Handles [RA [NL [Sigs [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]]]]].
+    as [LM [BM [CIF [CR [Unm [Handles [RA [Sigs [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
@@ -567,7 +567,7 @@ Proof.
   pose proof Compat as [_ [Supports Laws]].
   pose proof (PA.chain_platform_ok W Prog _ _ _ LM RA
     (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Handles Sigs)
-    NL) as CP.
+    ) as CP.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP) as CA.
   pose proof (CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.

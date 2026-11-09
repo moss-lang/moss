@@ -112,6 +112,7 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.platform_prims_public,
   @PublicPlatform.chain_platform_ok,
+  @PublicPlatform.platform_not_linked,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @NM.PublicCallRealize.ctxof_formed,

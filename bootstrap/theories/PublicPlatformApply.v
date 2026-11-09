@@ -287,13 +287,76 @@ Definition ChainPrimsOk : Prop :=
   CallableOk rr H (app_env d code th e) (rf :: A.sg_params gf) (A.sg_ret gf)
     (primitive_closure (app_env d code th e) (A.rkey_of outputs key) op).
 
-(* PREMISE (static). A platform family's code with a primitive is no
-   linked body's code: the platform mints its own code symbol for each
-   family (Elab.v platform_fun), and a linked body's binds come from source
-   items, none a primitive. Needed only to tell a closure's root apart. *)
+(* A platform family's code with a primitive is no linked body's code: a
+   linked body's binds come from source items, none a primitive
+   (platform_not_linked). Needed only to tell a closure's root apart. *)
 Definition PlatformNotLinked : Prop :=
   forall h0 code u gg fc, Platform.Family W Prog h0 code -> A.LinkBody W Prog u gg code ->
   A.funbody_of Prog code = Some fc -> fc_bindings fc = [].
+
+(* ---- no source item binds a primitive ---------------------------------------- *)
+
+(* The run of binds an expression starts with binds no primitive. *)
+Fixpoint NoPrim (e : expr) : Prop :=
+  match e with
+  | EBind b r => match b with BPrimitive _ _ => False | _ => True end /\ NoPrim r
+  | _ => True
+  end.
+
+Lemma lambda_np : forall F C ps rt body sg this pid pre sm,
+  A.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, NoPrim x -> NoPrim (pre x).
+Proof.
+  intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x Nx. cbv beta.
+  match goal with |- NoPrim (fold_right _ x ?l) => generalize l end.
+  intros l. induction l as [|q l IH]; [exact Nx|].
+  cbn [fold_right]. split; [exact Logic.I|exact IH].
+Qed.
+
+Lemma meth_np : forall F C y sg rt target types pre sm,
+  A.MethProvider W Prog F C y sg rt target types pre sm -> forall x, NoPrim x -> NoPrim (pre x).
+Proof.
+  intros F C y sg rt target types pre sm MP. destruct MP; intros x Nx; try exact Nx.
+  match goal with LP : A.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ => exact (lambda_np _ _ _ _ _ _ _ _ _ _ LP x Nx) end.
+Qed.
+
+Fixpoint item_np F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
+  forall x, NoPrim x -> NoPrim (w x)
+with items_np F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
+  forall x, NoPrim x -> NoPrim (w x).
+Proof.
+  - destruct D; intros x0 Nx.
+    all: try (cbn; split; [exact Logic.I|exact Nx]).
+    all: first
+      [ match goal with LP : A.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
+          apply (lambda_np _ _ _ _ _ _ _ _ _ _ LP); cbn; split; [exact Logic.I|exact Nx] end
+      | match goal with MP : A.MethProvider _ _ _ _ _ _ _ _ _ _ _ |- _ =>
+          apply (meth_np _ _ _ _ _ _ _ _ _ MP); cbn; split; [exact Logic.I|exact Nx] end
+      | match goal with Di : A.BindItems _ _ _ _ _ _ _ _ _ |- _ => exact (items_np _ _ _ _ _ _ _ Di x0 Nx) end ].
+  - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 D2]; intros x0 Nx; [exact Nx|].
+    exact (item_np _ _ _ _ _ _ _ D1 _ (items_np _ _ _ _ _ _ _ D2 x0 Nx)).
+Qed.
+
+Lemma bindsof_np : forall e l, A.BindsOf e l -> NoPrim e -> forall k op, ~ In (BPrimitive k op) l.
+Proof.
+  intros e l B. induction B as [|b body rest B IH]; intros N k op I; [exact I|].
+  destruct N as [Nb Nr]. destruct I as [->|I]; [exact Nb|exact (IH Nr k op I)].
+Qed.
+
+(* A platform family's code is no linked body's, unless it binds nothing:
+   a linked body's binds come from source items, none a primitive. *)
+Lemma platform_not_linked : PlatformNotLinked.
+Proof.
+  intros h0 code u gg fc Fam LB FB.
+  destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & (_ & _ & _ & FBf & Binds)).
+  rewrite FBf in FB. injection FB as <-. cbn [fc_bindings].
+  destruct LB. match goal with
+    | Bo : A.BindsOf (?w EUnit) ?b0, Bi : A.BindItems _ _ _ _ _ ?w _ _ _, Fh : A.funbody_of _ _ = Some _ |- _ =>
+        rewrite FBf in Fh; injection Fh as _ _ _ Eb _; subst b0;
+        pose proof (bindsof_np _ _ Bo (items_np _ _ _ _ _ _ _ Bi EUnit Logic.I)) as Np end.
+  destruct bindings as [|b rest]; [reflexivity|exfalso].
+  inversion Binds as [|key b' keys' rest' [op [Eb _]] _]; subst.
+  exact (Np _ op (or_introl eq_refl)).
+Qed.
 
 Lemma forall2_in_l : forall X Y (R : X -> Y -> Prop) l l' x, Forall2 R l l' -> In x l -> exists y, In y l' /\ R x y.
 Proof.
@@ -586,7 +649,6 @@ Qed.
 Hypothesis link_merges : S.LinkMergesOk W Prog.
 Hypothesis chain_agrees : ChainResultAgrees.
 Hypothesis chain_prims : ChainPrimsOk.
-Hypothesis not_linked : PlatformNotLinked.
 
 (* ChainPlatformOk (PublicCopyApply): applying a closure whose copy chain
    ends at a platform family is a safe binding step. The root is read off
@@ -620,7 +682,7 @@ Proof.
   - (* a linked root: the family's code has no bindings *)
     destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
     pose proof FD as (FC0 & _ & _ & FB & Binds).
-    pose proof (not_linked h0 code h0' gg _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
+    pose proof (platform_not_linked h0 code h0' gg _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
     inversion Binds; subst keys.
     destruct (chain_agrees F C pa u fx Cu ns sm th gensof C' ks newgens outs AP gfx sms h0 gf0 Chn
       code Ch0 needs outputs [] [] FD) as [NoOut Agree].
