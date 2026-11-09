@@ -89,7 +89,7 @@ Ltac clistx n tac := match goal with H : CommaList _ _ _ _ _ |- _ => clist H n t
 
 (* ===================== Names and applications ============================= *)
 
-Lemma head_first ts h rest : Head ts h rest -> kind ts = "NAME" \/ kind ts = "DOT".
+Lemma head_first ts h rest : Head ts h rest -> kind ts = NAME \/ kind ts = DOT.
 Proof.
   destruct 1 as [? ? ? Hp _ | ? ? ? ? ? ? Hp _ _ | ? ? ? ? [E _] _];
     [left; eapply path_kind; eauto | left; eapply path_kind; eauto | right; auto].
@@ -131,7 +131,7 @@ Qed.
 (* ===================== Types ============================================== *)
 
 Definition MembersTail (ts : list token) (ms : list aty) (rest : list token) : Prop :=
-  (ms = [] /\ kind ts <> "PIPE" /\ rest = ts) \/ (exists ts2, Tk "PIPE" ts ts2 /\ Members ts2 ms rest).
+  (ms = [] /\ kind ts <> PIPE /\ rest = ts) \/ (exists ts2, Tk PIPE ts ts2 /\ Members ts2 ms rest).
 
 Lemma members_split ts ms rest : Members ts ms rest ->
   exists m ms' t', ms = m :: ms' /\ TypeAtom ts m t' /\ MembersTail t' ms' rest.
@@ -190,7 +190,7 @@ Qed.
 (* ===================== Patterns =========================================== *)
 
 Lemma pattern_first ts p rest : Pattern ts p rest ->
-  kind ts = "UNDERSCORE" \/ kind ts = "NAME" \/ kind ts = "LBRACE".
+  kind ts = UNDERSCORE \/ kind ts = NAME \/ kind ts = LBRACE.
 Proof.
   destruct 1 as [? ? (E & _) | ? ? ? Hp _ | ? ? ? ? ? ? ? Hp _ _ _ | ? ? ? ? ? Hp _ | ? ? ? Hr];
     try (right; left; eapply path_kind; eauto; fail); auto.
@@ -235,16 +235,16 @@ Proof. intros H He n Hn. apply (pattern_group n); auto. Qed.
 
 Ltac first_tk := let H := fresh in intro H; destruct H;
   match goal with |- kind ?t = _ => match goal with Hk : Tk _ t _ |- _ => exact (proj1 Hk) end end.
-Lemma block_first ts b rest : Block ts b rest -> kind ts = "LBRACE".
+Lemma block_first ts b rest : Block ts b rest -> kind ts = LBRACE.
 Proof. first_tk. Qed.
-Lemma lambda_first ts e rest : Lambda ts e rest -> kind ts = "LPAREN".
+Lemma lambda_first ts e rest : Lambda ts e rest -> kind ts = LPAREN.
 Proof. first_tk. Qed.
-Lemma cond_first ts e rest : Cond ts e rest -> kind ts = "IF".
+Lemma cond_first ts e rest : Cond ts e rest -> kind ts = IF.
 Proof. first_tk. Qed.
-Lemma bind_first ts w rest : Bind ts w rest -> kind ts = "BIND".
+Lemma bind_first ts w rest : Bind ts w rest -> kind ts = BIND.
 Proof. first_tk. Qed.
 
-Definition UFIRST := ["HYPHEN"; "EXCLAM"; "LPAREN"; "THIS"; "INTEGER"; "DECIMAL"; "STRING"; "LBRACE"; "NAME"].
+Definition UFIRST := [HYPHEN; EXCLAM; LPAREN; THIS; INTEGER; DECIMAL; STRING; LBRACE; NAME].
 
 Ltac start_kind :=
   match goal with |- In (kind ?t) _ =>
@@ -257,7 +257,7 @@ Ltac start_kind :=
   simpl; intuition.
 
 Lemma primary_first nr ts e rest : Primary nr ts e rest ->
-  In (kind ts) ["LPAREN"; "THIS"; "INTEGER"; "DECIMAL"; "STRING"; "LBRACE"; "NAME"].
+  In (kind ts) [LPAREN; THIS; INTEGER; DECIMAL; STRING; LBRACE; NAME].
 Proof. intro H; destruct H; start_kind. Qed.
 
 Lemma unary_first nr ts e rest : Unary nr ts e rest -> In (kind ts) UFIRST.
@@ -281,8 +281,8 @@ Proof.
     [eapply unary_first | eapply operand_first | eapply operand_first]; eauto.
 Qed.
 
-Definition EFIRST := ["IF"; "MATCH"; "RETURN"; "BREAK"; "HYPHEN"; "EXCLAM"; "LPAREN"; "THIS"; "INTEGER";
-                      "DECIMAL"; "STRING"; "LBRACE"; "NAME"].
+Definition EFIRST := [IF; MATCH; RETURN; BREAK; HYPHEN; EXCLAM; LPAREN; THIS; INTEGER;
+                      DECIMAL; STRING; LBRACE; NAME].
 Lemma expr_first nr ts e rest : Expr nr ts e rest -> In (kind ts) EFIRST.
 Proof.
   intro H. destruct H; unfold EFIRST.
@@ -310,25 +310,23 @@ Proof.
 Qed.
 
 Lemma neg_dot_bool ts : ~ neg_literal_dot ts ->
-  (at_any ["INTEGER"; "DECIMAL"] ts && (kind_at 1 ts =? "DOT"))%bool = false.
+  (at_any [INTEGER; DECIMAL] ts && token_kind_eqb (kind_at 1 ts) DOT)%bool = false.
 Proof.
-  unfold neg_literal_dot. intro H. destruct (at_any ["INTEGER"; "DECIMAL"] ts) eqn:E1; auto.
-  destruct (kind_at 1 ts =? "DOT")%string eqn:E2; auto.
-  exfalso. apply H. split; [apply at_any_true; auto | apply String.eqb_eq; auto].
+  unfold neg_literal_dot. intro H. destruct (at_any [INTEGER; DECIMAL] ts) eqn:E1; auto.
+  destruct (token_kind_eqb (kind_at 1 ts) DOT) eqn:E2; auto.
+  exfalso. apply H. split; [apply at_any_true; auto | apply token_kind_eqb_eq; auto].
 Qed.
 
-Lemma assign_bool ts : ~ assign_ahead ts -> (at_ "NAME" ts && (kind_at 1 ts =? "EQUAL"))%bool = false.
+Lemma assign_bool ts : ~ assign_ahead ts -> (at_ NAME ts && token_kind_eqb (kind_at 1 ts) EQUAL)%bool = false.
 Proof.
-  unfold assign_ahead. intro H. destruct (at_ "NAME" ts) eqn:E1; auto.
-  destruct (kind_at 1 ts =? "EQUAL")%string eqn:E2; auto.
-  exfalso. apply H. split; [apply at_true; auto | apply String.eqb_eq; auto].
+  unfold assign_ahead. intro H. destruct (at_ NAME ts) eqn:E1; auto.
+  destruct (token_kind_eqb (kind_at 1 ts) EQUAL) eqn:E2; auto.
+  exfalso. apply H. split; [apply at_true; auto | apply token_kind_eqb_eq; auto].
 Qed.
 
-Lemma unary_op_none_of k : ~ In k ["HYPHEN"; "EXCLAM"] -> unary_op k = None.
+Lemma unary_op_none_of k : ~ In k [HYPHEN; EXCLAM] -> unary_op k = None.
 Proof.
-  intro H. unfold unary_op. destruct (k =? "HYPHEN")%string eqn:E1.
-  - apply String.eqb_eq in E1. subst. simpl in H. intuition.
-  - destruct (k =? "EXCLAM")%string eqn:E2; auto. apply String.eqb_eq in E2. subst. simpl in H. intuition.
+  intro H. unfold unary_op. destruct k; auto; simpl in H; intuition.
 Qed.
 
 Lemma chain_end X ops acc ts e rest : LeftChain X ops acc ts e rest -> binop_in ops ts = false ->
@@ -411,7 +409,7 @@ Proof. simpl. intuition subst; reflexivity. Qed.
 Definition PostfixD (nr : bool) (ts : list token) (e : aexpr) (rest : list token) : Prop :=
   exists p ts1, Primary nr ts p ts1 /\ Suffixes p ts1 e rest.
 
-Lemma OptTk_ends k ts ts' : OptTk k ts ts' -> k <> "EOF" -> Ends ts -> Ends ts' /\ length ts' <= length ts.
+Lemma OptTk_ends k ts ts' : OptTk k ts ts' -> k <> EOF -> Ends ts -> Ends ts' /\ length ts' <= length ts.
 Proof.
   intros [Ht | [_ ->]] Hk He; [|auto]. destruct (Tk_ends _ _ _ Ht Hk He). split; auto; lia.
 Qed.
@@ -511,13 +509,13 @@ Proof.
       unfold binop_in, mem in Hb. rewrite Eb in Hb. simpl in Hb.
       assert (Hm : (o =? op)%string = false) by (destruct (o =? op)%string; auto). rewrite Hm. fin.
     + destruct Hin as [<-|[]]. rewrite Hb, String.eqb_refl.
-      assert (kind ts <> "EOF") by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
+      assert (kind ts <> EOF) by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
       destruct (ends_advance _ He H). ih IH10 Hu. ih IH5 Hc. fin.
   (* parse_operand *)
   - intros nr first ts v rest H He Hn. simpl.
     destruct H as [(op & r & Hb & Hin & Hu & ->) | (t & ts1 & Htr & Hc & Hs)].
     + rewrite (binop_in_some _ _ _ Hb), In_mem by auto. rewrite Hb.
-      assert (kind ts <> "EOF") by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
+      assert (kind ts <> EOF) by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
       destruct (ends_advance _ He H). ih IH10 Hu. eexists. fin.
     + rewrite (arith_not_shift _ _ _ _ _ _ _ Htr Hc Hs).
       ihp IH8 TermRest. ih IH7 Hc.
@@ -527,7 +525,7 @@ Proof.
     + exists last. destruct (binop ts) as [o|] eqn:Eb; [|fin].
       unfold binop_in in Hb. rewrite Eb in Hb. rewrite Hb. fin.
     + rewrite Hb, In_mem by auto.
-      assert (kind ts <> "EOF") by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
+      assert (kind ts <> EOF) by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
       destruct (ends_advance _ He H).
       destruct (term_split _ _ _ _ Ht) as (u & tsu & Hu & Htr). ih IH10 Hu. ihp IH8 TermRest.
       ih IH7 Hc. eexists. fin.
@@ -538,13 +536,13 @@ Proof.
     + eexists. destruct (binop ts2) as [o|] eqn:Eb; [|fin].
       unfold binop_in in Hb. rewrite Eb in Hb. rewrite Hb. fin.
     + rewrite Hb, In_mem by auto.
-      assert (kind ts2 <> "EOF") by (intro E'; unfold binop in Hb; rewrite E' in Hb; discriminate).
+      assert (kind ts2 <> EOF) by (intro E'; unfold binop in Hb; rewrite E' in Hb; discriminate).
       destruct (binop_adv _ _ Hb ltac:(assumption)). ih IH10 Hu. rewrite Hn'. eexists. fin.
   (* mul_loop *)
   - intros nr last e ts v rest H He Hn. simpl. destruct H as [acc ? Hb | acc ? o r ts1 e' ts2 Hb Hin Hu Hc].
     + rewrite Hb. exists last. fin.
     + destruct Hin as [<-|[]]. rewrite (binop_in_some _ _ _ Hb). simpl.
-      assert (kind ts <> "EOF") by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
+      assert (kind ts <> EOF) by (intro E; unfold binop in Hb; rewrite E in Hb; discriminate).
       destruct (ends_advance _ He H). ih IH10 Hu.
       ih IH9 Hc. eexists. fin.
   (* parse_unary *)
@@ -593,7 +591,7 @@ Proof.
     + step. cbn [orb]. step. ihp IH1 Expr. ihp IH15 Block. ihp IH16 Stmts. fin.
     + step. cbn [orb]. step. ihp IH15 Block. ihp IH16 Stmts. fin.
     + step. cbn [orb]. step. ihp IH1 Expr. ihp IH15 Block. ihp IH16 Stmts. fin.
-    + rewrite kind_at1. step. cbn [orb andb]. step. match goal with H : kind (advance ts) = _ |- _ => rewrite H end. rewrite String.eqb_refl. cbv iota. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
+    + rewrite kind_at1. step. cbn [orb andb]. step. match goal with H : kind (advance ts) = _ |- _ => rewrite H end. rewrite token_kind_eqb_refl. cbv iota. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
     + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
     + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
     + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step. fin.
@@ -634,15 +632,15 @@ Proof.
   - pose proof (bind_first _ _ _ Hb). step. ext bind_complete Hb n. ih IH Hbs. fin.
 Qed.
 
-Lemma decl_first ts d rest : Decl ts d rest -> In (kind ts) ["ASSUME"; "TYPE"; "TAG"; "VAL"; "FN"; "CONTEXT"; "FUNCTOR"].
+Lemma decl_first ts d rest : Decl ts d rest -> In (kind ts) [ASSUME; TYPE; TAG; VAL; FN; CONTEXT; FUNCTOR].
 Proof.
   intro H; destruct H;
     match goal with Hk : Tk _ ts _ |- _ => rewrite (proj1 Hk) end; simpl; intuition.
 Qed.
 
-Lemma record_type_first ts t rest : RecordType ts t rest -> kind ts = "LBRACE".
+Lemma record_type_first ts t rest : RecordType ts t rest -> kind ts = LBRACE.
 Proof. first_tk. Qed.
-Lemma namelist_first ts xs rest : NameList ts xs rest -> kind ts = "LBRACKET".
+Lemma namelist_first ts xs rest : NameList ts xs rest -> kind ts = LBRACKET.
 Proof. intros (? & ? & [E _] & _). auto. Qed.
 
 Ltac param_tac n := match goal with H : Param _ _ _ |- _ => destruct H end;
@@ -737,7 +735,7 @@ Proof.
   induction n as [|n IH]; intros ts v rest H He Hn; [lia|]. simpl.
   destruct H as [? Hk | ? m ts1 ms ts2 Hm Hms].
   - step. fin.
-  - assert (kind ts = "IMPORT") by (destruct Hm as [? ? ? ? ? ? ? ? ? ? [E _] _ _ _ _]; auto).
+  - assert (kind ts = IMPORT) by (destruct Hm as [? ? ? ? ? ? ? ? ? ? [E _] _ _ _ _]; auto).
     step. ext import_complete Hm n. ih IH Hms. fin.
 Qed.
 

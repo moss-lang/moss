@@ -130,7 +130,7 @@ End Input.
    HOW TO READ A RULE.  A grammar relation `X ts v rest` says: the token
    list `ts` begins with an X whose AST is `v`, and `rest` is what follows
    it (so `ts` = the X's tokens ++ `rest`).  A rule's premises read left to
-   right as the production does: `Tk "LET" ts0 ts1` is the token `let`,
+   right as the production does: `Tk LET ts0 ts1` is the token `let`,
    `TkName ts1 x ts2` a name `x`, `Expr false ts2 e ts3` an expression, and
    so on, each starting where the last ended.  Premises about `kind ts`
    (the kind of the next token, not consumed) are LOOKAHEAD conditions:
@@ -192,9 +192,45 @@ Local Open Scope string_scope.
 
 (* ===================== Tokens ============================================= *)
 
-(* A token: its kind (lex.py's `Kind` name: "NAME", "LPAREN", "EOF", ...),
-   its text, and its byte offset (only error messages use it). *)
-Record token := Tok { tk : string; tx : string; toff : nat }.
+(* A token's kind, named as lex.py's `Kind` is: a name, a literal, a
+   keyword (`KEYWORDS`), a symbol (`one_char`, `two_char`), or the end. *)
+Inductive token_kind :=
+| NAME | STRING | INTEGER | DECIMAL
+| AS | ASSUME | FUNCTOR | BIND | BREAK | CONTEXT | ELSE | FN | FOR | IF | IMPORT
+| LET | LOOP | MATCH | RETURN | TAG | THIS_TYPE | THIS | TYPE | USE | VAL | VAR
+| WHILE | IN | UNDERSCORE
+| EXCLAM | PERCENT | AMPERSAND | LPAREN | RPAREN | STAR | PLUS | COMMA | HYPHEN
+| DOT | SLASH | COLON | SEMI | LESS | EQUAL | GREATER | LBRACKET | RBRACKET
+| CARET | LBRACE | PIPE | RBRACE
+| EXCLAM_EQUAL | COLON_COLON | EQUAL_GREATER | LESS_LESS | LESS_EQUAL
+| EQUAL_EQUAL | GREATER_EQUAL | GREATER_GREATER | HYPHEN_GREATER
+| EOF.
+
+(* Kinds are compared by their position in the list above. *)
+Definition token_kind_index (k : token_kind) : nat :=
+  match k with
+  | NAME => 0 | STRING => 1 | INTEGER => 2 | DECIMAL => 3
+  | AS => 4 | ASSUME => 5 | FUNCTOR => 6 | BIND => 7 | BREAK => 8 | CONTEXT => 9
+  | ELSE => 10 | FN => 11 | FOR => 12 | IF => 13 | IMPORT => 14 | LET => 15
+  | LOOP => 16 | MATCH => 17 | RETURN => 18 | TAG => 19 | THIS_TYPE => 20
+  | THIS => 21 | TYPE => 22 | USE => 23 | VAL => 24 | VAR => 25 | WHILE => 26
+  | IN => 27 | UNDERSCORE => 28
+  | EXCLAM => 29 | PERCENT => 30 | AMPERSAND => 31 | LPAREN => 32 | RPAREN => 33
+  | STAR => 34 | PLUS => 35 | COMMA => 36 | HYPHEN => 37 | DOT => 38 | SLASH => 39
+  | COLON => 40 | SEMI => 41 | LESS => 42 | EQUAL => 43 | GREATER => 44
+  | LBRACKET => 45 | RBRACKET => 46 | CARET => 47 | LBRACE => 48 | PIPE => 49
+  | RBRACE => 50
+  | EXCLAM_EQUAL => 51 | COLON_COLON => 52 | EQUAL_GREATER => 53 | LESS_LESS => 54
+  | LESS_EQUAL => 55 | EQUAL_EQUAL => 56 | GREATER_EQUAL => 57
+  | GREATER_GREATER => 58 | HYPHEN_GREATER => 59
+  | EOF => 60
+  end.
+Definition token_kind_eqb (a b : token_kind) : bool :=
+  Nat.eqb (token_kind_index a) (token_kind_index b).
+
+(* A token: its kind, its text, and its byte offset (only error messages
+   use it). *)
+Record token := Tok { tk : token_kind; tx : string; toff : nat }.
 
 (* Character classes. *)
 Definition is_digit (b : byte) : bool := match b with "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => true | _ => false end%byte.
@@ -207,41 +243,41 @@ Definition is_sign (b : byte) : bool := match b with "+" | "-" => true | _ => fa
 Definition is_escape (b : byte) : bool := match b with """" | "\" | "n" | "r" | "t" => true | _ => false end%byte.
 
 (* The keywords, and the kind of each. *)
-Definition KEYWORDS : list (string * string) :=
-  [("as", "AS"); ("assume", "ASSUME"); ("functor", "FUNCTOR"); ("bind", "BIND");
-   ("break", "BREAK"); ("context", "CONTEXT"); ("else", "ELSE"); ("fn", "FN");
-   ("for", "FOR"); ("if", "IF"); ("import", "IMPORT"); ("let", "LET");
-   ("loop", "LOOP"); ("match", "MATCH"); ("return", "RETURN"); ("tag", "TAG");
-   ("This", "THIS_TYPE"); ("this", "THIS"); ("type", "TYPE"); ("use", "USE");
-   ("val", "VAL"); ("var", "VAR"); ("while", "WHILE"); ("in", "IN");
+Definition KEYWORDS : list (string * token_kind) :=
+  [("as", AS); ("assume", ASSUME); ("functor", FUNCTOR); ("bind", BIND);
+   ("break", BREAK); ("context", CONTEXT); ("else", ELSE); ("fn", FN);
+   ("for", FOR); ("if", IF); ("import", IMPORT); ("let", LET);
+   ("loop", LOOP); ("match", MATCH); ("return", RETURN); ("tag", TAG);
+   ("This", THIS_TYPE); ("this", THIS); ("type", TYPE); ("use", USE);
+   ("val", VAL); ("var", VAR); ("while", WHILE); ("in", IN);
    (* (f) `_` alone is a word of its own, the wildcard pattern, and not a
       name (`_x` and `x_` are names) *)
-   ("_", "UNDERSCORE")].
+   ("_", UNDERSCORE)].
 
-Fixpoint assoc (k : string) (l : list (string * string)) : option string :=
+Fixpoint assoc {B : Type} (k : string) (l : list (string * B)) : option B :=
   match l with [] => None | (a, b) :: r => if String.eqb a k then Some b else assoc k r end.
 
 (* The symbols: one character, and two (the longer always wins). *)
-Definition one_char (b : byte) : option string :=
+Definition one_char (b : byte) : option token_kind :=
   match b with
-  | "!"%byte => Some "EXCLAM" | "%"%byte => Some "PERCENT" | "&"%byte => Some "AMPERSAND"
-  | "("%byte => Some "LPAREN" | ")"%byte => Some "RPAREN" | "*"%byte => Some "STAR"
-  | "+"%byte => Some "PLUS" | ","%byte => Some "COMMA" | "-"%byte => Some "HYPHEN"
-  | "."%byte => Some "DOT" | "/"%byte => Some "SLASH" | ":"%byte => Some "COLON"
-  | ";"%byte => Some "SEMI" | "<"%byte => Some "LESS" | "="%byte => Some "EQUAL"
-  | ">"%byte => Some "GREATER" | "["%byte => Some "LBRACKET" | "]"%byte => Some "RBRACKET"
-  | "^"%byte => Some "CARET" | "{"%byte => Some "LBRACE" | "|"%byte => Some "PIPE"
-  | "}"%byte => Some "RBRACE"
+  | "!"%byte => Some EXCLAM | "%"%byte => Some PERCENT | "&"%byte => Some AMPERSAND
+  | "("%byte => Some LPAREN | ")"%byte => Some RPAREN | "*"%byte => Some STAR
+  | "+"%byte => Some PLUS | ","%byte => Some COMMA | "-"%byte => Some HYPHEN
+  | "."%byte => Some DOT | "/"%byte => Some SLASH | ":"%byte => Some COLON
+  | ";"%byte => Some SEMI | "<"%byte => Some LESS | "="%byte => Some EQUAL
+  | ">"%byte => Some GREATER | "["%byte => Some LBRACKET | "]"%byte => Some RBRACKET
+  | "^"%byte => Some CARET | "{"%byte => Some LBRACE | "|"%byte => Some PIPE
+  | "}"%byte => Some RBRACE
   | _ => None
   end.
 
-Definition two_char (a b : byte) : option string :=
+Definition two_char (a b : byte) : option token_kind :=
   match a, b with
-  | "!"%byte, "="%byte => Some "EXCLAM_EQUAL" | ":"%byte, ":"%byte => Some "COLON_COLON"
-  | "="%byte, ">"%byte => Some "EQUAL_GREATER" | "<"%byte, "<"%byte => Some "LESS_LESS"
-  | "<"%byte, "="%byte => Some "LESS_EQUAL" | "="%byte, "="%byte => Some "EQUAL_EQUAL"
-  | ">"%byte, "="%byte => Some "GREATER_EQUAL" | ">"%byte, ">"%byte => Some "GREATER_GREATER"
-  | "-"%byte, ">"%byte => Some "HYPHEN_GREATER"
+  | "!"%byte, "="%byte => Some EXCLAM_EQUAL | ":"%byte, ":"%byte => Some COLON_COLON
+  | "="%byte, ">"%byte => Some EQUAL_GREATER | "<"%byte, "<"%byte => Some LESS_LESS
+  | "<"%byte, "="%byte => Some LESS_EQUAL | "="%byte, "="%byte => Some EQUAL_EQUAL
+  | ">"%byte, "="%byte => Some GREATER_EQUAL | ">"%byte, ">"%byte => Some GREATER_GREATER
+  | "-"%byte, ">"%byte => Some HYPHEN_GREATER
   | _, _ => None
   end.
 
@@ -279,7 +315,7 @@ Definition Exponent (ex : list byte) : Prop :=
 
 (* `Lexeme cs k rest`: the bytes `cs` are one token of kind `k` when `rest`
    follows; the conditions on `rest` make it the longest token there. *)
-Inductive Lexeme : list byte -> string -> list byte -> Prop :=
+Inductive Lexeme : list byte -> token_kind -> list byte -> Prop :=
 | LxSym2 : forall a b k rest, two_char a b = Some k -> Lexeme [a; b] k rest
 | LxSym1 : forall a k rest, one_char a = Some k ->
     (forall b r, rest = b :: r -> two_char a b = None) -> Lexeme [a] k rest
@@ -287,9 +323,9 @@ Inductive Lexeme : list byte -> string -> list byte -> Prop :=
 | LxWord : forall c ns rest,
     is_name_start c = true -> forallb is_name_cont ns = true -> starts is_name_cont rest = false ->
     Lexeme (c :: ns) (match assoc (string_of_list_byte (c :: ns)) KEYWORDS with
-                      | Some k => k | None => "NAME" end) rest
+                      | Some k => k | None => NAME end) rest
 | LxString : forall body rest, StrBody body ->
-    Lexeme (""""%byte :: body ++ [""""%byte]) "STRING" rest
+    Lexeme (""""%byte :: body ++ [""""%byte]) STRING rest
 (* digits, then the optional fraction and exponent; a numeric literal may
    not run into a letter, digit or `_`, and a digit run followed by `.` and
    a digit takes the fraction *)
@@ -298,13 +334,13 @@ Inductive Lexeme : list byte -> string -> list byte -> Prop :=
     starts is_name_cont rest = false ->
     (frac = [] -> ex = [] -> forall c r, rest = "."%byte :: c :: r -> is_digit c = false) ->
     Lexeme (d :: ds ++ frac ++ ex)
-           (match frac, ex with [], [] => "INTEGER" | _, _ => "DECIMAL" end) rest.
+           (match frac, ex with [], [] => INTEGER | _, _ => DECIMAL end) rest.
 
 (* `Lexes i cs ts`: the bytes `cs`, starting at offset `i`, are the tokens
    `ts`: whitespace and comments (`#` to the end of the line) between
-   tokens, and the token "EOF" at the end. *)
+   tokens, and the token EOF at the end. *)
 Inductive Lexes : nat -> list byte -> list token -> Prop :=
-| LexEnd : forall i, Lexes i [] [Tok "EOF" "" i]
+| LexEnd : forall i, Lexes i [] [Tok EOF "" i]
 | LexSpace : forall i c r ts, is_ws c = true -> Lexes (S i) r ts -> Lexes i (c :: r) ts
 | LexComment : forall i com r ts,
     forallb (fun b => negb (Byte.eqb b x0a)) com = true ->
@@ -317,7 +353,7 @@ Inductive Lexes : nat -> list byte -> list token -> Prop :=
 
 (* The next token (the final EOF stands for itself and for anything after
    it), the n-th token ahead, and what follows the next one. *)
-Definition eof_tok : token := Tok "EOF" "" 0.
+Definition eof_tok : token := Tok EOF "" 0.
 Definition peek (ts : list token) : token := match ts with t :: _ => t | [] => eof_tok end.
 Fixpoint peekn (n : nat) (ts : list token) : token :=
   match ts with
@@ -325,55 +361,55 @@ Fixpoint peekn (n : nat) (ts : list token) : token :=
   | [t] => t
   | t :: r => match n with 0 => t | S m => peekn m r end
   end.
-Definition kind (ts : list token) : string := tk (peek ts).
-Definition kind_at (n : nat) (ts : list token) : string := tk (peekn n ts).
+Definition kind (ts : list token) : token_kind := tk (peek ts).
+Definition kind_at (n : nat) (ts : list token) : token_kind := tk (peekn n ts).
 Definition advance (ts : list token) : list token :=
   match ts with [_] => ts | _ :: r => r | [] => [] end.
 
 (* `Tk k ts ts'`: a token of kind k, then ts'.  `TkText k ts x ts'`: the
    same, whose text is x; `TkName` for a name. *)
-Definition Tk (k : string) (ts ts' : list token) : Prop := kind ts = k /\ ts' = advance ts.
-Definition TkText (k : string) (ts : list token) (x : string) (ts' : list token) : Prop :=
+Definition Tk (k : token_kind) (ts ts' : list token) : Prop := kind ts = k /\ ts' = advance ts.
+Definition TkText (k : token_kind) (ts : list token) (x : string) (ts' : list token) : Prop :=
   kind ts = k /\ tx (peek ts) = x /\ ts' = advance ts.
-Definition TkName := TkText "NAME".
+Definition TkName := TkText NAME.
 (* An optional token. *)
-Definition OptTk (k : string) (ts ts' : list token) : Prop :=
+Definition OptTk (k : token_kind) (ts ts' : list token) : Prop :=
   Tk k ts ts' \/ (kind ts <> k /\ ts' = ts).
 
 (* List[X]: X, separated by `,`, with an optional trailing comma, up to
    (not including) one of the `closers`. *)
-Inductive CommaList {A : Type} (X : list token -> A -> list token -> Prop) (closers : list string)
+Inductive CommaList {A : Type} (X : list token -> A -> list token -> Prop) (closers : list token_kind)
   : list token -> list A -> list token -> Prop :=
 | CLNil : forall ts, In (kind ts) closers -> CommaList X closers ts [] ts
-| CLLast : forall ts x ts1, ~ In (kind ts) closers -> X ts x ts1 -> kind ts1 <> "COMMA" ->
+| CLLast : forall ts x ts1, ~ In (kind ts) closers -> X ts x ts1 -> kind ts1 <> COMMA ->
     CommaList X closers ts [x] ts1
-| CLCons : forall ts x ts1 ts2 xs ts3, ~ In (kind ts) closers -> X ts x ts1 -> Tk "COMMA" ts1 ts2 ->
+| CLCons : forall ts x ts1 ts2 xs ts3, ~ In (kind ts) closers -> X ts x ts1 -> Tk COMMA ts1 ts2 ->
     CommaList X closers ts2 xs ts3 -> CommaList X closers ts (x :: xs) ts3.
 
 (* ===================== Names: Path p, Head h, Spec s ====================== *)
 
 (* p ::= x | p::x *)
 Inductive Path : list token -> path -> list token -> Prop :=
-| PathOne : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "COLON_COLON" -> Path ts [x] ts1
-| PathMore : forall ts x ts1 ts2 p ts3, TkName ts x ts1 -> Tk "COLON_COLON" ts1 ts2 ->
+| PathOne : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> COLON_COLON -> Path ts [x] ts1
+| PathMore : forall ts x ts1 ts2 p ts3, TkName ts x ts1 -> Tk COLON_COLON ts1 ts2 ->
     Path ts2 p ts3 -> Path ts (x :: p) ts3.
 
 (* h ::= p | p.x | .x *)
 Inductive Head : list token -> option path * option name -> list token -> Prop :=
-| HeadPath : forall ts p ts1, Path ts p ts1 -> kind ts1 <> "DOT" -> Head ts (Some p, None) ts1
-| HeadMeth : forall ts p ts1 ts2 x ts3, Path ts p ts1 -> Tk "DOT" ts1 ts2 -> TkName ts2 x ts3 ->
+| HeadPath : forall ts p ts1, Path ts p ts1 -> kind ts1 <> DOT -> Head ts (Some p, None) ts1
+| HeadMeth : forall ts p ts1 ts2 x ts3, Path ts p ts1 -> Tk DOT ts1 ts2 -> TkName ts2 x ts3 ->
     Head ts (Some p, Some x) ts3
-| HeadDot : forall ts ts1 x ts2, Tk "DOT" ts ts1 -> TkName ts1 x ts2 -> Head ts (None, Some x) ts2.
+| HeadDot : forall ts ts1 x ts2, Tk DOT ts ts1 -> TkName ts1 x ts2 -> Head ts (None, Some x) ts2.
 
 (* s ::= h | h[p = s, ...]   (the brackets are `App`, optional) *)
 Inductive Spec_ : list token -> spec -> list token -> Prop :=
 | SpecG : forall ts p d ts1 a ts2, Head ts (p, d) ts1 -> App ts1 a ts2 -> Spec_ ts (Input.Spec p d a) ts2
 with App : list token -> sapp -> list token -> Prop :=
-| AppNone : forall ts, kind ts <> "LBRACKET" -> App ts None ts
-| AppSome : forall ts ts1 bs ts2 ts3, Tk "LBRACKET" ts ts1 ->
-    CommaList AppBinding ["RBRACKET"] ts1 bs ts2 -> Tk "RBRACKET" ts2 ts3 -> App ts (Some bs) ts3
+| AppNone : forall ts, kind ts <> LBRACKET -> App ts None ts
+| AppSome : forall ts ts1 bs ts2 ts3, Tk LBRACKET ts ts1 ->
+    CommaList AppBinding [RBRACKET] ts1 bs ts2 -> Tk RBRACKET ts2 ts3 -> App ts (Some bs) ts3
 with AppBinding : list token -> path * spec -> list token -> Prop :=
-| AppBindingG : forall ts p ts1 ts2 s ts3, Path ts p ts1 -> Tk "EQUAL" ts1 ts2 -> Spec_ ts2 s ts3 ->
+| AppBindingG : forall ts p ts1 ts2 s ts3, Path ts p ts1 -> Tk EQUAL ts1 ts2 -> Spec_ ts2 s ts3 ->
     AppBinding ts (p, s) ts3.
 
 (* ===================== Types τ ============================================ *)
@@ -383,63 +419,63 @@ with AppBinding : list token -> path * spec -> list token -> Prop :=
    atoms separated by `|`, optionally preceded by `|`; several atoms are a
    union, one is itself. *)
 Inductive Type_ : list token -> aty -> list token -> Prop :=
-| TyNever : forall ts ts1, Tk "PIPE" ts ts1 ->
-    ~ In (kind ts1) ["NAME"; "THIS_TYPE"; "LPAREN"; "LBRACE"] -> Type_ ts ATNever ts1
-| TyMembers : forall ts ts1 ms ts2, OptTk "PIPE" ts ts1 -> Members ts1 ms ts2 ->
+| TyNever : forall ts ts1, Tk PIPE ts ts1 ->
+    ~ In (kind ts1) [NAME; THIS_TYPE; LPAREN; LBRACE] -> Type_ ts ATNever ts1
+| TyMembers : forall ts ts1 ms ts2, OptTk PIPE ts ts1 -> Members ts1 ms ts2 ->
     Type_ ts (match ms with [m] => m | _ => ATUnion ms end) ts2
 with Members : list token -> list aty -> list token -> Prop :=
-| MemOne : forall ts t ts1, TypeAtom ts t ts1 -> kind ts1 <> "PIPE" -> Members ts [t] ts1
-| MemMore : forall ts t ts1 ts2 ms ts3, TypeAtom ts t ts1 -> Tk "PIPE" ts1 ts2 ->
+| MemOne : forall ts t ts1, TypeAtom ts t ts1 -> kind ts1 <> PIPE -> Members ts [t] ts1
+| MemMore : forall ts t ts1 ts2 ms ts3, TypeAtom ts t ts1 -> Tk PIPE ts1 ts2 ->
     Members ts2 ms ts3 -> Members ts (t :: ms) ts3
 with TypeAtom : list token -> aty -> list token -> Prop :=
 | TARef : forall ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> TypeAtom ts (ATRef p a) ts2
-| TAThis : forall ts ts1, Tk "THIS_TYPE" ts ts1 -> TypeAtom ts ATThis ts1
-| TAUnit : forall ts ts1 ts2, Tk "LPAREN" ts ts1 -> Tk "RPAREN" ts1 ts2 -> TypeAtom ts ATUnit ts2
-| TAParen : forall ts ts1 t ts2 ts3, Tk "LPAREN" ts ts1 -> Type_ ts1 t ts2 -> Tk "RPAREN" ts2 ts3 ->
+| TAThis : forall ts ts1, Tk THIS_TYPE ts ts1 -> TypeAtom ts ATThis ts1
+| TAUnit : forall ts ts1 ts2, Tk LPAREN ts ts1 -> Tk RPAREN ts1 ts2 -> TypeAtom ts ATUnit ts2
+| TAParen : forall ts ts1 t ts2 ts3, Tk LPAREN ts ts1 -> Type_ ts1 t ts2 -> Tk RPAREN ts2 ts3 ->
     TypeAtom ts t ts3
 | TARecord : forall ts t ts1, RecordType ts t ts1 -> TypeAtom ts t ts1
 with RecordType : list token -> aty -> list token -> Prop :=
-| RecordTypeG : forall ts ts1 fs ts2 ts3, Tk "LBRACE" ts ts1 ->
-    CommaList TypeField ["RBRACE"] ts1 fs ts2 -> Tk "RBRACE" ts2 ts3 -> RecordType ts (ATRec fs) ts3
+| RecordTypeG : forall ts ts1 fs ts2 ts3, Tk LBRACE ts ts1 ->
+    CommaList TypeField [RBRACE] ts1 fs ts2 -> Tk RBRACE ts2 ts3 -> RecordType ts (ATRec fs) ts3
 with TypeField : list token -> name * aty -> list token -> Prop :=
-| TypeFieldG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk "COLON" ts1 ts2 -> Type_ ts2 t ts3 ->
+| TypeFieldG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk COLON ts1 ts2 -> Type_ ts2 t ts3 ->
     TypeField ts (x, t) ts3.
 
 (* (`:` τ)? *)
 Inductive OptType : list token -> option aty -> list token -> Prop :=
-| OptTypeNone : forall ts, kind ts <> "COLON" -> OptType ts None ts
-| OptTypeSome : forall ts ts1 t ts2, Tk "COLON" ts ts1 -> Type_ ts1 t ts2 -> OptType ts (Some t) ts2.
+| OptTypeNone : forall ts, kind ts <> COLON -> OptType ts None ts
+| OptTypeSome : forall ts ts1 t ts2, Tk COLON ts ts1 -> Type_ ts1 t ts2 -> OptType ts (Some t) ts2.
 
 (* ===================== Patterns π ========================================= *)
 
 (* π ::= _ | p | p(π) | {x = π, ...} | p{x = π, ...}   (`= π` optional);
    `_` is its own token, not a name (f) *)
 Inductive Pattern : list token -> apat -> list token -> Prop :=
-| PatWild : forall ts ts1, Tk "UNDERSCORE" ts ts1 -> Pattern ts APWild ts1
+| PatWild : forall ts ts1, Tk UNDERSCORE ts ts1 -> Pattern ts APWild ts1
 (* a path not followed by `(` or `{` *)
-| PatPath : forall ts p ts1, Path ts p ts1 -> ~ In (kind ts1) ["LBRACE"; "LPAREN"] ->
+| PatPath : forall ts p ts1, Path ts p ts1 -> ~ In (kind ts1) [LBRACE; LPAREN] ->
     Pattern ts (APPath p) ts1
-| PatTag : forall ts p ts1 ts2 q ts3 ts4, Path ts p ts1 -> Tk "LPAREN" ts1 ts2 ->
-    Pattern ts2 q ts3 -> Tk "RPAREN" ts3 ts4 -> Pattern ts (APTag p q) ts4
+| PatTag : forall ts p ts1 ts2 q ts3 ts4, Path ts p ts1 -> Tk LPAREN ts1 ts2 ->
+    Pattern ts2 q ts3 -> Tk RPAREN ts3 ts4 -> Pattern ts (APTag p q) ts4
 | PatRecord : forall ts p ts1 fs ts2, Path ts p ts1 -> RecordPattern ts1 fs ts2 ->
     Pattern ts (APRec (Some p) fs) ts2
 | PatAnon : forall ts fs ts1, RecordPattern ts fs ts1 -> Pattern ts (APRec None fs) ts1
 with RecordPattern : list token -> list (name * option apat) -> list token -> Prop :=
-| RecordPatternG : forall ts ts1 fs ts2 ts3, Tk "LBRACE" ts ts1 ->
-    CommaList PatField ["RBRACE"] ts1 fs ts2 -> Tk "RBRACE" ts2 ts3 -> RecordPattern ts fs ts3
+| RecordPatternG : forall ts ts1 fs ts2 ts3, Tk LBRACE ts ts1 ->
+    CommaList PatField [RBRACE] ts1 fs ts2 -> Tk RBRACE ts2 ts3 -> RecordPattern ts fs ts3
 with PatField : list token -> name * option apat -> list token -> Prop :=
-| PatFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "EQUAL" -> PatField ts (x, None) ts1
-| PatFieldLong : forall ts x ts1 ts2 q ts3, TkName ts x ts1 -> Tk "EQUAL" ts1 ts2 ->
+| PatFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> EQUAL -> PatField ts (x, None) ts1
+| PatFieldLong : forall ts x ts1 ts2 q ts3, TkName ts x ts1 -> Tk EQUAL ts1 ts2 ->
     Pattern ts2 q ts3 -> PatField ts (x, Some q) ts3.
 
 (* ===================== Operators: Binary ⊕, Unary ⊖ ======================= *)
 
 (* ⊕: the token kinds of the binary operators, and the operator each is. *)
-Definition BINARY : list (string * string) :=
-  [("STAR", "*"); ("SLASH", "/"); ("PERCENT", "%"); ("PLUS", "+"); ("HYPHEN", "-");
-   ("LESS_LESS", "<<"); ("GREATER_GREATER", ">>"); ("EQUAL_EQUAL", "==");
-   ("EXCLAM_EQUAL", "!="); ("LESS", "<"); ("GREATER", ">"); ("LESS_EQUAL", "<=");
-   ("GREATER_EQUAL", ">="); ("AMPERSAND", "&"); ("CARET", "^"); ("PIPE", "|")].
+Definition BINARY : list (token_kind * string) :=
+  [(STAR, "*"); (SLASH, "/"); (PERCENT, "%"); (PLUS, "+"); (HYPHEN, "-");
+   (LESS_LESS, "<<"); (GREATER_GREATER, ">>"); (EQUAL_EQUAL, "==");
+   (EXCLAM_EQUAL, "!="); (LESS, "<"); (GREATER, ">"); (LESS_EQUAL, "<=");
+   (GREATER_EQUAL, ">="); (AMPERSAND, "&"); (CARET, "^"); (PIPE, "|")].
 (* D68's classes *)
 Definition FRACTION := ["/"; "%"].
 Definition ADDITIVE := ["+"; "-"].
@@ -448,7 +484,9 @@ Definition COMPARISON := ["=="; "!="; "<"; ">"; "<="; ">="].
 Definition BITWISE := ["&"; "^"; "|"].
 Definition mem (s : string) (l : list string) : bool := existsb (String.eqb s) l.
 (* the binary operator next, if any *)
-Definition binop (ts : list token) : option string := assoc (kind ts) BINARY.
+Fixpoint kind_assoc (k : token_kind) (l : list (token_kind * string)) : option string :=
+  match l with [] => None | (a, b) :: r => if token_kind_eqb a k then Some b else kind_assoc k r end.
+Definition binop (ts : list token) : option string := kind_assoc (kind ts) BINARY.
 Definition binop_in (l : list string) (ts : list token) : bool :=
   match binop ts with Some o => mem o l | None => false end.
 
@@ -673,20 +711,20 @@ Definition call_block (p : path) (a : list (path * spec)) (args : list aexpr) : 
 (* (e) D70: at `(`, a lambda is next: `()` or `(x)` followed by `=>` or
    `:`, or `(x` followed by `:` or `,`. *)
 Definition at_lambda (ts : list token) : bool :=
-  let arrow k := String.eqb k "EQUAL_GREATER" || String.eqb k "COLON" in
-  if String.eqb (kind_at 1 ts) "RPAREN" then arrow (kind_at 2 ts)
-  else if String.eqb (kind_at 1 ts) "NAME" then
-    if String.eqb (kind_at 2 ts) "COLON" || String.eqb (kind_at 2 ts) "COMMA" then true
-    else String.eqb (kind_at 2 ts) "RPAREN" && arrow (kind_at 3 ts)
+  let arrow k := token_kind_eqb k EQUAL_GREATER || token_kind_eqb k COLON in
+  if token_kind_eqb (kind_at 1 ts) RPAREN then arrow (kind_at 2 ts)
+  else if token_kind_eqb (kind_at 1 ts) NAME then
+    if token_kind_eqb (kind_at 2 ts) COLON || token_kind_eqb (kind_at 2 ts) COMMA then true
+    else token_kind_eqb (kind_at 2 ts) RPAREN && arrow (kind_at 3 ts)
   else false.
 
 (* D68: `-` before a literal with a method call or field (`-1.abs()`) is
    refused: `-` binds looser than `.`, and nobody means `-(1.abs())`. *)
 Definition neg_literal_dot (ts : list token) : Prop :=
-  In (kind ts) ["INTEGER"; "DECIMAL"] /\ kind_at 1 ts = "DOT".
+  In (kind ts) [INTEGER; DECIMAL] /\ kind_at 1 ts = DOT.
 
 (* A statement `x = e;` is next. *)
-Definition assign_ahead (ts : list token) : Prop := kind ts = "NAME" /\ kind_at 1 ts = "EQUAL".
+Definition assign_ahead (ts : list token) : Prop := kind ts = NAME /\ kind_at 1 ts = EQUAL.
 
 (* D85: `for x in coll { body }` is
    `{ let for = coll; var while = for.begin();
@@ -717,35 +755,35 @@ Definition for_desugar (x : name) (coll : aexpr) (body : ablock) : astmt :=
    `return` takes an expression unless `;`, `,`, `}` or `)` follows. *)
 Inductive Expr : bool -> list token -> aexpr -> list token -> Prop :=
 | ECond : forall nr ts e ts1, Cond ts e ts1 -> Expr nr ts e ts1
-| EMatch : forall nr ts ts1 s ts2 ts3 arms ts4 ts5, Tk "MATCH" ts ts1 -> Expr true ts1 s ts2 ->
-    Tk "LBRACE" ts2 ts3 -> Arms ts3 arms ts4 -> Tk "RBRACE" ts4 ts5 -> Expr nr ts (AEMatch s arms) ts5
-| EReturnNone : forall nr ts ts1, Tk "RETURN" ts ts1 -> In (kind ts1) ["SEMI"; "COMMA"; "RBRACE"; "RPAREN"] ->
+| EMatch : forall nr ts ts1 s ts2 ts3 arms ts4 ts5, Tk MATCH ts ts1 -> Expr true ts1 s ts2 ->
+    Tk LBRACE ts2 ts3 -> Arms ts3 arms ts4 -> Tk RBRACE ts4 ts5 -> Expr nr ts (AEMatch s arms) ts5
+| EReturnNone : forall nr ts ts1, Tk RETURN ts ts1 -> In (kind ts1) [SEMI; COMMA; RBRACE; RPAREN] ->
     Expr nr ts (AEReturn None) ts1
-| EReturn : forall nr ts ts1 e ts2, Tk "RETURN" ts ts1 -> ~ In (kind ts1) ["SEMI"; "COMMA"; "RBRACE"; "RPAREN"] ->
+| EReturn : forall nr ts ts1 e ts2, Tk RETURN ts ts1 -> ~ In (kind ts1) [SEMI; COMMA; RBRACE; RPAREN] ->
     Expr nr ts1 e ts2 -> Expr nr ts (AEReturn (Some e)) ts2
-| EBreak : forall nr ts ts1, Tk "BREAK" ts ts1 -> Expr nr ts AEBreak ts1
+| EBreak : forall nr ts ts1, Tk BREAK ts ts1 -> Expr nr ts AEBreak ts1
 | EOperators : forall nr ts e ts1, Operators nr ts e ts1 -> Expr nr ts e ts1
 
 (* c ::= if e b (else b | else c)? *)
 with Cond : list token -> aexpr -> list token -> Prop :=
-| CondIf : forall ts ts1 c ts2 t ts3, Tk "IF" ts ts1 -> Expr true ts1 c ts2 -> Block ts2 t ts3 ->
-    kind ts3 <> "ELSE" -> Cond ts (AEIf c t None) ts3
-| CondElseIf : forall ts ts1 c ts2 t ts3 ts4 e ts5, Tk "IF" ts ts1 -> Expr true ts1 c ts2 ->
-    Block ts2 t ts3 -> Tk "ELSE" ts3 ts4 -> Cond ts4 e ts5 -> Cond ts (AEIf c t (Some e)) ts5
-| CondElse : forall ts ts1 c ts2 t ts3 ts4 b ts5, Tk "IF" ts ts1 -> Expr true ts1 c ts2 ->
-    Block ts2 t ts3 -> Tk "ELSE" ts3 ts4 -> Block ts4 b ts5 -> Cond ts (AEIf c t (Some (AEBlock b))) ts5
+| CondIf : forall ts ts1 c ts2 t ts3, Tk IF ts ts1 -> Expr true ts1 c ts2 -> Block ts2 t ts3 ->
+    kind ts3 <> ELSE -> Cond ts (AEIf c t None) ts3
+| CondElseIf : forall ts ts1 c ts2 t ts3 ts4 e ts5, Tk IF ts ts1 -> Expr true ts1 c ts2 ->
+    Block ts2 t ts3 -> Tk ELSE ts3 ts4 -> Cond ts4 e ts5 -> Cond ts (AEIf c t (Some e)) ts5
+| CondElse : forall ts ts1 c ts2 t ts3 ts4 b ts5, Tk IF ts ts1 -> Expr true ts1 c ts2 ->
+    Block ts2 t ts3 -> Tk ELSE ts3 ts4 -> Block ts4 b ts5 -> Cond ts (AEIf c t (Some (AEBlock b))) ts5
 
 (* a ::= π => e, | π => b ,?   — and the last arm's `,` is optional in
    both forms; an arm body starting with `{` is the block form (b). *)
 with Arms : list token -> list (apat * aexpr) -> list token -> Prop :=
-| ArmsEnd : forall ts, kind ts = "RBRACE" -> Arms ts [] ts
-| ArmsCons : forall ts p ts1 ts2 body ts3 arms ts4, Pattern ts p ts1 -> Tk "EQUAL_GREATER" ts1 ts2 ->
+| ArmsEnd : forall ts, kind ts = RBRACE -> Arms ts [] ts
+| ArmsCons : forall ts p ts1 ts2 body ts3 arms ts4, Pattern ts p ts1 -> Tk EQUAL_GREATER ts1 ts2 ->
     ArmBody ts2 body ts3 -> Arms ts3 arms ts4 -> Arms ts ((p, body) :: arms) ts4
 with ArmBody : list token -> aexpr -> list token -> Prop :=
-| ArmBlock : forall ts b ts1 ts2, Block ts b ts1 -> OptTk "COMMA" ts1 ts2 -> ArmBody ts (AEBlock b) ts2
-| ArmExpr : forall ts e ts1 ts2, kind ts <> "LBRACE" -> Expr false ts e ts1 -> Tk "COMMA" ts1 ts2 ->
+| ArmBlock : forall ts b ts1 ts2, Block ts b ts1 -> OptTk COMMA ts1 ts2 -> ArmBody ts (AEBlock b) ts2
+| ArmExpr : forall ts e ts1 ts2, kind ts <> LBRACE -> Expr false ts e ts1 -> Tk COMMA ts1 ts2 ->
     ArmBody ts e ts2
-| ArmExprLast : forall ts e ts1, kind ts <> "LBRACE" -> Expr false ts e ts1 -> kind ts1 = "RBRACE" ->
+| ArmExprLast : forall ts e ts1, kind ts <> LBRACE -> Expr false ts e ts1 -> kind ts1 = RBRACE ->
     ArmBody ts e ts1
 
 (* e ⊕ e, D68's partial order.  An operator expression is one of
@@ -787,58 +825,58 @@ with Term : bool -> list token -> aexpr -> list token -> Prop :=
 
 (* ⊖e: `-` and `!` *)
 with Unary : bool -> list token -> aexpr -> list token -> Prop :=
-| UnaryNeg : forall nr ts ts1 u ts2, Tk "HYPHEN" ts ts1 -> ~ neg_literal_dot ts1 -> Unary nr ts1 u ts2 ->
+| UnaryNeg : forall nr ts ts1 u ts2, Tk HYPHEN ts ts1 -> ~ neg_literal_dot ts1 -> Unary nr ts1 u ts2 ->
     Unary nr ts (AEUnary "-" u) ts2
-| UnaryNot : forall nr ts ts1 u ts2, Tk "EXCLAM" ts ts1 -> Unary nr ts1 u ts2 ->
+| UnaryNot : forall nr ts ts1 u ts2, Tk EXCLAM ts ts1 -> Unary nr ts1 u ts2 ->
     Unary nr ts (AEUnary "!" u) ts2
 | UnaryPostfix : forall nr ts p ts1 e ts2, Primary nr ts p ts1 -> Suffixes p ts1 e ts2 -> Unary nr ts e ts2
 
 (* e.p(e, ...) | e.x: suffixes, as many as follow *)
 with Suffixes : aexpr -> list token -> aexpr -> list token -> Prop :=
-| SufEnd : forall e ts, kind ts <> "DOT" -> Suffixes e ts e ts
-| SufMethod : forall e ts ts1 p ts2 ts3 args ts4 ts5 e' ts6, Tk "DOT" ts ts1 -> Path ts1 p ts2 ->
-    Tk "LPAREN" ts2 ts3 -> CommaList (Expr false) ["RPAREN"] ts3 args ts4 -> Tk "RPAREN" ts4 ts5 ->
+| SufEnd : forall e ts, kind ts <> DOT -> Suffixes e ts e ts
+| SufMethod : forall e ts ts1 p ts2 ts3 args ts4 ts5 e' ts6, Tk DOT ts ts1 -> Path ts1 p ts2 ->
+    Tk LPAREN ts2 ts3 -> CommaList (Expr false) [RPAREN] ts3 args ts4 -> Tk RPAREN ts4 ts5 ->
     Suffixes (AEMeth e p args) ts5 e' ts6 -> Suffixes e ts e' ts6
-| SufField : forall e ts ts1 x ts2 e' ts3, Tk "DOT" ts ts1 -> Path ts1 [x] ts2 -> kind ts2 <> "LPAREN" ->
+| SufField : forall e ts ts1 x ts2 e' ts3, Tk DOT ts ts1 -> Path ts1 [x] ts2 -> kind ts2 <> LPAREN ->
     Suffixes (AEField e x) ts2 e' ts3 -> Suffixes e ts e' ts3
 
 (* (e) | () | this | b | int | dec | r | r(e, ...) | r{x = e, ...}, and
    the lambda (x: τ, ...): τ => e (D70), which the figure lists under β *)
 with Primary : bool -> list token -> aexpr -> list token -> Prop :=
 | PrimLambda : forall nr ts e ts1, Lambda ts e ts1 -> Primary nr ts e ts1
-| PrimUnit : forall nr ts ts1 ts2, Tk "LPAREN" ts ts1 -> at_lambda ts = false -> Tk "RPAREN" ts1 ts2 ->
+| PrimUnit : forall nr ts ts1 ts2, Tk LPAREN ts ts1 -> at_lambda ts = false -> Tk RPAREN ts1 ts2 ->
     Primary nr ts AEUnit ts2
-| PrimParen : forall nr ts ts1 e ts2 ts3, Tk "LPAREN" ts ts1 -> at_lambda ts = false ->
-    Expr false ts1 e ts2 -> Tk "RPAREN" ts2 ts3 -> Primary nr ts e ts3
-| PrimThis : forall nr ts ts1, Tk "THIS" ts ts1 -> Primary nr ts AEThis ts1
-| PrimLit : forall nr ts, In (kind ts) ["INTEGER"; "DECIMAL"] ->
+| PrimParen : forall nr ts ts1 e ts2 ts3, Tk LPAREN ts ts1 -> at_lambda ts = false ->
+    Expr false ts1 e ts2 -> Tk RPAREN ts2 ts3 -> Primary nr ts e ts3
+| PrimThis : forall nr ts ts1, Tk THIS ts ts1 -> Primary nr ts AEThis ts1
+| PrimLit : forall nr ts, In (kind ts) [INTEGER; DECIMAL] ->
     Primary nr ts (AELit (lit_norm (tx (peek ts)))) (advance ts)
-| PrimString : forall nr ts, kind ts = "STRING" ->
+| PrimString : forall nr ts, kind ts = STRING ->
     string_utf8_valid (string_value (tx (peek ts))) = true ->
     Primary nr ts (string_desugar (string_value (tx (peek ts)))) (advance ts)
 | PrimBlock : forall ts b ts1, Block ts b ts1 -> Primary false ts (AEBlock b) ts1
-| PrimRef : forall nr ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> kind ts2 <> "LPAREN" ->
-    (nr = true \/ kind ts2 <> "LBRACE") -> Primary nr ts (AEPath p a) ts2
+| PrimRef : forall nr ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> kind ts2 <> LPAREN ->
+    (nr = true \/ kind ts2 <> LBRACE) -> Primary nr ts (AEPath p a) ts2
 | PrimCall : forall nr ts p ts1 a ts2 ts3 args ts4 ts5, Path ts p ts1 -> App ts1 a ts2 ->
-    Tk "LPAREN" ts2 ts3 -> CommaList (Expr false) ["RPAREN"] ts3 args ts4 -> Tk "RPAREN" ts4 ts5 ->
+    Tk LPAREN ts2 ts3 -> CommaList (Expr false) [RPAREN] ts3 args ts4 -> Tk RPAREN ts4 ts5 ->
     Primary nr ts (AECall p a args) ts5
 | PrimRecord : forall ts p ts1 a ts2 ts3 fs ts4 ts5, Path ts p ts1 -> App ts1 a ts2 ->
-    Tk "LBRACE" ts2 ts3 -> CommaList RecField ["RBRACE"] ts3 fs ts4 -> Tk "RBRACE" ts4 ts5 ->
+    Tk LBRACE ts2 ts3 -> CommaList RecField [RBRACE] ts3 fs ts4 -> Tk RBRACE ts4 ts5 ->
     Primary false ts (AERec p a fs) ts5
 with RecField : list token -> name * option aexpr -> list token -> Prop :=
-| RecFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "EQUAL" -> RecField ts (x, None) ts1
-| RecFieldLong : forall ts x ts1 ts2 e ts3, TkName ts x ts1 -> Tk "EQUAL" ts1 ts2 -> Expr false ts2 e ts3 ->
+| RecFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> EQUAL -> RecField ts (x, None) ts1
+| RecFieldLong : forall ts x ts1 ts2 e ts3, TkName ts x ts1 -> Tk EQUAL ts1 ts2 -> Expr false ts2 e ts3 ->
     RecField ts (x, Some e) ts3
 with Lambda : list token -> aexpr -> list token -> Prop :=
-| LambdaG : forall ts ts1 ps ts2 ts3 ret ts4 ts5 body ts6, Tk "LPAREN" ts ts1 ->
-    CommaList LamParam ["RPAREN"] ts1 ps ts2 -> Tk "RPAREN" ts2 ts3 -> OptType ts3 ret ts4 ->
-    Tk "EQUAL_GREATER" ts4 ts5 -> Expr false ts5 body ts6 -> Lambda ts (AELam ps ret body) ts6
+| LambdaG : forall ts ts1 ps ts2 ts3 ret ts4 ts5 body ts6, Tk LPAREN ts ts1 ->
+    CommaList LamParam [RPAREN] ts1 ps ts2 -> Tk RPAREN ts2 ts3 -> OptType ts3 ret ts4 ->
+    Tk EQUAL_GREATER ts4 ts5 -> Expr false ts5 body ts6 -> Lambda ts (AELam ps ret body) ts6
 with LamParam : list token -> name * option aty -> list token -> Prop :=
 | LamParamG : forall ts x ts1 t ts2, TkName ts x ts1 -> OptType ts1 t ts2 -> LamParam ts (x, t) ts2
 
 (* b ::= { i ... e? } *)
 with Block : list token -> ablock -> list token -> Prop :=
-| BlockG : forall ts ts1 ss tl ts2 ts3, Tk "LBRACE" ts ts1 -> Stmts ts1 ss tl ts2 -> Tk "RBRACE" ts2 ts3 ->
+| BlockG : forall ts ts1 ss tl ts2 ts3, Tk LBRACE ts ts1 -> Stmts ts1 ss tl ts2 -> Tk RBRACE ts2 ts3 ->
     Block ts (ABlock ss tl) ts3
 
 (* i ...  e?: the statements of a block, and its trailing expression.
@@ -849,55 +887,55 @@ with Block : list token -> ablock -> list token -> Prop :=
    expression).  The expression rules are tried only where no keyword
    statement and no `x = ...` is next (b). *)
 with Stmts : list token -> list astmt -> option aexpr -> list token -> Prop :=
-| StEnd : forall ts, kind ts = "RBRACE" -> Stmts ts [] None ts
-| StLet : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk "LET" ts ts1 -> TkName ts1 x ts2 ->
-    OptType ts2 t ts3 -> Tk "EQUAL" ts3 ts4 -> Expr false ts4 e ts5 -> Tk "SEMI" ts5 ts6 ->
+| StEnd : forall ts, kind ts = RBRACE -> Stmts ts [] None ts
+| StLet : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk LET ts ts1 -> TkName ts1 x ts2 ->
+    OptType ts2 t ts3 -> Tk EQUAL ts3 ts4 -> Expr false ts4 e ts5 -> Tk SEMI ts5 ts6 ->
     Stmts ts6 ss tl ts7 -> Stmts ts (ASLet x t e :: ss) tl ts7
-| StVar : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk "VAR" ts ts1 -> TkName ts1 x ts2 ->
-    OptType ts2 t ts3 -> Tk "EQUAL" ts3 ts4 -> Expr false ts4 e ts5 -> Tk "SEMI" ts5 ts6 ->
+| StVar : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk VAR ts ts1 -> TkName ts1 x ts2 ->
+    OptType ts2 t ts3 -> Tk EQUAL ts3 ts4 -> Expr false ts4 e ts5 -> Tk SEMI ts5 ts6 ->
     Stmts ts6 ss tl ts7 -> Stmts ts (ASVar x t e :: ss) tl ts7
 | StBind : forall ts w ts1 ss tl ts2, Bind ts w ts1 -> Stmts ts1 ss tl ts2 -> Stmts ts (ASBind w :: ss) tl ts2
-| StWhile : forall ts ts1 c ts2 b ts3 ss tl ts4, Tk "WHILE" ts ts1 -> Expr true ts1 c ts2 ->
+| StWhile : forall ts ts1 c ts2 b ts3 ss tl ts4, Tk WHILE ts ts1 -> Expr true ts1 c ts2 ->
     Block ts2 b ts3 -> Stmts ts3 ss tl ts4 -> Stmts ts (ASWhile c b :: ss) tl ts4
-| StLoop : forall ts ts1 b ts2 ss tl ts3, Tk "LOOP" ts ts1 -> Block ts1 b ts2 -> Stmts ts2 ss tl ts3 ->
+| StLoop : forall ts ts1 b ts2 ss tl ts3, Tk LOOP ts ts1 -> Block ts1 b ts2 -> Stmts ts2 ss tl ts3 ->
     Stmts ts (ASLoop b :: ss) tl ts3
-| StFor : forall ts ts1 x ts2 ts3 coll ts4 body ts5 ss tl ts6, Tk "FOR" ts ts1 -> TkName ts1 x ts2 ->
-    Tk "IN" ts2 ts3 -> Expr true ts3 coll ts4 -> Block ts4 body ts5 -> Stmts ts5 ss tl ts6 ->
+| StFor : forall ts ts1 x ts2 ts3 coll ts4 body ts5 ss tl ts6, Tk FOR ts ts1 -> TkName ts1 x ts2 ->
+    Tk IN ts2 ts3 -> Expr true ts3 coll ts4 -> Block ts4 body ts5 -> Stmts ts5 ss tl ts6 ->
     Stmts ts (for_desugar x coll body :: ss) tl ts6
-| StAssign : forall ts x ts1 ts2 e ts3 ts4 ss tl ts5, TkName ts x ts1 -> Tk "EQUAL" ts1 ts2 ->
-    Expr false ts2 e ts3 -> Tk "SEMI" ts3 ts4 -> Stmts ts4 ss tl ts5 -> Stmts ts (ASAssign x e :: ss) tl ts5
-| StExpr : forall ts e ts1 ts2 ss tl ts3, ~ assign_ahead ts -> Expr false ts e ts1 -> Tk "SEMI" ts1 ts2 ->
+| StAssign : forall ts x ts1 ts2 e ts3 ts4 ss tl ts5, TkName ts x ts1 -> Tk EQUAL ts1 ts2 ->
+    Expr false ts2 e ts3 -> Tk SEMI ts3 ts4 -> Stmts ts4 ss tl ts5 -> Stmts ts (ASAssign x e :: ss) tl ts5
+| StExpr : forall ts e ts1 ts2 ss tl ts3, ~ assign_ahead ts -> Expr false ts e ts1 -> Tk SEMI ts1 ts2 ->
     Stmts ts2 ss tl ts3 -> Stmts ts (ASExpr e :: ss) tl ts3
-| StBraced : forall ts e ts1 ss tl ts2, ~ assign_ahead ts -> In (kind ts) ["IF"; "MATCH"; "LBRACE"] ->
-    Expr false ts e ts1 -> ~ In (kind ts1) ["SEMI"; "RBRACE"] -> Stmts ts1 ss tl ts2 ->
+| StBraced : forall ts e ts1 ss tl ts2, ~ assign_ahead ts -> In (kind ts) [IF; MATCH; LBRACE] ->
+    Expr false ts e ts1 -> ~ In (kind ts1) [SEMI; RBRACE] -> Stmts ts1 ss tl ts2 ->
     Stmts ts (ASExpr e :: ss) tl ts2
-| StTail : forall ts e ts1, ~ assign_ahead ts -> Expr false ts e ts1 -> kind ts1 = "RBRACE" ->
+| StTail : forall ts e ts1, ~ assign_ahead ts -> Expr false ts e ts1 -> kind ts1 = RBRACE ->
     Stmts ts [] (Some e) ts1
 
 (* w ::= bind β, ...;    β ::= s | s = e *)
 with Bind : list token -> list (spec * option aexpr) -> list token -> Prop :=
-| BindG : forall ts ts1 bs ts2 ts3, Tk "BIND" ts ts1 -> CommaList Binding ["SEMI"] ts1 bs ts2 ->
-    Tk "SEMI" ts2 ts3 -> Bind ts bs ts3
+| BindG : forall ts ts1 bs ts2 ts3, Tk BIND ts ts1 -> CommaList Binding [SEMI] ts1 bs ts2 ->
+    Tk SEMI ts2 ts3 -> Bind ts bs ts3
 with Binding : list token -> spec * option aexpr -> list token -> Prop :=
-| BindingApply : forall ts s ts1, Spec_ ts s ts1 -> kind ts1 <> "EQUAL" -> Binding ts (s, None) ts1
-| BindingBind : forall ts s ts1 ts2 e ts3, Spec_ ts s ts1 -> Tk "EQUAL" ts1 ts2 -> Expr false ts2 e ts3 ->
+| BindingApply : forall ts s ts1, Spec_ ts s ts1 -> kind ts1 <> EQUAL -> Binding ts (s, None) ts1
+| BindingBind : forall ts s ts1 ts2 e ts3, Spec_ ts s ts1 -> Tk EQUAL ts1 ts2 -> Expr false ts2 e ts3 ->
     Binding ts (s, Some e) ts3.
 
 (* ===================== Declarations d ===================================== *)
 
 (* [x, ...], as a tag's or functor's brackets *)
 Definition NameList (ts : list token) (xs : list name) (rest : list token) : Prop :=
-  exists ts1 ts2, Tk "LBRACKET" ts ts1 /\ CommaList TkName ["RBRACKET"] ts1 xs ts2 /\ Tk "RBRACKET" ts2 rest.
+  exists ts1 ts2, Tk LBRACKET ts ts1 /\ CommaList TkName [RBRACKET] ts1 xs ts2 /\ Tk RBRACKET ts2 rest.
 
 (* f ::= x | x.x | .x *)
 Inductive Function_ : list token -> fnrecv * name -> list token -> Prop :=
-| FnPlain : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> "DOT" -> Function_ ts (RPlain, x) ts1
-| FnAttached : forall ts r ts1 ts2 x ts3, TkName ts r ts1 -> Tk "DOT" ts1 ts2 -> TkName ts2 x ts3 ->
+| FnPlain : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> DOT -> Function_ ts (RPlain, x) ts1
+| FnAttached : forall ts r ts1 ts2 x ts3, TkName ts r ts1 -> Tk DOT ts1 ts2 -> TkName ts2 x ts3 ->
     Function_ ts (RAttached r, x) ts3
-| FnDetached : forall ts ts1 x ts2, Tk "DOT" ts ts1 -> TkName ts1 x ts2 -> Function_ ts (RDetached, x) ts2.
+| FnDetached : forall ts ts1 x ts2, Tk DOT ts ts1 -> TkName ts1 x ts2 -> Function_ ts (RDetached, x) ts2.
 
 Inductive Param : list token -> name * aty -> list token -> Prop :=
-| ParamG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk "COLON" ts1 ts2 -> Type_ ts2 t ts3 ->
+| ParamG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk COLON ts1 ts2 -> Type_ ts2 t ts3 ->
     Param ts (x, t) ts3.
 
 (* an assume's item: h, but not `.x` *)
@@ -906,7 +944,7 @@ Definition AssumeItem (ts : list token) (it : path * option name) (rest : list t
 
 (* `[x, ...]` after `tag x`, possibly absent or empty *)
 Definition TagParams (ts : list token) (xs : list name) (rest : list token) : Prop :=
-  (kind ts <> "LBRACKET" /\ xs = [] /\ rest = ts) \/ NameList ts xs rest.
+  (kind ts <> LBRACKET /\ xs = [] /\ rest = ts) \/ NameList ts xs rest.
 
 (* d ::= assume h, ... { d ... } | type x; | type x = τ; | val x: τ (= e)?;
        | tag x; | tag x([x, ...])? (τ); | tag x([x, ...])? {x: τ, ...};
@@ -914,84 +952,84 @@ Definition TagParams (ts : list token) (xs : list name) (rest : list token) : Pr
        | context x = s, ...; | functor x([x, ...])?: s, ... -> s, ...;
        | functor x: s, ... -> s, ... { w ... } *)
 Inductive Decl : list token -> adecl -> list token -> Prop :=
-| DAssume : forall ts ts1 its ts2 ts3 ds ts4 ts5, Tk "ASSUME" ts ts1 ->
-    CommaList AssumeItem ["LBRACE"] ts1 its ts2 -> Tk "LBRACE" ts2 ts3 -> Decls ts3 ds ts4 ->
-    Tk "RBRACE" ts4 ts5 -> Decl ts (ADAssume its ds) ts5
-| DType : forall ts ts1 x ts2 ts3, Tk "TYPE" ts ts1 -> TkName ts1 x ts2 -> Tk "SEMI" ts2 ts3 ->
+| DAssume : forall ts ts1 its ts2 ts3 ds ts4 ts5, Tk ASSUME ts ts1 ->
+    CommaList AssumeItem [LBRACE] ts1 its ts2 -> Tk LBRACE ts2 ts3 -> Decls ts3 ds ts4 ->
+    Tk RBRACE ts4 ts5 -> Decl ts (ADAssume its ds) ts5
+| DType : forall ts ts1 x ts2 ts3, Tk TYPE ts ts1 -> TkName ts1 x ts2 -> Tk SEMI ts2 ts3 ->
     Decl ts (ADType x) ts3
-| DAlias : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk "TYPE" ts ts1 -> TkName ts1 x ts2 -> Tk "EQUAL" ts2 ts3 ->
-    Type_ ts3 t ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADAlias x t) ts5
+| DAlias : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk TYPE ts ts1 -> TkName ts1 x ts2 -> Tk EQUAL ts2 ts3 ->
+    Type_ ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADAlias x t) ts5
 (* `tag x;`, without brackets: `tag x[];` is refused (D73) *)
-| DUnit : forall ts ts1 x ts2 ts3, Tk "TAG" ts ts1 -> TkName ts1 x ts2 -> kind ts2 <> "LBRACKET" ->
-    Tk "SEMI" ts2 ts3 -> Decl ts (ADUnit x) ts3
-| DTagRecord : forall ts ts1 x ts2 ps ts3 t ts4 ts5, Tk "TAG" ts ts1 -> TkName ts1 x ts2 ->
-    TagParams ts2 ps ts3 -> RecordType ts3 t ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADTag x ps t) ts5
+| DUnit : forall ts ts1 x ts2 ts3, Tk TAG ts ts1 -> TkName ts1 x ts2 -> kind ts2 <> LBRACKET ->
+    Tk SEMI ts2 ts3 -> Decl ts (ADUnit x) ts3
+| DTagRecord : forall ts ts1 x ts2 ps ts3 t ts4 ts5, Tk TAG ts ts1 -> TkName ts1 x ts2 ->
+    TagParams ts2 ps ts3 -> RecordType ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADTag x ps t) ts5
 (* a record payload is written with braces, not `({...})` (D83) *)
-| DTag : forall ts ts1 x ts2 ps ts3 ts4 t ts5 ts6 ts7, Tk "TAG" ts ts1 -> TkName ts1 x ts2 ->
-    TagParams ts2 ps ts3 -> Tk "LPAREN" ts3 ts4 -> Type_ ts4 t ts5 -> (forall fs, t <> ATRec fs) ->
-    Tk "RPAREN" ts5 ts6 -> Tk "SEMI" ts6 ts7 -> Decl ts (ADTag x ps t) ts7
-| DVal : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk "VAL" ts ts1 -> TkName ts1 x ts2 -> Tk "COLON" ts2 ts3 ->
-    Type_ ts3 t ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADVal x t None) ts5
-| DValDefined : forall ts ts1 x ts2 ts3 t ts4 ts5 e ts6 ts7, Tk "VAL" ts ts1 -> TkName ts1 x ts2 ->
-    Tk "COLON" ts2 ts3 -> Type_ ts3 t ts4 -> Tk "EQUAL" ts4 ts5 -> Expr false ts5 e ts6 ->
-    Tk "SEMI" ts6 ts7 -> Decl ts (ADVal x t (Some e)) ts7
-| DFnAbstract : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 ts7, Tk "FN" ts ts1 -> Function_ ts1 rx ts2 ->
-    Tk "LPAREN" ts2 ts3 -> CommaList Param ["RPAREN"] ts3 ps ts4 -> Tk "RPAREN" ts4 ts5 ->
-    OptType ts5 ret ts6 -> Tk "SEMI" ts6 ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret None) ts7
-| DFn : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 b ts7, Tk "FN" ts ts1 -> Function_ ts1 rx ts2 ->
-    Tk "LPAREN" ts2 ts3 -> CommaList Param ["RPAREN"] ts3 ps ts4 -> Tk "RPAREN" ts4 ts5 ->
+| DTag : forall ts ts1 x ts2 ps ts3 ts4 t ts5 ts6 ts7, Tk TAG ts ts1 -> TkName ts1 x ts2 ->
+    TagParams ts2 ps ts3 -> Tk LPAREN ts3 ts4 -> Type_ ts4 t ts5 -> (forall fs, t <> ATRec fs) ->
+    Tk RPAREN ts5 ts6 -> Tk SEMI ts6 ts7 -> Decl ts (ADTag x ps t) ts7
+| DVal : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk VAL ts ts1 -> TkName ts1 x ts2 -> Tk COLON ts2 ts3 ->
+    Type_ ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADVal x t None) ts5
+| DValDefined : forall ts ts1 x ts2 ts3 t ts4 ts5 e ts6 ts7, Tk VAL ts ts1 -> TkName ts1 x ts2 ->
+    Tk COLON ts2 ts3 -> Type_ ts3 t ts4 -> Tk EQUAL ts4 ts5 -> Expr false ts5 e ts6 ->
+    Tk SEMI ts6 ts7 -> Decl ts (ADVal x t (Some e)) ts7
+| DFnAbstract : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 ts7, Tk FN ts ts1 -> Function_ ts1 rx ts2 ->
+    Tk LPAREN ts2 ts3 -> CommaList Param [RPAREN] ts3 ps ts4 -> Tk RPAREN ts4 ts5 ->
+    OptType ts5 ret ts6 -> Tk SEMI ts6 ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret None) ts7
+| DFn : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 b ts7, Tk FN ts ts1 -> Function_ ts1 rx ts2 ->
+    Tk LPAREN ts2 ts3 -> CommaList Param [RPAREN] ts3 ps ts4 -> Tk RPAREN ts4 ts5 ->
     OptType ts5 ret ts6 -> Block ts6 b ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret (Some b)) ts7
-| DContext : forall ts ts1 x ts2 ts3 ss ts4 ts5, Tk "CONTEXT" ts ts1 -> TkName ts1 x ts2 ->
-    Tk "EQUAL" ts2 ts3 -> CommaList Spec_ ["SEMI"] ts3 ss ts4 -> Tk "SEMI" ts4 ts5 -> Decl ts (ADCtx x ss) ts5
+| DContext : forall ts ts1 x ts2 ts3 ss ts4 ts5, Tk CONTEXT ts ts1 -> TkName ts1 x ts2 ->
+    Tk EQUAL ts2 ts3 -> CommaList Spec_ [SEMI] ts3 ss ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADCtx x ss) ts5
 (* an abstract functor, its brackets optional (D78, D84) *)
-| DFunctorAbstract : forall ts ts1 x ts2 ps ts3 ts4 args ts5 ts6 res ts7 ts8, Tk "FUNCTOR" ts ts1 ->
+| DFunctorAbstract : forall ts ts1 x ts2 ps ts3 ts4 args ts5 ts6 res ts7 ts8, Tk FUNCTOR ts ts1 ->
     TkName ts1 x ts2 ->
-    ((kind ts2 <> "LBRACKET" /\ ps = None /\ ts3 = ts2) \/ exists l, ps = Some l /\ NameList ts2 l ts3) ->
-    Tk "COLON" ts3 ts4 -> CommaList Spec_ ["HYPHEN_GREATER"] ts4 args ts5 -> Tk "HYPHEN_GREATER" ts5 ts6 ->
-    CommaList Spec_ ["LBRACE"; "SEMI"] ts6 res ts7 -> Tk "SEMI" ts7 ts8 ->
+    ((kind ts2 <> LBRACKET /\ ps = None /\ ts3 = ts2) \/ exists l, ps = Some l /\ NameList ts2 l ts3) ->
+    Tk COLON ts3 ts4 -> CommaList Spec_ [HYPHEN_GREATER] ts4 args ts5 -> Tk HYPHEN_GREATER ts5 ts6 ->
+    CommaList Spec_ [LBRACE; SEMI] ts6 res ts7 -> Tk SEMI ts7 ts8 ->
     Decl ts (ADFunctor x ps args res None) ts8
 (* a functor with a body has no brackets (D84) *)
-| DFunctor : forall ts ts1 x ts2 ts3 args ts4 ts5 res ts6 ts7 ws ts8 ts9, Tk "FUNCTOR" ts ts1 ->
-    TkName ts1 x ts2 -> kind ts2 <> "LBRACKET" -> Tk "COLON" ts2 ts3 ->
-    CommaList Spec_ ["HYPHEN_GREATER"] ts3 args ts4 -> Tk "HYPHEN_GREATER" ts4 ts5 ->
-    CommaList Spec_ ["LBRACE"; "SEMI"] ts5 res ts6 -> Tk "LBRACE" ts6 ts7 -> Binds ts7 ws ts8 ->
-    Tk "RBRACE" ts8 ts9 -> Decl ts (ADFunctor x None args res (Some ws)) ts9
+| DFunctor : forall ts ts1 x ts2 ts3 args ts4 ts5 res ts6 ts7 ws ts8 ts9, Tk FUNCTOR ts ts1 ->
+    TkName ts1 x ts2 -> kind ts2 <> LBRACKET -> Tk COLON ts2 ts3 ->
+    CommaList Spec_ [HYPHEN_GREATER] ts3 args ts4 -> Tk HYPHEN_GREATER ts4 ts5 ->
+    CommaList Spec_ [LBRACE; SEMI] ts5 res ts6 -> Tk LBRACE ts6 ts7 -> Binds ts7 ws ts8 ->
+    Tk RBRACE ts8 ts9 -> Decl ts (ADFunctor x None args res (Some ws)) ts9
 with Decls : list token -> list adecl -> list token -> Prop :=
-| DeclsEnd : forall ts, kind ts = "RBRACE" -> Decls ts [] ts
+| DeclsEnd : forall ts, kind ts = RBRACE -> Decls ts [] ts
 | DeclsCons : forall ts d ts1 ds ts2, Decl ts d ts1 -> Decls ts1 ds ts2 -> Decls ts (d :: ds) ts2
 with Binds : list token -> list (list (spec * option aexpr)) -> list token -> Prop :=
-| BindsEnd : forall ts, kind ts = "RBRACE" -> Binds ts [] ts
+| BindsEnd : forall ts, kind ts = RBRACE -> Binds ts [] ts
 | BindsCons : forall ts w ts1 ws ts2, Bind ts w ts1 -> Binds ts1 ws ts2 -> Binds ts (w :: ws) ts2.
 
 (* ===================== Imports m, Uses u, the File F ====================== *)
 
 (* u ::= x | x as x | .x | .x as .x   (a rename keeps the dottedness) *)
 Definition UseName (ts : list token) (u : bool * name) (rest : list token) : Prop :=
-  exists ts1, ((fst u = true /\ Tk "DOT" ts ts1) \/ (fst u = false /\ kind ts <> "DOT" /\ ts1 = ts)) /\
+  exists ts1, ((fst u = true /\ Tk DOT ts ts1) \/ (fst u = false /\ kind ts <> DOT /\ ts1 = ts)) /\
               TkName ts1 (snd u) rest.
 Inductive Use : list token -> ause -> list token -> Prop :=
-| UsePlain : forall ts d x ts1, UseName ts (d, x) ts1 -> kind ts1 <> "AS" -> Use ts (AUse d x None) ts1
-| UseRenamed : forall ts d x ts1 ts2 y ts3, UseName ts (d, x) ts1 -> Tk "AS" ts1 ts2 ->
+| UsePlain : forall ts d x ts1, UseName ts (d, x) ts1 -> kind ts1 <> AS -> Use ts (AUse d x None) ts1
+| UseRenamed : forall ts d x ts1 ts2 y ts3, UseName ts (d, x) ts1 -> Tk AS ts1 ts2 ->
     UseName ts2 (d, y) ts3 -> Use ts (AUse d x (Some (d, y))) ts3.
 
 (* m ::= import str (as x)? (use * | use u, ...)?; *)
 Inductive Import_ : list token -> aimport -> list token -> Prop :=
-| ImportG : forall ts ts1 s ts2 alias ts3 glob uses ts4 ts5, Tk "IMPORT" ts ts1 ->
-    TkText "STRING" ts1 s ts2 ->
-    ((kind ts2 <> "AS" /\ alias = None /\ ts3 = ts2) \/
-     exists ts' a, alias = Some a /\ Tk "AS" ts2 ts' /\ TkName ts' a ts3) ->
-    ((kind ts3 <> "USE" /\ glob = false /\ uses = [] /\ ts4 = ts3) \/
-     (exists ts', Tk "USE" ts3 ts' /\ Tk "STAR" ts' ts4 /\ glob = true /\ uses = []) \/
-     (exists ts', Tk "USE" ts3 ts' /\ kind ts' <> "STAR" /\ glob = false /\
-                  CommaList Use ["SEMI"] ts' uses ts4)) ->
-    Tk "SEMI" ts4 ts5 -> Import_ ts (AImport (string_value s) alias glob uses) ts5.
+| ImportG : forall ts ts1 s ts2 alias ts3 glob uses ts4 ts5, Tk IMPORT ts ts1 ->
+    TkText STRING ts1 s ts2 ->
+    ((kind ts2 <> AS /\ alias = None /\ ts3 = ts2) \/
+     exists ts' a, alias = Some a /\ Tk AS ts2 ts' /\ TkName ts' a ts3) ->
+    ((kind ts3 <> USE /\ glob = false /\ uses = [] /\ ts4 = ts3) \/
+     (exists ts', Tk USE ts3 ts' /\ Tk STAR ts' ts4 /\ glob = true /\ uses = []) \/
+     (exists ts', Tk USE ts3 ts' /\ kind ts' <> STAR /\ glob = false /\
+                  CommaList Use [SEMI] ts' uses ts4)) ->
+    Tk SEMI ts4 ts5 -> Import_ ts (AImport (string_value s) alias glob uses) ts5.
 
 Inductive Imports : list token -> list aimport -> list token -> Prop :=
-| ImportsEnd : forall ts, kind ts <> "IMPORT" -> Imports ts [] ts
+| ImportsEnd : forall ts, kind ts <> IMPORT -> Imports ts [] ts
 | ImportsCons : forall ts m ts1 ms ts2, Import_ ts m ts1 -> Imports ts1 ms ts2 -> Imports ts (m :: ms) ts2.
 
 Inductive DeclsToEnd : list token -> list adecl -> list token -> Prop :=
-| EndOfFile : forall ts, kind ts = "EOF" -> DeclsToEnd ts [] ts
+| EndOfFile : forall ts, kind ts = EOF -> DeclsToEnd ts [] ts
 | DeclThen : forall ts d ts1 ds ts2, Decl ts d ts1 -> DeclsToEnd ts1 ds ts2 -> DeclsToEnd ts (d :: ds) ts2.
 
 (* F ::= m ... d ... (then the end of the file) *)
@@ -3678,7 +3716,7 @@ Definition literal_tree_of (text : string) : literal_tree :=
   end.
 Definition NumericText (text : string) : Prop :=
   exists raw kind, Syntax.Lexeme (String.list_byte_of_string raw) kind [] /\
-    (kind = "INTEGER" \/ kind = "DECIMAL") /\ Syntax.lit_norm raw = text.
+    (kind = Syntax.INTEGER \/ kind = Syntax.DECIMAL) /\ Syntax.lit_norm raw = text.
 
 (* [D84] rule 7 / DECISIONS.md: at most one family in force produces a key.
    Here θ is the matching substitution over P(F), not the full emitted

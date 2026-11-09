@@ -18,19 +18,44 @@ Lemma pbind_ok {A B} (r : pr A) (k : A -> list token -> pr B) v rest :
   pbind r k = POk v rest -> exists a ts', r = POk a ts' /\ k a ts' = POk v rest.
 Proof. destruct r; simpl; [eauto | discriminate]. Qed.
 
+(* Kinds: equality is decidable, by `token_kind_eqb`. *)
+Lemma token_kind_index_inj a b : token_kind_index a = token_kind_index b -> a = b.
+Proof.
+  set (all :=
+    [NAME; STRING; INTEGER; DECIMAL; AS; ASSUME; FUNCTOR; BIND; BREAK; CONTEXT;
+     ELSE; FN; FOR; IF; IMPORT; LET; LOOP; MATCH; RETURN; TAG; THIS_TYPE; THIS;
+     TYPE; USE; VAL; VAR; WHILE; IN; UNDERSCORE; EXCLAM; PERCENT; AMPERSAND;
+     LPAREN; RPAREN; STAR; PLUS; COMMA; HYPHEN; DOT; SLASH; COLON; SEMI; LESS;
+     EQUAL; GREATER; LBRACKET; RBRACKET; CARET; LBRACE; PIPE; RBRACE;
+     EXCLAM_EQUAL; COLON_COLON; EQUAL_GREATER; LESS_LESS; LESS_EQUAL;
+     EQUAL_EQUAL; GREATER_EQUAL; GREATER_GREATER; HYPHEN_GREATER; EOF]).
+  assert (R : forall k, nth (token_kind_index k) all EOF = k) by (destruct k; reflexivity).
+  intro H. rewrite <- (R a), <- (R b), H. reflexivity.
+Qed.
+Lemma token_kind_eqb_eq a b : token_kind_eqb a b = true <-> a = b.
+Proof.
+  unfold token_kind_eqb. rewrite Nat.eqb_eq. split; [apply token_kind_index_inj | intros ->; reflexivity].
+Qed.
+Lemma token_kind_eqb_refl a : token_kind_eqb a a = true.
+Proof. apply token_kind_eqb_eq. reflexivity. Qed.
+Lemma token_kind_eqb_neq a b : token_kind_eqb a b = false <-> a <> b.
+Proof. rewrite <- token_kind_eqb_eq. destruct (token_kind_eqb a b); intuition discriminate. Qed.
+Lemma token_kind_eqb_spec a b : reflect (a = b) (token_kind_eqb a b).
+Proof. apply iff_reflect. symmetry. apply token_kind_eqb_eq. Qed.
+
 Lemma at_true k ts : at_ k ts = true -> kind ts = k.
-Proof. unfold at_. apply String.eqb_eq. Qed.
+Proof. unfold at_. apply token_kind_eqb_eq. Qed.
 Lemma at_false k ts : at_ k ts = false -> kind ts <> k.
-Proof. unfold at_. intros H E. apply String.eqb_neq in H. auto. Qed.
+Proof. unfold at_. intros H E. apply token_kind_eqb_neq in H. auto. Qed.
 Lemma at_any_true ks ts : at_any ks ts = true -> In (kind ts) ks.
 Proof.
   unfold at_any. intro H. apply existsb_exists in H as (k & Hin & E).
-  apply String.eqb_eq in E. subst. auto.
+  apply token_kind_eqb_eq in E. subst. auto.
 Qed.
 Lemma at_any_false ks ts : at_any ks ts = false -> ~ In (kind ts) ks.
 Proof.
-  unfold at_any. intros H Hin. assert (existsb (String.eqb (kind ts)) ks = true).
-  { apply existsb_exists. exists (kind ts). split; auto. apply String.eqb_refl. }
+  unfold at_any. intros H Hin. assert (existsb (token_kind_eqb (kind ts)) ks = true).
+  { apply existsb_exists. exists (kind ts). split; auto. apply token_kind_eqb_refl. }
   congruence.
 Qed.
 Lemma mem_In s l : mem s l = true -> In s l.
@@ -104,6 +129,8 @@ Ltac crush :=
   | H : (_ || _)%bool = false |- _ => apply orb_false_iff in H; destruct H
   | H : String.eqb _ _ = true |- _ => apply String.eqb_eq in H
   | H : String.eqb _ _ = false |- _ => apply String.eqb_neq in H
+  | H : token_kind_eqb _ _ = true |- _ => apply token_kind_eqb_eq in H
+  | H : token_kind_eqb _ _ = false |- _ => apply token_kind_eqb_neq in H
   | H : negb _ = true |- _ => apply negb_true_iff in H
   | H : negb _ = false |- _ => apply negb_false_iff in H
   end.
@@ -147,7 +174,7 @@ Proof.
 Qed.
 
 Lemma path_first ts p rest : Path ts p rest ->
-  exists q, p = tx (peek ts) :: q /\ (q = [] -> kind (advance ts) <> "COLON_COLON").
+  exists q, p = tx (peek ts) :: q /\ (q = [] -> kind (advance ts) <> COLON_COLON).
 Proof.
   intro H. destruct H as [ts x ts1 [E1 [E2 E3]] Hk | ts x ts1 ts2 p ts3 [E1 [E2 E3]] [E4 E5] Hp].
   - exists []. subst. split; auto.
@@ -218,7 +245,7 @@ Proof.
   induction n as [|n (IH1 & IH2 & IH3 & IH4 & IH5)]; [repeat split; intros; discriminate|].
   repeat split.
   - intros ts v rest H. simpl in H. unfold eat, at_type_atom in H.
-    destruct (at_ "PIPE" ts) eqn:Ep; simpl in H; crush; feed.
+    destruct (at_ PIPE ts) eqn:Ep; simpl in H; crush; feed.
     + apply TyNever; auto with fe.
     + match goal with H : MembersAfter _ _ _, Ha : TypeAtom _ _ _ |- _ => apply H in Ha end.
       match goal with Hm : Members ?t (?m :: ?ms) _ |- _ => apply (TyMembers ts t (m :: ms)) end;
@@ -258,7 +285,7 @@ Ltac use_sound ::=
 
 Lemma opt_type_sound n ts v rest : parse_opt_type n ts = POk v rest -> OptType ts v rest.
 Proof.
-  unfold parse_opt_type, eat. intro H. destruct (at_ "COLON" ts) eqn:E; crush; use_sound; eauto with fe.
+  unfold parse_opt_type, eat. intro H. destruct (at_ COLON ts) eqn:E; crush; use_sound; eauto with fe.
 Qed.
 
 Definition RecPatAfter (p : option path) (ts : list token) (v : apat) (rest : list token) : Prop :=
@@ -301,7 +328,7 @@ Global Hint Unfold OptTk : fe.
 Global Hint Constructors LeftChain Expr Cond Arms ArmBody Operators Operand Additive Term Unary
   Suffixes Primary RecField Lambda LamParam Block Stmts Bind Binding : fe.
 
-Lemma TkName_intro ts ts' x : Tk "NAME" ts ts' -> tx (peek ts) = x -> TkName ts x ts'.
+Lemma TkName_intro ts ts' x : Tk NAME ts ts' -> tx (peek ts) = x -> TkName ts x ts'.
 Proof. intros [E1 E2] E3. repeat split; auto. Qed.
 Lemma OptTk_eat k ts : OptTk k ts (snd (eat k ts)).
 Proof.
@@ -309,21 +336,14 @@ Proof.
   - left. apply at_true in E. split; auto.
   - right. apply at_false in E. auto.
 Qed.
-Lemma TkName_self ts : kind ts = "NAME" -> TkName ts (tx (peek ts)) (advance ts).
+Lemma TkName_self ts : kind ts = NAME -> TkName ts (tx (peek ts)) (advance ts).
 Proof. intro. repeat split; auto. Qed.
 Global Hint Resolve TkName_intro OptTk_eat TkName_self : fe.
 
-Lemma unary_op_some k op : unary_op k = Some op -> (k = "HYPHEN" /\ op = "-") \/ (k = "EXCLAM" /\ op = "!").
-Proof.
-  unfold unary_op. destruct (k =? "HYPHEN")%string eqn:E1; [|destruct (k =? "EXCLAM")%string eqn:E2];
-    intro H; inversion H; subst; [left|right]; split; auto; apply String.eqb_eq; auto.
-Qed.
-Lemma unary_op_none k : unary_op k = None -> k <> "HYPHEN" /\ k <> "EXCLAM".
-Proof.
-  unfold unary_op. destruct (k =? "HYPHEN")%string eqn:E1; [discriminate|].
-  destruct (k =? "EXCLAM")%string eqn:E2; [discriminate|].
-  intros _. apply String.eqb_neq in E1, E2. auto.
-Qed.
+Lemma unary_op_some k op : unary_op k = Some op -> (k = HYPHEN /\ op = "-") \/ (k = EXCLAM /\ op = "!").
+Proof. unfold unary_op. destruct k; intro H; inversion H; auto. Qed.
+Lemma unary_op_none k : unary_op k = None -> k <> HYPHEN /\ k <> EXCLAM.
+Proof. unfold unary_op. destruct k; intro H; try discriminate H; split; discriminate. Qed.
 
 Lemma binop_in_false l ts : (forall o, binop ts = Some o -> ~ In o l) -> binop_in l ts = false.
 Proof.
@@ -492,7 +512,7 @@ Proof.
   (* block_loop *)
   - intros ts v rest H. simpl in H. grind.
     all: unfold StmtsOk in *; simpl in *.
-    all: try (destruct (at_ "LET" ts) eqn:?; crush).
+    all: try (destruct (at_ LET ts) eqn:?; crush).
     all: rewrite ?kind_at1 in *.
     all: try congruence.
     all: try solve [eauto 8 with fe].
@@ -584,7 +604,7 @@ Proof.
     try (match goal with H : comma_list _ _ _ _ = POk _ _ |- _ =>
            apply (comma_list_sound Use) in H; [|exact use_item_sound] end).
   all: eapply ImportG; eauto with fe; unfold TkText; eauto 10 with fe.
-  all: match goal with H : Tk "STRING" _ _ |- _ => destruct H end; repeat split; auto.
+  all: match goal with H : Tk STRING _ _ |- _ => destruct H end; repeat split; auto.
 Qed.
 
 Lemma imports_sound : forall n ts v rest, imports_loop n ts = POk v rest -> Imports ts v rest.
@@ -661,12 +681,12 @@ Proof. intro H. destruct c; congruence. Qed.
 Lemma frac_spec r1 kd frac r2 :
   match r1 with
   | "."%byte :: d :: r' =>
-      if is_digit d then let (ds2, r'') := span is_digit r' in ("DECIMAL", "."%byte :: d :: ds2, r'')
-      else ("INTEGER", [], r1)
-  | _ => ("INTEGER", [], r1)
+      if is_digit d then let (ds2, r'') := span is_digit r' in (DECIMAL, "."%byte :: d :: ds2, r'')
+      else (INTEGER, [], r1)
+  | _ => (INTEGER, [], r1)
   end = (kd, frac, r2) ->
-  (kd = "INTEGER" /\ frac = [] /\ r2 = r1 /\ forall c r, r1 = "."%byte :: c :: r -> is_digit c = false) \/
-  (kd = "DECIMAL" /\ exists d ds2, frac = "."%byte :: d :: ds2 /\ forallb is_digit (d :: ds2) = true /\
+  (kd = INTEGER /\ frac = [] /\ r2 = r1 /\ forall c r, r1 = "."%byte :: c :: r -> is_digit c = false) \/
+  (kd = DECIMAL /\ exists d ds2, frac = "."%byte :: d :: ds2 /\ forallb is_digit (d :: ds2) = true /\
                        r1 = (frac ++ r2)%list /\ starts is_digit r2 = false).
 Proof.
   intro H. destruct r1 as [|c1 r1].
@@ -697,7 +717,7 @@ Proof.
   apply frac_spec in Hf.
   assert (Hfr : Fraction frac /\ (ds ++ r1 = ds ++ frac ++ r2)%list /\
                 (frac = [] -> forall c r, r2 = "."%byte :: c :: r -> is_digit c = false) /\
-                kd = match frac with [] => "INTEGER" | _ => "DECIMAL" end).
+                kd = match frac with [] => INTEGER | _ => DECIMAL end).
   { destruct Hf as [(-> & -> & -> & Hn) | (-> & d & ds2 & -> & Hd & -> & _)].
     - repeat split; auto. left; auto.
     - repeat split; auto. right; eauto. discriminate. }
@@ -710,20 +730,20 @@ Proof.
               i + length (c :: ds) + length frac = i + length cs).
   { intros r'' Hn Hd. exists (c :: ds ++ frac ++ [])%list, kd.
     rewrite !app_nil_r. split; [simpl; rewrite app_assoc; reflexivity|]. split.
-    - replace kd with (match frac, @nil byte with [], [] => "INTEGER" | _, _ => "DECIMAL" end)
+    - replace kd with (match frac, @nil byte with [], [] => INTEGER | _, _ => DECIMAL end)
         by (subst kd; destruct frac; reflexivity).
       replace (c :: ds ++ frac)%list with (c :: ds ++ frac ++ [])%list by (rewrite app_nil_r; reflexivity).
       apply LxNumber; auto. simpl; rewrite Hc; auto. left; auto. intros Hf0 _. eauto.
     - simpl. rewrite app_length. split; [reflexivity | lia]. }
   assert (Hsome : forall ex r4, Exponent ex -> ex <> [] -> starts is_name_cont r4 = false ->
             exists cs k, (c :: ds ++ frac ++ ex ++ r4)%list = (cs ++ r4)%list /\ Lexeme cs k r4 /\
-              Tok "DECIMAL" (string_of_list_byte (((c :: ds) ++ frac) ++ ex)) i = Tok k (string_of_list_byte cs) i /\
+              Tok DECIMAL (string_of_list_byte (((c :: ds) ++ frac) ++ ex)) i = Tok k (string_of_list_byte cs) i /\
               i + length (c :: ds) + length frac + length ex = i + length cs).
-  { intros ex r4 Hex Hne Hn. exists (c :: ds ++ frac ++ ex)%list, "DECIMAL".
+  { intros ex r4 Hex Hne Hn. exists (c :: ds ++ frac ++ ex)%list, DECIMAL.
     split; [simpl; rewrite !app_assoc; reflexivity|]. split.
-    - assert (L : Lexeme (c :: ds ++ frac ++ ex) (match frac, ex with [], [] => "INTEGER" | _, _ => "DECIMAL" end) r4).
+    - assert (L : Lexeme (c :: ds ++ frac ++ ex) (match frac, ex with [], [] => INTEGER | _, _ => DECIMAL end) r4).
       { apply LxNumber; auto. simpl; rewrite Hc; auto. intros _ E. contradiction. }
-      replace (match frac, ex with [], [] => "INTEGER" | _, _ => "DECIMAL" end) with "DECIMAL" in L
+      replace (match frac, ex with [], [] => INTEGER | _, _ => DECIMAL end) with DECIMAL in L
         by (destruct frac, ex; congruence). exact L.
     - simpl. rewrite <- !app_assoc, !app_length. split; [reflexivity | lia]. }
   destruct r2 as [|e [|s r3]].
@@ -827,7 +847,7 @@ Lemma lex_go_sound : forall fuel cs i acc ts, lex_go fuel cs i acc = LOk ts ->
 Proof.
   induction fuel as [|fuel IH]; intros cs i acc ts H; simpl in H; [discriminate|].
   destruct cs as [|c r].
-  - injection H as <-. exists [Tok "EOF" "" i]. unfold rev'. rewrite <- rev_alt. split; [reflexivity|constructor].
+  - injection H as <-. exists [Tok EOF "" i]. unfold rev'. rewrite <- rev_alt. split; [reflexivity|constructor].
   - destruct (lex_char c r i acc) as [[[r' i'] acc']|[m o]] eqn:E; [|discriminate].
     apply lex_char_sound in E. apply IH in H as (ts' & -> & Hl).
     destruct E as [(-> & Hs) | (t & -> & Hs)].
@@ -923,7 +943,7 @@ Lemma lex_number_complete d ds frac ex rest i :
   forallb is_digit (d :: ds) = true -> Fraction frac -> Exponent ex -> starts is_name_cont rest = false ->
   (frac = [] -> ex = [] -> forall c r, rest = "."%byte :: c :: r -> is_digit c = false) ->
   lex_number d (ds ++ frac ++ ex ++ rest)%list i =
-    inl (Tok (match frac, ex with [], [] => "INTEGER" | _, _ => "DECIMAL" end)
+    inl (Tok (match frac, ex with [], [] => INTEGER | _, _ => DECIMAL end)
              (string_of_list_byte (d :: ds ++ frac ++ ex)%list) i, rest,
          i + length (d :: ds ++ frac ++ ex)%list).
 Proof.
@@ -932,7 +952,7 @@ Proof.
   rewrite span_app by (auto; apply frac_ex_not_digit; auto).
   match goal with |- context [match ?m with (_, _) => _ end] => destruct m as [[kd frac'] r2] eqn:Hm end.
   apply frac_spec in Hm.
-  assert (Hfr : kd = match frac with [] => "INTEGER" | _ => "DECIMAL" end /\ frac' = frac /\ r2 = (ex ++ rest)%list).
+  assert (Hfr : kd = match frac with [] => INTEGER | _ => DECIMAL end /\ frac' = frac /\ r2 = (ex ++ rest)%list).
   { destruct Hf as [->|(d1 & ds1 & -> & Hd1)]; destruct Hm as [(-> & -> & -> & Hn) | (-> & d2 & ds2 & -> & Hd2 & E & Hs)].
     - auto.
     - exfalso. simpl in E. destruct He as [->|(e & sign & d3 & ds3 & -> & Hee & _)].
@@ -995,7 +1015,7 @@ Proof.
     replace (match rest with
              | [] => None
              | d :: r' => match two_char a d with Some k0 => Some (k0, d, r') | None => None end
-             end) with (@None (string * byte * list byte)).
+             end) with (@None (token_kind * byte * list byte)).
     2: { destruct rest as [|b r']; auto. rewrite (Hn b r' eq_refl). reflexivity. }
     rewrite Hk. fin_off.
   - exists c, (ns ++ rest)%list. split; [reflexivity|].
@@ -1004,7 +1024,7 @@ Proof.
     replace (match (ns ++ rest)%list with
              | [] => None
              | d :: r' => match two_char c d with Some k0 => Some (k0, d, r') | None => None end
-             end) with (@None (string * byte * list byte)).
+             end) with (@None (token_kind * byte * list byte)).
     2: { destruct (ns ++ rest)%list as [|b r']; auto. rewrite H3. reflexivity. }
     rewrite H4, H5, Hc, span_app by auto. fin_off.
   - exists """"%byte, (body ++ [""""%byte] ++ rest)%list. split; [simpl; rewrite <- app_assoc; reflexivity|].
@@ -1012,7 +1032,7 @@ Proof.
     replace (match (body ++ [""""%byte] ++ rest)%list with
              | [] => None
              | d :: r' => match two_char """"%byte d with Some k0 => Some (k0, d, r') | None => None end
-             end) with (@None (string * byte * list byte)).
+             end) with (@None (token_kind * byte * list byte)).
     2: { destruct (body ++ [""""%byte] ++ rest)%list as [|b r']; auto. }
     simpl one_char. simpl is_digit. simpl is_name_start. cbv iota beta. simpl Byte.eqb. cbv iota beta.
     simpl app. rewrite lex_string_complete by auto. simpl.
@@ -1024,7 +1044,7 @@ Proof.
     replace (match (ds ++ frac ++ ex ++ rest)%list with
              | [] => None
              | d0 :: r' => match two_char d d0 with Some k0 => Some (k0, d0, r') | None => None end
-             end) with (@None (string * byte * list byte)).
+             end) with (@None (token_kind * byte * list byte)).
     2: { destruct (ds ++ frac ++ ex ++ rest)%list as [|b r']; auto. rewrite H3. reflexivity. }
     rewrite H4, Hd. rewrite lex_number_complete; auto. simpl. rewrite Hd, Hds. reflexivity.
 Qed.
@@ -1054,7 +1074,7 @@ Proof. intro H. unfold lex. rewrite (lex_go_complete _ _ _ H); auto. Qed.
 (* The lexer's output ends with the EOF token, which no rule consumes; so
    every token consumed shortens the list.  The parser's fuel bound rests on
    that. *)
-Definition Ends (ts : list token) : Prop := exists pre x o, ts = (pre ++ [Tok "EOF" x o])%list.
+Definition Ends (ts : list token) : Prop := exists pre x o, ts = (pre ++ [Tok EOF x o])%list.
 
 Lemma lexes_ends i cs ts : Lexes i cs ts -> Ends ts.
 Proof.
@@ -1066,34 +1086,34 @@ Qed.
 Lemma ends_len ts : Ends ts -> 1 <= length ts.
 Proof. intros (pre & x & o & ->). rewrite app_length. simpl. lia. Qed.
 
-Lemma ends_advance ts : Ends ts -> kind ts <> "EOF" -> Ends (advance ts) /\ length (advance ts) < length ts.
+Lemma ends_advance ts : Ends ts -> kind ts <> EOF -> Ends (advance ts) /\ length (advance ts) < length ts.
 Proof.
   intros (pre & x & o & ->) Hk. destruct pre as [|t pre]; [exfalso; apply Hk; reflexivity|].
-  simpl. replace (advance (t :: pre ++ [Tok "EOF" x o])%list) with (pre ++ [Tok "EOF" x o])%list
+  simpl. replace (advance (t :: pre ++ [Tok EOF x o])%list) with (pre ++ [Tok EOF x o])%list
     by (destruct pre; reflexivity).
   split; [exists pre, x, o; reflexivity | lia].
 Qed.
 
-Lemma Tk_ends k ts ts' : Tk k ts ts' -> k <> "EOF" -> Ends ts -> Ends ts' /\ length ts' < length ts.
+Lemma Tk_ends k ts ts' : Tk k ts ts' -> k <> EOF -> Ends ts -> Ends ts' /\ length ts' < length ts.
 Proof. intros [E ->] Hk He. apply ends_advance; congruence. Qed.
 
 Lemma at_eq k ts : kind ts = k -> at_ k ts = true.
-Proof. unfold at_. intros ->. apply String.eqb_refl. Qed.
+Proof. unfold at_. intros ->. apply token_kind_eqb_refl. Qed.
 Lemma at_neq k ts : kind ts <> k -> at_ k ts = false.
-Proof. unfold at_. intro H. apply String.eqb_neq. auto. Qed.
+Proof. unfold at_. intro H. apply token_kind_eqb_neq. auto. Qed.
 Lemma at_any_in ks ts : In (kind ts) ks -> at_any ks ts = true.
-Proof. unfold at_any. intro H. apply existsb_exists. exists (kind ts). split; auto. apply String.eqb_refl. Qed.
+Proof. unfold at_any. intro H. apply existsb_exists. exists (kind ts). split; auto. apply token_kind_eqb_refl. Qed.
 Lemma at_any_nin ks ts : ~ In (kind ts) ks -> at_any ks ts = false.
 Proof.
-  unfold at_any. intro H. destruct (existsb (String.eqb (kind ts)) ks) eqn:E; auto.
-  apply existsb_exists in E as (k & Hin & Ek). apply String.eqb_eq in Ek. subst. contradiction.
+  unfold at_any. intro H. destruct (existsb (token_kind_eqb (kind ts)) ks) eqn:E; auto.
+  apply existsb_exists in E as (k & Hin & Ek). apply token_kind_eqb_eq in Ek. subst. contradiction.
 Qed.
 Lemma expect_eq k ts : kind ts = k -> expect k ts = POk (peek ts) (advance ts).
 Proof. intro H. unfold expect. rewrite at_eq; auto. Qed.
 Lemma expect_name_eq ts x ts' : TkName ts x ts' -> expect_name ts = POk x ts'.
 Proof. intros (E1 & E2 & ->). unfold expect_name. rewrite expect_eq; auto. simpl. rewrite E2. reflexivity. Qed.
 
-Lemma expect_name_eq' ts : kind ts = "NAME" -> expect_name ts = POk (tx (peek ts)) (advance ts).
+Lemma expect_name_eq' ts : kind ts = NAME -> expect_name ts = POk (tx (peek ts)) (advance ts).
 Proof. intro E. unfold expect_name. rewrite expect_eq; auto. Qed.
 
 (* What a completeness lemma concludes: the parser finds it, and the rest
@@ -1116,7 +1136,7 @@ Ltac tks :=
       let E := fresh "Ek" in let X := fresh "Ex" in let A := fresh in destruct H as (E & X & A); subst ts'
   | H : TkName ?ts ?x ?ts', He : Ends ?ts |- _ =>
       let E1 := fresh "En" in let L1 := fresh "Ln" in
-      destruct (Tk_ends "NAME" ts ts' (conj (proj1 H) (proj2 (proj2 H))) ltac:(discriminate) He) as [E1 L1];
+      destruct (Tk_ends NAME ts ts' (conj (proj1 H) (proj2 (proj2 H))) ltac:(discriminate) He) as [E1 L1];
       let E := fresh "Ek" in let X := fresh "Ex" in let A := fresh in destruct H as (E & X & A); subst ts'
   end.
 
@@ -1162,7 +1182,7 @@ Proof.
   - rewrite at_eq by auto.
     match goal with E : Ends (advance (advance ts)) |- _ => rename E into E2 end.
     assert (Hq := path_first _ _ _ Hp). destruct Hq as (q' & -> & _).
-    assert (Hk2 : kind (advance (advance ts)) = "NAME")
+    assert (Hk2 : kind (advance (advance ts)) = NAME)
       by (destruct Hp as [? ? ? (E & _) | ? ? ? ? ? ? (E & _) _ _]; auto).
     rewrite expect_name_eq' by auto. simpl.
     edestruct (IH E2 _ q' eq_refl n (y :: acc)) as ((Ep & E3 & L3) & L4); [lia|].
@@ -1174,7 +1194,7 @@ Lemma path_complete ts p rest : Path ts p rest -> Ends ts -> forall n, length ts
 Proof.
   intros Hp He n Hn. unfold parse_path.
   assert (Hx := path_first _ _ _ Hp). destruct Hx as (q & -> & _).
-  assert (Hk : kind ts = "NAME") by (destruct Hp as [? ? ? (E & _) | ? ? ? ? ? ? (E & _) _ _]; auto).
+  assert (Hk : kind ts = NAME) by (destruct Hp as [? ? ? (E & _) | ? ? ? ? ? ? (E & _) _ _]; auto).
   rewrite expect_name_eq' by auto. simpl.
   destruct (path_rest_complete _ _ _ Hp He _ _ eq_refl n [] Hn) as ((Ep & E1 & L1) & L2).
   repeat split; auto.
@@ -1188,11 +1208,11 @@ Qed.
 Theorem operators_maximal nr ts e rest : Operators nr ts e rest -> binop rest = None.
 Proof. destruct 1; auto. Qed.
 
-Lemma path_kind ts p rest : Path ts p rest -> kind ts = "NAME".
+Lemma path_kind ts p rest : Path ts p rest -> kind ts = NAME.
 Proof. destruct 1 as [? ? ? (E & _) _ | ? ? ? ? ? ? (E & _) _ _]; auto. Qed.
 
 (* A type starts with `|`, a name, `This`, `(` or `{`. *)
-Lemma type_atom_first ts t rest : TypeAtom ts t rest -> In (kind ts) ["NAME"; "THIS_TYPE"; "LPAREN"; "LBRACE"].
+Lemma type_atom_first ts t rest : TypeAtom ts t rest -> In (kind ts) [NAME; THIS_TYPE; LPAREN; LBRACE].
 Proof.
   intro H. destruct H as [? ? ? ? ? Hp _ | ? ? [E _] | ? ? ? [E _] _ | ? ? ? ? ? [E _] _ _ | ? ? ? Hr].
   - rewrite (path_kind _ _ _ Hp). simpl. auto.
@@ -1202,7 +1222,7 @@ Proof.
   - destruct Hr as [? ? ? ? ? [E _] _ _]. rewrite E. simpl. auto.
 Qed.
 
-Lemma type_first ts t rest : Type_ ts t rest -> In (kind ts) ["PIPE"; "NAME"; "THIS_TYPE"; "LPAREN"; "LBRACE"].
+Lemma type_first ts t rest : Type_ ts t rest -> In (kind ts) [PIPE; NAME; THIS_TYPE; LPAREN; LBRACE].
 Proof.
   intro H. destruct H as [ts ts1 [E _] _ | ts ts1 ms ts2 Hp Hm].
   - rewrite E. simpl. auto.

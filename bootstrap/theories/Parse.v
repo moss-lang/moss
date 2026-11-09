@@ -83,9 +83,9 @@ Definition lex_number (c : byte) (r : list byte) (i : nat)
   let '(kind, frac, r2) :=
     match r1 with
     | "."%byte :: d :: r' =>
-        if is_digit d then let (ds2, r'') := span is_digit r' in ("DECIMAL", "."%byte :: d :: ds2, r'')
-        else ("INTEGER", [], r1)
-    | _ => ("INTEGER", [], r1)
+        if is_digit d then let (ds2, r'') := span is_digit r' in (DECIMAL, "."%byte :: d :: ds2, r'')
+        else (INTEGER, [], r1)
+    | _ => (INTEGER, [], r1)
     end in
   let j := i + length int_text + length frac in        (* offset of r2 *)
   let body := app int_text frac in
@@ -118,8 +118,8 @@ Definition lex_number (c : byte) (r : list byte) (i : nat)
         let text := app body (app pre eds) in
         match r4 with
         | d :: _ => if is_name_cont d then inr ("a numeric literal has no suffix; separate it from the name (D68)", k)
-                    else inl (Tok "DECIMAL" (string_of_list_byte text) i, r4, k)
-        | [] => inl (Tok "DECIMAL" (string_of_list_byte text) i, r4, k)
+                    else inl (Tok DECIMAL (string_of_list_byte text) i, r4, k)
+        | [] => inl (Tok DECIMAL (string_of_list_byte text) i, r4, k)
         end
   end.
 
@@ -148,12 +148,12 @@ Definition lex_char (c : byte) (r : list byte) (i : nat) (acc : list token)
     else if is_name_start c then
       let (ns, r') := span is_name_cont r in
       let text := string_of_list_byte (c :: ns) in
-      let k := match assoc text KEYWORDS with Some k => k | None => "NAME" end in
+      let k := match assoc text KEYWORDS with Some k => k | None => NAME end in
       inl (r', S i + length ns, Tok k text i :: acc)
     else if Byte.eqb c """"%byte then
       match lex_string i (S i) r [] with
       | inl (body, r') =>
-          inl (r', S i + length body + 1, Tok "STRING" (string_of_list_byte (c :: app body [c])) i :: acc)
+          inl (r', S i + length body + 1, Tok STRING (string_of_list_byte (c :: app body [c])) i :: acc)
       | inr (m, o) => inr (m, o)
       end
     else inr ("unexpected character " ++ repr_char_at c r, i)
@@ -164,7 +164,7 @@ Fixpoint lex_go (fuel : nat) (cs : list byte) (i : nat) (acc : list token) : lre
   | 0 => LErr "lexer out of fuel" i
   | S fuel =>
       match cs with
-      | [] => LOk (rev' (Tok "EOF" "" i :: acc))
+      | [] => LOk (rev' (Tok EOF "" i :: acc))
       | c :: r =>
           match lex_char c r i acc with
           | inl (r', i', acc') => lex_go fuel r' i' acc'
@@ -200,27 +200,51 @@ Definition pbind {A B} (r : pr A) (k : A -> list token -> pr B) : pr B :=
 Notation "'let@' x '&' ts ':=' r 'in' k" := (pbind r (fun x ts => k))
   (at level 200, x pattern, ts name, r at level 100, k at level 200).
 
-Definition at_ (k : string) (ts : list token) : bool := String.eqb (kind ts) k.
-Definition at_any (ks : list string) (ts : list token) : bool := existsb (String.eqb (kind ts)) ks.
+(* A kind's name, for error messages: lex.py's `Kind` name. *)
+Definition kind_name (k : token_kind) : string :=
+  match k with
+  | NAME => "NAME" | STRING => "STRING" | INTEGER => "INTEGER"
+  | DECIMAL => "DECIMAL" | AS => "AS" | ASSUME => "ASSUME"
+  | FUNCTOR => "FUNCTOR" | BIND => "BIND" | BREAK => "BREAK"
+  | CONTEXT => "CONTEXT" | ELSE => "ELSE" | FN => "FN" | FOR => "FOR"
+  | IF => "IF" | IMPORT => "IMPORT" | LET => "LET" | LOOP => "LOOP"
+  | MATCH => "MATCH" | RETURN => "RETURN" | TAG => "TAG"
+  | THIS_TYPE => "THIS_TYPE" | THIS => "THIS" | TYPE => "TYPE" | USE => "USE"
+  | VAL => "VAL" | VAR => "VAR" | WHILE => "WHILE" | IN => "IN"
+  | UNDERSCORE => "UNDERSCORE" | EXCLAM => "EXCLAM" | PERCENT => "PERCENT"
+  | AMPERSAND => "AMPERSAND" | LPAREN => "LPAREN" | RPAREN => "RPAREN"
+  | STAR => "STAR" | PLUS => "PLUS" | COMMA => "COMMA" | HYPHEN => "HYPHEN"
+  | DOT => "DOT" | SLASH => "SLASH" | COLON => "COLON" | SEMI => "SEMI"
+  | LESS => "LESS" | EQUAL => "EQUAL" | GREATER => "GREATER"
+  | LBRACKET => "LBRACKET" | RBRACKET => "RBRACKET" | CARET => "CARET"
+  | LBRACE => "LBRACE" | PIPE => "PIPE" | RBRACE => "RBRACE"
+  | EXCLAM_EQUAL => "EXCLAM_EQUAL" | COLON_COLON => "COLON_COLON"
+  | EQUAL_GREATER => "EQUAL_GREATER" | LESS_LESS => "LESS_LESS"
+  | LESS_EQUAL => "LESS_EQUAL" | EQUAL_EQUAL => "EQUAL_EQUAL"
+  | GREATER_EQUAL => "GREATER_EQUAL" | GREATER_GREATER => "GREATER_GREATER"
+  | HYPHEN_GREATER => "HYPHEN_GREATER" | EOF => "EOF"
+  end.
+Definition at_ (k : token_kind) (ts : list token) : bool := token_kind_eqb (kind ts) k.
+Definition at_any (ks : list token_kind) (ts : list token) : bool := existsb (token_kind_eqb (kind ts)) ks.
 Definition err {A} (msg : string) (ts : list token) : pr A := PErr msg (toff (peek ts)).
 Definition fuel_err {A} (ts : list token) : pr A := err "parser out of fuel" ts.
-Definition expect (k : string) (ts : list token) : pr token :=
+Definition expect (k : token_kind) (ts : list token) : pr token :=
   if at_ k ts then POk (peek ts) (advance ts)
-  else err ("expected " ++ k ++ ", found " ++ kind ts) ts.
+  else err ("expected " ++ kind_name k ++ ", found " ++ kind_name (kind ts)) ts.
 Definition expect_name (ts : list token) : pr string :=
-  let@ t & ts := expect "NAME" ts in POk (tx t) ts.
-Definition eat (k : string) (ts : list token) : bool * list token :=
+  let@ t & ts := expect NAME ts in POk (tx t) ts.
+Definition eat (k : token_kind) (ts : list token) : bool * list token :=
   if at_ k ts then (true, advance ts) else (false, ts).
 
 (* List[X]: comma-separated, optional trailing comma (Parser.comma_list) *)
-Fixpoint comma_list {A} (n : nat) (item : list token -> pr A) (closers : list string)
+Fixpoint comma_list {A} (n : nat) (item : list token -> pr A) (closers : list token_kind)
   (ts : list token) : pr (list A) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
       if at_any closers ts then POk [] ts else
       let@ x & ts := item ts in
-      if at_ "COMMA" ts then
+      if at_ COMMA ts then
         let@ xs & ts := comma_list n item closers (advance ts) in POk (x :: xs) ts
       else POk [x] ts
   end.
@@ -231,7 +255,7 @@ Fixpoint path_rest (n : nat) (acc : list string) (ts : list token) : pr path :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "COLON_COLON" ts then
+      if at_ COLON_COLON ts then
         let@ x & ts := expect_name (advance ts) in path_rest n (x :: acc) ts
       else POk (rev' acc) ts
   end.
@@ -244,11 +268,11 @@ Fixpoint parse_spec (n : nat) (ts : list token) : pr spec :=
   | 0 => fuel_err ts
   | S n =>
       let@ (p, d) & ts :=
-        (if at_ "DOT" ts then
+        (if at_ DOT ts then
            let@ d & ts := expect_name (advance ts) in POk (None, Some d) ts
          else
            let@ p & ts := parse_path n ts in
-           if at_ "DOT" ts then
+           if at_ DOT ts then
              let@ d & ts := expect_name (advance ts) in POk (Some p, Some d) ts
            else POk (Some p, None) ts) in
       let@ a & ts := parse_app_opt n ts in
@@ -258,10 +282,10 @@ with parse_app_opt (n : nat) (ts : list token) : pr sapp :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "LBRACKET" ts then
-        let@ _ & ts := expect "LBRACKET" ts in
-        let@ bs & ts := comma_list n (parse_binding n) ["RBRACKET"] ts in
-        let@ _ & ts := expect "RBRACKET" ts in
+      if at_ LBRACKET ts then
+        let@ _ & ts := expect LBRACKET ts in
+        let@ bs & ts := comma_list n (parse_binding n) [RBRACKET] ts in
+        let@ _ & ts := expect RBRACKET ts in
         POk (Some bs) ts
       else POk None ts
   end
@@ -270,26 +294,26 @@ with parse_binding (n : nat) (ts : list token) : pr (path * spec) :=
   | 0 => fuel_err ts
   | S n =>
       let@ p & ts := parse_path n ts in
-      let@ _ & ts := expect "EQUAL" ts in
+      let@ _ & ts := expect EQUAL ts in
       let@ s & ts := parse_spec n ts in
       POk (p, s) ts
   end.
 
 Definition parse_assume_item (n : nat) (ts : list token) : pr (path * option name) :=
   let@ p & ts := parse_path n ts in
-  if at_ "DOT" ts then let@ d & ts := expect_name (advance ts) in POk (p, Some d) ts
+  if at_ DOT ts then let@ d & ts := expect_name (advance ts) in POk (p, Some d) ts
   else POk (p, None) ts.
 
 (* ===================== Types ============================================== *)
 
 Definition at_type_atom (ts : list token) : bool :=
-  at_any ["NAME"; "THIS_TYPE"; "LPAREN"; "LBRACE"] ts.
+  at_any [NAME; THIS_TYPE; LPAREN; LBRACE] ts.
 
 Fixpoint parse_type (n : nat) (ts : list token) : pr aty :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let (piped, ts) := eat "PIPE" ts in
+      let (piped, ts) := eat PIPE ts in
       if piped && negb (at_type_atom ts) then POk ATNever ts else
       let@ m & ts := parse_type_atom n ts in
       let@ ms & ts := union_rest n ts in
@@ -299,7 +323,7 @@ with union_rest (n : nat) (ts : list token) : pr (list aty) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "PIPE" ts then
+      if at_ PIPE ts then
         let@ m & ts := parse_type_atom n (advance ts) in
         let@ ms & ts := union_rest n ts in POk (m :: ms) ts
       else POk [] ts
@@ -308,26 +332,26 @@ with parse_type_atom (n : nat) (ts : list token) : pr aty :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "NAME" ts then
+      if at_ NAME ts then
         let@ p & ts := parse_path n ts in
         let@ a & ts := parse_app_opt n ts in POk (ATRef p a) ts
-      else if at_ "THIS_TYPE" ts then POk ATThis (advance ts)
-      else if at_ "LPAREN" ts then
+      else if at_ THIS_TYPE ts then POk ATThis (advance ts)
+      else if at_ LPAREN ts then
         let ts := advance ts in
-        if at_ "RPAREN" ts then POk ATUnit (advance ts) else
+        if at_ RPAREN ts then POk ATUnit (advance ts) else
         let@ t & ts := parse_type n ts in
-        if at_ "COMMA" ts then err "there are no tuple types (D63); use a record" ts else
-        let@ _ & ts := expect "RPAREN" ts in POk t ts
-      else if at_ "LBRACE" ts then parse_record_type n ts
-      else err ("expected a type, found " ++ kind ts) ts
+        if at_ COMMA ts then err "there are no tuple types (D63); use a record" ts else
+        let@ _ & ts := expect RPAREN ts in POk t ts
+      else if at_ LBRACE ts then parse_record_type n ts
+      else err ("expected a type, found " ++ kind_name (kind ts)) ts
   end
 with parse_record_type (n : nat) (ts : list token) : pr aty :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let@ _ & ts := expect "LBRACE" ts in
-      let@ fs & ts := comma_list n (type_field n) ["RBRACE"] ts in
-      let@ _ & ts := expect "RBRACE" ts in
+      let@ _ & ts := expect LBRACE ts in
+      let@ fs & ts := comma_list n (type_field n) [RBRACE] ts in
+      let@ _ & ts := expect RBRACE ts in
       POk (ATRec fs) ts
   end
 with type_field (n : nat) (ts : list token) : pr (name * aty) :=
@@ -335,12 +359,12 @@ with type_field (n : nat) (ts : list token) : pr (name * aty) :=
   | 0 => fuel_err ts
   | S n =>
       let@ x & ts := expect_name ts in
-      let@ _ & ts := expect "COLON" ts in
+      let@ _ & ts := expect COLON ts in
       let@ t & ts := parse_type n ts in POk (x, t) ts
   end.
 
 Definition parse_opt_type (n : nat) (ts : list token) : pr (option aty) :=
-  let (b, ts) := eat "COLON" ts in
+  let (b, ts) := eat COLON ts in
   if b then let@ t & ts := parse_type n ts in POk (Some t) ts else POk None ts.
 
 (* ===================== Patterns =========================================== *)
@@ -349,24 +373,24 @@ Fixpoint parse_pattern (n : nat) (ts : list token) : pr apat :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "LBRACE" ts then parse_record_pattern n None ts
-      else if at_ "UNDERSCORE" ts then POk APWild (advance ts)
-      else if at_ "NAME" ts then
+      if at_ LBRACE ts then parse_record_pattern n None ts
+      else if at_ UNDERSCORE ts then POk APWild (advance ts)
+      else if at_ NAME ts then
         let@ p & ts := parse_path n ts in
-        if at_ "LBRACE" ts then parse_record_pattern n (Some p) ts
-        else if at_ "LPAREN" ts then
+        if at_ LBRACE ts then parse_record_pattern n (Some p) ts
+        else if at_ LPAREN ts then
           let@ sub & ts := parse_pattern n (advance ts) in
-          let@ _ & ts := expect "RPAREN" ts in POk (APTag p sub) ts
+          let@ _ & ts := expect RPAREN ts in POk (APTag p sub) ts
         else POk (APPath p) ts
-      else err ("expected a pattern, found " ++ kind ts) ts
+      else err ("expected a pattern, found " ++ kind_name (kind ts)) ts
   end
 with parse_record_pattern (n : nat) (p : option path) (ts : list token) : pr apat :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let@ _ & ts := expect "LBRACE" ts in
-      let@ fs & ts := comma_list n (pat_field n) ["RBRACE"] ts in
-      let@ _ & ts := expect "RBRACE" ts in
+      let@ _ & ts := expect LBRACE ts in
+      let@ fs & ts := comma_list n (pat_field n) [RBRACE] ts in
+      let@ _ & ts := expect RBRACE ts in
       POk (APRec p fs) ts
   end
 with pat_field (n : nat) (ts : list token) : pr (name * option apat) :=
@@ -374,15 +398,15 @@ with pat_field (n : nat) (ts : list token) : pr (name * option apat) :=
   | 0 => fuel_err ts
   | S n =>
       let@ x & ts := expect_name ts in
-      if at_ "EQUAL" ts then
+      if at_ EQUAL ts then
         let@ q & ts := parse_pattern n (advance ts) in POk (x, Some q) ts
       else POk (x, None) ts
   end.
 
 (* ===================== Operators (D68) ==================================== *)
 
-Definition unary_op (k : string) : option string :=
-  if String.eqb k "HYPHEN" then Some "-" else if String.eqb k "EXCLAM" then Some "!" else None.
+Definition unary_op (k : token_kind) : option string :=
+  match k with HYPHEN => Some "-" | EXCLAM => Some "!" | _ => None end.
 
 (* Parser.mixed: two operators that may not meet *)
 Definition mixed {A} (before : option string) (ts : list token) : pr A :=
@@ -406,30 +430,30 @@ Fixpoint parse_expr (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexp
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "IF" ts then parse_if n ts
-      else if at_ "MATCH" ts then
+      if at_ IF ts then parse_if n ts
+      else if at_ MATCH ts then
         let@ s & ts := parse_expr n true (advance ts) in
-        let@ _ & ts := expect "LBRACE" ts in
+        let@ _ & ts := expect LBRACE ts in
         let@ arms & ts := parse_arms n ts in
-        let@ _ & ts := expect "RBRACE" ts in
+        let@ _ & ts := expect RBRACE ts in
         POk (AEMatch s arms) ts
-      else if at_ "RETURN" ts then
+      else if at_ RETURN ts then
         let ts := advance ts in
-        if at_any ["SEMI"; "COMMA"; "RBRACE"; "RPAREN"] ts then POk (AEReturn None) ts
+        if at_any [SEMI; COMMA; RBRACE; RPAREN] ts then POk (AEReturn None) ts
         else let@ e & ts := parse_expr n nr ts in POk (AEReturn (Some e)) ts
-      else if at_ "BREAK" ts then POk AEBreak (advance ts)
+      else if at_ BREAK ts then POk AEBreak (advance ts)
       else parse_operators n nr ts
   end
 with parse_if (n : nat) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let@ _ & ts := expect "IF" ts in
+      let@ _ & ts := expect IF ts in
       let@ c & ts := parse_expr n true ts in
       let@ t & ts := parse_block n ts in
-      let (el, ts) := eat "ELSE" ts in
+      let (el, ts) := eat ELSE ts in
       if el then
-        if at_ "IF" ts then let@ e & ts := parse_if n ts in POk (AEIf c t (Some e)) ts
+        if at_ IF ts then let@ e & ts := parse_if n ts in POk (AEIf c t (Some e)) ts
         else let@ b & ts := parse_block n ts in POk (AEIf c t (Some (AEBlock b))) ts
       else POk (AEIf c t None) ts
   end
@@ -437,16 +461,16 @@ with parse_arms (n : nat) (ts : list token) {struct n} : pr (list (apat * aexpr)
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "RBRACE" ts then POk [] ts else
+      if at_ RBRACE ts then POk [] ts else
       let@ p & ts := parse_pattern n ts in
-      let@ _ & ts := expect "EQUAL_GREATER" ts in
+      let@ _ & ts := expect EQUAL_GREATER ts in
       let@ body & ts :=
-        (if at_ "LBRACE" ts then
-           let@ b & ts := parse_block n ts in POk (AEBlock b) (snd (eat "COMMA" ts))
+        (if at_ LBRACE ts then
+           let@ b & ts := parse_block n ts in POk (AEBlock b) (snd (eat COMMA ts))
          else
            let@ e & ts := parse_expr n false ts in
-           if at_ "RBRACE" ts then POk e ts
-           else let@ _ & ts := expect "COMMA" ts in POk e ts) in
+           if at_ RBRACE ts then POk e ts
+           else let@ _ & ts := expect COMMA ts in POk e ts) in
       let@ rest & ts := parse_arms n ts in
       POk ((p, body) :: rest) ts
   end
@@ -556,9 +580,9 @@ with parse_unary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :
       | None => parse_postfix n nr ts
       | Some op =>
           let ts := advance ts in
-          if String.eqb op "-" && at_any ["INTEGER"; "DECIMAL"] ts && String.eqb (kind_at 1 ts) "DOT" then
+          if String.eqb op "-" && at_any [INTEGER; DECIMAL] ts && token_kind_eqb (kind_at 1 ts) DOT then
             let text := tx (peek ts) in
-            let nm := if String.eqb (kind_at 2 ts) "NAME" then tx (peekn 2 ts) else "m" in
+            let nm := if token_kind_eqb (kind_at 2 ts) NAME then tx (peekn 2 ts) else "m" in
             err ("`-` before a literal with a method call: write `(-" ++ text ++ ")." ++ nm
                  ++ "(...)` or `-(" ++ text ++ "." ++ nm ++ "(...))` (D68)") ts
           else let@ u & ts := parse_unary n nr ts in POk (AEUnary op u) ts
@@ -574,11 +598,11 @@ with postfix_loop (n : nat) (e : aexpr) (ts : list token) {struct n} : pr aexpr 
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "DOT" ts then
+      if at_ DOT ts then
         let@ p & ts := parse_path n (advance ts) in
-        if at_ "LPAREN" ts then
-          let@ args & ts := comma_list n (parse_expr n false) ["RPAREN"] (advance ts) in
-          let@ _ & ts := expect "RPAREN" ts in
+        if at_ LPAREN ts then
+          let@ args & ts := comma_list n (parse_expr n false) [RPAREN] (advance ts) in
+          let@ _ & ts := expect RPAREN ts in
           postfix_loop n (AEMeth e p args) ts
         else match p with
              | [f] => postfix_loop n (AEField e f) ts
@@ -590,13 +614,13 @@ with parse_lambda (n : nat) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let@ _ & ts := expect "LPAREN" ts in
+      let@ _ & ts := expect LPAREN ts in
       let@ ps & ts := comma_list n (fun ts => let@ x & ts := expect_name ts in
                                               let@ t & ts := parse_opt_type n ts in
-                                              POk (x, t) ts) ["RPAREN"] ts in
-      let@ _ & ts := expect "RPAREN" ts in
+                                              POk (x, t) ts) [RPAREN] ts in
+      let@ _ & ts := expect RPAREN ts in
       let@ ret & ts := parse_opt_type n ts in
-      let@ _ & ts := expect "EQUAL_GREATER" ts in
+      let@ _ & ts := expect EQUAL_GREATER ts in
       let@ body & ts := parse_expr n false ts in
       POk (AELam ps ret body) ts
   end
@@ -604,45 +628,45 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "LPAREN" ts && at_lambda ts then parse_lambda n ts
-      else if at_ "LPAREN" ts then
+      if at_ LPAREN ts && at_lambda ts then parse_lambda n ts
+      else if at_ LPAREN ts then
         let ts := advance ts in
-        if at_ "RPAREN" ts then POk AEUnit (advance ts) else
+        if at_ RPAREN ts then POk AEUnit (advance ts) else
         let@ e & ts := parse_expr n false ts in
-        let@ _ & ts := expect "RPAREN" ts in POk e ts
-      else if at_ "THIS" ts then POk AEThis (advance ts)
-      else if at_any ["INTEGER"; "DECIMAL"] ts then POk (AELit (lit_norm (tx (peek ts)))) (advance ts)
-      else if at_ "STRING" ts then
+        let@ _ & ts := expect RPAREN ts in POk e ts
+      else if at_ THIS ts then POk AEThis (advance ts)
+      else if at_any [INTEGER; DECIMAL] ts then POk (AELit (lit_norm (tx (peek ts)))) (advance ts)
+      else if at_ STRING ts then
         let value := string_value (tx (peek ts)) in
         if string_utf8_valid value then POk (string_desugar value) (advance ts)
         else err "invalid UTF-8 in string literal" ts
-      else if at_ "LBRACE" ts && negb nr then
+      else if at_ LBRACE ts && negb nr then
         let@ b & ts := parse_block n ts in POk (AEBlock b) ts
-      else if at_ "NAME" ts then
+      else if at_ NAME ts then
         let@ p & ts := parse_path n ts in
         let@ a & ts := parse_app_opt n ts in
-        if at_ "LPAREN" ts then
-          let@ args & ts := comma_list n (parse_expr n false) ["RPAREN"] (advance ts) in
-          let@ _ & ts := expect "RPAREN" ts in
+        if at_ LPAREN ts then
+          let@ args & ts := comma_list n (parse_expr n false) [RPAREN] (advance ts) in
+          let@ _ & ts := expect RPAREN ts in
           POk (AECall p a args) ts
-        else if at_ "LBRACE" ts && negb nr then
+        else if at_ LBRACE ts && negb nr then
           let@ fs & ts := comma_list n (fun ts => let@ x & ts := expect_name ts in
-                                                  if at_ "EQUAL" ts then
+                                                  if at_ EQUAL ts then
                                                     let@ v & ts := parse_expr n false (advance ts) in
                                                     POk (x, Some v) ts
-                                                  else POk (x, None) ts) ["RBRACE"] (advance ts) in
-          let@ _ & ts := expect "RBRACE" ts in
+                                                  else POk (x, None) ts) [RBRACE] (advance ts) in
+          let@ _ & ts := expect RBRACE ts in
           POk (AERec p a fs) ts
         else POk (AEPath p a) ts
-      else err ("expected an expression, found " ++ kind ts) ts
+      else err ("expected an expression, found " ++ kind_name (kind ts)) ts
   end
 with parse_block (n : nat) (ts : list token) {struct n} : pr ablock :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let@ _ & ts := expect "LBRACE" ts in
+      let@ _ & ts := expect LBRACE ts in
       let@ (ss, tl) & ts := block_loop n ts in
-      let@ _ & ts := expect "RBRACE" ts in
+      let@ _ & ts := expect RBRACE ts in
       POk (ABlock ss tl) ts
   end
 with block_loop (n : nat) (ts : list token) {struct n} : pr (list astmt * option aexpr) :=
@@ -651,69 +675,69 @@ with block_loop (n : nat) (ts : list token) {struct n} : pr (list astmt * option
   | S n =>
       let more (s : astmt) (ts : list token) :=
         let@ (ss, tl) & ts := block_loop n ts in POk (s :: ss, tl) ts in
-      if at_ "RBRACE" ts then POk ([], None) ts
-      else if at_ "LET" ts || at_ "VAR" ts then
-        let is_let := at_ "LET" ts in
+      if at_ RBRACE ts then POk ([], None) ts
+      else if at_ LET ts || at_ VAR ts then
+        let is_let := at_ LET ts in
         let@ x & ts := expect_name (advance ts) in
         let@ t & ts := parse_opt_type n ts in
-        let@ _ & ts := expect "EQUAL" ts in
+        let@ _ & ts := expect EQUAL ts in
         let@ e & ts := parse_expr n false ts in
-        let@ _ & ts := expect "SEMI" ts in
+        let@ _ & ts := expect SEMI ts in
         more ((if is_let then ASLet else ASVar) x t e) ts
-      else if at_ "BIND" ts then
+      else if at_ BIND ts then
         let@ b & ts := parse_bind n ts in more (ASBind b) ts
-      else if at_ "WHILE" ts then
+      else if at_ WHILE ts then
         let@ c & ts := parse_expr n true (advance ts) in
         let@ b & ts := parse_block n ts in more (ASWhile c b) ts
-      else if at_ "LOOP" ts then
+      else if at_ LOOP ts then
         let@ b & ts := parse_block n (advance ts) in more (ASLoop b) ts
-      else if at_ "FOR" ts then
+      else if at_ FOR ts then
         let ts := advance ts in
         let@ x & ts := expect_name ts in
-        let@ _ & ts := expect "IN" ts in
+        let@ _ & ts := expect IN ts in
         let@ coll & ts := parse_expr n true ts in
         let@ body & ts := parse_block n ts in
         more (for_desugar x coll body) ts
-      else if at_ "NAME" ts && String.eqb (kind_at 1 ts) "EQUAL" then
+      else if at_ NAME ts && token_kind_eqb (kind_at 1 ts) EQUAL then
         let x := tx (peek ts) in
         let@ e & ts := parse_expr n false (advance (advance ts)) in
-        let@ _ & ts := expect "SEMI" ts in
+        let@ _ & ts := expect SEMI ts in
         more (ASAssign x e) ts
       else
-        let braced := at_any ["IF"; "MATCH"; "LBRACE"] ts in
+        let braced := at_any [IF; MATCH; LBRACE] ts in
         let@ e & ts := parse_expr n false ts in
-        if at_ "SEMI" ts then more (ASExpr e) (advance ts)
-        else if at_ "RBRACE" ts then POk ([], Some e) ts
+        if at_ SEMI ts then more (ASExpr e) (advance ts)
+        else if at_ RBRACE ts then POk ([], Some e) ts
         else if braced then more (ASExpr e) ts
-        else err ("expected SEMI or RBRACE, found " ++ kind ts) ts
+        else err ("expected SEMI or RBRACE, found " ++ kind_name (kind ts)) ts
   end
 with parse_bind (n : nat) (ts : list token) {struct n} : pr (list (spec * option aexpr)) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      let@ _ & ts := expect "BIND" ts in
+      let@ _ & ts := expect BIND ts in
       let@ its & ts := comma_list n (fun ts => let@ s & ts := parse_spec n ts in
-                                               if at_ "EQUAL" ts then
+                                               if at_ EQUAL ts then
                                                  let@ e & ts := parse_expr n false (advance ts) in
                                                  POk (s, Some e) ts
-                                               else POk (s, None) ts) ["SEMI"] ts in
-      let@ _ & ts := expect "SEMI" ts in
+                                               else POk (s, None) ts) [SEMI] ts in
+      let@ _ & ts := expect SEMI ts in
       POk its ts
   end.
 
 (* ===================== Declarations and files ============================= *)
 
 Definition name_list (n : nat) (ts : list token) : pr (list name) :=
-  let@ _ & ts := expect "LBRACKET" ts in
-  let@ ps & ts := comma_list n expect_name ["RBRACKET"] ts in
-  let@ _ & ts := expect "RBRACKET" ts in
+  let@ _ & ts := expect LBRACKET ts in
+  let@ ps & ts := comma_list n expect_name [RBRACKET] ts in
+  let@ _ & ts := expect RBRACKET ts in
   POk ps ts.
 
 Fixpoint binds_loop (n : nat) (ts : list token) : pr (list (list (spec * option aexpr))) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "RBRACE" ts then POk [] ts else
+      if at_ RBRACE ts then POk [] ts else
       let@ b & ts := parse_bind n ts in
       let@ bs & ts := binds_loop n ts in POk (b :: bs) ts
   end.
@@ -722,132 +746,132 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "ASSUME" ts then
-        let@ its & ts := comma_list n (parse_assume_item n) ["LBRACE"] (advance ts) in
-        let@ _ & ts := expect "LBRACE" ts in
+      if at_ ASSUME ts then
+        let@ its & ts := comma_list n (parse_assume_item n) [LBRACE] (advance ts) in
+        let@ _ & ts := expect LBRACE ts in
         let@ ds & ts := decls_until n ts in
-        let@ _ & ts := expect "RBRACE" ts in
+        let@ _ & ts := expect RBRACE ts in
         POk (ADAssume its ds) ts
-      else if at_ "TYPE" ts then
+      else if at_ TYPE ts then
         let@ x & ts := expect_name (advance ts) in
-        if at_ "SEMI" ts then POk (ADType x) (advance ts)
-        else if at_ "EQUAL" ts then
+        if at_ SEMI ts then POk (ADType x) (advance ts)
+        else if at_ EQUAL ts then
           let@ t & ts := parse_type n (advance ts) in
-          let@ _ & ts := expect "SEMI" ts in POk (ADAlias x t) ts
+          let@ _ & ts := expect SEMI ts in POk (ADAlias x t) ts
         else err ("`type " ++ x ++ "` is abstract (`;`) or an alias (`=`); declare a nominal type with `tag` (D83)") ts
-      else if at_ "TAG" ts then
+      else if at_ TAG ts then
         let@ x & ts := expect_name (advance ts) in
-        let bracketed := at_ "LBRACKET" ts in
+        let bracketed := at_ LBRACKET ts in
         let@ ps & ts := (if bracketed then name_list n ts else POk [] ts) in
-        if at_ "SEMI" ts then
+        if at_ SEMI ts then
           (if bracketed then err ("a tag with listed parameters has a payload; a unit tag is `tag " ++ x ++ ";` (D73)") ts
            else POk (ADUnit x) (advance ts)) else
         let@ t & ts :=
-          (if at_ "LBRACE" ts then parse_record_type n ts
+          (if at_ LBRACE ts then parse_record_type n ts
            else
-             let@ _ & ts := expect "LPAREN" ts in
+             let@ _ & ts := expect LPAREN ts in
              let at0 := ts in
              let@ t & ts := parse_type n ts in
              match t with
              | ATRec _ => err ("a record payload is written `tag " ++ x ++ " { ... };` (D83)") at0
              | _ =>
-                 if at_ "COMMA" ts then err "there are no tuple types (D63); use a record" ts else
-                 let@ _ & ts := expect "RPAREN" ts in POk t ts
+                 if at_ COMMA ts then err "there are no tuple types (D63); use a record" ts else
+                 let@ _ & ts := expect RPAREN ts in POk t ts
              end) in
-        let@ _ & ts := expect "SEMI" ts in
+        let@ _ & ts := expect SEMI ts in
         POk (ADTag x ps t) ts
-      else if at_ "VAL" ts then
+      else if at_ VAL ts then
         let@ x & ts := expect_name (advance ts) in
-        let@ _ & ts := expect "COLON" ts in
+        let@ _ & ts := expect COLON ts in
         let@ t & ts := parse_type n ts in
-        let@ i & ts := (if at_ "EQUAL" ts then
+        let@ i & ts := (if at_ EQUAL ts then
                           let@ e & ts := parse_expr n false (advance ts) in POk (Some e) ts
                         else POk None ts) in
-        let@ _ & ts := expect "SEMI" ts in
+        let@ _ & ts := expect SEMI ts in
         POk (ADVal x t i) ts
-      else if at_ "FN" ts then
+      else if at_ FN ts then
         let ts := advance ts in
         let@ (rcv, x) & ts :=
-          (if at_ "DOT" ts then let@ x & ts := expect_name (advance ts) in POk (RDetached, x) ts
+          (if at_ DOT ts then let@ x & ts := expect_name (advance ts) in POk (RDetached, x) ts
            else
              let@ x & ts := expect_name ts in
-             if at_ "DOT" ts then let@ y & ts := expect_name (advance ts) in POk (RAttached x, y) ts
+             if at_ DOT ts then let@ y & ts := expect_name (advance ts) in POk (RAttached x, y) ts
              else POk (RPlain, x) ts) in
-        let@ _ & ts := expect "LPAREN" ts in
+        let@ _ & ts := expect LPAREN ts in
         let@ ps & ts := comma_list n (fun ts => let@ p & ts := expect_name ts in
-                                                let@ _ & ts := expect "COLON" ts in
+                                                let@ _ & ts := expect COLON ts in
                                                 let@ t & ts := parse_type n ts in
-                                                POk (p, t) ts) ["RPAREN"] ts in
-        let@ _ & ts := expect "RPAREN" ts in
+                                                POk (p, t) ts) [RPAREN] ts in
+        let@ _ & ts := expect RPAREN ts in
         let@ ret & ts := parse_opt_type n ts in
-        if at_ "SEMI" ts then POk (ADFn rcv x ps ret None) (advance ts)
+        if at_ SEMI ts then POk (ADFn rcv x ps ret None) (advance ts)
         else let@ b & ts := parse_block n ts in POk (ADFn rcv x ps ret (Some b)) ts
-      else if at_ "CONTEXT" ts then
+      else if at_ CONTEXT ts then
         let@ x & ts := expect_name (advance ts) in
-        let@ _ & ts := expect "EQUAL" ts in
-        let@ its & ts := comma_list n (parse_spec n) ["SEMI"] ts in
-        let@ _ & ts := expect "SEMI" ts in
+        let@ _ & ts := expect EQUAL ts in
+        let@ its & ts := comma_list n (parse_spec n) [SEMI] ts in
+        let@ _ & ts := expect SEMI ts in
         POk (ADCtx x its) ts
-      else if at_ "FUNCTOR" ts then
+      else if at_ FUNCTOR ts then
         let@ x & ts := expect_name (advance ts) in
-        let@ ps & ts := (if at_ "LBRACKET" ts then
+        let@ ps & ts := (if at_ LBRACKET ts then
                            let@ l & ts := name_list n ts in POk (Some l) ts
                          else POk None ts) in
-        let@ _ & ts := expect "COLON" ts in
-        let@ args & ts := comma_list n (parse_spec n) ["HYPHEN_GREATER"] ts in
-        let@ _ & ts := expect "HYPHEN_GREATER" ts in
-        let@ res & ts := comma_list n (parse_spec n) ["LBRACE"; "SEMI"] ts in
-        if at_ "SEMI" ts then POk (ADFunctor x ps args res None) (advance ts) else
+        let@ _ & ts := expect COLON ts in
+        let@ args & ts := comma_list n (parse_spec n) [HYPHEN_GREATER] ts in
+        let@ _ & ts := expect HYPHEN_GREATER ts in
+        let@ res & ts := comma_list n (parse_spec n) [LBRACE; SEMI] ts in
+        if at_ SEMI ts then POk (ADFunctor x ps args res None) (advance ts) else
         match ps with
         | Some _ => err "only an abstract functor lists polymorphic inputs (D84)" ts
         | None =>
-            let@ _ & ts := expect "LBRACE" ts in
+            let@ _ & ts := expect LBRACE ts in
             let@ bs & ts := binds_loop n ts in
-            let@ _ & ts := expect "RBRACE" ts in
+            let@ _ & ts := expect RBRACE ts in
             POk (ADFunctor x None args res (Some bs)) ts
         end
-      else err ("expected a declaration, found " ++ kind ts) ts
+      else err ("expected a declaration, found " ++ kind_name (kind ts)) ts
   end
 with decls_until (n : nat) (ts : list token) : pr (list adecl) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "RBRACE" ts then POk [] ts else
+      if at_ RBRACE ts then POk [] ts else
       let@ d & ts := parse_decl n ts in
       let@ ds & ts := decls_until n ts in POk (d :: ds) ts
   end.
 
 Definition use_name (ts : list token) : pr (bool * name) :=
-  let (d, ts) := eat "DOT" ts in
+  let (d, ts) := eat DOT ts in
   let@ x & ts := expect_name ts in POk (d, x) ts.
 
 Definition use_item (ts : list token) : pr ause :=
   let@ (d, x) & ts := use_name ts in
-  if at_ "AS" ts then
+  if at_ AS ts then
     let@ (d', y) & ts := use_name (advance ts) in
     if Bool.eqb d d' then POk (AUse d x (Some (d', y))) ts
     else err "a use rename must keep the name's dottedness" ts
   else POk (AUse d x None) ts.
 
 Definition parse_import (n : nat) (ts : list token) : pr aimport :=
-  let@ _ & ts := expect "IMPORT" ts in
-  let@ s & ts := expect "STRING" ts in
-  let@ alias & ts := (if at_ "AS" ts then let@ a & ts := expect_name (advance ts) in POk (Some a) ts
+  let@ _ & ts := expect IMPORT ts in
+  let@ s & ts := expect STRING ts in
+  let@ alias & ts := (if at_ AS ts then let@ a & ts := expect_name (advance ts) in POk (Some a) ts
                       else POk None ts) in
   let@ (glob, uses) & ts :=
-    (if at_ "USE" ts then
+    (if at_ USE ts then
        let ts := advance ts in
-       if at_ "STAR" ts then POk (true, []) (advance ts)
-       else let@ us & ts := comma_list n use_item ["SEMI"] ts in POk (false, us) ts
+       if at_ STAR ts then POk (true, []) (advance ts)
+       else let@ us & ts := comma_list n use_item [SEMI] ts in POk (false, us) ts
      else POk (false, []) ts) in
-  let@ _ & ts := expect "SEMI" ts in
+  let@ _ & ts := expect SEMI ts in
   POk (AImport (string_value (tx s)) alias glob uses) ts.
 
 Fixpoint imports_loop (n : nat) (ts : list token) : pr (list aimport) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "IMPORT" ts then
+      if at_ IMPORT ts then
         let@ i & ts := parse_import n ts in
         let@ is & ts := imports_loop n ts in POk (i :: is) ts
       else POk [] ts
@@ -857,7 +881,7 @@ Fixpoint decls_to_eof (n : nat) (ts : list token) : pr (list adecl) :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ "EOF" ts then POk [] ts else
+      if at_ EOF ts then POk [] ts else
       let@ d & ts := parse_decl n ts in
       let@ ds & ts := decls_to_eof n ts in POk (d :: ds) ts
   end.
@@ -997,7 +1021,7 @@ Proof. intros s f1 f2 H1 H2. rewrite H1 in H2. injection H2. auto. Qed.
 (* The lexer's output always ends with the EOF token, which the parser's
    `peekn`/`advance` rely on (Parser.peek's clamping). *)
 Lemma lex_go_eof : forall fuel cs i acc ts,
-  lex_go fuel cs i acc = LOk ts -> exists pre o, ts = app pre [Tok "EOF" "" o].
+  lex_go fuel cs i acc = LOk ts -> exists pre o, ts = app pre [Tok EOF "" o].
 Proof.
   induction fuel as [|fuel IH]; intros cs i acc ts H; simpl in H; [discriminate|].
   destruct cs as [|c r].
@@ -1006,7 +1030,7 @@ Proof.
 Qed.
 
 Theorem lex_ends_eof : forall cs ts,
-  lex cs = LOk ts -> exists pre o, ts = app pre [Tok "EOF" "" o].
+  lex cs = LOk ts -> exists pre o, ts = app pre [Tok EOF "" o].
 Proof. intros cs ts H. exact (lex_go_eof _ _ _ _ _ H). Qed.
 
 (* Paths: the dump writes a path joined by `::`, the reader splits it; for
