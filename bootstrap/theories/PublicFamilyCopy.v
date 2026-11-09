@@ -246,7 +246,7 @@ Proof.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
-  set (sms' := (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list) in *.
+  set (sms' := (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh])%list) in *.
   set (rms' := (rms ++ [rm])%list) in *.
   set (f := fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))).
   assert (Thf : th = CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.thof f Cu) by exact Th.

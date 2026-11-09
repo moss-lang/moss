@@ -277,12 +277,12 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   Pre rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (CopyA.S.linked_needs ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (CopyA.S.linked_needs ns nsg)] dc []) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)] dc []) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)] dc []) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
-  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (CopyA.S.linked_needs ns nsg)) = Some d2 ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
   CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
@@ -299,11 +299,11 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list dc (rms ++ [rm])%list) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh])%list dc (rms ++ [rm])%list) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
-  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
-  (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
+  (forall k, In k nsh -> option_map (A.canon_provision Cu0) (A.ilook (A.provision_id k) (A.c_provisions Ch)) = A.ilook (A.provision_id (A.canon_item Cu0 k)) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
@@ -323,11 +323,11 @@ Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matc
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list dc (rms ++ [rm])%list) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh])%list dc (rms ++ [rm])%list) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
-  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
-  (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
+  (forall k, In k nsh -> option_map (A.canon_provision Cu0) (A.ilook (A.provision_id k) (A.c_provisions Ch)) = A.ilook (A.provision_id (A.canon_item Cu0 k)) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ type_meanings dr = [] /\ type_aliases dr = [] /\
@@ -428,13 +428,13 @@ Proof.
   pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu') as [<- <-]. destruct (CopyA.S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
   (* the closure's own needs, from those the caller selected *)
-  destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (CopyA.S.linked_needs ns nsg))) as [d2 Sel2].
+  destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu (A.canon_item Cu k0))) (CopyA.S.linked_needs Cu ns nsg))) as [d2 Sel2].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-    unfold CopyA.S.linked_needs in Ik. apply filter_In in Ik as [Ig E]. apply existsb_exists in E as [k1 [Iu E]]. apply item_eqb_spec in E. subst k1.
-    destruct (functx_needs_provided W u Cu ns FC k0 Iu) as [p0 Ip].
+    apply CopyA.S.linked_spec in Ik as [Ig Iu].
+    destruct (functx_needs_provided W u Cu ns FC (A.canon_item Cu k0) Iu) as [p0 Ip].
     destruct (CopyA.S.functx_static W _ _ _ FC) as [_ [_ [_ [_ [_ [ShU _]]]]]].
-    destruct (CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU k0 Iu)) as [pv0 L0].
-    change (lookup_provision (A.rkey_of Cu k0) d1) with (lookup_provision (A.rkey_of Cu k0) (CopyA.S.callee_env d th d1)). rewrite L0. discriminate. }
+    destruct (CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU (A.canon_item Cu k0) Iu)) as [pv0 L0].
+    change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) d1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) (CopyA.S.callee_env d th d1)). rewrite L0. discriminate. }
   assert (Keys : map fst th = map fst (A.c_ty Cu)) by (unfold th; rewrite map_map; reflexivity).
   (* F's fixed inputs: θ reads them in the family context as the closure recorded them (FixedAgreement) *)
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).

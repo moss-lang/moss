@@ -209,8 +209,8 @@ Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newg
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (LR.PA.FS.CopyA.S.linked_needs nsh0 nsg)] [] ->
-  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (LR.PA.FS.CopyA.S.linked_needs nsh0 nsg)] dc []) ->
+  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg)] [] ->
+  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg)] dc []) ->
   LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -546,12 +546,12 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (LR.PA.FS.CopyA.S.linked_needs ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (LR.PA.FS.CopyA.S.linked_needs ns nsg)] dc []) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)] dc []) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)] dc []) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
-  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (LR.PA.FS.CopyA.S.linked_needs ns nsg)) = Some d2 ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
   LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
   forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->

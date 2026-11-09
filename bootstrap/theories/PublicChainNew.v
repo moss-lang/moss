@@ -37,8 +37,8 @@ Definition ChainRealizeOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   CC.LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (CC.LR.PA.FS.CopyA.S.linked_needs nsh0 nsg)] [] ->
-  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (CC.LR.PA.FS.CopyA.S.linked_needs nsh0 nsg)] dc []) ->
+  CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (CC.LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg)] [] ->
+  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (CC.LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg)] dc []) ->
   CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
