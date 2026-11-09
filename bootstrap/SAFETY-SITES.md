@@ -559,6 +559,24 @@ the local store. *C* and *F* are the static context and frame.
   roles, H's result gives each of F's keys F's provision, F's fixed inputs
   read as they are in force. Details and the remaining differences from
   the oracle's check: scratch/orch/copy-AUDIT.md.
+- **Counterexample: a copy's source with an extra result key (fixed).**
+  `CopyOutputs` checked one direction only, as the oracle's
+  `copy_outputs_match` does: each key of F's result is one of H's. Leaves
+  drop a method item's brackets, so H may have two items on one leaf
+  (`Box.m[T=Bool], Box.m[T=Char]`) where F has one. An application of F
+  runs the root body and selects every key of the root's result
+  (`fc_outputs`), so the extra key overwrites the caller's own provision
+  of it. [copy-extra-key.moss](examples/copy-extra-key.moss) binds
+  `Box.m[T=Char]` to 3 and applies F: native keeps exactly F's result
+  (docs/reference/semantics.md, Functors) and prints 31; the oracle
+  installs G's `Box.m[T=Char]` and prints 21. The caller's static context
+  no longer describes its environment, and `ChainNewOk`'s first clause
+  (every key the selection fills is a new provision's) was false.
+  `CopyOutputs` now also requires every key of H's result to be one of
+  F's. The oracle should check the same converse (task E32); over the
+  corpus, an oracle with that converse gives the same verdicts. Native
+  accepts the program (correctly), so Audit is stricter than native here.
+  Details: scratch/orch/results4-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
   `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
   inputs (types only H's result mentions). An application of F reads its

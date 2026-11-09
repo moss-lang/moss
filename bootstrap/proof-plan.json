@@ -2204,7 +2204,8 @@
         "E28",
         "E29",
         "E30",
-        "E31"
+        "E31",
+        "E32"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2820,6 +2821,31 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/refile-stale-shadow.moss"
+        ]
+      }
+    },
+    {
+      "id": "E32",
+      "group": "E",
+      "title": "Check a copy's result keys both ways",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's copy_outputs_match also checks that every key of the source H's result (read at F's inputs with F's output roles) is a key of F's, as Audit's CopyOutputs now requires, so `bind F = H;` is rejected when H's result has a bracketed method key F's lacks.",
+      "approach": "Add the converse to copy_outputs_match (Elab.v) and to FinalCopyOutputs/copy_outputs_match_sound (CopyOutputExec.v). An extracted variant with the converse gives the same verdicts over tests/, examples/ and bootstrap/examples/ except copy-extra-key.moss. bootstrap/examples/copy-extra-key.moss prints 21 on the oracle (the extra key overwrites the caller's Box[T=Char].m) and 31 natively (native keeps exactly F's result).",
+      "sources": [
+        "theories/Elab.v",
+        "theories/CopyOutputExec.v",
+        "theories/Audit.v",
+        "examples/copy-extra-key.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "ChainNewOk's first clause was false: an application of a copy installs every key of the root body's result, and a one-directional CopyOutputs let the root have a key F's result lacks, overwriting the caller's provision of it.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/copy-extra-key.moss"
         ]
       }
     },

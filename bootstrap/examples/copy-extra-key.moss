@@ -1,0 +1,57 @@
+# H's result has two items on the leaf (Box, m), at T=Bool and at T=Char;
+# F's has only the first. Both results have the same leaves (SameResult),
+# and each key of F's result is one of H's with the same provision, which
+# is all the oracle's copy_outputs_match (and Audit's CopyOutputs) checked,
+# so `bind F = H;` was accepted. `bind F;` should keep exactly F's result
+# (docs/reference/semantics.md, Functors): native does, and prints 31.
+# The oracle runs G's body and installs every key of H's result, so the
+# extra key Box[T=Char].m overwrites demo's own binding, and it prints 21.
+# Audit's application also selects the root body's keys (fc_outputs), so
+# the caller's static context would no longer describe its environment.
+# Audit's CopyOutputs now also requires every key of H's result to be one
+# of F's, rejecting the copy (as the oracle should; native accepts it).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+
+assume Std, T {
+  tag Box(T);
+  fn .m(): Int;
+}
+assume Std { val kk: Int; }
+
+functor F[]: Std -> kk, Box.m[T=Bool];
+functor H[]: Std -> kk, Box.m[T=Bool], Box.m[T=Char];
+functor G: Std -> kk, Box.m[T=Bool], Box.m[T=Char] {
+  bind kk = 5;
+  bind Box.m[T=Bool] = () => 1;
+  bind Box.m[T=Char] = () => 2;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind H = G;
+    bind F = H;
+    bind Box.m[T=Char] = () => 3;
+    bind F;
+    let b = Box[T=Char](char::a);
+    print_int(b.m());
+    let c = Box[T=Bool](true);
+    print_int(c.m());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
