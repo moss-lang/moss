@@ -311,6 +311,7 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
@@ -325,11 +326,11 @@ Hypothesis family_platform_apply : FamilyPlatformApplyOk.
 
 Lemma family_run : forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  PublicFormation.TysScoped W C -> A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 Proof.
-  intros k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0.
+  intros k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0.
   pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
@@ -343,7 +344,7 @@ Proof.
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
          fx gfx h Cu0 nsu Ch nsh code sms dc gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
   2: { destruct CP as (code & -> & PFam & _).
-       exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
+       exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
   destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
   destruct (BS.functx_unique W _ _ _ _ _ FC FCu0) as [<- <-].
@@ -577,8 +578,8 @@ Qed.
 
 Theorem family_step_ok : BS.FamilyStepOk W Prog argv read state_ok.
 Proof.
-  intros k Bel C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin F rr j d types H g st Lr Lj Pre0 rest.
-  destruct (family_run k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0 rest)
+  intros k Bel C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Ts F rr j d types H g st Lr Lj Pre0 rest.
+  destruct (family_run k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0 rest)
     as [[dr [st' [H' [E [St' [Res Run]]]]]]|Stop]; [left|right; exact Stop].
   pose proof Res as [Em [Ea _]].
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [Elo _]]]].

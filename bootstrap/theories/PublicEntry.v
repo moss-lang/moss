@@ -615,6 +615,14 @@ Proof.
   exact (PublicLinkMerges.captured_mentioned W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou).
 Qed.
 
+(* ---- table keys a path names are types (PublicFormation) --------------------- *)
+
+Lemma family_keys_typed_ok : forall W, PA.FamilyKeysTyped W.
+Proof.
+  intros W C u matching th sm Cr ks Ts FA Cu needs FC q pa x _ Lx Nu.
+  exact (PublicFormation.family_keys_typed W C u matching th sm Cr ks Ts FA Cu needs FC x Lx Nu).
+Qed.
+
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
    ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
@@ -639,12 +647,12 @@ Theorem safety_obligations : forall prelude,
         chain is proved; a chain with a copy is ChainForwardCopyKeys,
         false as stated (examples/linked-copy-bracket.moss) *)
      CF.ChainForwardCopyKeys W Prog argv read so /\
-     CF.PlatformAbstract W Prog /\ CF.PlatformKeysDistinct W Prog /\ CF.AppKeysTyped W /\
+     CF.PlatformAbstract W Prog /\ CF.PlatformKeysDistinct W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
      CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
-     (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
-     PA.FamilyKeysTyped W /\
+     (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok
+        (its FamilyKeysTyped proved: family_keys_typed_ok) *)
      (* a family agrees with the code's context *)
      S.FamilyCoherentOk W) ->
   forall program interface initial,
@@ -654,7 +662,9 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CK [CRz [KU [RAc [PAb [PKD [AKT [FLN [FCA [FRA FCo]]]]]]]]]].
+    as [CK [CRz [KU [RAc [PAb [PKD [FLN [FCA FCo]]]]]]]].
+  pose proof (CF.app_keys_typed W) as AKT.
+  pose proof (family_keys_typed_ok W) as FRA.
   pose proof (captured_in_force_ok W) as CIF.
   pose proof (CF.chain_forward_keys W Prog _ _ _ PAb PKD AKT RAc) as RA.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.

@@ -12,7 +12,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize.
-From NM Require PublicFormation PublicScoping.
+From NM Require PublicFormation PublicScoping PublicWorldFormation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -462,7 +462,7 @@ Definition FamilyCoherent (Cx Cr : A.cx) (ks : list item) : Prop :=
 Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
-  PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot -> FamilyTableIn C C0 ->
+  PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot -> FamilyTableIn C C0 -> PublicFormation.TysScoped W C ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
   (exists d' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\ type_aliases d' = type_aliases d /\
      Pre rr F (with_ty C0 Cr) d' types H' g st' /\
@@ -521,7 +521,7 @@ Proof.
   rewrite eval_bind_eq0. destruct k as [|k1]; [cbn; exact Logic.I|].
   pose proof Pre0 as [_ [_ [_ [_ [Real0 Fm0]]]]].
   destruct (Rcv Fm0) as [Ok Sc].
-  destruct (family_step (S k1) Bel C C u matching th sm Cr ks ot m eq_refl eq_refl eq_refl FA Ro Ok Sc (table_in_self F C Fm0)
+  destruct (family_step (S k1) Bel C C u matching th sm Cr ks ot m eq_refl eq_refl eq_refl FA Ro Ok Sc (table_in_self F C Fm0) (proj2 (proj2 (proj1 Fm0)))
     F (S (S k1)) k1 d types H g st (le_n _) ltac:(lia) Pre0 []) as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
   - rewrite Run. destruct k1 as [|k2]; [cbn; exact Logic.I|].
     assert (Enil : I.eval_bindings (S k2) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
@@ -1624,7 +1624,7 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   forall F Cc Corig t (B : Prop) x,
   A.c_sub C = A.c_sub Cc -> A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
   incl (A.c_provisions Corig) (A.c_provisions Cc) -> A.c_sub Corig = A.c_sub Cc ->
-  FamilyTableIn C Cc ->
+  FamilyTableIn C Cc -> PublicFormation.TysScoped W C ->
   (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W Cc r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty Cc C') d types H g st -> Pre j F Corig d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
@@ -1632,14 +1632,14 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   Outcome F d H types t B (I.eval n P d g st (wrap x)).
 Proof.
   intros k Bel D0 wanted used C wrap C' Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
-    intros F Cc Corig t B x Es Ep El Inc Eo Tin Wk Cont n Ln d types H g st PreC PreO.
+    intros F Cc Corig t B x Es Ep El Inc Eo Tin Ts Wk Cont n Ln d types H g st PreC PreO.
   - apply Cont; [exact Ln| |exact PreO].
     replace (with_ty Cc C) with Cc; [exact PreC|]. destruct Cc as [a0 b0 c0 e0], C as [a1 b1 c1 e1]; cbn in *; subst; reflexivity.
   - inversion Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FA Ro Ik]; subst.
     cbn beta. unfold apply_expression. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
     destruct n1 as [|n2]; [cbn; exact Logic.I|].
     destruct (Wk ot m Iw) as [Ok Sc].
-    destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
+    destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Ts F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
       as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
     + rewrite Run. destruct n2 as [|n3]; [cbn; exact Logic.I|].
       assert (Enil : I.eval_bindings (S n3) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
@@ -1658,6 +1658,7 @@ Proof.
       * intros x0 v Iq. cbn in Iq.
         replace (A.canon (A.family_restore C Cr) v) with (A.canon C v) by (unfold A.canon; cbn; rewrite SubCr; reflexivity).
         destruct (Tin x0 v Iq) as [O1 S1]. exact (conj O1 (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE) S1)).
+      * exact Ts.
       * intros r0 m0 I0. destruct (Wk r0 m0 I0) as [O1 S1]. exact (conj O1 (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE) S1)).
       * exact Cont.
       * lia.
@@ -1669,15 +1670,15 @@ Qed.
 Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Prop) x,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.Demand W C wanted [] C wrap C' ->
-  (Formed F C0 -> FamilyTableIn C C0 /\
+  (Formed F C0 -> FamilyTableIn C C0 /\ PublicFormation.TysScoped W C /\
      forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C0 r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty C0 C') d types H g st -> Pre j F C0 d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C0 t B (wrap x).
 Proof.
   intros k Bel F C0 C wanted C' wrap t B x Es Ep El Dm Sco Cont d types H g st Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ Fm0]]]]]. destruct (Sco Fm0) as [Tin Wk].
-  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Ep El (fun q I => I) eq_refl Tin Wk Cont (S k) (le_n _)
+  pose proof Pre0 as [_ [_ [_ [_ [_ Fm0]]]]]. destruct (Sco Fm0) as [Tin [Ts Wk]].
+  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Ep El (fun q I => I) eq_refl Tin Ts Wk Cont (S k) (le_n _)
     d types H g st Pre0 Pre0).
 Qed.
 
@@ -4965,7 +4966,14 @@ Proof.
       split; [exact (PublicFormation.canon_ok W C v (proj1 (proj1 Fm)) (proj2 (PublicFormation.nom_ok_elim W h xs0 Ok) xq v Iq))|].
       apply PublicFormation.canon_scoped. intros y Iy. apply Sc. rewrite PublicFormation.gens_nom.
       exact (PublicFormation.in_tm_gens _ _ _ _ Iq Iy). }
-    split; [exact Tin|]. intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Es Ctx I0). }
+    split; [exact Tin|]. split.
+    { intros xq Ix. unfold Cd0 in Ix. rewrite Et, map_app in Ix. apply in_app_or in Ix as [Ix|Ix].
+      - rewrite map_rev in Ix. apply (proj2 (in_rev _ _)) in Ix.
+        assert (Ir : In xq (A.w_reqs W h)) by (rewrite <- Keys; exact Ix).
+        destruct World as [bd Wo]. apply (PublicWorldFormation.reqs_typed bd W Wo h xq); [|exact Ir].
+        intros E. unfold A.kind_sym in Kind. rewrite E in Kind. destruct Kind; discriminate.
+      - exact (proj2 (proj2 (proj1 Fm)) xq Ix). }
+    intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Es Ctx I0). }
   intros j Lj d' types' H' g' st' PreD PreC.
   destruct j as [|j]; [exact Logic.I|].
   cbn [I.eval]. change (view_function P att) with (A.body_of Prog att). rewrite View.
@@ -5142,7 +5150,7 @@ Proof.
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl Dem
-        (fun Fm => conj (table_in_self F C Fm) (fun r0 m0 I0 => demand_scoped F C C f Cf ns r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx I0))
+        (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx I0)))
         (fun j Lj d' types' H' g' st' Pre' _ => call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
           (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre')) d types H lg lst Pre0).

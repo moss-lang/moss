@@ -1651,3 +1651,37 @@ Proof.
   destruct (demand_formed W _ _ _ _ _ _ Dm Cf0 Ks Wk) as [Cf1 Ks1].
   exact (conj Cf1 (conj Ks1 (demand_tys W _ _ _ _ _ _ Dm Ts))).
 Qed.
+
+(* A key of a family context's table that F's inputs lack is a type symbol:
+   the context's own keys are (TysScoped), and a matching key is a P(F)
+   symbol, which F's inputs list unless F lists its polymorphic inputs,
+   which are types (FamilyShape). *)
+Theorem family_keys_typed : forall W C u matching th sm Cr ks, TysScoped W C ->
+  A.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
+  forall x, A.nlook x (A.c_ty (A.family_context C matching)) <> None ->
+  A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
+Proof.
+  intros W C u matching th sm Cr ks Ts (fx & Cu0 & ns & Fx & [Shape _] & Poly & _) Cu needs FC x Lx Nu.
+  destruct (family_context_shape matching C) as [Ety _].
+  destruct (A.nlook x (A.c_ty (A.family_context C matching))) as [v|] eqn:L; [|congruence].
+  apply nlook_in in L. rewrite Ety in L. apply in_app_or in L as [L|L].
+  - apply in_rev in L. rewrite Forall_forall in Poly. pose proof (Poly _ L) as Px. cbn in Px.
+    destruct Px as (d & n & ps & a & r & D & Ast & Pm).
+    destruct Shape as (d' & n' & ps' & a' & r' & D' & Ast' & _ & Listed).
+    rewrite D in D'. injection D' as <-. rewrite Ast in Ast'. injection Ast' as <- <- <- <-.
+    destruct ps as [names|].
+    + destruct Pm as [y [Iy Ry]]. exact (Listed names y x eq_refl Iy Ry).
+    + exfalso. destruct FC as (d0 & ps0 & a0 & r0 & b0 & es & tm & tm' & σ & implicit & D0 & FP & _ & Imp & -> & _ & -> & _).
+      rewrite D in D0. injection D0 as <-. rewrite Ast in FP. cbn in FP. injection FP as _ _ _ <-.
+      assert (Ix : In x (map fst (A.c_ty (A.entries_cx σ (map (fun t => (t, TAbs t)) implicit ++ tm) es)))).
+      { cbn. rewrite map_map. cbn. rewrite map_app, map_map. cbn. apply in_or_app.
+        destruct (A.nlook x tm) as [w|] eqn:Lt.
+        - right. apply nlook_in in Lt. change x with (fst (x, w)). apply in_map, Lt.
+        - left. rewrite map_id. apply Imp. split; [reflexivity|split; [exact Pm|exact Lt]]. }
+      apply in_map_iff in Ix as [[y w] [Ey Iw]]. cbn in Ey. subst y.
+      destruct (A.nlook x (A.c_ty (A.entries_cx σ (map (fun t => (t, TAbs t)) implicit ++ tm) es))) eqn:N; [discriminate|].
+      clear Nu. induction (A.c_ty (A.entries_cx σ (map (fun t => (t, TAbs t)) implicit ++ tm) es)) as [|[z u0] rest IH];
+        [contradiction|]. cbn in N. destruct (Nat.eqb_spec x z) as [->|Ne]; [discriminate|].
+      destruct Iw as [E|Iw]; [injection E as E _; congruence|exact (IH N Iw)].
+  - apply Ts. change x with (fst (x, v)). apply in_map. exact L.
+Qed.

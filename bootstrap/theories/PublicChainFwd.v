@@ -109,13 +109,13 @@ Definition PlatformKeysDistinct : Prop :=
   forall u code Ch0 needs outputs keys bindings, PA.FamilyData W Prog u code Ch0 needs outputs keys bindings ->
   NoDup (map A.provision_id keys).
 
-(* PREMISE (formation, T29): PlatformApply's FamilyKeysTyped at an
-   application (AppPremises) instead of a family application: an extra
-   key of the caller's table (one F's own inputs lack) that a path names
-   is a type symbol, since a table's keys are type symbols or fresh
-   generations, which no path names. *)
+(* PlatformApply's FamilyKeysTyped at an application (AppPremises)
+   instead of a family application: an extra key of the caller's table
+   (one F's own inputs lack) that a path names is a type symbol, since a
+   formed table's keys are declared type symbols (PublicFormation.TysScoped).
+   Proved: `app_keys_typed`. *)
 Definition AppKeysTyped : Prop :=
-  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs, PublicFormation.TysScoped W C ->
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall q pa' x, A.resolve_sym W q pa' = Some x -> A.nlook x (A.c_ty C) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
@@ -124,6 +124,12 @@ Lemma chain_nil : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 g
 Proof.
   intros u gfx sms h0 gf0 sms0 Ch. destruct Ch; intros E; [reflexivity|].
   exfalso. destruct sms; discriminate.
+Qed.
+
+Lemma app_keys_typed : AppKeysTyped.
+Proof. intros F C pa u fx Cu ns sm th gensof C' ks newgens outs Ts _ q pa' x _ Lx _.
+  destruct (A.nlook x (A.c_ty C)) as [v|] eqn:L; [|congruence]. apply Ts. apply nlook_in in L.
+  change x with (fst (x, v)). apply in_map. exact L.
 Qed.
 
 Theorem chain_forward_keys : PlatformAbstract -> PlatformKeysDistinct -> AppKeysTyped ->
@@ -139,7 +145,7 @@ Proof.
   pose proof FD as (FC0 & NoH & PRf & FB & Binds & MD).
   pose proof AP as (_ & _ & FC & Inp & Th & _ & Sat & _ & _ & _ & _ & _ & PR).
   destruct (S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem _]]] & _).
+  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem _]]] & Fmd).
   assert (Fam : Platform.Family W Prog u code) by (exists Cu, ns, outputs, keys, bindings; exact FD).
   assert (KeysM : forall key, In key keys -> exists r m a, key = IMth r m a /\ A.kind_sym W m = Some A.DKMeth).
   { intros key Ik. destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
@@ -160,7 +166,7 @@ Proof.
     - exact PRf.
     - exact KeysM.
     - exact Idem.
-    - exact (AKT F C pa u fx Cu ns sm th gensof C' ks newgens outs AP). }
+    - exact (AKT F C pa u fx Cu ns sm th gensof C' ks newgens outs (proj2 (proj2 (proj1 Fmd))) AP). }
   destruct IA as [IA _].
   destruct (IA r m g0 (conj (news_method_key W u C _ C' ks news PR En r m g0 L) (mlook_news C C' news r m g0 En L)))
     as [Key Sig].

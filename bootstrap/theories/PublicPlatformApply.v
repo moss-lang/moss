@@ -869,7 +869,7 @@ Qed.
    family's result read at its own inputs and at the family context agree
    (PublicFamilyAgree.family_items_agree): a receiver is a table key on
    both sides or on neither. *)
-Definition FamilyKeysTyped : Prop := forall C u matching th sm Cr ks,
+Definition FamilyKeysTyped : Prop := forall C u matching th sm Cr ks, PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
   forall q pa x, A.resolve_sym W q pa = Some x -> A.nlook x (A.c_ty (A.family_context C matching)) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
@@ -877,20 +877,20 @@ Definition FamilyKeysTyped : Prop := forall C u matching th sm Cr ks,
 (* The agreement family_platform_ok needs (FamilyResultAgrees, formerly a
    premise), from FamilyKeysTyped and the family context's idempotent
    merge. *)
-Lemma family_result_agrees : FamilyKeysTyped -> forall C u matching th sm Cr ks,
+Lemma family_result_agrees : FamilyKeysTyped -> forall C u matching th sm Cr ks, PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
   forall code Cu needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
   ItemsAgree (A.family_context C matching) Cr Cu outputs th
     (fun r m g => In (A.mkey r m) ks /\ A.mlook r m (A.c_mths Cr) = Some g) keys.
 Proof.
-  intros KT C u matching th sm Cr ks FA Idem code Cu needs outputs keys bindings (FC & NoOut & PRf & _ & Binds & _).
+  intros KT C u matching th sm Cr ks Ts FA Idem code Cu needs outputs keys bindings (FC & NoOut & PRf & _ & Binds & _).
   apply (PublicFamilyAgree.family_items_agree W C u matching th sm Cr ks Cu needs outputs keys FA FC NoOut PRf).
   - intros key Ik. destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
     destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).
     exists r0, m0, a0. split; [reflexivity|]. unfold A.kind_sym. rewrite Dm, Ast. cbn.
     destruct form; [contradiction|reflexivity|reflexivity].
   - exact Idem.
-  - exact (KT C u matching th sm Cr ks FA Cu needs FC).
+  - exact (KT C u matching th sm Cr ks Ts FA Cu needs FC).
 Qed.
 
 Hypothesis prims_ground : PrimsGroundOk.
@@ -904,7 +904,7 @@ Hypothesis family_keys : FamilyKeysTyped.
    FixedAgreement at the family context. *)
 Theorem family_platform_ok : FS.FamilyPlatformApplyOk W Prog argv read state_ok.
 Proof.
-  intros k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0 code Look Fam.
+  intros k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0 code Look Fam.
   pose proof FA as (fx & Cu & ns & Fx & _ & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (family_data u code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
   pose proof FD as (FC0 & _ & PRf & FB & Binds & _).
@@ -922,7 +922,7 @@ Proof.
   { destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & gfh & E & _). injection E as _ E _.
     destruct sms'; discriminate. }
   destruct CP as (code' & _ & _ & Mach).
-  pose proof (family_result_agrees family_keys C u matching th sm Cr ks FA
+  pose proof (family_result_agrees family_keys C u matching th sm Cr ks Ts FA
     ltac:(intros t; unfold A.canon; rewrite Es; exact (Idem t)) code Cu ns outputs keys bindings FD) as [NewSig NewAll].
   intros rest. rewrite S.bindings_apply_eq.
   destruct j as [|j1].

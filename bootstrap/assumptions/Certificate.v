@@ -153,6 +153,7 @@ Definition certificate_roots :=
   @NM.PublicOutputSubst.provide_result_rel,
   @PublicLinkMergesI.captured_in_force_ok,
   @NM.PublicLinkMerges.captured_mentioned,
+  @NM.PublicFormation.family_keys_typed,
   @NM.PublicCallRealize.ctxof_formed,
   @NM.PublicCallRealize.call_agree,
   @NM.PublicCallRealize.call_absorbs,
