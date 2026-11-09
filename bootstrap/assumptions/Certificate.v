@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
-  PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize.
+  PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -37,6 +37,7 @@ Module PublicChainFwdI := PublicChainFwd.ChainFwd PublicClosureExample.Prims Pub
 Module PublicFamilyLinkI := PublicFamilyLink.FamilyLink PublicClosureExample.Prims PublicInterp.
 Module PublicChainSigsI := PublicChainSigs.ChainSigs PublicClosureExample.Prims PublicInterp.
 Module PublicChainRealizeI := PublicChainRealize.ChainRealize PublicClosureExample.Prims PublicInterp.
+Module PublicFamilyCopyI := PublicFamilyCopy.FamilyCopy PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
@@ -116,6 +117,7 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_safe,
   @PublicEntryTop.safety_public,
   @PublicEntryTop.safety_obligations,
+  @PublicEntryTop.public_safety,
   @PublicEntryTop.handles_formed,
   @NM.PublicWorldFormation.merge_formed_of,
   @NM.PublicWorldFormation.mentions_typed_of,
@@ -165,6 +167,9 @@ Definition certificate_roots :=
   @PublicChainSigsI.chain_sigs,
   @PublicChainRealizeI.chain_real,
   @PublicChainRealizeI.chain_realize_ok,
+  @PublicFamilyCopyI.family_copy_realize_ok,
+  @PublicFamilyCopyI.family_top,
+  @PublicFamilyCopyI.platform_level,
   @PublicChainRealizeI.root_level,
   @PublicChainRealizeI.top_envok,
   @NM.PublicChainRealize.level_rel,

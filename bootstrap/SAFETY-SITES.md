@@ -21,11 +21,15 @@ an admissible program and a compatible interface, `run_main`'s signal is never
   (`stuck_entry_is_wrong`). The reduction is therefore exact, and T20 is
   precisely what remains.
 
-## The entry (checked, conditional)
+## The entry (checked)
 
-[PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
-`CORRECT.safety` for any `Public` instance from exactly the remaining named
-obligations (the functor and family obligations: `ChainResultsOk` from
+[PublicEntry.v](theories/PublicEntry.v) proves `public_safety`:
+`CORRECT.safety` for any `Public` instance and every prelude, with no
+hypotheses (realize5; it is in the Certificate.v roots, so check.sh
+confirms it assumes only the kernel's primitives). It is
+`safety_obligations`, whose premise of remaining obligations is now empty:
+every functor and family obligation below is proved (the functor and
+family obligations: `ChainResultsOk` from
 [PublicCopyApply.v](theories/PublicCopyApply.v) (itself proved,
 `PublicChainCore.chain_results_of_new`, from `ChainNewOk`, the
 formal/caller result correspondence for the result's new provisions
@@ -47,7 +51,8 @@ proved, `PublicChainSigs.chain_forward_copy_sigs`); for `FamilyStepOk`, proved i
 (its selection proved, `PublicChainCore.family_link_results_ok`, from
 `FamilyLinkNewOk`: the family's new methods installed by the selection,
 callable; proved, `PublicFamilyLink.family_link_new_ok`), `FamilyCopyRealizeOk` (`FamilyCopyApplyOk`'s realization half;
-its key half is by construction, `family_copy_apply_of_realize`), and
+its key half is by construction, `family_copy_apply_of_realize`; proved,
+`PublicFamilyCopy.family_copy_realize_ok`, realize5), and
 `FamilyKeysTyped` (for
 `FamilyPlatformApplyOk`, proved in PublicPlatformApply.v); and the slice's
 `FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off
@@ -128,6 +133,18 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **FamilyCopyRealizeOk assumes the family application's table is scoped (realize5).**
+  `FS.FamilyCopyRealizeOk` and `FS.FamilyCopyApplyOk` gain the premise
+  `PublicFormation.TysScoped W C`, which `FamilyLinkResultsOk` and
+  `FamilyPlatformApplyOk` already had. Not an Audit change, and the slice
+  is unchanged: `family_run` has it at the call (its own premise), so
+  `family_step_ok`'s assumptions do not grow.
+  - Why: the realization relates the caller's reading of the family's
+    result at the family context to the family's own reading
+    (`PublicChainRealize.level_rel`), whose `DomT` clause asks that an
+    extra key of the family context's table that a path names is a type
+    symbol; its only source is `PublicFormation.family_keys_typed`, from
+    `TysScoped W C` (realize4's handoff; approved by the lead).
 - **A copy's target is abstract (fwdsigs).** BFunCopy did not require
   `bind F = H;`'s F to be abstract, though BFunClosure does and the oracle's
   `bind_functor` rejects a target with a body ("`F` has a body, so it is
@@ -1034,7 +1051,7 @@ it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
 | `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. It was still false after that repair (examples/copy-fresh-collide.moss: `cg y` equal to a fresh generation in sigma's image), which realizepf's CopyOutputs repair addresses (the fresh symbols avoid sigma's image). It was also false for a linked body whose application keeps an output at an input of F (examples/link-kept-output-pin.moss), which realize2's BApplyAbstract pin clause addresses. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
-| `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses | T15 |
+| `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses. It (and `FamilyCopyApplyOk`) now assumes `PublicFormation.TysScoped W C`, as `FamilyLinkResultsOk` and `FamilyPlatformApplyOk` do (`family_run` has it). Proved (realize5, [PublicFamilyCopy.v](theories/PublicFamilyCopy.v), `family_copy_realize_ok`): the run is `copy_apply_ok`'s; the root's level (`root_level` for a linked root, `platform_level` for a platform family: each position is the primitive installed for the family's own item, `PrimsGroundOk`) is carried up the chain by `chain_real` with no outputs, and `family_top` reads the caller's new methods at the family context against u's result at its own (`level_rel`, with `family_keys_typed`) | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |

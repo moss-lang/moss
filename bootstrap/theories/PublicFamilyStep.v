@@ -296,6 +296,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
    and applying a platform family installs its primitives. *)
 Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
@@ -319,6 +320,7 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
    (examples/family-copy-linked-bracket.moss). *)
 Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
@@ -355,9 +357,9 @@ Qed.
 
 Lemma family_copy_apply_of_realize : FamilyCopyRealizeOk -> FamilyCopyApplyOk.
 Proof.
-  intros Rz k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
+  intros Rz k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
     fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC SN ST Fm.
-  destruct (Rz k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
+  destruct (Rz k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
     fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC SN ST Fm)
     as [(dr & st' & H' & Ext & St' & Tm & Ta & New & Ap)|Stop]; intros rest; [left|right; exact (Stop rest)].
   exists dr, st', H'. split; [exact Ext|]. split; [exact St'|]. split.
@@ -403,7 +405,7 @@ Proof.
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
   destruct (BS.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
-       exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
+       exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
   2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0

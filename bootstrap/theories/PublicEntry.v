@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize PublicFamilyCopy.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module CRz := PublicChainRealize.ChainRealize M.ReferenceHost M.Reference.
+Module FCp := PublicFamilyCopy.FamilyCopy M.ReferenceHost M.Reference.
+Module CRz := FCp.CRz.
 Module CSg := CRz.CSg.
 Module FL := CSg.FL.
 Module CF := FL.CF.
@@ -634,39 +635,33 @@ Proof.
   exact (PublicFamilyCoherent.family_coherent b W Wo F C Fm C1 u matching th sm Cr ks Es Inc FA r m g a g' a' Ik Il L Eth).
 Qed.
 
-(* G05 from the remaining obligations alone: the slice's safety follows
-   from them, with the elaboration and link facts it assumes read off
-   ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
-   and PlatformApplyOk, follow from the obligations about a closure's root
-   read through its copy chain (PublicCopyApply). *)
-Theorem safety_obligations : forall prelude,
-  (forall Prog iface initial bundle W, M.Compatible Prog iface ->
-     A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
-     let argv := M.arguments initial in let read := M.read_file initial in
-     let so := PS.state_ok W (program_of Prog argv read) iface in
-     (* ChainResultsOk, from PublicChainCore.chain_results_of_new and
-        PublicChainNew.chain_new_ok: the new provisions of the caller's
-        result are realized (the keys are the caller's by construction,
-        Audit.result_selection), proved in
-        PublicChainRealize.chain_realize_ok *)
-     (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
-        ChainForwardSigs from PublicChainFwd.chain_forward_sigs: the empty
-        chain is proved; a chain with a copy is ChainForwardCopySigs,
-        proved in PublicChainSigs.chain_forward_copy_sigs *)
-     (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
-     (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok,
-        its FamilyLinkNewOk from PublicFamilyLink.family_link_new_ok *)
-     FS.FamilyCopyRealizeOk W Prog argv read so
-     (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok
-        (its FamilyKeysTyped proved: family_keys_typed_ok) *)
-     (* FamilyCoherentOk, from family_coherent_ok *)) ->
-  forall program interface initial,
+(* G05, with no remaining obligation: the slice's safety follows from the
+   proved obligations, with the elaboration and link facts it assumes read
+   off ElaboratesIn and Linked. Applying a copy, and the slice's
+   LinkResultsOk and PlatformApplyOk, follow from the obligations about a
+   closure's root read through its copy chain (PublicCopyApply). Where each
+   obligation is proved:
+   - ChainResultsOk, from PublicChainCore.chain_results_of_new and
+     PublicChainNew.chain_new_ok: the new provisions of the caller's result
+     are realized (the keys are the caller's by construction,
+     Audit.result_selection), proved in PublicChainRealize.chain_realize_ok;
+   - ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
+     ChainForwardSigs from PublicChainFwd.chain_forward_sigs: the empty
+     chain is proved; a chain with a copy is ChainForwardCopySigs, proved
+     in PublicChainSigs.chain_forward_copy_sigs;
+   - FamilyStepOk, from PublicFamilyStep.family_step_ok;
+   - FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok, its
+     FamilyLinkNewOk from PublicFamilyLink.family_link_new_ok;
+   - FamilyCopyRealizeOk, from PublicFamilyCopy.family_copy_realize_ok;
+   - FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok (its
+     FamilyKeysTyped proved: family_keys_typed_ok);
+   - FamilyCoherentOk, from family_coherent_ok. *)
+Theorem safety_obligations : forall prelude program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
 Proof.
-  intros prelude Obl. apply (safety_public prelude).
+  intros prelude. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
-  pose proof (Obl Prog iface initial bundle W Compat Elab Link) as FCA.
   assert (CRz : CN.ChainRealizeOk W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
     by exact (CRz.chain_realize_ok W Prog _ _ _ (ex_intro _ bundle (proj1 Elab)) (PublicWorldFormation.merge_formed_of W)
@@ -706,11 +701,20 @@ Proof.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
   pose proof (CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.
+  pose proof (FCp.family_copy_realize_ok W Prog _ _ _ (ex_intro _ bundle Wo) Mf Mt Fs AllFn CIF LR CA PA PG) as FCA.
   assert (FSt : S.FamilyStepOk W Prog _ _ _)
     by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF LR CA PA FLR FCA FPA).
   split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
     (ex_intro _ bundle Wo) CIF LR CA PA).
 Qed.
+
+(* Audit.Public's CORRECT.safety, for every prelude, with no hypotheses. *)
+Theorem public_safety : forall prelude program interface initial,
+  M.Admissible prelude program ->
+  M.Compatible program interface ->
+  forall code final,
+    ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
+Proof. exact safety_obligations. Qed.
 
 End EntrySafety.
