@@ -30,7 +30,7 @@ Example body_rebind_changes_only_output_reading :
 Proof. split; reflexivity. Qed.
 
 Definition provider_view := ProgramView (fun _ => None)
-  (fun _ => Some (FunctorCode [10;11] [10;11] [ITy 10] [] []))
+  (fun _ => Some (FunctorCode [10;11] [10;11] [] [ITy 10] [] []))
   0 0 0 [] (fun _ => None) [].
 Definition applied := application_environment provider_view caller 1
   [(10,TAbs 100);(12,TAbs 101)] captured.
@@ -78,7 +78,7 @@ Proof. reflexivity. Qed.
    a complete source-world or Admissible proof for the schematic program. *)
 Definition fresh_provider_view := ProgramView
   (fun _ => Some (EBind (BApply 1 [] [(10,10)] []) EUnit))
-  (fun _ => Some (FunctorCode [] [] [ITy 10] [BType 10 (TNom 20 [])] []))
+  (fun _ => Some (FunctorCode [] [] [] [ITy 10] [BType 10 (TNom 20 [])] []))
   0 0 0 [] (fun _ => None) [].
 Definition ambient_caller := install_provision (IFun 1)
   (FunctorClosure 1 [] empty_environment)

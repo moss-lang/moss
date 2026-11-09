@@ -232,8 +232,6 @@ Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis link_merges : BS.LinkMergesOk W Prog.
-Hypothesis bind_merges : BS.BindMergesOk W Prog.
 Hypothesis captured_in_force : BS.CapturedInForceOk.
 Hypothesis link_results : BS.LinkResultsOk W Prog argv read state_ok.
 Hypothesis copy_apply : BS.CopyApplyOk W Prog argv read state_ok.
@@ -343,7 +341,7 @@ Proof.
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
          fx gfx h Cu0 nsu Ch nsh code sms dc gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
-  2: { destruct CP as (code & -> & PFam).
+  2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
   destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
@@ -390,7 +388,7 @@ Proof.
     rewrite (BS.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (E1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
     injection E1 as E1. rewrite E1, <- Ag, CanonEq. symmetry. exact (Abs was). }
-  pose proof (BS.link_entry W Prog argv read state_ok link_merges rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2
+  pose proof (BS.link_entry W Prog argv read state_ok rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2
     LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
   set (de := application_environment P d h th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
@@ -403,9 +401,9 @@ Proof.
     - apply BS.alias_self; [reflexivity|exact (proj1 RealG)|].
       destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
   pose proof (BS.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
-    link_merges bind_merges captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
+    captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
   destruct (BS.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
-    bind_merges captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
+    captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply BS.bindsof_fold in BO. subst binds0.
   rewrite BS.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
   cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.

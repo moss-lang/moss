@@ -14,8 +14,8 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig PublicCopyApply
-  PublicFamilyStep.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
+  PublicPlatformApply PublicFamilyStep.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -25,11 +25,13 @@ Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims Publ
 Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
+Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.Prims PublicInterp.
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
+Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Prims PublicInterp.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -109,8 +111,12 @@ Definition certificate_roots :=
   @NM.PublicWorldFormation.mentions_typed_of,
   @NM.PublicFamilySig.family_sig_ok_readoff,
   @PublicEntryTop.entry_primitive,
+  @PublicEntryTop.platform_prims_public,
+  @PublicPlatform.chain_platform_ok,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
+  @PublicLinkMergesI.captured_in_force_unprovable,
+  @NM.PublicLinkMerges.captured_in_force_of,
   @NM.PublicCallRealize.ctxof_formed,
   @NM.PublicCallRealize.call_agree,
   @NM.PublicCallRealize.call_absorbs,
