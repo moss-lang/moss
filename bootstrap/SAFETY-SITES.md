@@ -333,6 +333,22 @@ the local store. *C* and *F* are the static context and frame.
 - **`ExConst`** inlines code elaborated in an empty context with its own
   numbering. It is closed: it reads no locals, vals or provisions, and has
   no `return` or `break`.
+- **A family's matching is read off the demanded key.** `FamilyApplication`
+  constrained the matching θ only to P(F) symbols. A symbol that the demanded
+  key's receiver does not mention could be matched to any type, even an
+  unformed one or one naming generations outside the context, and the
+  application then installed provisions keyed by it. D84 rule 7 says θ is
+  read off the key, and the oracle does exactly that
+  (`family_candidate_step` in
+  [FamilySelectTrace.v](theories/FamilySelectTrace.v)): it reads the
+  receiver with each P(F) symbol as a marker and matches it against the key.
+  The new `FamilyReadOff` (a premise of `PrFamily`, `FamilyStep` and
+  `LitOpFamily`) states the same: θ's domain is exactly the P(F) symbols
+  that the formal receiver mentions, with no duplicates, and
+  `canon C (app_subst θ rf)` is the key's receiver. Each value is then a
+  subterm of an ok, scoped receiver (`family_matching_scoped`), so
+  `demand_formed_cx` no longer assumes this. It rules out no program the
+  implementations accept.
 
 ## Body-safety slice (checked, conditional)
 

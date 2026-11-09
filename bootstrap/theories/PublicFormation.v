@@ -1056,26 +1056,120 @@ Lemma demand_shape : forall C0 wanted used C wrap Cf, Demand W C0 wanted used C 
 Proof.
   intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
     [split; reflexivity|].
-  destruct IH as [E1 E2]. rewrite E1, E2. destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ik].
+  destruct IH as [E1 E2]. rewrite E1, E2. destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ro Ik].
   cbn. split; [reflexivity|exact (family_application_sub _ _ _ _ _ _ _ FAp)].
 Qed.
 
-(* HYPOTHESIS (family matchings). A family application's matching
-   substitution is not constrained by [FamilyApplication] beyond its domain
-   (P(F)); here it is assumed ok and in scope. See the report: a P(F)
-   symbol that the demanded key does not mention can be matched to any
-   type, so this does not hold of every derivation. *)
-Definition FamilyMatchingScoped : Prop := forall C u matching th sm Cr ks,
-  FamilyApplication W C u matching th sm Cr ks -> CxFormed W C ->
-  forall x v, In (x, v) matching -> TyOk W (canon C v) /\ incl (gens (canon C v)) (scope_gens C).
-
-Lemma demand_formed : FamilyMatchingScoped -> forall C0 wanted used C wrap Cf,
-  Demand W C0 wanted used C wrap Cf -> CxFormed W C -> KeysScoped C -> CxFormed W Cf /\ KeysScoped Cf.
+(* A matching read off a key ([FamilyReadOff]): each value is part of the
+   key's receiver, so it is ok and in scope when the receiver is. *)
+Fixpoint aty_ind (P : ty -> Prop) (Hm : forall m, P (TMachine m))
+  (Hr : forall fs, (forall f u, In (f, u) fs -> P u) -> P (TRecord fs)) (Hu : P TUnit)
+  (Ha : forall g, P (TAbs g)) (Hn : forall n xs, (forall x u, In (x, u) xs -> P u) -> P (TNom n xs))
+  (Hs : forall ms, (forall u, In u ms -> P u) -> P (TUnion ms)) (t : ty) {struct t} : P t.
 Proof.
-  intros Hm C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
-    intros Cf0 Ks; [split; assumption|].
-  destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ik].
-  destruct (family_application_ok _ _ _ _ _ _ _ FAp Cf0 Ks (Hm _ _ _ _ _ _ _ FAp Cf0)) as [Sub [Lo Pr]].
+  destruct t as [m|fs| |g|n xs|ms].
+  - apply Hm.
+  - apply Hr. induction fs as [|[f0 u0] r Tail]; intros f u I; [destruct I|].
+    destruct I as [E|I]; [injection E as _ <-; exact (aty_ind P Hm Hr Hu Ha Hn Hs u0)|exact (Tail f u I)].
+  - apply Hu.
+  - apply Ha.
+  - apply Hn. induction xs as [|[x0 u0] r Tail]; intros x u I; [destruct I|].
+    destruct I as [E|I]; [injection E as _ <-; exact (aty_ind P Hm Hr Hu Ha Hn Hs u0)|exact (Tail x u I)].
+  - apply Hs. induction ms as [|u0 r Tail]; intros u I; [destruct I|].
+    destruct I as [<-|I]; [exact (aty_ind P Hm Hr Hu Ha Hn Hs u0)|exact (Tail u I)].
+Qed.
+
+Inductive SubTy : ty -> ty -> Prop :=
+| SubRefl : forall t, SubTy t t
+| SubRec : forall a fs f u, In (f, u) fs -> SubTy a u -> SubTy a (TRecord fs)
+| SubNom : forall a n xs x u, In (x, u) xs -> SubTy a u -> SubTy a (TNom n xs)
+| SubUnion : forall a ms u, In u ms -> SubTy a u -> SubTy a (TUnion ms).
+
+Lemma gens_record_flat : forall fs, gens (TRecord fs) = flat_map (fun p => gens (snd p)) fs.
+Proof. induction fs as [|[f u] r IH]; cbn; [reflexivity|f_equal; exact IH]. Qed.
+Lemma gens_nom_flat : forall n xs, gens (TNom n xs) = flat_map (fun p => gens (snd p)) xs.
+Proof. intros n; induction xs as [|[x u] r IH]; cbn; [reflexivity|f_equal; exact IH]. Qed.
+Lemma gens_union_flat : forall ms, gens (TUnion ms) = flat_map gens ms.
+Proof. induction ms as [|u r IH]; cbn; [reflexivity|f_equal; exact IH]. Qed.
+
+Lemma sub_read : forall rf s x v, In x (gens rf) -> lookup_subst x s = Some v -> SubTy v (app_subst s rf).
+Proof.
+  intros rf. induction rf as [m|fs IH| |g|n xs IH|ms IH] using aty_ind; intros s x v Ix L.
+  - contradiction.
+  - rewrite gens_record_flat in Ix. apply in_flat_map in Ix as [[f u] [Iu Ix]].
+    rewrite subst_record. apply (SubRec _ _ f (app_subst s u)); [|exact (IH f u Iu s x v Ix L)].
+    apply in_map_iff. exists (f, u). split; [reflexivity|exact Iu].
+  - contradiction.
+  - destruct Ix as [<-|[]]. cbn. rewrite L. constructor.
+  - rewrite gens_nom_flat in Ix. apply in_flat_map in Ix as [[y u] [Iu Ix]].
+    rewrite subst_nom. apply (SubNom _ _ _ y (app_subst s u)); [|exact (IH y u Iu s x v Ix L)].
+    unfold PublicTypeRead.smap. apply in_map_iff. exists (y, u). split; [reflexivity|exact Iu].
+  - rewrite gens_union_flat in Ix. apply in_flat_map in Ix as [u [Iu Ix]].
+    rewrite subst_union. apply (SubUnion _ _ (app_subst s u)); [|exact (IH u Iu s x v Ix L)].
+    apply in_map. exact Iu.
+Qed.
+
+Lemma sub_subst : forall c a b, SubTy a b -> SubTy (app_subst c a) (app_subst c b).
+Proof.
+  intros c a b Sb. induction Sb as [t|a fs f u I _ IH|a n xs x u I _ IH|a ms u I _ IH].
+  - constructor.
+  - rewrite subst_record. apply (SubRec _ _ f (app_subst c u)); [|exact IH].
+    apply in_map_iff. exists (f, u). split; [reflexivity|exact I].
+  - rewrite subst_nom. apply (SubNom _ _ _ x (app_subst c u)); [|exact IH].
+    unfold PublicTypeRead.smap. apply in_map_iff. exists (x, u). split; [reflexivity|exact I].
+  - rewrite subst_union. apply (SubUnion _ _ (app_subst c u)); [|exact IH]. apply in_map. exact I.
+Qed.
+
+Lemma sub_ok : forall a b, SubTy a b -> TyOk W b -> TyOk W a /\ incl (gens a) (gens b).
+Proof.
+  intros a b Sb. induction Sb as [t|a fs f u I _ IH|a n xs x u I _ IH|a ms u I _ IH]; intros [Fb Ab].
+  - split; [split; assumption|intros g Ig; exact Ig].
+  - assert (Iu : incl (gens u) (gens (TRecord fs))).
+    { intros g Ig. rewrite gens_record_flat. apply in_flat_map. exists (f, u). split; assumption. }
+    destruct IH as [Oa Ia]; [split; [exact (proj1 (record_formed W fs) Fb f u I)|intros g Ig; exact (Ab g (Iu g Ig))]|].
+    split; [exact Oa|intros g Ig; exact (Iu g (Ia g Ig))].
+  - assert (Iu : incl (gens u) (gens (TNom n xs))).
+    { intros g Ig. rewrite gens_nom_flat. apply in_flat_map. exists (x, u). split; assumption. }
+    destruct IH as [Oa Ia]; [split; [exact (proj2 (proj1 (nom_formed W n xs) Fb) x u I)|intros g Ig; exact (Ab g (Iu g Ig))]|].
+    split; [exact Oa|intros g Ig; exact (Iu g (Ia g Ig))].
+  - assert (Iu : incl (gens u) (gens (TUnion ms))).
+    { intros g Ig. rewrite gens_union_flat. apply in_flat_map. exists u. split; assumption. }
+    destruct (proj1 (union_formed W ms) Fb) as [_ [_ Fm]]. rewrite Forall_forall in Fm.
+    destruct IH as [Oa Ia]; [split; [exact (Fm u I)|intros g Ig; exact (Ab g (Iu g Ig))]|].
+    split; [exact Oa|intros g Ig; exact (Iu g (Ia g Ig))].
+Qed.
+
+Lemma lookup_subst_nodup : forall (s : subst) x v, NoDup (map fst s) -> In (x, v) s -> lookup_subst x s = Some v.
+Proof.
+  induction s as [|[y u] r IH]; intros x v Nd I; [contradiction|]. cbn in Nd |- *. inversion Nd as [|? ? Ny Nr]; subst.
+  destruct I as [E|I].
+  - injection E as -> ->. rewrite Nat.eqb_refl. reflexivity.
+  - destruct (Nat.eqb_spec x y) as [->|_]; [exfalso; apply Ny; apply in_map_iff; exists (y, v); split; [reflexivity|exact I]|].
+    exact (IH x v Nr I).
+Qed.
+
+(* Family matchings read off an ok, scoped receiver are ok and scoped. *)
+Lemma family_matching_scoped : forall C u ot m matching,
+  FamilyReadOff W C u ot m matching -> TyOk W ot -> incl (gens ot) (scope_gens C) ->
+  forall x v, In (x, v) matching -> TyOk W (canon C v) /\ incl (gens (canon C v)) (scope_gens C).
+Proof.
+  intros C u ot m matching (marks & fr & fks & rf & a & Marks & PR & Ik & Dom & Nd & Ot) Ok Sc x v Iq.
+  assert (Ix : In x (gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
+  pose proof (sub_subst (c_sub C) _ _ (sub_read rf matching x v Ix (lookup_subst_nodup matching x v Nd Iq))) as Sb.
+  change (SubTy (canon C v) (canon C (app_subst matching rf))) in Sb. rewrite Ot in Sb.
+  destruct (sub_ok _ _ Sb Ok) as [Ov Iv]. split; [exact Ov|intros g Ig; exact (Sc g (Iv g Ig))].
+Qed.
+
+Lemma demand_formed : forall C0 wanted used C wrap Cf,
+  Demand W C0 wanted used C wrap Cf -> CxFormed W C -> KeysScoped C ->
+  (forall r m, In (mkey r m) wanted -> TyOk W r /\ incl (gens r) (scope_gens C)) ->
+  CxFormed W Cf /\ KeysScoped Cf.
+Proof.
+  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
+    intros Cf0 Ks Wk; [split; assumption|].
+  destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ro Ik].
+  destruct (Wk ot m Iw) as [Ok Sco].
+  destruct (family_application_ok _ _ _ _ _ _ _ FAp Cf0 Ks (family_matching_scoped _ _ _ _ _ Ro Ok Sco)) as [Sub [Lo Pr]].
   assert (Sc : scope_gens (family_restore C1 Cr) = scope_gens C1) by (apply scope_gens_ext; [reflexivity|exact Sub]).
   apply IH.
   - constructor.
@@ -1084,6 +1178,7 @@ Proof.
     + intros k p Iq. destruct (Pr k p Iq) as [Kk [Pk _]]. split; assumption.
     + change (forall n t mu, In (n, (t, mu)) (c_locals Cr) -> TyOk W t). rewrite Lo. exact (cf_locals _ _ Cf0).
   - intros r m' th' p Iq. rewrite Sc. exact (proj2 (proj2 (Pr _ _ Iq)) r m' th' eq_refl).
+  - intros r m' Iw'. rewrite Sc. exact (Wk r m' Iw').
 Qed.
 
 Lemma demand_tys : forall C0 wanted used C wrap Cf, Demand W C0 wanted used C wrap Cf -> TysScoped W C -> TysScoped W Cf.
@@ -1279,7 +1374,7 @@ Proof.
     + exact (provided_ok _ _ _ _ _ _ _ _ Pv Fc Ff Ot).
     + exact (provided_ok _ _ _ _ _ _ _ _ Pv Fc Ff Ot).
   (* ---- Provided ---- *)
-  - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th sm C' ks g xs Ml FAp Ik Of Ml' As];
+  - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th sm C' ks g xs Ml FAp Ro Ik Of Ml' As];
       intros Fc Ff Ot.
     + exact (proj2 (mths_ok W _ _ _ _ (proj1 Fc) Ml)).
     + exact (proj2 (family_sig_ok _ _ _ _ _ _ _ ot m g FAp Fc Ot Ik Ml')).
@@ -1449,11 +1544,13 @@ Proof.
 Qed.
 
 (* The context a family demand leaves (ExCallD's and MCAttachedDefined's
-   C'/Cd, FamilyStep's) is formed, given [FamilyMatchingScoped]. *)
-Theorem demand_formed_cx : forall W, FamilyMatchingScoped W ->
-  forall C0 wanted used C wrap Cf, A.Demand W C0 wanted used C wrap Cf -> FormedCx W C -> FormedCx W Cf.
+   C'/Cd, FamilyStep's) is formed when the demanded keys' receivers are ok
+   and in scope: each family's matching is read off one of them. *)
+Theorem demand_formed_cx : forall W C0 wanted used C wrap Cf, A.Demand W C0 wanted used C wrap Cf ->
+  FormedCx W C -> (forall r m, In (A.mkey r m) wanted -> TyOk W r /\ incl (A.gens r) (scope_gens C)) ->
+  FormedCx W Cf.
 Proof.
-  intros W Hm C0 wanted used C wrap Cf Dm [Cf0 [Ks Ts]].
-  destruct (demand_formed W Hm _ _ _ _ _ _ Dm Cf0 Ks) as [Cf1 Ks1].
+  intros W C0 wanted used C wrap Cf Dm [Cf0 [Ks Ts]] Wk.
+  destruct (demand_formed W _ _ _ _ _ _ Dm Cf0 Ks Wk) as [Cf1 Ks1].
   exact (conj Cf1 (conj Ks1 (demand_tys W _ _ _ _ _ _ Dm Ts))).
 Qed.

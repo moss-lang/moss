@@ -766,7 +766,7 @@ Proof.
   assert (Op : forall a b x y result m,
     A.Literal W C a x t -> A.Literal W C b y t -> A.LitOp W C t m x y result ->
     Outcome F d H types t False (I.eval (S n) P d lg lst result)).
-  { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th sm C' ks None' Fam InK Only Found].
+  { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th sm C' ks None' Fam _Ro InK Only Found].
     - refine (method_code n F C False t m (A.FSig [t] t) x' [y] d types H lg lst Found
         (IHc F C a x' t Da) _ Pre0).
       constructor; [exact (IHc F C b y t Db)|constructor].
@@ -3308,7 +3308,7 @@ Lemma provided_step : forall F C o ox ot0 m args x t (B : Prop),
 Proof.
   intros F C o ox ot0 m args x t B Do BrkO BrkA Prov.
   remember (A.canon C ot0) as ot eqn:Ot.
-  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th sm C' ks g xs None' Fam InK Only Found Args].
+  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th sm C' ks g xs None' Fam _Ro InK Only Found Args].
   2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
           None' Fam InK Only Found Args). }
   intros d types H lg lst Pre0.

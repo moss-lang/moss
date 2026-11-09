@@ -3531,6 +3531,21 @@ Definition FamilyApplication (W : world) (C : cx) (u : usym)
     ProvideResult W u (family_context C matching) (fun t => TAbs t) result keys /\
     NoDup (map provision_id keys).
 
+(* [D84] rule 7: θ is read off the demanded key.  The result is formed once
+   with each P(F) symbol standing for itself (the oracle's markers), and the
+   demanded method's formal receiver there is matched against the key's
+   receiver: θ's domain is exactly the P(F) symbols that receiver mentions,
+   and each value is the part of the key at that symbol. *)
+Definition FamilyReadOff (W : world) (C : cx) (u : usym) (ot : ty) (m : nat)
+    (matching : subst) : Prop :=
+  exists marks formal_result formal_keys rf a,
+    (forall t, Poly W u t <-> In t marks) /\
+    ProvideResult W u (family_context C (map (fun t => (t, TAbs t)) marks))
+      (fun t => TAbs t) formal_result formal_keys /\
+    In (IMth rf m a) formal_keys /\
+    (forall t, In t (map fst matching) <-> In t marks /\ In t (gens rf)) /\
+    NoDup (map fst matching) /\ canon C (app_subst matching rf) = ot.
+
 (* A literal's binary arithmetic call uses a provision already in force,
    or a unique family applied in a scope around that call ([D84] rule 7).
    Its one parameter and result are exactly the literal's own type. *)
@@ -3540,7 +3555,7 @@ Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr ->
     LitOp W C t m ox oy (EMethod ox m (rkey C t m) [oy])
 | LitOpFamily : forall u matching th sm C' ks,
     mlook t m (c_mths C) = None ->
-    FamilyApplication W C u matching th sm C' ks ->
+    FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u t m matching ->
     In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
     mlook t m (c_mths C') = Some (FSig [t] t) ->
     LitOp W C t m ox oy (apply_expression u th sm (EMethod ox m (rkey C' t m) [oy])).
@@ -3844,7 +3859,8 @@ Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
 | FamilyStepApply : forall C ot m u matching th sm Cr ks,
     In (mkey ot m) wanted -> mlook ot m (c_mths C0) = None ->
     OnlyFamily W C0 u (mkey ot m) ->
-    FamilyApplication W C u matching th sm Cr ks -> In (mkey ot m) ks ->
+    FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+    In (mkey ot m) ks ->
     FamilyStep W C0 wanted C u matching th sm (family_restore C Cr).
 
 (* Group identity is the inferred matching substitution.  Distinct groups
@@ -4084,7 +4100,7 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
    at most one family in a context produces a key (DECISIONS.md, rule 7). *)
 | PrFamily : forall F C ox ot m args u matching th sm C' ks g xs,
     mlook ot m (c_mths C) = None ->
-    FamilyApplication W C u matching th sm C' ks ->
+    FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks -> OnlyFamily W C u (mkey ot m) ->
     mlook ot m (c_mths C') = Some g -> Args W P F C args (sg_params g) xs ->
     Provided W P F C ox ot m args (apply_expression u th sm (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
