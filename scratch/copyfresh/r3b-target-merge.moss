@@ -1,0 +1,42 @@
+# r3b: F's own context merges its non-fixed I with its fixed Z (M), H[I]
+# does not; copy where Z = Char. If Cu reads H's get at the merged
+# reading, the comparison is ():Char vs ():Char.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type I;
+type Z;
+type A;
+type Foo;
+fn .gimme(): Foo;
+assume { val kk: Int; }
+assume I { fn get(): I; val vi: I; }
+context M = A, I, Z, A.gimme[Foo = I], A.gimme[Foo = Z];
+functor H[I]: Std, I, vi -> kk, get;
+functor F[]: Std, M, vi -> kk, get[I = Z];
+functor G: Std, I, vi -> kk, get { bind kk = 1; bind get = () => vi; }
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Z = Char;
+    bind H = G;
+    bind F = H;
+    bind I = Bool;
+    bind vi = true;
+    bind A = Char;
+    bind Foo = Char;
+    bind A.gimme = () => this;
+    bind F;
+    let c: Char = get();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}

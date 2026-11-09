@@ -70,7 +70,7 @@ Proof.
     intros E0 srcs Len.
   - subst rms. cbn [chain_sources fold_left]. split; [exact Len|intros s I; exact I].
   - destruct (IH E0 srcs Len) as [LenH InH].
-    destruct CO as (sg & m & (outs & gen & Cr & ks & Cr' & ks' & _ & _ & _ & PRu & PRh & _ & Lrm & Pos) & _).
+    destruct CO as (sg & m & (outs & gen & ys & cg & Cr & ks & Cr' & ks' & _ & _ & _ & _ & _ & PRu & PRh & _ & Lrm & Pos) & _).
     assert (Rg : forall j, In j rm -> j < List.length (chain_sources rms srcs)).
     { intros j Ij. apply In_nth_error in Ij as [i Ei].
       assert (Li : i < List.length ks) by (rewrite <- Lrm; apply nth_error_Some; rewrite Ei; discriminate).
@@ -321,7 +321,7 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources Cb outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources (A.link_site Cg Cb outs') outs' gen ks')) = Some dr /\
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (A.rkey_of Cr) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     S.MeaningsGrow (map gensof outs) d (append_environment result d).

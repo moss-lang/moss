@@ -1,0 +1,43 @@
+# r1b: H[I] root; F2[]: get[I = Z] copied from H at a site where Z reads
+# Char (sigma = [Z := Char]; F2's get ():Char vs H's ():c_I: reject
+# expected), then F3 = F2. Expected: reject at bind F2 = H.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type I;
+type Z;
+assume { val kk: Int; }
+assume I { fn get(): I; val vi: I; }
+functor H[I]: Std, I, vi -> kk, get;
+functor F2[]: Std, I, Z, vi -> kk, get[I = Z];
+functor F3[]: Std, I, Z, vi -> kk, get[I = Z];
+functor G: Std, I, vi -> kk, get { bind kk = 1; bind get = () => vi; }
+assume Std, I {
+  fn demo(): I {
+    bind Z = Char;
+    bind H = G;
+    bind F2 = H;
+    bind F3 = F2;
+    bind I = Bool;
+    bind vi = true;
+    bind F3;
+    get()
+  }
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind I = Char;
+    let c: Char = demo();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}

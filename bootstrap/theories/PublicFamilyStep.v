@@ -287,7 +287,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (BS.link_sources Cb outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (BS.link_sources (A.link_site Cg Cb outs') outs' gen ks')) = Some dr /\
     FamilyNewOk rr Cr ks d dr H3.
 
 (* HYPOTHESIS (T15), CopyApplyOk and PlatformApplyOk at a family

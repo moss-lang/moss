@@ -1,0 +1,48 @@
+# r3: t3 with Z's site reading reached through a merge in demo's context
+# (two readings of A.gimme merge I and Z) instead of bind Z = I.
+# Expected: reject at bind F = H (I fresh in F).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type I;
+type Z;
+type A;
+type Foo;
+fn .gimme(): Foo;
+assume { val kk: Int; }
+assume I { fn get(): I; val vi: I; }
+context M = A, I, Z, A.gimme[Foo = I], A.gimme[Foo = Z];
+functor H[I]: Std, I, vi -> kk, get;
+functor F[]: Std, I, Z, vi -> kk, get[I = Z];
+functor G: Std, I, vi -> kk, get { bind kk = 1; bind get = () => vi; }
+assume Std, M {
+  fn demo(): Z {
+    bind H = G;
+    bind F = H;
+    bind I = Bool;
+    bind vi = true;
+    bind F;
+    get()
+  }
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind I = Char;
+    bind Z = Char;
+    bind A = Char;
+    bind Foo = Char;
+    bind A.gimme = () => this;
+    let c: Char = demo();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}

@@ -127,6 +127,74 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A linked body's result keys are read at G's readings of the inputs (linknewpf).**
+  `CC.FamilyLinkNewOk` was false, and so, very likely, was
+  `CN.ChainRealizeOk` for a linked root.
+  - LinkBody looked each result key up at `at_site Cb`, which re-reads
+    the receiver through the body's final table.
+  - A body may rebind an input that F's result does not mention, since
+    the pins (D84 3d) are M(F). If that input is the merge representative
+    of a mentioned one, the key follows the rebind.
+  - But an input's meaning at an application is the caller's, and
+    `bind T = ...` writes only the alias.
+  - [link-merge-rep-rebind.moss](examples/link-merge-rep-rebind.moss):
+    F[X]'s and G's contexts merge X with T, with representative T.
+    Audit's world picks the representative freely, since `w_context` is
+    a witness.
+    - G binds T = Bool and then `T.m`, and the key `X.m` (T.m at F's
+      inputs) was found at Bool.m.
+    - main's demand of Concrete.m installed that closure, and `if this`
+      ran on a Concrete.
+    - Both implementations reject the program.
+
+  Fix (the faithful option): `A.link_site Cg Cb outs` reads outputs at
+  the body's table and every other symbol at G's own (`c_ty Cg`).
+  - LinkBody's ResultRealizes and the code's sources use it. It has
+    Cb's provisions and merges, so it is realized and keys as Cb does.
+  - The m2 variants are now rejected, as both implementations reject
+    them.
+  - scratch/linknewpf/m5-*.moss (G also binds `X.m`) is accepted, and
+    the application now selects G's `X.m`, as native does. The oracle
+    rejects the XT order through its pins, which include the
+    representatives of M(F) (Elab.v `mf`).
+  - Proof repair: LinkData and the result selections in the obligations
+    read `S.link_sources (A.link_site Cg Cb outs') ...`.
+
+  See scratch/orch/linknewpf-AUDIT.md.
+- **A copy reads F's non-fixed inputs as fresh symbols (copyfresh).**
+  `CN.ChainRealizeOk` and `FS.FamilyCopyRealizeOk` were false (moss-safety
+  scratch/hunt/hunt2-chain and hunt2-family). BFunCopy's `CopyOutputs`
+  compared F's and H's result provisions after the copy site's readings
+  of F's fixed inputs alone (sigma). Such a reading can name a symbol
+  that is also one of F's non-fixed inputs, which every application
+  supplies afresh, and the check identified the two.
+  - [copy-bracket-nonfixed.moss](examples/copy-bracket-nonfixed.moss):
+    F[]'s `get[I = Z]` with Z read as demo's I equalled H[I]'s `get`
+    (`(): I`), and the application installed H's body at I = Bool under a
+    key the caller reads at Char.
+  - [copy-fixed-reads-poly.moss](examples/copy-fixed-reads-poly.moss): F's
+    `A.m[U = A]` (A poly) equalled H's `A.m[U = Y]` with Y read as go's A.
+  - Both: oracle rejects the copy ("effective output interpretation
+    differs (D78)"); native rejects (the first at the copy, the second at
+    the use of F).
+
+  `CopyOutputs` now also chooses, for every generation of F's input
+  readings that sigma does not read, a fresh symbol `cg y` (distinct
+  from each other and from the output roles), and compares the
+  provisions after `sigma ++ [y := cg y]`. This is the oracle's
+  `copy_output_compatible`, which sends every unsolved generation to a
+  fresh `@copy` symbol. The alternative (sigma's image mentions none of
+  F's inputs) is not equivalent: copy-fixed-bracket.moss reads its fixed
+  Z as I32, itself a fixed input of F.
+  - Statements are unchanged (CopySite, CCopy and BFunCopy pass the
+    same sigma); one destructuring in PublicCopyApply.v gains the two
+    witnesses.
+  - copy-extra-key, linked-copy-bracket, copy-fixed-bracket and
+    family-copy-linked-bracket still satisfy CopyOutputs (each argued in
+    scratch/orch/copyfresh-AUDIT.md).
+
+  See scratch/orch/copyfresh-AUDIT.md.
+
 - **A method's θ records every type symbol its signature mentions (sigclose, E35).**
   `S.FamilyCoherentOk` was false.
   [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss) declares
@@ -887,9 +955,9 @@ likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
-| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. Still false after it (realizepf, examples/copy-fresh-collide.moss): `cg y` is only `Fresh W`, so it may equal a fresh generation in sigma's image (a fixed input read at the site as a rebound output); CopyOutputs should also make `cg y` and the roles avoid sigma's image. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
 | `ChainForwardCopySigs` (PublicChainFwd) | at an application of F through at least one copy to a platform family: at the caller's last position for a key, the caller's method and the family's item at the chain's source have the same name and agreeing signatures (SigAgreeG). The signature half of the former `ChainForwardCopyKeys`, whose key half was false (linked-copy-bracket.moss) and is by construction since callerkeys | T15, T16 |
-| `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`) | T15 |
+| `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
