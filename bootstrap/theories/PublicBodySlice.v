@@ -3233,6 +3233,162 @@ Proof.
       exact (callable_transfer r r H d d'' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
 Qed.
 
+(* Installing a callable method closure under a bound key. *)
+Lemma meth_install : forall r F C d types H g st rt m sg ap pv,
+  Pre r F C d types H g st -> CallableOk r H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg) pv ->
+  Pre r F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))
+    (install_provision (IMth (A.canon C rt) m (A.theta_of C ap)) pv d) types H g st.
+Proof.
+  intros r F C d types H g st rt m sg ap pv [Frame [Ctx [L [St Real]]]] Ok.
+  unfold A.set_mth. rewrite (provide_set C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg []) ap ltac:(intros; discriminate)).
+  assert (Key : A.rkey (set_cx C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)) (A.canon C rt) m =
+                IMth (A.canon C rt) m (A.theta_of C ap)).
+  { unfold A.rkey. rewrite capps_ilook. unfold set_cx. cbn [A.c_provisions].
+    rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). cbn [option_map A.provision_inst].
+    apply f_equal, theta_of_sub. reflexivity. }
+  set (d' := install_provision (IMth (A.canon C rt) m (A.theta_of C ap)) pv d).
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  apply (realizes_set r C d H (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)).
+  - exact Real.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. intro E. apply Ne. rewrite E. unfold A.mkey. cbn [A.rkey_of].
+    symmetry. exact Key.
+  - cbn [NewOk]. exists pv.
+    split; [transitivity (lookup_provision (IMth (A.canon C rt) m (A.theta_of C ap)) d'); [f_equal; exact Key|]|].
+    { unfold d'. rewrite lookup_install, (proj2 (item_eqb_spec _ _) eq_refl). reflexivity. }
+    exact (callable_transfer r r H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
+Qed.
+
+(* After a lambda's prefix: the enclosing context, and the captured vals. *)
+Lemma pre_from_cap : forall r F C qs d types H g st,
+  NoDup (map snd qs) -> (forall q, In q qs -> A.ilook (IVal (snd q)) (A.c_provisions C) = None) ->
+  Pre r F (cap_cx C qs) d types H g st -> Pre r F C d types H g st /\ Installed C qs d H.
+Proof.
+  intros r F C qs d types H g st Ndq Unp Pre0.
+  pose proof Pre0 as [Frame [Ctx [L [St RealM]]]].
+  destruct (cap_cx_fields C qs C) as [Ety [Esub Eloc]]. cbn zeta in Ety, Esub, Eloc.
+  pose proof RealM as [_ [_ [_ KMm]]].
+  assert (NotCap : forall k0 p0, In (k0, p0) (A.c_provisions C) -> forall q, In q qs -> k0 <> IVal (snd q)).
+  { intros k0 p0 I q Iq E. subst k0. exact (in_ilook _ _ _ I (Unp q Iq)). }
+  assert (KMc : PublicCallRealize.KeysMatch (A.c_provisions C)).
+  { intros k0 p0 I. apply KMm. exact (cap_cx_incl C qs C k0 p0 I (NotCap k0 p0 I)). }
+  split.
+  - split; [exact Frame|]. split.
+    { destruct Ctx as [Loc Rcv]. split; [|exact Rcv]. intros n t mu Found Nm. apply (Loc n t mu); [|exact Nm].
+      change (A.c_locals (cap_cx C qs)) with (A.c_locals (fold_left (fun C' q => set_cx C' (IVal (snd q))
+        (A.ProvidedVal (capty C (fst q)) [])) qs C)). rewrite Eloc. exact Found. }
+    split; [exact L|]. split; [exact St|].
+    apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub KMc).
+    intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
+    exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)).
+  - intros q Iq. pose proof RealM as [_ [[Vals _] _]].
+    assert (Lv : A.nlook (snd q) (A.c_vals (cap_cx C qs)) = Some (capty C (fst q))).
+    { change (A.c_vals (cap_cx C qs)) with (vals_of (A.c_provisions (cap_cx C qs))).
+      rewrite (vals_by_ilook _ _ KMm). unfold cap_cx. rewrite (cap_cx_val C qs C (fst q) (snd q) Ndq ltac:(destruct q; exact Iq)).
+      reflexivity. }
+    exact (Vals _ _ Lv).
+Qed.
+
+(* A method bind as a chain: an attached method, a wrapper, or a lambda
+   (its prefix of captured values, then its closure). *)
+Lemma meth_chain : forall k, Below k -> forall F C pa dn a y r m bs rt sg target pre sm ap types,
+  A.resolve_sym W (A.fr_mod F) pa = Some r -> A.MethodNamed W (A.fr_mod F) r dn m ->
+  A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
+  A.TyOf W (A.fr_mod F) (bs ++ A.c_ty C)%list None (ATRef pa None) rt ->
+  A.SigOf W m (bs ++ A.c_ty C)%list (Some rt) sg ->
+  A.MethProvider W Prog F C y sg rt target types pre sm ->
+  A.AppOf W m (bs ++ A.c_ty C)%list ap ->
+  exists binds, (forall x, pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) target types sm x) =
+                           fold_right (fun b x => EBind b x) x binds) /\
+    Chain k F C F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))
+      (ItemBreaks F (Spec (Some pa) (Some dn) a, Some y)) [] binds.
+Proof.
+  intros k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App.
+  pose proof (method_sig_scoped F C m a bs pa rt sg Br Ty Sig) as SigSc.
+  set (Bi := ItemBreaks F (Spec (Some pa) (Some dn) a, Some y)).
+  set (Cres := A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)).
+  assert (Single : forall b, (forall rr, rr <= S k -> BindStep rr F C F Cres Bi [] b) -> Chain k F C F Cres Bi [] [b]).
+  { intros b Step. apply (ChainCons k F C F Cres F Cres Bi False Bi [] [] b []); [exact Step|constructor|tauto]. }
+  destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA
+    |F C pw sg rt g sm w n0 Cg nsg types FP Ctx Len Fresh Body|F C ps r0 body sg rt pid pre sm LP].
+  - (* attached *)
+    exists [BMethod (A.canon C rt) m (A.theta_of C ap) att (TypeCapture th th) sm]. split; [reflexivity|].
+    apply Single. intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+    intros j d types0 H g st Lj Pre0 rest. rewrite bindings_method_eq.
+    assert (Keys : map fst rargs = A.w_reqs W rg).
+    { destruct Def as [rn [ps [rt0 [b Def]]]]. unfold A.ast_of in Def.
+      destruct (A.w_decl W att) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
+      pose proof (all_fn_elab att dcl (RAttached rn) n0 ps rt0 b Decl Ast dcl (RAttached rn) n0 ps rt0 b Decl Ast)
+        as (C0 & ns0 & this & g0 & F0 & x0 & t0 & _ & Rcv & _).
+      destruct Rcv as [r' [args0 [Att0 [Kind _]]]].
+      pose proof (attached_unique rg r' n0 att Att Att0) as <-.
+      exact (bind_nominal_formed F C pa a bs m rt rg rargs Br Ty Canon Kind). }
+    pose proof Pre0 as [_ [_ [_ [_ Real]]]].
+    destruct (attached_provider_callable k Bel rr Lr C rg n0 att rt sg Ca ns sm th rargs d H
+      Att Def Canon Keys Ctx Sat CT SigA Real) as [dc [Sel Ok]].
+    rewrite Sel. left. eexists _, g, st, H. split; [intros a0 c L0; exact L0|].
+    split; [|split; [exact (meth_install rr F C d types0 H g st rt m sg ap _ Pre0 Ok)|reflexivity]].
+    apply meanings_grow_refl; reflexivity.
+  - (* wrapper *)
+    exists [BMethod (A.canon C rt) m (A.theta_of C ap) w types sm]. split; [reflexivity|].
+    apply Single. intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+    intros j d types0 H g0 st Lj Pre0 rest. rewrite bindings_method_eq.
+    remember (AEPath pw None) as src eqn:Src. remember (@None ty) as none eqn:NoneE.
+    destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R' K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R' K Abs' Fn Len' Fresh' Body'].
+    2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
+    destruct (PublicContextFacts.function_context_unique W g' Cg' ns' Cg nsg Ctx' Ctx) as [-> ->]. subst n0.
+    pose proof Pre0 as [_ [_ [_ [_ Real]]]].
+    destruct (callee_realizes_le rr rr C' d H g' Cg nsg sm' th (le_n rr) Real Ctx Sat CT) as [dc [Sel _]].
+    pose proof (wrapped_callable k Bel rr Lr C' sg' g' th Cg nsg sm' w (A.canon C' rt) d H dc
+      Def Ctx Sat CT SigG Sel Body Real) as Ok.
+    rewrite Sel. left. eexists _, g0, st, H. split; [intros a0 c L0; exact L0|].
+    split; [|split; [exact (meth_install rr F' C' d types0 H g0 st rt m sg' ap _ Pre0 Ok)|reflexivity]].
+    apply meanings_grow_refl; reflexivity.
+  - (* lambda *)
+    pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
+    remember (Some rt) as recv eqn:RecvE in LP.
+    destruct LP as [F C ps r0 body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
+      FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+    subst sm this.
+    assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
+      by exact ClE.
+    set (qs := combine caps capvals) in *.
+    assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
+    assert (Sq : map snd qs = capvals) by (apply snd_combine; congruence).
+    assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
+    assert (InCaps : forall q, In q qs -> In (fst q) caps) by (intros q Iq; rewrite <- Fq; apply in_map, Iq).
+    assert (InVals : forall q, In q qs -> In (snd q) capvals) by (intros q Iq; rewrite <- Sq; apply in_map, Iq).
+    assert (CapsIn : forall n, In n caps -> A.slook n (A.c_locals C) <> None /\ ~ In n (map fst ps))
+      by (intros n0 I0; apply CapsIff in I0 as [_ [L [O _]]]; split; assumption).
+    rewrite Forall_forall in NamedF, Unprov.
+    set (bm := BMethod (A.canon C rt) m (A.theta_of C ap) pid (A.lexical_capture C)
+      (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys)).
+    exists (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs ++ [bm])%list.
+    split; [intros x; cbn beta; rewrite fold_bind_values, fold_right_app; reflexivity|].
+    apply (chain_app k F C F (cap_cx C qs) F Cres False Bi Bi [] []); [| |tauto].
+    + apply prefix_chain; [|exact Ndq]. intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|].
+      split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|exact (Unprov _ (InVals q Iq))].
+    + apply (ChainCons k F (cap_cx C qs) F Cres F Cres Bi False Bi [] [] bm []); [|constructor|tauto].
+      intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+      intros j d types0 H g st Lj Pre0 rest. unfold bm. rewrite bindings_method_eq.
+      destruct (pre_from_cap rr F C qs d types0 H g st Ndq (fun q Iq => Unprov _ (InVals q Iq)) Pre0) as [PreC Inst].
+      pose proof PreC as [_ [_ [_ [_ RealC]]]]. pose proof RealC as [Abs _].
+      destruct (lambda_select rr C qs Cl d H keys ClE' RealC Inst Ndq
+        (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
+      rewrite Sel. left.
+      pose proof (lambda_callable k Bel rr Lr C ps sg (Some rt) body pid caps capvals Cl Fl lbody ltype d H dc keys
+        Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst KS SigSc) as Ok.
+      cbn [this_list app] in Ok.
+      assert (Ok' : CallableOk rr H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg)
+        (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc))).
+      { apply (callable_transfer rr rr H d d (rt :: A.sg_params sg) (A.canon C rt :: A.sg_params sg) (A.sg_ret sg) (A.sg_ret sg) _ (le_n _)); [|reflexivity|exact Ok].
+        cbn [map]. f_equal. symmetry. exact (Abs rt). }
+      eexists _, g, st, H. split; [intros a0 c L0; exact L0|].
+      split; [|split; [exact (meth_install rr F C d types0 H g st rt m sg ap _ PreC Ok')|reflexivity]].
+      apply meanings_grow_refl; reflexivity.
+Qed.
+
 (* Code safety reads a frame only through its return type, receiver, loop
    flag and local numbering. *)
 Lemma codesafe_frame : forall n F1 F2 C t (B : Prop) x,
