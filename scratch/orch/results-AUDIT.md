@@ -54,3 +54,32 @@ not-in-force output clause now also requires `In t newgens`.
 
 **Proofs fixed.** `PublicFormation` (one destruct pattern in the bind-item formation proof).
 `PublicBodySlice.AppPremises`/`AppAt` restate the rule's premises.
+
+## 2. ResultRealizes compares at the body's output meanings
+
+**What.** `ResultRealizes body promised rename keys` compared the promised
+provision renamed by `rename` (each output role `gen t` to `TAbs t`) with
+the body's provision, both under `c_sub body`. It now renames by
+`read_rename body rename`: each `gen t` to `canon body (app_subst (c_ty body)
+(TAbs t))`, the body's meaning of output `t`. Keys are unchanged (they are
+already read at the body's site by `at_site`).
+
+**Why (derivation).** For G `{ bind T = Bool; bind mk = () => true; }`
+providing F's `fn mk(): T`: in Cb, `T ↦ Bool`, so `BFnLambda` files
+`IFn mk` as `ProvidedFn (FSig [] Bool) [(T, Some Bool)]` (`SigOf`/`AppOf`
+read through `c_ty Cb`). F's formal Cr (output role gT) files
+`ProvidedFn (FSig [] (TAbs gT)) [(T, Some (TAbs gT))]`. Renamed to `T` and
+canonicalized by `c_sub Cb` (which never maps T: BTypeBind only sets the
+type table) the promised return is `TAbs T`, not `Bool`, and the recorded
+instantiation differs the same way. So `LinkBody` could not hold, and Audit
+rejected `bind F = G;` for the standard pattern of a body binding an output
+and providing an item that mentions it.
+
+**Test.** `bootstrap/examples/result-output-meaning.moss`: oracle and native
+both run it (print 1). The oracle compares as the new definition does:
+`Elab.promised_result_type eb made_tys want = canon eb (instantiate made_tys
+want)` with `made_tys` mapping each output role to `canon eb` of the body's
+meaning of its output.
+
+**Effect.** Accepts more (only where the old comparison was unsatisfiable
+for outputs the body rebinds); nothing proved used the old comparison.

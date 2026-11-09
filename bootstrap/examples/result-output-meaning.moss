@@ -1,0 +1,36 @@
+# The standard functor pattern: G binds its output T and provides an item
+# whose type mentions it. Read in G's body, `mk` returns Bool (T = Bool
+# there); F promises `mk(): T`, T being the application's output. Audit's
+# ResultRealizes compared the promise with the output renamed to T itself,
+# TAbs T against Bool, so LinkBody could not hold and `bind F = G;` was
+# rejected. The oracle compares at the body's output meanings
+# (Elab.promised_result_type), as ResultRealizes now does. Both
+# implementations accept and run it (prints 1).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn mk(): T;
+fn id(x: T): T;
+
+functor F: -> T, mk, id;
+functor G: -> T, mk, id { bind T = Bool; bind mk = () => true; bind id = (x) => x; }
+
+assume Std {
+  fn demo() {
+    bind F = G;
+    bind F;
+    let v = id(mk());
+    putchar(char::digit1);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

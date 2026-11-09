@@ -3792,12 +3792,19 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop 
 Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
   app_subst_item (map (fun t => (gen t, TAbs t)) outs) k.
 
+(* A promised item is compared with the body's at the body's meanings of
+   the renamed symbols (each output role at what the body's type table
+   makes of its output, canonically), as the oracle's promised_result_type
+   does: a body that binds `T = Bool` provides `mk(): T` as `mk(): Bool`.
+   The key is read at the body's site (at_site re-reads its receiver). *)
+Definition read_rename (body : cx) (rename : subst) : subst :=
+  map (fun q => (fst q, canon body (app_subst (c_ty body) (snd q)))) rename.
 Definition ResultRealizes (body promised : cx) (rename : subst) (keys : list item) : Prop :=
   forall k, In k keys -> exists required actual,
     ilook (provision_id k) (c_provisions promised) = Some required /\
     ilook (provision_id (at_site body (app_subst_item rename k))) (c_provisions body) = Some actual /\
     provision_refines
-      (provision_subst (c_sub body) (provision_subst rename required))
+      (provision_subst (c_sub body) (provision_subst (read_rename body rename) required))
       (provision_subst (c_sub body) actual).
 Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
   Forall (fun binding => match binding with
