@@ -89,8 +89,9 @@ entry they belong to.
 | 45 | A platform family's items read raw handles as themselves | f9d33bf | E |
 | 46 | A platform family's items have distinct methods | 3544241 | E |
 | 47 | A platform family is abstract, with distinct keys | cf21df4 | E |
+| 48 | **No expanding cycle (`NoExpandingCycle`, D16/D30)** | branch ob-expand | **B** |
 
-Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
 
 **Points that most need a decision.**
 - #10 rejects two programs that both implementations accept and run
@@ -896,6 +897,47 @@ executable tests unless noted.
   `PlatformKeysDistinct`.
 - **Decision.** The coordinator chose to fold them into the world.
 - **Class E.**
+
+### 48. No expanding cycle (branch ob-expand, after this document's range)
+- **Rule now.** `ElaboratesIn` ends with `NoExpandingCycle W P`, the
+  planned resolution of D16's polymorphic-recursion exception
+  (Kennedy and Pierce's expansive cycles, decided before specialization).
+  It has two halves, each a level function that no edge raises and every
+  strict edge lowers, which exists iff no cycle has a strict edge:
+  - `InstantiationsBounded P`: vertices are (code node, type symbol),
+    nodes being P's fns (lambdas, forwarders and method providers
+    included) and core functor bodies. Edges come from `ECall θ` (plain
+    calls, bracket applications, attached methods at the receiver's
+    instantiation), from closures (`bind f = g`, `bind R.m = g`, lambdas,
+    `bind F = G`) at their captured types, and from `BApply θ` (`bind F;`
+    and family members demanded on demand) to every functor body's linked
+    inputs. Within a node a symbol reads as itself, through a functor
+    body's table, or, for an application's output, as strictly containing
+    everything its θ mentions (the owner's choice (a)). Type binds in
+    force count through the canonical θ and captures.
+  - `TypesBounded W`: a tag's payload, read at its own requirements,
+    gives an edge to every nominal instance it mentions, behind `Ref` too.
+- **Why.** The planned monomorphization theorem needs finitely many
+  instantiations; a falsification hunt (scratch/expand/mono) found Audit
+  accepting polymorphic recursion through every channel above.
+- **Tests.** bootstrap/examples/expand-*.moss. Rejected: polyrec,
+  attached, functor-output, functor-double, family, lambda, fn-bind,
+  type-direct (also D58 in the oracle), type-ref-rec, type-ref,
+  functor-forge. Controls: control-loop is accepted; control-functor-const
+  is **rejected** by choice (a), though native compiles it and prints 5.
+  - oracle: accepts and runs all but type-direct (D58);
+  - native: crashes at compile time on every growing one (wasm call
+    stack exhausted; out-of-bounds memory for functor-double), including
+    type-ref, which has no recursive fn.
+- **Corpus.** An oracle variant with the check (scratch/expand/variant;
+  scratch/expand/expand-cmp.sh): 395 same / 0 diff over `tests/`,
+  `examples/`, `bootstrap/examples/` (before the expand examples), and it
+  accepts `src/main.moss`, the self-hosted compiler.
+- **Proof.** `public_safety` unchanged; PublicBoolTyping and
+  AuditBuildExample destructure one more conjunct.
+- **Class B.** Native crashes on everything it rejects except
+  control-functor-const, which it compiles. Follow-up: E38 (open; the
+  oracle needs the check for E11).
 
 ---
 
