@@ -2453,19 +2453,85 @@ Qed.
 (* One binding, run by eval_bindings at fuel at most r - 1, with the
    provisions realized at the fixed index r: either it completes, in the
    context after it, or it stops with an outcome of its own. *)
-Definition BindStep r F C F' C' (Bi : Prop) (made : list nat) (b : binding) : Prop :=
+Definition BindStep (J r : nat) F C F' C' (Bi : Prop) (made : list nat) (b : binding) : Prop :=
   FrameSame F F' /\ FrameAvoids made F /\
-  forall j d types H g st, S j <= r -> Pre r F C d types H g st -> forall rest,
+  forall j d types H g st, S j <= r -> j < J -> Pre r F C d types H g st -> forall rest,
     (exists d' g' st' H', heap_extends H H' /\ MeaningsGrow made d d' /\
        Pre r F' C' d' types H' g' st' /\
        I.eval_bindings (S j) P d g st (b :: rest) = I.eval_bindings j P d' g' st' rest) \/
     (exists res, I.eval_bindings (S j) P d g st (b :: rest) = inr res /\
        (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 
+(* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
+Local Close Scope string_scope.
+(* BApplyAbstract *)
+(* A `bind F;` of an abstract F in force, as a step below the cap J. *)
+Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
+      A.FunCtx W u Cu ns ->
+      
+      (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
+      th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) ->
+      
+      (forall x tx, In (x, tx) fx -> exists here,
+        A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
+      A.Satisfies C Cu th ns sm ->
+      A.FreshFor W F C newgens ->
+      
+      (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
+      
+      (forall t, A.FunOutputs W u t ->
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+      NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
+      A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False newgens
+      (BApply u th (map (fun t => (t, gensof t)) outs) sm).
+
+Hypothesis case_BApplyAbstract : forall k, Below k -> forall J, AppAt J k.
+
+(* BFunCopy *)
+Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
+      A.nlook h (A.c_funs C) <> None ->
+      A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+      
+      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
+      (forall x, A.Fixed W h x -> A.Fixed W u x) ->
+      A.FixedAgreement W C h ->
+      A.SameResult W u h ->
+      sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
+      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+  forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BCopyFunctor u h sm).
+
+(* BFunClosure *)
+Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
+      (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
+      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
+      A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+      
+      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
+      A.SameResult W u gg ->
+      A.LinkBody W Prog u gg h ->
+      sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
+      A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
+        (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
+      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+  forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h sm smc).
+
+
+Local Open Scope string_scope.
+
+(* Chains of steps run below the eval-fuel cap J (a functor body runs
+   below its application's fuel). *)
+Section Cap.
+Variable J : nat.
+
 Inductive Chain (k : nat) : A.frame -> A.cx -> A.frame -> A.cx -> Prop -> list nat -> list binding -> Prop :=
 | ChainNil : forall F F' C (B : Prop), FrameSame F F' -> Chain k F C F' C B [] []
 | ChainCons : forall F C F1 C1 F2 C2 (B1 B2 B : Prop) m1 m2 b bs,
-    (forall r, r <= S k -> BindStep r F C F1 C1 B1 m1 b) -> Chain k F1 C1 F2 C2 B2 m2 bs ->
+    (forall r, r <= S k -> BindStep J r F C F1 C1 B1 m1 b) -> Chain k F1 C1 F2 C2 B2 m2 bs ->
     (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (m1 ++ m2)%list (b :: bs).
 
 Lemma frame_same_refl : forall F, FrameSame F F.
@@ -2489,13 +2555,13 @@ Proof.
 Qed.
 
 Lemma bstep_src : forall r F F1 C F2 C2 (B : Prop) m b, FrameSame F F1 ->
-  BindStep r F1 C F2 C2 B m b -> BindStep r F C F2 C2 B m b.
+  BindStep J r F1 C F2 C2 B m b -> BindStep J r F C F2 C2 B m b.
 Proof.
   intros r F F1 C F2 C2 B m b Same [Same12 [Av Run]]. split; [exact (frame_same_trans _ _ _ Same Same12)|].
   split.
   { destruct Same as [Er [Et _]]. destruct Av as [Ar At]. split; intros t E; [apply Ar|apply At]; congruence. }
-  intros j d types H g st Lj Pre0 rest.
-  destruct (Run j d types H g st Lj (pre_frame _ _ _ _ _ _ _ _ _ Same Pre0) rest)
+  intros j d types H g st Lj LJ Pre0 rest.
+  destruct (Run j d types H g st Lj LJ (pre_frame _ _ _ _ _ _ _ _ _ Same Pre0) rest)
     as [Done|[res [Eq [NN Out]]]]; [left; exact Done|right].
   exists res. split; [exact Eq|]. split; [exact NN|]. exact (outcome_frame F F1 d H types TUnit B res Same Out).
 Qed.
@@ -2510,11 +2576,11 @@ Proof.
 Qed.
 
 Lemma bstep_tgt : forall r F C F2 C2 F3 (B : Prop) m b, FrameSame F2 F3 ->
-  BindStep r F C F2 C2 B m b -> BindStep r F C F3 C2 B m b.
+  BindStep J r F C F2 C2 B m b -> BindStep J r F C F3 C2 B m b.
 Proof.
   intros r F C F2 C2 F3 B m b Same [Same12 [Av Run]]. split; [exact (frame_same_trans _ _ _ Same12 Same)|].
-  split; [exact Av|]. intros j d types H g st Lj Pre0 rest.
-  destruct (Run j d types H g st Lj Pre0 rest) as [[d' [g' [st' [H' [E [M [Pre' Eq]]]]]]]|Stop]; [left|right; exact Stop].
+  split; [exact Av|]. intros j d types H g st Lj LJ Pre0 rest.
+  destruct (Run j d types H g st Lj LJ Pre0 rest) as [[d' [g' [st' [H' [E [M [Pre' Eq]]]]]]]|Stop]; [left|right; exact Stop].
   exists d', g', st', H'. split; [exact E|]. split; [exact M|]. split; [exact (pre_frame _ _ _ _ _ _ _ _ _ Same Pre')|exact Eq].
 Qed.
 
@@ -2544,10 +2610,10 @@ Proof. intros m1 m2 t Av. split; intros g Ig; apply Av; apply in_or_app; [left|r
 
 (* A chain gives the expression-level wrapper: each binding in turn, then
    the continuation. *)
-Lemma chain_wrap : forall k n F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi made bs -> n <= S k ->
+Lemma chain_wrap : forall k n F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi made bs -> n <= S k -> n <= J ->
   WrapSafe n F C F' C' Bi made (fun x => fold_right (fun b x => EBind b x) x bs).
 Proof.
-  intros k n F C F' C' Bi made bs D Le. induction D as [F F' C B0 Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp].
+  intros k n F C F' C' Bi made bs D Le LeJ. induction D as [F F' C B0 Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp].
   - intros t B x _ Safe. apply (wrap_breaks n F C t B); [tauto|].
     destruct Same as [Er [Et [El Ev]]]. exact (codesafe_frame n F' F C t B x Er Et El Ev Safe).
   - intros t B' x Av Safe. destruct (avoids_app m1 m2 t Av) as [Av1 Av2].
@@ -2555,7 +2621,7 @@ Proof.
     intros [|j] Lj d types H g st Pre0; [exact Logic.I|]. rewrite eval_bind_eq.
     destruct j as [|j]; [exact Logic.I|].
     destruct (Step (S (S j)) ltac:(lia)) as [Same [FAv Run]].
-    destruct (Run j d types H g st ltac:(lia) Pre0 []) as [[d' [g' [st' [H' [E [Grow [Pre' Eq]]]]]]]|[res [Eq [NN Out]]]];
+    destruct (Run j d types H g st ltac:(lia) ltac:(lia) Pre0 []) as [[d' [g' [st' [H' [E [Grow [Pre' Eq]]]]]]]|[res [Eq [NN Out]]]];
       rewrite Eq.
     + destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
       pose proof (Inner (S (S j)) ltac:(lia) d' types H' g' st' (pre_lower Pre')) as Out.
@@ -2581,7 +2647,7 @@ Proof. intros made F F' [Er [Et _]] [Ar At]. split; intros t E; [apply Ar|apply 
 (* A chain run by eval_bindings: it completes, in the context after it,
    or stops with an outcome. *)
 Lemma chain_run : forall k F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi made bs ->
-  forall r j d types H g st rest, r <= S k -> j < r -> Pre r F C d types H g st ->
+  forall r j d types H g st rest, r <= S k -> j < r -> j <= J -> Pre r F C d types H g st ->
   (exists d' g' st' H' j', j = j' + List.length bs /\ heap_extends H H' /\ MeaningsGrow made d d' /\
      Pre r F' C' d' types H' g' st' /\
      I.eval_bindings j P d g st (bs ++ rest)%list = I.eval_bindings j' P d' g' st' rest) \/
@@ -2589,15 +2655,15 @@ Lemma chain_run : forall k F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi m
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 Proof.
   intros k F C F' C' Bi made bs D. induction D as [F F' C B0 Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
-    intros r j d types H g st rest Lr Lj Pre0.
+    intros r j d types H g st rest Lr Lj LJ Pre0.
   - left. exists d, g, st, H, j. split; [cbn; lia|]. split; [intros a c L; exact L|].
     split; [apply meanings_grow_refl; reflexivity|]. split; [exact (pre_frame _ _ _ _ _ _ _ _ _ Same Pre0)|reflexivity].
   - destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v E; discriminate|exact Logic.I]|].
     destruct (Step r Lr) as [Same [FAv Run]].
-    destruct (Run j d types H g st ltac:(lia) Pre0 (bs ++ rest)%list)
+    destruct (Run j d types H g st ltac:(lia) ltac:(lia) Pre0 (bs ++ rest)%list)
       as [[d1 [g1 [st1 [H1 [E1 [M1 [Pre1 Eq1]]]]]]]|[res [Eq [NN Out]]]].
     + cbn [app]. rewrite Eq1.
-      destruct (IH r j d1 types H1 g1 st1 rest Lr ltac:(lia) Pre1)
+      destruct (IH r j d1 types H1 g1 st1 rest Lr ltac:(lia) ltac:(lia) Pre1)
         as [[d' [g' [st' [H' [j' [Ej [E' [M' [Pre' Eq']]]]]]]]]|[res [Eq [NN Out]]]].
       * left. exists d', g', st', H', j'. split; [cbn; lia|]. split; [exact (heap_extends_trans _ _ _ E1 E')|].
         split; [exact (meanings_grow_trans _ _ _ _ _ M1 M')|]. split; [exact Pre'|exact Eq'].
@@ -2613,20 +2679,20 @@ Lemma frame_avoids_nil : forall F, FrameAvoids [] F.
 Proof. intros F. split; intros t _ g []. Qed.
 
 Lemma type_bstep : forall r F C t0 tau,
-  BindStep r F C F (A.set_ty C t0 (A.canon C tau)) False [] (BType t0 (A.canon C tau)).
+  BindStep J r F C F (A.set_ty C t0 (A.canon C tau)) False [] (BType t0 (A.canon C tau)).
 Proof.
   intros r F C t0 tau. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-  intros j d types H g st Lj Pre0 rest.
+  intros j d types H g st Lj LJ Pre0 rest.
   left. exists (bind_type d t0 (A.canon C tau)), g, st, H. split; [intros a c L; exact L|].
   split; [apply meanings_grow_refl; reflexivity|]. split; [exact Pre0|]. reflexivity.
 Qed.
 
 Lemma val_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp v declared y x xt a,
   A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
-  BindStep r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) [] (BValue v x).
+  BindStep J r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) [] (BValue v x).
 Proof.
   intros k Bel r Lr F C sp v declared y x xt a Dy Fits. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-  intros j d types H g st Lj Pre0 rest. rewrite bindings_value_eq.
+  intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_value_eq.
   destruct (Bel j ltac:(lia)) as [SEx _].
   pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits
     (SEx F C y _ x xt Dy d types H g st (realizes_pre_lower j r F C d types H g st Pre0 ltac:(lia)))) as Out.
@@ -2649,11 +2715,11 @@ Qed.
 
 Lemma fn_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp f g sg pg types sm a,
   A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
-  BindStep r F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AEPath pg None)))
+  BindStep J r F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AEPath pg None)))
     [] (BFunction f g types sm).
 Proof.
   intros k Bel r Lr F C sp f g sg pg types sm a Prov. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-  intros j d types0 H lg st Lj Pre0 rest. rewrite bindings_function_eq.
+  intros j d types0 H lg st Lj LJ Pre0 rest. rewrite bindings_function_eq.
   pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
   destruct (provider_callable k Bel r Lr F C pg sg g types sm d H Prov Real) as [dc [Sel Ok]].
   rewrite Sel. left.
@@ -2717,10 +2783,10 @@ Qed.
 (* A captured local's value, bound to its val. *)
 Lemma cap_bstep : forall r F C n v, A.Named F n -> A.slook n (A.c_locals C) <> None ->
   A.ilook (IVal v) (A.c_provisions C) = None ->
-  BindStep r F C F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) False [] (BValue v (EVar (A.var_of F n))).
+  BindStep J r F C F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) False [] (BValue v (EVar (A.var_of F n))).
 Proof.
   intros r F C n v Named Loc Out. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-  intros j d types H g st Lj Pre0 rest. rewrite bindings_value_eq.
+  intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_value_eq.
   destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v' E; discriminate|exact Logic.I]|].
   rewrite eval_var_eq.
   pose proof Pre0 as [Frame [[Locals Recv] [Lt [St Real]]]].
@@ -2848,7 +2914,7 @@ Proof.
   - apply (ChainCons k F (cap_cx C qs) F (A.provide C (IFn f) a (A.set_fn C f sg)) F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AELam ps rt body))) False (ItemBreaks F (sp, Some (AELam ps rt body))) [] []);
       [|constructor; apply frame_same_refl|tauto].
     intros r Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-    intros j d types H g st Lj Pre0 rest. rewrite bindings_function_eq.
+    intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_function_eq.
     pose proof Pre0 as [Frame [Ctx [L [St RealM]]]].
     destruct (cap_cx_fields C qs C) as [Ety [Esub Eloc]]. cbn zeta in Ety, Esub, Eloc.
     pose proof RealM as [_ [_ [_ KMm]]].
@@ -2966,14 +3032,14 @@ Proof.
   pose proof (method_sig_scoped F C m a bs pa rt sg Br Ty Sig) as SigSc.
   set (Bi := ItemBreaks F (Spec (Some pa) (Some dn) a, Some y)).
   set (Cres := A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)).
-  assert (Single : forall b, (forall rr, rr <= S k -> BindStep rr F C F Cres Bi [] b) -> Chain k F C F Cres Bi [] [b]).
+  assert (Single : forall b, (forall rr, rr <= S k -> BindStep J rr F C F Cres Bi [] b) -> Chain k F C F Cres Bi [] [b]).
   { intros b Step. apply (ChainCons k F C F Cres F Cres Bi False Bi [] [] b []); [exact Step|constructor; apply frame_same_refl|tauto]. }
   destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA
     |F C pw sg rt g sm w n0 Cg nsg types FP Ctx Len Fresh Body|F C ps r0 body sg rt pid pre sm LP].
   - (* attached *)
     exists [BMethod (A.canon C rt) m (A.theta_of C ap) att (TypeCapture th th) sm]. split; [reflexivity|].
     apply Single. intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-    intros j d types0 H g st Lj Pre0 rest. rewrite bindings_method_eq.
+    intros j d types0 H g st Lj LJ Pre0 rest. rewrite bindings_method_eq.
     assert (Keys : map fst rargs = A.w_reqs W rg).
     { destruct Def as [rn [ps [rt0 [b Def]]]]. unfold A.ast_of in Def.
       destruct (A.w_decl W att) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
@@ -2991,7 +3057,7 @@ Proof.
   - (* wrapper *)
     exists [BMethod (A.canon C rt) m (A.theta_of C ap) w types sm]. split; [reflexivity|].
     apply Single. intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-    intros j d types0 H g0 st Lj Pre0 rest. rewrite bindings_method_eq.
+    intros j d types0 H g0 st Lj LJ Pre0 rest. rewrite bindings_method_eq.
     remember (AEPath pw None) as src eqn:Src. remember (@None ty) as none eqn:NoneE.
     destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R' K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R' K Abs' Fn Len' Fresh' Body'].
     2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
@@ -3029,7 +3095,7 @@ Proof.
       split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|exact (Unprov _ (InVals q Iq))].
     + apply (ChainCons k F (cap_cx C qs) F Cres F Cres Bi False Bi [] [] bm []); [|constructor; apply frame_same_refl|tauto].
       intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
-      intros j d types0 H g st Lj Pre0 rest. unfold bm. rewrite bindings_method_eq.
+      intros j d types0 H g st Lj LJ Pre0 rest. unfold bm. rewrite bindings_method_eq.
       destruct (pre_from_cap rr F C qs d types0 H g st Ndq (fun q Iq => Unprov _ (InVals q Iq)) Pre0) as [PreC Inst].
       pose proof PreC as [_ [_ [_ [_ RealC]]]]. pose proof RealC as [Abs _].
       destruct (lambda_select rr C qs Cl d H keys ClE' RealC Inst Ndq
@@ -3048,63 +3114,7 @@ Proof.
 Qed.
 
 
-(* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
-Local Close Scope string_scope.
-(* BApplyAbstract *)
-Hypothesis case_BApplyAbstract : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
-      A.FunCtx W u Cu ns ->
-      
-      (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
-      th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) ->
-      
-      (forall x tx, In (x, tx) fx -> exists here,
-        A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
-      A.Satisfies C Cu th ns sm ->
-      A.FreshFor W F C newgens ->
-      
-      (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-      
-      (forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
-         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
-      NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
-      A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-  forall rr, rr <= S k -> BindStep rr F C (A.with_fresh F newgens) C' False newgens
-      (BApply u th (map (fun t => (t, gensof t)) outs) sm).
 
-(* BFunCopy *)
-Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
-      A.nlook h (A.c_funs C) <> None ->
-      A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
-      
-      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
-      (forall x, A.Fixed W h x -> A.Fixed W u x) ->
-      A.FixedAgreement W C h ->
-      A.SameResult W u h ->
-      sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
-      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
-  forall rr, rr <= S k -> BindStep rr F C F (A.set_fun C u fx) False [] (BCopyFunctor u h sm).
-
-(* BFunClosure *)
-Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
-      (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
-      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
-      A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
-      
-      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
-      A.SameResult W u gg ->
-      A.LinkBody W Prog u gg h ->
-      sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
-      A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
-        (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
-      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
-  forall rr, rr <= S k -> BindStep rr F C F (A.set_fun C u fx) False [] (BFunctor u h sm smc).
-
-
-Local Open Scope string_scope.
 
 Lemma fold_binds_app : forall bs1 bs2 x,
   fold_right (fun b x => EBind b x) (fold_right (fun b x => EBind b x) x bs2) bs1 =
@@ -3112,16 +3122,16 @@ Lemma fold_binds_app : forall bs1 bs2 x,
 Proof. intros bs1 bs2 x. rewrite fold_right_app. reflexivity. Qed.
 
 Lemma single_chain : forall k F C F' C' (B : Prop) m b,
-  (forall r, r <= S k -> BindStep r F C F' C' B m b) -> Chain k F C F' C' B m [b].
+  (forall r, r <= S k -> BindStep J r F C F' C' B m b) -> Chain k F C F' C' B m [b].
 Proof.
   intros k F C F' C' B m b Step. rewrite <- (app_nil_r m).
   apply (ChainCons k F C F' C' F' C' B False B m [] b []); [exact Step|constructor; apply frame_same_refl|tauto].
 Qed.
 
 (* Each bind item is a chain of bindings. *)
-Fixpoint item_chain k (Bel : Below k) F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
+Fixpoint item_chain k (Bel : Below k) (Ap : AppAt J k) F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
   exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemBreaks F it) m bs
-with items_chain k (Bel : Below k) F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
+with items_chain k (Bel : Below k) (Ap : AppAt J k) F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
   exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemsBreak F its) m bs.
 Proof.
   - destruct D as [F C pa t0 rp ra tau R K Pin Ty
@@ -3142,7 +3152,7 @@ Proof.
     + exact (lambda_fn_chain k Bel F C (Spec (Some pa) None None) f sg ps rt body pid pre sm a Sig LP).
     + exact (meth_chain k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App).
     + (* `bind F;` for F with a body: its binds, in place *)
-      destruct (items_chain k Bel _ _ _ _ _ _ _ Ditems) as [bs [Ew Ch]].
+      destruct (items_chain k Bel Ap _ _ _ _ _ _ _ Ditems) as [bs [Ew Ch]].
       exists bs. split; [exact Ew|].
       destruct (bind_items_frame _ _ _ _ _ _ _ Ditems) as [_ [Er [Et [El Ev]]]]. cbn in Er, Et, El, Ev.
       apply (chain_reframe_src k (A.with_mod F (A.d_mod dcl) u) C); [|repeat split].
@@ -3151,18 +3161,18 @@ Proof.
       intros [it [Iit Bi]]. eapply A.IBApply; [exact R|exact Dcl|exact Ast|exact Iit|exact Bi].
     + exists [BApply u th (map (fun t => (t, gensof t)) outs) sm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BApplyAbstract k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG
+      exact (Ap F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG
         Uniq Outs NdO OutsIff PR).
     + exists [BCopyFunctor u h sm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx).
+      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx J).
     + exists [BFunctor u h sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx).
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
-    + destruct (item_chain k Bel _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
-      destruct (items_chain k Bel _ _ _ _ _ _ _ Rest) as [bs2 [E2 Ch2]].
+    + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
+      destruct (items_chain k Bel Ap _ _ _ _ _ _ _ Rest) as [bs2 [E2 Ch2]].
       exists (bs1 ++ bs2)%list. split; [intros x; rewrite E1, E2; apply fold_binds_app|].
       destruct (bind_item_frame _ _ _ _ _ _ _ D1) as [Mod _].
       apply (chain_app k F C F1 C1 F2 C2 (ItemBreaks F it) (ItemsBreak F1 r) _ m1 m2 bs1 bs2 Ch1 Ch2).
@@ -3171,18 +3181,20 @@ Proof.
       * exists it'. split; [right; exact I'|exact Bi].
 Qed.
 
+End Cap.
+
 Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
   A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks F it) m w.
 Proof.
-  intros k Bel n F C it w C' F' m D Le. destruct (item_chain k Bel _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
-  intros t B x Av Safe. rewrite Ew. exact (chain_wrap k n F C F' C' _ m bs Ch Le t B x Av Safe).
+  intros k Bel n F C it w C' F' m D Le. destruct (item_chain (S k) k Bel (case_BApplyAbstract k Bel (S k)) _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
+  intros t B x Av Safe. rewrite Ew. exact (chain_wrap (S k) k n F C F' C' _ m bs Ch Le Le t B x Av Safe).
 Qed.
 
 Lemma items_safe : forall k, Below k -> forall n F C its w C' F' m,
   A.BindItems W Prog F C its w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemsBreak F its) m w.
 Proof.
-  intros k Bel n F C its w C' F' m D Le. destruct (items_chain k Bel _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
-  intros t B x Av Safe. rewrite Ew. exact (chain_wrap k n F C F' C' _ m bs Ch Le t B x Av Safe).
+  intros k Bel n F C its w C' F' m D Le. destruct (items_chain (S k) k Bel (case_BApplyAbstract k Bel (S k)) _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
+  intros t B x Av Safe. rewrite Ew. exact (chain_wrap (S k) k n F C F' C' _ m bs Ch Le Le t B x Av Safe).
 Qed.
 
 Section Step.
