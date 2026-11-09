@@ -31,7 +31,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
-From NM Require PublicFormation PublicCopyApply PublicFamilyStep PublicFamilyAgree.
+From NM Require PublicFormation PublicCopyApply PublicFamilyStep PublicFamilyAgree PublicChainAgree.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -286,6 +286,30 @@ Definition ChainResultAgrees : Prop :=
   forall h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
   (forall t, ~ A.FunOutputs W u t) /\ ResultAgree d C C' Ch0 outputs th keys.
+
+(* PREMISE (static correspondence, T15/T16): ChainResultAgrees's forward
+   half. F has no type output; C' adds methods only to C's provisions; and
+   each new method is filed under the run-time key of one of h0's items at
+   θ, its signature agreeing with that item's (ItemsAgreeG's first
+   clause). This is the direction each copy step's CopyOutputs gives. The
+   converse (every item of h0 is a new method) follows by counting
+   (PublicChainAgree.chain_cover, chain_result_agrees below). *)
+Definition ChainForwardAgrees : Prop :=
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr d types H g st, Pre rr F C d types H g st ->
+  forall code sms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env) ->
+  S.FixedMeans W u d fx gfx ->
+  forall h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
+  (forall t, ~ A.FunOutputs W u t) /\
+  exists news, A.c_provisions C' = (news ++ A.c_provisions C)%list /\
+    (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a) /\
+    (forall r m g, A.mlook r m (mths_of news) = Some g ->
+     (exists key, In key keys /\ app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m) /\
+     (forall key rf a gf, In key keys -> key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
+        app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m ->
+        Forall2 (SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf))).
 
 (* PREMISE (primitive behaviour, T11/T17). A primitive a platform family
    installs is callable, at its AtKey signature, in the environment the
@@ -665,6 +689,33 @@ Proof.
   split; [|exact (proj2 Fmd)].
   apply (PublicFormation.apply_abstract_formed W C u gensof C' ks (proj1 Fmd)); [|exact PR].
   intros t Ft. exfalso. exact (NoOut t Ft).
+Qed.
+
+(* A copy chain keeps its root's leaves (each step's SameResult). *)
+Lemma chain_leaves : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
+  forall l, A.ResultLeaf W h0 l -> A.ResultLeaf W u l.
+Proof.
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same];
+    intros l L; [exact L|]. exact (proj2 (Same l) (IH l L)).
+Qed.
+
+(* ChainResultAgrees from its forward half, in a world read from a
+   bundle: the converse by counting (PublicChainAgree.chain_cover). *)
+Theorem chain_result_agrees : forall b, A.WorldOf b W -> ChainForwardAgrees -> ChainResultAgrees.
+Proof.
+  intros b Wo Fwd F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx Look Fm
+    h0 gf0 Chn Ch0 needs outputs keys bindings FD.
+  destruct (Fwd F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx Look Fm
+    h0 gf0 Chn Ch0 needs outputs keys bindings FD) as [NoOut (news & Enews & NewM & A1)].
+  split; [exact NoOut|]. exists news. split; [exact Enews|]. split; [exact NewM|].
+  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR).
+  pose proof FD as (_ & _ & PRf & _ & Binds & MD).
+  split; [exact A1|].
+  apply (PublicChainAgree.chain_cover b W Wo u h0 (chain_leaves _ _ _ _ _ _ Chn) C _ C' ks PR Ch0 outputs keys PRf MD).
+  - intros key Ik. destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op [_ [MP _]]]]].
+    destruct MP as (r0 & m0 & a0 & _ & _ & _ & _ & _ & _ & -> & _). eauto.
+  - exact Enews.
+  - intros r m g0 L. exact (proj1 (A1 r m g0 L)).
 Qed.
 
 Hypothesis chain_agrees : ChainResultAgrees.

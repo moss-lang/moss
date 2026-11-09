@@ -591,7 +591,7 @@ Theorem safety_obligations : forall prelude,
         decide (scratch/orch/results2-AUDIT.md section 2) *)
      LRes.KeptOutputsUnmentioned W /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
-     PA.ChainResultAgrees W Prog argv read so /\
+     PA.ChainForwardAgrees W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok *)
@@ -616,7 +616,7 @@ Proof.
   pose proof (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps
     (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo))
     (platform_sigs_fixed W Prog)) as PG.
-  pose proof (PA.chain_platform_ok W Prog _ _ _ RA (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
+  pose proof (PA.chain_platform_ok W Prog _ _ _ (PA.chain_result_agrees W Prog _ _ _ bundle Wo RA) (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
   pose proof (PA.family_platform_ok W Prog _ _ _ PG FRA) as FPA.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
