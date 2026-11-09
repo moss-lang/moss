@@ -396,7 +396,8 @@ Proof.
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
     4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
-         split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
+         split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
+         apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (BS.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
     - apply BS.alias_self; [reflexivity|exact (proj1 RealG)| |].
@@ -562,11 +563,11 @@ Lemma pre_same_table : forall rr F C0 Cw d d' types H H' g st st',
   Pre rr F C0 d types H g st -> type_meanings d' = type_meanings d -> type_aliases d' = type_aliases d ->
   A.c_ty Cw = A.c_ty C0 -> A.c_locals Cw = A.c_locals C0 ->
   Realizes rr Cw d' H' -> heap_extends H H' -> state_ok H' st' -> PublicFormation.FormedCx W Cw ->
-  Pre rr F Cw d' types H' g st'.
+  PublicScoping.CxScoped W F Cw -> Pre rr F Cw d' types H' g st'.
 Proof.
-  intros rr F C0 Cw d d' types H H' g st st' [Frame [[Lo [Re Al]] [L [St [Real [Fc Ff]]]]]] Em Ea Ety Elo Real' Ext St' Fw.
+  intros rr F C0 Cw d d' types H H' g st st' [Frame [[Lo [Re Al]] [L [St [Real [Fc [Ff _]]]]]]] Em Ea Ety Elo Real' Ext St' Fw Cw'.
   assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Em; reflexivity).
-  split; [exact Frame|]. split; [split; [|split]|split; [exact (locals_extends W P H H' g types Ext L)|split; [exact St'|split; [exact Real'|exact (conj Fw Ff)]]]].
+  split; [exact Frame|]. split; [split; [|split]|split; [exact (locals_extends W P H H' g types Ext L)|split; [exact St'|split; [exact Real'|exact (conj Fw (conj Ff Cw'))]]]].
   - intros n t mu Found Nm. rewrite Elo in Found. rewrite G. exact (Lo n t mu Found Nm).
   - intros t Th. rewrite G. exact (Re t Th).
   - intros x tx Lx. rewrite Ety in Lx. unfold cmeaning, output_meaning. rewrite Ea, Em. rewrite G. exact (Al x tx Lx).
@@ -583,14 +584,16 @@ Proof.
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [Elo _]]]].
   assert (Em' : type_meanings (append_environment dr d) = type_meanings d) by (cbn; rewrite Em; reflexivity).
   assert (Ea' : type_aliases (append_environment dr d) = type_aliases d) by (cbn; rewrite Ea; reflexivity).
-  pose proof Pre0 as [_ [_ [_ [_ [Real0 [Fc0 Ff0]]]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [Real0 [Fc0 [Ff0 Cs0]]]]]]].
   exists (append_environment dr d), st', H'.
   split; [exact E|]. split; [exact Em'|]. split; [exact Ea'|].
   split; [|split; [exact (keep_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA E Res)|exact Run]].
   apply (pre_same_table rr F C0 (BS.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
     eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real0 E Res)
-    |exact E|exact St'|].
-  exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
+    |exact E|exact St'| |].
+  - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
+  - exact (PublicScoping.family_result_cxscoped W F C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc
+      (fun x v I => proj2 (Tin x v I)) Cs0).
 Qed.
 
 End Fam.

@@ -205,6 +205,16 @@ Proof.
   apply tm_scoped. exact (nlook_gens _ _ _ _ (Fx _ _ Iq) Iy).
 Qed.
 
+Lemma cxscoped_narrow : forall F C C', c_ty C' = c_ty C -> c_sub C' = c_sub C -> c_locals C' = c_locals C ->
+  incl (c_provisions C') (c_provisions C) -> CxScoped F C -> CxScoped F C'.
+Proof.
+  intros F C C' Ety Esub Eloc Inc [Ls [Ps Ts]]. pose proof (scope_gens_ext C' C Ety Esub) as Sc.
+  split; [|split].
+  - intros n t mu I. rewrite Eloc in I. exact (scoped_ext W _ _ _ (eq_sym Sc) (Ls n t mu I)).
+  - intros k p I y Iy. unfold GenScoped. rewrite Sc. exact (Ps k p (Inc _ I) y Iy).
+  - intros t E. exact (scoped_ext W _ _ _ (eq_sym Sc) (Ts t E)).
+Qed.
+
 (* ---- a functor's result ------------------------------------------------------ *)
 
 Definition TyIn (K : nat -> Prop) (t : ty) : Prop := GensIn K (gens t).
@@ -271,31 +281,36 @@ Proof.
     apply Forall_app. split; [exact (IH1 SOb STm)|exact (IH2 SOb STm)].
 Qed.
 
-Lemma entry_provision_gens : forall (K : nat -> Prop) s e k p,
-  (forall g u, In (g, u) s -> GensIn K (gens u)) -> EntryP (TyIn K) e ->
-  In (k, p) (entry_provision s (fun a => a) e) -> GensIn K (provision_gens p).
+Lemma entry_provision_gens_f : forall (K : nat -> Prop) s freeze e k p,
+  (forall g u, In (g, u) s -> GensIn K (gens u)) -> (forall a, InstP (TyIn K) a -> InstP (TyIn K) (freeze a)) ->
+  EntryP (TyIn K) e -> In (k, p) (entry_provision s freeze e) -> GensIn K (provision_gens p).
 Proof.
-  intros K s [t|v t a|f g a|r m g a|u fx] k p Range Ok Iq; cbn in Iq; try contradiction;
+  intros K s freeze [t|v t a|f g a|r m g a|u fx] k p Range Fz Ok Iq; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; injection E as <- <-; cbn in Ok.
   - destruct Ok as [Ot Oa]. intros y Iy. unfold provision_gens in Iy. cbn in Iy. rewrite app_nil_r in Iy.
     apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s t Range Ot y Iy)|].
-    apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Oa x w Iq y Iy)|contradiction].
+    apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
   - destruct Ok as [[Ps Rt] Oa]. intros y Iy. unfold provision_gens in Iy. cbn [provision_signature provision_inst] in Iy.
     apply in_app_or in Iy as [Iy|Iy].
     + cbn in Iy. apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s _ Range Rt y Iy)|].
       apply in_flat_map in Iy as [t [It Iy]]. apply in_map_iff in It as [t0 [<- It]].
       rewrite Forall_forall in Ps. exact (subst_within K s t0 Range (Ps t0 It) y Iy).
-    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Oa x w Iq y Iy)|contradiction].
+    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
   - destruct Ok as [_ [[Ps Rt] Oa]]. intros y Iy. unfold provision_gens in Iy. cbn [provision_signature provision_inst] in Iy.
     apply in_app_or in Iy as [Iy|Iy].
     + cbn in Iy. apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s _ Range Rt y Iy)|].
       apply in_flat_map in Iy as [t [It Iy]]. apply in_map_iff in It as [t0 [<- It]].
       rewrite Forall_forall in Ps. exact (subst_within K s t0 Range (Ps t0 It) y Iy).
-    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Oa x w Iq y Iy)|contradiction].
+    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
   - intros y Iy. unfold provision_gens in Iy. cbn in Iy. apply in_flat_map in Iy as [[x o] [Iq Iy]].
     unfold fixed_subst in Iq. rewrite map_map in Iq. apply in_map_iff in Iq as [[x' w] [E Iq]]. cbn in E. injection E as -> <-.
     cbn in Iy. exact (subst_within K s w Range (Ok _ w Iq) y Iy).
 Qed.
+
+Lemma entry_provision_gens : forall (K : nat -> Prop) s e k p,
+  (forall g u, In (g, u) s -> GensIn K (gens u)) -> EntryP (TyIn K) e ->
+  In (k, p) (entry_provision s (fun a => a) e) -> GensIn K (provision_gens p).
+Proof. intros K s e k p Range Ok Iq. exact (entry_provision_gens_f K s (fun a => a) e k p Range (fun a H => H) Ok Iq). Qed.
 
 (* A functor's result read in C0: each new provision mentions only K. *)
 Lemma provide_result_gens : forall u C0 out C' ks (K : nat -> Prop),
@@ -335,6 +350,41 @@ Proof.
     + left. exact (scope_ty_canon C x v y Iq' Iy).
   - intros t Ft. exfalso. exact (family_no_outputs W u t (proj1 Fam) Ft).
 Qed.
+
+(* A family applied in C (C0's merge, provisions and locals, a table read
+   in C0's scope), its matching read off a receiver scoped in C0: C0's
+   table with the family's provisions keeps CxScoped. *)
+Lemma family_result_cxscoped : forall F C0 C u matching th sm Cr ks ot m,
+  c_sub C = c_sub C0 -> c_provisions C = c_provisions C0 -> c_locals C = c_locals C0 ->
+  FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+  TyOk W ot -> ScopedTy W C0 ot -> (forall x v, In (x, v) (c_ty C) -> ScopedTy W C0 (canon C v)) ->
+  CxScoped F C0 -> CxScoped F (Cx (c_ty C0) (c_sub Cr) (c_provisions Cr) (c_locals Cr)).
+Proof.
+  intros F C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin [Ls [Ps Ts]].
+  pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
+  set (K := GenScoped W C0).
+  assert (Mt : forall x v, In (x, v) matching -> GensIn K (gens (canon C v))).
+  { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot).
+    intros x v Iq. assert (Ix : In x (gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
+    pose proof (sub_subst (c_sub C) _ _ (sub_read rf matching x v Ix (lookup_subst_nodup matching x v NdM Iq))) as Sb.
+    change (SubTy (canon C v) (canon C (app_subst matching rf))) in Sb. rewrite Ot in Sb.
+    destruct (sub_ok W _ _ Sb Ok) as [_ Iv]. intros g Ig. exact (Sc g (Iv g Ig)). }
+  destruct (provide_result_shape W _ _ _ _ _ PR) as [SubR [LoR _]].
+  assert (ScE : scope_gens (Cx (c_ty C0) (c_sub Cr) (c_provisions Cr) (c_locals Cr)) = scope_gens C0)
+    by (apply scope_gens_ext; [reflexivity|cbn; rewrite SubR, Esub, Es; reflexivity]).
+  split; [|split].
+  - intros n t mu Iq. cbn in Iq. rewrite LoR, Elo, El in Iq. exact (scoped_ext W _ _ _ (eq_sym ScE) (Ls n t mu Iq)).
+  - intros k p Iq y Iy. unfold GenScoped. rewrite ScE. fold (GenScoped W C0 y). cbn in Iq.
+    destruct (provide_result_gens _ _ _ _ _ K PR) with (k := k) (p := p) as [Iq'|G]; [| | |exact Iq| |exact (G y Iy)].
+    + intros g v Iv z Iz. left. rewrite Esub, Es in Iv. exact (scope_sub C0 g v z Iv Iz).
+    + intros x v Iv z Iz. unfold canon in Iz. rewrite Esub in Iz. fold (canon C v) in Iz.
+      rewrite Ety in Iv. apply in_app_or in Iv as [Iv|Iv]; [apply (proj2 (in_rev _ _)) in Iv; exact (Mt x v Iv z Iz)|exact (Tin x v Iv z Iz)].
+    + intros t Ft. exfalso. exact (family_no_outputs W u t Shape Ft).
+    + rewrite Epr, Ep in Iq'. exact (Ps k p Iq' y Iy).
+  - intros t E. exact (scoped_ext W _ _ _ (eq_sym ScE) (Ts t E)).
+Qed.
+
 
 (* ---- readings in a context ----------------------------------------------------- *)
 
@@ -473,7 +523,263 @@ Proof.
       * apply (Can _ y Iy). intros z Iz. apply (Can _ z Iz). intros z' Iz'. exact (Can _ z' Iz' Back).
 Qed.
 
+(* `bind F;` for F abstract keeps CxScoped (BApplyAbstract). *)
+Lemma apply_abstract_cxscoped : forall F F' C u gensof C' ks, ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+  fr_this F' = fr_this F -> CxScoped F C -> CxScoped F' C'.
+Proof.
+  intros F F' C u gensof C' ks PR Th [Ls [Ps Ts]].
+  destruct (apply_abstract_scope C u gensof C' ks PR) as [Inc _].
+  destruct (provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo [outs' [OutsI' Ety]]]].
+  assert (InTy : forall x v, In (x, v) (output_type_map C outs' (fun t => TAbs (gensof t))) ->
+    In (x, app_subst (c_sub C') v) (c_ty C')).
+  { intros x v Iq. rewrite Ety, Esub. apply in_map_iff. exists (x, v). split; [reflexivity|exact Iq]. }
+  split; [|split].
+  - intros n t mu Iq. rewrite Elo in Iq. exact (scoped_mono _ _ _ Inc (Ls n t mu Iq)).
+  - intros k p Iq.
+    destruct (provide_result_gens _ _ _ _ _ (GenScoped W C') PR) with (k := k) (p := p) as [Iq'|G]; [| | |exact Iq| |exact G].
+    + intros g v Iv y Iy. left. rewrite <- Esub in Iv. exact (scope_sub C' g v y Iv Iy).
+    + intros x v Iv y Iy. left. apply (table_scope C' x (canon C v)); [|exact Iy]. apply InTy.
+      unfold output_type_map. apply in_map_iff. exists (x, v). split; [reflexivity|apply in_or_app; right; exact Iv].
+    + intros t Ft y Iy. left. apply (table_scope C' t (canon C (TAbs (gensof t)))); [|exact Iy]. apply InTy.
+      unfold output_type_map. apply in_map_iff. exists (t, TAbs (gensof t)). split; [reflexivity|].
+      apply in_or_app; left. apply in_map_iff. exists t. split; [reflexivity|exact (proj2 (OutsI' t) Ft)].
+    + intros y Iy. exact (inscope_mono W _ _ y Inc (Ps k p Iq' y Iy)).
+  - intros t E. rewrite Th in E. exact (scoped_mono _ _ _ Inc (Ts t E)).
+Qed.
+
 End Scoping.
+
+(* ---- the contexts bodies start in ------------------------------------------------ *)
+
+Section Initial.
+Variable W : A.world.
+Import A.
+
+Lemma entry_gens_entryp : forall (K : nat -> Prop) e, GensIn K (entry_gens e) -> EntryP (TyIn K) e.
+Proof.
+  intros K [t|v t a|f g a|r m g a|u fx] G; cbn; try exact Logic.I.
+  - split; [intros y Iy; apply G; cbn; apply in_or_app; left; exact Iy|].
+    intros x w Iq y Iy. apply G. cbn. apply in_or_app. right. exact (inst_in_gens a x w y Iq Iy).
+  - split; [|intros x w Iq y Iy; apply G; cbn; apply in_or_app; right; exact (inst_in_gens a x w y Iq Iy)].
+    split; [apply Forall_forall; intros t It y Iy; apply G; cbn; apply in_or_app; left; exact (sig_param_in g t y It Iy)|].
+    intros y Iy. apply G. cbn. apply in_or_app. left. exact (sig_ret_in g y Iy).
+  - split; [intros y Iy; apply G; cbn; apply in_or_app; left; exact Iy|].
+    split; [|intros x w Iq y Iy; apply G; cbn; apply in_or_app; right; apply in_or_app; right; exact (inst_in_gens a x w y Iq Iy)].
+    split; [apply Forall_forall; intros t It y Iy; apply G; cbn; apply in_or_app; right; apply in_or_app; left; exact (sig_param_in g t y It Iy)|].
+    intros y Iy. apply G. cbn. apply in_or_app. right. apply in_or_app. left. exact (sig_ret_in g y Iy).
+  - intros x w Iq y Iy. apply G. cbn. apply in_flat_map. exists (x, w). split; assumption.
+Qed.
+
+Lemma entries_cx_scoped : forall F σ tm es, IdForm tm -> (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
+  (forall g t, In (g, t) σ -> incl (gens t) (map fst tm)) -> ThisScoped W F (entries_cx σ tm es) ->
+  CxScoped W F (entries_cx σ tm es).
+Proof.
+  intros F σ tm es Id Eg Sg Th. set (K := fun y => In y (scope_gens (entries_cx σ tm es))).
+  assert (Key : forall x, In x (map fst tm) -> K x) by (intros x Ix; exact (idform_scope σ tm es x Id Ix)).
+  assert (Range : forall g u, In (g, u) σ -> GensIn K (gens u)) by (intros g u Iq y Iy; exact (Key y (Sg g u Iq y Iy))).
+  split; [intros n t mu []|split; [|exact Th]].
+  intros k p Iq y Iy. left. cbn in Iq. apply in_flat_map in Iq as [e [Ie Iq]].
+  refine (entry_provision_gens_f K σ _ e k p Range _ (entry_gens_entryp K e (fun y Iy => Key y (Eg e Ie y Iy))) Iq y Iy).
+  intros a Ia x w Iq' z Iz. apply in_map_iff in Iq' as [[x0 o] [E Iq']]. cbn in E. injection E as E0 E. subst x.
+  destruct o as [t0|]; cbn in E.
+  - injection E as <-. exact (subst_within K σ t0 Range (Ia _ _ Iq') z Iz).
+  - destruct (nlook x0 tm) as [t0|] eqn:L; cbn in E; [|discriminate]. injection E as <-.
+    apply (subst_within K σ t0 Range); [|exact Iz]. intros y' Iy'.
+    pose proof (idform_nlook tm x0 t0 Id L) as ->. destruct Iy' as [E'|[]]. subst y'. apply Key.
+    change x0 with (fst (x0, TAbs x0)). apply in_map. exact (nlook_in _ _ _ _ L).
+Qed.
+
+Theorem ctxof_cxscoped : forall f C ns F, CtxOf W f C ns -> ThisScoped W F C -> CxScoped W F C.
+Proof.
+  intros f C ns F (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _) Th.
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
+  assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
+  { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
+    - split; [exact IdT|]. split; [intros x Ix; exact Ix|]. intros g [].
+    - exact (root_formed W _ _ _ _ _ _ RI IdT). }
+  destruct Tmr as [IdR [SubR ErR]].
+  assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
+  { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
+  apply entries_cx_scoped; [exact IdR| | |exact Th].
+  - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
+  - destruct MGM as [_ [_ [_ [Dom _]]]]. intros g t Iq y Iy. exact (All y (proj2 (Dom g t Iq) y Iy)).
+Qed.
+
+Theorem functx_cxscoped : forall u C ns F, FunCtx W u C ns -> ThisScoped W F C -> CxScoped W F C.
+Proof.
+  intros u C ns F (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _) Th.
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
+  assert (Id' : IdForm (map (fun t => (t, TAbs t)) implicit ++ tm)).
+  { apply Forall_app. split; [|exact IdT]. apply Forall_forall. intros q Iq. apply in_map_iff in Iq as [t [<- _]]. reflexivity. }
+  assert (Sub : forall x, In x (map fst tm) -> In x (map fst (map (fun t => (t, TAbs t)) implicit ++ tm))).
+  { intros x Ix. rewrite map_app. apply in_or_app. right. exact Ix. }
+  apply entries_cx_scoped; [exact Id'| | |exact Th].
+  - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
+  - destruct MGM as [_ [_ [_ [Dom _]]]]. intros g t Iq y Iy. exact (Sub y (EsT y (proj2 (Dom g t Iq) y Iy))).
+Qed.
+
+(* ---- a callee's needs, read at the call site ---------------------------------- *)
+
+Definition KeysTyped (tm : list (nat * ty)) : Prop := forall x, In x (map fst tm) -> kind_sym W x = Some DKType.
+
+Lemma entries_keys_typed' :
+  (forall p ob tm sp es tm', ItemEntries W p ob tm sp es tm' -> KeysTyped tm -> KeysTyped tm') /\
+  (forall p ob tm sps es tm', ItemsEntries W p ob tm sps es tm' -> KeysTyped tm -> KeysTyped tm').
+Proof.
+  apply (ies_mut W (fun p ob tm sp es tm' _ => KeysTyped tm -> KeysTyped tm')
+                   (fun p ob tm sps es tm' _ => KeysTyped tm -> KeysTyped tm'));
+    intros; try assumption.
+  - destruct (nlook t tm); [assumption|]. intros x [<-|Ix]; [assumption|auto].
+  - auto.
+  - auto.
+Qed.
+
+Lemma root_keys_typed : MentionsTyped W -> forall q es0 tm its es tm', RootItems W q es0 tm its es tm' ->
+  KeysTyped tm -> KeysTyped tm'.
+Proof.
+  intros Mt q es0 tm its es tm' Root. induction Root as
+    [es0 tm|es0 tm p a rest u du n ps args res xs fx es tm' R D Ast Fresh Nd Xs FR Rest IH|es0 tm sp rest es tm' Skip Rest IH];
+    intros Kt.
+  - exact Kt.
+  - apply IH. intros x Ix. destruct (add_tys_keys xs tm x Ix) as [Ix'|Ix']; [|exact (Kt x Ix')].
+    apply (Mt u). exact (proj1 (proj1 (Xs x) Ix')).
+  - exact (IH Kt).
+Qed.
+
+Lemma ctxof_keys_typed : MentionsTyped W -> forall f C ns, CtxOf W f C ns ->
+  forall x, In x (map fst (c_ty C)) -> kind_sym W x = Some DKType.
+Proof.
+  intros Mt f C ns (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _) x Ix.
+  cbn in Ix. rewrite map_map in Ix. cbn in Ix.
+  pose proof (proj2 entries_keys_typed' _ _ _ _ _ _ IE (fun y (Iy : In y []) => match Iy with end)) as Kt.
+  destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI]; [exact (Kt x Ix)|].
+  exact (root_keys_typed Mt _ _ _ _ _ _ RI Kt x Ix).
+Qed.
+
+Lemma need_provision : forall f Cf ns k, CtxOf W f Cf ns -> In k ns -> exists p, In (k, p) (c_provisions Cf).
+Proof.
+  intros f Cf ns k (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & [Nd Keys] & _) Ik.
+  destruct (proj1 (Keys k) Ik) as [e [Ie Ek]]. cbn [c_provisions entries_cx].
+  destruct e as [t|v t a|f' g a|r m g a|u fx]; cbn in Ek; try discriminate; injection Ek as <-;
+    eexists; apply in_flat_map; eexists; (split; [exact Ie|cbn; left; reflexivity]).
+Qed.
+
+Lemma lookup_comp : forall (f : ty -> ty) (l s : subst) x,
+  lookup_subst x (map (fun q => (fst q, f (snd q))) l ++ s) =
+  match lookup_subst x l with Some v => Some (f v) | None => lookup_subst x s end.
+Proof.
+  intros f l s x. induction l as [|[y v] r IH]; [reflexivity|]. cbn. destruct (Nat.eqb x y); [reflexivity|exact IH].
+Qed.
+
+Lemma map_pair_id : forall (l : subst), map (fun q => (fst q, snd q)) l = l.
+Proof. induction l as [|[x v] r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
+
+(* A callee's method need read at the site X (the caller's table, with
+   its merge): ok, and scoped where X's table is. A requirement X leaves
+   unbound reads as itself, a declared type symbol. *)
+Theorem demand_at_site_scoped : forall C X f Cf ns r m, MergeFormed W -> MentionsTyped W -> FormedCx W C ->
+  c_sub X = c_sub C ->
+  (forall x v, In (x, v) (c_ty X) -> TyOk W (canon X v) /\ ScopedTy W C (canon X v)) ->
+  CtxOf W f Cf ns -> In (mkey r m) (map (at_site X) ns) -> TyOk W r /\ ScopedTy W C r.
+Proof.
+  intros C X f Cf ns r m Mf Mt Fc Es Tin Ctx Ir. apply in_map_iff in Ir as [k [E Ik]].
+  destruct k as [t0|v0|f0|r0 m0 a0|u0]; cbn in E; try discriminate. injection E as Er -> ->.
+  destruct (need_provision f Cf ns _ Ctx Ik) as [p Ip].
+  pose proof (ctxof_cx_formed W Mf Mt f Cf ns Ctx) as [CfF _].
+  destruct (cf_prov W Cf CfF _ _ Ip) as [Or _]. cbn in Or.
+  assert (Kr : forall y, In y (gens r0) -> kind_sym W y = Some DKType).
+  { intros y Iy. apply (ctxof_keys_typed Mt f Cf ns Ctx). exact (proj2 (ctx_provision_scoped W f Cf ns Ctx _ _ Ip) y Iy). }
+  set (comp := map (fun q => (fst q, canon X (snd q))) (c_ty X) ++ c_sub X).
+  assert (Ec : r = app_subst comp r0).
+  { rewrite <- Er. rewrite map_pair_id. unfold canon. rewrite <- (app_subst_nil (app_subst comp r0)). apply subst2_agree.
+    intros x _. cbn [app_subst]. unfold comp. rewrite lookup_comp.
+    destruct (lookup_subst x (c_ty X)) as [v|]; [rewrite app_subst_nil; reflexivity|].
+    cbn [app_subst]. destruct (lookup_subst x (c_sub X)); [rewrite app_subst_nil; reflexivity|reflexivity]. }
+  rewrite Ec. split.
+  - apply (tyok_subst W comp r0); [|exact Or]. apply tmok_app.
+    + intros x w Iq. apply in_map_iff in Iq as [[x' v] [E Iq]]. cbn in E. injection E as -> <-. exact (proj1 (Tin _ _ Iq)).
+    + rewrite Es. exact (cf_sub W C (proj1 Fc)).
+  - apply (subst_within (GenScoped W C) comp r0); [|intros y Iy; right; exact (Kr y Iy)].
+    intros g u Iq. apply in_app_or in Iq as [Iq|Iq].
+    + apply in_map_iff in Iq as [[x' v] [E Iq]]. cbn in E. injection E as -> <-. exact (proj2 (Tin _ _ Iq)).
+    + intros y Iy. left. rewrite Es in Iq. exact (scope_sub C g u y Iq Iy).
+Qed.
+
+(* A fn or method body's context: the assumes' context with the
+   parameters, its receiver (if any) read there. *)
+Theorem fn_body_cxscoped : forall f C ns F this g names, CtxOf W f C ns -> SigOf W f (c_ty C) this g ->
+  fr_this F = this -> OptScoped W C this ->
+  CxScoped W F (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine names (sg_params g)) C).
+Proof.
+  intros f C ns F this g names Ctx Sig Th Sth.
+  apply add_locals_scoped; [apply (ctxof_cxscoped f C ns F Ctx); intros t E; rewrite Th in E; exact (Sth t E)|].
+  intros n t Iq y Iy. apply in_combine_r in Iq.
+  destruct (sigof_gens W _ _ _ _ y Sig (sig_param_in g t y Iq Iy)) as [I|[x [E Ix]]]; [exact (tm_scoped W C y I)|exact (Sth x E y Ix)].
+Qed.
+
+(* An attached method's receiver, at its requirements' meanings. *)
+Lemma attached_this_scoped : forall C r args,
+  Forall2 (fun x xa => fst xa = x /\ nlook x (c_ty C) = Some (snd xa)) (w_reqs W r) args -> ScopedTy W C (TNom r args).
+Proof.
+  intros C r args Fx y Iy. rewrite gens_nom in Iy. destruct (tm_gens_in _ y Iy) as [x [u [Iq Iu]]].
+  destruct (Forall2_In_r _ _ _ _ _ _ Fx Iq) as [x' [_ [_ L]]]. exact (tm_scoped W C y (nlook_gens _ _ _ _ L Iu)).
+Qed.
+
+Lemma sig_scoped_none : forall C s g, SigOf W s (c_ty C) None g ->
+  forall t, In t (sg_ret g :: sg_params g) -> ScopedTy W C t.
+Proof.
+  intros C s g Sig t It y Iy.
+  assert (Ig : In y (sig_gens g)) by (unfold sig_gens; apply in_flat_map; exists t; split; assumption).
+  destruct (sigof_gens W _ _ _ _ y Sig Ig) as [I|[x [E _]]]; [exact (tm_scoped W C y I)|discriminate].
+Qed.
+
+Lemma meth_sig_scoped : forall C p p' m a bs ar rt sg, Brackets W p (c_ty C) m a bs ->
+  TyOf W p' (bs ++ c_ty C) None ar rt -> SigOf W m (bs ++ c_ty C) (Some rt) sg ->
+  forall t, In t (rt :: sg_ret sg :: sg_params sg) -> ScopedTy W C t.
+Proof.
+  intros C p p' m a bs ar rt sg B T Sig.
+  assert (Full : forall y, In y (tm_gens (bs ++ c_ty C)) -> GenScoped W C y).
+  { intros y Iy. apply tm_scoped. apply tm_gens_app in Iy as [Iy|Iy]; [exact (br_gens W _ _ _ _ _ B y Iy)|exact Iy]. }
+  assert (Rt : ScopedTy W C rt) by (intros y Iy; exact (Full y (tyof_none_gens W _ _ _ _ T y Iy))).
+  intros t [<-|It] y Iy; [exact (Rt y Iy)|].
+  assert (Ig : In y (sig_gens sg)) by (unfold sig_gens; apply in_flat_map; exists t; split; assumption).
+  destruct (sigof_gens W _ _ _ _ y Sig Ig) as [I|[x [E Ix]]]; [exact (Full y I)|injection E as <-; exact (Rt y Ix)].
+Qed.
+
+(* A lambda provider's body context (LambdaProvider's Cl with the
+   parameters), its signature and receiver read in C. *)
+Theorem lambda_cxscoped : forall C caps capvals Fl names ts, LocalsScoped W C -> ProvsScoped W C ->
+  (forall t, fr_this Fl = Some t -> ScopedTy W C t) -> (forall t, In t ts -> ScopedTy W C t) ->
+  CxScoped W Fl (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine names ts)
+    (fold_left (fun C' q => let '(n, v) := q in
+                    match slook n (c_locals C) with
+                    | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
+                    | None => C' end)
+                 (combine caps capvals)
+                 (Cx (c_ty C) (c_sub C) (c_provisions C) []))).
+Proof.
+  intros C caps capvals Fl names ts Ls Ps Th Ts.
+  assert (Step : forall l C0, scope_gens C0 = scope_gens C -> CxScoped W Fl C0 ->
+    let C1 := fold_left (fun C' q => let '(n, v) := q in
+                    match slook n (c_locals C) with
+                    | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
+                    | None => C' end) l C0 in
+    scope_gens C1 = scope_gens C /\ CxScoped W Fl C1).
+  { induction l as [|[n v] r IH]; intros C0 E0 Cs0; [split; assumption|]. cbn. apply IH.
+    - destruct (slook n (c_locals C)) as [[t mu]|]; [|exact E0].
+      change (scope_gens (add_local (provide C0 (IVal v) [] (set_val C0 v t)) n t LCaptured) = scope_gens C).
+      rewrite scope_add_local, provide_scope. exact E0.
+    - destruct (slook n (c_locals C)) as [[t mu]|] eqn:L; [|exact Cs0].
+      assert (St : ScopedTy W C0 t) by (apply (scoped_ext W _ _ _ (eq_sym E0)); exact (Ls n t mu (slook_in _ _ _ _ L))).
+      apply add_local_scoped; [|apply (scoped_ext W C0 _ t); [rewrite provide_scope; reflexivity|exact St]].
+      apply provide_scoped; [exact (set_val_scoped W Fl C0 v t Cs0 St)|intros y []]. }
+  destruct (Step (combine caps capvals) (Cx (c_ty C) (c_sub C) (c_provisions C) [])) as [E1 Cs1].
+  - reflexivity.
+  - split; [intros n t mu []|split; [exact Ps|exact Th]].
+  - apply add_locals_scoped; [exact Cs1|]. intros n t Iq. apply (scoped_ext W _ _ _ (eq_sym E1)). exact (Ts t (in_combine_r _ _ _ _ Iq)).
+Qed.
+
+End Initial.
 
 (* ---- elaboration keeps types scoped ---------------------------------------------- *)
 

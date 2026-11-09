@@ -223,7 +223,7 @@ Proof.
   - split; [exact (locals_extends W P H H3 g types Ext L)|]. split; [exact St3|]. split.
     + split; [exact (absorbs_grow C C' (map gensof outs) d d' Abs Esub Gr (fun g0 Ig => proj1 (Av g0 Ig)))|].
       split; [exact Env|]. split; [intros t; unfold A.canon; rewrite Esub; exact (Idem t)|exact KM].
-    + split; [|exact Ff].
+    + split; [|split; [exact (proj1 Ff)|exact (PublicScoping.apply_abstract_cxscoped W F _ C u gensof C' ks PR eq_refl (proj2 Ff))]].
       apply (PublicFormation.apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
       intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ [Fr _]]]; [left; exact E|right; exact Fr].
 Qed.

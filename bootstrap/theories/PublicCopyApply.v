@@ -379,7 +379,8 @@ Proof.
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
     4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
-         split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
+         split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
+         apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (S.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
     - apply S.alias_self; [reflexivity|exact (proj1 RealG)| |].
