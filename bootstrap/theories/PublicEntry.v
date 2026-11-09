@@ -426,7 +426,6 @@ Theorem safety_obligations : forall prelude,
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
      S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
-     S.RefileRunOk W Prog argv read so /\
      CopyA.ChainResultsOk W Prog argv read so /\ CopyA.ChainPlatformOk W Prog argv read so) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
@@ -435,7 +434,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [FSt [LM [BM [CIF [RR [CR CP]]]]]].
+    as [FSt [LM [BM [CIF [CR CP]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
@@ -443,8 +442,8 @@ Proof.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR (CopyA.link_results_of_chain W Prog _ _ _ CR)
-    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF RR CR CP)
+    (ex_intro _ bundle Wo) LM BM CIF (CopyA.link_results_of_chain W Prog _ _ _ CR)
+    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP)
     (CopyA.platform_apply_of_chain W Prog _ _ _ CP)).
 Qed.
 
