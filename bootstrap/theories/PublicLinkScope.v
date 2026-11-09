@@ -171,8 +171,9 @@ Proof.
       { intros t It. unfold output_type_map. apply in_map_iff. exists (t, TAbs (gensof t)). split; [reflexivity|].
         apply in_or_app; left. apply in_map_iff. exists t. split; [reflexivity|exact It]. }
       assert (OutAbs : forall t, FunOutputs W u t -> Abstract W (gensof t)).
-      { intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ [Fr _]]];
-          [rewrite E; exact (typed_abstract W _ (outputs_typed W _ _ Ft))|exact (fresh_abstract W _ Fr)]. }
+      { intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]];
+          [rewrite E; exact (typed_abstract W _ (outputs_typed W _ _ Ft))|].
+        apply (fresh_abstract W). match goal with FF : A.FreshFor _ _ _ ?gs |- _ => exact (freshfor_fresh W _ _ _ _ FF Ig) end. }
       set (K := fun y => In y (scope_gens C')).
       assert (SubK : forall g v, In (g, v) (c_sub C) -> GensIn K (gens v)).
       { intros g v Iq y Iy. rewrite <- Esub in Iq. exact (scope_sub C' g v y Iq Iy). }

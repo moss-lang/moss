@@ -4432,7 +4432,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
           ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
                   (match fr_this F with Some r => gens r | None => [] end)) /\
           ~ In t (context_gens C ++ key_receiver_gens C)) \/
-       (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+       (nlook t (c_ty C) <> None /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
     (* [D78]: every output destination, fresh or not, is made here: a

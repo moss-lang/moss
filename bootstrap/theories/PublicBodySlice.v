@@ -3147,7 +3147,7 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
             ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
-         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
+         (A.nlook t (A.c_ty C) <> None /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
   (A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks).
@@ -3181,7 +3181,7 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
             ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
-         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+         (A.nlook t (A.c_ty C) <> None /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
   forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False (map gensof outs)
@@ -4792,7 +4792,7 @@ Proof.
   { assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
         (match A.fr_this F with Some r => A.gens r | None => [] end))).
     { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
-      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E [Nf _]]]|[_ [_ In']]]; [rewrite E; exact Nf|].
+      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E [Nf _]]]|[_ In']]; [rewrite E; exact Nf|].
       destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr. destruct (Fr _ In') as [_ Out]. intros I. apply Out.
       apply in_or_app; right; apply in_or_app; right. exact I. }
     split; intros t E g0 Ig Ig'; apply (Av g0 Ig); rewrite E; apply in_or_app; [left|right]; exact Ig'. }
