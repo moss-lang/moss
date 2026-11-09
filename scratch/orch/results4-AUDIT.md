@@ -131,3 +131,44 @@ PublicChainCore, PublicPlatformApply, PublicBodySlice app_step, the
 refile/fc_sources proofs). The interpreter is also the oracle's
 `moss_ref`, so the oracle's link_body must emit the roles too (fixes
 E33/E06's case). Roughly half a day to a day including proof repair.
+
+## Change 2 REVERTED (coordinator's decision)
+
+The LinkBody premise is removed (it rejected the corpus regression
+functor_input_output_generations.moss). Audit is again wrong for that
+shape until change 3 lands; ChainKeysOk is false for it meanwhile.
+
+# Change 3 (decided, NOT done): separate output roles — handoff
+
+Plan (Audit):
+- `functor_code` gains a last field `fc_roles : list (tsym * tsym)`
+  (output symbol t, its role gen t). Platform.Family: `[]`.
+- LinkBody: Dr keys `rkey_of Cr k` (no output_renaming); fc_sources'
+  first components likewise; the body side stays
+  `rkey_of Cb (at_site Cb (output_renaming outs gen k))`; fc_roles =
+  `map (fun t => (t, gen t)) outs`.
+- apply_functor: the selection uses
+  `result_substitution th (role_outputs (fc_roles code) outputs)` with
+  `role_outputs roles outputs := map (fun q => (snd q, dest of fst q in outputs)) roles`
+  (raw t then reads by θ as the input it is; gen t maps to the
+  destination). read_result_types is unchanged (it reads ITy t from d3).
+- Statements to restate: LinkResultsOk (PublicBodySlice ~4649),
+  ChainResultsOk (PublicCopyApply ~280), ChainCoreOk (PublicLinkResults
+  ~346), ChainNewOk (PublicChainCore ~206), ChainKeysOk/ChainRealizeOk
+  (PublicChainNew), FamilyLinkNewOk and FS's family link statements
+  (PublicFamilyStep), LinkData (PublicBodySlice ~3246), plus the 13
+  FunctorCode constructions in examples (AuditExamples,
+  PublicClosureExample, PublicOutputTransferExample,
+  PublicGenerationCallExample, PublicFunctorScopeExample) and
+  PublicPlatformApply/PublicCopyApply/PublicEntry.
+
+Important finding for the oracle side: the oracle's runtime is NOT
+Audit's interpreter. `moss_ref` runs ExecutionModel's program (Elab.v
+emits ExecutionModel code; the fast interpreters CachedClo/LazyX/CloX/
+FastX/CoreFragment and their equivalence proofs consume it). So the
+oracle half of change 3 means changing ExecutionModel's functor code and
+application (and every fast interpreter plus its proofs), or an
+oracle-only workaround in Elab.v's link_body. That is a large job; scope
+it before starting (LinkOutputFresh.v's `link_output_renaming_actual`
+and LinkBodySound.v relate the oracle's output_role_item to Audit's
+output_renaming and must change with it).

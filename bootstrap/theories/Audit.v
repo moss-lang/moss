@@ -4504,15 +4504,6 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* Every output has the promised signature and known type meanings. *)
     ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks ->
-    (* A result key, read at F's inputs, mentions no output symbol as an
-       input. F's merges can make an input X read as an input T that is
-       also an output (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
-       representative); the code's key would spell X.m as T.m, which the
-       application reads as the new T while the caller keys it at X
-       (examples/output-merge-key.moss; the oracle's program is stuck,
-       native prints 7). Output roles (gen t) are what the key may use. *)
-    (forall k t r m i, In k ks -> In t outs -> rkey_of Cr k = IMth r m i ->
-       ~ In t (gens r) /\ forall x tx, In (x, tx) i -> ~ In t (gens tx)) ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->
