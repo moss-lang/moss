@@ -27,7 +27,10 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the functor and family obligations
 `CapturedInForceOk`, and `ChainResultsOk` from
-[PublicCopyApply.v](theories/PublicCopyApply.v), which with
+[PublicCopyApply.v](theories/PublicCopyApply.v) (itself proved,
+`PublicLinkResults.chain_results_scoped`, from `ChainCoreOk`, the
+formal/caller result correspondence, and `KeptOutputsUnmentioned`, an
+open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
 [PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
@@ -633,6 +636,7 @@ between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
 likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
+| `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |

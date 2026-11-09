@@ -6,7 +6,7 @@
    caller's meanings grow only by the destinations. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
-  PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply.
+  PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply.
 From NM Require PublicFormation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -65,41 +65,43 @@ Qed.
 End Made.
 
 Module LinkResults (Prims : PRIMITIVES) (I0 : INTERP Prims).
-Module CA := PublicCopyApply.CopyApply Prims I0.
+(* The instance PublicEntry uses (PA), so the obligations match. *)
+Module PA := PublicPlatformApply.PlatformApply Prims I0.
+Module CA := PA.CopyA.
 Module S := CA.S.
 
 Section Run.
 Variable W : A.world.
 
-(* PREMISE (named, see scratch/orch/results2-STATUS.md). A declared symbol
-   the caller's context mentions is a key of its table. dest_scope needs it
-   for an output installed as itself: its destination must be out of the
-   context, or the result's write (which shadows) would re-ground types the
-   context mentions. NOTE: false for accepted programs since family demands
-   install keys mentioning unbound declared symbols
-   (examples/family-unbound-need.moss); a kept output must then be shown
-   out of the context some other way (an Audit kept-output clause, or a
-   proof that re-grounding such a symbol is harmless). *)
-Definition DeclaredScoped (C : A.cx) : Prop :=
-  forall x, In x (A.context_gens C) -> A.Fresh W x \/ In x (map fst (A.c_ty C)).
+(* PREMISE (T16; scratch/orch/results2-AUDIT.md section 2). An output that
+   `bind F;` installs as itself (not in force here) is not mentioned by the
+   context. Otherwise the result's write re-grounds what mentions it. It
+   can be mentioned only as an unbound declared symbol in family method
+   provisions (examples/lambda-declared-output.moss), where re-grounding
+   is harmless by parametricity (unproved). For the user to decide:
+   either an Audit clause `~ In t (context_gens C)`, which rejects correct
+   programs both implementations accept, or the parametricity proof. *)
+Definition KeptOutputsUnmentioned : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs -> PublicFormation.FormedCx W C ->
+  forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> ~ In t (A.context_gens C).
 
 (* Each output destination is out of scope at the application: no key of
    the caller's table, no generation its context or frame types mention. *)
 Lemma dest_scope : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  PublicFormation.FormedCx W C -> DeclaredScoped C ->
+  PublicFormation.FormedCx W C -> KeptOutputsUnmentioned ->
   forall t, In t outs ->
     ~ In (gensof t) (map fst (A.c_ty C)) /\ ~ In (gensof t) (A.context_gens C) /\
     (forall r, A.fr_ret F = Some r -> ~ In (gensof t) (A.gens r)) /\
     (forall r, A.fr_this F = Some r -> ~ In (gensof t) (A.gens r)).
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs
-    (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _) Fc Ds t It.
+    AP Fc Ku t It. pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _).
   pose proof (proj1 (OutsI t) It) as Ft.
   destruct (Outs t Ft) as [[None' [E Fr]]|[_ [Fresh Ig]]].
   - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
     split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
-    split; [intros Ic; destruct (Ds t Ic) as [F'|Ik]; [exact (Nf F')|destruct (nlook_some _ t _ Ik) as [v L]; congruence]|].
+    split; [exact (Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc t Ft None')|].
     split; [intros r Er I; apply Fr; apply in_or_app; left; rewrite Er; exact I|].
     intros r Er I; apply Fr; apply in_or_app; right; rewrite Er; exact I.
   - destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
@@ -191,7 +193,7 @@ Qed.
 Lemma pre_after_result : forall rr F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall d types H g st d' H3 st3,
-  S.Pre W Prog argv read state_ok rr F C d types H g st -> DeclaredScoped W C ->
+  S.Pre W Prog argv read state_ok rr F C d types H g st -> KeptOutputsUnmentioned W ->
   S.MeaningsGrow (map gensof outs) d d' -> heap_extends H H3 -> state_ok H3 st3 ->
   AliasOk C' d' -> S.EnvOk W Prog argv read state_ok rr C' d' H3 -> S.KeysMatch C' ->
   S.Pre W Prog argv read state_ok rr (A.with_fresh F newgens) C' d' types H3 g st3.
@@ -365,7 +367,7 @@ Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
 
 (* ChainResultsOk, from the correspondence and DeclaredScoped. *)
 Theorem chain_results_scoped : ChainCoreOk ->
-  (forall C, PublicFormation.FormedCx W C -> DeclaredScoped W C) -> CA.ChainResultsOk W Prog argv read state_ok.
+  KeptOutputsUnmentioned W -> CA.ChainResultsOk W Prog argv read state_ok.
 Proof.
   intros Core DS F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3.
@@ -373,7 +375,7 @@ Proof.
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3)
     as [dr [Sdr [Read [Al [Env KM]]]]].
   pose proof Pre0 as [_ [_ [_ [_ [_ [Fc _]]]]]].
-  pose proof (DS C Fc) as Sc.
+  pose proof DS as Sc.
   assert (OutsI' : forall t, In t outs' <-> A.FunOutputs W u t).
   { pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & _).
     intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ Chain t). }
