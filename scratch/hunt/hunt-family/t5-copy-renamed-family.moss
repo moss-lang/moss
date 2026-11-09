@@ -1,0 +1,16 @@
+# Target: FamilyCopyApplyOk keys. F's closure is a copy of family H whose
+# polymorphic input is spelled B, not A. The demand of A.foo at Bool
+# applies F (a copy); H's code installs keys over B (receiver TAbs B),
+# while the caller's key is Bool.foo.
+# Result: oracle rejects (H does not provide A.foo); native rejects. Copies must share spelling (CopyOutputs/SameResult). No failure.
+type A;
+type B;
+assume A { fn .foo(); }
+functor F[A]: A -> A.foo;
+functor H[B]: B -> B.foo;
+functor G: B -> B.foo { bind B.foo = () => (); }
+fn main() {
+  bind H = G;
+  bind F = H;
+  true.foo();
+}

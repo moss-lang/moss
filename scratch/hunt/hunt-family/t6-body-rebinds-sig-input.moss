@@ -1,0 +1,17 @@
+# Target: FamilyLinkNewOk signature part. A.foo : () -> S, S an implicit
+# input of F. The linked body G rebinds S locally before binding A.foo, so
+# its A.foo returns its own S (Concrete), not the caller's (Other).
+# Result: oracle rejects (G binds S, F fixed in S); native rejects. Audit: ResultRealizes / fixed agreement. No failure.
+type A;
+type S;
+tag Concrete;
+tag Other(Concrete);
+assume S, A { fn .foo(): S; }
+functor F[A]: A -> A.foo;
+functor G: A, S -> A.foo { bind S = Concrete; bind A.foo = () => Concrete; }
+fn main() {
+  bind S = Other;
+  bind F = G;
+  let y: Other = true.foo();
+  let n = match y { Other(n) => n };
+}

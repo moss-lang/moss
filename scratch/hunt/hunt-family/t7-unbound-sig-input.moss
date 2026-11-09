@@ -1,0 +1,13 @@
+# Target: FamilyLinkNewOk signature part. A.foo : (S) -> (), S an
+# implicit input of family F that main never binds. G ignores x.
+# Result: oracle rejects (binding F needs fixed S in force); native rejects. No failure.
+type A;
+type S;
+assume S, A { fn .foo(x: S); }
+functor F[A]: A -> A.foo;
+functor G: A -> A.foo { bind A.foo = (x) => (); }
+assume S, F { fn use_it(s: S) { true.foo(s); } }
+fn main() {
+  bind F = G;
+  use_it(());
+}

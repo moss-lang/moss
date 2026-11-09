@@ -1,0 +1,19 @@
+# Target: FamilyLinkNewOk signature part. A callee assumes only F (whose
+# A.foo : () -> S mentions implicit input S). main binds S = Concrete and
+# F = G, then calls use_it with S rebound to Other.
+# Result: oracle rejects (assuming F needs S in force); native rejects. Audit: FamilyApplication needs every formal key in force. No failure.
+type A;
+type S;
+tag Concrete;
+tag Other(Concrete);
+assume S, A { fn .foo(): S; }
+fn mk(): S;
+functor F[A]: A -> A.foo;
+functor G: A, S, mk -> A.foo { bind A.foo = () => mk(); }
+assume F { fn use_it() { let y = true.foo(); } }
+fn main() {
+  bind S = Concrete;
+  bind mk = () => Concrete;
+  bind F = G;
+  use_it();
+}

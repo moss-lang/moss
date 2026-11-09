@@ -1,0 +1,86 @@
+# hunt-chain: ChainRealizeOk counterexample (survives the caller-keyed change).
+# Targets: CN.ChainRealizeOk (PublicChainNew.v). Shape: a linked input
+# merged away, inside G's context only, into a type G captures; F's
+# result mentions the linked input.
+#
+# G's context merges X (an input F takes, so linked) with Y (an input
+# only G has, so captured), oriented X := Y (two readings of A.gimme; the
+# world may orient either way, SAFETY-SITES "A merge could be oriented
+# either way"; this order is also the oracle's orientation).
+# - 3b passes in Audit: the captured A.gimme's provision in Cg is read
+#   under sigma, so it mentions Y (not in Cu) and A (not in Cu), not X.
+# - LinkBody's "G's readings of F's inputs hold in F's context" is
+#   vacuous for X |-> Y, because Y is not one of F's inputs (the
+#   premise `forall y in gens tx, nlook y (c_ty Cu) <> None` fails).
+# - No linked need mentions X, so the linked-needs check passes.
+# - ResultRealizes: required `out: X` (Cr) and actual `out: Y` (Cb) agree
+#   after provision_subst (c_sub Cb), since c_sub Cb maps X to Y.
+# At the application, fc_table reads X as the captured Y (Bool), so the
+# body's `out` is `true`, but the caller's static context types `out` at
+# its own X (Char). EnvOkOn fails for the new provision `out`: the value
+# is not value_typed at ground X = Char. `c.code()` then runs Char's
+# code on a Bool. Keys play no part (IVal out), so the caller-keyed
+# install does not change it. With `X.m` in the result instead of a val,
+# the body's Y.m closure (on Bool) is installed at the caller's Char.m.
+#
+# Oracle (moss-ob-family4 moss_m2): rejects, "G, bound to F, captures
+#   A.gimme, which mentions a type each application of F supplies (D84 3b)"
+#   (the oracle checks 3b before the merge).
+# Native (moss-ob-family, seed 1h1710x0): rejects, "incompatible types" at
+#   `bind out = vy;`.
+# Audit: accepts (reasoning above). Candidate repairs: check 3b on the
+#   unmerged entries (as the oracle does), or make the LinkBody input
+#   condition non-vacuous: a linked input must read, in G, as a type over
+#   F's inputs (drop the `gens tx in Cu` premise / require it).
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+assume Y { val vy: Y; }
+assume X { val out: X; }
+
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y];
+
+functor F: Std, X -> out;
+
+functor G: Std, Merge, vy -> out {
+  bind out = vy;
+}
+
+assume Std, X, F {
+  fn go(): X { bind F; out }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Bool;
+    bind Foo = Bool;
+    bind X = Bool;
+    bind Y = Bool;
+    bind A.gimme = () => this;
+    bind vy = true;
+    bind F = G;
+    bind X = Char;
+    let c: Char = go();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
