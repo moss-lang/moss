@@ -1,61 +1,39 @@
 # linknewpf: status
 
-Branch ob-linknewpf, from safety e69a7cd, fast-forwarded to safety 460a720
-(copyfresh). No Rocq file changed; check.sh
-not rerun (only a .moss example and scratch files are added).
+Branch ob-linknewpf.
 
-## Stopped: CC.FamilyLinkNewOk is false for an Audit-accepted program
+## Done
 
-Counterexample: bootstrap/examples/link-merge-rep-rebind.moss (header has
-the full walk). Scratch variants: scratch/linknewpf/m2-*.moss, m5-*.moss,
-m3-rebind-unmentioned-input.moss (control), run.sh.
+- **Audit change, 94d89ce (merged into safety):** `A.link_site`. LinkBody
+  reads result keys with the inputs at G's own table. Details:
+  scratch/orch/linknewpf-AUDIT.md and a SAFETY-SITES Observation.
+  - Counterexample: bootstrap/examples/link-merge-rep-rebind.moss.
+  - Companion: link-merge-rep-rebind-both.moss.
+- **Corpus comparison, 17c5108:** scratch/linknewpf/cmp.sh and cmp.out;
+  the analysis is in the AUDIT file.
+- **Lemmas (PublicBodySlice):** `realizes_link_site`,
+  `rkey_of_link_site` and `canon_link_site`.
+- `BodyReal` and `body_provides` in PublicChainCore are unchanged. They
+  apply at `A.link_site Cg Cb outs'`, since Realizes at Cb converts to
+  Realizes at the site.
 
-- F[X]: Merge -> X.m, where Merge merges X with T (A.gimme[Foo=X] and
-  A.gimme[Foo=T]). G: Merge -> X.m { bind T = Bool; bind T.m = ... }.
-- Audit's world is a witness, and w_context is unconstrained by WorldOf,
-  so the merge representative is free. Take T for both F and G.
-- F's key X.m reads at Cu as T.m. M(F) = {X}, so G's pins (3d) are {X},
-  and `bind T = Bool` is allowed.
-- LinkBody's ResultRealizes (and the code's sources, link_sources) look
-  the key up at `at_site Cb (T.m)`, which re-reads T through G's final
-  table: Bool.m. G's Bool.m (`if this {}`) is the result source.
-- main demands Concrete.m (X := Concrete; T = Concrete there, so the
-  merge holds). The install puts the Bool.m closure under the caller's
-  Concrete.m key, and `if this` runs on a Concrete: stuck.
-- Both implementations reject it. The oracle says "functor `G` does not
-  bind `X.m`"; native says "the functor does not bind every item its
-  result promises: `m`".
-- Why: a linked input's run-time meaning is the caller's (the
-  application environment), but `bind T = ...` writes only an alias, and
-  at_site reads the receiver through the table (aliases). Signatures are
-  compared under c_sub only, so they are not affected. Only receivers are.
+## Suspected hole for realizepf (ChainRealizeOk, non-family linked root)
 
-The same hole should affect CN.ChainRealizeOk for a non-family linked
-root, since it uses the same ResultRealizes and link_sources. I did not
-build a test for that case.
-
-### Fix options (for the coordinator / user)
-
-(a) Pins include the merge representatives of M(F): x is pinned iff
-    Mentions W u x, or x is in gens (canon Cu (TAbs y)) for some
-    mentioned y.
-    - This mirrors the oracle. On m5-XT (G also binds X.m), the oracle
-      says "`bind T` ... changes a type its result mentions (D84 3d)"
-      when its representative is T.
-    - Native accepts m5-XT and m5-TX and runs them correctly (exit 0).
-      So (a) rejects a program native accepts. The oracle accepts m5-TX,
-      whose representative is X, and Audit with representative X still
-      accepts it.
-    - It is a minimal one-conjunct change to LinkBody's pins clause.
-(b) Faithful: read the result key's receiver with the inputs at G's own
-    readings (c_ty Cg) and the outputs at the body's (Cb), in both
-    LinkBody's ResultRealizes lookup and link_sources.
-    - This matches native on m5.
-    - It changes the code's sources and LinkData, with proof repair in
-      PublicBodySlice, PublicChainCore and PublicLinkResults.
-(c) Require that the body does not rebind an input that a result key's
-    receiver mentions at Cu. This is close to (a), with the same native
-    disagreement on m5-XT.
+scratch/linknewpf/m7-kept-output-receiver.moss. This is not checked
+against Audit in full; I read the rules by hand.
+- F: T -> T.m, done. G does not take T. G's body applies Make, whose
+  output T is not in force in G, so the application installs T as
+  itself. Make provides T.flipit = Bool.flip.
+- G then binds T.m = () => { this.flipit(); }. F's key T.m is read at
+  G's site as T.m (T is not in G's table), so the body's T.m is found.
+- The caller files that closure under its own T.m (Concrete). So
+  Concrete.m() would run Bool.flip on a Concrete.
+- The pins only stop `bind T`; they do not stop an application's output.
+- Oracle: accepts it and runs to exit 0. Native: rejects ("compilation
+  failed: `T`").
+- The hole predates link_site: at_site Cb read it the same way.
+- It cannot occur for a family body, since FamilyBindings allows only
+  family applications, and families have no outputs.
 
 ## Plan for FamilyLinkNewOk once fixed (findings, nothing committed)
 
