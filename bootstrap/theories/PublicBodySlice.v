@@ -201,6 +201,11 @@ Definition Formed (F : A.frame) (C : A.cx) : Prop :=
 Definition Pre n F C d types H g st : Prop :=
   FrameOk F /\ CtxLocals F C d types /\ locals_typed W P H g types /\ state_ok H st /\ Realizes n C d H /\ Formed F C.
 
+(* The context code runs in after a demand: the type table of C0, where
+   the code is, and the provisions the families added. The demand itself
+   may read the table differently (an attached method's receiver). *)
+Definition with_ty (C0 C : A.cx) : A.cx := A.Cx (A.c_ty C0) (A.c_sub C) (A.c_provisions C) (A.c_locals C).
+
 Notation Outcome := (O.Outcome W P state_ok).
 
 Definition SafeEx k : Prop := forall F C a exp x t, A.Ex W Prog F C a exp x t ->
@@ -229,14 +234,6 @@ Definition StepSafe (k : nat) F C t (breaks : Prop) (x : expr) : Prop :=
   Outcome F d H types t breaks (I.eval (S k) P d g st x).
 
 (* A method a family supplies at the call: a functor application (T15/T16). *)
-Hypothesis family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
-  A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
-  A.FamilyApplication W C u matching th sm C' ks ->
-  In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
-  A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
-  StepSafe k F C (A.sg_ret g) B
-    (apply_expression u th sm (EMethod ox m (A.rkey C' (A.canon C ot0) m) xs)).
 Hypothesis Reps : Platform.Representations W Prog.
 
 Lemma forall2_keys : forall (reqs : list nat) (xs : list (nat * ty)) (R : nat -> ty -> Prop),
@@ -375,6 +372,75 @@ Proof.
   intros F d H types t t' breaks breaks' [[] g st] Weaken NotNormal Out; cbn in *; auto.
   - exfalso; exact (NotNormal v eq_refl).
   - destruct Out as [Br Rest]; auto.
+Qed.
+
+Lemma outcome_meanings : forall F d d' H types t (B : Prop) r, type_meanings d' = type_meanings d ->
+  Outcome F d' H types t B r -> Outcome F d H types t B r.
+Proof.
+  intros F d d' H types t B [[] g st] E Out; cbn in *; auto.
+  - destruct Out as [H' [Ex [S [L T]]]]. exists H'. unfold ground in *. rewrite E in T. auto.
+  - destruct Out as [H' [ret [R [Ex [S [L T]]]]]]. exists H', ret. unfold ground in *. rewrite E in T. auto.
+Qed.
+
+(* A state with the same meanings and aliases, a realized context and a
+   larger heap keeps Pre. *)
+Lemma pre_keep : forall r F C d d' types H H' g st st',
+  Pre r F C d types H g st -> type_meanings d' = type_meanings d -> type_aliases d' = type_aliases d ->
+  Realizes r C d' H' -> heap_extends H H' -> state_ok H' st' -> Pre r F C d' types H' g st'.
+Proof.
+  intros r F C d d' types H H' g st st' [Frame [[Lo [Re Al]] [L [St [Real Fm]]]]] Em Ea Real' Ext St'.
+  assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Em; reflexivity).
+  split; [exact Frame|]. split; [split; [|split]|split; [exact (locals_extends W P H H' g types Ext L)|split; [exact St'|split; [exact Real'|exact Fm]]]].
+  - intros n t mu Found Nm. rewrite G. exact (Lo n t mu Found Nm).
+  - intros t Th. rewrite G. exact (Re t Th).
+  - intros x tx Lx. unfold cmeaning, output_meaning. rewrite Ea, Em. rewrite G. exact (Al x tx Lx).
+Qed.
+
+Lemma eval_bind_eq0 : forall j d g st b x,
+  I.eval (S j) P d g st (EBind b x) =
+  match I.eval_bindings j P d g st [b] with
+  | inl (d1, g1, st1) => I.eval j P d1 g1 st1 x
+  | inr r => r
+  end.
+Proof. reflexivity. Qed.
+
+(* HYPOTHESIS (T15/T16). A family application, as one binding: it
+   completes with the families' provisions added (the code's own context,
+   and any narrower one, stays realized: rule 7 keeps family members from
+   being bound directly, and a member a context lists has the family's
+   signature), or it stops. *)
+Hypothesis family_step : forall k, Below k -> forall C0 C u matching th sm Cr ks,
+  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.FamilyApplication W C u matching th sm Cr ks ->
+  forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
+  (exists d' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\ type_aliases d' = type_aliases d /\
+     Pre rr F (with_ty C0 Cr) d' types H' g st' /\
+     (forall Cx, incl (A.c_provisions Cx) (A.c_provisions C0) -> A.c_sub Cx = A.c_sub C0 ->
+        Realizes rr Cx d H -> Realizes rr Cx d' H') /\
+     I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = I.eval_bindings j P d' g st' rest) \/
+  (exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = inr res /\
+     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
+
+(* Code after a family application runs with the families' provisions
+   and the code's own context both realized. *)
+Lemma family_then : forall k, Below k -> forall C u matching th sm Cr ks F t (B : Prop) x,
+  A.FamilyApplication W C u matching th sm Cr ks ->
+  (forall j, j <= k -> forall d types H g st, Pre j F (with_ty C Cr) d types H g st -> Pre j F C d types H g st ->
+     Outcome F d H types t B (I.eval j P d g st x)) ->
+  StepSafe k F C t B (EBind (BApply u th [] sm) x).
+Proof.
+  intros k Bel C u matching th sm Cr ks F t B x FA Cont d types H g st Pre0.
+  rewrite eval_bind_eq0. destruct k as [|k1]; [cbn; exact Logic.I|].
+  pose proof Pre0 as [_ [_ [_ [_ [Real0 _]]]]].
+  destruct (family_step (S k1) Bel C C u matching th sm Cr ks eq_refl eq_refl eq_refl FA F (S (S k1)) k1 d types H g st
+    (le_n _) ltac:(lia) Pre0 []) as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
+  - rewrite Run. destruct k1 as [|k2]; [cbn; exact Logic.I|].
+    assert (Enil : I.eval_bindings (S k2) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
+    pose proof PreN as [_ [_ [_ [StN _]]]].
+    pose proof (pre_keep _ _ _ _ _ _ _ _ _ _ _ Pre0 Em Ea (Keep C (fun q I => I) eq_refl Real0) E StN) as PreC.
+    eapply outcome_heap; [exact E|]. apply (outcome_meanings F d d' H' types t B _ Em).
+    exact (Cont (S (S k2)) ltac:(lia) d' types H' g st' (pre_lower PreN) (pre_lower PreC)).
+  - rewrite Run. eapply outcome_pass; [|exact NN|exact Out]. intros [].
 Qed.
 
 Lemma safe_zero : Safe 0.
@@ -812,15 +878,14 @@ Proof.
 Unshelve. all: exact TUnit.
 Qed.
 
-Lemma method_code : forall n F C (B : Prop) ot m g ox xs d types H lg lst,
-  A.mlook ot m (A.c_mths C) = Some g ->
+Lemma method_code_at : forall n F C (B : Prop) ot m g ox xs d types H lg lst K pv,
+  lookup_provision K d = Some pv -> CallableOk (S n) H d (ot :: A.sg_params g) (A.sg_ret g) pv ->
   CodeSafe n F C ot B ox ->
   Forall2 (fun e t => CodeSafe n F C t B e) xs (A.sg_params g) ->
   Pre (S n) F C d types H lg lst ->
-  Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EMethod ox m (A.rkey C ot m) xs)).
+  Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EMethod ox m K xs)).
 Proof.
-  intros n F C B ot m g ox xs d types H lg lst Found Recv Args Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  intros n F C B ot m g ox xs d types H lg lst K pv Look Ok Recv Args Pre0.
   pose proof (Recv n (le_n n) d types H lg lst (pre_lower Pre0)) as ROut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -846,6 +911,18 @@ Proof.
       exact (outcome_prim F d H0 H1 types _ _ o' st2 g1 E1 L1 POut).
     + destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
 Unshelve. all: exact TUnit.
+Qed.
+
+Lemma method_code : forall n F C (B : Prop) ot m g ox xs d types H lg lst,
+  A.mlook ot m (A.c_mths C) = Some g ->
+  CodeSafe n F C ot B ox ->
+  Forall2 (fun e t => CodeSafe n F C t B e) xs (A.sg_params g) ->
+  Pre (S n) F C d types H lg lst ->
+  Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EMethod ox m (A.rkey C ot m) xs)).
+Proof.
+  intros n F C B ot m g ox xs d types H lg lst Found Recv Args Pre0.
+  pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  exact (method_code_at n F C B ot m g ox xs d types H lg lst _ pv Look Ok Recv Args Pre0).
 Qed.
 
 (* Ex-derived code is safe below the induction's fuel, read at a fitting type. *)
@@ -890,11 +967,43 @@ Proof.
 Qed.
 
 (* Arithmetic a family supplies to a literal: a functor application (T15/T16). *)
-Hypothesis literal_family_case : forall n, Below n -> forall F C t m ox oy u matching th sm C' ks,
+Lemma family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
+  A.FamilyApplication W C u matching th sm C' ks ->
+  In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
+  A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
+  StepSafe k F C (A.sg_ret g) B
+    (apply_expression u th sm (EMethod ox m (A.rkey C' (A.canon C ot0) m) xs)).
+Proof.
+  intros k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA None' FA InK Only Found Args.
+  unfold apply_expression. apply (family_then k Bel C u matching th sm C' ks F _ B _ FA).
+  intros j Lj d types H lg st PreN PreC. destruct j as [|j1]; [exact Logic.I|].
+  pose proof PreN as [_ [_ [_ [_ [[_ [[_ [_ [Mths _]]] _]] _]]]]].
+  destruct (Mths (A.canon C ot0) m g Found) as [pv [Look Ok]].
+  apply (method_code_at j1 F C B (A.canon C ot0) m g ox xs d types H lg st _ pv Look Ok).
+  - apply (codesafe_le k); [lia|]. apply (ex_code k Bel F C o None ox ot0 _ B Do); [right; right; reflexivity|exact BrkO].
+  - pose proof (args_code_of k Bel F C args _ xs Args B BrkA) as AC. clear -AC Lj.
+    induction AC; constructor; [apply (codesafe_le k); [lia|assumption]|assumption].
+  - exact PreC.
+Qed.
+
+Lemma literal_family_case : forall n, Below n -> forall F C t m ox oy u matching th sm C' ks,
   CodeSafe n F C t False ox -> CodeSafe n F C t False oy ->
   A.mlook t m (A.c_mths C) = None -> A.FamilyApplication W C u matching th sm C' ks ->
   In (A.mkey t m) ks -> A.OnlyFamily W C u (A.mkey t m) -> A.mlook t m (A.c_mths C') = Some (A.FSig [t] t) ->
   StepSafe n F C t False (apply_expression u th sm (EMethod ox m (A.rkey C' t m) [oy])).
+Proof.
+  intros n Bel F C t m ox oy u matching th sm C' ks Cx Cy None' FA InK Only Found.
+  unfold apply_expression. apply (family_then n Bel C u matching th sm C' ks F t False _ FA).
+  intros j Lj d types H lg st PreN PreC. destruct j as [|j1]; [exact Logic.I|].
+  pose proof PreN as [_ [_ [_ [_ [[_ [[_ [_ [Mths _]]] _]] _]]]]].
+  destruct (Mths t m _ Found) as [pv [Look Ok]].
+  apply (method_code_at j1 F C False t m (A.FSig [t] t) ox [oy] d types H lg st _ pv Look Ok).
+  - apply (codesafe_le n); [lia|exact Cx].
+  - constructor; [apply (codesafe_le n); [lia|exact Cy]|constructor].
+  - exact PreC.
+Qed.
 
 Lemma lit_step : forall n, Below n ->
   (forall F C tree x t, A.Literal W C tree x t -> CodeSafe n F C t False x) ->
@@ -1379,17 +1488,66 @@ Qed.
    context after the families: an attached call's receiver and arguments are
    elaborated before the families it demands. With no family the wrapper is
    the identity, so the inner code runs at the same fuel. *)
-(* The context code runs in after a demand: the type table of C0, where
-   the code is, and the provisions the families added. The demand itself
-   may read the table differently (an attached method's receiver). *)
-Definition with_ty (C0 C : A.cx) : A.cx := A.Cx (A.c_ty C0) (A.c_sub C) (A.c_provisions C) (A.c_locals C).
 
-Hypothesis demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Prop) x,
+(* A family application keeps the context's provisions and merge. *)
+Lemma family_cr : forall C u matching th sm Cr ks, A.FamilyApplication W C u matching th sm Cr ks ->
+  incl (A.c_provisions C) (A.c_provisions Cr) /\ A.c_sub Cr = A.c_sub C.
+Proof.
+  intros C u matching th sm Cr ks (fixed & formal & needs & _ & _ & _ & _ & _ & _ & _ & _ & PR & _).
+  destruct PR as (d0 & ps & a & r & b & outs & es & tm' & _ & _ & _ & _ & _ & ->).
+  destruct (PublicFormation.fold_set_ty_shape matching C) as [_ [Esub [Epr _]]].
+  unfold A.output_cx, A.family_context in *. cbn [A.c_provisions A.c_sub]. split.
+  - intros q I. apply in_or_app. right. rewrite Epr. exact I.
+  - exact Esub.
+Qed.
+
+(* A demand's family applications, one after another, run the code after
+   them with the families' provisions and the code's original context. *)
+Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Demand W D0 wanted used C wrap C' ->
+  forall F Cc Corig t (B : Prop) x,
+  A.c_sub C = A.c_sub Cc -> A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
+  incl (A.c_provisions Corig) (A.c_provisions Cc) -> A.c_sub Corig = A.c_sub Cc ->
+  (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty Cc C') d types H g st -> Pre j F Corig d types H g st ->
+     Outcome F d H types t B (I.eval j P d g st x)) ->
+  forall n, n <= S k -> forall d types H g st, Pre n F Cc d types H g st -> Pre n F Corig d types H g st ->
+  Outcome F d H types t B (I.eval n P d g st (wrap x)).
+Proof.
+  intros k Bel D0 wanted used C wrap C' Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
+    intros F Cc Corig t B x Es Ep El Inc Eo Cont n Ln d types H g st PreC PreO.
+  - apply Cont; [exact Ln| |exact PreO].
+    replace (with_ty Cc C) with Cc; [exact PreC|]. destruct Cc as [a0 b0 c0 e0], C as [a1 b1 c1 e1]; cbn in *; subst; reflexivity.
+  - inversion Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FA Ro Ik]; subst.
+    cbn beta. unfold apply_expression. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
+    destruct n1 as [|n2]; [cbn; exact Logic.I|].
+    destruct (family_step k Bel Cc C u matching th sm Cr ks Es Ep El FA F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
+      as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
+    + rewrite Run. destruct n2 as [|n3]; [cbn; exact Logic.I|].
+      assert (Enil : I.eval_bindings (S n3) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
+      pose proof PreN as [_ [_ [_ [StN _]]]]. pose proof PreO as [_ [_ [_ [_ [RealO _]]]]].
+      pose proof (pre_keep _ _ _ _ _ _ _ _ _ _ _ PreO Em Ea (Keep Corig Inc Eo RealO) E StN) as PreO'.
+      destruct (family_cr _ _ _ _ _ _ _ FA) as [IncCr SubCr].
+      eapply outcome_heap; [exact E|]. apply (outcome_meanings F d d' H' types t B _ Em).
+      apply (IH F (with_ty Cc Cr) Corig t B x eq_refl eq_refl eq_refl).
+      * intros q I. apply IncCr. rewrite Ep. exact (Inc q I).
+      * cbn. rewrite SubCr, Es. exact Eo.
+      * exact Cont.
+      * lia.
+      * exact (pre_lower PreN).
+      * exact (pre_lower PreO').
+    + rewrite Run. eapply outcome_pass; [|exact NN|exact Out]. intros [].
+Qed.
+
+Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Prop) x,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.Demand W C wanted [] C wrap C' ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty C0 C') d types H g st -> Pre j F C0 d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C0 t B (wrap x).
+Proof.
+  intros k Bel F C0 C wanted C' wrap t B x Es Ep El Dm Cont d types H g st Pre0.
+  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Ep El (fun q I => I) eq_refl Cont (S k) (le_n _)
+    d types H g st Pre0 Pre0).
+Qed.
 
 Lemma call_code : forall k, Below k -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->

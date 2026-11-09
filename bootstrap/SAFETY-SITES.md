@@ -410,9 +410,7 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
-| `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
-| `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
+| `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it | T15, T16 |
 | `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
