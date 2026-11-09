@@ -558,6 +558,14 @@ the local store. *C* and *F* are the static context and frame.
   elaborated contexts but not for every formed one. Proving them needs
   invariants in `Formed` (scoped local and provision types, signature
   coherence) preserved through the slice.
+- **Gap: a linked body could not rebind an output its result mentions (fixed).**
+  [result-output-meaning.moss](examples/result-output-meaning.moss): G binds
+  `T = Bool` and provides F's `fn mk(): T`. G's body files `mk` at
+  `() -> Bool`, but `ResultRealizes` compared it with F's promise renamed to
+  `() -> T`, so `LinkBody` failed and Audit rejected the standard functor
+  pattern, which both implementations accept. `ResultRealizes` now compares
+  at the body's meanings of the outputs, as the oracle's
+  `promised_result_type` does (scratch/orch/results-AUDIT.md).
 
 ## Body-safety slice (checked, conditional)
 
@@ -582,7 +590,7 @@ hypotheses, each a named remaining obligation:
 | `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
 | `copy_apply` | applying a copy runs its source at the source's interface | T15 |
-| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, and F has no type output; needs a substitution lemma for result readings), `PlatformNotLinked` (a family's code with primitives is no linked body's) and `ChainPrimsOk`, which `PublicEntry.platform_prims_public` discharges for the reference host from `PlatformHandlesFormed` (the families' handle formation, as `handles_formed` proves main's) and `PlatformSigsFixed` (machine symbols a family signature mentions are its fixed inputs). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `MainMachinesUnmerged` | T15, T11, T29 |
+| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, and F has no type output; needs a substitution lemma for result readings) and `ChainPrimsOk`, which `PublicEntry.platform_prims_public` discharges for the reference host (`platform_handles_formed`, `platform_sigs_fixed`, from Platform.Family's `HandlesRead` and `MachinesFixed`). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `Platform.Entry`'s `FixedMachinesRead`; a linked root never shares a family's primitives (`platform_not_linked`) | T15, T11, T29 |
 
 `copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
 (`copy_apply_ok`): a closure's derivation is followed down its copy chain

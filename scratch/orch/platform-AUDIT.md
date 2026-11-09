@@ -52,3 +52,73 @@ type result item (`SpecTypes`), so the change rejects nothing it accepts.
 
 Alternative: `FamilyShape W source` (D84 family shape); it is stronger
 than needed and not what the oracle checks (it allows contexts).
+
+## 3. A platform family's machine types are fixed inputs (MachinesFixed)
+
+What: each item of a platform family satisfies
+`Platform.MachinesFixed W source inputs outputs key`: every wasm machine
+type symbol (I32, I64, F32, F64, StructRef, ArrayRef) its AtKey signature
+mentions (receiver, parameters, result) is a fixed input of the source
+functor (`Fixed`: mentioned by its result, not a bracket) and in its
+context's table.
+
+Why: a primitive is typed only at the machine types; the safety proof
+reads the family's signature types through θ, and only a fixed input is
+guaranteed to mean, at the application, what it meant where the closure
+was provided (the platform's provision exists only at the machine types,
+CPlatform's PlatformFixed). A family polymorphic in, say, I32 could be
+applied where I32 means Bool (the oracle accepts `bind I32 = Bool;`), and
+its `Array.get` would then be typed at Bool. Previously this was the
+premise PlatformSigsFixed in safety_obligations.
+
+Rejects nothing accepted: the oracle provides platform families only for
+lib/wasm.moss's functors (Elab.v platform_fun), Heap[Boxed], Mutable[Boxed],
+Arrays[Arrayed] and Memories[Memory], whose brackets are Boxed, Arrayed and
+Memory, none a machine type, and whose result signatures mention the
+machine types through their inputs (Wasm, I32 etc.).
+
+Test: none executable (no implementation provides such a family).
+
+## 4. A platform family's items read their raw handles as themselves (HandlesRead)
+
+What: `Platform.HandlesRead` gains a method case (each type of a method
+item's signature, its receiver among them, reads a handle tag's raw
+requirement as itself, RawHandleRead), and `Platform.Family` asks
+`HandlesRead W outputs key` of each item, as worldform's change asks it of
+main's platform fns (`Platform.Entry`). The definitions moved above
+`Family` (unchanged otherwise).
+
+Why: the primitives read a handle's payload as the raw machine handle
+(PublicPrimitiveSafety's HandleFormed); this was the premise
+PlatformHandlesFormed.
+
+Rejects nothing accepted: the oracle provides platform families only for
+lib/wasm.moss's functors, whose result items are unbracketed methods
+(platform_fun: `Spec (Some p) (Some dn) None`), read in the functor's own
+context where each raw handle (StructRef, ArrayRef, I32) means itself; it
+checks each with check_runtime_primitive.
+
+Test: none executable (no implementation provides another family).
+
+## 5. main reads a platform functor's fixed machine types as themselves (FixedMachinesRead)
+
+What: `Platform.Entry`'s `IFun` case is now
+`Family W P source code /\ FixedMachinesRead W C source`: each machine
+type symbol among the functor's fixed readings in main's context (its
+`c_funs` entry) reads, canonically in main's context, as itself.
+
+Why: the platform's family code exists only at the machine types; a merge
+of main's context (MostGeneralMerge may pick either side as the
+representative) could read a fixed I32 as Bool, and the family's
+primitives would then be typed at Bool. The proof needed this as the
+premise MainMachinesUnmerged (main's merge leaves the machine symbols
+alone); this is the narrower check the oracle actually makes.
+
+Test: bootstrap/examples/platform-fixed-merge.moss (a context listing
+`ff[I32 = Bool], ff`, so main's merge makes I32 Bool). Oracle: rejects,
+"platform functor has an incompatible assumed fixed type"
+(check_platform_entry_view, the XDFun case, which this mirrors). Native:
+rejects, "incompatible types: `Memories`".
+
+Rejects nothing accepted: it is the oracle's own check on platform functor
+entries, stated on the recorded fixed readings.

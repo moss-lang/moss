@@ -70,3 +70,28 @@ native), and no type outputs. Both were needed (the obligation was false).
 ## Time
 
 About 4 hours in total.
+
+
+## Update (premises discharged)
+
+- PlatformNotLinked: proved (`platform_not_linked`, PublicPlatformApply.v):
+  no BindItem/lambda/method provider wraps a BPrimitive (`item_np`), so a
+  linked body sharing a family's code binds nothing.
+- PlatformSigsFixed: Audit change (Platform.MachinesFixed in
+  Platform.Family), then `platform_sigs_fixed` (PublicEntry.v).
+- PlatformHandlesFormed: Audit change (Platform.HandlesRead method case,
+  asked by Platform.Family), then `platform_handles_formed`, as
+  `handles_formed` does main's.
+- MainMachinesUnmerged: needed in the old form (MostGeneralMerge may merge
+  I32 away; the oracle accepts `bind I32 = Bool;` but that is a rebinding,
+  which the fixed agreement handles). Replaced by an Audit change mirroring
+  the oracle's check_platform_entry_view (Platform.Entry's IFun case asks
+  FixedMachinesRead); example bootstrap/examples/platform-fixed-merge.moss,
+  rejected by the oracle and native. entry_realizes uses it.
+- Remaining premise of mine in safety_obligations: PA.ChainResultAgrees
+  (left for the results agent's substitution lemma).
+- FamilyPlatformApplyOk: not done. Its conclusion (FamilyResultOk at Cr)
+  needs the run (as family_core), a result agreement against the family
+  application's Cr/ks (another premise like ChainResultAgrees), and the
+  machine grounding from FixedAgreement at the family context instead of
+  AppPremises' fixed readings: a parallel proof of a few hundred lines.

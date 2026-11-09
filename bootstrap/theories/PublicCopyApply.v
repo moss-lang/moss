@@ -43,6 +43,7 @@ Inductive CopyChain : nat -> subst -> list smap -> nat -> subst -> list smap -> 
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx) ->
     (exists sg m, A.CopyOutputs W sg u h Cu /\ gfx = S.ground_fixed m sg) ->
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
+    (forall t, A.FunOutputs W u t <-> A.FunOutputs W h t) ->
     CopyChain u gfx (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list h0 gf0 sms0.
 
 Lemma chain_fixed : forall u gfx sms h0 gf0 sms0, CopyChain u gfx sms h0 gf0 sms0 ->
@@ -189,7 +190,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      ClosureOk rr H h0 gf0 (FunctorClosure code [] dc)).
 Proof.
   intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
-    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub|u code gfx Fam Mach];
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub SO|u code gfx Fam Mach];
     intros code0 sms0 dc0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (S.linked_needs nsu nsg))) as [e2 Sel2].
@@ -220,12 +221,12 @@ Proof.
       [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & e2 & Chn & Ok0 & LB & FC0 & FCg & Keys & A2 & RealG)
       |(h0 & gf0 & Chn & Edc & Fam & Ok0)].
     + left. exists h0, gf0, gg, Ch0, nsh0, Cg, nsg, e2.
-      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub)|].
+      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO)|].
       split; [exact Ok0|]. split; [exact LB|]. split; [exact FC0|]. split; [exact FCg|].
       split; [intros x I; exact (keys_sub _ _ Sub x (Keys x I))|].
       split; [exact (Ad e2 A2)|exact RealG].
     + right. exists h0, gf0.
-      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub)|].
+      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO)|].
       split; [exact Edc|]. split; [exact Fam|exact Ok0].
   - right. exists u, gfx. split; [constructor|]. split; [reflexivity|]. split; [exact Fam|].
     exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach).
@@ -381,8 +382,11 @@ Proof.
          split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
     - intros n1 t mu Found. rewrite (S.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply S.alias_self; [reflexivity|exact (proj1 RealG)|].
-      destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
+    - apply S.alias_self; [reflexivity|exact (proj1 RealG)| |].
+      + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
+      + intros k0 v0 L0. unfold de, application_environment. change (view_functor P code) with (A.funbody_of Prog code).
+        rewrite FB. cbn [type_meanings fc_inputs]. rewrite S.lookup_map_nat; [discriminate|].
+        change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
   intros rest. rewrite S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }

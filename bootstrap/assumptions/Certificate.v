@@ -15,7 +15,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
-  PublicPlatformApply PublicFamilyStep.
+  PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -27,6 +27,7 @@ Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInte
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
 Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.Prims PublicInterp.
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
+Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
@@ -112,9 +113,17 @@ Definition certificate_roots :=
   @NM.PublicFamilySig.family_sig_ok_readoff,
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.platform_prims_public,
+  @PublicEntryTop.platform_sigs_fixed,
+  @PublicEntryTop.platform_handles_formed,
   @PublicPlatform.chain_platform_ok,
+  @PublicPlatform.platform_not_linked,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
+  @PublicLinkRes.chain_results_scoped,
+  @PublicLinkRes.pre_junk_meaning,
+  @NM.PublicLinkResults.result_environment_occupied,
+  @NM.PublicOutputSubst.output_entries_rel,
+  @NM.PublicOutputSubst.provide_result_rel,
   @PublicLinkMergesI.captured_in_force_unprovable,
   @NM.PublicLinkMerges.captured_in_force_of,
   @NM.PublicCallRealize.ctxof_formed,

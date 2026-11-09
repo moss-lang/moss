@@ -3811,12 +3811,19 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop 
 Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
   app_subst_item (map (fun t => (gen t, TAbs t)) outs) k.
 
+(* A promised item is compared with the body's at the body's meanings of
+   the renamed symbols (each output role at what the body's type table
+   makes of its output, canonically), as the oracle's promised_result_type
+   does: a body that binds `T = Bool` provides `mk(): T` as `mk(): Bool`.
+   The key is read at the body's site (at_site re-reads its receiver). *)
+Definition read_rename (body : cx) (rename : subst) : subst :=
+  map (fun q => (fst q, canon body (app_subst (c_ty body) (snd q)))) rename.
 Definition ResultRealizes (body promised : cx) (rename : subst) (keys : list item) : Prop :=
   forall k, In k keys -> exists required actual,
     ilook (provision_id k) (c_provisions promised) = Some required /\
     ilook (provision_id (at_site body (app_subst_item rename k))) (c_provisions body) = Some actual /\
     provision_refines
-      (provision_subst (c_sub body) (provision_subst rename required))
+      (provision_subst (c_sub body) (provision_subst (read_rename body rename) required))
       (provision_subst (c_sub body) actual).
 Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
   Forall (fun binding => match binding with
@@ -4676,21 +4683,6 @@ Definition MethodPrimitive (W : world) (key : item) (operation : prim) : Prop :=
     | RPlain => False
     end.
 
-Definition Family (W : world) (P : program) (source code : usym) : Prop :=
-  exists inputs needs outputs keys bindings,
-    FunCtx W source inputs needs /\
-    (* the platform provides method items only (Elab.v platform_fun): no
-       type output, which its code could not return *)
-    (forall t, ~ FunOutputs W source t) /\
-    ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
-    (* each item is installed and returned under its run-time key, the
-       instantiation it is made at (rkey_of), as a linked body's are *)
-    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) []
-      (map (rkey_of outputs) keys) bindings []) /\
-    Forall2 (fun key binding => exists operation,
-      binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
-      AtKey W outputs key operation) keys bindings.
-
 (* The handle tags carry a raw machine handle (Ref a StructRef, Array an
    ArrayRef, Addr an I32), which the primitives read as that machine value.
    A platform fn's signature must read that requirement as itself: a
@@ -4706,8 +4698,51 @@ Definition HandlesRead (W : world) (C : cx) (key : item) : Prop :=
   match key with
   | IFn f => forall signature, nlook f (c_fns C) = Some signature ->
       Forall (RawHandleRead W) (sg_ret signature :: sg_params signature)
+  (* a platform family's method item, its receiver among the parameters *)
+  | IMth receiver method _ => forall signature, mlook receiver method (c_mths C) = Some signature ->
+      Forall (RawHandleRead W) (sg_ret signature :: receiver :: sg_params signature)
   | _ => True
   end.
+
+(* The machine types a platform item's signature mentions are fixed
+   inputs of its functor, in its context: the platform's provision exists
+   only at the machine types, so it may not be polymorphic in one
+   (lib/wasm.moss: Heap, Mutable, Arrays and Memories bracket only Boxed,
+   Arrayed and Memory). *)
+Definition MachinesFixed (W : world) (source : usym) (inputs outputs : cx) (key : item) : Prop :=
+  match key with
+  | IMth receiver method _ => forall signature, mlook receiver method (c_mths outputs) = Some signature ->
+      forall name machine symbol, In (name, machine) initial_machines -> LangSym W "wasm" NSName name symbol ->
+      In symbol (flat_map gens (sg_ret signature :: receiver :: sg_params signature)) ->
+      Fixed W source symbol /\ In symbol (map fst (c_ty inputs))
+  | _ => True
+  end.
+
+Definition Family (W : world) (P : program) (source code : usym) : Prop :=
+  exists inputs needs outputs keys bindings,
+    FunCtx W source inputs needs /\
+    (* the platform provides method items only (Elab.v platform_fun): no
+       type output, which its code could not return *)
+    (forall t, ~ FunOutputs W source t) /\
+    ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
+    (* each item is installed and returned under its run-time key, the
+       instantiation it is made at (rkey_of), as a linked body's are *)
+    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) []
+      (map (rkey_of outputs) keys) bindings []) /\
+    Forall2 (fun key binding => exists operation,
+      binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
+      AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
+      HandlesRead W outputs key) keys bindings.
+
+(* main's context reads each machine type a platform functor fixes as
+   itself (the oracle's check_platform_entry_view: "platform functor has an
+   incompatible assumed fixed type"): the platform's provision exists only
+   at the machine types, so a merge of main's context may not read one as
+   another type. *)
+Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
+  forall fixed, nlook source (c_funs C) = Some fixed ->
+  forall name machine symbol t, In (name, machine) initial_machines ->
+    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed -> canon C t = TAbs symbol.
 
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
@@ -4715,7 +4750,8 @@ Definition Entry (W : world) (P : program) (C : cx)
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
-  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) => Family W P source code
+  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) =>
+      Family W P source code /\ FixedMachinesRead W C source
   | _, _ => False
   end.
 
