@@ -218,7 +218,7 @@ Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newg
   adapt_provisions d1 sms = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
   (forall k pv, lookup_provision k dr = Some pv -> exists k1 p1, In (k1, p1) news /\ A.rkey_of C' k1 = k) /\
   EnvOkOn (fun k => In k (map fst news)) rr C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
@@ -231,7 +231,7 @@ Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' th',
   S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
   A.ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs') ks' ->
-  exists dr, select_provisions d3 (result_smap th' (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list
+  exists dr, select_provisions d3 (result_smap th' (map ITy outs' ++ map (A.rkey_of Cr) ks')%list
     (S.link_sources Cb outs' gen Cr ks')) = Some dr.
 Proof.
   intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' th' Real PR RR. apply select_ok. intros [a b] Iq.
@@ -422,7 +422,7 @@ Proof.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
-  destruct (chain_selection rr Cb d3 H3 h0 Ch0 _ outs' gen Cr ks' (result_substitution th (map (fun t => (t, gensof t)) outs))
+  destruct (chain_selection rr Cb d3 H3 h0 Ch0 _ outs' gen Cr ks' (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs)))
     Real3 PR' RR) as [dr Sdr].
   destruct (provide_result_news W _ _ _ _ _ PR) as [news [En KMn]].
   destruct (New F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
@@ -537,8 +537,8 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)) = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_smap (result_substitution th [])
-      (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr' k0)) ks')%list
+  forall dr, select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') []))
+      (map ITy outs' ++ map (A.rkey_of Cr') ks')%list
       (S.link_sources Cb outs' gen Cr' ks')) = Some dr ->
   FS.FamilyNewOk W Prog argv read state_ok rr Cr ks d dr H3.
 
@@ -548,7 +548,7 @@ Proof.
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
-  destruct (chain_selection rr Cb d3 H3 u Cu _ outs' gen Cr' ks' (result_substitution th []) Real3 PR' RR) as [dr Sdr].
+  destruct (chain_selection rr Cb d3 H3 u Cu _ outs' gen Cr' ks' (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') [])) Real3 PR' RR) as [dr Sdr].
   exists dr. split; [exact Sdr|].
   exact (New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).

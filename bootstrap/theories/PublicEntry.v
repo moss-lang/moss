@@ -454,7 +454,7 @@ Proof.
   { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
     pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
     apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) []
-      (map (A.rkey_of outputs) keys) bindings []). split; [exact (nlook_in _ _ _ _ FB)|].
+      (map (A.rkey_of outputs) keys) bindings [] []). split; [exact (nlook_in _ _ _ _ FB)|].
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
   assert (Held : HeldAt m' (rf :: A.sg_params gf)

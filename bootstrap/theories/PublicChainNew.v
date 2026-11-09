@@ -1,7 +1,7 @@
 (* ChainNewOk (PublicChainCore), split. Its first clause (every key the
    result selection dr fills is the run-time key of one of C''s new
    provisions) follows from a static fact, ChainKeysOk: each key of the
-   root's formal result, renamed and substituted as the application's
+   root's formal result, substituted (roles and inputs) as the application's
    selection does, is the caller's run-time key of one of F's result keys.
    Its second clause (the new provisions are realized after the
    application) is ChainRealizeOk. ChainKeysOk needs CopyOutputs in both
@@ -29,6 +29,48 @@ Proof.
   exists p. apply in_flat_map. exists e. split; [apply in_rev in Ie; exact Ie|]. rewrite Ep. left. reflexivity.
 Qed.
 
+(* The application's role substitution (Audit.role_outputs): at a
+   length-zero chain the root's outputs are F's, so each role gen t reads
+   as t's destination gensof t, and a symbol that is no role reads by θ. *)
+Lemma output_destination_map : forall (f : nat -> nat) outs t, In t outs ->
+  output_destination (map (fun t => (t, f t)) outs) t = f t.
+Proof.
+  intros f outs t. induction outs as [|t0 rest IH]; intros I; [contradiction|].
+  cbn [map output_destination]. destruct (Nat.eqb_spec t0 t) as [->|Ne]; [reflexivity|].
+  destruct I as [E|I]; [congruence|exact (IH I)].
+Qed.
+
+Lemma role_subst_role_at : forall th (gen : nat -> nat) outs outputs t, In t outs -> NoDup (map gen outs) ->
+  lookup_subst (gen t) (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs) outputs)) =
+  Some (TAbs (output_destination outputs t)).
+Proof.
+  intros th gen outs outputs t I Nd. unfold result_substitution, role_outputs. rewrite !map_map. cbn [fst snd].
+  induction outs as [|t0 rest IH]; [contradiction|].
+  cbn [map app lookup_subst] in *. inversion Nd as [|g0 gs Out Nd']; subst.
+  destruct (Nat.eqb_spec (gen t) (gen t0)) as [E|Ne].
+  - destruct I as [->|I]; [reflexivity|].
+    exfalso. apply Out. rewrite <- E. apply in_map. exact I.
+  - destruct I as [->|I]; [congruence|exact (IH I Nd')].
+Qed.
+
+Lemma role_subst_role : forall th (gen gensof : nat -> nat) outs t, In t outs -> NoDup (map gen outs) ->
+  lookup_subst (gen t) (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs) (map (fun t => (t, gensof t)) outs))) =
+  Some (TAbs (gensof t)).
+Proof.
+  intros th gen gensof outs t I Nd. rewrite (role_subst_role_at th gen outs _ t I Nd), output_destination_map by exact I.
+  reflexivity.
+Qed.
+
+Lemma role_subst_input : forall th (gen : nat -> nat) roles_outs outputs x,
+  ~ In x (map gen roles_outs) ->
+  lookup_subst x (result_substitution th (role_outputs (map (fun t => (t, gen t)) roles_outs) outputs)) = lookup_subst x th.
+Proof.
+  intros th gen outs outputs x N. unfold result_substitution, role_outputs. rewrite !map_map. cbn [fst snd].
+  induction outs as [|t0 rest IH]; [reflexivity|]. cbn [map app lookup_subst] in *.
+  destruct (Nat.eqb_spec x (gen t0)) as [->|_]; [exfalso; apply N; left; reflexivity|].
+  apply IH. intros I. apply N. right. exact I.
+Qed.
+
 End Static.
 
 Module ChainNew (Prims : PRIMITIVES) (I0 : INTERP Prims).
@@ -47,11 +89,10 @@ Notation ClosureOk := (S.ClosureOk W Prog argv read state_ok).
 
 (* PREMISE (T15/T16, static). At an application of F (AppPremises) whose
    closure is a copy chain down to a root h0, each key k0 of h0's formal
-   result (read at h0's context with fresh output roles gen), with the
-   roles renamed back to h0's output symbols and then substituted as the
-   application's result selection does (each output t to its destination,
-   each input by θ), is the caller's run-time key of a key of F's result
-   as the caller reads it (C'). *)
+   result (read at h0's context with fresh output roles gen), substituted
+   as the application's result selection does (each role gen t to t's
+   destination, every other symbol, an input, by θ), is the caller's
+   run-time key of a key of F's result as the caller reads it (C'). *)
 Definition ChainKeysOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   (forall t, A.canon C (A.canon C t) = A.canon C t) ->
@@ -62,8 +103,8 @@ Definition ChainKeysOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
   NoDup (map gen outs') -> (forall t, In t outs' -> A.Fresh W (gen t)) ->
   A.ProvideResult W h0 Ch0 (fun t => TAbs (gen t)) Cr ks' ->
   forall k0, In k0 ks' -> exists k1, In k1 ks /\
-    A.rkey_of C' k1 = app_subst_item (result_substitution th (map (fun t => (t, gensof t)) outs))
-      (A.output_renaming outs' gen (A.rkey_of Cr k0)).
+    A.rkey_of C' k1 = app_subst_item (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs)))
+      (A.rkey_of Cr k0).
 
 (* PREMISE (T15/T16): ChainNewOk's second clause, the new provisions
    realized after the application. *)
@@ -82,7 +123,7 @@ Definition ChainRealizeOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   adapt_provisions d1 sms = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
   CC.EnvOkOn W Prog argv read state_ok (fun k => In k (map fst news)) rr C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
 

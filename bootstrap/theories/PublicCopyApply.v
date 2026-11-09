@@ -246,13 +246,13 @@ Proof.
   apply map_ext. intros s0. destruct (lookup_subst s0 tb); [rewrite Em; reflexivity|rewrite Eb; reflexivity].
 Qed.
 
-Lemma app_env_thof : forall d code f Cu Ch0 Cg tb outs bs srcs X,
+Lemma app_env_thof : forall d code f Cu Ch0 Cg tb outs bs srcs rls X,
   A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Cg))
-    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) tb outs bs srcs) ->
+    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) tb outs bs srcs rls) ->
   (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) ->
   application_environment P d code (thof f Cu) X = application_environment P d code (thof f Ch0) X.
 Proof.
-  intros d code f Cu Ch0 Cg tb outs bs srcs X FB Keys. unfold application_environment.
+  intros d code f Cu Ch0 Cg tb outs bs srcs rls X FB Keys. unfold application_environment.
   change (view_functor P code) with (A.funbody_of Prog code). rewrite FB. cbn [fc_inputs fc_linked fc_table].
   assert (E : forall x, (if existsb (Nat.eqb x) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg)))
       then lookup_subst x (thof f Cu) else None) =
@@ -295,8 +295,8 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
-    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
+    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
+    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (A.rkey_of Cr) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     S.MeaningsGrow (map gensof outs) d (append_environment result d).
 
@@ -375,7 +375,7 @@ Proof.
     & outs' & gen & Cr & ks' & binds0 & LD).
   pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
   destruct (S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
-  rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
+  rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
   set (de := application_environment P d code th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
@@ -397,7 +397,7 @@ Proof.
     captured_in_force (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch']].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply S.bindsof_fold in BO. subst binds0.
   rewrite S.apply_functor_eq, Look. change (view_functor (program_of Prog argv read) code) with (PublicBodySlice.A.funbody_of Prog code). rewrite FB.
-  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel, A2.
+  cbn [fc_bindings fc_outputs fc_sources fc_roles]. rewrite Sel, A2.
   change (application_environment (program_of Prog argv read) d code th (append_environment d2 dc)) with de.
   destruct (S.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch' rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
     as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
