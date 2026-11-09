@@ -179,3 +179,43 @@ whether rewriting `T ↦ m` regrounds the provision `T.foo`, is results2's
   user. Do not prove it.
 
 `safety` d6a3e86 is merged (fcfddd6).
+
+## Option 4 (lead: ExConst clears type meanings/aliases): investigation, paused before any Audit change
+
+Findings, reported before proceeding as asked:
+- **Native has no defined-val semantics to compare.** It rejects every
+  use of a defined val ("no binding provides this item: `K`"). This
+  includes `val K: () = ();` used in a body under `assume T`, and
+  `val K: () = { let x = (); x };` used in main (scratch/t2/v1, v2; the
+  oracle runs both). So native says nothing about whether caller meanings
+  reach const code.
+- **The oracle inlines and runs in the caller.** It caches the
+  initializer's elaborated code (`Elab.const_val`, checked in an empty
+  `Cx`) and inlines it. It runs on its own IR (`XS.xinterp` over `xprog`,
+  `ExecutionModel.run_main`), so const code runs in the caller's run-time
+  environment.
+  - `bootstrap/examples/const-family-unbound.moss`: a const applies family
+    F at an unbound T, with a lambda argument, inside a body where T means
+    `Concrete`. The oracle accepts and runs it (exit 0).
+  - `const-kept-output.moss`: the oracle runs it (exit 0) by shadowing,
+    which shows caller meanings are present in const code.
+  - Neither program's output depends on those meanings. I have not found
+    a program where clearing them would be observable. The only reachable
+    differences are run-time keys and groundings over symbols the const
+    reads unbound.
+- **Cost of the Audit change.** Audit has no expression that changes the
+  environment (`expr` has no scoping form; `binding` has none that clears
+  meanings). So `ExConst` needs a new form, e.g. `EScope e` (eval e in
+  `EnvironmentWithAliases [] [] (provision_values d)`).
+  - `Input.expr` is matched in about 19 theory files, including
+    CoreMoss, ExecutionModel, Elab/ElabSound, BodySoundCore, MossX and
+    DumpRoundTrip, plus the INTERP module type the slice's `I.eval`
+    implements.
+  - If ElabSound relates the oracle's inlined const code to `ExConst`'s
+    `x`, the oracle's elaborator or translation must emit the same
+    wrapper, so the oracle would change too.
+  - Reusing existing forms (binding the initializer as a synthetic
+    function closure with `TypeCapture [] []` and invoking it) would need
+    a program function per const that the oracle does not produce today.
+  - I have not made either change. This is larger than "a run-time Audit
+    change" and should be confirmed first.
