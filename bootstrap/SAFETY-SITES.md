@@ -397,6 +397,19 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
+- **Counterexample: a copy whose result reads differently (fixed).**
+  `BFunCopy` compared results only leaf by leaf (`SameResult`). In
+  [copy-output-order.moss](examples/copy-output-order.moss) F lists
+  `out[P=U], out[P=V]` and H `out[P=V], out[P=U]`: the same leaves, but
+  the last setter types `out` as V after `bind F;` and as U for H. Applying
+  the copy runs G's body, which provides a U, so the caller's match on V is
+  stuck. The oracle rejects the copy ("effective output interpretation
+  differs (D78)", `copy_outputs_match`), and so does native (test
+  `copied_functors_compare_final_output_interpretations`). `BFunCopy` now
+  requires `CopyOutputs`: read in F's context with the same fresh output
+  roles, H's result gives each of F's keys F's provision, F's fixed inputs
+  read as they are in force. Details and the remaining differences from
+  the oracle's check: scratch/orch/copy-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 
