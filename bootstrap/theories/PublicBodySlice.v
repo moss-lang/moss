@@ -2797,23 +2797,58 @@ Proof.
   subst. intros Pre0. exact Pre0.
 Qed.
 
+(* The generations a step makes: the meanings grow only by them, and the
+   frame's return and receiver types do not mention them. *)
+Definition AvoidsTy (made : list nat) (t : ty) : Prop := forall g, In g made -> ~ In g (A.gens t).
+Definition FrameAvoids (made : list nat) (F : A.frame) : Prop :=
+  (forall t, A.fr_ret F = Some t -> AvoidsTy made t) /\ (forall t, A.fr_this F = Some t -> AvoidsTy made t).
+Definition MeaningsGrow (made : list nat) (d d' : environment) : Prop :=
+  exists writes, type_meanings d' = (writes ++ type_meanings d)%list /\ forall x, In x (map fst writes) -> In x made.
+
+Lemma meanings_grow_refl : forall made d d', type_meanings d' = type_meanings d -> MeaningsGrow made d d'.
+Proof. intros made d d' E. exists []. split; [exact E|intros x []]. Qed.
+
+Lemma meanings_grow_trans : forall m1 m2 d1 d2 d3, MeaningsGrow m1 d1 d2 -> MeaningsGrow m2 d2 d3 ->
+  MeaningsGrow (m1 ++ m2)%list d1 d3.
+Proof.
+  intros m1 m2 d1 d2 d3 [w1 [E1 I1]] [w2 [E2 I2]]. exists (w2 ++ w1)%list. split; [rewrite E2, E1, app_assoc; reflexivity|].
+  intros x Ix. rewrite map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app; [right; exact (I2 x Ix)|left; exact (I1 x Ix)].
+Qed.
+
+Lemma ground_grow : forall made d d' t, MeaningsGrow made d d' -> AvoidsTy made t -> ground d' t = ground d t.
+Proof.
+  intros made d d' t [w [E In']] Av. unfold ground. rewrite E. apply subst_agree_on. intros x Ix. cbn [app_subst].
+  rewrite !lookup_subst_nlook, nlook_app'. rewrite <- lookup_subst_nlook.
+  destruct (lookup_subst x w) as [u|] eqn:L; [|reflexivity].
+  exfalso. apply (Av x (In' x (in_map fst _ _ (lookup_subst_in_pair _ _ _ L))) Ix).
+Qed.
+
+Lemma outcome_grow : forall made F d d' H types t (b : Prop) r, MeaningsGrow made d d' -> AvoidsTy made t ->
+  FrameAvoids made F -> Outcome F d' H types t b r -> Outcome F d H types t b r.
+Proof.
+  intros made F d d' H types t b r Grow Av [Ret _] Out. destruct r as [[] g st]; cbn in *; auto.
+  - destruct Out as [H' [E [S [L T]]]]. exists H'; repeat split; auto. rewrite <- (ground_grow made d d' t Grow Av). exact T.
+  - destruct Out as [H' [ret [R [E [S [L T]]]]]]. exists H', ret; repeat split; auto.
+    rewrite <- (ground_grow made d d' ret Grow (Ret ret R)). exact T.
+Qed.
+
 (* One binding, run by eval_bindings at fuel at most r - 1, with the
    provisions realized at the fixed index r: either it completes, in the
    context after it, or it stops with an outcome of its own. *)
-Definition BindStep r F C F' C' (Bi : Prop) (b : binding) : Prop :=
-  FrameSame F F' /\
+Definition BindStep r F C F' C' (Bi : Prop) (made : list nat) (b : binding) : Prop :=
+  FrameSame F F' /\ FrameAvoids made F /\
   forall j d types H g st, S j <= r -> Pre r F C d types H g st -> forall rest,
-    (exists d' g' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\
+    (exists d' g' st' H', heap_extends H H' /\ MeaningsGrow made d d' /\
        Pre r F' C' d' types H' g' st' /\
        I.eval_bindings (S j) P d g st (b :: rest) = I.eval_bindings j P d' g' st' rest) \/
     (exists res, I.eval_bindings (S j) P d g st (b :: rest) = inr res /\
        (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 
-Inductive Chain (k : nat) : A.frame -> A.cx -> A.frame -> A.cx -> Prop -> list binding -> Prop :=
-| ChainNil : forall F C (B : Prop), Chain k F C F C B []
-| ChainCons : forall F C F1 C1 F2 C2 (B1 B2 B : Prop) b bs,
-    (forall r, r <= S k -> BindStep r F C F1 C1 B1 b) -> Chain k F1 C1 F2 C2 B2 bs ->
-    (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (b :: bs).
+Inductive Chain (k : nat) : A.frame -> A.cx -> A.frame -> A.cx -> Prop -> list nat -> list binding -> Prop :=
+| ChainNil : forall F C (B : Prop), Chain k F C F C B [] []
+| ChainCons : forall F C F1 C1 F2 C2 (B1 B2 B : Prop) m1 m2 b bs,
+    (forall r, r <= S k -> BindStep r F C F1 C1 B1 m1 b) -> Chain k F1 C1 F2 C2 B2 m2 bs ->
+    (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (m1 ++ m2)%list (b :: bs).
 
 Lemma frame_same_refl : forall F, FrameSame F F.
 Proof. intros F. repeat split. Qed.
@@ -2821,46 +2856,52 @@ Proof. intros F. repeat split. Qed.
 Lemma frame_same_trans : forall F1 F2 F3, FrameSame F1 F2 -> FrameSame F2 F3 -> FrameSame F1 F3.
 Proof. intros F1 F2 F3 [A1 [A2 [A3 A4]]] [B1 [B2 [B3 B4]]]. repeat split; congruence. Qed.
 
-Lemma chain_frame : forall k F C F' C' B bs, Chain k F C F' C' B bs -> FrameSame F F'.
+Lemma chain_frame : forall k F C F' C' B made bs, Chain k F C F' C' B made bs -> FrameSame F F'.
 Proof.
-  intros k F C F' C' B bs D. induction D as [F C B|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest IH Imp];
+  intros k F C F' C' B made bs D. induction D as [F C B|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
     [apply frame_same_refl|].
   exact (frame_same_trans _ _ _ (proj1 (Step (S k) (le_n _))) IH).
 Qed.
 
-Lemma chain_weaken : forall k F C F' C' (B B' : Prop) bs, Chain k F C F' C' B bs -> (B -> B') -> Chain k F C F' C' B' bs.
+Lemma chain_weaken : forall k F C F' C' (B B' : Prop) made bs, Chain k F C F' C' B made bs -> (B -> B') ->
+  Chain k F C F' C' B' made bs.
 Proof.
-  intros k F C F' C' B B' bs D Imp. destruct D as [F C B|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest Imp0];
-    [constructor|]. apply (ChainCons k F C F1 C1 F2 C2 B1 B2 B' b bs Step Rest). tauto.
+  intros k F C F' C' B B' made bs D Imp. destruct D as [F C B|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest Imp0];
+    [constructor|]. apply (ChainCons k F C F1 C1 F2 C2 B1 B2 B' m1 m2 b bs Step Rest). tauto.
 Qed.
 
-Lemma chain_app : forall k F C F1 C1 F2 C2 (B1 B2 B : Prop) bs1 bs2,
-  Chain k F C F1 C1 B1 bs1 -> Chain k F1 C1 F2 C2 B2 bs2 -> (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (bs1 ++ bs2)%list.
+Lemma chain_app : forall k F C F1 C1 F2 C2 (B1 B2 B : Prop) m1 m2 bs1 bs2,
+  Chain k F C F1 C1 B1 m1 bs1 -> Chain k F1 C1 F2 C2 B2 m2 bs2 -> (B1 \/ B2 -> B) ->
+  Chain k F C F2 C2 B (m1 ++ m2)%list (bs1 ++ bs2)%list.
 Proof.
-  intros k F C F1 C1 F2 C2 B1 B2 B bs1 bs2 D1. revert F2 C2 B2 B bs2.
-  induction D1 as [F C B0|F C F1 C1 F1' C1' Ba Bb B0 b bs Step Rest IH Imp]; intros F2 C2 B2 B bs2 D2 Imp2.
-  - cbn. apply (chain_weaken k F C F2 C2 B2 B bs2 D2). tauto.
-  - cbn. apply (ChainCons k F C F1 C1 F2 C2 Ba (Bb \/ B2) B b (bs ++ bs2)%list Step).
-    + apply (IH F2 C2 B2 (Bb \/ B2) bs2 D2). tauto.
+  intros k F C F1 C1 F2 C2 B1 B2 B m1 m2 bs1 bs2 D1. revert F2 C2 B2 B m2 bs2.
+  induction D1 as [F C B0|F C F1 C1 F1' C1' Ba Bb B0 ma mb b bs Step Rest IH Imp]; intros F2 C2 B2 B m2 bs2 D2 Imp2.
+  - cbn. apply (chain_weaken k F C F2 C2 B2 B m2 bs2 D2). tauto.
+  - cbn. rewrite <- app_assoc. apply (ChainCons k F C F1 C1 F2 C2 Ba (Bb \/ B2) B ma (mb ++ m2)%list b (bs ++ bs2)%list Step).
+    + apply (IH F2 C2 B2 (Bb \/ B2) m2 bs2 D2). tauto.
     + tauto.
 Qed.
 
+Lemma avoids_app : forall m1 m2 t, AvoidsTy (m1 ++ m2)%list t -> AvoidsTy m1 t /\ AvoidsTy m2 t.
+Proof. intros m1 m2 t Av. split; intros g Ig; apply Av; apply in_or_app; [left|right]; exact Ig. Qed.
+
 (* A chain gives the expression-level wrapper: each binding in turn, then
    the continuation. *)
-Lemma chain_wrap : forall k n F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi bs -> n <= S k ->
+Lemma chain_wrap : forall k n F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi made bs -> n <= S k ->
   WrapSafe n F C F' C' Bi made (fun x => fold_right (fun b x => EBind b x) x bs).
 Proof.
-  intros k n F C F' C' Bi made bs D Le. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest IH Imp].
+  intros k n F C F' C' Bi made bs D Le. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp].
   - intros t B x _ Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
-  - intros t B' x Av Safe. pose proof (IH t B' x Av Safe) as Inner. cbn [fold_right].
+  - intros t B' x Av Safe. destruct (avoids_app m1 m2 t Av) as [Av1 Av2].
+    pose proof (IH t B' x Av2 Safe) as Inner. cbn [fold_right].
     intros [|j] Lj d types H g st Pre0; [exact Logic.I|]. rewrite eval_bind_eq.
     destruct j as [|j]; [exact Logic.I|].
-    destruct (Step (S (S j)) ltac:(lia)) as [Same Run].
-    destruct (Run j d types H g st ltac:(lia) Pre0 []) as [[d' [g' [st' [H' [E [Meq [Pre' Eq]]]]]]]|[res [Eq [NN Out]]]];
+    destruct (Step (S (S j)) ltac:(lia)) as [Same [FAv Run]].
+    destruct (Run j d types H g st ltac:(lia) Pre0 []) as [[d' [g' [st' [H' [E [Grow [Pre' Eq]]]]]]]|[res [Eq [NN Out]]]];
       rewrite Eq.
     + destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
       pose proof (Inner (S (S j)) ltac:(lia) d' types H' g' st' (pre_lower Pre')) as Out.
-      eapply outcome_heap; [exact E|]. apply (outcome_env F d d' H' types t _ _ Meq).
+      eapply outcome_heap; [exact E|]. apply (outcome_grow m1 F d d' H' types t _ _ Grow Av1 FAv).
       apply (outcome_frame F F1 d' H' types t _ _ Same).
       eapply O.outcome_breaks; [|exact Out]. tauto.
     + eapply outcome_pass; [|exact NN|exact Out]. tauto.
@@ -2876,50 +2917,57 @@ Qed.
 Lemma heap_extends_trans : forall H1 H2 H3, heap_extends H1 H2 -> heap_extends H2 H3 -> heap_extends H1 H3.
 Proof. intros H1 H2 H3 E1 E2 a c L. exact (E2 _ _ (E1 _ _ L)). Qed.
 
+Lemma frame_avoids_same : forall made F F', FrameSame F F' -> FrameAvoids made F -> FrameAvoids made F'.
+Proof. intros made F F' [Er [Et _]] [Ar At]. split; intros t E; [apply Ar|apply At]; congruence. Qed.
+
 (* A chain run by eval_bindings: it completes, in the context after it,
    or stops with an outcome. *)
-Lemma chain_run : forall k F C F' C' (Bi : Prop) bs, Chain k F C F' C' Bi bs ->
+Lemma chain_run : forall k F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi made bs ->
   forall r j d types H g st rest, r <= S k -> j < r -> Pre r F C d types H g st ->
-  (exists d' g' st' H' j', j = j' + List.length bs /\ heap_extends H H' /\ type_meanings d' = type_meanings d /\
+  (exists d' g' st' H' j', j = j' + List.length bs /\ heap_extends H H' /\ MeaningsGrow made d d' /\
      Pre r F' C' d' types H' g' st' /\
      I.eval_bindings j P d g st (bs ++ rest)%list = I.eval_bindings j' P d' g' st' rest) \/
   (exists res, I.eval_bindings j P d g st (bs ++ rest)%list = inr res /\
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 Proof.
-  intros k F C F' C' Bi bs D. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest IH Imp];
+  intros k F C F' C' Bi made bs D. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
     intros r j d types H g st rest Lr Lj Pre0.
   - left. exists d, g, st, H, j. split; [cbn; lia|]. split; [intros a c L; exact L|].
-    split; [reflexivity|]. split; [exact Pre0|reflexivity].
+    split; [apply meanings_grow_refl; reflexivity|]. split; [exact Pre0|reflexivity].
   - destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v E; discriminate|exact Logic.I]|].
-    destruct (Step r Lr) as [Same Run].
+    destruct (Step r Lr) as [Same [FAv Run]].
     destruct (Run j d types H g st ltac:(lia) Pre0 (bs ++ rest)%list)
       as [[d1 [g1 [st1 [H1 [E1 [M1 [Pre1 Eq1]]]]]]]|[res [Eq [NN Out]]]].
     + cbn [app]. rewrite Eq1.
       destruct (IH r j d1 types H1 g1 st1 rest Lr ltac:(lia) Pre1)
         as [[d' [g' [st' [H' [j' [Ej [E' [M' [Pre' Eq']]]]]]]]]|[res [Eq [NN Out]]]].
       * left. exists d', g', st', H', j'. split; [cbn; lia|]. split; [exact (heap_extends_trans _ _ _ E1 E')|].
-        split; [congruence|]. split; [exact Pre'|exact Eq'].
+        split; [exact (meanings_grow_trans _ _ _ _ _ M1 M')|]. split; [exact Pre'|exact Eq'].
       * right. exists res. split; [exact Eq|]. split; [exact NN|].
-        eapply outcome_heap; [exact E1|]. apply (outcome_env F d d1 H1 types TUnit _ _ M1).
+        eapply outcome_heap; [exact E1|]. apply (outcome_grow m1 F d d1 H1 types TUnit _ _ M1 (fun g _ I => I) FAv).
         apply (outcome_frame F F1 d1 H1 types TUnit _ _ Same).
         eapply O.outcome_breaks; [|exact Out]. tauto.
     + right. exists res. cbn [app]. split; [exact Eq|]. split; [exact NN|].
       eapply O.outcome_breaks; [|exact Out]. tauto.
 Qed.
 
+Lemma frame_avoids_nil : forall F, FrameAvoids [] F.
+Proof. intros F. split; intros t _ g []. Qed.
+
 Lemma type_bstep : forall r F C t0 tau,
-  BindStep r F C F (A.set_ty C t0 (A.canon C tau)) False (BType t0 (A.canon C tau)).
+  BindStep r F C F (A.set_ty C t0 (A.canon C tau)) False [] (BType t0 (A.canon C tau)).
 Proof.
-  intros r F C t0 tau. split; [apply frame_same_refl|]. intros j d types H g st Lj Pre0 rest.
+  intros r F C t0 tau. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+  intros j d types H g st Lj Pre0 rest.
   left. exists (bind_type d t0 (A.canon C tau)), g, st, H. split; [intros a c L; exact L|].
-  split; [reflexivity|]. split; [exact Pre0|]. reflexivity.
+  split; [apply meanings_grow_refl; reflexivity|]. split; [exact Pre0|]. reflexivity.
 Qed.
 
 Lemma val_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp v declared y x xt a,
   A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
-  BindStep r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) (BValue v x).
+  BindStep r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) [] (BValue v x).
 Proof.
-  intros k Bel r Lr F C sp v declared y x xt a Dy Fits. split; [apply frame_same_refl|].
+  intros k Bel r Lr F C sp v declared y x xt a Dy Fits. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
   intros j d types H g st Lj Pre0 rest. rewrite bindings_value_eq.
   destruct (Bel j ltac:(lia)) as [SEx _].
   pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits
@@ -2929,7 +2977,7 @@ Proof.
          eapply outcome_pass; [exact (fun b => A.IBExpr sp b)|intros v' Ev; discriminate|exact Out]).
   destruct Out as [H1 [E1 [S1 [L1 T1]]]].
   left. exists (install_provision (IVal v) (ValueProvision w) d), g1, st1, H1.
-  split; [exact E1|]. split; [reflexivity|]. split; [|reflexivity].
+  split; [exact E1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   pose proof Pre0 as [Frame [Ctx [_ [_ Real]]]].
   unfold A.set_val. rewrite (provide_set C (IVal v) (A.ProvidedVal declared []) a ltac:(intros; eauto)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L1|]. split; [exact S1|].
@@ -2944,15 +2992,15 @@ Qed.
 Lemma fn_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp f g sg pg types sm a,
   A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
   BindStep r F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AEPath pg None)))
-    (BFunction f g types sm).
+    [] (BFunction f g types sm).
 Proof.
-  intros k Bel r Lr F C sp f g sg pg types sm a Prov. split; [apply frame_same_refl|].
+  intros k Bel r Lr F C sp f g sg pg types sm a Prov. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
   intros j d types0 H lg st Lj Pre0 rest. rewrite bindings_function_eq.
   pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
   destruct (provider_callable k Bel r Lr F C pg sg g types sm d H Prov Real) as [dc [Sel Ok]].
   rewrite Sel. left.
   set (d' := install_provision (IFn f) (FunctionClosure g (typed_capture d types dc)) d).
-  exists d', lg, st, H. split; [intros a0 c L0; exact L0|]. split; [reflexivity|]. split; [|reflexivity].
+  exists d', lg, st, H. split; [intros a0 c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   unfold A.set_fn. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
   apply (realizes_set r C d H (IFn f) (A.ProvidedFn sg a)).
