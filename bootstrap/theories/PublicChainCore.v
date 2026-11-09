@@ -550,5 +550,94 @@ Proof.
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).
 Qed.
 
+(* ---- what a run of bindings writes ------------------------------------------- *)
+
+(* Only an application writes meanings (at its destinations) and aliases
+   (at its outputs); a type binding writes an alias. *)
+Definition binding_dests (bs : list binding) : list nat :=
+  flat_map (fun b => match b with BApply _ _ outs _ => map snd outs | _ => [] end) bs.
+Definition binding_aliases (bs : list binding) : list nat :=
+  flat_map (fun b => match b with BApply _ _ outs _ => map fst outs | BType t _ => [t] | _ => [] end) bs.
+
+Definition Grows (Xm Xa : list nat) (d d' : environment) : Prop :=
+  (exists w, type_meanings d' = (w ++ type_meanings d)%list /\ incl (map fst w) Xm) /\
+  (exists a, type_aliases d' = (a ++ type_aliases d)%list /\ incl (map fst a) Xa).
+
+Lemma grows_refl : forall Xm Xa d, Grows Xm Xa d d.
+Proof. intros Xm Xa d. split; exists []; split; [reflexivity|intros x []|reflexivity|intros x []]. Qed.
+
+Lemma grows_trans : forall X1 Y1 X2 Y2 d1 d2 d3, Grows X1 Y1 d1 d2 -> Grows X2 Y2 d2 d3 -> Grows (X1 ++ X2) (Y1 ++ Y2) d1 d3.
+Proof.
+  intros X1 Y1 X2 Y2 d1 d2 d3 [[w1 [E1 I1]] [a1 [F1 J1]]] [[w2 [E2 I2]] [a2 [F2 J2]]]. split.
+  - exists (w2 ++ w1)%list. split; [rewrite E2, E1, app_assoc; reflexivity|].
+    intros x Ix. rewrite map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app; [right; exact (I2 x Ix)|left; exact (I1 x Ix)].
+  - exists (a2 ++ a1)%list. split; [rewrite F2, F1, app_assoc; reflexivity|].
+    intros x Ix. rewrite map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app; [right; exact (J2 x Ix)|left; exact (J1 x Ix)].
+Qed.
+
+Lemma grows_install : forall Xm Xa d k v, Grows Xm Xa d (install_provision k v d).
+Proof. intros Xm Xa d k v. split; exists []; split; [reflexivity|intros x []|reflexivity|intros x []]. Qed.
+
+Lemma read_result_keys : forall d Dr outs w a, read_result_types d Dr outs = Some (w, a) ->
+  map fst w = map snd outs /\ map fst a = map fst outs.
+Proof.
+  intros d Dr outs. induction outs as [|[src dst] rest IH]; intros w a E; cbn in E.
+  - injection E as <- <-. split; reflexivity.
+  - destruct (existsb (item_eqb (ITy src)) Dr); [|discriminate].
+    destruct (output_meaning d src) as [m|]; [|discriminate].
+    destruct (read_result_types d Dr rest) as [[w' a']|]; [|discriminate].
+    injection E as <- <-. destruct (IH w' a' eq_refl) as [Ew Ea]. cbn. rewrite Ew, Ea. split; reflexivity.
+Qed.
+
+Lemma apply_functor_writes : forall j Pv d u th outs sm st dr st1,
+  S.I.apply_functor j Pv d u th outs sm st = inl (dr, st1) ->
+  Grows (map snd outs) (map fst outs) d (append_environment dr d).
+Proof.
+  intros j Pv d u th outs sm st dr st1 E. destruct j as [|j]; [discriminate|]. cbn in E.
+  unfold result_environment in E.
+  repeat match type of E with context[match ?x with _ => _ end] =>
+    match x with context[read_result_types] => fail 1 | _ => destruct x; try discriminate E end end.
+  destruct (read_result_types _ _ outs) as [[w a]|] eqn:R; [|discriminate].
+  injection E as <- _. destruct (read_result_keys _ _ _ _ _ R) as [Ew Ea].
+  split; [exists w|exists a]; cbn; (split; [reflexivity|]); [rewrite Ew|rewrite Ea]; intros x I; exact I.
+Qed.
+
+Lemma grows_mono : forall X Y X' Y' d d', incl X X' -> incl Y Y' -> Grows X Y d d' -> Grows X' Y' d d'.
+Proof.
+  intros X Y X' Y' d d' IX IY [[w [E I]] [a [F J]]]. split; [exists w|exists a]; split; auto.
+  - intros x Ix. exact (IX x (I x Ix)).
+  - intros x Ix. exact (IY x (J x Ix)).
+Qed.
+
+Lemma bindings_writes : forall j Pv d g st bs d' g' st', S.I.eval_bindings j Pv d g st bs = inl (d', g', st') ->
+  Grows (binding_dests bs) (binding_aliases bs) d d'.
+Proof.
+  induction j as [|j IH]; intros Pv d g st bs d' g' st' E; [discriminate|].
+  destruct bs as [|b r]; cbn in E.
+  - injection E as <- _ _. apply grows_refl.
+  - assert (Step : forall Xm Xa d1, Grows Xm Xa d d1 -> forall g1 st1, S.I.eval_bindings j Pv d1 g1 st1 r = inl (d', g', st') ->
+      incl (Xm ++ binding_dests r) (binding_dests (b :: r)) -> incl (Xa ++ binding_aliases r) (binding_aliases (b :: r)) ->
+      Grows (binding_dests (b :: r)) (binding_aliases (b :: r)) d d').
+    { intros Xm Xa d1 G1 g1 st1 E1 IX IY. exact (grows_mono _ _ _ _ _ _ IX IY (grows_trans _ _ _ _ _ _ _ G1 (IH _ _ _ _ _ _ _ _ E1))). }
+    destruct b as [t tau|v e1|f f' types sm|tauk m th f' types sm|u h sm smc|u u' sm|u th outs sm|i p].
+    + refine (Step [] [t] (bind_type d t tau) _ g st E _ _).
+      * split; [exists []|exists [(t, ground d tau)]]; split; [reflexivity|intros x []|reflexivity|]. intros x [<-|[]]; left; reflexivity.
+      * intros x Ix. exact Ix.
+      * intros x Ix. exact Ix.
+    + destruct (S.I.eval j Pv d g st e1) as [sg g1 st1]; destruct sg; try discriminate.
+      refine (Step [] [] _ (grows_install _ _ _ _ _) g1 st1 E _ _); intros x Ix; exact Ix.
+    + destruct (select_provisions d sm); [|discriminate].
+      refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
+    + destruct (select_provisions d sm); [|discriminate].
+      refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
+    + destruct (select_provisions d smc); [|discriminate].
+      refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
+    + destruct (lookup_provision (IFun u') d) as [pv|]; [destruct pv; try discriminate|discriminate].
+      refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
+    + destruct (S.I.apply_functor j Pv d u th outs sm st) as [[dr st1]|] eqn:A1; [|discriminate].
+      refine (Step _ _ _ (apply_functor_writes _ _ _ _ _ _ _ _ _ _ A1) g st1 E _ _); intros x Ix; exact Ix.
+    + refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
+Qed.
+
 End Core.
 End ChainCore.
