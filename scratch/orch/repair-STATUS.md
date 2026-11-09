@@ -1,7 +1,8 @@
 # repair: merges in the semantics, CapturedInForceOk's invariant
 
-Branch `ob-repair`. `safety` (3a869cf) is merged in, and `check.sh` passes
-(2m15s), so the lead can fast-forward `safety` to 1d4f5c5.
+Branch `ob-repair`. `safety` (77d6fb0, with the platform merge) is merged in
+(377f481), and `check.sh` passes (2m35s). Platform families record `[]` as
+fc_table; PublicPlatformApply drops `link_merges`.
 
 ## Done
 
@@ -45,6 +46,8 @@ entry):
 ## Not done
 
 Task C's proof is not done: `CapturedInForceOk` is still an obligation.
+The lead has handed the scoping invariant in `Formed` to the family agent;
+the plan below is for them.
 
 The plan, checked against the definitions:
 - **Ex-level lemma** (new file, mirroring PublicFormation's `ex_ok`
