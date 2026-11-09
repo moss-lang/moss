@@ -633,6 +633,53 @@ Proof.
   - intros x t t' I I'. unfold fixed_subst in I, I'. apply in_map_iff in I as [[y a] [E I]]. apply in_map_iff in I' as [[y' a'] [E' I']].
     cbn in E, E'. injection E as -> <-. injection E' as -> <-. rewrite (Fun x a a' I I'). reflexivity.
 Qed.
+(* A functor's own context, as a function's: its table is canonical
+   self-reference, its merge and provisions are over its keys, and its
+   provisions are its needs. *)
+Theorem functx_scoped : forall u C ns, FunCtx W u C ns ->
+  (forall k v, nlook k (c_ty C) = Some v -> v = app_subst (c_sub C) (TAbs k)) /\
+  (forall k p, In (k, p) (c_provisions C) ->
+     incl (provision_sig_gens p) (map fst (c_ty C)) /\ incl (key_gens k) (map fst (c_ty C)) /\
+     match p with ProvidedFunctor fx => forall x t, In (x, t) fx -> incl (gens t) (map fst (c_ty C)) | _ => True end) /\
+  KeysMatch (c_provisions C) /\
+  NoDup ns /\ (forall k p, In (k, p) (c_provisions C) -> In k ns) /\ (forall k, In k ns -> NeedShape k).
+Proof.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & [Nd Keys] & _).
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
+  set (tmr := (map (fun t => (t, TAbs t)) implicit ++ tm)%list).
+  assert (IdR : IdForm tmr).
+  { apply Forall_app. split; [|exact IdT]. apply Forall_forall. intros q Iq. apply in_map_iff in Iq as [t [<- _]]. reflexivity. }
+  assert (All : Scoped tmr (flat_map entry_gens es)).
+  { intros x Ix. unfold tmr. rewrite map_app. apply in_or_app. right. exact (EsT x Ix). }
+  assert (KeysE : map fst (c_ty (entries_cx σ tmr es)) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
+  destruct MGM as [_ [_ [_ Dom]]].
+  assert (Range : forall g t, In (g, t) σ -> incl (gens t) (map fst tmr)).
+  { intros g t I x Ix. exact (All x (proj2 (Dom g t I) x Ix)). }
+  split; [|split; [|split; [|split; [exact Nd|split]]]].
+  - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
+    rewrite nlook_smap in Found. destruct (nlook k tmr) as [v0|] eqn:L; [|discriminate].
+    injection Found as <-. rewrite (idform_nlook _ _ _ IdR L). reflexivity.
+  - rewrite KeysE. intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]].
+    assert (Eg : incl (entry_gens e) (map fst tmr)).
+    { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
+    destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
+      unfold provision_sig_gens, key_gens; cbn [provision_signature].
+    + split; [|split; [intros x []|exact Logic.I]]. apply (sig_subst_scoped _ σ (FSig [] t) Range). intros x Ix. apply Eg. cbn.
+      unfold sig_gens in Ix. cbn in Ix. rewrite app_nil_r in Ix. apply in_or_app. left. exact Ix.
+    + split; [|split; [intros x []|exact Logic.I]]. apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn.
+      apply in_or_app. left. exact Ix.
+    + split; [|split; [|exact Logic.I]].
+      * apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn. apply in_or_app. right. apply in_or_app. left. exact Ix.
+      * apply (subst_scoped _ σ r0 Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
+    + split; [intros x []|split; [intros x []|]].
+      intros x t It. unfold fixed_subst in It. apply in_map_iff in It as [[y t0] [E It]]. cbn in E. injection E as -> <-.
+      apply (subst_scoped _ σ t0 Range). intros z Iz. apply Eg. cbn. apply in_flat_map. exists (x, t0). split; assumption.
+  - intros k p I. cbn in I. apply in_flat_map in I as [e [_ I]].
+    destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
+  - intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]]. apply Keys. exists e. split; [exact Ie|].
+    exact (entry_provision_key _ _ _ _ _ I).
+  - intros k Ik. destruct (proj1 (Keys k) Ik) as [e [_ E]]. exact (entry_key_shape _ _ _ E).
+Qed.
 End Support2.
 
 (* ---- tables read through the provision list ------------------------------- *)

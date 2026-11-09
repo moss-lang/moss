@@ -2749,7 +2749,60 @@ Proof.
 Qed.
 
 (* BFunClosure *)
-Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
+(* HYPOTHESIS (T29). What a closure captures from where it is bound
+   mentions, among G's own inputs, only fixed inputs and types in force
+   there: the provisions in force mention only symbols in force (or
+   generations), and a captured input not in force reads as itself. *)
+Hypothesis captured_in_force : forall C Cu nsu Cg nsg smc,
+  A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
+    (captured nsu nsg) smc ->
+  forall k p x, In k (captured nsu nsg) -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
+  In x (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
+  In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None.
+
+Lemma bindings_functor_eq : forall j d g st u h sm smc r,
+  I.eval_bindings (S j) P d g st (BFunctor u h sm smc :: r) =
+  match select_provisions d smc with
+  | Some dc => I.eval_bindings j P (install_provision (IFun u) (FunctorClosure h [sm] (capture_environment d dc)) d) g st r
+  | None => inr (I.Evaluation (Stuck I.e_compose) g st)
+  end.
+Proof. reflexivity. Qed.
+
+Lemma link_3b : forall u gg h, A.LinkBody W Prog u gg h -> exists Cu nsu Cg nsg,
+  A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
+  (forall k p t, In k nsg -> ~ In k nsu -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
+     In t (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
+     A.nlook t (A.c_ty Cu) <> None -> A.Fixed W u t).
+Proof.
+  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds
+    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
+  exists Cu, nsu, Cg, nsg. split; [exact FCu|]. split; [exact FCg|exact B3].
+Qed.
+
+Lemma functx_unique : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
+Proof.
+  intros u C ns C' ns' (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & _ & _ & _ & _ & E)
+    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & σ' & implicit' & _ & _ & _ & _ & _ & _ & _ & _ & E').
+  rewrite E in E'. injection E' as -> ->. split; reflexivity.
+Qed.
+
+Lemma lookup_on_keys : forall (f : nat -> ty) (l : list (nat * ty)) x, In x (map fst l) ->
+  lookup_subst x (map (fun q => (fst q, f (fst q))) l) = Some (f x).
+Proof.
+  intros f l x. induction l as [|[a t] r IH]; intros I; [contradiction|]. cbn in I |- *.
+  destruct (Nat.eqb_spec x a) as [->|Ne]; [reflexivity|]. destruct I as [E|I]; [congruence|exact (IH I)].
+Qed.
+
+Lemma lookup_on_keys_some : forall (f : nat -> ty) (l : list (nat * ty)) x, lookup_subst x (map (fun q => (fst q, f (fst q))) l) <> None <->
+  In x (map fst l).
+Proof.
+  intros f l x. split.
+  - induction l as [|[a t] r IH]; intros L; cbn in L |- *; [congruence|].
+    destruct (Nat.eqb_spec x a) as [->|Ne]; [left; reflexivity|right; exact (IH L)].
+  - intros I. rewrite (lookup_on_keys f l x I). discriminate.
+Qed.
+
+Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
       (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
       (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
@@ -2763,6 +2816,177 @@ Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu 
         (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h sm smc).
+Proof.
+  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J rr _.
+  split; [repeat split|]. split; [split; intros t0 _ g0 []|].
+  intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
+  pose proof Pre0 as [Frame [Ctx [L [St Real]]]]. pose proof Ctx as [_ [_ Al]].
+  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg)) in *.
+  change (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) with (captured nsu nsg) in SatC.
+  pose proof SatC as SatC'. set (caps := captured nsu nsg) in *.
+  destruct SatC as [SmEq [Prov [Coh [Types _]]]].
+  destruct (functx_scoped W gg Cg nsg FCg) as [CanG [ScG [KMg [NdG [ProvNsG ShapeG]]]]].
+  assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ ~ In k0 nsu).
+  { intros k0 I. unfold caps, captured in I. apply filter_In in I as [I E]. split; [exact I|].
+    intros I'. apply negb_true_iff in E. rewrite (proj2 (existsb_exists _ _) (ex_intro _ k0 (conj I' (proj2 (item_eqb_spec _ _) eq_refl)))) in E.
+    discriminate. }
+  (* 3b, read at our contexts *)
+  destruct (link_3b _ _ _ LB) as [Cu' [nsu' [Cg' [nsg' [FCu' [FCg' B3]]]]]].
+  destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
+  (* the caller provides every captured need *)
+  assert (Caller : forall k0, In k0 caps -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k0)) d = Some pv).
+  { intros k0 Ik. pose proof (Prov k0 Ik) as Pr. pose proof (ShapeG k0 (proj1 (CapsIn k0 Ik))) as Sh.
+    destruct k0 as [t|v|f'|r m a|u']; cbn in Sh, Pr |- *; try contradiction.
+    - destruct (A.nlook v (A.c_vals C)) as [t|] eqn:L0; [|congruence]. destruct (Vals v t L0) as [w [Look _]]. eauto.
+    - destruct (A.nlook f' (A.c_fns C)) as [g0|] eqn:L0; [|congruence]. destruct (Fns f' g0 L0) as [pv [Look _]]. eauto.
+    - destruct (A.mlook _ m (A.c_mths C)) as [g0|] eqn:L0; [|congruence]. destruct (Mths _ m g0 L0) as [pv [Look _]]. eauto.
+    - destruct (A.nlook u' (A.c_funs C)) as [fx'|] eqn:L0; [|congruence]. destruct (Funs u' fx' L0) as [pv [gfx [Look _]]]. eauto. }
+  destruct (select_ok d smc) as [dsel Sel].
+  { rewrite SmEq. intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn. destruct (Caller k0 Ik) as [pv ->]. discriminate. }
+  rewrite Sel. left.
+  set (dc := capture_environment d dsel).
+  destruct (select_provisions_empty _ _ _ Sel) as [Em Ea].
+  assert (Find : forall k0, In k0 caps -> lookup_provision (A.rkey_of Cg k0) dc = lookup_provision (A.rkey_of C (A.at_th C th k0)) d).
+  { intros k0 Ik. change (lookup_provision (A.rkey_of Cg k0) dc) with (lookup_provision (A.rkey_of Cg k0) dsel).
+    rewrite (select_lookup d smc dsel _ Sel), SmEq.
+    rewrite (sm_find_map (A.rkey_of Cg) (fun k' => A.rkey_of C (A.at_th C th k')) caps k0 Ik); [reflexivity|].
+    intros k' Ik' E. exact (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (CapsIn k' Ik'))) (ShapeG k0 (proj1 (CapsIn k0 Ik))) E). }
+  assert (CmEq : forall x, cmeaning dc x = cmeaning d x).
+  { intros x. unfold cmeaning, output_meaning. cbn [dc capture_environment type_aliases type_meanings]. rewrite Ea, Em. reflexivity. }
+  set (gfx := ground_fixed (type_meanings d) fx).
+  assert (FunFx : forall x t t', In (x, t) fx -> In (x, t') fx -> t = t').
+  { intros x t t' I I'. destruct (proj1 (Fx x t) I) as [_ E]. destruct (proj1 (Fx x t') I') as [_ E']. congruence. }
+  assert (Lth : forall x, In x (map fst (A.c_ty Cg)) -> lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x)))).
+  { intros x Ix. exact (lookup_on_keys (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ x Ix). }
+  (* a captured provision's types, read at an application, are the caller's *)
+  assert (GroundGm : forall gm, AppMeanings u Cu Cg dc gfx gm -> forall k0 p t, In k0 caps ->
+    A.ilook (A.provision_id k0) (A.c_provisions Cg) = Some p ->
+    incl (A.gens t) (A.provision_gens p ++ match k0 with IMth r _ _ => A.gens r | _ => [] end)%list ->
+    incl (A.gens t) (map fst (A.c_ty Cg)) ->
+    app_subst gm t = ground d (A.canon C (app_subst th t))).
+  { intros gm [Am1 Am2] k0 p t Ik Il Gp Sc. rewrite (Abs _). unfold ground.
+    rewrite <- (subst_through t (type_meanings d) th).
+    2: { intros x Ix. rewrite (Lth x (Sc x Ix)). discriminate. }
+    apply subst_agree_on. intros x Ix. cbn [app_subst].
+    rewrite (lookup_map_snd (app_subst (type_meanings d))).
+    rewrite (Lth x (Sc x Ix)). cbn [option_map].
+    assert (Inf : A.nlook x (A.c_ty C) <> None).
+    { destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
+      - apply FixU. apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
+        destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate.
+      - exact (captured_in_force C Cu nsu Cg nsg smc SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix) Ou). }
+    destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|congruence]. clear Inf.
+    replace (app_subst (A.c_ty C) (TAbs x)) with tx by (cbn [app_subst]; rewrite (lookup_subst_nlook' x (A.c_ty C)), Lx; reflexivity).
+    change (app_subst (type_meanings d) (A.canon C tx)) with (ground d (A.canon C tx)). rewrite (Abs tx).
+    destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
+    - assert (Fu : A.Fixed W u x).
+      { apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
+        destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate. }
+      rewrite (Am1 x Fu (Sc x Ix)). unfold gfx. rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
+      reflexivity.
+    - rewrite (Am2 x (Sc x Ix) Ou), CmEq. exact (Al x tx Lx). }
+  set (d' := install_provision (IFun u) (FunctorClosure h [sm] dc) d).
+  exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
+  change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  apply (realizes_set rr C d H (IFun u) (A.ProvidedFunctor fx)).
+  - exact Real.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists (FunctorClosure h [sm] dc), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
+    + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg).
+      * intros gm Am. split; [|split].
+        -- (* vals *) intros v t Ik Lt.
+           destruct (vals_ilook _ v t KMg Lt) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
+           destruct (Types (IVal v) _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
+           pose proof (KM _ _ (ilook_in _ _ _ Il')) as Kind.
+           destruct p' as [tc a'|g' a'|g' a'|fx']; cbn in Kind; try contradiction.
+           destruct (Vals v tc (ilook_vals _ v tc a' KM Il')) as [w [Look T]].
+           exists w. split; [pose proof (Find (IVal v) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'; exact Look|].
+           assert (Sig' : A.sg_ret (A.canon_sig C (A.FSig [] tc)) = A.sg_ret (A.sig_at C th (A.FSig [] t)))
+             by (cbn [option_map A.provision_signature] in Sig; congruence).
+           change (A.canon C tc = A.canon C (app_subst th t)) in Sig'.
+           rewrite (GroundGm gm Am (IVal v) _ t Ik Il).
+           ++ rewrite <- Sig', (Abs tc). exact T.
+           ++ intros x Ix. cbn. rewrite app_nil_r. apply in_or_app. left. rewrite app_nil_r. exact Ix.
+           ++ intros x Ix. destruct (ScG _ _ InP) as [Sc _]. apply Sc. unfold provision_sig_gens, A.sig_gens. cbn. rewrite app_nil_r. exact Ix.
+        -- (* fns *) intros f gf Ik Lf.
+           destruct (fns_ilook _ f gf KMg Lf) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
+           destruct (Types (IFn f) _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
+           pose proof (KM _ _ (ilook_in _ _ _ Il')) as Kind.
+           destruct p' as [tc a'|gc a'|gc a'|fx']; cbn in Kind; try contradiction.
+           destruct (Fns f gc (ilook_fns _ f gc a' KM Il')) as [pv [Look Ok]].
+           exists pv. split; [pose proof (Find (IFn f) Ik) as F'; cbn [A.rkey_of A.at_th] in F'; rewrite F'; exact Look|].
+           assert (Sig' : A.canon_sig C gc = A.sig_at C th gf) by (cbn [option_map A.provision_signature] in Sig; congruence).
+           destruct (ScG _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
+           assert (Gt : forall t, In t (A.sg_ret gf :: A.sg_params gf) -> app_subst gm t = ground d (A.canon C (app_subst th t))).
+           { intros t It. apply (GroundGm gm Am (IFn f) _ t Ik Il).
+             - intros x Ix. cbn. rewrite app_nil_r. apply in_or_app. left.
+               destruct It as [<-|It]; [apply in_or_app; left; exact Ix|].
+               apply in_or_app. right. apply in_flat_map. exists t. split; [exact It|exact Ix].
+             - intros x Ix. apply Sc. unfold A.sig_gens. destruct It as [<-|It]; [apply in_or_app; left; exact Ix|].
+               apply in_or_app. right. apply in_flat_map. exists t. split; [exact It|exact Ix]. }
+           destruct gc as [psc rc], gf as [psf rf]. unfold A.canon_sig, A.sig_at in Sig'. cbn in Sig', Gt. injection Sig' as Ep Er.
+           apply (callable_transfer rr rr H d (denv gm) psc psf rc rf pv (le_n _)); [| |exact Ok].
+           ++ transitivity (map (fun t => ground d (A.canon C t)) psc); [apply map_ext; intros t; symmetry; apply Abs|].
+              rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. exact (Gt t (or_intror It)).
+           ++ transitivity (ground d (A.canon C rc)); [symmetry; apply Abs|].
+              change (A.canon C rc) with (app_subst (A.c_sub C) rc). rewrite Er. symmetry. exact (Gt rf (or_introl eq_refl)).
+        -- (* methods *) intros r m a gf Ik Lm.
+           destruct (mths_ilook _ r m gf KMg Lm) as [a0 Il]. pose proof (ilook_in _ _ _ Il) as InP.
+           pose proof (ShapeG _ (proj1 (CapsIn _ Ik))) as Sh. cbn in Sh. subst a.
+           destruct (Types (A.mkey r m) _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
+           pose proof (KM _ _ (ilook_in _ _ _ Il')) as Kind.
+           destruct p' as [tc a'|gc a'|gc a'|fx']; cbn in Kind; try contradiction.
+           destruct (Mths _ m gc (ilook_mths _ _ m gc a' KM Il')) as [pv [Look Ok]].
+           exists pv. split; [pose proof (Find (A.mkey r m) Ik) as F'; cbn [A.rkey_of A.at_th A.mkey] in F'; rewrite F'; exact Look|].
+           assert (Sig' : A.canon_sig C gc = A.sig_at C th gf) by (cbn [option_map A.provision_signature] in Sig; congruence).
+           destruct (ScG _ _ InP) as [Sc [Kr _]]. unfold provision_sig_gens in Sc. cbn in Sc, Kr.
+           assert (Gt : forall t, In t (r :: A.sg_ret gf :: A.sg_params gf) -> app_subst gm t = ground d (A.canon C (app_subst th t))).
+           { intros t It. apply (GroundGm gm Am (A.mkey r m) _ t Ik Il).
+             - intros x Ix. cbn. destruct It as [<-|It]; [apply in_or_app; right; exact Ix|]. apply in_or_app. left.
+               apply in_or_app. left. destruct It as [<-|It]; [apply in_or_app; left; exact Ix|].
+               apply in_or_app. right. apply in_flat_map. exists t. split; [exact It|exact Ix].
+             - intros x Ix. destruct It as [<-|It]; [exact (Kr x Ix)|]. apply Sc. unfold A.sig_gens.
+               destruct It as [<-|It]; [apply in_or_app; left; exact Ix|].
+               apply in_or_app. right. apply in_flat_map. exists t. split; [exact It|exact Ix]. }
+           destruct gc as [psc rc], gf as [psf rf]. unfold A.canon_sig, A.sig_at in Sig'. cbn in Sig', Gt. injection Sig' as Ep Er.
+           apply (callable_transfer rr rr H d (denv gm) (A.canon C (app_subst th r) :: psc) (r :: psf) rc rf pv (le_n _)); [| |exact Ok].
+           ++ cbn [map]. f_equal; [symmetry; exact (Gt r (or_introl eq_refl))|].
+              transitivity (map (fun t => ground d (A.canon C t)) psc); [apply map_ext; intros t; symmetry; apply Abs|].
+              rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. exact (Gt t (or_intror (or_intror It))).
+           ++ transitivity (ground d (A.canon C rc)); [symmetry; apply Abs|].
+              change (A.canon C rc) with (app_subst (A.c_sub C) rc). rewrite Er. symmetry. exact (Gt rf (or_intror (or_introl eq_refl))).
+      * intros gm Am.
+        assert (Gen : forall l, incl l caps -> CapturedFuns rr H gm dc (captured_funs Cg l)).
+        { induction l as [|k0 l IH]; intros Inc; [constructor|].
+          assert (Ik : In k0 caps) by (apply Inc; left; reflexivity).
+          specialize (IH (fun x Ix => Inc x (or_intror Ix))).
+          destruct k0 as [t|v|f|r m a|u']; cbn [captured_funs flat_map]; try exact IH.
+          destruct (A.nlook u' (A.c_funs Cg)) as [fx'|] eqn:Lu; [|exact IH]. cbn [app].
+          pose proof (funs_ilook _ u' fx' KMg Lu) as Il. pose proof (ilook_in _ _ _ Il) as InP.
+          pose proof (Prov (IFun u') Ik) as Pr. cbn in Pr.
+          destruct (A.nlook u' (A.c_funs C)) as [fxc|] eqn:Lc; [|congruence].
+          destruct (Funs u' fxc Lc) as [pv [gfc [Look [Ok [_ Vm]]]]].
+          apply (CFCons rr H gm dc u' fx' pv gfc); [|exact Ok| |exact IH].
+          - pose proof (Find (IFun u') Ik) as F'. cbn [A.rkey_of A.at_th] in F'. rewrite F'. exact Look.
+          - intros x tx Ixt.
+            assert (Ia : A.ilook (IFun u') (A.c_apps Cg) = Some (A.fixed_app fx')) by (apply ilook_apps_fun; exact Il).
+            assert (Ic : A.ilook (IFun u') (A.c_apps C) = Some (A.fixed_app fxc)) by (apply ilook_apps_fun; exact (funs_ilook _ u' fxc KM Lc)).
+            pose proof (Coh (IFun u') _ Ik Ia x tx (fixed_app_in _ _ _ Ixt)) as Have. cbn [A.at_th] in Have. rewrite Ic in Have.
+            apply fixed_app_out in Have. rewrite (Vm x _ Have). f_equal. symmetry.
+            change (ground d (A.canon C (app_subst th tx))) with (ground d (A.canon C (app_subst th tx))).
+            apply (GroundGm gm Am (IFun u') _ tx Ik Il).
+            + intros y Iy. cbn. rewrite app_nil_r. apply in_flat_map. exists (x, Some tx). split; [exact (fixed_app_in _ _ _ Ixt)|exact Iy].
+            + destruct (ScG _ _ InP) as [_ [_ Sf]]. exact (Sf x tx Ixt). }
+        apply Gen. intros x Ix. exact Ix.
+    + split.
+      * intros x Fu. destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
+        exists tx. exact (proj2 (Fx x tx) (conj Fu Lx)).
+      * intros x tx I. exact (lookup_ground_fixed _ fx x tx FunFx I).
+Qed.
 
 
 Local Open Scope string_scope.
