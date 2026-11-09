@@ -563,3 +563,11 @@ without touching any proof.
 - The linked and copy interpretation gaps: tests, two oracle variants
   compared over the corpus, and the premises after approval (03:40 to
   04:11).
+- Merges recorded in closures (`link_merges`, `bind_merges`), the body
+  entry (`link_entry`), `apply_theta`, and the application step's structure
+  (`case_BApplyAbstract` with `refile_run`, `link_results`, `copy_apply`,
+  `platform_apply`) (04:11 to 04:34).
+- Formation through `Pre`, discharging `ex_formed`, `ex_nominal_formed`,
+  `bind_nominal_formed` and `lambda_keys_scoped` (04:34 to 04:51).
+- Rule 7's `family_direct` in Audit after approval, the family cases from
+  one `family_step`, and `safety_obligations` (04:51 to 05:03).
