@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -27,6 +27,7 @@ Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims Publi
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
+Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Prims PublicInterp.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -100,6 +101,8 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
+  @PublicLinkMergesI.captured_in_force_unprovable,
+  @NM.PublicLinkMerges.captured_in_force_of,
   @NM.PublicCallRealize.ctxof_formed,
   @NM.PublicCallRealize.call_agree,
   @NM.PublicCallRealize.call_absorbs,
