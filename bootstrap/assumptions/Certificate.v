@@ -16,7 +16,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
-  PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk.
+  PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -154,6 +154,7 @@ Definition certificate_roots :=
   @PublicChainNewI.chain_new_ok,
   @NM.PublicCopyFresh.copy_outputs_at,
   @NM.PublicLinkWalk.family_binds_no_dests,
+  @NM.PublicLinkScope.items_scope,
   @NM.PublicCopyFresh.ground_app_subst,
   @NM.PublicCallerKeys.provide_result_key_news,
   @PublicChainCoreI.selection_news,
