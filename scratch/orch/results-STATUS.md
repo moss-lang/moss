@@ -1,89 +1,70 @@
-# results agent: LinkResultsOk (branch ob-results) — STATUS
+# results agent: LinkResultsOk / ChainResultsOk (branch ob-results) — STATUS
 
-LinkResultsOk is NOT proved. It is false as stated, for two independent
-reasons; one is fixed in Audit, the other needs Pre strengthened (not done:
-Pre is shared by every case). What is proved isolates the remaining work.
+Branch is merged with `safety` 41baf76; check.sh green.
 
-## 1. False: kept outputs are written but were not "made" (Audit fixed)
-`result_environment` writes a meaning for every output destination, so
-`MeaningsGrow newgens` requires every `gensof t` in `newgens`. For an output
-not in force (`gensof t = t`), `t` is a declared symbol and `FreshFor` made
-all of `newgens` `Fresh W`, so this failed for every such application
-(e.g. examples/captured-output-scope.moss). It also hid a real Audit hole:
-examples/kept-output-escape.moss (accepted by Audit's D78 check, rejected by
-the oracle and native; runs `x + 1` on `true`).
-Fix (commit a79663e): `BApplyAbstract` requires `MadeFor W F C outs newgens`
-(each member fresh or a not-in-force output, none in fr_fresh/context_gens/
-frame types) and `In t newgens` for kept outputs. Obligation texts unchanged.
-Details and oracle-variant evidence (356/356 same verdict):
-scratch/orch/results-AUDIT.md. NOTE: the lead says ob-family makes an
-equivalent change (made = map gensof outs); reconcile with one of the two.
-`result_grows_by_destinations` proves MeaningsGrow over `map gensof outs`
-directly for that form.
+## Done (committed)
+- Audit `ResultRealizes` compares at the body's output meanings
+  (`read_rename`, as the oracle's promised_result_type). Before, a body that
+  binds `T = Bool` and provides `fn mk(): T` could never satisfy LinkBody.
+  Test bootstrap/examples/result-output-meaning.moss (oracle and native
+  print 1). Notes: scratch/orch/results-AUDIT.md §2, SAFETY-SITES entry.
+- My earlier MadeFor fix is superseded by ob-family's D78 fix and was
+  dropped at the merge (AUDIT §1 marked superseded).
+- AliasOk strengthened (PublicBodySafety): `nlook x (c_ty C) = Some tx ->
+  output_meaning d x = Some (ground d tx)` (lead decision 2). Established at
+  every entry via `KeysMeant` (callee envs: θ keys = callee table; application
+  envs: fc_inputs = body table; main: InitialTypes; lambdas: aliases of the
+  whole table); body_call/body_call_method take `KeysMeant`. Fixed in
+  PublicBodySlice, PublicCopyApply, PublicFamilyStep, PublicPlatformApply,
+  PublicEntry (entry_pre takes InitialTypes).
+- Copy chains keep type outputs: `ClosureOk.CCopy` and `CopyChain.CCStep`
+  carry `FunOutputs u <-> FunOutputs h` (from BFunCopy's SameResult,
+  `same_result_outputs`). Without it ChainResultsOk was unprovable: the
+  root's result telescope must list every output the caller reads.
+- PublicLinkResults.v, aimed at ChainResultsOk:
+  - `dest_scope`/`result_environment_ok`: destinations are out of scope and
+    free in the caller; result_environment = Some (result_of ...).
+  - `result_grows_by_destinations`: MeaningsGrow (map gensof outs).
+  - `pre_after_result`: Pre after the application from the caller's Pre,
+    given AliasOk/EnvOk/KeysMatch of C' at the new environment.
+  - `chain_results_scoped : ChainCoreOk -> ChainResultsScopedOk`
+    (ChainResultsOk + premise `MeaningsScoped W F C d`).
+  - `pre_junk_meaning`, `result_environment_occupied`: Pre alone cannot
+    bound the caller's meanings, so some MeaningsScoped-like invariant is
+    necessary.
+- PublicOutputSubst.v: `output_entries_rel`, `provide_result_rel` (two
+  readings of a functor result at Agree-related tables correspond one to
+  one; DomGap for receivers present in one base table only). Usable for
+  ChainResultAgrees / PlatformResultAgrees.
 
-## 2. False: Pre does not bound the caller's meanings (NOT fixed)
-`fresh_result_types` needs every destination absent from the caller's
-`type_meanings d`. Pre says nothing about d's meaning domain: adding a
-meaning for a generation outside C's keys, types and receiver keeps Pre
-(checked: `PublicLinkResults.pre_junk_meaning`, via `pre_meanings_free`),
-and the run before the result step is unchanged, but then the application
-is Stuck (`result_environment_occupied`). So any reachable completed
-application with an in-force output gives premises of LinkResultsOk with a
-false conclusion. Needed invariant (proposed, to add to Pre):
-  MeaningsScoped F C d := every x with a meaning in d is a key of c_ty C or
-  in fr_fresh F ++ context_gens C.
-It is plausible at every step (calls: θ keys + captures of context_gens,
-which LambdaProvider puts in the body frame's fr_fresh; applications: keys
-and fresh gens now in context_gens/fr_fresh; type binds add aliases only)
-but threading it through Pre is a slice-wide change for the lead.
-With it, destinations are free: `made_free` (uses FormedCx's TysScoped).
+## Not done
+1. MeaningsScoped in Pre (lead decision 1). Attempted (diff saved in
+   scratch/orch/results/ms-in-pre-attempt.diff, reverted). Findings:
+   - With `MeaningsScoped F C d := meaning x -> key of C \/ (Fresh x /\ In x
+     (fr_fresh F))`, entries are easy (callees: `keyed_callee`; application
+     env: body table; lambdas: captured gens are fresh (in fr_fresh Fl via
+     LambdaProvider) or, being declared, keys — this needs a formation fact
+     `DeclaredScoped C` (declared symbols C mentions are keys), which Formed
+     does not carry; I'd add it as a *_scoped-style hypothesis like
+     ex_scoped, to be discharged by DeclaredInForce).
+   - Blocker: the slice reframes code between frames with different
+     fr_fresh (codesafe_frame / FrameSame / pre_frame compare only
+     ret/this/loop/var). A dependence of Pre on fr_fresh breaks those
+     lemmas unless FrameSame also orders fr_fresh, which must be checked at
+     every reframing (BindStep's F -> with_fresh F newgens grows; reframes
+     back would shrink).
+   - An F-independent alternative: `meaning x -> key of C \/ (Fresh x /\ x
+     occurs in c_ty C's values)`. Fresh generations enter only as output
+     destinations (t ↦ TAbs g in c_ty), c_ty is append-only within a body
+     and lambdas keep it, so this should be preserved by every step; the
+     kept-output and fresh-destination freshness then follow (kept t: not a
+     key, not Fresh; fresh g: FreshFor puts it outside context_gens).
+     Needs DeclaredScoped at lambda capture as above.
+2. ChainCoreOk (the correspondence): select from body keys (result_smap /
+   link_sources), AliasOk/EnvOk/KeysMatch for C'. Tools ready
+   (provide_result_rel with s1 = body meanings after read_rename, s2 =
+   caller meanings after result_of; AliasOk at Cb now gives outputs
+   readable), not assembled.
+3. FamilyLinkResultsOk not attempted.
 
-## Proved (bootstrap/theories/PublicLinkResults.v, PublicOutputSubst.v)
-- `result_environment_ok`: with MeaningsScoped and the outputs readable in
-  d3, result_environment = Some (result_of d3 outs gensof dr) and
-  MeaningsGrow newgens d (append result d).
-- `pre_after_result`: Pre at (with_fresh F newgens, C', append result d,
-  H3, g, st3) from the caller's Pre, MeaningsGrow, heap extension and
-  state_ok, given only AliasOk C' d', EnvOk rr C' d' H3 and KeysMatch C'
-  (frame, locals, receiver, Absorbs, idempotence, formation all proved).
-- `link_results_scoped : ResultCoreOk -> LinkResultsScopedOk`, where
-  LinkResultsScopedOk = LinkResultsOk + premise `MeaningsScoped F C d`, and
-  ResultCoreOk (same premises as LinkResultsOk) asks exactly:
-  result selection succeeds (dr), outputs have meanings in d3, and
-  AliasOk/EnvOk/KeysMatch for C' at append (result_of d3 outs gensof dr) d.
-  ChainResultsOk (ob-copy) has the same conclusion; the same glue applies
-  unchanged (it only uses AppPremises, LinkData's outs', d3 and Pre).
-- `PublicOutputSubst.output_entries_rel` / `provide_result_rel` (requested
-  by the lead for PlatformResultAgrees too): two OutputItemsEntries
-  derivations of one spec list at tables that Agree after s1/s2 give
-  one-to-one corresponding entries (EntryRel: same symbols; types,
-  signatures, instantiations (where both Some), fixed readings equal after
-  s1/s2). A method receiver symbol present in only one base table is
-  reported as DomGap (impossible under DomSame).
-check.sh green; all in assumptions/Certificate.v.
-
-## Remaining (ResultCoreOk), with what I found
-- Result keys: per the lead, ob-refile drops refile and selects each
-  F-key (θ'-instantiated) from the body key at_site Cb (output_renaming k);
-  so lookups come from Pre at Cb + ResultRealizes.
-- Outputs readable in d3 (`output_meaning d3 t <> None`): not implied by
-  Pre at Cb (AliasOk only fixes cmeaning). Needs a run invariant "every
-  key of c_ty has an alias or meaning" (true: application env aliases all
-  fc_inputs, BType and applications add aliases), or a premise on runs.
-- Types: value at Cb typed at ground d3 tb; ResultRealizes gives
-  canon Cb tb = canon Cb (rename tr) with rename = gen t -> TAbs t; caller
-  wants ground d' tc. Use provide_result_rel with s1 = (rename then d3's
-  meanings), s2 = d' meanings. CONCERN: ground uses meanings only, while a
-  body's `bind T = τ` sets an alias; and ResultRealizes compares the
-  promised signature (output as TAbs t) to the body's (read through c_ty
-  Cb, so τ) only modulo c_sub Cb. For a body `bind T = Bool; bind mk =
-  () => true;` with result `fn mk(): T`, TAbs T vs Bool looks unequal, i.e.
-  Audit's LinkBody may reject the main functor pattern (the oracle instead
-  substitutes the body's output meanings, Elab.v promised_result_type).
-  Worth checking before proving the correspondence: if so, ResultRealizes
-  should read outputs at their body meanings, which also changes the
-  correspondence to prove.
-- Old provisions of C at d': need dr's keys not to shadow them except
-  where C' shadows statically (key correspondence through θ').
-
-Time: about 3 hours.
+Time: about 7 hours in total.
