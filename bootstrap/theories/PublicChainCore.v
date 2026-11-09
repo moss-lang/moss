@@ -197,7 +197,7 @@ Qed.
    caller's reading of F's result (ProvideResult at θ and the destinations)
    against the root's formal one (Cr, through the copy chain's
    CopyOutputs and positions), with the body's provisions typed at the
-   body's meanings (ResultRealizes, read_rename). That every key dr fills
+   body's meanings (ResultRealizes, role_reads). That every key dr fills
    is the run-time key of a new provision of C' is true by construction
    (Audit.result_selection files position i under the caller's key for
    it), so it is no longer part of this premise (chain_core_ok). *)
@@ -242,7 +242,7 @@ Qed.
 Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms,
   LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
-  A.ResultRealizes Cb Cr (A.link_renaming outs' gen) ks' ->
+  A.ResultRealizes Cb Cr (A.role_reads Cb outs' gen) ks' ->
   (forall s, In s (chain_sources rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) -> In s (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) ->
   exists dr, select_provisions d3 (result_selection rs rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) = Some dr.
 Proof.
@@ -251,10 +251,10 @@ Proof.
   pose proof (Rg b Ib) as Ib'. unfold LR.PA.FS.CopyA.S.link_sources in Ib'. apply in_map_iff in Ib' as [k' [<- Ik']].
   destruct (RR k' Ik') as [req [act [_ [La _]]]].
   assert (NT : forall t, k' <> ITy t) by (intros t E; subst k'; exact (provide_result_keys_not_ty W _ _ _ _ _ t PR Ik')).
-  assert (NT' : forall t, A.at_site Cb (app_subst_item (A.link_renaming outs' gen) k') <> ITy t)
-    by (apply at_site_not_ty, app_subst_item_not_ty, NT).
+  assert (NT' : forall t, A.at_site Cb k' <> ITy t)
+    by (apply at_site_not_ty, NT).
   destruct (LR.PA.FS.CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real (ilook_in_gen _ _ _ _ La) (need_shape_id _ NT')) as [pv L].
-  rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item (A.link_renaming outs' gen) k'))) d3 = None) in E. congruence.
+  rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb k')) d3 = None) in E. congruence.
 Qed.
 
 (* ---- the caller's aliases after the application ---------------------------- *)
@@ -461,7 +461,7 @@ Proof. intros New Ku. exact (LR.chain_results_scoped W Prog argv read state_ok (
 
 (* A result key k (renamed into the body's terms), promised as p by the
    formal result, is realized in the body's final state by pv: p's types
-   read at the body's meanings of the renamed outputs (rr, read_rename),
+   read at the body's meanings of the output roles (rr, role_reads),
    a method's receiver as the body's site reads it. *)
 Definition BodyReal (n : nat) (H3 : heap_types) (d3 : environment) (Cb : A.cx) (rr : subst) (k : item)
     (p : A.provision) (pv : provision_value) : Prop :=
@@ -485,17 +485,17 @@ Proof.
   injection E as E1 E2. cbn. rewrite (absorbs_sub Cb d3 t t' Abs E1), (IH r' Abs E2). reflexivity.
 Qed.
 
-Lemma body_provides : forall n Cb d3 H3 Cr ks ren,
-  LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 -> A.ResultRealizes Cb Cr ren ks ->
+Lemma body_provides : forall n Cb d3 H3 Cr ks reads,
+  LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 -> A.ResultRealizes Cb Cr reads ks ->
   forall k, In k ks -> exists p pv, A.ilook (A.provision_id k) (A.c_provisions Cr) = Some p /\
-    lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item ren k))) d3 = Some pv /\
-    BodyReal n H3 d3 Cb (A.read_rename Cb ren) (app_subst_item ren k) p pv.
+    lookup_provision (A.rkey_of Cb (A.at_site Cb k)) d3 = Some pv /\
+    BodyReal n H3 d3 Cb reads k p pv.
 Proof.
-  intros n Cb d3 H3 Cr ks ren [Abs [[Vals [Fns [Mths Funs]]] [_ KM]]] RR k Ik.
+  intros n Cb d3 H3 Cr ks reads [Abs [[Vals [Fns [Mths Funs]]] [_ KM]]] RR k Ik.
   destruct (RR k Ik) as [req [act [Lr [La [Kind [Sig Inst]]]]]].
   pose proof (KM _ _ (LR.PA.FS.CopyA.S.ilook_in _ _ _ La)) as Kd.
   exists req.
-  destruct k as [x|v|f|rf m i|u0]; cbn [app_subst_item A.at_site A.provision_id] in La, Kd |- *;
+  destruct k as [x|v|f|rf m i|u0]; cbn [A.at_site A.provision_id] in La, Kd |- *;
     destruct act as [tb ab|gb ab|gb ab|fxb]; cbn in Kd; try contradiction;
     destruct req as [t a|g a|g a|fx]; cbn in Kind; try contradiction.
   - (* val *)
@@ -510,9 +510,9 @@ Proof.
     + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
   - (* method *)
     clear Kd.
-    set (rb := A.canon Cb (app_subst (map (fun q => (fst q, snd q)) (A.c_ty Cb)) (app_subst ren rf))) in *.
+    set (rb := A.canon Cb (app_subst (map (fun q => (fst q, snd q)) (A.c_ty Cb)) rf)) in *.
     pose proof (ilook_mths _ rb m gb ab KM La) as Lm. destruct (Mths rb m gb Lm) as [pv [Look Ok]].
-    exists pv. split; [exact Lr|]. split; [exact Look|]. exists rb, m, (map_snd (app_subst ren) i). split; [reflexivity|].
+    exists pv. split; [exact Lr|]. split; [exact Look|]. exists rb, m, i. split; [reflexivity|].
     cbn in Sig. injection Sig as Sp Sr.
     refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
     + cbn [map]. f_equal. symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
@@ -523,8 +523,8 @@ Proof.
     destruct (Funs u0 fxb Lu) as [pv [gfx [Look [Ok [_ Vm]]]]].
     exists pv. split; [exact Lr|]. split; [exact Look|]. exists u0, gfx. split; [reflexivity|]. split; [exact Ok|].
     intros x tx Ix.
-    assert (Ip : In (x, Some (app_subst (A.c_sub Cb) (app_subst (A.read_rename Cb ren) tx)))
-      (A.provision_inst (A.provision_subst (A.c_sub Cb) (A.provision_subst (A.read_rename Cb ren) (A.ProvidedFunctor fx))))).
+    assert (Ip : In (x, Some (app_subst (A.c_sub Cb) (app_subst reads tx)))
+      (A.provision_inst (A.provision_subst (A.c_sub Cb) (A.provision_subst reads (A.ProvidedFunctor fx))))).
     { cbn. rewrite !map_map. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Ix]. }
     pose proof (Inst _ _ Ip) as Ia. cbn in Ia. rewrite map_map in Ia. apply in_map_iff in Ia as [[x' tb] [E Ib]].
     injection E as -> E. rewrite (Vm x tb Ib). f_equal. symmetry. exact (absorbs_sub Cb d3 _ _ Abs (eq_sym E)).

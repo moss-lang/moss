@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
-  PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy.
+  PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -198,10 +198,12 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicCopyFresh.ground_app_subst);
   root (@NM.PublicCopyFresh.result_gens);
   root (@NM.PublicCopyFresh.copy_outputs_read);
-  root (@NM.PublicLinkPins.items_dests_pins);
-  root (@NM.PublicLinkPins.link_dests_avoid);
+  root (@NM.PublicLinkPins.items_dests_made);
+  root (@NM.PublicConsol.link_body_has_body);
+  root (@NM.PublicConsol.result_realizes_restated);
+  root (@NM.PublicConsol.link_sources_restated);
+  root (@NM.PublicFormation.freshfor_fresh);
   root (@NM.PublicLinkRun.app_env_meaning);
-  root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_mentioned);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_input);
   root (@NM.PublicLinkPins.link_dests_out);
   root (@NM.PublicCallerKeys.provide_result_key_news);

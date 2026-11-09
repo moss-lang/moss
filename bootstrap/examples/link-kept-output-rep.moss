@@ -1,6 +1,6 @@
 # realize2 (scratch/orch/realize2-AUDIT.md, second change): REJECTED by
 # Audit's LinkBody clause `forall t, In t made -> nlook t (c_ty Cu) = None`.
-# The BApplyAbstract pin clause alone does not reject it. The program was a
+# (realize2's pin clause in BApplyAbstract, since dropped, did not reject it.) The program was a
 # COUNTEREXAMPLE to CN.ChainRealizeOk for a world whose merge for F picks T
 # as the representative of X (MostGeneralMerge allows either, and
 # w_context is a witness).

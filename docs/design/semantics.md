@@ -360,7 +360,12 @@ sentence above false as a description of the compilers. What stands:
   resolution, chosen by the designer:** a static check that rejects a
   cycle of calls whose type bindings grow along it (an *expanding*
   cycle), made generically, before specialization — so this stops being
-  an exception, and [D30]'s backstop is not needed. Not implemented.
+  an exception, and [D30]'s backstop is not needed. Stated in the
+  public semantics (`NoExpandingCycle`, `bootstrap/theories/Audit.v`, a
+  condition of `ElaboratesIn`), conservatively: an abstract functor's
+  output counts as possibly containing its inputs, and a datatype that
+  mentions itself at a growing instance, behind `Ref` too, is an
+  expanding cycle as well. Implemented in neither compiler yet (E38).
 - **A union slot that is a reference in one member and a scalar in
   another** only after specialization: a union whose slot is an abstract
   type in one member and a `Ref` in another type-checks generically and is

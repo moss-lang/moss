@@ -3146,8 +3146,8 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
          (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
-            ~ In t (A.context_gens C ++ A.key_receiver_gens C) /\ ~ In t (A.fr_pins F)) \/
-         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
+            ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
+         (A.nlook t (A.c_ty C) <> None /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
   (A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks).
@@ -3180,8 +3180,8 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
          (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
-            ~ In t (A.context_gens C ++ A.key_receiver_gens C) /\ ~ In t (A.fr_pins F)) \/
-         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+            ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
+         (A.nlook t (A.c_ty C) <> None /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
   forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False (map gensof outs)
@@ -3289,7 +3289,7 @@ Qed.
 (* A linked body's result sources: position by position, the body's
    runtime key for each item of F's declared result (LinkBody). *)
 Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (ks : list item) : list item :=
-  map (fun k => A.rkey_of Cb (A.at_site Cb (app_subst_item (A.link_renaming outs gen) k))) ks.
+  map (fun k => A.rkey_of Cb (A.at_site Cb k)) ks.
 
 (* The site a linked body's result keys are read at (A.link_site) has
    the body's provisions and merges, so it is realized where the body is,
@@ -3334,7 +3334,7 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
   NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
   A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
-  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.link_renaming outs gen) ks /\
+  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
@@ -3378,7 +3378,6 @@ Qed.
 Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
       (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
-      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
       A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
@@ -3390,7 +3389,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h (A.lexical_capture C) sm smc).
 Proof.
-  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J rr _.
+  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
@@ -4690,7 +4689,7 @@ Proof.
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
+                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep. exact FD.
     + exists [BValue v x]. split; [reflexivity|].
@@ -4716,7 +4715,7 @@ Proof.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J).
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
@@ -4793,7 +4792,7 @@ Proof.
   { assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
         (match A.fr_this F with Some r => A.gens r | None => [] end))).
     { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
-      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E [Nf _]]]|[_ [_ In']]]; [rewrite E; exact Nf|].
+      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E [Nf _]]]|[_ In']]; [rewrite E; exact Nf|].
       destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr. destruct (Fr _ In') as [_ Out]. intros I. apply Out.
       apply in_or_app; right; apply in_or_app; right. exact I. }
     split; intros t E g0 Ig Ig'; apply (Av g0 Ig); rewrite E; apply in_or_app; [left|right]; exact Ig'. }

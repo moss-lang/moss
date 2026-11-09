@@ -1,6 +1,9 @@
 # realize2 (scratch/orch/realize2-AUDIT.md): REJECTED by Audit at `bind F = G`
-# (G's `bind Make;`): in a body bound to F, BApplyAbstract's kept-output case
-# requires `~ In t (fr_pins F)`. Before that, Audit accepted it, and it was a
+# (G's `bind Make;`): LinkBody requires that nothing the body makes is an
+# input of F, and T is one. (realize2 first rejected it with a pin clause in
+# BApplyAbstract's kept-output case, `~ In t (fr_pins F)`, which the made
+# clause implies for the body's own binds; consol dropped it.) Before that,
+# Audit accepted it, and it was a
 # COUNTEREXAMPLE to CN.ChainRealizeOk (length-zero chain). It is the
 # observable form of linknewpf's m7 (ob-linknewpf
 # scratch/linknewpf/m7-kept-output-receiver.moss).

@@ -158,6 +158,16 @@ Proof.
       * left. reflexivity.
 Qed.
 
+(* No nominal has a payload and the one body enters nothing, so no edge. *)
+Lemma main_bounded : NoExpandingCycle world_main AuditExamples.unit_program.
+Proof.
+  split; exists (fun _ => 0).
+  - intros a b strict (pay & args & tau & Pay & _). inversion Pay as [s xs d n ps t p Read Ast].
+    apply reads_decl in Read as [_ ->]. discriminate.
+  - intros [[f|h] t] b strict (site & th & tau & v & s & s' & At & _); cbn in At;
+      [destruct (Nat.eqb f 1)|]; cbn in At; contradiction.
+Qed.
+
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
 Proof.
   split; [exact world_main_valid|]. split.
@@ -167,7 +177,7 @@ Proof.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|constructor].
-      * right. split.
+      * split; [|exact main_bounded]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.

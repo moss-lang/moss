@@ -11,6 +11,10 @@ Module A := Audit.Semantics.Elaboration.
 Section Formation.
 Variable W : A.world.
 
+(* A generation FreshFor lists is undeclared. *)
+Lemma freshfor_fresh : forall F C gs g, A.FreshFor W F C gs -> In g gs -> A.Fresh W g.
+Proof. intros F C gs g [_ Fa] I. rewrite Forall_forall in Fa. exact (proj1 (Fa g I)). Qed.
+
 Fixpoint TyFormed (t : ty) : Prop :=
   match t with
   | TMachine _ | TUnit | TAbs _ => True
@@ -1536,7 +1540,8 @@ Proof.
     + destruct (binditems_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' _]. exact (conj Fc' Ff).
     + split; [|exact Ff].
       apply (apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
-      intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ [Fr _]]]; [left; exact E|right; exact Fr].
+      intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
+      exact (freshfor_fresh W _ _ _ _ FF Ig).
     + match goal with Fx : forall x tx, In (x, tx) fx <-> _ |- _ =>
         split; [|exact Ff]; apply set_fun_formed; [exact Fc|intros x tx Iq; exact (proj2 (proj1 (Fx x tx) Iq))] end.
     + match goal with Fx : forall x tx, In (x, tx) fx <-> _ |- _ =>

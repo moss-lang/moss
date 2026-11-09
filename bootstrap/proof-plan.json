@@ -2210,7 +2210,8 @@
         "E34",
         "E35",
         "E36",
-        "E37"
+        "E37",
+        "E38"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2980,6 +2981,33 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/link-kept-output-pin.moss"
+        ]
+      }
+    },
+    {
+      "id": "E38",
+      "group": "E",
+      "title": "Reject expanding cycles in the oracle and native (NoExpandingCycle)",
+      "requires": [],
+      "status": "open",
+      "budget": "unknown",
+      "goal": "Both implementations reject, before specialization, a program with an expanding cycle as Audit's NoExpandingCycle states it (ElaboratesIn's last condition): InstantiationsBounded (no cycle of code-node edges with a strict edge, an abstract functor's output counted as containing its inputs) and TypesBounded (no nominal mentioning itself at a growing instance, behind Ref too). The oracle then still satisfies ElaboratesIn (E11), and native reports a diagnostic instead of crashing.",
+      "approach": "Oracle: scratch/expand/variant (branch ob-expand) checks the elaborated xprogram (expand.ml) and the final state's tag payloads (expandty.ml), with Tarjan's SCCs; over tests/, examples/ and bootstrap/examples/ it rejects only the growing programs (scratch/expand/cmp.out). Move it into Elab.v and prove it computes NoExpandingCycle. Native: today it crashes at compile time on every growing candidate (wasm call stack exhausted, or an out-of-bounds memory access for exponential growth, bootstrap/examples/expand-functor-double.moss), including the type-only case behind Ref, bootstrap/examples/expand-type-ref.moss (Cons[T] holding Ref[Boxed=Nest[T=Box]]; the oracle accepts and prints 0 since it never builds WasmGC types). The same check in src/ (before specialization) gives the diagnostic. Native compiles bootstrap/examples/expand-control-functor-const.moss, which the conservative check rejects.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/expand-polyrec.moss",
+        "examples/expand-type-ref.moss",
+        "examples/expand-control-functor-const.moss",
+        "examples/expand-control-loop.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "A falsification hunt for the planned monomorphization theorem found Audit accepting polymorphic recursion in many shapes (scratch/expand/mono); D16's planned resolution, an expanding-cycle check, is now an Audit condition (expand).",
+        "sources": [
+          "SAFETY-SITES.md",
+          "AUDIT-CHANGES.md"
         ]
       }
     },

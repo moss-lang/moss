@@ -91,7 +91,7 @@ Lemma kept_outputs_unmentioned : KeptOutputsUnmentioned.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft None'.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & Outs & _).
-  destruct (Outs t Ft) as [[_ [_ [_ [Nm _]]]]|[N _]]; [exact Nm|congruence].
+  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[N _]]; [exact Nm|congruence].
 Qed.
 
 (* Each output destination is out of scope at the application: no key of
@@ -107,13 +107,14 @@ Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs
     AP Fc Ku t It. pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _).
   pose proof (proj1 (OutsI t) It) as Ft.
-  destruct (Outs t Ft) as [[None' [E [Fr _]]]|[_ [Fresh Ig]]].
+  destruct (Outs t Ft) as [[None' [E [Fr _]]]|[_ Ig]].
   - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
     split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
     split; [exact (Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc t Ft None')|].
     split; [intros r Er I; apply Fr; apply in_or_app; left; rewrite Er; exact I|].
     intros r Er I; apply Fr; apply in_or_app; right; rewrite Er; exact I.
-  - destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
+  - pose proof (PublicFormation.freshfor_fresh W _ _ _ _ FreshG Ig) as Fresh.
+    destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
     split; [exact (fresh_not_key W F C newgens _ Fc (conj Nd (proj2 (Forall_forall _ _) Fr)) Ig)|].
     split; [intros I; apply in_app_or in I as [I|I]; [apply Out; apply in_or_app; right; apply in_or_app; left; exact I|]|].
     { unfold A.key_receiver_gens in I. apply in_flat_map in I as [[k p] [Iq I]]. destruct k as [| | |r m a|]; try contradiction.
@@ -213,7 +214,7 @@ Lemma pre_after_result : forall rr F C pa u fx Cu ns sm th gensof C' ks newgens 
 Proof.
   intros rr F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d types H g st d' H3 st3
     [Frame [[Lo [Re _]] [L [_ [[Abs [_ [Idem _]]] [Fc Ff]]]]]] Ms Gr Ext St3 Al Env KM.
-  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & Outs & _ & _ & PR).
+  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & _ & PR).
   destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo _]].
   assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 (A.context_gens C) /\ True /\
     (forall t, A.fr_ret F = Some t -> ~ In g0 (A.gens t)) /\ (forall t, A.fr_this F = Some t -> ~ In g0 (A.gens t))).
@@ -232,7 +233,8 @@ Proof.
       split; [exact Env|]. split; [intros t; unfold A.canon; rewrite Esub; exact (Idem t)|exact KM].
     + split; [|split; [exact (proj1 Ff)|exact (PublicScoping.apply_abstract_cxscoped W F _ C u gensof C' ks PR eq_refl (proj2 Ff))]].
       apply (PublicFormation.apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
-      intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ [Fr _]]]; [left; exact E|right; exact Fr].
+      intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
+      exact (PublicFormation.freshfor_fresh W _ _ _ _ FreshG Ig).
 Qed.
 
 (* ---- Pre does not bound the caller's meanings ---------------------------- *)

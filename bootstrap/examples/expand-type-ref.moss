@@ -1,0 +1,37 @@
+# expand (scratch/orch/expand-AUDIT.md): REJECTED (NoExpandingCycle, TypesBounded).
+# A non-regular datatype behind Ref with no recursive function at all: Cons[T]
+# holds Ref[Boxed=Nest[T=Box]], so its WasmGC type needs Cons[T=Box[T]], and so
+# on. Every nominal instance a payload mentions counts, behind Ref too.
+# Oracle (this worktree's moss_m2): accepts and prints 0
+# Oracle variant with the check (scratch/expand/variant): rejects: expanding type definition
+# Native (ob-family moss, seed 1h1710x0): crashes at compile time (call stack exhausted)
+import "../../lib/wasm.moss" use Boxed, Ref, Heap, .boxed;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn nl() { putchar(char::newline); }
+}
+type T;
+tag A;
+tag Nil;
+assume Std, Wasm, T {
+  tag Box(T);
+  tag Cons { head: T, tail: Ref[Boxed=Nest[T=Box]] };
+  type Nest = Nil | Cons;
+  fn zero_of(l: Nest): Int { match l { Nil => 0, Cons { head, tail } => 1 } }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = A;
+    let l: Nest = Nil;
+    print_int(zero_of(l)); nl();
+  }
+}

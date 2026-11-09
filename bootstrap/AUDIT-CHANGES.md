@@ -89,8 +89,9 @@ entry they belong to.
 | 45 | A platform family's items read raw handles as themselves | f9d33bf | E |
 | 46 | A platform family's items have distinct methods | 3544241 | E |
 | 47 | A platform family is abstract, with distinct keys | cf21df4 | E |
+| 48 | **No expanding cycle (`NoExpandingCycle`, D16/D30)** | branch ob-expand | **B** |
 
-Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
 
 **Points that most need a decision.**
 - #10 rejects two programs that both implementations accept and run
@@ -345,13 +346,21 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
   is done.
 
 ### 13. A linked body does not keep an output at an input of F (268bf3a, 4d55710)
-- **Rule now.**
-  - 268bf3a: `BApplyAbstract`'s kept-output case also requires
+- **Rule now.** `LinkBody` requires that nothing the body makes is an
+  input of F (`forall t, In t made -> nlook t (c_ty Cu) = None`, 4d55710).
+- **History.**
+  - 268bf3a: `BApplyAbstract`'s kept-output case also required
     `~ In t (fr_pins F)`.
-  - 4d55710: `LinkBody` requires that nothing the body makes is an input
-    of F (`forall t, In t made -> nlook t (c_ty Cu) = None`). This implies
-    the pin clause for linked bodies. The pin clause was kept because it
-    had been approved.
+  - 4d55710 added the made clause, which implies the pin clause for a
+    linked body's own binds. The pin clause was kept because it had been
+    approved.
+  - **Removed in consolidation (ob-consol, "Drop BApplyAbstract's pin
+    clause").** Outside the body's own binds the pin clause was stricter
+    than both implementations: a block nested in a linked body keeps its
+    `made` to itself, but the frame's pins still reached it.
+    [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) was
+    rejected by Audit only; the oracle and native both print 7. Audit now
+    accepts it. This is a relaxation toward both implementations.
 - **Why.** `CN.ChainRealizeOk` was false. G's `bind Make;` installed Make's
   output T (Char) as itself, where T is F's input, and G bound `T.m` on
   it. The caller, with T = Bool, filed it under `Bool.m`. The pins M(F)
@@ -383,8 +392,10 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
   - every symbol is read at G's own table, including an input occurrence
     of a symbol that is also an output.
 
-  `link_renaming` is the identity on the roles. Merges, provisions and
-  locals are Cb's.
+  The keys keep the roles, which the site's table alone reads. (Until
+  consolidation, LinkBody also applied `link_renaming`, the identity on
+  the roles, to each key; it is gone.) Merges, provisions and locals are
+  Cb's.
 - **History.**
   - 94d89ce introduced `link_site`. It read the output *symbols* at Cb.
   - fc75de7 made only the *roles* read at Cb.
@@ -401,7 +412,7 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
   |---|---|---|---|
   | [link-merge-rep-rebind.moss](examples/link-merge-rep-rebind.moss) | rejects ("does not bind `X.m`") | rejects | rejects (before: accepted, then stuck) |
   | [link-merge-rep-rebind-both.moss](examples/link-merge-rep-rebind-both.moss) (= m5-XT) | rejects in this order (D84 3d); accepts the other order and exits 0 | accepts both orders, exit 0 | accepts; selects G's `X.m` |
-  | [tests/errors/functor_output_input_changed.moss](../tests/errors/functor_output_input_changed.moss) | rejects (D84 3d) | rejects | accepted after 94d89ce (rejected before). The record argues this is sound. Not re-checked after fc75de7 |
+  | [tests/errors/functor_output_input_changed.moss](../tests/errors/functor_output_input_changed.moss) | rejects (D84 3d) | rejects | accepted after 94d89ce (rejected before). The record argues this is sound. Still accepted after fc75de7, by a consolidation reading |
   | [link-output-input-rep.moss](examples/link-output-input-rep.moss) | rejects | rejects | rejects (before fc75de7: accepted, by hand reading) |
   | [link-output-input-rebind-control.moss](examples/link-output-input-rebind-control.moss) | prints 7 | prints 7 | accepts |
   | [output-merge-key.moss](examples/output-merge-key.moss) | accepts | accepts, prints 7 | accepted after fc75de7 (the old rule rejected it) |
@@ -419,10 +430,9 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
 - **Class C.** After 94d89ce, Audit accepts
   `functor_output_input_changed.moss`, which both implementations reject.
   It also accepts m5-XT, which the oracle rejects and native accepts.
-  Whether the first still holds after fc75de7 was not checked. As the
-  rule now reads, F's `T.out` has the output role as its receiver, which
-  reads at the body's table, so Audit may reject it again. That is my
-  reading and was not run.
+  After fc75de7 the first still holds, by a consolidation reading (not
+  run): Target's result has no type item, so `T.out` is not a role and
+  reads at G's table (see "Open points found in consolidation").
 
 ## D: run-time semantics changes
 
@@ -809,8 +819,10 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
 - **Class A** (the frame premise is argued).
 
 ### 38. `ResultRealizes` compares at the body's output meanings (671b6a5)
-- **Rule now.** F's promised provisions are compared with the renamed
-  outputs read through the body's type table (`read_rename`), as the
+- **Rule now.** F's promised provisions are compared with each output
+  role read through the body's type table (`role_reads`; before
+  consolidation, `read_rename` at the identity `link_renaming`, an
+  equivalent form, `PublicConsol.result_realizes_restated`), as the
   oracle's `promised_result_type` does.
 - **Why.** A body that binds `T = Bool` and provides `mk(): T` could never
   match, so Audit rejected the standard functor pattern.
@@ -897,7 +909,121 @@ executable tests unless noted.
 - **Decision.** The coordinator chose to fold them into the world.
 - **Class E.**
 
+### 48. No expanding cycle (branch ob-expand, after this document's range)
+- **Rule now.** `ElaboratesIn` ends with `NoExpandingCycle W P`, the
+  planned resolution of D16's polymorphic-recursion exception
+  (Kennedy and Pierce's expansive cycles, decided before specialization).
+  It has two halves, each a level function that no edge raises and every
+  strict edge lowers, which exists iff no cycle has a strict edge:
+  - `InstantiationsBounded P`: vertices are (code node, type symbol),
+    nodes being P's fns (lambdas, forwarders and method providers
+    included) and core functor bodies. Edges come from `ECall θ` (plain
+    calls, bracket applications, attached methods at the receiver's
+    instantiation), from closures (`bind f = g`, `bind R.m = g`, lambdas,
+    `bind F = G`) at their captured types, and from `BApply θ` (`bind F;`
+    and family members demanded on demand) to every functor body's linked
+    inputs. Within a node a symbol reads as itself, through a functor
+    body's table, or, for an application's output, as strictly containing
+    everything its θ mentions (the owner's choice (a)). Type binds in
+    force count through the canonical θ and captures.
+  - `TypesBounded W`: a tag's payload, read at its own requirements,
+    gives an edge to every nominal instance it mentions, behind `Ref` too.
+- **Why.** The planned monomorphization theorem needs finitely many
+  instantiations; a falsification hunt (scratch/expand/mono) found Audit
+  accepting polymorphic recursion through every channel above.
+- **Tests.** bootstrap/examples/expand-*.moss. Rejected: polyrec,
+  attached, functor-output, functor-double, family, lambda, fn-bind,
+  type-direct (also D58 in the oracle), type-ref-rec, type-ref,
+  functor-forge. Controls: control-loop is accepted; control-functor-const
+  is **rejected** by choice (a), though native compiles it and prints 5.
+  - oracle: accepts and runs all but type-direct (D58);
+  - native: crashes at compile time on every growing one (wasm call
+    stack exhausted; out-of-bounds memory for functor-double), including
+    type-ref, which has no recursive fn.
+- **Corpus.** An oracle variant with the check (scratch/expand/variant;
+  scratch/expand/expand-cmp.sh): 395 same / 0 diff over `tests/`,
+  `examples/`, `bootstrap/examples/` (before the expand examples), and it
+  accepts `src/main.moss`, the self-hosted compiler.
+- **Proof.** `public_safety` unchanged; PublicBoolTyping and
+  AuditBuildExample destructure one more conjunct.
+- **Class B.** Native crashes on everything it rejects except
+  control-functor-const, which it compiles. Follow-up: E38 (open; the
+  oracle needs the check for E11).
+
 ---
+
+## Consolidation (branch ob-consol)
+
+After G05 closed, the functor-application rules were read end to end
+against three principles (inputs of F read at G's own table, outputs at
+the body's; an application installs exactly F's declared result under
+the caller's keys, from the root's positions; copies are position maps
+with fresh symbols that avoid the copy site's substitution). The full
+spec and clause classification are in `scratch/consol-STATUS.md`
+(git-ignored). Each removal below is its own commit, with `check.sh`
+green.
+
+| Removed | From | Effect on acceptance | Commit |
+|---|---|---|---|
+| `~ In t (fr_pins F)` in the kept-output case (#13, 268bf3a) | `BApplyAbstract` | relaxation toward both implementations: [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) is now accepted (oracle 7, native 7) | "Drop BApplyAbstract's pin clause" |
+| "G has a body" (`exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))`) | `BFunClosure` | none: `LinkBody` states it (`w_decl W gg = Some dg`, `d_ast dg = ADFunctor n ps a r (Some bodies)`) | "BFunClosure: drop the body premise LinkBody states" |
+| `Fresh W (gensof t)` in the fresh-output case | `BApplyAbstract` | none: the case asks `In (gensof t) newgens`, and `FreshFor W F C newgens` makes every member `Fresh W` (`PublicFormation.freshfor_fresh`) | "BApplyAbstract: a fresh output's freshness is FreshFor's" |
+| `output_renaming` (unused definition) | Audit.v | none | "Audit: remove the unused output_renaming" |
+
+Restatements (equivalence-preserving, each proved in
+[PublicConsol.v](theories/PublicConsol.v) against the old definitions,
+restated there verbatim):
+
+| Restated | Old form | New form | Proof |
+|---|---|---|---|
+| `ResultRealizes` and LinkBody's result sources | each key renamed by `link_renaming outs gen` (the identity on the roles), promised types read through `read_rename` at it | keys used as they are; promised types read through `role_reads site outs gen` (each role at the site's table) | `result_realizes_restated`, `link_sources_restated` |
+| BFunClosure's removed body premise | `exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))` | implied by LinkBody | `link_body_has_body` |
+
+Open points found in consolidation (not changed; the owner decides). The
+details are in `scratch/consol-STATUS.md`.
+- **Pins reach nested blocks but not lambda bodies.** A frame carries
+  `fr_pins` into every expression of a linked body, but
+  `LambdaProvider` leaves the body frame's pins free. BTypeBind's 3d
+  check therefore rejects
+  [block-pin-rebind.moss](examples/block-pin-rebind.moss), which both
+  implementations run, while the same rebind in a lambda is accepted.
+  Since only a linked body's own binds can reach its result, pins could
+  be scoped to them.
+- **M(F) counts a method's non-requirement signature symbols (#12), not
+  a fn's.** `RMMeth` uses `SigMentions`; `RMValFn` uses `w_reqs`. A
+  functor whose result lists `fn mk(): U` (U outside mk's assume nesting)
+  has no U among its inputs, so its result cannot be read in its own
+  context. The oracle has the same asymmetry ("type `U` is not available
+  in the context here").
+- **Leftovers kept.** `result_environment` ignores its `caller` argument,
+  and `fresh_result_types` is only a statement (#20). `fc_outputs`
+  carries the non-type result keys, which no application reads.
+  BFunClosure and LinkBody both state `FunCtx` for F and G (equal by
+  `w_context`).
+- **Owner-decided principles, analysed but not implemented** (proposals
+  5–7 in `scratch/consol-STATUS.md`):
+  - *Merge orientation:* LinkBody's 3b (#7) and #11 split one condition
+    by orientation (G merging an input of F with a symbol only G has is
+    rejected under one representative and can be accepted under the
+    other), `fc_table` makes the run time follow the representative, and
+    link_site spells F's keys with F's representative. Class-based
+    restatements make every orientation agree without changing which
+    programs some orientation accepts.
+  - *Principal θ:* `CallTheta` lets an unbound requirement take any type
+    that satisfies the callee's merges. Requiring the principal θ
+    rejects partially-bound-merge.moss (as the oracle does since
+    61040f2; native accepts), settling E24.
+  - *Ambiguous family read-off:* `FamilyReadOff` lets a derivation pick
+    either of two matching items; the oracle's `family_member` rejects
+    that. Requiring one matching mirrors it.
+- **#14 after fc75de7, by reading (not run):** Audit still accepts
+  `tests/errors/functor_output_input_changed.moss`. Target's result has
+  no type item, so `outs = []` and link_site reads `T.out` at G's table
+  as `T.out`. The body bound `T.out` before `bind Make;`, which gives T a
+  fresh generation (T is in force in Provider), and that generation is no
+  input of Target. The application reads the source key `T.out` from the
+  body, so the "stale key" the test guards against (the oracle's refile)
+  does not arise. Class C stands.
 
 ## Implementation bugs filed (E31–E37)
 
@@ -944,12 +1070,17 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   still says it must be accepted, which conflicts with the oracle's new
   D62 rejection. This should be settled.
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
+- [block-pin-rebind.moss](examples/block-pin-rebind.moss) (found in
+  consolidation; predates it). A block nested in a linked body rebinds a
+  pin of F (`bind T = Char;`). BTypeBind's D84 3d check reaches nested
+  blocks through the frame; both implementations accept and print 7. See
+  "Open points" below.
 - Native's verdict is not recorded for stale-provision-type (#4) or
   unbound-merge-representative (#3).
 
 **Audit accepts; native rejects.**
 - tests/errors/functor_output_input_changed.moss (#14). Audit accepted it
-  after 94d89ce; this was not re-checked after fc75de7.
+  after 94d89ce, and still does after fc75de7 (consolidation reading).
 - const-kept-output.moss and const-family-unbound.moss (#20, #21). Native
   rejects every use of a defined val, which is unrelated to these changes.
 - scratch/copyfresh/r3c-target-merge-ok.moss (#35, the known residual).
@@ -990,9 +1121,8 @@ On copy-capture, Audit matches both implementations.
       restated to give callability at every grounding.
   - Estimate: "days, not hours". If it is done, revert 642490e's
     conjunct, and the two programs are accepted again.
-- **Drop the redundant pin clause (#13).** `LinkBody`'s made clause
-  implies `~ In t (fr_pins F)` for linked bodies. It was kept only because
-  it had been approved.
+- **Drop the redundant pin clause (#13).** Done in consolidation (see
+  #13).
 - **Pin merge representatives as the oracle does (#14, option a).** This
   is smaller, but it rejects m5-XT, which native runs.
 - **3b over every unmerged entry (#11, option a).** It rejects the same
