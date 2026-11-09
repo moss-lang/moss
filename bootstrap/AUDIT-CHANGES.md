@@ -958,6 +958,22 @@ details are in `scratch/consol-STATUS.md`.
   carries the non-type result keys, which no application reads.
   BFunClosure and LinkBody both state `FunCtx` for F and G (equal by
   `w_context`).
+- **Owner-decided principles, analysed but not implemented** (proposals
+  5–7 in `scratch/consol-STATUS.md`):
+  - *Merge orientation:* LinkBody's 3b (#7) and #11 split one condition
+    by orientation (G merging an input of F with a symbol only G has is
+    rejected under one representative and can be accepted under the
+    other), `fc_table` makes the run time follow the representative, and
+    link_site spells F's keys with F's representative. Class-based
+    restatements make every orientation agree without changing which
+    programs some orientation accepts.
+  - *Principal θ:* `CallTheta` lets an unbound requirement take any type
+    that satisfies the callee's merges. Requiring the principal θ
+    rejects partially-bound-merge.moss (as the oracle does since
+    61040f2; native accepts), settling E24.
+  - *Ambiguous family read-off:* `FamilyReadOff` lets a derivation pick
+    either of two matching items; the oracle's `family_member` rejects
+    that. Requiring one matching mirrors it.
 - **#14 after fc75de7, by reading (not run):** Audit still accepts
   `tests/errors/functor_output_input_changed.moss`. Target's result has
   no type item, so `outs = []` and link_site reads `T.out` at G's table
