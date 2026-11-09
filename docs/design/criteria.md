@@ -70,7 +70,9 @@ It has three parts:
    generations that functor applications create. This needs a check that
    rejects expanding cycles, in code and in type definitions (D30's planned
    resolution, Kennedy and Pierce's expansive cycles). Without it the
-   property is false: `Specialization.polyrec_infinite`.
+   property is false: `Specialization.polyrec_infinite`. `Audit.v` states
+   the check as `NoExpandingCycle`, part of `ElaboratesIn`; neither
+   compiler implements it yet (proof-plan E38).
 3. **A behaviour-preserving specialization.** A translation removes every
    run-time type computation and preserves behaviour. Together with safety,
    specialized programs are safe too.
