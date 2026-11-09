@@ -68,3 +68,101 @@ Branch is merged with `safety` 41baf76; check.sh green.
 3. FamilyLinkResultsOk not attempted.
 
 Time: about 7 hours in total.
+
+
+## HANDOFF BRIEF (for a fresh agent; branch ob-results = safety 5522b69)
+
+The previous agent's context was too full to continue well. The lead decided:
+(1) put the frame-free MeaningsScoped into the slice's Pre, with
+DeclaredScopedOk as a named slice hypothesis (a plain fact about C);
+(2) assemble ChainCoreOk so ChainResultsOk (PublicCopyApply.v) is proved;
+(3) then FamilyLinkResultsOk (PublicFamilyStep.v) if possible.
+Rules: ORCH-RULES.md (name "results"); check.sh green before each commit;
+merge `safety` before reporting.
+
+### Step 1: MeaningsScoped in Pre (PublicBodySlice.v)
+- Definition (no frame argument, so FrameSame/codesafe_frame/pre_frame stay
+  untouched):
+    MeaningsScoped C d := forall x, lookup_subst x (type_meanings d) <> None ->
+      In x (map fst (A.c_ty C)) \/ (A.Fresh W x /\ In x (tm_gens (A.c_ty C)))
+  (tm_gens = flat_map (gens o snd); maybe use the c_ty part of context_gens,
+  i.e. gens v ++ gens (canon C v), if canon is a problem at output_cx).
+- Hypothesis (approved): DeclaredScopedOk := forall C, FormedCx W C ->
+  forall x, In x (A.context_gens C) -> A.Fresh W x \/ In x (map fst (A.c_ty C)).
+- Append `/\ MeaningsScoped C d` to Pre (after Formed F C). The reverted
+  attempt (scratch/orch/results/ms-in-pre-attempt.diff) used an F-dependent
+  version but shows the mechanical edits: destruct patterns
+  `[Real Fmd]]]]]` -> `[Real [Fmd Ms]]]]]]`, the regex
+  `\[(\w+) (Fm\w*)\]\]\]\]\]` -> `[\1 [\2 _]]]]]]`, the `conj ... Fmd`
+  constructions in pre_lower/pre_le/pre_after/realizes_pre_lower, pre_keep.
+  Helper lemmas worth reusing from it: MeaningsKeyed C d (meanings only on
+  keys), ms_keyed, keyed_callee (callee_env over θ with θ keys = table keys),
+  ms_same/ms_keep (same meanings, table keys grow).
+- Entries: body_call/body_call_method get `MeaningsKeyed Cf de` (callers pass
+  keyed_callee ... (proj1 CT), or theta_ctx keys at the wrapper, line with
+  `RealN Sok eq_refl`); app_step PreB and PublicCopyApply/PublicFamilyStep
+  PreB: application_environment meanings are over fc_inputs = keys of Cg
+  (same proof as their KeysMeant subgoal); main: InitialTypes (keys);
+  lambda_callable: captured meanings are over context_gens C, so each is a
+  key of Cl (= keys of C) or Fresh (DeclaredScopedOk C) and then it must be
+  in Cl's table values: needs "a Fresh x in context_gens C is in tm_gens
+  (c_ty C)" — either strengthen MeaningsScoped's second disjunct to
+  context_gens of the *table part* and prove fresh gens only enter through
+  output destinations (t |-> TAbs g), or add that to DeclaredScopedOk
+  (it is also a formation fact: fresh generations a context mentions occur
+  in its table). Decide and state it as a plain fact about C.
+- Steps: binds keep d's meanings (install/bind_type: aliases only) and the
+  table keys only grow (set_ty conses; output_cx keys = outs ++ keys C;
+  provide/set_* keep c_ty); demand_case uses with_ty C0 C (C0's table);
+  applications: the result writes gensof t: kept t is a key of C'
+  (provide_result_shape), fresh g occurs as TAbs g in C''s table.
+- PublicLinkResults.v currently takes MeaningsScoped as an extra premise
+  (with an fr_fresh-based definition and DeclaredScoped inside); rewrite it
+  to the Pre version: dest_scope's freshness then uses "kept t: not a key,
+  not Fresh (funoutputs_declared); fresh g: Fresh but FreshFor puts it
+  outside context_gens C ⊇ table values". Remove pre_after_result's
+  MeaningsScoped premise; it must now prove MeaningsScoped C' d' (writes as
+  above).
+
+### Step 2: ChainCoreOk (PublicLinkResults.v, Section Assemble)
+Goal: prove ChainCoreOk, then `CA.ChainResultsOk W Prog argv read state_ok`
+from chain_results_scoped (MeaningsScoped then comes from Pre).
+Needed pieces, all under ChainResultsOk's premises (LD = S.LinkData of the
+root h0; Pre3 = Pre at Cb, d3; RR = ResultRealizes Cb Cr (gen t ↦ TAbs t) ks'
+with Audit's new read_rename comparison):
+- Selection: `select_provisions d3 (result_smap θ' Dr (S.link_sources Cb outs'
+  gen Cr ks')) = Some dr` — each source is the body key
+  rkey_of Cb (at_site Cb (output_renaming outs' gen k)); Pre3's EnvOk gives a
+  provision there (RR gives the Cb provision; realized_key-style lemma).
+  Use PublicCallRealize.select_ok; read result_smap/link_sources defs in
+  Audit.v/PublicBodySlice.v.
+- Outputs readable: `output_meaning d3 t <> None` from Pre3's (strengthened)
+  AliasOk and LD's OutM (outputs are keys of c_ty Cb).
+- C' facts at d' = append (result_of d3 outs gensof dr) d:
+  * KeysMatch C': new provisions come from entry_provision (kinds match).
+  * AliasOk C': outputs t: aliases of result give read_meaning d3 t =
+    ground d' (TAbs (gensof t)) (writes first); other keys: as in d
+    (aliases/meanings unchanged for them; they avoid the destinations by
+    dest_scope).
+  * EnvOk C' (the core): for a new provision k_c of C' (caller
+    ProvideResult at output_type_map C outs (TAbs∘gensof)), relate to the
+    formal entry of Cr (ProvideResult at output_type_map Cu outs (TAbs∘gen),
+    and through the copy chain: CopyChain's CCStep carries CopyOutputs
+    (h's result read at u's table gives each of u's keys the same
+    provision) and FunOutputs equality) with
+    PublicOutputSubst.provide_result_rel; s1/s2 chosen so that Agree holds:
+    s2 = type_meanings d' (caller), s1 = (gen t ↦ read_meaning d3 t) then
+    θ grounded in d (inputs). The runtime value at dr's key is d3's value at
+    the body key, typed by Pre3 at ground d3 (Cb type); RR says the Cb type
+    equals canon Cb of the promised type under read_rename; ground d3 of
+    that equals ground d' of the caller's type (inputs: d3 reads linked
+    inputs as ground d (θ x) via application_environment; outputs: alias
+    read_meaning). Old provisions of C: lookups in d' fall through dr unless
+    a dr key collides; collisions only at keys C' shadows statically
+    (key correspondence via provide_result_rel's EntryRel).
+  This is the largest piece; expect several hundred lines.
+
+### Step 3: FamilyLinkResultsOk (PublicFamilyStep.v, line ~276)
+Same as LinkResultsOk with a FamilyApplication instead of AppPremises, no
+type outputs (`result_substitution th []`), conclusion FamilyNewOk.
+Reuse the EnvOk correspondence of step 2 with outs = [].
