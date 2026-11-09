@@ -1,7 +1,7 @@
 (* ChainNewOk (PublicChainCore), split. Its first clause (every key the
    result selection dr fills is the run-time key of one of C''s new
    provisions) follows from a static fact, ChainKeysOk: each key of the
-   root's formal result, renamed and substituted as the application's
+   root's formal result, substituted (roles and inputs) as the application's
    selection does, is the caller's run-time key of one of F's result keys.
    Its second clause (the new provisions are realized after the
    application) is ChainRealizeOk. ChainKeysOk needs CopyOutputs in both
@@ -27,6 +27,48 @@ Proof.
   destruct (A.entry_key (A.c_sub C) e) as [k'|] eqn:Ek; [|contradiction].
   destruct Ik as [->|[]]. destruct (entry_provision_of (A.c_sub C) (fun a => a) e k Ek) as [p Ep].
   exists p. apply in_flat_map. exists e. split; [apply in_rev in Ie; exact Ie|]. rewrite Ep. left. reflexivity.
+Qed.
+
+(* The application's role substitution (Audit.role_outputs): at a
+   length-zero chain the root's outputs are F's, so each role gen t reads
+   as t's destination gensof t, and a symbol that is no role reads by θ. *)
+Lemma output_destination_map : forall (f : nat -> nat) outs t, In t outs ->
+  output_destination (map (fun t => (t, f t)) outs) t = f t.
+Proof.
+  intros f outs t. induction outs as [|t0 rest IH]; intros I; [contradiction|].
+  cbn [map output_destination]. destruct (Nat.eqb_spec t0 t) as [->|Ne]; [reflexivity|].
+  destruct I as [E|I]; [congruence|exact (IH I)].
+Qed.
+
+Lemma role_subst_role_at : forall th (gen : nat -> nat) outs outputs t, In t outs -> NoDup (map gen outs) ->
+  lookup_subst (gen t) (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs) outputs)) =
+  Some (TAbs (output_destination outputs t)).
+Proof.
+  intros th gen outs outputs t I Nd. unfold result_substitution, role_outputs. rewrite !map_map. cbn [fst snd].
+  induction outs as [|t0 rest IH]; [contradiction|].
+  cbn [map app lookup_subst] in *. inversion Nd as [|g0 gs Out Nd']; subst.
+  destruct (Nat.eqb_spec (gen t) (gen t0)) as [E|Ne].
+  - destruct I as [->|I]; [reflexivity|].
+    exfalso. apply Out. rewrite <- E. apply in_map. exact I.
+  - destruct I as [->|I]; [congruence|exact (IH I Nd')].
+Qed.
+
+Lemma role_subst_role : forall th (gen gensof : nat -> nat) outs t, In t outs -> NoDup (map gen outs) ->
+  lookup_subst (gen t) (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs) (map (fun t => (t, gensof t)) outs))) =
+  Some (TAbs (gensof t)).
+Proof.
+  intros th gen gensof outs t I Nd. rewrite (role_subst_role_at th gen outs _ t I Nd), output_destination_map by exact I.
+  reflexivity.
+Qed.
+
+Lemma role_subst_input : forall th (gen : nat -> nat) roles_outs outputs x,
+  ~ In x (map gen roles_outs) ->
+  lookup_subst x (result_substitution th (role_outputs (map (fun t => (t, gen t)) roles_outs) outputs)) = lookup_subst x th.
+Proof.
+  intros th gen outs outputs x N. unfold result_substitution, role_outputs. rewrite !map_map. cbn [fst snd].
+  induction outs as [|t0 rest IH]; [reflexivity|]. cbn [map app lookup_subst] in *.
+  destruct (Nat.eqb_spec x (gen t0)) as [->|_]; [exfalso; apply N; left; reflexivity|].
+  apply IH. intros I. apply N. right. exact I.
 Qed.
 
 End Static.
