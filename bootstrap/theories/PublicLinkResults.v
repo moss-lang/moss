@@ -329,12 +329,12 @@ Variables (Prog : program) (argv : list (list int)) (read : list int -> option (
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Let P := program_of Prog argv read.
 
-(* A copy chain keeps the type outputs (each copy's SameResult). *)
+(* A copy chain keeps the type outputs (each copy's SameResult, through same_result_outputs). *)
 Lemma chain_outputs : forall u gfx sms h0 gf0 sms0, CA.CopyChain W u gfx sms h0 gf0 sms0 ->
   forall t, A.FunOutputs W u t <-> A.FunOutputs W h0 t.
 Proof.
   intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ SO];
-    intros t; [reflexivity|]. rewrite (SO t). exact (IH t).
+    intros t; [reflexivity|]. rewrite (S.same_result_outputs W u h SO t). exact (IH t).
 Qed.
 
 (* REMAINING (T15/T16), at a copy chain above a linked root (ChainResultsOk's

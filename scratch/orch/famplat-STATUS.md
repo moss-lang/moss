@@ -110,3 +110,73 @@ and `CopyChain` lacks the facts for it:
   separate multi-hour job.
 
 Time for this follow-up: about 3 hours.
+
+## Follow-up 2: ChainResultAgrees (stopped at a clean commit; handoff)
+
+### Done
+- `ClosureOk.CCopy` (PublicBodySlice) and `CopyChain.CCStep`
+  (PublicCopyApply) now carry `A.SameResult W u h` in place of results'
+  outputs field, which was derived from it. Users recover that field
+  through `S.same_result_outputs`; PublicLinkResults' `chain_outputs` does
+  so. Same arity, so no destruct patterns changed.
+
+### Finding: SameResult does not make the two readings' key sets equal
+`ResultLeaf` keeps only (receiver symbol, method name). A reading's key
+also depends on two things leaves drop:
+- the item's brackets (`Boxed[Boxed = I32].boxed` and `Boxed.boxed` are
+  one leaf with two receivers);
+- the module the method name resolves in (`MethodNamed` finds a detached
+  `.m` through the declaring module's scope).
+
+`CopyOutputs`, like the oracle's `copy_outputs_match` (Elab.v
+`copy_output_check`), checks one direction only: each key of the copy's
+result is a key of the source's, read at the copy's inputs. So a source
+whose result has two bracketed items on one leaf can have a key its copy
+lacks. Clause B of `ItemsAgree` needs the converse: every item the root
+family installs is one of the caller's. `family_core` uses that clause to
+rule out shadowing an old method of the caller.
+
+For lib/wasm.moss's families (Heap, Mutable, Arrays, Memories) the
+converse does hold. Each has one item per leaf, with pairwise distinct
+methods, so every root key is matched by the copy's item on the same leaf.
+`Platform.Family` does not require this, though, and I found no general
+proof.
+
+### Options for the next agent (pick one)
+1. Audit: make `CopyOutputs` two-directional (also: each key of H's
+   reading has F's provision). This is a strengthening; the oracle checks
+   only F→G. Following the rules, compare an oracle variant over the
+   corpus (copies of platform families are rare).
+2. Audit `Platform.Family`: its items have pairwise distinct (receiver
+   symbol, method) and no brackets, true of lib/wasm.moss. Then a counting
+   argument, from SameResult and one-directional CopyOutputs at each step,
+   gives the converse at the root. You must still compose readings along
+   the chain (below).
+3. Semantic: tolerate extra installed keys. Change `family_core`'s
+   old-method case so a shadowing primitive is fine when it is callable at
+   the old method's signature. This needs a coherence invariant like the
+   family agent's `FamilyCoherentOk`.
+
+### Composing along the chain (needed under 1 or 2)
+For one copy step u ← h (CCStep): `CopyOutputs W sg u h Cu` relates u's
+and h's readings, both at Cu, with fresh output roles gen (outputs are
+empty here). Provisions are equal after `provision_subst sg`, and keys are
+equal (same `provision_id`).
+- The root reading needed is h0's at its own Ch0. Relate h's reading at
+  Ch to h's reading at Cu with `PublicFamilyAgree.family_entries_rel` (or
+  `provide_result_rel`) at s1 = the copy's input renaming (`ST`: canon Cu
+  reads Ch's table), s2 = canon Cu.
+- `family_items_agree`'s section is specialised to `FamilyApplication`.
+  Generalise its hypotheses to:
+  - a context Ca;
+  - θ = canon Ca ∘ Ca-table over Cu's keys;
+  - InF;
+  - Satisfies' merge clause;
+  - `ProvideResult W u Ca _ Cr ks`;
+  - NoDup ks.
+  AppPremises gives each of these except NoDup ks (check; the family
+  version takes it from FamilyApplication). The empty chain is then that
+  generalisation at Ca = C.
+- `ResultAgree`'s first two conjuncts (provisions shape) follow from
+  `PublicFormation.provide_result_shape` plus `family_entries_methods`
+  (PublicFamilyStep).
