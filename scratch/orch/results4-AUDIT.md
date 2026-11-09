@@ -93,10 +93,10 @@ the oracle prints 7. Filed as E33.
 Native accepts and runs it, so this rejects a program native runs (an
 incompleteness). The premise only bites when F's input context merges an
 input onto an output symbol as representative *and* a result key
-mentions it; no corpus program (tests/, examples/, bootstrap/examples/)
-has a functor with outputs whose inputs merge with an output (I did not
-build an oracle variant for this one; the oracle cannot run such a
-program safely anyway).
+mentions it. NOT verified over the corpus (no oracle variant built for
+this one); such a functor needs a merge in its input context between an
+input and one of its outputs, which I expect to be rare. Where the
+oracle accepts such a program, its program may be stuck anyway.
 
 ## Alternatives
 Keep roles distinct: the code's keys would carry `gen t`, and the
