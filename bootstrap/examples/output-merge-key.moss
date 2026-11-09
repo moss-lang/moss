@@ -1,0 +1,58 @@
+# F's inputs merge X with T (two readings of A.gimme), with T the
+# representative, and T is also an output of F. F's result key X.m, read
+# at F's inputs, is then spelled T.m with T the *input* T. A linked body's
+# code files its result keys with the output roles renamed back to the
+# output symbols (output_renaming), so the code's key T.m reads, at the
+# application, as the *new* T, while the caller keys X.m at X's meaning
+# (the old T). The method is installed under the wrong key and the call
+# `x.m()` misses it: the reference interpreter on the oracle's program
+# stops `stuck (XErr 6)` (e_entry). Native prints 7. With the two
+# readings swapped (X the representative) the oracle prints 7 too.
+# Audit's LinkBody now requires that no result key, read at F's inputs,
+# mentions an output symbol as an input (ChainKeysOk was false here).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type T;
+type X;
+
+fn .gimme(): Foo;
+fn .m(): Int;
+
+context Merge = A, X, T, A.gimme[Foo=X], A.gimme[Foo=T];
+
+functor F: Std, Merge -> T, X.m;
+functor G: Std, Merge -> T, X.m {
+  bind X.m = () => 7;
+  bind T = Int;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind F = G;
+    bind A = Char;
+    bind Foo = Char;
+    bind X = Char;
+    bind T = Char;
+    bind A.gimme = () => this;
+    bind F;
+    let x: X = char::a;
+    print_int(x.m());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

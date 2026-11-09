@@ -580,6 +580,22 @@ the local store. *C* and *F* are the static context and frame.
   corpus, an oracle with that converse gives the same verdicts. Native
   accepts the program (correctly), so Audit is stricter than native here.
   Details: scratch/orch/results4-AUDIT.md.
+- **Counterexample: a result key spelled through an output's input
+  meaning (fixed).** F's merges can make an input X read as an input T
+  that is also an output of F (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
+  merge representative). F's result key `X.m`, read at F's inputs, is then
+  `T.m` with the input T. `LinkBody`'s code renames the output roles back
+  to the output symbols (`output_renaming`), so the code's key reads, at
+  the application, as the new T, while the caller keys `X.m` at X's
+  meaning (the old T). [output-merge-key.moss](examples/output-merge-key.moss):
+  the reference interpreter on the oracle's program stops `stuck (XErr 6)`
+  (e_entry) at `x.m()`; native prints 7; with the representative swapped
+  the oracle prints 7. `ChainKeysOk` was false. `LinkBody` now requires
+  that no result key read at F's inputs (`rkey_of Cr k`) mention an output
+  symbol (only output roles `gen t`). Native accepts the program, so this
+  rejects something native runs; the faithful alternative is to keep the
+  roles distinct in the code's keys (an interpreter change). Oracle bug:
+  E33. Details: scratch/orch/results4-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
   `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
   inputs (types only H's result mentions). An application of F reads its

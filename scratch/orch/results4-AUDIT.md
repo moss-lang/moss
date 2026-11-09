@@ -63,3 +63,43 @@ correctly.
    ordinary programs.
 3. Tolerate the extra key semantically (callable at the old signature):
    needs a coherence invariant; the extra closure is still the wrong one.
+
+# results4: Audit change 2 — LinkBody: no output symbol in a result key
+
+## What
+`LinkBody` gains a premise: for each result key k of F read at F's inputs
+(`ProvideResult W u Cu (gen) Cr ks`), `rkey_of Cr k`'s receiver and
+instantiation mention no output symbol t (raw `TAbs t`; output roles
+`gen t` are fine).
+
+## Why
+Raw t in Cr is the *input* t. It arises only through F's merges: Cu's
+table maps each input to itself under σ, and `output_type_map` puts the
+roles first, so `T.m` with T an output reads `gen T`. A merge of X into T
+(T representative) makes `X.m` read `T.m` with the input T. The code
+files `output_renaming outs gen (rkey_of Cr k)`, which renames `gen T` to
+T, so the input T and the output T become one symbol, and the
+application's `result_substitution` (outputs first) reads it as the new
+T. The caller keys the provision at X's meaning (old T), so the call
+misses (e_entry). This was results3's "edge case" (an output that is also
+an input, reached through a merge).
+
+## Test
+`bootstrap/examples/output-merge-key.moss`: oracle `moss_ref: stuck (XErr
+6)`; native prints 7. Swapping the two readings (X the representative):
+the oracle prints 7. Filed as E33.
+
+## Evidence / scope
+Native accepts and runs it, so this rejects a program native runs (an
+incompleteness). The premise only bites when F's input context merges an
+input onto an output symbol as representative *and* a result key
+mentions it; no corpus program (tests/, examples/, bootstrap/examples/)
+has a functor with outputs whose inputs merge with an output (I did not
+build an oracle variant for this one; the oracle cannot run such a
+program safely anyway).
+
+## Alternatives
+Keep roles distinct: the code's keys would carry `gen t`, and the
+application would map `gen t` to the destination. BApply's outputs do not
+know `gen` (it is the closure's), so FunctorCode would need the role map:
+an interpreter change, deferred to the user.

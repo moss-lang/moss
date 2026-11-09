@@ -2205,7 +2205,8 @@
         "E29",
         "E30",
         "E31",
-        "E32"
+        "E32",
+        "E33"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2846,6 +2847,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/copy-extra-key.moss"
+        ]
+      }
+    },
+    {
+      "id": "E33",
+      "group": "E",
+      "title": "No result key spelled through an output's input meaning",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle rejects (or files correctly) a linked functor whose result key, read at F's inputs, mentions an output symbol as an input through F's merges, as Audit's LinkBody now requires; its program for bootstrap/examples/output-merge-key.moss must not get stuck.",
+      "approach": "Either check LinkBody's new premise in link_body (Elab.v) or file each result key with the output roles kept distinct from input symbols. bootstrap/examples/output-merge-key.moss: oracle `moss_ref: stuck (XErr 6)`, native prints 7.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/output-merge-key.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "ChainKeysOk was false: a merge made F's result key X.m read as T.m with T an input that is also an output, and output_renaming made the code's key the new T's.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/output-merge-key.moss"
         ]
       }
     },
