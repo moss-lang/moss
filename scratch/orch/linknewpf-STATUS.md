@@ -77,10 +77,30 @@ against Audit in full; I read the rules by hand.
      with items_scope and functx_scoped.
   5. callable_transfer.
 
-## CF.ChainForwardCopySigs
+## CF.ChainForwardCopySigs: not started (handoff)
 
-Not started yet (next).
+I stopped here to keep a clean, compiling handoff; my context is large.
+
+Pointers for whoever continues:
+- **Statement.** PublicChainFwd.v, `ChainForwardCopySigs` (sms <> []).
+  The empty chain is `chain_forward_sigs`, from
+  PublicFamilyAgree.items_agree_gen and items_agree_pos.
+- **Argument.** moss-safety scratch/hunt/hunt2-chain/REPORT.md:
+  - a platform root's polymorphic inputs all sit in receivers (keys);
+  - everything else H mentions is fixed in H, hence in F;
+  - it is checked by FixedAgreement at the copy site and pinned at the
+    application.
+- **Copy-site facts.** These are in `CCStep`/`CopySite` (PublicCopyApply,
+  PublicBodySlice). CopyOutputs now compares after
+  `sigma ++ [y := cg y]` (fresh cg avoiding sigma's image).
+  PublicCopyFresh.v's `copy_outputs_at` / `copy_provision_read` read that
+  agreement back at a substitution. Use them to step SigAgreeG down the
+  chain.
+- **Shape.** Mirror PublicPlatformApply.family_platform_ok's
+  selection/position argument, at each CCStep. The root is a platform
+  family (FamilyData), where SigAgreeG is items_agree_gen at the root's
+  context.
 
 ## Time
 
-About 1.5 hours.
+About 5.5 hours in total.
