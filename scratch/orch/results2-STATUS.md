@@ -53,6 +53,18 @@ mentioned (via `T.foo`) and kept. Options:
    is stated at grounded types, so this is not obvious.
 Until then, `ChainResultsOk` from `ChainCoreOk` carries this premise.
 
+Variants, run on the oracle and native (results2-AUDIT.md section 2):
+- (i)+(ii) (kept-output-family-method.moss): both accept and run it
+  correctly.
+- (iii) (kept-output-captured-fn.moss): both reject it statically.
+
+There is no implementation bug. Re-grounding is harmless because an
+unbound declared symbol is mentioned only by parametric family method
+provisions. Proving that is large (a parametricity argument for
+CallableOk). The cheap alternative is the Audit clause
+`~ In t (context_gens C)`, which rejects programs that both
+implementations accept and run correctly.
+
 ## Not done
 
 - **ChainCoreOk** (PublicLinkResults, Section Assemble) is not started.

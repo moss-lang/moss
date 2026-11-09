@@ -96,3 +96,60 @@ the freshness the static rules give.
   kept-output clause excluding `fr_fresh`, and a formation hypothesis.
   It is much larger, and lambda-declared-output.moss would still need
   rejecting.
+
+## 2. Kept outputs that the context mentions: variants (no Audit change)
+
+Question: when `bind F;` keeps an output T that is not in force but that
+the context mentions (an unbound declared T, through a family demand),
+does the result's write `T |-> m` re-ground anything in a way that
+matters?
+
+| variant | file | oracle | native | Audit (shadowing) |
+|---|---|---|---|---|
+| base: lambda keeps T | lambda-declared-output.moss | runs, exit 0 | runs, exit 0 | accepts; runs |
+| (i)+(ii): after the keep, call the family method `T.dup : () -> T` (receiver and result at T) on a value of the new T (Bool) | kept-output-family-method.moss | prints 0 (correct: G's dup is `this`) | prints 0 | accepts; the static key `mkey (TAbs T) dup` finds the family provision; it runs G's identity closure and prints 0 |
+| (iii): a provider or value at the unbound T before the keep (`bind consume = (x) => x.dup();` with `fn consume(x: T): T`), used after it | kept-output-captured-fn.moss | rejected: "type `T` is not available in the context here" | rejected: "incompatible types" | not reached: a fn binding's signature types must be in force |
+
+No implementation misbehaves, and the variants that could misbehave are
+rejected statically. So this is outcome (2), not an implementation bug.
+
+**Why re-grounding is harmless (the invariant).** An unbound declared
+symbol T (no table key) reaches a context only through family demands.
+It occurs only in the keys and signatures of family-installed method
+provisions (`at_site`/`theta_at` read the need as `TAbs T`).
+- No local, val, fn or functor provision, merge or frame type mentions it.
+  Binding a provider at a signature mentioning it is rejected
+  ((iii); `TyOf` needs the types in force).
+- So no value is ever typed at a type mentioning T: the only producers
+  of T values are those family methods, which need a T receiver first.
+- After `bind F;` keeps T, the write `T |-> m` changes `ground d` only
+  for those family method provisions. Their closures are code of a
+  family functor body, parametric in the family's input A (captured as
+  `A |-> TAbs T`), so calling them at `m` is safe.
+
+**Size of the proof.**
+1. The "only family method provisions mention an unbound declared
+   symbol" part extends family2's FormedCx scoping invariant: admit
+   declared non-key symbols only in method provisions. This is small to
+   moderate, alongside that work.
+2. The parametricity part is large. The slice's `EnvOk` states
+   `CallableOk` at grounded types. After the write, the family closure
+   must be callable at `ground d' = ... m ...`, but its captured
+   environment says `A |-> TAbs T`, so its body's `Pre` cannot type a
+   receiver of type m. Proving it needs one of:
+   - a type-abstraction (logical-relation) lemma for closure safety under
+     renaming an abstract generation in the captured meanings; or
+   - restating the family obligations (`FamilyResultOk`/`FamilyNewOk`) to
+     give callability at every grounding of the family's inputs, which
+     needs the same argument to prove.
+
+   Estimate: days, not hours. It touches CallableOk's definition or every
+   family obligation.
+
+**Cheaper alternative (lead's call).** Add an Audit kept-output clause:
+`~ In t (A.context_gens C)` in `BApplyAbstract`'s not-in-force case
+(the narrowest form that makes `dest_scope` go through without
+`DeclaredScoped`). It rejects lambda-declared-output.moss and
+kept-output-family-method.moss, which both implementations accept and run
+correctly. It matched the oracle on the 356-program corpus
+(results-AUDIT.md section 1), so such programs are rare.
