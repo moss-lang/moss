@@ -753,3 +753,8 @@ without touching any proof.
   `bind_nominal_formed` and `lambda_keys_scoped` (04:34 to 04:51).
 - Rule 7's `family_direct` in Audit after approval, the family cases from
   one `family_step`, and `safety_obligations` (04:51 to 05:03).
+- Orchestration with obligation agents in separate worktrees (05:03 to
+  06:36): worldform, copy, refile, family, platform, repair and results
+  branches merged into `safety` in turn (per-agent notes in
+  `scratch/orch/*-STATUS.md` and `*-AUDIT.md`); results handed to a fresh
+  agent (results2), the family platform step to another (famplat).
