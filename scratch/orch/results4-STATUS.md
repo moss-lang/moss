@@ -110,3 +110,13 @@ About 3 hours.
      (SigRel/TyRel from family_entries_rel generalised to outputs), plus
      the provisions' equality along copies (CopyOutputs' forward clause),
      so do ChainKeysOk's length-zero case first.
+
+## Round 3 (decision: separate output roles; revert the LinkBody premise)
+
+- Reverted the E33 LinkBody premise (Audit is again wrong for the merged
+  input/output shape; ChainKeysOk false for it until the roles fix).
+  check.sh passes.
+- The roles fix itself is NOT started: context ran out. Full plan and the
+  finding that the oracle runs ExecutionModel code (not Audit's
+  interpreter), so its half is much larger than estimated:
+  results4-AUDIT.md "Change 3".

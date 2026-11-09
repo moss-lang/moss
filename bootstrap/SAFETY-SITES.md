@@ -581,7 +581,7 @@ the local store. *C* and *F* are the static context and frame.
   accepts the program (correctly), so Audit is stricter than native here.
   Details: scratch/orch/results4-AUDIT.md.
 - **Counterexample: a result key spelled through an output's input
-  meaning (fixed).** F's merges can make an input X read as an input T
+  meaning (open; fix decided).** F's merges can make an input X read as an input T
   that is also an output of F (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
   merge representative). F's result key `X.m`, read at F's inputs, is then
   `T.m` with the input T. `LinkBody`'s code renames the output roles back
@@ -590,14 +590,14 @@ the local store. *C* and *F* are the static context and frame.
   meaning (the old T). [output-merge-key.moss](examples/output-merge-key.moss):
   the reference interpreter on the oracle's program stops `stuck (XErr 6)`
   (e_entry) at `x.m()`; native prints 7; with the representative swapped
-  the oracle prints 7. `ChainKeysOk` was false. `LinkBody` now requires
-  that no result key read at F's inputs (`rkey_of Cr k`) mention an output
-  symbol (only output roles `gen t`). Native accepts the program, so this
-  rejects something native runs, including the corpus regression
+  the oracle prints 7. `ChainKeysOk` was false. A `LinkBody` premise forbidding such keys was
+  tried and REVERTED: it rejects the corpus regression
   tests/regressions/functor_input_output_generations.moss (native `yn`;
-  the oracle is stuck there too, a known ignored test); the faithful alternative is to keep the
-  roles distinct in the code's keys (an interpreter change). Oracle bug:
-  E33. Details: scratch/orch/results4-AUDIT.md.
+  the oracle is stuck there, its ignored test, E06). Decided fix (pending):
+  keep the output roles in the code's keys and map them at the
+  application (results4-AUDIT.md, change 3). Until then Audit's
+  application is wrong for this shape and `ChainKeysOk` is false for it.
+  Oracle bug: E33. Details: scratch/orch/results4-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
   `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
   inputs (types only H's result mentions). An application of F reads its

@@ -2857,8 +2857,8 @@
       "requires": [],
       "status": "open",
       "budget": "hour",
-      "goal": "The oracle rejects (or files correctly) a linked functor whose result key, read at F's inputs, mentions an output symbol as an input through F's merges, as Audit's LinkBody now requires; its program for bootstrap/examples/output-merge-key.moss must not get stuck.",
-      "approach": "Either check LinkBody's new premise in link_body (Elab.v) or file each result key with the output roles kept distinct from input symbols. bootstrap/examples/output-merge-key.moss: oracle `moss_ref: stuck (XErr 6)`, native prints 7.",
+      "goal": "A linked functor whose result key, read at F's inputs, mentions an input symbol that is also an output (through F's merges) is filed and applied correctly: the code keeps output roles distinct from input symbols and the application maps the roles (decided fix; Audit and oracle), so output-merge-key.moss prints 7 and functor_input_output_generations.moss prints yn (cf. E06).",
+      "approach": "functor_code gains the role map (fc_roles); LinkBody files rkey_of Cr k unrenamed; apply_functor substitutes roles to destinations and inputs by theta. The oracle runs ExecutionModel code, so its link_body and runtime change too (scratch/orch/results4-AUDIT.md, change 3). bootstrap/examples/output-merge-key.moss: oracle `moss_ref: stuck (XErr 6)`, native prints 7.",
       "sources": [
         "theories/Elab.v",
         "theories/Audit.v",

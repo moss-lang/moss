@@ -3310,7 +3310,7 @@ Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR NoRaw BO Fam FrH FB].
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Fam FrH FB].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   refine (conj FCu (conj FCg (conj LPeq (conj LRd (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
     (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO FB))))))))))))))))))).

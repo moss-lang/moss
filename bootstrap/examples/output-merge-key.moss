@@ -8,8 +8,9 @@
 # `x.m()` misses it: the reference interpreter on the oracle's program
 # stops `stuck (XErr 6)` (e_entry). Native prints 7. With the two
 # readings swapped (X the representative) the oracle prints 7 too.
-# Audit's LinkBody now requires that no result key, read at F's inputs,
-# mentions an output symbol as an input (ChainKeysOk was false here).
+# Same bug as tests/regressions/functor_input_output_generations.moss
+# (E06/E33). Decided fix, pending: keep the output roles in the code's
+# keys and map them at the application (scratch/orch/results4-AUDIT.md).
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
