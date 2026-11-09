@@ -93,13 +93,41 @@ the oracle prints 7. Filed as E33.
 Native accepts and runs it, so this rejects a program native runs (an
 incompleteness). The premise only bites when F's input context merges an
 input onto an output symbol as representative *and* a result key
-mentions it. NOT verified over the corpus (no oracle variant built for
-this one); such a functor needs a merge in its input context between an
-input and one of its outputs, which I expect to be rare. Where the
-oracle accepts such a program, its program may be stuck anyway.
+mentions it.
+
+**Corpus check (done later): it rejects a corpus program.** An oracle
+variant (extracted Elab.ml; in link_body, after
+`fresh_target_output_view ef fg`, fail if any method key of `dr` has a
+receiver, or a recorded instantiation (`get_app ef'`), mentioning
+`fst` of an output role) over tests/, examples/, bootstrap/examples/
+(377 files, scratch/orch/results4-cmp-E33.out): 375 same, 2 differ:
+- bootstrap/examples/output-merge-key.moss (intended);
+- tests/regressions/functor_input_output_generations.moss: `Target[]:
+  Right, Left -> T, made, T.out, U.out` with the contexts merging U into
+  T through `seed[P=T]`, `seed[P=U]`. It is the same bug: the oracle
+  elaborates it and the reference interpreter stops `stuck (XErr 6)`
+  after printing `n`; native prints `yn`
+  (crates/moss-tests/tests/suite/backend.rs:
+  `native_functor_outputs_preserve_merged_input_generations` passes,
+  `oracle_functor_outputs_preserve_merged_input_generations` is
+  `#[ignore]`d as a known oracle generation-capture bug; proof-plan E06,
+  S11 cite the test).
+So the language intends to accept this shape, and the LinkBody premise
+rejects a program native runs and the project tests. Reported to the
+coordinator; the faithful fix is the "separate output roles" semantic
+alternative below.
 
 ## Alternatives
-Keep roles distinct: the code's keys would carry `gen t`, and the
-application would map `gen t` to the destination. BApply's outputs do not
-know `gen` (it is the closure's), so FunctorCode would need the role map:
-an interpreter change, deferred to the user.
+Keep roles distinct: the code's keys would carry `gen t` (no
+output_renaming), and the application would map `gen t` to the
+destination and every input by θ. BApply's outputs do not know `gen` (it
+is the closure's), so FunctorCode needs the role map (a new field, or
+roles recorded in fc_outputs), apply_functor builds
+`result_substitution th (map (gen t, dest t))` for the keys while
+read_result_types still reads the body's meaning of t. Size estimate:
+not small. FunctorCode is built by LinkBody and Platform.Family and
+destructed in the interpreter and its proofs (PublicLinkResults,
+PublicChainCore, PublicPlatformApply, PublicBodySlice app_step, the
+refile/fc_sources proofs). The interpreter is also the oracle's
+`moss_ref`, so the oracle's link_body must emit the roles too (fixes
+E33/E06's case). Roughly half a day to a day including proof repair.
