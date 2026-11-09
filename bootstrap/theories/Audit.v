@@ -3886,10 +3886,15 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
    readings are the copy site's and may name a symbol that is also one of
    F's inputs, which must not be identified with it
    (examples/copy-bracket-nonfixed.moss, copy-fixed-reads-poly.moss;
-   scratch/orch/copyfresh-AUDIT.md). *)
+   scratch/orch/copyfresh-AUDIT.md). Fresh means fresh for sigma's image
+   too, as the oracle's @copy symbols are: a copy site can read a fixed
+   input as a fresh application generation, and a cg y or output role
+   equal to it would identify it with F's input or output again
+   (examples/copy-fresh-collide.moss, scratch/orch/realizepf-AUDIT.md). *)
 Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : list nat) : Prop :=
   exists outs gen ys cg Cr ks Cr' ks',
     (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs ++ map cg ys) /\
+    (forall z, In z (flat_map (fun q => gens (snd q)) sigma) -> ~ In z (map gen outs ++ map cg ys)) /\
     (forall t, In t outs -> Fresh W (gen t)) /\
     (forall y, In y ys -> Fresh W (cg y)) /\
     (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
