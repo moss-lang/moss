@@ -4432,6 +4432,9 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
+    (* only an abstract functor is bound (D78; the oracle's bind_functor,
+       examples/copy-into-body.moss) *)
+    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh -> incl nsh nsu ->
     (* Copying requires the target fixed inputs now and preserves every

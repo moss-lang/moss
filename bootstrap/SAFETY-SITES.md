@@ -127,6 +127,20 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A copy's target is abstract (fwdsigs).** BFunCopy did not require
+  `bind F = H;`'s F to be abstract, though BFunClosure does and the oracle's
+  `bind_functor` rejects a target with a body ("`F` has a body, so it is
+  applied ..., not bound; only an abstract functor is bound (D78)").
+  - [copy-into-body.moss](examples/copy-into-body.moss): rejected by the
+    oracle (that message) and by native ("not supported ... `bind F = H;`");
+    the control without F's body prints 7 on both.
+  - The proof needs it: `CF.ChainForwardCopySigs` relates each copy's
+    result read in two contexts (PublicFamilyAgree.entries_rel), which asks
+    that every symbol the result mentions is one of the copy's inputs; only
+    an abstract functor has implicit inputs.
+  - Fix: BFunCopy gains `exists n ps a r, ast_of W u = Some (ADFunctor n ps a
+    r None)`, carried in `S.CopySite`. It mirrors the oracle's check, so it
+    rejects nothing the oracle accepts. See scratch/orch/fwdsigs-AUDIT.md.
 - **A linked body's result keys are read at G's readings of the inputs (linknewpf).**
   `CC.FamilyLinkNewOk` was false, and so, very likely, was
   `CN.ChainRealizeOk` for a linked root.

@@ -1,0 +1,45 @@
+# A copy `bind F = H;` whose target F has a body. Only an abstract functor
+# is bound (D78): the oracle's bind_functor rejects a target with a body
+# ("`F` has a body, so it is applied (`bind F;`), not bound"), as Audit's
+# BFunClosure already requires (and now BFunCopy too,
+# scratch/orch/fwdsigs-AUDIT.md). The control (copy-into-body-ok.moss)
+# drops F's body and is accepted.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type X;
+assume X { val vx: X; }
+assume Std, X { val out: X; }
+
+functor H: Std, X, vx -> out;
+
+functor F: Std, X, vx -> out;
+
+functor G: Std, X, vx -> out {
+  bind out = vx;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind H = G;
+    bind F = H;
+    bind X = Int;
+    bind vx = 7;
+    bind F;
+    print_int(out);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
