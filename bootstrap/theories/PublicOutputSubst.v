@@ -87,7 +87,10 @@ Proof.
   intros s T1 T2 a1 a2 [rq1 [E1 K1]] [rq2 [E2 K2]] Ag.
   assert (Rq : rq1 = rq2).
   { destruct K1 as [[M1 S1]|[M1 S1]]; destruct K2 as [[M2 S2]|[M2 S2]];
-      [exact (select_det _ _ _ _ _ S1 S2)|congruence|congruence|congruence]. }
+      [|congruence|congruence|congruence].
+    destruct S1 as (sel1 & ex1 & S1 & O1 & ->). destruct S2 as (sel2 & ex2 & S2 & O2 & ->).
+    assert (Ee : ex1 = ex2) by (eapply sig_outside_det; eassumption).
+    rewrite (select_det _ _ _ _ _ S1 S2), Ee. reflexivity. }
   subst a1 a2 rq2. unfold InstRel. clear K1 K2. induction rq1 as [|r rest IH]; cbn; [constructor|constructor; [|exact IH]].
   split; [reflexivity|]. intros x1 x2 L1 L2. exact (Ag r x1 x2 L1 L2).
 Qed.

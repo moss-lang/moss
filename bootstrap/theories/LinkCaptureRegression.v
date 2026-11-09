@@ -82,7 +82,7 @@ Lemma seeddecl_read : A.w_decl model 2 = Some seeddecl.
 Proof. vm_compute;reflexivity. Qed.
 Lemma seed_app : A.AppOf model 2 [(1,TAbs 1)] [(1,Some (TAbs 1))].
 Proof.
- exists [1];split;[intros t [<-|[]];left;reflexivity|].
+ exists [1].
  split;[reflexivity|]. split;[reflexivity|intro Kind;discriminate Kind].
 Qed.
 Lemma seed_items : A.ItemsEntries model "/capture.moss" [] [] [pathspec "T";pathspec "seed"]

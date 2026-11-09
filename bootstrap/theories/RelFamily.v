@@ -91,6 +91,19 @@ Proof.
    intros [b[H _]];contradiction.
 Qed.
 
+(* Box.get's signature mentions only Item, its requirement. *)
+Lemma get_sig_in : forall t, SigMentions W_fa 6 t -> In t (w_reqs W_fa 6).
+Proof.
+  intros t H. destruct H as (d & rcv & n & ps & rt & body & Hd & Ha & [(pt & Hpt & F)|(r0 & Hr & F)]);
+    vm_compute in Hd; injection Hd as <-; vm_compute in Ha; injection Ha as <- <- <- <- <-;
+    [destruct Hpt|injection Hr as <-].
+  inversion F as [| |pa a t' Rs K N|pa a g x Rs K I N|pa a bp sp dd sa x Rs I F']; subst.
+  - vm_compute in Rs. injection Rs as <-. vm_compute. left. reflexivity.
+  - vm_compute in Rs. injection Rs as <-. vm_compute in K. exfalso. exact (K eq_refl).
+  - vm_compute in I. destruct I.
+Qed.
+Ltac sig_in_reqs ::= apply get_sig_in; assumption.
+
 Lemma fam_mentions : forall t, Mentions W_fa 4 t -> t = 1.
 Proof.
   intros t (d & ps & a & r & b & sp & Hd & Hp & Hin & Hm & _). vm_compute in Hd. injection Hd as <-.
@@ -104,7 +117,7 @@ Proof.
     match goal with H : MethodNamed _ _ _ _ ?m |- _ =>
       destruct H as [Hat|(_ & Hs)]; [ | vm_compute in Hs; discriminate Hs ] end.
     unfold Attached in Hat. vm_compute in Hat. injection Hat as <-.
-    match goal with H : In t (w_reqs W_fa _) |- _ => vm_compute in H; destruct H as [<-|[]] end.
+    match goal with H : SigMentions _ _ _ |- _ => apply get_sig_in in H; vm_compute in H; destruct H as [<-|[]] end.
     reflexivity.
   - match goal with H : In _ [] |- _ => destruct H end.
 Qed.

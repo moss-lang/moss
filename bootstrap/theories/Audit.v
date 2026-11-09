@@ -2862,7 +2862,7 @@ Definition SigOf (W : world) (s : nat) (tm : list (nat * ty)) (this : option ty)
     Forall2 (fun pt t => TyOf W (d_mod d) tm this (snd pt) t) ps (sg_params g) /\
     match rt with Some r => TyOf W (d_mod d) tm this r (sg_ret g) | None => sg_ret g = TUnit end.
 
-(* A requirement t of fn or method s that its signature (a parameter's or
+(* A type symbol t that the signature of fn or method s (a parameter's or
    the result's type) mentions (note 51). *)
 Definition SigMentions (W : world) (s : nat) (t : nat) : Prop :=
   exists d rcv n ps rt body, w_decl W s = Some d /\ d_ast d = ADFn rcv n ps rt body /\
@@ -2878,10 +2878,54 @@ Inductive Select {A : Type} (P : A -> Prop) : list A -> list A -> Prop :=
     Select P (x :: xs) (x :: selected)
 | SelectDrop : forall x xs selected, ~ P x -> Select P xs selected ->
     Select P (x :: xs) selected.
+(* [D20], sigclose: a method's signature is closed over its requirements,
+   which include every type symbol it mentions, so θ records each. The
+   mentioned symbols outside its assume nesting (w_reqs) follow the
+   nesting's, ascending: a list fixed by its members. *)
+Fixpoint Ascending (l : list nat) : Prop :=
+  match l with
+  | x :: ((y :: _) as r) => x < y /\ Ascending r
+  | _ => True
+  end.
+Definition SigOutside (W : world) (s : nat) (extra : list nat) : Prop :=
+  Ascending extra /\ forall t, In t extra <-> SigMentions W s t /\ ~ In t (w_reqs W s).
+Lemma ascending_tail : forall x r, Ascending (x :: r) -> Ascending r.
+Proof. intros x [|y r] H; [exact I | exact (proj2 H)]. Qed.
+Lemma ascending_lt : forall r x, Ascending (x :: r) -> forall y, In y r -> x < y.
+Proof.
+  induction r as [|z r IH]; intros x H y Hy; [destruct Hy|]. destruct H as [Hxz Hr].
+  destruct Hy as [<-|Hy]; [exact Hxz | exact (Nat.lt_trans _ _ _ Hxz (IH z Hr y Hy))].
+Qed.
+(* An ascending list is fixed by its members. *)
+Lemma ascending_det : forall l1 l2, Ascending l1 -> Ascending l2 ->
+  (forall t, In t l1 <-> In t l2) -> l1 = l2.
+Proof.
+  induction l1 as [|x r1 IH]; intros [|y r2] A1 A2 E.
+  - reflexivity.
+  - exfalso. exact (proj2 (E y) (or_introl eq_refl)).
+  - exfalso. exact (proj1 (E x) (or_introl eq_refl)).
+  - assert (Exy : x = y).
+    { destruct (proj1 (E x) (or_introl eq_refl)) as [->|Hx]; [reflexivity|].
+      destruct (proj2 (E y) (or_introl eq_refl)) as [->|Hy]; [reflexivity|].
+      exfalso. exact (Nat.lt_asymm _ _ (ascending_lt r2 y A2 x Hx) (ascending_lt r1 x A1 y Hy)). }
+    subst y. f_equal. apply IH; [exact (ascending_tail _ _ A1) | exact (ascending_tail _ _ A2)|].
+    intro t. split; intro Ht.
+    + destruct (proj1 (E t) (or_intror Ht)) as [Ex|H]; [|exact H].
+      exfalso. rewrite <- Ex in Ht. exact (Nat.lt_irrefl _ (ascending_lt r1 x A1 x Ht)).
+    + destruct (proj2 (E t) (or_intror Ht)) as [Ex|H]; [|exact H].
+      exfalso. rewrite <- Ex in Ht. exact (Nat.lt_irrefl _ (ascending_lt r2 x A2 x Ht)).
+Qed.
+Lemma sig_outside_det : forall W s e1 e2, SigOutside W s e1 -> SigOutside W s e2 -> e1 = e2.
+Proof.
+  intros W s e1 e2 [A1 M1] [A2 M2]. apply ascending_det; [exact A1 | exact A2|].
+  intro t. rewrite M1, M2. reflexivity.
+Qed.
 Definition AppOf (W : world) (s : nat) (tm : subst) (a : inst) : Prop :=
   exists requirements,
     a = map (fun r => (r, nlook r tm)) requirements /\
-    ((kind_sym W s = Some DKMeth /\ Select (SigMentions W s) (w_reqs W s) requirements) \/
+    ((kind_sym W s = Some DKMeth /\ exists selected extra,
+        Select (SigMentions W s) (w_reqs W s) selected /\ SigOutside W s extra /\
+        requirements = selected ++ extra) \/
      (kind_sym W s <> Some DKMeth /\ requirements = w_reqs W s)).
 
 (* The receiver type of a method item `R.m`: R's meaning if R is a type
@@ -2938,7 +2982,7 @@ Inductive ResultMentions (W : world) : nat -> string -> spec -> nat -> Prop :=
     ResultMentions W self p (Spec (Some pa) (Some dn) a) t
 | RMMeth : forall self p pa dn a r m t,
     resolve_sym W p pa = Some r -> MethodNamed W p r dn m ->
-    In t (w_reqs W m) -> SigMentions W m t ->
+    SigMentions W m t ->
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
     ResultMentions W self p (Spec (Some pa) (Some dn) a) t
 | RMBracket : forall self p pa d a bp sp dr sa t,

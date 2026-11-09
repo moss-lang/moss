@@ -53,8 +53,8 @@ Proof.
  {eapply signature_extends;[exact Sig|apply lookup_overlay_extends]. }
  exists(smap sigma base);split.
  - exact(sigof_subst W sigma f base None sg Extended(smap sigma base)ltac:(intro key;apply nlook_smap)).
- - destruct App as[rs[Incl[Eq[Order Method]]]].
-   exists rs;split;[exact Incl|];split;[|split;assumption].
+ - destruct App as[rs[Eq[Order Method]]].
+   exists rs;split;[|split;assumption].
    unfold snapshot_inst;rewrite Eq,map_map;apply map_ext;intro key;cbn[fst snd].
    rewrite nlook_smap;unfold base;rewrite lookup_overlay_missing.
    destruct(A.nlook key rawtm);reflexivity.

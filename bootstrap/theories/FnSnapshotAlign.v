@@ -28,7 +28,7 @@ Lemma appof_function_member:forall W f tm a key value,
  A.kind_sym W f<>Some A.DKMeth->A.AppOf W f tm a->
  In(key,value)a->A.nlook key tm=value.
 Proof.
- intros W f tm a key value NotMethod[rs[Incl[-> [All Filter]]]] Member.
+ intros W f tm a key value NotMethod[rs[-> [All Filter]]] Member.
  apply in_map_iff in Member as[r[Eq Member]].
  injection Eq as <- <-;reflexivity.
 Qed.
@@ -36,7 +36,7 @@ Lemma appof_function_complete:forall W f tm a key,
  A.kind_sym W f<>Some A.DKMeth->A.AppOf W f tm a->
  In key(A.w_reqs W f)->In(key,A.nlook key tm)a.
 Proof.
- intros W f tm a key NotMethod[rs[Incl[-> [All Filter]]]] Member.
+ intros W f tm a key NotMethod[rs[-> [All Filter]]] Member.
  rewrite(All NotMethod);apply in_map_iff;exists key;split;[reflexivity|exact Member].
 Qed.
 (* Coherence of the recorded provision determines every prototype key that

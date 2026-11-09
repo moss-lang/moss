@@ -221,13 +221,19 @@ Proof.
       * intros Km. match goal with H : AppOf W m1 _ ?a2 |- _ => destruct App as [rq1 [E1 K1]]; destruct H as [rq2 [E2 K2]] end.
         assert (Rq : rq1 = rq2).
         { destruct K1 as [[M1 S1]|[M1 S1]]; destruct K2 as [[M2 S2]|[M2 S2]];
-            [exact (PublicOutputSubst.select_det _ _ _ _ _ S1 S2)|congruence|congruence|congruence]. }
-        subst rq2. destruct K1 as [[_ S1]|[M1 _]]; [|congruence]. subst. unfold InstSome.
-        assert (Each : forall t, In t rq1 -> nlook t (bs ++ ob ++ tm) <> None).
-        { intros t It. destruct (select_facts _ _ _ _ S1 t It) as [SM Iw].
+            [|congruence|congruence|congruence].
+          destruct S1 as (sel1 & ex1 & S1 & O1 & ->). destruct S2 as (sel2 & ex2 & S2 & O2 & ->).
+          assert (Ee : ex1 = ex2) by (eapply sig_outside_det; eassumption).
+    rewrite (PublicOutputSubst.select_det _ _ _ _ _ S1 S2), Ee. reflexivity. }
+        subst rq2. destruct K1 as [[_ (sel1 & ex1 & S1 & O1 & Eq1)]|[M1 _]]; [|congruence]. subst. unfold InstSome.
+        assert (Each : forall t, In t (sel1 ++ ex1) -> nlook t (bs ++ ob ++ tm) <> None).
+        { intros t It.
+          assert (SM : SigMentions W m1 t).
+          { apply in_app_or in It as [It|It];
+              [exact (proj1 (select_facts _ _ _ _ S1 t It)) | exact (proj1 (proj1 (proj2 O1 t) It))]. }
           destruct (classic_bound a p t) as [Bd|NB]; [exact (Bound t Bd)|].
-          apply Ext. exact (Mt t (@RMMeth W u p pa dn a r m1 t R Mn Iw SM NB)). }
-        exact (inst_some_of rq1 _ _ Each D12 Ag2).
+          apply Ext. exact (Mt t (@RMMeth W u p pa dn a r m1 t R Mn SM NB)). }
+        exact (inst_some_of (sel1 ++ ex1) _ _ Each D12 Ag2).
       * intros gq Ig. rewrite <- kt_fst. apply in_app_or in Ig as [Ig|Ig]; [exact (recv_scoped W _ _ _ _ Rv Sc gq Ig)|].
         apply in_app_or in Ig as [Ig|Ig].
         -- apply (sigof_scoped W _ _ _ _ _ _ Sig Sc); [|exact Ig].

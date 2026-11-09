@@ -183,16 +183,22 @@ Proof.
   - exact (scope_good _ _ _ _ Lp S).
 Qed.
 
+Lemma sig_mentions_typed : forall m t, SigMentions W m t -> Typed t.
+Proof.
+  intros m t (d & rcv & n & ps & rt & body & D & _ & [(pt & _ & F)|(r & _ & F)]);
+    exact (freein_typed _ _ _ _ (decl_loaded _ _ D) (fun g y D I => reqs_typed g y D I) F).
+Qed.
+
 Lemma result_mentions_typed : forall self p sp t, ResultMentions W self p sp t -> Loaded b p -> Typed t.
 Proof.
   intros self p sp t R. induction R as
-    [self p pa a s t Rs K I _|self p pa dn a r t Rs Cases _|self p pa dn a r m t Rs Mn I _ _
+    [self p pa a s t Rs K I _|self p pa dn a r t Rs Cases _|self p pa dn a r m t Rs Mn SM _
     |self p pa d a bp sp dr sa t _ _ F|self p pa a c dc n its sp t Rs Dc _ _ _ IH _
     |self p pa a u du n names args res sp t Rs Du _ _ _ _ IH _ _ _]; intros Lp.
   - destruct K as [K|K]; exact (reqs_plain_typed s _ t K ltac:(discriminate) ltac:(discriminate) I).
   - destruct Cases as [[-> K]|[_ I]]; [exact K|].
     exact (reqs_typed r t (resolve_sym_declared _ _ _ Lp Rs) I).
-  - exact (reqs_typed m t (method_named_declared _ _ _ _ Lp Mn) I).
+  - exact (sig_mentions_typed m t SM).
   - exact (freein_typed _ _ _ _ Lp (fun g y D I => reqs_typed g y D I) F).
   - exact (IH (decl_loaded _ _ Dc)).
   - exact (IH (decl_loaded _ _ Du)).

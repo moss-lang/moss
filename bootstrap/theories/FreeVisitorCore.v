@@ -1,5 +1,5 @@
 (* The actual signature visitor, read against the final fixed requirements. *)
-From Stdlib Require Import List String Bool Arith.
+From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
@@ -134,12 +134,42 @@ Proof.
  - intro Hf. exists(A.Decl(path_of(gs_mod g))(gs_decl g)(gs_assumes g)),rcv,n,ps,rt,body.
    split;[exact(w_decl_rd w R Fl _ _ Hg)|]. split;[exact D|exact Hf].
 Qed.
+(* Elab.nsort: ascending, the same members. *)
+Lemma nsort_insert_in:forall x l y,In y(nsort_insert x l)<->y=x\/In y l.
+Proof.
+ intros x l. induction l as[|z r IH];intro y;cbn[nsort_insert].
+ - cbn. intuition.
+ - destruct(Nat.ltb_spec x z);[cbn;intuition|]. destruct(Nat.eqb_spec x z)as[->|];[cbn;intuition|].
+   cbn[In]. rewrite IH. intuition.
+Qed.
+Lemma nsort_in:forall l y,In y(nsort l)<->In y l.
+Proof.
+ induction l as[|x r IH];intro y;[reflexivity|]. unfold nsort. cbn[fold_right]. fold(nsort r).
+ rewrite nsort_insert_in,IH. cbn[In]. intuition.
+Qed.
+Lemma nsort_insert_head:forall x l z r,nsort_insert x l=z::r->z=x\/exists r',l=z::r'.
+Proof.
+ intros x[|y l]z r H;cbn[nsort_insert]in H;[injection H as <- _;left;reflexivity|].
+ destruct(Nat.ltb x y);[injection H as <- _;left;reflexivity|]. destruct(Nat.eqb x y);[right;exists r;exact H|].
+ injection H as <- _. right. exists l. reflexivity.
+Qed.
+Lemma nsort_insert_ascending:forall x l,A.Ascending l->A.Ascending(nsort_insert x l).
+Proof.
+ intros x l. induction l as[|y r IH];intro H;[exact I|]. cbn[nsort_insert].
+ destruct(Nat.ltb_spec x y);[cbn;split;[exact H0|exact H]|]. destruct(Nat.eqb_spec x y);[exact H|].
+ assert(Hr:A.Ascending r)by(destruct r;[exact I|exact(proj2 H)]).
+ specialize(IH Hr). destruct(nsort_insert x r)as[|z r']eqn:E;[exact I|].
+ cbn. split;[|exact IH]. destruct(nsort_insert_head x r z r' E)as[->|(r''&->)];[lia|exact(proj1 H)].
+Qed.
+Lemma nsort_ascending:forall l,A.Ascending(nsort l).
+Proof. induction l as[|x r IH];[exact I|]. exact(nsort_insert_ascending x(nsort r)IH). Qed.
 Lemma later_sigsyms:forall f s,Later w P R Fl(s_sigsyms f s)->Later w P R Fl s.
 Proof. intros f s[L1 L2 L3 L4 L5 L6 L7 L8 L9]. constructor;assumption. Qed.
 Theorem signature_type_syms_filter:forall g rcv n ps rt body rs s result s',
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn rcv n ps rt body->
  signature_type_syms g rs s=Good(result,s')->Inv s->st_w s=w->Later w P R Fl s'->
- exists test:nat->bool,result=filter test rs/\forall x,test x=true<->A.SigMentions WW(gs_id g)x.
+ exists(test:nat->bool)extra,result=filter test rs++extra/\(forall x,test x=true<->A.SigMentions WW(gs_id g)x)/\
+  A.Ascending extra/\forall x,In x extra<->A.SigMentions WW(gs_id g)x/\~In x rs.
 Proof.
  intros g rcv n ps rt body rs s result s' Hg D H Hi Hw L.
  unfold signature_type_syms in H. rewrite D in H.
@@ -166,7 +196,11 @@ Proof.
    - injection Hr as <- <-. rewrite Rfold. cbn[In]. split.
      + intros[[]|Hp]. left;exact Hp.
      + intros[Hp|(t'&E&_)];[right;exact Hp|discriminate E]. }
- exists(fun x=>nmem x vis). split;[reflexivity|]. intro x. rewrite nmem_in. exact(M x).
+ exists(fun x=>nmem x vis),(nsort(filter(fun t=>negb(nmem t rs))vis)). split;[reflexivity|].
+ split;[intro x;rewrite nmem_in;exact(M x)|]. split;[apply nsort_ascending|].
+ intro x. rewrite nsort_in,filter_In,<-M. pose proof(nmem_in x rs)as Nm. destruct(nmem x rs);cbn;
+ [split;[intros[_ E];discriminate E|intros[_ N];exfalso;apply N,Nm;reflexivity]|].
+ split;[intros[Hv _];split;[exact Hv|intro I;apply Nm in I;discriminate I]|intros[Hv _];split;[exact Hv|reflexivity]].
 Qed.
 
 Lemma filter_mask:forall(test:nat->bool)rs,
