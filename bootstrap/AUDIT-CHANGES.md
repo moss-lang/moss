@@ -907,6 +907,22 @@ executable tests unless noted.
 
 ---
 
+## Consolidation (branch ob-consol)
+
+After G05 closed, the functor-application rules were read end to end
+against three principles (inputs of F read at G's own table, outputs at
+the body's; an application installs exactly F's declared result under
+the caller's keys, from the root's positions; copies are position maps
+with fresh symbols that avoid the copy site's substitution). The full
+spec and clause classification are in `scratch/consol-STATUS.md`
+(git-ignored). Each removal below is its own commit, with `check.sh`
+green.
+
+| Removed | From | Effect on acceptance | Commit |
+|---|---|---|---|
+| `~ In t (fr_pins F)` in the kept-output case (#13, 268bf3a) | `BApplyAbstract` | relaxation toward both implementations: [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) is now accepted (oracle 7, native 7) | "Drop BApplyAbstract's pin clause" |
+| "G has a body" (`exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))`) | `BFunClosure` | none: `LinkBody` states it (`w_decl W gg = Some dg`, `d_ast dg = ADFunctor n ps a r (Some bodies)`) | "BFunClosure: drop the body premise LinkBody states" |
+
 ## Implementation bugs filed (E31–E37)
 
 All of these come from [proof-plan.json](proof-plan.json).

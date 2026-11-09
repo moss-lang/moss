@@ -3378,7 +3378,6 @@ Qed.
 Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
       (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
-      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
       A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
@@ -3390,7 +3389,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h (A.lexical_capture C) sm smc).
 Proof.
-  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J rr _.
+  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
@@ -4690,7 +4689,7 @@ Proof.
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
+                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep. exact FD.
     + exists [BValue v x]. split; [reflexivity|].
@@ -4716,7 +4715,7 @@ Proof.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J).
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].

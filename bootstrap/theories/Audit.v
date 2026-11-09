@@ -4470,7 +4470,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are
    captured here (vals by value) and must be in force here; G's body is
-   checked once, in its own terms, as the core functor body h (LinkBody).
+   checked once, in its own terms, as the core functor body h (LinkBody,
+   which also asks that G has a body).
    The closure keeps types as a lambda does (`lexical_capture`): the
    table's readings and the meanings of what the context mentions, method
    keys' receivers included, so a captured need keyed at a declared symbol
@@ -4479,7 +4480,6 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
 | BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
-    (exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
