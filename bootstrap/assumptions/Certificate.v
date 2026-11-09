@@ -17,7 +17,8 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
-  PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicSameNeed.
+  PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicSameNeed
+  PublicMergeClass.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -204,6 +205,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicConsol.link_sources_restated);
   root (@NM.PublicOrientation.mgm_classes_iff);
   root (@NM.PublicOrientation.mgm_reorient);
+  root (@NM.PublicOrientation.merges_by_pairs);
+  root (@NM.PublicMergeClass.functx_merges);
   root (@NM.PublicSameNeed.need_reading_orientation_free_F);
   root (@NM.PublicSameNeed.need_reading_orientation_free_G);
   root (@NM.PublicSameNeed.link_need_unambiguous);

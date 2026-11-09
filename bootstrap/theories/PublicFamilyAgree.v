@@ -9,7 +9,7 @@
    the first reading mentions only generations in a given list K. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
-From NM Require PublicFormation PublicOutputSubst PublicCallerKeys.
+From NM Require PublicFormation PublicOutputSubst PublicCallerKeys PublicOrientation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -900,7 +900,10 @@ Theorem family_items_agree : ItemsAgree (family_context C matching) Cr Cu output
 Proof.
   destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  destruct Sat as [_ [_ [_ [_ Merge0]]]].
+  pose proof (PublicOrientation.merges_by_pairs (family_context C matching) Cu (map fst (c_ty Cu))
+    (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (functx_scoped W u Cu needs FCu)))))))
+    (PublicOrientation.functx_sub_function W u Cu needs FCu) InF Merge0) as Merge.
   apply (items_agree_gen W C u th (family_context C matching) (fun t => TAbs t) Cr ks Cu needs outputs keys).
   - exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))).
   - split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].
@@ -920,7 +923,10 @@ Theorem family_items_pos : Forall2 (fun k key => app_subst_item th (rkey_of outp
 Proof.
   destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  destruct Sat as [_ [_ [_ [_ Merge0]]]].
+  pose proof (PublicOrientation.merges_by_pairs (family_context C matching) Cu (map fst (c_ty Cu))
+    (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (functx_scoped W u Cu needs FCu)))))))
+    (PublicOrientation.functx_sub_function W u Cu needs FCu) InF Merge0) as Merge.
   apply (items_agree_pos W C u th (family_context C matching) (fun t => TAbs t) Cr ks Cu needs outputs keys).
   - exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))).
   - split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].

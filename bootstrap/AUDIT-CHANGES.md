@@ -102,8 +102,9 @@ entry they belong to.
 | 51 | F's congruence decides "same need" across contexts (`canon_item`) | 71be6ac (sameneed) | C and D (a relaxation) |
 | 52 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
 | 53 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
+| 54 | `Satisfies` checks the callee's merges by class | coherence2 | relaxation (toward native) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, and #52 and #53, from the coherence2 branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, and #52 to #54, from the coherence2 branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1357,6 +1358,67 @@ executable tests unless noted.
   reading from the new clause (`fixed_machine_self`, by idempotence of
   main's merge).
 - **Class A** (reject-only, mirroring both implementations).
+
+### 54. `Satisfies` checks the callee's merges by class (coherence2 branch; PART-DESIGN §1.5 #6)
+- **Rule now.** The merges clause of `Satisfies` checks each class of
+  the callee's merge that is wholly in force here. That means all its
+  members are in force, and so are the classes of the symbols of the
+  structure it is merged with. For such a class, the caller reads a
+  member g as it reads `canon Cs (TAbs g)`. Before, the clause checked
+  each equation (g, t) of the callee's σ whose symbols g and `gens t`
+  were in force.
+- **Why.** Whether an equation mentions a symbol that is not in force
+  depends on the representative. At a closure (`bind F = G;`, BFunClosure
+  3b), take a G class {X, Y, Z} where X is linked and in force, Y is
+  captured and in force, and Z is not in force.
+  - With representative X, the clause checked Y = X and skipped Z = X.
+  - With representative Z, every equation mentions Z and was skipped.
+
+  So a class only partly in force was checked under one representative
+  and not under another. Classes, and "wholly in force", do not depend on
+  the choice (`PublicOrientation.mgm_classes_iff`).
+  - At calls, `CallTheta`'s merge clause already holds of every class,
+    so this clause adds nothing there.
+  - At applications and families, every input is in force. There the
+    class form gives every equation of σ
+    (`PublicOrientation.merges_by_pairs`,
+    `PublicMergeClass.functx_merges`), which is what the proofs use.
+  - At closures, the permissive form is sufficient (PART-DESIGN): a
+    class only partly in force has a linked member, and each application
+    reads the class at θ.
+- **Criterion: coherence** (criteria.md section 2).
+- **Coordination.** Built on `sameneed` (#51, merged): the clause it
+  restates sits next to 71be6ac's `canon_item` filters, which are
+  unchanged.
+- **Tests** (Audit verdicts argued from the rules, not run):
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [closure-partial-class-xyz.moss](examples/closure-partial-class-xyz.moss) (X = Bool and Y = Char at the bind, Z unbound) | rejects ("linked input interpretation differs") | prints k | rejects (LinkBody forces representative X; Y = X fails) | accepts |
+  | [closure-partial-class-zyx.moss](examples/closure-partial-class-zyx.moss) (the same, merge listed the other way) | prints k | prints k | rejects | accepts |
+  | [closure-partial-unbound-xyz.moss](examples/closure-partial-unbound-xyz.moss) (X unbound at the bind) | rejects | prints k | accepts | accepts |
+  | [closure-partial-unbound-zyx.moss](examples/closure-partial-unbound-zyx.moss) | prints k | prints k | accepts | accepts |
+
+  The oracle is itself order-dependent on these programs. Its linked
+  input interpretation check (`defined_link_inputs_compatible`) reads the
+  class through its union-find representative. That is an oracle
+  coherence bug, not fixed here.
+- **Corpus.** No oracle variant changes acceptance. The oracle has no
+  check of G's merges at a closure's bind: it checks only that captured
+  keys are present and that their frozen readings agree
+  (`check_captured_reading`). Audit's change is a relaxation, and it
+  changes Audit's verdict only where Audit rejected before (as on
+  closure-partial-class-*.moss). Neither implementation runs Audit, so
+  no corpus verdict of theirs moves.
+- **Proof.** `public_safety` unchanged. Ten sites that read the merges
+  clause at an application, a family or a copy now derive the per-equation
+  form from the class form through `PublicMergeClass.functx_merges`
+  (new file, added to the certificate's roots): PublicBodySlice
+  (`apply_theta`), PublicFamilyAgree (two), PublicChainFwd,
+  PublicChainSigs, PublicChainRealize (two), PublicFamilyLink and
+  PublicFamilyCopy (two).
+- **Class:** a relaxation, toward native (and toward the oracle in one
+  merge order).
 
 ---
 

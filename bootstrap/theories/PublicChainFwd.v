@@ -9,7 +9,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply
   PublicPlatformApply PublicFamilyAgree PublicChainNew.
-From NM Require PublicFormation PublicTypeFacts PublicCallerKeys.
+From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicOrientation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -136,7 +136,12 @@ Proof.
     destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).
     exists r0, m0, a0. split; [reflexivity|]. unfold A.kind_sym. rewrite Dm, Ast. cbn.
     destruct form; [contradiction|reflexivity|reflexivity]. }
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  destruct Sat as [_ [_ [_ [_ Merge0]]]].
+  assert (Force : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
+  { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }
+  pose proof (PublicOrientation.merges_by_pairs C Cu (map fst (A.c_ty Cu))
+    (proj2 (proj2 (proj2 (proj2 (proj2 (proj2 (PublicCallRealize.functx_scoped W u Cu ns FC)))))))
+    (PublicOrientation.functx_sub_function W u Cu ns FC) Force Merge0) as Merge.
   assert (Parts : th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) /\
     (forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None) /\
     (forall g t, In (g, t) (A.c_sub Cu) -> (forall x, In x (g :: A.gens t) -> A.nlook x (A.c_ty C) <> None) ->

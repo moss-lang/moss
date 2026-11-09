@@ -30,6 +30,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicLinkResults PublicChainCore PublicLinkScope.
 From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig.
+From NM Require PublicMergeClass.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -1143,7 +1144,10 @@ Lemma top_key : forall k, In k (map fst news) -> exists q pv,
 Proof.
   intros k Ik.
   pose proof AP as (_ & Fx & FC & Inp & Th & FixC & Sat & _ & Uniq & _ & _ & OutsI & PR).
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  destruct Sat as [_ [_ [_ [_ Merge0]]]].
+  assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
+  { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }
+  pose proof (PublicMergeClass.functx_merges W u Cu ns C FC Force0 Merge0) as Merge.
   assert (Parts : th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) /\
     (forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None) /\
     (forall g t, In (g, t) (A.c_sub Cu) -> (forall x, In x (g :: A.gens t) -> A.nlook x (A.c_ty C) <> None) ->
@@ -1299,7 +1303,10 @@ Proof.
     dr Sdr news En.
   pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem KMc]]] & Fmd).
   pose proof AP as (_ & Fx & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  destruct Sat as [_ [_ [_ [_ Merge0]]]].
+  assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
+  { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }
+  pose proof (PublicMergeClass.functx_merges W u Cu ns C FC Force0 Merge0) as Merge.
   pose proof LD as (FC0 & FCg & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & _ & _ & FB & _).
   (* the root and the top are abstract *)
   assert (Abs0 : CSg.Abstract W h0) by exact (CSg.abstract_of_ast W h0 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_link_abstract W Prog argv read state_ok _ _ _ _ _ _ _ Ok0)).

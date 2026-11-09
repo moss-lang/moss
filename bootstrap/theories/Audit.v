@@ -3293,10 +3293,20 @@ Definition Satisfies (C : cx) (Cs : cx) (th : subst) (ns : list item) (sm : smap
   (forall k p, In k ns -> ilook k (c_provisions Cs) = Some p ->
      exists p', ilook (at_th C th k) (c_provisions C) = Some p' /\
        option_map (canon_sig C) (provision_signature p') = option_map (sig_at C th) (provision_signature p)) /\
-  (* merges: every equation of the callee's σ holds of the caller's meanings *)
-  (forall g t, In (g, t) (c_sub Cs) ->
-     (forall x, In x (g :: gens t) -> nlook x (c_ty C) <> None) ->
-     canon C (app_subst (c_ty C) (TAbs g)) = canon C (app_subst (c_ty C) t)).
+  (* merges: every merge class of the callee whose members, and the
+     classes of the symbols of its structure, are all in force here holds
+     of the caller's meanings.  Stated by class (criteria section 2,
+     coherence): the classes do not depend on the callee's choice of
+     representatives (PublicOrientation.mgm_classes_iff), while the
+     equations of its σ do.  A class only partly in force here is not
+     checked under any representative (a closure's class with a linked
+     member: BFunClosure; before, an equation of σ was skipped only when it
+     mentioned a symbol not in force, so such a class was checked under a
+     representative that is captured and not under one that is linked).
+     At a call, CallTheta's merge clause already holds of every class. *)
+  (forall g, (forall y, (exists x, (x = g \/ In x (gens (canon Cs (TAbs g)))) /\
+                          canon Cs (TAbs y) = canon Cs (TAbs x)) -> nlook y (c_ty C) <> None) ->
+     canon C (app_subst (c_ty C) (TAbs g)) = canon C (app_subst (c_ty C) (canon Cs (TAbs g)))).
 
 (* Arguments checked against parameter types ([D17] fits), elaborated in order. *)
 

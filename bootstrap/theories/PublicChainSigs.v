@@ -26,7 +26,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd.
-From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink.
+From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink PublicMergeClass.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -606,7 +606,10 @@ Proof.
   pose proof FD as (FC0 & NoH & PRf & _ & _ & _ & Abst0 & _).
   pose proof AP as (_ & _ & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
   pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem KMc]]] & Fmd).
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  destruct Sat as [_ [_ [_ [_ Merge0]]]].
+  assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
+  { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }
+  pose proof (PublicMergeClass.functx_merges W u Cu ns C FC Force0 Merge0) as Merge.
   assert (AbU : Abstract u) by exact (chain_abs u gfx sms rms h0 gf0 [] [] Chn Abst0).
   pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W u gfx sms rms h0 gf0 [] [] Chn NoH) as NoU.
   assert (Parts : th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) /\
