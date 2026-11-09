@@ -154,6 +154,8 @@ Definition certificate_roots :=
   @PublicChainNewI.chain_new_ok,
   @NM.PublicCopyFresh.copy_outputs_at,
   @NM.PublicCopyFresh.ground_app_subst,
+  @NM.PublicCopyFresh.result_gens,
+  @NM.PublicCopyFresh.copy_outputs_read,
   @NM.PublicCallerKeys.provide_result_key_news,
   @PublicChainCoreI.selection_news,
   @PublicCopy.chain_sources_range,
