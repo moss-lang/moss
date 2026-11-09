@@ -2209,7 +2209,8 @@
         "E33",
         "E34",
         "E35",
-        "E36"
+        "E36",
+        "E37"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2955,6 +2956,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/link-merge-captured-fn.moss"
+        ]
+      }
+    },
+    {
+      "id": "E37",
+      "group": "E",
+      "title": "Oracle 3d: a linked body may not install an input of F as a kept output",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's D84 3d (link_body, Elab.v) rejects a functor closure G bound to F whose body applies an abstract functor with an output T that is an input of F (M(F)) not in force in G, so that the application installs T as itself. link-kept-output-pin.moss is then rejected, as native and Audit reject it.",
+      "approach": "check_link_pins compares only the table's reading of each pin before and after. A kept output installs T at TAbs T, so that check passes. Also reject a pin that the body's final table has and G's own table lacks (variant: scratch/realize2/varsrc, check_link_pins with `before`; corpus scratch/orch/realize2-cmp.out). bootstrap/examples/link-kept-output-pin.moss: F: T, Std -> T.m, done; G: Make, Std -> T.m, done applies Make, whose output T is Char at run time, and binds T.m on it. The caller's T = Bool files it under Bool.m, so `true.m()` runs Char's code on a Bool. The oracle elaborates it and gets `moss_ref: stuck (XErr 14)`. Native rejects it (\"compilation failed: `T`\"). Audit rejects it (BApplyAbstract's kept case: ~ In t (fr_pins F)).",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/link-kept-output-pin.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "While proving ChainRealizeOk (realize2), the body's new generations had to avoid F's inputs. The oracle and Audit allowed a kept output at a pin, and the oracle is stuck at run time (linknewpf's m7, made observable).",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/link-kept-output-pin.moss"
         ]
       }
     },

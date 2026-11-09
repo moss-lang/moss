@@ -3146,7 +3146,7 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
          (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
-            ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
+            ~ In t (A.context_gens C ++ A.key_receiver_gens C) /\ ~ In t (A.fr_pins F)) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
@@ -3180,7 +3180,7 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
          (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
-            ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
+            ~ In t (A.context_gens C ++ A.key_receiver_gens C) /\ ~ In t (A.fr_pins F)) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
@@ -3281,7 +3281,7 @@ Lemma link_3b : forall u gg h, A.LinkBody W Prog u gg h -> exists Cu nsu Cg nsg,
      A.nlook t (A.c_ty Cu) <> None -> A.Fixed W u t).
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
+    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
   exists Cu, nsu, Cg, nsg. split; [exact FCu|]. split; [exact FCg|exact B3].
 Qed.
 
@@ -3339,16 +3339,17 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
       (map ITy outs ++ map (A.rkey_of Cr) ks)%list binds0
-      (link_sources (A.link_site Cg Cb outs) outs gen ks)).
+      (link_sources (A.link_site Cg Cb outs) outs gen ks)) /\
+  (forall t, In t made -> A.nlook t (A.c_ty Cu) = None).
 
 Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Fam FrH FB].
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   refine (conj FCu (conj FCg (conj LPeq (conj (fun x tx L1 L2 _ => proj2 (LRd x tx L1 L2)) (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
-    (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO FB))))))))))))))))))).
+    (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO (conj FB MadeU)))))))))))))))))))).
 Qed.
 
 Lemma functx_unique : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
@@ -3688,7 +3689,7 @@ Lemma link_entry : forall rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2,
 Proof.
   intros rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2 LB FCu FCg Keys FxIn RealU Gfx Caps CF Sel.
   destruct (link_facts _ _ _ LB) as (dg & n0 & ps & a & rspec & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
-    & outs & gen & Cr & ks & binds0 & FCu' & FCg' & LPeq & LRd & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & FB).
+    & outs & gen & Cr & ks & binds0 & FCu' & FCg' & LPeq & LRd & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & FB & _).
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
   destruct (functx_static _ _ _ FCg) as [[CanG DomG] [CnG [KMg [NdG [ProvNsG [ShapeG [ScG FixG]]]]]]].
   destruct (functx_static _ _ _ FCu) as [[CanU DomU] [CnU [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
@@ -4806,7 +4807,7 @@ Proof.
     (apply_theta C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
   destruct (link_facts _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr & ks' & binds0 & LD).
-  pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
+  pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (functx_unique _ _ _ _ _ FC FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (linked_needs ns nsg))) as [d2 Sel2].

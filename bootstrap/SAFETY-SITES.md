@@ -141,6 +141,31 @@ the local store. *C* and *F* are the static context and frame.
   - Fix: BFunCopy gains `exists n ps a r, ast_of W u = Some (ADFunctor n ps a
     r None)`, carried in `S.CopySite`. It mirrors the oracle's check, so it
     rejects nothing the oracle accepts. See scratch/orch/fwdsigs-AUDIT.md.
+||||||| 01e0647
+- **A linked body may not install an input of F as a kept output (realize2).**
+  `CN.ChainRealizeOk` was false for a linked root (linknewpf's m7, made
+  observable).
+  - G does not take F's input T, and G's body applies Make, whose output
+    T is not in force in G. `BApplyAbstract` installed T as itself, and
+    at run time it meant Char.
+  - G binds `T.m` on it. The caller, with T = Bool, files it under Bool.m.
+  - The pins M(F) (D84 3d) stopped `bind T` only.
+  - [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): the
+    oracle elaborates it and is stuck at run time (XErr 14, proof-plan
+    E37); native rejects it.
+
+  Repair: BApplyAbstract's kept-output case also asks `~ In t (fr_pins F)`,
+  so every destination of a linked body avoids M(F). That was not enough:
+  [link-kept-output-rep.moss](examples/link-kept-output-rep.moss) keeps
+  an output at T, an unmentioned merge representative of X, which a world
+  may pick. So `LinkBody` also asks that nothing the body makes is an input
+  of F: `forall t, In t made -> nlook t (c_ty Cu) = None`. The oracle and
+  native reject that program.
+  - The control (link-kept-output-pin-control.moss, where the meanings
+    agree) is rejected too. Native rejects it; the oracle runs it.
+  - Corpus (oracle against a variant whose `check_link_pins` rejects a
+    pin, or input of F, installed by the body as itself): 401 the same,
+    5 different (the new programs). See scratch/orch/realize2-AUDIT.md.
 - **A linked body's result keys are read at G's readings of the inputs (linknewpf).**
   `CC.FamilyLinkNewOk` was false, and so, very likely, was
   `CN.ChainRealizeOk` for a linked root.
@@ -986,7 +1011,7 @@ likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
-| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. It was still false after that repair (examples/copy-fresh-collide.moss: `cg y` equal to a fresh generation in sigma's image), which realizepf's CopyOutputs repair addresses (the fresh symbols avoid sigma's image). Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. It was still false after that repair (examples/copy-fresh-collide.moss: `cg y` equal to a fresh generation in sigma's image), which realizepf's CopyOutputs repair addresses (the fresh symbols avoid sigma's image). It was also false for a linked body whose application keeps an output at an input of F (examples/link-kept-output-pin.moss), which realize2's BApplyAbstract pin clause addresses. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
 | `ChainForwardCopySigs` (PublicChainFwd) | at an application of F through at least one copy to a platform family: at the caller's last position for a key, the caller's method and the family's item at the chain's source have the same name and agreeing signatures (SigAgreeG). The signature half of the former `ChainForwardCopyKeys`, whose key half was false (linked-copy-bracket.moss) and is by construction since callerkeys | T15, T16 |
 | `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |

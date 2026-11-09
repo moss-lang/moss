@@ -1,0 +1,53 @@
+# realize2: kept output at an unmentioned merge representative of F.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type T;
+type X;
+tag Concrete;
+fn .gimme(): Foo;
+fn .m();
+fn .num(): Int;
+context Merge = A, T, X, A.gimme[Foo=T], A.gimme[Foo=X];
+functor Make: Std -> T, T.num;
+functor Maker: Std -> T, T.num {
+  bind T = Char;
+  bind T.num = () => this.code();
+}
+functor F[X]: Merge, Std -> X.m;
+functor G: Make, Std -> T.m {
+  bind Make;
+  bind T.m = () => { print_int(this.num()); putchar(char::newline); };
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind A = Concrete;
+    bind T = Bool;
+    bind X = Bool;
+    bind Foo = Bool;
+    bind A.gimme = () => true;
+    bind Make = Maker;
+    bind F = G;
+    bind F;
+    true.m();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

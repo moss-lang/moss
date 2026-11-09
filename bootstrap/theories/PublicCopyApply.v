@@ -400,7 +400,7 @@ Proof.
          code sms' rms' gfx h0 gf0 Look Ok Fm Chn Fam). }
   destruct (S.link_facts W Prog _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Ch0' & nsh0' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr & ks' & binds0 & LD).
-  pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
+  pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
   rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
   set (de := application_environment P d code th (append_environment d2 dc)) in *.

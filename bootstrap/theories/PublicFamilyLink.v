@@ -51,7 +51,7 @@ Lemma link_body_parts : forall u gg h, A.LinkBody W Prog u gg h ->
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds0 srcs).
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Fam FrH FB].
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
   exists Cu, nsu, Cg, nsg, binds0, (map ITy outs ++ map (A.rkey_of Cr) ks)%list,
     (map (fun k => A.rkey_of (A.link_site Cg Cb outs) (A.at_site (A.link_site Cg Cb outs) (A.output_renaming outs gen k))) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
 Qed.
@@ -82,7 +82,7 @@ Proof.
   intros C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
   pose proof FA as (fx' & Cu1 & ns1 & Fx' & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
-  pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB).
+  pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (S.functx_unique W _ _ _ _ _ FC FCu) as [-> ->].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.

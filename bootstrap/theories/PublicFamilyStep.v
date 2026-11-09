@@ -425,7 +425,7 @@ Proof.
     (BS.functx_static W _ _ _ FC) Sat (BS.apply_theta W Cf u Cu ns sm FC IdemF Inp Sat)) as [d1 [Sel [_ RealU]]].
   destruct (BS.link_facts W Prog _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr' & ks' & binds0 & LD).
-  pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
+  pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (BS.functx_unique W _ _ _ _ _ FC FCu') as [<- <-]. destruct (BS.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (BS.linked_needs ns nsg))) as [d2 Sel2].
