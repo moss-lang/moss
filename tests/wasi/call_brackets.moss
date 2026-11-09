@@ -1,0 +1,55 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D89: a bracket application on a function call runs the call under
+# those binds, its arguments evaluated first, in the caller's terms:
+# `f[Item=Float](e)` is `{ let a = e; bind Item = Float; f(a) }`.
+#
+# `Stack` counts its elements and holds none, so nothing an argument
+# says fixes `Item`: `stack[Item=Float]()` is the element-free
+# constructor that only the bracket (or a `bind`) can instantiate.
+
+type Item;
+
+assume Std, Item {
+  tag Stack[Item] { len: Int };
+
+  fn stack(): Stack { Stack { len = 0 } }
+
+  fn push(s: Stack, x: Item): Stack { Stack { len = s.len + 1 } }
+
+  fn grown(n: Int): Stack { Stack { len = n } }
+}
+
+assume Std {
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+
+  fn floats() {
+    let s: Stack[Item=Float] = stack[Item=Float]();
+    let s = push[Item=Float](s, 1.5);
+    digit(push[Item=Float](s, 2.5).len);
+    putchar(char::newline);                         # 2
+  }
+
+  # The argument is the caller's: `push(stack(), char::a)` is checked
+  # with `Item = Char`, as bound here, not with the `Item = Float` the
+  # bracket binds for `grown` alone; and after the call `Item` is still
+  # `Char`.
+  fn chars() {
+    bind Item = Char;
+    let s: Stack[Item=Float] = grown[Item=Float](push(push(stack(), char::a), char::b).len);
+    digit(s.len);
+    digit(push(stack(), char::c).len);
+    putchar(char::newline);                         # 21
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    floats();
+    chars();
+  }
+}

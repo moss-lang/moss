@@ -1923,6 +1923,34 @@ fn applying_a_type() {
     assert_eq!(run_moss(&entry, ""), "A\n");
 }
 
+/// D89: a bracket application on a function call runs the call under
+/// those binds, its arguments evaluated first, in the caller's terms.
+/// tests/wasi/call_brackets.moss constructs a `Stack` that holds no
+/// elements, so that only the bracket fixes `Item` (`stack[Item=Float]()`),
+/// and passes `grown[Item=Float]` an argument checked with the caller's
+/// `Item = Char`, which would not fit under the bracket's `Item = Float`.
+#[test]
+fn a_call_under_brackets() {
+    let entry = wasi("call_brackets");
+    assert_eq!(oracle_run(&entry, &[]), "2\n21\n");
+    assert_eq!(run_moss(&entry, PRELUDE), "2\n21\n");
+}
+
+/// D89, D22: each binding of a call's brackets names a type the callee
+/// requires; `stack[Elem=Float]()` binds `Elem`, which `stack` does not
+/// require. The self-hosted compiler reports `e_irrelevant` (`Q`), named
+/// by the symbol.
+#[test]
+fn a_call_bracket_names_a_requirement() {
+    let entry = wasi("call_brackets_unrequired");
+    oracle_says(
+        &entry,
+        "a bracket application on a call of `stack` binds `Elem`, which is not a type \
+         `stack` requires (D22, D89)",
+    );
+    assert_eq!(report(&entry, PRELUDE), format!("!Q {entry} Elem\n"));
+}
+
 /// A record whose fields are typed by an abstract `T` is laid out per
 /// instantiation, so a method on it compiles at `T = Char` and at `T =
 /// Point` alike.

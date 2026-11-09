@@ -1663,6 +1663,123 @@ assume Std {
       }
     }
 
+    # D89: a bracket application on a function call, `f[A = T](e1, ...)`,
+    # is `{ let a1 = e1; ...; bind A = T; f(a1, ...) }`, with names `ai`
+    # no program can write (`%arg0`, ...): the arguments are evaluated,
+    # in the caller's terms, before the binds. Each binding names a type
+    # `f`'s assume nesting requires (`nest_types`, the bootstrap's
+    # `reqs`) and binds it to a type by name, as a bracket on any
+    # reference does (D22). Every such call is rewritten in place, before
+    # anything reads a body, so that each pass of the back end sees only
+    # the block; a tag's application (`Box[Elem=I32](x)`) stays as it is.
+    fn desugar_call_brackets() {
+      let n = ast::nkind.length();
+      var id = 0;
+      while id < n {
+        if ast::kind_of(id) == ast::k_ex_call() {
+          let callee = ast::a_of(id);
+          if ast::is_kind(callee, ast::k_ex_path()) {
+            if ast::d_of(callee) == 1 {
+              let m = ast::source_module(id);
+              if ast::is_some(m) {
+                let f = prog::resolve_path(m, ast::a_of(callee));
+                if ast::is_some(f) {
+                  if prog::sym_kind.get(f) == prog::sk_fn() {
+                    call_block(id, f, m);
+                  }
+                }
+              }
+            }
+          }
+        }
+        id = id + 1;
+      }
+    }
+
+    # A node synthesized for `call`, with its source range.
+    fn at_call(node: Int, call: Int): Int {
+      ast::nfile.set(node, ast::nfile.get(call));
+      ast::nstart.set(node, ast::nstart.get(call));
+      ast::nend.set(node, ast::nend.get(call));
+      node
+    }
+
+    fn call_arg_name(i: Int): Int {
+      let cs = int_list();
+      push_string(cs, "%arg");
+      if i == 0 {
+        cs.push(48);
+      }
+      let digits = int_list();
+      var k = i;
+      while k > 0 {
+        digits.push(48 + k % 10);
+        k = k / 10;
+      }
+      var j = digits.length();
+      while j > 0 {
+        j = j - 1;
+        cs.push(digits.get(j));
+      }
+      intern::intern_chars(cs)
+    }
+
+    fn call_block(call: Int, f: Int, m: Int) {
+      let saved = prog::location.read();
+      prog::location.write(call + 1);
+      let callee = ast::a_of(call);
+      let reqs = int_list();
+      nest_types(prog::sym_mod.get(f), prog::sym_asm.get(f), prog::sym_nasm.get(f), reqs, int_list());
+      let stmts = int_list();
+      let args = int_list();
+      var i = 0;
+      while i < ast::c_of(call) {
+        let name = call_arg_name(i);
+        stmts.push(at_call(ast::node3(ast::k_st_let(), name, ast::none(), ast::kid_at(ast::b_of(call), i)), call));
+        let ps = int_list();
+        ps.push(name);
+        args.push(at_call(ast::node4(ast::k_ex_path(), ast::path_of(ps), ast::none(), 0, 0), call));
+        i = i + 1;
+      }
+      let items = int_list();
+      i = 0;
+      while i < ast::c_of(callee) {
+        let b = ast::kid_at(ast::b_of(callee), i);
+        let rhs = ast::b_of(b);
+        let lhs = prog::resolve_path(m, ast::a_of(b));
+        if !ast::is_some(lhs) {
+          prog::error(prog::e_scope(), m, ast::path_last(ast::a_of(b)));
+        } else if prog::sym_kind.get(lhs) != prog::sk_type() {
+          # Only a type is bound so far (D89).
+          prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        } else if !types::contains_sym(reqs, lhs) {
+          prog::error(prog::e_irrelevant(), m, prog::sym_name.get(lhs));
+        } else if ast::is_some(ast::b_of(rhs)) {
+          # `f[T = R.m]`, `f[T = .m]`: a method is no type.
+          prog::error(prog::e_apply(), m, prog::sym_name.get(lhs));
+        } else {
+          let spec = at_call(ast::node4(ast::k_spec(), ast::a_of(b), ast::none(), ast::none(), 0), call);
+          var applied = 0;
+          if ast::d_of(rhs) > 0 {
+            applied = 1;
+          }
+          let value = at_call(ast::node4(ast::k_ex_path(), ast::a_of(rhs), ast::c_of(rhs), ast::d_of(rhs), applied), call);
+          items.push(at_call(ast::node2(ast::k_st_item(), spec, value), call));
+        }
+        i = i + 1;
+      }
+      stmts.push(at_call(ast::node2(ast::k_st_bind(), ast::commit(items), items.length()), call));
+      let plain = at_call(ast::node4(ast::k_ex_path(), ast::a_of(callee), ast::none(), 0, 0), call);
+      let inner = at_call(ast::node3(ast::k_ex_call(), plain, ast::commit(args), args.length()), call);
+      let run = ast::commit(stmts);
+      ast::nkind.set(call, ast::k_ex_block());
+      ast::na.set(call, run);
+      ast::nb.set(call, stmts.length());
+      ast::nc.set(call, inner);
+      ast::nd.set(call, ast::none());
+      prog::location.write(saved);
+    }
+
     # Every defined function of the program, in module order.
     # Every defined function's needs; a module's `main`'s with the root
     # context beside its own (`lower_needs_at`).

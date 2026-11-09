@@ -44,7 +44,7 @@ assume Std {
     if code == prog::e_shape() { return "this type has no finite runtime layout"; }
     if code == prog::e_read() { return "cannot read this source file"; }
     if code == prog::e_absent() { return "this item is not available in the current context"; }
-    if code == prog::e_irrelevant() { return "the bound type is not a parameter of this declaration"; }
+    if code == prog::e_irrelevant() { return "the bound type is not a parameter or requirement of this declaration"; }
     if code == prog::e_incoherent() { return "the available binding was provided at a different type instantiation"; }
     if code == prog::e_signature() { return "the provider's signature does not match the declaration"; }
     if code == prog::e_this() { return "this is only allowed inside a method body"; }

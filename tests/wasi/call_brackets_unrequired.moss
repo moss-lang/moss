@@ -1,0 +1,30 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# D89, D22: each binding of a bracket application on a call names a
+# requirement of the callee. `stack` requires `Item`, not `Elem`.
+
+type Item;
+type Elem;
+
+assume Std, Item {
+  tag Stack[Item] { len: Int };
+
+  fn stack(): Stack { Stack { len = 0 } }
+}
+
+assume Std {
+  fn go() {
+    let s = stack[Elem=Float]();
+    putchar((s.len + char::digit0.code()).char());
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    go();
+  }
+}

@@ -153,6 +153,8 @@ assume Std {
   # type's relevant parameters (`Stop[Int=Num]` for a unit, `W[T=Char]`
   # for a tag whose payload does not mention `T`). Named by the symbol, as
   # the bootstrap's "binds `T`, which is not one of its parameters" is.
+  # D89: also a bracket binding on a function call for a type that is not
+  # one of the function's requirements (`stack[Elem=Float]()`).
   fn e_irrelevant(): Int { 16 }
 
   # D62, D71: a call (or a provider's bind) whose callee needs a val, fn or

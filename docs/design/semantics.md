@@ -1705,7 +1705,7 @@ bootstrap shares, and probing the bootstrap resolves both:
   an ambient val/fn provision was made under (`f[T=Char]` satisfied by a
   `seed : T` bound under `T=Int`). This record once called it
   unreachable, because v0 rejects bracket applications at call sites
-  altogether. It was not: rebinding a type [D25] does the same thing
+  altogether (since [D89] it accepts them, as binds around the call). It was not: rebinding a type [D25] does the same thing
   with no brackets at all, and a method bind's own brackets do it for
   methods. The bootstrap matched every requirement by its key alone —
   presence of a provision at `(receiver, method)`, or of the val/fn
@@ -5075,7 +5075,9 @@ and reject alike, and everyday work on a previously built compiler,
 D87 quoted strings as ordinary contextual construction calls, a default
 GC string provider with immutable snapshots, separate typed union lanes
 for incompatible references, with backend pooling deferred; D88 line-leading
-`> ` raw multiline string expressions; and D32 as amended: a call evaluates its receiver,
+`> ` raw multiline string expressions; D89 a bracket application on a
+function call as the call under those binds, its arguments evaluated
+first; and D32 as amended: a call evaluates its receiver,
 then its arguments left to right)
 
 The MVP language is fully pinned down. Next (the plan as of revision 4):
@@ -5127,3 +5129,42 @@ This resolves the shadowing question recorded after D61 and amends D44's
 application to implicit prelude imports. In particular, a local `type Base;`
 or an explicit import of another module's `Base` shadows the standard
 prelude's `Base` context.
+
+**[D89] DECIDED by the designer and implemented (bracket applications on function calls).**
+
+The grammar always let a call carry an application (`Primary = Path App?
+Args`), but only a tag's construction (`Box[Elem=I32](x)`) gave it a
+meaning: the self-hosted compiler ignored the brackets of a function
+call, so `filled[Item=Float](n, 1.5)` was checked as `filled(n, 1.5)`,
+and the bootstrap refused them ("v0 does not support bracket
+applications at call sites"). A function that nothing in its arguments
+instantiates, such as an element-free constructor `fn stack(): Stack`
+under `assume Item`, could be called only as `{ bind Item = Float;
+stack() }`.
+
+Decided: `f[A=T, ...](e1, ..., en)` on a function `f` is sugar for
+
+    { let a1 = e1; ...; let an = en; bind A = T, ...; f(a1, ..., an) }
+
+where `a1` to `an` are names no program can write. The arguments are
+evaluated before the binds, left to right ([D32]), in the caller's
+terms, so a bind cannot change what an argument means (the rule a
+family's on-demand application already follows, [D84] rule 7), and the
+binds end with the call. As on any reference ([D22]), each binding must
+name a requirement of `f`: a type symbol of its `assume` nesting,
+flattened through contexts. Naming anything else is an error; the
+requirements it does not name must be in force at the call and pass
+through. A binding binds a type to a type written by name, as `bind` does.
+Binding a val, fn or functor requirement this way is not supported.
+Method calls take no brackets (the grammar has none on a suffix), and a
+tag's application keeps its meaning. Both front ends expand the call as
+written: the self-hosted compiler rewrites it before the back end reads
+a body (`lower::desugar_call_brackets`), and the bootstrap elaborates
+`Audit.Syntax.call_block`, the expansion that the elaboration relation's
+`ExCallBr` reads. Since a bracket call is a bind and a call, a bracket
+that grows the callee's own instantiation (`nest[T=Wrap](...)` inside
+`nest`) is polymorphic recursion like any other, and [D16]'s
+expanding-cycle check (`NoExpandingCycle`) rejects it
+(`bootstrap/examples/expand-call-brackets.moss`). Standing tests:
+`tests/wasi/call_brackets.moss` and
+`tests/wasi/call_brackets_unrequired.moss`.

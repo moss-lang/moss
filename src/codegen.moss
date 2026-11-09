@@ -9563,6 +9563,7 @@ assume Std {
       cg_where.write(ast::none());
       find_primitive_modules();
       wops::install_wasm_ops();
+      lower::desugar_call_brackets();
       # Every defined function's requirement list, which is what the
       # calling convention below is built from.
       lower::lower_all();
