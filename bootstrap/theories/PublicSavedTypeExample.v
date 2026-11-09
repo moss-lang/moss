@@ -71,7 +71,7 @@ Qed.
    arises from a formed world and admissible linked body. *)
 Definition body_result := Environment [(4,TMachine MI32)] [].
 Definition caller_after_result :=
-  match result_environment runtime_before [(4,6)] body_result [ITy 4] empty_environment with
+  match result_environment [(4,6)] body_result [ITy 4] empty_environment with
   | Some result => append_environment result runtime_before
   | None => empty_environment
   end.

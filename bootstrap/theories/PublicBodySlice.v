@@ -3340,7 +3340,7 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
-      (map ITy outs ++ map (A.rkey_of Cr) ks)%list binds0
+      (map ITy outs) binds0
       (link_sources (A.link_site Cg Cb outs gen) outs gen ks)) /\
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None).
 
@@ -3375,6 +3375,19 @@ Proof.
   - induction l as [|[a t] r IH]; intros L; cbn in L |- *; [congruence|].
     destruct (Nat.eqb_spec x a) as [->|Ne]; [left; reflexivity|right; exact (IH L)].
   - intros I. rewrite (lookup_on_keys f l x I). discriminate.
+Qed.
+
+(* BFunClosure reads F's and G's contexts from the world; LinkBody states
+   that they are their FunCtx. *)
+Lemma link_body_functx : forall u gg h Cu nsu Cg nsg, A.LinkBody W Prog u gg h ->
+  A.w_context W u = Some (Cu, nsu) -> A.w_context W gg = Some (Cg, nsg) ->
+  A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg.
+Proof.
+  intros u gg h Cu nsu Cg nsg LB Wu Wg.
+  destruct LB as [u0 gg0 h0 dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0 Dg Ast FCu FCg].
+  pose proof FCu as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Wu').
+  pose proof FCg as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Wg').
+  rewrite Wu in Wu'. rewrite Wg in Wg'. injection Wu' as E1 E2. injection Wg' as E3 E4. subst. split; assumption.
 Qed.
 
 Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
@@ -3989,7 +4002,7 @@ Lemma apply_functor_eq : forall j d u th outs sm rs st,
                   match AR.O.I.eval_bindings j P (application_environment P d h th (append_environment d2 dc)) [] st (fc_bindings code) with
                   | inl (d3, _, st3) =>
                       match select_provisions d3 (result_selection rs rms (fc_sources code)) with
-                      | Some dr => match result_environment d outs d3 (fc_outputs code) dr with
+                      | Some dr => match result_environment outs d3 (fc_outputs code) dr with
                           | Some result => inl (result, st3)
                           | None => inr (AR.O.I.Evaluation (Stuck AR.O.I.e_compose) [] st3) end
                       | None => inr (AR.O.I.Evaluation (Stuck AR.O.I.e_compose) [] st3)
@@ -4717,7 +4730,8 @@ Proof.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J).
+      destruct (link_body_functx u gg h Cu nsu Cg nsg LB FCu FCg) as [FCu' FCg'].
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
@@ -4753,7 +4767,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
     select_provisions d3 (result_selection (map (A.rkey_of C') ks) [] (link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
-    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (A.rkey_of Cr) ks')%list dr = Some result /\
+    result_environment (map (fun t => (t, gensof t)) outs) d3 (map ITy outs') dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     MeaningsGrow (map gensof outs) d (append_environment result d).
 Hypothesis link_results : LinkResultsOk.

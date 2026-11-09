@@ -1498,7 +1498,8 @@ Record functor_code := FunctorCode {
      type reads as that type over the inputs' meanings, so the body's
      environment absorbs G's merges; an input it omits reads as itself *)
   fc_table : list (tsym * ty);
-  (* the result telescope; an application reads only its type items *)
+  (* the result's type outputs (the body's roles); an application reads
+     each one's final meaning *)
   fc_outputs : tele;
   fc_bindings : list binding;
   (* where the body left each item of the declared result, position by
@@ -1624,7 +1625,7 @@ Fixpoint fresh_result_types (writes occupied : subst) : bool :=
    lambda's capture of a declared symbol it mentions), so a freshness check
    here would make accepted programs Stuck (scratch/orch/results2-AUDIT.md).
    [fresh_result_types] stays as the check's statement. *)
-Definition result_environment (caller : environment) (outputs : list (tsym * tsym))
+Definition result_environment (outputs : list (tsym * tsym))
     (d3 : environment) (Dr : tele) (dr : environment) : option environment :=
   match read_result_types d3 Dr outputs with
   | Some (writes, aliases) => Some (EnvironmentWithAliases writes aliases (provision_values dr))
@@ -2051,7 +2052,7 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
                           match select_provisions d3 (result_selection rs rms (fc_sources code)) with
-                          | Some dr => match result_environment d outputs d3 Dr dr with
+                          | Some dr => match result_environment outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
                           | None => inr (Evaluation (Stuck e_compose) [] st3)
@@ -4494,7 +4495,9 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
 | BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
-    FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
+    (* F's and G's contexts, as the world records them (LinkBody states
+       that they are their FunCtx) *)
+    w_context W u = Some (Cu, nsu) -> w_context W gg = Some (Cg, nsg) ->
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
@@ -4658,7 +4661,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
        the caller's key for that position) *)
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
-      (map ITy outs ++ map (rkey_of Cr) ks) binds0
+      (map ITy outs) binds0
       (map (fun k => rkey_of (link_site Cg Cb outs gen) (at_site (link_site Cg Cb outs gen) k)) ks)) ->
     LinkBody W P u gg h.
 
@@ -5069,7 +5072,7 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
     (* each item is installed and returned under its run-time key, the
        instantiation it is made at (rkey_of), as a linked body's are *)
     funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) []
-      (map (rkey_of outputs) keys) bindings (map (rkey_of outputs) keys)) /\
+      [] bindings (map (rkey_of outputs) keys)) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\

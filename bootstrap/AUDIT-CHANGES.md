@@ -1112,11 +1112,15 @@ details are in `scratch/consol-STATUS.md`.
 - **M(F) counts a method's non-requirement signature symbols (#12), not
   a fn's.** Resolved by #12b: `RMValFn` counts a fn's `SigMentions` too,
   in Audit and the oracle.
-- **Leftovers kept.** `result_environment` ignores its `caller` argument,
-  and `fresh_result_types` is only a statement (#20). `fc_outputs`
-  carries the non-type result keys, which no application reads.
-  BFunClosure and LinkBody both state `FunCtx` for F and G (equal by
-  `w_context`).
+- **Leftovers, cleaned up on the proposals branch (item 7, one
+  equivalence-preserving commit).** `result_environment` no longer takes
+  the unused `caller` argument. `fc_outputs` holds only the type outputs
+  (`map ITy outs` in LinkBody; `[]` for a platform family, which has no
+  type output), the only items `read_result_types` reads. BFunClosure
+  reads F's and G's contexts from the world (`w_context W u = Some (Cu,
+  nsu)`, likewise for G) instead of restating `FunCtx`, which LinkBody
+  states (`PublicBodySlice.link_body_functx`). `fresh_result_types` stays
+  as the statement #20 refers to.
 - **Owner-decided principles, analysed but not implemented** (proposals
   5–7 in `scratch/consol-STATUS.md`):
   - *Merge orientation:* LinkBody's 3b (#7) and #11 split one condition

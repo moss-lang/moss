@@ -145,10 +145,10 @@ Definition result_of (d3 : environment) (outs : list nat) (gensof : nat -> nat) 
    caller's meanings grow by them alone. *)
 Lemma result_environment_ok : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall d d3 dr (outs' : list nat) (rest : list item),
+  forall (d : environment) d3 dr (outs' : list nat) (rest : list item),
   (forall t, In t outs' <-> A.FunOutputs W u t) ->
   (forall t, In t outs -> output_meaning d3 t <> None) ->
-  result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ rest)%list dr =
+  result_environment (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ rest)%list dr =
     Some (result_of d3 outs gensof dr).
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs' rest OutsI' Read.
@@ -399,7 +399,7 @@ Proof.
   { pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & _).
     intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ _ _ Chain t). }
   pose proof (result_environment_ok W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs'
-    (map (A.rkey_of Cr) ks') OutsI' Read) as Re.
+    [] OutsI' Read) as Re. rewrite app_nil_r in Re.
   pose proof (result_grows_by_destinations d d3 dr outs gensof) as Gr.
   exists dr, (result_of d3 outs gensof dr). split; [exact Sdr|]. split; [exact Re|]. split; [|exact Gr].
   pose proof Pre3 as [_ [_ [_ [St3 _]]]].

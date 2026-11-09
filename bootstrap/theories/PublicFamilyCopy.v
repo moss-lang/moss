@@ -330,8 +330,8 @@ Proof.
     assert (AF : forall X, (match CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs with
        | inl (d3, _, st3) => match select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) rms' (fc_sources (FunctorCode
            (map fst (A.c_ty Cg)) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
-           (map ITy outs' ++ map (A.rkey_of Cr') ks') bs (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')))) with
-           | Some dr => match result_environment d [] d3 (map ITy outs' ++ map (A.rkey_of Cr') ks') dr with
+           (map ITy outs') bs (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')))) with
+           | Some dr => match result_environment [] d3 (map ITy outs') dr with
                | Some result => inl (result, st3) | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
            | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
        | inr rr => inr rr end) = X -> CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.apply_functor (S j1) P d u th [] sm (map (A.rkey_of Cr) ks) st = X).
@@ -419,7 +419,7 @@ Proof.
     { clear -Binds. induction Binds as [|key b keys' bs' [op [-> _]] _ IH]; constructor; [do 2 eexists; reflexivity|exact IH]. }
     assert (AF : forall X, match CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j1 P de [] st bindings with
        | inl (d3, _, st3) => match select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) rms' Dr) with
-           | Some dr => match result_environment d [] d3 Dr dr with
+           | Some dr => match result_environment [] d3 Dr dr with
                | Some result => inl (result, st3) | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
            | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
        | inr rr => inr rr end = X -> CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.apply_functor (S j1) P d u th [] sm (map (A.rkey_of Cr) ks) st = X).

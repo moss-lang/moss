@@ -80,7 +80,7 @@ Definition compiled_apply (fuel : nat) (d : environment) (u : usym) (th : subst)
                           match select_provisions d3 (result_selection rs rms
                                   (match view_functor P h with Some code => fc_sources code | None => [] end)) with
                           | Some dr =>
-                              match result_environment d destinations d3 outputs dr with
+                              match result_environment destinations d3 outputs dr with
                               | Some delta => inl (delta, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
                           | None => inr (Evaluation (Stuck e_compose) [] st3) end

@@ -52,7 +52,7 @@ Lemma link_body_parts : forall u gg h, A.LinkBody W Prog u gg h ->
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
     Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
-  exists Cu, nsu, Cg, nsg, binds0, (map ITy outs ++ map (A.rkey_of Cr) ks)%list,
+  exists Cu, nsu, Cg, nsg, binds0, (map ITy outs),
     (map (fun k => A.rkey_of (A.link_site Cg Cb outs gen) (A.at_site (A.link_site Cg Cb outs gen) k)) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
 Qed.
 

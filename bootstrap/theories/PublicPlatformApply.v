@@ -222,7 +222,7 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
   (forall t, ~ A.FunOutputs W u t) /\
   A.ProvideResult W u inputs (fun t => TAbs t) outputs keys /\
   A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty inputs)) (map fst (A.c_ty inputs)) []
-    (map (A.rkey_of outputs) keys) bindings (map (A.rkey_of outputs) keys)) /\
+    [] bindings (map (A.rkey_of outputs) keys)) /\
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
     Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key /\

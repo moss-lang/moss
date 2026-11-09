@@ -41,13 +41,13 @@ Example provider_inputs_shadow_and_private_capture_survives :
 Proof. split; reflexivity. Qed.
 
 Example result_reads_final_alias :
-  result_environment caller [(10,200)] rebound [ITy 10] empty_environment =
+  result_environment [(10,200)] rebound [ITy 10] empty_environment =
   Some (EnvironmentWithAliases [(200,TMachine MI64)] [(10,TMachine MI64)] []).
 Proof. reflexivity. Qed.
 
 Definition two_outputs := Environment [(10,TMachine MF32);(11,TMachine MF64)] [].
 Example output_reads_share_one_snapshot :
-  result_environment empty_environment [(10,11);(11,10)] two_outputs [ITy 10;ITy 11] empty_environment =
+  result_environment [(10,11);(11,10)] two_outputs [ITy 10;ITy 11] empty_environment =
   Some (EnvironmentWithAliases [(11,TMachine MF32);(10,TMachine MF64)]
     [(10,TMachine MF32);(11,TMachine MF64)] []).
 Proof. reflexivity. Qed.
@@ -57,7 +57,7 @@ Proof. reflexivity. Qed.
    of the caller's scope, so nothing typed there reads it
    (PublicLinkResults.dest_scope; scratch/orch/results2-AUDIT.md). *)
 Example output_shadows_callers_generation :
-  result_environment caller [(10,100)] called [ITy 10] empty_environment =
+  result_environment [(10,100)] called [ITy 10] empty_environment =
   Some (EnvironmentWithAliases [(100,TMachine MI32)] [(10,TMachine MI32)] []).
 Proof. reflexivity. Qed.
 

@@ -89,14 +89,14 @@ Proof.
     + cbn; rewrite Writes, Aliases; split; reflexivity.
 Qed.
 
-Theorem result_environment_snapshot : forall caller outputs body declared provisions delta,
-  result_environment caller outputs body declared provisions = Some delta ->
+Theorem result_environment_snapshot : forall outputs body declared provisions delta,
+  result_environment outputs body declared provisions = Some delta ->
   exists writes aliases,
     read_result_types body declared outputs = Some (writes, aliases) /\
     type_meanings delta = writes /\ type_aliases delta = aliases /\
     provision_values delta = provision_values provisions.
 Proof.
-  intros caller outputs body declared provisions delta Export.
+  intros outputs body declared provisions delta Export.
   unfold result_environment in Export.
   destruct (read_result_types body declared outputs) as [[writes aliases]|] eqn:Read; [|discriminate].
   inversion Export; subst delta. exists writes, aliases; cbn; repeat split; assumption.
@@ -107,7 +107,7 @@ Qed.
    free (PublicLinkResults.dest_scope), and given that, no generation the
    caller has is changed. *)
 Theorem result_environment_preserves_generation : forall caller outputs body declared provisions delta,
-  result_environment caller outputs body declared provisions = Some delta ->
+  result_environment outputs body declared provisions = Some delta ->
   fresh_result_types (type_meanings delta) (type_meanings caller) = true ->
   forall symbol meaning, lookup_subst symbol (type_meanings caller) = Some meaning ->
     lookup_subst symbol (type_meanings (append_environment delta caller)) = Some meaning.
@@ -121,7 +121,7 @@ Qed.
    map can change grounding of a previously absent generation. *)
 Theorem result_environment_preserves_supported_ground :
   forall caller outputs body declared provisions delta tau,
-  result_environment caller outputs body declared provisions = Some delta ->
+  result_environment outputs body declared provisions = Some delta ->
   fresh_result_types (type_meanings delta) (type_meanings caller) = true ->
   (forall symbol, In symbol (A.gens tau) ->
     exists meaning, lookup_subst symbol (type_meanings caller) = Some meaning) ->
@@ -135,8 +135,8 @@ Proof.
 Qed.
 
 Theorem result_environment_exports_one_snapshot :
-  forall caller outputs body declared provisions delta,
-  result_environment caller outputs body declared provisions = Some delta ->
+  forall outputs body declared provisions delta,
+  result_environment outputs body declared provisions = Some delta ->
   exists meanings,
     Forall2 (fun output meaning =>
       existsb (item_eqb (ITy (fst output))) declared = true /\
@@ -144,8 +144,8 @@ Theorem result_environment_exports_one_snapshot :
     type_meanings delta = combine (map snd outputs) meanings /\
     type_aliases delta = combine (map fst outputs) meanings.
 Proof.
-  intros caller outputs body declared provisions delta Export.
-  destruct (result_environment_snapshot caller outputs body declared provisions delta Export)
+  intros outputs body declared provisions delta Export.
+  destruct (result_environment_snapshot outputs body declared provisions delta Export)
     as [writes [aliases [Read [Writes [Aliases Provisions]]]]].
   destruct (read_result_types_single_snapshot body declared outputs writes aliases Read)
     as [meanings [Reads [ReadWrites ReadAliases]]].
@@ -154,24 +154,24 @@ Qed.
 
 (* An occupied destination is shadowed, not rejected. *)
 Theorem result_environment_shadows_occupied :
-  forall caller outputs body declared provisions writes aliases,
+  forall outputs body declared provisions writes aliases,
   read_result_types body declared outputs = Some (writes, aliases) ->
-  result_environment caller outputs body declared provisions =
+  result_environment outputs body declared provisions =
     Some (EnvironmentWithAliases writes aliases (provision_values provisions)).
 Proof. intros; unfold result_environment; rewrite H; reflexivity. Qed.
 
 Theorem result_environment_rejects_missing_snapshot :
-  forall caller outputs body declared provisions,
+  forall outputs body declared provisions,
   read_result_types body declared outputs = None ->
-  result_environment caller outputs body declared provisions = None.
+  result_environment outputs body declared provisions = None.
 Proof. intros; unfold result_environment; rewrite H; reflexivity. Qed.
 
 Example missing_output_is_rejected :
-  result_environment empty_environment [(2,7)] empty_environment [ITy 2] empty_environment = None.
+  result_environment [(2,7)] empty_environment [ITy 2] empty_environment = None.
 Proof. reflexivity. Qed.
 
 Example undeclared_output_is_rejected :
-  result_environment empty_environment [(2,7)]
+  result_environment [(2,7)]
     (bind_type empty_environment 2 (TMachine MI32)) [] empty_environment = None.
 Proof. reflexivity. Qed.
 
@@ -180,13 +180,13 @@ Proof. reflexivity. Qed.
    destination is out of the caller's scope (FreshFor and the output
    clauses), and gensof is injective on the outputs. *)
 Example occupied_destination_is_shadowed :
-  result_environment (Environment [(7,TMachine MF64)] []) [(2,7)]
+  result_environment [(2,7)]
     (bind_type empty_environment 2 (TMachine MI32)) [ITy 2] empty_environment =
   Some (EnvironmentWithAliases [(7,TMachine MI32)] [(2,TMachine MI32)] []).
 Proof. reflexivity. Qed.
 
 Example duplicate_destination_is_shadowed :
-  result_environment empty_environment [(2,7);(2,7)]
+  result_environment [(2,7);(2,7)]
     (bind_type empty_environment 2 (TMachine MI32)) [ITy 2] empty_environment =
   Some (EnvironmentWithAliases [(7,TMachine MI32);(7,TMachine MI32)] [(2,TMachine MI32);(2,TMachine MI32)] []).
 Proof. reflexivity. Qed.
