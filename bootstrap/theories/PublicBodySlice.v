@@ -409,7 +409,7 @@ Proof. reflexivity. Qed.
    and any narrower one, stays realized: rule 7 keeps family members from
    being bound directly, and a member a context lists has the family's
    signature), or it stops. *)
-Hypothesis family_step : forall k, Below k -> forall C0 C u matching th sm Cr ks,
+Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
@@ -420,6 +420,7 @@ Hypothesis family_step : forall k, Below k -> forall C0 C u matching th sm Cr ks
      I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = I.eval_bindings j P d' g st' rest) \/
   (exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = inr res /\
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
+Hypothesis family_step : FamilyStepOk.
 
 (* Code after a family application runs with the families' provisions
    and the code's own context both realized. *)
@@ -3029,29 +3030,32 @@ Qed.
    involves only symbols in force where G is bound (bind_merges). The item
    causing a merge mentions both sides: linked, it reads as F's
    (LinkBody); captured, 3b fixes F's inputs it mentions. *)
-Hypothesis link_merges : forall u gg h Cu nsu Cg nsg,
+Definition LinkMergesOk : Prop := forall u gg h Cu nsu Cg nsg,
   A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
   incl (x :: A.gens tx) (map fst (A.c_ty Cu)) \/
   (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y).
-Hypothesis bind_merges : forall C u gg h Cu nsu Cg nsg smc,
+Hypothesis link_merges : LinkMergesOk.
+Definition BindMergesOk : Prop := forall C u gg h Cu nsu Cg nsg smc,
   A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
     (captured nsu nsg) smc ->
   forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
   (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
   forall y, In y (x :: A.gens tx) -> ~ In y (map fst (A.c_ty Cu)) -> A.nlook y (A.c_ty C) <> None.
+Hypothesis bind_merges : BindMergesOk.
 
 (* HYPOTHESIS (T29). What a closure captures from where it is bound
    mentions, among G's own inputs, only fixed inputs and types in force
    there: the provisions in force mention only symbols in force (or
    generations), and a captured input not in force reads as itself. *)
-Hypothesis captured_in_force : forall C Cu nsu Cg nsg smc,
+Definition CapturedInForceOk : Prop := forall C Cu nsu Cg nsg smc,
   A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
     (captured nsu nsg) smc ->
   forall k p x, In k (captured nsu nsg) -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
   In x (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
   In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None.
+Hypothesis captured_in_force : CapturedInForceOk.
 
 Lemma bindings_functor_eq : forall j d g st u h sm smc r,
   I.eval_bindings (S j) P d g st (BFunctor u h sm smc :: r) =
@@ -4435,7 +4439,7 @@ End Cap.
    declares, run as their chain does: refile's extra installs (a method
    bind filed again under F's spelling of its key) leave the body's
    context realized. *)
-Hypothesis refile_run : forall J' k u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 B,
+Definition RefileRunOk : Prop := forall J' k u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 B,
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   Chain J' k Fg Cg Fb Cb B made binds0 ->
   forall rr j' d H st, rr <= S k -> j' < rr -> j' <= J' -> Pre rr Fg Cg d [] H [] st ->
@@ -4443,13 +4447,14 @@ Hypothesis refile_run : forall J' k u gg h dg n ps a r bodies Cu nsu Cg nsg Fg w
      I.eval_bindings j' P d [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inl (d3, g3, st3)) \/
   (exists res, I.eval_bindings j' P d [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inr res /\
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome Fg d H [] TUnit B res).
+Hypothesis refile_run : RefileRunOk.
 
 (* HYPOTHESIS (T15). A linked body that completes provides F's result at
    the application: its result provisions are selected under the caller's
    keys (through θ and the output renaming), the output generations are
    fresh in the caller, and the caller's context after the application is
    realized. *)
-Hypothesis link_results : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st h dc gfx gg dg n ps a r bodies nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j',
   Pre rr F C d types H g st ->
@@ -4466,10 +4471,11 @@ Hypothesis link_results : forall F C pa u fx Cu ns sm th gensof C' ks newgens ou
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     MeaningsGrow newgens d (append_environment result d).
+Hypothesis link_results : LinkResultsOk.
 
 (* HYPOTHESIS (T15). Applying a copy runs its source at the source's
    interface, and applying a platform family installs its primitives. *)
-Hypothesis copy_apply : forall k, Below k -> forall J, (forall J', J' < J -> AppAt J' k) ->
+Definition CopyApplyOk : Prop := forall k, Below k -> forall J, (forall J', J' < J -> AppAt J' k) ->
   forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> j < J -> Pre rr F C d types H g st ->
@@ -4482,12 +4488,14 @@ Hypothesis copy_apply : forall k, Below k -> forall J, (forall J', J' < J -> App
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   FixedMeans u d fx gfx ->
   StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
-Hypothesis platform_apply : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+Hypothesis copy_apply : CopyApplyOk.
+Definition PlatformApplyOk : Prop := forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> Pre rr F C d types H g st ->
   forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
   Platform.Family W Prog u code ->
   StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+Hypothesis platform_apply : PlatformApplyOk.
 
 (* An abstract application below the cap J, given those below it: the
    closure found for F is linked (run its body), a copy or a platform

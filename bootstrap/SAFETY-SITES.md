@@ -23,8 +23,14 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 
 ## The entry (checked, conditional)
 
-[PublicEntry.v](theories/PublicEntry.v) proves `safety_public`, which is
-`CORRECT.safety` for any `Public` instance, from three premises:
+[PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
+`CORRECT.safety` for any `Public` instance from exactly the remaining named
+obligations (the formation premises, `HandleFormed`, and the functor and
+family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
+`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
+`PlatformApplyOk`), with the slice's elaboration and link facts read off
+`ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
+`CORRECT.safety` from three premises:
 
 - the slice's safety at every fuel, with the reference host's state
   invariant (`PublicPrimitiveSafety.state_ok`);

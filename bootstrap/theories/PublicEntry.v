@@ -379,4 +379,33 @@ Theorem safety_public : forall prelude,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
 Proof. intros prelude Remaining. exact (SR.safety_from_entry prelude (entry_safe_public prelude Remaining)). Qed.
+(* G05 from the remaining obligations alone: the slice's safety follows
+   from them, with the elaboration and link facts it assumes read off
+   ElaboratesIn and Linked. *)
+Theorem safety_obligations : forall prelude,
+  (forall Prog iface initial bundle W, M.Compatible Prog iface ->
+     A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
+     let argv := M.arguments initial in let read := M.read_file initial in
+     let so := PS.state_ok W (program_of Prog argv read) iface in
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W /\ PublicFormation.FamilySigOk W) /\
+     (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
+        Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg)) /\
+     S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
+     S.RefileRunOk W Prog argv read so /\ S.LinkResultsOk W Prog argv read so /\
+     S.CopyApplyOk W Prog argv read so /\ S.PlatformApplyOk W Prog argv read so) ->
+  forall program interface initial,
+    M.Admissible prelude program -> M.Compatible program interface ->
+    forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
+Proof.
+  intros prelude Obl. apply (safety_public prelude).
+  intros Prog iface initial bundle W Compat Elab Link.
+  destruct (Obl Prog iface initial bundle W Compat Elab Link)
+    as [[Mf [Mt Fs]] [Handles [FSt [LM [BM [CIF [RR [LR [CA PA]]]]]]]]].
+  pose proof Elab as (Wo & AllFn & _).
+  pose proof Link as (_ & Lay & Reps & _).
+  split; [|split; [split; assumption|exact Handles]].
+  exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
+    (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA).
+Qed.
+
 End EntrySafety.

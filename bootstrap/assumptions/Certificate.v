@@ -96,6 +96,7 @@ Definition certificate_roots :=
   @PublicSlice.safe_all,
   @PublicEntryTop.entry_safe,
   @PublicEntryTop.safety_public,
+  @PublicEntryTop.safety_obligations,
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
