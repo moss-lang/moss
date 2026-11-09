@@ -227,6 +227,42 @@ Proof.
   destruct (nmem (gs_id lg) rs) eqn:Em; [apply nmem_in; exact Em | noerr' E].
 Qed.
 
+(* D89: the bracket check of a fn call, as the relation's CallBrackets *)
+Lemma check_call_brackets_spec : forall mi g bs s u s', Inv s -> st_w s = w -> In mi (w_order w) ->
+  check_call_brackets mi g bs s = Good (u, s') -> Later w P R Fl s' ->
+  A.CallBrackets WW (path_of mi) (gs_id g) bs.
+Proof.
+  intros mi g bs s u s' Hi Hw Hmi H L. unfold check_call_brackets in H.
+  apply bind_inv in H as (rs & s1 & H1 & H).
+  destruct (ok_reqs _ s rs s1 Hi H1) as [Hi1 F1]. pose proof (fr_w' _ _ F1 Hw) as Hw1.
+  match type of H with miter ?fn _ _ = _ =>
+    assert (Rd : forall b1, In b1 bs -> forall u0 s2, fn b1 s1 = Good (u0, s2) -> s2 = s1) end.
+  { intros b1 _ u0 s2 E. cbv beta in E. apply bind_inv in E as (l & s3 & E1 & E).
+    rewrite (resolve_sym_reader _ _ _ _ _ E1) in E.
+    destruct l as [lg|]; [|noerr' E].
+    destruct (kind_eqb (gs_kind lg) KType && nmem (gs_id lg) rs); [|noerr' E].
+    destruct (snd b1) as [[sp|] [dn|] sa]; try noerr' E. injection E as _ <-; reflexivity. }
+  pose proof (miter_each _ _ _ _ _ _ Rd H) as Each.
+  assert (Es : s' = s1).
+  { clear -Rd H. revert s1 u s' Rd H. induction bs as [|b1 r IH]; intros s1 u s' Rd H; cbn [miter] in H.
+    - injection H as _ <-. reflexivity.
+    - apply bind_inv in H as (u1 & s2 & H1 & H2). rewrite (Rd b1 (or_introl eq_refl) u1 s2 H1) in H2.
+      exact (IH s1 u s' (fun z Hz => Rd z (or_intror Hz)) H2). }
+  subst s'. pose proof (reqs_R (gs_id g) s rs s1 Hi H1 L) as Er.
+  unfold A.CallBrackets. apply Forall_forall. intros b0 Hb.
+  destruct (Each b0 Hb) as (u' & E). cbv beta in E. apply bind_inv in E as (l & s3 & E1 & E).
+  destruct (esym_rel mi (fst b0) s1 l s3 Hi1 Hw1 Hmi E1) as [-> Hl].
+  destruct l as [lg|]; [|noerr' E].
+  destruct Hl as [Hl Hg].
+  destruct (kind_eqb (gs_kind lg) KType) eqn:Ek; [|noerr' E].
+  destruct (nmem (gs_id lg) rs) eqn:Em; [|noerr' E]. cbn [andb] in E.
+  split.
+  - exists (gs_id lg). split; [exact Hl|]. split.
+    + rewrite (kind_sym_rd _ _ Hg). destruct (gs_kind lg); try discriminate Ek; reflexivity.
+    + change (In (gs_id lg) (R (gs_id g))). rewrite Er. apply nmem_in; exact Em.
+  - destruct (snd b0) as [[sp|] [dn|] sa]; try noerr' E. exists sp, sa; reflexivity.
+Qed.
+
 (* ---- unions ---- *)
 
 Definition UInv (out : list ety) : Prop :=

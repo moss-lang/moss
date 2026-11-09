@@ -103,8 +103,9 @@ entry they belong to.
 | 52 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
 | 53 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
 | 54 | `Satisfies` checks the callee's merges by class | coherence2 | relaxation (toward native) |
+| 55 | A bracket application on a fn call is its expansion (`ExCallBr`, D89) | call-brackets | an extension made in both implementations (a relaxation toward both) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, and #52 to #54, from the coherence2 branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, and #55, from the call-brackets branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1419,6 +1420,79 @@ executable tests unless noted.
   PublicFamilyCopy (two).
 - **Class:** a relaxation, toward native (and toward the oracle in one
   merge order).
+
+### 55. A bracket application on a fn call is its expansion (`ExCallBr`, branch call-brackets; D89)
+- **Rule now.** `Ex` (Audit.v, and ExecutionModel.v's oracle relation
+  alike) has a rule `ExCallBr`: `f[A=T, ...](e1, ..., en)`, with `f` a fn,
+  elaborates as `Syntax.call_block`, the block
+  `{ let %arg0 = e1; ...; bind A = T, ...; f(%arg0, ...) }`, under
+  `CallBrackets`: each binding names a type symbol among `w_reqs W f` and
+  binds it to a type by name (`Spec (Some rp) None ra`). `%` starts no
+  name a program can write. A tag's application keeps `ExTag`. Before,
+  no rule read `AECall pa (Some bs) args` with `pa` a fn, so Audit
+  rejected every such call.
+- **Why.** D89 (docs/design/semantics.md): an element-free constructor
+  such as `stack(): Stack` under `assume Item` could be called only as
+  `{ bind Item = Float; stack() }`. Native ignored a fn call's brackets
+  (checking `f[A=T](x)` as `f(x)`), and the oracle refused them.
+- **Criteria.**
+  - Fidelity (section 6): the oracle (`check_call_brackets`, then the
+    expansion) and native (`lower::desugar_call_brackets`, a rewrite to the
+    same block) implement the same expansion in the same branch.
+  - Stability under rebinding (section 5): the arguments are evaluated
+    before the binds, in the caller's terms, so a bracket cannot change
+    what an argument means (as D84 rule 7's on-demand application does).
+  - Principality and coherence (sections 2, 3): the expansion's call is an
+    ordinary call, so its θ is `CallTheta`'s principal one (#50); the
+    requirements the brackets do not name pass through.
+  - Specialization (section 4): `NoExpandingCycle` is stated on the
+    elaborated program, where a bracket call is the expansion's
+    `BType` bind and `ECall θ`, so it needs no new case, in #48's form
+    and in #52's (`InstantiationsBounded W P` with each node's `NodeCx`:
+    the expansion adds no merge, and its call's θ gives the same strict
+    edge). A bracket that grows the callee's own instantiation is
+    rejected like any polymorphic recursion.
+- **Tests.**
+
+  | program | oracle | oracle variant with the expanding-cycle check (#48, #52) | native | Audit |
+  |---|---|---|---|---|
+  | `tests/wasi/call_brackets.moss` | `2`, `21` | `2`, `21` | `2`, `21` | accepts (by reading) |
+  | `tests/wasi/call_brackets_unrequired.moss` (`stack[Elem=Float]()`, `Elem` not required) | rejects ("binds `Elem`, which is not a type `stack` requires") | rejects | rejects (`e_irrelevant`) | rejects (`CallBrackets`) |
+  | [expand-call-brackets.moss](examples/expand-call-brackets.moss) (`nest[T=Wrap](Wrap(x), n - 1)` inside `nest`) | accepts, prints 5 | rejects: expanding cycle, nest's T grows into nest's T | crashes at compile time (wasm call stack exhausted), as on expand-polyrec | rejects (`InstantiationsBounded`: the strict edge (nest, T) -> (nest, T), by reading) |
+  | `stack[Item=Float](1)`, `stack` taking no argument (scratch) | rejects ("`stack` takes 0 argument(s), got 1") | rejects | **invalid Wasm** ("values remaining on stack at end of block", reported as a compiler bug) | rejects (the expansion's call has no `Args` derivation: `ArgsNil` needs as many arguments as parameters) |
+  | `stack[Item=Float, Int=Int]()` under `assume Std, Item` (scratch) | prints 0 | (not run) | prints 0 | accepts (`Int` is in `w_reqs`, through `Std`) |
+
+  The variant is scratch/expand-variant2: this branch's extracted oracle
+  with #52's port of the check (coherence2's scratch/oracle/expand:
+  `Expand.check`, `Expandty.check`), run with and without
+  `MOSS_EXPAND_MERGE=1`; both verdicts are the same, and the same as
+  #48's original variant's. It also still rejects expand-polyrec and
+  expand-merged-xy and accepts expand-control-loop.
+- **Open review points.**
+  - (a) A bracket may bind any type the callee requires, flattened
+    through contexts, so every type a context such as `Std` brings in
+    (`Int`, `Float`, ...) may be bracketed, as the last row shows. This is
+    D22's rule for a bracket on any reference, kept by the owner's
+    decision; a narrower rule (only the types the callee's own `assume`
+    names) is not adopted.
+  - (b) Native checks no arity, for a bracket call as for a plain one:
+    `stack[Item=Float](1)` compiles to invalid Wasm. Audit and the oracle
+    both reject it, so this is a native bug (a crash, not a wrong run),
+    not a divergence of the semantics.
+  - Native also accepts a bracket binding a type to one not in force,
+    which the oracle rejects, as it does for a plain `bind`.
+- **Proof.** `public_safety` gains no premise. `PublicBodySlice.ex_step`
+  reads the expansion's derivation (`call_block_breaks`: only an argument
+  of the expansion can break; its binds' `ItemBreaks` cannot be
+  `IBApply`, whose item has no expression), and `PublicFormation.ex_ok`
+  and `PublicScoping.ex_scoped` take the expansion's type. On the oracle
+  side, `CallAbstract.brackets_code_sound` and `synth_brackets_sound`
+  relate `check_call_brackets` (`BodyTy.check_call_brackets_spec`) and the
+  expansion's elaboration to `ExCallBr`.
+- **Class.** None of A to E exactly: an extension of the language that
+  both implementations make in the same branch, so a relaxation toward
+  both, like #49. Audit rejects two things native accepts (arity, and a
+  binding to a type not in force), as it does for plain calls and binds.
 
 ---
 

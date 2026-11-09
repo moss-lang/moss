@@ -2728,6 +2728,13 @@ Inductive Demand (W : world) (C0 : cx) (wanted : list item)
     Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
     Demand W C0 wanted used C (fun x => XApply u th sm (wrap x)) Cf.
 
+(* D89: the bracket application on a call of the fn f: each binding names
+   a type symbol among f's requirements and binds it to a type by name. *)
+Definition CallBrackets (W : world) (p : string) (f : nat) (bs : list (path * spec)) : Prop :=
+  Forall (fun b => (exists x, resolve_sym W p (fst b) = Some x /\ kind_sym W x = Some DKType /\
+                              In x (w_reqs W f)) /\
+                   exists rp ra, snd b = Spec (Some rp) None ra) bs.
+
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
    checked against the expected type `exp` if any, elaborates to x of type t.
@@ -2791,6 +2798,13 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     nlook f (c_fns C) = Some g ->
     Args W P F C args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp (XCallA f xs) (sg_ret g)
+(* D89: a fn applied to brackets is the call under those binds, its
+   arguments evaluated first (Syntax.call_block) *)
+| ExCallBr : forall F C exp pa bs args f x t,
+    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
+    CallBrackets W (fr_mod F) f bs ->
+    Ex W P F C (Syntax.call_block pa bs args) None x t ->
+    Ex W P F C (AECall pa (Some bs) args) exp x t
 | ExMeth : forall F C exp o pa args ox ot x t,
     Ex W P F C o None ox ot ->
     MethCall W P F C ox (canon C ot) pa args x t ->

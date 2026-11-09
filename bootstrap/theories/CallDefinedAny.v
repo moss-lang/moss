@@ -135,10 +135,10 @@ Definition DefinedDemandStep(f:nat):Prop:=
  A.Ex WW P F C(AECall pa None args)exp x(tr Fl(canon e t))/\WFty t/\Support WW t.
 Theorem defined_fn_step:forall f,OK w P R Fl f->DefinedDemandStep f->DefinedFnStep w P R Fl f.
 Proof.
- intros f IH HD c e pa a args exp s x t s' E F C Hi Ii Hfi Hc Wexp Sexp Hp
+ intros f IH HD c e pa a args exp s x t s' Ha E F C Hi Ii Hfi Hc Wexp Sexp Hp
   (fid&fnm&ps&rt&body&Hr&Hk&Decl).
  destruct(synth_defined_exec w R Fl b Hload f c e pa a args fid fnm ps rt body exp s x t s' F C
-  E Hi Hc Hp Hr Hk Decl)as[-> [g[sc[Hg[Id[D[Code[Fr Pc]]]]]]]].
+  Ha E Hi Hc Hp Hr Hk Decl)as[-> [g[sc[Hg[Id[D[Code[Fr Pc]]]]]]]].
  subst fid.
  destruct(defined_call_code_exec _ _ _ _ _ _ _ _ _ _ Code)
  as(info&si&pre&ed&sd&pairs&sn&sm&ss&sg&sgstate&xs&sa&u&sl&th&Ei&Ed&En&Es&Eg&Ea&El&Et&Ex&Er).

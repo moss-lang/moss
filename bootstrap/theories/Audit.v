@@ -654,6 +654,22 @@ Definition string_desugar (value : string) : aexpr :=
        [AELit (show_nat (List.length bytes))]) :: string_writes bytes 0)
     (Some (AECall ["string_finish"] None [AEPath ["return"] None]))).
 
+(* D89: a bracket application on a function call, `f[A = T](e1, ..., en)`,
+   is the call run under those binds, its arguments evaluated first, in
+   the caller's terms: `{ let %arg0 = e1; ...; bind A = T; f(%arg0, ...) }`.
+   `%` starts no name a program can write.  Elaboration reads the
+   expansion (Elaboration.ExCallBr); a tag's application is not expanded. *)
+Definition call_arg_name (i : nat) : name := "%arg" ++ show_nat i.
+Definition call_block (p : path) (a : list (path * spec)) (args : list aexpr) : aexpr :=
+  let names := map call_arg_name (seq 0 (List.length args)) in
+  AEBlock (ABlock (List.app (map (fun na => ASLet (fst na) None (snd na)) (combine names args))
+                   [ASBind (map (fun b => (Spec (Some (fst b)) None None,
+                                           Some (match snd b with
+                                                 | Spec (Some rp) _ ra => AEPath rp ra
+                                                 | _ => AEUnit
+                                                 end))) a)])
+                  (Some (AECall p None (map (fun n => AEPath [n] None) names)))).
+
 (* (e) D70: at `(`, a lambda is next: `()` or `(x)` followed by `=>` or
    `:`, or `(x` followed by `:` or `,`. *)
 Definition at_lambda (ts : list token) : bool :=
@@ -4079,6 +4095,13 @@ Inductive Demand (W : world) (C0 : cx) (wanted : list item)
     Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
     Demand W C0 wanted used C (fun x => apply_expression u th sm rs (wrap x)) Cf.
 
+(* D89: the bracket application on a call of the fn f: each binding names
+   a type symbol among f's requirements and binds it to a type by name. *)
+Definition CallBrackets (W : world) (p : string) (f : nat) (bs : list (path * spec)) : Prop :=
+  Forall (fun b => (exists x, resolve_sym W p (fst b) = Some x /\ kind_sym W x = Some DKType /\
+                              In x (w_reqs W f)) /\
+                   exists rp ra, snd b = Spec (Some rp) None ra) bs.
+
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
    checked against the expected type `exp` if any, elaborates to x of type t.
@@ -4137,6 +4160,13 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     nlook f (c_fns C) = Some g ->
     Args W P F C args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp (EInvoke f xs) (sg_ret g)
+(* D89: a fn applied to brackets is the call under those binds, its
+   arguments evaluated first (Syntax.call_block) *)
+| ExCallBr : forall F C exp pa bs args f x t,
+    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
+    CallBrackets W (fr_mod F) f bs ->
+    Ex W P F C (Syntax.call_block pa bs args) None x t ->
+    Ex W P F C (AECall pa (Some bs) args) exp x t
 | ExMeth : forall F C exp o pa args ox ot x t,
     Ex W P F C o None ox ot ->
     MethCall W P F C ox (canon C ot) pa args x t ->

@@ -1480,6 +1480,30 @@ Definition check_relevant (mi : nat) (g : gsym) (a : list (path * spec)) : M uni
            | None => ret tt
            end) a.
 
+(* D89: a bracket application on a function call, `f[A = T](e1, …, en)`,
+   is `{ let a1 = e1; …; let an = en; bind A = T; f(a1, …, an) }` with
+   names `ai` no program can write (`Syntax.call_block`): the arguments are
+   evaluated, in the caller's terms, before the binds.  Each binding
+   names a type `f`'s assume nesting requires and binds it to a path,
+   as a bracket on any reference does (D22). *)
+Definition check_call_brackets (mi : nat) (g : gsym) (a : list (path * spec)) : M unit :=
+  let! rs := reqs (gs_id g) in
+  miter (fun b =>
+           let! l := resolve_sym mi (fst b) in
+           match l with
+           | None => err mi ("`" ++ show_path (fst b) ++ "` is not in scope")
+           | Some lg =>
+               if kind_eqb (gs_kind lg) KType && nmem (gs_id lg) rs then
+                 match snd b with
+                 | Spec (Some _) None _ => ret tt
+                 | _ => err mi ("a bracket application on a call of `" ++ gs_name g ++ "` binds `" ++
+                                gs_name lg ++ "` to a method; it binds a type to a type (D89)")
+                 end
+               else
+                 err mi ("a bracket application on a call of `" ++ gs_name g ++ "` binds `" ++ gs_name lg ++
+                         "`, which is not a type `" ++ gs_name g ++ "` requires (D22, D89)")
+           end) a.
+
 Definition check_totality (mi : nat) (g : gsym) (subst : list (nat * ety)) (e : env) : M unit :=
   match subst with
   | [] => ret tt
@@ -4106,7 +4130,7 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
           end
       | KFn =>
           match a with
-          | Some _ => err mi "v0 does not support bracket applications at call sites"
+          | Some bs => check_call_brackets mi g bs ;; synth f c e (Syntax.call_block p bs args) None
           | None =>
               let! mem := is_memory_instruction g in
               let! ms := memory_sym in

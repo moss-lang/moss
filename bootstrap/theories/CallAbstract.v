@@ -1,5 +1,6 @@
 (* The executable abstract-function branch, using the actual context table. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require Import BodyProofTools BodyTy.
 From NM Require Import InfoPreserve ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame ElabMono BodySoundCore
  EtyTyExec CanonTypes NominalSupport CallArgs.
 Import ListNotations.
@@ -62,14 +63,14 @@ Proof.
 Qed.
 
 Theorem synth_call_abstract_sound : forall fuel, OK w P R Fl fuel ->
- forall c e pa a args fid fnm ps rt s x t s' F C exp,
+ forall c e pa a args fid fnm ps rt s x t s' F C exp, a = None ->
  synth_call (S fuel) c e pa a args s = Good((x,t),s') ->
  Inv s -> InfoInv s -> FwdInv s -> CxRel w R Fl c e F C -> Post w P R Fl s' F -> st_w s=w ->
  AC.resolve_sym WW (AC.fr_mod F) pa=Some fid -> AC.kind_sym WW fid=Some AC.DKFn ->
  AC.ast_of WW fid=Some(ADFn RPlain fnm ps rt None) ->
  AC.Ex WW P F C (AECall pa a args) exp x (tc e t) /\ WFty t /\ Support WW t.
 Proof.
- intros fuel HOK c e pa a args fid fnm ps rt s x t s' F C exp H Hi Hii Hfi Hc Hp Hw Resolve Kind Decl.
+ intros fuel HOK c e pa a args fid fnm ps rt s x t s' F C exp Ha H Hi Hii Hfi Hc Hp Hw Resolve Kind Decl.
  cbn [synth_call] in H.
  apply bind_inv in H as (tg & sp & Hpath & H).
  destruct (rpath_rel w R Fl b Hload (cx_mod c) pa s tg sp Hw (cr_mod_in _ _ _ _ _ _ _ Hc) Hpath) as [-> Path].
@@ -88,7 +89,7 @@ Proof.
  unfold AC.ast_of in Decl; rewrite (w_decl_read w R Fl fid g Hg) in Decl.
  cbn [option_map AC.d_ast] in Decl; injection Decl as D.
  cbn beta iota in H.
- destruct a as [bs|]; [exfalso; exact(err_not_good _ _ _ _ _ _ H)|].
+ destruct a as [bs|]; [discriminate Ha|].
  apply bind_inv in H as (mem & sm & Hmem & H).
  unfold is_memory_instruction in Hmem; injection Hmem as <- <-.
  apply bind_inv in H as (ms & sm & Hms & H).
@@ -104,7 +105,7 @@ Proof.
 Qed.
 
 Theorem synth_abstract_sound : forall fuel, OK w P R Fl fuel ->
- forall c e pa a args fid fnm ps rt exp s x t s' F C,
+ forall c e pa a args fid fnm ps rt exp s x t s' F C, a = None ->
  synth (S fuel) c e (AECall pa a args) exp s=Good((x,t),s') ->
  Inv s -> InfoInv s -> FwdInv s -> CxRel w R Fl c e F C -> Post w P R Fl s' F -> st_w s=w ->
  AC.resolve_sym WW (AC.fr_mod F) pa=Some fid -> AC.kind_sym WW fid=Some AC.DKFn ->
@@ -112,7 +113,7 @@ Theorem synth_abstract_sound : forall fuel, OK w P R Fl fuel ->
  AC.Ex WW P F C (AECall pa a args) (option_map (fun t=>tc e t) exp) x (tc e t) /\
  WFty t /\ Support WW t.
 Proof.
- intros fuel HOK c e pa a args fid fnm ps rt exp s x t s' F C H Hi Hii Hfi Hc Hp Hw Resolve Kind Decl.
+ intros fuel HOK c e pa a args fid fnm ps rt exp s x t s' F C Ha H Hi Hii Hfi Hc Hp Hw Resolve Kind Decl.
  cbn [synth] in H.
  apply bind_inv in H as ([v vt] & s1 & Hcall & H).
  apply bind_inv in H as (u & s2 & Hinj & Hret); injection Hret as <- <- <-.
@@ -120,11 +121,72 @@ Proof.
  destruct (ok_inject_check e vt exp s1 u s2 Hi1 Hinj) as [Hi2 F2].
  pose proof (post_back w P R Fl _ _ F F2 Hp) as Hp1.
  pose proof (mono_group fuel) as Mon; do 11 (apply proj2 in Mon); apply proj1 in Mon.
- eapply synth_call_abstract_sound; [exact HOK|exact (Mon c e pa a args s ((v,vt),s1) Hcall)|eassumption..].
+ eapply synth_call_abstract_sound; [exact HOK|exact Ha|exact (Mon c e pa a args s ((v,vt),s1) Hcall)|eassumption..].
+Qed.
+
+(* D89: a fn applied to brackets is its expansion, elaborated at the fuel
+   below; the bracket check only reads. *)
+Lemma brackets_code_sound : forall fuel, OK w P R Fl fuel ->
+ forall c e pa bs args g s x t s' F C exp,
+ (check_call_brackets (cx_mod c) g bs;; synth fuel c e (Syntax.call_block pa bs args) None) s = Good((x,t),s') ->
+ Inv s -> InfoInv s -> FwdInv s -> CxRel w R Fl c e F C -> Post w P R Fl s' F -> st_w s=w ->
+ AC.resolve_sym WW (AC.fr_mod F) pa=Some (gs_id g) -> AC.kind_sym WW (gs_id g)=Some AC.DKFn ->
+ AC.Ex WW P F C (AECall pa (Some bs) args) exp x (tc e t) /\ WFty t /\ Support WW t.
+Proof.
+ intros fuel HOK c e pa bs args g s x t s' F C exp H Hi Hii Hfi Hc Hp Hw Resolve Kind.
+ apply bind_inv in H as (u & s1 & Hchk & H).
+ assert (Ok : ok (check_call_brackets (cx_mod c) g bs))
+   by (unfold check_call_brackets; apply ok_bind; [apply ok_reqs|intro; okt]).
+ destruct (Ok _ _ _ Hi Hchk) as [Hi1 F1].
+ destruct (ok_synth fuel c e (Syntax.call_block pa bs args) None s1 (x,t) s' Hi1 H) as [Hi2 F2].
+ pose proof (later_back w P R Fl _ _ F2 (proj1 Hp)) as L1.
+ pose proof (check_call_brackets_spec w R Fl b Hload (cx_mod c) g bs s u s1 Hi Hw
+   (cr_mod_in _ _ _ _ _ _ _ Hc) Hchk L1) as Br.
+ destruct (bs_synth _ _ _ _ _ HOK c e (Syntax.call_block pa bs args) None s1 x t s' H F C Hi1
+   ltac:(cache_inv) ltac:(fwd_inv) Hc I I Hp) as [Ex [Wt St]].
+ split; [|split; assumption].
+ eapply AC.ExCallBr; [exact Resolve|exact Kind| |exact Ex].
+ rewrite (cr_mod _ _ _ _ _ _ _ Hc). exact Br.
+Qed.
+
+Theorem synth_brackets_sound : forall fuel, OK w P R Fl fuel ->
+ forall c e pa bs args exp s x t s' F C,
+ synth (S fuel) c e (AECall pa (Some bs) args) exp s=Good((x,t),s') ->
+ Inv s -> InfoInv s -> FwdInv s -> CxRel w R Fl c e F C -> Post w P R Fl s' F -> st_w s=w ->
+ forall fid, AC.resolve_sym WW (AC.fr_mod F) pa=Some fid -> AC.kind_sym WW fid=Some AC.DKFn ->
+ AC.Ex WW P F C (AECall pa (Some bs) args) (option_map (fun t=>tc e t) exp) x (tc e t) /\
+ WFty t /\ Support WW t.
+Proof.
+ intros fuel HOK c e pa bs args exp s x t s' F C H Hi Hii Hfi Hc Hp Hw fid Resolve Kind.
+ cbn [synth] in H.
+ apply bind_inv in H as ([v vt] & s1 & Hcall & H).
+ apply bind_inv in H as (u & s2 & Hinj & Hret); injection Hret as <- <- <-.
+ destruct (ok_synth_call fuel c e pa (Some bs) args s (v,vt) s1 Hi Hcall) as [Hi1 F1].
+ destruct (ok_inject_check e vt exp s1 u s2 Hi1 Hinj) as [Hi2 F2].
+ pose proof (post_back w P R Fl _ _ F F2 Hp) as Hp1.
+ pose proof (mono_group fuel) as Mon; do 11 (apply proj2 in Mon); apply proj1 in Mon.
+ pose proof (Mon c e pa (Some bs) args s ((v,vt),s1) Hcall) as H. clear Hcall Mon.
+ cbn [synth_call] in H.
+ apply bind_inv in H as (tg & sp & Hpath & H).
+ destruct (rpath_rel w R Fl b Hload (cx_mod c) pa s tg sp Hw (cr_mod_in _ _ _ _ _ _ _ Hc) Hpath) as [-> Path].
+ rewrite <- (cr_mod _ _ _ _ _ _ _ Hc) in Path.
+ unfold AC.resolve_sym in Resolve; rewrite Path in Resolve.
+ destruct tg as [[id|modid]|]; cbn [option_map ent_of] in Resolve; try discriminate Resolve.
+ injection Resolve as ->.
+ apply bind_inv in H as (g & ss & Hsym & H).
+ cbn [option_map ent_of] in Path.
+ destruct (sym_loader w R Fl b Hload (AC.fr_mod F) pa fid s g ss Hi Hw Path Hsym) as [-> Hg].
+ pose proof (load_world_ids b w Hload fid g Hg) as Id.
+ pose proof (kind_sym_read b w R Fl Hload fid g Hg) as Gkind.
+ change (AC.kind_sym WW fid = Some(kconv(gs_kind g))) in Gkind.
+ rewrite Kind in Gkind; destruct (gs_kind g) eqn:K; try discriminate Gkind.
+ cbn beta iota in H. subst fid.
+ eapply brackets_code_sound; [exact HOK|exact H|exact Hi|exact Hii|exact Hfi|exact Hc|exact Hp1|exact Hw| |exact Kind].
+ unfold AC.resolve_sym; rewrite Path; reflexivity.
 Qed.
 
 Definition DefinedFnStep (fuel : nat) : Prop :=
- forall c e pa a args exp s v t s',
+ forall c e pa a args exp s v t s', a = None ->
  synth (S fuel) c e (AECall pa a args) exp s=Good((v,t),s') ->
  forall F C, Inv s -> InfoInv s -> FwdInv s -> CxRel w R Fl c e F C -> opt_wf exp -> opt_support WW exp -> Post w P R Fl s' F ->
  (exists fid fnm ps rt body, AC.resolve_sym WW (AC.fr_mod F) pa=Some fid /\
@@ -139,11 +201,13 @@ Theorem fn_call_step : forall fuel, OK w P R Fl fuel -> DefinedFnStep fuel ->
  AC.Ex WW P F C (AECall pa a args) (option_map (fun t=>tc e t)exp) v (tc e t) /\ WFty t /\ Support WW t.
 Proof.
  intros fuel HOK Def c e pa a args exp s v t s' H F C Hi Hii Hfi Hc Wx Sx Hp (fid &Resolve &Kind).
- destruct (@kind_fn_ast WW fid Kind) as (fnm &ps &rt &[body|] &Decl).
- - eapply Def; try eassumption. exists fid,fnm,ps,rt,body; auto.
- - assert (Hw : st_w s=w).
-   { pose proof(proj2(ok_synth (S fuel) c e (AECall pa a args) exp s (v,t) s' Hi H))as Fr.
-     exact(@lt_w w P R Fl s (later_back w P R Fl _ _ Fr (proj1 Hp))). }
-   eapply synth_abstract_sound; eassumption.
+ assert (Hw : st_w s=w).
+ { pose proof(proj2(ok_synth (S fuel) c e (AECall pa a args) exp s (v,t) s' Hi H))as Fr.
+   exact(@lt_w w P R Fl s (later_back w P R Fl _ _ Fr (proj1 Hp))). }
+ destruct a as [bs|].
+ - eapply synth_brackets_sound; [exact HOK|exact H|exact Hi|exact Hii|exact Hfi|exact Hc|exact Hp|exact Hw|exact Resolve|exact Kind].
+ - destruct (@kind_fn_ast WW fid Kind) as (fnm &ps &rt &[body|] &Decl).
+   + eapply Def; try eassumption; try reflexivity. exists fid,fnm,ps,rt,body; auto.
+   + eapply synth_abstract_sound; try eassumption; reflexivity.
 Qed.
 End Abstract.

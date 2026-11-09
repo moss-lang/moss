@@ -1113,7 +1113,7 @@ Proof.
   - destruct D as [F C exp|F C exp t Th|F C exp n t mu L Nm|F C exp pa s Hl R K|F C exp pa s d n t0 t Hl R D' Ast L
                   |F C exp pa s d n t0 i t x Hl R D' Ast As T Ex0|F C exp pa a args s bs xs pay y v ty R K B Fx Pay Ea Ey Fi
                   |F C exp pa args f Cf ns sm th g xs wrap C' R K Def Ctx Dm Sat CT Sig As
-                  |F C exp pa args f g xs R K Abs L As|F C exp o pa args ox ot x t Eo Mc
+                  |F C exp pa args f g xs R K Abs L As|F C exp pa bs args f x t R K Br Dx|F C exp o pa args ox ot x t Eo Mc
                   |F C exp op y lib n m ox ot x t Op Ls Ey Hd Pv|F C exp op l r lib n m ox ot x t Op Ls El Hd Pv
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
@@ -1131,6 +1131,7 @@ Proof.
       intros y' Iy. destruct (sigof_gens W _ _ _ _ y' Sig (sig_ret_in g y' Iy)) as [I|[x0 [E _]]]; [|discriminate].
       rewrite Ety in I. exact (tm_scoped W C y' I).
     + exact (fn_ret_scoped W C _ _ Ps L).
+    + exact (ex_scoped _ _ _ _ _ _ Dx Fc Ff Cs (optscoped_none C)).
     + pose proof (ex_scoped _ _ _ _ _ _ Eo Fc Ff Cs (optscoped_none C)) as So.
       pose proof (ex_ok' _ _ _ _ _ Eo Fc Ff) as Ot.
       exact (methcall_scoped _ _ _ _ _ _ _ _ Mc Fc Ff Cs (canon_ok W C ot (proj1 Fc) Ot) (canon_scoped W C ot So)).

@@ -632,6 +632,29 @@ Proof.
   - destruct Out as [_ [L _]]; congruence.
 Qed.
 
+(* D89: what can break in a bracketed call's expansion is one of its
+   arguments; the binds and the `%arg` paths cannot. *)
+Lemma call_block_breaks : forall md pa bs args,
+  A.Breaks W md (Audit.Syntax.call_block pa bs args) -> A.Breaks W md (AECall pa (Some bs) args).
+Proof.
+  intros md pa bs args B. unfold Audit.Syntax.call_block in B.
+  inversion B; subst; clear B.
+  match goal with BB : A.BlockBreaks _ _ _ |- _ => inversion BB; subst; clear BB end.
+  - match goal with InS : In _ (List.app _ _) |- _ => apply in_app_or in InS as [InL|InB] end.
+    + apply in_map_iff in InL as [[nm y] [Eq InC]]. subst. cbn in *.
+      match goal with SB : A.StmtBreaks _ _ _ |- _ => inversion SB; subst end.
+      eapply A.BkCall; [eapply in_combine_r; exact InC|eassumption].
+    + destruct InB as [Eq|[]]. subst.
+      match goal with SB : A.StmtBreaks _ _ _ |- _ => inversion SB; subst end.
+      match goal with InI : In _ (map _ _) |- _ => apply in_map_iff in InI as [b0 [Eq _]] end.
+      subst. destruct b0 as [bp [[rp|] rk ra]]; cbn in *;
+        match goal with IB : A.ItemBreaks _ _ _ |- _ => inversion IB; subst end;
+        match goal with By : A.Breaks _ _ _ |- _ => inversion By end.
+  - match goal with BT : A.Breaks _ _ (AECall _ _ _) |- _ => inversion BT; subst end.
+    match goal with InY : In _ (map _ _) |- _ => apply in_map_iff in InY as [n0 [Eq _]] end.
+    subst. match goal with By : A.Breaks _ _ (AEPath _ _) |- _ => inversion By end.
+Qed.
+
 Lemma block_breaks_cons : forall md s rest tl,
   A.BlockBreaks W md (ABlock rest tl) -> A.BlockBreaks W md (ABlock (s :: rest) tl).
 Proof.
@@ -5187,6 +5210,7 @@ Proof.
       |F C exp pa a args s bs xs pay y v vty R K Br F2 Pay Args1 Dy Fits
       |F C exp pa args f Cf ns sm th sg xs wrap C' R K Def Ctx Dem Sat CT Sig Args
       |F C exp pa args f sg xs R K Abs Fn Args
+      |F C exp pa bs args f x t R K Br Dx
       |F C exp o pa args ox ot x t Do Dm
       |F C exp op y lib n m ox ot x t Op Lang Dy Head Prov
       |F C exp op l r lib n m ox ot x t Op Lang Dl Head Prov
@@ -5249,6 +5273,9 @@ Proof.
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
           (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre')) d types H lg lst Pre0).
     + exact (invoke_step F C pa args f sg xs Fn Args d types H lg lst Pre0).
+    + (* bracketed call (D89): its expansion *)
+      eapply AR.O.outcome_breaks; [exact (call_block_breaks (A.fr_mod F) pa bs args)|].
+      exact (ex_step F C _ None x t Dx d types H lg lst Pre0).
     + refine (methcall_step F C o ox ot pa args x t _ Do _ _ Dm d types H lg lst Pre0);
         [intro B0; apply A.BkMethRecv; exact B0|intros a' In' B0; eapply A.BkMethArg; [exact In'|exact B0]].
     + refine (provided_step F C y ox ot m [] x t _ Dy _ _ Prov d types H lg lst Pre0);

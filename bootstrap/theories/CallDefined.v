@@ -15,14 +15,14 @@ Variables(R:nat->list nat)(Fl:string->nat)(b:bundle).
 Hypothesis Hload:load_world b=Good w.
 Hypothesis Finj:forall a c,Fl a=Fl c->a=c.
 Notation WW:=(BodySoundCore.W w R Fl).
-Theorem synth_call_defined_exec : forall f c e pa a args fid fnm ps rt body s x t s' F C,
+Theorem synth_call_defined_exec : forall f c e pa a args fid fnm ps rt body s x t s' F C, a = None ->
  synth_call(S f)c e pa a args s=Good((x,t),s')->Inv s->CxRel w R Fl c e F C->st_w s=w->
  A.resolve_sym WW(A.fr_mod F)pa=Some fid->A.kind_sym WW fid=Some A.DKFn->
  A.ast_of WW fid=Some(ADFn RPlain fnm ps rt(Some body))->
  a=None/\exists g,nget(w_syms w)fid=Some g/\gs_id g=fid/\
  gs_decl g=ADFn RPlain fnm ps rt(Some body)/\defined_call_code f c e fid g args s=Good((x,t),s').
 Proof.
- intros f c e pa a args fid fnm ps rt body s x t s' F C E Hi Hc Hw Resolve Kind Decl.
+ intros f c e pa a args fid fnm ps rt body s x t s' F C Ha E Hi Hc Hw Resolve Kind Decl.
  cbn[synth_call]in E. apply bind_inv in E as[tg[sp[Ep E]]].
  destruct(rpath_rel w R Fl b Hload _ _ _ _ _ Hw(cr_mod_in _ _ _ _ _ _ _ Hc)Ep)as[-> Path].
  rewrite <-(cr_mod _ _ _ _ _ _ _ Hc)in Path.
@@ -38,7 +38,7 @@ Proof.
  change(A.ast_of(W_read w R Fl)fid=Some(ADFn RPlain fnm ps rt(Some body)))in Decl.
  unfold A.ast_of in Decl;rewrite(w_decl_read w R Fl fid g Hg)in Decl.
  cbn[option_map A.d_ast]in Decl;injection Decl as D.
- cbn beta iota in E. destruct a as[bs|];[exfalso;exact(err_not_good _ _ _ _ _ _ E)|].
+ cbn beta iota in E. destruct a as[bs|];[discriminate Ha|].
  apply bind_inv in E as[mem[sm[Em E]]]. unfold is_memory_instruction in Em;injection Em as <- <-.
  apply bind_inv in E as[ms[sm[Em E]]]. pose proof(@memory_sym_state s ms sm Em)as ->.
  apply bind_inv in E as[u[su[Eu E]]]. injection Eu as <- <-.
@@ -47,7 +47,7 @@ Proof.
  unfold defined_call_code;exact E.
 Qed.
 
-Theorem synth_defined_exec : forall f c e pa a args fid fnm ps rt body exp s x t s' F C,
+Theorem synth_defined_exec : forall f c e pa a args fid fnm ps rt body exp s x t s' F C, a = None ->
  synth(S f)c e(AECall pa a args)exp s=Good((x,t),s')->
  Inv s->CxRel w R Fl c e F C->Post w P R Fl s' F->
  A.resolve_sym WW(A.fr_mod F)pa=Some fid->A.kind_sym WW fid=Some A.DKFn->
@@ -56,7 +56,7 @@ Theorem synth_defined_exec : forall f c e pa a args fid fnm ps rt body exp s x t
  gs_decl g=ADFn RPlain fnm ps rt(Some body)/\
  defined_call_code f c e fid g args s=Good((x,t),sc)/\Fr sc s'/\Post w P R Fl sc F.
 Proof.
- intros f c e pa a args fid fnm ps rt body exp s x t s' F C E Hi Hc Hp Resolve Kind Decl.
+ intros f c e pa a args fid fnm ps rt body exp s x t s' F C Ha E Hi Hc Hp Resolve Kind Decl.
  cbn[synth]in E. apply bind_inv in E as[[v vt][sc[Ec E]]].
  apply bind_inv in E as[u[sr[Ei E]]]. injection E as <- <- <-.
  destruct(ok_synth_call f c e pa a args _ _ _ Hi Ec)as[Ic Fc].
@@ -64,7 +64,7 @@ Proof.
  assert(Hw:st_w s=w).
  { rewrite <-(fr_w _ _ (fr_trans _ _ _ Fc Fi));exact(lt_w _ _ _ _ _(proj1 Hp)). }
  pose proof(mono_group f)as Mon;do 11(apply proj2 in Mon);apply proj1 in Mon.
- destruct(synth_call_defined_exec f c e pa a args fid fnm ps rt body s v vt sc F C
+ destruct(synth_call_defined_exec f c e pa a args fid fnm ps rt body s v vt sc F C Ha
    (Mon c e pa a args s((v,vt),sc)Ec)Hi Hc Hw Resolve Kind Decl)as[-> [g[Hg[Id[D Code]]]]].
  split;[reflexivity|]. exists g,sc;split;[exact Hg|]. split;[exact Id|]. split;[exact D|].
  split;[exact Code|]. split;[exact Fi|]. exact(post_back w P R Fl _ _ F Fi Hp).
