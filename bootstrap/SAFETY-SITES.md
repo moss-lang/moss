@@ -27,7 +27,9 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the formation premises, `HandleFormed`, and the functor and
 family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
+`CapturedInForceOk`, `RefileRunOk`, and `ChainResultsOk`,
+`ChainPlatformOk` from [PublicCopyApply.v](theories/PublicCopyApply.v),
+which prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
@@ -440,6 +442,18 @@ hypotheses, each a named remaining obligation:
 | `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
+
+`copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
+(`copy_apply_ok`): a closure's derivation is followed down its copy chain
+(`CopyChain`, `chain_entry`), each copy's context realized where its
+target's is (`copy_step_realizes`), to the root. A linked root's body runs
+as in the linked case (`link_entry`, `refile_run`); what it provides at
+the application, and a platform root, are the two obligations read
+through the chain: `ChainResultsOk` (`link_results` with a copy chain in
+between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
+likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
+it fixes the caller's functor to the body's own (its `LinkData`, closure
+shape and `AppPremises` all name u), and a copy's caller has neither.
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigOk`); `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
