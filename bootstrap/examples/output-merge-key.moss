@@ -9,8 +9,10 @@
 # stops `stuck (XErr 6)` (e_entry). Native prints 7. With the two
 # readings swapped (X the representative) the oracle prints 7 too.
 # Same bug as tests/regressions/functor_input_output_generations.moss
-# (E06/E33). Decided fix, pending: keep the output roles in the code's
-# keys and map them at the application (scratch/orch/results4-AUDIT.md).
+# (E06/E33). Audit's fix (scratch/orch/roles-AUDIT.md): the code keeps
+# the output roles in its keys (fc_roles) and the application maps each
+# role to its destination and the input T by θ. The oracle is unchanged
+# (an oracle-conformance gap, E33).
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

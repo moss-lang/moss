@@ -47,11 +47,10 @@ Notation ClosureOk := (S.ClosureOk W Prog argv read state_ok).
 
 (* PREMISE (T15/T16, static). At an application of F (AppPremises) whose
    closure is a copy chain down to a root h0, each key k0 of h0's formal
-   result (read at h0's context with fresh output roles gen), with the
-   roles renamed back to h0's output symbols and then substituted as the
-   application's result selection does (each output t to its destination,
-   each input by θ), is the caller's run-time key of a key of F's result
-   as the caller reads it (C'). *)
+   result (read at h0's context with fresh output roles gen), substituted
+   as the application's result selection does (each role gen t to t's
+   destination, every other symbol, an input, by θ), is the caller's
+   run-time key of a key of F's result as the caller reads it (C'). *)
 Definition ChainKeysOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   (forall t, A.canon C (A.canon C t) = A.canon C t) ->
@@ -62,8 +61,8 @@ Definition ChainKeysOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
   NoDup (map gen outs') -> (forall t, In t outs' -> A.Fresh W (gen t)) ->
   A.ProvideResult W h0 Ch0 (fun t => TAbs (gen t)) Cr ks' ->
   forall k0, In k0 ks' -> exists k1, In k1 ks /\
-    A.rkey_of C' k1 = app_subst_item (result_substitution th (map (fun t => (t, gensof t)) outs))
-      (A.output_renaming outs' gen (A.rkey_of Cr k0)).
+    A.rkey_of C' k1 = app_subst_item (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs)))
+      (A.rkey_of Cr k0).
 
 (* PREMISE (T15/T16): ChainNewOk's second clause, the new provisions
    realized after the application. *)
@@ -82,7 +81,7 @@ Definition ChainRealizeOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   adapt_provisions d1 sms = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
   CC.EnvOkOn W Prog argv read state_ok (fun k => In k (map fst news)) rr C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
 

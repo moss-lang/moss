@@ -370,7 +370,7 @@ Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
+    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
     (forall t, In t outs -> output_meaning d3 t <> None) /\
     AliasOk C' (append_environment (result_of d3 outs gensof dr) d) /\
     S.EnvOk W Prog argv read state_ok rr C' (append_environment (result_of d3 outs gensof dr) d) H3 /\
@@ -391,7 +391,7 @@ Proof.
   { pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & _).
     intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ Chain t). }
   pose proof (result_environment_ok W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs'
-    (map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks') OutsI' Read) as Re.
+    (map (A.rkey_of Cr) ks') OutsI' Read) as Re.
   pose proof (result_grows_by_destinations d d3 dr outs gensof) as Gr.
   exists dr, (result_of d3 outs gensof dr). split; [exact Sdr|]. split; [exact Re|]. split; [|exact Gr].
   pose proof Pre3 as [_ [_ [_ [St3 _]]]].

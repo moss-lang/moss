@@ -581,7 +581,7 @@ the local store. *C* and *F* are the static context and frame.
   accepts the program (correctly), so Audit is stricter than native here.
   Details: scratch/orch/results4-AUDIT.md.
 - **Counterexample: a result key spelled through an output's input
-  meaning (open; fix decided).** F's merges can make an input X read as an input T
+  meaning (fixed in Audit: separate output roles).** F's merges can make an input X read as an input T
   that is also an output of F (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
   merge representative). F's result key `X.m`, read at F's inputs, is then
   `T.m` with the input T. `LinkBody`'s code renames the output roles back
@@ -598,6 +598,27 @@ the local store. *C* and *F* are the static context and frame.
   application (results4-AUDIT.md, change 3). Until then Audit's
   application is wrong for this shape and `ChainKeysOk` is false for it.
   Oracle bug: E33. Details: scratch/orch/results4-AUDIT.md.
+  **Fixed (roles):** `functor_code` gains `fc_roles` (output symbol t,
+  its role gen t; `Platform.Family`: none). `LinkBody` files the result
+  keys `rkey_of Cr k` with the roles kept (no `output_renaming`; the body
+  side `rkey_of Cb (at_site Cb (output_renaming outs gen k))` is
+  unchanged), and `apply_functor` selects
+  `result_smap (result_substitution θ (role_outputs (fc_roles code) outputs))`:
+  each role reads as its output's destination, a raw symbol (an input,
+  even one spelled as an output) by θ. So `X.m` (spelled `T.m`, input T)
+  installs at the caller's old T and the output's `T.m` at the new T
+  (PublicSavedTypeExample `output_role_key_goes_to_destination`,
+  `merged_input_key_stays_input`). Audit now runs both
+  output-merge-key.moss and functor_input_output_generations.moss as
+  native does. Restated with it: `LinkData`, `LinkResultsOk`,
+  `ChainResultsOk`, `ChainCoreOk`, `ChainNewOk`, `ChainKeysOk` (no
+  `output_renaming`), `ChainRealizeOk`, `FamilyLinkResultsOk`,
+  `FamilyLinkNewOk`; no proof needed more than the new terms. The oracle
+  is unchanged: its runtime is ExecutionModel's (XBApply, Elab.v
+  link_body), whose LinkBody/LinkBodySound/LinkOutputFresh proofs do not
+  mention Audit's functor code, so nothing oracle-relating broke; the
+  oracle still gets this shape stuck (E06/E33, an oracle-conformance
+  gap). Details: scratch/orch/roles-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
   `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
   inputs (types only H's result mentions). An application of F reads its

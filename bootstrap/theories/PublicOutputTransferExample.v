@@ -10,7 +10,7 @@ Definition run_prim (_ : program_view) (_ : prim) (_ : list value) (st : unit) :
 End Prims.
 Module R := Interpreter Prims.
 
-Definition output_code := FunctorCode [] [] [] [ITy 2] [BType 2 (TMachine MI32)] [].
+Definition output_code := FunctorCode [] [] [] [ITy 2] [BType 2 (TMachine MI32)] [] [].
 Definition output_binding := BApply 1 [] [(2,2)] [].
 Definition callee := EBind output_binding EUnit.
 Definition runtime := ProgramView
