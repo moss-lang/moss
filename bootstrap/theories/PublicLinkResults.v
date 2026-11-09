@@ -350,10 +350,10 @@ Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Let P := program_of Prog argv read.
 
 (* A copy chain keeps the type outputs (each copy's SameResult, through same_result_outputs). *)
-Lemma chain_outputs : forall u gfx sms h0 gf0 sms0, CA.CopyChain W u gfx sms h0 gf0 sms0 ->
+Lemma chain_outputs : forall u gfx sms rms h0 gf0 sms0 rms0, CA.CopyChain W u gfx sms rms h0 gf0 sms0 rms0 ->
   forall t, A.FunOutputs W u t <-> A.FunOutputs W h0 t.
 Proof.
-  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ SO];
+  intros u gfx sms rms h0 gf0 sms0 rms0 Ch. induction Ch as [|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ _ _ SO];
     intros t; [reflexivity|]. rewrite (S.same_result_outputs W u h SO t). exact (IH t).
 Qed.
 
@@ -365,21 +365,21 @@ Qed.
    renaming (PublicOutputSubst) is what proves it. *)
 Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
+  forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   S.Pre W Prog argv read state_ok rr F C d types H g st ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code sms dc) ->
-  S.ClosureOk W Prog argv read state_ok rr H u gfx (FunctorClosure code sms dc) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
+  S.ClosureOk W Prog argv read state_ok rr H u gfx (FunctorClosure code sms dc rms) ->
   S.FixedMeans W u d fx gfx ->
-  CA.CopyChain W u gfx sms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] ->
-  S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] dc) ->
+  CA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] [] ->
+  S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] dc []) ->
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources Cb outs' gen ks')) = Some dr /\
     (forall t, In t outs -> output_meaning d3 t <> None) /\
     AliasOk C' (append_environment (result_of d3 outs gensof dr) d) /\
     S.EnvOk W Prog argv read state_ok rr C' (append_environment (result_of d3 outs gensof dr) d) H3 /\
@@ -389,16 +389,16 @@ Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
 Theorem chain_results_scoped : ChainCoreOk ->
   KeptOutputsUnmentioned W -> CA.ChainResultsOk W Prog argv read state_ok.
 Proof.
-  intros Core DS F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
+  intros Core DS F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3.
-  destruct (Core F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
+  destruct (Core F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3)
     as [dr [Sdr [Read [Al [Env KM]]]]].
   pose proof Pre0 as [_ [_ [_ [_ [_ [Fc _]]]]]].
   pose proof DS as Sc.
   assert (OutsI' : forall t, In t outs' <-> A.FunOutputs W u t).
   { pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & _).
-    intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ Chain t). }
+    intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ _ _ Chain t). }
   pose proof (result_environment_ok W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs'
     (map (A.rkey_of Cr) ks') OutsI' Read) as Re.
   pose proof (result_grows_by_destinations d d3 dr outs gensof) as Gr.

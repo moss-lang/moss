@@ -1138,7 +1138,7 @@ Qed.
 Lemma demand_shape : forall C0 wanted used C wrap Cf, Demand W C0 wanted used C wrap Cf ->
   c_ty Cf = c_ty C /\ c_sub Cf = c_sub C.
 Proof.
-  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
+  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm rs Cm wrap Cf Nin Step Rest IH];
     [split; reflexivity|].
   destruct IH as [E1 E2]. rewrite E1, E2. destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ro Ik].
   cbn. split; [reflexivity|exact (family_application_sub _ _ _ _ _ _ _ FAp)].
@@ -1249,7 +1249,7 @@ Lemma demand_formed : forall C0 wanted used C wrap Cf,
   (forall r m, In (mkey r m) wanted -> TyOk W r /\ ScopedTy W C r) ->
   CxFormed W Cf /\ KeysScoped W Cf.
 Proof.
-  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
+  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm rs Cm wrap Cf Nin Step Rest IH];
     intros Cf0 Ks Wk; [split; assumption|].
   destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ro Ik].
   destruct (Wk ot m Iw) as [Ok Sco].

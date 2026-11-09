@@ -167,7 +167,7 @@ Proof.
   split; [|split; [|split]].
   - intros v t Found. destruct (vals_ilook _ v t KM Found) as [a Il].
     destruct (Find (IVal v) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
-    cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc|p held]; cbn in En; try contradiction.
+    cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc rms0|p held]; cbn in En; try contradiction.
     destruct w; cbn in En; try contradiction. destruct En as [t' [Lt Mt]].
     rewrite Found in Lt. injection Lt as <-. exists (VI32 i). split; [exact L|].
     destruct Mt as [sym [Lang [_ ->]]].
@@ -182,7 +182,7 @@ Proof.
     rewrite (i32_machine sym Lang). constructor.
   - intros f g Found. destruct (fns_ilook _ f g KM Found) as [a Il].
     destruct (Find (IFn f) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
-    cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc|p held]; cbn in En; try contradiction.
+    cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc rms0|p held]; cbn in En; try contradiction.
     destruct held; cbn in En; try contradiction. exists (PrimitiveClosure p None). split; [exact L|].
     exact (Prims f p g (lookup_entry_some _ _ _ L) Found (proj1 En)).
   - intros r m g Found. destruct (mths_ilook _ r m g KM Found) as [a Il].
@@ -190,9 +190,9 @@ Proof.
     cbn in En. contradiction.
   - intros u fx Found. pose proof (funs_ilook _ u fx KM Found) as Il.
     destruct (Find (IFun u) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
-    cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u' sms dc|p held]; cbn in En; try contradiction.
-    destruct sms; [|contradiction]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction.
-    exists (FunctorClosure u' [] (EnvironmentWithAliases [] [] [])),
+    cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u' sms dc rms0|p held]; cbn in En; try contradiction.
+    destruct sms; [|contradiction]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction. destruct rms0; [|contradiction].
+    exists (FunctorClosure u' [] (EnvironmentWithAliases [] [] []) []),
       (S.ground_fixed (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)) fx).
     destruct (ctx_fun_fixed W _ C ns Ctx u fx (S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
     split; [exact L|]. split; [apply S.CPlatform; [exact (proj1 En)| |]|].
@@ -454,7 +454,7 @@ Proof.
   { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
     pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
     apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) []
-      (map (A.rkey_of outputs) keys) bindings [] []). split; [exact (nlook_in _ _ _ _ FB)|].
+      (map (A.rkey_of outputs) keys) bindings (map (A.rkey_of outputs) keys)). split; [exact (nlook_in _ _ _ _ FB)|].
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
   assert (Held : HeldAt m' (rf :: A.sg_params gf)
@@ -579,7 +579,7 @@ Proof.
     by (rewrite Keys; change (IFn f) with (A.rkey_of C (IFn f)); apply in_map; exact (ProvNs _ _ (S.ilook_in _ _ _ Il))).
   apply in_map_iff in Im as [[k pv] [Ek Ie]]. cbn in Ek. subst k.
   rewrite Forall_forall in Entries. pose proof (Entries _ Ie) as En. cbn in En.
-  destruct pv as [w|f' df|u sms dc|p held]; try contradiction. destruct held; try contradiction.
+  destruct pv as [w|f' df|u sms dc rms0|p held]; try contradiction. destruct held; try contradiction.
   destruct En as [_ Raw]. pose proof (Raw sg Found) as Raws.
   rewrite Forall_forall in Formed, Raws |- *. intros t It name param handle symbol args Tag Sym ->.
   split.
@@ -634,19 +634,18 @@ Theorem safety_obligations : forall prelude,
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
      (* ChainResultsOk, from PublicChainCore.chain_results_of_new and
-        PublicChainNew.chain_new_ok: the root's result keys are the
-        caller's (static), and the new provisions of the caller's result
-        are realized *)
-     CN.ChainKeysOk W /\ CN.ChainRealizeOk W Prog argv read so /\
+        PublicChainNew.chain_new_ok: the new provisions of the caller's
+        result are realized (the keys are the caller's by construction,
+        Audit.result_selection) *)
+     CN.ChainRealizeOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
-        ChainResultAgrees from its forward half (chain_result_agrees),
-        ChainForwardKeys from PublicChainFwd.chain_forward_keys: the empty
-        chain is proved; a chain with a copy is ChainForwardCopyKeys,
-        false as stated (examples/linked-copy-bracket.moss) *)
-     CF.ChainForwardCopyKeys W Prog argv read so /\
+        ChainForwardSigs from PublicChainFwd.chain_forward_sigs: the empty
+        chain is proved; a chain with a copy is ChainForwardCopySigs, the
+        signature agreement at each position *)
+     CF.ChainForwardCopySigs W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
-     CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
+     CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyRealizeOk W Prog argv read so /\
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok
         (its FamilyKeysTyped proved: family_keys_typed_ok) *)
      (* a family agrees with the code's context *)
@@ -658,18 +657,18 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CK [CRz [RAc [FLN [FCA FCo]]]]].
+    as [CRz [RAc [FLN [FCA FCo]]]].
   pose proof (CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.
   pose proof (captured_in_force_ok W) as CIF.
   (* a kept output is unmentioned by the context: BApplyAbstract asks it
      (scratch/orch/chainfwd-AUDIT.md section 2) *)
   pose proof (LRes.kept_outputs_unmentioned W) as KU.
-  pose proof (CF.chain_forward_keys W Prog _ _ _ AKT RAc) as RA.
+  pose proof (CF.chain_forward_sigs W Prog _ _ _ AKT RAc) as RA.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.
-  pose proof (CC.chain_results_of_new W Prog _ _ _ (CN.chain_new_ok W Prog _ _ _ CK CRz) KU) as CR.
+  pose proof (CC.chain_results_of_new W Prog _ _ _ (CN.chain_new_ok W Prog _ _ _ CRz) KU) as CR.
   pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
@@ -680,7 +679,7 @@ Proof.
   pose proof (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps
     (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo))
     (platform_sigs_fixed W Prog)) as PG.
-  pose proof (PA.chain_platform_ok W Prog _ _ _ (PA.chain_result_agrees W Prog _ _ _ bundle Wo (PA.chain_forward_agrees W Prog _ _ _ RA)) (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
+  pose proof (PA.chain_platform_ok W Prog _ _ _ RA (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
   pose proof (PA.family_platform_ok W Prog _ _ _ PG FRA) as FPA.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.

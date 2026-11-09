@@ -9,7 +9,7 @@
    the first reading mentions only generations in a given list K. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
-From NM Require PublicFormation PublicOutputSubst.
+From NM Require PublicFormation PublicOutputSubst PublicCallerKeys.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -307,6 +307,23 @@ Qed.
 
 Lemma keys_of_map : forall X Y (f : Y -> option item) (g : X -> Y) l, keys_of f (map g l) = keys_of (fun x => f (g x)) l.
 Proof. intros X Y f g l. unfold keys_of. induction l as [|x r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
+
+(* Keys read off related pairs, position by position. *)
+Lemma keys_of_pairs : forall X Y (L : list (X * Y)) (f1 : X -> option item) (f2 : Y -> option item) (R : item -> item -> Prop),
+  (forall p, In p L -> (f1 (fst p) = None <-> f2 (snd p) = None) /\
+     forall k1 k2, f1 (fst p) = Some k1 -> f2 (snd p) = Some k2 -> R k2 k1) ->
+  Forall2 R (keys_of f2 (map snd L)) (keys_of f1 (map fst L)).
+Proof.
+  intros X Y L f1 f2 R. induction L as [|p L IH]; intros Ok; [constructor|]. cbn [map]. unfold keys_of. cbn [flat_map].
+  fold (keys_of f2 (map snd L)) (keys_of f1 (map fst L)).
+  destruct (Ok p (or_introl eq_refl)) as [Iff Rp].
+  assert (IH' : Forall2 R (keys_of f2 (map snd L)) (keys_of f1 (map fst L))) by (apply IH; intros q Iq; exact (Ok q (or_intror Iq))).
+  destruct (f1 (fst p)) as [k1|] eqn:E1; destruct (f2 (snd p)) as [k2|] eqn:E2.
+  - constructor; [exact (Rp k1 k2 eq_refl eq_refl)|exact IH'].
+  - exfalso. pose proof (proj2 Iff eq_refl). discriminate.
+  - exfalso. pose proof (proj1 Iff eq_refl). discriminate.
+  - exact IH'.
+Qed.
 
 Lemma keys_unique : forall X (f : X -> option item) l, NoDup (keys_of f l) ->
   forall e e' k, In e l -> In e' l -> f e = Some k -> f e' = Some k -> e = e'.
@@ -743,6 +760,114 @@ Proof.
     exists (app_subst cS r2), m, (sig_subst cS g2). split; [split; assumption|exact Kr].
 Qed.
 
+(* Position by position, the family's run-time key at θ is the caller's
+   (the caller-keyed install reads the family's item at position i for
+   the caller's key at position i). *)
+Theorem items_agree_pos : Forall2 (fun k key => app_subst_item th (rkey_of outputs key) = rkey_of Cr k) ks keys.
+Proof.
+  (* the caller's keys are methods: its reading has the family's entries' kinds *)
+  assert (KsM : forall k, In k ks -> exists r m a, k = IMth r m a).
+  { destruct fa_parts as [_ [_ [_ [_ PR]]]].
+    destruct (PublicCallerKeys.provide_result_kinds W u Cf out2 Cr ks Cu (fun t => TAbs t) outputs keys PR PRf)
+      as (e1 & e2 & E1 & E2 & Fk).
+    pose proof (PublicCallerKeys.same_kind_keys (c_sub Cf) (c_sub Cu) _ _ Fk) as FK. rewrite <- E1, <- E2 in FK.
+    intros k Ik. clear -FK Ik KeysM. revert k Ik KeysM. induction FK as [|x y l1 l2 Rxy _ IH]; intros k Ik KeysM; [contradiction|].
+    destruct Ik as [<-|Ik]; [|exact (IH k Ik (fun key I => KeysM key (or_intror I)))].
+    destruct (KeysM y (or_introl eq_refl)) as (r & m & a & -> & _). destruct x; try contradiction. eauto. }
+  destruct entries_rel as (es1 & es2 & Eo & EK1 & ECr & EK2 & Fr).
+  destruct (forall2_pairs _ _ _ _ _ Fr) as (L & -> & -> & FL).
+  rewrite Forall_forall in FL.
+  assert (SubO : c_sub outputs = σ) by (rewrite Eo; reflexivity).
+  assert (SubR : c_sub Cr = cS).
+  { rewrite ECr. cbn. unfold cS. exact SubCf0. }
+  assert (SubCf : c_sub Cf = cS) by exact SubCf0.
+  (* a method pair *)
+  assert (Pm : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 -> exists r2 g2 a2, snd p = NMth r2 m g2 a2 /\
+     app_subst th r1 = app_subst cS r2 /\ PublicOutputSubst.SigRel th cS g1 g2 /\
+     (kind_sym W m = Some DKMeth -> InstSome th cS a1 a2) /\ incl (gens r1 ++ sig_gens g1 ++ inst_gens a1) Dom).
+  { intros p r1 m g1 a1 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
+    destruct (snd p) as [?|?|?|r2 m2 g2 a2|?]; try contradiction. destruct R as (<- & Rr & Sg & Is & Sc).
+    exists r2, g2, a2. split; [reflexivity|exact (conj Rr (conj Sg (conj Is Sc)))]. }
+  assert (Pm2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 -> exists r1 g1 a1, fst p = NMth r1 m g1 a1).
+  { intros p r2 m g2 a2 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
+    destruct (fst p) as [?|?|?|r1 m1 g1 a1|?]; try contradiction. destruct R as (-> & _). eauto. }
+  (* the pairs are determined by their caller method keys: the caller's
+     keys are distinct, or a caller key's method names one family key *)
+  assert (Upair : forall p p' r m, In p L -> In p' L -> entry_key cS (snd p) = Some (mkey r m) ->
+    entry_key cS (snd p') = Some (mkey r m) -> p = p').
+  { intros p p' r m Ip Ip' E E'. destruct Uniq as [Nd|[Nd1 MD]].
+    - rewrite EK2, prov_id_keys, keys_of_map in Nd. exact (keys_unique _ _ L Nd p p' _ Ip Ip' E E').
+    - rewrite EK1, prov_id_keys, keys_of_map in Nd1.
+      destruct (snd p) as [?|?|?|r2 m2 g2 a2|?] eqn:S2; cbn in E; try discriminate. injection E as _ Em. subst m2.
+      destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?] eqn:S2'; cbn in E'; try discriminate. injection E' as _ Em'. subst m2'.
+      destruct (Pm2 p r2 m g2 a2 Ip S2) as (r1 & g1 & a1 & F1).
+      destruct (Pm2 p' r2' m g2' a2' Ip' S2') as (r1' & g1' & a1' & F1').
+      assert (I1 : In (mkey (app_subst σ r1) m) (keys_of (entry_key σ) (map fst L))).
+      { apply keys_of_in. exists (NMth r1 m g1 a1). split; [rewrite <- F1; exact (in_map fst _ _ Ip)|reflexivity]. }
+      assert (I1' : In (mkey (app_subst σ r1') m) (keys_of (entry_key σ) (map fst L))).
+      { apply keys_of_in. exists (NMth r1' m g1' a1'). split; [rewrite <- F1'; exact (in_map fst _ _ Ip')|reflexivity]. }
+      rewrite <- EK1 in I1, I1'.
+      pose proof (MD _ _ _ _ _ _ _ _ I1 I1' eq_refl eq_refl (or_introl eq_refl)) as Ek.
+      apply (keys_unique _ _ L Nd1 p p' (mkey (app_subst σ r1) m) Ip Ip').
+      + rewrite F1. reflexivity.
+      + rewrite F1', Ek. reflexivity. }
+  (* each side's method key is unique *)
+  assert (Key2 : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 ->
+     entry_key cS (snd p) = Some (mkey (app_subst th (app_subst σ r1)) m)).
+  { intros p r1 m g1 a1 Ip E. destruct (Pm p r1 m g1 a1 Ip E) as (r2 & g2 & a2 & E2 & Rr & _).
+    rewrite E2. cbn. rewrite th_sigma, Rr. reflexivity. }
+  assert (Un1 : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 ->
+     forall e', In e' (map fst L) -> entry_key σ e' = Some (mkey (app_subst σ r1) m) -> e' = NMth r1 m g1 a1).
+  { intros p r1 m g1 a1 Ip E e' Ie' Ek. apply in_map_iff in Ie' as [p' [<- Ip']].
+    destruct (fst p') as [?|?|?|r1' m' g1' a1'|?] eqn:E'; cbn in Ek; try discriminate.
+    injection Ek as Er ->. pose proof (Key2 p' r1' m g1' a1' Ip' E') as K'. rewrite Er in K'.
+    rewrite (Upair p' p _ _ Ip' Ip K' (Key2 p r1 m g1 a1 Ip E)) in E'. congruence. }
+  assert (Un2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 ->
+     forall e', In e' (map snd L) -> entry_key cS e' = Some (mkey (app_subst cS r2) m) -> e' = NMth r2 m g2 a2).
+  { intros p r2 m g2 a2 Ip E e' Ie' Ek. apply in_map_iff in Ie' as [p' [<- Ip']].
+    assert (Ek0 : entry_key cS (snd p) = Some (mkey (app_subst cS r2) m)) by (rewrite E; reflexivity).
+    rewrite (Upair p' p _ _ Ip' Ip Ek Ek0). exact E. }
+  (* one pair: the family's run-time key at θ is the caller's *)
+  assert (Core : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 -> In (mkey (app_subst σ r1) m) keys ->
+     exists r2 g2 a2, snd p = NMth r2 m g2 a2 /\
+       In (mkey (app_subst cS r2) m) ks /\ mlook (app_subst cS r2) m (c_mths Cr) = Some (sig_subst cS g2) /\
+       mlook (app_subst σ r1) m (c_mths outputs) = Some (sig_subst σ g1) /\
+       app_subst_item th (rkey_of outputs (mkey (app_subst σ r1) m)) = rkey Cr (app_subst cS r2) m).
+  { intros p r1 m g1 a1 Ip E Ik. destruct (Pm p r1 m g1 a1 Ip E) as (r2 & g2 & a2 & E2 & Rr & Sg & Is & Sc).
+    assert (I1 : In (NMth r1 m g1 a1) (map fst L)) by (rewrite <- E; exact (in_map fst _ _ Ip)).
+    assert (I2 : In (NMth r2 m g2 a2) (map snd L)) by (rewrite <- E2; exact (in_map snd _ _ Ip)).
+    pose proof (result_lookup Cu T1 (map fst L) r1 m g1 a1 I1 (Un1 p r1 m g1 a1 Ip E)) as [M1 A1].
+    pose proof (result_lookup Cf T2 (map snd L) r2 m g2 a2 I2) as R2. rewrite SubCf in R2.
+    destruct (R2 (Un2 p r2 m g2 a2 Ip E2)) as [M2 A2]. clear R2.
+    exists r2, g2, a2. split; [exact E2|]. split; [|split; [rewrite ECr; exact M2|split; [rewrite Eo; exact M1|]]].
+    - rewrite EK2. apply keys_of_in. exists (NMth r2 m g2 a2). split; [exact I2|reflexivity].
+    - assert (Km : kind_sym W m = Some DKMeth).
+      { destruct (KeysM _ Ik) as (r0 & m0 & a0 & Ek & Km). injection Ek as _ <- _. exact Km. }
+      change (rkey_of outputs (mkey (app_subst σ r1) m)) with (rkey outputs (app_subst σ r1) m). unfold rkey. rewrite <- Eo in A1. rewrite <- ECr in A2. change (c_sub Cu) with σ in A1. rewrite A1, A2.
+      cbn [app_subst_item]. unfold theta_of, canon. rewrite SubO, SubR.
+      rewrite th_sigma, Rr. f_equal. unfold map_snd. rewrite map_map. cbn.
+      erewrite map_ext; [exact (known_rel a1 a2 (Is Km))|]. intros [y t]. cbn. rewrite th_sigma. reflexivity. }
+  rewrite EK1, EK2. apply keys_of_pairs. intros p Ip.
+  destruct (fst p) as [t1|v1 t1 a1|f1 g1 a1|r1 m g1 a1|u1 fx1] eqn:E1.
+  4: { destruct (Pm p r1 m g1 a1 Ip E1) as (r2 & g2 & a2 & E2 & _). rewrite E2. cbn [entry_key].
+       split; [split; discriminate|]. intros k1 k2 K1 K2. injection K1 as <-. injection K2 as <-.
+       assert (Ik1 : In (mkey (app_subst σ r1) m) keys).
+       { rewrite EK1. apply keys_of_in. exists (NMth r1 m g1 a1). split; [rewrite <- E1; exact (in_map fst _ _ Ip)|reflexivity]. }
+       destruct (Core p r1 m g1 a1 Ip E1 Ik1) as (r2' & g2' & a2' & E2' & _ & _ & _ & Kr).
+       rewrite E2 in E2'. injection E2' as <- <- <-. exact Kr. }
+  all: assert (N1 : entry_key σ (fst p) = None)
+    by (destruct (entry_key σ (fst p)) as [k1|] eqn:K1; [|reflexivity];
+        assert (Ik1 : In k1 keys) by (rewrite EK1; apply keys_of_in; exists (fst p); split; [exact (in_map fst _ _ Ip)|exact K1]);
+        destruct (KeysM k1 Ik1) as (r & m & a & -> & _); rewrite E1 in K1; cbn in K1; discriminate).
+  all: assert (N2 : entry_key cS (snd p) = None)
+    by (pose proof (FL p Ip) as R0; rewrite E1 in R0;
+        destruct (entry_key cS (snd p)) as [k2|] eqn:K2; [|reflexivity];
+        assert (Ik2 : In k2 ks) by (rewrite EK2; apply keys_of_in; exists (snd p); split; [exact (in_map snd _ _ Ip)|exact K2]);
+        destruct (KsM k2 Ik2) as (r & m & a & ->);
+        destruct (snd p); cbn in R0, K2; try contradiction; discriminate).
+  all: rewrite <- E1, N1, N2. all: split; [split; reflexivity|intros k1 k2 K1; discriminate].
+Qed.
+
 End FamilyAgree.
 
 (* A family application (FamilyApplication), as PlatformApply's
@@ -771,6 +896,26 @@ Proof.
   destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
   destruct Sat as [_ [_ [_ [_ Merge]]]].
   apply (items_agree_gen W C u th (family_context C matching) (fun t => TAbs t) Cr ks Cu needs outputs keys).
+  - exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))).
+  - split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].
+    intros d ps a r b D FP. destruct Shape as (d' & n & ps' & a' & r' & D' & Ast & _).
+    rewrite D in D'. injection D' as <-. rewrite Ast in FP. cbn in FP. injection FP as _ _ _ <-. reflexivity.
+  - left. exact Nd.
+  - exact FCu.
+  - exact NoOut.
+  - exact PRf.
+  - exact KeysM.
+  - exact Idem.
+  - exact KeysT.
+Qed.
+
+(* The same, position by position. *)
+Theorem family_items_pos : Forall2 (fun k key => app_subst_item th (rkey_of outputs key) = rkey_of Cr k) ks keys.
+Proof.
+  destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
+  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  apply (items_agree_pos W C u th (family_context C matching) (fun t => TAbs t) Cr ks Cu needs outputs keys).
   - exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))).
   - split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].
     intros d ps a r b D FP. destruct Shape as (d' & n & ps' & a' & r' & D' & Ast & _).

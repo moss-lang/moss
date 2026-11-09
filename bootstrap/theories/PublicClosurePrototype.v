@@ -62,13 +62,13 @@ Definition bnil : bcode := fun fuel d g st =>
   match fuel with 0 => inr (Evaluation OutOfFuel g st) | S _ => inl (d,g,st) end.
 
 Definition compiled_apply (fuel : nat) (d : environment) (u : usym) (th : subst)
-    (destinations : list (tsym * tsym)) (sm : smap) (st : Prims.mstate) :
+    (destinations : list (tsym * tsym)) (sm : smap) (rs : list item) (st : Prims.mstate) :
     (environment * Prims.mstate) + evaluation :=
   match fuel with
   | 0 => inr (Evaluation OutOfFuel [] st)
   | S k =>
       match lookup_provision (IFun u) d with
-      | Some (FunctorClosure h sms dc) =>
+      | Some (FunctorClosure h sms dc rms) =>
           match bodies h with
           | Some (outputs, body) =>
               match select_provisions d sm with
@@ -77,8 +77,7 @@ Definition compiled_apply (fuel : nat) (d : environment) (u : usym) (th : subst)
                   | Some d2 =>
                       match body k (application_environment P d h th (append_environment d2 dc)) [] st with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (result_smap (result_substitution th (role_outputs
-                                  (match view_functor P h with Some code => fc_roles code | None => [] end) destinations)) outputs
+                          match select_provisions d3 (result_selection rs rms
                                   (match view_functor P h with Some code => fc_sources code | None => [] end)) with
                           | Some dr =>
                               match result_environment d destinations d3 outputs dr with
@@ -100,13 +99,13 @@ Definition tables_correct : Prop := forall h,
   | _, _ => False
   end.
 
-Lemma apply_correct : tables_correct -> forall fuel d u th destinations sm st,
-  compiled_apply fuel d u th destinations sm st = apply_functor fuel P d u th destinations sm st.
+Lemma apply_correct : tables_correct -> forall fuel d u th destinations sm rs st,
+  compiled_apply fuel d u th destinations sm rs st = apply_functor fuel P d u th destinations sm rs st.
 Proof.
-  intros Tables [|fuel] d u th destinations sm st; [reflexivity|].
+  intros Tables [|fuel] d u th destinations sm rs st; [reflexivity|].
   cbn [compiled_apply apply_functor].
   destruct (lookup_provision (IFun u) d) as [entry|]; [|reflexivity].
-  destruct entry as [value|function captured|h maps captured|operation held]; try reflexivity.
+  destruct entry as [value|function captured|h maps captured rms|operation held]; try reflexivity.
   specialize (Tables h).
   destruct (view_functor P h) as [body|] eqn:Source;
     destruct (bodies h) as [[outputs c]|] eqn:Cached; try contradiction; try reflexivity.
@@ -136,15 +135,15 @@ Definition compile_step (binding : binding) : option bcode :=
       | None => inr (Evaluation (Stuck e_compose) g st) end)
   | BFunctor u body plan linked captures => Some (fun _ d g st =>
       match select_provisions d captures with
-      | Some dc => inl (install_provision (IFun u) (FunctorClosure body [linked] (typed_capture d plan dc)) d,g,st)
+      | Some dc => inl (install_provision (IFun u) (FunctorClosure body [linked] (typed_capture d plan dc) []) d,g,st)
       | None => inr (Evaluation (Stuck e_compose) g st) end)
-  | BCopyFunctor u provider sm => Some (fun _ d g st =>
+  | BCopyFunctor u provider sm rm => Some (fun _ d g st =>
       match lookup_provision (IFun provider) d with
-      | Some (FunctorClosure body maps dc) =>
-          inl (install_provision (IFun u) (FunctorClosure body (maps ++ [sm]) dc) d,g,st)
+      | Some (FunctorClosure body maps dc rms) =>
+          inl (install_provision (IFun u) (FunctorClosure body (maps ++ [sm]) dc (rms ++ [rm])) d,g,st)
       | _ => inr (Evaluation (Stuck e_fun) g st) end)
-  | BApply u th destinations sm => Some (fun fuel d g st =>
-      match compiled_apply fuel d u th destinations sm st with
+  | BApply u th destinations sm rs => Some (fun fuel d g st =>
+      match compiled_apply fuel d u th destinations sm rs st with
       | inl (dr, st1) => inl (append_environment dr d,g,st1)
       | inr rr => inr (with_g g rr) end)
   | BPrimitive key operation => Some (fun _ d g st =>
@@ -176,7 +175,7 @@ Lemma step_correct : tables_correct -> forall b c,
 Proof.
   intros Tables b c Compiled.
   destruct b as [t tau|v e|f body plan inputs|tau method theta body plan inputs|
-    u body plan inputs captures|u provider inputs|u theta destinations inputs|key operation];
+    u body plan inputs captures|u provider inputs rm|u theta destinations inputs rs|key operation];
     cbn [compile_step] in Compiled.
   - injection Compiled as <-. intros; reflexivity.
   - destruct (compile_atom e) as [atom|] eqn:Atom; [|discriminate].
@@ -194,7 +193,7 @@ Proof.
       [destruct entry|]; reflexivity.
   - injection Compiled as <-. intros fuel rest d g st. cbn [eval_bindings].
     rewrite (apply_correct Tables).
-    destruct (apply_functor fuel P d u theta destinations inputs st) as [[dr st1]|rr]; reflexivity.
+    destruct (apply_functor fuel P d u theta destinations inputs rs st) as [[dr st1]|rr]; reflexivity.
   - injection Compiled as <-. intros; reflexivity.
 Qed.
 

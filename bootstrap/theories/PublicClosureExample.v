@@ -17,7 +17,7 @@ Module R := C.R.
 Definition captured_handle := VCheckedHandle false (TMachine MI32) 0.
 Definition replacement_handle := VCheckedHandle false (TMachine MI32) 1.
 Definition provider_bindings := [BType 2 (TMachine MI32); BValue 3 (EVal 1)].
-Definition provider_code := FunctorCode [] [] [] [ITy 2; IVal 3] provider_bindings [] [].
+Definition provider_code := FunctorCode [] [] [] [ITy 2; IVal 3] provider_bindings [IVal 3].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some provider_code else None)
   0 0 0 [] (fun _ => None) [(11, CastSpec false 9 None)].
@@ -27,7 +27,7 @@ Definition initial := Environment [(2, TMachine MF64)]
 (* Capture seed, rebind the caller's seed, export a new meaning of Fresh,
    then check the old captured handle at that new output generation. *)
 Definition setup_bindings :=
-  [BFunctor 10 20 (TypeCapture [] []) [] [(IVal 1,IVal 1)]; BValue 1 (EVal 4); BApply 10 [] [(2,7)] []].
+  [BFunctor 10 20 (TypeCapture [] []) [] [(IVal 1,IVal 1)]; BValue 1 (EVal 4); BApply 10 [] [(2,7)] [] [IVal 3]].
 Definition expression :=
   fold_right EBind (ETag 11 [(9,TAbs 7)] (EVal 3)) setup_bindings.
 

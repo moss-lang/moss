@@ -15,7 +15,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults.
-From NM Require PublicFormation.
+From NM Require PublicFormation PublicCallerKeys.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -197,55 +197,68 @@ Qed.
 
 (* PREMISE (T15/T16; the correspondence). In ChainCoreOk's situation, with
    the result selected from the body (dr) and C''s new provisions (news):
-   every key dr fills is the run-time key of a new provision of C', and
    the new provisions are realized after the application. It is the
    caller's reading of F's result (ProvideResult at θ and the destinations)
    against the root's formal one (Cr, through the copy chain's
-   CopyOutputs), with the body's provisions typed at the body's meanings
-   (ResultRealizes, read_rename). *)
+   CopyOutputs and positions), with the body's provisions typed at the
+   body's meanings (ResultRealizes, read_rename). That every key dr fills
+   is the run-time key of a new provision of C' is true by construction
+   (Audit.result_selection files position i under the caller's key for
+   it), so it is no longer part of this premise (chain_core_ok). *)
 Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
+  forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   S.Pre W Prog argv read state_ok rr F C d types H g st ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code sms dc) ->
-  ClosureOk rr H u gfx (FunctorClosure code sms dc) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
+  ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   S.FixedMeans W u d fx gfx ->
-  CA.CopyChain W u gfx sms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] ->
-  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] dc) ->
+  CA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] [] ->
+  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] dc []) ->
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources Cb outs' gen ks')) = Some dr ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
-  (forall k pv, lookup_provision k dr = Some pv -> exists k1 p1, In (k1, p1) news /\ A.rkey_of C' k1 = k) /\
   EnvOkOn (fun k => In k (map fst news)) rr C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
+
+(* Every key the selection fills is the caller's run-time key of one of
+   its new provisions. *)
+Lemma selection_news : forall u C out C' ks rms srcs d3 dr, A.ProvideResult W u C out C' ks ->
+  select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms srcs) = Some dr ->
+  forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
+  forall k pv, lookup_provision k dr = Some pv -> exists k1 p1, In (k1, p1) news /\ A.rkey_of C' k1 = k.
+Proof.
+  intros u C out C' ks rms srcs d3 dr PR Sdr news En k pv L.
+  rewrite (select_lookup _ _ _ k Sdr) in L. destruct (sm_find k _) as [s|] eqn:F; [|discriminate].
+  destruct (PublicCallerKeys.selection_in _ _ _ _ _ (PublicCallerKeys.sm_find_some_in _ _ _ F)) as [Ik _].
+  apply in_map_iff in Ik as [k1 [<- Ik1]].
+  destruct (PublicCallerKeys.provide_result_key_news W u C out C' ks k1 PR Ik1 news En) as [p1 Ip1].
+  exists k1, p1. split; [exact Ip1|reflexivity].
+Qed.
 
 (* ---- the result selection ------------------------------------------------ *)
 
-(* Every result key is read from a body key the body's context provides
+(* Every position's source is a body key the body's context provides
    (ResultRealizes), so the selection succeeds. *)
-Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' th',
+Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms,
   S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
   A.ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs') ks' ->
-  exists dr, select_provisions d3 (result_smap th' (map ITy outs' ++ map (A.rkey_of Cr) ks')%list
-    (S.link_sources Cb outs' gen Cr ks')) = Some dr.
+  (forall s, In s (chain_sources rms (S.link_sources Cb outs' gen ks')) -> In s (S.link_sources Cb outs' gen ks')) ->
+  exists dr, select_provisions d3 (result_selection rs rms (S.link_sources Cb outs' gen ks')) = Some dr.
 Proof.
-  intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' th' Real PR RR. apply select_ok. intros [a b] Iq.
-  destruct (S.result_smap_in _ _ _ a b Iq) as [i [Ii [Nt [_ ->]]]]. cbn [snd].
-  apply in_app_or in Ii as [Ii|Ii].
-  - apply in_map_iff in Ii as [t [<- _]]. discriminate.
-  - apply in_map_iff in Ii as [k0 [<- Ik]].
-    destruct (S.link_source_of Cb outs' gen Cr ks' k0 Ik) as [k' [Ik' [_ Es]]]. rewrite Es.
-    destruct (RR k' Ik') as [req [act [_ [La _]]]].
-    assert (NT : forall t, k' <> ITy t) by (intros t E; subst k'; exact (provide_result_keys_not_ty W _ _ _ _ _ t PR Ik')).
-    assert (NT' : forall t, A.at_site Cb (app_subst_item (map (fun t => (gen t, TAbs t)) outs') k') <> ITy t)
-      by (apply at_site_not_ty, app_subst_item_not_ty, NT).
-    destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real (ilook_in_gen _ _ _ _ La) (need_shape_id _ NT')) as [pv L].
-    rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item (map (fun t => (gen t, TAbs t)) outs') k'))) d3 = None) in E. congruence.
+  intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms Real PR RR Rg. apply select_ok. intros [a b] Iq.
+  destruct (PublicCallerKeys.selection_in _ _ _ _ _ Iq) as [_ Ib]. cbn [snd].
+  pose proof (Rg b Ib) as Ib'. unfold S.link_sources in Ib'. apply in_map_iff in Ib' as [k' [<- Ik']].
+  destruct (RR k' Ik') as [req [act [_ [La _]]]].
+  assert (NT : forall t, k' <> ITy t) by (intros t E; subst k'; exact (provide_result_keys_not_ty W _ _ _ _ _ t PR Ik')).
+  assert (NT' : forall t, A.at_site Cb (app_subst_item (map (fun t => (gen t, TAbs t)) outs') k') <> ITy t)
+    by (apply at_site_not_ty, app_subst_item_not_ty, NT).
+  destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real (ilook_in_gen _ _ _ _ La) (need_shape_id _ NT')) as [pv L].
+  rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item (map (fun t => (gen t, TAbs t)) outs') k'))) d3 = None) in E. congruence.
 Qed.
 
 (* ---- the caller's aliases after the application ---------------------------- *)
@@ -416,21 +429,24 @@ Qed.
 
 Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCoreOk W Prog argv read state_ok.
 Proof.
-  intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
+  intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3.
   pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[Abs [Env [Idem KM]]] [Fc _]]]]]].
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
-  destruct (chain_selection rr Cb d3 H3 h0 Ch0 _ outs' gen Cr ks' (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs)))
-    Real3 PR' RR) as [dr Sdr].
+  destruct (CA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (S.link_sources Cb outs' gen ks')
+    ltac:(intros C0 o C0' ks0 P0; unfold S.link_sources; rewrite length_map;
+          exact (PublicCallerKeys.provide_result_length W h0 _ _ _ _ _ _ _ _ PR' P0))) as [_ Rg].
+  destruct (chain_selection rr Cb d3 H3 h0 Ch0 _ outs' gen Cr ks' (map (A.rkey_of C') ks) rms Real3 PR' RR Rg) as [dr Sdr].
   destruct (provide_result_news W _ _ _ _ _ PR) as [news [En KMn]].
-  destruct (New F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
+  pose proof (selection_news u C _ C' ks rms _ d3 dr PR Sdr news En) as Cov.
+  pose proof (New F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3
-    dr Sdr news En) as [Cov EnvN].
+    dr Sdr news En) as EnvN.
   exists dr. split; [exact Sdr|]. split.
   { intros t It. pose proof (proj1 (OutsI t) It) as Ft.
-    pose proof (proj2 (OutsR t) (proj1 (LR.chain_outputs W _ _ _ _ _ _ Chain t) Ft)) as It'.
+    pose proof (proj2 (OutsR t) (proj1 (LR.chain_outputs W _ _ _ _ _ _ _ _ Chain t) Ft)) as It'.
     destruct (OutM t It') as [m Lm]. rewrite (Al3 t m Lm). discriminate. }
   split; [exact (alias_after F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr Al0 Abs Idem)|].
   split.
@@ -522,25 +538,27 @@ Qed.
 
 (* PREMISE (T15). FamilyLinkResultsOk, its selection discharged: the
    family's new methods are installed by what the body selection dr
-   finds (the correspondence with no type outputs). *)
+   finds, callable at their signatures (the correspondence with no type
+   outputs). That dr fills only the run-time keys of new methods is true
+   by construction (Audit.result_selection), proved in
+   family_link_results_ok. *)
 Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc []) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc []) ->
   S.FixedMeans W u d fx gfx ->
   S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)) = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') []))
-      (map ITy outs' ++ map (A.rkey_of Cr') ks')%list
-      (S.link_sources Cb outs' gen Cr' ks')) = Some dr ->
-  FS.FamilyNewOk W Prog argv read state_ok rr Cr ks d dr H3.
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (S.link_sources Cb outs' gen ks')) = Some dr ->
+  forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
+     lookup_provision (A.rkey Cr r m) dr = Some pv /\ CallableOk rr H3 d (r :: A.sg_params g) (A.sg_ret g) pv.
 
 Theorem family_link_results_ok : FamilyLinkNewOk -> FS.FamilyLinkResultsOk W Prog argv read state_ok.
 Proof.
@@ -548,10 +566,16 @@ Proof.
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
-  destruct (chain_selection rr Cb d3 H3 u Cu _ outs' gen Cr' ks' (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') [])) Real3 PR' RR) as [dr Sdr].
-  exists dr. split; [exact Sdr|].
-  exact (New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
-    Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).
+  destruct (chain_selection rr Cb d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) [] Real3 PR' RR
+    ltac:(intros s0 I0; exact I0)) as [dr Sdr].
+  exists dr. split; [exact Sdr|]. split.
+  - intros K pv L. destruct (PublicFamilyStep.family_news W C u matching th sm Cr ks FA) as (news & En & _ & _ & NewM & Keys).
+    rewrite (select_lookup _ _ _ K Sdr) in L. destruct (sm_find K _) as [s|] eqn:Fs; [|discriminate].
+    destruct (PublicCallerKeys.selection_in _ _ _ _ _ (PublicCallerKeys.sm_find_some_in _ _ _ Fs)) as [Ik _].
+    apply in_map_iff in Ik as [k1 [<- Ik1]]. destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
+    destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
+  - exact (New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+      Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).
 Qed.
 
 (* ---- what a run of bindings writes ------------------------------------------- *)
@@ -559,9 +583,9 @@ Qed.
 (* Only an application writes meanings (at its destinations) and aliases
    (at its outputs); a type binding writes an alias. *)
 Definition binding_dests (bs : list binding) : list nat :=
-  flat_map (fun b => match b with BApply _ _ outs _ => map snd outs | _ => [] end) bs.
+  flat_map (fun b => match b with BApply _ _ outs _ _ => map snd outs | _ => [] end) bs.
 Definition binding_aliases (bs : list binding) : list nat :=
-  flat_map (fun b => match b with BApply _ _ outs _ => map fst outs | BType t _ => [t] | _ => [] end) bs.
+  flat_map (fun b => match b with BApply _ _ outs _ _ => map fst outs | BType t _ => [t] | _ => [] end) bs.
 
 Definition Grows (Xm Xa : list nat) (d d' : environment) : Prop :=
   (exists w, type_meanings d' = (w ++ type_meanings d)%list /\ incl (map fst w) Xm) /\
@@ -593,11 +617,11 @@ Proof.
     injection E as <- <-. destruct (IH w' a' eq_refl) as [Ew Ea]. cbn. rewrite Ew, Ea. split; reflexivity.
 Qed.
 
-Lemma apply_functor_writes : forall j Pv d u th outs sm st dr st1,
-  S.I.apply_functor j Pv d u th outs sm st = inl (dr, st1) ->
+Lemma apply_functor_writes : forall j Pv d u th outs sm rs st dr st1,
+  S.I.apply_functor j Pv d u th outs sm rs st = inl (dr, st1) ->
   Grows (map snd outs) (map fst outs) d (append_environment dr d).
 Proof.
-  intros j Pv d u th outs sm st dr st1 E. destruct j as [|j]; [discriminate|]. cbn in E.
+  intros j Pv d u th outs sm rs st dr st1 E. destruct j as [|j]; [discriminate|]. cbn in E.
   unfold result_environment in E.
   repeat match type of E with context[match ?x with _ => _ end] =>
     match x with context[read_result_types] => fail 1 | _ => destruct x; try discriminate E end end.
@@ -623,7 +647,7 @@ Proof.
       incl (Xm ++ binding_dests r) (binding_dests (b :: r)) -> incl (Xa ++ binding_aliases r) (binding_aliases (b :: r)) ->
       Grows (binding_dests (b :: r)) (binding_aliases (b :: r)) d d').
     { intros Xm Xa d1 G1 g1 st1 E1 IX IY. exact (grows_mono _ _ _ _ _ _ IX IY (grows_trans _ _ _ _ _ _ _ G1 (IH _ _ _ _ _ _ _ _ E1))). }
-    destruct b as [t tau|v e1|f f' types sm|tauk m th f' types sm|u h tys sm smc|u u' sm|u th outs sm|i p].
+    destruct b as [t tau|v e1|f f' types sm|tauk m th f' types sm|u h tys sm smc|u u' sm rm|u th outs sm rs|i p].
     + refine (Step [] [t] (bind_type d t tau) _ g st E _ _).
       * split; [exists []|exists [(t, ground d tau)]]; split; [reflexivity|intros x []|reflexivity|]. intros x [<-|[]]; left; reflexivity.
       * intros x Ix. exact Ix.
@@ -638,8 +662,8 @@ Proof.
       refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
     + destruct (lookup_provision (IFun u') d) as [pv|]; [destruct pv; try discriminate|discriminate].
       refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
-    + destruct (S.I.apply_functor j Pv d u th outs sm st) as [[dr st1]|] eqn:A1; [|discriminate].
-      refine (Step _ _ _ (apply_functor_writes _ _ _ _ _ _ _ _ _ _ A1) g st1 E _ _); intros x Ix; exact Ix.
+    + destruct (S.I.apply_functor j Pv d u th outs sm rs st) as [[dr st1]|] eqn:A1; [|discriminate].
+      refine (Step _ _ _ (apply_functor_writes _ _ _ _ _ _ _ _ _ _ _ A1) g st1 E _ _); intros x Ix; exact Ix.
     + refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
 Qed.
 

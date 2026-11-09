@@ -30,7 +30,7 @@ Example body_rebind_changes_only_output_reading :
 Proof. split; reflexivity. Qed.
 
 Definition provider_view := ProgramView (fun _ => None)
-  (fun _ => Some (FunctorCode [10;11] [10;11] [] [ITy 10] [] [] []))
+  (fun _ => Some (FunctorCode [10;11] [10;11] [] [ITy 10] [] []))
   0 0 0 [] (fun _ => None) [].
 Definition applied := application_environment provider_view caller 1
   [(10,TAbs 100);(12,TAbs 101)] captured.
@@ -66,9 +66,9 @@ Definition mstate := unit.
 Definition run_prim (_ : program_view) (_ : prim) (_ : list value) (state : unit) := (Trap 0,state).
 End Primitives.
 Module R := Interpreter Primitives.
-Definition with_functor := install_provision (IFun 1) (FunctorClosure 1 [] captured) caller.
+Definition with_functor := install_provision (IFun 1) (FunctorClosure 1 [] captured []) caller.
 Example actual_application_exports_unchanged_formal_not_stale_capture :
-  R.apply_functor 3 provider_view with_functor 1 [(10,TAbs 100)] [(10,200)] [] tt =
+  R.apply_functor 3 provider_view with_functor 1 [(10,TAbs 100)] [(10,200)] [] [] tt =
   inl (EnvironmentWithAliases [(200,TMachine MI32)] [(10,TMachine MI32)] [],tt).
 Proof. reflexivity. Qed.
 
@@ -82,11 +82,11 @@ Proof. reflexivity. Qed.
    These calculations check the repaired boundary; they do not construct
    a complete source-world or Admissible proof for the schematic program. *)
 Definition fresh_provider_view := ProgramView
-  (fun _ => Some (EBind (BApply 1 [] [(10,10)] []) EUnit))
-  (fun _ => Some (FunctorCode [] [] [] [ITy 10] [BType 10 (TNom 20 [])] [] []))
+  (fun _ => Some (EBind (BApply 1 [] [(10,10)] [] []) EUnit))
+  (fun _ => Some (FunctorCode [] [] [] [ITy 10] [BType 10 (TNom 20 [])] []))
   0 0 0 [] (fun _ => None) [].
 Definition ambient_caller := install_provision (IFun 1)
-  (FunctorClosure 1 [] empty_environment)
+  (FunctorClosure 1 [] empty_environment [])
   (Environment [(10,TNom 30 [])] []).
 
 Example ambient_generation_does_not_block_callee_first_output :
@@ -97,7 +97,7 @@ Proof. reflexivity. Qed.
 
 Example same_callee_without_ambient_generation_succeeds :
   R.eval 8 fresh_provider_view
-    (install_provision (IFun 1) (FunctorClosure 1 [] empty_environment) empty_environment)
+    (install_provision (IFun 1) (FunctorClosure 1 [] empty_environment []) empty_environment)
     [] tt (ECall 2 [] [(IFun 1,IFun 1)] []) =
   R.Evaluation (Normal VUnit) [] tt.
 Proof. reflexivity. Qed.

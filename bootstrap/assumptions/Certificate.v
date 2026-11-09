@@ -16,7 +16,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
-  PublicChainCore PublicChainNew PublicChainFwd PublicScoping.
+  PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -126,14 +126,19 @@ Definition certificate_roots :=
   @PublicPlatform.chain_platform_ok,
   @PublicPlatform.family_platform_ok,
   @PublicPlatform.chain_prims_of_ground,
-  @PublicPlatform.chain_result_agrees,
+  @PublicPlatform.chain_core_premises,
+  @PublicPlatform.family_core,
   @NM.PublicChainAgree.chain_cover,
-  @PublicPlatform.chain_forward_agrees,
   @NM.PublicChainAgree.copy_news_methods,
   @PublicPlatform.family_result_agrees,
   @NM.PublicFamilyAgree.family_items_agree,
   @NM.PublicFamilyAgree.items_agree_gen,
-  @PublicChainFwdI.chain_forward_keys,
+  @NM.PublicFamilyAgree.items_agree_pos,
+  @NM.PublicFamilyAgree.family_items_pos,
+  @NM.PublicCallerKeys.same_kind_entries,
+  @NM.PublicCallerKeys.provide_result_length,
+  @NM.PublicCallerKeys.selection_last,
+  @PublicChainFwdI.chain_forward_sigs,
   @NM.PublicChainFwd.news_method_key,
   @NM.PublicFamilyAgree.family_entries_rel,
   @PublicPlatform.platform_not_linked,
@@ -147,7 +152,11 @@ Definition certificate_roots :=
   @PublicChainCoreI.body_provides,
   @PublicChainCoreI.bindings_writes,
   @PublicChainNewI.chain_new_ok,
-  @PublicChainNew.provide_result_key_news,
+  @NM.PublicCallerKeys.provide_result_key_news,
+  @PublicChainCoreI.selection_news,
+  @PublicCopy.chain_sources_range,
+  @PublicFamily.family_copy_apply_of_realize,
+  @PublicFamily.apply_functor_keys,
   @PublicLinkRes.pre_junk_meaning,
   @NM.PublicGenerationFacts.result_environment_shadows_occupied,
   @NM.PublicOutputSubst.output_entries_rel,

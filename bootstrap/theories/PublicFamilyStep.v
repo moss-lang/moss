@@ -24,7 +24,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.
-From NM Require PublicFormation PublicCopyApply.
+From NM Require PublicFormation PublicCopyApply PublicCallerKeys.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -262,8 +262,8 @@ Definition FamilyResultOk (rr : nat) (Cr : A.cx) (ks : list item) (d dr : enviro
 Definition FamilyStepOut (rr : nat) F (Cr : A.cx) (ks : list item) u th sm j d types H g st : Prop :=
   forall rest,
   (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ FamilyResultOk rr Cr ks d dr H' /\
-     I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = I.eval_bindings j P (append_environment dr d) g st' rest) \/
-  (exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = inr res /\
+     I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = I.eval_bindings j P (append_environment dr d) g st' rest) \/
+  (exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = inr res /\
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
 
 (* ---- the application obligations, for a family application -------------------- *)
@@ -278,8 +278,8 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   Pre rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)] dc) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)] dc) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)] dc []) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)] dc []) ->
   BS.FixedMeans W u d fx gfx ->
   BS.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
@@ -287,9 +287,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') []))
-      (map ITy outs' ++ map (A.rkey_of Cr') ks')%list
-      (BS.link_sources Cb outs' gen Cr' ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (BS.link_sources Cb outs' gen ks')) = Some dr /\
     FamilyNewOk rr Cr ks d dr H3.
 
 (* HYPOTHESIS (T15), CopyApplyOk and PlatformApplyOk at a family
@@ -299,27 +297,90 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
-  forall fx gfx h Cu0 nsu Ch nsh code sms dc gfh,
+  forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list dc) ->
-  ClosureOk rr H h gfh (FunctorClosure code sms dc) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list dc (rms ++ [rm])%list) ->
+  ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
   A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
   (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   BS.FixedMeans W u d fx gfx ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
+(* HYPOTHESIS (T15): FamilyCopyApplyOk's realization half. Applying a copy
+   at a family application completes with provisions dr (no type meanings,
+   no aliases) under which each new method of Cr is callable at its
+   signature, or stops. That dr fills only the run-time keys of Cr's new
+   methods is true by construction (Audit.result_selection files position
+   i of the family's result under the caller's key ks[i];
+   apply_functor_keys), so FamilyCopyApplyOk follows
+   (family_copy_apply_of_realize). The former key half was false
+   (examples/family-copy-linked-bracket.moss). *)
+Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
+  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.FamilyApplication W C u matching th sm Cr ks ->
+  forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
+  forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
+  A.nlook u (A.c_funs C0) = Some fx ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list dc (rms ++ [rm])%list) ->
+  ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
+  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+  (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
+  (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
+  (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
+  BS.FixedMeans W u d fx gfx ->
+  (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ type_meanings dr = [] /\ type_aliases dr = [] /\
+     (forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
+        lookup_provision (A.rkey Cr r m) dr = Some pv /\ CallableOk rr H' d (r :: A.sg_params g) (A.sg_ret g) pv) /\
+     I.apply_functor j P d u th [] sm (map (A.rkey_of Cr) ks) st = inl (dr, st')) \/
+  (forall rest, exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = inr res /\
+     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
+
+(* An application installs only under the caller's keys it is given. *)
+Lemma apply_functor_keys : forall j d u th outs sm rs st dr st',
+  I.apply_functor j P d u th outs sm rs st = inl (dr, st') ->
+  forall K pv, lookup_provision K dr = Some pv -> In K rs.
+Proof.
+  intros j d u th outs sm rs st dr st' E K pv L. destruct j as [|j]; [discriminate|]. cbn in E.
+  repeat match type of E with context[match ?x with _ => _ end] =>
+    match x with context[result_environment] => fail 1 | _ => destruct x eqn:?; try discriminate E end end.
+  unfold result_environment in E. destruct (read_result_types _ _ outs) as [[w a]|]; [|discriminate].
+  injection E as <- _.
+  match goal with Hs : select_provisions _ (result_selection rs ?rms ?srcs) = Some ?dr0 |- _ =>
+    change (lookup_provision K dr0 = Some pv) in L; rewrite (select_lookup _ _ _ K Hs) in L;
+    destruct (sm_find K (result_selection rs rms srcs)) as [s|] eqn:Fs; [|discriminate];
+    exact (proj1 (PublicCallerKeys.selection_in _ _ _ _ _ (PublicCallerKeys.sm_find_some_in _ _ _ Fs))) end.
+Qed.
+
+Lemma family_copy_apply_of_realize : FamilyCopyRealizeOk -> FamilyCopyApplyOk.
+Proof.
+  intros Rz k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
+    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC SN ST Fm.
+  destruct (Rz k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
+    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC SN ST Fm)
+    as [(dr & st' & H' & Ext & St' & Tm & Ta & New & Ap)|Stop]; intros rest; [left|right; exact (Stop rest)].
+  exists dr, st', H'. split; [exact Ext|]. split; [exact St'|]. split.
+  - split; [exact Tm|]. split; [exact Ta|]. split; [|exact New].
+    intros K pv L. pose proof (apply_functor_keys _ _ _ _ _ _ _ _ _ _ Ap K pv L) as IK.
+    apply in_map_iff in IK as [k1 [<- Ik1]].
+    destruct (family_news W C u matching th sm Cr ks FA) as (news & _ & _ & _ & NewM & Keys).
+    destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
+    destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
+  - rewrite BS.bindings_apply_eq, Ap. reflexivity.
+Qed.
+
 Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
-  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
+  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] []) []) ->
   Platform.Family W Prog u code ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 
 Hypothesis family_link_results : FamilyLinkResultsOk.
-Hypothesis family_copy_apply : FamilyCopyApplyOk.
+Hypothesis family_copy_realize : FamilyCopyRealizeOk.
+Let family_copy_apply := family_copy_apply_of_realize family_copy_realize.
 Hypothesis family_platform_apply : FamilyPlatformApplyOk.
 
 (* ---- the run --------------------------------------------------------------- *)
@@ -340,9 +401,9 @@ Proof.
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
   destruct (BS.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
-  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
+  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
-         fx gfx h Cu0 nsu Ch nsh code sms dc gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
+         fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
   2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
@@ -412,7 +473,7 @@ Proof.
     captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply BS.bindsof_fold in BO. subst binds0.
   rewrite BS.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
-  cbn [fc_bindings fc_outputs fc_sources fc_roles]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
+  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
   destruct (BS.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
     as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
     [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
