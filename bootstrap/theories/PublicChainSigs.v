@@ -386,10 +386,6 @@ Module ChainSigs (Prims : PRIMITIVES) (I0 : INTERP Prims).
 (* The instance PublicEntry uses (FL, and through it CF), so the
    obligations match. *)
 Module FL := PublicFamilyLink.FamilyLink Prims I0.
-Module CF := FL.CF.
-Module PA := CF.PA.
-Module CopyA := CF.CopyA.
-Module S := CF.S.
 
 Section Sigs.
 Variable W : A.world.
@@ -414,7 +410,7 @@ Proof.
   eexists _, _, _, _. unfold A.ast_of. rewrite D. cbn. rewrite Ed. reflexivity.
 Qed.
 
-Lemma chain_abs : forall v gfv sms rms h0 gf0 sms0 rms0, CopyA.CopyChain W v gfv sms rms h0 gf0 sms0 rms0 ->
+Lemma chain_abs : forall v gfv sms rms h0 gf0 sms0 rms0, FL.CF.CN.CC.LR.PA.FS.CopyA.CopyChain W v gfv sms rms h0 gf0 sms0 rms0 ->
   Abstract h0 -> Abstract v.
 Proof.
   intros v gfv sms rms h0 gf0 sms0 rms0 Ch. destruct Ch as [|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ _ _ _ _ _ _ _ _ _ Site];
@@ -473,7 +469,7 @@ Lemma kinds_of : forall (s1 s2 th : subst) K (L : list (A.entry * A.entry)),
   forall p, In p L -> (A.entry_key s1 (fst p) = None <-> A.entry_key s2 (snd p) = None).
 Proof. intros s1 s2 th K L FL p Ip. rewrite Forall_forall in FL. exact (same_kind_none s1 s2 _ _ (proj2 (FL p Ip))). Qed.
 
-Lemma chain_sigs : forall v gfv sms rmsv h0' gf0 sms0 rms0, CopyA.CopyChain W v gfv sms rmsv h0' gf0 sms0 rms0 ->
+Lemma chain_sigs : forall v gfv sms rmsv h0' gf0 sms0 rms0, FL.CF.CN.CC.LR.PA.FS.CopyA.CopyChain W v gfv sms rmsv h0' gf0 sms0 rms0 ->
   h0' = h0 -> rms0 = [] ->
   forall Cv nsv, A.FunCtx W v Cv nsv -> TableOk T Cv ->
   (forall x, A.Fixed W v x -> lookup_subst x gfv = Some (app_subst T (TAbs x))) ->
@@ -482,7 +478,7 @@ Proof.
   intros v gfv sms rmsv h0' gf0 sms0 rms0 Ch.
   induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0' gf0 sms0 rms0 Sub IH FCu FCh Incl FixH SameN SameT _ InCu Same Site];
     intros E0 Er Cv nsv FCv Tok FixT.
-  - subst u rms. destruct (S.functx_unique W _ _ _ _ _ FCv FC0) as [Ecv _]. subst Cv.
+  - subst u rms. destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FC0) as [Ecv _]. subst Cv.
     exists outputs, keys. split; [exact PR0|].
     intros i r m a g a0 Ki Lk key Ik Si. cbn [chain_sources fold_left] in Si. unfold srcs in Si.
     rewrite nth_error_map, Ki in Si. injection Si as Es.
@@ -491,9 +487,9 @@ Proof.
       (PublicCallerKeys.result_key_id W h0 Ch0 _ outputs keys key PR0 Ik) in Pid.
     subst key. exists r, a, g, a0. split; [reflexivity|]. split; [exact Lk|]. split; reflexivity.
   - subst h0' rms0.
-    pose proof (PA.chain_no_outputs W h gfh sms rms h0 gf0 sms0 [] Sub NoH) as NoHh.
-    assert (NoU : forall t, ~ A.FunOutputs W u t) by (intros t Ft; exact (NoHh t (proj1 (S.same_result_outputs W u h Same t) Ft))).
-    destruct (S.functx_unique W _ _ _ _ _ FCv FCu) as [Ecv _]. subst Cv.
+    pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W h gfh sms rms h0 gf0 sms0 [] Sub NoH) as NoHh.
+    assert (NoU : forall t, ~ A.FunOutputs W u t) by (intros t Ft; exact (NoHh t (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.S.same_result_outputs W u h Same t) Ft))).
+    destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FCu) as [Ecv _]. subst Cv.
     pose proof (sub_inv W u Cu nsu T FCu Tok) as InvU.
     assert (TokH : TableOk T Ch).
     { intros x tx Lx. pose proof (SameT x tx Lx) as E. unfold A.canon in E.
@@ -529,7 +525,7 @@ Proof.
           apply in_flat_map. exists (x, s0). split; [exact Is|exact Iz].
         + unfold sigma in Is. apply in_map_iff in Is as [[x' tx] [E Itx]]. cbn in E. injection E as -> <-.
           destruct (proj1 (Fx1 x tx) Itx) as [Fu _].
-          pose proof (FixT x Fu) as Fg. rewrite Egfx, (S.lookup_ground_fixed _ fx1 x tx FunFx Itx) in Fg.
+          pose proof (FixT x Fu) as Fg. rewrite Egfx, (FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed _ fx1 x tx FunFx Itx) in Fg.
           assert (Fg' : app_subst (type_meanings d1) tx = app_subst T (TAbs x)) by congruence.
           change (ground d1 (A.canon C1 tx) = app_subst T (TAbs x)). rewrite (Ab1 tx). exact Fg'.
       - intros Ls Ny. exfalso. apply Ny. apply Ys. split; [|exact Ls].
@@ -582,7 +578,7 @@ Proof.
     (* the chain's source for i is h's for j *)
     rewrite PublicCallerKeys.chain_sources_snoc, nth_error_map, Rj in Si. injection Si as Es.
     assert (LenS : List.length (chain_sources rms srcs) = List.length ks').
-    { refine (proj1 (CopyA.chain_sources_range W h gfh sms rms h0 gf0 sms0 [] Sub eq_refl srcs _) _ _ _ _ PRh').
+    { refine (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W h gfh sms rms h0 gf0 sms0 [] Sub eq_refl srcs _) _ _ _ _ PRh').
       intros C0 o C0' ks0 P0. unfold srcs. rewrite length_map.
       exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ outputs keys C0 o C0' ks0 PR0 P0). }
     assert (Sj : nth_error (chain_sources rms srcs) j = Some (A.rkey_of outputs key)).
@@ -603,7 +599,7 @@ End Chain.
 
 (* ---- the obligation ------------------------------------------------------------ *)
 
-Theorem chain_forward_copy_sigs : forall Prog argv read state_ok, CF.ChainForwardCopySigs W Prog argv read state_ok.
+Theorem chain_forward_copy_sigs : forall Prog argv read state_ok, FL.CF.ChainForwardCopySigs W Prog argv read state_ok.
 Proof.
   intros Prog argv read state_ok F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
     code sms rms gfx Look Nn Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD i r m g0 key Ki Last Mg Ikey Si.
@@ -612,7 +608,7 @@ Proof.
   pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem KMc]]] & Fmd).
   destruct Sat as [_ [_ [_ [_ Merge]]]].
   assert (AbU : Abstract u) by exact (chain_abs u gfx sms rms h0 gf0 [] [] Chn Abst0).
-  pose proof (PA.chain_no_outputs W u gfx sms rms h0 gf0 [] [] Chn NoH) as NoU.
+  pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W u gfx sms rms h0 gf0 [] [] Chn NoH) as NoU.
   assert (Parts : th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) /\
     (forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None) /\
     (forall g t, In (g, t) (A.c_sub Cu) -> (forall x, In x (g :: A.gens t) -> A.nlook x (A.c_ty C) <> None) ->
@@ -632,13 +628,13 @@ Proof.
   assert (FixT : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))).
   { intros x Fx. destruct Fm as [Cov Mean]. destruct (Cov x Fx) as [tx Itx]. rewrite (Mean x tx Itx). f_equal.
     destruct (FixC x tx Itx) as [here [Lh Eh]].
-    pose proof (S.fixed_in_functx W u Cu ns x (ast_of_abstract u Cu ns FC AbU) FC Fx) as Ix.
+    pose proof (FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W u Cu ns x (ast_of_abstract u Cu ns FC AbU) FC Fx) as Ix.
     assert (Lx : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x)))).
     { rewrite Th. exact (PublicFamilyAgree.lookup_keys (fun y => A.canon C (app_subst (A.c_ty C) (TAbs y))) (A.c_ty Cu) x Ix). }
     rewrite <- GT, app_subst_abs, Lx, (app_subst_abs (A.c_ty C)), lookup_subst_nlook', Lh, Eh. symmetry. exact (Abs tx). }
   destruct (chain_sigs h0 Ch0 needs outputs keys FC0 NoH PRf Abst0 T u gfx sms rms h0 gf0 [] [] Chn eq_refl eq_refl
     Cu ns FC Tok FixT) as (Crv & ksv & PRv & Inv).
-  pose proof (CF.app_keys_typed W F C pa u fx Cu ns sm th gensof C' ks newgens outs (proj2 (proj2 (proj1 Fmd))) AP) as KT.
+  pose proof (FL.CF.app_keys_typed W F C pa u fx Cu ns sm th gensof C' ks newgens outs (proj2 (proj2 (proj1 Fmd))) AP) as KT.
   destruct (entries_rel_kinds W C u th C (fun t => TAbs (gensof t)) C' ks Cu ns Crv ksv eq_refl Parts FC NoU PRv Idem KT)
     as (tm1 & tm2 & L & ECrv & EKv & EC' & EKs & FL).
   assert (Ni : nth_error (keys_of (fun p => A.entry_key (A.c_sub C) (snd p)) L) i = Some (IMth r m [])).
@@ -685,7 +681,7 @@ Proof.
       exact (table_gens_dom W h0 Ch0 needs x tx y FC0 Lx Ix). }
   (* each caller type is θ of u's, which T reads as the root's *)
   assert (One : forall t1 tf, app_subst T (app_subst (A.c_sub Cu) t1) = app_subst T tf -> incl (A.gens tf) (map fst (A.c_ty Ch0)) ->
-    PA.SigAgreeG d Ch0 th (app_subst th t1) tf).
+    FL.CF.CN.CC.LR.PA.SigAgreeG d Ch0 th (app_subst th t1) tf).
   { intros t1 tf E Inc. split; [exact Inc|]. rewrite !GT, <- E, InvU. reflexivity. }
   exists rf, [], gf. split; [exact Ekey|]. split; [exact Mgf|].
   pose proof (sigrel_eq _ _ _ _ Sg) as Eg. rewrite <- Eg. destruct g1 as [ps1 rt1], gf as [psf rtf].

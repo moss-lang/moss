@@ -160,10 +160,6 @@ End Keys.
 Module ChainCore (Prims : PRIMITIVES) (I0 : INTERP Prims).
 (* The instance PublicEntry uses, so the obligations match. *)
 Module LR := PublicLinkResults.LinkResults Prims I0.
-Module PA := LR.PA.
-Module CA := LR.CA.
-Module S := LR.S.
-Module FS := PA.FS.
 
 Section Core.
 Variable W : A.world.
@@ -171,8 +167,8 @@ Variables (Prog : program) (argv : list (list int)) (read : list int -> option (
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Let P := program_of Prog argv read.
 
-Notation CallableOk := (S.CallableOk W Prog argv read state_ok).
-Notation ClosureOk := (S.ClosureOk W Prog argv read state_ok).
+Notation CallableOk := (LR.PA.FS.CopyA.S.CallableOk W Prog argv read state_ok).
+Notation ClosureOk := (LR.PA.FS.CopyA.S.ClosureOk W Prog argv read state_ok).
 
 (* EnvOk, for the provisions whose keys K holds. *)
 Definition EnvOkOn (K : item -> Prop) (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
@@ -183,10 +179,10 @@ Definition EnvOkOn (K : item -> Prop) (n : nat) (C : A.cx) (d : environment) (H 
   (forall r m g, K (A.mkey r m) -> A.mlook r m (A.c_mths C) = Some g -> exists pv,
      lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
   (forall u fx, K (IFun u) -> A.nlook u (A.c_funs C) = Some fx -> exists pv gfx,
-     lookup_provision (IFun u) d = Some pv /\ ClosureOk n H u gfx pv /\ S.FixedMeans W u d fx gfx).
+     lookup_provision (IFun u) d = Some pv /\ ClosureOk n H u gfx pv /\ LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx).
 
 Lemma envok_of_on : forall (K : item -> Prop) n C d H, (forall k, K k \/ ~ K k) ->
-  EnvOkOn K n C d H -> EnvOkOn (fun k => ~ K k) n C d H -> S.EnvOk W Prog argv read state_ok n C d H.
+  EnvOkOn K n C d H -> EnvOkOn (fun k => ~ K k) n C d H -> LR.PA.FS.CopyA.S.EnvOk W Prog argv read state_ok n C d H.
 Proof.
   intros K n C d H Dec [V1 [F1 [M1 U1]]] [V2 [F2 [M2 U2]]]. split; [|split; [|split]].
   - intros v t L. destruct (Dec (IVal v)); [exact (V1 v t H0 L)|exact (V2 v t H0 L)].
@@ -206,21 +202,21 @@ Qed.
    (Audit.result_selection files position i under the caller's key for
    it), so it is no longer part of this premise (chain_core_ok). *)
 Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
     d1 d2 d3 g3 st3 H3 j',
-  S.Pre W Prog argv read state_ok rr F C d types H g st ->
+  LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C d types H g st ->
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
-  S.FixedMeans W u d fx gfx ->
-  CA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] [] ->
-  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] dc []) ->
-  S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
+  LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
+  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (LR.PA.FS.CopyA.S.linked_needs nsh0 nsg)] [] ->
+  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (LR.PA.FS.CopyA.S.linked_needs nsh0 nsg)] dc []) ->
+  LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
-  S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
-  heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
+  LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
+  heap_extends H H3 -> LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
   EnvOkOn (fun k => In k (map fst news)) rr C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
 
@@ -244,20 +240,20 @@ Qed.
 (* Every position's source is a body key the body's context provides
    (ResultRealizes), so the selection succeeds. *)
 Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms,
-  S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
+  LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
   A.ResultRealizes Cb Cr (A.link_renaming outs' gen) ks' ->
-  (forall s, In s (chain_sources rms (S.link_sources Cb outs' gen ks')) -> In s (S.link_sources Cb outs' gen ks')) ->
-  exists dr, select_provisions d3 (result_selection rs rms (S.link_sources Cb outs' gen ks')) = Some dr.
+  (forall s, In s (chain_sources rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) -> In s (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) ->
+  exists dr, select_provisions d3 (result_selection rs rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) = Some dr.
 Proof.
   intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms Real PR RR Rg. apply select_ok. intros [a b] Iq.
   destruct (PublicCallerKeys.selection_in _ _ _ _ _ Iq) as [_ Ib]. cbn [snd].
-  pose proof (Rg b Ib) as Ib'. unfold S.link_sources in Ib'. apply in_map_iff in Ib' as [k' [<- Ik']].
+  pose proof (Rg b Ib) as Ib'. unfold LR.PA.FS.CopyA.S.link_sources in Ib'. apply in_map_iff in Ib' as [k' [<- Ik']].
   destruct (RR k' Ik') as [req [act [_ [La _]]]].
   assert (NT : forall t, k' <> ITy t) by (intros t E; subst k'; exact (provide_result_keys_not_ty W _ _ _ _ _ t PR Ik')).
   assert (NT' : forall t, A.at_site Cb (app_subst_item (A.link_renaming outs' gen) k') <> ITy t)
     by (apply at_site_not_ty, app_subst_item_not_ty, NT).
-  destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real (ilook_in_gen _ _ _ _ La) (need_shape_id _ NT')) as [pv L].
+  destruct (LR.PA.FS.CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real (ilook_in_gen _ _ _ _ La) (need_shape_id _ NT')) as [pv L].
   rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item (A.link_renaming outs' gen) k'))) d3 = None) in E. congruence.
 Qed.
 
@@ -270,7 +266,7 @@ Proof. intros x l1 l2. rewrite !lookup_subst_nlook', nlook_app'. reflexivity. Qe
 Lemma canon_abs_free : forall C g, ~ In g (A.context_gens C) -> A.canon C (TAbs g) = TAbs g.
 Proof.
   intros C g N. unfold A.canon. cbn [app_subst]. destruct (lookup_subst g (A.c_sub C)) as [t|] eqn:E; [|reflexivity].
-  exfalso. apply N. exact (proj1 (S.sub_context_gens C g t (lookup_subst_in_pair _ _ _ E))).
+  exfalso. apply N. exact (proj1 (LR.PA.FS.CopyA.S.sub_context_gens C g t (lookup_subst_in_pair _ _ _ E))).
 Qed.
 
 Lemma nlook_ty_canon_gens : forall C x tx, A.nlook x (A.c_ty C) = Some tx -> incl (A.gens (A.canon C tx)) (A.context_gens C).
@@ -285,21 +281,21 @@ Proof. intros l x v L. change x with (fst (x, v)). apply in_map. exact (nlook_in
 (* After the application the caller's meanings grow by the destinations,
    which nothing C mentions: so its types ground as before. *)
 Lemma ground_after : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   PublicFormation.FormedCx W C -> LR.KeptOutputsUnmentioned W ->
-  forall d d3 dr t, incl (A.gens t) (S.capture_gens C) ->
+  forall d d3 dr t, incl (A.gens t) (LR.PA.FS.CopyA.S.capture_gens C) ->
   ground (append_environment (LR.result_of d3 outs gensof dr) d) t = ground d t.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr t Inc.
-  apply (S.ground_grow (map gensof outs) d _ t (LR.result_grows_by_destinations d d3 dr outs gensof)).
+  apply (LR.PA.FS.CopyA.S.ground_grow (map gensof outs) d _ t (LR.result_grows_by_destinations d d3 dr outs gensof)).
   intros g Ig Ig'. apply in_map_iff in Ig as [t0 [<- It]].
   exact (proj1 (proj2 (LR.dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku t0 It)) (Inc _ Ig')).
 Qed.
 
 Lemma alias_after : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   PublicFormation.FormedCx W C -> LR.KeptOutputsUnmentioned W ->
-  forall d d3 dr, AliasOk C d -> S.Absorbs C d -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
+  forall d d3 dr, AliasOk C d -> LR.PA.FS.CopyA.S.Absorbs C d -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
   AliasOk C' (append_environment (LR.result_of d3 outs gensof dr) d).
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr Al0 Abs Idem.
@@ -314,10 +310,10 @@ Proof.
   - cbn in L. injection L as <-. destruct (nlook_map_key (fun t => TAbs (gensof t)) _ _ _ Lo) as [-> Ix0].
     assert (Ix : In x outs) by (apply OutsI, O0, Ix0).
     destruct (LR.dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku x Ix) as [_ [Nc _]].
-    assert (Nc' : ~ In (gensof x) (A.context_gens C)) by (intros I; exact (Nc (S.cg_l C _ I))).
+    assert (Nc' : ~ In (gensof x) (A.context_gens C)) by (intros I; exact (Nc (LR.PA.FS.CopyA.S.cg_l C _ I))).
     rewrite (canon_abs_free C _ Nc'), (canon_abs_free C _ Nc').
     unfold output_meaning. unfold d'. cbn [type_aliases type_meanings append_environment LR.result_of].
-    rewrite lookup_subst_app, (S.lookup_map_nat (LR.read_meaning d3) outs x Ix).
+    rewrite lookup_subst_app, (LR.PA.FS.CopyA.S.lookup_map_nat (LR.read_meaning d3) outs x Ix).
     unfold ground. cbn [type_meanings].
     change (app_subst ?s (TAbs ?g)) with (match lookup_subst g s with Some t => t | None => TAbs g end).
     cbn [type_meanings append_environment LR.result_of]. rewrite lookup_subst_app, (lookup_dest gensof (LR.read_meaning d3) outs x Ix Inj).
@@ -334,7 +330,7 @@ Proof.
         apply Nk. rewrite E. exact (nlook_key _ _ _ Lc). }
     rewrite Same, (Al0 x cx Lc). f_equal. rewrite Idem.
     unfold d'. rewrite (ground_after F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr _
-      (fun y Iy => S.cg_l C y (nlook_ty_canon_gens C x cx Lc y Iy))).
+      (fun y Iy => LR.PA.FS.CopyA.S.cg_l C y (nlook_ty_canon_gens C x cx Lc y Iy))).
     symmetry. exact (Abs cx).
 Qed.
 
@@ -352,9 +348,9 @@ Qed.
    as before: the result's keys are new keys, and the destinations are out
    of everything C mentions. *)
 Lemma envok_kept : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   PublicFormation.FormedCx W C -> LR.KeptOutputsUnmentioned W ->
-  forall n d d3 dr H H3 news, S.EnvOk W Prog argv read state_ok n C d H -> S.KeysMatch C -> heap_extends H H3 ->
+  forall n d d3 dr H H3 news, LR.PA.FS.CopyA.S.EnvOk W Prog argv read state_ok n C d H -> LR.PA.FS.CopyA.S.KeysMatch C -> heap_extends H H3 ->
   A.c_provisions C' = (news ++ A.c_provisions C)%list -> PublicCallRealize.KeysMatch news ->
   (forall k pv, lookup_provision k dr = Some pv -> exists k1 p1, In (k1, p1) news /\ A.rkey_of C' k1 = k) ->
   EnvOkOn (fun k => ~ In k (map fst news)) n C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
@@ -363,10 +359,10 @@ Proof.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR).
   destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub _].
   set (d' := append_environment (LR.result_of d3 outs gensof dr) d).
-  assert (Gk : forall t, incl (A.gens t) (S.capture_gens C) -> ground d' t = ground d t)
+  assert (Gk : forall t, incl (A.gens t) (LR.PA.FS.CopyA.S.capture_gens C) -> ground d' t = ground d t)
     by (intros t Inc; exact (ground_after F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr t Inc)).
   assert (Gc : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
-    by (intros t Inc; apply Gk; intros y Iy; exact (S.cg_l C y (Inc y Iy))).
+    by (intros t Inc; apply Gk; intros y Iy; exact (LR.PA.FS.CopyA.S.cg_l C y (Inc y Iy))).
   assert (Gm : forall ps, (forall t, In t ps -> incl (A.gens t) (A.context_gens C)) -> map (ground d) ps = map (ground d') ps).
   { intros ps Inc. apply map_ext_in. intros t It. symmetry. exact (Gc t (Inc t It)). }
   assert (Lk : forall k, (forall k1 p1, In (k1, p1) news -> A.rkey_of C' k1 <> k) -> lookup_provision k d' = lookup_provision k d).
@@ -382,19 +378,19 @@ Proof.
     destruct (Vals v t L) as [w [Look T]]. exists w.
     rewrite Lk; [|intros k1 p1 I R; pose proof (rkey_of_kind C' k1 _ R) as K; cbn in K; subst k1; exact (Nk (Key _ _ I))].
     split; [exact Look|]. rewrite Gc; [eapply value_typed_extends; [exact Ext|exact T]|].
-    destruct (vals_ilook _ v t KM L) as [a Il]. apply S.ilook_in in Il.
-    intros x Ix. apply (S.prov_context_gens C _ _ Il). exact (proj1 (S.sig_provision_gens (A.ProvidedVal t a) (A.FSig [] t) eq_refl) x Ix).
+    destruct (vals_ilook _ v t KM L) as [a Il]. apply LR.PA.FS.CopyA.S.ilook_in in Il.
+    intros x Ix. apply (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il). exact (proj1 (LR.PA.FS.CopyA.S.sig_provision_gens (A.ProvidedVal t a) (A.FSig [] t) eq_refl) x Ix).
   - intros f g0 Nk L. change (A.c_fns C') with (fns_of (A.c_provisions C')) in L.
     rewrite (fns_by_ilook _ f KMC), En, (ilook_app_out _ _ _ _ Nk), <- (fns_by_ilook _ f KM) in L.
     destruct (Fns f g0 L) as [pv [Look Ok]]. exists pv.
     rewrite Lk; [|intros k1 p1 I R; pose proof (rkey_of_kind C' k1 _ R) as K; cbn in K; subst k1; exact (Nk (Key _ _ I))].
     split; [exact Look|].
-    destruct (fns_ilook _ f g0 KM L) as [a Il]. apply S.ilook_in in Il.
-    destruct (S.sig_provision_gens (A.ProvidedFn g0 a) g0 eq_refl) as [Gr Gp].
-    refine (S.callable_transfer W Prog argv read state_ok n n H3 d d' _ _ _ _ pv (le_n n) _ _
-      (S.callable_extends W Prog argv read state_ok n H H3 d _ _ pv Ext Ok)).
-    + apply Gm. intros t It x Ix. exact (S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
-    + symmetry. apply Gc. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gr x Ix)).
+    destruct (fns_ilook _ f g0 KM L) as [a Il]. apply LR.PA.FS.CopyA.S.ilook_in in Il.
+    destruct (LR.PA.FS.CopyA.S.sig_provision_gens (A.ProvidedFn g0 a) g0 eq_refl) as [Gr Gp].
+    refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d d' _ _ _ _ pv (le_n n) _ _
+      (LR.PA.FS.CopyA.S.callable_extends W Prog argv read state_ok n H H3 d _ _ pv Ext Ok)).
+    + apply Gm. intros t It x Ix. exact (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
+    + symmetry. apply Gc. intros x Ix. exact (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gr x Ix)).
   - intros r m g0 Nk L. change (A.c_mths C') with (mths_of (A.c_provisions C')) in L.
     rewrite (mths_by_ilook _ r m KMC), En, (ilook_app_out _ _ _ _ Nk), <- (mths_by_ilook _ r m KM) in L.
     destruct (Mths r m g0 L) as [pv [Look Ok]]. exists pv.
@@ -404,23 +400,23 @@ Proof.
          pose proof (KMn _ _ I) as Kd. destruct i as [|q i]; [|destruct p1; cbn in Kd; contradiction].
          exact (Nk (Key _ _ I)). }
     split; [exact Look|].
-    destruct (mths_ilook _ r m g0 KM L) as [a Il]. apply S.ilook_in in Il.
-    destruct (S.sig_provision_gens (A.ProvidedMethod g0 a) g0 eq_refl) as [Gr Gp].
-    refine (S.callable_transfer W Prog argv read state_ok n n H3 d d' _ _ _ _ pv (le_n n) _ _
-      (S.callable_extends W Prog argv read state_ok n H H3 d _ _ pv Ext Ok)).
+    destruct (mths_ilook _ r m g0 KM L) as [a Il]. apply LR.PA.FS.CopyA.S.ilook_in in Il.
+    destruct (LR.PA.FS.CopyA.S.sig_provision_gens (A.ProvidedMethod g0 a) g0 eq_refl) as [Gr Gp].
+    refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d d' _ _ _ _ pv (le_n n) _ _
+      (LR.PA.FS.CopyA.S.callable_extends W Prog argv read state_ok n H H3 d _ _ pv Ext Ok)).
     + rewrite (map_ext_in (ground d) (ground d') (r :: A.sg_params g0)); [reflexivity|].
-      intros t [<-|It]; symmetry; [apply Gk; exact (S.cg_key C r m [] _ Il)|].
-      apply Gc. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
-    + symmetry. apply Gc. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gr x Ix)).
+      intros t [<-|It]; symmetry; [apply Gk; exact (LR.PA.FS.CopyA.S.cg_key C r m [] _ Il)|].
+      apply Gc. intros x Ix. exact (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
+    + symmetry. apply Gc. intros x Ix. exact (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gr x Ix)).
   - intros u0 fx0 Nk L. change (A.c_funs C') with (funs_of (A.c_provisions C')) in L.
     rewrite (funs_by_ilook _ u0 KMC), En, (ilook_app_out _ _ _ _ Nk), <- (funs_by_ilook _ u0 KM) in L.
     destruct (Funs u0 fx0 L) as [pv [gfx [Look [Ok [Cv Vm]]]]]. exists pv, gfx.
     rewrite Lk; [|intros k1 p1 I R; pose proof (rkey_of_kind C' k1 _ R) as K; cbn in K; subst k1; exact (Nk (Key _ _ I))].
-    split; [exact Look|]. split; [exact (proj1 (S.closure_lower W Prog argv read state_ok n n H H3 (le_n n) Ext) u0 gfx pv Ok)|].
+    split; [exact Look|]. split; [exact (proj1 (LR.PA.FS.CopyA.S.closure_lower W Prog argv read state_ok n n H H3 (le_n n) Ext) u0 gfx pv Ok)|].
     split; [exact Cv|].
     intros x tx Ix. rewrite Gc; [exact (Vm x tx Ix)|].
-    pose proof (funs_ilook _ u0 fx0 KM L) as Il. apply S.ilook_in in Il.
-    intros y Iy. apply (S.prov_context_gens C _ _ Il). unfold A.provision_gens. cbn [A.provision_signature].
+    pose proof (funs_ilook _ u0 fx0 KM L) as Il. apply LR.PA.FS.CopyA.S.ilook_in in Il.
+    intros y Iy. apply (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il). unfold A.provision_gens. cbn [A.provision_signature].
     apply in_or_app. right. apply in_flat_map. exists (x, Some tx). split; [|exact Iy].
     cbn [A.provision_inst]. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Ix].
 Qed.
@@ -435,8 +431,8 @@ Proof.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
-  destruct (CA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')
-    ltac:(intros C0 o C0' ks0 P0; unfold S.link_sources; rewrite length_map;
+  destruct (LR.PA.FS.CopyA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')
+    ltac:(intros C0 o C0' ks0 P0; unfold LR.PA.FS.CopyA.S.link_sources; rewrite length_map;
           exact (PublicCallerKeys.provide_result_length W h0 _ _ _ _ _ _ _ _ PR' P0))) as [_ Rg].
   destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr ks' (map (A.rkey_of C') ks) rms
     Real3 PR' RR Rg) as [dr Sdr].
@@ -453,12 +449,12 @@ Proof.
   split.
   - apply (envok_of_on (fun k => In k (map fst news))); [intros k; apply item_in_dec|exact EnvN|].
     exact (envok_kept F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku rr d d3 dr H H3 news Env KM Ext En KMn Cov).
-  - unfold S.KeysMatch. rewrite En. exact (keys_match_app _ _ KMn KM).
+  - unfold LR.PA.FS.CopyA.S.KeysMatch. rewrite En. exact (keys_match_app _ _ KMn KM).
 Qed.
 
 (* So ChainResultsOk, from the new provisions' correspondence and the
    kept-output premise. *)
-Corollary chain_results_of_new : ChainNewOk -> LR.KeptOutputsUnmentioned W -> CA.ChainResultsOk W Prog argv read state_ok.
+Corollary chain_results_of_new : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.PA.FS.CopyA.ChainResultsOk W Prog argv read state_ok.
 Proof. intros New Ku. exact (LR.chain_results_scoped W Prog argv read state_ok (chain_core_ok New Ku) Ku). Qed.
 
 (* ---- what the body provides at each result key ------------------------------- *)
@@ -478,11 +474,11 @@ Definition BodyReal (n : nat) (H3 : heap_types) (d3 : environment) (Cb : A.cx) (
       forall x tx, In (x, tx) fx -> lookup_subst x gfx = Some (ground d3 (app_subst rr tx))
   end.
 
-Lemma absorbs_sub : forall Cb d3 t t', S.Absorbs Cb d3 -> app_subst (A.c_sub Cb) t = app_subst (A.c_sub Cb) t' ->
+Lemma absorbs_sub : forall Cb d3 t t', LR.PA.FS.CopyA.S.Absorbs Cb d3 -> app_subst (A.c_sub Cb) t = app_subst (A.c_sub Cb) t' ->
   ground d3 t = ground d3 t'.
 Proof. intros Cb d3 t t' Abs E. rewrite <- (Abs t), <- (Abs t'). unfold A.canon. rewrite E. reflexivity. Qed.
 
-Lemma absorbs_sub_map : forall Cb d3 ts ts', S.Absorbs Cb d3 -> map (app_subst (A.c_sub Cb)) ts = map (app_subst (A.c_sub Cb)) ts' ->
+Lemma absorbs_sub_map : forall Cb d3 ts ts', LR.PA.FS.CopyA.S.Absorbs Cb d3 -> map (app_subst (A.c_sub Cb)) ts = map (app_subst (A.c_sub Cb)) ts' ->
   map (ground d3) ts = map (ground d3) ts'.
 Proof.
   intros Cb d3 ts. induction ts as [|t r IH]; intros [|t' r'] Abs E; cbn in E; try discriminate; [reflexivity|].
@@ -490,14 +486,14 @@ Proof.
 Qed.
 
 Lemma body_provides : forall n Cb d3 H3 Cr ks ren,
-  S.Realizes W Prog argv read state_ok n Cb d3 H3 -> A.ResultRealizes Cb Cr ren ks ->
+  LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 -> A.ResultRealizes Cb Cr ren ks ->
   forall k, In k ks -> exists p pv, A.ilook (A.provision_id k) (A.c_provisions Cr) = Some p /\
     lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item ren k))) d3 = Some pv /\
     BodyReal n H3 d3 Cb (A.read_rename Cb ren) (app_subst_item ren k) p pv.
 Proof.
   intros n Cb d3 H3 Cr ks ren [Abs [[Vals [Fns [Mths Funs]]] [_ KM]]] RR k Ik.
   destruct (RR k Ik) as [req [act [Lr [La [Kind [Sig Inst]]]]]].
-  pose proof (KM _ _ (S.ilook_in _ _ _ La)) as Kd.
+  pose proof (KM _ _ (LR.PA.FS.CopyA.S.ilook_in _ _ _ La)) as Kd.
   exists req.
   destruct k as [x|v|f|rf m i|u0]; cbn [app_subst_item A.at_site A.provision_id] in La, Kd |- *;
     destruct act as [tb ab|gb ab|gb ab|fxb]; cbn in Kd; try contradiction;
@@ -509,7 +505,7 @@ Proof.
   - (* fn *)
     pose proof (ilook_fns _ f gb ab KM La) as Lf. destruct (Fns f gb Lf) as [pv [Look Ok]].
     exists pv. split; [exact Lr|]. split; [exact Look|]. cbn in Sig. injection Sig as Sp Sr.
-    refine (S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
+    refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
     + symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
     + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
   - (* method *)
@@ -518,7 +514,7 @@ Proof.
     pose proof (ilook_mths _ rb m gb ab KM La) as Lm. destruct (Mths rb m gb Lm) as [pv [Look Ok]].
     exists pv. split; [exact Lr|]. split; [exact Look|]. exists rb, m, (map_snd (app_subst ren) i). split; [reflexivity|].
     cbn in Sig. injection Sig as Sp Sr.
-    refine (S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
+    refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
     + cbn [map]. f_equal. symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
     + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
   - (* functor *)
@@ -549,20 +545,20 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
-  S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)] dc []) ->
-  S.FixedMeans W u d fx gfx ->
-  S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
+  LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (LR.PA.FS.CopyA.S.linked_needs ns nsg)] dc []) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (LR.PA.FS.CopyA.S.linked_needs ns nsg)] dc []) ->
+  LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
+  LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
-  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)) = Some d2 ->
-  S.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
-  heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (LR.PA.FS.CopyA.S.linked_needs ns nsg)) = Some d2 ->
+  LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
+  heap_extends H H3 -> LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
   forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
      lookup_provision (A.rkey Cr r m) dr = Some pv /\ CallableOk rr H3 d (r :: A.sg_params g) (A.sg_ret g) pv.
 
-Theorem family_link_results_ok : FamilyLinkNewOk -> FS.FamilyLinkResultsOk W Prog argv read state_ok.
+Theorem family_link_results_ok : FamilyLinkNewOk -> LR.PA.FS.FamilyLinkResultsOk W Prog argv read state_ok.
 Proof.
   intros New C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
@@ -621,7 +617,7 @@ Proof.
 Qed.
 
 Lemma apply_functor_writes : forall j Pv d u th outs sm rs st dr st1,
-  S.I.apply_functor j Pv d u th outs sm rs st = inl (dr, st1) ->
+  LR.PA.FS.CopyA.S.AR.O.I.apply_functor j Pv d u th outs sm rs st = inl (dr, st1) ->
   Grows (map snd outs) (map fst outs) d (append_environment dr d).
 Proof.
   intros j Pv d u th outs sm rs st dr st1 E. destruct j as [|j]; [discriminate|]. cbn in E.
@@ -640,13 +636,13 @@ Proof.
   - intros x Ix. exact (IY x (J x Ix)).
 Qed.
 
-Lemma bindings_writes : forall j Pv d g st bs d' g' st', S.I.eval_bindings j Pv d g st bs = inl (d', g', st') ->
+Lemma bindings_writes : forall j Pv d g st bs d' g' st', LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d g st bs = inl (d', g', st') ->
   Grows (binding_dests bs) (binding_aliases bs) d d'.
 Proof.
   induction j as [|j IH]; intros Pv d g st bs d' g' st' E; [discriminate|].
   destruct bs as [|b r]; cbn in E.
   - injection E as <- _ _. apply grows_refl.
-  - assert (Step : forall Xm Xa d1, Grows Xm Xa d d1 -> forall g1 st1, S.I.eval_bindings j Pv d1 g1 st1 r = inl (d', g', st') ->
+  - assert (Step : forall Xm Xa d1, Grows Xm Xa d d1 -> forall g1 st1, LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d1 g1 st1 r = inl (d', g', st') ->
       incl (Xm ++ binding_dests r) (binding_dests (b :: r)) -> incl (Xa ++ binding_aliases r) (binding_aliases (b :: r)) ->
       Grows (binding_dests (b :: r)) (binding_aliases (b :: r)) d d').
     { intros Xm Xa d1 G1 g1 st1 E1 IX IY. exact (grows_mono _ _ _ _ _ _ IX IY (grows_trans _ _ _ _ _ _ _ G1 (IH _ _ _ _ _ _ _ _ E1))). }
@@ -655,7 +651,7 @@ Proof.
       * split; [exists []|exists [(t, ground d tau)]]; split; [reflexivity|intros x []|reflexivity|]. intros x [<-|[]]; left; reflexivity.
       * intros x Ix. exact Ix.
       * intros x Ix. exact Ix.
-    + destruct (S.I.eval j Pv d g st e1) as [sg g1 st1]; destruct sg; try discriminate.
+    + destruct (LR.PA.FS.CopyA.S.AR.O.I.eval j Pv d g st e1) as [sg g1 st1]; destruct sg; try discriminate.
       refine (Step [] [] _ (grows_install _ _ _ _ _) g1 st1 E _ _); intros x Ix; exact Ix.
     + destruct (select_provisions d sm); [|discriminate].
       refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
@@ -665,7 +661,7 @@ Proof.
       refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
     + destruct (lookup_provision (IFun u') d) as [pv|]; [destruct pv; try discriminate|discriminate].
       refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
-    + destruct (S.I.apply_functor j Pv d u th outs sm rs st) as [[dr st1]|] eqn:A1; [|discriminate].
+    + destruct (LR.PA.FS.CopyA.S.AR.O.I.apply_functor j Pv d u th outs sm rs st) as [[dr st1]|] eqn:A1; [|discriminate].
       refine (Step _ _ _ (apply_functor_writes _ _ _ _ _ _ _ _ _ _ _ A1) g st1 E _ _); intros x Ix; exact Ix.
     + refine (Step [] [] _ (grows_install _ _ _ _ _) g st E _ _); intros x Ix; exact Ix.
 Qed.

@@ -62,11 +62,10 @@ Qed.
 
 Module LinkRun (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CC := PublicChainCore.ChainCore Prims I0.
-Module S := CC.S.
 
 (* A run of binds keeps every meaning outside its destinations. *)
 Lemma body_meaning_kept : forall j Pv d g st bs d' g' st',
-  S.I.eval_bindings j Pv d g st bs = inl (d', g', st') ->
+  CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d g st bs = inl (d', g', st') ->
   forall x, ~ In x (CC.binding_dests bs) -> lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d).
 Proof.
   intros j Pv d g st bs d' g' st' E x Nx.
@@ -79,7 +78,7 @@ Qed.
 Lemma body_meaning_mentioned : forall W Prog u Fg Cg its wrap Cb Fb made binds,
   (forall x, In x (A.fr_pins Fg) <-> A.Mentions W u x) ->
   A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
-  forall j Pv d g st d' g' st', S.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
+  forall j Pv d g st d' g' st', CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
   forall x, A.Mentions W u x -> ~ A.Fresh W x ->
   lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d).
 Proof.
@@ -92,7 +91,7 @@ Qed.
 Lemma body_meaning_input : forall W Prog (Cu : A.cx) Fg Cg its wrap Cb Fb made binds,
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
-  forall j Pv d g st d' g' st', S.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
+  forall j Pv d g st d' g' st', CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
   forall x, A.nlook x (A.c_ty Cu) <> None ->
   lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d).
 Proof.
@@ -119,7 +118,7 @@ Lemma link_input_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb 
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   (forall t, app_subst th (A.canon Cu t) = app_subst th t) ->
   forall argv read j d dc g st d3 g3 st3,
-  S.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
+  CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
   lookup_subst x (type_meanings d3) = Some (ground d (app_subst th (TAbs x))).
@@ -161,7 +160,7 @@ Corollary link_run_fact : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb F
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   (forall t, app_subst th (A.canon Cu t) = app_subst th t) ->
   forall argv read j d dc g st d3 g3 st3,
-  S.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
+  CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
   ground d3 t = ground d (app_subst th t).

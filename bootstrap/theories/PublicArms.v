@@ -15,7 +15,6 @@ Definition UnionFormed (st : ty) : Prop :=
 
 Module Arms (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module O := Outcomes Prims I0.
-Module I := O.I.
 
 Section Arms.
 Variables (W : A.world) (Prog : program) (P : program_view) (d : environment) (H : heap_types).
@@ -68,13 +67,13 @@ Proof.
   - destruct (Formed ms eq_refl) as [_ Distinct]. rewrite (heads_unique ms s xs xs' Distinct Member Member'). exact T'.
 Qed.
 
-Lemma assoc_slook : forall f (fs : list (fld * value)), I.assoc_fld f fs = A.slook f fs.
+Lemma assoc_slook : forall f (fs : list (fld * value)), O.I.assoc_fld f fs = A.slook f fs.
 Proof. intros f fs; induction fs as [|[g v] r IH]; cbn; [reflexivity|rewrite IH; reflexivity]. Qed.
 
 Lemma fieldpats_bind : forall F ftys fs bs fxs values,
   A.FieldPats W F ftys fs bs fxs ->
   fields_typed W P H values (map (fun q => (fst q, gr (snd q))) ftys) ->
-  exists vals, I.bind_fields fxs values = Some vals /\
+  exists vals, O.I.bind_fields fxs values = Some vals /\
     locals_typed W P H vals (map (fun q => (A.var_of F (fst q), gr (snd q))) bs) /\
     Forall (fun q => A.Named F (fst q)) bs /\ List.length bs = List.length fxs.
 Proof.
@@ -102,8 +101,8 @@ Lemma pat_match : forall F st pat xp binds hs ca w,
   A.PatOf W F st pat xp binds hs ca -> UnionFormed st -> st <> A.never -> typed w (gr st) ->
   (forall s, In s hs -> exists xs, In (TNom s xs) (A.members st)) /\
   (ca = false -> hs <> []) /\
-  ((exists bs, I.match_pat xp w = I.PMatch bs /\ PatResult F binds bs) \/
-   (I.match_pat xp w = I.PNo /\ ca = false /\ forall s, In s hs -> forall inner, w <> VTag s inner)).
+  ((exists bs, O.I.match_pat xp w = O.I.PMatch bs /\ PatResult F binds bs) \/
+   (O.I.match_pat xp w = O.I.PNo /\ ca = false /\ forall s, In s hs -> forall inner, w <> VTag s inner)).
 Proof.
   intros F st pat xp binds hs ca w Pat Formed NotNever T.
   destruct Pat as [|n Res Named|pa s k xs R K Kind Member
@@ -113,13 +112,13 @@ Proof.
   - split; [intros s []|]. split; [discriminate|]. left.
     exists [(A.var_of F n, w)]; repeat split; repeat constructor; auto; intros [].
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | | | | | |]; cbn [I.match_pat];
+    destruct w as [|s' inner| | | | | | |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists []; repeat split; constructor.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | | | | | |]; cbn [I.match_pat];
+    destruct w as [|s' inner| | | | | | |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists [(A.var_of F y, inner)].
@@ -129,7 +128,7 @@ Proof.
       repeat split; repeat constructor; auto; try (intros []); exact Inner.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | | | | | |]; cbn [I.match_pat];
+    destruct w as [|s' inner| | | | | | |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left.
@@ -149,7 +148,7 @@ Qed.
 
 Definition Selected F C st (arms : list (apat * aexpr)) exp t xarms w : Prop :=
   exists pat body bs eb binds et,
-    I.select_arm xarms w = Some (bs, eb) /\ In (pat, body) arms /\
+    O.I.select_arm xarms w = Some (bs, eb) /\ In (pat, body) arms /\
     A.Branch W Prog F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) body exp eb et /\
     A.fits et t /\ A.opt_fits et exp /\ PatResult F binds bs /\
     exists xp hs ca, A.PatOf W F st pat xp binds hs ca.
@@ -158,7 +157,7 @@ Lemma armslist_select : forall F C st arms exp xarms covered catch t w,
   A.ArmsList W Prog F C st arms exp xarms covered catch t ->
   UnionFormed st -> st <> A.never -> typed w (gr st) ->
   Selected F C st arms exp t xarms w \/
-  (I.select_arm xarms w = None /\ catch = false /\ covered <> [] /\
+  (O.I.select_arm xarms w = None /\ catch = false /\ covered <> [] /\
    forall s, In s covered -> (forall inner, w <> VTag s inner) /\ exists xs, In (TNom s xs) (A.members st)).
 Proof.
   intros F C st arms exp xarms covered catch t w List Formed NotNever T.

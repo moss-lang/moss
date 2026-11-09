@@ -218,8 +218,6 @@ Qed.
 
 Module FamilyStep (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CopyA := PublicCopyApply.CopyApply Prims I0.
-Module BS := CopyA.S.
-Module I := BS.I.
 
 Section Fam.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -233,17 +231,17 @@ Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis captured_in_force : BS.CapturedInForceOk W.
-Hypothesis link_results : BS.LinkResultsOk W Prog argv read state_ok.
-Hypothesis copy_apply : BS.CopyApplyOk W Prog argv read state_ok.
-Hypothesis platform_apply : BS.PlatformApplyOk W Prog argv read state_ok.
+Hypothesis captured_in_force : CopyA.S.CapturedInForceOk W.
+Hypothesis link_results : CopyA.S.LinkResultsOk W Prog argv read state_ok.
+Hypothesis copy_apply : CopyA.S.CopyApplyOk W Prog argv read state_ok.
+Hypothesis platform_apply : CopyA.S.PlatformApplyOk W Prog argv read state_ok.
 
-Local Notation Pre := (BS.Pre W Prog argv read state_ok).
-Local Notation Realizes := (BS.Realizes W Prog argv read state_ok).
-Local Notation CallableOk := (BS.CallableOk W Prog argv read state_ok).
-Local Notation ClosureOk := (BS.ClosureOk W Prog argv read state_ok).
-Local Notation Below := (BS.Below W Prog argv read state_ok).
-Local Notation Outcome := (BS.O.Outcome W P state_ok).
+Local Notation Pre := (CopyA.S.Pre W Prog argv read state_ok).
+Local Notation Realizes := (CopyA.S.Realizes W Prog argv read state_ok).
+Local Notation CallableOk := (CopyA.S.CallableOk W Prog argv read state_ok).
+Local Notation ClosureOk := (CopyA.S.ClosureOk W Prog argv read state_ok).
+Local Notation Below := (CopyA.S.Below W Prog argv read state_ok).
+Local Notation Outcome := (CopyA.S.AR.O.Outcome W P state_ok).
 
 (* ---- what a family application installs -------------------------------------- *)
 
@@ -262,9 +260,9 @@ Definition FamilyResultOk (rr : nat) (Cr : A.cx) (ks : list item) (d dr : enviro
 Definition FamilyStepOut (rr : nat) F (Cr : A.cx) (ks : list item) u th sm j d types H g st : Prop :=
   forall rest,
   (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ FamilyResultOk rr Cr ks d dr H' /\
-     I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = I.eval_bindings j P (append_environment dr d) g st' rest) \/
-  (exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = inr res /\
-     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
+     CopyA.S.AR.O.I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = CopyA.S.AR.O.I.eval_bindings j P (append_environment dr d) g st' rest) \/
+  (exists res, CopyA.S.AR.O.I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = inr res /\
+     (forall v, CopyA.S.AR.O.I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
 
 (* ---- the application obligations, for a family application -------------------- *)
 
@@ -279,16 +277,16 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   Pre rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)] dc []) ->
-  BS.FixedMeans W u d fx gfx ->
-  BS.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (CopyA.S.linked_needs ns nsg)] dc []) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (CopyA.S.linked_needs ns nsg)] dc []) ->
+  CopyA.S.FixedMeans W u d fx gfx ->
+  CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
-  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)) = Some d2 ->
-  I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (CopyA.S.linked_needs ns nsg)) = Some d2 ->
+  CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (BS.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
     FamilyNewOk rr Cr ks d dr H3.
 
 (* HYPOTHESIS (T15), CopyApplyOk and PlatformApplyOk at a family
@@ -307,7 +305,7 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
   (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
-  BS.FixedMeans W u d fx gfx ->
+  CopyA.S.FixedMeans W u d fx gfx ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 (* HYPOTHESIS (T15): FamilyCopyApplyOk's realization half. Applying a copy
    at a family application completes with provisions dr (no type meanings,
@@ -331,17 +329,17 @@ Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matc
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
   (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
-  BS.FixedMeans W u d fx gfx ->
+  CopyA.S.FixedMeans W u d fx gfx ->
   (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ type_meanings dr = [] /\ type_aliases dr = [] /\
      (forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
         lookup_provision (A.rkey Cr r m) dr = Some pv /\ CallableOk rr H' d (r :: A.sg_params g) (A.sg_ret g) pv) /\
-     I.apply_functor j P d u th [] sm (map (A.rkey_of Cr) ks) st = inl (dr, st')) \/
-  (forall rest, exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = inr res /\
-     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
+     CopyA.S.AR.O.I.apply_functor j P d u th [] sm (map (A.rkey_of Cr) ks) st = inl (dr, st')) \/
+  (forall rest, exists res, CopyA.S.AR.O.I.eval_bindings (S j) P d g st (BApply u th [] sm (map (A.rkey_of Cr) ks) :: rest) = inr res /\
+     (forall v, CopyA.S.AR.O.I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
 
 (* An application installs only under the caller's keys it is given. *)
 Lemma apply_functor_keys : forall j d u th outs sm rs st dr st',
-  I.apply_functor j P d u th outs sm rs st = inl (dr, st') ->
+  CopyA.S.AR.O.I.apply_functor j P d u th outs sm rs st = inl (dr, st') ->
   forall K pv, lookup_provision K dr = Some pv -> In K rs.
 Proof.
   intros j d u th outs sm rs st dr st' E K pv L. destruct j as [|j]; [discriminate|]. cbn in E.
@@ -369,7 +367,7 @@ Proof.
     destruct (family_news W C u matching th sm Cr ks FA) as (news & _ & _ & _ & NewM & Keys).
     destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
     destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
-  - rewrite BS.bindings_apply_eq, Ap. reflexivity.
+  - rewrite CopyA.S.bindings_apply_eq, Ap. reflexivity.
 Qed.
 
 Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
@@ -403,7 +401,7 @@ Proof.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
-  destruct (BS.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
+  destruct (CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
@@ -411,32 +409,32 @@ Proof.
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
   destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
-  destruct (BS.functx_unique W _ _ _ _ _ FC FCu0) as [<- <-].
-  intros rest. rewrite BS.bindings_apply_eq.
+  destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu0) as [<- <-].
+  intros rest. rewrite CopyA.S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   subst th. set (th := map (fun q => (fst q, A.canon Cf (app_subst (A.c_ty Cf) (TAbs (fst q))))) (A.c_ty Cu)) in *.
   (* the state realizes the family context: it differs from C0 only in its table *)
   assert (RealF : Realizes rr Cf d H)
-    by (apply (BS.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|rewrite EprF; exact Ep|exact Real]).
+    by (apply (CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|rewrite EprF; exact Ep|exact Real]).
   assert (IdemF : forall t, A.canon Cf (A.canon Cf t) = A.canon Cf t) by (intros t; rewrite !CanonEq; apply Idem).
   assert (Inp : forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty Cf) = Some here).
   { intros t tt L. apply nlook_in in L. destruct (A.nlook t (A.c_ty Cf)) as [here|] eqn:Lh; [exists here; reflexivity|].
     exfalso. exact (InF t (in_map fst _ _ L) Lh). }
-  destruct (BS.static_realizes_le W Prog argv read state_ok rr rr Cf d H u Cu ns sm th (le_n _) RealF
-    (BS.functx_static W _ _ _ FC) Sat (BS.apply_theta W Cf u Cu ns sm FC IdemF Inp Sat)) as [d1 [Sel [_ RealU]]].
-  destruct (BS.link_facts W Prog _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+  destruct (CopyA.S.static_realizes_le W Prog argv read state_ok rr rr Cf d H u Cu ns sm th (le_n _) RealF
+    (CopyA.S.functx_static W _ _ _ FC) Sat (CopyA.S.apply_theta W Cf u Cu ns sm FC IdemF Inp Sat)) as [d1 [Sel [_ RealU]]].
+  destruct (CopyA.S.link_facts W Prog _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr' & ks' & binds0 & LD).
   pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
-  destruct (BS.functx_unique W _ _ _ _ _ FC FCu') as [<- <-]. destruct (BS.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
+  destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu') as [<- <-]. destruct (CopyA.S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
   (* the closure's own needs, from those the caller selected *)
-  destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (BS.linked_needs ns nsg))) as [d2 Sel2].
+  destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (CopyA.S.linked_needs ns nsg))) as [d2 Sel2].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-    unfold BS.linked_needs in Ik. apply filter_In in Ik as [Ig E]. apply existsb_exists in E as [k1 [Iu E]]. apply item_eqb_spec in E. subst k1.
+    unfold CopyA.S.linked_needs in Ik. apply filter_In in Ik as [Ig E]. apply existsb_exists in E as [k1 [Iu E]]. apply item_eqb_spec in E. subst k1.
     destruct (functx_needs_provided W u Cu ns FC k0 Iu) as [p0 Ip].
-    destruct (BS.functx_static W _ _ _ FC) as [_ [_ [_ [_ [_ [ShU _]]]]]].
-    destruct (BS.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU k0 Iu)) as [pv0 L0].
-    change (lookup_provision (A.rkey_of Cu k0) d1) with (lookup_provision (A.rkey_of Cu k0) (BS.callee_env d th d1)). rewrite L0. discriminate. }
+    destruct (CopyA.S.functx_static W _ _ _ FC) as [_ [_ [_ [_ [_ [ShU _]]]]]].
+    destruct (CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU k0 Iu)) as [pv0 L0].
+    change (lookup_provision (A.rkey_of Cu k0) d1) with (lookup_provision (A.rkey_of Cu k0) (CopyA.S.callee_env d th d1)). rewrite L0. discriminate. }
   assert (Keys : map fst th = map fst (A.c_ty Cu)) by (unfold th; rewrite map_map; reflexivity).
   (* F's fixed inputs: θ reads them in the family context as the closure recorded them (FixedAgreement) *)
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
@@ -445,16 +443,16 @@ Proof.
   { intros x Fx' _. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).
     assert (Ix : In x (map fst (A.c_ty Cu))) by exact (FxIn x Fx').
     assert (Lx : lookup_subst x th = Some (A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))))
-      by (unfold th; exact (BS.lookup_on_keys (fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))) _ x Ix)).
+      by (unfold th; exact (CopyA.S.lookup_on_keys (fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))) _ x Ix)).
     rewrite Lx. cbn [option_map]. f_equal.
     destruct (A.nlook x (A.c_ty Cf)) as [now|] eqn:Ln; [|exfalso; exact (InF x Ix Ln)].
     replace (app_subst (A.c_ty Cf) (TAbs x)) with now by (cbn [app_subst]; rewrite lookup_subst_nlook', Ln; reflexivity).
-    destruct (BS.nlook_fixed_app fx x (Cov x Fx')) as [was [Nw Iw]].
+    destruct (CopyA.S.nlook_fixed_app fx x (Cov x Fx')) as [was [Nw Iw]].
     pose proof (FAg x Fx') as Ag.
-    rewrite (BS.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
+    rewrite (CopyA.S.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (E1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
     injection E1 as E1. rewrite E1, <- Ag, CanonEq. symmetry. exact (Abs was). }
-  pose proof (BS.link_entry W Prog argv read state_ok rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2
+  pose proof (CopyA.S.link_entry W Prog argv read state_ok rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2
     LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
   set (de := application_environment P d h th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
@@ -463,28 +461,28 @@ Proof.
     4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
          split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
          apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
-    - intros n1 t mu Found. rewrite (BS.functx_locals W _ _ _ FCg) in Found. discriminate.
+    - intros n1 t mu Found. rewrite (CopyA.S.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply BS.alias_self; [reflexivity|exact (proj1 RealG)| |].
+    - apply CopyA.S.alias_self; [reflexivity|exact (proj1 RealG)| |].
       + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
       + intros k0 v0 L0. unfold de, application_environment. change (view_functor P h) with (A.funbody_of Prog h).
-        rewrite FB. cbn [type_meanings fc_inputs]. rewrite BS.lookup_map_nat; [discriminate|].
+        rewrite FB. cbn [type_meanings fc_inputs]. rewrite CopyA.S.lookup_map_nat; [discriminate|].
         change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
-  pose proof (BS.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+  pose proof (CopyA.S.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
     captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
-  destruct (BS.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+  destruct (CopyA.S.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
     captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
-  pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply BS.bindsof_fold in BO. subst binds0.
-  rewrite BS.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
+  pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply CopyA.S.bindsof_fold in BO. subst binds0.
+  rewrite CopyA.S.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
   cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
-  destruct (BS.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
+  destruct (CopyA.S.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
     as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
     [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
   - destruct j' as [|j'].
-    { rewrite Run0. right. exists (I.with_g g (I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
-      exact (BS.body_stop W Prog argv read state_ok Fg de H [] TUnit False False F d H types g (I.Evaluation OutOfFuel g3 st3)
+    { rewrite Run0. right. exists (CopyA.S.AR.O.I.with_g g (CopyA.S.AR.O.I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
+      exact (CopyA.S.body_stop W Prog argv read state_ok Fg de H [] TUnit False False F d H types g (CopyA.S.AR.O.I.Evaluation OutOfFuel g3 st3)
         Ret Loop ltac:(intros v E; discriminate) Logic.I). }
-    assert (Run : I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
+    assert (Run : CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
     destruct (family_link_results C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n0 ps0 a0 rs bodies
       Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
@@ -492,8 +490,8 @@ Proof.
     rewrite Sdr. left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.
     split; [exact E3|]. split; [exact (proj1 (proj2 (proj2 (proj2 Pre3))))|].
     split; [split; [reflexivity|split; [reflexivity|exact New]]|reflexivity].
-  - rewrite Run. right. exists (I.with_g g res). split; [reflexivity|].
-    exact (BS.body_stop W Prog argv read state_ok Fg de H [] TUnit _ False F d H types g res Ret Loop NN Out).
+  - rewrite Run. right. exists (CopyA.S.AR.O.I.with_g g res). split; [reflexivity|].
+    exact (CopyA.S.body_stop W Prog argv read state_ok Fg de H [] TUnit _ False F d H types g res Ret Loop NN Out).
 Qed.
 
 (* ---- the contexts after it ----------------------------------------------------- *)
@@ -503,21 +501,21 @@ Lemma realizes_family : forall rr C0 C u matching th sm Cr ks d dr H H',
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   Realizes rr C0 d H -> heap_extends H H' -> FamilyResultOk rr Cr ks d dr H' ->
-  Realizes rr (BS.with_ty C0 Cr) (append_environment dr d) H'.
+  Realizes rr (CopyA.S.with_ty C0 Cr) (append_environment dr d) H'.
 Proof.
   intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real Ext [Em [Ea [Dom New]]].
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
-  destruct (BS.realizes_extends W Prog argv read state_ok rr C0 d H H' Ext Real) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr C0 d H H' Ext Real) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (d' := append_environment dr d).
   assert (G : forall t, ground d' t = ground d t)
     by (intros t; unfold ground, d'; cbn [type_meanings append_environment]; rewrite Em; reflexivity).
   assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
   assert (LookD : forall K, (forall r m, In (A.mkey r m) ks -> K <> A.rkey Cr r m) -> lookup_provision K d' = lookup_provision K d).
-  { intros K NotK. unfold d'. rewrite BS.lookup_append_env. destruct (lookup_provision K dr) as [pv|] eqn:L; [|reflexivity].
+  { intros K NotK. unfold d'. rewrite CopyA.S.lookup_append_env. destruct (lookup_provision K dr) as [pv|] eqn:L; [|reflexivity].
     destruct (Dom K pv L) as [r [m [Ik ->]]]. exfalso. exact (NotK r m Ik eq_refl). }
   assert (NotM : forall K, (forall r m th, K <> IMth r m th) -> forall r m, In (A.mkey r m) ks -> K <> A.rkey Cr r m).
   { intros K Nm r m _ E. exact (Nm r m _ E). }
-  set (Cw := BS.with_ty C0 Cr).
+  set (Cw := CopyA.S.with_ty C0 Cr).
   assert (Epw : A.c_provisions Cw = (news ++ A.c_provisions C0)%list) by (unfold Cw; cbn; rewrite Epr, Ep; reflexivity).
   assert (Esw : A.c_sub Cw = A.c_sub C0) by (unfold Cw; cbn; rewrite Esub, Es; reflexivity).
   assert (CanonEq : forall t, A.canon Cw t = A.canon C0 t) by (intros t; unfold A.canon; rewrite Esw; reflexivity).
@@ -535,7 +533,7 @@ Proof.
   - intros f sg Found. change (A.nlook f (fns_of (A.c_provisions Cw)) = Some sg) in Found.
     rewrite Epw in Found. unfold fns_of in Found. rewrite flat_map_app, (flat_map_methods_nil _ _ news Meth) in Found by reflexivity.
     destruct (Fns f sg Found) as [pv [L Ok]]. exists pv. rewrite LookD; [|apply NotM; intros r m th0 E; discriminate].
-    split; [exact L|]. exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
+    split; [exact L|]. exact (CopyA.S.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
   - intros r m sg Found. change (A.mlook r m (mths_of (A.c_provisions Cw)) = Some sg) in Found.
     rewrite Epw in Found. unfold mths_of in Found. rewrite flat_map_app, mlook_app in Found. fold (mths_of news) in Found.
     destruct (A.mlook r m (mths_of news)) as [sg'|] eqn:Ln.
@@ -547,17 +545,17 @@ Proof.
       { change (A.mlook r m (mths_of (A.c_provisions Cr)) = Some sg'). rewrite Epr. unfold mths_of.
         rewrite flat_map_app, mlook_app. fold (mths_of news). rewrite Ln. reflexivity. }
       destruct (New r m sg' Ik Fc) as [pv [L Ok]]. exists pv.
-      change (A.rkey Cw r m) with (A.rkey Cr r m). unfold d'. rewrite BS.lookup_append_env, L.
+      change (A.rkey Cw r m) with (A.rkey Cr r m). unfold d'. rewrite CopyA.S.lookup_append_env, L.
       split; [reflexivity|].
-      exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
+      exact (CopyA.S.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
     + destruct (Mths r m sg Found) as [pv [L Ok]]. exists pv.
       assert (NoNew : forall p, ~ In (A.mkey r m, p) news).
       { intros p I. destruct (Meth _ _ I) as (r1 & m1 & g1 & a1 & _ & ->). exact (mlook_mths_some _ _ _ _ _ I Ln). }
       assert (Rk : A.rkey Cw r m = A.rkey C0 r m).
-      { unfold A.rkey. rewrite !BS.capps_ilook, Epw, (ilook_app_none _ _ _ _ NoNew).
+      { unfold A.rkey. rewrite !CopyA.S.capps_ilook, Epw, (ilook_app_none _ _ _ _ NoNew).
         unfold A.theta_of, A.canon. rewrite Esw. reflexivity. }
       rewrite Rk, LookD.
-      * split; [exact L|]. exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
+      * split; [exact L|]. exact (CopyA.S.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
       * intros r' m' Ik E. unfold A.rkey in E. injection E as <- <- _.
         destruct (proj1 (KsI _) Ik) as [p Ip]. exact (NoNew p Ip).
   - intros u' fx Found. change (A.nlook u' (funs_of (A.c_provisions Cw)) = Some fx) in Found.
@@ -574,17 +572,17 @@ Lemma keep_family : forall rr C0 C u matching th sm Cr ks d dr H H',
   A.FamilyApplication W C u matching th sm Cr ks ->
   heap_extends H H' -> FamilyResultOk rr Cr ks d dr H' ->
   forall Cx, incl (A.c_provisions Cx) (A.c_provisions C0) -> A.c_sub Cx = A.c_sub C0 ->
-  BS.FamilyCoherent Cx Cr ks -> Realizes rr Cx d H -> Realizes rr Cx (append_environment dr d) H'.
+  CopyA.S.FamilyCoherent Cx Cr ks -> Realizes rr Cx d H -> Realizes rr Cx (append_environment dr d) H'.
 Proof.
   intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Ext [Em [Ea [Dom New]]] Cx Inc Esx Coh RealX.
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
-  destruct (BS.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (d' := append_environment dr d).
   assert (G : forall t, ground d' t = ground d t)
     by (intros t; unfold ground, d'; cbn [type_meanings append_environment]; rewrite Em; reflexivity).
   assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
   assert (LookN : forall K, (forall r m th, K <> IMth r m th) -> lookup_provision K d' = lookup_provision K d).
-  { intros K Nm. unfold d'. rewrite BS.lookup_append_env. destruct (lookup_provision K dr) as [pv|] eqn:L; [|reflexivity].
+  { intros K Nm. unfold d'. rewrite CopyA.S.lookup_append_env. destruct (lookup_provision K dr) as [pv|] eqn:L; [|reflexivity].
     destruct (Dom K pv L) as [r [m [_ ->]]]. exfalso. exact (Nm r m _ eq_refl). }
   assert (KMn : PublicCallRealize.KeysMatch news).
   { intros k p I. destruct (Meth k p I) as (r & m & g & a & -> & ->). exact Logic.I. }
@@ -594,11 +592,11 @@ Proof.
     rewrite G, LookN; [exact (conj L T)|intros r m th0 E; discriminate].
   - intros f sg Found. destruct (Fns f sg Found) as [pv [L Ok]]. exists pv.
     rewrite LookN; [|intros r m th0 E; discriminate]. split; [exact L|].
-    exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
+    exact (CopyA.S.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok).
   - intros r m sg Found. destruct (Mths r m sg Found) as [pv [L Ok]].
     destruct (lookup_provision (A.rkey Cx r m) dr) as [pv'|] eqn:Ld.
-    2: { exists pv. unfold d'. rewrite BS.lookup_append_env, Ld. split; [exact L|].
-         exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok). }
+    2: { exists pv. unfold d'. rewrite CopyA.S.lookup_append_env, Ld. split; [exact L|].
+         exact (CopyA.S.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv (le_n _) (Gm _) (eq_sym (G _)) Ok). }
     destruct (Dom _ _ Ld) as [r' [m' [Ik Ek]]].
     pose proof Ek as Ek0. unfold A.rkey at 1 2 in Ek. injection Ek as Er Emm Eth. subst r' m'.
     (* the family provision at that key *)
@@ -613,10 +611,10 @@ Proof.
     rewrite <- Ek0, Ld in L1. injection L1 as <-.
     (* C0's provision there, and its θ *)
     destruct (mths_ilook (A.c_provisions Cx) r m sg KM Found) as [ax Lx].
-    rewrite !BS.capps_ilook, Lx, Lr in Eth. cbn [option_map A.provision_inst] in Eth.
-    pose proof (Coh r m sg ax g1 a1 Ik (BS.ilook_in _ _ _ Lx) Lr Eth) as <-.
-    exists pv'. unfold d'. rewrite BS.lookup_append_env, Ld. split; [reflexivity|].
-    exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv' (le_n _) (Gm _) (eq_sym (G _)) Ok1).
+    rewrite !CopyA.S.capps_ilook, Lx, Lr in Eth. cbn [option_map A.provision_inst] in Eth.
+    pose proof (Coh r m sg ax g1 a1 Ik (CopyA.S.ilook_in _ _ _ Lx) Lr Eth) as <-.
+    exists pv'. unfold d'. rewrite CopyA.S.lookup_append_env, Ld. split; [reflexivity|].
+    exact (CopyA.S.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv' (le_n _) (Gm _) (eq_sym (G _)) Ok1).
   - intros u' fx Found. destruct (Funs u' fx Found) as [pv [gfx [L [Ok [Cov Vm]]]]]. exists pv, gfx.
     rewrite LookN; [|intros r m th0 E; discriminate].
     split; [exact L|]. split; [exact Ok|]. split; [exact Cov|]. intros x tx I. rewrite G. exact (Vm x tx I).
@@ -640,7 +638,7 @@ Qed.
 
 (* ---- FamilyStepOk -------------------------------------------------------------- *)
 
-Theorem family_step_ok : BS.FamilyStepOk W Prog argv read state_ok.
+Theorem family_step_ok : CopyA.S.FamilyStepOk W Prog argv read state_ok.
 Proof.
   intros k Bel C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Ts F rr j d types H g st Lr Lj Pre0 rest.
   destruct (family_run k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0 rest)
@@ -653,7 +651,7 @@ Proof.
   exists (append_environment dr d), st', H'.
   split; [exact E|]. split; [exact Em'|]. split; [exact Ea'|].
   split; [|split; [exact (keep_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA E Res)|exact Run]].
-  apply (pre_same_table rr F C0 (BS.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
+  apply (pre_same_table rr F C0 (CopyA.S.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
     eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real0 E Res)
     |exact E|exact St'| |].
   - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).

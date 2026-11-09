@@ -25,8 +25,6 @@ Module FamilyLink (Prims : PRIMITIVES) (I0 : INTERP Prims).
 (* The instance PublicEntry uses (CF, and through it CN and CC), so the
    obligations match. *)
 Module CF := PublicChainFwd.ChainFwd Prims I0.
-Module CC := CF.CN.CC.
-Module S := CC.S.
 Module LRn := PublicLinkRun.LinkRun Prims I0.
 
 Section Link.
@@ -79,27 +77,27 @@ Proof.
   apply in_flat_map in I as [t' [It I]]. apply in_map_iff in It as [t [<- It]]. exists t. split; [right; exact It|exact I].
 Qed.
 
-Theorem family_link_new_ok : CC.FamilyLinkNewOk W Prog argv read state_ok.
+Theorem family_link_new_ok : CF.CN.CC.FamilyLinkNewOk W Prog argv read state_ok.
 Proof.
   intros C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
   pose proof FA as (fx' & Cu1 & ns1 & Fx' & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & MadeOut).
-  destruct (S.functx_unique W _ _ _ _ _ FC FCu) as [-> ->].
+  destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC FCu) as [-> ->].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   (* 1: a family has no outputs *)
   assert (NoOut : forall t, ~ A.FunOutputs W u t) by (intros t Ft; exact (PublicFormation.family_no_outputs W u t (proj1 Fam) Ft)).
   destruct outs' as [|t0 outs0]; [|exfalso; exact (NoOut t0 (proj1 (OutsR t0) (or_introl eq_refl)))].
   (* 2: the full LinkBody, from the closure *)
-  destruct (S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
+  destruct (CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
   2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & code & sms & dc' & rms & rm & gfh & E & _).
        injection E as _ _ _ E. destruct rms; discriminate. }
   2: { destruct CP as (code & E & _). discriminate. }
   destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & LB & _).
   injection E as E1h _ E3h. subst h2 dc2.
   destruct (link_body_parts _ _ _ LB) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & FamB & FB3).
-  destruct (S.functx_unique W _ _ _ _ _ FCu FCu3) as [<- <-].
+  destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu3) as [<- <-].
   rewrite FB in FB3. injection FB3 as E1 E2 ETy E4 EBinds E6.
   (* cap3b's input condition, at G's table *)
   assert (LRd' : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
@@ -110,7 +108,7 @@ Proof.
   destruct (family_binds_no_dests W Prog _ _ _ _ _ _ _ binds0 Items BO FBs) as [Made _].
   assert (ThL : forall z, In z (map fst (A.c_ty Cu)) ->
     lookup_subst z th = Some (A.canon Cf (app_subst (A.c_ty Cf) (TAbs z)))).
-  { intros z Iz. rewrite Th. exact (S.lookup_on_keys (fun y => A.canon Cf (app_subst (A.c_ty Cf) (TAbs y))) _ z Iz). }
+  { intros z Iz. rewrite Th. exact (CF.CN.CC.LR.PA.FS.CopyA.S.lookup_on_keys (fun y => A.canon Cf (app_subst (A.c_ty Cf) (TAbs y))) _ z Iz). }
   destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg [_ [_ [_ SubG]]]]]].
   destruct (PublicCallRealize.functx_scoped W u Cu ns FCu) as [TblU [ProvU [KMu _]]].
   assert (GgDom : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> incl (A.gens tx) (map fst (A.c_ty Cg))).
@@ -145,12 +143,12 @@ Proof.
     destruct (PublicCallerKeys.provide_result_kinds W u Cf _ Cr ks Cu _ Cr' ks' PR PRf) as (es1 & es2 & E1' & E2' & Fk).
     pose proof (PublicCallerKeys.same_kind_keys (A.c_sub Cf) (A.c_sub Cu) _ _ Fk) as FK. rewrite <- E1', <- E2' in FK.
     intros key Ik.
-    destruct (S.Forall2_In_r _ _ _ _ _ _ FK Ik) as [k1 [Ik1 Rk]].
+    destruct (CF.CN.CC.LR.PA.FS.CopyA.S.Forall2_In_r _ _ _ _ _ _ FK Ik) as [k1 [Ik1 Rk]].
     destruct (proj1 (KeysN k1) Ik1) as [p1 Ip1]. destruct (NewM k1 p1 Ip1) as (r1 & m1 & g1 & a1 & -> & _).
     destruct key as [?|?|?|rk mk ak|?]; cbn in Rk; try contradiction.
     pose proof (PublicCallerKeys.result_key_id W u Cu _ Cr' ks' _ PRf Ik) as Pid. cbn in Pid. injection Pid as Ea. subst ak.
     destruct (RR (IMth rk mk []) Ik) as [req [act [Lr _]]]. cbn [A.provision_id] in Lr.
-    pose proof (KMr _ _ (S.ilook_in _ _ _ Lr)) as Kd. destruct req as [| |gq aq|]; cbn in Kd; try contradiction.
+    pose proof (KMr _ _ (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Lr)) as Kd. destruct req as [| |gq aq|]; cbn in Kd; try contradiction.
     destruct (PublicFamilyCoherent.family_member bw W Wo u Cu _ Cr' ks' rk mk gq aq PRf Ik Lr) as (_ & _ & _ & _ & _ & _ & _ & Km).
     exists rk, mk, []. split; [reflexivity|exact Km]. }
   assert (Idem : forall t, A.canon C (A.canon C t) = A.canon C t).
@@ -160,15 +158,15 @@ Proof.
   pose proof (PublicFamilyAgree.family_items_pos W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as Pos.
   pose proof (PublicFamilyAgree.family_items_agree W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as [NewSig _].
   set (Ls := A.link_site Cg Cb [] gen) in *.
-  set (srcs := S.link_sources Ls [] gen ks') in *.
+  set (srcs := CF.CN.CC.LR.PA.FS.CopyA.S.link_sources Ls [] gen ks') in *.
   set (rs := map (A.rkey_of Cr) ks) in *.
   assert (LenRs : List.length (chain_sources [] srcs) = List.length rs)
-    by (unfold rs, srcs, S.link_sources; cbn [chain_sources fold_left]; rewrite !length_map; exact (eq_sym (Forall2_length Pos))).
+    by (unfold rs, srcs, CF.CN.CC.LR.PA.FS.CopyA.S.link_sources; cbn [chain_sources fold_left]; rewrite !length_map; exact (eq_sym (Forall2_length Pos))).
   destruct (In_nth_error _ _ Ik0) as [i0 E0].
   assert (R0 : nth_error rs i0 = Some (A.rkey Cr r0 m0)) by (unfold rs; rewrite nth_error_map, E0; reflexivity).
   destruct (PublicCallerKeys.selection_at rs [] srcs i0 _ R0 LenRs) as [s Fs].
   destruct (PublicCallerKeys.selection_last rs [] srcs _ s Fs LenRs) as [i [Ri [Si _]]].
-  cbn [chain_sources fold_left] in Si. unfold srcs, S.link_sources in Si. rewrite nth_error_map in Si.
+  cbn [chain_sources fold_left] in Si. unfold srcs, CF.CN.CC.LR.PA.FS.CopyA.S.link_sources in Si. rewrite nth_error_map in Si.
   destruct (nth_error ks' i) as [key1|] eqn:Ek1; [|discriminate]. injection Si as Es'.
   unfold rs in Ri. rewrite nth_error_map in Ri.
   destruct (nth_error ks i) as [ki|] eqn:Ki; [|discriminate]. injection Ri as Eki.
@@ -181,9 +179,9 @@ Proof.
   pose proof (PublicCallerKeys.result_key_id W u Cu _ Cr' ks' _ PRf Ik1) as Pid. cbn in Pid. injection Pid as Ea. subst a1.
   (* 5: the body's provision at key1 *)
   pose proof Pre3 as [_ [_ [_ [_ [Real3 [Fmd3 _]]]]]].
-  destruct (CC.body_provides W Prog argv read state_ok rr Ls d3 H3 Cr' ks' [] Real3 RR _ Ik1) as [p [pv [Lp [Lpv BR]]]].
+  destruct (CF.CN.CC.body_provides W Prog argv read state_ok rr Ls d3 H3 Cr' ks' [] Real3 RR _ Ik1) as [p [pv [Lp [Lpv BR]]]].
   cbn [A.provision_id] in Lp.
-  pose proof (KMr _ _ (S.ilook_in _ _ _ Lp)) as Kd. destruct p as [| |gf af|]; cbn in Kd; try contradiction.
+  pose proof (KMr _ _ (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Lp)) as Kd. destruct p as [| |gf af|]; cbn in Kd; try contradiction.
   assert (Mgf : A.mlook rf m0 (A.c_mths Cr') = Some gf) by exact (PublicCallRealize.ilook_mths _ rf m0 gf af KMr Lp).
   pose proof (proj2 (NewSig r0 m0 g0 (conj Ik0 Mg0)) (IMth rf m0 []) rf [] gf Ik1 eq_refl Mgf Kq) as Agr.
   destruct BR as (rb & mb & ib & Eat & Call).
@@ -227,7 +225,7 @@ Proof.
       + apply Ny, ScopeG. destruct (BackB y (Sk y Iy)) as [I'|[]]. exact I'. }
   destruct (RR (IMth rf m0 []) Ik1) as [req [act [Lr [La Ref]]]].
   cbn [A.provision_id] in Lr. rewrite Lp in Lr. injection Lr as <-. cbn [map] in La, Ref.
-  pose proof (S.ilook_in _ _ _ La) as Iact.
+  pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ La) as Iact.
   change (In (A.provision_id (A.at_site Ls (app_subst_item [] (IMth rf m0 []))), act) (A.c_provisions Cb)) in Iact.
   rewrite Eat in Iact. cbn [A.provision_id] in Iact.
   cbn [app_subst_item A.at_site] in Eat. injection Eat as Erb Emb _. subst mb.
@@ -289,7 +287,7 @@ Proof.
     rewrite (GE tc tf A1 (fun y Iy => R2sig tf y (or_intror (Inc tf (or_introl eq_refl))) Iy)).
     rewrite IH; [reflexivity|]. intros t It. exact (Inc t (or_intror It)). }
   cbn [A.read_rename map] in Call. rewrite PublicTypeRead.app_subst_nil, (map_ext _ _ PublicTypeRead.app_subst_nil), map_id in Call.
-  apply (S.callable_transfer W Prog argv read state_ok rr rr H3 d3 d (rb :: A.sg_params gf) (r0 :: A.sg_params g0)
+  apply (CF.CN.CC.LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok rr rr H3 d3 d (rb :: A.sg_params gf) (r0 :: A.sg_params g0)
     (A.sg_ret gf) (A.sg_ret g0) pv (le_n _)); [| |exact Call].
   - cbn [map]. rewrite Recv, (GEp _ _ Rps (fun t I => I)). reflexivity.
   - exact (GE _ _ Aret (fun y Iy => R2sig _ y (or_introl eq_refl) Iy)).

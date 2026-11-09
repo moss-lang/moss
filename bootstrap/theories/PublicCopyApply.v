@@ -17,7 +17,6 @@ Module A := Audit.Semantics.Elaboration.
 
 Module CopyApply (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module S := PublicBodySlice.BodySlice Prims I0.
-Module I := S.I.
 
 Section Copy.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -318,7 +317,7 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
-  I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
+  S.AR.O.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
     select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
@@ -430,17 +429,17 @@ Proof.
     as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
     [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
   - destruct j' as [|j'].
-    { rewrite Run0. right. exists (I.with_g g (I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
-      exact (S.body_stop W Prog argv read state_ok Fg de H [] TUnit False False F d H types g (I.Evaluation OutOfFuel g3 st3) Ret Loop
+    { rewrite Run0. right. exists (S.AR.O.I.with_g g (S.AR.O.I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
+      exact (S.body_stop W Prog argv read state_ok Fg de H [] TUnit False False F d H types g (S.AR.O.I.Evaluation OutOfFuel g3 st3) Ret Loop
         ltac:(intros v E; discriminate) Logic.I). }
-    assert (Run : I.eval_bindings j1 (program_of Prog argv read) de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
+    assert (Run : S.AR.O.I.eval_bindings j1 (program_of Prog argv read) de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
     destruct (chain_results F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms' dc rms' gfx h0 gf0 gg dg n0
       ps0 a0 rs bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm Chn Ok0 LD
       Sel A2 Run E3 Pre3) as [dr [result [Sdr [Rres [PreC GrowC]]]]].
     rewrite Sdr, Rres. left. exists (append_environment result d), g, st3, H3.
     split; [exact E3|]. split; [exact GrowC|]. split; [exact PreC|reflexivity].
-  - rewrite Run. right. exists (I.with_g g res). split; [reflexivity|].
+  - rewrite Run. right. exists (S.AR.O.I.with_g g res). split; [reflexivity|].
     exact (S.body_stop W Prog argv read state_ok Fg de H [] TUnit _ False F d H types g res Ret Loop NN Out).
 Qed.
 

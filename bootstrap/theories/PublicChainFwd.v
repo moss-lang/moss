@@ -58,15 +58,12 @@ End Static.
 
 Module ChainFwd (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CN := PublicChainNew.ChainNew Prims I0.
-Module PA := CN.LR.PA.
-Module CopyA := PA.CopyA.
-Module S := CopyA.S.
 
 Section Fwd.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 
-Notation Pre := (S.Pre W Prog argv read state_ok).
+Notation Pre := (CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok).
 
 (* (Proved: PublicChainSigs.chain_forward_copy_sigs.) ChainForwardSigs for a copy
    chain of at least one copy (sms nonempty). The caller's last position
@@ -78,19 +75,19 @@ Notation Pre := (S.Pre W Prog argv read state_ok).
    by construction (scratch/orch/callerkeys2-AUDIT.md). *)
 Definition ChainForwardCopySigs : Prop :=
   forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  CN.CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st, Pre rr F C d types H g st ->
-  forall code sms rms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env rms) ->
+  forall code sms rms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CN.CC.LR.PA.FS.CopyA.empty_env rms) ->
   sms <> [] ->
-  S.FixedMeans W u d fx gfx ->
-  forall h0 gf0, CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
-  forall Ch0 needs outputs keys bindings, PA.FamilyData W Prog h0 code Ch0 needs outputs keys bindings ->
+  CN.CC.LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
+  forall h0 gf0, CN.CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
+  forall Ch0 needs outputs keys bindings, CN.CC.LR.PA.FamilyData W Prog h0 code Ch0 needs outputs keys bindings ->
   forall i r m g key, nth_error ks i = Some (A.mkey r m) ->
   (forall i', i < i' -> nth_error ks i' <> Some (A.mkey r m)) ->
   A.mlook r m (A.c_mths C') = Some g ->
   In key keys -> nth_error (chain_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
   exists rf a gf, key = IMth rf m a /\ A.mlook rf m (A.c_mths outputs) = Some gf /\
-    Forall2 (PA.SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf).
+    Forall2 (CN.CC.LR.PA.SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf).
 
 (* PlatformApply's FamilyKeysTyped at an application (AppPremises)
    instead of a family application: an extra key of the caller's table
@@ -99,11 +96,11 @@ Definition ChainForwardCopySigs : Prop :=
    Proved: `app_keys_typed`. *)
 Definition AppKeysTyped : Prop :=
   forall F C pa u fx Cu ns sm th gensof C' ks newgens outs, PublicFormation.TysScoped W C ->
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  CN.CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall q pa' x, A.resolve_sym W q pa' = Some x -> A.nlook x (A.c_ty C) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
 
-Lemma chain_nil : forall u gfx sms rms h0 gf0 sms0 rms0, CopyA.CopyChain W u gfx sms rms h0 gf0 sms0 rms0 -> sms = [] ->
+Lemma chain_nil : forall u gfx sms rms h0 gf0 sms0 rms0, CN.CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 sms0 rms0 -> sms = [] ->
   u = h0 /\ sms0 = [] /\ rms = rms0.
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch. destruct Ch; intros E; [subst; split; [reflexivity|split; reflexivity]|].
@@ -121,7 +118,7 @@ Qed.
    inputs, position by position (items_agree_pos) and item by item
    (items_agree_gen); a chain with a copy is ChainForwardCopySigs. *)
 Theorem chain_forward_sigs : AppKeysTyped ->
-  ChainForwardCopySigs -> PA.ChainForwardSigs W Prog argv read state_ok.
+  ChainForwardCopySigs -> CN.CC.LR.PA.ChainForwardSigs W Prog argv read state_ok.
 Proof.
   intros AKT Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
     code sms rms gfx Look Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD i r m g0 key Ki Last Mg Ikey Si.
@@ -132,10 +129,10 @@ Proof.
   destruct (chain_nil _ _ _ _ _ _ _ _ Chn eq_refl) as [<- [_ ->]].
   pose proof FD as (FC0 & NoH & PRf & FB & Binds & MD & Abst & KD).
   pose proof AP as (_ & _ & FC & Inp & Th & _ & Sat & _ & _ & _ & _ & _ & PR).
-  destruct (S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].
+  destruct (CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].
   pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem _]]] & Fmd).
   assert (KeysM : forall key, In key keys -> exists r m a, key = IMth r m a /\ A.kind_sym W m = Some A.DKMeth).
-  { intros key0 Ik. destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
+  { intros key0 Ik. destruct (CN.CC.LR.PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
     destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).
     exists r0, m0, a0. split; [reflexivity|]. unfold A.kind_sym. rewrite Dm, Ast. cbn.
     destruct form; [contradiction|reflexivity|reflexivity]. }
@@ -167,7 +164,7 @@ Proof.
   assert (Em : m' = m).
   { rewrite Ek in Kq. cbn [A.rkey_of A.rkey app_subst_item A.mkey] in Kq. unfold A.rkey in Kq. injection Kq as _ Em _. exact Em. }
   subst m'.
-  destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ikey) as [b [_ [op [_ [_ [AK _]]]]]].
+  destruct (CN.CC.LR.PA.forall2_in_l _ _ _ _ _ _ Binds Ikey) as [b [_ [op [_ [_ [AK _]]]]]].
   rewrite Ek in AK. destruct AK as [gf [Mgf _]].
   destruct (IA r m g0 (conj (nth_error_In _ _ Ki) Mg)) as [_ Sig].
   exists rf, a, gf. split; [exact Ek|]. split; [exact Mgf|].
