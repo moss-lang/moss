@@ -1498,7 +1498,13 @@ Record functor_code := FunctorCode {
   (* where the body left each result item: a result key (as the functor
      declares it) paired with the body's own key for it; an item not
      listed is read under its own key *)
-  fc_sources : list (item * item)
+  fc_sources : list (item * item);
+  (* each output symbol t with the role (generation) the result keys
+     (fc_outputs' items, fc_sources' first components) use for it: a raw
+     t there is the input t, which F's merges may have made another
+     input's representative (tests/regressions/
+     functor_input_output_generations.moss) *)
+  fc_roles : list (tsym * tsym)
 }.
 Record program : Type := Program {
   program_functions : list (nat * expr);
@@ -1572,6 +1578,17 @@ Definition application_environment (P : program_view) (d : environment) (h : usy
    Result provisions use the output roles in preference to input roles. *)
 Definition result_substitution (inputs : subst) (outputs : list (tsym * tsym)) : subst :=
   map (fun q => (fst q, TAbs (snd q))) outputs ++ inputs.
+(* An application's destination for output symbol t (t itself if none). *)
+Fixpoint output_destination (outputs : list (tsym * tsym)) (t : tsym) : tsym :=
+  match outputs with
+  | [] => t
+  | (source, destination) :: rest => if Nat.eqb source t then destination else output_destination rest t
+  end.
+(* A body's result keys name each output by its role: the role reads as
+   the output's destination, every other symbol (an input, even one
+   spelled as an output) by θ. *)
+Definition role_outputs (roles outputs : list (tsym * tsym)) : list (tsym * tsym) :=
+  map (fun q => (snd q, output_destination outputs (fst q))) roles.
 (* Read every output from one completed body snapshot before installing any
    caller destination. An unchanged formal may be an output too. *)
 Fixpoint read_result_types (d : environment) (Dr : tele) (outputs : list (tsym * tsym))
@@ -2036,7 +2053,7 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (result_smap (result_substitution th outputs) Dr (fc_sources code)) with
+                          match select_provisions d3 (result_smap (result_substitution th (role_outputs (fc_roles code) outputs)) Dr (fc_sources code)) with
                           | Some dr => match result_environment d outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
@@ -4320,11 +4337,14 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* outputs: fresh where the symbol is already in force; one not in
        force is installed as itself, and the frame's return and receiver
        types (read where every symbol they mention is in force) do not
-       mention it *)
+       mention it, nor does the context or a method key's receiver (the
+       result's write would re-ground what mentions it; stricter than the
+       oracle and native, scratch/orch/chainfwd-AUDIT.md section 2) *)
     (forall t, FunOutputs W u t ->
        (nlook t (c_ty C) = None /\ gensof t = t /\
           ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
-                  (match fr_this F with Some r => gens r | None => [] end))) \/
+                  (match fr_this F with Some r => gens r | None => [] end)) /\
+          ~ In t (context_gens C ++ key_receiver_gens C)) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
@@ -4518,13 +4538,15 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     (Family W u -> FamilyBindings W binds0) ->
     Fresh W h ->
     (* a result item, keyed as F declares it (receiver and θ in F's terms,
-       note 28), is read where the body bound it: a method under the
-       body's runtime key for its receiver read in the body *)
+       note 28, each output by its role gen t, not renamed back to t: a
+       raw t is the input t), is read where the body bound it: a method
+       under the body's runtime key for its receiver read in the body.
+       The application reads each role as its destination (fc_roles). *)
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
-      (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds0
-      (map (fun k => (output_renaming outs gen (rkey_of Cr k),
-                      rkey_of Cb (at_site Cb (output_renaming outs gen k)))) ks)) ->
+      (map ITy outs ++ map (rkey_of Cr) ks) binds0
+      (map (fun k => (rkey_of Cr k, rkey_of Cb (at_site Cb (output_renaming outs gen k)))) ks)
+      (map (fun t => (t, gen t)) outs)) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
@@ -4771,12 +4793,17 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
     (* each item is installed and returned under its run-time key, the
        instantiation it is made at (rkey_of), as a linked body's are *)
     funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) []
-      (map (rkey_of outputs) keys) bindings []) /\
+      (map (rkey_of outputs) keys) bindings [] []) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
       HandlesRead W outputs key) keys bindings /\
-    MethodsDistinct W keys.
+    MethodsDistinct W keys /\
+    (* an abstract functor (the oracle's platform_entry: KyFun with no
+       body), whose items are distinct (lib/wasm.moss: each its own
+       declaration) *)
+    (forall d ps a r b, w_decl W source = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None) /\
+    NoDup (map provision_id keys).
 
 (* main's context reads each machine type a platform functor fixes as
    itself (the oracle's check_platform_entry_view: "platform functor has an

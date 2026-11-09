@@ -94,21 +94,6 @@ Definition ChainForwardCopyKeys : Prop :=
        app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m ->
        Forall2 (PA.SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf)).
 
-(* PREMISE (platform world, T16): a platform family is an abstract
-   functor (lib/wasm.moss's Heap, Mutable, Arrays and Memories have no
-   body; the oracle builds platform families only for these, Elab.v
-   platform_fun). *)
-Definition PlatformAbstract : Prop :=
-  forall u code, Platform.Family W Prog u code ->
-  forall dl ps a r b, A.w_decl W u = Some dl -> A.functor_parts (A.d_ast dl) = Some (ps, a, r, b) -> b = None.
-
-(* PREMISE (platform world, T16): a platform family's items are distinct
-   (each is its own declaration in lib/wasm.moss), as MethodsDistinct
-   says of their methods. *)
-Definition PlatformKeysDistinct : Prop :=
-  forall u code Ch0 needs outputs keys bindings, PA.FamilyData W Prog u code Ch0 needs outputs keys bindings ->
-  NoDup (map A.provision_id keys).
-
 (* PlatformApply's FamilyKeysTyped at an application (AppPremises)
    instead of a family application: an extra key of the caller's table
    (one F's own inputs lack) that a path names is a type symbol, since a
@@ -132,21 +117,20 @@ Proof. intros F C pa u fx Cu ns sm th gensof C' ks newgens outs Ts _ q pa' x _ L
   change x with (fst (x, v)). apply in_map. exact L.
 Qed.
 
-Theorem chain_forward_keys : PlatformAbstract -> PlatformKeysDistinct -> AppKeysTyped ->
+Theorem chain_forward_keys : AppKeysTyped ->
   ChainForwardCopyKeys -> PA.ChainForwardKeys W Prog argv read state_ok.
 Proof.
-  intros PAbs PKD AKT Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
+  intros AKT Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
     code sms gfx Look Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD news En NewM r m g0 L.
   destruct sms as [|s0 sms'].
   2: { exact (Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
          code (s0 :: sms') gfx Look ltac:(discriminate) Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD
          news En NewM r m g0 L). }
   pose proof (chain_nil _ _ _ _ _ _ Chn eq_refl) as <-.
-  pose proof FD as (FC0 & NoH & PRf & FB & Binds & MD).
+  pose proof FD as (FC0 & NoH & PRf & FB & Binds & MD & Abst & KD).
   pose proof AP as (_ & _ & FC & Inp & Th & _ & Sat & _ & _ & _ & _ & _ & PR).
   destruct (S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].
   pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem _]]] & Fmd).
-  assert (Fam : Platform.Family W Prog u code) by (exists Cu, ns, outputs, keys, bindings; exact FD).
   assert (KeysM : forall key, In key keys -> exists r m a, key = IMth r m a /\ A.kind_sym W m = Some A.DKMeth).
   { intros key Ik. destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
     destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).
@@ -159,8 +143,8 @@ Proof.
     - reflexivity.
     - split; [exact Th|]. split.
       { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }
-      split; [exact Merge|]. split; [exact (PAbs u code Fam)|exact PR].
-    - right. split; [exact (PKD u code Cu ns outputs keys bindings FD)|exact MD].
+      split; [exact Merge|]. split; [exact Abst|exact PR].
+    - right. split; [exact KD|exact MD].
     - exact FC0.
     - exact NoH.
     - exact PRf.

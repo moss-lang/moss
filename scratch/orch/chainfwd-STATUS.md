@@ -1,6 +1,6 @@
 # Status: ChainForwardKeys ("chainfwd")
 
-Branch ob-chainfwd, from safety at 7b39518, with safety 67343d6 merged. check.sh passes.
+Branch ob-chainfwd. safety cbe023b is merged (231bb4e), and check.sh passes.
 
 ## Step 1 (done): copy-chain facts
 
@@ -106,6 +106,33 @@ Audit conjuncts, like MethodsDistinct. AppKeysTyped and FamilyKeysTyped
 share one argument (formation: no path names a generation) and could be
 discharged together.
 
+## Audit changes (scratch/orch/chainfwd-AUDIT.md)
+
+1. **cf21df4.** `Platform.Family` adds two conjuncts: the functor has
+   no body, and `NoDup (map provision_id keys)`.
+   - `PlatformAbstract` and `PlatformKeysDistinct` are discharged.
+     `chain_forward_keys` now takes only `AppKeysTyped` and
+     `ChainForwardCopyKeys`.
+   - This matches the oracle's `platform_entry`, which handles `KyFun`
+     with body `None`. lib/wasm.moss's families have distinct items.
+2. **642490e.** BApplyAbstract and AppPremises: an output not in force
+   must not be in `context_gens C ++ key_receiver_gens C`.
+   - `PublicLinkResults.kept_outputs_unmentioned` proves the former
+     premise, and `safety_obligations` no longer lists it.
+   - **Rejects lambda-declared-output.moss and
+     kept-output-family-method.moss, which both implementations run
+     correctly.**
+   - An oracle variant with the same check (scratch/chainfwd/variant)
+     differs from the oracle on exactly those 2 of 378 corpus files
+     (scratch/orch/chainfwd-cmp.out).
+   - Alternative: the parametricity proof (results2-AUDIT.md section 2).
+
+## Remaining premises from this work
+
+- `ChainForwardCopyKeys`: false as stated; waiting on the roles design.
+- `AppKeysTyped`: family4 is handling it, together with
+  `FamilyKeysTyped`.
+
 ## Time
 
-About 3.5 hours.
+About 4.5 hours.

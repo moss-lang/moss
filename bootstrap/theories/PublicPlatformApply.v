@@ -225,12 +225,14 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
   (forall t, ~ A.FunOutputs W u t) /\
   A.ProvideResult W u inputs (fun t => TAbs t) outputs keys /\
   A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty inputs)) (map fst (A.c_ty inputs)) []
-    (map (A.rkey_of outputs) keys) bindings []) /\
+    (map (A.rkey_of outputs) keys) bindings [] []) /\
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
     Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key /\
     Platform.HandlesRead W outputs key) keys bindings /\
-  Platform.MethodsDistinct W keys.
+  Platform.MethodsDistinct W keys /\
+  (forall dl ps a r b, A.w_decl W u = Some dl -> A.functor_parts (A.d_ast dl) = Some (ps, a, r, b) -> b = None) /\
+  NoDup (map A.provision_id keys).
 
 Lemma family_data : forall u code, Platform.Family W Prog u code ->
   exists inputs needs outputs keys bindings, FamilyData u code inputs needs outputs keys bindings.
@@ -412,7 +414,7 @@ Qed.
 
 (* The family's code reads a type of its inputs as the caller's θ does. *)
 Lemma app_env_ground : forall d code th e (Ch0 Cu : A.cx) (f : nat -> ty) Dr bs,
-  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) [] Dr bs []) ->
+  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) [] Dr bs [] []) ->
   th = map (fun q => (fst q, f (fst q))) (A.c_ty Cu) -> incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground (app_env d code th e) t = ground d (app_subst th t).
 Proof.
@@ -536,7 +538,7 @@ Proof.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   rewrite S.apply_functor_eq, Look. change (view_functor (program_of Prog argv read) code) with (A.funbody_of Prog code).
-  rewrite FB. cbn [fc_bindings fc_outputs fc_sources].
+  rewrite FB. cbn [fc_bindings fc_outputs fc_sources fc_roles].
   pose proof Th as Th'. subst th.
   destruct (S.static_realizes_le W Prog argv read state_ok rr rr C d H u Cu ns sm _ (le_n _) Real
     (S.functx_static W u Cu ns FC) Sat (S.apply_theta W C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
@@ -567,8 +569,8 @@ Proof.
   destruct (select_ok (installs de bindings) sm') as [dr Sdr].
   { intros q Iq. unfold sm' in Iq. apply in_map_iff in Iq as [s [<- Is]]. cbn [snd].
     destruct (Inst s Is) as [op Lp]. rewrite installs_lookup, Lp. discriminate. }
-  replace (result_smap (result_substitution th (map (fun t : nat => (t, gensof t)) [])) Dr []) with sm'
-    by (unfold result_smap, inst_smap, sm'; cbn [map result_substitution app]; rewrite Filt, map_map; reflexivity).
+  replace (result_smap (result_substitution th (role_outputs [] (map (fun t : nat => (t, gensof t)) []))) Dr []) with sm'
+    by (unfold result_smap, inst_smap, sm'; cbn [role_outputs map result_substitution app]; rewrite Filt, map_map; reflexivity).
   rewrite Sdr. cbn [map result_environment read_result_types fresh_result_types].
   left. set (d' := append_environment (EnvironmentWithAliases [] [] (provision_values dr)) d).
   exists d', g, st, H. split; [apply S.extends_refl|]. split; [apply S.meanings_grow_refl; reflexivity|].
@@ -746,7 +748,7 @@ Proof.
     h0 gf0 Chn Ch0 needs outputs keys bindings FD) as [NoOut (news & Enews & NewM & A1)].
   split; [exact NoOut|]. exists news. split; [exact Enews|]. split; [exact NewM|].
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR).
-  pose proof FD as (_ & _ & PRf & _ & Binds & MD).
+  pose proof FD as (_ & _ & PRf & _ & Binds & MD & _).
   split; [exact A1|].
   apply (PublicChainAgree.chain_cover b W Wo u h0 (chain_leaves _ _ _ _ _ _ Chn) C _ C' ks PR Ch0 outputs keys PRf MD).
   - intros key Ik. destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op [_ [MP _]]]]].
@@ -928,7 +930,7 @@ Proof.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   rewrite S.apply_functor_eq, Look. change (view_functor (program_of Prog argv read) code) with (A.funbody_of Prog code).
-  rewrite FB. cbn [fc_bindings fc_outputs fc_sources].
+  rewrite FB. cbn [fc_bindings fc_outputs fc_sources fc_roles].
   subst th. set (th := map (fun q => (fst q, A.canon Cf (app_subst (A.c_ty Cf) (TAbs (fst q))))) (A.c_ty Cu)) in *.
   set (f := fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))).
   assert (Thf : th = map (fun q => (fst q, f (fst q))) (A.c_ty Cu)) by reflexivity.
@@ -984,8 +986,8 @@ Proof.
   destruct (select_ok (installs de bindings) sm') as [dr Sdr].
   { intros q Iq. unfold sm' in Iq. apply in_map_iff in Iq as [s [<- Is]]. cbn [snd].
     destruct (Inst s Is) as [op Lp]. rewrite installs_lookup, Lp. discriminate. }
-  replace (result_smap (result_substitution th []) Dr []) with sm'
-    by (unfold result_smap, inst_smap, sm'; cbn [map result_substitution app]; rewrite Filt, map_map; reflexivity).
+  replace (result_smap (result_substitution th (role_outputs [] [])) Dr []) with sm'
+    by (unfold result_smap, inst_smap, sm'; cbn [role_outputs map result_substitution app]; rewrite Filt, map_map; reflexivity).
   rewrite Sdr. cbn [map result_environment read_result_types fresh_result_types].
   assert (SmKeys : forall k0 s, In (k0, s) sm' -> exists key r0 m0 a0, In key keys /\ s = A.rkey_of outputs key /\
      key = IMth r0 m0 a0 /\ k0 = app_subst_item th s).

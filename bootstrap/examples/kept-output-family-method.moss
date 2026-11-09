@@ -8,6 +8,9 @@
 # both print 0 (exit 0). So the re-grounded family method behaves
 # correctly. Audit (with results2's shadowing) accepts it. Re-grounding
 # changes only the types of this parametric family provision.
+# Audit now rejects this program, though both implementations run it
+# correctly: BApplyAbstract asks that a kept output not in force be
+# unmentioned by the context (scratch/orch/chainfwd-AUDIT.md section 2).
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

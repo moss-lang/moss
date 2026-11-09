@@ -608,7 +608,7 @@ the local store. *C* and *F* are the static context and frame.
   accepts the program (correctly), so Audit is stricter than native here.
   Details: scratch/orch/results4-AUDIT.md.
 - **Counterexample: a result key spelled through an output's input
-  meaning (open; fix decided).** F's merges can make an input X read as an input T
+  meaning (fixed in Audit: separate output roles).** F's merges can make an input X read as an input T
   that is also an output of F (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
   merge representative). F's result key `X.m`, read at F's inputs, is then
   `T.m` with the input T. `LinkBody`'s code renames the output roles back
@@ -625,6 +625,27 @@ the local store. *C* and *F* are the static context and frame.
   application (results4-AUDIT.md, change 3). Until then Audit's
   application is wrong for this shape and `ChainKeysOk` is false for it.
   Oracle bug: E33. Details: scratch/orch/results4-AUDIT.md.
+  **Fixed (roles):** `functor_code` gains `fc_roles` (output symbol t,
+  its role gen t; `Platform.Family`: none). `LinkBody` files the result
+  keys `rkey_of Cr k` with the roles kept (no `output_renaming`; the body
+  side `rkey_of Cb (at_site Cb (output_renaming outs gen k))` is
+  unchanged), and `apply_functor` selects
+  `result_smap (result_substitution θ (role_outputs (fc_roles code) outputs))`:
+  each role reads as its output's destination, a raw symbol (an input,
+  even one spelled as an output) by θ. So `X.m` (spelled `T.m`, input T)
+  installs at the caller's old T and the output's `T.m` at the new T
+  (PublicSavedTypeExample `output_role_key_goes_to_destination`,
+  `merged_input_key_stays_input`). Audit now runs both
+  output-merge-key.moss and functor_input_output_generations.moss as
+  native does. Restated with it: `LinkData`, `LinkResultsOk`,
+  `ChainResultsOk`, `ChainCoreOk`, `ChainNewOk`, `ChainKeysOk` (no
+  `output_renaming`), `ChainRealizeOk`, `FamilyLinkResultsOk`,
+  `FamilyLinkNewOk`; no proof needed more than the new terms. The oracle
+  is unchanged: its runtime is ExecutionModel's (XBApply, Elab.v
+  link_body), whose LinkBody/LinkBodySound/LinkOutputFresh proofs do not
+  mention Audit's functor code, so nothing oracle-relating broke; the
+  oracle still gets this shape stuck (E06/E33, an oracle-conformance
+  gap). Details: scratch/orch/roles-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
   `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
   inputs (types only H's result mentions). An application of F reads its
@@ -704,6 +725,40 @@ the local store. *C* and *F* are the static context and frame.
   `platform_fun`, `plat`), and Heap, Mutable, Arrays and Memories each
   have distinct methods, one detached at most (`.boxed`, `.arrayed`).
   Details in scratch/orch/chainagree-AUDIT.md.
+- **A platform family is abstract, with distinct items (`Platform.Family`).**
+  The empty-chain case of `ChainForwardKeys` reads F's result at θ in
+  the caller's context against the family's own
+  (`PublicFamilyAgree.items_agree_gen`). That needs:
+  - the family to be an abstract functor, so every symbol its result
+    mentions is one of its inputs (implicit inputs);
+  - its result's keys to be distinct, since AppPremises, unlike a
+    family application, does not check `NoDup` of the caller's keys.
+
+  `Platform.Family` now asks both: a declaration with no body, and
+  `NoDup (map provision_id keys)`. They constrain only the platform
+  world. The oracle builds a platform family only for a `KyFun` whose
+  `functor_parts` body is `None` in the platform module (Elab.v
+  `platform_entry`). lib/wasm.moss's Heap, Mutable, Arrays and Memories
+  declare distinct items (Memories' 27 `Addr.*` methods have no
+  duplicate). Details in scratch/orch/chainfwd-AUDIT.md.
+- **Audit now rejects two correct programs: a kept output must be unmentioned (`BApplyAbstract`).**
+  The premise `KeptOutputsUnmentioned` was false for
+  `examples/lambda-declared-output.moss` and
+  `examples/kept-output-family-method.moss`, which Audit accepted. That
+  made `safety_obligations` vacuous. `bind F;` keeps an output T that is
+  not in force, while the context mentions T as an unbound declared
+  symbol in family method keys and signatures.
+  - BApplyAbstract now asks that such an output not be in `context_gens
+    C ++ key_receiver_gens C`, and `kept_outputs_unmentioned` proves the
+    premise from it.
+  - **This rejects both programs, which the oracle and native accept and
+    run correctly.** It is an incompleteness, chosen by the coordinator.
+  - An oracle variant with the same check differs from the oracle on
+    exactly these two of 378 corpus files.
+  - Alternative: the parametricity proof (results2-AUDIT.md section 2,
+    days), which would keep them.
+
+  Details in scratch/orch/chainfwd-AUDIT.md section 2.
 
 ## Body-safety slice (checked, conditional)
 

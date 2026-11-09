@@ -95,6 +95,20 @@ Example output_role_is_separate_from_input_role :
   result_substitution [(4,TAbs 5)] [(4,6)] = [(4,TAbs 6);(4,TAbs 5)].
 Proof. reflexivity. Qed.
 
+(* A linked body's result keys keep each output's role (fc_roles), so an
+   output symbol 4 that is also an input (another input merged into it,
+   tests/regressions/functor_input_output_generations.moss) is two keys:
+   role 9 (the output) goes to the destination 6, raw 4 (the input) to its
+   meaning θ(4) = 5 in the caller. *)
+Example output_role_key_goes_to_destination :
+  app_subst_item (result_substitution [(4,TAbs 5)] (role_outputs [(4,9)] [(4,6)])) (IMth (TAbs 9) 1 []) =
+  IMth (TAbs 6) 1 [].
+Proof. reflexivity. Qed.
+Example merged_input_key_stays_input :
+  app_subst_item (result_substitution [(4,TAbs 5)] (role_outputs [(4,9)] [(4,6)])) (IMth (TAbs 4) 1 []) =
+  IMth (TAbs 5) 1 [].
+Proof. reflexivity. Qed.
+
 (* Previous behavior, isolated from the repaired semantics. *)
 Definition legacy_bind_type (d : environment) symbol meaning :=
   Environment ((symbol, ground d meaning)::type_meanings d) (provision_values d).

@@ -3140,7 +3140,8 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
   ((forall t, A.FunOutputs W u t ->
          (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
-                    (match A.fr_this F with Some r => A.gens r | None => [] end))) \/
+                    (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
+            ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
@@ -3173,7 +3174,8 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
       (forall t, A.FunOutputs W u t ->
          (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
-                    (match A.fr_this F with Some r => A.gens r | None => [] end))) \/
+                    (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
+            ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
@@ -3281,7 +3283,7 @@ Qed.
 (* A linked body's result sources: each result key as F declares it, read
    from the body's runtime key for it (LinkBody). *)
 Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (Cr : A.cx) (ks : list item) :=
-  map (fun k => (A.output_renaming outs gen (A.rkey_of Cr k), A.rkey_of Cb (A.at_site Cb (A.output_renaming outs gen k)))) ks.
+  map (fun k => (A.rkey_of Cr k, A.rkey_of Cb (A.at_site Cb (A.output_renaming outs gen k)))) ks.
 
 (* Each entry of an application's result selection: a non-type result item,
    read at θ' for the caller, from its source key in the body. *)
@@ -3296,15 +3298,15 @@ Qed.
 (* A linked body's result key k is read from the body key of the first
    result key spelled as k is (the body binds it at its own receiver). *)
 Lemma link_source_of : forall Cb outs gen Cr ks k, In k ks ->
-  exists k', In k' ks /\ A.output_renaming outs gen (A.rkey_of Cr k') = A.output_renaming outs gen (A.rkey_of Cr k) /\
-    source_key (link_sources Cb outs gen Cr ks) (A.output_renaming outs gen (A.rkey_of Cr k)) =
+  exists k', In k' ks /\ A.rkey_of Cr k' = A.rkey_of Cr k /\
+    source_key (link_sources Cb outs gen Cr ks) (A.rkey_of Cr k) =
     A.rkey_of Cb (A.at_site Cb (A.output_renaming outs gen k')).
 Proof.
   intros Cb outs gen Cr ks k. induction ks as [|k0 rest IH]; intros I; [contradiction|]. cbn [link_sources map source_key].
-  destruct (item_eqb (A.output_renaming outs gen (A.rkey_of Cr k)) (A.output_renaming outs gen (A.rkey_of Cr k0))) eqn:E.
+  destruct (item_eqb (A.rkey_of Cr k) (A.rkey_of Cr k0)) eqn:E.
   - apply item_eqb_spec in E. exists k0. split; [left; reflexivity|]. split; [symmetry; exact E|reflexivity].
   - destruct I as [E0|I].
-    + exfalso. subst k0. assert (T : item_eqb (A.output_renaming outs gen (A.rkey_of Cr k)) (A.output_renaming outs gen (A.rkey_of Cr k)) = true)
+    + exfalso. subst k0. assert (T : item_eqb (A.rkey_of Cr k) (A.rkey_of Cr k) = true)
         by (apply item_eqb_spec; reflexivity). congruence.
     + destruct (IH I) as [k' [Ik [Ek Sk]]]. exists k'. split; [right; exact Ik|]. split; [exact Ek|exact Sk].
 Qed.
@@ -3326,8 +3328,8 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
-      (map ITy outs ++ map (fun k => A.output_renaming outs gen (A.rkey_of Cr k)) ks)%list binds0
-      (link_sources Cb outs gen Cr ks)).
+      (map ITy outs ++ map (A.rkey_of Cr) ks)%list binds0
+      (link_sources Cb outs gen Cr ks) (map (fun t => (t, gen t)) outs)).
 
 Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
@@ -3963,7 +3965,7 @@ Lemma apply_functor_eq : forall j d u th outs sm st,
               | Some d2 =>
                   match I.eval_bindings j P (application_environment P d h th (append_environment d2 dc)) [] st (fc_bindings code) with
                   | inl (d3, _, st3) =>
-                      match select_provisions d3 (result_smap (result_substitution th outs) (fc_outputs code) (fc_sources code)) with
+                      match select_provisions d3 (result_smap (result_substitution th (role_outputs (fc_roles code) outs)) (fc_outputs code) (fc_sources code)) with
                       | Some dr => match result_environment d outs d3 (fc_outputs code) dr with
                           | Some result => inl (result, st3)
                           | None => inr (I.Evaluation (Stuck I.e_compose) [] st3) end
@@ -4711,7 +4713,7 @@ End Cap.
 
 (* HYPOTHESIS (T15). A linked body that completes provides F's result at
    the application: its result provisions are selected under the caller's
-   keys (through θ and the output renaming), the output generations are
+   keys (through θ and the output roles), the output generations are
    fresh in the caller, and the caller's context after the application is
    realized. *)
 Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
@@ -4727,8 +4729,8 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (link_sources Cb outs' gen Cr ks')) = Some dr /\
-    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
+    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (link_sources Cb outs' gen Cr ks')) = Some dr /\
+    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (A.rkey_of Cr) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     MeaningsGrow (map gensof outs) d (append_environment result d).
 Hypothesis link_results : LinkResultsOk.
@@ -4769,7 +4771,7 @@ Proof.
   { assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
         (match A.fr_this F with Some r => A.gens r | None => [] end))).
     { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
-      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E Nf]]|[_ [_ In']]]; [rewrite E; exact Nf|].
+      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E [Nf _]]]|[_ [_ In']]]; [rewrite E; exact Nf|].
       destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr. destruct (Fr _ In') as [_ Out]. intros I. apply Out.
       apply in_or_app; right; apply in_or_app; right. exact I. }
     split; intros t E g0 Ig Ig'; apply (Av g0 Ig); rewrite E; apply in_or_app; [left|right]; exact Ig'. }
@@ -4831,7 +4833,7 @@ Proof.
   destruct (items_chain (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply bindsof_fold in BO. subst binds0.
   rewrite apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
-  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
+  cbn [fc_bindings fc_outputs fc_sources fc_roles]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
   (* the body's binds, run as their chain does *)
   destruct (chain_run (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
     as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];

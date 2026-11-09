@@ -7,6 +7,9 @@
 # was Stuck (fresh_result_types, b4f8279), though Audit accepts the program.
 # The oracle and native both run it (exit 0). Audit now shadows
 # (results2-AUDIT.md).
+# Audit now rejects this program, though both implementations run it
+# correctly: BApplyAbstract asks that a kept output not in force be
+# unmentioned by the context (scratch/orch/chainfwd-AUDIT.md section 2).
 type A;
 type T;
 tag Concrete;

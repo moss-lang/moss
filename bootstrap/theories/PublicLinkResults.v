@@ -71,7 +71,9 @@ Module S := CA.S.
 Section Run.
 Variable W : A.world.
 
-(* PREMISE (T16; scratch/orch/results2-AUDIT.md section 2). An output that
+(* (T16; proved below, kept_outputs_unmentioned, from BApplyAbstract's
+   clause added by chainfwd-AUDIT.md section 2; formerly a premise,
+   scratch/orch/results2-AUDIT.md section 2). An output that
    `bind F;` installs as itself (not in force here) is not mentioned by the
    context, nor by a method key's receiver. Otherwise the result's write
    re-grounds what mentions it. It can be mentioned only as an unbound
@@ -84,6 +86,15 @@ Variable W : A.world.
 Definition KeptOutputsUnmentioned : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs -> PublicFormation.FormedCx W C ->
   forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> ~ In t (S.capture_gens C).
+
+(* KeptOutputsUnmentioned holds: BApplyAbstract asks it of an output not
+   in force (chainfwd-AUDIT.md section 2). *)
+Lemma kept_outputs_unmentioned : KeptOutputsUnmentioned.
+Proof.
+  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft None'.
+  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & Outs & _).
+  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[N _]]; [exact Nm|congruence].
+Qed.
 
 (* Each output destination is out of scope at the application: no key of
    the caller's table, no generation its context or frame types mention. *)
@@ -98,7 +109,7 @@ Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs
     AP Fc Ku t It. pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _).
   pose proof (proj1 (OutsI t) It) as Ft.
-  destruct (Outs t Ft) as [[None' [E Fr]]|[_ [Fresh Ig]]].
+  destruct (Outs t Ft) as [[None' [E [Fr _]]]|[_ [Fresh Ig]]].
   - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
     split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
     split; [exact (Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc t Ft None')|].
@@ -368,7 +379,7 @@ Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
+    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') (map (fun t => (t, gensof t)) outs))) (map ITy outs' ++ map (A.rkey_of Cr) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
     (forall t, In t outs -> output_meaning d3 t <> None) /\
     AliasOk C' (append_environment (result_of d3 outs gensof dr) d) /\
     S.EnvOk W Prog argv read state_ok rr C' (append_environment (result_of d3 outs gensof dr) d) H3 /\
@@ -389,7 +400,7 @@ Proof.
   { pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & _).
     intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ Chain t). }
   pose proof (result_environment_ok W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs'
-    (map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks') OutsI' Read) as Re.
+    (map (A.rkey_of Cr) ks') OutsI' Read) as Re.
   pose proof (result_grows_by_destinations d d3 dr outs gensof) as Gr.
   exists dr, (result_of d3 outs gensof dr). split; [exact Sdr|]. split; [exact Re|]. split; [|exact Gr].
   pose proof Pre3 as [_ [_ [_ [St3 _]]]].

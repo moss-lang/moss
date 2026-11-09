@@ -454,7 +454,7 @@ Proof.
   { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
     pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
     apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) []
-      (map (A.rkey_of outputs) keys) bindings []). split; [exact (nlook_in _ _ _ _ FB)|].
+      (map (A.rkey_of outputs) keys) bindings [] []). split; [exact (nlook_in _ _ _ _ FB)|].
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
   assert (Held : HeldAt m' (rf :: A.sg_params gf)
@@ -638,16 +638,12 @@ Theorem safety_obligations : forall prelude,
         caller's (static), and the new provisions of the caller's result
         are realized *)
      CN.ChainKeysOk W /\ CN.ChainRealizeOk W Prog argv read so /\
-     (* a kept output is unmentioned by the context: open, for the user to
-        decide (scratch/orch/results2-AUDIT.md section 2) *)
-     LRes.KeptOutputsUnmentioned W /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
         ChainResultAgrees from its forward half (chain_result_agrees),
         ChainForwardKeys from PublicChainFwd.chain_forward_keys: the empty
         chain is proved; a chain with a copy is ChainForwardCopyKeys,
         false as stated (examples/linked-copy-bracket.moss) *)
      CF.ChainForwardCopyKeys W Prog argv read so /\
-     CF.PlatformAbstract W Prog /\ CF.PlatformKeysDistinct W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
      CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
@@ -662,11 +658,14 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CK [CRz [KU [RAc [PAb [PKD [FLN [FCA FCo]]]]]]]].
+    as [CK [CRz [RAc [FLN [FCA FCo]]]]].
   pose proof (CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.
   pose proof (captured_in_force_ok W) as CIF.
-  pose proof (CF.chain_forward_keys W Prog _ _ _ PAb PKD AKT RAc) as RA.
+  (* a kept output is unmentioned by the context: BApplyAbstract asks it
+     (scratch/orch/chainfwd-AUDIT.md section 2) *)
+  pose proof (LRes.kept_outputs_unmentioned W) as KU.
+  pose proof (CF.chain_forward_keys W Prog _ _ _ AKT RAc) as RA.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.

@@ -287,8 +287,8 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_smap (result_substitution th [])
-      (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr' k0)) ks')%list
+    select_provisions d3 (result_smap (result_substitution th (role_outputs (map (fun t => (t, gen t)) outs') []))
+      (map ITy outs' ++ map (A.rkey_of Cr') ks')%list
       (BS.link_sources Cb outs' gen Cr' ks')) = Some dr /\
     FamilyNewOk rr Cr ks d dr H3.
 
@@ -412,7 +412,7 @@ Proof.
     captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply BS.bindsof_fold in BO. subst binds0.
   rewrite BS.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
-  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
+  cbn [fc_bindings fc_outputs fc_sources fc_roles]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
   destruct (BS.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
     as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
     [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
