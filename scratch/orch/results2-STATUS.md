@@ -1,56 +1,79 @@
-# results2: MeaningsScoped / ChainCoreOk / FamilyLinkResultsOk — STATUS (in progress)
+# results2: MeaningsScoped / ChainCoreOk / FamilyLinkResultsOk — STATUS
 
-Branch ob-results2 (safety 68900a4 merged).
+Branch ob-results2. safety is merged. check.sh passed at 712aecd. Time:
+about 3 hours.
 
-## Formation hypothesis (candidate statement, for family2)
+## For family2: no formation hypothesis from results2
 
-Only needed if Audit keeps `fresh_result_types` (option B below):
+`DeclaredScopedOk` (and `MeaningsScoped` in `Pre`) are **no longer
+needed**. The coordinator chose option (A): Audit's `result_environment`
+now shadows an occupied destination instead of being Stuck (commit
+712aecd, scratch/orch/results2-AUDIT.md). Nothing in `Pre` or `FormedCx`
+needs to bound the environment's meanings any more.
 
-    Definition table_gens (C : A.cx) : list nat :=
-      flat_map (fun q => A.gens (snd q) ++ A.gens (A.canon C (snd q))) (A.c_ty C).
-    Definition DeclaredScoped (C : A.cx) : Prop :=
-      forall x, In x (A.context_gens C) ->
-        In x (map fst (A.c_ty C)) \/ (A.Fresh W x /\ In x (table_gens C)) \/
-        A.kind_sym W x = Some A.DKType.
-    Definition DeclaredScopedOk : Prop :=
-      forall C, PublicFormation.FormedCx W C -> DeclaredScoped C.
+## Done
 
-That is, a generation a formed context mentions is a table key, a fresh
-generation that the table mentions, or a declared type symbol (option (b)).
-The middle disjunct is what a lambda needs to capture fresh generations
-without a frame.
+- **Audit change (712aecd):** dropped b4f8279's `fresh_result_types`
+  check in `result_environment`.
+  - Counterexamples: bootstrap/examples/const-kept-output.moss and
+    lambda-declared-output.moss. Audit accepted both and its semantics was
+    Stuck. The oracle runs both, and native runs the lambda one.
+  - PublicGenerationFacts and PublicGenerationCallExample are restated to
+    check shadowing, with generation preservation kept under the
+    statically given freshness.
+  - Recorded in SAFETY-SITES (Observations, first entry; stuck-site table)
+    and results2-AUDIT.md.
+- **PublicLinkResults:**
+  - `MeaningsScoped` is removed.
+  - `dest_scope`: destinations are out of the caller's table keys,
+    `context_gens` and frame types.
+  - `result_environment_ok` needs no scope premise.
+  - `pre_after_result` builds Pre after the result from the caller's Pre.
+  - `chain_results_scoped : ChainCoreOk -> (forall C, FormedCx W C ->
+    DeclaredScoped W C) -> CA.ChainResultsOk ...`
+  - `DeclaredScoped C := forall x, In x (context_gens C) -> Fresh W x \/
+    In x (map fst (c_ty C))`. It is used only by `dest_scope`, for an
+    output installed as itself.
 
-## Blocker found: Audit's result freshness check (needs a lead decision)
+## Open issue (needs a decision): kept outputs mentioned by the context
 
-`result_environment` is Stuck when an output destination already has a
-meaning in the caller's environment (`fresh_result_types`, b4f8279).
-ExecutionModel/the oracle shadows instead (`dr ++ d`). Two kinds of
-accepted programs reach the check with an occupied destination, so no
-invariant in `Pre` can help:
+`dest_scope` needs a kept output T (installed as itself) to be out of
+`context_gens C`. Otherwise the result's write `T |-> m` re-grounds types
+the context mentions, such as a provision key or signature over T. Its
+premise `DeclaredScoped` is false after family-unbound-need.moss, and
+lambda-declared-output.moss is a concrete accepted program where T is
+mentioned (via `T.foo`) and kept. Options:
+1. An Audit kept-output clause `~ In t (A.context_gens C)` in
+   `BApplyAbstract` (the old MadeFor clause, which matched the oracle on
+   the corpus). It would reject lambda-declared-output.moss, which both
+   implementations accept.
+2. Prove that re-grounding an unbound declared symbol is harmless.
+   Before the write, `ground d (TAbs T) = TAbs T`. A value can have a type
+   mentioning an abstract T only through provisions whose `CallableOk`
+   is stated at grounded types, so this is not obvious.
+Until then, `ChainResultsOk` from `ChainCoreOk` carries this premise.
 
-1. Constants. `ExConst` elaborates the initializer in `Cx [] [] [] []` with
-   `fr_fresh F0 = []`, so every output of a `bind F;` in it is installed as
-   itself (destination T). The initializer is inlined and evaluated in the
-   caller's environment. If the caller has made T, the run is Stuck.
-   Example: scratch/orch/results2/const-bind.moss (oracle: accepted, runs,
-   exit 0). The slice's const case also needs Pre at `Cx []` with the
-   caller's d, so any frame-free MeaningsScoped fails there.
-2. Lambdas, under option (b). `capture_meanings` captures every x in
-   `context_gens C`, including a declared non-key T (`T |-> TAbs T`). A
-   kept output T in the lambda body is then Stuck, unless the kept-output
-   clause also excludes `fr_fresh F`. The lambda rule puts
-   `context_gens C`, declared symbols included, into `fr_fresh Fl`, so
-   `fr_fresh` does not hold only fresh symbols. That makes
-   MeaningsScoped frame-dependent.
+## Not done
 
-Options sent to the coordinator:
-- (A) Drop the freshness check (mirrors the oracle). MeaningsScoped and
-  DeclaredScopedOk become unnecessary.
-- (B) Keep it. This needs a const semantics change, a frame-dependent
-  MeaningsScoped, and the hypothesis above.
+- **ChainCoreOk** (PublicLinkResults, Section Assemble) is not started.
+  The predecessor's plan (results-STATUS.md, "Step 2") still applies
+  unchanged, minus anything about MeaningsScoped. Pieces:
+  - selection from body keys: `link_source_of`, `select_ok`,
+    `realized_key` at Cb;
+  - outputs readable: Pre3's AliasOk plus LinkData's OutM;
+  - KeysMatch/AliasOk/EnvOk of C' at `append (result_of d3 outs gensof dr) d`;
+  - for EnvOk, `PublicOutputSubst.provide_result_rel` with
+    s1 = body meanings after `read_rename` and s2 = caller meanings;
+  - the copy chain's CopyOutputs.
 
-## Work in progress
+  Expect several hundred lines.
+- **FamilyLinkResultsOk**: not attempted. It is the outs = [] instance of
+  the same correspondence.
+- safety_obligations is unchanged: ChainResultsOk and FamilyLinkResultsOk
+  are still obligations.
 
-- scratch/orch/results2/ms-frame-free-wip.diff: frame-free MeaningsScoped
-  in Pre, about 90% through PublicBodySlice. It stops at the const case
-  (blocker 1).
+## Files
+
+- scratch/orch/results2/ms-frame-free-wip.diff: the abandoned frame-free
+  MeaningsScoped edit of PublicBodySlice. Obsolete under (A), and kept for
+  reference only.
