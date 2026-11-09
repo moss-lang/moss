@@ -25,8 +25,7 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
-obligations (the functor and family obligations
-`CapturedInForceOk`, and `ChainResultsOk` from
+obligations (the functor and family obligations: `ChainResultsOk` from
 [PublicCopyApply.v](theories/PublicCopyApply.v) (itself proved,
 `PublicChainCore.chain_results_of_new`, from `ChainNewOk`, the
 formal/caller result correspondence for the result's new provisions
@@ -123,6 +122,26 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A functor closure captures types as a lambda does (family4).**
+  `BFunctor` carries a `type_capture`, and `BFunClosure` gives it
+  `lexical_capture C`: the closure keeps the table's readings as aliases
+  and the meanings of `context_gens C ++ key_receiver_gens C`, where it
+  used to keep all of `d`'s meanings and aliases (`capture_environment`).
+  A captured need can be keyed at a declared symbol not in force where G
+  is bound ([functor-captured-unbound.moss](examples/functor-captured-unbound.moss):
+  `bind H = P;` in an argument of a call that demands family F at
+  `A := T`, T unbound; oracle and native accept and run it). G's
+  application reads such an input from the capture, and with all of `d`
+  that was its alias, which need not be its meaning in inlined const code.
+  Now it is its meaning, so the captured readings agree by construction
+  (`cmeaning_capture`). Run-time only; nothing is rejected. The oracle's
+  `xclose` keeps the whole type environment, with one map, so it agrees
+  with itself either way. `CapturedInForceOk` is restated (a `FunCtx`
+  premise; conclusion "in force or in `capture_gens C`") and proved
+  statically (`PublicLinkMerges.captured_mentioned`); it has left
+  `safety_obligations`. This supersedes `captured_in_force_unprovable`,
+  `captured_in_force_of` and `DeclaredInForce` below
+  (scratch/orch/family4-AUDIT.md).
 - **Lambda capture keeps method-key receivers' meanings (family2,
   coordinator-approved option (c)).** `lexical_capture C` now captures
   `context_gens C ++ key_receiver_gens C`. A callee requirement the caller

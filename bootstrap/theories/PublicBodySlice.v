@@ -2498,6 +2498,24 @@ Lemma lookup_map_snd : forall (f : ty -> ty) (l : list (nat * ty)) x,
   lookup_subst x (map (fun q => (fst q, f (snd q))) l) = option_map f (lookup_subst x l).
 Proof. intros f l x. induction l as [|[a t] r IH]; [reflexivity|]. cbn. destruct (Nat.eqb x a); [reflexivity|exact IH]. Qed.
 
+(* A closure over C's lexical capture reads a symbol in force as the
+   table does and one it mentions as its meaning: either way as d reads
+   it canonically. *)
+Lemma cmeaning_capture : forall d C dc x, Absorbs C d ->
+  A.nlook x (A.c_ty C) <> None \/ In x (capture_gens C) ->
+  cmeaning (typed_capture d (A.lexical_capture C) dc) x = ground d (A.canon C (app_subst (A.c_ty C) (TAbs x))).
+Proof.
+  intros d C dc x Abs Ix. unfold cmeaning, output_meaning.
+  replace (type_aliases (typed_capture d (A.lexical_capture C) dc))
+    with (map (fun q => (fst q, ground d (A.canon C (snd q)))) (A.c_ty C)) by (cbn; rewrite map_map; reflexivity).
+  rewrite (lookup_map_snd (fun t => ground d (A.canon C t))). cbn [app_subst].
+  destruct (lookup_subst x (A.c_ty C)) as [tx|] eqn:Lx; [reflexivity|]. cbn [option_map].
+  rewrite typed_capture_meanings.
+  destruct Ix as [Ix|Ix]; [exfalso; apply Ix; rewrite <- lookup_subst_nlook'; exact Lx|].
+  rewrite (lookup_capture d _ x Ix). symmetry. exact (Abs (TAbs x)).
+Qed.
+
+
 (* An environment without aliases reads a canonical table in its meanings. *)
 Lemma alias_none : forall C d, type_aliases d = [] -> Absorbs C d ->
   (forall k v, A.nlook k (A.c_ty C) = Some v -> v = A.canon C (TAbs k)) -> KeysMeant C d -> AliasOk C d.
@@ -3224,21 +3242,25 @@ Qed.
 
 (* BFunClosure *)
 (* HYPOTHESIS (T29). What a closure captures from where it is bound
-   mentions, among G's own inputs, only fixed inputs and types in force
-   there: the provisions in force mention only symbols in force (or
-   generations), and a captured input not in force reads as itself. *)
-Definition CapturedInForceOk : Prop := forall C Cu nsu Cg nsg smc,
+   mentions, among G's own inputs that F does not take, only types in
+   force there or symbols the context mentions (which the closure's
+   `lexical_capture` keeps the meanings of). A captured need can be keyed
+   at a declared symbol not in force (examples/functor-captured-unbound.moss).
+   Proved in PublicLinkMerges (`captured_in_force_ok`). *)
+Definition CapturedInForceOk : Prop := forall C gg Cu nsu Cg nsg smc,
+  A.FunCtx W gg Cg nsg ->
   A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
     (captured nsu nsg) smc ->
   forall k p x, In k (captured nsu nsg) -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
   In x (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
-  In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None.
+  In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
+  A.nlook x (A.c_ty C) <> None \/ In x (capture_gens C).
 Hypothesis captured_in_force : CapturedInForceOk.
 
-Lemma bindings_functor_eq : forall j d g st u h sm smc r,
-  I.eval_bindings (S j) P d g st (BFunctor u h sm smc :: r) =
+Lemma bindings_functor_eq : forall j d g st u h types sm smc r,
+  I.eval_bindings (S j) P d g st (BFunctor u h types sm smc :: r) =
   match select_provisions d smc with
-  | Some dc => I.eval_bindings j P (install_provision (IFun u) (FunctorClosure h [sm] (capture_environment d dc)) d) g st r
+  | Some dc => I.eval_bindings j P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc)) d) g st r
   | None => inr (I.Evaluation (Stuck I.e_compose) g st)
   end.
 Proof. reflexivity. Qed.
@@ -3352,7 +3374,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
-  forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h sm smc).
+  forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h (A.lexical_capture C) sm smc).
 Proof.
   intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
@@ -3382,15 +3404,13 @@ Proof.
   destruct (select_ok d smc) as [dsel Sel].
   { rewrite SmEq. intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn. destruct (Caller k0 Ik) as [pv ->]. discriminate. }
   rewrite Sel. left.
-  set (dc := capture_environment d dsel).
+  set (dc := typed_capture d (A.lexical_capture C) dsel).
   destruct (select_provisions_empty _ _ _ Sel) as [Em Ea].
   assert (Find : forall k0, In k0 caps -> lookup_provision (A.rkey_of Cg k0) dc = lookup_provision (A.rkey_of C (A.at_th C th k0)) d).
   { intros k0 Ik. change (lookup_provision (A.rkey_of Cg k0) dc) with (lookup_provision (A.rkey_of Cg k0) dsel).
     rewrite (select_lookup d smc dsel _ Sel), SmEq.
     rewrite (sm_find_map (A.rkey_of Cg) (fun k' => A.rkey_of C (A.at_th C th k')) caps k0 Ik); [reflexivity|].
     intros k' Ik' E. exact (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (CapsIn k' Ik'))) (ShapeG k0 (proj1 (CapsIn k0 Ik))) E). }
-  assert (CmEq : forall x, cmeaning dc x = cmeaning d x).
-  { intros x. unfold cmeaning, output_meaning. cbn [dc capture_environment type_aliases type_meanings]. rewrite Ea, Em. reflexivity. }
   set (gfx := ground_fixed (type_meanings d) fx).
   assert (FunFx : forall x t t', In (x, t) fx -> In (x, t') fx -> t = t').
   { intros x t t' I I'. destruct (proj1 (Fx x t) I) as [_ E]. destruct (proj1 (Fx x t') I') as [_ E']. congruence. }
@@ -3408,21 +3428,18 @@ Proof.
     apply subst_agree_on. intros x Ix. cbn [app_subst].
     rewrite (lookup_map_snd (app_subst (type_meanings d))).
     rewrite (Lth x (Sc x Ix)). cbn [option_map].
-    assert (Inf : A.nlook x (A.c_ty C) <> None).
-    { destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
-      - apply FixU. apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
-        destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate.
-      - exact (captured_in_force C Cu nsu Cg nsg smc SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix) Ou). }
-    destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|congruence]. clear Inf.
+    destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
+    2: { rewrite (Am2 x (Sc x Ix) Ou). unfold dc.
+         rewrite (cmeaning_capture d C dsel x Abs (captured_in_force C gg Cu nsu Cg nsg smc FCg SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix) Ou)).
+         reflexivity. }
+    assert (Fu : A.Fixed W u x).
+    { apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
+      destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate. }
+    destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
     replace (app_subst (A.c_ty C) (TAbs x)) with tx by (cbn [app_subst]; rewrite (lookup_subst_nlook' x (A.c_ty C)), Lx; reflexivity).
     change (app_subst (type_meanings d) (A.canon C tx)) with (ground d (A.canon C tx)). rewrite (Abs tx).
-    destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
-    - assert (Fu : A.Fixed W u x).
-      { apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
-        destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate. }
-      rewrite (Am1 x Fu (Sc x Ix)). unfold gfx. rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
-      reflexivity.
-    - rewrite (Am2 x (Sc x Ix) Ou), CmEq. exact (alias_cmeaning C d x tx Al Lx). }
+    rewrite (Am1 x Fu (Sc x Ix)). unfold gfx. rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
+    reflexivity. }
   set (d' := install_provision (IFun u) (FunctorClosure h [sm] dc) d).
   exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
@@ -4672,7 +4689,7 @@ Proof.
     + exists [BCopyFunctor u h sm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
-    + exists [BFunctor u h sm smc]. split; [reflexivity|].
+    + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].

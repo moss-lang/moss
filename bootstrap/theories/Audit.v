@@ -1367,7 +1367,7 @@ with binding : Type :=
 | BValue               : vsym -> expr -> binding
 | BFunction            : fsym -> fsym -> type_capture -> smap -> binding
 | BMethod              : ty -> msym -> subst -> fsym -> type_capture -> smap -> binding
-| BFunctor             : usym -> usym -> smap -> smap -> binding
+| BFunctor             : usym -> usym -> type_capture -> smap -> smap -> binding
 | BCopyFunctor         : usym -> usym -> smap -> binding
 | BApply               : usym -> subst -> list (tsym * tsym) -> smap -> binding
 | BPrimitive           : item -> prim -> binding.
@@ -1381,7 +1381,7 @@ Definition bind_value_expression v value e := EBind (BValue v value) e.
 Definition bind_function_expression f body types captures e := EBind (BFunction f body types captures) e.
 Definition bind_method_expression receiver method application body types captures e :=
   EBind (BMethod receiver method application body types captures) e.
-Definition bind_functor_expression u body linked captured e := EBind (BFunctor u body linked captured) e.
+Definition bind_functor_expression u body types linked captured e := EBind (BFunctor u body types linked captured) e.
 Definition copy_functor_expression u provider inputs e := EBind (BCopyFunctor u provider inputs) e.
 Definition bind_primitive_expression key operation e := EBind (BPrimitive key operation) e.
 
@@ -2000,9 +2000,9 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
           | Some dc => eval_bindings k P (install_provision (IMth tauk m th) (FunctionClosure f' (typed_capture d types dc)) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
-      | BFunctor u h sm smc :: r =>
+      | BFunctor u h types sm smc :: r =>
           match select_provisions d smc with
-          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (capture_environment d dc)) d) g st r
+          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc)) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
       | BCopyFunctor u u' sm :: r =>
@@ -4356,7 +4356,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are
    captured here (vals by value) and must be in force here; G's body is
-   checked once, in its own terms, as the core functor body h (LinkBody). *)
+   checked once, in its own terms, as the core functor body h (LinkBody).
+   The closure keeps types as a lambda does (`lexical_capture`): the
+   table's readings and the meanings of what the context mentions, method
+   keys' receivers included, so a captured need keyed at a declared symbol
+   not in force reads as it was provided (examples/functor-captured-unbound.moss,
+   family4-AUDIT.md). *)
 | BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
@@ -4373,7 +4378,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
       (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h sm smc) (set_fun C u fx) F []
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
 
 (* [D66] a fn provider: a defined fn (its needs answered here), or an
    abstract fn in force, through a fresh defined forwarder whose body calls

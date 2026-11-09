@@ -623,7 +623,7 @@ Proof.
       incl (Xm ++ binding_dests r) (binding_dests (b :: r)) -> incl (Xa ++ binding_aliases r) (binding_aliases (b :: r)) ->
       Grows (binding_dests (b :: r)) (binding_aliases (b :: r)) d d').
     { intros Xm Xa d1 G1 g1 st1 E1 IX IY. exact (grows_mono _ _ _ _ _ _ IX IY (grows_trans _ _ _ _ _ _ _ G1 (IH _ _ _ _ _ _ _ _ E1))). }
-    destruct b as [t tau|v e1|f f' types sm|tauk m th f' types sm|u h sm smc|u u' sm|u th outs sm|i p].
+    destruct b as [t tau|v e1|f f' types sm|tauk m th f' types sm|u h tys sm smc|u u' sm|u th outs sm|i p].
     + refine (Step [] [t] (bind_type d t tau) _ g st E _ _).
       * split; [exists []|exists [(t, ground d tau)]]; split; [reflexivity|intros x []|reflexivity|]. intros x [<-|[]]; left; reflexivity.
       * intros x Ix. exact Ix.

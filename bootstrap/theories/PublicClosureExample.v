@@ -27,7 +27,7 @@ Definition initial := Environment [(2, TMachine MF64)]
 (* Capture seed, rebind the caller's seed, export a new meaning of Fresh,
    then check the old captured handle at that new output generation. *)
 Definition setup_bindings :=
-  [BFunctor 10 20 [] [(IVal 1,IVal 1)]; BValue 1 (EVal 4); BApply 10 [] [(2,7)] []].
+  [BFunctor 10 20 (TypeCapture [] []) [] [(IVal 1,IVal 1)]; BValue 1 (EVal 4); BApply 10 [] [(2,7)] []].
 Definition expression :=
   fold_right EBind (ETag 11 [(9,TAbs 7)] (EVal 3)) setup_bindings.
 

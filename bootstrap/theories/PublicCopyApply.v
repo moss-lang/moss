@@ -339,7 +339,7 @@ Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis captured_in_force : S.CapturedInForceOk.
+Hypothesis captured_in_force : S.CapturedInForceOk W.
 Hypothesis chain_results : ChainResultsOk.
 Hypothesis chain_platform : ChainPlatformOk.
 

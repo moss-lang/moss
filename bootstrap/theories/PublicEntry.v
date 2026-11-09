@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicLinkMerges.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -606,6 +606,14 @@ Proof.
     (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es Tin Ctx I).
 Qed.
 
+(* ---- what a functor closure captures (PublicLinkMerges) ---------------------- *)
+
+Lemma captured_in_force_ok : forall W, S.CapturedInForceOk W.
+Proof.
+  intros W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou.
+  exact (PublicLinkMerges.captured_mentioned W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou).
+Qed.
+
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
    ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
@@ -616,7 +624,6 @@ Theorem safety_obligations : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
-     S.CapturedInForceOk /\
      (* ChainResultsOk, from PublicChainCore.chain_results_of_new and
         PublicChainNew.chain_new_ok: the root's result keys are the
         caller's (static), and the new provisions of the caller's result
@@ -642,7 +649,8 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CK [CRz [KU [RA [FLN [FCA [FRA FCo]]]]]]]].
+    as [CK [CRz [KU [RA [FLN [FCA [FRA FCo]]]]]]].
+  pose proof (captured_in_force_ok W) as CIF.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.

@@ -32,7 +32,7 @@ Definition runtime := ProgramView (fun _ => None)
 Definition initial := Environment [] [(IFun 1,FunctorClosure 20 [] empty_environment)].
 Definition no_input_setup :=
   match R.eval_bindings 30 runtime initial [] tt
-    [BApply 1 [] [(2,2)] []; BFunctor 3 21 [] [(IFun 1,IFun 1)]] with
+    [BApply 1 [] [(2,2)] []; BFunctor 3 21 (TypeCapture [] []) [] [(IFun 1,IFun 1)]] with
   | inl (d,_,_) => d
   | inr _ => empty_environment
   end.
@@ -54,11 +54,12 @@ Proof. reflexivity. Qed.
    functor Outer: -> U; functor Provider: T -> U { bind U=T; }
    fn main() { bind T=Concrete; bind Outer=Provider; bind Outer; }
 
-   T is a private provider input, captured as an already-read source alias.
+   T is a private provider input, captured as an already-read source alias
+   (main's `lexical_capture`, whose table reads T as Concrete).
    A new activation initializes the formal role T from that alias. *)
 Definition private_alias := bind_type empty_environment 2 concrete.
 Definition private_input_setup :=
-  match R.eval_bindings 15 runtime private_alias [] tt [BFunctor 3 22 [] []] with
+  match R.eval_bindings 15 runtime private_alias [] tt [BFunctor 3 22 (TypeCapture [] [(2,concrete)]) [] []] with
   | inl (d,_,_) => d
   | inr _ => empty_environment
   end.

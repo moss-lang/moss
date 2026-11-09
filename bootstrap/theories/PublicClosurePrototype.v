@@ -133,9 +133,9 @@ Definition compile_step (binding : binding) : option bcode :=
       match select_provisions d sm with
       | Some dc => inl (install_provision (IMth tau m th) (FunctionClosure body (typed_capture d plan dc)) d,g,st)
       | None => inr (Evaluation (Stuck e_compose) g st) end)
-  | BFunctor u body linked captures => Some (fun _ d g st =>
+  | BFunctor u body plan linked captures => Some (fun _ d g st =>
       match select_provisions d captures with
-      | Some dc => inl (install_provision (IFun u) (FunctorClosure body [linked] (capture_environment d dc)) d,g,st)
+      | Some dc => inl (install_provision (IFun u) (FunctorClosure body [linked] (typed_capture d plan dc)) d,g,st)
       | None => inr (Evaluation (Stuck e_compose) g st) end)
   | BCopyFunctor u provider sm => Some (fun _ d g st =>
       match lookup_provision (IFun provider) d with
@@ -175,7 +175,7 @@ Lemma step_correct : tables_correct -> forall b c,
 Proof.
   intros Tables b c Compiled.
   destruct b as [t tau|v e|f body plan inputs|tau method theta body plan inputs|
-    u body inputs captures|u provider inputs|u theta destinations inputs|key operation];
+    u body plan inputs captures|u provider inputs|u theta destinations inputs|key operation];
     cbn [compile_step] in Compiled.
   - injection Compiled as <-. intros; reflexivity.
   - destruct (compile_atom e) as [atom|] eqn:Atom; [|discriminate].

@@ -8,12 +8,12 @@
      now reads G's inputs through G's table (`fc_table`), so G's merges
      hold by construction and both obligations are gone
      (scratch/orch/repair-AUDIT.md).
-   - `CapturedInForceOk` as stated says nothing about the bind context C,
-     so it is false (`captured_in_force_unprovable` below). At a bind site
-     it follows (`captured_in_force_of`) from C's key scoping (FormedCx's
-     KeysScoped, which Pre carries) and one static invariant of the
-     context, `DeclaredInForce`: every declared symbol the context mentions
-     is in force there (generations need not be). *)
+   - `CapturedInForceOk` (`captured_in_force_ok` below): a symbol a
+     captured need mentions, among G's inputs F does not take, is in force
+     where G is bound or mentioned by the context there
+     (`captured_mentioned`). It may be a declared symbol not in force
+     (examples/functor-captured-unbound.moss); the closure's
+     `lexical_capture` keeps its meaning (scratch/orch/family4-AUDIT.md). *)
 From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation.
 From NM Require PublicValueTyping PublicBodySlice.
@@ -23,12 +23,6 @@ Module A := Audit.Semantics.Elaboration.
 Section Static.
 Variable W : A.world.
 Import A.
-
-(* A context's declared symbols are in force: every symbol its merge, type
-   table, provisions or locals mention is in force or a generation
-   (no declaration). *)
-Definition DeclaredInForce (C : cx) : Prop :=
-  forall x, In x (context_gens C) -> w_decl W x <> None -> nlook x (c_ty C) <> None.
 
 (* A substitution's image of a mentioned symbol is mentioned. *)
 Lemma gens_hit : forall t s y u, In y (gens t) -> lookup_subst y s = Some u -> incl (gens u) (gens (app_subst s t)).
@@ -128,23 +122,26 @@ Proof.
   - exact (context_gens_sub C z u y (lookup_subst_in_pair _ _ _ L) Iu).
 Qed.
 
-Theorem captured_in_force_of : forall C gg Cu nsu Cg nsg smc,
-  MentionsTyped W -> FunCtx W gg Cg nsg ->
-  (forall r m th p, In (IMth r m th, p) (c_provisions C) -> incl (gens r) (scope_gens C)) -> DeclaredInForce C ->
+(* What a closure captures where it is bound (BFunClosure's 3b, read at
+   G's inputs here): a symbol a captured need mentions, among G's inputs
+   that F does not take, is in force here or mentioned by the context
+   (its merge, provisions, or a method key's receiver). The closure's
+   `lexical_capture` keeps both. *)
+Theorem captured_mentioned : forall C gg Cu nsu Cg nsg smc,
+  FunCtx W gg Cg nsg ->
   Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
     (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
   forall k p x, In k (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) -> ilook (provision_id k) (c_provisions Cg) = Some p ->
   In x (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end)%list ->
-  In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> nlook x (c_ty C) <> None.
+  In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) ->
+  nlook x (c_ty C) <> None \/ In x (context_gens C ++ key_receiver_gens C).
 Proof.
-  intros C gg Cu nsu Cg nsg smc Mt FCg Ks Dif [_ [Prov [Coh [Types _]]]] k p x Ik Il Ix Ig _ Lx.
+  intros C gg Cu nsu Cg nsg smc FCg [_ [Prov [Coh [Types _]]]] k p x Ik Il Ix Ig _.
+  destruct (nlook x (c_ty C)) as [tx|] eqn:Lx; [left; discriminate|right].
   set (th := map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg)) in *.
-  assert (Decl : w_decl W x <> None) by exact (kind_decl x _ (functx_keys_typed gg Cg nsg Mt FCg x Ig)).
-  (* x mentioned by C would be in force *)
-  assert (Out : ~ In x (context_gens C)) by (intros Ic; exact (Dif x Ic Decl Lx)).
-  assert (Ns : lookup_subst x (c_sub C) = None).
-  { destruct (lookup_subst x (c_sub C)) as [u|] eqn:L; [|reflexivity].
-    exfalso. exact (Out (context_gens_sub_key C x u (lookup_subst_in_pair _ _ _ L))). }
+  (* a merged-away x is mentioned by the merge *)
+  destruct (lookup_subst x (c_sub C)) as [u|] eqn:Ns.
+  { apply in_or_app. left. exact (context_gens_sub_key C x u (lookup_subst_in_pair _ _ _ Ns)). }
   (* so θ reads x as itself, and x survives a reading at θ *)
   assert (Th : lookup_subst x th = Some (TAbs x)).
   { pose proof (lookup_on_keys' (fun x => canon C (app_subst (c_ty C) (TAbs x))) _ x Ig) as E. cbn beta in E.
@@ -158,7 +155,7 @@ Proof.
   rewrite Pid in Il.
   destruct (Types k p Ik Il) as [p' [Il' Sig]].
   pose proof (ilook_in' _ _ _ Il') as Ip'.
-  apply Out. apply in_app_or in Ix as [Ix|Ix].
+  apply in_app_or in Ix as [Ix|Ix]; [apply in_or_app; left|].
   - unfold provision_gens in Ix. apply in_app_or in Ix as [Ix|Ix].
     + (* a type of its signature *)
       destruct (provision_signature p) as [g|] eqn:Sp; [|contradiction].
@@ -188,31 +185,20 @@ Proof.
       apply in_flat_map. exists (y, Some (canon C (app_subst th want))). split; [exact Have|exact (Keep want Ixw)].
   - (* a method's receiver *)
     destruct k as [t|v|f|r m a|u]; try contradiction. cbn in Il'.
-    apply context_gens_scope. apply (Ks _ m a p' (ilook_in' _ _ _ Il')). exact (Keep r Ix).
+    apply in_or_app. right. unfold key_receiver_gens. apply in_flat_map.
+    eexists. split; [exact (ilook_in' _ _ _ Il')|]. cbn. exact (Keep r Ix).
 Qed.
 
 End Static.
 
-(* ---- CapturedInForceOk as stated -------------------------------------------- *)
+(* ---- CapturedInForceOk ------------------------------------------------------ *)
 
-(* Nothing ties the bind context C to a program: a context that provides
-   the captured `v : x` without x in force satisfies G's captured need, and
-   x is not in force there. *)
 Module LinkMerges (Prims : PRIMITIVES) (I0 : PublicValueTyping.INTERP Prims).
 Module S := PublicBodySlice.BodySlice Prims I0.
 
-Theorem captured_in_force_unprovable : ~ S.CapturedInForceOk.
+Theorem captured_in_force_ok : forall W, S.CapturedInForceOk W.
 Proof.
-  intros Ok.
-  set (Cg := A.Cx [(0, TAbs 0)] [] [(IVal 1, A.ProvidedVal (TAbs 0) [])] []).
-  set (C := A.Cx [] [] [(IVal 1, A.ProvidedVal (TAbs 0) [])] []).
-  set (Cu := A.Cx [] [] [] []).
-  refine (Ok C Cu [] Cg [IVal 1] [(IVal 1, IVal 1)] _ (IVal 1) (A.ProvidedVal (TAbs 0) []) 0
-            (or_introl eq_refl) eq_refl (or_introl eq_refl) (or_introl eq_refl) (fun I => I) eq_refl).
-  split; [reflexivity|]. split; [|split; [|split]].
-  - intros k [<-|[]]. cbn. discriminate.
-  - intros k a [<-|[]] L t want I. cbn in L. injection L as <-. contradiction.
-  - intros k p [<-|[]] L. cbn in L. injection L as <-. exists (A.ProvidedVal (TAbs 0) []). split; reflexivity.
-  - intros g t [].
+  intros W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou.
+  exact (captured_mentioned W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou).
 Qed.
 End LinkMerges.
