@@ -119,17 +119,28 @@ Proof.
   exact (Reserved Receiver n Kn).
 Qed.
 
-(* The static locals and receiver, realized in a positional type list. *)
+(* What a closure's application reads an input as: its alias, else its
+   meaning, else itself. *)
+Definition cmeaning (d : environment) (x : nat) : ty :=
+  match output_meaning d x with Some t => t | None => TAbs x end.
+
+(* The type table, as the environment's aliases record it. *)
+Definition AliasOk (C : A.cx) (d : environment) : Prop :=
+  forall x tx, A.nlook x (A.c_ty C) = Some tx -> cmeaning d x = ground d tx.
+
+(* The static locals and receiver, realized in a positional type list,
+   and the type table in the environment's aliases. *)
 Definition CtxLocals (F : A.frame) (C : A.cx) (d : environment) (types : list (var * ty)) : Prop :=
   (forall n t mu, A.slook n (A.c_locals C) = Some (t, mu) -> A.Named F n ->
      A.nlook (A.var_of F n) types = Some (ground d t)) /\
-  (forall t, A.fr_this F = Some t -> A.nlook 0 types = Some (ground d t)).
+  (forall t, A.fr_this F = Some t -> A.nlook 0 types = Some (ground d t)) /\
+  AliasOk C d.
 
 Lemma ctx_locals_push : forall F C d types n t mu,
   FrameOk F -> CtxLocals F C d types -> A.Named F n ->
   CtxLocals F (A.add_local C n t mu) d ((A.var_of F n, ground d t) :: types).
 Proof.
-  intros F C d types n t mu Frame [Locals Receiver] Named. split.
+  intros F C d types n t mu Frame [Locals [Receiver Al]] Named. split; [|split; [|exact Al]].
   - intros m tm mum Found Hm. cbn in Found |- *.
     destruct (String.eqb_spec m n) as [->|Different].
     + injection Found as <- _. rewrite Nat.eqb_refl. reflexivity.
@@ -244,10 +255,10 @@ Lemma ctx_locals_push_distinct : forall F binds C d types,
     (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds ++ types).
 Proof.
   intros F binds C d types Frame Ctx Named Distinct.
-  pose proof (ctx_locals_push_all F binds C d types Frame Ctx Named) as [Locals Receiver].
+  pose proof (ctx_locals_push_all F binds C d types Frame Ctx Named) as [Locals [Receiver Al]].
   set (l := map (fun q => (A.var_of F (fst q), ground d (snd q))) binds) in *.
   assert (Vars : NoDup (map fst l)).
-  { subst l. rewrite map_map. cbn. clear Ctx Locals Receiver.
+  { subst l. rewrite map_map. cbn. clear Ctx Locals Receiver Al.
     induction binds as [|[n t] rest IH]; cbn; [constructor|].
     inversion Named as [|? ? Here Rest]; inversion Distinct as [|? ? Absent Others]; subst.
     constructor; [|exact (IH Rest Others)].
@@ -255,7 +266,7 @@ Proof.
     apply Absent. replace n with m; [change m with (fst (m, u)); apply in_map, Found|].
     apply (var_of_injective F); [exact Frame| |exact Here|exact Same].
     rewrite Forall_forall in Rest. exact (Rest (m, u) Found). }
-  split.
+  split; [|split; [|exact Al]].
   - intros n t mu Found Hn. rewrite <- nlook_rev_distinct by exact Vars.
     exact (Locals n t mu Found Hn).
   - intros t This. rewrite <- nlook_rev_distinct by exact Vars.

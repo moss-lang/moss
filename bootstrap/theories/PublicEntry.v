@@ -190,7 +190,8 @@ Proof.
   intros n F C ns types platform H0 st0 Ctx Frame This St Real.
   split; [exact Frame|]. split; [split|split; [constructor|split; [exact St|exact Real]]].
   - intros m t mu Found. rewrite (S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
-  - intros t E. congruence.
+  - split; [intros t E; congruence|]. apply S.alias_none; [reflexivity|exact (proj1 Real)|].
+    exact (proj1 (ctxof_formed W _ C ns Ctx)).
 Qed.
 End Entry.
 
