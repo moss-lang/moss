@@ -27,7 +27,7 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the formation premises, `HandleFormed`, and the functor and
 family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
+`CapturedInForceOk`, `RefileShadowOk` (which gives `RefileRunOk`), `LinkResultsOk`, `CopyApplyOk`,
 `PlatformApplyOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
@@ -397,6 +397,22 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
+- **Refile can shadow a stale provision (open).** `LinkBody` files a
+  result method again under F's key right after its bind (`refile`). F's
+  key spells an output T as `TAbs T`; when T is also an input of G, the
+  body can bind `T.out` before rebinding T, and that stale provision has
+  the same runtime key. [examples/refile-stale-shadow.moss](examples/refile-stale-shadow.moss)
+  binds `T.out`, then `Int.out`, then `T = Int`, and calls `seed.out()`
+  in between: the reference interpreter on the oracle's program stops
+  `Stuck` (`Int.out` on a Bool), native prints 7. So `RefileRunOk` is
+  false for an accepted program. [PublicRefile.v](theories/PublicRefile.v)
+  proves `RefileRunOk` from `RefileShadowOk` (`refile_run_ok`): every
+  chain of a linked body leaves, after each method bind, no provision
+  under one of refile's extra keys. No Audit change yet: forbidding the
+  pattern rejects a program native accepts, and installing the aliases
+  after the body (as native behaves) changes the oracle's refile, which
+  `LinkBodySound`'s certificate equates with Audit's. Details in
+  scratch/orch/refile-STATUS.md.
 
 ## Body-safety slice (checked, conditional)
 
@@ -417,7 +433,7 @@ hypotheses, each a named remaining obligation:
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
 | `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it | T15, T16 |
-| `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
+| `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does. Proved from `RefileShadowOk` ([PublicRefile.v](theories/PublicRefile.v) `refile_run_ok`; `safety_obligations` now takes `RefileShadowOk`): after each method bind no provision of the context is filed under one of refile's extra keys. False for examples/refile-stale-shadow.moss | T15 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |

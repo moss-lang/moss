@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicRefile.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -24,6 +24,7 @@ Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims Publ
 Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
+Module PublicRefileI := PublicRefile.Refile PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
@@ -94,6 +95,8 @@ Definition certificate_roots :=
   @PublicBool.truthy_typed,
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
+  @PublicRefileI.refile_run_ok,
+  @PublicRefileI.refile_rchain_run,
   @PublicEntryTop.entry_safe,
   @PublicEntryTop.safety_public,
   @PublicEntryTop.safety_obligations,
