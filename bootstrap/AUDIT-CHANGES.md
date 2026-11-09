@@ -411,7 +411,7 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
   |---|---|---|---|
   | [link-merge-rep-rebind.moss](examples/link-merge-rep-rebind.moss) | rejects ("does not bind `X.m`") | rejects | rejects (before: accepted, then stuck) |
   | [link-merge-rep-rebind-both.moss](examples/link-merge-rep-rebind-both.moss) (= m5-XT) | rejects in this order (D84 3d); accepts the other order and exits 0 | accepts both orders, exit 0 | accepts; selects G's `X.m` |
-  | [tests/errors/functor_output_input_changed.moss](../tests/errors/functor_output_input_changed.moss) | rejects (D84 3d) | rejects | accepted after 94d89ce (rejected before). The record argues this is sound. Not re-checked after fc75de7 |
+  | [tests/errors/functor_output_input_changed.moss](../tests/errors/functor_output_input_changed.moss) | rejects (D84 3d) | rejects | accepted after 94d89ce (rejected before). The record argues this is sound. Still accepted after fc75de7, by a consolidation reading |
   | [link-output-input-rep.moss](examples/link-output-input-rep.moss) | rejects | rejects | rejects (before fc75de7: accepted, by hand reading) |
   | [link-output-input-rebind-control.moss](examples/link-output-input-rebind-control.moss) | prints 7 | prints 7 | accepts |
   | [output-merge-key.moss](examples/output-merge-key.moss) | accepts | accepts, prints 7 | accepted after fc75de7 (the old rule rejected it) |
@@ -429,10 +429,9 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
 - **Class C.** After 94d89ce, Audit accepts
   `functor_output_input_changed.moss`, which both implementations reject.
   It also accepts m5-XT, which the oracle rejects and native accepts.
-  Whether the first still holds after fc75de7 was not checked. As the
-  rule now reads, F's `T.out` has the output role as its receiver, which
-  reads at the body's table, so Audit may reject it again. That is my
-  reading and was not run.
+  After fc75de7 the first still holds, by a consolidation reading (not
+  run): Target's result has no type item, so `T.out` is not a role and
+  reads at G's table (see "Open points found in consolidation").
 
 ## D: run-time semantics changes
 
@@ -938,6 +937,36 @@ restated there verbatim):
 | `ResultRealizes` and LinkBody's result sources | each key renamed by `link_renaming outs gen` (the identity on the roles), promised types read through `read_rename` at it | keys used as they are; promised types read through `role_reads site outs gen` (each role at the site's table) | `result_realizes_restated`, `link_sources_restated` |
 | BFunClosure's removed body premise | `exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))` | implied by LinkBody | `link_body_has_body` |
 
+Open points found in consolidation (not changed; the owner decides). The
+details are in `scratch/consol-STATUS.md`.
+- **Pins reach nested blocks but not lambda bodies.** A frame carries
+  `fr_pins` into every expression of a linked body, but
+  `LambdaProvider` leaves the body frame's pins free. BTypeBind's 3d
+  check therefore rejects
+  [block-pin-rebind.moss](examples/block-pin-rebind.moss), which both
+  implementations run, while the same rebind in a lambda is accepted.
+  Since only a linked body's own binds can reach its result, pins could
+  be scoped to them.
+- **M(F) counts a method's non-requirement signature symbols (#12), not
+  a fn's.** `RMMeth` uses `SigMentions`; `RMValFn` uses `w_reqs`. A
+  functor whose result lists `fn mk(): U` (U outside mk's assume nesting)
+  has no U among its inputs, so its result cannot be read in its own
+  context. The oracle has the same asymmetry ("type `U` is not available
+  in the context here").
+- **Leftovers kept.** `result_environment` ignores its `caller` argument,
+  and `fresh_result_types` is only a statement (#20). `fc_outputs`
+  carries the non-type result keys, which no application reads.
+  BFunClosure and LinkBody both state `FunCtx` for F and G (equal by
+  `w_context`).
+- **#14 after fc75de7, by reading (not run):** Audit still accepts
+  `tests/errors/functor_output_input_changed.moss`. Target's result has
+  no type item, so `outs = []` and link_site reads `T.out` at G's table
+  as `T.out`. The body bound `T.out` before `bind Make;`, which gives T a
+  fresh generation (T is in force in Provider), and that generation is no
+  input of Target. The application reads the source key `T.out` from the
+  body, so the "stale key" the test guards against (the oracle's refile)
+  does not arise. Class C stands.
+
 ## Implementation bugs filed (E31–E37)
 
 All of these come from [proof-plan.json](proof-plan.json).
@@ -983,12 +1012,17 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   still says it must be accepted, which conflicts with the oracle's new
   D62 rejection. This should be settled.
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
+- [block-pin-rebind.moss](examples/block-pin-rebind.moss) (found in
+  consolidation; predates it). A block nested in a linked body rebinds a
+  pin of F (`bind T = Char;`). BTypeBind's D84 3d check reaches nested
+  blocks through the frame; both implementations accept and print 7. See
+  "Open points" below.
 - Native's verdict is not recorded for stale-provision-type (#4) or
   unbound-merge-representative (#3).
 
 **Audit accepts; native rejects.**
 - tests/errors/functor_output_input_changed.moss (#14). Audit accepted it
-  after 94d89ce; this was not re-checked after fc75de7.
+  after 94d89ce, and still does after fc75de7 (consolidation reading).
 - const-kept-output.moss and const-family-unbound.moss (#20, #21). Native
   rejects every use of a defined val, which is unrelated to these changes.
 - scratch/copyfresh/r3c-target-merge-ok.moss (#35, the known residual).

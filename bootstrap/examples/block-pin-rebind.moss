@@ -1,0 +1,61 @@
+# consol: REJECTED by Audit, ACCEPTED by both implementations (a known
+# divergence, not changed). Like block-kept-output-pin.moss, but the block
+# nested in G's body rebinds the pin itself: `bind seven = { bind T = Char;
+# 7 };`. M(F) = {T} (F's result lists `tick`, a defined fn under
+# `assume T`), and BTypeBind asks `~ In t (fr_pins F)` in every frame
+# derived from the linked body's, nested blocks included. The rebind is
+# local to the block and its value (an Int) does not mention T, so no
+# result of G reads it. Lambda bodies inside G are not constrained this
+# way (LambdaProvider leaves the body frame's pins free), so the pins'
+# scope is incoherent: see scratch/consol-STATUS.md, "Incoherences".
+# Oracle (moss_m2 at ob-consol): prints 7, exit 0.
+# Native (moss-safety target/release/moss, MOSS_SEED
+#   /nix/store/1h1710x0...-mossc.wasm): prints 7, exit 0.
+# The same rebind at the top of G's body (`bind T = Char; bind seven = 7;`):
+#   Audit rejects (D84 3d), native rejects ("compilation failed: `T`"), and
+#   the oracle accepts and prints 7.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn .num(): Int;
+val seven: Int;
+assume T {
+  fn tick() {}
+}
+functor Make: Std -> T, T.num;
+functor Maker: Std -> T, T.num {
+  bind T = Char;
+  bind T.num = () => this.code();
+}
+functor F: Std -> tick, seven;
+functor G: Make, Std -> tick, seven {
+  bind seven = { bind T = Char; 7 };
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Bool;
+    bind Make = Maker;
+    bind F = G;
+    bind F;
+    print_int(seven);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
