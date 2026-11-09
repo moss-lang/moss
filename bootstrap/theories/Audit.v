@@ -3462,9 +3462,16 @@ Definition context_gens (C : cx) : list nat :=
   flat_map (fun q => provision_gens (snd q) ++
     provision_gens (provision_subst (c_sub C) (snd q))) (c_provisions C) ++
   flat_map (fun q => gens (fst (snd q)) ++ gens (canon C (fst (snd q)))) (c_locals C).
+(* The generations a method key's receiver mentions. A callee requirement
+   the caller leaves unbound is read at the call site as itself, so a family
+   demand can key a method at a declared symbol that nothing else in the
+   context mentions (examples/family-unbound-need.moss); a lambda keeps
+   its meaning too (family2-AUDIT.md). *)
+Definition key_receiver_gens (C : cx) : list nat :=
+  flat_map (fun q => match fst q with IMth r _ _ => gens r | _ => [] end) (c_provisions C).
 Definition lexical_capture (C : cx) : type_capture :=
   TypeCapture
-    (map (fun generation => (generation, TAbs generation)) (context_gens C))
+    (map (fun generation => (generation, TAbs generation)) (context_gens C ++ key_receiver_gens C))
     (map (fun q => (fst q, canon C (snd q))) (c_ty C)).
 Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
   NoDup gs /\ Forall (fun g => Fresh W g /\

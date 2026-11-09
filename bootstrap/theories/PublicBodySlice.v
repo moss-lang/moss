@@ -2121,8 +2121,21 @@ Proof.
   cbn [app_subst]. rewrite (lookup_capture d K x (Sc x Ix)). reflexivity.
 Qed.
 
+(* What a lambda captures the meanings of: its context's generations and
+   its method keys' receivers' (Audit's lexical_capture). *)
+Definition capture_gens (C : A.cx) : list nat := A.context_gens C ++ A.key_receiver_gens C.
+
+Lemma cg_l : forall C, incl (A.context_gens C) (capture_gens C).
+Proof. intros C x I. apply in_or_app. left. exact I. Qed.
+
+Lemma cg_key : forall C r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (capture_gens C).
+Proof.
+  intros C r m th p I x Ix. apply in_or_app. right. unfold A.key_receiver_gens. apply in_flat_map.
+  exists (IMth r m th, p). split; [exact I|exact Ix].
+Qed.
+
 Lemma typed_capture_meanings : forall d C dc,
-  type_meanings (typed_capture d (A.lexical_capture C) dc) = capture_meanings d (A.context_gens C).
+  type_meanings (typed_capture d (A.lexical_capture C) dc) = capture_meanings d (capture_gens C).
 Proof. intros d C dc. cbn. unfold capture_meanings. rewrite map_map. reflexivity. Qed.
 
 Lemma sub_context_gens : forall C x u, In (x, u) (A.c_sub C) ->
@@ -2134,13 +2147,13 @@ Proof.
 Qed.
 
 Lemma capture_absorbs : forall C d, Absorbs C d ->
-  forall t, app_subst (capture_meanings d (A.context_gens C)) (A.canon C t) = app_subst (capture_meanings d (A.context_gens C)) t.
+  forall t, app_subst (capture_meanings d (capture_gens C)) (A.canon C t) = app_subst (capture_meanings d (capture_gens C)) t.
 Proof.
   intros C d Abs t. unfold A.canon. rewrite <- (app_subst_nil t) at 2.
   apply subst2_agree. intros x _. cbn [app_subst lookup_subst].
   destruct (lookup_subst x (A.c_sub C)) as [u|] eqn:L; [|reflexivity].
   destruct (sub_context_gens C x u (lookup_subst_in_pair _ _ _ L)) as [Ix Su].
-  rewrite (ground_capture d _ u Su), (lookup_capture d _ x Ix).
+  rewrite (ground_capture d _ u (fun y I => cg_l C y (Su y I))), (lookup_capture d _ x (cg_l C x Ix)).
   pose proof (Abs (TAbs x)) as E. unfold A.canon in E. cbn [app_subst] in E. rewrite L in E. exact E.
 Qed.
 
@@ -2262,18 +2275,17 @@ Lemma lambda_realizes_le : forall n0 n C qs Cl d1 H dc keys, n <= n0 ->
   Realizes n0 C d1 H -> NoDup (map snd qs) ->
   (forall q, In q qs -> exists t mu w, A.slook (fst q) (A.c_locals C) = Some (t, mu) /\
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
-  (forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C)) ->
   (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
   select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
 Proof.
-  intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps KScoped Keys Sel.
+  intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps Keys Sel.
   pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (de := typed_capture d1 (A.lexical_capture C) dc).
-  set (K := A.context_gens C).
+  set (K := capture_gens C).
   assert (Meq : type_meanings de = capture_meanings d1 K) by apply typed_capture_meanings.
-  assert (G : forall t, incl (A.gens t) K -> ground de t = ground d1 t).
-  { intros t Sc. unfold ground at 1. rewrite Meq. exact (ground_capture d1 K t Sc). }
+  assert (G : forall t, incl (A.gens t) (A.context_gens C) -> ground de t = ground d1 t).
+  { intros t Sc. unfold ground at 1. rewrite Meq. exact (ground_capture d1 K t (fun y I => cg_l C y (Sc y I))). }
   destruct (cl_fields C qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) [])) as [_ Sub].
   rewrite <- ClE in Sub. cbn [A.c_sub] in Sub.
   assert (Canon : forall t, A.canon Cl t = A.canon C t) by (intros t; unfold A.canon; rewrite Sub; reflexivity).
@@ -2336,10 +2348,11 @@ Proof.
     pose proof (Find _ Ik) as F'. cbn [A.rkey_of A.mkey] in F'. rewrite F'. split; [exact Look|].
     destruct (sig_provision_gens (A.ProvidedMethod g a) g eq_refl) as [Sr Sp].
     pose proof (prov_context_gens C _ _ (ilook_in _ _ _ Il)) as Sc.
-    pose proof (KScoped r m [] _ (ilook_in _ _ _ Il)) as Kr.
+    pose proof (cg_key C r m [] _ (ilook_in _ _ _ Il)) as Kr.
     apply (callable_transfer n0 n H d1 de (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv
       Le); [| |exact Ok].
-    + apply map_ext_in. intros t [<-|It]; symmetry; apply G; [exact Kr|].
+    + apply map_ext_in. intros t [<-|It]; symmetry;
+        [unfold ground at 1; rewrite Meq; exact (ground_capture d1 K r Kr)|apply G].
       intros x Ix. exact (Sc x (Sp t It x Ix)).
     + symmetry. apply G. intros x Ix. exact (Sc x (Sr x Ix)).
   - (* functors *) intros u fx Found.
@@ -2362,7 +2375,6 @@ Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
   Realizes (S n) C d1 H -> NoDup (map snd qs) ->
   (forall q, In q qs -> exists t mu w, A.slook (fst q) (A.c_locals C) = Some (t, mu) /\
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
-  (forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C)) ->
   (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
   select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
@@ -2472,7 +2484,7 @@ Proof.
   rewrite (lookup_map_snd (fun t => ground d1 (A.canon C t))), lookup_subst_nlook', L. cbn [option_map]. f_equal.
   unfold ground at 2. rewrite typed_capture_meanings, ground_capture.
   - exact (Abs tx).
-  - intros y Iy. apply tm_context_gens. unfold tm_gens. apply in_flat_map. exists (x, tx). split; [|exact Iy].
+  - intros y Iy. apply cg_l. apply tm_context_gens. unfold tm_gens. apply in_flat_map. exists (x, tx). split; [|exact Iy].
     exact (nlook_in _ _ _ _ L).
 Qed.
 
@@ -2500,12 +2512,11 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
 Proof.
   intros k Bel jn Ljn C ps sg this body pid caps capvals Cl Fl lbody ltype d1 H dc keys
     Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps SigSc FcC SgOk ThOk.
-  pose proof (fun r m th p I => PublicFormation.keys_scoped W C r m th p FcC I) as KS.
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (qs := combine caps capvals) in *.
   set (K := A.context_gens C).
   assert (G : forall t, incl (A.gens t) K -> ground de t = ground d1 t).
-  { intros t Sc. unfold ground at 1. unfold de. rewrite typed_capture_meanings. exact (ground_capture d1 K t Sc). }
+  { intros t Sc. unfold ground at 1. unfold de. rewrite typed_capture_meanings. exact (ground_capture d1 _ t (fun y I => cg_l C y (Sc y I))). }
   assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
   assert (Sq : map snd qs = capvals) by (apply snd_combine; congruence).
   assert (InCaps : forall q, In q qs -> In (fst q) caps) by (intros q Iq; rewrite <- Fq; apply in_map, Iq).
@@ -2515,7 +2526,7 @@ Proof.
     destruct (A.slook (fst q) (A.c_locals C)) as [[t mu]|] eqn:Lq; [|congruence].
     destruct (Caps q Iq) as [w [Look T]]. unfold capty in T. rewrite Lq in T. exists t, mu, w. split; [reflexivity|split; [exact Look|exact T]]. }
   assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
-  pose proof (lambda_realizes_le jn jn C qs Cl d1 H dc keys (le_n jn) ClE Real Ndq Capsr KS Keys Sel) as RealCl.
+  pose proof (lambda_realizes_le jn jn C qs Cl d1 H dc keys (le_n jn) ClE Real Ndq Capsr Keys Sel) as RealCl.
   fold de in RealCl.
   cbn [CallableOk]. eexists. split; [change (view_function P pid) with (A.body_of Prog pid); exact BodyOf|].
   intros j Lj H' st ws E Sok Args.

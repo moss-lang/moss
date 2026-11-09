@@ -116,6 +116,23 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **Lambda capture keeps method-key receivers' meanings (family2,
+  coordinator-approved option (c)).** `lexical_capture C` now captures
+  `context_gens C ++ key_receiver_gens C`. A callee requirement the caller
+  leaves unbound is read at the call site as itself, so a family demand can
+  key a method at a declared T that only that key mentions
+  ([family-unbound-need.moss](examples/family-unbound-need.moss)). A lambda
+  over that context used to drop T's meaning while keeping the key, so the
+  captured provision was realized at another grounding whenever T had a
+  meaning. In a body that is never the case; in a defined val's inlined
+  initializer it can be
+  ([const-family-unbound.moss](examples/const-family-unbound.moss)).
+  Run-time only: nothing is rejected. The oracle captures the whole type
+  environment (`ExecutionModel.xclose`) and keys methods symbolically, so
+  this mirrors it. With it, `lambda_realizes_le` needs no key-scoping
+  premise, and option (b)'s relaxed `KeysScoped` needs no run-time "no
+  meaning" fact. Details: scratch/orch/family2-AUDIT.md.
+
 - **Removed: b4f8279's runtime freshness check on functor results
   (results2, coordinator-approved).** `result_environment` was Stuck when
   an output destination already had a meaning in the caller
