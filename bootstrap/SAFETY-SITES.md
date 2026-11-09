@@ -814,3 +814,8 @@ without touching any proof.
   branches merged into `safety` in turn (per-agent notes in
   `scratch/orch/*-STATUS.md` and `*-AUDIT.md`); results handed to a fresh
   agent (results2), the family platform step to another (famplat).
+- Orchestration continued (06:36 to 07:25): famplat, results2,
+  results3 and family2 merged; Audit changes for result shadowing
+  (removing `fresh_result_types`), `MachinesFixed`/`HandlesRead` in
+  families, and key-receiver capture in lambdas; `KeptOutputsUnmentioned`
+  left for the user; fresh agents results4, family3 and chainagree started.
