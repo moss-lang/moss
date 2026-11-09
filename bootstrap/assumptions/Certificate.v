@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry.
+  PublicEntry PublicPrimitiveSafety.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -25,6 +25,7 @@ Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInte
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host.
+Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -100,6 +101,8 @@ Definition certificate_roots :=
   @NM.PublicCallRealize.call_absorbs,
   @PublicArmsI.arms_select,
   @PublicTags.tag_check,
+  @PublicPrims.primitive_safe,
+  @PublicPrims.state_ok_initial,
   @NM.PublicTypeRead.tyof_abs,
   @NM.PublicTypeRead.tyof_rel,
   @NM.PublicTypeRead.sig_rel,
