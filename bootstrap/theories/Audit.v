@@ -4333,11 +4333,14 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* outputs: fresh where the symbol is already in force; one not in
        force is installed as itself, and the frame's return and receiver
        types (read where every symbol they mention is in force) do not
-       mention it *)
+       mention it, nor does the context or a method key's receiver (the
+       result's write would re-ground what mentions it; stricter than the
+       oracle and native, scratch/orch/chainfwd-AUDIT.md section 2) *)
     (forall t, FunOutputs W u t ->
        (nlook t (c_ty C) = None /\ gensof t = t /\
           ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
-                  (match fr_this F with Some r => gens r | None => [] end))) \/
+                  (match fr_this F with Some r => gens r | None => [] end)) /\
+          ~ In t (context_gens C ++ key_receiver_gens C)) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->

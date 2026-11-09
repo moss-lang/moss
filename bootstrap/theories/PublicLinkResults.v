@@ -73,7 +73,9 @@ Module S := CA.S.
 Section Run.
 Variable W : A.world.
 
-(* PREMISE (T16; scratch/orch/results2-AUDIT.md section 2). An output that
+(* (T16; proved below, kept_outputs_unmentioned, from BApplyAbstract's
+   clause added by chainfwd-AUDIT.md section 2; formerly a premise,
+   scratch/orch/results2-AUDIT.md section 2). An output that
    `bind F;` installs as itself (not in force here) is not mentioned by the
    context, nor by a method key's receiver. Otherwise the result's write
    re-grounds what mentions it. It can be mentioned only as an unbound
@@ -86,6 +88,15 @@ Variable W : A.world.
 Definition KeptOutputsUnmentioned : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs -> PublicFormation.FormedCx W C ->
   forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> ~ In t (S.capture_gens C).
+
+(* KeptOutputsUnmentioned holds: BApplyAbstract asks it of an output not
+   in force (chainfwd-AUDIT.md section 2). *)
+Lemma kept_outputs_unmentioned : KeptOutputsUnmentioned.
+Proof.
+  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft None'.
+  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & Outs & _).
+  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[N _]]; [exact Nm|congruence].
+Qed.
 
 (* Each output destination is out of scope at the application: no key of
    the caller's table, no generation its context or frame types mention. *)
@@ -100,7 +111,7 @@ Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs
     AP Fc Ku t It. pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _).
   pose proof (proj1 (OutsI t) It) as Ft.
-  destruct (Outs t Ft) as [[None' [E Fr]]|[_ [Fresh Ig]]].
+  destruct (Outs t Ft) as [[None' [E [Fr _]]]|[_ [Fresh Ig]]].
   - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
     split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
     split; [exact (Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc t Ft None')|].

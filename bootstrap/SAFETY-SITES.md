@@ -714,6 +714,24 @@ the local store. *C* and *F* are the static context and frame.
   `platform_entry`). lib/wasm.moss's Heap, Mutable, Arrays and Memories
   declare distinct items (Memories' 27 `Addr.*` methods have no
   duplicate). Details in scratch/orch/chainfwd-AUDIT.md.
+- **Audit now rejects two correct programs: a kept output must be unmentioned (`BApplyAbstract`).**
+  The premise `KeptOutputsUnmentioned` was false for
+  `examples/lambda-declared-output.moss` and
+  `examples/kept-output-family-method.moss`, which Audit accepted. That
+  made `safety_obligations` vacuous. `bind F;` keeps an output T that is
+  not in force, while the context mentions T as an unbound declared
+  symbol in family method keys and signatures.
+  - BApplyAbstract now asks that such an output not be in `context_gens
+    C ++ key_receiver_gens C`, and `kept_outputs_unmentioned` proves the
+    premise from it.
+  - **This rejects both programs, which the oracle and native accept and
+    run correctly.** It is an incompleteness, chosen by the coordinator.
+  - An oracle variant with the same check differs from the oracle on
+    exactly these two of 378 corpus files.
+  - Alternative: the parametricity proof (results2-AUDIT.md section 2,
+    days), which would keep them.
+
+  Details in scratch/orch/chainfwd-AUDIT.md section 2.
 
 ## Body-safety slice (checked, conditional)
 

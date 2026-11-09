@@ -623,9 +623,6 @@ Theorem safety_obligations : forall prelude,
         caller's (static), and the new provisions of the caller's result
         are realized *)
      CN.ChainKeysOk W /\ CN.ChainRealizeOk W Prog argv read so /\
-     (* a kept output is unmentioned by the context: open, for the user to
-        decide (scratch/orch/results2-AUDIT.md section 2) *)
-     LRes.KeptOutputsUnmentioned W /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
         ChainResultAgrees from its forward half (chain_result_agrees),
         ChainForwardKeys from PublicChainFwd.chain_forward_keys: the empty
@@ -646,7 +643,10 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CK [CRz [KU [RAc [AKT [FLN [FCA [FRA FCo]]]]]]]]].
+    as [CIF [CK [CRz [RAc [AKT [FLN [FCA [FRA FCo]]]]]]]].
+  (* a kept output is unmentioned by the context: BApplyAbstract asks it
+     (scratch/orch/chainfwd-AUDIT.md section 2) *)
+  pose proof (LRes.kept_outputs_unmentioned W) as KU.
   pose proof (CF.chain_forward_keys W Prog _ _ _ AKT RAc) as RA.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.

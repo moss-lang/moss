@@ -140,6 +140,7 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @PublicLinkRes.chain_results_scoped,
+  @PublicLinkRes.kept_outputs_unmentioned,
   @PublicChainCoreI.chain_core_ok,
   @PublicChainCoreI.chain_results_of_new,
   @PublicChainCoreI.family_link_results_ok,
