@@ -133,6 +133,17 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **An ambiguous family read-off is rejected (proposals, item 6).**
+  `FamilyReadOff` gains a uniqueness conjunct: every item of the family
+  with the demanded method whose receiver matches the key gives the same
+  matching (up to `canon C`). Criterion: coherence (criteria.md section 2
+  names a family key matching two items with different matchings as
+  ambiguous). It mirrors the oracle's `family_member`; native rejects such
+  programs too ("conflicting method bindings from a family"). Test:
+  examples/family-ambiguous-member.moss. An oracle variant without the
+  check accepts only that example among the corpus (412 same, 2 diff, the
+  other one rejected by both). The proofs ignore the new conjunct. See
+  AUDIT-CHANGES.md #31.
 - **Pins constrain only a linked body's own binds (proposals, #49).**
   `BlkECheck` runs a nested block in `without_pins F`, so D84 3d's pins
   M(F) reach the linked body's own binds (where only they can affect the

@@ -37,7 +37,7 @@ Lemma readoff_values_ok : forall C u ot m matching,
   FamilyReadOff W C u ot m matching -> TyOk W ot ->
   forall x v, In (x, v) matching -> TyOk W (canon C v) /\ incl (gens (canon C v)) (gens ot).
 Proof.
-  intros C u ot m matching (marks & fr & fks & rf & a & Marks & PR & Ik & Dom & Nd & Ot) Ok x v Iq.
+  intros C u ot m matching (marks & fr & fks & rf & a & Marks & PR & Ik & Dom & Nd & Ot & _) Ok x v Iq.
   assert (Ix : In x (gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
   pose proof (sub_subst (c_sub C) _ _ (sub_read rf matching x v Ix (lookup_subst_nodup matching x v Nd Iq))) as Sb.
   change (SubTy (canon C v) (canon C (app_subst matching rf))) in Sb. rewrite Ot in Sb.

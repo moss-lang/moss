@@ -72,7 +72,7 @@ entry they belong to.
 | 28 | Captured vals are new symbols | c6f1b9d | A |
 | 29 | A lambda's body frame keeps the generations in scope | e0d6f9c | A |
 | 30 | A functor closure's captured needs satisfy G; body numbering | 64e2a92 | A |
-| 31 | A family's matching is read off the key (`FamilyReadOff`) | a12f7ab | A |
+| 31 | A family's matching is read off the key (`FamilyReadOff`); since item 6, uniquely | a12f7ab, proposals | A |
 | 32 | Linked bodies and copies read F's needs as F does | d458480 | A |
 | 33 | A family member is not bound directly (rule 7) | 1cd1ce5 | A |
 | 34 | `MostGeneralMerge`: σ is a function | f17fb86 | A |
@@ -773,6 +773,33 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Tests.** None. The record argues it mirrors the oracle's
   `family_candidate_step` and rejects nothing the implementations accept.
 - **Class A** (argued).
+- **Since proposals item 6: the member is unique.** A fourth conjunct asks
+  that every formal key with method m whose receiver matches the demanded
+  receiver (same domain and read-off conditions) give the same matching,
+  compared up to the merges in force (`option_map (canon C)` of each
+  lookup). A key matching two items with different matchings is
+  ambiguous and has no family read-off, so no derivation picks one.
+  - **Criterion: coherence** (criteria.md section 2, which names this case):
+    before, a derivation could pick either item, so the demand's θ, the
+    provision and its run-time key were not determined.
+  - **Mirrors** the oracle's `family_member` (Elab.v), which accepts a
+    repeat with equal θ and otherwise fails ("... is two items of the
+    family ... ambiguous (D84 rule 7)").
+  - **Native first:** native rejects such a program too ("conflicting
+    method bindings from a family: `m`").
+  - **Test.** [family-ambiguous-member.moss](examples/family-ambiguous-member.moss):
+    `F[A, B]: Std -> A.m, B.m` with A and B in force and the demand `k.m()`
+    at Int. Oracle rejects (ambiguous); native rejects; Audit now rejects
+    (before, a derivation could take either G's A.m, printing 1, or B.m,
+    printing 2). An oracle variant without the ambiguity check prints 1.
+  - **Corpus.** That variant (`scratch/oracle/noambig`) against the oracle:
+    412 same, 2 diff: the new example (accepted by the variant) and
+    tests/wasi/family_ambiguous.moss, rejected by both (the variant for a
+    different reason: B is not in force). So in the corpus only the new
+    example changes verdict.
+  - **Proof.** The proofs use one read-off per demand; the four
+    destructurings take the extra conjunct.
+  - **Class A** (mirrors both implementations).
 
 ### 32. Linked bodies and copies read F's needs as F does (d458480)
 - **Rule now.**
@@ -1103,9 +1130,8 @@ details are in `scratch/consol-STATUS.md`.
     that satisfies the callee's merges. Requiring the principal θ
     rejects partially-bound-merge.moss (as the oracle does since
     61040f2; native accepts), settling E24.
-  - *Ambiguous family read-off:* `FamilyReadOff` lets a derivation pick
-    either of two matching items; the oracle's `family_member` rejects
-    that. Requiring one matching mirrors it.
+  - *Ambiguous family read-off:* resolved by item 6 (#31): the
+    matching item must be unique, as the oracle's `family_member` asks.
 - **#14 after fc75de7, by reading (not run):** Audit still accepts
   `tests/errors/functor_output_input_changed.moss`. Target's result has
   no type item, so `outs = []` and link_site reads `T.out` at G's table

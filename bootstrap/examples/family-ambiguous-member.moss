@@ -1,0 +1,43 @@
+# Ambiguous family read-off (proposals item 6). F[A, B] lists A.m and B.m
+# for the one method m, so the demanded key Int.m matches both items, with
+# different matchings (A := Int, B := Int). A and B are both in force, so
+# either matching gives a well-formed family application: which provision
+# `k.m()` means (G's A.m, 1, or B.m, 2), and its θ and run-time key, would
+# depend on the derivation (criteria.md section 2, coherence). Unlike
+# tests/wasi/family_ambiguous.moss, nothing else rejects the program: an
+# oracle variant without its ambiguity check prints 1. Audit's FamilyReadOff now asks that every matching
+# item give the same matching (up to the merges in force), mirroring the
+# oracle's `family_member`.
+# Verdicts: Audit rejects (since item 6; before, a derivation could pick
+# either item); oracle rejects ("`Int.m` is two items of the family `F`
+# here, so which one is meant is ambiguous (D84 rule 7)"); native rejects
+# ("conflicting method bindings from a family: `m`").
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type B;
+assume A { fn .m(): Int; }
+functor F[A, B]: Std -> A.m, B.m;
+functor G: A, B, Std -> A.m, B.m {
+  bind A.m = () => 1;
+  bind B.m = () => 2;
+}
+assume Std {
+  fn demo() {
+    bind A = Bool;
+    bind B = Bool;
+    bind F = G;
+    let k: Int = 7;
+    print_int(k.m());
+    putchar(char::newline);
+  }
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

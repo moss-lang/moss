@@ -635,7 +635,7 @@ Proof.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   set (K := GenScoped W C0).
   assert (Mt : forall x v, In (x, v) matching -> GensIn K (gens (canon C v))).
-  { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot).
+  { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot & _).
     intros x v Iq. assert (Ix : In x (gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
     pose proof (sub_subst (c_sub C) _ _ (sub_read rf matching x v Ix (lookup_subst_nodup matching x v NdM Iq))) as Sb.
     change (SubTy (canon C v) (canon C (app_subst matching rf))) in Sb. rewrite Ot in Sb.

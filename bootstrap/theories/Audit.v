@@ -3652,7 +3652,11 @@ Definition FamilyApplication (W : world) (C : cx) (u : usym)
    with each P(F) symbol standing for itself (the oracle's markers), and the
    demanded method's formal receiver there is matched against the key's
    receiver: θ's domain is exactly the P(F) symbols that receiver mentions,
-   and each value is the part of the key at that symbol. *)
+   and each value is the part of the key at that symbol.  The member is
+   unique: every item of the family with method m whose receiver matches
+   the key gives the same matching (up to the merges here), else which one
+   is meant is ambiguous and the demand fails (D84 rule 7; the oracle's
+   `family_member`, examples/family-ambiguous-member.moss). *)
 Definition FamilyReadOff (W : world) (C : cx) (u : usym) (ot : ty) (m : nat)
     (matching : subst) : Prop :=
   exists marks formal_result formal_keys rf a,
@@ -3661,7 +3665,12 @@ Definition FamilyReadOff (W : world) (C : cx) (u : usym) (ot : ty) (m : nat)
       (fun t => TAbs t) formal_result formal_keys /\
     In (IMth rf m a) formal_keys /\
     (forall t, In t (map fst matching) <-> In t marks /\ In t (gens rf)) /\
-    NoDup (map fst matching) /\ canon C (app_subst matching rf) = ot.
+    NoDup (map fst matching) /\ canon C (app_subst matching rf) = ot /\
+    (forall rf' a' matching', In (IMth rf' m a') formal_keys ->
+       (forall t, In t (map fst matching') <-> In t marks /\ In t (gens rf')) ->
+       canon C (app_subst matching' rf') = ot ->
+       forall t, option_map (canon C) (lookup_subst t matching') =
+                 option_map (canon C) (lookup_subst t matching)).
 
 (* A literal's binary arithmetic call uses a provision already in force,
    or a unique family applied in a scope around that call ([D84] rule 7).

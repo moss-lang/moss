@@ -183,7 +183,7 @@ Proof.
   set (K := PublicFormation.GenScoped W C0).
   assert (Mt : forall x v, In (x, v) matching ->
     PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.GensIn K (A.gens (A.canon C v))).
-  { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot).
+  { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot & _).
     intros x v Iq. assert (Ix : In x (A.gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
     pose proof (PublicFormation.sub_subst (A.c_sub C) _ _
       (PublicFormation.sub_read rf matching x v Ix (PublicFormation.lookup_subst_nodup matching x v NdM Iq))) as Sb.
