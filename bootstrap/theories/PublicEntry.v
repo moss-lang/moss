@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicLinkMerges.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module CN := PublicChainNew.ChainNew M.ReferenceHost M.Reference.
+Module CF := PublicChainFwd.ChainFwd M.ReferenceHost M.Reference.
+Module CN := CF.CN.
 Module CC := CN.CC.
 Module LRes := CC.LR.
 Module PA := LRes.PA.
@@ -633,8 +634,12 @@ Theorem safety_obligations : forall prelude,
         decide (scratch/orch/results2-AUDIT.md section 2) *)
      LRes.KeptOutputsUnmentioned W /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
-        ChainResultAgrees from this forward half (chain_result_agrees) *)
-     PA.ChainForwardKeys W Prog argv read so /\
+        ChainResultAgrees from its forward half (chain_result_agrees),
+        ChainForwardKeys from PublicChainFwd.chain_forward_keys: the empty
+        chain is proved; a chain with a copy is ChainForwardCopyKeys,
+        false as stated (examples/linked-copy-bracket.moss) *)
+     CF.ChainForwardCopyKeys W Prog argv read so /\
+     CF.PlatformAbstract W Prog /\ CF.PlatformKeysDistinct W Prog /\ CF.AppKeysTyped W /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
      CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
@@ -649,8 +654,9 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CK [CRz [KU [RA [FLN [FCA [FRA FCo]]]]]]].
+    as [CK [CRz [KU [RAc [PAb [PKD [AKT [FLN [FCA [FRA FCo]]]]]]]]]].
   pose proof (captured_in_force_ok W) as CIF.
+  pose proof (CF.chain_forward_keys W Prog _ _ _ PAb PKD AKT RAc) as RA.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.

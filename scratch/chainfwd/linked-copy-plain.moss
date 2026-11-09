@@ -1,0 +1,41 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed, i32_one, i32_zero;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Z;
+
+functor F[Arrayed]: Wasm, Arrayed, Z ->
+  Arrayed.arrayed, Array.length, Array.get, Array.set, Array.fill, Array.copy;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume { fn run(); }
+functor Gf: -> run;
+
+functor G: Wasm, Std, Branch, Z, F -> run {
+  bind run = () => {
+    bind Arrayed = Int;
+    bind F;
+    let xs = 42.arrayed(i32_one);
+    let l = xs.length();
+    print_int(xs.get(i32_zero));
+    putchar(char::newline);
+  };
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Z = I32;
+    bind F = Arrays;
+    bind Gf = G;
+    bind Gf;
+    run();
+  }
+}
