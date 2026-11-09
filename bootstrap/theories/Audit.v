@@ -4631,6 +4631,9 @@ Definition MethodPrimitive (W : world) (key : item) (operation : prim) : Prop :=
 Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
+    (* the platform provides method items only (Elab.v platform_fun): no
+       type output, which its code could not return *)
+    (forall t, ~ FunOutputs W source t) /\
     ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
     (* each item is installed and returned under its run-time key, the
        instantiation it is made at (rkey_of), as a linked body's are *)
