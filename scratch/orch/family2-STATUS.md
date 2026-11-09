@@ -219,3 +219,67 @@ Findings, reported before proceeding as asked:
     a program function per const that the oracle does not produce today.
   - I have not made either change. This is larger than "a run-time Audit
     change" and should be confirmed first.
+
+## Decision (lead): option (c). Done; supersedes the `Inert` plan above
+
+**Audit change** (family2-AUDIT.md §1; SAFETY-SITES Observations, first
+entry): `lexical_capture C` captures `context_gens C ++ key_receiver_gens C`.
+- It is run-time only and mirrors the oracle's `xclose`.
+- Tests:
+  - family-unbound-need.moss, -sig.moss and lambda-declared-output.moss:
+    oracle 0, native 0.
+  - const-family-unbound.moss: oracle 0; native rejects every defined val.
+
+**Slice** (`PublicBodySlice.v`):
+- `capture_gens C := context_gens C ++ key_receiver_gens C`, with
+  `cg_l` and `cg_key`.
+- `typed_capture_meanings` and `capture_absorbs` are stated over
+  `capture_gens`.
+- `lambda_realizes_le`/`lambda_realizes` **no longer take a key-scoping
+  premise**: a captured key's receiver is captured by construction
+  (`cg_key`). `lambda_callable` no longer uses `keys_scoped`.
+- So no run-time `Inert` fact is needed anywhere. The WIP diff's `Inert`
+  parts are obsolete. Its PublicFormation part (`GenScoped`/`ScopedTy`,
+  relaxed `KeysScoped`, `GensIn` generalization of `provide_result_ok`,
+  restated `family_application_ok`/`family_matching_scoped`/
+  `demand_formed`) is still the right start for goal 1/2.
+
+## Handoff brief (next agent; I stopped for context)
+
+State: see the last commit on ob-family2. check.sh passes there.
+
+1. **Goal 1 (relax `KeysScoped`).**
+   - Apply only the PublicFormation.v hunks of
+     scratch/orch/family2/inert-wip.diff (`git apply --include='*PublicFormation.v'`),
+     then build.
+   - Downstream, `KeysScoped` takes W, and `keys_scoped` is relaxed (with
+     `keys_scoped_context` beside it).
+   - Its only slice consumer was lambda capture, which no longer needs
+     it. Fix `formed_narrow` (WIP line: `PublicFormation.scoped_ext W _ _ _ (eq_sym Sc) ...`).
+   - Then fix PublicFamilyStep `family_formed`: receiver and matching
+     `ScopedTy`; `FamilyStepOk`'s `incl (gens ot) (scope_gens C0)` and
+     `FamilyTableIn`'s `incl ...` become `ScopedTy`.
+   - Also fix PublicLinkMerges, PublicLinkResults (uses of `KeysScoped C`)
+     and PublicFamilySig.
+2. **Goal 2.**
+   - Add to `FormedCx` a conjunct: locals' types and provision
+     types/inst are `ScopedTy`.
+   - Prove a mutual `ex_scoped` fixpoint mirroring `ex_ok` (same
+     `destruct` patterns): `BindItem`s grow the scope (`scope_set_ty`,
+     `scope_fold_set_ty`), and `BlkE` drops `made`.
+   - The `at_site` reading at calls gives either table-value gens (scoped)
+     or unbound callee symbols (declared, `CtxOf` table keys are
+     `DKType` via `entries_ok`/`mentions_typed`).
+   - Restate `ExScopedOk`/`LitScopedOk`/`DemandScopedOk` with `ScopedTy`
+     (allowed; the current statements are false) and discharge them.
+3. **Goal 3, `CapturedInForceOk`.** With (c) the lambda half is static.
+   Follow repair-STATUS.md's plan with `ScopedTy` in place of
+   `scope_gens`.
+4. **Goal 5.** Add `SigCoherent` to `Formed` and prove `FamilyCoherentOk`
+   (family-STATUS.md "Suggested design" 3).
+5. **`PA.FamilyKeysTyped`.**
+   - Restate it with a `FormedCx W C` premise.
+   - Add a key fact: every table key is a declared type symbol or a
+     fresh generation, i.e. `TysScoped` strengthened; `resolve_sym` never
+     yields a fresh generation.
+6. **Leave `KeptOutputsUnmentioned` alone** (the user's).
