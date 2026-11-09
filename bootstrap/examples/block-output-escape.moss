@@ -1,0 +1,44 @@
+# DeclaredInForce (PublicLinkMerges) was false of Audit: `bind F;` in a
+# block, for an F whose output T is not in force there, makes T stand for
+# itself (`gensof T = T`), so T was not among the generations the block
+# `made`, and the block's value could leave it: `y : T` in a context where
+# T is not in force. The oracle rejects the program ("this block yields
+# `T`, which mentions `T`, a type `bind F;` made in it ... (D78)") and so
+# does native ("a type created by a binding cannot escape its block").
+# Audit now counts an output not in force among what the bind made
+# (`unforced`), so it rejects the program too.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+
+fn make(): T;
+
+functor F: Std -> T, make;
+
+functor G: Std -> T, make {
+  bind T = Int;
+  bind make = () => 7;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind F = G;
+    let y = { bind F; make() };
+    print_int(7);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

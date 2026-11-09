@@ -2943,6 +2943,15 @@ Definition StepOut r F F' C' (Bi : Prop) (made : list nat) (b : binding) j d typ
     (exists res, I.eval_bindings (S j) P d g st (b :: rest) = inr res /\
        (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 
+Lemma stepout_more : forall r F F' C' Bi m m' b j d types H g st, incl m m' ->
+  StepOut r F F' C' Bi m b j d types H g st -> StepOut r F F' C' Bi m' b j d types H g st.
+Proof.
+  intros r F F' C' Bi m m' b j d types H g st Inc So rest.
+  destruct (So rest) as [(d' & g' & st' & H' & E & [ws [Ew Iw]] & Pr & Ev)|Stop]; [left|right; exact Stop].
+  exists d', g', st', H'. split; [exact E|]. split; [exists ws; split; [exact Ew|intros x Ix; exact (Inc x (Iw x Ix))]|].
+  split; assumption.
+Qed.
+
 (* A `bind F;` of an abstract F in force, as a step below the cap J. *)
 Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
@@ -2963,7 +2972,9 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False newgens
+      Forall (fun t => ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+                               match A.fr_this F with Some r => A.gens r | None => [] end)) (A.unforced C outs) ->
+  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False (newgens ++ A.unforced C outs)
       (BApply u th (map (fun t => (t, gensof t)) outs) sm).
 
 
@@ -4406,7 +4417,7 @@ Proof.
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
                   |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App NoFam
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
-                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
+                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR Unf
                   |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx
                   |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
@@ -4428,7 +4439,7 @@ Proof.
     + exists [BApply u th (map (fun t => (t, gensof t)) outs) sm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (Ap F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG
-        Uniq Outs NdO OutsIff PR).
+        Uniq Outs NdO OutsIff PR Unf).
     + exists [BCopyFunctor u h sm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx J).
@@ -4518,15 +4529,20 @@ Hypothesis platform_apply : PlatformApplyOk.
    family. *)
 Lemma app_step : forall k, Below k -> forall J, (forall J', J' < J -> AppAt J' k) -> AppAt J k.
 Proof.
-  intros k Bel J IH F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR rr Lr.
+  intros k Bel J IH F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR Unf rr Lr.
   assert (AP : AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs)
     by exact (conj R (conj Fx (conj FC (conj Inp (conj Th (conj Fixed (conj Sat (conj FreshG (conj Uniq (conj Outs (conj NdO (conj OutsIff PR)))))))))))).
   split; [repeat split|]. split.
-  { destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr.
-    split; intros t E g0 Ig Ig'; destruct (Fr g0 Ig) as [_ Out]; apply Out; apply in_or_app; right; apply in_or_app; right;
-      [apply in_or_app; left; rewrite E; exact Ig'|apply in_or_app; right; rewrite E; exact Ig']. }
-  intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False newgens
+  { destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr, Unf.
+    split; intros t E g0 Ig Ig'; (apply in_app_or in Ig as [Ig|Ig];
+      [destruct (Fr g0 Ig) as [_ Out]; apply Out; apply in_or_app; right; apply in_or_app; right
+      |apply (Unf g0 Ig)]);
+      [apply in_or_app; left; rewrite E; exact Ig'|apply in_or_app; left; rewrite E; exact Ig'
+      |apply in_or_app; right; rewrite E; exact Ig'|apply in_or_app; right; rewrite E; exact Ig']. }
+  intros j d types H g st Lj LJ Pre0.
+  change (StepOut rr F (A.with_fresh F newgens) C' False (newgens ++ A.unforced C outs)
     (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st).
+  apply (stepout_more _ _ _ _ _ newgens); [intros x Ix; apply in_or_app; left; exact Ix|].
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
   pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
   destruct (Funs u fx Fx) as [pv [gfx [Look [Ok Fm]]]].

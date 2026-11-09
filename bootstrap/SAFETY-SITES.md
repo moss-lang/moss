@@ -438,6 +438,18 @@ the local store. *C* and *F* are the static context and frame.
   context had made. `LinkMergesOk`, `BindMergesOk`, their hypotheses, and
   `ClosureOk`'s merge clause are gone. See scratch/orch/repair-AUDIT.md.
 
+- **An output not in force counts as made by `bind F;` (Audit change).**
+  An output T of F not in force where `bind F;` runs stands for itself, so
+  it was not among the generations the bind `made`, and Audit let a value
+  of type T leave the block ([block-output-escape.moss](examples/block-output-escape.moss):
+  `let y = { bind F; make() };` with T not in force). The oracle and native
+  both reject this (D78's escape check). `BApplyAbstract`'s `made` now
+  includes `unforced C outs`, with the frame's types not mentioning them
+  (as `FreshFor` says of fresh generations; they are read where the body
+  starts, so this rejects nothing). Without it, `DeclaredInForce` (every
+  declared symbol a context mentions is in force), which
+  `captured_in_force_of` needs, fails for contexts with such locals. See
+  scratch/orch/repair-AUDIT.md.
 ## Body-safety slice (checked, conditional)
 
 [PublicBodySlice.v](theories/PublicBodySlice.v) proves `safe_all`. For

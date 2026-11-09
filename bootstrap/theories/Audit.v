@@ -3894,6 +3894,10 @@ Inductive Demand (W : world) (C0 : cx) (wanted : list item)
     Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
     Demand W C0 wanted used C (fun x => apply_expression u th sm (wrap x)) Cf.
 
+(* The symbols among ts not in force in C. *)
+Definition unforced (C : cx) (ts : list nat) : list nat :=
+  filter (fun t => match nlook t (c_ty C) with Some _ => false | None => true end) ts.
+
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
    checked against the expected type `exp` if any, elaborates to x of type t.
@@ -4273,9 +4277,17 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+    (* an output not in force here stands for itself: like a fresh
+       generation, the frame's types do not mention it (they are read where
+       the body starts, so mention only types in force) *)
+    Forall (fun t => ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+                             match fr_this F with Some r => gens r | None => [] end)) (unforced C outs) ->
+    (* made: the fresh generations and the outputs not in force here; a
+       value of their types may not leave the block ([D78], the oracle's
+       and native's escape check) *)
     BindItem W P F C (Spec (Some pa) None None, None)
       (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
-      C' (with_fresh F newgens) newgens
+      C' (with_fresh F newgens) (newgens ++ unforced C outs)
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx,
