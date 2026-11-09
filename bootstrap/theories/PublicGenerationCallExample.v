@@ -52,8 +52,13 @@ Example output_reads_share_one_snapshot :
     [(10,TMachine MF32);(11,TMachine MF64)] []).
 Proof. reflexivity. Qed.
 
-Example output_cannot_overwrite_callers_generation :
-  result_environment caller [(10,100)] called [ITy 10] empty_environment = None.
+(* A destination the caller already gives a meaning is shadowed (as in
+   the oracle), not rejected: Audit's static rules keep destinations out
+   of the caller's scope, so nothing typed there reads it
+   (PublicLinkResults.dest_scope; scratch/orch/results2-AUDIT.md). *)
+Example output_shadows_callers_generation :
+  result_environment caller [(10,100)] called [ITy 10] empty_environment =
+  Some (EnvironmentWithAliases [(100,TMachine MI32)] [(10,TMachine MI32)] []).
 Proof. reflexivity. Qed.
 
 Module Primitives <: PRIMITIVES.

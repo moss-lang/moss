@@ -1,9 +1,9 @@
 (* Toward LinkResultsOk (T15/T16): what a completed linked body leaves for
    the caller of `bind F;`. This file proves the runtime half of
    apply_functor's last steps: the result types are read from the body's
-   final environment, their destinations are free in the caller, and the
-   caller's meanings grow only by the generations the application makes
-   (Audit's MadeFor). *)
+   final environment, their destinations are out of the caller's scope (so
+   the writes, which shadow, re-ground nothing typed there), and the
+   caller's meanings grow only by the destinations. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply.
@@ -25,42 +25,9 @@ Proof.
   rewrite IH; [reflexivity|]. intros t' I. exact (Ok t' (or_intror I)).
 Qed.
 
-Lemma fresh_result_types_ok : forall (writes occupied : subst),
-  NoDup (map fst writes) -> (forall x, In x (map fst writes) -> lookup_subst x occupied = None) ->
-  fresh_result_types writes occupied = true.
-Proof.
-  intros writes. induction writes as [|[x m] rest IH]; intros occ Nd Free; [reflexivity|].
-  cbn [fresh_result_types]. rewrite (Free x (or_introl eq_refl)).
-  inversion Nd as [|? ? Nx Nd']; subst. apply IH; [exact Nd'|].
-  intros y Iy. cbn. destruct (Nat.eqb_spec y x) as [->|Ne]; [contradiction|].
-  exact (Free y (or_intror Iy)).
-Qed.
-
 Lemma item_eqb_ty_in : forall t (l : list item), In (ITy t) l -> existsb (item_eqb (ITy t)) l = true.
 Proof.
   intros t l I. apply existsb_exists. exists (ITy t). split; [exact I|]. cbn. apply Nat.eqb_refl.
-Qed.
-
-(* Conversely, an occupied destination makes the application Stuck: without
-   MeaningsScoped (or another bound on the caller's meanings) the step
-   cannot complete, whatever the body does. *)
-Lemma fresh_result_types_occupied : forall (writes occupied : subst) x m,
-  In x (map fst writes) -> lookup_subst x occupied = Some m -> fresh_result_types writes occupied = false.
-Proof.
-  intros writes. induction writes as [|[y v] rest IH]; intros occ x m Ix L; [contradiction|].
-  cbn [fresh_result_types]. destruct (lookup_subst y occ) as [w|] eqn:Ly; [reflexivity|].
-  destruct Ix as [E|Ix]; [cbn in E; subst y; congruence|].
-  apply (IH _ x (if Nat.eqb x y then v else m) Ix). cbn.
-  destruct (Nat.eqb_spec x y) as [->|_]; [reflexivity|exact L].
-Qed.
-
-Lemma result_environment_occupied : forall d outputs d3 Dr dr writes aliases x m,
-  read_result_types d3 Dr outputs = Some (writes, aliases) ->
-  In x (map fst writes) -> lookup_subst x (type_meanings d) = Some m ->
-  result_environment d outputs d3 Dr dr = None.
-Proof.
-  intros d outputs d3 Dr dr writes aliases x m R Ix L. unfold result_environment. rewrite R.
-  rewrite (fresh_result_types_occupied writes _ x m Ix L). reflexivity.
 Qed.
 
 End ResultTypes.
@@ -69,20 +36,6 @@ End ResultTypes.
 
 Section Made.
 Variable W : A.world.
-
-(* NEW INVARIANT (Pre must carry it; see scratch/orch/results-STATUS.md).
-   The caller's meanings give a meaning only to a symbol of its type table or
-   to a fresh generation its frame made (or captured), and a declared symbol
-   the context mentions is in its type table. Without the first part
-   `result_environment` can find a destination occupied (pre_junk_meaning);
-   the second keeps an output installed as itself out of everything in
-   scope. *)
-Definition DeclaredScoped (C : A.cx) : Prop :=
-  forall x, In x (A.context_gens C) -> A.Fresh W x \/ In x (map fst (A.c_ty C)).
-Definition MeaningsScoped (F : A.frame) (C : A.cx) (d : environment) : Prop :=
-  (forall x, lookup_subst x (type_meanings d) <> None ->
-     In x (map fst (A.c_ty C)) \/ (A.Fresh W x /\ In x (A.fr_fresh F))) /\
-  DeclaredScoped C.
 
 Lemma scope_context_gens : forall C x, In x (PublicFormation.scope_gens C) -> In x (A.context_gens C).
 Proof.
@@ -112,48 +65,48 @@ Qed.
 End Made.
 
 Module LinkResults (Prims : PRIMITIVES) (I0 : INTERP Prims).
-Module S := PublicBodySlice.BodySlice Prims I0.
 Module CA := PublicCopyApply.CopyApply Prims I0.
+Module S := CA.S.
 
 Section Run.
 Variable W : A.world.
 
+(* PREMISE (named, see scratch/orch/results2-STATUS.md). A declared symbol
+   the caller's context mentions is a key of its table. dest_scope needs it
+   for an output installed as itself: its destination must be out of the
+   context, or the result's write (which shadows) would re-ground types the
+   context mentions. NOTE: false for accepted programs since family demands
+   install keys mentioning unbound declared symbols
+   (examples/family-unbound-need.moss); a kept output must then be shown
+   out of the context some other way (an Audit kept-output clause, or a
+   proof that re-grounding such a symbol is harmless). *)
+Definition DeclaredScoped (C : A.cx) : Prop :=
+  forall x, In x (A.context_gens C) -> A.Fresh W x \/ In x (map fst (A.c_ty C)).
+
 (* Each output destination is out of scope at the application: no key of
-   the caller's table, no generation its context or frame types mention,
-   and free in the caller's meanings. *)
+   the caller's table, no generation its context or frame types mention. *)
 Lemma dest_scope : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall d, PublicFormation.FormedCx W C -> MeaningsScoped W F C d ->
+  PublicFormation.FormedCx W C -> DeclaredScoped C ->
   forall t, In t outs ->
     ~ In (gensof t) (map fst (A.c_ty C)) /\ ~ In (gensof t) (A.context_gens C) /\
     (forall r, A.fr_ret F = Some r -> ~ In (gensof t) (A.gens r)) /\
-    (forall r, A.fr_this F = Some r -> ~ In (gensof t) (A.gens r)) /\
-    lookup_subst (gensof t) (type_meanings d) = None.
+    (forall r, A.fr_this F = Some r -> ~ In (gensof t) (A.gens r)).
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs
-    (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _) d Fc [Ms Ds] t It.
+    (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & OutsI & _) Fc Ds t It.
   pose proof (proj1 (OutsI t) It) as Ft.
-  assert (Key : ~ In (gensof t) (map fst (A.c_ty C)) /\ ~ In (gensof t) (A.context_gens C) /\
-    (forall r, A.fr_ret F = Some r -> ~ In (gensof t) (A.gens r)) /\
-    (forall r, A.fr_this F = Some r -> ~ In (gensof t) (A.gens r)) /\
-    (A.Fresh W (gensof t) -> ~ In (gensof t) (A.fr_fresh F))).
-  { destruct (Outs t Ft) as [[None' [E Fr]]|[_ [Fresh Ig]]].
-    - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
-      split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
-      split; [intros Ic; destruct (Ds t Ic) as [F'|Ik]; [exact (Nf F')|destruct (nlook_some _ t _ Ik) as [v L]; congruence]|].
-      split; [intros r Er I; apply Fr; apply in_or_app; left; rewrite Er; exact I|].
-      split; [intros r Er I; apply Fr; apply in_or_app; right; rewrite Er; exact I|].
-      intros F'. contradiction.
-    - destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
-      split; [exact (fresh_not_key W F C newgens _ Fc (conj Nd (proj2 (Forall_forall _ _) Fr)) Ig)|].
-      split; [intros I; apply Out; apply in_or_app; right; apply in_or_app; left; exact I|].
-      split; [intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; left; rewrite Er; exact I|].
-      split; [intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; right; rewrite Er; exact I|].
-      intros _ I. apply Out. apply in_or_app. left. exact I. }
-  destruct Key as [Nk [Nc [Nr [Nt Nf]]]]. split; [exact Nk|]. split; [exact Nc|]. split; [exact Nr|]. split; [exact Nt|].
-  destruct (lookup_subst (gensof t) (type_meanings d)) as [m|] eqn:L; [|reflexivity].
-  exfalso. destruct (Ms (gensof t) ltac:(rewrite L; discriminate)) as [Ik|[Fresh If]];
-    [exact (Nk Ik)|exact (Nf Fresh If)].
+  destruct (Outs t Ft) as [[None' [E Fr]]|[_ [Fresh Ig]]].
+  - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
+    split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
+    split; [intros Ic; destruct (Ds t Ic) as [F'|Ik]; [exact (Nf F')|destruct (nlook_some _ t _ Ik) as [v L]; congruence]|].
+    split; [intros r Er I; apply Fr; apply in_or_app; left; rewrite Er; exact I|].
+    intros r Er I; apply Fr; apply in_or_app; right; rewrite Er; exact I.
+  - destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
+    split; [exact (fresh_not_key W F C newgens _ Fc (conj Nd (proj2 (Forall_forall _ _) Fr)) Ig)|].
+    split; [intros I; apply Out; apply in_or_app; right; apply in_or_app; left; exact I|].
+    split; [intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; left; rewrite Er; exact I|].
+    intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; right; rewrite Er; exact I.
 Qed.
 
 Lemma app_outputs_nodup : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
@@ -178,21 +131,16 @@ Definition result_of (d3 : environment) (outs : list nat) (gensof : nat -> nat) 
 Lemma result_environment_ok : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall d d3 dr (outs' : list nat) (rest : list item),
-  PublicFormation.FormedCx W C -> MeaningsScoped W F C d ->
   (forall t, In t outs' <-> A.FunOutputs W u t) ->
   (forall t, In t outs -> output_meaning d3 t <> None) ->
   result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ rest)%list dr =
     Some (result_of d3 outs gensof dr).
 Proof.
-  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs' rest Fc Sc OutsI' Read.
-  pose proof (app_outputs_nodup _ _ _ _ _ _ _ _ _ _ _ _ _ _ AP) as Nd.
+  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs' rest OutsI' Read.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & _).
   unfold result_environment.
   rewrite (read_result_types_ok d3 _ outs gensof (read_meaning d3)).
-  - rewrite fresh_result_types_ok; [reflexivity| |].
-    + rewrite map_map. cbn. exact Nd.
-    + intros x Ix. rewrite map_map in Ix. cbn in Ix. apply in_map_iff in Ix as [t [<- It]].
-      exact (proj2 (proj2 (proj2 (proj2 (dest_scope F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d Fc Sc t It))))).
+  - reflexivity.
   - intros t It. split.
     + apply item_eqb_ty_in. apply in_or_app. left. apply in_map. apply OutsI'. apply OutsI. exact It.
     + unfold read_meaning. destruct (output_meaning d3 t) as [m|] eqn:E; [reflexivity|].
@@ -243,7 +191,7 @@ Qed.
 Lemma pre_after_result : forall rr F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall d types H g st d' H3 st3,
-  S.Pre W Prog argv read state_ok rr F C d types H g st -> MeaningsScoped W F C d ->
+  S.Pre W Prog argv read state_ok rr F C d types H g st -> DeclaredScoped W C ->
   S.MeaningsGrow (map gensof outs) d d' -> heap_extends H H3 -> state_ok H3 st3 ->
   AliasOk C' d' -> S.EnvOk W Prog argv read state_ok rr C' d' H3 -> S.KeysMatch C' ->
   S.Pre W Prog argv read state_ok rr (A.with_fresh F newgens) C' d' types H3 g st3.
@@ -255,7 +203,7 @@ Proof.
   assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 (A.context_gens C) /\ True /\
     (forall t, A.fr_ret F = Some t -> ~ In g0 (A.gens t)) /\ (forall t, A.fr_this F = Some t -> ~ In g0 (A.gens t))).
   { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
-    destruct (dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d Fc Ms t It) as [_ [Nc [Nr [Nt _]]]].
+    destruct (dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ms t It) as [_ [Nc [Nr Nt]]].
     exact (conj Nc (conj I (conj Nr Nt))). }
   split; [exact Frame|]. split; [split; [|split; [|exact Al]]|].
   - intros n t mu Found Nm. rewrite Elo in Found. cbn in Nm |- *.
@@ -319,8 +267,8 @@ Qed.
 
 (* A caller state whose meanings differ only off the context's types (and
    off its keys) satisfies Pre as well. So Pre cannot rule out a meaning
-   for a generation an application is about to make, and LinkResultsOk
-   needs a bound like MeaningsScoped. *)
+   for a generation an application is about to make: result_environment
+   shadows such a meaning rather than checking it is absent. *)
 Lemma pre_meanings_free : forall rr F C d types H g st d',
   S.Pre W Prog argv read state_ok rr F C d types H g st ->
   provision_values d' = provision_values d -> type_aliases d' = type_aliases d ->
@@ -415,42 +363,22 @@ Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
     S.EnvOk W Prog argv read state_ok rr C' (append_environment (result_of d3 outs gensof dr) d) H3 /\
     S.KeysMatch C'.
 
-(* ChainResultsOk, for a caller whose meanings are scoped. *)
-Definition ChainResultsScopedOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
-    d1 d2 d3 g3 st3 H3 j',
-  S.Pre W Prog argv read state_ok rr F C d types H g st ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code sms dc) ->
-  S.ClosureOk W Prog argv read state_ok rr H u gfx (FunctorClosure code sms dc) ->
-  S.FixedMeans W u d fx gfx ->
-  CA.CopyChain W u gfx sms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] ->
-  S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 k)) (S.linked_needs nsh0 nsg)] dc) ->
-  S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
-  select_provisions d sm = Some d1 ->
-  adapt_provisions d1 sms = Some d2 ->
-  S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
-  heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  MeaningsScoped W F C d ->
-  exists dr result,
-    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
-    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
-    S.Pre W Prog argv read state_ok rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
-    S.MeaningsGrow (map gensof outs) d (append_environment result d).
-
-Theorem chain_results_scoped : ChainCoreOk -> ChainResultsScopedOk.
+(* ChainResultsOk, from the correspondence and DeclaredScoped. *)
+Theorem chain_results_scoped : ChainCoreOk ->
+  (forall C, PublicFormation.FormedCx W C -> DeclaredScoped W C) -> CA.ChainResultsOk W Prog argv read state_ok.
 Proof.
-  intros Core F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3 Sc.
+  intros Core DS F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3.
   destruct (Core F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3)
     as [dr [Sdr [Read [Al [Env KM]]]]].
   pose proof Pre0 as [_ [_ [_ [_ [_ [Fc _]]]]]].
+  pose proof (DS C Fc) as Sc.
   assert (OutsI' : forall t, In t outs' <-> A.FunOutputs W u t).
   { pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & _).
     intros t. rewrite (OutsR t). symmetry. exact (chain_outputs _ _ _ _ _ _ Chain t). }
   pose proof (result_environment_ok W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d d3 dr outs'
-    (map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks') Fc Sc OutsI' Read) as Re.
+    (map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks') OutsI' Read) as Re.
   pose proof (result_grows_by_destinations d d3 dr outs gensof) as Gr.
   exists dr, (result_of d3 outs gensof dr). split; [exact Sdr|]. split; [exact Re|]. split; [|exact Gr].
   pose proof Pre3 as [_ [_ [_ [St3 _]]]].
