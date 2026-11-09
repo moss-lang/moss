@@ -156,6 +156,8 @@ Definition certificate_roots :=
   @NM.PublicLinkWalk.family_binds_no_dests,
   @NM.PublicLinkScope.items_scope,
   @NM.PublicCopyFresh.ground_app_subst,
+  @NM.PublicCopyFresh.result_gens,
+  @NM.PublicCopyFresh.copy_outputs_read,
   @NM.PublicCallerKeys.provide_result_key_news,
   @PublicChainCoreI.selection_news,
   @PublicCopy.chain_sources_range,

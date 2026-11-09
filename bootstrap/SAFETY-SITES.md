@@ -161,6 +161,23 @@ the local store. *C* and *F* are the static context and frame.
     read `S.link_sources (A.link_site Cg Cb outs') ...`.
 
   See scratch/orch/linknewpf-AUDIT.md.
+- **A copy's fresh symbols avoid sigma's image (realizepf).**
+  `CN.ChainRealizeOk` (and, by the same rule, `FS.FamilyCopyRealizeOk`)
+  was still false after copyfresh's repair.
+  - `cg y` was only `Fresh W`, but sigma's image (F's fixed readings at the
+    copy site) can mention a fresh application generation: after
+    `bind Z = Bool; bind K;`, Z reads as a fresh g.
+  - The witness `cg I := g` then made F's `get[I = Z]` and H's `get` equal
+    again.
+  - [copy-fresh-collide.moss](examples/copy-fresh-collide.moss): the oracle
+    and native reject at the copy; old Audit accepted, and `show(get())`
+    ran Char's `code` on a Bool.
+  - Repair: `CopyOutputs` requires each `cg y` and each output role to
+    avoid the generations of sigma's image, as the oracle's `@copy` symbols
+    do. The role half is untested; `PublicCopyFresh.copy_outputs_at` needs
+    it.
+  - Corpus (oracle against a colliding variant): 397 the same, 1 different
+    (the new example). See scratch/orch/realizepf-AUDIT.md.
 - **A copy reads F's non-fixed inputs as fresh symbols (copyfresh).**
   `CN.ChainRealizeOk` and `FS.FamilyCopyRealizeOk` were false (moss-safety
   scratch/hunt/hunt2-chain and hunt2-family). BFunCopy's `CopyOutputs`
@@ -955,7 +972,7 @@ likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
-| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. Still false after it (realizepf, examples/copy-fresh-collide.moss): `cg y` is only `Fresh W`, so it may equal a fresh generation in sigma's image (a fixed input read at the site as a rebound output); CopyOutputs should also make `cg y` and the roles avoid sigma's image. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. It was still false after that repair (examples/copy-fresh-collide.moss: `cg y` equal to a fresh generation in sigma's image), which realizepf's CopyOutputs repair addresses (the fresh symbols avoid sigma's image). Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
 | `ChainForwardCopySigs` (PublicChainFwd) | at an application of F through at least one copy to a platform family: at the caller's last position for a key, the caller's method and the family's item at the chain's source have the same name and agreeing signatures (SigAgreeG). The signature half of the former `ChainForwardCopyKeys`, whose key half was false (linked-copy-bracket.moss) and is by construction since callerkeys | T15, T16 |
 | `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |

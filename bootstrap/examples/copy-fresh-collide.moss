@@ -1,5 +1,8 @@
-# realizepf: COUNTEREXAMPLE to CN.ChainRealizeOk (and, by the same rule,
-# FS.FamilyCopyRealizeOk) after copyfresh's CopyOutputs repair.
+# realizepf (scratch/orch/realizepf-AUDIT.md): REJECTED at `bind F = H`.
+# CopyOutputs now requires each cg y and each output role to avoid the
+# generations of sigma's image, so the witness below is no longer allowed.
+# Original header: COUNTEREXAMPLE to CN.ChainRealizeOk (and, by the same
+# rule, FS.FamilyCopyRealizeOk) after copyfresh's CopyOutputs repair.
 # Variant of copy-bracket-nonfixed.moss. CopyOutputs reads F's non-fixed
 # inputs ys as symbols cg y that are only required to be `Fresh W`
 # (undeclared) and distinct from each other and from the output roles. But
@@ -24,7 +27,7 @@
 # Control (scratch/realizepf/control.moss: F[I] and no bracket): the oracle
 #   and native both accept and print 7, so everything up to the copy,
 #   including `bind Z = Bool; bind K;`, is accepted.
-# Repair (suggested): CopyOutputs also requires each cg y and each gen t to
+# Repair (made): CopyOutputs also requires each cg y and each gen t to
 # avoid the generations of sigma's image (`~ In (cg y) (flat_map (fun q =>
 # gens (snd q)) sigma)`), as the oracle's fresh symbols do.
 import "../../lib/wasi.moss" use WasiStd;

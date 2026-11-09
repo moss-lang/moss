@@ -76,11 +76,38 @@ those stated.
 
 check.sh passes (212s).
 
+## Round 2 (Audit fix approved; merged safety f7918c8)
+
+- Audit change (own commit a8ef896, scratch/orch/realizepf-AUDIT.md,
+  SAFETY-SITES Observation): CopyOutputs requires each cg y and each output
+  role to avoid the generations of sigma's image. The role half is untested;
+  copy_outputs_read needs it (rho0 must send a site generation to its site
+  meaning and a role to its application meaning). Corpus: oracle vs a
+  colliding variant, 397 same, 1 different (copy-fresh-collide.moss).
+- New in PublicCopyFresh.v (Section ResultGens, under the slice's T29
+  hypotheses MergeFormed/MentionsTyped):
+  - `functx_ty_abs`: a FunCtx table reads each key x as `c_sub Cu (TAbs x)`.
+  - `functx_keys_declared`: its keys are declared (not Fresh).
+  - `result_gens`: a ProvideResult reading in Cu with roles gen gives each of
+    its keys a provision whose generations are Cu's table keys or roles
+    (via PublicScoping.output_entries_gens).
+  - `copy_outputs_read` (the copy step, step 2 of the task's order): from
+    FunCtx W u Cu, H's outputs among F's, sigma's domain declared, and
+    CopyOutputs, it exposes Cr, Cr', ks, ks', the positions, and: for any
+    tau and rho0 such that rho0 matches tau on the fixed readings
+    (`rho0 (sigma x) = tau x`), on Cu's other keys outside ys, and on the
+    roles, every k in ks has its provision in Cr and in Cr' equal after
+    tau. This is the step's whole static content: what is left per step is
+    choosing tau (the application's meanings of F's symbols) and rho0 (d's
+    meanings at the copy site, roles as the application reads them) and
+    discharging the three premises from FixedMeans/CopySite.
+- So the second copyfresh lemma is done too (fresh cg y does not occur in
+  formed provisions: `result_gens` + `functx_keys_declared`).
+
 ## Remaining
 
-- The Audit repair above, with its own commit, AUDIT note, corpus
-  comparison and SAFETY-SITES entry.
-- Then ChainRealizeOk:
+- (Audit repair: done, a8ef896.)
+- ChainRealizeOk:
   1. Length-zero case (h0 = u, Ch0 = Cu): the correspondence between the
      caller's es (read at C, out = gensof) and the formal es' (read at Cu,
      out = gen), position by position. Candidates are PublicOutputSubst
@@ -93,7 +120,9 @@ check.sh passes (212s).
      `ground d (th x)`. It is still not threaded: `app_step` drops
      `MeaningsGrow made de d3`, and a static walk is needed showing that
      `made` avoids Cu's inputs.
-  4. Then compose the copy steps with `copy_outputs_at`. Taking tau = the
+  4. Then compose the copy steps with `copy_outputs_read` (by induction on
+     CopyChain; each CCopy carries its CopySite, whose C1/fx/d give rho0 =
+     type_meanings d and sigma's domain = fixed inputs, declared). Taking tau = the
      application's meanings and rho0 = d's meanings needs these facts:
      - FixedMeans gives gfx = ground d (sigma x);
      - Cu's gens and the roles are declared or fresh, and distinct from the
