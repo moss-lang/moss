@@ -1,0 +1,37 @@
+# Oracle (sigclose var build): 42, exit 0. Native: 42, exit 0.
+# Audit: accepted; caller's Int.m has θ [U:=Int], the family's [U:=Bool]:
+# distinct run-time keys, FamilyCoherent vacuous at this pair. SAFE.
+# TARGET: family result leaf brackets a non-requirement signature type
+# (A.m[U = Bool]) while the caller provides Int.m at U = Int.
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+type A;
+type U;
+assume A {
+  fn .m(): U;
+  fn .n(x: A): A;
+}
+functor F[A]: U -> A.m[U = Bool], A.n;
+functor G: A, U -> A.m[U = Bool], A.n {
+  bind A.m[U = Bool] = () => true;
+  bind A.n = (x) => x;
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind U = Int;
+    bind Int.m = () => 42;
+    bind F = G;
+    let k: Int = 7;
+    print_int(k.n(k.m()));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

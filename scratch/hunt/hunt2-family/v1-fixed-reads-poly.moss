@@ -1,0 +1,30 @@
+# Earlier draft of v3 (H also in force at the demand, so OnlyFamily fails there). Oracle rejects the copy (D78), native rejects.
+type A;
+type U;
+type Y;
+tag Concrete;
+assume A { fn .m(): U; fn .k(): U; }
+val y0: Y;
+val a0: A;
+functor F[A]: A, Y, y0 -> A.m[U = A], A.k[U = Y];
+functor H[A]: A, Y, y0 -> A.m[U = Y], A.k[U = Y];
+functor G: A, Y, y0 -> A.m[U = Y], A.k[U = Y] {
+  bind A.m[U = Y] = () => y0;
+  bind A.k[U = Y] = () => y0;
+}
+assume A, a0 {
+  fn go(): Concrete {
+    bind Y = A;
+    bind y0 = a0;
+    bind H = G;
+    bind F = H;
+    let r: Concrete = Concrete.m();
+    r
+  }
+}
+fn main() {
+  bind A = Bool;
+  bind a0 = true;
+  let r = go();
+  match r { Concrete => () };
+}

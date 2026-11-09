@@ -1,0 +1,41 @@
+# Oracle: 42, exit 0. Native: 42, exit 0.
+# Audit: θ records V (FNom through Box), [V:=Int] vs [V:=Bool]: distinct keys. SAFE.
+# TARGET: a nominal with a requirement in the signature (.m(): Box, Box
+# requires V); caller provides Int.m at V = Int, rebinds V = Bool, then
+# demands Int.n from the family (which reads Int.m at V = Bool).
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+type A;
+type V;
+assume V { tag Box(V); }
+val b0: Box;
+assume A {
+  fn .m(): Box;
+  fn .n(x: A): A;
+}
+functor F[A]: V, b0 -> A.m, A.n;
+functor G: A, V, b0 -> A.m, A.n {
+  bind A.m = () => b0;
+  bind A.n = (x) => x;
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind V = Int;
+    bind Int.m = () => Box(42);
+    bind V = Bool;
+    bind b0 = Box(true);
+    bind F = G;
+    let k: Int = 7;
+    match k.m() { Box(x) => print_int(k.n(x)) }
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

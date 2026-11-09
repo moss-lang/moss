@@ -1,0 +1,16 @@
+# Target: FamilyLinkNewOk, linked body with bracket W = A on poly. Control.
+# Result: oracle 0, native 0. Audit accepts, consistent. No failure.
+type A;
+type W;
+tag Concrete;
+assume W, A { fn .len(): W; }
+fn mkw(): W;
+functor F[A]: A, W -> A.len[W = A];
+functor G: A, W -> A.len[W = A] { bind A.len[W = A] = () => this; }
+fn main() {
+  bind W = Bool;
+  bind mkw = () => true;
+  bind F = G;
+  let c: Concrete = Concrete.len();
+  match c { Concrete => () };
+}

@@ -1,0 +1,57 @@
+# COUNTEREXAMPLE to FS.FamilyCopyRealizeOk (family copy, no platform code).
+# This is the family instance of the hole hunt2-chain/t3-copy-bracket-nonfixed.moss
+# found: BFunCopy's CopyOutputs sigma is built from F's FIXED readings only, and
+# those readings may name one of F's poly symbols.
+#   F[A]: A, Y, y0 -> A.m[U = A], A.k[U = Y]     X(F) = {Y}, P(F) = {A}
+#   H[A]: A, Y, y0 -> A.m[U = Y], A.k[U = Y]     X(H) = {Y}
+#   (.m/.k : () -> U, U a non-requirement type that sigclose puts in theta)
+# In go (assume A), `bind Y = A` makes Y read TAbs A. sigma = [Y := TAbs A].
+# Read at Cu_F, F's A.m is () -> A [U := A] and H's is () -> Y [U := Y];
+# after sigma both are () -> A [U := A], so CopyOutputs holds (rm = [0,1]).
+# Every other BFunCopy premise holds (Fixed H = Fixed F = {Y}; FixedAgreement;
+# same needs y0 : Y; SameResult leaves (A,m),(A,k)). The copy-site A is go's
+# outer A, but sigma identifies it with F's poly A.
+# use_it (assume A, Y, y0, F) demands Concrete.m: matching A := Concrete,
+# Cr gives Concrete.m : () -> Concrete. FamilyCopyRealizeOk's premises all
+# hold (gfh Y = gfx Y = Bool). The application completes: G's body (via H's
+# closure) has A := Concrete, Y := ground d (TAbs Y) = Bool, and installs,
+# under the caller's key, A.m[U = Y] = () => y0 returning `true`. CallableOk
+# at () -> Concrete fails; Audit's run is stuck at `match r { Concrete => () }`.
+# Oracle (sigclose var build): rejects the copy, "effective output
+# interpretation differs (D78)" (its copy_output_compatible replaces F's
+# non-fixed generations by fresh @copy symbols). Native: "this construct is
+# not supported by the compiler" at the demand. Audit: ACCEPTS (as argued).
+# Control v3b (F's bracket U = Y, as H's): oracle 0, native 0.
+type A;
+type U;
+type Y;
+tag Concrete;
+assume A { fn .m(): U; fn .k(): U; }
+val y0: Y;
+val a0: A;
+functor F[A]: A, Y, y0 -> A.m[U = A], A.k[U = Y];
+functor H[A]: A, Y, y0 -> A.m[U = Y], A.k[U = Y];
+functor G: A, Y, y0 -> A.m[U = Y], A.k[U = Y] {
+  bind A.m[U = Y] = () => y0;
+  bind A.k[U = Y] = () => y0;
+}
+assume A, Y, y0, F {
+  fn use_it() {
+    let r: Concrete = Concrete.m();
+    match r { Concrete => () };
+  }
+}
+assume A, a0 {
+  fn go() {
+    bind Y = A;
+    bind y0 = a0;
+    bind H = G;
+    bind F = H;
+    use_it();
+  }
+}
+fn main() {
+  bind A = Bool;
+  bind a0 = true;
+  go();
+}

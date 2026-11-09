@@ -1,0 +1,50 @@
+# Oracle: 3, exit 0. Native: 3, exit 0.
+# Audit: σ merges U,T; both Int.m readings are () -> rep at θ [U:=rep]. SAFE.
+# TARGET: a merge identifies two signature types (U and T, via Int.m and
+# Int.m[U = T] in one telescope); inside, T is rebound, then a family
+# demand reads Int.m at the merged representative.
+import "../../../lib/wasi.moss" use WasiStd;
+import "../../../lib/wasistd.moss" use Branch;
+import "../../../lib/wasm.moss" use Wasm;
+import "../../../lib/wasip1.moss" use Wasi;
+type A;
+type U;
+type T;
+val u0: U;
+assume A {
+  fn .m(): U;
+  fn .n(x: A): A;
+}
+context C1 = U, Int.m;
+context C2 = T, Int.m[U = T];
+functor F[A]: U, u0 -> A.m, A.n;
+functor G: A, U, u0 -> A.m, A.n {
+  bind A.m = () => u0;
+  bind A.n = (x) => x;
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  assume C1, C2, F, u0 {
+    fn user(): Int {
+      bind T = Bool;
+      let k: Int = 7;
+      let r: U = k.n(k).m();
+      3
+    }
+  }
+  fn demo() {
+    bind U = Int;
+    bind T = Int;
+    bind Int.m = () => 42;
+    bind u0 = 9;
+    bind F = G;
+    print_int(user());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

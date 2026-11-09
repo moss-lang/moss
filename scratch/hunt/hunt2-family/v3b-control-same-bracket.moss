@@ -1,0 +1,34 @@
+# Control for v3: F's A.m bracket equals H's (U = Y). Oracle 0, native 0. Shows the rest of v3 elaborates.
+type A;
+type U;
+type Y;
+tag Concrete;
+assume A { fn .m(): U; fn .k(): U; }
+val y0: Y;
+val a0: A;
+functor F[A]: A, Y, y0 -> A.m[U = Y], A.k[U = Y];
+functor H[A]: A, Y, y0 -> A.m[U = Y], A.k[U = Y];
+functor G: A, Y, y0 -> A.m[U = Y], A.k[U = Y] {
+  bind A.m[U = Y] = () => y0;
+  bind A.k[U = Y] = () => y0;
+}
+assume A, Y, y0, F {
+  fn use_it() {
+    let r: Y = Concrete.m();
+  }
+}
+assume A, a0 {
+  fn go() {
+    bind Y = A;
+    bind y0 = a0;
+    bind H = G;
+    bind F = H;
+    use_it();
+  }
+}
+fn main() {
+  bind A = Bool;
+  bind a0 = true;
+  go();
+}
+
