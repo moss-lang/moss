@@ -397,6 +397,29 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
+- **Counterexamples: two closure-merge obligations are false (open).**
+  `LinkMergesOk` and `BindMergesOk` (PublicBodySlice) claim that each
+  merge of a linked body's context either stays among F's (non-fixed)
+  inputs or involves only fixed inputs and symbols in force at the bind.
+  [linked-merge-captured.moss](examples/linked-merge-captured.moss): G
+  merges Y, which it captures, into X, which F links (merge Y := X), so
+  LinkBody holds and 3b does not apply. [bind-merge-unbound.moss](examples/bind-merge-unbound.moss):
+  G merges Y into Z, F takes neither, and Y is not in force where G is
+  bound, so Satisfies' merge clause does not apply to it. Audit, the oracle
+  and native accept both (they print 7). In each, an application's
+  environment reads the merged-away Y from the bind site, not as its
+  representative, so it does not realize G's context (absorption fails),
+  although nothing in G's body reads Y. A premise rejecting these would
+  reject programs both implementations accept; the proposed repair is in
+  the runtime: `application_environment` should read each of G's inputs
+  through G's table (its representative under the merge), after which
+  `link_entry`'s merge clause holds by construction and both obligations
+  can go. `CapturedInForceOk` as stated is false
+  (`PublicLinkMerges.captured_in_force_unprovable`: nothing ties the bind
+  context to a program); `captured_in_force_of` proves it at a bind
+  context with `KeysScoped` (in `Pre`) and `DeclaredInForce` (every
+  declared symbol the context mentions is in force), an invariant `Pre`
+  does not carry yet (T29).
 
 ## Body-safety slice (checked, conditional)
 
