@@ -28,6 +28,71 @@ From NM Require PublicFormation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
+(* ---- a function context records its fixed readings as the symbols ----------- *)
+
+Section FixedSelf.
+Variable W : A.world.
+
+(* An assumed functor's fixed inputs are read in a table where each
+   symbol means itself (IdForm), so as the symbols themselves. *)
+Definition FunSelf (e : A.entry) : Prop :=
+  match e with A.NFun _ fx => forall x t, In (x, t) fx -> t = TAbs x | _ => True end.
+
+Lemma entries_self :
+  (forall p ob tm sp es tm', A.ItemEntries W p ob tm sp es tm' ->
+     IdForm tm -> Scoped tm (tm_gens ob) -> Forall FunSelf es) /\
+  (forall p ob tm sps es tm', A.ItemsEntries W p ob tm sps es tm' ->
+     IdForm tm -> Scoped tm (tm_gens ob) -> Forall FunSelf es).
+Proof.
+  apply (ies_mut W
+    (fun p ob tm sp es tm' _ => IdForm tm -> Scoped tm (tm_gens ob) -> Forall FunSelf es)
+    (fun p ob tm sps es tm' _ => IdForm tm -> Scoped tm (tm_gens ob) -> Forall FunSelf es)).
+  - intros. repeat constructor.
+  - intros. constructor.
+  - intros. repeat constructor.
+  - intros. repeat constructor.
+  - intros p ob tm pa u d n ps args res fx R D Ast Fixed FR Id Ob. constructor; [|constructor].
+    cbn. intros x t I. destruct (proj1 (FR x t) I) as [_ L]. exact (idform_nlook _ _ _ Id L).
+  - intros. repeat constructor.
+  - intros p ob tm a pa c d n its bs es tm' R D Ast B Rest IH Id Ob.
+    pose proof (brackets_scoped W p ob tm c a bs Id Ob B) as Bs.
+    apply IH; [exact Id|]. intros g Ig. apply tm_gens_app in Ig as [Ig|Ig]; [exact (Bs g Ig)|exact (Ob g Ig)].
+  - intros. constructor.
+  - intros p ob tm sp r es1 tm1 es2 tm2 H1 IH1 H2 IH2 Id Ob.
+    destruct (proj1 (entries_formed W) _ _ _ _ _ _ H1 Id Ob) as [Id1 [Sub1 _]].
+    apply Forall_app. split; [exact (IH1 Id Ob)|exact (IH2 Id1 (fun g Ig => Sub1 g (Ob g Ig)))].
+Qed.
+
+Lemma root_self : forall q es0 tm its es tm', A.RootItems W q es0 tm its es tm' -> IdForm tm -> Forall FunSelf es.
+Proof.
+  intros q es0 tm its es tm' Root. induction Root as
+    [es0 tm|es0 tm p a rest u du n ps args res xs fx es tm' R D Ast Fresh Nd Xs FR Rest IH|es0 tm sp rest es tm' Skip Rest IH];
+    intros Id; [constructor| |exact (IH Id)].
+  destruct (add_tys_formed xs tm Id) as [IdA _].
+  apply Forall_app. split; [apply Forall_forall; intros e Ie; apply in_map_iff in Ie as [x [<- _]]; exact Logic.I|].
+  constructor; [|exact (IH IdA)]. cbn. intros x t I. destruct (proj1 (FR x t) I) as [_ L].
+  exact (idform_nlook _ _ _ IdA L).
+Qed.
+
+(* So a function context's functor provision reads each fixed input as
+   the symbol's canonical self. *)
+Theorem ctx_fun_self : forall f C ns, A.CtxOf W f C ns -> forall u fx, In (IFun u, A.ProvidedFunctor fx) (A.c_provisions C) ->
+  forall x t, In (x, t) fx -> t = app_subst (A.c_sub C) (TAbs x).
+Proof.
+  intros f C ns Ctx. destruct Ctx as (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT _].
+  pose proof (proj2 entries_self _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as SelfE.
+  assert (SelfR : Forall FunSelf er).
+  { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI]; [constructor|exact (root_self _ _ _ _ _ _ RI IdT)]. }
+  intros u fx I x t It. cbn in I. apply in_flat_map in I as [e [Ie I]].
+  assert (Se : FunSelf e).
+  { apply in_app_or in Ie as [Ie|Ie]; [exact (proj1 (Forall_forall _ _) SelfE e Ie)|exact (proj1 (Forall_forall _ _) SelfR e Ie)]. }
+  destruct e as [t0|v t0 a|f' g a|r m g a|u' fx']; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
+  injection E as <- <-. unfold A.fixed_subst in It. apply in_map_iff in It as [[y t0] [E It]]. cbn in E.
+  injection E as -> <-. cbn in Se. rewrite (Se x t0 It). reflexivity.
+Qed.
+End FixedSelf.
+
 Module PlatformApply (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module S := BodySlice Prims I0.
 
@@ -169,7 +234,8 @@ Definition PlatformPrimsOk : Prop :=
   forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st, Pre rr F C d types H g st ->
-  forall code needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
+  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
+  forall needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
   forall d1, select_provisions d sm = Some d1 ->
   forall key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
   Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
@@ -223,6 +289,43 @@ Proof.
     by (apply existsb_exists; exists x; split; [exact Kx|apply Nat.eqb_refl]).
   cbn [app_subst]. erewrite S.lookup_map_nat by exact Kx. cbv beta.
   rewrite E, (S.lookup_on_keys f _ x Kx). apply PublicTypeRead.app_subst_nil.
+Qed.
+
+(* At an application of a platform closure, the family's code reads each
+   fixed machine-type input of F as its machine type: the closure records
+   it (PlatformFixed), the caller's θ reads a fixed input as it was read
+   where the closure was provided (FixedMeans, the application's fixed
+   agreement), and the code reads its inputs through θ. *)
+Lemma platform_fixed_ground : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr d types H g st, Pre rr F C d types H g st ->
+  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
+  forall needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
+  forall d1 name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
+  A.Fixed W u x -> In x (map fst (A.c_ty Cu)) ->
+  ground (app_env d code th d1) (TAbs x) = TMachine mach.
+Proof.
+  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code Look
+    needs outputs keys bindings FD d1 name mach x Inm Lang Fx Ix.
+  pose proof AP as (R & Lf & FC & Inp & Th & Fixed & _).
+  pose proof FD as (_ & _ & _ & FB & _).
+  pose proof Pre0 as (_ & _ & _ & _ & [Abs [[_ [_ [_ Funs]]] _]] & _).
+  destruct (Funs u fx Lf) as [pv [gfx [Look' [Ok [Cov Vm]]]]]. rewrite Look in Look'. injection Look' as <-.
+  destruct (S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok) as [CL|[CC|CP]].
+  - destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E as _ E _. discriminate.
+  - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms & dc & gfh & E & _). injection E as _ E _.
+    destruct sms; discriminate.
+  - destruct CP as (code' & _ & _ & Mach).
+    destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx. rewrite (Mach name mach x Inm Lang Fx) in Gx.
+    injection Gx as Gx. destruct (Fixed x tx Itx) as [here [Lh Eh]].
+    rewrite (app_env_ground d code th d1 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ FB Th (TAbs x)
+      ltac:(intros y [<-|[]]; exact Ix)).
+    unfold ground. change (app_subst th (TAbs x)) with (match lookup_subst x th with Some t => t | None => TAbs x end).
+    assert (Lt : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x))))
+      by (rewrite Th; exact (S.lookup_on_keys (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ x Ix)).
+    rewrite Lt.
+    change (app_subst (A.c_ty C) (TAbs x)) with (match lookup_subst x (A.c_ty C) with Some t => t | None => TAbs x end).
+    rewrite lookup_subst_nlook, Lh. fold (ground d (A.canon C here)). rewrite Eh, (Abs tx). exact (eq_sym Gx).
 Qed.
 
 Hypothesis prims_ok : PlatformPrimsOk.
@@ -355,7 +458,7 @@ Proof.
         subst m2.
         pose proof (AllSig key2 rf a2 gf Ik2 Ek2 Mgf ltac:(rewrite <- Es2, <- Ek1; reflexivity)) as Agr.
         pose proof (prims_ok F C pa u fx Cu ns sm th gensof C' ks newgens [] AP rr d types H g st Pre0
-          code ns outputs keys bindings FD d1 Sel key2 op rf m a2 gf Ik2 ltac:(rewrite <- Es2; exact (last_prim_in _ _ _ Lp))
+          code Look ns outputs keys bindings FD d1 Sel key2 op rf m a2 gf Ik2 ltac:(rewrite <- Es2; exact (last_prim_in _ _ _ Lp))
           MP AK Ek2 Mgf) as Call.
         assert (GE : forall tc tf, SigAgree C Cu th tc tf -> ground de tf = ground d' tc).
         { intros tc tf [Sc Ec]. unfold de.

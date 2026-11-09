@@ -111,6 +111,12 @@ Proof.
   - left. rewrite map_id. apply Imp. split; [reflexivity|split; [exact Mn|exact L]].
 Qed.
 
+(* A platform family's fixed machine-type inputs mean the machine types
+   (the platform's provision exists only there, lib/wasm.moss). *)
+Definition PlatformFixed (u : nat) (gfx : subst) : Prop :=
+  forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
+    A.Fixed W u x -> lookup_subst x gfx = Some (TMachine mach).
+
 (* A functor closure is applicable (structurally: its captured functors
    are subterms). ClosureOk n H0 u gfx pv: pv, provided for u with its
    fixed inputs meaning what gfx says, is a body linked for u whose
@@ -143,7 +149,7 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx) ->
     ClosureOk n H0 u gfx (FunctorClosure code
       (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list dc)
-| CPlatform : forall u code gfx, Platform.Family W Prog u code ->
+| CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx ->
     ClosureOk n H0 u gfx (FunctorClosure code [] (EnvironmentWithAliases [] [] []))
 with CapturedFuns (n : nat) (H0 : heap_types) : subst -> environment -> list (nat * subst) -> Prop :=
 | CFNil : forall gm dc, CapturedFuns n H0 gm dc []
@@ -303,7 +309,7 @@ Proof.
       exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
   - intros u h Cu nsu Ch nsh code sms dc gfx gfh _ IH FCu FCh Incl Fx SN ST.
     exact (CCopy m H1 u h Cu nsu Ch nsh code sms dc gfx gfh IH FCu FCh Incl Fx SN ST).
-  - intros u code gfx Fam. exact (CPlatform m H1 u code gfx Fam).
+  - intros u code gfx Fam Mach. exact (CPlatform m H1 u code gfx Fam Mach).
   - intros gm dc. constructor.
   - intros gm dc u fx pv gfx rest Look _ IH1 Fx _ IH2. exact (CFCons m H1 gm dc u fx pv gfx rest Look IH1 Fx IH2).
 Qed.
@@ -3640,15 +3646,16 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
      (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) /\
      (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu)) /\
      (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx)) \/
-  (exists code, pv = FunctorClosure code [] (EnvironmentWithAliases [] [] []) /\ Platform.Family W Prog u code).
+  (exists code, pv = FunctorClosure code [] (EnvironmentWithAliases [] [] []) /\ Platform.Family W Prog u code /\
+     PlatformFixed u gfx).
 Proof.
   intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
-    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh FCu FCh Incl Fx SN ST|u code gfx Fam].
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh FCu FCh Incl Fx SN ST|u code gfx Fam Mach].
   - left. exists gg, h, Cu, nsu, Cg, nsg, dc. split; [reflexivity|].
     exact (conj LB (conj FCu (conj FCg (conj FxIn (conj Caps CF))))).
   - right; left. exists h, Cu, nsu, Ch, nsh, code, sms, dc, gfh. split; [reflexivity|].
     exact (conj Okh (conj FCu (conj FCh (conj Incl (conj Fx (conj SN ST)))))).
-  - right; right. exists code. split; [reflexivity|exact Fam].
+  - right; right. exists code. split; [reflexivity|exact (conj Fam Mach)].
 Qed.
 
 Lemma ilook_some_of_in : forall X k (l : list (item * X)) p, In (k, p) l -> exists p', A.ilook k l = Some p'.
@@ -4518,7 +4525,7 @@ Proof.
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
        exact (copy_apply k Bel J IH F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj LJ Pre0
          gfx h Cu0 nsu Ch nsh code sms dc gfh Look Okh FCu0 FCh Incl FxC SN ST Fm). }
-  2: { destruct CP as (code & -> & Fam).
+  2: { destruct CP as (code & -> & Fam & _).
        exact (platform_apply k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0 code Look Fam). }
   destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
   destruct (functx_unique _ _ _ _ _ FC FCu0) as [<- <-].
