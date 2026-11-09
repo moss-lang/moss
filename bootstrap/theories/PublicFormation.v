@@ -1442,7 +1442,7 @@ Proof.
     + destruct (binditems_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' _]. exact (conj Fc' Ff).
     + split; [|exact Ff].
       apply (apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
-      intros t Ft. destruct (Outs t Ft) as [[_ E]|[_ [Fr _]]]; [left; exact E|right; exact Fr].
+      intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ [Fr _]]]; [left; exact E|right; exact Fr].
     + match goal with Fx : forall x tx, In (x, tx) fx <-> _ |- _ =>
         split; [|exact Ff]; apply set_fun_formed; [exact Fc|intros x tx Iq; exact (proj2 (proj1 (Fx x tx) Iq))] end.
     + match goal with Fx : forall x tx, In (x, tx) fx <-> _ |- _ =>

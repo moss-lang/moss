@@ -2932,7 +2932,9 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
   (A.FreshFor W F C newgens) /\
   ((forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b)) /\
   ((forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
+            ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+                    (match A.fr_this F with Some r => A.gens r | None => [] end))) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
@@ -2963,11 +2965,13 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
       (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
       
       (forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
+            ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+                    (match A.fr_this F with Some r => A.gens r | None => [] end))) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False newgens
+  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False (map gensof outs)
       (BApply u th (map (fun t => (t, gensof t)) outs) sm).
 
 
@@ -4470,7 +4474,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
     select_provisions d3 (inst_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list) = Some dr /\
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
-    MeaningsGrow newgens d (append_environment result d).
+    MeaningsGrow (map gensof outs) d (append_environment result d).
 Hypothesis link_results : LinkResultsOk.
 
 (* HYPOTHESIS (T15). Applying a copy runs its source at the source's
@@ -4487,14 +4491,14 @@ Definition CopyApplyOk : Prop := forall k, Below k -> forall J, (forall J', J' <
   (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   FixedMeans u d fx gfx ->
-  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+  StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs) (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 Hypothesis copy_apply : CopyApplyOk.
 Definition PlatformApplyOk : Prop := forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> Pre rr F C d types H g st ->
   forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
   Platform.Family W Prog u code ->
-  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+  StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs) (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 Hypothesis platform_apply : PlatformApplyOk.
 
 (* An abstract application below the cap J, given those below it: the
@@ -4506,10 +4510,14 @@ Proof.
   assert (AP : AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs)
     by exact (conj R (conj Fx (conj FC (conj Inp (conj Th (conj Fixed (conj Sat (conj FreshG (conj Uniq (conj Outs (conj NdO (conj OutsIff PR)))))))))))).
   split; [repeat split|]. split.
-  { destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr.
-    split; intros t E g0 Ig Ig'; destruct (Fr g0 Ig) as [_ Out]; apply Out; apply in_or_app; right; apply in_or_app; right;
-      [apply in_or_app; left; rewrite E; exact Ig'|apply in_or_app; right; rewrite E; exact Ig']. }
-  intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False newgens
+  { assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+        (match A.fr_this F with Some r => A.gens r | None => [] end))).
+    { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
+      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E Nf]]|[_ [_ In']]]; [rewrite E; exact Nf|].
+      destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr. destruct (Fr _ In') as [_ Out]. intros I. apply Out.
+      apply in_or_app; right; apply in_or_app; right. exact I. }
+    split; intros t E g0 Ig Ig'; apply (Av g0 Ig); rewrite E; apply in_or_app; [left|right]; exact Ig'. }
+  intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs)
     (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
   pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].

@@ -401,6 +401,18 @@ the local store. *C* and *F* are the static context and frame.
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
 
+- **Counterexample: an output type left its block (fixed).** `BApplyAbstract`
+  returned only the fresh generations (`newgens`) as made. An output not
+  in force is installed as itself, and the application writes its meaning,
+  but it was not made, so `BlkE` let a value of that type leave the block.
+  [output-escape.moss](examples/output-escape.moss) does this. The oracle
+  rejects it (D78). Native was not run: no built compiler in that
+  checkout. `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
+  applications. The rule now makes every output destination
+  (`map gensof outs`), and requires that the frame's return and receiver
+  types not mention an output installed as itself (they are read where
+  their symbols are in force, so this rejects nothing). Details are in
+  scratch/orch/family-AUDIT.md.
 - **`FamilyStepOk` is too general (statement gap, open).** It quantifies
   over every `FamilyApplication` and every realized `C0`, but it does not
   have the facts that make its conclusion true.
