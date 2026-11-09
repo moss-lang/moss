@@ -172,6 +172,15 @@ Proof.
     intros x Ix. rewrite map_map in Ix. cbn in Ix. apply in_map_iff in Ix as [t [<- It]]. exact (Made t It).
 Qed.
 
+(* The same growth, over every output destination (the form the lead's
+   reconciled statement uses: made = map gensof outs). *)
+Lemma result_grows_by_destinations : forall d d3 dr (outs : list nat) (gensof : nat -> nat),
+  S.MeaningsGrow (map gensof outs) d (append_environment (result_of d3 outs gensof dr) d).
+Proof.
+  intros d d3 dr outs gensof. exists (map (fun t => (gensof t, read_meaning d3 t)) outs). split; [reflexivity|].
+  intros x Ix. rewrite map_map in Ix. exact Ix.
+Qed.
+
 End Run.
 
 (* ---- the caller's state after the application ---------------------------- *)
