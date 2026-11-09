@@ -438,7 +438,7 @@ Proof.
   assert (Supported : M.supports iface op = true).
   { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
     pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
-    apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0))
+    apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) []
       (map (A.rkey_of outputs) keys) bindings []). split; [exact (nlook_in _ _ _ _ FB)|].
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
@@ -583,7 +583,7 @@ Theorem safety_obligations : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
-     S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
+     S.CapturedInForceOk /\
      CopyA.ChainResultsOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
      PA.ChainResultAgrees W Prog /\
@@ -599,24 +599,24 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [LM [BM [CIF [CR [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]].
+    as [CIF [CR [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
   pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].
-  pose proof (PA.chain_platform_ok W Prog _ _ _ LM RA
+  pose proof (PA.chain_platform_ok W Prog _ _ _ RA
     (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo)) (platform_sigs_fixed W Prog))
     ) as CP.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
-  pose proof (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP) as CA.
+  pose proof (CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
   pose proof (CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.
   assert (FSt : S.FamilyStepOk W Prog _ _ _)
-    by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) LM BM CIF LR CA PA FLR FCA FPA).
+    by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF LR CA PA FLR FCA FPA).
   split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
-    (ex_intro _ bundle Wo) LM BM CIF LR CA PA).
+    (ex_intro _ bundle Wo) CIF LR CA PA).
 Qed.
 
 End EntrySafety.

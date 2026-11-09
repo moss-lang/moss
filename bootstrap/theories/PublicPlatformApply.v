@@ -217,7 +217,7 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
   A.FunCtx W u inputs needs /\
   (forall t, ~ A.FunOutputs W u t) /\
   A.ProvideResult W u inputs (fun t => TAbs t) outputs keys /\
-  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty inputs)) (map fst (A.c_ty inputs))
+  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty inputs)) (map fst (A.c_ty inputs)) []
     (map (A.rkey_of outputs) keys) bindings []) /\
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
@@ -352,7 +352,7 @@ Proof.
   rewrite FBf in FB. injection FB as <-. cbn [fc_bindings].
   destruct LB. match goal with
     | Bo : A.BindsOf (?w EUnit) ?b0, Bi : A.BindItems _ _ _ _ _ ?w _ _ _, Fh : A.funbody_of _ _ = Some _ |- _ =>
-        rewrite FBf in Fh; injection Fh as _ _ _ Eb _; subst b0;
+        rewrite FBf in Fh; injection Fh as _ _ _ _ Eb _; subst b0;
         pose proof (bindsof_np _ _ Bo (items_np _ _ _ _ _ _ _ Bi EUnit Logic.I)) as Np end.
   destruct bindings as [|b rest]; [reflexivity|exfalso].
   inversion Binds as [|key b' keys' rest' [op [Eb _]] _]; subst.
@@ -368,13 +368,13 @@ Qed.
 
 (* The family's code reads a type of its inputs as the caller's θ does. *)
 Lemma app_env_ground : forall d code th e (Ch0 Cu : A.cx) (f : nat -> ty) Dr bs,
-  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) Dr bs []) ->
+  A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0)) [] Dr bs []) ->
   th = map (fun q => (fst q, f (fst q))) (A.c_ty Cu) -> incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground (app_env d code th e) t = ground d (app_subst th t).
 Proof.
   intros d code th e Ch0 Cu f Dr bs FB -> Kin t Sc.
   unfold app_env, application_environment. change (view_functor P code) with (A.funbody_of Prog code). rewrite FB.
-  cbn [fc_linked fc_inputs]. unfold ground. cbn [type_meanings].
+  cbn [fc_linked fc_inputs fc_table lookup_subst]. unfold ground. cbn [type_meanings].
   match goal with |- app_subst ?m t = _ => rewrite <- (PublicTypeRead.app_subst_nil (app_subst m t)) end.
   apply subst2_agree. intros x Ix. pose proof (Sc x Ix) as Kx.
   assert (E : existsb (Nat.eqb x) (map fst (A.c_ty Ch0)) = true)
@@ -647,7 +647,6 @@ Proof.
   intros t Ft. exfalso. exact (NoOut t Ft).
 Qed.
 
-Hypothesis link_merges : S.LinkMergesOk W Prog.
 Hypothesis chain_agrees : ChainResultAgrees.
 Hypothesis chain_prims : ChainPrimsOk.
 
@@ -676,7 +675,7 @@ Proof.
     rewrite Eh, (Abs tx). reflexivity. }
   assert (RealF : S.Realizes W Prog argv read state_ok rr Cu (S.callee_env d (CopyA.thof f Cu) d1) H)
     by (rewrite <- Thf; exact RealU).
-  destruct (CopyA.chain_entry W Prog argv read state_ok link_merges rr H u gfx _ Ok code sms CopyA.empty_env eq_refl
+  destruct (CopyA.chain_entry W Prog argv read state_ok rr H u gfx _ Ok code sms CopyA.empty_env eq_refl
     d f Cu ns d1 FC RealF Fixd)
     as [(h0' & gf0' & gg & Ch0' & nsh0 & Cg & nsg & e2 & Chn' & Ok0 & LB & FC0' & FCg & Keys & A2 & RealG)
        |(h0' & gf0' & Chn' & _ & Fam' & Ok0)].
