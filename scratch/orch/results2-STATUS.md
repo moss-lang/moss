@@ -89,3 +89,96 @@ implementations accept and run correctly.
 - scratch/orch/results2/ms-frame-free-wip.diff: the abandoned frame-free
   MeaningsScoped edit of PublicBodySlice. Obsolete under (A), and kept for
   reference only.
+
+
+## Update (280e5bc): premise in place; HANDOFF BRIEF for ChainCoreOk
+
+The coordinator decided: no Audit clause. The kept-output gap is now the
+single named premise `PublicLinkResults.KeptOutputsUnmentioned`:
+
+    forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+      S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+      PublicFormation.FormedCx W C ->
+      forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None ->
+        ~ In t (A.context_gens C)
+
+It is for the user to decide later: an Audit clause or the parametricity
+proof (results2-AUDIT.md section 2). `DeclaredScoped` is gone.
+
+`safety_obligations` (PublicEntry) now lists `LRes.ChainCoreOk` and
+`LRes.KeptOutputsUnmentioned` in place of `CopyA.ChainResultsOk`. The
+proof derives it with `LRes.chain_results_scoped`. Module plumbing:
+- `PublicLinkResults.LinkResults` instantiates `PA := PlatformApply`,
+  with `CA := PA.CopyA` and `S := CA.S`.
+- PublicEntry takes `PA := LRes.PA`, so both use one slice instance.
+  Separate functor applications would give distinct inductives.
+- SAFETY-SITES's entry paragraph and hypotheses table name the premise.
+
+check.sh passes.
+
+### Next: prove ChainCoreOk (PublicLinkResults, Section Assemble)
+
+Once proved, drop it from `safety_obligations`: `chain_results_scoped`
+then needs only `KeptOutputsUnmentioned`. The statement is in the file.
+Under ChainCoreOk's premises:
+- `LD := S.LinkData ... h0 ...`, the root's link facts, including:
+  - `OutM`: outputs are keys of `c_ty Cb`;
+  - `PR'`: `ProvideResult h0 Ch0 (TAbs o gen) Cr ks'`;
+  - `RR`: `ResultRealizes Cb Cr ...`, comparing at `read_rename`;
+  - `FB`: the code's sources are `link_sources Cb outs' gen Cr ks'`.
+- `Pre3`: the body's final state.
+- `AP`: the caller's `AppPremises`, with
+  `PR : ProvideResult u C (TAbs o gensof) C' ks`.
+
+Pieces to prove, in order of difficulty:
+1. **Outputs readable.** `forall t, In t outs -> output_meaning d3 t <> None`:
+   - Pre3's `AliasOk` (CtxLocals' third part) at a key of `c_ty Cb`
+     gives `Some`.
+   - `outs` = `outs'` as sets (`chain_outputs` with LD's OutsI;
+     AP's OutsI).
+2. **KeysMatch C'.** `C'` is `output_cx C tm' es`
+   (`PublicFormation.provide_result_shape`). New provisions come from
+   `entry_provision`, which files each under its own kind.
+   `PublicFormation.apply_abstract_formed` may already give it, or look
+   for a KeysMatch lemma for output_cx in PublicCallRealize or
+   PublicFormation.
+3. **Selection.** `select_provisions d3 (result_smap θ' D (link_sources
+   ...)) = Some dr`:
+   - use `select_ok` (PublicCallRealize): each source key must have a
+     provision in d3;
+   - `result_smap_in` and `link_source_of` (PublicBodySlice) give the
+     source `rkey_of Cb (at_site Cb (output_renaming outs' gen k'))`;
+   - RR says Cb provides it at that key; Pre3's EnvOk then gives a
+     run-time provision (`S.realized_key`).
+4. **AliasOk C' at d'**, where
+   `d' = append_environment (result_of d3 outs gensof dr) d`:
+   - an output t: alias `read_meaning d3 t`, and the table entry
+     `t |-> canon C (TAbs (gensof t))` grounds to the same value, since
+     the write `gensof t |-> read_meaning d3 t` comes first in d';
+   - other keys: as in d, because `dest_scope` keeps destinations out of
+     their types, and its first conjunct (`~ In (gensof t) keys`)
+     separates aliases.
+5. **EnvOk C' at d' (the core, the largest piece).**
+   - Old provisions of C: `envok_scoped`-style transfer. Meanings change
+     only at destinations, which are out of `context_gens C` by
+     `dest_scope`. Provisions: `dr`'s keys may shadow C's keys at the
+     same run-time key. Those are exactly the keys that C' re-files, by
+     `ResultKeys`/`output_cx`.
+   - New provisions: relate the caller's entry (`ProvideResult` at
+     `output_type_map C outs (TAbs o gensof)`) to the formal entry of
+     Cr, read through the copy chain (`CopyChain`'s
+     `CopyOutputs`/FunOutputs steps), with
+     `PublicOutputSubst.provide_result_rel`:
+     - `s1` = `(gen t |-> read_meaning d3 t)` over θ grounded in d;
+     - `s2` = `type_meanings d'`.
+   - The value at dr's key is d3's value at the body key, typed by
+     Pre3's EnvOk at `ground d3` of Cb's type. RR equates that with
+     `canon Cb` of the promised type under `read_rename`. `ground d3`
+     of that equals `ground d'` of the caller's type: inputs through
+     `application_environment` read θ in d, outputs through the
+     aliases.
+   - Expect several hundred lines. Start with the length-zero chain
+     (`CCRefl`, h0 = u): `link_results_of_chain` is that case. Then
+     generalize along `CCStep`.
+6. **FamilyLinkResultsOk** (PublicFamilyStep.v): the same correspondence
+   with outs = [] and `result_substitution th []`. Pieces 1 and 4 vanish.
