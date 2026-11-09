@@ -1493,9 +1493,9 @@ Proof.
 Qed.
 
 (* A closure bound from a provider is callable below the binding's fuel. *)
-Lemma provider_callable : forall k, Below k -> forall jn, jn <= k -> forall F C pa sg g types sm d H,
+Lemma provider_callable : forall k, Below k -> forall jn, jn <= S k -> forall F C pa sg g types sm d H,
   A.FnProvider W Prog F C (AEPath pa None) sg None g types sm ->
-  Realizes (S jn) C d H ->
+  Realizes jn C d H ->
   exists dc, select_provisions d sm = Some dc /\
     CallableOk jn H d (A.sg_params sg) (A.sg_ret sg) (FunctionClosure g (typed_capture d types dc)).
 Proof.
@@ -1503,7 +1503,7 @@ Proof.
   pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   remember (AEPath pa None) as src eqn:Src. remember (@None ty) as none eqn:NoThis.
   destruct Prov as [F C pa' g sg Cg ns sm th R K Def Ctx Sat CT SigG|F C pa' g sg w n R K Abs' Fn Len Fresh Body].
-  - destruct (callee_realizes jn C d H g Cg ns sm th Real Ctx Sat CT) as [dc [Sel [Ag RealG]]].
+  - destruct (callee_realizes_le jn jn C d H g Cg ns sm th (le_n jn) Real Ctx Sat CT) as [dc [Sel [Ag RealG]]].
     exists dc. split; [exact Sel|].
     destruct Def as [n0 [ps0 [rt0 [b0 Def]]]]. unfold A.ast_of in Def.
     destruct (A.w_decl W g) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
@@ -1665,7 +1665,7 @@ Proof.
 Qed.
 
 (* An attached method bound at a key is entered at the key's receiver. *)
-Lemma attached_provider_callable : forall k, Below k -> forall jn, jn <= k ->
+Lemma attached_provider_callable : forall k, Below k -> forall jn, jn <= S k ->
   forall C rg n att rt sg Ca ns sm th rargs d H,
   A.Attached W rg n att ->
   (exists rn ps r b, A.ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
@@ -1675,7 +1675,7 @@ Lemma attached_provider_callable : forall k, Below k -> forall jn, jn <= k ->
   A.CallTheta W (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) Ca att th ->
   A.SigOf W att (A.c_ty (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)) (Some (A.canon C rt))
     (A.FSig (map (A.canon C) (A.sg_params sg)) (A.canon C (A.sg_ret sg))) ->
-  Realizes (S jn) C d H ->
+  Realizes jn C d H ->
   exists dc, select_provisions d sm = Some dc /\
     CallableOk jn H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg) (FunctionClosure att (typed_capture d (TypeCapture th th) dc)).
 Proof.
@@ -1685,7 +1685,7 @@ Proof.
   pose proof Real as [Abs _].
   pose proof (realizes_ty_free _ C Cd d H Es Ep Real) as RealD.
   pose proof RealD as [AbsD _].
-  destruct (callee_realizes jn Cd d H att Ca ns sm th RealD Ctx Sat CT) as [dc [Sel [Ag RealA]]].
+  destruct (callee_realizes_le jn jn Cd d H att Ca ns sm th (le_n jn) RealD Ctx Sat CT) as [dc [Sel [Ag RealA]]].
   exists dc. split; [exact Sel|].
   destruct Def as [rn [ps [rt0 [b Def]]]]. unfold A.ast_of in Def.
   destruct (A.w_decl W att) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
@@ -2062,7 +2062,7 @@ Proof.
   - right. split; [|exact Here]. intros [E|I]; [exact (Ne (eq_sym E))|exact (Out I)].
 Qed.
 
-Lemma lambda_callable : forall k, Below k -> forall jn, jn <= k ->
+Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
   forall C (ps : list (name * option aty)) sg this body pid caps capvals Cl Fl lbody ltype d1 H dc keys,
   List.length ps = List.length (A.sg_params sg) ->
   (forall n, In n caps -> A.slook n (A.c_locals C) <> None /\ ~ In n (map fst ps)) ->
@@ -2076,7 +2076,7 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= k ->
   A.body_of Prog pid = Some (fold_right (fun q x => ELet (A.var_of Fl (fst q)) (EVal (snd q)) x) lbody (combine caps capvals)) ->
   (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
   select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
-  Realizes (S jn) C d1 H ->
+  Realizes jn C d1 H ->
   (forall q, In q (combine caps capvals) -> exists w, lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\
      value_typed W P H w (ground d1 (capty C (fst q)))) ->
   (forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C)) ->
@@ -2100,7 +2100,7 @@ Proof.
     destruct (A.slook (fst q) (A.c_locals C)) as [[t mu]|] eqn:Lq; [|congruence].
     destruct (Caps q Iq) as [w [Look T]]. unfold capty in T. rewrite Lq in T. exists t, mu, w. split; [reflexivity|split; [exact Look|exact T]]. }
   assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
-  pose proof (lambda_realizes jn C qs Cl d1 H dc keys ClE Real Ndq Capsr KS Keys Sel) as RealCl.
+  pose proof (lambda_realizes_le jn jn C qs Cl d1 H dc keys (le_n jn) ClE Real Ndq Capsr KS Keys Sel) as RealCl.
   fold de in RealCl.
   cbn [CallableOk]. eexists. split; [change (view_function P pid) with (A.body_of Prog pid); exact BodyOf|].
   intros j Lj H' st ws E Sok Args.
@@ -2536,7 +2536,7 @@ Qed.
 
 (* Each need of a callee is found in the environment a call builds. *)
 Lemma callee_found : forall n C d H f Cf ns sm th dc,
-  Realizes (S n) C d H -> A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th ->
+  Realizes n C d H -> A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th ->
   select_provisions d sm = Some dc ->
   forall k, In k ns -> lookup_provision (A.rkey_of Cf k) (callee_env d th dc) <> None.
 Proof.
@@ -2588,7 +2588,7 @@ Lemma eval_call_eq : forall j d g st f th sm args,
 Proof. reflexivity. Qed.
 
 (* A wrapper's closure: the bound fn called from inside its own context. *)
-Lemma wrapped_callable : forall k, Below k -> forall jn, jn <= k ->
+Lemma wrapped_callable : forall k, Below k -> forall jn, jn <= S k ->
   forall C sg g th Cg ns sm w recv d H dc,
   (exists n ps rt b, A.ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
   A.CtxOf W g Cg ns -> A.Satisfies C Cg th ns sm -> A.CallTheta W C Cg g th ->
@@ -2596,12 +2596,12 @@ Lemma wrapped_callable : forall k, Below k -> forall jn, jn <= k ->
   select_provisions d sm = Some dc ->
   A.body_of Prog w = Some (ECall g (A.theta_ctx Cg) (map (fun k => (A.rkey_of Cg k, A.rkey_of Cg k)) ns)
                                  (map EVar (seq 1 (List.length (A.sg_params sg))))) ->
-  Realizes (S jn) C d H ->
+  Realizes jn C d H ->
   CallableOk jn H d (recv :: A.sg_params sg) (A.sg_ret sg) (FunctionClosure w (typed_capture d (TypeCapture th th) dc)).
 Proof.
   intros k Bel jn Ljn C sg g th Cg ns sm w recv d H dc Def Ctx Sat CT Sig Sel BodyW Real.
   pose proof Real as [Abs _].
-  destruct (callee_realizes jn C d H g Cg ns sm th Real Ctx Sat CT) as [dc0 [Sel0 [Ag RealG]]].
+  destruct (callee_realizes_le jn jn C d H g Cg ns sm th (le_n jn) Real Ctx Sat CT) as [dc0 [Sel0 [Ag RealG]]].
   rewrite Sel in Sel0. injection Sel0 as <-.
   set (de := typed_capture d (TypeCapture th th) dc).
   assert (RealDe : Realizes jn Cg de H) by exact RealG.
@@ -2774,6 +2774,193 @@ Proof.
   intros F C its w C' F' m D. induction D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest IH]; [auto 10|].
   destruct (bind_item_frame _ _ _ _ _ _ _ D1) as [E1 [E2 [E3 [E4 E5]]]].
   destruct IH as [I1 [I2 [I3 [I4 I5]]]]. repeat split; congruence.
+Qed.
+
+(* ---- binding-level steps -------------------------------------------------------- *)
+
+(* Two frames that agree on what code safety reads. *)
+Definition FrameSame (F F' : A.frame) : Prop :=
+  A.fr_ret F' = A.fr_ret F /\ A.fr_this F' = A.fr_this F /\ A.fr_loop F' = A.fr_loop F /\ A.fr_var F' = A.fr_var F.
+
+Lemma outcome_frame : forall F F' d H types t (b : Prop) r, FrameSame F F' ->
+  Outcome F' d H types t b r -> Outcome F d H types t b r.
+Proof.
+  intros [m r1 t1 l1 v1 f1 a1 p1] [m' r2 t2 l2 v2 f2 a2 p2] d H types t b r [Er [Et [El Ev]]]; cbn in *.
+  subst. intros Out. exact Out.
+Qed.
+
+Lemma pre_frame : forall n F F' C d types H g st, FrameSame F F' ->
+  Pre n F C d types H g st -> Pre n F' C d types H g st.
+Proof.
+  intros n [m r1 t1 l1 v1 f1 a1 p1] [m' r2 t2 l2 v2 f2 a2 p2] C d types H g st [Er [Et [El Ev]]]; cbn in *.
+  subst. intros Pre0. exact Pre0.
+Qed.
+
+(* One binding, run by eval_bindings at fuel at most r - 1, with the
+   provisions realized at the fixed index r: either it completes, in the
+   context after it, or it stops with an outcome of its own. *)
+Definition BindStep r F C F' C' (Bi : Prop) (b : binding) : Prop :=
+  FrameSame F F' /\
+  forall j d types H g st, S j <= r -> Pre r F C d types H g st -> forall rest,
+    (exists d' g' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\
+       Pre r F' C' d' types H' g' st' /\
+       I.eval_bindings (S j) P d g st (b :: rest) = I.eval_bindings j P d' g' st' rest) \/
+    (exists res, I.eval_bindings (S j) P d g st (b :: rest) = inr res /\
+       (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
+
+Inductive Chain (k : nat) : A.frame -> A.cx -> A.frame -> A.cx -> Prop -> list binding -> Prop :=
+| ChainNil : forall F C (B : Prop), Chain k F C F C B []
+| ChainCons : forall F C F1 C1 F2 C2 (B1 B2 B : Prop) b bs,
+    (forall r, r <= S k -> BindStep r F C F1 C1 B1 b) -> Chain k F1 C1 F2 C2 B2 bs ->
+    (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (b :: bs).
+
+Lemma frame_same_refl : forall F, FrameSame F F.
+Proof. intros F. repeat split. Qed.
+
+Lemma frame_same_trans : forall F1 F2 F3, FrameSame F1 F2 -> FrameSame F2 F3 -> FrameSame F1 F3.
+Proof. intros F1 F2 F3 [A1 [A2 [A3 A4]]] [B1 [B2 [B3 B4]]]. repeat split; congruence. Qed.
+
+Lemma chain_frame : forall k F C F' C' B bs, Chain k F C F' C' B bs -> FrameSame F F'.
+Proof.
+  intros k F C F' C' B bs D. induction D as [F C B|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest IH Imp];
+    [apply frame_same_refl|].
+  exact (frame_same_trans _ _ _ (proj1 (Step (S k) (le_n _))) IH).
+Qed.
+
+Lemma chain_weaken : forall k F C F' C' (B B' : Prop) bs, Chain k F C F' C' B bs -> (B -> B') -> Chain k F C F' C' B' bs.
+Proof.
+  intros k F C F' C' B B' bs D Imp. destruct D as [F C B|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest Imp0];
+    [constructor|]. apply (ChainCons k F C F1 C1 F2 C2 B1 B2 B' b bs Step Rest). tauto.
+Qed.
+
+Lemma chain_app : forall k F C F1 C1 F2 C2 (B1 B2 B : Prop) bs1 bs2,
+  Chain k F C F1 C1 B1 bs1 -> Chain k F1 C1 F2 C2 B2 bs2 -> (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (bs1 ++ bs2)%list.
+Proof.
+  intros k F C F1 C1 F2 C2 B1 B2 B bs1 bs2 D1. revert F2 C2 B2 B bs2.
+  induction D1 as [F C B0|F C F1 C1 F1' C1' Ba Bb B0 b bs Step Rest IH Imp]; intros F2 C2 B2 B bs2 D2 Imp2.
+  - cbn. apply (chain_weaken k F C F2 C2 B2 B bs2 D2). tauto.
+  - cbn. apply (ChainCons k F C F1 C1 F2 C2 Ba (Bb \/ B2) B b (bs ++ bs2)%list Step).
+    + apply (IH F2 C2 B2 (Bb \/ B2) bs2 D2). tauto.
+    + tauto.
+Qed.
+
+(* A chain gives the expression-level wrapper: each binding in turn, then
+   the continuation. *)
+Lemma chain_wrap : forall k n F C F' C' (Bi : Prop) bs, Chain k F C F' C' Bi bs -> n <= S k ->
+  WrapSafe n F C F' C' Bi (fun x => fold_right (fun b x => EBind b x) x bs).
+Proof.
+  intros k n F C F' C' Bi bs D Le. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest IH Imp].
+  - intros t B x Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
+  - intros t B' x Safe. pose proof (IH t B' x Safe) as Inner. cbn [fold_right].
+    intros [|j] Lj d types H g st Pre0; [exact Logic.I|]. rewrite eval_bind_eq.
+    destruct j as [|j]; [exact Logic.I|].
+    destruct (Step (S (S j)) ltac:(lia)) as [Same Run].
+    destruct (Run j d types H g st ltac:(lia) Pre0 []) as [[d' [g' [st' [H' [E [Meq [Pre' Eq]]]]]]]|[res [Eq [NN Out]]]];
+      rewrite Eq.
+    + destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
+      pose proof (Inner (S (S j)) ltac:(lia) d' types H' g' st' (pre_lower Pre')) as Out.
+      eapply outcome_heap; [exact E|]. apply (outcome_env F d d' H' types t _ _ Meq).
+      apply (outcome_frame F F1 d' H' types t _ _ Same).
+      eapply O.outcome_breaks; [|exact Out]. tauto.
+    + eapply outcome_pass; [|exact NN|exact Out]. tauto.
+Qed.
+
+Lemma realizes_pre_lower : forall j r F C d types H g st, Pre r F C d types H g st -> j <= r ->
+  Pre j F C d types H g st.
+Proof.
+  intros j r F C d types H g st [Frame [Ctx [L [St Real]]]] Le.
+  exact (conj Frame (conj Ctx (conj L (conj St (realizes_lower r j C d H Le Real))))).
+Qed.
+
+Lemma heap_extends_trans : forall H1 H2 H3, heap_extends H1 H2 -> heap_extends H2 H3 -> heap_extends H1 H3.
+Proof. intros H1 H2 H3 E1 E2 a c L. exact (E2 _ _ (E1 _ _ L)). Qed.
+
+(* A chain run by eval_bindings: it completes, in the context after it,
+   or stops with an outcome. *)
+Lemma chain_run : forall k F C F' C' (Bi : Prop) bs, Chain k F C F' C' Bi bs ->
+  forall r j d types H g st rest, r <= S k -> j < r -> Pre r F C d types H g st ->
+  (exists d' g' st' H' j', j = j' + List.length bs /\ heap_extends H H' /\ type_meanings d' = type_meanings d /\
+     Pre r F' C' d' types H' g' st' /\
+     I.eval_bindings j P d g st (bs ++ rest)%list = I.eval_bindings j' P d' g' st' rest) \/
+  (exists res, I.eval_bindings j P d g st (bs ++ rest)%list = inr res /\
+     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
+Proof.
+  intros k F C F' C' Bi bs D. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B b bs Step Rest IH Imp];
+    intros r j d types H g st rest Lr Lj Pre0.
+  - left. exists d, g, st, H, j. split; [cbn; lia|]. split; [intros a c L; exact L|].
+    split; [reflexivity|]. split; [exact Pre0|reflexivity].
+  - destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v E; discriminate|exact Logic.I]|].
+    destruct (Step r Lr) as [Same Run].
+    destruct (Run j d types H g st ltac:(lia) Pre0 (bs ++ rest)%list)
+      as [[d1 [g1 [st1 [H1 [E1 [M1 [Pre1 Eq1]]]]]]]|[res [Eq [NN Out]]]].
+    + cbn [app]. rewrite Eq1.
+      destruct (IH r j d1 types H1 g1 st1 rest Lr ltac:(lia) Pre1)
+        as [[d' [g' [st' [H' [j' [Ej [E' [M' [Pre' Eq']]]]]]]]]|[res [Eq [NN Out]]]].
+      * left. exists d', g', st', H', j'. split; [cbn; lia|]. split; [exact (heap_extends_trans _ _ _ E1 E')|].
+        split; [congruence|]. split; [exact Pre'|exact Eq'].
+      * right. exists res. split; [exact Eq|]. split; [exact NN|].
+        eapply outcome_heap; [exact E1|]. apply (outcome_env F d d1 H1 types TUnit _ _ M1).
+        apply (outcome_frame F F1 d1 H1 types TUnit _ _ Same).
+        eapply O.outcome_breaks; [|exact Out]. tauto.
+    + right. exists res. cbn [app]. split; [exact Eq|]. split; [exact NN|].
+      eapply O.outcome_breaks; [|exact Out]. tauto.
+Qed.
+
+Lemma type_bstep : forall r F C t0 tau,
+  BindStep r F C F (A.set_ty C t0 (A.canon C tau)) False (BType t0 (A.canon C tau)).
+Proof.
+  intros r F C t0 tau. split; [apply frame_same_refl|]. intros j d types H g st Lj Pre0 rest.
+  left. exists (bind_type d t0 (A.canon C tau)), g, st, H. split; [intros a c L; exact L|].
+  split; [reflexivity|]. split; [exact Pre0|]. reflexivity.
+Qed.
+
+Lemma val_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp v declared y x xt a,
+  A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
+  BindStep r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) (BValue v x).
+Proof.
+  intros k Bel r Lr F C sp v declared y x xt a Dy Fits. split; [apply frame_same_refl|].
+  intros j d types H g st Lj Pre0 rest. rewrite bindings_value_eq.
+  destruct (Bel j ltac:(lia)) as [SEx _].
+  pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits
+    (SEx F C y _ x xt Dy d types H g st (realizes_pre_lower j r F C d types H g st Pre0 ltac:(lia)))) as Out.
+  destruct (I.eval j P d g st x) as [[w| | | | | | |] g1 st1] eqn:E;
+    try (right; eexists; split; [reflexivity|]; split; [intros v' Ev; discriminate|];
+         eapply outcome_pass; [exact (fun b => A.IBExpr sp b)|intros v' Ev; discriminate|exact Out]).
+  destruct Out as [H1 [E1 [S1 [L1 T1]]]].
+  left. exists (install_provision (IVal v) (ValueProvision w) d), g1, st1, H1.
+  split; [exact E1|]. split; [reflexivity|]. split; [|reflexivity].
+  pose proof Pre0 as [Frame [Ctx [_ [_ Real]]]].
+  unfold A.set_val. rewrite (provide_set C (IVal v) (A.ProvidedVal declared []) a ltac:(intros; eauto)).
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L1|]. split; [exact S1|].
+  apply (realizes_set r C d H1 (IVal v) (A.ProvidedVal declared a)).
+  - exact (realizes_extends _ _ _ _ _ E1 Real).
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists w. split; [cbn; rewrite Nat.eqb_refl; reflexivity|exact T1].
+Qed.
+
+Lemma fn_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp f g sg pg types sm a,
+  A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
+  BindStep r F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AEPath pg None)))
+    (BFunction f g types sm).
+Proof.
+  intros k Bel r Lr F C sp f g sg pg types sm a Prov. split; [apply frame_same_refl|].
+  intros j d types0 H lg st Lj Pre0 rest. rewrite bindings_function_eq.
+  pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
+  destruct (provider_callable k Bel r Lr F C pg sg g types sm d H Prov Real) as [dc [Sel Ok]].
+  rewrite Sel. left.
+  set (d' := install_provision (IFn f) (FunctionClosure g (typed_capture d types dc)) d).
+  exists d', lg, st, H. split; [intros a0 c L0; exact L0|]. split; [reflexivity|]. split; [|reflexivity].
+  unfold A.set_fn. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)).
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  apply (realizes_set r C d H (IFn f) (A.ProvidedFn sg a)).
+  - exact Real.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists (FunctionClosure g (typed_capture d types dc)). split; [cbn; rewrite Nat.eqb_refl; reflexivity|].
+    exact (callable_transfer r r H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
 Qed.
 
 (* Code safety reads a frame only through its return type, receiver, loop
