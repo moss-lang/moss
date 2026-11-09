@@ -127,6 +127,39 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A method's θ records every type symbol its signature mentions (sigclose, E35).**
+  `S.FamilyCoherentOk` was false.
+  [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss) declares
+  `fn .m(): U` under `assume A`, so U was not a requirement of `.m`, and
+  AppOf's θ (the requirements the signature mentions) was `[]`.
+  - `demo` binds `Int.m` at U = Int, rebinds U = Bool and puts family F
+    in force. F's result also has `Int.m`, read at U = Bool, so the two
+    provisions shared a run-time key while their signatures differed.
+  - The oracle ran F's closure for `k.m()` and got stuck (XErr 14);
+    native prints 42.
+
+  Decision (D20, the user's choice): a signature is closed over its
+  requirements, which include every type symbol it mentions. A method's
+  θ now lists the requirements its signature mentions, in their fixed
+  order, then the other type symbols it mentions, ascending
+  (`SigOutside`). `ResultMentions`' `RMMeth` counts every such symbol.
+  - Audit.v and ExecutionModel.v change alike, and
+    `Elab.signature_type_syms` mirrors them, so the oracle is fixed too.
+    The example now prints 42 on the oracle.
+  - `w_reqs` is unchanged. Fns are not widened: their provision keys
+    carry no θ, and widening their requirements would change functors'
+    fixed inputs and the elaborator's requirement cache.
+  - Corpus (scratch/orch/sigclose-cmp.out, full runs): three files
+    differ, all where a caller leaves a signature type of a provided
+    method unbound. sig-nonreq-shadow goes from stuck to 42.
+    unbound-merge-representative (stuck, XErr 10) and
+    partially-bound-merge (printed k) are now rejected by D62's "a
+    provision serves only the instantiation it was made at", since `C.w`
+    is bound at Foo = Char and `f` needs it at the unbound Y. Binding
+    Y = Char makes partially-bound-merge accepted again. merge.moss and
+    bridged.moss (through signature.moss) are unchanged.
+
+  See scratch/orch/sigclose-AUDIT.md.
 - **A linked input reads in G as a type over F's inputs (cap3b).**
   LinkBody's input condition used to assume that G's reading of an input x
   of F mentions only F's inputs, so it held vacuously when G's context

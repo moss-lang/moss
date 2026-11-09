@@ -2208,6 +2208,7 @@
         "E32",
         "E33",
         "E34",
+        "E35",
         "E36"
       ],
       "status": "open",
@@ -2897,6 +2898,39 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/family-poly-nontype.moss"
+        ]
+      }
+    },
+    {
+      "id": "E35",
+      "group": "E",
+      "title": "Oracle: a method's θ records every type symbol its signature mentions",
+      "requires": [],
+      "status": "done",
+      "budget": "done",
+      "goal": "The oracle keys a method provision at a θ that determines the method's signature, so a family's provision and a caller's provision read at different meanings of a signature type are never filed under one run-time key.",
+      "approach": "Fixed with the Audit change (sigclose): Elab.signature_type_syms returns the requirements the signature mentions, then the other type symbols it mentions, ascending (Audit AppOf/SigOutside, ResultMentions RMMeth). bootstrap/examples/sig-nonreq-shadow.moss: `fn .m(): U` under `assume A`; demo binds Int.m at U = Int, rebinds U = Bool and puts family F in force, whose Int.m reads at U = Bool; both were keyed at θ [], the oracle ran F's closure for k.m() and got `moss_ref: stuck (XErr 14)`; native prints 42. Now the keys are θ [U := Int] and [U := Bool] and the oracle prints 42. Corpus (scratch/orch/sigclose-cmp.out): two other verdicts change, both to a D62 rejection where the caller leaves part of a merged class unbound (partially-bound-merge.moss, which printed k; unbound-merge-representative.moss, which was stuck).",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/sig-nonreq-shadow.moss"
+      ],
+      "evidence": [
+        {
+          "summary": "examples/sig-nonreq-shadow.moss prints 42 on the oracle and native; the corpus comparison is scratch/orch/sigclose-cmp.out.",
+          "sources": [
+            "theories/Elab.v",
+            "examples/sig-nonreq-shadow.moss"
+          ]
+        }
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "hunt-coherent found S.FamilyCoherentOk false: AppOf's θ for a method did not record signature types outside its assume nesting, and the oracle shared the defect.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/sig-nonreq-shadow.moss"
         ]
       }
     },
