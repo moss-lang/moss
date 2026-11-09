@@ -4220,6 +4220,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     SigOf W m (bs ++ c_ty C) (Some rt) sg ->
     MethProvider W P F C y sg rt target types pre sm ->
     AppOf W m (bs ++ c_ty C) ap ->
+    (* [D84] rule 7: a member of a family in force is not bound directly *)
+    (forall u, ~ FamilyProduces W C u (mkey (canon C rt) m)) ->
     BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
              (fun x => pre (bind_method_expression (canon C rt) m (theta_of C ap) target types sm x))
              (provide C (mkey (canon C rt) m) ap (set_mth C (canon C rt) m sg)) F []

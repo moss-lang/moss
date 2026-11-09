@@ -4226,7 +4226,7 @@ Proof.
                   |F C pa v d0 n0 t00 i declared y x xt a R Dd Ast Ty Dy Fits App
                   |F C pa f g sg pg sm a types R K Sig Prov App
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
-                  |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App
+                  |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App NoFam
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx

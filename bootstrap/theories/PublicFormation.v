@@ -1414,7 +1414,7 @@ Proof.
                   |F C pa v d n t0 i declared y x xt a R D' Ast T Ey Fi App
                   |F C pa f g sg pg sm a types R K Sig FP App
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
-                  |F C pa dn a y r m bs rt sg target pre sm ap types R MN B T Sig MP App
+                  |F C pa dn a y r m bs rt sg target pre sm ap types R MN B T Sig MP App NoFam
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC In' Th Fix Sat FF Inj Outs Nd OutsI PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx

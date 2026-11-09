@@ -381,6 +381,16 @@ the local store. *C* and *F* are the static context and frame.
   hold in F's context. `BFunCopy` requires the same of H's needs and
   inputs. An oracle variant with these simpler checks gives the same
   verdict as the oracle on all 353 test programs.
+- **A family member is not bound directly (rule 7, now in Audit).**
+  Rule 7 forbids binding a method key that a family in force produces
+  (`family_direct`). Both implementations enforce it: the oracle in `Elab.v`
+  ("is a member of the family … it cannot be bound directly"), native in
+  the test `family_direct` (`crates/moss-tests/tests/suite/backend.rs`).
+  Audit's `BMethBind` did not, so a family application could shadow a
+  directly bound provision under the same key. `BMethBind` now requires
+  `~ FamilyProduces` for every family, after discussion. It rejects nothing
+  the implementations accept, and family applications no longer need an
+  argument that the shadowed provision has the same signature.
 
 ## Body-safety slice (checked, conditional)
 
