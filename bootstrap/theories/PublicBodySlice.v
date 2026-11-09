@@ -144,6 +144,8 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     (* H's result reads as u's, u's fixed inputs read as the copy site did *)
     (exists sg m, A.CopyOutputs W sg u h Cu /\ gfx = ground_fixed m sg) ->
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
+    (* the same type outputs (SameResult) *)
+    (forall t, A.FunOutputs W u t <-> A.FunOutputs W h t) ->
     ClosureOk n H0 u gfx (FunctorClosure code
       (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list dc)
 | CPlatform : forall u code gfx, Platform.Family W Prog u code ->
@@ -304,8 +306,8 @@ Proof.
       exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
     + intros r m' a g I L. destruct (Mths r m' a g I L) as [pv [Look Ok]]. exists pv. split; [exact Look|].
       exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
-  - intros u h Cu nsu Ch nsh code sms dc gfx gfh _ IH FCu FCh Incl Fx SN ST CO Sub.
-    exact (CCopy m H1 u h Cu nsu Ch nsh code sms dc gfx gfh IH FCu FCh Incl Fx SN ST CO Sub).
+  - intros u h Cu nsu Ch nsh code sms dc gfx gfh _ IH FCu FCh Incl Fx SN ST CO Sub SO.
+    exact (CCopy m H1 u h Cu nsu Ch nsh code sms dc gfx gfh IH FCu FCh Incl Fx SN ST CO Sub SO).
   - intros u code gfx Fam. exact (CPlatform m H1 u code gfx Fam).
   - intros gm dc. constructor.
   - intros gm dc u fx pv gfx rest Look _ IH1 Fx _ IH2. exact (CFCons m H1 gm dc u fx pv gfx rest Look IH1 Fx IH2).
@@ -407,41 +409,93 @@ Lemma eval_bind_eq0 : forall j d g st b x,
   end.
 Proof. reflexivity. Qed.
 
+(* The demand's context C reads its table in the code's scope (C0's):
+   each entry ok and mentioning only C0's generations. *)
+Definition FamilyTableIn (C C0 : A.cx) : Prop :=
+  forall x v, In (x, v) (A.c_ty C) ->
+    PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0).
+
+(* A context's method provisions agree with a family's new provision at
+   the same receiver, method and θ (so at the same run-time key). *)
+Definition FamilyCoherent (Cx Cr : A.cx) (ks : list item) : Prop :=
+  forall r m g a g' a', In (A.mkey r m) ks ->
+  In (A.mkey r m, A.ProvidedMethod g a) (A.c_provisions Cx) ->
+  A.ilook (A.mkey r m) (A.c_provisions Cr) = Some (A.ProvidedMethod g' a') ->
+  A.theta_of Cx a = A.theta_of Cr a' -> g = g'.
+
 (* HYPOTHESIS (T15/T16). A family application, as one binding: it
    completes with the families' provisions added (the code's own context,
-   and any narrower one, stays realized: rule 7 keeps family members from
-   being bound directly, and a member a context lists has the family's
-   signature), or it stops. *)
-Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
+   and any narrower one whose methods agree with the family's at a shared
+   run-time key, stays realized), or it stops. Its matching is read off a
+   demanded key whose receiver is ok and in the code's scope (proved:
+   PublicFamilyStep.family_step_ok). *)
+Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
+  PublicFormation.TyOk W ot -> incl (A.gens ot) (PublicFormation.scope_gens C0) -> FamilyTableIn C C0 ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
   (exists d' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\ type_aliases d' = type_aliases d /\
      Pre rr F (with_ty C0 Cr) d' types H' g st' /\
-     (forall Cx, incl (A.c_provisions Cx) (A.c_provisions C0) -> A.c_sub Cx = A.c_sub C0 ->
+     (forall Cx, incl (A.c_provisions Cx) (A.c_provisions C0) -> A.c_sub Cx = A.c_sub C0 -> FamilyCoherent Cx Cr ks ->
         Realizes rr Cx d H -> Realizes rr Cx d' H') /\
      I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = I.eval_bindings j P d' g st' rest) \/
   (exists res, I.eval_bindings (S j) P d g st (BApply u th [] sm :: rest) = inr res /\
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit False res).
 Hypothesis family_step : FamilyStepOk.
 
+(* HYPOTHESIS (T29). The code's own context, formed, agrees with any
+   family applied around it where they share a run-time key. Elaboration
+   reads both a listed need and a family member as the method's declared
+   signature at θ, but Pre does not carry that as an invariant. *)
+Definition FamilyCoherentOk : Prop := forall F C, Formed F C ->
+  forall C1 u matching th sm Cr ks, A.c_sub C1 = A.c_sub C -> incl (A.c_provisions C) (A.c_provisions C1) ->
+  A.FamilyApplication W C1 u matching th sm Cr ks -> FamilyCoherent C Cr ks.
+Hypothesis family_coherent : FamilyCoherentOk.
+
+(* HYPOTHESES (T29). A demanded family key's receiver is in the code's
+   scope: an elaborated expression's or literal's type mentions only the
+   context's generations, and so does a callee's need read at the call
+   site. Formed does not record that locals' and provisions' types are
+   scoped (only ok), and a callee need's symbol the caller leaves unbound
+   reads as itself (theta_at), so these are not yet derivable. *)
+Definition ExScopedOk : Prop := forall F C a exp x t, A.Ex W Prog F C a exp x t -> Formed F C ->
+  incl (A.gens t) (PublicFormation.scope_gens C).
+Definition LitScopedOk : Prop := forall F C tree x t, A.Literal W C tree x t -> Formed F C ->
+  incl (A.gens t) (PublicFormation.scope_gens C).
+Definition DemandScopedOk : Prop := forall F C X f Cf ns r m, Formed F C -> FamilyTableIn X C ->
+  A.CtxOf W f Cf ns -> In (A.mkey r m) (map (A.at_site X) ns) ->
+  PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens C).
+Hypothesis ex_scoped : ExScopedOk.
+Hypothesis lit_scoped : LitScopedOk.
+Hypothesis demand_scoped : DemandScopedOk.
+
+Lemma table_in_self : forall F C, Formed F C -> FamilyTableIn C C.
+Proof.
+  intros F C [Fc _] x v Iq. split.
+  - exact (PublicFormation.canon_ok W C v (proj1 Fc) (PublicFormation.cf_ty W C (proj1 Fc) x v Iq)).
+  - intros y Iy. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
+Qed.
+
 (* Code after a family application runs with the families' provisions
    and the code's own context both realized. *)
-Lemma family_then : forall k, Below k -> forall C u matching th sm Cr ks F t (B : Prop) x,
-  A.FamilyApplication W C u matching th sm Cr ks ->
+Lemma family_then : forall k, Below k -> forall C u matching th sm Cr ks ot m F t (B : Prop) x,
+  A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
+  (Formed F C -> PublicFormation.TyOk W ot /\ incl (A.gens ot) (PublicFormation.scope_gens C)) ->
   (forall j, j <= k -> forall d types H g st, Pre j F (with_ty C Cr) d types H g st -> Pre j F C d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C t B (EBind (BApply u th [] sm) x).
 Proof.
-  intros k Bel C u matching th sm Cr ks F t B x FA Cont d types H g st Pre0.
+  intros k Bel C u matching th sm Cr ks ot m F t B x FA Ro Rcv Cont d types H g st Pre0.
   rewrite eval_bind_eq0. destruct k as [|k1]; [cbn; exact Logic.I|].
-  pose proof Pre0 as [_ [_ [_ [_ [Real0 _]]]]].
-  destruct (family_step (S k1) Bel C C u matching th sm Cr ks eq_refl eq_refl eq_refl FA F (S (S k1)) k1 d types H g st
-    (le_n _) ltac:(lia) Pre0 []) as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [Real0 Fm0]]]]].
+  destruct (Rcv Fm0) as [Ok Sc].
+  destruct (family_step (S k1) Bel C C u matching th sm Cr ks ot m eq_refl eq_refl eq_refl FA Ro Ok Sc (table_in_self F C Fm0)
+    F (S (S k1)) k1 d types H g st (le_n _) ltac:(lia) Pre0 []) as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
   - rewrite Run. destruct k1 as [|k2]; [cbn; exact Logic.I|].
     assert (Enil : I.eval_bindings (S k2) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
     pose proof PreN as [_ [_ [_ [StN _]]]].
-    pose proof (pre_keep _ _ _ _ _ _ _ _ _ _ _ Pre0 Em Ea (Keep C (fun q I => I) eq_refl Real0) E StN) as PreC.
+    assert (Coh : FamilyCoherent C Cr ks) by exact (family_coherent F C Fm0 C u matching th sm Cr ks eq_refl (fun q I => I) FA).
+    pose proof (pre_keep _ _ _ _ _ _ _ _ _ _ _ Pre0 Em Ea (Keep C (fun q I => I) eq_refl Coh Real0) E StN) as PreC.
     eapply outcome_heap; [exact E|]. apply (outcome_meanings F d d' H' types t B _ Em).
     exact (Cont (S (S k2)) ltac:(lia) d' types H' g st' (pre_lower PreN) (pre_lower PreC)).
   - rewrite Run. eapply outcome_pass; [|exact NN|exact Out]. intros [].
@@ -974,14 +1028,15 @@ Qed.
 Lemma family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
   A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
-  A.FamilyApplication W C u matching th sm C' ks ->
+  A.FamilyApplication W C u matching th sm C' ks -> A.FamilyReadOff W C u (A.canon C ot0) m matching ->
+  (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ incl (A.gens (A.canon C ot0)) (PublicFormation.scope_gens C)) ->
   In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
   A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B
     (apply_expression u th sm (EMethod ox m (A.rkey C' (A.canon C ot0) m) xs)).
 Proof.
-  intros k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA None' FA InK Only Found Args.
-  unfold apply_expression. apply (family_then k Bel C u matching th sm C' ks F _ B _ FA).
+  intros k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA None' FA Ro Rcv InK Only Found Args.
+  unfold apply_expression. apply (family_then k Bel C u matching th sm C' ks _ m F _ B _ FA Ro Rcv).
   intros j Lj d types H lg st PreN PreC. destruct j as [|j1]; [exact Logic.I|].
   pose proof PreN as [_ [_ [_ [_ [[_ [[_ [_ [Mths _]]] _]] _]]]]].
   destruct (Mths (A.canon C ot0) m g Found) as [pv [Look Ok]].
@@ -995,11 +1050,13 @@ Qed.
 Lemma literal_family_case : forall n, Below n -> forall F C t m ox oy u matching th sm C' ks,
   CodeSafe n F C t False ox -> CodeSafe n F C t False oy ->
   A.mlook t m (A.c_mths C) = None -> A.FamilyApplication W C u matching th sm C' ks ->
+  A.FamilyReadOff W C u t m matching ->
+  (Formed F C -> PublicFormation.TyOk W t /\ incl (A.gens t) (PublicFormation.scope_gens C)) ->
   In (A.mkey t m) ks -> A.OnlyFamily W C u (A.mkey t m) -> A.mlook t m (A.c_mths C') = Some (A.FSig [t] t) ->
   StepSafe n F C t False (apply_expression u th sm (EMethod ox m (A.rkey C' t m) [oy])).
 Proof.
-  intros n Bel F C t m ox oy u matching th sm C' ks Cx Cy None' FA InK Only Found.
-  unfold apply_expression. apply (family_then n Bel C u matching th sm C' ks F t False _ FA).
+  intros n Bel F C t m ox oy u matching th sm C' ks Cx Cy None' FA Ro Rcv InK Only Found.
+  unfold apply_expression. apply (family_then n Bel C u matching th sm C' ks t m F t False _ FA Ro Rcv).
   intros j Lj d types H lg st PreN PreC. destruct j as [|j1]; [exact Logic.I|].
   pose proof PreN as [_ [_ [_ [_ [[_ [[_ [_ [Mths _]]] _]] _]]]]].
   destruct (Mths t m _ Found) as [pv [Look Ok]].
@@ -1017,12 +1074,14 @@ Proof.
   assert (Op : forall a b x y result m,
     A.Literal W C a x t -> A.Literal W C b y t -> A.LitOp W C t m x y result ->
     Outcome F d H types t False (I.eval (S n) P d lg lst result)).
-  { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th sm C' ks None' Fam _Ro InK Only Found].
+  { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th sm C' ks None' Fam Ro InK Only Found].
     - refine (method_code n F C False t m (A.FSig [t] t) x' [y] d types H lg lst Found
         (IHc F C a x' t Da) _ Pre0).
       constructor; [exact (IHc F C b y t Db)|constructor].
     - exact (literal_family_case n Bel F C t m x' y u matching th sm C' ks
-        (IHc F C a x' t Da) (IHc F C b y t Db) None' Fam InK Only Found d types H lg lst Pre0). }
+        (IHc F C a x' t Da) (IHc F C b y t Db) None' Fam Ro
+        (fun Fm => conj (PublicFormation.literal_ok W _ _ _ _ Da (proj1 (proj1 Fm))) (lit_scoped F C a x' t Da Fm))
+        InK Only Found d types H lg lst Pre0). }
   destruct D as [z t Lang Val|o t Lang Val|a b x y result t m Da Db Lang Lop|a b x y result t m Da Db Lang Lop
                 |a b x y result t m Da Db Lang Lop|a x ti tp t f Da Lang Fn Fits].
   - pose proof Pre0 as [_ [_ [_ [_ [[_ [[Vals _] _]] _]]]]]. destruct (Vals z t Val) as [w [Look T]].
@@ -1511,29 +1570,41 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   forall F Cc Corig t (B : Prop) x,
   A.c_sub C = A.c_sub Cc -> A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
   incl (A.c_provisions Corig) (A.c_provisions Cc) -> A.c_sub Corig = A.c_sub Cc ->
+  FamilyTableIn C Cc ->
+  (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens Cc)) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty Cc C') d types H g st -> Pre j F Corig d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   forall n, n <= S k -> forall d types H g st, Pre n F Cc d types H g st -> Pre n F Corig d types H g st ->
   Outcome F d H types t B (I.eval n P d g st (wrap x)).
 Proof.
   intros k Bel D0 wanted used C wrap C' Dm. induction Dm as [used C|used C u matching th sm Cm wrap Cf Nin Step Rest IH];
-    intros F Cc Corig t B x Es Ep El Inc Eo Cont n Ln d types H g st PreC PreO.
+    intros F Cc Corig t B x Es Ep El Inc Eo Tin Wk Cont n Ln d types H g st PreC PreO.
   - apply Cont; [exact Ln| |exact PreO].
     replace (with_ty Cc C) with Cc; [exact PreC|]. destruct Cc as [a0 b0 c0 e0], C as [a1 b1 c1 e1]; cbn in *; subst; reflexivity.
   - inversion Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FA Ro Ik]; subst.
     cbn beta. unfold apply_expression. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
     destruct n1 as [|n2]; [cbn; exact Logic.I|].
-    destruct (family_step k Bel Cc C u matching th sm Cr ks Es Ep El FA F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
+    destruct (Wk ot m Iw) as [Ok Sc].
+    destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
       as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
     + rewrite Run. destruct n2 as [|n3]; [cbn; exact Logic.I|].
       assert (Enil : I.eval_bindings (S n3) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
-      pose proof PreN as [_ [_ [_ [StN _]]]]. pose proof PreO as [_ [_ [_ [_ [RealO _]]]]].
-      pose proof (pre_keep _ _ _ _ _ _ _ _ _ _ _ PreO Em Ea (Keep Corig Inc Eo RealO) E StN) as PreO'.
+      pose proof PreN as [_ [_ [_ [StN _]]]]. pose proof PreO as [_ [_ [_ [_ [RealO FmO]]]]].
+      assert (Coh : FamilyCoherent Corig Cr ks).
+      { apply (family_coherent F Corig FmO C u matching th sm Cr ks); [rewrite Es; symmetry; exact Eo| |exact FA].
+        intros q I. rewrite Ep. exact (Inc q I). }
+      pose proof (pre_keep _ _ _ _ _ _ _ _ _ _ _ PreO Em Ea (Keep Corig Inc Eo Coh RealO) E StN) as PreO'.
       destruct (family_cr _ _ _ _ _ _ _ FA) as [IncCr SubCr].
+      assert (ScE : PublicFormation.scope_gens (with_ty Cc Cr) = PublicFormation.scope_gens Cc)
+        by (apply PublicFormation.scope_gens_ext; [reflexivity|cbn; rewrite SubCr, Es; reflexivity]).
       eapply outcome_heap; [exact E|]. apply (outcome_meanings F d d' H' types t B _ Em).
       apply (IH F (with_ty Cc Cr) Corig t B x eq_refl eq_refl eq_refl).
       * intros q I. apply IncCr. rewrite Ep. exact (Inc q I).
       * cbn. rewrite SubCr, Es. exact Eo.
+      * intros x0 v Iq. cbn in Iq. rewrite ScE.
+        replace (A.canon (A.family_restore C Cr) v) with (A.canon C v) by (unfold A.canon; cbn; rewrite SubCr; reflexivity).
+        exact (Tin x0 v Iq).
+      * intros r0 m0 I0. rewrite ScE. exact (Wk r0 m0 I0).
       * exact Cont.
       * lia.
       * exact (pre_lower PreN).
@@ -1544,12 +1615,15 @@ Qed.
 Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Prop) x,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.Demand W C wanted [] C wrap C' ->
+  (Formed F C0 -> FamilyTableIn C C0 /\
+     forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens C0)) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty C0 C') d types H g st -> Pre j F C0 d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C0 t B (wrap x).
 Proof.
-  intros k Bel F C0 C wanted C' wrap t B x Es Ep El Dm Cont d types H g st Pre0.
-  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Ep El (fun q I => I) eq_refl Cont (S k) (le_n _)
+  intros k Bel F C0 C wanted C' wrap t B x Es Ep El Dm Sco Cont d types H g st Pre0.
+  pose proof Pre0 as [_ [_ [_ [_ [_ Fm0]]]]]. destruct (Sco Fm0) as [Tin Wk].
+  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Ep El (fun q I => I) eq_refl Tin Wk Cont (S k) (le_n _)
     d types H g st Pre0 Pre0).
 Qed.
 
@@ -2908,6 +2982,42 @@ Lemma bindings_copy_eq : forall j d g st u h sm r,
   end.
 Proof. reflexivity. Qed.
 
+(* A copy has its source's type outputs: they are the result's type leaves. *)
+Lemma spectypes_leaf : forall p sp t, A.SpecTypes W p sp t -> A.ResultSpecLeaf W p sp (t, None).
+Proof.
+  intros p sp t D. induction D as [p pa a t R K|p pa a c d n its sp t R Dd Ast I D IH].
+  - unfold A.kind_sym in K. destruct (A.w_decl W t) as [dt|] eqn:Dt; [|discriminate].
+    eapply A.RSLPlain; [exact R|exact Dt| |].
+    + intros n its E. rewrite E in K. discriminate.
+    + destruct (A.d_ast dt); cbn in K |- *; try discriminate; try reflexivity.
+      destruct f; discriminate.
+  - eapply A.RSLContext; [exact R|exact Dd|exact Ast|exact I|exact IH].
+Qed.
+
+Lemma leaf_spectypes : forall p sp k, A.ResultSpecLeaf W p sp k -> forall t, k = (t, None) ->
+  A.kind_sym W t = Some A.DKType -> A.SpecTypes W p sp t.
+Proof.
+  intros p sp k D. induction D as [p pa br s R|p pa br s d R Dd NC NA|p pa br c d n its sp k R Dd Ast I D IH];
+    intros t E K; try discriminate.
+  - injection E as <-. eapply A.STType; [exact R|exact K].
+  - eapply A.STCtx; [exact R|exact Dd|exact Ast|exact I|exact (IH t E K)].
+Qed.
+
+Lemma same_result_outputs : forall u h, A.SameResult W u h -> forall t, A.FunOutputs W u t <-> A.FunOutputs W h t.
+Proof.
+  assert (One : forall u h, A.SameResult W u h -> forall t, A.FunOutputs W u t -> A.FunOutputs W h t).
+  { intros u h Same t (d & ps & a & r & b & sp & D & FP & I & St).
+    assert (K : A.kind_sym W t = Some A.DKType).
+    { clear -St. induction St; [assumption|assumption]. }
+    destruct (A.d_ast d) eqn:Ad; try discriminate. cbn in FP. injection FP as <- <- <- <-.
+    assert (Lu : A.ResultLeaf W u (t, None)) by (eapply A.RL; [exact D|exact Ad|exact I|exact (spectypes_leaf _ _ _ St)]).
+    pose proof (proj1 (Same (t, None)) Lu) as Lh.
+    inversion Lh as [h' d' n' ps' a' r' b' sp' k' D' Ad' I' L']; subst.
+    exists d', ps', a', r', b', sp'. split; [exact D'|]. rewrite Ad'. split; [reflexivity|]. split; [exact I'|].
+    exact (leaf_spectypes _ _ _ L' t eq_refl K). }
+  intros u h Same t. split; [apply One; exact Same|apply One; intros k; symmetry; apply Same].
+Qed.
+
 Lemma closure_shape : forall n H u gfx pv, ClosureOk n H u gfx pv -> exists c sms dc, pv = FunctorClosure c sms dc.
 Proof. intros n H u gfx pv Ok. destruct Ok; eauto. Qed.
 
@@ -2932,10 +3042,12 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
   ((forall x tx, In (x, tx) fx -> exists here,
         A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx)) /\
   (A.Satisfies C Cu th ns sm) /\
-  (A.MadeFor W F C outs newgens) /\
+  (A.FreshFor W F C newgens) /\
   ((forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b)) /\
   ((forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\ In t newgens) \/
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
+            ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+                    (match A.fr_this F with Some r => A.gens r | None => [] end))) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
@@ -2961,16 +3073,18 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
       (forall x tx, In (x, tx) fx -> exists here,
         A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
       A.Satisfies C Cu th ns sm ->
-      A.MadeFor W F C outs newgens ->
+      A.FreshFor W F C newgens ->
       
       (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
       
       (forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\ In t newgens) \/
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\
+            ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+                    (match A.fr_this F with Some r => A.gens r | None => [] end))) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False newgens
+  forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False (map gensof outs)
       (BApply u th (map (fun t => (t, gensof t)) outs) sm).
 
 
@@ -3015,7 +3129,7 @@ Proof.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure c (sms ++ [sm])%list dc), (ground_fixed (type_meanings d) fx).
     split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
-    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub].
+    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact (same_result_outputs u h Same)].
       2: { exists (map (fun q => (fst q, A.canon C (snd q))) fx), (type_meanings d). split; [exact CO|].
            unfold ground_fixed. rewrite map_map. apply map_ext. intros [x tx]. cbn. f_equal. symmetry. exact (Abs tx). }
       intros x Fh. pose proof (FixH x Fh) as Fu. split; [exact Fu|].
@@ -3078,12 +3192,43 @@ Lemma link_3b : forall u gg h, A.LinkBody W Prog u gg h -> exists Cu nsu Cg nsg,
      In t (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
      A.nlook t (A.c_ty Cu) <> None -> A.Fixed W u t).
 Proof.
-  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds
-    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
+  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
+    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
   exists Cu, nsu, Cg, nsg. split; [exact FCu|]. split; [exact FCg|exact B3].
 Qed.
 
 (* What an application reads of a linked body. *)
+(* A linked body's result sources: each result key as F declares it, read
+   from the body's runtime key for it (LinkBody). *)
+Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (Cr : A.cx) (ks : list item) :=
+  map (fun k => (A.output_renaming outs gen (A.rkey_of Cr k), A.rkey_of Cb (A.at_site Cb (A.output_renaming outs gen k)))) ks.
+
+(* Each entry of an application's result selection: a non-type result item,
+   read at θ' for the caller, from its source key in the body. *)
+Lemma result_smap_in : forall th D src a b, In (a, b) (result_smap th D src) ->
+  exists i, In i D /\ is_ty_item i = false /\ a = app_subst_item th i /\ b = source_key src i.
+Proof.
+  intros th D src a b I. unfold result_smap, inst_smap in I. rewrite map_map in I.
+  apply in_map_iff in I as [i [E Ii]]. apply filter_In in Ii as [Ii Nt]. injection E as <- <-.
+  exists i. split; [exact Ii|]. split; [destruct (is_ty_item i); [discriminate|reflexivity]|]. split; reflexivity.
+Qed.
+
+(* A linked body's result key k is read from the body key of the first
+   result key spelled as k is (the body binds it at its own receiver). *)
+Lemma link_source_of : forall Cb outs gen Cr ks k, In k ks ->
+  exists k', In k' ks /\ A.output_renaming outs gen (A.rkey_of Cr k') = A.output_renaming outs gen (A.rkey_of Cr k) /\
+    source_key (link_sources Cb outs gen Cr ks) (A.output_renaming outs gen (A.rkey_of Cr k)) =
+    A.rkey_of Cb (A.at_site Cb (A.output_renaming outs gen k')).
+Proof.
+  intros Cb outs gen Cr ks k. induction ks as [|k0 rest IH]; intros I; [contradiction|]. cbn [link_sources map source_key].
+  destruct (item_eqb (A.output_renaming outs gen (A.rkey_of Cr k)) (A.output_renaming outs gen (A.rkey_of Cr k0))) eqn:E.
+  - apply item_eqb_spec in E. exists k0. split; [left; reflexivity|]. split; [symmetry; exact E|reflexivity].
+  - destruct I as [E0|I].
+    + exfalso. subst k0. assert (T : item_eqb (A.output_renaming outs gen (A.rkey_of Cr k)) (A.output_renaming outs gen (A.rkey_of Cr k)) = true)
+        by (apply item_eqb_spec; reflexivity). congruence.
+    + destruct (IH I) as [k' [Ik [Ek Sk]]]. exists k'. split; [right; exact Ik|]. split; [exact Ek|exact Sk].
+Qed.
+
 Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 : Prop :=
   A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
   (forall k, In k nsg -> In k nsu -> A.ilook (A.provision_id k) (A.c_provisions Cg) = A.ilook (A.provision_id k) (A.c_provisions Cu)) /\
@@ -3101,16 +3246,15 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg)))
-      (map ITy outs ++ map (fun k => A.output_renaming outs gen (A.rkey_of Cr k)) ks)%list
-      (flat_map (A.refile (map (fun k =>
-         (A.at_site Cb (A.output_renaming outs gen k), A.output_renaming outs gen (A.rkey_of Cr k))) ks)) binds0)).
+      (map ITy outs ++ map (fun k => A.output_renaming outs gen (A.rkey_of Cr k)) ks)%list binds0
+      (link_sources Cb outs gen Cr ks)).
 
 Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
 Proof.
-  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Eb Fam FrH FB].
-  subst binds. exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
+  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Fam FrH FB].
+  exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   refine (conj FCu (conj FCg (conj LPeq (conj LRd (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
     (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO FB))))))))))))))))))).
 Qed.
@@ -3650,7 +3794,7 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists code, pv = FunctorClosure code [] (EnvironmentWithAliases [] [] []) /\ Platform.Family W Prog u code).
 Proof.
   intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
-    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh FCu FCh Incl Fx SN ST _ _|u code gfx Fam].
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh FCu FCh Incl Fx SN ST _ _ _|u code gfx Fam].
   - left. exists gg, h, Cu, nsu, Cg, nsg, dc. split; [reflexivity|].
     exact (conj LB (conj FCu (conj FCg (conj FxIn (conj Caps CF))))).
   - right; left. exists h, Cu, nsu, Ch, nsh, code, sms, dc, gfh. split; [reflexivity|].
@@ -3703,7 +3847,7 @@ Lemma apply_functor_eq : forall j d u th outs sm st,
               | Some d2 =>
                   match I.eval_bindings j P (application_environment P d h th (append_environment d2 dc)) [] st (fc_bindings code) with
                   | inl (d3, _, st3) =>
-                      match select_provisions d3 (inst_smap (result_substitution th outs) (fc_outputs code)) with
+                      match select_provisions d3 (result_smap (result_substitution th outs) (fc_outputs code) (fc_sources code)) with
                       | Some dr => match result_environment d outs d3 (fc_outputs code) dr with
                           | Some result => inl (result, st3)
                           | None => inr (I.Evaluation (Stuck I.e_compose) [] st3) end
@@ -4442,20 +4586,6 @@ End Cap.
 
 (* ---- abstract applications ------------------------------------------------- *)
 
-(* HYPOTHESIS (T15). A linked body's binds, refiled under the keys F
-   declares, run as their chain does: refile's extra installs (a method
-   bind filed again under F's spelling of its key) leave the body's
-   context realized. *)
-Definition RefileRunOk : Prop := forall J' k u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 B,
-  LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
-  Chain J' k Fg Cg Fb Cb B made binds0 ->
-  forall rr j' d H st, rr <= S k -> j' < rr -> j' <= J' -> Pre rr Fg Cg d [] H [] st ->
-  (exists d3 g3 st3 H3, heap_extends H H3 /\ Pre rr Fb Cb d3 [] H3 g3 st3 /\
-     I.eval_bindings j' P d [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inl (d3, g3, st3)) \/
-  (exists res, I.eval_bindings j' P d [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inr res /\
-     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome Fg d H [] TUnit B res).
-Hypothesis refile_run : RefileRunOk.
-
 (* HYPOTHESIS (T15). A linked body that completes provides F's result at
    the application: its result provisions are selected under the caller's
    keys (through θ and the output renaming), the output generations are
@@ -4471,13 +4601,13 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs ns nsg)) = Some d2 ->
-  I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inl (d3, g3, st3) ->
+  I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (inst_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list) = Some dr /\
+    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (link_sources Cb outs' gen Cr ks')) = Some dr /\
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
-    MeaningsGrow newgens d (append_environment result d).
+    MeaningsGrow (map gensof outs) d (append_environment result d).
 Hypothesis link_results : LinkResultsOk.
 
 (* HYPOTHESIS (T15). Applying a copy runs its source at the source's
@@ -4494,14 +4624,14 @@ Definition CopyApplyOk : Prop := forall k, Below k -> forall J, (forall J', J' <
   (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   FixedMeans u d fx gfx ->
-  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+  StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs) (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 Hypothesis copy_apply : CopyApplyOk.
 Definition PlatformApplyOk : Prop := forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> Pre rr F C d types H g st ->
   forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
   Platform.Family W Prog u code ->
-  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+  StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs) (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
 Hypothesis platform_apply : PlatformApplyOk.
 
 (* An abstract application below the cap J, given those below it: the
@@ -4513,10 +4643,14 @@ Proof.
   assert (AP : AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs)
     by exact (conj R (conj Fx (conj FC (conj Inp (conj Th (conj Fixed (conj Sat (conj FreshG (conj Uniq (conj Outs (conj NdO (conj OutsIff PR)))))))))))).
   split; [repeat split|]. split.
-  { destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr.
-    split; intros t E g0 Ig Ig'; destruct (Fr g0 Ig) as [_ Out]; apply Out; apply in_or_app; right; apply in_or_app; right;
-      [apply in_or_app; left; rewrite E; exact Ig'|apply in_or_app; right; rewrite E; exact Ig']. }
-  intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False newgens
+  { assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
+        (match A.fr_this F with Some r => A.gens r | None => [] end))).
+    { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
+      destruct (Outs t (proj1 (OutsIff t) It)) as [[_ [E Nf]]|[_ [_ In']]]; [rewrite E; exact Nf|].
+      destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr. destruct (Fr _ In') as [_ Out]. intros I. apply Out.
+      apply in_or_app; right; apply in_or_app; right. exact I. }
+    split; intros t E g0 Ig Ig'; apply (Av g0 Ig); rewrite E; apply in_or_app; [left|right]; exact Ig'. }
+  intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs)
     (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
   pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
@@ -4570,10 +4704,16 @@ Proof.
   destruct (items_chain (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply bindsof_fold in BO. subst binds0.
   rewrite apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
-  cbn [fc_bindings fc_outputs]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
-  destruct (refile_run (S j1) k u gg h dg n0 ps0 a0 rs bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs _ LD Ch
-    rr j1 de H st Lr ltac:(lia) ltac:(lia) PreB) as [[d3 [g3 [st3 [H3 [E3 [Pre3 Run]]]]]]|[res [Run [NN Out]]]].
-  - rewrite Run.
+  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
+  (* the body's binds, run as their chain does *)
+  destruct (chain_run (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
+    as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
+    [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
+  - destruct j' as [|j'].
+    { rewrite Run0. right. exists (I.with_g g (I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
+      exact (body_stop Fg de H [] TUnit False False F d H types g (I.Evaluation OutOfFuel g3 st3) Ret Loop ltac:(intros v E; discriminate) Logic.I). }
+    assert (Run : I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
+    rewrite Run.
     destruct (link_results F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st h dc gfx gg dg n0 ps0 a0 rs bodies
       nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
       as [dr [result [Sdr [Rres [PreC GrowC]]]]].
@@ -4685,7 +4825,21 @@ Proof.
   destruct (set_tys_fields xs0 C) as [Es [Ep [El Et]]].
   assert (Nd : NoDup (map fst xs0)) by (rewrite Keys; destruct World as [bd Wo]; exact (A.wo_reqs_nodup Wo h)).
   assert (Cty : A.c_ty Cd = (rev xs0 ++ A.c_ty C)%list) by (rewrite (demand_ty _ _ _ _ _ _ Dem); exact Et).
-  refine (demand_case k Bel F C Cd0 _ Cd wrap (A.sg_ret g) B _ Es Ep El Dem _ d types H lg lst Pre0).
+  refine (demand_case k Bel F C Cd0 _ Cd wrap (A.sg_ret g) B _ Es Ep El Dem _ _ d types H lg lst Pre0).
+  { intros Fm.
+    assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ incl (A.gens (TNom h xs0)) (PublicFormation.scope_gens C)).
+    { rewrite Ot. split.
+      - exact (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
+          (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj2 Fm) (PublicFormation.optok_none W))).
+      - exact (PublicFormation.canon_scope C ot0 (ex_scoped F C o None ox ot0 Do Fm)). }
+    assert (Tin : FamilyTableIn Cd0 C).
+    { intros xq v Iq. replace (A.canon Cd0 v) with (A.canon C v) by (unfold A.canon, Cd0; rewrite Es; reflexivity).
+      unfold Cd0 in Iq. rewrite Et in Iq. apply in_app_or in Iq as [Iq|Iq]; [|exact (table_in_self F C Fm xq v Iq)].
+      apply (proj2 (in_rev _ _)) in Iq. destruct Rok as [Ok Sc].
+      split; [exact (PublicFormation.canon_ok W C v (proj1 (proj1 Fm)) (proj2 (PublicFormation.nom_ok_elim W h xs0 Ok) xq v Iq))|].
+      apply PublicFormation.canon_scope. intros y Iy. apply Sc. rewrite PublicFormation.gens_nom.
+      exact (PublicFormation.in_tm_gens _ _ _ _ Iq Iy). }
+    split; [exact Tin|]. intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Ctx I0). }
   intros j Lj d' types' H' g' st' PreD PreC.
   destruct j as [|j]; [exact Logic.I|].
   cbn [I.eval]. change (view_function P att) with (A.body_of Prog att). rewrite View.
@@ -4724,9 +4878,13 @@ Lemma provided_step : forall F C o ox ot0 m args x t (B : Prop),
 Proof.
   intros F C o ox ot0 m args x t B Do BrkO BrkA Prov.
   remember (A.canon C ot0) as ot eqn:Ot.
-  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th sm C' ks g xs None' Fam _Ro InK Only Found Args].
+  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th sm C' ks g xs None' Fam Ro InK Only Found Args].
   2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
-          None' Fam InK Only Found Args). }
+          None' Fam Ro
+          (fun Fm => conj (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
+              (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj2 Fm) (PublicFormation.optok_none W)))
+            (PublicFormation.canon_scope C ot0 (ex_scoped F C o None ox ot0 Do Fm)))
+          InK Only Found Args). }
   intros d types H lg lst Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
   pose proof (O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ BrkO (sex F C o None ox ot0 Do d types H lg lst (pre_lower Pre0))) as ROut.
@@ -4857,6 +5015,7 @@ Proof.
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl Dem
+        (fun Fm => conj (table_in_self F C Fm) (fun r0 m0 I0 => demand_scoped F C C f Cf ns r0 m0 Fm (table_in_self F C Fm) Ctx I0))
         (fun j Lj d' types' H' g' st' Pre' _ => call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
           (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre')) d types H lg lst Pre0).

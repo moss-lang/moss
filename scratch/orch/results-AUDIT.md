@@ -1,6 +1,6 @@
 # Audit changes by the "results" agent (LinkResultsOk)
 
-## 1. BApplyAbstract: every output's destination is made (MadeFor)
+## 1. BApplyAbstract: every output's destination is made (MadeFor) — SUPERSEDED by ob-family's D78 fix (made = map gensof outs); MadeFor dropped at the merge of safety
 
 **What.** `BApplyAbstract` required `FreshFor W F C newgens` and, for an
 output `t` not in force here, only `gensof t = t`. Its `made` list (and the

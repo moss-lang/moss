@@ -14,7 +14,8 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig PublicCopyApply PublicLinkResults PublicOutputSubst.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig PublicCopyApply
+  PublicFamilyStep PublicLinkResults PublicOutputSubst.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -27,6 +28,7 @@ Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims Publi
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
 Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
+Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
 
@@ -96,6 +98,7 @@ Definition certificate_roots :=
   @PublicBool.truthy_typed,
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
+  @PublicFamily.family_step_ok,
   @PublicCopy.copy_apply_ok,
   @PublicCopy.link_results_of_chain,
   @PublicCopy.platform_apply_of_chain,
@@ -109,7 +112,7 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
-  @PublicLinkRes.link_results_scoped,
+  @PublicLinkRes.chain_results_scoped,
   @PublicLinkRes.pre_junk_meaning,
   @NM.PublicLinkResults.result_environment_occupied,
   @NM.PublicOutputSubst.output_entries_rel,

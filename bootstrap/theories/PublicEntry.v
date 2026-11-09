@@ -5,7 +5,7 @@
 From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
-  PublicCopyApply.
+  PublicCopyApply PublicFamilyStep.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -15,7 +15,8 @@ Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
 Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
-Module CopyA := CopyApply M.ReferenceHost M.Reference.
+Module FS := FamilyStep M.ReferenceHost M.Reference.
+Module CopyA := FS.CopyA.
 Module S := CopyA.S.
 
 Section Entry.
@@ -425,9 +426,13 @@ Theorem safety_obligations : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
-     S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
-     S.RefileRunOk W Prog argv read so /\
-     CopyA.ChainResultsOk W Prog argv read so /\ CopyA.ChainPlatformOk W Prog argv read so) ->
+     S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
+     CopyA.ChainResultsOk W Prog argv read so /\ CopyA.ChainPlatformOk W Prog argv read so /\
+     (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
+     FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
+     FS.FamilyPlatformApplyOk W Prog argv read so /\
+     (* a family's receiver is in scope, and agrees with the code's context *)
+     S.FamilyCoherentOk W /\ S.ExScopedOk W Prog /\ S.LitScopedOk W /\ S.DemandScopedOk W) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -435,17 +440,20 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [FSt [LM [BM [CIF [RR [CR CP]]]]]].
+    as [LM [BM [CIF [CR [CP [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
   pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
+  pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
+  pose proof (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP) as CA.
+  pose proof (CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.
+  assert (FSt : S.FamilyStepOk W Prog _ _ _)
+    by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) LM BM CIF LR CA PA FLR FCA FPA).
   split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
-  exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR (CopyA.link_results_of_chain W Prog _ _ _ CR)
-    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF RR CR CP)
-    (CopyA.platform_apply_of_chain W Prog _ _ _ CP)).
+  exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
+    (ex_intro _ bundle Wo) LM BM CIF LR CA PA).
 Qed.
 
 End EntrySafety.

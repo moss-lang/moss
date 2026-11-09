@@ -1490,7 +1490,11 @@ Record functor_code := FunctorCode {
   (* the inputs each application supplies (the rest are captured) *)
   fc_linked : list tsym;
   fc_outputs : tele;
-  fc_bindings : list binding
+  fc_bindings : list binding;
+  (* where the body left each result item: a result key (as the functor
+     declares it) paired with the body's own key for it; an item not
+     listed is read under its own key *)
+  fc_sources : list (item * item)
 }.
 Record program : Type := Program {
   program_functions : list (nat * expr);
@@ -1607,6 +1611,16 @@ Inductive signal : Type :=
    item read at θ — the key its scope refers to it by. *)
 Definition inst_smap (th : subst) (D : tele) : smap :=
   map (fun i => (app_subst_item th i, i)) (filter (fun i => negb (is_ty_item i)) D).
+(* A result item is read from the body under the key its source names
+   (fc_sources), by default its own: a linked body binds a result method
+   under its own receiver, not under F's spelling of it. *)
+Fixpoint source_key (sources : list (item * item)) (i : item) : item :=
+  match sources with
+  | [] => i
+  | (k, s) :: rest => if item_eqb i k then s else source_key rest i
+  end.
+Definition result_smap (th : subst) (D : tele) (sources : list (item * item)) : smap :=
+  map (fun q => (fst q, source_key sources (snd q))) (inst_smap th D).
 
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
@@ -2001,7 +2015,7 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (inst_smap (result_substitution th outputs) Dr) with
+                          match select_provisions d3 (result_smap (result_substitution th outputs) Dr (fc_sources code)) with
                           | Some dr => match result_environment d outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
@@ -3436,17 +3450,6 @@ Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
     ~ In g (fr_fresh F ++ context_gens C ++
        (match fr_ret F with Some t => gens t | None => [] end) ++
        match fr_this F with Some t => gens t | None => [] end)) gs.
-(* The generations `bind F;` makes ([D78]): a fresh one for each output
-   already in force, and each output not in force, which keeps its name.
-   Both are new here, as the oracle's [cx_fresh] records them
-   (Elab.apply_abstract appends every output's destination): a value of
-   either kind of type may not leave the block, and no type here mentions
-   either one. *)
-Definition MadeFor (W : world) (F : frame) (C : cx) (outs : list nat) (gs : list nat) : Prop :=
-  NoDup gs /\ Forall (fun g => (Fresh W g \/ (In g outs /\ nlook g (c_ty C) = None)) /\
-    ~ In g (fr_fresh F ++ context_gens C ++
-       (match fr_ret F with Some t => gens t | None => [] end) ++
-       match fr_this F with Some t => gens t | None => [] end)) gs.
 
 (* The meaning of a decimal literal ([D68]): digits, an optional fraction
    and an optional exponent, as numerator / denominator. *)
@@ -3811,19 +3814,6 @@ Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
     | BValue _ _ => False
     | BApply family _ _ _ => Family W family
     | _ => True end) bindings.
-
-(* a method bind, filed also under each key it answers as another spelling
-   (pairs: the body's key, the key as declared) *)
-Definition refile (pairs : list (item * item)) (b : binding) : list binding :=
-  match b with
-  | BMethod t m th f types sm =>
-      b :: flat_map (fun p => match p with
-                              | (IMth t' m' _, IMth t0 _ th0) =>
-                                  if ty_eqb t t' && Nat.eqb m m' && negb (item_eqb (IMth t0 m th0) (IMth t m th))
-                                  then [BMethod t0 m th0 f types sm] else []
-                              | _ => [] end) pairs
-  | _ => [b]
-  end.
 
 Inductive BindsOf : expr -> list binding -> Prop :=
 | BOEnd : BindsOf EUnit []
@@ -4285,19 +4275,25 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x tx, In (x, tx) fx -> exists here,
       nlook x (c_ty C) = Some here /\ canon C here = canon C tx) ->
     Satisfies C Cu th ns sm ->
-    (* newgens: what the application makes, the destinations of its outputs *)
-    MadeFor W F C outs newgens ->
+    FreshFor W F C newgens ->
     (* Repeated output roles share a generation; distinct roles do not. *)
     (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-    (* outputs: fresh where the symbol is already in force, else itself *)
+    (* outputs: fresh where the symbol is already in force; one not in
+       force is installed as itself, and the frame's return and receiver
+       types (read where every symbol they mention is in force) do not
+       mention it *)
     (forall t, FunOutputs W u t ->
-       (nlook t (c_ty C) = None /\ gensof t = t /\ In t newgens) \/
+       (nlook t (c_ty C) = None /\ gensof t = t /\
+          ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+                  (match fr_this F with Some r => gens r | None => [] end))) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+    (* [D78]: every output destination, fresh or not, is made here: a
+       value of its type may not leave the block *)
     BindItem W P F C (Spec (Some pa) None None, None)
       (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
-      C' (with_fresh F newgens) newgens
+      C' (with_fresh F newgens) (map gensof outs)
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx,
@@ -4444,7 +4440,7 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
    that applications supply; 3d: pins may not rebind M(F); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
 with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds,
+| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
     (* 3b: a captured item (value, fn, method or functor) may mention fixed
@@ -4475,16 +4471,16 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
-    (* a result method item is filed under its key as F declares it too
-       (receiver and θ in F's terms, note 28) *)
-    binds = flat_map (refile (map (fun k =>
-      (at_site Cb (output_renaming outs gen k),
-       output_renaming outs gen (rkey_of Cr k))) ks)) binds0 ->
-    (Family W u -> FamilyBindings W binds) ->
+    (Family W u -> FamilyBindings W binds0) ->
     Fresh W h ->
+    (* a result item, keyed as F declares it (receiver and θ in F's terms,
+       note 28), is read where the body bound it: a method under the
+       body's runtime key for its receiver read in the body *)
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
-      (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds) ->
+      (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds0
+      (map (fun k => (output_renaming outs gen (rkey_of Cr k),
+                      rkey_of Cb (at_site Cb (output_renaming outs gen k)))) ks)) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
@@ -4675,7 +4671,7 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
     ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
-    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) keys bindings) /\
+    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) keys bindings []) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive key operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation) keys bindings.
