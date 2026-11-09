@@ -120,6 +120,8 @@ Definition certificate_roots :=
   @PublicPlatform.chain_prims_of_ground,
   @PublicPlatform.chain_result_agrees,
   @NM.PublicChainAgree.chain_cover,
+  @PublicPlatform.chain_forward_agrees,
+  @NM.PublicChainAgree.copy_news_methods,
   @PublicPlatform.family_result_agrees,
   @NM.PublicFamilyAgree.family_items_agree,
   @NM.PublicFamilyAgree.family_entries_rel,

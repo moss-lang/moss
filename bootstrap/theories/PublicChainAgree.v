@@ -216,4 +216,114 @@ Proof.
   exists (app_subst (c_sub C) rt), m, g'. split; [exact Lg|]. rewrite <- EkK. exact Ek2.
 Qed.
 
+(* ---- a copy of a method-only result has method entries only ------------- *)
+
+Definition Plain (e : entry) : Prop := match e with NMth _ _ _ _ => False | _ => True end.
+Definition esym (e : entry) : nat :=
+  match e with NTy t => t | NVal v _ _ => v | NFn f _ _ => f | NFun u _ => u | NMth _ m _ _ => m end.
+
+(* A plain entry of a reading is a type its items name, or comes from a
+   plain leaf of its items. *)
+Definition PlainFrom (p : string) (sp : spec) (e : entry) : Prop :=
+  match e with NTy t => SpecTypes W p sp t | NMth _ _ _ _ => False | _ => ResultSpecLeaf W p sp (esym e, None) end.
+
+Lemma entry_plain_leaf :
+  (forall p ob tm sp es tm', OutputItemEntries W p ob tm sp es tm' ->
+     forall e, In e es -> Plain e -> PlainFrom p sp e) /\
+  (forall p ob tm sps es tm', OutputItemsEntries W p ob tm sps es tm' ->
+     forall e, In e es -> Plain e -> exists sp, In sp sps /\ PlainFrom p sp e).
+Proof.
+  apply (PublicFormation.oies_mut W
+    (fun p ob tm sp es tm' _ => forall e, In e es -> Plain e -> PlainFrom p sp e)
+    (fun p ob tm sps es tm' _ => forall e, In e es -> Plain e -> exists sp, In sp sps /\ PlainFrom p sp e)).
+  - intros p ob tm pa a bs t R K B e [<-|[]] _. cbn. eapply STType; eassumption.
+  - intros; contradiction.
+  - intros p ob tm a pa s0 d n t ty0 bs ap R D Ast B T App e [<-|[]] _. cbn.
+    eapply RSLPlain; [exact R|exact D| |]; rewrite Ast; [intros n' its E; discriminate|reflexivity].
+  - intros p ob tm a pa s0 g bs ap d rcv n ps rt R K D Ast B Sig App e [<-|[]] _. cbn.
+    eapply RSLPlain; [exact R|exact D| |]; rewrite Ast; [intros n' its E; discriminate|destruct rcv; reflexivity].
+  - intros p ob tm a bs pa u' d n ps args res fx R D Ast B Fx Rd e [<-|[]] _. cbn.
+    eapply RSLPlain; [exact R|exact D| |]; rewrite Ast; [intros n' its E; discriminate|reflexivity].
+  - intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sig App e [<-|[]] Pl. contradiction.
+  - intros p ob tm a pa c d n its bs es tm' R D Ast B Its IH e I Pl.
+    destruct (IH e I Pl) as (sp & Isp & X).
+    destruct e; cbn in X |- *; try contradiction; [eapply STCtx; eassumption|..]; eapply RSLContext; eassumption.
+  - intros; contradiction.
+  - intros p ob tm sp rest es1 tm1 es2 tm2 H1 IH1 H2 IH2 e I Pl.
+    apply in_app_or in I as [I|I].
+    + exists sp. split; [left; reflexivity|exact (IH1 e I Pl)].
+    + destruct (IH2 e I Pl) as (sp' & Isp & X). exists sp'. split; [right; exact Isp|exact X].
+Qed.
+
+Lemma already_kind : forall a k, kind_of a = Some k -> k = DKUnit \/ k = DKTag \/ k = DKAlias ->
+  result_already_provided a = true.
+Proof.
+  intros a k K Ek. destruct a as [| | | | | |rcv n ps rt body| | ]; cbn in K; try discriminate;
+    try (destruct rcv); injection K as <-; flat; discriminate || reflexivity.
+Qed.
+
+(* A plain leaf of an item has a plain entry in its reading. *)
+Lemma leaf_plain_entry : forall p sp k, ResultSpecLeaf W p sp k -> forall s, k = (s, None) ->
+  forall ob tm es tm', OutputItemEntries W p ob tm sp es tm' -> exists e, In e es /\ Plain e.
+Proof.
+  intros p sp k Lf. induction Lf as [p pa dn0 br s0 R|p pa br s0 d R D Nc Np|p pa br c d n its sp k R D Ast Isp Lf IH];
+    intros s Ek ob tm es tm' OIE.
+  - discriminate.
+  - inversion OIE; subst; try (eexists; split; [left; reflexivity|exact Logic.I]).
+    2: { exfalso. match goal with H : resolve_sym W p pa = Some ?x |- _ => assert (x = s0) by congruence; subst x end.
+      match goal with H : w_decl W s0 = Some ?d' |- _ => assert (d' = d) by congruence; subst d' end.
+      match goal with H : d_ast d = ADCtx _ _ |- _ => exact (Nc _ _ H) end. }
+    exfalso. match goal with H : resolve_sym W p pa = Some ?x |- _ => assert (x = s0) by congruence; subst x end.
+    match goal with K : kind_sym W s0 = Some ?k, O : _ \/ _ |- _ => rename K into Ks; rename O into Ok end.
+    unfold kind_sym in Ks. rewrite D in Ks.
+    destruct Ok as [->|[->|[->|[[-> (d' & n' & t' & i' & D' & A')]|[-> (d' & r' & n' & ps' & rt' & b' & D' & A')]]]]].
+    + rewrite (already_kind _ _ Ks (or_introl eq_refl)) in Np. discriminate.
+    + rewrite (already_kind _ _ Ks (or_intror (or_introl eq_refl))) in Np. discriminate.
+    + rewrite (already_kind _ _ Ks (or_intror (or_intror eq_refl))) in Np. discriminate.
+    + rewrite D in D'. injection D' as <-. rewrite A' in Np. discriminate.
+    + rewrite D in D'. injection D' as <-. rewrite A' in Np, Ks. destruct r'; cbn in Ks; try discriminate.
+  - subst k. inversion OIE; subst; try (flat; kmis).
+    match goal with H : resolve_sym W p pa = Some ?c' |- _ => assert (c' = c) by congruence; subst c' end.
+    match goal with H : w_decl W c = Some ?d' |- _ => assert (d' = d) by congruence; subst d' end.
+    match goal with H : d_ast d = ADCtx _ _ |- _ => rewrite H in Ast; injection Ast as -> -> end.
+    match goal with H : OutputItemsEntries W _ _ _ _ _ _ |- _ => rename H into HI end.
+    destruct (items_member _ _ _ _ _ _ HI sp Isp) as (t1 & e1 & t2 & Hm & Inc).
+    destruct (IH s eq_refl _ _ _ _ Hm) as (e & I & Pl). exists e. split; [exact (Inc _ I)|exact Pl].
+Qed.
+
+(* A copy u of a method-only family h0 (the same leaves, no outputs)
+   adds methods only to the caller's provisions. *)
+Theorem copy_news_methods : forall u h0, (forall l, ResultLeaf W u l -> ResultLeaf W h0 l) ->
+  (forall t, ~ FunOutputs W u t) -> (forall t, ~ FunOutputs W h0 t) ->
+  forall Ch0 out0 outputs keys, ProvideResult W h0 Ch0 out0 outputs keys ->
+  (forall key, In key keys -> exists r m a, key = IMth r m a) ->
+  forall C out C' ks, ProvideResult W u C out C' ks ->
+  exists news, c_provisions C' = (news ++ c_provisions C)%list /\
+    (forall k p, In (k, p) news -> exists r m g a, k = mkey r m /\ p = ProvidedMethod g a).
+Proof.
+  intros u h0 Lv NoU NoH Ch0 out0 outputs keys PRf KeysM C out C' ks PR.
+  destruct PR as (d & ps & a & r & bb & outs & es & tm' & D & FP & _ & OIE & _ & EC).
+  exists (flat_map (entry_provision (c_sub C) (fun a => a)) (rev es)). split; [subst C'; reflexivity|].
+  intros k pr I. apply in_flat_map in I as [e [Ie Ip]]. apply (proj2 (in_rev _ _)) in Ie.
+  destruct e as [t0|v t0 a'|f g0 a'|rt m g a'|u' fx]; cbn in Ip;
+    [contradiction| | | destruct Ip as [E|[]]; injection E as <- <-; do 4 eexists; split; reflexivity|]; exfalso.
+  all: destruct (proj2 entry_plain_leaf _ _ _ _ _ _ OIE _ Ie Logic.I) as (sp & Isp & Lf); cbn in Lf.
+  all: destruct (functor_decl d _ _ _ _ FP) as [n Ast].
+  all: match goal with Lf : ResultSpecLeaf W _ _ ?l |- _ => assert (Lh : ResultLeaf W h0 l) by (apply Lv; eapply RL; eassumption) end.
+  all: destruct PRf as (d0 & ps0 & a0 & r0 & b0 & outs0 & es0 & tm0 & D0 & FP0 & _ & OIE0 & RK0 & _).
+  all: inversion Lh as [h1 d1 n1 ps1 a1 r1 b1 sp1 k1 D1 Ast1 Isp1 Lf1]; subst.
+  all: rewrite D0 in D1; injection D1 as <-; rewrite Ast1 in FP0; injection FP0 as <- <- <- <-.
+  all: destruct (items_member _ _ _ _ _ _ OIE0 sp1 Isp1) as (t1 & e1 & t2 & Hm & Inc).
+  all: destruct (leaf_plain_entry _ _ _ Lf1 _ eq_refl _ _ _ _ Hm) as (e0 & I0 & Pl0).
+  all: pose proof (Inc _ I0) as I0'.
+  all: destruct e0 as [y0|v0 y1 a0'|f0 g0' a0'|rt0 m0 g0' a0'|u0 fx0]; try contradiction.
+  all: try (destruct (proj2 entry_plain_leaf _ _ _ _ _ _ OIE0 _ I0' Logic.I) as (sp2 & Isp2 & St); cbn in St;
+    apply (NoH y0); exists d0, ps1, a1, r1, b1, sp2;
+    split; [exact D0|split; [rewrite Ast1; reflexivity|split; [exact Isp2|exact St]]]).
+  all: match type of I0' with In ?e0 _ =>
+    assert (Ik : In (match entry_key (c_sub Ch0) e0 with Some k => k | None => ITy 0 end) keys)
+      by (rewrite RK0; apply in_flat_map; exists e0; split; [exact I0'|cbn; left; reflexivity]) end.
+  all: destruct (KeysM _ Ik) as (r2 & m2 & a2 & E2); discriminate E2.
+Qed.
+
 End ChainAgree.

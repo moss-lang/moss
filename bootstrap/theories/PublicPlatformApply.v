@@ -691,6 +691,43 @@ Proof.
   intros t Ft. exfalso. exact (NoOut t Ft).
 Qed.
 
+(* PREMISE (static correspondence, T15/T16): ChainForwardAgrees's last
+   clause. Each method C' adds to C's provisions (news) is filed under the
+   run-time key of one of h0's items at θ, its signature agreeing with that
+   item's at the state's ground meanings. This is the direction each copy
+   step's CopyOutputs gives; ChainForwardAgrees's other clauses follow
+   (chain_forward_agrees). *)
+Definition ChainForwardKeys : Prop :=
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr d types H g st, Pre rr F C d types H g st ->
+  forall code sms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CopyA.empty_env) ->
+  S.FixedMeans W u d fx gfx ->
+  forall h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 [] ->
+  forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
+  forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
+  (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a) ->
+  forall r m g, A.mlook r m (mths_of news) = Some g ->
+    (exists key, In key keys /\ app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m) /\
+    (forall key rf a gf, In key keys -> key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
+       app_subst_item th (A.rkey_of outputs key) = A.rkey C' r m ->
+       Forall2 (SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf)).
+
+(* A copy chain keeps its root's leaves both ways, and so its outputs. *)
+Lemma chain_leaves_back : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
+  forall l, A.ResultLeaf W u l -> A.ResultLeaf W h0 l.
+Proof.
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same];
+    intros l L; [exact L|]. exact (IH l (proj1 (Same l) L)).
+Qed.
+
+Lemma chain_no_outputs : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
+  (forall t, ~ A.FunOutputs W h0 t) -> forall t, ~ A.FunOutputs W u t.
+Proof.
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH _ _ _ _ _ _ _ _ Same];
+    intros N t Ft; [exact (N t Ft)|]. exact (IH N t (proj1 (S.same_result_outputs W u h Same t) Ft)).
+Qed.
+
 (* A copy chain keeps its root's leaves (each step's SameResult). *)
 Lemma chain_leaves : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 gf0 sms0 ->
   forall l, A.ResultLeaf W h0 l -> A.ResultLeaf W u l.
@@ -716,6 +753,25 @@ Proof.
     destruct MP as (r0 & m0 & a0 & _ & _ & _ & _ & _ & _ & -> & _). eauto.
   - exact Enews.
   - intros r m g0 L. exact (proj1 (A1 r m g0 L)).
+Qed.
+
+(* ChainForwardAgrees from its last clause: F has h0's outputs (none) and
+   leaves, so its result adds methods only (copy_news_methods). *)
+Theorem chain_forward_agrees : ChainForwardKeys -> ChainForwardAgrees.
+Proof.
+  intros Fwd F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx Look Fm
+    h0 gf0 Chn Ch0 needs outputs keys bindings FD.
+  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR).
+  pose proof FD as (_ & NoH & PRf & _ & Binds & _).
+  pose proof (chain_no_outputs _ _ _ _ _ _ Chn NoH) as NoU.
+  split; [exact NoU|].
+  destruct (PublicChainAgree.copy_news_methods W u h0 (chain_leaves_back _ _ _ _ _ _ Chn) NoU NoH Ch0 _ outputs keys PRf
+    ltac:(intros key Ik; destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op [_ [MP _]]]]];
+          destruct MP as (r0 & m0 & a0 & _ & _ & _ & _ & _ & _ & -> & _); eauto)
+    C _ C' ks PR) as (news & En & NewM).
+  exists news. split; [exact En|]. split; [exact NewM|].
+  exact (Fwd F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms gfx Look Fm
+    h0 gf0 Chn Ch0 needs outputs keys bindings FD news En NewM).
 Qed.
 
 Hypothesis chain_agrees : ChainResultAgrees.
