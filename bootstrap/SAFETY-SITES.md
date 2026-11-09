@@ -349,6 +349,20 @@ the local store. *C* and *F* are the static context and frame.
   subterm of an ok, scoped receiver (`family_matching_scoped`), so
   `demand_formed_cx` no longer assumes this. It rules out no program the
   implementations accept.
+- **Counterexample: a copy's extra input replaced a captured type
+  (fixed).** `application_environment` read every input of a functor body
+  from the application's θ first. After `bind F0 = G; bind F1 = F0;`
+  where G captures `X` and `v: X` but only F1 takes `X`, applying F1 at
+  `X = F64` gave G's body `X = F64` while `v` is an i32.
+  [copy-capture.moss](examples/copy-capture.moss) then boxes `v` at F64,
+  rebuilds it at `Ref[Boxed=F64]` and hands `f64_add` an i32, which is
+  stuck under Audit. Both implementations keep the captured `X = I32`
+  (the oracle's `runtime_provider_inputs` passes θ only for the linked
+  inputs), so the rebuild traps with a cast failure. `functor_code` now
+  records `fc_linked` (G's inputs that the functor it was bound to takes;
+  all inputs for a platform family), and only those are read from θ.
+  After discussion: a captured value has a fixed representation, and a
+  copy should behave as its source does at the source's inputs.
 
 ## Body-safety slice (checked, conditional)
 
