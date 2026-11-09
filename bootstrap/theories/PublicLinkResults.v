@@ -75,15 +75,17 @@ Variable W : A.world.
 
 (* PREMISE (T16; scratch/orch/results2-AUDIT.md section 2). An output that
    `bind F;` installs as itself (not in force here) is not mentioned by the
-   context. Otherwise the result's write re-grounds what mentions it. It
-   can be mentioned only as an unbound declared symbol in family method
-   provisions (examples/lambda-declared-output.moss), where re-grounding
-   is harmless by parametricity (unproved). For the user to decide:
-   either an Audit clause `~ In t (context_gens C)`, which rejects correct
+   context, nor by a method key's receiver. Otherwise the result's write
+   re-grounds what mentions it. It can be mentioned only as an unbound
+   declared symbol in family method provisions or their keys
+   (examples/lambda-declared-output.moss, examples/family-unbound-need.moss:
+   KeysScoped admits declared symbols), where re-grounding is harmless by
+   parametricity (unproved). For the user to decide: either an Audit clause
+   `~ In t (context_gens C ++ key_receiver_gens C)`, which rejects correct
    programs both implementations accept, or the parametricity proof. *)
 Definition KeptOutputsUnmentioned : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs -> PublicFormation.FormedCx W C ->
-  forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> ~ In t (A.context_gens C).
+  forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> ~ In t (S.capture_gens C).
 
 (* Each output destination is out of scope at the application: no key of
    the caller's table, no generation its context or frame types mention. *)
@@ -91,7 +93,7 @@ Lemma dest_scope : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   PublicFormation.FormedCx W C -> KeptOutputsUnmentioned ->
   forall t, In t outs ->
-    ~ In (gensof t) (map fst (A.c_ty C)) /\ ~ In (gensof t) (A.context_gens C) /\
+    ~ In (gensof t) (map fst (A.c_ty C)) /\ ~ In (gensof t) (S.capture_gens C) /\
     (forall r, A.fr_ret F = Some r -> ~ In (gensof t) (A.gens r)) /\
     (forall r, A.fr_this F = Some r -> ~ In (gensof t) (A.gens r)).
 Proof.
@@ -106,7 +108,11 @@ Proof.
     intros r Er I; apply Fr; apply in_or_app; right; rewrite Er; exact I.
   - destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
     split; [exact (fresh_not_key W F C newgens _ Fc (conj Nd (proj2 (Forall_forall _ _) Fr)) Ig)|].
-    split; [intros I; apply Out; apply in_or_app; right; apply in_or_app; left; exact I|].
+    split; [intros I; apply in_app_or in I as [I|I]; [apply Out; apply in_or_app; right; apply in_or_app; left; exact I|]|].
+    { unfold A.key_receiver_gens in I. apply in_flat_map in I as [[k p] [Iq I]]. destruct k as [| | |r m a|]; try contradiction.
+      destruct (proj1 (proj2 Fc) r m a p Iq _ I) as [Sc|K].
+      - apply Out. apply in_or_app; right; apply in_or_app; left. exact (scope_context_gens C _ Sc).
+      - unfold A.Fresh in Fresh. unfold A.kind_sym in K. rewrite Fresh in K. discriminate. }
     split; [intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; left; rewrite Er; exact I|].
     intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; right; rewrite Er; exact I.
 Qed.
@@ -206,7 +212,7 @@ Proof.
     (forall t, A.fr_ret F = Some t -> ~ In g0 (A.gens t)) /\ (forall t, A.fr_this F = Some t -> ~ In g0 (A.gens t))).
   { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
     destruct (dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ms t It) as [_ [Nc [Nr Nt]]].
-    exact (conj Nc (conj I (conj Nr Nt))). }
+    exact (conj (fun I => Nc (S.cg_l C _ I)) (conj I (conj Nr Nt))). }
   split; [exact Frame|]. split; [split; [|split; [|exact Al]]|].
   - intros n t mu Found Nm. rewrite Elo in Found. cbn in Nm |- *.
     rewrite (ground_grow_writes (map gensof outs) d d' t Gr (fun g0 Ig Ig' => proj1 (Av g0 Ig) (S.local_context_gens C n t mu Found g0 Ig'))).

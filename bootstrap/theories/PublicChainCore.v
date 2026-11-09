@@ -274,7 +274,7 @@ Proof. intros l x v L. change x with (fst (x, v)). apply in_map. exact (nlook_in
 Lemma ground_after : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   PublicFormation.FormedCx W C -> LR.KeptOutputsUnmentioned W ->
-  forall d d3 dr t, incl (A.gens t) (A.context_gens C) ->
+  forall d d3 dr t, incl (A.gens t) (S.capture_gens C) ->
   ground (append_environment (LR.result_of d3 outs gensof dr) d) t = ground d t.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr t Inc.
@@ -301,7 +301,8 @@ Proof.
   - cbn in L. injection L as <-. destruct (nlook_map_key (fun t => TAbs (gensof t)) _ _ _ Lo) as [-> Ix0].
     assert (Ix : In x outs) by (apply OutsI, O0, Ix0).
     destruct (LR.dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku x Ix) as [_ [Nc _]].
-    rewrite (canon_abs_free C _ Nc), (canon_abs_free C _ Nc).
+    assert (Nc' : ~ In (gensof x) (A.context_gens C)) by (intros I; exact (Nc (S.cg_l C _ I))).
+    rewrite (canon_abs_free C _ Nc'), (canon_abs_free C _ Nc').
     unfold output_meaning. unfold d'. cbn [type_aliases type_meanings append_environment LR.result_of].
     rewrite lookup_subst_app, (S.lookup_map_nat (LR.read_meaning d3) outs x Ix).
     unfold ground. cbn [type_meanings].
@@ -319,7 +320,8 @@ Proof.
       - intros t It E. destruct (LR.dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku t It) as [Nk _].
         apply Nk. rewrite E. exact (nlook_key _ _ _ Lc). }
     rewrite Same, (Al0 x cx Lc). f_equal. rewrite Idem.
-    unfold d'. rewrite (ground_after F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr _ (nlook_ty_canon_gens C x cx Lc)).
+    unfold d'. rewrite (ground_after F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr _
+      (fun y Iy => S.cg_l C y (nlook_ty_canon_gens C x cx Lc y Iy))).
     symmetry. exact (Abs cx).
 Qed.
 
@@ -348,8 +350,10 @@ Proof.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR).
   destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub _].
   set (d' := append_environment (LR.result_of d3 outs gensof dr) d).
-  assert (Gc : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
+  assert (Gk : forall t, incl (A.gens t) (S.capture_gens C) -> ground d' t = ground d t)
     by (intros t Inc; exact (ground_after F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr t Inc)).
+  assert (Gc : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
+    by (intros t Inc; apply Gk; intros y Iy; exact (S.cg_l C y (Inc y Iy))).
   assert (Gm : forall ps, (forall t, In t ps -> incl (A.gens t) (A.context_gens C)) -> map (ground d) ps = map (ground d') ps).
   { intros ps Inc. apply map_ext_in. intros t It. symmetry. exact (Gc t (Inc t It)). }
   assert (Lk : forall k, (forall k1 p1, In (k1, p1) news -> A.rkey_of C' k1 <> k) -> lookup_provision k d' = lookup_provision k d).
@@ -391,9 +395,9 @@ Proof.
     destruct (S.sig_provision_gens (A.ProvidedMethod g0 a) g0 eq_refl) as [Gr Gp].
     refine (S.callable_transfer W Prog argv read state_ok n n H3 d d' _ _ _ _ pv (le_n n) _ _
       (S.callable_extends W Prog argv read state_ok n H H3 d _ _ pv Ext Ok)).
-    + apply Gm. intros t [<-|It] x Ix.
-      * exact (PublicLinkResults.scope_context_gens C x (proj1 (proj2 Fc) r m [] _ Il x Ix)).
-      * exact (S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
+    + rewrite (map_ext_in (ground d) (ground d') (r :: A.sg_params g0)); [reflexivity|].
+      intros t [<-|It]; symmetry; [apply Gk; exact (S.cg_key C r m [] _ Il)|].
+      apply Gc. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
     + symmetry. apply Gc. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gr x Ix)).
   - intros u0 fx0 Nk L. change (A.c_funs C') with (funs_of (A.c_provisions C')) in L.
     rewrite (funs_by_ilook _ u0 KMC), En, (ilook_app_out _ _ _ _ Nk), <- (funs_by_ilook _ u0 KM) in L.
