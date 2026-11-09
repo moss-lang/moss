@@ -1,12 +1,13 @@
-(* The closure obligations of `bind F = G;` (BFunClosure, LinkBody):
-   `LinkMergesOk`, `BindMergesOk` and `CapturedInForceOk` of
-   PublicBodySlice.
+(* The closure obligations of `bind F = G;` (BFunClosure, LinkBody).
 
-   - `LinkMergesOk` and `BindMergesOk` are false for programs both
-     implementations accept: examples/linked-merge-captured.moss (G merges
-     the captured Y into the linked X) and examples/bind-merge-unbound.moss
-     (G merges Y, not in force where G is bound, into Z). See
-     scratch/orch/merges-STATUS.md; they are not proved here.
+   - `LinkMergesOk` and `BindMergesOk` (formerly of PublicBodySlice) were
+     false for programs both implementations accept:
+     examples/linked-merge-captured.moss (G merges the captured Y into the
+     linked X) and examples/bind-merge-unbound.moss (G merges Y, not in
+     force where G is bound, into Z). Audit's `application_environment`
+     now reads G's inputs through G's table (`fc_table`), so G's merges
+     hold by construction and both obligations are gone
+     (scratch/orch/repair-AUDIT.md).
    - `CapturedInForceOk` as stated says nothing about the bind context C,
      so it is false (`captured_in_force_unprovable` below). At a bind site
      it follows (`captured_in_force_of`) from C's key scoping (FormedCx's

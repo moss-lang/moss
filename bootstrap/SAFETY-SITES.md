@@ -26,8 +26,7 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the formation premises, `HandleFormed`, and the functor and
-family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
+family obligations `FamilyStepOk`, `CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
 `PlatformApplyOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
@@ -397,7 +396,7 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
-- **Counterexamples: two closure-merge obligations are false (open).**
+- **Counterexamples: two closure-merge obligations are false (repaired in Audit, next entry).**
   `LinkMergesOk` and `BindMergesOk` (PublicBodySlice) claim that each
   merge of a linked body's context either stays among F's (non-fixed)
   inputs or involves only fixed inputs and symbols in force at the bind.
@@ -420,6 +419,24 @@ the local store. *C* and *F* are the static context and frame.
   context with `KeysScoped` (in `Pre`) and `DeclaredInForce` (every
   declared symbol the context mentions is in force), an invariant `Pre`
   does not carry yet (T29).
+- **An application reads G's inputs through G's table (Audit change,
+  repairs the two closure-merge counterexamples).** `functor_code` has a
+  new field `fc_table`, and `application_environment` reads each input x
+  as `app_subst base t` when the table maps x to t, where `base` is the
+  old per-input meaning (θ for a linked input, the capture otherwise); an
+  input the table omits reads as `base x`, as before. `LinkBody` records
+  G's canonical table `c_ty Cg`; a platform family's code records `[]`, so
+  its behaviour is unchanged by definition. A merged-away input now reads
+  as its representative, so G's merges hold in the body's environment by
+  construction (`link_entry`, via `GD : ground de t = app_subst base
+  (canon Cg t)` and idempotence). This is unobservable by elaborated code:
+  G's provisions and every type its body elaborates are canonical in G's
+  table (`functx_canon_prov`), so they mention only representatives, whose
+  meanings did not change. A premise would have been the wrong fix: the
+  programs are safe, both implementations accept them, and the failure was
+  only that the model's run-time environment ignored a merge the static
+  context had made. `LinkMergesOk`, `BindMergesOk`, their hypotheses, and
+  `ClosureOk`'s merge clause are gone. See scratch/orch/repair-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 
@@ -444,7 +461,6 @@ hypotheses, each a named remaining obligation:
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
-| `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigOk`); `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |

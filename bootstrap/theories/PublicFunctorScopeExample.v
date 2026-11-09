@@ -13,9 +13,9 @@ Module R := Interpreter Prims.
 
 (* F=1, T=2, Outer=3, U=4, Concrete=99. *)
 Definition concrete := TNom 99 [].
-Definition maker := FunctorCode [] [] [ITy 2] [BType 2 concrete].
-Definition no_input_provider := FunctorCode [] [] [ITy 2] [BApply 1 [] [(2,2)] []].
-Definition private_input_provider := FunctorCode [2] [2] [ITy 4] [BType 4 (TAbs 2)].
+Definition maker := FunctorCode [] [] [] [ITy 2] [BType 2 concrete].
+Definition no_input_provider := FunctorCode [] [] [] [ITy 2] [BApply 1 [] [(2,2)] []].
+Definition private_input_provider := FunctorCode [2] [2] [] [ITy 4] [BType 4 (TAbs 2)].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some maker else
     if Nat.eqb h 21 then Some no_input_provider else

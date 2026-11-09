@@ -390,7 +390,7 @@ Theorem safety_obligations : forall prelude,
      (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W /\ PublicFormation.FamilySigOk W) /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg)) /\
-     S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
+     S.FamilyStepOk W Prog argv read so /\ S.CapturedInForceOk /\
      S.RefileRunOk W Prog argv read so /\ S.LinkResultsOk W Prog argv read so /\
      S.CopyApplyOk W Prog argv read so /\ S.PlatformApplyOk W Prog argv read so) ->
   forall program interface initial,
@@ -400,12 +400,12 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [[Mf [Mt Fs]] [Handles [FSt [LM [BM [CIF [RR [LR [CA PA]]]]]]]]].
+    as [[Mf [Mt Fs]] [Handles [FSt [CIF [RR [LR [CA PA]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   split; [|split; [split; assumption|exact Handles]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA).
+    (ex_intro _ bundle Wo) CIF RR LR CA PA).
 Qed.
 
 End EntrySafety.

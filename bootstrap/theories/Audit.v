@@ -1489,6 +1489,10 @@ Record functor_code := FunctorCode {
   fc_inputs : list tsym;
   (* the inputs each application supplies (the rest are captured) *)
   fc_linked : list tsym;
+  (* the body's type table (G's canonical c_ty): an input it maps to a
+     type reads as that type over the inputs' meanings, so the body's
+     environment absorbs G's merges; an input it omits reads as itself *)
+  fc_table : list (tsym * ty);
   fc_outputs : tele;
   fc_bindings : list binding
 }.
@@ -1537,15 +1541,27 @@ Definition output_meaning (d : environment) (source : tsym) : option ty :=
 (* Rebase exactly the provider's formal roles. Linked inputs (fc_linked)
    are read from θ here; the rest, including an input that only a copy of
    the functor takes, use their captured source meanings. Unrelated
-   captured generations cannot occupy this activation's local output names. *)
+   captured generations cannot occupy this activation's local output names.
+   An input the body's table (fc_table) maps to a type then reads as that
+   type over those meanings: a merged-away input reads as its
+   representative, so the body's merges hold by construction. Elaborated
+   code reads types through that table, so it never sees the difference. *)
 Definition application_environment (P : program_view) (d : environment) (h : usym) (th : subst) (dc : environment) : environment :=
   let linked := match view_functor P h with Some code => fc_linked code | None => [] end in
-  let meanings := map (fun source => (source,
+  let inputs := match view_functor P h with Some code => fc_inputs code | None => [] end in
+  let table := match view_functor P h with Some code => fc_table code | None => [] end in
+  let base source :=
     match (if existsb (Nat.eqb source) linked then lookup_subst source th else None) with
     | Some meaning => ground d meaning
     | None => match output_meaning dc source with
       | Some meaning => meaning | None => TAbs source end
-    end)) (match view_functor P h with Some code => fc_inputs code | None => [] end) in
+    end in
+  let bases := map (fun source => (source, base source)) inputs in
+  let meanings := map (fun source => (source,
+    match lookup_subst source table with
+    | Some t => app_subst bases t
+    | None => base source
+    end)) inputs in
   EnvironmentWithAliases meanings meanings (provision_values dc).
 
 (* Formal input interpretation and output destination roles are distinct.
@@ -4440,7 +4456,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     (Family W u -> FamilyBindings W binds) ->
     Fresh W h ->
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
-      (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
+      (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
       (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds) ->
     LinkBody W P u gg h.
 
@@ -4632,7 +4648,7 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
     ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
-    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) keys bindings) /\
+    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) [] keys bindings) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive key operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation) keys bindings.

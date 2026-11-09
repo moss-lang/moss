@@ -126,11 +126,7 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
       (forall f g, In (IFn f) (captured nsu nsg) -> A.nlook f (A.c_fns Cg) = Some g -> exists pv,
          lookup_provision (IFn f) dc = Some pv /\ CallableOk n H0 (denv gm) (A.sg_params g) (A.sg_ret g) pv) /\
       (forall r m a g, In (IMth r m a) (captured nsu nsg) -> A.mlook r m (A.c_mths Cg) = Some g -> exists pv,
-         lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv) /\
-      (* G's merges among its fixed and captured inputs hold *)
-      (forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
-         (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
-         app_subst gm (TAbs x) = app_subst gm tx)) ->
+         lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv)) ->
     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
       CapturedFuns n H0 gm dc (captured_funs Cg (captured nsu nsg))) ->
     ClosureOk n H0 u gfx (FunctorClosure h
@@ -294,7 +290,7 @@ Proof.
   apply (closure_ok_mut n H0 (fun u gfx pv _ => ClosureOk m H1 u gfx pv) (fun gm dc l _ => CapturedFuns m H1 gm dc l)).
   - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps _ IH.
     apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn); [|exact IH].
-    intros gm Am. destruct (Caps gm Am) as [Vals [Fns [Mths Mg]]]. split; [|split; [|split; [|exact Mg]]].
+    intros gm Am. destruct (Caps gm Am) as [Vals [Fns Mths]]. split; [|split].
     + intros v t I L. destruct (Vals v t I L) as [w [Look T]]. exists w. split; [exact Look|].
       eapply value_typed_extends; eassumption.
     + intros f g I L. destruct (Fns f g I L) as [pv [Look Ok]]. exists pv. split; [exact Look|].
@@ -3025,26 +3021,6 @@ Proof.
 Qed.
 
 (* BFunClosure *)
-(* HYPOTHESIS. A merge of G's context that touches an input F links (and
-   does not fix) stays among F's inputs (link_merges); any other merge
-   involves only symbols in force where G is bound (bind_merges). The item
-   causing a merge mentions both sides: linked, it reads as F's
-   (LinkBody); captured, 3b fixes F's inputs it mentions. *)
-Definition LinkMergesOk : Prop := forall u gg h Cu nsu Cg nsg,
-  A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
-  forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
-  incl (x :: A.gens tx) (map fst (A.c_ty Cu)) \/
-  (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y).
-Hypothesis link_merges : LinkMergesOk.
-Definition BindMergesOk : Prop := forall C u gg h Cu nsu Cg nsg smc,
-  A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
-  A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
-    (captured nsu nsg) smc ->
-  forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
-  (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
-  forall y, In y (x :: A.gens tx) -> ~ In y (map fst (A.c_ty Cu)) -> A.nlook y (A.c_ty C) <> None.
-Hypothesis bind_merges : BindMergesOk.
-
 (* HYPOTHESIS (T29). What a closure captures from where it is bound
    mentions, among G's own inputs, only fixed inputs and types in force
    there: the provisions in force mention only symbols in force (or
@@ -3093,7 +3069,7 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   A.ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
-      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg)))
+      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
       (map ITy outs ++ map (fun k => A.output_renaming outs gen (A.rkey_of Cr k)) ks)%list
       (flat_map (A.refile (map (fun k =>
          (A.at_site Cb (A.output_renaming outs gen k), A.output_renaming outs gen (A.rkey_of Cr k))) ks)) binds0)).
@@ -3229,7 +3205,7 @@ Proof.
   - exists (FunctorClosure h [sm] dc), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
     + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
-      * intros gm Am. split; [|split; [|split]].
+      * intros gm Am. split; [|split].
         -- (* vals *) intros v t Ik Lt.
            destruct (vals_ilook _ v t KMg Lt) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
            destruct (Types (IVal v) _ Ik Il) as [p' [Il' Sig]]. cbn in Il'.
@@ -3291,40 +3267,6 @@ Proof.
               rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. exact (Gt t (or_intror (or_intror It))).
            ++ transitivity (ground d (A.canon C rc)); [symmetry; apply Abs|].
               change (A.canon C rc) with (app_subst (A.c_sub C) rc). rewrite Er. symmetry. exact (Gt rf (or_intror (or_introl eq_refl))).
-        -- (* G's merges among fixed and captured inputs *)
-           intros x tx Lt NoLin. destruct Am as [Am1 Am2].
-           pose proof (bind_merges C u gg h Cu nsu Cg nsg smc LB FCu FCg SatC' x tx Lt NoLin) as InF'.
-           assert (Kg : forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cg))).
-           { intros y Iy. rewrite (CanG x tx Lt) in Iy. cbn [app_subst] in Iy.
-             assert (Ix : In x (map fst (A.c_ty Cg))) by (apply nlook_in in Lt; change x with (fst (x, tx)); apply in_map, Lt).
-             destruct Iy as [<-|Iy]; [exact Ix|].
-             destruct (lookup_subst x (A.c_sub Cg)) as [t0|] eqn:Ls; [|destruct Iy as [<-|[]]; exact Ix].
-             pose proof (lookup_subst_in_pair _ _ _ Ls) as Ip. destruct (functx_scoped W gg Cg nsg FCg) as [_ [_ [_ [_ [_ [_ DomG]]]]]].
-             exact (proj2 (DomG x t0 Ip) y Iy). }
-           assert (Val : forall y, In y (x :: A.gens tx) ->
-             lookup_subst y gm = Some (ground d (app_subst (A.c_ty C) (TAbs y))) /\ A.nlook y (A.c_ty C) <> None).
-           { intros y Iy. destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Cu))) as [Iu|Ou].
-             - pose proof (NoLin y Iy Iu) as Fy. destruct (A.nlook y (A.c_ty C)) as [ty|] eqn:Ly; [|exfalso; exact (FixU y Fy Ly)].
-               split; [|congruence]. rewrite (Am1 y Fy (Kg y Iy)). unfold gfx.
-               rewrite (lookup_ground_fixed _ fx y ty FunFx (proj2 (Fx y ty) (conj Fy Ly))).
-               cbn [app_subst]. rewrite lookup_subst_nlook', Ly. reflexivity.
-             - pose proof (InF' y Iy Ou) as Iny. destruct (A.nlook y (A.c_ty C)) as [ty|] eqn:Ly; [|congruence].
-               split; [|congruence]. rewrite (Am2 y (Kg y Iy) Ou), CmEq. f_equal.
-               rewrite (Al y ty Ly). cbn [app_subst]. rewrite lookup_subst_nlook', Ly. reflexivity. }
-           assert (Through : forall s, incl (A.gens s) (x :: A.gens tx) -> app_subst gm s = ground d (app_subst (A.c_ty C) s)).
-           { intros s Sc. unfold ground. rewrite <- (subst_through s (type_meanings d) (A.c_ty C)).
-             - apply subst_agree_on. intros y Iy. cbn [app_subst]. rewrite (proj1 (Val y (Sc y Iy))).
-               rewrite (lookup_map_snd (app_subst (type_meanings d))). cbn [app_subst].
-               destruct (lookup_subst y (A.c_ty C)) as [ty|] eqn:Ly; [reflexivity|].
-               exfalso. apply (proj2 (Val y (Sc y Iy))). rewrite <- lookup_subst_nlook'. exact Ly.
-             - intros y Iy. rewrite lookup_subst_nlook'. exact (proj2 (Val y (Sc y Iy))). }
-           rewrite (Through (TAbs x)) by (intros y [<-|[]]; left; reflexivity).
-           rewrite (Through tx) by (intros y Iy; right; exact Iy).
-           pose proof (CanG x tx Lt) as Etx. cbn [app_subst] in Etx.
-           destruct (lookup_subst x (A.c_sub Cg)) as [t0|] eqn:Ls; [|rewrite Etx; reflexivity].
-           subst tx. pose proof (lookup_subst_in_pair _ _ _ Ls) as Ip.
-           rewrite <- (Abs (app_subst (A.c_ty C) (TAbs x))), <- (Abs (app_subst (A.c_ty C) t0)).
-           f_equal. apply (Merg x t0 Ip). intros y Iy. exact (proj2 (Val y Iy)).
       * intros gm Am.
         assert (Gen : forall l, incl l caps -> CapturedFuns rr H gm dc (captured_funs Cg l)).
         { induction l as [|k0 l IH]; intros Inc; [constructor|].
@@ -3394,9 +3336,77 @@ Proof.
   - right. intros I. rewrite (proj2 (existsb_exists _ _) (ex_intro _ k (conj I (proj2 (item_eqb_spec _ _) eq_refl)))) in E. discriminate.
 Qed.
 
+Lemma subst_abs : forall s x, app_subst s (TAbs x) = match lookup_subst x s with Some t => t | None => TAbs x end.
+Proof. reflexivity. Qed.
+
+Lemma lookup_map_out : forall (f : nat -> ty) l x, ~ In x l -> lookup_subst x (map (fun s => (s, f s)) l) = None.
+Proof.
+  intros f l x. induction l as [|a r IH]; intros O; [reflexivity|]. cbn.
+  destruct (Nat.eqb_spec x a) as [->|Ne]; [exfalso; apply O; left; reflexivity|]. apply IH. intros I. apply O. right. exact I.
+Qed.
+
+(* The types a provision mentions. *)
+Definition prov_types (p : A.provision) : list ty :=
+  match p with
+  | A.ProvidedVal t _ => [t]
+  | A.ProvidedFn g _ | A.ProvidedMethod g _ => A.sg_ret g :: A.sg_params g
+  | A.ProvidedFunctor fx => map snd fx
+  end.
+
+(* A functor context's provisions are canonical: read through σ. *)
+Lemma functx_canon_prov : forall u C ns, A.FunCtx W u C ns -> forall k p, In (k, p) (A.c_provisions C) ->
+  (forall t, In t (prov_types p) -> A.canon C t = t) /\ (forall r m a, k = IMth r m a -> A.canon C r = r).
+Proof.
+  intros u C ns (dd & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & Etm & MGM & EC & _ & _) k p Ik.
+  subst C. destruct MGM as [_ [Idem _]]. unfold A.canon. cbn [A.c_sub A.entries_cx A.c_provisions] in Ik |- *.
+  apply in_flat_map in Ik as [e [_ Ik]].
+  destruct e as [t0|v t0 a0|f g a0|r0 m g a0|u0 fx]; cbn [A.entry_provision In] in Ik; [contradiction|..];
+    destruct Ik as [E|[]]; injection E as <- <-; split.
+  - intros tq [<-|[]]. apply Idem.
+  - intros r1 m1 a1 E. discriminate.
+  - intros tq It. cbn [prov_types A.sig_subst A.sg_ret A.sg_params] in It.
+    destruct It as [<-|It]; [apply Idem|]. apply in_map_iff in It as [t1 [<- _]]. apply Idem.
+  - intros r1 m1 a1 E. discriminate.
+  - intros tq It. cbn [prov_types A.sig_subst A.sg_ret A.sg_params] in It.
+    destruct It as [<-|It]; [apply Idem|]. apply in_map_iff in It as [t1 [<- _]]. apply Idem.
+  - intros r1 m1 a1 E. unfold A.mkey in E. injection E as <- _ _. apply Idem.
+  - intros tq It. cbn [prov_types] in It. unfold A.fixed_subst in It.
+    apply in_map_iff in It as [[x1 t1] [<- It]]. apply in_map_iff in It as [[x2 t2] [E _]].
+    injection E as _ <-. apply Idem.
+  - intros r1 m1 a1 E. discriminate.
+Qed.
+
+(* EnvOk depends on the environment only through its provisions and the
+   meanings of the types the context's provisions mention. *)
+Lemma envok_transfer : forall n C d d' H (Q : ty -> Prop),
+  (forall k, lookup_provision k d' = lookup_provision k d) ->
+  (forall t, Q t -> ground d' t = ground d t) ->
+  (forall v t, A.nlook v (A.c_vals C) = Some t -> Q t) ->
+  (forall f g, A.nlook f (A.c_fns C) = Some g -> forall t, In t (A.sg_ret g :: A.sg_params g) -> Q t) ->
+  (forall r m g, A.mlook r m (A.c_mths C) = Some g -> forall t, In t (r :: A.sg_ret g :: A.sg_params g) -> Q t) ->
+  (forall u fx, A.nlook u (A.c_funs C) = Some fx -> forall x t, In (x, t) fx -> Q t) ->
+  EnvOk n C d H -> EnvOk n C d' H.
+Proof.
+  intros n C d d' H Q Lp G QV QF QM QU [Vals [Fns [Mths Funs]]]. split; [|split; [|split]].
+  - intros v t L. destruct (Vals v t L) as [w [Look T]]. exists w. rewrite Lp, (G t (QV v t L)). split; assumption.
+  - intros f g L. destruct (Fns f g L) as [pv [Look Ok]]. exists pv. rewrite Lp. split; [exact Look|].
+    apply (callable_transfer n n H d d' (A.sg_params g) (A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
+    + apply map_ext_in. intros t It. symmetry. exact (G t (QF f g L t (or_intror It))).
+    + symmetry. exact (G _ (QF f g L _ (or_introl eq_refl))).
+  - intros r m g L. destruct (Mths r m g L) as [pv [Look Ok]]. exists pv. rewrite Lp. split; [exact Look|].
+    apply (callable_transfer n n H d d' (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
+    + apply map_ext_in. intros t It. symmetry. apply G. apply (QM r m g L).
+      destruct It as [<-|It]; [left; reflexivity|right; right; exact It].
+    + symmetry. apply G. apply (QM r m g L). right. left. reflexivity.
+  - intros u fx L. destruct (Funs u fx L) as [pv [gfx [Look [Ok [Cov Vm]]]]]. exists pv, gfx. rewrite Lp.
+    split; [exact Look|]. split; [exact Ok|]. split; [exact Cov|].
+    intros x t I. rewrite (Vm x t I), (G t (QU u fx L x t I)). reflexivity.
+Qed.
+
 (* An application's body environment realizes G's context: the needs F
    links come from F's realized context, the captured ones from the
-   closure, and G's merges hold (link_merges). *)
+   closure. The body reads each input through G's table (fc_table), so
+   G's merges hold by construction. *)
 Lemma link_entry : forall rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2,
   A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   map fst th = map fst (A.c_ty Cu) ->
@@ -3409,10 +3419,7 @@ Lemma link_entry : forall rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2,
       (forall f g, In (IFn f) (captured nsu nsg) -> A.nlook f (A.c_fns Cg) = Some g -> exists pv,
          lookup_provision (IFn f) dc = Some pv /\ CallableOk rr H (denv gm) (A.sg_params g) (A.sg_ret g) pv) /\
       (forall r m a g, In (IMth r m a) (captured nsu nsg) -> A.mlook r m (A.c_mths Cg) = Some g -> exists pv,
-         lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk rr H (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv) /\
-      (forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
-         (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
-         app_subst gm (TAbs x) = app_subst gm tx)) ->
+         lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk rr H (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv)) ->
   (forall gm, AppMeanings u Cu Cg dc gfx gm -> CapturedFuns rr H gm dc (captured_funs Cg (captured nsu nsg))) ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs nsu nsg)) = Some d2 ->
   Realizes rr Cg (application_environment P d h th (append_environment d2 dc)) H.
@@ -3424,6 +3431,14 @@ Proof.
   destruct (functx_static _ _ _ FCg) as [[CanG DomG] [CnG [KMg [NdG [ProvNsG [ShapeG [ScG FixG]]]]]]].
   destruct (functx_static _ _ _ FCu) as [[CanU DomU] [CnU [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
   set (ce := callee_env d th d1). set (de := application_environment P d h th (append_environment d2 dc)).
+  (* each input's own meaning (B), and the body's environment over it *)
+  set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
+  set (base := fun source => match (if existsb (Nat.eqb source) lnk then lookup_subst source th else None) with
+    | Some meaning => ground d meaning
+    | None => match output_meaning (append_environment d2 dc) source with Some meaning => meaning | None => TAbs source end
+    end).
+  set (B := map (fun source => (source, base source)) (map fst (A.c_ty Cg))).
+  set (de0 := EnvironmentWithAliases B B (provision_values (append_environment d2 dc))).
   pose proof RealU as [AbsU [[ValsU [FnsU [MthsU FunsU]]] [IdemU KMU']]].
   assert (Code : view_functor P h = A.funbody_of Prog h) by reflexivity.
   destruct (select_provisions_empty _ _ _ Sel) as [Em2 Ea2].
@@ -3435,30 +3450,31 @@ Proof.
     clear -L Iq. induction th as [|[a0 t0] rest IH]; [contradiction|]. cbn in L, Iq.
     destruct (Nat.eqb_spec x a0) as [->|Ne]; [discriminate|]. destruct Iq as [E|Iq]; [injection E as E; congruence|apply IH; assumption]. }
   (* the body's meanings *)
+  assert (Mde : type_meanings de = map (fun source => (source, match lookup_subst source (A.c_ty Cg) with
+    | Some t => app_subst B t | None => base source end)) (map fst (A.c_ty Cg))).
+  { unfold de, application_environment. rewrite Code, FB. reflexivity. }
   assert (MeanL : forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
-    lookup_subst x (type_meanings de) = option_map (ground d) (lookup_subst x th)).
-  { intros x Ig Iu. unfold de, application_environment. rewrite Code, FB. cbn [type_meanings fc_inputs fc_linked].
-    rewrite (lookup_map_nat _ _ x Ig).
-    assert (Ex : existsb (Nat.eqb x) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) = true).
-    { apply existsb_exists. exists x. split; [apply filter_In; split; [exact Ig|]|apply Nat.eqb_refl].
+    lookup_subst x B = option_map (ground d) (lookup_subst x th)).
+  { intros x Ig Iu. unfold B. rewrite (lookup_map_nat _ _ x Ig). unfold base. cbv beta.
+    assert (Ex : existsb (Nat.eqb x) lnk = true).
+    { unfold lnk. apply existsb_exists. exists x. split; [apply filter_In; split; [exact Ig|]|apply Nat.eqb_refl].
       apply existsb_exists. exists x. split; [exact Iu|apply Nat.eqb_refl]. }
     rewrite Ex. destruct (Th x Iu) as [v Lv]. rewrite Lv. reflexivity. }
   assert (MeanC : forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
-    lookup_subst x (type_meanings de) = Some (cmeaning dc x)).
-  { intros x Ig Ou. unfold de, application_environment. rewrite Code, FB. cbn [type_meanings fc_inputs fc_linked].
-    rewrite (lookup_map_nat _ _ x Ig).
-    assert (Ex : existsb (Nat.eqb x) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) = false).
-    { destruct (existsb _ _) eqn:E; [|reflexivity]. exfalso. apply existsb_exists in E as [y [Iy E]].
+    lookup_subst x B = Some (cmeaning dc x)).
+  { intros x Ig Ou. unfold B. rewrite (lookup_map_nat _ _ x Ig). unfold base. cbv beta.
+    assert (Ex : existsb (Nat.eqb x) lnk = false).
+    { unfold lnk. destruct (existsb _ _) eqn:E; [|reflexivity]. exfalso. apply existsb_exists in E as [y [Iy E]].
       apply Nat.eqb_eq in E. subst y. apply filter_In in Iy as [_ Iy]. apply existsb_exists in Iy as [z [Iz E]].
       apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
     rewrite Ex. unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
-  assert (Am : AppMeanings u Cu Cg dc gfx (type_meanings de)).
+  assert (Am : AppMeanings u Cu Cg dc gfx B).
   { split.
     - intros x Fx Ig. rewrite (Gfx x Fx Ig). exact (MeanL x Ig (FxIn x Fx)).
     - intros x Ig Ou. exact (MeanC x Ig Ou). }
   assert (GA : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) -> incl (A.gens t) (map fst (A.c_ty Cg)) ->
-    ground de t = ground ce t).
-  { intros t SU SG. unfold ground. apply subst_agree_on. intros x Ix. cbn [app_subst].
+    ground de0 t = ground ce t).
+  { intros t SU SG. unfold ground. change (app_subst B t = app_subst (type_meanings ce) t). apply subst_agree_on. intros x Ix. cbn [app_subst].
     rewrite (MeanL x (SG x Ix) (SU x Ix)). unfold ce, callee_env. cbn [type_meanings].
     rewrite (lookup_map_snd (ground d)). destruct (lookup_subst x th); reflexivity. }
   assert (InLks : forall k0, In k0 nsg -> In k0 nsu -> In k0 lks).
@@ -3471,19 +3487,14 @@ Proof.
   { intros k0 I. unfold lks, linked_needs in I. apply filter_In in I as [Ig E]. split; [exact Ig|].
     apply existsb_exists in E as [k' [I' E]]. apply item_eqb_spec in E. subst. exact I'. }
   assert (LookL : forall k0 v, In k0 lks -> lookup_provision (A.rkey_of Cu k0) ce = Some v ->
-    lookup_provision (A.rkey_of Cg k0) de = Some v).
-  { intros k0 v Ik L. unfold de. change (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)) with
-      (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
-    unfold application_environment. change (lookup_provision (A.rkey_of Cg k0) (EnvironmentWithAliases _ _ (provision_values (append_environment d2 dc))))
-      with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
+    lookup_provision (A.rkey_of Cg k0) de0 = Some v).
+  { intros k0 v Ik L. change (lookup_provision (A.rkey_of Cg k0) de0) with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
     rewrite lookup_append_env, (select_lookup d1 _ d2 _ Sel).
     rewrite (sm_find_map (A.rkey_of Cg) (A.rkey_of Cu) lks k0 Ik).
     - change (lookup_provision (A.rkey_of Cu k0) d1) with (lookup_provision (A.rkey_of Cu k0) ce). rewrite L. reflexivity.
     - intros k' Ik' E. exact (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (LksIn k' Ik'))) (ShapeG k0 (proj1 (LksIn k0 Ik))) E). }
-  assert (LookC : forall k0, In k0 caps -> lookup_provision (A.rkey_of Cg k0) de = lookup_provision (A.rkey_of Cg k0) dc).
-  { intros k0 Ik. unfold de, application_environment.
-    change (lookup_provision (A.rkey_of Cg k0) (EnvironmentWithAliases _ _ (provision_values (append_environment d2 dc))))
-      with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
+  assert (LookC : forall k0, In k0 caps -> lookup_provision (A.rkey_of Cg k0) de0 = lookup_provision (A.rkey_of Cg k0) dc).
+  { intros k0 Ik. change (lookup_provision (A.rkey_of Cg k0) de0) with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
     rewrite lookup_append_env, (select_lookup d1 _ d2 _ Sel).
     assert (Ck : In k0 nsg /\ ~ In k0 nsu).
     { unfold caps, captured in Ik. apply filter_In in Ik as [Ig E]. split; [exact Ig|]. intros Iu. apply negb_true_iff in E.
@@ -3497,27 +3508,22 @@ Proof.
       - apply item_eqb_spec in E. exfalso. exact (All k' (or_introl eq_refl) (eq_sym E)).
       - apply IH. intros k'' I. exact (All k'' (or_intror I)). }
     rewrite None'. reflexivity. }
-  destruct (Caps (type_meanings de) Am) as [CVals [CFns [CMths CMerges]]].
-  pose proof (CF (type_meanings de) Am) as CFs.
-  split; [|split; [split; [|split; [|split]]|split; [exact CnG|exact KMg]]].
-  - (* G's merges hold in the body's environment *)
-    intros t. unfold A.canon. change (ground de (app_subst (A.c_sub Cg) t) = ground de t).
-    unfold ground. rewrite <- (app_subst_nil t) at 2. apply subst2_agree. intros x Ix. rewrite app_subst_nil.
-    destruct (lookup_subst x (A.c_sub Cg)) as [t0|] eqn:Ls.
-    2: { replace (app_subst (A.c_sub Cg) (TAbs x)) with (TAbs x) by (cbn; rewrite Ls; reflexivity). reflexivity. }
-    replace (app_subst (A.c_sub Cg) (TAbs x)) with t0 by (cbn; rewrite Ls; reflexivity).
-    pose proof (lookup_subst_in_pair _ _ _ Ls) as Ip. destruct (DomG x t0 Ip) as [Ixg Gt0].
-    destruct (keys_in _ x Ixg) as [v Lx]. pose proof (CanG x v Lx) as Ev. cbn [app_subst] in Ev. rewrite Ls in Ev. subst v.
-    destruct (link_merges u gg h Cu nsu Cg nsg LB FCu FCg x t0 Lx) as [AllU|Fixd].
-    + assert (Lu : A.nlook x (A.c_ty Cu) <> None) by (destruct (keys_in _ x (AllU x (or_introl eq_refl))) as [w Lw]; rewrite Lw; discriminate).
-      pose proof (LRd x t0 Lx Lu ltac:(intros y Iy; destruct (keys_in _ y (AllU y (or_intror Iy))) as [w Lw]; rewrite Lw; discriminate)) as Rd.
-      change (ground de t0 = ground de (TAbs x)).
-      assert (Sx : incl (A.gens (TAbs x)) (map fst (A.c_ty Cu))) by (intros y [<-|[]]; exact (AllU _ (or_introl eq_refl))).
-      assert (Sxg : incl (A.gens (TAbs x)) (map fst (A.c_ty Cg))) by (intros y [<-|[]]; exact Ixg).
-      rewrite (GA t0 (fun y Iy => AllU y (or_intror Iy)) Gt0), (GA (TAbs x) Sx Sxg).
-      transitivity (ground ce (A.canon Cu t0)); [symmetry; apply AbsU|].
-      transitivity (ground ce (A.canon Cu (TAbs x))); [rewrite Rd; reflexivity|apply AbsU].
-    + symmetry. exact (CMerges x t0 Lx Fixd).
+  destruct (Caps B Am) as [CVals [CFns CMths]].
+  pose proof (CF B Am) as CFs.
+  (* the body's meanings read G's table over B *)
+  assert (GD : forall t, ground de t = app_subst B (A.canon Cg t)).
+  { intros t. unfold ground, A.canon. rewrite Mde. rewrite <- (app_subst_nil t) at 1. apply subst2_agree.
+    intros x _. rewrite app_subst_nil, !subst_abs.
+    destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cg))) as [Ig|Og].
+    - rewrite (lookup_map_nat _ _ x Ig). cbv beta iota. destruct (keys_in _ x Ig) as [v Lv].
+      rewrite (lookup_subst_nlook' x (A.c_ty Cg)), Lv, (CanG x v Lv). reflexivity.
+    - rewrite (lookup_map_out _ _ x Og).
+      assert (Ls : lookup_subst x (A.c_sub Cg) = None).
+      { destruct (lookup_subst x (A.c_sub Cg)) as [t0|] eqn:Ls; [|reflexivity].
+        exfalso. exact (Og (proj1 (DomG x t0 (lookup_subst_in_pair _ _ _ Ls)))). }
+      rewrite Ls. cbv iota. rewrite (subst_abs B). unfold B. rewrite (lookup_map_out _ _ x Og). reflexivity. }
+  assert (Env0 : EnvOk rr Cg de0 H).
+  { split; [|split; [|split]].
   - (* vals *) intros v t Found.
     destruct (vals_ilook _ v t KMg Found) as [a0 Il]. pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
     destruct (in_keys_dec (IVal v) nsu) as [Iu|Ou].
@@ -3537,7 +3543,7 @@ Proof.
       split; [exact (LookL (IFn f) _ (InLks _ Ik Iu) Look)|].
       destruct (ScU _ _ (ilook_in _ _ _ E)) as [S1 _]. destruct (ScG _ _ (ilook_in _ _ _ Il)) as [S2 _].
       unfold provision_sig_gens in S1, S2. cbn in S1, S2.
-      apply (callable_transfer rr rr H ce de (A.sg_params g) (A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
+      apply (callable_transfer rr rr H ce de0 (A.sg_params g) (A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
       * apply map_ext_in. intros t It. symmetry. apply GA; intros y Iy; [apply S1|apply S2]; unfold A.sig_gens;
           apply in_or_app; right; apply in_flat_map; exists t; split; assumption.
       * symmetry. apply GA; intros y Iy; [apply S1|apply S2]; unfold A.sig_gens; apply in_or_app; left; exact Iy.
@@ -3551,7 +3557,7 @@ Proof.
       split; [exact (LookL (A.mkey r m) _ (InLks _ Ik Iu) Look)|].
       destruct (ScU _ _ (ilook_in _ _ _ E)) as [S1 K1]. destruct (ScG _ _ (ilook_in _ _ _ Il)) as [S2 K2].
       unfold provision_sig_gens in S1, S2. cbn in S1, S2, K1, K2.
-      apply (callable_transfer rr rr H ce de (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
+      apply (callable_transfer rr rr H ce de0 (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
       * cbn [map]. f_equal; [symmetry; apply GA; [exact K1|exact K2]|].
         apply map_ext_in. intros t It. symmetry. apply GA; intros y Iy; [apply S1|apply S2]; unfold A.sig_gens;
           apply in_or_app; right; apply in_flat_map; exists t; split; assumption.
@@ -3573,8 +3579,22 @@ Proof.
         as [pv [gfx' [Look [Ok Vm]]]].
       exists pv, gfx'. split; [pose proof (LookC (IFun u') (InCaps _ Ik Ou)) as LC; cbn [A.rkey_of] in LC; rewrite LC; exact Look|]. split; [exact Ok|].
       split; [exact CovG|]. intros x tx I. exact (Vm x tx I).
+}
+  split; [|split; [|split; [exact CnG|exact KMg]]].
+  - (* G's merges hold in the body's environment, by its table *)
+    intros t. rewrite (GD (A.canon Cg t)), (GD t), (CnG t). reflexivity.
+  - apply (envok_transfer rr Cg de0 de H (fun t => A.canon Cg t = t)); [reflexivity| | | | | |exact Env0].
+    + intros t Ct. rewrite GD, Ct. reflexivity.
+    + intros v t L. destruct (vals_ilook _ v t KMg L) as [a0 Il].
+      exact (proj1 (functx_canon_prov _ _ _ FCg _ _ (ilook_in _ _ _ Il)) t (or_introl eq_refl)).
+    + intros f g L t It. destruct (fns_ilook _ f g KMg L) as [a0 Il].
+      exact (proj1 (functx_canon_prov _ _ _ FCg _ _ (ilook_in _ _ _ Il)) t It).
+    + intros r m g L t It. destruct (mths_ilook _ r m g KMg L) as [a0 Il].
+      destruct (functx_canon_prov _ _ _ FCg _ _ (ilook_in _ _ _ Il)) as [Ct Crr].
+      destruct It as [<-|It]; [exact (Crr r m [] eq_refl)|exact (Ct t It)].
+    + intros u' fx L x t I. pose proof (funs_ilook _ u' fx KMg L) as Il.
+      exact (proj1 (functx_canon_prov _ _ _ FCg _ _ (ilook_in _ _ _ Il)) t (in_map snd fx (x, t) I)).
 Qed.
-
 (* An application's θ reads F's inputs here, as a call's does. *)
 Lemma apply_theta : forall C u Cu ns sm,
   A.FunCtx W u Cu ns -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
@@ -3626,11 +3646,7 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
         (forall f g, In (IFn f) (captured nsu nsg) -> A.nlook f (A.c_fns Cg) = Some g -> exists pv,
            lookup_provision (IFn f) dc = Some pv /\ CallableOk n H0 (denv gm) (A.sg_params g) (A.sg_ret g) pv) /\
         (forall r m a g, In (IMth r m a) (captured nsu nsg) -> A.mlook r m (A.c_mths Cg) = Some g -> exists pv,
-           lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv) /\
-        (* G's merges among its fixed and captured inputs hold *)
-        (forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
-           (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
-           app_subst gm (TAbs x) = app_subst gm tx)) /\
+           lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv)) /\
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
         CapturedFuns n H0 gm dc (captured_funs Cg (captured nsu nsg)))) \/
   (exists h Cu nsu Ch nsh code sms dc gfh,
