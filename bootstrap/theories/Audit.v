@@ -3878,17 +3878,29 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
    source. An application of F installs exactly F's result, position by
    position under the caller's keys (Rule A, result_selection), so a key
    H has and F lacks is never installed (examples/copy-extra-key.moss;
-   results4's converse conjunct, which rejected that copy, is reverted). *)
+   results4's converse conjunct, which rejected that copy, is reverted).
+   Every other generation of F's input readings (one sigma does not read:
+   F's non-fixed inputs, which each application supplies afresh) reads as
+   its own fresh symbol cg y, as the oracle's copy_output_compatible
+   replaces each unsolved generation by a fresh `@copy` symbol: sigma's
+   readings are the copy site's and may name a symbol that is also one of
+   F's inputs, which must not be identified with it
+   (examples/copy-bracket-nonfixed.moss, copy-fixed-reads-poly.moss;
+   scratch/orch/copyfresh-AUDIT.md). *)
 Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : list nat) : Prop :=
-  exists outs gen Cr ks Cr' ks',
-    (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs) /\
+  exists outs gen ys cg Cr ks Cr' ks',
+    (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs ++ map cg ys) /\
     (forall t, In t outs -> Fresh W (gen t)) /\
+    (forall y, In y ys -> Fresh W (cg y)) /\
+    (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
+                          lookup_subst y sigma = None) /\
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
     ProvideResult W h Cu (fun t => TAbs (gen t)) Cr' ks' /\
     (forall k, In k ks -> exists p p',
        ilook (provision_id k) (c_provisions Cr) = Some p /\
        ilook (provision_id k) (c_provisions Cr') = Some p' /\
-       provision_subst sigma p = provision_subst sigma p') /\
+       provision_subst (sigma ++ map (fun y => (y, TAbs (cg y))) ys) p =
+       provision_subst (sigma ++ map (fun y => (y, TAbs (cg y))) ys) p') /\
     length rm = length ks /\
     (forall i k, nth_error ks i = Some k -> exists j k',
        nth_error rm i = Some j /\ nth_error ks' j = Some k' /\ provision_id k' = provision_id k /\

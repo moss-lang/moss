@@ -1,0 +1,46 @@
+# r2b (accept control): F's get[I = Z], H's get[I = Y], Z and Y fixed in
+# both, both read as demo's I at the copy. sigma = [Z := I, Y := I], I
+# fresh: F's ():I_site [I := I_site] = H's. Audit accepts; at bind F, H's
+# body runs at Y = demo's I (Char) and get returns vi read there...
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type I;
+type Z;
+type Y;
+assume { val kk: Int; }
+assume I { fn get(): I; val vi: I; }
+assume Y { val vy: Y; fn yy(): Y; }
+functor H[]: Std, I, Y, vy -> kk, get[I = Y], yy;
+functor F[]: Std, I, Z, Y, vy -> kk, get[I = Z], yy;
+functor G: Std, I, Y, vy -> kk, get[I = Y], yy { bind kk = 1; bind yy = () => vy; bind I = Y; bind get = () => vy; }
+assume Std, I, vi {
+  fn demo(): I {
+    bind Z = I;
+    bind Y = I;
+    bind vy = vi;
+    bind H = G;
+    bind F = H;
+    bind I = Bool;
+    bind F;
+    get()
+  }
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind I = Char;
+    bind vi = char::a;
+    let c: Char = demo();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}

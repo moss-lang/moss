@@ -70,7 +70,7 @@ Proof.
     intros E0 srcs Len.
   - subst rms. cbn [chain_sources fold_left]. split; [exact Len|intros s I; exact I].
   - destruct (IH E0 srcs Len) as [LenH InH].
-    destruct CO as (sg & m & (outs & gen & Cr & ks & Cr' & ks' & _ & _ & _ & PRu & PRh & _ & Lrm & Pos) & _).
+    destruct CO as (sg & m & (outs & gen & ys & cg & Cr & ks & Cr' & ks' & _ & _ & _ & _ & _ & PRu & PRh & _ & Lrm & Pos) & _).
     assert (Rg : forall j, In j rm -> j < List.length (chain_sources rms srcs)).
     { intros j Ij. apply In_nth_error in Ij as [i Ei].
       assert (Li : i < List.length ks) by (rewrite <- Lrm; apply nth_error_Some; rewrite Ei; discriminate).
