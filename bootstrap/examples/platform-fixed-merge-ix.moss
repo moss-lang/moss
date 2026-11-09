@@ -1,4 +1,4 @@
-# FixedMachinesRead by class (AUDIT-CHANGES #52; criteria section 2, coherence).
+# FixedMachinesRead by class (AUDIT-CHANGES #53; criteria section 2, coherence).
 # main's context merges the machine type I32 with an abstract X
 # (`context Two = X, i32_eqz, i32_eqz[I32 = X]`: the two bindings of i32_eqz are one
 # key, so I32 and X are one type). The root context's platform functors fix

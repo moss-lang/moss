@@ -1,0 +1,72 @@
+# Cross-context need identity in a copy (AUDIT-CHANGES.md #51; criteria.md
+# section 2, coherence). `bind F = H;` (BFunCopy), where H's context merges
+# X with Y in the opposite order to F's, so H can spell `X.m` the need F
+# spells `Y.m`. sameneed-copy-agree.moss is this program with the orders
+# agreeing.
+# - Oracle: rejects ("`H` cannot be bound to `F`: it needs `X.m`, which `F`
+#   does not take (D78)"). The agreeing order prints 7.
+# - Native: rejects ("the functor does not satisfy the required signature:
+#   `X`"). The agreeing order prints 7.
+# - Audit before: the verdict depended on the orientation. Accepted when F
+#   and H chose the same representative; rejected otherwise (`incl nsh nsu`,
+#   and the provision equality on A.gimme).
+# - Audit now: accepts under every orientation and prints 7. Both
+#   implementations reject this order and accept the other, so this is a
+#   class C change: where their verdict depends on a merge's representative,
+#   coherence decides (criteria.md section 6).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+fn .m(): Bool;
+
+assume Std {
+  fn run(): Int;
+}
+
+context MergeXY = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], X.m;
+context MergeYX = A, X, Y, A.gimme[Foo=Y], A.gimme[Foo=X], X.m;
+
+functor F: Std, MergeXY -> run;
+functor H: Std, MergeYX -> run;
+
+functor G: Std, MergeYX -> run {
+  bind run = () => 7;
+}
+
+assume Std, MergeXY, F {
+  fn go(): Int { bind F; run() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind Foo = Char;
+    bind X = Char;
+    bind Y = Char;
+    bind A.gimme = () => this;
+    bind X.m = () => true;
+    bind H = G;
+    bind F = H;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

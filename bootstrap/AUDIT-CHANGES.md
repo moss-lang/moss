@@ -99,10 +99,11 @@ entry they belong to.
 | 48 | **No expanding cycle (`NoExpandingCycle`, D16/D30)** | branch ob-expand | **B** |
 | 49 | Pins constrain only a linked body's own binds | proposals | relaxation (toward both) |
 | 50 | A call's θ is principal (`CallTheta`) | coherence | A |
-| 51 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
-| 52 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
+| 51 | F's congruence decides "same need" across contexts (`canon_item`) | 71be6ac (sameneed) | C and D (a relaxation) |
+| 52 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
+| 53 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, and #52 and #53, from the coherence2 branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1147,7 +1148,101 @@ executable tests unless noted.
   principal-theta-unbound), and it settles E24 for Audit: partially-bound-
   merge is accepted, as native does.
 
-### 51. A merge class is one vertex of the expanding-cycle check (coherence2 branch; PART-DESIGN §1.5 #8)
+### 51. F's congruence decides "same need" across contexts (71be6ac, branch sameneed; PART-DESIGN §1.5 item 7, R2)
+- **Rule now.** Where `bind F = G;` (BFunClosure, LinkBody) or
+  `bind F = H;` (BFunCopy) relates two functor contexts, a need of G (or
+  H) is one of F's when it is, read through F's merge
+  (`canon_item Cu k`, the key with its receiver read by F's σ). Each site
+  that compared G's canonical keys with F's syntactically is restated:
+
+  | Rule | Before | Now |
+  |---|---|---|
+  | LinkBody 3b | `~ In k nsu` | `~ In (canon_item Cu k) nsu` |
+  | LinkBody, linked provisions | `In k nsu -> ilook (provision_id k) Cg = ilook (provision_id k) Cu` | `In (canon_item Cu k) nsu -> option_map (canon_provision Cu) (ilook (provision_id k) Cg) = ilook (provision_id (canon_item Cu k)) Cu` |
+  | BFunClosure, linked `sm` | `filter (existsb (item_eqb k) nsu) nsg`, mapped to `rkey_of Cu k` | `filter (existsb (item_eqb (canon_item Cu k)) nsu) nsg`, mapped to `rkey_of Cu (canon_item Cu k)` |
+  | BFunClosure, captured needs (3b's `Satisfies`) | `negb (existsb (item_eqb k) nsu)` | `negb (existsb (item_eqb (canon_item Cu k)) nsu)` |
+  | BFunCopy, H's needs among F's | `incl nsh nsu` | `forall k, In k nsh -> In (canon_item Cu k) nsu` |
+  | BFunCopy, H reads its needs as F does | `ilook (provision_id k) Ch = ilook (provision_id k) Cu` | `option_map (canon_provision Cu) (ilook (provision_id k) Ch) = ilook (provision_id (canon_item Cu k)) Cu` |
+  | BFunCopy, `sm` | `rkey_of Cu k` on an H-spelled `k` | `rkey_of Cu (canon_item Cu k)` |
+
+  `canon_item` and `canon_provision` are new definitions next to `canon`.
+  Every old condition implies the new one (F's needs and provisions are
+  canonical in F), so nothing is newly rejected.
+- **Why.** The two contexts choose their merges' representatives
+  independently. When both merge X with Y but pick different
+  representatives, a need F spells `Y.m` is `X.m` in G. Audit then
+  treated it as captured, not linked, and compared the linked provisions
+  that mention the class (`vx: Y` against `vx: X`) as different. Since
+  Audit's orientation is a free choice in the world, the verdict and the
+  meaning depended on that choice.
+- **Owner's decision.** F's congruence decides "same need": F's needs are
+  what each application supplies. If one need class of G meets two need
+  classes of F, the program is ambiguous and rejected. This needed no
+  new clause. LinkBody's input-reading clause (#11) and BFunCopy's
+  (`canon Cu (TAbs x) = canon Cu tx`) already rule it out, and
+  `PublicSameNeed.link_need_unambiguous` and `copy_need_unambiguous`
+  prove it.
+- **Criterion: coherence** (criteria.md section 2). Proved in
+  [PublicSameNeed.v](theories/PublicSameNeed.v), all as certificate
+  roots:
+  - `need_reading_orientation_free_F`: whether a key, read through F's
+    merge, is a need of F is the same for every most general merge of F's
+    telescope (from `PublicOrientation.mgm_same_classes`);
+  - `need_reading_orientation_free_G`: two orientations of G's merge
+    whose readings of F's inputs hold in F (#11) give the same F reading
+    of every key over F's inputs (from `mgm_reorient`).
+
+  The G side is invariant only among orientations that #11 accepts. #11
+  itself still depends on G's orientation when G merges an input of F
+  with a type only G has (proposals item 4, "Change B"); this change does
+  not touch that.
+- **Tests.** In each pair, the second file is the first with the merge
+  orders agreeing. Audit's verdicts are by reading.
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [sameneed-link.moss](examples/sameneed-link.moss) (F links X.m, vx, A.gimme; opposite orders) | rejects (D84 3b: "captures `X.m`") | 7 | depends on the orientation: accepts when F and G choose the same representative, else rejects (linked provisions; 3b) | 7, every orientation |
+  | [sameneed-link-agree.moss](examples/sameneed-link-agree.moss) | 7 | 7 | as above | 7 |
+  | [sameneed-meaning.moss](examples/sameneed-meaning.moss) (X fixed; X.m rebound between bind and application) | 1 (captured) | 1 | accepts with two meanings: 2 (linked) or 1 (captured), by orientation | 2, every orientation |
+  | [sameneed-meaning-agree.moss](examples/sameneed-meaning-agree.moss) | 2 | 1 | 2 or 1, by orientation | 2 |
+  | [sameneed-copy.moss](examples/sameneed-copy.moss) (`bind F = H;`, opposite orders) | rejects (D78: "needs `X.m`, which `F` does not take") | rejects ("does not satisfy the required signature: `X`") | depends on the orientation (`incl nsh nsu`; provisions) | 7, every orientation |
+  | [sameneed-copy-agree.moss](examples/sameneed-copy-agree.moss) | 7 | 7 | as above | 7 |
+  | [sameneed-ambiguous.moss](examples/sameneed-ambiguous.moss) (G merges X, Y; F does not, and needs X.m and Y.m) | rejects ("linked input interpretation differs") | 7 | rejects (#11) | rejects (#11) |
+  | [sameneed-ambiguous-other.moss](examples/sameneed-ambiguous-other.moss) | 7 | 7 | rejects (#11) | rejects (#11) |
+
+  Native prints 1 on sameneed-meaning-agree.moss and also when no merge
+  is involved, where the oracle and Audit print 2: native captures needs
+  keyed at fixed inputs. That divergence predates #51.
+- **Corpus.** An oracle variant whose `bind F = G;` and `bind F = H;`
+  read G's (H's) need keys through F's union-find (`canon_key ef k`) in
+  the linked and captured filters, the linked smap, the 3b check, the
+  linked-input check and rule 4 (scratch/oracle/sameneed, scratch/oracle/corpus.sh),
+  compared with the oracle over tests/, examples/ and bootstrap/examples/
+  (with the new tests):
+  - elaboration: 421 same / 2 diff (sameneed-link and sameneed-copy,
+    rejected, now accepted);
+  - full runs: 420 same / 3 diff (those two, now printing 7, and
+    sameneed-meaning, 1 now 2).
+
+  No corpus program changes verdict, and nothing changes from accepted to
+  rejected. The variant leaves sameneed-ambiguous-other accepted, because
+  the oracle has no counterpart of #11.
+- **Proof.** `public_safety` unchanged. PublicBodySlice's `captured` and
+  `linked_needs` take F's context and filter by `canon_item`. The linked
+  case of the application's environment (`PublicBodySlice.link_entry`) and
+  `PublicCopyApply.copy_step_realizes` read a linked provision through
+  F's merge. A provision of G at type t is typed at `ground ce (canon Cu t)`,
+  and `Absorbs` (the callee environment equates whatever F merges) gives
+  `ground ce t`. A new helper, `Unc` (a type F reads over its table is over
+  its table), keeps the scoping. The full re-orientation lemma was not
+  needed: the proof never re-orients a context. It reads G's spelling
+  through F's merge where F's provision is used.
+- **Class C and D, a relaxation.** sameneed-copy.moss is accepted although
+  both implementations reject it (they reject only this merge order, so
+  coherence decides, criteria.md section 6). sameneed-meaning.moss's
+  meaning changes from "1 or 2, by orientation" to 2. The oracle's
+  orientation, reading order, gives 1 there.
+### 52. A merge class is one vertex of the expanding-cycle check (coherence2 branch; PART-DESIGN §1.5 #8)
 - **Rule now.** `InstantiationsBounded` takes the world, and its level
   also satisfies two constraints per code node n and its context C
   (`NodeCx`: a fn's `w_context`, a lambda provider's enclosing context,
@@ -1204,7 +1299,7 @@ executable tests unless noted.
 - **Class B** (a strengthening of #48's check, which the implementations
   lack). No program found whose verdict changes.
 
-### 52. Main's fixed machine types are read by class (coherence2 branch; PART-DESIGN §1.5 #5)
+### 53. Main's fixed machine types are read by class (coherence2 branch; PART-DESIGN §1.5 #5)
 - **Rule now.** `FixedMachinesRead` (Platform.Entry, for each platform
   functor in main's context) asks, for each machine type `symbol` the
   functor fixes at meaning t:
@@ -1412,10 +1507,14 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   (D62); its fix is designed in #50 (E24).
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
 - ~~block-pin-rebind.moss~~: accepted since #49.
+- sameneed-ambiguous.moss and sameneed-ambiguous-other.moss (#11; tests of
+  #51). Native prints 7 on both, and the oracle accepts the second.
 - Native's verdict is not recorded for stale-provision-type (#4) or
   unbound-merge-representative (#3).
 
 **Audit accepts; native rejects.**
+- sameneed-copy.moss (#51). The oracle rejects it too, but both accept the
+  same program with the merge orders agreeing.
 - tests/errors/functor_output_input_changed.moss (#14). Audit accepted it
   after 94d89ce, and still does after fc75de7 (consolidation reading).
 - const-kept-output.moss and const-family-unbound.moss (#20, #21). Native
@@ -1436,6 +1535,10 @@ describe it, matches native and not the oracle:
 - family-copy-linked-bracket (exit 0).
 
 On copy-capture, Audit matches both implementations.
+
+On sameneed-meaning.moss (#51), Audit prints 2, while native and the
+oracle print 1. On sameneed-meaning-agree.moss, Audit and the oracle print
+2 and native prints 1.
 
 **Stale documentation.**
 - The header of kept-output-escape.moss says MadeFor (dropped).

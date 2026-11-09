@@ -130,8 +130,8 @@ Qed.
 Theorem captured_mentioned : forall C gg Cu nsu Cg nsg smc,
   FunCtx W gg Cg nsg ->
   Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
-    (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
-  forall k p x, In k (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) -> ilook (provision_id k) (c_provisions Cg) = Some p ->
+    (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) smc ->
+  forall k p x, In k (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) -> ilook (provision_id k) (c_provisions Cg) = Some p ->
   In x (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end)%list ->
   In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) ->
   nlook x (c_ty C) <> None \/ In x (context_gens C ++ key_receiver_gens C).

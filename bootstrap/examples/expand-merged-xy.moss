@@ -1,4 +1,4 @@
-# expand, merge classes (AUDIT-CHANGES #51; criteria section 2, coherence):
+# expand, merge classes (AUDIT-CHANGES #52; criteria section 2, coherence):
 # REJECTED (NoExpandingCycle, InstantiationsBounded) in either orientation.
 # nest's context merges X and Y (`context M = ff[T = X], ff[T = Y]`: the two
 # bindings of ff are one key, so their types are one type). nest binds

@@ -1,0 +1,67 @@
+# Control for sameneed-meaning.moss: the same program with F's and G's
+# merges in the same order.
+# - Oracle: prints 2. Native: prints 1 (see sameneed-meaning.moss).
+# - Audit before: 2 or 1 depending on the orientation it chose (as in
+#   sameneed-meaning.moss: Audit's orientation is free, not the source
+#   order). Audit now: prints 2 under every orientation.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type B;
+type X;
+type Y;
+type Z;
+
+fn .gimme(): Foo;
+fn .m(): Bool;
+val vx: X;
+
+assume Std, X, Y {
+  fn run(): Int;
+}
+
+context MergeF = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], X.m;
+context MergeG = B, X, Y, B.gimme[Foo=X], B.gimme[Foo=Y], X.m;
+
+functor F[Z]: Std, MergeF -> run;
+
+functor G: Std, MergeG, vx -> run {
+  bind run = () => if vx.m() { 1 } else { 2 };
+}
+
+assume Std, MergeF, F {
+  fn go(): Int { bind F; run() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind B = Char;
+    bind Foo = Char;
+    bind X = Char;
+    bind Y = Char;
+    bind A.gimme = () => this;
+    bind B.gimme = () => this;
+    bind vx = char::a;
+    bind X.m = () => true;
+    bind F = G;
+    bind X.m = () => false;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

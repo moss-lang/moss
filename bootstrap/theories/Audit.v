@@ -2788,6 +2788,11 @@ Fixpoint mlook (r : ty) (m : nat) (l : list ((ty * nat) * fsig)) : option fsig :
   end.
 
 Definition canon (C : cx) (t : ty) : ty := app_subst (c_sub C) t.
+(* A key, and a provision, read through C's merge.  Two contexts choose
+   their merges' representatives independently, so a need one context
+   spells `X.m` another may spell `Y.m`; read through F's merge, both are
+   F's one need (criteria.md section 2, coherence). *)
+Definition canon_item (C : cx) (k : item) : item := app_subst_item (c_sub C) k.
 
 (* A provision identity omits the captured instantiation. Runtime references
    retain that annotation so a callee's requirements can name its own interface. *)
@@ -2829,6 +2834,7 @@ Definition provision_subst (sigma : subst) (p : provision) : provision :=
   | ProvidedMethod g a => ProvidedMethod (sig_subst sigma g) (inst_sub a)
   | ProvidedFunctor fx => ProvidedFunctor (map (fun q => (fst q, app_subst sigma (snd q))) fx)
   end.
+Definition canon_provision (C : cx) (p : provision) : provision := provision_subst (c_sub C) p.
 Definition provision_signature (p : provision) : option fsig :=
   match p with
   | ProvidedVal t _ => Some (FSig [] t)
@@ -4473,18 +4479,26 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
        examples/copy-into-body.moss) *)
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     nlook h (c_funs C) <> None ->
-    FunCtx W u Cu nsu -> FunCtx W h Ch nsh -> incl nsh nsu ->
+    FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
+    (* each need of H is one of F's, read through F's merge (F's
+       congruence decides "same need": H may spell it through another
+       representative of the class; criteria.md section 2,
+       examples/sameneed-copy.moss). The input-reading clause below rules
+       out a need class of H meeting two of F's
+       (`PublicSameNeed.copy_need_unambiguous`) *)
+    (forall k, In k nsh -> In (canon_item Cu k) nsu) ->
     (* Copying requires the target fixed inputs now and preserves every
        known fixed interpretation carried by the existing source binding. *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     (forall x, Fixed W h x -> Fixed W u x) ->
     FixedAgreement W C h ->
     SameResult W u h ->
-    (* H reads its needs and inputs as F does (the oracle: input
-       interpretation, D78) *)
-    (forall k, In k nsh -> ilook (provision_id k) (c_provisions Ch) = ilook (provision_id k) (c_provisions Cu)) ->
+    (* H reads its needs and inputs as F does, up to F's merge (the
+       oracle: input interpretation, D78) *)
+    (forall k, In k nsh -> option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Ch)) =
+                          ilook (provision_id (canon_item Cu k)) (c_provisions Cu)) ->
     (forall x tx, nlook x (c_ty Ch) = Some tx -> canon Cu (TAbs x) = canon Cu tx) ->
-    sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
+    sm = map (fun k => (rkey_of Ch k, rkey_of Cu (canon_item Cu k))) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     (* and H's result reads as F's (the oracle: output interpretation, D78) *)
     CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu rm ->
@@ -4493,7 +4507,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
-   that F takes are linked (supplied by each application), the rest are
+   that F takes (read through F's merge) are linked (supplied by each
+   application), the rest are
    captured here (vals by value) and must be in force here; G's body is
    checked once, in its own terms, as the core functor body h (LinkBody,
    which also asks that G has a body).
@@ -4512,12 +4527,13 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
     LinkBody W P u gg h ->
-    sm = map (fun k => (rkey_of Cg k, rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
+    (* the linked needs: those of G that are F's, read through F's merge *)
+    sm = map (fun k => (rkey_of Cg k, rkey_of Cu (canon_item Cu k))) (filter (fun k => existsb (item_eqb (canon_item Cu k)) nsu) nsg) ->
     (* 3b: the captured needs are answered here as a call would answer
        them, at G's inputs read here: provided, coherent, at G's view of
        their types, and G's merges holding of the meanings here *)
     Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
-      (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
+      (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
 
@@ -4628,18 +4644,24 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
        or privately captured types, but no target input type supplied afresh
        by each application: not in its type or signature, its recorded
        instantiation, or a method's receiver. *)
-    (forall k p t, In k nsg -> ~ In k nsu -> ilook (provision_id k) (c_provisions Cg) = Some p ->
+    (forall k p t, In k nsg -> ~ In (canon_item Cu k) nsu -> ilook (provision_id k) (c_provisions Cg) = Some p ->
        In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
        nlook t (c_ty Cu) <> None -> Fixed W u t) ->
     (* G reads each need F links as F does, and its readings of F's inputs
        hold in F's context (the oracle: linked input interpretation, D84).
+       A need of G is linked when it is one of F's read through F's merge
+       (F's congruence decides "same need", whatever representatives the
+       two contexts chose: examples/sameneed-*.moss).  A class of G that
+       met two of F's need classes would be ambiguous; the next clause
+       rules it out (`PublicSameNeed.link_need_unambiguous`).
        An input of F reads in G as a type over F's inputs: G's merges may
        not send a linked input to a type only G has, which the closure
        captures at the bind while each application supplies the input
        afresh (the oracle's 3b sees the first unmerged reading;
        examples/link-merge-captured.moss, scratch/orch/cap3b-AUDIT.md) *)
-    (forall k, In k nsg -> In k nsu ->
-       ilook (provision_id k) (c_provisions Cg) = ilook (provision_id k) (c_provisions Cu)) ->
+    (forall k, In k nsg -> In (canon_item Cu k) nsu ->
+       option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)) =
+       ilook (provision_id (canon_item Cu k)) (c_provisions Cu)) ->
     (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
        (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\ canon Cu (TAbs x) = canon Cu tx) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
