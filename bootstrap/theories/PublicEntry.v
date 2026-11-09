@@ -397,7 +397,9 @@ Theorem safety_obligations : forall prelude,
      S.CopyApplyOk W Prog argv read so /\ S.PlatformApplyOk W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
-     FS.FamilyPlatformApplyOk W Prog argv read so /\ FS.FamilyFormedOk W /\ FS.FamilyShadowOk W) ->
+     FS.FamilyPlatformApplyOk W Prog argv read so /\
+     (* a family's receiver is in scope, and agrees with the code's context *)
+     S.FamilyCoherentOk W /\ S.ExScopedOk W Prog /\ S.LitScopedOk W /\ S.DemandScopedOk W) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -405,13 +407,13 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [[Mf [Mt Fs]] [Handles [LM [BM [CIF [RR [LR [CA [PA [FLR [FCA [FPA [FFo FSh]]]]]]]]]]]]].
+    as [[Mf [Mt Fs]] [Handles [LM [BM [CIF [RR [LR [CA [PA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   assert (FSt : S.FamilyStepOk W Prog _ _ _)
-    by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA FLR FCA FPA FFo FSh).
+    by exact (FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA FLR FCA FPA).
   split; [|split; [split; assumption|exact Handles]].
-  exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
+  exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
     (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA).
 Qed.
 

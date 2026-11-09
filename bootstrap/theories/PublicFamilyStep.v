@@ -13,30 +13,13 @@
    obligations (`FamilyLinkResultsOk`, `FamilyCopyApplyOk`,
    `FamilyPlatformApplyOk`: AppPremises does not fit a family
    application, which has no source path and whose state realizes C0, not
-   the family context). `realizes_family` and `keep_family` then show the
-   code's context with the family's provisions realized, and every context
-   among C0's provisions still realized, except where a family provision
-   shadows one of C0's at the same run-time key: there FamilyShadowOk
-   (signature coherence) is needed. Formation of the result context is
-   FamilyFormedOk.
-
-   FamilyFormedOk and FamilyShadowOk are NOT true in the generality that
-   FamilyStepOk quantifies over (any FamilyApplication, any C0 realized):
-   - FamilyApplication alone leaves the matching's values unconstrained
-     (FamilyReadOff, which reads them off the demanded key, is a premise of
-     the rules that apply families, not of FamilyStepOk), so a matching
-     value may be a type that is not ok or names a generation outside C0's
-     scope; the family's keys then are not KeyOk / KeysScoped, and Pre's
-     Formed fails at `with_ty C0 Cr` although the application completes.
-   - Pre does not record that C0's method provisions are readings of the
-     method's declared signature at their instantiation, so C0 may hold a
-     provision for the same receiver, method and θ as a family member with
-     a different signature; the family's closure then shadows it at the
-     same run-time key and C0 is no longer realized.
-   So FamilyStepOk itself is false at that generality (see
-   scratch/orch/family-STATUS.md); this file isolates exactly these two
-   static facts, everything else being proved here or an application
-   obligation. *)
+   the family context). `realizes_family` shows the code's table with the
+   family's provisions realized; `keep_family` keeps realized every
+   context among C0's provisions whose methods agree with the family's at a
+   shared run-time key (FamilyCoherent); `family_formed` shows the result
+   context formed, the matching being read off (FamilyReadOff) an ok
+   receiver in C0's scope. `family_step_ok` is then FamilyStepOk, with no
+   premise beyond the application obligations. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
@@ -179,6 +162,59 @@ Proof.
   apply IH. intros k' p' I. exact (Meth k' p' (or_intror I)).
 Qed.
 
+(* ---- the result context is formed ------------------------------------------ *)
+
+(* A family applied in C, its matching read off an ok receiver in C0's
+   scope, C's table read in C0's scope: C0's table with the family's
+   provisions is formed (PublicFormation.family_application_ok, at C0's
+   scope). *)
+Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
+  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
+  PublicFormation.TyOk W ot -> incl (A.gens ot) (PublicFormation.scope_gens C0) ->
+  (forall x v, In (x, v) (A.c_ty C) ->
+     PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0)) ->
+  PublicFormation.FormedCx W C0 ->
+  PublicFormation.FormedCx W (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_provisions Cr) (A.c_locals Cr)).
+Proof.
+  intros W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin [Cf0 [Ks0 Ts0]].
+  pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  destruct (PublicFormation.family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
+  assert (Mt : forall x v, In (x, v) matching ->
+    PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0)).
+  { destruct Ro as (marks & fr & fks & rf & a & Marks & PRm & Ikm & Dom & NdM & Ot).
+    intros x v Iq. assert (Ix : In x (A.gens rf)) by (apply (proj2 (proj1 (Dom x) (in_map fst _ _ Iq)))).
+    pose proof (PublicFormation.sub_subst (A.c_sub C) _ _
+      (PublicFormation.sub_read rf matching x v Ix (PublicFormation.lookup_subst_nodup matching x v NdM Iq))) as Sb.
+    change (PublicFormation.SubTy (A.canon C v) (A.canon C (app_subst matching rf))) in Sb. rewrite Ot in Sb.
+    destruct (PublicFormation.sub_ok W _ _ Sb Ok) as [Ov Iv]. split; [exact Ov|intros g Ig; exact (Sc g (Iv g Ig))]. }
+  set (Cf := A.family_context C matching) in *.
+  assert (CanF : forall t, A.canon Cf t = A.canon C t) by (intros t; unfold A.canon; rewrite Esub; reflexivity).
+  assert (P1 : PublicFormation.TmOk W (A.c_sub Cf)) by (rewrite Esub, Es; exact (PublicFormation.cf_sub W C0 Cf0)).
+  assert (P2 : forall g v, In (g, v) (A.c_sub Cf) -> incl (A.gens v) (PublicFormation.scope_gens C0)).
+  { intros g v Iq y Iy. rewrite Esub, Es in Iq. exact (PublicFormation.scope_sub C0 g v y Iq Iy). }
+  assert (P3 : forall x v, In (x, v) (A.c_ty Cf) ->
+    PublicFormation.TyOk W (A.canon Cf v) /\ incl (A.gens (A.canon Cf v)) (PublicFormation.scope_gens C0)).
+  { intros x v Iq. rewrite CanF. rewrite Ety in Iq. apply in_app_or in Iq as [Iq|Iq];
+      [apply (proj2 (in_rev _ _)) in Iq; exact (Mt x v Iq)|exact (Tin x v Iq)]. }
+  assert (P4 : forall t, A.FunOutputs W u t -> PublicFormation.TyOk W (A.canon Cf (TAbs t)) /\
+    incl (A.gens (A.canon Cf (TAbs t))) (PublicFormation.scope_gens C0)).
+  { intros t Ft. exfalso. exact (PublicFormation.family_no_outputs W u t Shape Ft). }
+  destruct (PublicFormation.provide_result_ok W u Cf (fun t => TAbs t) Cr ks (PublicFormation.scope_gens C0) PR P1 P2 P3 P4)
+    as [SubR [LoR [_ PrR]]].
+  assert (ScE : PublicFormation.scope_gens (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_provisions Cr) (A.c_locals Cr))
+    = PublicFormation.scope_gens C0) by (apply PublicFormation.scope_gens_ext; [reflexivity|cbn; rewrite SubR, Esub, Es; reflexivity]).
+  split; [constructor|split].
+  - cbn. exact (PublicFormation.cf_ty W C0 Cf0).
+  - cbn. rewrite SubR, Esub, Es. exact (PublicFormation.cf_sub W C0 Cf0).
+  - cbn. intros k p Iq. destruct (PrR k p Iq) as [Iq'|[Kk [Pk _]]];
+      [rewrite Epr, Ep in Iq'; exact (PublicFormation.cf_prov W C0 Cf0 k p Iq')|exact (conj Kk Pk)].
+  - cbn. intros n t mu Iq. rewrite LoR, Elo, El in Iq. exact (PublicFormation.cf_locals W C0 Cf0 n t mu Iq).
+  - intros r m' th' p Iq. rewrite ScE. cbn in Iq. destruct (PrR _ _ Iq) as [Iq'|[_ [_ Kr]]];
+      [rewrite Epr, Ep in Iq'; exact (Ks0 r m' th' p Iq')|exact (Kr r m' th' eq_refl)].
+  - intros x Ix. rewrite ScE. exact (Ts0 x Ix).
+Qed.
+
 Module FamilyStep (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module BS := PublicBodySlice.BodySlice Prims I0.
 Module I := BS.I.
@@ -282,20 +318,6 @@ Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u ma
   forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
   Platform.Family W Prog u code ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
-
-(* The two static facts FamilyStepOk needs beyond the run (see the header:
-   neither holds at FamilyStepOk's generality). *)
-Definition FamilyFormedOk : Prop := forall C0 C u matching th sm Cr ks,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
-  PublicFormation.FormedCx W C0 -> PublicFormation.FormedCx W (BS.with_ty C0 Cr).
-Definition FamilyShadowOk : Prop := forall C0 C u matching th sm Cr ks,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
-  forall r m g a g' a', In (A.mkey r m) ks ->
-  In (A.mkey r m, A.ProvidedMethod g a) (A.c_provisions C0) ->
-  A.ilook (A.mkey r m) (A.c_provisions Cr) = Some (A.ProvidedMethod g' a') ->
-  A.theta_of C0 a = A.theta_of Cr a' -> g = g'.
 
 Hypothesis family_link_results : FamilyLinkResultsOk.
 Hypothesis family_copy_apply : FamilyCopyApplyOk.
@@ -476,12 +498,12 @@ Qed.
    provision shadowing one of C0's at its run-time key has its signature. *)
 Lemma keep_family : forall rr C0 C u matching th sm Cr ks d dr H H',
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks -> FamilyShadowOk ->
+  A.FamilyApplication W C u matching th sm Cr ks ->
   heap_extends H H' -> FamilyResultOk rr Cr ks d dr H' ->
   forall Cx, incl (A.c_provisions Cx) (A.c_provisions C0) -> A.c_sub Cx = A.c_sub C0 ->
-  Realizes rr Cx d H -> Realizes rr Cx (append_environment dr d) H'.
+  BS.FamilyCoherent Cx Cr ks -> Realizes rr Cx d H -> Realizes rr Cx (append_environment dr d) H'.
 Proof.
-  intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Shadow Ext [Em [Ea [Dom New]]] Cx Inc Esx RealX.
+  intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Ext [Em [Ea [Dom New]]] Cx Inc Esx Coh RealX.
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
   destruct (BS.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (d' := append_environment dr d).
@@ -519,8 +541,7 @@ Proof.
     (* C0's provision there, and its θ *)
     destruct (mths_ilook (A.c_provisions Cx) r m sg KM Found) as [ax Lx].
     rewrite !BS.capps_ilook, Lx, Lr in Eth. cbn [option_map A.provision_inst] in Eth.
-    rewrite (BS.theta_of_sub C0 Cx ax Esx) in Eth.
-    pose proof (Shadow C0 C u matching th sm Cr ks Es Ep FA r m sg ax g1 a1 Ik (Inc _ (BS.ilook_in _ _ _ Lx)) Lr Eth) as <-.
+    pose proof (Coh r m sg ax g1 a1 Ik (BS.ilook_in _ _ _ Lx) Lr Eth) as <-.
     exists pv'. unfold d'. rewrite BS.lookup_append_env, Ld. split; [reflexivity|].
     exact (BS.callable_transfer W Prog argv read state_ok rr rr H' d d' _ _ _ _ pv' (le_n _) (Gm _) (eq_sym (G _)) Ok1).
   - intros u' fx Found. destruct (Funs u' fx Found) as [pv [gfx [L [Ok [Cov Vm]]]]]. exists pv, gfx.
@@ -528,15 +549,27 @@ Proof.
     split; [exact L|]. split; [exact Ok|]. split; [exact Cov|]. intros x tx I. rewrite G. exact (Vm x tx I).
 Qed.
 
-Lemma ctx_locals_same : forall F C C' d types, A.c_ty C' = A.c_ty C -> A.c_locals C' = A.c_locals C ->
-  CtxLocals F C d types -> CtxLocals F C' d types.
-Proof. intros F [t s p l] [t' s' p' l'] d types; cbn; intros -> ->; exact (fun x => x). Qed.
+(* Pre at a context with C0's table and locals, from Pre at C0, once its
+   provisions are realized and it is formed. *)
+Lemma pre_same_table : forall rr F C0 Cw d d' types H H' g st st',
+  Pre rr F C0 d types H g st -> type_meanings d' = type_meanings d -> type_aliases d' = type_aliases d ->
+  A.c_ty Cw = A.c_ty C0 -> A.c_locals Cw = A.c_locals C0 ->
+  Realizes rr Cw d' H' -> heap_extends H H' -> state_ok H' st' -> PublicFormation.FormedCx W Cw ->
+  Pre rr F Cw d' types H' g st'.
+Proof.
+  intros rr F C0 Cw d d' types H H' g st st' [Frame [[Lo [Re Al]] [L [St [Real [Fc Ff]]]]]] Em Ea Ety Elo Real' Ext St' Fw.
+  assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Em; reflexivity).
+  split; [exact Frame|]. split; [split; [|split]|split; [exact (locals_extends W P H H' g types Ext L)|split; [exact St'|split; [exact Real'|exact (conj Fw Ff)]]]].
+  - intros n t mu Found Nm. rewrite Elo in Found. rewrite G. exact (Lo n t mu Found Nm).
+  - intros t Th. rewrite G. exact (Re t Th).
+  - intros x tx Lx. rewrite Ety in Lx. unfold cmeaning, output_meaning. rewrite Ea, Em. rewrite G. exact (Al x tx Lx).
+Qed.
 
 (* ---- FamilyStepOk -------------------------------------------------------------- *)
 
-Theorem family_step_ok : FamilyFormedOk -> FamilyShadowOk -> BS.FamilyStepOk W Prog argv read state_ok.
+Theorem family_step_ok : BS.FamilyStepOk W Prog argv read state_ok.
 Proof.
-  intros Formed Shadow k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0 rest.
+  intros k Bel C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin F rr j d types H g st Lr Lj Pre0 rest.
   destruct (family_run k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0 rest)
     as [[dr [st' [H' [E [St' [Res Run]]]]]]|Stop]; [left|right; exact Stop].
   pose proof Res as [Em [Ea _]].
@@ -544,15 +577,13 @@ Proof.
   assert (Em' : type_meanings (append_environment dr d) = type_meanings d) by (cbn; rewrite Em; reflexivity).
   assert (Ea' : type_aliases (append_environment dr d) = type_aliases d) by (cbn; rewrite Ea; reflexivity).
   pose proof Pre0 as [_ [_ [_ [_ [Real0 [Fc0 Ff0]]]]]].
-  pose proof (keep_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Shadow E Res) as Keep.
   exists (append_environment dr d), st', H'.
-  split; [exact E|]. split; [exact Em'|]. split; [exact Ea'|]. split; [|split; [exact Keep|exact Run]].
-  pose proof (BS.pre_keep W Prog argv read state_ok rr F C0 d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
-    (Keep C0 (fun q I => I) eq_refl Real0) E St') as [Fr [Ctx [L [S' _]]]].
-  split; [exact Fr|]. split; [apply (ctx_locals_same F C0); [reflexivity|cbn; rewrite Elo; exact El|exact Ctx]|].
-  split; [exact L|]. split; [exact S'|]. split.
-  - exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real0 E Res).
-  - split; [exact (Formed C0 C u matching th sm Cr ks Es Ep El FA Fc0)|exact Ff0].
+  split; [exact E|]. split; [exact Em'|]. split; [exact Ea'|].
+  split; [|split; [exact (keep_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA E Res)|exact Run]].
+  apply (pre_same_table rr F C0 (BS.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
+    eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real0 E Res)
+    |exact E|exact St'|].
+  exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
 Qed.
 
 End Fam.

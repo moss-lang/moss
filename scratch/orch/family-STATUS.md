@@ -1,5 +1,28 @@
 # family: FamilyStepOk
 
+## Changes to other obligations (read first)
+
+- **Audit D78** (commit 914cd3c; scratch/orch/family-AUDIT.md):
+  `BApplyAbstract`'s made list is now `map gensof outs`. The
+  not-in-force output clause also requires that the frame's ret/this types
+  not mention the output. In the slice:
+  - `LinkResultsOk` concludes `MeaningsGrow (map gensof outs) d (append_environment result d)`
+    (was `MeaningsGrow newgens`);
+  - `CopyApplyOk`/`PlatformApplyOk` conclude
+    `StepOut ... (map gensof outs) ...` (was `newgens`);
+  - `AppPremises`/`AppAt` gain the frame clause in the outputs premise.
+  The frame (`with_fresh F newgens`) and `FreshFor` are unchanged. The old
+  `MeaningsGrow newgens` was false for outputs not in force, whose meaning
+  the result writes.
+- **`FamilyStepOk` restated** (now proved, `PublicFamilyStep.family_step_ok`):
+  - new premises `FamilyReadOff W C u ot m matching`, `TyOk W ot`,
+    `incl (gens ot) (scope_gens C0)`, `FamilyTableIn C C0`;
+  - the keep clause requires `FamilyCoherent Cx Cr ks`.
+  `family_then`, `demand_gen`/`demand_case`, `family_method_case` and
+  `literal_family_case` take the matching premises. Their callers supply
+  them from four new slice hypotheses: `family_coherent`, `ex_scoped`,
+  `lit_scoped`, `demand_scoped`.
+
 ## Proved
 
 `bootstrap/theories/PublicFamilyStep.v`, functor `FamilyStep Prims I0`
@@ -123,3 +146,34 @@ CallTheta/Satisfies rule that out needs its own check.
 every step of the slice that produces `Pre`.
 
 I stopped here to report, rather than start these changes.
+
+
+## Follow-up 2 (D78 fixed, FamilyStepOk restated)
+
+- Proved: `FamilyStepOk` itself, with no premises beyond the application
+  obligations (`family_step_ok`).
+  - `family_formed` (outside the functor): the formation half, following
+    `family_application_ok` at C0's scope with the matching read off the
+    receiver.
+  - `keep_family`: the coherence half, now conditional on
+    `FamilyCoherent`.
+  - `pre_same_table`: assembles `Pre` at `with_ty C0 Cr`.
+- `safety_obligations` now lists:
+  - the family application restatements;
+  - the four slice hypotheses (`FamilyCoherentOk`, `ExScopedOk`,
+    `LitScopedOk`, `DemandScopedOk`) in place of
+    `FamilyFormedOk`/`FamilyShadowOk`.
+- Still open, with reasons:
+  - `ExScopedOk`/`LitScopedOk`: a scoping fixpoint over `Ex`. It needs
+    `Formed` to scope local and provision types, an invariant to carry
+    through every bind, let, arm and lambda. Multi-hour.
+  - `DemandScopedOk`: as well as that, a callee need's symbol the caller
+    leaves unbound reads as itself (`TAbs x`, a declared type symbol),
+    which `scope_gens` excludes. Either such calls cannot demand a family
+    (to check), or `KeysScoped` should admit declared type symbols, as
+    `TysScoped` does. The lambda capture use of `keys_scoped` then needs
+    checking.
+  - `FamilyCoherentOk`: needs a `SigCoherent` invariant in `Formed`,
+    established at body entries and preserved by every step, including
+    `RefileRunOk`/`LinkResultsOk`/`CopyApplyOk`, which conclude `Pre`.
+    Multi-hour.
