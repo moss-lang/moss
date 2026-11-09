@@ -1298,67 +1298,7 @@ Definition WrapSafe n F C F' C' (Bi : Prop) (made : list nat) (w : expr -> expr)
   forall t (B : Prop) x, (forall g, In g made -> ~ In g (A.gens t)) ->
   CodeSafe n F' C' t B x -> CodeSafe n F C t (B \/ Bi) (w x).
 
-Definition ItemWrap n F C (it : spec * option aexpr) (w : expr -> expr) (C' : A.cx) (F' : A.frame) (made : list nat) : Prop :=
-  WrapSafe n F C F' C' (ItemBreaks F it) made w.
 
-(* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
-Local Close Scope string_scope.
-(* BApplyAbstract *)
-Hypothesis case_BApplyAbstract : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
-      A.FunCtx W u Cu ns ->
-      
-      (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
-      th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) ->
-      
-      (forall x tx, In (x, tx) fx -> exists here,
-        A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
-      A.Satisfies C Cu th ns sm ->
-      A.FreshFor W F C newgens ->
-      
-      (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-      
-      (forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
-         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
-      NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
-      A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, None)
-      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
-      C' (A.with_fresh F newgens) newgens.
-
-(* BFunCopy *)
-Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
-      A.nlook h (A.c_funs C) <> None ->
-      A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
-      
-      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
-      (forall x, A.Fixed W h x -> A.Fixed W u x) ->
-      A.FixedAgreement W C h ->
-      A.SameResult W u h ->
-      sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
-      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (A.set_fun C u fx) F [].
-
-(* BFunClosure *)
-Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
-      (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
-      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
-      A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
-      
-      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
-      A.SameResult W u gg ->
-      A.LinkBody W Prog u gg h ->
-      sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
-      smc = map (fun k => (A.rkey_of Cg k, A.rkey_of C (A.at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
-      (forall k k', In (k, k') smc -> A.provides C k') ->
-      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h sm smc) (A.set_fun C u fx) F [].
-
-
-Local Open Scope string_scope.
 
 Lemma wrap_breaks : forall n F C t (B B' : Prop) x, (B -> B') -> CodeSafe n F C t B x -> CodeSafe n F C t B' x.
 Proof. intros n F C t B B' x Imp Safe j Le d types H g st Pre0. exact (O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ Imp (Safe j Le d types H g st Pre0)). Qed.
@@ -1378,16 +1318,6 @@ Lemma bindings_type_eq : forall j d g st t tau r,
   I.eval_bindings (S j) P d g st (BType t tau :: r) = I.eval_bindings j P (bind_type d t tau) g st r.
 Proof. reflexivity. Qed.
 
-Lemma type_bind_safe : forall n F C t0 tau,
-  WrapSafe n F C F (A.set_ty C t0 (A.canon C tau)) False [] (bind_type_expression t0 (A.canon C tau)).
-Proof.
-  intros n F C t0 tau t B x _ Safe [|[|[|i]]] Le d types H g st Pre0; [exact Logic.I| | |];
-    unfold bind_type_expression; rewrite eval_bind_eq; [reflexivity|..].
-  - rewrite bindings_type_eq. exact Logic.I.
-  - rewrite bindings_type_eq, bindings_nil_eq.
-    eapply O.outcome_breaks; [intro b; left; exact b|].
-    exact (Safe (S (S i)) ltac:(lia) (bind_type d t0 (A.canon C tau)) types H g st (pre_lower Pre0)).
-Qed.
 
 Lemma bindings_value_eq : forall j d g st v e r,
   I.eval_bindings (S j) P d g st (BValue v e :: r) =
@@ -1416,36 +1346,6 @@ Proof.
   - destruct Out as [H' [ret [R [E [S [L T]]]]]]. exists H', ret; repeat split; auto. rewrite <- G. exact T.
 Qed.
 
-Lemma val_bind_safe : forall k, Below k -> forall n, n <= S k -> forall F C sp v declared y x xt a,
-  A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
-  ItemWrap n F C (sp, Some y) (bind_value_expression v x) (A.provide C (IVal v) a (A.set_val C v declared)) F [].
-Proof.
-  intros k Bel n Le F C sp v declared y x xt a Dy Fits t B cont _ Safe [|j] Lj d types H g st Pre0; [exact Logic.I|].
-  unfold bind_value_expression. rewrite eval_bind_eq.
-  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_value_eq.
-  destruct (Bel j ltac:(lia)) as [SEx _].
-  pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits
-    (SEx F C y _ x xt Dy d types H g st (pre_lower (pre_lower Pre0)))) as Out.
-  destruct (I.eval j P d g st x) as [[] g1 st1] eqn:E;
-    try (lazymatch goal with |- O.Outcome _ _ _ _ _ _ _ _ _ ?r => let r' := eval cbn in r in change r with r' end;
-         refine (outcome_pass F d H types declared t (A.Breaks W (A.fr_mod F) y) _ _ (fun b => or_intror (A.IBExpr sp b)) _ Out);
-         cbn; congruence).
-  destruct Out as [H1 [E1 [S1 [L1 T1]]]].
-  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
-  unfold A.set_val in Safe. rewrite (provide_set C (IVal v) (A.ProvidedVal declared []) a ltac:(intros; eauto)) in Safe.
-  eapply outcome_heap; [exact E1|].
-  eapply O.outcome_breaks; [intro b; left; exact b|].
-  apply (outcome_env F d (install_provision (IVal v) (ValueProvision v0) d) H1 types t B _ eq_refl).
-  apply (Safe (S (S j)) ltac:(lia) _ types H1 g1 st1).
-  pose proof (pre_after _ _ _ _ _ _ _ _ _ _ _ Pre0 E1 S1 L1) as [Frame [Ctx [_ [_ Real]]]].
-  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L1|]. split; [exact S1|].
-  apply (realizes_set (S (S j)) C d H1 (IVal v) (A.ProvidedVal declared a)).
-  - eapply realizes_lower; [|exact Real]. lia.
-  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
-  - reflexivity.
-  - intros k0 Ne. apply install_other. exact Ne.
-  - exists v0. split; [cbn; rewrite Nat.eqb_refl; reflexivity|exact T1].
-Qed.
 
 Lemma bindings_function_eq : forall j d g st f f' types sm r,
   I.eval_bindings (S j) P d g st (BFunction f f' types sm :: r) =
@@ -1546,32 +1446,6 @@ Proof.
       destruct (I.run_prim_at P p held ws st) as [o st2]. exact (calloutcome_prim _ _ _ _ _ POut).
 Qed.
 
-Lemma fn_bind_safe : forall k, Below k -> forall n, n <= S k -> forall F C sp f g sg pg types sm a,
-  A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
-  ItemWrap n F C (sp, Some (AEPath pg None)) (bind_function_expression f g types sm)
-    (A.provide C (IFn f) a (A.set_fn C f sg)) F [].
-Proof.
-  intros k Bel n Le F C sp f g sg pg types sm a Prov t B cont _ Safe [|j] Lj d types0 H lg st Pre0; [exact Logic.I|].
-  unfold bind_function_expression. rewrite eval_bind_eq.
-  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_function_eq.
-  pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
-  destruct (provider_callable k Bel (S j) ltac:(lia) F C pg sg g types sm d H Prov
-    ltac:(eapply realizes_lower; [|exact Real]; lia)) as [dc [Sel Ok]].
-  rewrite Sel. destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
-  unfold A.set_fn in Safe. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)) in Safe.
-  set (d' := install_provision (IFn f) (FunctionClosure g (typed_capture d types dc)) d).
-  apply (outcome_env F d d' H types0 t _ _ eq_refl).
-  eapply O.outcome_breaks; [intro b; left; exact b|].
-  apply (Safe (S (S j)) ltac:(lia) d' types0 H lg st).
-  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
-  apply (realizes_set (S (S j)) C d H (IFn f) (A.ProvidedFn sg a)).
-  - eapply realizes_lower; [|exact Real]. lia.
-  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
-  - reflexivity.
-  - intros k0 Ne. apply install_other. exact Ne.
-  - exists (FunctionClosure g (typed_capture d types dc)). split; [cbn; rewrite Nat.eqb_refl; reflexivity|].
-    exact (callable_transfer (S (S j)) (S (S j)) H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
-Qed.
 
 (* ---- attached method calls ---------------------------------------------------- *)
 
@@ -2235,43 +2109,6 @@ Lemma eval_var_eq : forall j d g st x,
 Proof. reflexivity. Qed.
 
 (* The prefix binds each captured local's value to its val. *)
-Lemma prefix_run : forall F C rest acc j d types H g st t (B : Prop) x,
-  (forall q, In q (acc ++ rest)%list -> A.Named F (fst q) /\ A.slook (fst q) (A.c_locals C) <> None /\
-     A.ilook (IVal (snd q)) (A.c_provisions C) = None) ->
-  NoDup (map snd (acc ++ rest)%list) ->
-  Pre j F C d types H g st -> Installed C acc d H ->
-  (forall j' d', j' <= j -> type_meanings d' = type_meanings d -> Pre j' F C d' types H g st ->
-     Installed C (acc ++ rest)%list d' H -> Outcome F d H types t B (I.eval j' P d' g st x)) ->
-  Outcome F d H types t B (I.eval j P d g st
-    (fold_right (fun q x => bind_value_expression (snd q) (EVar (A.var_of F (fst q))) x) x rest)).
-Proof.
-  intros F C rest. induction rest as [|q rest IH]; intros acc j d types H g st t B x Ok Nd Pre0 Inst Cont.
-  - rewrite app_nil_r in Cont. exact (Cont j d (le_n j) eq_refl Pre0 Inst).
-  - destruct j as [|j]; [exact Logic.I|]. cbn [fold_right]. unfold bind_value_expression at 1. rewrite eval_bind_eq.
-    destruct j as [|j]; [exact Logic.I|]. rewrite bindings_value_eq.
-    destruct j as [|j]; [exact Logic.I|]. rewrite eval_var_eq.
-    destruct (Ok q ltac:(apply in_or_app; right; left; reflexivity)) as [Named [Loc Out]].
-    destruct (A.slook (fst q) (A.c_locals C)) as [[t0 mu]|] eqn:L; [|congruence].
-    pose proof Pre0 as [Frame [[Locals _] [Lt [St Real]]]].
-    destruct (locals_lookup W P H g types _ _ Lt (Locals _ t0 mu L Named)) as [w [Look T]].
-    rewrite Look. rewrite bindings_nil_eq.
-    set (d' := install_provision (IVal (snd q)) (ValueProvision w) d).
-    apply (outcome_env F d d' H types t B _ eq_refl).
-    apply (IH (acc ++ [q])%list (S (S j)) d' types H g st t B x).
-    + rewrite <- app_assoc. exact Ok.
-    + rewrite <- app_assoc. exact Nd.
-    + split; [exact Frame|]. split; [exact (proj1 (proj2 Pre0))|]. split; [exact Lt|]. split; [exact St|].
-      apply realizes_install_val; [eapply realizes_lower; [|exact Real]; lia|exact Out].
-    + intros q' Iq'. apply in_app_or in Iq' as [Iq'|[<-|[]]].
-      * destruct (Inst q' Iq') as [w' [Look' T']]. exists w'. split; [|exact T'].
-        unfold d'. rewrite install_other; [exact Look'|]. intros E. injection E as E.
-        rewrite map_app in Nd. cbn in Nd. apply NoDup_remove_2 in Nd. apply Nd. apply in_or_app. left.
-        rewrite <- E. apply in_map. exact Iq'.
-      * exists w. split; [unfold d'; rewrite lookup_install, (proj2 (item_eqb_spec _ _) eq_refl); reflexivity|].
-        unfold capty. rewrite L. exact T.
-    + intros j' d'' Lj' Meq Pre' Inst'. rewrite <- app_assoc in Inst'. cbn in Inst'.
-      apply (outcome_env F d' d H types t B _ eq_refl). exact (Cont j' d'' ltac:(lia) Meq Pre' Inst').
-Qed.
 
 (* Every key the lambda needs is found where it is bound. *)
 Lemma lambda_select : forall n C (qs : list (name * vsym)) Cl d' H keys,
@@ -2323,62 +2160,6 @@ Hypothesis lambda_keys_scoped : forall F C ps rt body sg this pid pre sm,
   A.LambdaProvider W Prog F C ps rt body sg this pid pre sm ->
   forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C).
 
-Lemma lambda_fn_bind_safe : forall k, Below k -> forall n, n <= S k -> forall F C sp f sg ps rt body pid pre sm a,
-  A.SigOf W f (A.c_ty C) None sg ->
-  A.LambdaProvider W Prog F C ps rt body sg None pid pre sm ->
-  ItemWrap n F C (sp, Some (AELam ps rt body)) (fun x => pre (bind_function_expression f pid (A.lexical_capture C) sm x))
-    (A.provide C (IFn f) a (A.set_fn C f sg)) F [].
-Proof.
-  intros k Bel n Le F C sp f sg ps rt body pid pre sm a Sig LP.
-  pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
-  remember (@None ty) as none eqn:NoneE in LP.
-  destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
-    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
-  subst sm this.
-  assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
-    by exact ClE.
-  set (qs := combine caps capvals) in *.
-  assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
-  assert (Sq : map snd qs = capvals) by (apply snd_combine; congruence).
-  assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
-  assert (InCaps : forall q, In q qs -> In (fst q) caps) by (intros q Iq; rewrite <- Fq; apply in_map, Iq).
-  assert (InVals : forall q, In q qs -> In (snd q) capvals) by (intros q Iq; rewrite <- Sq; apply in_map, Iq).
-  assert (CapsIn : forall n, In n caps -> A.slook n (A.c_locals C) <> None /\ ~ In n (map fst ps))
-    by (intros n0 I0; apply CapsIff in I0 as [_ [L [O _]]]; split; assumption).
-  rewrite Forall_forall in NamedF, Unprov.
-  intros t B cont _ Safe J LJ d types H g st Pre0. cbn beta.
-  apply (prefix_run F C qs [] J d types H g st t _ _).
-  - intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|]. split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|].
-    exact (Unprov _ (InVals q Iq)).
-  - exact Ndq.
-  - exact Pre0.
-  - intros q [].
-  - intros j' d' Lj' Meq Pre' Inst'. cbn [app] in Inst'.
-    destruct j' as [|j']; [exact Logic.I|]. unfold bind_function_expression. rewrite eval_bind_eq.
-    destruct j' as [|j']; [exact Logic.I|]. rewrite bindings_function_eq.
-    pose proof Pre' as [Frame [Ctx [L [St Real]]]].
-    destruct (lambda_select _ C qs Cl d' H keys ClE' Real Inst' Ndq
-      (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
-    rewrite Sel. destruct j' as [|j']; [exact Logic.I|]. rewrite bindings_nil_eq.
-    pose proof (lambda_callable k Bel (S (S j')) ltac:(lia) C ps sg None body pid caps capvals Cl Fl lbody ltype d' H dc keys
-      Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel
-      ltac:(eapply realizes_lower; [|exact Real]; lia) Inst' KS (sigof_scoped f C sg Sig)) as Ok.
-    cbn [this_list app] in Ok.
-    unfold A.set_fn in Safe. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)) in Safe.
-    set (d'' := install_provision (IFn f) (FunctionClosure pid (typed_capture d' (A.lexical_capture C) dc)) d').
-    apply (outcome_env F d d'' H types t _ _ Meq).
-    eapply O.outcome_breaks; [intro b; left; exact b|].
-    apply (Safe (S (S j')) ltac:(lia) d'' types H g st).
-    split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
-    apply (realizes_set (S (S j')) C d' H (IFn f) (A.ProvidedFn sg a)).
-    + eapply realizes_lower; [|exact Real]. lia.
-    + intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
-    + reflexivity.
-    + intros k0 Ne. apply install_other. exact Ne.
-    + exists (FunctionClosure pid (typed_capture d' (A.lexical_capture C) dc)).
-      split; [cbn; rewrite Nat.eqb_refl; reflexivity|].
-      exact (callable_transfer (S (S j')) (S (S j')) H d' d'' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
-Qed.
 
 Lemma method_sig_scoped : forall F C m a bs pa rt sg,
   A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
@@ -2400,74 +2181,6 @@ Proof.
     destruct (tyof_gens W _ _ _ _ _ T x Ix) as [I'|[x0 [E I']]]; [exact (Tm x I')|injection E as <-; exact (Rt x I')].
 Qed.
 
-Lemma lambda_meth_bind_safe : forall k, Below k -> forall n, n <= S k -> forall F C sp m sg rt ps r body pid pre sm ap,
-  A.LambdaProvider W Prog F C ps r body sg (Some rt) pid pre sm ->
-  (forall t, In t (rt :: A.sg_ret sg :: A.sg_params sg) -> incl (A.gens t) (A.context_gens C)) ->
-  ItemWrap n F C (sp, Some (AELam ps r body))
-    (fun x => pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) pid (A.lexical_capture C) sm x))
-    (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
-Proof.
-  intros k Bel n Le F C sp m sg rt ps r body pid pre sm ap LP SigSc.
-  pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
-  remember (Some rt) as recv eqn:RecvE in LP.
-  destruct LP as [F C ps r body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
-    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
-  subst sm this.
-  assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
-    by exact ClE.
-  set (qs := combine caps capvals) in *.
-  assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
-  assert (Sq : map snd qs = capvals) by (apply snd_combine; congruence).
-  assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
-  assert (InCaps : forall q, In q qs -> In (fst q) caps) by (intros q Iq; rewrite <- Fq; apply in_map, Iq).
-  assert (InVals : forall q, In q qs -> In (snd q) capvals) by (intros q Iq; rewrite <- Sq; apply in_map, Iq).
-  assert (CapsIn : forall n, In n caps -> A.slook n (A.c_locals C) <> None /\ ~ In n (map fst ps))
-    by (intros n0 I0; apply CapsIff in I0 as [_ [L [O _]]]; split; assumption).
-  rewrite Forall_forall in NamedF, Unprov.
-  intros t B cont _ Safe J LJ d types H g st Pre0. cbn beta.
-  apply (prefix_run F C qs [] J d types H g st t _ _).
-  - intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|]. split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|].
-    exact (Unprov _ (InVals q Iq)).
-  - exact Ndq.
-  - exact Pre0.
-  - intros q [].
-  - intros j' d' Lj' Meq Pre' Inst'. cbn [app] in Inst'.
-    destruct j' as [|j']; [exact Logic.I|]. unfold bind_method_expression. rewrite eval_bind_eq.
-    destruct j' as [|j']; [exact Logic.I|]. rewrite bindings_method_eq.
-    pose proof Pre' as [Frame [Ctx [L [St Real]]]].
-    pose proof Real as [Abs _].
-    destruct (lambda_select _ C qs Cl d' H keys ClE' Real Inst' Ndq
-      (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
-    rewrite Sel. destruct j' as [|j']; [exact Logic.I|]. rewrite bindings_nil_eq.
-    pose proof (lambda_callable k Bel (S (S j')) ltac:(lia) C ps sg (Some rt) body pid caps capvals Cl Fl lbody ltype d' H dc keys
-      Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel
-      ltac:(eapply realizes_lower; [|exact Real]; lia) Inst' KS SigSc) as Ok.
-    cbn [this_list app] in Ok.
-    unfold A.set_mth in Safe.
-    rewrite (provide_set C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg []) ap ltac:(intros; discriminate)) in Safe.
-    assert (Key : A.rkey (set_cx C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)) (A.canon C rt) m =
-                  IMth (A.canon C rt) m (A.theta_of C ap)).
-    { unfold A.rkey. rewrite capps_ilook. unfold set_cx. cbn [A.c_provisions].
-      rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). cbn [option_map A.provision_inst].
-      apply f_equal, theta_of_sub. reflexivity. }
-    set (d'' := install_provision (IMth (A.canon C rt) m (A.theta_of C ap))
-      (FunctionClosure pid (typed_capture d' (A.lexical_capture C) dc)) d').
-    apply (outcome_env F d d'' H types t _ _ Meq).
-    eapply O.outcome_breaks; [intro b; left; exact b|].
-    apply (Safe (S (S j')) ltac:(lia) d'' types H g st).
-    split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
-    apply (realizes_set (S (S j')) C d' H (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)).
-    + eapply realizes_lower; [|exact Real]. lia.
-    + intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
-    + reflexivity.
-    + intros k0 Ne. apply install_other. intro E. apply Ne. rewrite E. unfold A.mkey. cbn [A.rkey_of].
-      symmetry. exact Key.
-    + cbn [NewOk]. exists (FunctionClosure pid (typed_capture d' (A.lexical_capture C) dc)).
-      split; [transitivity (lookup_provision (IMth (A.canon C rt) m (A.theta_of C ap)) d''); [f_equal; exact Key|]|].
-      { unfold d''. rewrite lookup_install, (proj2 (item_eqb_spec _ _) eq_refl). reflexivity. }
-      apply (callable_transfer (S (S j')) (S (S j')) H d' d'' (rt :: A.sg_params sg) (A.canon C rt :: A.sg_params sg) (A.sg_ret sg) (A.sg_ret sg) _ (le_n _)); [|reflexivity|exact Ok].
-      cbn [map]. f_equal. symmetry. exact (Abs rt).
-Qed.
 
 (* ---- wrapper providers ------------------------------------------------------ *)
 
@@ -2655,112 +2368,7 @@ Proof.
     apply calloutcome_ret. exact Run.
 Qed.
 
-Lemma wrapped_meth_bind_safe : forall k, Below k -> forall n, n <= S k ->
-  forall F C sp pa m sg rt g types sm w n0 Cg nsg ap,
-  A.FnProvider W Prog F C (AEPath pa None) sg None g types sm ->
-  A.CtxOf W g Cg nsg -> n0 = List.length (A.sg_params sg) ->
-  A.body_of Prog w = Some (ECall g (A.theta_ctx Cg) (map (fun k => (A.rkey_of Cg k, A.rkey_of Cg k)) nsg) (map EVar (seq 1 n0))) ->
-  ItemWrap n F C (sp, Some (AEPath pa None))
-    (fun x => bind_method_expression (A.canon C rt) m (A.theta_of C ap) w types sm x)
-    (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
-Proof.
-  intros k Bel n Le F C sp pa m sg rt g types sm w n0 Cg nsg ap FP Ctx Len BodyW.
-  remember (AEPath pa None) as src eqn:Src. remember (@None ty) as none eqn:NoneE.
-  destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R K Abs' Fn Len' Fresh' Body'].
-  2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
-  destruct (PublicContextFacts.function_context_unique W g' Cg' ns' Cg nsg Ctx' Ctx) as [-> ->].
-  subst n0.
-  intros t B cont _ Safe [|j] Lj d types0 H lg st Pre0; [exact Logic.I|].
-  unfold bind_method_expression. rewrite eval_bind_eq.
-  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_method_eq.
-  pose proof Pre0 as [Frame [Ctx0 [L [St Real]]]].
-  destruct (callee_realizes (S j) C' d H g' Cg nsg sm' th ltac:(eapply realizes_lower; [|exact Real]; lia) Ctx Sat CT)
-    as [dc [Sel _]].
-  pose proof (wrapped_callable k Bel (S j) ltac:(lia) C' sg' g' th Cg nsg sm' w (A.canon C' rt) d H dc
-    Def Ctx Sat CT SigG Sel BodyW ltac:(eapply realizes_lower; [|exact Real]; lia)) as Ok.
-  rewrite Sel. destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
-  unfold A.set_mth in Safe.
-  rewrite (provide_set C' (A.mkey (A.canon C' rt) m) (A.ProvidedMethod sg' []) ap ltac:(intros; discriminate)) in Safe.
-  assert (Key : A.rkey (set_cx C' (A.mkey (A.canon C' rt) m) (A.ProvidedMethod sg' ap)) (A.canon C' rt) m =
-                IMth (A.canon C' rt) m (A.theta_of C' ap)).
-  { unfold A.rkey. rewrite capps_ilook. unfold set_cx. cbn [A.c_provisions].
-    rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). cbn [option_map A.provision_inst].
-    apply f_equal, theta_of_sub. reflexivity. }
-  set (d' := install_provision (IMth (A.canon C' rt) m (A.theta_of C' ap))
-    (FunctionClosure w (typed_capture d (TypeCapture th th) dc)) d).
-  apply (outcome_env F' d d' H types0 t _ _ eq_refl).
-  eapply O.outcome_breaks; [intro b; left; exact b|].
-  apply (Safe (S (S j)) ltac:(lia) d' types0 H lg st).
-  split; [exact Frame|]. split; [exact Ctx0|]. split; [exact L|]. split; [exact St|].
-  apply (realizes_set (S (S j)) C' d H (A.mkey (A.canon C' rt) m) (A.ProvidedMethod sg' ap)).
-  - eapply realizes_lower; [|exact Real]. lia.
-  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
-  - reflexivity.
-  - intros k0 Ne. apply install_other. intro E. apply Ne. rewrite E. unfold A.mkey. cbn [A.rkey_of].
-    symmetry. exact Key.
-  - cbn [NewOk]. exists (FunctionClosure w (typed_capture d (TypeCapture th th) dc)).
-    split; [transitivity (lookup_provision (IMth (A.canon C' rt) m (A.theta_of C' ap)) d'); [f_equal; exact Key|]|].
-    { unfold d'. rewrite lookup_install, (proj2 (item_eqb_spec _ _) eq_refl). reflexivity. }
-    exact (callable_transfer (S (S j)) (S (S j)) H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
-Qed.
 
-Lemma meth_bind_safe : forall k, Below k -> forall n F C pa dn a y r m bs rt sg target pre sm ap types,
-  A.resolve_sym W (A.fr_mod F) pa = Some r -> A.MethodNamed W (A.fr_mod F) r dn m ->
-  A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
-  A.TyOf W (A.fr_mod F) (bs ++ A.c_ty C)%list None (ATRef pa None) rt ->
-  A.SigOf W m (bs ++ A.c_ty C)%list (Some rt) sg ->
-  A.MethProvider W Prog F C y sg rt target types pre sm ->
-  A.AppOf W m (bs ++ A.c_ty C)%list ap ->
-  n <= S k -> ItemWrap n F C (Spec (Some pa) (Some dn) a, Some y)
-    (fun x => pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) target types sm x))
-    (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)) F [].
-Proof.
-  intros k Bel n F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App Le.
-  pose proof (method_sig_scoped F C m a bs pa rt sg Br Ty Sig) as SigSc.
-  destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA
-    |F C pw sg rt g sm w n0 Cg nsg types FP Ctx Len Fresh Body|F C ps r0 body sg rt pid pre sm LP];
-    [|exact (wrapped_meth_bind_safe k Bel n Le F C _ pw m sg rt g types sm w n0 Cg nsg ap FP Ctx Len Body)
-     |exact (lambda_meth_bind_safe k Bel n Le F C _ m sg rt ps r0 body pid pre sm ap LP SigSc)].
-  intros t B cont _ Safe [|j] Lj d types0 H lg st Pre0; [exact Logic.I|].
-  unfold bind_method_expression. rewrite eval_bind_eq.
-  destruct j as [|j]; [exact Logic.I|]. rewrite bindings_method_eq.
-  pose proof Pre0 as [Frame [Ctx0 [L [St Real]]]].
-  assert (Keys : map fst rargs = A.w_reqs W rg).
-  { destruct Def as [rn [ps [rt0 [b Def]]]]. unfold A.ast_of in Def.
-    destruct (A.w_decl W att) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
-    pose proof (all_fn_elab att dcl (RAttached rn) n0 ps rt0 b Decl Ast dcl (RAttached rn) n0 ps rt0 b Decl Ast)
-      as (C0 & ns0 & this & g0 & F0 & x0 & t0 & _ & Rcv & _).
-    destruct Rcv as [r' [args0 [Att0 [Kind _]]]].
-    pose proof (attached_unique rg r' n0 att Att Att0) as <-.
-    exact (bind_nominal_formed F C pa a bs m rt rg rargs Br Ty Canon Kind). }
-  destruct (attached_provider_callable k Bel (S j) ltac:(lia) C rg n0 att rt sg Ca ns sm th rargs d H
-    Att Def Canon Keys Ctx Sat CT SigA ltac:(eapply realizes_lower; [|exact Real]; lia)) as [dc [Sel Ok]].
-  rewrite Sel. destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
-  unfold A.set_mth in Safe.
-  rewrite (provide_set C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg []) ap ltac:(intros; discriminate)) in Safe.
-  set (C' := set_cx C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)) in *.
-  assert (Key : A.rkey C' (A.canon C rt) m = IMth (A.canon C rt) m (A.theta_of C ap)).
-  { unfold A.rkey. rewrite capps_ilook. unfold C', set_cx. cbn [A.c_provisions].
-    rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). cbn [option_map A.provision_inst].
-    apply f_equal, theta_of_sub. reflexivity. }
-  unfold C' in Key.
-  set (d' := install_provision (IMth (A.canon C rt) m (A.theta_of C ap))
-    (FunctionClosure att (typed_capture d (TypeCapture th th) dc)) d).
-  apply (outcome_env F d d' H types0 t _ _ eq_refl).
-  eapply O.outcome_breaks; [intro b; left; exact b|].
-  apply (Safe (S (S j)) ltac:(lia) d' types0 H lg st).
-  split; [exact Frame|]. split; [exact Ctx0|]. split; [exact L|]. split; [exact St|].
-  apply (realizes_set (S (S j)) C d H (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)).
-  - eapply realizes_lower; [|exact Real]. lia.
-  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
-  - reflexivity.
-  - intros k0 Ne. apply install_other. intro E. apply Ne. rewrite E. unfold A.mkey. cbn [A.rkey_of].
-    symmetry. exact Key.
-  - cbn [NewOk]. exists (FunctionClosure att (typed_capture d (TypeCapture th th) dc)).
-    split; [transitivity (lookup_provision (IMth (A.canon C rt) m (A.theta_of C ap)) d'); [f_equal; exact Key|]|].
-    { unfold d'. rewrite lookup_install, (proj2 (item_eqb_spec _ _) eq_refl). reflexivity. }
-    exact (callable_transfer (S (S j)) (S (S j)) H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
-Qed.
 
 (* A bind item changes only the frame's fresh generations. *)
 Lemma bind_item_frame : forall F C it w C' F' m, A.BindItem W Prog F C it w C' F' m ->
@@ -2775,6 +2383,16 @@ Proof.
   intros F C its w C' F' m D. induction D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest IH]; [auto 10|].
   destruct (bind_item_frame _ _ _ _ _ _ _ D1) as [E1 [E2 [E3 [E4 E5]]]].
   destruct IH as [I1 [I2 [I3 [I4 I5]]]]. repeat split; congruence.
+Qed.
+
+(* Code safety reads a frame only through its return type, receiver, loop
+   flag and local numbering. *)
+Lemma codesafe_frame : forall n F1 F2 C t (B : Prop) x,
+  A.fr_ret F1 = A.fr_ret F2 -> A.fr_this F1 = A.fr_this F2 -> A.fr_loop F1 = A.fr_loop F2 -> A.fr_var F1 = A.fr_var F2 ->
+  CodeSafe n F1 C t B x -> CodeSafe n F2 C t B x.
+Proof.
+  intros n [m1 r1 t1 l1 v1 f1 a1 p1] [m2 r2 t2 l2 v2 f2 a2 p2] C t B x; cbn; intros <- <- <- <- Safe.
+  exact Safe.
 Qed.
 
 (* ---- binding-level steps -------------------------------------------------------- *)
@@ -2845,7 +2463,7 @@ Definition BindStep r F C F' C' (Bi : Prop) (made : list nat) (b : binding) : Pr
        (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 
 Inductive Chain (k : nat) : A.frame -> A.cx -> A.frame -> A.cx -> Prop -> list nat -> list binding -> Prop :=
-| ChainNil : forall F C (B : Prop), Chain k F C F C B [] []
+| ChainNil : forall F F' C (B : Prop), FrameSame F F' -> Chain k F C F' C B [] []
 | ChainCons : forall F C F1 C1 F2 C2 (B1 B2 B : Prop) m1 m2 b bs,
     (forall r, r <= S k -> BindStep r F C F1 C1 B1 m1 b) -> Chain k F1 C1 F2 C2 B2 m2 bs ->
     (B1 \/ B2 -> B) -> Chain k F C F2 C2 B (m1 ++ m2)%list (b :: bs).
@@ -2858,16 +2476,55 @@ Proof. intros F1 F2 F3 [A1 [A2 [A3 A4]]] [B1 [B2 [B3 B4]]]. repeat split; congru
 
 Lemma chain_frame : forall k F C F' C' B made bs, Chain k F C F' C' B made bs -> FrameSame F F'.
 Proof.
-  intros k F C F' C' B made bs D. induction D as [F C B|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
-    [apply frame_same_refl|].
+  intros k F C F' C' B made bs D. induction D as [F F' C B Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
+    [exact Same|].
   exact (frame_same_trans _ _ _ (proj1 (Step (S k) (le_n _))) IH).
 Qed.
 
 Lemma chain_weaken : forall k F C F' C' (B B' : Prop) made bs, Chain k F C F' C' B made bs -> (B -> B') ->
   Chain k F C F' C' B' made bs.
 Proof.
-  intros k F C F' C' B B' made bs D Imp. destruct D as [F C B|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest Imp0];
-    [constructor|]. apply (ChainCons k F C F1 C1 F2 C2 B1 B2 B' m1 m2 b bs Step Rest). tauto.
+  intros k F C F' C' B B' made bs D Imp. destruct D as [F F' C B Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest Imp0];
+    [constructor; exact Same|]. apply (ChainCons k F C F1 C1 F2 C2 B1 B2 B' m1 m2 b bs Step Rest). tauto.
+Qed.
+
+Lemma bstep_src : forall r F F1 C F2 C2 (B : Prop) m b, FrameSame F F1 ->
+  BindStep r F1 C F2 C2 B m b -> BindStep r F C F2 C2 B m b.
+Proof.
+  intros r F F1 C F2 C2 B m b Same [Same12 [Av Run]]. split; [exact (frame_same_trans _ _ _ Same Same12)|].
+  split.
+  { destruct Same as [Er [Et _]]. destruct Av as [Ar At]. split; intros t E; [apply Ar|apply At]; congruence. }
+  intros j d types H g st Lj Pre0 rest.
+  destruct (Run j d types H g st Lj (pre_frame _ _ _ _ _ _ _ _ _ Same Pre0) rest)
+    as [Done|[res [Eq [NN Out]]]]; [left; exact Done|right].
+  exists res. split; [exact Eq|]. split; [exact NN|]. exact (outcome_frame F F1 d H types TUnit B res Same Out).
+Qed.
+
+Lemma chain_reframe_src : forall k F1 C F2 C2 (B : Prop) m bs F, Chain k F1 C F2 C2 B m bs -> FrameSame F F1 ->
+  Chain k F C F2 C2 B m bs.
+Proof.
+  intros k F1 C F2 C2 B m bs F D Same. destruct D as [F1 F2 C B0 Same'|F1 C F3 C3 F2 C2 B1 B2 B0 m1 m2 b bs Step Rest Imp].
+  - constructor. exact (frame_same_trans _ _ _ Same Same').
+  - apply (ChainCons k F C F3 C3 F2 C2 B1 B2 B0 m1 m2 b bs); [|exact Rest|exact Imp].
+    intros r Lr. exact (bstep_src r F F1 C F3 C3 B1 m1 b Same (Step r Lr)).
+Qed.
+
+Lemma bstep_tgt : forall r F C F2 C2 F3 (B : Prop) m b, FrameSame F2 F3 ->
+  BindStep r F C F2 C2 B m b -> BindStep r F C F3 C2 B m b.
+Proof.
+  intros r F C F2 C2 F3 B m b Same [Same12 [Av Run]]. split; [exact (frame_same_trans _ _ _ Same12 Same)|].
+  split; [exact Av|]. intros j d types H g st Lj Pre0 rest.
+  destruct (Run j d types H g st Lj Pre0 rest) as [[d' [g' [st' [H' [E [M [Pre' Eq]]]]]]]|Stop]; [left|right; exact Stop].
+  exists d', g', st', H'. split; [exact E|]. split; [exact M|]. split; [exact (pre_frame _ _ _ _ _ _ _ _ _ Same Pre')|exact Eq].
+Qed.
+
+Lemma chain_reframe_tgt : forall k F C F2 C2 (B : Prop) m bs F3, Chain k F C F2 C2 B m bs -> FrameSame F2 F3 ->
+  Chain k F C F3 C2 B m bs.
+Proof.
+  intros k F C F2 C2 B m bs F3 D. induction D as [F F2 C B0 Same'|F C F1 C1 F2 C2 B1 B2 B0 m1 m2 b bs Step Rest IH Imp];
+    intros Same.
+  - constructor. exact (frame_same_trans _ _ _ Same' Same).
+  - exact (ChainCons k F C F1 C1 F3 C2 B1 B2 B0 m1 m2 b bs Step (IH Same) Imp).
 Qed.
 
 Lemma chain_app : forall k F C F1 C1 F2 C2 (B1 B2 B : Prop) m1 m2 bs1 bs2,
@@ -2875,8 +2532,8 @@ Lemma chain_app : forall k F C F1 C1 F2 C2 (B1 B2 B : Prop) m1 m2 bs1 bs2,
   Chain k F C F2 C2 B (m1 ++ m2)%list (bs1 ++ bs2)%list.
 Proof.
   intros k F C F1 C1 F2 C2 B1 B2 B m1 m2 bs1 bs2 D1. revert F2 C2 B2 B m2 bs2.
-  induction D1 as [F C B0|F C F1 C1 F1' C1' Ba Bb B0 ma mb b bs Step Rest IH Imp]; intros F2 C2 B2 B m2 bs2 D2 Imp2.
-  - cbn. apply (chain_weaken k F C F2 C2 B2 B m2 bs2 D2). tauto.
+  induction D1 as [F F1 C B0 Same|F C F1 C1 F1' C1' Ba Bb B0 ma mb b bs Step Rest IH Imp]; intros F2 C2 B2 B m2 bs2 D2 Imp2.
+  - cbn. apply (chain_weaken k F C F2 C2 B2 B m2 bs2 (chain_reframe_src k F1 C F2 C2 B2 m2 bs2 F D2 Same)). tauto.
   - cbn. rewrite <- app_assoc. apply (ChainCons k F C F1 C1 F2 C2 Ba (Bb \/ B2) B ma (mb ++ m2)%list b (bs ++ bs2)%list Step).
     + apply (IH F2 C2 B2 (Bb \/ B2) m2 bs2 D2). tauto.
     + tauto.
@@ -2890,8 +2547,9 @@ Proof. intros m1 m2 t Av. split; intros g Ig; apply Av; apply in_or_app; [left|r
 Lemma chain_wrap : forall k n F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi made bs -> n <= S k ->
   WrapSafe n F C F' C' Bi made (fun x => fold_right (fun b x => EBind b x) x bs).
 Proof.
-  intros k n F C F' C' Bi made bs D Le. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp].
-  - intros t B x _ Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
+  intros k n F C F' C' Bi made bs D Le. induction D as [F F' C B0 Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp].
+  - intros t B x _ Safe. apply (wrap_breaks n F C t B); [tauto|].
+    destruct Same as [Er [Et [El Ev]]]. exact (codesafe_frame n F' F C t B x Er Et El Ev Safe).
   - intros t B' x Av Safe. destruct (avoids_app m1 m2 t Av) as [Av1 Av2].
     pose proof (IH t B' x Av2 Safe) as Inner. cbn [fold_right].
     intros [|j] Lj d types H g st Pre0; [exact Logic.I|]. rewrite eval_bind_eq.
@@ -2930,10 +2588,10 @@ Lemma chain_run : forall k F C F' C' (Bi : Prop) made bs, Chain k F C F' C' Bi m
   (exists res, I.eval_bindings j P d g st (bs ++ rest)%list = inr res /\
      (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 Proof.
-  intros k F C F' C' Bi made bs D. induction D as [F C B0|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
+  intros k F C F' C' Bi made bs D. induction D as [F F' C B0 Same|F C F1 C1 F2 C2 B1 B2 B m1 m2 b bs Step Rest IH Imp];
     intros r j d types H g st rest Lr Lj Pre0.
   - left. exists d, g, st, H, j. split; [cbn; lia|]. split; [intros a c L; exact L|].
-    split; [apply meanings_grow_refl; reflexivity|]. split; [exact Pre0|reflexivity].
+    split; [apply meanings_grow_refl; reflexivity|]. split; [exact (pre_frame _ _ _ _ _ _ _ _ _ Same Pre0)|reflexivity].
   - destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v E; discriminate|exact Logic.I]|].
     destruct (Step r Lr) as [Same [FAv Run]].
     destruct (Run j d types H g st ltac:(lia) Pre0 (bs ++ rest)%list)
@@ -3085,7 +2743,7 @@ Lemma prefix_chain : forall k F C qs,
   NoDup (map snd qs) ->
   Chain k F C F (cap_cx C qs) False [] (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs).
 Proof.
-  intros k F C qs. revert C. induction qs as [|[n v] rest IH]; intros C Ok Nd; [constructor|].
+  intros k F C qs. revert C. induction qs as [|[n v] rest IH]; intros C Ok Nd; [constructor; apply frame_same_refl|].
   inversion Nd as [|? ? Out Nd']; subst. cbn [map].
   destruct (Ok (n, v) (or_introl eq_refl)) as [Named [Loc Unp]].
   change ([] : list nat) with ([] ++ [] : list nat)%list.
@@ -3188,7 +2846,7 @@ Proof.
   - apply prefix_chain; [|exact Ndq]. intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|].
     split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|exact (Unprov _ (InVals q Iq))].
   - apply (ChainCons k F (cap_cx C qs) F (A.provide C (IFn f) a (A.set_fn C f sg)) F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AELam ps rt body))) False (ItemBreaks F (sp, Some (AELam ps rt body))) [] []);
-      [|constructor|tauto].
+      [|constructor; apply frame_same_refl|tauto].
     intros r Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
     intros j d types H g st Lj Pre0 rest. rewrite bindings_function_eq.
     pose proof Pre0 as [Frame [Ctx [L [St RealM]]]].
@@ -3309,7 +2967,7 @@ Proof.
   set (Bi := ItemBreaks F (Spec (Some pa) (Some dn) a, Some y)).
   set (Cres := A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)).
   assert (Single : forall b, (forall rr, rr <= S k -> BindStep rr F C F Cres Bi [] b) -> Chain k F C F Cres Bi [] [b]).
-  { intros b Step. apply (ChainCons k F C F Cres F Cres Bi False Bi [] [] b []); [exact Step|constructor|tauto]. }
+  { intros b Step. apply (ChainCons k F C F Cres F Cres Bi False Bi [] [] b []); [exact Step|constructor; apply frame_same_refl|tauto]. }
   destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA
     |F C pw sg rt g sm w n0 Cg nsg types FP Ctx Len Fresh Body|F C ps r0 body sg rt pid pre sm LP].
   - (* attached *)
@@ -3369,7 +3027,7 @@ Proof.
     apply (chain_app k F C F (cap_cx C qs) F Cres False Bi Bi [] []); [| |tauto].
     + apply prefix_chain; [|exact Ndq]. intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|].
       split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|exact (Unprov _ (InVals q Iq))].
-    + apply (ChainCons k F (cap_cx C qs) F Cres F Cres Bi False Bi [] [] bm []); [|constructor|tauto].
+    + apply (ChainCons k F (cap_cx C qs) F Cres F Cres Bi False Bi [] [] bm []); [|constructor; apply frame_same_refl|tauto].
       intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
       intros j d types0 H g st Lj Pre0 rest. unfold bm. rewrite bindings_method_eq.
       destruct (pre_from_cap rr F C qs d types0 H g st Ndq (fun q Iq => Unprov _ (InVals q Iq)) Pre0) as [PreC Inst].
@@ -3389,52 +3047,142 @@ Proof.
       apply meanings_grow_refl; reflexivity.
 Qed.
 
-(* Code safety reads a frame only through its return type, receiver, loop
-   flag and local numbering. *)
-Lemma codesafe_frame : forall n F1 F2 C t (B : Prop) x,
-  A.fr_ret F1 = A.fr_ret F2 -> A.fr_this F1 = A.fr_this F2 -> A.fr_loop F1 = A.fr_loop F2 -> A.fr_var F1 = A.fr_var F2 ->
-  CodeSafe n F1 C t B x -> CodeSafe n F2 C t B x.
+
+(* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
+Local Close Scope string_scope.
+(* BApplyAbstract *)
+Hypothesis case_BApplyAbstract : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
+      A.FunCtx W u Cu ns ->
+      
+      (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
+      th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) ->
+      
+      (forall x tx, In (x, tx) fx -> exists here,
+        A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
+      A.Satisfies C Cu th ns sm ->
+      A.FreshFor W F C newgens ->
+      
+      (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
+      
+      (forall t, A.FunOutputs W u t ->
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
+      NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
+      A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+  forall rr, rr <= S k -> BindStep rr F C (A.with_fresh F newgens) C' False newgens
+      (BApply u th (map (fun t => (t, gensof t)) outs) sm).
+
+(* BFunCopy *)
+Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
+      A.nlook h (A.c_funs C) <> None ->
+      A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+      
+      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
+      (forall x, A.Fixed W h x -> A.Fixed W u x) ->
+      A.FixedAgreement W C h ->
+      A.SameResult W u h ->
+      sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
+      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+  forall rr, rr <= S k -> BindStep rr F C F (A.set_fun C u fx) False [] (BCopyFunctor u h sm).
+
+(* BFunClosure *)
+Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
+  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
+      (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
+      (exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b))) ->
+      A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+      
+      (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
+      A.SameResult W u gg ->
+      A.LinkBody W Prog u gg h ->
+      sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
+      smc = map (fun k => (A.rkey_of Cg k, A.rkey_of C (A.at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
+      (forall k k', In (k, k') smc -> A.provides C k') ->
+      (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+  forall rr, rr <= S k -> BindStep rr F C F (A.set_fun C u fx) False [] (BFunctor u h sm smc).
+
+
+Local Open Scope string_scope.
+
+Lemma fold_binds_app : forall bs1 bs2 x,
+  fold_right (fun b x => EBind b x) (fold_right (fun b x => EBind b x) x bs2) bs1 =
+  fold_right (fun b x => EBind b x) x (bs1 ++ bs2)%list.
+Proof. intros bs1 bs2 x. rewrite fold_right_app. reflexivity. Qed.
+
+Lemma single_chain : forall k F C F' C' (B : Prop) m b,
+  (forall r, r <= S k -> BindStep r F C F' C' B m b) -> Chain k F C F' C' B m [b].
 Proof.
-  intros n [m1 r1 t1 l1 v1 f1 a1 p1] [m2 r2 t2 l2 v2 f2 a2 p2] C t B x; cbn; intros <- <- <- <- Safe.
-  exact Safe.
+  intros k F C F' C' B m b Step. rewrite <- (app_nil_r m).
+  apply (ChainCons k F C F' C' F' C' B False B m [] b []); [exact Step|constructor; apply frame_same_refl|tauto].
 Qed.
 
-Fixpoint item_safe k (Bel : Below k) n F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) (Le : n <= S k)
-  {struct D} : WrapSafe n F C F' C' (ItemBreaks F it) m w
-with items_safe k (Bel : Below k) n F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) (Le : n <= S k)
-  {struct D} : WrapSafe n F C F' C' (ItemsBreak F its) m w.
+(* Each bind item is a chain of bindings. *)
+Fixpoint item_chain k (Bel : Below k) F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
+  exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemBreaks F it) m bs
+with items_chain k (Bel : Below k) F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
+  exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemsBreak F its) m bs.
 Proof.
-  - destruct D as [| | | | |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems| | |].
-    + intros t' B x _ Safe. apply (wrap_breaks n F C t' (B \/ False)); [tauto|]. apply type_bind_safe; [intros g []|exact Safe].
-    + eapply val_bind_safe; eassumption.
-    + eapply fn_bind_safe; eassumption.
-    + eapply lambda_fn_bind_safe; eassumption.
-    + eapply meth_bind_safe; eassumption.
+  - destruct D as [F C pa t0 rp ra tau R K Pin Ty
+                  |F C pa v d0 n0 t00 i declared y x xt a R Dd Ast Ty Dy Fits App
+                  |F C pa f g sg pg sm a types R K Sig Prov App
+                  |F C pa f sg ps rt body pid pre sm a R K Sig LP App
+                  |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App
+                  |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
+                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
+                  |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx
+                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm Smc Prov Fx].
+    + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
+      apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep.
+    + exists [BValue v x]. split; [reflexivity|].
+      apply single_chain. intros r Lr. exact (val_bstep k Bel r Lr F C _ v declared y x xt a Dy Fits).
+    + exists [BFunction f g types sm]. split; [reflexivity|].
+      apply single_chain. intros r Lr. exact (fn_bstep k Bel r Lr F C _ f g sg pg types sm a Prov).
+    + exact (lambda_fn_chain k Bel F C (Spec (Some pa) None None) f sg ps rt body pid pre sm a Sig LP).
+    + exact (meth_chain k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App).
     + (* `bind F;` for F with a body: its binds, in place *)
-      pose proof (items_safe k Bel n (A.with_mod F (A.d_mod dcl) u) C (List.concat bodies) wrap C' F' made Ditems Le) as Inner.
+      destruct (items_chain k Bel _ _ _ _ _ _ _ Ditems) as [bs [Ew Ch]].
+      exists bs. split; [exact Ew|].
       destruct (bind_items_frame _ _ _ _ _ _ _ Ditems) as [_ [Er [Et [El Ev]]]]. cbn in Er, Et, El, Ev.
-      intros t B x Av Safe.
-      assert (Safe' : CodeSafe n F' C' t B x) by (apply (codesafe_frame n (A.Frame (A.fr_mod F) (A.fr_ret F) (A.fr_this F) (A.fr_loop F) (A.fr_var F) (A.fr_fresh F') (A.fr_applying F) (A.fr_pins F)) F' C' t B x); cbn; try congruence; exact Safe).
-      pose proof (Inner t B x Av Safe') as Out.
-      apply (codesafe_frame n (A.with_mod F (A.d_mod dcl) u) F C t _ (wrap x)); [reflexivity..|].
-      apply (wrap_breaks n _ C t (B \/ ItemsBreak (A.with_mod F (A.d_mod dcl) u) (List.concat bodies))); [|exact Out].
-      intros [b|[it [Iit Bi]]]; [left; exact b|right].
-      eapply A.IBApply; [exact R|exact Dcl|exact Ast|exact Iit|exact Bi].
-    + eapply case_BApplyAbstract; eassumption.
-    + eapply case_BFunCopy; eassumption.
-    + eapply case_BFunClosure; eassumption.
+      apply (chain_reframe_src k (A.with_mod F (A.d_mod dcl) u) C); [|repeat split].
+      apply (chain_reframe_tgt k _ C F'); [|split; [|split; [|split]]; cbn; congruence].
+      apply (chain_weaken k _ C F' C' (ItemsBreak (A.with_mod F (A.d_mod dcl) u) (List.concat bodies))); [exact Ch|].
+      intros [it [Iit Bi]]. eapply A.IBApply; [exact R|exact Dcl|exact Ast|exact Iit|exact Bi].
+    + exists [BApply u th (map (fun t => (t, gensof t)) outs) sm]. split; [reflexivity|].
+      apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
+      exact (case_BApplyAbstract k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG
+        Uniq Outs NdO OutsIff PR).
+    + exists [BCopyFunctor u h sm]. split; [reflexivity|].
+      apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
+      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx).
+    + exists [BFunctor u h sm smc]. split; [reflexivity|].
+      apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm Smc Prov Fx).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
-    + intros t B x _ Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
-    + intros t B x Av Safe.
-      assert (Av1 : forall g, In g m1 -> ~ In g (A.gens t)) by (intros g I; apply Av; apply in_or_app; left; exact I).
-      assert (Av2 : forall g, In g m2 -> ~ In g (A.gens t)) by (intros g I; apply Av; apply in_or_app; right; exact I).
-      pose proof (items_safe k Bel n F1 C1 r w2 C2 F2 m2 Rest Le t B x Av2 Safe) as S2.
-      pose proof (item_safe k Bel n F C it w1 C1 F1 m1 D1 Le t _ (w2 x) Av1 S2) as S1.
+    + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
+    + destruct (item_chain k Bel _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
+      destruct (items_chain k Bel _ _ _ _ _ _ _ Rest) as [bs2 [E2 Ch2]].
+      exists (bs1 ++ bs2)%list. split; [intros x; rewrite E1, E2; apply fold_binds_app|].
       destruct (bind_item_frame _ _ _ _ _ _ _ D1) as [Mod _].
-      unfold ItemsBreak, ItemBreaks in S1. rewrite Mod in S1. fold (ItemBreaks F it) in S1.
-      apply (wrap_breaks n F C t ((B \/ ItemsBreak F r) \/ ItemBreaks F it) _ (w1 (w2 x))); [|exact S1].
-      intros [[b|[it' [I' Bi]]]|b]; [left; exact b|right; exists it'; split; [right; exact I'|exact Bi]|].
-      right. exists it. split; [left; reflexivity|exact b].
+      apply (chain_app k F C F1 C1 F2 C2 (ItemBreaks F it) (ItemsBreak F1 r) _ m1 m2 bs1 bs2 Ch1 Ch2).
+      unfold ItemsBreak, ItemBreaks. rewrite Mod. intros [b|[it' [I' Bi]]].
+      * exists it. split; [left; reflexivity|exact b].
+      * exists it'. split; [right; exact I'|exact Bi].
+Qed.
+
+Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
+  A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks F it) m w.
+Proof.
+  intros k Bel n F C it w C' F' m D Le. destruct (item_chain k Bel _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
+  intros t B x Av Safe. rewrite Ew. exact (chain_wrap k n F C F' C' _ m bs Ch Le t B x Av Safe).
+Qed.
+
+Lemma items_safe : forall k, Below k -> forall n F C its w C' F' m,
+  A.BindItems W Prog F C its w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemsBreak F its) m w.
+Proof.
+  intros k Bel n F C its w C' F' m D Le. destruct (items_chain k Bel _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
+  intros t B x Av Safe. rewrite Ew. exact (chain_wrap k n F C F' C' _ m bs Ch Le t B x Av Safe).
 Qed.
 
 Section Step.
