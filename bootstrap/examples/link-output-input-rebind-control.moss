@@ -1,0 +1,35 @@
+# realize3 control for link-output-input-rep.moss: ACCEPTED by the oracle and
+# native. An input T of F that is also an output, which the linked body G
+# rebinds (`bind T = Char`), with no merge. So an Audit repair for
+# link-output-input-rep.moss must not forbid rebinding such a T outright.
+# Oracle (ob-sigclose var moss_m2): prints 7. Native (ob-family, seed
+# 1h1710x0): prints 7.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn .m();
+functor F: T, Std -> T, T.m;
+functor G: T, Std -> T, T.m {
+  bind T = Char;
+  bind T.m = () => { putchar(this); };
+}
+
+assume Std {
+  fn demo() {
+    bind T = Bool;
+    bind F = G;
+    bind F;
+    putchar((7 + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

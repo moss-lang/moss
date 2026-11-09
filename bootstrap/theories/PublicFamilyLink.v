@@ -16,6 +16,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicChainCore PublicLinkWalk PublicLinkScope.
+From NM Require PublicLinkRun.
 From NM Require PublicChainFwd PublicFormation PublicCallerKeys PublicFamilyAgree PublicFamilyStep PublicFamilyCoherent PublicFamilySig PublicScoping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -26,6 +27,7 @@ Module FamilyLink (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CF := PublicChainFwd.ChainFwd Prims I0.
 Module CC := CF.CN.CC.
 Module S := CC.S.
+Module LRn := PublicLinkRun.LinkRun Prims I0.
 
 Section Link.
 Variable W : A.world.
@@ -82,7 +84,7 @@ Proof.
   intros C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
   pose proof FA as (fx' & Cu1 & ns1 & Fx' & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
-  pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & _).
+  pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & MadeOut).
   destruct (S.functx_unique W _ _ _ _ _ FC FCu) as [-> ->].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
@@ -104,31 +106,11 @@ Proof.
      (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.canon Cu (TAbs x) = A.canon Cu tx).
   { intros x tx L1 L2. rewrite ETy in L1. exact (LRd3 x tx L1 L2). }
   pose proof (FamB Fam) as FBs. rewrite <- EBinds in FBs.
-  (* 3: the body writes no type meaning *)
-  destruct (family_binds_no_dests W Prog _ _ _ _ _ _ _ binds0 Items BO FBs) as [Made [Dests _]].
-  pose proof (CC.bindings_writes _ _ _ _ _ _ _ _ _ Run) as [[w [Ew Iw]] _].
-  unfold CC.binding_dests in Iw. change (flat_map _ binds0) with (binding_dests binds0) in Iw. rewrite Dests in Iw.
-  destruct w as [|q w]; [|exfalso; exact (Iw (fst q) (or_introl eq_refl))]. cbn [app] in Ew.
-  assert (Code : view_functor (program_of Prog argv read) h = A.funbody_of Prog h) by reflexivity.
-  set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
-  set (base := fun source => match (if existsb (Nat.eqb source) lnk then lookup_subst source th else None) with
-    | Some meaning => ground d meaning
-    | None => match output_meaning (append_environment d2 dc) source with Some meaning => meaning | None => TAbs source end
-    end).
-  set (B := map (fun source => (source, base source)) (map fst (A.c_ty Cg))).
-  assert (Mde : type_meanings d3 = map (fun source => (source, match lookup_subst source (A.c_ty Cg) with
-    | Some t => app_subst B t | None => base source end)) (map fst (A.c_ty Cg))).
-  { rewrite Ew. unfold application_environment. rewrite Code, FB. reflexivity. }
+  (* 3: the body writes no input of F, so it keeps the caller's θ readings *)
+  destruct (family_binds_no_dests W Prog _ _ _ _ _ _ _ binds0 Items BO FBs) as [Made _].
   assert (ThL : forall z, In z (map fst (A.c_ty Cu)) ->
     lookup_subst z th = Some (A.canon Cf (app_subst (A.c_ty Cf) (TAbs z)))).
   { intros z Iz. rewrite Th. exact (S.lookup_on_keys (fun y => A.canon Cf (app_subst (A.c_ty Cf) (TAbs y))) _ z Iz). }
-  assert (BaseL : forall z, In z (map fst (A.c_ty Cg)) -> In z (map fst (A.c_ty Cu)) ->
-    lookup_subst z B = Some (ground d (app_subst th (TAbs z)))).
-  { intros z Ig Iu. unfold B. rewrite (S.lookup_map_nat base _ z Ig). unfold base.
-    assert (Ex : existsb (Nat.eqb z) lnk = true).
-    { unfold lnk. apply existsb_exists. exists z. split; [apply filter_In; split; [exact Ig|]|apply Nat.eqb_refl].
-      apply existsb_exists. exists z. split; [exact Iu|apply Nat.eqb_refl]. }
-    rewrite Ex, (ThL z Iu). cbn [app_subst]. rewrite (ThL z Iu). reflexivity. }
   destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg [_ [_ [_ SubG]]]]]].
   destruct (PublicCallRealize.functx_scoped W u Cu ns FCu) as [TblU [ProvU [KMu _]]].
   assert (GgDom : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> incl (A.gens tx) (map fst (A.c_ty Cg))).
@@ -146,22 +128,10 @@ Proof.
     intros d' ps' a' r' b' D FP. destruct Fam as [Shape _]. destruct Shape as (d'' & n'' & ps'' & a'' & r'' & D' & Ast'' & _).
     rewrite D in D'. injection D' as <-. rewrite Ast'' in FP. cbn in FP. injection FP as _ _ _ <-. reflexivity. }
   pose proof (PublicFamilyAgree.th_sigma W C u th Cf (fun t => TAbs t) Cr ks Cu ns EsubF Parts FCu) as ThSig.
-  assert (MeanX : forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
-    lookup_subst x (type_meanings d3) = Some (ground d (app_subst th (TAbs x)))).
-  { intros x Ig Iu. rewrite Mde, (S.lookup_map_nat _ _ x Ig).
-    destruct (A.nlook x (A.c_ty Cg)) as [tx|] eqn:Lx; [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ x _) Ig Lx)].
-    rewrite lookup_subst_nlook', Lx. f_equal.
-    destruct (LRd' x tx Lx (proj2 (PublicFamilyAgree.nlook_dom _ x _) Iu)) as [InU Can].
-    assert (EB : app_subst B tx = ground d (app_subst th tx)).
-    { unfold ground. rewrite <- (PublicTypeRead.app_subst_nil (app_subst B tx)). apply subst2_agree.
-      intros z Iz. rewrite PublicTypeRead.app_subst_nil. cbn [app_subst].
-      rewrite (BaseL z (GgDom x tx Lx z Iz) (proj1 (PublicFamilyAgree.nlook_dom _ z _) (InU z Iz))). reflexivity. }
-    rewrite EB. f_equal. rewrite <- (ThSig (TAbs x)), <- (ThSig tx). unfold A.canon in Can. rewrite Can. reflexivity. }
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
     ground d3 t = ground d (app_subst th t)).
-  { intros t Ig Iu. unfold ground. rewrite <- (PublicTypeRead.app_subst_nil (app_subst (type_meanings d3) t)).
-    apply subst2_agree. intros z Iz. rewrite PublicTypeRead.app_subst_nil. change (app_subst (type_meanings d3) (TAbs z)) with (match lookup_subst z (type_meanings d3) with Some t => t | None => TAbs z end).
-    rewrite (MeanX z (Ig z Iz) (Iu z Iz)). reflexivity. }
+  { exact (LRn.link_run_fact W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg LRd' Items BO MadeOut FB th
+      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) ThSig argv read j' d _ [] st d3 g3 st3 Run). }
   (* 4: positions *)
   assert (PRf : A.ProvideResult W u Cu (fun t => TAbs t) Cr' ks').
   { destruct PR' as (dd & pss & aa & rr0 & bb & outsI & es & tm' & D & FP & OutsI & OIE & RK & ECr).
