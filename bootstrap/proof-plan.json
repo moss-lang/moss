@@ -2207,7 +2207,8 @@
         "E31",
         "E32",
         "E33",
-        "E34"
+        "E34",
+        "E36"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2896,6 +2897,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/family-poly-nontype.moss"
+        ]
+      }
+    },
+    {
+      "id": "E36",
+      "group": "E",
+      "title": "Oracle 3b: check every reading of a captured fn or method",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's D84 3b (link_body, Elab.v) rejects a functor closure G bound to F that captures a fn or method one of whose readings in G's context mentions a type each application of F supplies, not only the one stored signature (key_sig eg k), so link-merge-captured-fn.moss is rejected as native and Audit reject it.",
+      "approach": "In link_body's 3b, check the canonical signature (canon eg) of each captured fn/method key, as it already does for vals and functors, or check every unmerged reading; alternatively add Audit's LinkBody input condition (each input of F that G has reads in G as a type over F's inputs; variant in scratch/orch/cap3b-cmp.sh, same corpus verdicts). bootstrap/examples/link-merge-captured-fn.moss: G reads the captured `gimme` at Y then at X, merging X (an input of F) with Y; the oracle's 3b sees only the first reading (Y), accepts, and gets `moss_ref: stuck (XErr 14)`; native rejects (incompatible types); Audit rejects.",
+      "sources": [
+        "theories/Elab.v",
+        "theories/Audit.v",
+        "examples/link-merge-captured-fn.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "While repairing ChainRealizeOk's counterexample (cap3b), the oracle's 3b turned out to read one stored signature per captured fn or method, so mirroring it in Audit would not be sound; the oracle accepts a neighbour and is stuck at run time.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/link-merge-captured-fn.moss"
         ]
       }
     },
