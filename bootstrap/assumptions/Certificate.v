@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig PublicCopyApply.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig PublicCopyApply PublicLinkResults.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -25,6 +25,7 @@ Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
+Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
@@ -108,6 +109,9 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
+  @PublicLinkRes.link_results_scoped,
+  @PublicLinkRes.pre_junk_meaning,
+  @NM.PublicLinkResults.result_environment_occupied,
   @NM.PublicCallRealize.ctxof_formed,
   @NM.PublicCallRealize.call_agree,
   @NM.PublicCallRealize.call_absorbs,
