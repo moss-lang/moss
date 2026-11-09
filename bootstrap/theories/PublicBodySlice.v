@@ -3351,6 +3351,45 @@ Proof.
       split; [exact CovG|]. intros x tx I. exact (Vm x tx I).
 Qed.
 
+(* An application's θ reads F's inputs here, as a call's does. *)
+Lemma apply_theta : forall C u Cu ns sm,
+  A.FunCtx W u Cu ns -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
+  (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
+  A.Satisfies C Cu (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) ns sm ->
+  A.CallTheta W C Cu u (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)).
+Proof.
+  intros C u Cu ns sm FC Idem Inp Sat. set (th := map _ (A.c_ty Cu)).
+  destruct (functx_scoped W u Cu ns FC) as [_ [_ [_ [_ [_ [_ Dom]]]]]].
+  destruct Sat as [_ [_ [_ [_ Merg]]]].
+  assert (Lth : forall x, In x (map fst (A.c_ty Cu)) -> lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x)))).
+  { intros x Ix. exact (lookup_on_keys (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ x Ix). }
+  assert (Through : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) ->
+    A.canon C (app_subst th t) = A.canon C (app_subst (A.c_ty C) t)).
+  { intros t Sc. transitivity (A.canon C (A.canon C (app_subst (A.c_ty C) t))); [|apply Idem]. f_equal.
+    unfold A.canon. rewrite <- (subst_through t (A.c_sub C) (A.c_ty C)).
+    - apply subst_agree_on. intros x Ix. cbn [app_subst]. rewrite (Lth x (Sc x Ix)).
+      rewrite (lookup_map_snd (app_subst (A.c_sub C))). cbn [app_subst].
+      destruct (keys_in _ x (Sc x Ix)) as [v Lv]. destruct (Inp x v Lv) as [here Lh].
+      rewrite lookup_subst_nlook', Lh. reflexivity.
+    - intros x Ix. destruct (keys_in _ x (Sc x Ix)) as [v Lv]. destruct (Inp x v Lv) as [here Lh].
+      rewrite lookup_subst_nlook', Lh. discriminate. }
+  split; [unfold th; rewrite map_map; reflexivity|]. split.
+  - intros r Ir _. exact (Lth r Ir).
+  - intros g t Ig. destruct (Dom g t Ig) as [Gg Gt].
+    rewrite (Through (TAbs g)) by (intros y [<-|[]]; exact Gg). rewrite (Through t Gt).
+    apply Merg; [exact Ig|]. intros x Ix.
+    assert (Kx : In x (map fst (A.c_ty Cu))) by (destruct Ix as [<-|Ix]; [exact Gg|exact (Gt x Ix)]).
+    destruct (keys_in _ x Kx) as [v Lv]. destruct (Inp x v Lv) as [here Lh]. rewrite Lh. discriminate.
+Qed.
+
+Lemma bindings_apply_eq : forall j d g st u th outs sm r,
+  I.eval_bindings (S j) P d g st (BApply u th outs sm :: r) =
+  match I.apply_functor j P d u th outs sm st with
+  | inl (dr, st1) => I.eval_bindings j P (append_environment dr d) g st1 r
+  | inr rr => inr (I.with_g g rr)
+  end.
+Proof. reflexivity. Qed.
+
 (* Chains of steps run below the eval-fuel cap J (a functor body runs
    below its application's fuel). *)
 Section Cap.
