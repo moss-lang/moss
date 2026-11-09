@@ -4875,9 +4875,36 @@ Definition InstantiationEdge (P : program) (a b : code_node * tsym) (strict : bo
     In (snd b, tau) th /\ In (v, s) (ty_occurrences tau) /\
     NodeReads P (fst a) v (snd a) s' /\ strict = s || s'.
 
-Definition InstantiationsBounded (P : program) : Prop :=
-  exists level : code_node * tsym -> nat, forall a b strict,
-    InstantiationEdge P a b strict -> level b + (if strict then 1 else 0) <= level a.
+(* The context a node's code is elaborated in: a fn's own (the world's
+   record), a lambda provider's (the enclosing context, whose merges it
+   keeps), a linked functor body's (G's). *)
+Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
+| NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
+| NCLambda : forall F C ps rt body sg this pid pre sm,
+    LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
+| NCBody : forall u gg h Cg nsg, LinkBody W P u gg h -> w_context W gg = Some (Cg, nsg) ->
+    NodeCx W P (CodeFunctor h) Cg.
+
+(* Merges are edges too (criteria section 2, coherence).  Within a node,
+   a type symbol t is the type its context's merge reads it as, `canon C
+   (TAbs t)`: an edge from each symbol that reading mentions to t, strict
+   under a constructor, and, where t reads as a symbol z, an edge back from
+   t to z.  So the members of a merge class share a level, and a class
+   merged with a structure lies strictly above what the structure
+   mentions.  Which member a context spells a class by is the merge's
+   choice of representative (MostGeneralMerge); the classes do not depend
+   on it (PublicOrientation.mgm_classes_iff), and two orientations read a
+   structure alike up to renaming within classes (mgm_reorient), so these
+   constraints do not either.  Without them a cycle could enter a class at
+   one member and leave it at another (or at the structure it is merged
+   with), and whether it is seen would depend on the spelling. *)
+Definition InstantiationsBounded (W : world) (P : program) : Prop :=
+  exists level : code_node * tsym -> nat,
+    (forall a b strict,
+       InstantiationEdge P a b strict -> level b + (if strict then 1 else 0) <= level a) /\
+    (forall n C t v s, NodeCx W P n C -> In (v, s) (ty_occurrences (canon C (TAbs t))) ->
+       level (n, t) + (if s then 1 else 0) <= level (n, v)) /\
+    (forall n C t z, NodeCx W P n C -> canon C (TAbs t) = TAbs z -> level (n, z) <= level (n, t)).
 
 (* Types.  A nominal's payload, read at its own requirements, mentions
    nominal instances; an edge (g, x) -> (g', y) says g' is mentioned with
@@ -4899,7 +4926,7 @@ Definition TypesBounded (W : world) : Prop :=
     TypeEdge W a b strict -> level b + (if strict then 1 else 0) <= level a.
 
 Definition NoExpandingCycle (W : world) (P : program) : Prop :=
-  TypesBounded W /\ InstantiationsBounded P.
+  TypesBounded W /\ InstantiationsBounded W P.
 
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=

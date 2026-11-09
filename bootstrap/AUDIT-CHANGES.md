@@ -99,6 +99,7 @@ entry they belong to.
 | 48 | **No expanding cycle (`NoExpandingCycle`, D16/D30)** | branch ob-expand | **B** |
 | 49 | Pins constrain only a linked body's own binds | proposals | relaxation (toward both) |
 | 50 | A call's θ is principal (`CallTheta`) | coherence | A |
+| 51 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch.
 
@@ -1144,6 +1145,63 @@ executable tests unless noted.
 - **Class A** (reject-only, mirroring both implementations, which reject
   principal-theta-unbound), and it settles E24 for Audit: partially-bound-
   merge is accepted, as native does.
+
+### 51. A merge class is one vertex of the expanding-cycle check (coherence2 branch; PART-DESIGN §1.5 #8)
+- **Rule now.** `InstantiationsBounded` takes the world, and its level
+  also satisfies two constraints per code node n and its context C
+  (`NodeCx`: a fn's `w_context`, a lambda provider's enclosing context,
+  a linked functor body's G context):
+  - every symbol v that `canon C (TAbs t)` mentions is at least t's
+    level, strictly above it under a constructor (an edge v → t);
+  - if `canon C (TAbs t) = TAbs z`, t is at least z's level (an edge
+    t → z).
+
+  So the members of a merge class share a level, and a class merged with
+  a structure lies strictly above what the structure mentions.
+- **Why.** The vertices are (node, symbol), and the edges come from the
+  θ, tables and captures P spells. Which member spells a class is the
+  merge's representative, an open choice (`MostGeneralMerge`). Without
+  edges inside a class, a cycle could enter the class at one member and
+  leave it at another, or at the structure the class is merged with, and
+  then whether it is seen would depend on the spelling. The classes do
+  not depend on the choice (`PublicOrientation.mgm_classes_iff`), and
+  two orientations read a structure alike up to renaming inside classes
+  (`mgm_reorient`), so the new constraints do not depend on it either.
+  The future `mono` finiteness proof relies on this check.
+- **Criterion: coherence** (criteria.md section 2), for specialization
+  (section 4, part 2).
+- **No counterexample today.** I found no program the old check misses.
+  Audit spells every class canonically, θ covers every formal of the
+  callee (`CallTheta`: `map fst th = map fst (c_ty Cs)`), and a caller
+  gives all members of a callee class one meaning. A cycle through a
+  non-representative member therefore also runs through the members the
+  code mentions. The change makes this hold by construction. It also
+  covers raw spellings, which PART-DESIGN's M5 (and R6) introduces and
+  for which the old check would be unsound.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [expand-merged-xy.moss](examples/expand-merged-xy.moss) (nest merges X, Y; polymorphic recursion through the class) | prints 5 | crashes at compile time (call stack exhausted) | rejects | rejects |
+  | [expand-merged-yx.moss](examples/expand-merged-yx.moss) (the same, merge listed the other way, so the oracle spells the class by Y) | prints 5 | crashes at compile time | rejects | rejects |
+  | expand-*.moss (#48) | unchanged | unchanged | unchanged | unchanged |
+
+  The oracle variant (below) rejects both merged tests with and without
+  the merge edges, and keeps every expand-*.moss verdict.
+- **Corpus.** The ob-expand oracle variant (expand.ml, expandty.ml)
+  ported to this branch's oracle (`scratch/oracle/expand`), with
+  `MOSS_EXPAND_MERGE=1` adding each fn's merge edges (its `fi_merges`,
+  read through the oracle's union-find, as above). Over `tests/`,
+  `examples/` and `bootstrap/examples/`: 415 same / 0 diff before the
+  two new tests. Both new tests are rejected with and without the merge
+  edges (for expand-merged-yx only the message's vertex differs). The variant has no lambda or functor-body merges; Audit
+  has them too.
+- **Proof.** `public_safety` unchanged: safety never reads the conjunct.
+  `AuditBuildExample.main_bounded` proves the new constraints for the
+  unit program (`node_cx_unmerged`: main's context merges nothing, and
+  there is no lambda or linked body).
+- **Class B** (a strengthening of #48's check, which the implementations
+  lack). No program found whose verdict changes.
 
 ---
 
