@@ -78,3 +78,24 @@ Memory, none a machine type, and whose result signatures mention the
 machine types through their inputs (Wasm, I32 etc.).
 
 Test: none executable (no implementation provides such a family).
+
+## 4. A platform family's items read their raw handles as themselves (HandlesRead)
+
+What: `Platform.HandlesRead` gains a method case (each type of a method
+item's signature, its receiver among them, reads a handle tag's raw
+requirement as itself, RawHandleRead), and `Platform.Family` asks
+`HandlesRead W outputs key` of each item, as worldform's change asks it of
+main's platform fns (`Platform.Entry`). The definitions moved above
+`Family` (unchanged otherwise).
+
+Why: the primitives read a handle's payload as the raw machine handle
+(PublicPrimitiveSafety's HandleFormed); this was the premise
+PlatformHandlesFormed.
+
+Rejects nothing accepted: the oracle provides platform families only for
+lib/wasm.moss's functors, whose result items are unbracketed methods
+(platform_fun: `Spec (Some p) (Some dn) None`), read in the functor's own
+context where each raw handle (StructRef, ArrayRef, I32) means itself; it
+checks each with check_runtime_primitive.
+
+Test: none executable (no implementation provides another family).

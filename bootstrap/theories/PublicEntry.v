@@ -357,7 +357,7 @@ Lemma platform_sigs_fixed : forall W Prog, PlatformSigsFixed W Prog.
 Proof.
   intros W Prog u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is.
   pose proof FD as (_ & _ & _ & _ & Binds).
-  destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op' [_ [_ [_ MF]]]]]].
+  destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op' [_ [_ [_ [MF _]]]]]]].
   rewrite Ek in MF. exact (MF gf Mgf name mach sym Inm Lang Is).
 Qed.
 

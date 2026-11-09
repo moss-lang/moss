@@ -221,7 +221,8 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
     (map (A.rkey_of outputs) keys) bindings []) /\
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
-    Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key) keys bindings.
+    Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key /\
+    Platform.HandlesRead W outputs key) keys bindings.
 
 Lemma family_data : forall u code, Platform.Family W Prog u code ->
   exists inputs needs outputs keys bindings, FamilyData u code inputs needs outputs keys bindings.
