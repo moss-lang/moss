@@ -12,6 +12,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize.
+From NM Require PublicFormation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -29,6 +30,10 @@ Let P := program_of Prog argv read.
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 
 Hypothesis Layouts : Platform.Layouts W.
+(* HYPOTHESES (T29): context formation's own premises (PublicFormation). *)
+Hypothesis merge_formed : PublicFormation.MergeFormed W.
+Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
+Hypothesis family_sig_ok : PublicFormation.FamilySigOk W.
 Hypothesis Bools : BoolSymbols W Prog.
 
 Definition Absorbs (C : A.cx) (d : environment) : Prop :=
@@ -189,8 +194,12 @@ Definition StaticOk (C : A.cx) : Prop :=
 Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
   Absorbs C d /\ EnvOk n C d H /\ StaticOk C.
 
+(* The context and frame are formed (T29). *)
+Definition Formed (F : A.frame) (C : A.cx) : Prop :=
+  PublicFormation.FormedCx W C /\ PublicFormation.FrameFormed W F.
+
 Definition Pre n F C d types H g st : Prop :=
-  FrameOk F /\ CtxLocals F C d types /\ locals_typed W P H g types /\ state_ok H st /\ Realizes n C d H.
+  FrameOk F /\ CtxLocals F C d types /\ locals_typed W P H g types /\ state_ok H st /\ Realizes n C d H /\ Formed F C.
 
 Notation Outcome := (O.Outcome W P state_ok).
 
@@ -234,9 +243,6 @@ Lemma forall2_keys : forall (reqs : list nat) (xs : list (nat * ty)) (R : nat ->
   Forall2 (fun r ra => fst ra = r /\ R r (snd ra)) reqs xs -> map fst xs = reqs.
 Proof. intros reqs xs R F; induction F as [|r ra rs ras [E _] _ IH]; cbn; [reflexivity|congruence]. Qed.
 
-(* Elaborated types are formed: a union has nominal members with distinct
-   heads, also after canonicalization (T29). *)
-Hypothesis ex_formed : forall F C a exp x t, A.Ex W Prog F C a exp x t -> UnionFormed (A.canon C t).
 
 (* ---- generic outcome facts ------------------------------------------------ *)
 
@@ -340,24 +346,24 @@ Qed.
 
 Lemma pre_lower : forall n F C d types H g st, Pre (S n) F C d types H g st -> Pre n F C d types H g st.
 Proof.
-  intros n F C d types H g st [Frame [Ctx [L [St Real]]]].
-  exact (conj Frame (conj Ctx (conj L (conj St (realizes_lower (S n) n C d H (le_S _ _ (le_n n)) Real))))).
+  intros n F C d types H g st [Frame [Ctx [L [St [Real Fmd]]]]].
+  exact (conj Frame (conj Ctx (conj L (conj St (conj (realizes_lower (S n) n C d H (le_S _ _ (le_n n)) Real) Fmd))))).
 Qed.
 
 Arguments pre_lower {n F C d types H g st} _.
 
 Lemma pre_le : forall n m F C d types H g st, m <= n -> Pre n F C d types H g st -> Pre m F C d types H g st.
 Proof.
-  intros n m F C d types H g st Le [Frame [Ctx [L [St Real]]]].
-  exact (conj Frame (conj Ctx (conj L (conj St (realizes_lower n m C d H Le Real))))).
+  intros n m F C d types H g st Le [Frame [Ctx [L [St [Real Fmd]]]]].
+  exact (conj Frame (conj Ctx (conj L (conj St (conj (realizes_lower n m C d H Le Real) Fmd))))).
 Qed.
 
 Lemma pre_after : forall n F C d types H g st H' g' st',
   Pre n F C d types H g st -> heap_extends H H' -> state_ok H' st' ->
   locals_typed W P H' g' types -> Pre n F C d types H' g' st'.
 Proof.
-  intros n F C d types H g st H' g' st' [Frame [Ctx [_ [_ Real]]]] Ext State Locals.
-  exact (conj Frame (conj Ctx (conj Locals (conj State (realizes_extends n C d H H' Ext Real))))).
+  intros n F C d types H g st H' g' st' [Frame [Ctx [_ [_ [Real Fmd]]]]] Ext State Locals.
+  exact (conj Frame (conj Ctx (conj Locals (conj State (conj (realizes_extends n C d H H' Ext Real) Fmd))))).
 Qed.
 
 (* A non-Normal result passes through unchanged. *)
@@ -573,7 +579,7 @@ Proof.
   - destruct Pre0 as [_ [_ [L [S _]]]]. exists H; repeat split; auto. intros ? ? E; exact E.
   - destruct (Bel j ltac:(lia)) as [SEx _].
     pose proof (outcome_conv _ _ _ _ _ _ _ _
-      (fun H' w => canon_fits_ground C d H' w t' t (proj1 (proj2 (proj2 (proj2 (proj2 Pre0))))) Fits)
+      (fun H' w => canon_fits_ground C d H' w t' t (proj1 (proj1 (proj2 (proj2 (proj2 (proj2 Pre0)))))) Fits)
       (SEx F C a exp e t' D d types H g st (pre_lower Pre0))) as Out.
     destruct (I.eval j P d g st e) as [sig g1 st1] eqn:E.
     destruct sig; cbn in Out;
@@ -788,7 +794,7 @@ Lemma invoke_code : forall n F C (B : Prop) f g xs d types H lg lst,
   Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EInvoke f xs)).
 Proof.
   intros n F C B f g xs d types H lg lst Found Args Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [[_ [Fns _]] _]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [[_ [[_ [Fns _]] _]] _]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
   pose proof (args_code n n (le_n n) F C B xs (A.sg_params g) d types H lg lst Args (pre_lower Pre0)) as AOut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -814,7 +820,7 @@ Lemma method_code : forall n F C (B : Prop) ot m g ox xs d types H lg lst,
   Outcome F d H types (A.sg_ret g) B (I.eval (S n) P d lg lst (EMethod ox m (A.rkey C ot m) xs)).
 Proof.
   intros n F C B ot m g ox xs d types H lg lst Found Recv Args Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [Abs [[_ [_ [Mths _]]] _]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
   pose proof (Recv n (le_n n) d types H lg lst (pre_lower Pre0)) as ROut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -861,7 +867,7 @@ Proof.
   intros k Bel F C a exp e t' t B D Cv Brk j Le d types H g st Pre0.
   destruct (Bel j Le) as [SEx _].
   pose proof (SEx F C a exp e t' D d types H g st Pre0) as Out.
-  pose proof Pre0 as [_ [_ [_ [_ [Abs _]]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [[Abs _] _]]]]].
   eapply O.outcome_breaks; [exact Brk|].
   exact (outcome_conv _ _ _ _ _ _ _ _ (fun H' w => conv_ground C d H' w t' t Abs Cv) Out).
 Qed.
@@ -879,7 +885,7 @@ Lemma codesafe_conv : forall n F C t' t B e,
   CodeSafe n F C t' B e -> CodeSafe n F C t B e.
 Proof.
   intros n F C t' t B e Conv Safe j Le d types H g st Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [Abs _]]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [[Abs _] _]]]]].
   exact (outcome_conv _ _ _ _ _ _ _ _ (fun H' w => Conv d H' w Abs) (Safe j Le d types H g st Pre0)).
 Qed.
 
@@ -906,9 +912,9 @@ Proof.
         (IHc F C a x' t Da) (IHc F C b y t Db) None' Fam InK Only Found d types H lg lst Pre0). }
   destruct D as [z t Lang Val|o t Lang Val|a b x y result t m Da Db Lang Lop|a b x y result t m Da Db Lang Lop
                 |a b x y result t m Da Db Lang Lop|a x ti tp t f Da Lang Fn Fits].
-  - pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals z t Val) as [w [Look T]].
+  - pose proof Pre0 as [_ [_ [_ [_ [[_ [[Vals _] _]] _]]]]]. destruct (Vals z t Val) as [w [Look T]].
     cbn [I.eval]. rewrite Look. eapply outcome_now; eassumption.
-  - pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals o t Val) as [w [Look T]].
+  - pose proof Pre0 as [_ [_ [_ [_ [[_ [[Vals _] _]] _]]]]]. destruct (Vals o t Val) as [w [Look T]].
     cbn [I.eval]. rewrite Look. eapply outcome_now; eassumption.
   - exact (Op a b x y result m Da Db Lop).
   - exact (Op a b x y result m Da Db Lop).
@@ -1039,7 +1045,10 @@ Proof.
       + unfold parameter_values, types0. rewrite <- (map_length (ground de)).
         apply params_typed. rewrite Params.
         clear -Args. induction Args; constructor; auto.
-      + apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]. }
+      + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]|].
+        destruct (PublicFormation.fn_body_formed W f Cf ns None g0 (map fst ps) merge_formed mentions_typed Ctx Sig
+          (PublicFormation.optok_none W)) as [Sg FBf].
+        split; [exact FBf|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; apply PublicFormation.optok_none]. }
   destruct Sj as [_ [_ [SBlkE _]]].
   pose proof (SBlkE F0 Cb b (Some (A.sg_ret g0)) x t0 Body de types0 H (parameter_values ws) st Pre0) as Out.
   destruct (blke_branch_ty _ _ _ _ _ _ Body) as [_ Fits]. cbn in Fits.
@@ -1093,7 +1102,13 @@ Proof.
       + unfold parameter_values, types0.
         apply params_typed. unfold all. constructor; [rewrite This; exact Recv|].
         rewrite Params. clear -Args. induction Args; constructor; auto.
-      + apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]. }
+      + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]|].
+        pose proof (PublicFormation.ctxof_cx_formed W merge_formed mentions_typed att Cf ns Ctx) as Fc.
+        assert (Ot : PublicFormation.OptOk W (Some (TNom r args))).
+        { apply PublicFormation.optok_some. exact (PublicFormation.attached_this_ok W Cf r args (proj1 Fc) Reqs). }
+        destruct (PublicFormation.fn_body_formed W att Cf ns (Some (TNom r args)) g0 (map fst ps) merge_formed mentions_typed Ctx Sig Ot)
+          as [Sg FBf].
+        split; [exact FBf|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; exact Ot]. }
   destruct Sj as [_ [_ [SBlkE _]]].
   pose proof (SBlkE F0 Cb b (Some (A.sg_ret g0)) x t0 Body de types0 H (parameter_values (w0 :: ws)) st Pre0) as Out.
   destruct (blke_branch_ty _ _ _ _ _ _ Body) as [_ Fits]. cbn in Fits.
@@ -1347,7 +1362,7 @@ Proof.
   destruct (I.eval_arguments j P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
   2: { destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out]. }
   destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
-  pose proof Pre0 as [_ [_ [_ [_ Real]]]].
+  pose proof Pre0 as [_ [_ [_ [_ [Real _]]]]].
   destruct (callee_realizes j C d H1 f Cf ns sm th (realizes_extends _ _ _ _ _ E1 Real) Ctx Sat CT)
     as [dc [Sel [Ag RealF]]].
   rewrite Sel, (call_environment_callee d _ sm dc Sel).
@@ -1667,11 +1682,31 @@ Qed.
 
 Hypothesis World : exists b, A.WorldOf b W.
 
-(* Receiver types are formed: a nominal's arguments are keyed by its
-   requirements (T29). *)
-Hypothesis ex_nominal_formed : forall F C a exp x t, A.Ex W Prog F C a exp x t ->
-  forall h, A.head (A.canon C t) = Some h -> (A.kind_sym W h = Some A.DKTag \/ A.kind_sym W h = Some A.DKUnit) ->
-  exists xs, A.canon C t = TNom h xs /\ map fst xs = A.w_reqs W h.
+Lemma units_bare : PublicFormation.UnitsBare W.
+Proof. destruct World as [b Wo]. exact (PublicFormation.units_bare_of W b Wo). Qed.
+
+(* A bind item leaves a formed context (T29, PublicFormation). *)
+Lemma item_formed : forall F C it w C' F' m, A.BindItem W Prog F C it w C' F' m -> Formed F C -> Formed F' C'.
+Proof.
+  intros F C it w C' F' m D [Fc Ff]. exact (PublicFormation.binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff).
+Qed.
+
+(* Fewer provisions keep a context formed. *)
+Lemma formed_narrow : forall F C C', A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_locals C' = A.c_locals C ->
+  incl (A.c_provisions C') (A.c_provisions C) -> Formed F C -> Formed F C'.
+Proof.
+  intros F C C' Ety Esub Eloc Inc [[[Ty Sub Pr Lo] [Ks Ts]] Ff]. split; [|exact Ff].
+  assert (Sc : PublicFormation.scope_gens C' = PublicFormation.scope_gens C)
+    by (unfold PublicFormation.scope_gens, A.canon; rewrite Ety, Esub; reflexivity).
+  split; [constructor|split].
+  - rewrite Ety. exact Ty.
+  - rewrite Esub. exact Sub.
+  - intros k p I. exact (Pr k p (Inc _ I)).
+  - rewrite Eloc. exact Lo.
+  - intros r m th p I. rewrite Sc. exact (Ks r m th p (Inc _ I)).
+  - intros x Ix. unfold PublicFormation.TysScoped in *. rewrite Ety in Ix. rewrite Sc. exact (Ts x Ix).
+Qed.
+
 
 Lemma attached_unique : forall r r' n s, A.Attached W r n s -> A.Attached W r' n s -> r = r'.
 Proof.
@@ -1735,13 +1770,6 @@ Qed.
 
 (* ---- method binds ------------------------------------------------------------- *)
 
-(* The bound key's receiver is formed: its arguments are keyed by its
-   head's requirements (T29). *)
-Hypothesis bind_nominal_formed : forall F C pa a bs m rt rg rargs,
-  A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
-  A.TyOf W (A.fr_mod F) (bs ++ A.c_ty C)%list None (ATRef pa None) rt ->
-  A.canon C rt = TNom rg rargs -> (A.kind_sym W rg = Some A.DKTag \/ A.kind_sym W rg = Some A.DKUnit) ->
-  map fst rargs = A.w_reqs W rg.
 
 (* Realization does not read the type table. *)
 Lemma realizes_ty_free : forall n C C' d H,
@@ -2206,13 +2234,14 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
   Realizes jn C d1 H ->
   (forall q, In q (combine caps capvals) -> exists w, lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\
      value_typed W P H w (ground d1 (capty C (fst q)))) ->
-  (forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C)) ->
   (forall t, In t (this_list this ++ A.sg_ret sg :: A.sg_params sg)%list -> incl (A.gens t) (A.context_gens C)) ->
+  PublicFormation.FormedCx W C -> PublicFormation.SigOk W sg -> PublicFormation.OptOk W this ->
   CallableOk jn H d1 (this_list this ++ A.sg_params sg)%list (A.sg_ret sg)
     (FunctionClosure pid (typed_capture d1 (A.lexical_capture C) dc)).
 Proof.
   intros k Bel jn Ljn C ps sg this body pid caps capvals Cl Fl lbody ltype d1 H dc keys
-    Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps KS SigSc.
+    Len CapsIn NdC LenV NdV ClE Ret FThis Loop Num NamedC Blk Fits BodyOf Keys Sel Real Caps SigSc FcC SgOk ThOk.
+  pose proof (fun r m th p I => PublicFormation.keys_scoped W C r m th p FcC I) as KS.
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (qs := combine caps capvals) in *.
   set (K := A.context_gens C).
@@ -2294,9 +2323,13 @@ Proof.
       + rewrite map_rev. intro Ir. apply in_rev in Ir. destruct (CapVar _ Ir) as [c [Ic Ec]].
         rewrite Forall_forall in NamedC.
         exact (var_of_not_receiver Fl c Frame ltac:(rewrite This; discriminate) (NamedC c Ic) (eq_sym Ec)).
-    - split; [exact Lg'|]. split; [exact Sok|].
-      apply (realizes_same _ Cl); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|].
-      apply (realizes_extends _ _ _ H); [exact E|]. eapply realizes_lower; [|exact RealCl]. lia. }
+    - split; [exact Lg'|]. split; [exact Sok|]. split.
+      + apply (realizes_same _ Cl); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|].
+        apply (realizes_extends _ _ _ H); [exact E|]. eapply realizes_lower; [|exact RealCl]. lia.
+      + split.
+        * unfold Cb. apply (PublicFormation.params_formed W Cl (map fst ps) (A.sg_params sg)); [|exact (proj1 SgOk)].
+          rewrite ClE. exact (PublicFormation.lambda_cx_formed W C caps capvals FcC).
+        * split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 SgOk)|rewrite FThis; exact ThOk]. }
   destruct (Bel j' ltac:(lia)) as [_ [_ [SBlkE _]]].
   pose proof (SBlkE Fl Cb _ _ lbody ltype Blk de _ H' g' st Pre0) as Out.
   assert (Gr : ground de (A.sg_ret sg) = ground d1 (A.sg_ret sg)).
@@ -2402,11 +2435,6 @@ Proof.
     destruct (Funs u fx Lu) as [pv [gfx [Look _]]]. congruence.
 Qed.
 
-(* The method keys a lambda's context lists have receivers over its
-   generations (T29). *)
-Hypothesis lambda_keys_scoped : forall F C ps rt body sg this pid pre sm,
-  A.LambdaProvider W Prog F C ps rt body sg this pid pre sm ->
-  forall r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (A.context_gens C).
 
 
 Lemma method_sig_scoped : forall F C m a bs pa rt sg,
@@ -2803,7 +2831,7 @@ Proof.
   intros k _ F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
-  pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
+  pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]].
   pose proof Real as [Abs [[_ [_ [_ Funs]]] [_ KM]]].
   destruct (A.nlook h (A.c_funs C)) as [fxh|] eqn:Lh; [|congruence].
   destruct (Funs h fxh Lh) as [pv [gfh [Look [Okh [Covh Vmh]]]]].
@@ -2814,6 +2842,8 @@ Proof.
   exists d', g, st, H. split; [intros a0 c0 L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  split; [|split; [apply (PublicFormation.set_fun_formed W C u fx (proj1 Fmd)); intros x0 tx0 I0; exact (proj2 (proj1 (Fx x0 tx0) I0))
+    |exact (proj2 Fmd)]].
   apply (realizes_set rr C d H (IFun u) (A.ProvidedFunctor fx)).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -2957,7 +2987,7 @@ Proof.
   intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
-  pose proof Pre0 as [Frame [Ctx [L [St Real]]]]. pose proof Ctx as [_ [_ Al]].
+  pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
   pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg)) in *.
   change (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) with (captured nsu nsg) in SatC.
@@ -3027,6 +3057,8 @@ Proof.
   exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  split; [|split; [apply (PublicFormation.set_fun_formed W C u fx (proj1 Fmd)); intros x0 tx0 I0; exact (proj2 (proj1 (Fx x0 tx0) I0))
+    |exact (proj2 Fmd)]].
   apply (realizes_set rr C d H (IFun u) (A.ProvidedFunctor fx)).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -3646,8 +3678,8 @@ Qed.
 Lemma realizes_pre_lower : forall j r F C d types H g st, Pre r F C d types H g st -> j <= r ->
   Pre j F C d types H g st.
 Proof.
-  intros j r F C d types H g st [Frame [Ctx [L [St Real]]]] Le.
-  exact (conj Frame (conj Ctx (conj L (conj St (realizes_lower r j C d H Le Real))))).
+  intros j r F C d types H g st [Frame [Ctx [L [St [Real Fmd]]]]] Le.
+  exact (conj Frame (conj Ctx (conj L (conj St (conj (realizes_lower r j C d H Le Real) Fmd))))).
 Qed.
 
 Lemma heap_extends_trans : forall H1 H2 H3, heap_extends H1 H2 -> heap_extends H2 H3 -> heap_extends H1 H3.
@@ -3690,24 +3722,25 @@ Qed.
 Lemma frame_avoids_nil : forall F, FrameAvoids [] F.
 Proof. intros F. split; intros t _ g []. Qed.
 
-Lemma type_bstep : forall r F C t0 tau,
+Lemma type_bstep : forall r F C t0 tau, (Formed F C -> Formed F (A.set_ty C t0 (A.canon C tau))) ->
   BindStep J r F C F (A.set_ty C t0 (A.canon C tau)) False [] (BType t0 (A.canon C tau)).
 Proof.
-  intros r F C t0 tau. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+  intros r F C t0 tau FS. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
   intros j d types H g st Lj LJ Pre0 rest.
   left. exists (bind_type d t0 (A.canon C tau)), g, st, H. split; [intros a c L; exact L|].
   split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
-  destruct Pre0 as [Fr [[Lo [Re Al]] [L [St Real]]]].
-  refine (conj Fr (conj (conj Lo (conj Re _)) (conj L (conj St Real)))).
+  destruct Pre0 as [Fr [[Lo [Re Al]] [L [St [Real Fmd]]]]].
+  refine (conj Fr (conj (conj Lo (conj Re _)) (conj L (conj St (conj Real (FS Fmd)))))).
   intros x tx Lx. unfold cmeaning, output_meaning. cbn [type_aliases bind_type A.set_ty A.c_ty lookup_subst A.nlook] in Lx |- *.
   destruct (Nat.eqb_spec x t0) as [->|Ne]; [injection Lx as <-; reflexivity|]. exact (Al x tx Lx).
 Qed.
 
 Lemma val_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp v declared y x xt a,
   A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
+  (Formed F C -> Formed F (A.provide C (IVal v) a (A.set_val C v declared))) ->
   BindStep J r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) [] (BValue v x).
 Proof.
-  intros k Bel r Lr F C sp v declared y x xt a Dy Fits. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+  intros k Bel r Lr F C sp v declared y x xt a Dy Fits FS. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_value_eq.
   destruct (Bel j ltac:(lia)) as [SEx _].
   pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits
@@ -3718,9 +3751,9 @@ Proof.
   destruct Out as [H1 [E1 [S1 [L1 T1]]]].
   left. exists (install_provision (IVal v) (ValueProvision w) d), g1, st1, H1.
   split; [exact E1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
-  pose proof Pre0 as [Frame [Ctx [_ [_ Real]]]].
-  unfold A.set_val. rewrite (provide_set C (IVal v) (A.ProvidedVal declared []) a ltac:(intros; eauto)).
-  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L1|]. split; [exact S1|].
+  pose proof Pre0 as [Frame [Ctx [_ [_ [Real Fmd]]]]]. pose proof (FS Fmd) as FmdP.
+  unfold A.set_val in FmdP |- *. rewrite (provide_set C (IVal v) (A.ProvidedVal declared []) a ltac:(intros; eauto)) in FmdP |- *.
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L1|]. split; [exact S1|]. split; [|exact FmdP].
   apply (realizes_set r C d H1 (IVal v) (A.ProvidedVal declared a)).
   - exact (realizes_extends _ _ _ _ _ E1 Real).
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -3731,18 +3764,20 @@ Qed.
 
 Lemma fn_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp f g sg pg types sm a,
   A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
+  (Formed F C -> Formed F (A.provide C (IFn f) a (A.set_fn C f sg))) ->
   BindStep J r F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AEPath pg None)))
     [] (BFunction f g types sm).
 Proof.
-  intros k Bel r Lr F C sp f g sg pg types sm a Prov. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+  intros k Bel r Lr F C sp f g sg pg types sm a Prov FS. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
   intros j d types0 H lg st Lj LJ Pre0 rest. rewrite bindings_function_eq.
-  pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
+  pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]].
   destruct (provider_callable k Bel r Lr F C pg sg g types sm d H Prov Real) as [dc [Sel Ok]].
   rewrite Sel. left.
   set (d' := install_provision (IFn f) (FunctionClosure g (typed_capture d types dc)) d).
   exists d', lg, st, H. split; [intros a0 c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
-  unfold A.set_fn. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)).
-  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  pose proof (FS Fmd) as FmdP.
+  unfold A.set_fn in FmdP |- *. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)) in FmdP |- *.
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|]. split; [|exact FmdP].
   apply (realizes_set r C d H (IFn f) (A.ProvidedFn sg a)).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -3797,6 +3832,18 @@ Proof.
 Qed.
 
 (* A captured local's value, bound to its val. *)
+(* A captured local's val keeps the context formed. *)
+Lemma cap_formed : forall F C n v, A.slook n (A.c_locals C) <> None -> Formed F C ->
+  Formed F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])).
+Proof.
+  intros F C n v L [Fc Ff]. split; [|exact Ff].
+  change (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) with (A.set_provision C (IVal v) (A.ProvidedVal (capty C n) [])).
+  apply PublicFormation.set_provision_formed; [exact Fc|exact Logic.I| |intros r m th E; discriminate].
+  unfold capty. destruct (A.slook n (A.c_locals C)) as [[t mu]|] eqn:Ls; [|congruence].
+  pose proof (PublicFormation.cf_locals W _ (proj1 Fc) n t mu (PublicFormation.slook_in _ _ _ _ Ls)) as Ot.
+  split; [intros g E; injection E as <-; split; [constructor|exact Ot]|intros x t' []].
+Qed.
+
 Lemma cap_bstep : forall r F C n v, A.Named F n -> A.slook n (A.c_locals C) <> None ->
   A.ilook (IVal v) (A.c_provisions C) = None ->
   BindStep J r F C F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) False [] (BValue v (EVar (A.var_of F n))).
@@ -3805,12 +3852,13 @@ Proof.
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_value_eq.
   destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v' E; discriminate|exact Logic.I]|].
   rewrite eval_var_eq.
-  pose proof Pre0 as [Frame [[Locals Recv] [Lt [St Real]]]].
+  pose proof Pre0 as [Frame [[Locals Recv] [Lt [St [Real Fmd]]]]].
   destruct (A.slook n (A.c_locals C)) as [[t mu]|] eqn:L; [|congruence].
   destruct (locals_lookup W P H g types _ _ Lt (Locals _ t mu L Named)) as [w [Look T]]. rewrite Look.
   left. exists (install_provision (IVal v) (ValueProvision w) d), g, st, H.
   split; [intros a c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   split; [exact Frame|]. split; [exact (conj Locals Recv)|]. split; [exact Lt|]. split; [exact St|].
+  split; [|exact (cap_formed F C n v ltac:(rewrite L; discriminate) Fmd)].
   apply (realizes_set r C d H (IVal v) (A.ProvidedVal (capty C n) [])).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -3895,12 +3943,12 @@ Proof. intros F qs x. induction qs as [|q r IH]; cbn; [reflexivity|]. rewrite IH
 Lemma lambda_fn_chain : forall k, Below k -> forall F C sp f sg ps rt body pid pre sm a,
   A.SigOf W f (A.c_ty C) None sg ->
   A.LambdaProvider W Prog F C ps rt body sg None pid pre sm ->
+  (Formed F C -> Formed F (A.provide C (IFn f) a (A.set_fn C f sg))) ->
   exists bs, (forall x, pre (bind_function_expression f pid (A.lexical_capture C) sm x) =
                         fold_right (fun b x => EBind b x) x bs) /\
     Chain k F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AELam ps rt body))) [] bs.
 Proof.
-  intros k Bel F C sp f sg ps rt body pid pre sm a Sig LP.
-  pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
+  intros k Bel F C sp f sg ps rt body pid pre sm a Sig LP FS.
   remember (@None ty) as none eqn:NoneE in LP.
   destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
     FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
@@ -3931,7 +3979,7 @@ Proof.
       [|constructor; apply frame_same_refl|tauto].
     intros r Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
     intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_function_eq.
-    pose proof Pre0 as [Frame [Ctx [L [St RealM]]]].
+    pose proof Pre0 as [Frame [Ctx [L [St [RealM FmdM]]]]].
     destruct (cap_cx_fields C qs C) as [Ety [Esub Eloc]]. cbn zeta in Ety, Esub, Eloc.
     pose proof RealM as [_ [_ [_ KMm]]].
     assert (KMc : PublicCallRealize.KeysMatch (A.c_provisions C)).
@@ -3950,20 +3998,25 @@ Proof.
     destruct (lambda_select r C qs Cl d H keys ClE' RealC Inst Ndq
       (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
     rewrite Sel. left.
+    assert (FmdC : Formed F C).
+    { apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym Eloc)); [|exact FmdM].
+      intros [k1 p1] I1. exact (cap_cx_incl C qs C k1 p1 I1 (NotCap k1 p1 I1)). }
+    pose proof (PublicFormation.sigof_ok W _ _ _ _ Sig (PublicFormation.cf_ty _ _ (proj1 (proj1 FmdC))) (PublicFormation.optok_none W)) as SgOk.
     pose proof (lambda_callable k Bel r Lr C ps sg None body pid caps capvals Cl Fl lbody ltype d H dc keys
-      Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst KS
-      (sigof_scoped f C sg Sig)) as Ok.
+      Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst
+      (sigof_scoped f C sg Sig) (proj1 FmdC) SgOk (PublicFormation.optok_none W)) as Ok.
     cbn [this_list app] in Ok.
     set (d'' := install_provision (IFn f) (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc)) d).
     exists d'', g, st, H. split; [intros a0 c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|].
     split; [|reflexivity].
-    unfold A.set_fn. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)).
+    pose proof (FS FmdC) as FmdP.
+    unfold A.set_fn in FmdP |- *. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)) in FmdP |- *.
     split; [exact Frame|]. split.
     { destruct Ctx as [Loc [Rcv Al]]. split; [|split; [exact Rcv|apply (alias_ty (cap_cx C qs)); [exact (eq_sym Ety)|exact Al]]].
       intros n t mu Found Nm. apply (Loc n t mu); [|exact Nm].
       change (A.c_locals (cap_cx C qs)) with (A.c_locals (fold_left (fun C' q => set_cx C' (IVal (snd q))
         (A.ProvidedVal (capty C (fst q)) [])) qs C)). rewrite Eloc. exact Found. }
-    split; [exact L|]. split; [exact St|].
+    split; [exact L|]. split; [exact St|]. split; [|exact FmdP].
     apply (realizes_set r C d H (IFn f) (A.ProvidedFn sg a)).
     + exact RealC.
     + intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -3976,19 +4029,21 @@ Qed.
 
 (* Installing a callable method closure under a bound key. *)
 Lemma meth_install : forall r F C d types H g st rt m sg ap pv,
+  (Formed F C -> Formed F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))) ->
   Pre r F C d types H g st -> CallableOk r H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg) pv ->
   Pre r F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))
     (install_provision (IMth (A.canon C rt) m (A.theta_of C ap)) pv d) types H g st.
 Proof.
-  intros r F C d types H g st rt m sg ap pv [Frame [Ctx [L [St Real]]]] Ok.
-  unfold A.set_mth. rewrite (provide_set C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg []) ap ltac:(intros; discriminate)).
+  intros r F C d types H g st rt m sg ap pv FS [Frame [Ctx [L [St [Real Fmd]]]]] Ok.
+  pose proof (FS Fmd) as FmdP. unfold A.set_mth in FmdP |- *.
+  rewrite (provide_set C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg []) ap ltac:(intros; discriminate)) in FmdP |- *.
   assert (Key : A.rkey (set_cx C (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)) (A.canon C rt) m =
                 IMth (A.canon C rt) m (A.theta_of C ap)).
   { unfold A.rkey. rewrite capps_ilook. unfold set_cx. cbn [A.c_provisions].
     rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). cbn [option_map A.provision_inst].
     apply f_equal, theta_of_sub. reflexivity. }
   set (d' := install_provision (IMth (A.canon C rt) m (A.theta_of C ap)) pv d).
-  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|]. split; [|exact FmdP].
   apply (realizes_set r C d H (A.mkey (A.canon C rt) m) (A.ProvidedMethod sg ap)).
   - exact Real.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
@@ -4007,7 +4062,7 @@ Lemma pre_from_cap : forall r F C qs d types H g st,
   Pre r F (cap_cx C qs) d types H g st -> Pre r F C d types H g st /\ Installed C qs d H.
 Proof.
   intros r F C qs d types H g st Ndq Unp Pre0.
-  pose proof Pre0 as [Frame [Ctx [L [St RealM]]]].
+  pose proof Pre0 as [Frame [Ctx [L [St [RealM FmdM]]]]].
   destruct (cap_cx_fields C qs C) as [Ety [Esub Eloc]]. cbn zeta in Ety, Esub, Eloc.
   pose proof RealM as [_ [_ [_ KMm]]].
   assert (NotCap : forall k0 p0, In (k0, p0) (A.c_provisions C) -> forall q, In q qs -> k0 <> IVal (snd q)).
@@ -4020,10 +4075,12 @@ Proof.
       intros n t mu Found Nm. apply (Loc n t mu); [|exact Nm].
       change (A.c_locals (cap_cx C qs)) with (A.c_locals (fold_left (fun C' q => set_cx C' (IVal (snd q))
         (A.ProvidedVal (capty C (fst q)) [])) qs C)). rewrite Eloc. exact Found. }
-    split; [exact L|]. split; [exact St|].
-    apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub KMc).
-    intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
-    exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)).
+    split; [exact L|]. split; [exact St|]. split.
+    + apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub KMc).
+      intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
+      exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)).
+    + apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym Eloc)); [|exact FmdM].
+      intros [k1 p1] I1. exact (cap_cx_incl C qs C k1 p1 I1 (NotCap k1 p1 I1)).
   - intros q Iq. pose proof RealM as [_ [[Vals _] _]].
     assert (Lv : A.nlook (snd q) (A.c_vals (cap_cx C qs)) = Some (capty C (fst q))).
     { change (A.c_vals (cap_cx C qs)) with (vals_of (A.c_provisions (cap_cx C qs))).
@@ -4041,12 +4098,13 @@ Lemma meth_chain : forall k, Below k -> forall F C pa dn a y r m bs rt sg target
   A.SigOf W m (bs ++ A.c_ty C)%list (Some rt) sg ->
   A.MethProvider W Prog F C y sg rt target types pre sm ->
   A.AppOf W m (bs ++ A.c_ty C)%list ap ->
+  (Formed F C -> Formed F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))) ->
   exists binds, (forall x, pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) target types sm x) =
                            fold_right (fun b x => EBind b x) x binds) /\
     Chain k F C F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))
       (ItemBreaks F (Spec (Some pa) (Some dn) a, Some y)) [] binds.
 Proof.
-  intros k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App.
+  intros k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App FS.
   pose proof (method_sig_scoped F C m a bs pa rt sg Br Ty Sig) as SigSc.
   set (Bi := ItemBreaks F (Spec (Some pa) (Some dn) a, Some y)).
   set (Cres := A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)).
@@ -4065,12 +4123,17 @@ Proof.
         as (C0 & ns0 & this & g0 & F0 & x0 & t0 & _ & Rcv & _).
       destruct Rcv as [r' [args0 [Att0 [Kind _]]]].
       pose proof (attached_unique rg r' n0 att Att Att0) as <-.
-      exact (bind_nominal_formed F C pa a bs m rt rg rargs Br Ty Canon Kind). }
-    pose proof Pre0 as [_ [_ [_ [_ Real]]]].
+      pose proof Pre0 as [_ [_ [_ [_ [_ [FcB _]]]]]].
+      assert (TmB : PublicFormation.TmOk W (bs ++ A.c_ty C)%list).
+      { apply PublicFormation.tmok_app; [|exact (PublicFormation.cf_ty _ _ (proj1 FcB))].
+        exact (PublicFormation.br_ok W _ _ _ _ _ Br (PublicFormation.cf_ty _ _ (proj1 FcB))). }
+      pose proof (PublicFormation.canon_ok W C rt (proj1 FcB) (PublicFormation.tyof_ok W _ _ _ _ _ Ty TmB (PublicFormation.optok_none W))) as Oc.
+      rewrite Canon in Oc. exact (proj1 (PublicFormation.nom_ok_elim W rg rargs Oc)). }
+    pose proof Pre0 as [_ [_ [_ [_ [Real _]]]]].
     destruct (attached_provider_callable k Bel rr Lr C rg n0 att rt sg Ca ns sm th rargs d H
       Att Def Canon Keys Ctx Sat CT SigA Real) as [dc [Sel Ok]].
     rewrite Sel. left. eexists _, g, st, H. split; [intros a0 c L0; exact L0|].
-    split; [|split; [exact (meth_install rr F C d types0 H g st rt m sg ap _ Pre0 Ok)|reflexivity]].
+    split; [|split; [exact (meth_install rr F C d types0 H g st rt m sg ap _ FS Pre0 Ok)|reflexivity]].
     apply meanings_grow_refl; reflexivity.
   - (* wrapper *)
     exists [BMethod (A.canon C rt) m (A.theta_of C ap) w types sm]. split; [reflexivity|].
@@ -4080,16 +4143,15 @@ Proof.
     destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R' K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R' K Abs' Fn Len' Fresh' Body'].
     2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
     destruct (PublicContextFacts.function_context_unique W g' Cg' ns' Cg nsg Ctx' Ctx) as [-> ->]. subst n0.
-    pose proof Pre0 as [_ [_ [_ [_ Real]]]].
+    pose proof Pre0 as [_ [_ [_ [_ [Real _]]]]].
     destruct (callee_realizes_le rr rr C' d H g' Cg nsg sm' th (le_n rr) Real Ctx Sat CT) as [dc [Sel _]].
     pose proof (wrapped_callable k Bel rr Lr C' sg' g' th Cg nsg sm' w (A.canon C' rt) d H dc
       Def Ctx Sat CT SigG Sel Body Real) as Ok.
     rewrite Sel. left. eexists _, g0, st, H. split; [intros a0 c L0; exact L0|].
-    split; [|split; [exact (meth_install rr F' C' d types0 H g0 st rt m sg' ap _ Pre0 Ok)|reflexivity]].
+    split; [|split; [exact (meth_install rr F' C' d types0 H g0 st rt m sg' ap _ FS Pre0 Ok)|reflexivity]].
     apply meanings_grow_refl; reflexivity.
   - (* lambda *)
-    pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
-    remember (Some rt) as recv eqn:RecvE in LP.
+      remember (Some rt) as recv eqn:RecvE in LP.
     destruct LP as [F C ps r0 body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
       FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
     subst sm this.
@@ -4115,19 +4177,26 @@ Proof.
       intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
       intros j d types0 H g st Lj LJ Pre0 rest. unfold bm. rewrite bindings_method_eq.
       destruct (pre_from_cap rr F C qs d types0 H g st Ndq (fun q Iq => Unprov _ (InVals q Iq)) Pre0) as [PreC Inst].
-      pose proof PreC as [_ [_ [_ [_ RealC]]]]. pose proof RealC as [Abs _].
+      pose proof PreC as [_ [_ [_ [_ [RealC _]]]]]. pose proof RealC as [Abs _].
       destruct (lambda_select rr C qs Cl d H keys ClE' RealC Inst Ndq
         (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
       rewrite Sel. left.
+      pose proof PreC as [_ [_ [_ [_ [_ [FcC _]]]]]].
+      assert (TmC : PublicFormation.TmOk W (bs ++ A.c_ty C)%list).
+      { apply PublicFormation.tmok_app; [|exact (PublicFormation.cf_ty _ _ (proj1 FcC))].
+        exact (PublicFormation.br_ok W _ _ _ _ _ Br (PublicFormation.cf_ty _ _ (proj1 FcC))). }
+      pose proof (PublicFormation.tyof_ok W _ _ _ _ _ Ty TmC (PublicFormation.optok_none W)) as OkRt.
+      pose proof (PublicFormation.sigof_ok W _ _ _ _ Sig TmC (PublicFormation.optok_some W _ OkRt)) as SgOk.
       pose proof (lambda_callable k Bel rr Lr C ps sg (Some rt) body pid caps capvals Cl Fl lbody ltype d H dc keys
-        Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst KS SigSc) as Ok.
+        Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst SigSc
+        FcC SgOk (PublicFormation.optok_some W _ OkRt)) as Ok.
       cbn [this_list app] in Ok.
       assert (Ok' : CallableOk rr H d (A.canon C rt :: A.sg_params sg) (A.sg_ret sg)
         (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc))).
       { apply (callable_transfer rr rr H d d (rt :: A.sg_params sg) (A.canon C rt :: A.sg_params sg) (A.sg_ret sg) (A.sg_ret sg) _ (le_n _)); [|reflexivity|exact Ok].
         cbn [map]. f_equal. symmetry. exact (Abs rt). }
       eexists _, g, st, H. split; [intros a0 c L0; exact L0|].
-      split; [|split; [exact (meth_install rr F C d types0 H g st rt m sg ap _ PreC Ok')|reflexivity]].
+      split; [|split; [exact (meth_install rr F C d types0 H g st rt m sg ap _ FS PreC Ok')|reflexivity]].
       apply meanings_grow_refl; reflexivity.
 Qed.
 
@@ -4152,7 +4221,8 @@ Fixpoint item_chain k (Bel : Below k) (Ap : AppAt J k) F C it w C' F' m (D : A.B
 with items_chain k (Bel : Below k) (Ap : AppAt J k) F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
   exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemsBreak F its) m bs.
 Proof.
-  - destruct D as [F C pa t0 rp ra tau R K Pin Ty
+  - pose proof (item_formed _ _ _ _ _ _ _ D) as FD. revert FD.
+    destruct D as [F C pa t0 rp ra tau R K Pin Ty
                   |F C pa v d0 n0 t00 i declared y x xt a R Dd Ast Ty Dy Fits App
                   |F C pa f g sg pg sm a types R K Sig Prov App
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
@@ -4160,15 +4230,15 @@ Proof.
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx].
+                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
-      apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep.
+      apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep. exact FD.
     + exists [BValue v x]. split; [reflexivity|].
-      apply single_chain. intros r Lr. exact (val_bstep k Bel r Lr F C _ v declared y x xt a Dy Fits).
+      apply single_chain. intros r Lr. exact (val_bstep k Bel r Lr F C _ v declared y x xt a Dy Fits FD).
     + exists [BFunction f g types sm]. split; [reflexivity|].
-      apply single_chain. intros r Lr. exact (fn_bstep k Bel r Lr F C _ f g sg pg types sm a Prov).
-    + exact (lambda_fn_chain k Bel F C (Spec (Some pa) None None) f sg ps rt body pid pre sm a Sig LP).
-    + exact (meth_chain k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App).
+      apply single_chain. intros r Lr. exact (fn_bstep k Bel r Lr F C _ f g sg pg types sm a Prov FD).
+    + exact (lambda_fn_chain k Bel F C (Spec (Some pa) None None) f sg ps rt body pid pre sm a Sig LP FD).
+    + exact (meth_chain k Bel F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App FD).
     + (* `bind F;` for F with a body: its binds, in place *)
       destruct (items_chain k Bel Ap _ _ _ _ _ _ _ Ditems) as [bs [Ew Ch]].
       exists bs. split; [exact Ew|].
@@ -4275,7 +4345,7 @@ Proof.
       [apply in_or_app; left; rewrite E; exact Ig'|apply in_or_app; right; rewrite E; exact Ig']. }
   intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False newgens
     (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st).
-  pose proof Pre0 as [Frame [Ctx [Lt [St Real]]]].
+  pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
   pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
   destruct (Funs u fx Fx) as [pv [gfx [Look [Ok Fm]]]].
   destruct (closure_cases _ _ _ _ _ Ok) as [CL|[CC|CP]].
@@ -4317,7 +4387,9 @@ Proof.
   set (de := application_environment P d h th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
-    split; [split; [|split]|split; [constructor|split; [exact St|exact RealG]]].
+    split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
+    4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
+         split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
     - intros n1 t mu Found. rewrite (functx_locals _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
     - apply alias_self; [reflexivity|exact (proj1 RealG)|].
@@ -4381,7 +4453,7 @@ Lemma val_step : forall F C pa s t, A.nlook s (A.c_vals C) = Some t ->
   StepSafe k F C t (A.Breaks W (A.fr_mod F) (AEPath pa None)) (EVal s).
 Proof.
   intros F C pa s t Found d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals s t Found) as [w [Look T]].
+  pose proof Pre0 as [_ [_ [_ [_ [[_ [[Vals _] _]] _]]]]]. destruct (Vals s t Found) as [w [Look T]].
   cbn [I.eval]. rewrite Look. eapply outcome_now; eassumption.
 Qed.
 
@@ -4390,7 +4462,7 @@ Lemma invoke_step : forall F C pa args f g xs,
   StepSafe k F C (A.sg_ret g) (A.Breaks W (A.fr_mod F) (AECall pa None args)) (EInvoke f xs).
 Proof.
   intros F C pa args f g xs Found Args d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [_ [[_ [Fns _]] _]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [[_ [[_ [Fns _]] _]] _]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
   pose proof (args_safe k Bel k (le_n k) F C (A.Breaks W (A.fr_mod F) (AECall pa None args)) xs (A.sg_params g) d types H lg lst
     (args_argsafe F C args _ xs Args _ (fun a In' B => A.BkCall pa None args In' B)) (pre_lower Pre0)) as AOut.
   cbn [I.eval]. rewrite Look.
@@ -4432,7 +4504,9 @@ Proof.
   destruct Rcv as [r [args0 [Att0 [Kind _]]]].
   pose proof (attached_unique h r n att Att Att0) as <-.
   pose proof Head as Head'. rewrite Ot in Head'.
-  destruct (ex_nominal_formed F C o None ox ot0 Do h Head' Kind) as [xs0 [Eot Keys]].
+  pose proof Pre0 as [_ [_ [_ [_ [_ [FcA FfA]]]]]].
+  destruct (PublicFormation.ex_nominal_formed' W Prog units_bare family_sig_ok F C o None ox ot0 Do FcA FfA
+    (PublicFormation.optok_none W) h Head' Kind) as [xs0 [Eot Keys]].
   rewrite <- Ot in Eot. rewrite Eot in Ot. subst ot. cbn in Rargs. subst rargs.
   set (Cd0 := fold_left (fun C q => A.set_ty C (fst q) (snd q)) xs0 C) in *.
   destruct (set_tys_fields xs0 C) as [Es [Ep [El Et]]].
@@ -4450,7 +4524,7 @@ Proof.
   2: { destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out]. }
   destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
   inversion T1 as [|w0 t0' ws' ts' Tw0 Tws]; subst.
-  pose proof PreD as [_ [_ [_ [_ RealD]]]]. apply (realizes_ty_free _ _ Cd) in RealD; [|reflexivity|reflexivity].
+  pose proof PreD as [_ [_ [_ [_ [RealD _]]]]]. apply (realizes_ty_free _ _ Cd) in RealD; [|reflexivity|reflexivity].
   destruct (callee_realizes j Cd d' H1 att Ca ns sm th (realizes_extends _ _ _ _ _ E1 RealD) Ctx Sat CT)
     as [dc [Sel [Ag RealA]]].
   rewrite Sel, (call_environment_callee d' _ sm dc Sel).
@@ -4481,7 +4555,7 @@ Proof.
   2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
           None' Fam InK Only Found Args). }
   intros d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [Abs [[_ [_ [Mths _]]] _]]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
+  pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
   pose proof (O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ BrkO (sex F C o None ox ot0 Do d types H lg lst (pre_lower Pre0))) as ROut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -4588,7 +4662,11 @@ Proof.
       eapply (outcome_const F0); [exact Ret|exact Loop|].
       apply (O.outcome_fits W P state_ok _ _ _ _ t'); [exact Fits|].
       apply (ex_step F0 (A.Cx [] [] [] []) i (Some t) x t' Dx).
-      destruct Pre0 as [_ [_ [L [S Abs]]]]. split; [|split; [|split; [exact L|split; [exact S|]]]].
+      destruct Pre0 as [_ [_ [L [S Abs]]]]. split; [|split; [|split; [exact L|split; [exact S|split]]]].
+      4: { split.
+           - split; [constructor; [intros x9 u9 []|intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
+             split; [intros r9 m9 th9 p9 []|intros x9 []].
+           - split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
       * apply (numbering_frame F0 []). rewrite This. exact Num.
       * split; [intros n' t1 mu Found; discriminate|split; [intros t1 This'; congruence|intros x1 tx1 Lx1; discriminate]].
       * split; [intros t1; unfold A.canon; cbn; rewrite app_subst_nil; reflexivity|].
@@ -4649,10 +4727,13 @@ Proof.
       pose proof (sex F C sc None sx st Ds d types H lg lst (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkMatchS arms B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
-      pose proof Pre1 as [Frame [Ctx [L1 [S1 Real]]]].
+      pose proof Pre1 as [Frame [Ctx [L1 [S1 [Real Fmd1]]]]].
       assert (T1' : value_typed W P H1 w (ground d (A.canon C st))) by (rewrite (proj1 Real); exact T1).
-      destruct (AR.arms_select W Prog P d H1 F C _ arms exp xarms t w Darms (ex_formed _ _ _ _ _ _ Ds) T1')
-        as [pat [body [bs [eb [binds [et [Sel [InArm [Dbr [FitsT [_ [NamedB [Distinct LB]]]]]]]]]]]]].
+      pose proof (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj2 Fmd1)
+        (PublicFormation.optok_none W)) as OkSt.
+      destruct (AR.arms_select W Prog P d H1 F C _ arms exp xarms t w Darms
+        (PublicFormation.ex_formed' W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj2 Fmd1) (PublicFormation.optok_none W)) T1')
+        as [pat [body [bs [eb [binds [et [Sel [InArm [Dbr [FitsT [_ [[NamedB [Distinct LB]] [xp [hs [ca PO]]]]]]]]]]]]]]].
       rewrite Sel.
       assert (Len : List.length bs = List.length (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds))
         by exact (Forall2_length LB).
@@ -4662,8 +4743,10 @@ Proof.
       * intro B. eapply A.BkMatchA; [exact InArm|exact B].
       * split; [exact Frame|]. split; [exact (ctx_locals_push_distinct F binds C d types Frame Ctx NamedB Distinct)|].
         split; [apply Forall2_app; [exact LB|exact L1]|]. split; [exact S1|].
-        apply (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k))) in Real.
-        refine (realizes_same _ C _ _ _ _ _ _ Real); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions].
+        apply (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k))) in Real. split.
+        -- refine (realizes_same _ C _ _ _ _ _ _ Real); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions].
+        -- split; [|exact (proj2 Fmd1)]. apply (PublicFormation.add_locals_formed W); [exact (proj1 Fmd1)|].
+           exact (PublicFormation.patof_ok W _ _ _ _ _ _ _ PO (PublicFormation.canon_ok W C st (proj1 (proj1 Fmd1)) OkSt)).
     + (* block *)
       destruct (blke_branch_ty _ _ _ _ _ _ Db) as [_ FitsExp].
       apply (O.outcome_fits W P state_ok _ _ _ _ t).
@@ -4734,11 +4817,17 @@ Proof.
       pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits0 (sex F C y _ v vt Dy d types H lg lst (pre_lower Pre0))) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0
         (fun B => stmt_breaks_block _ st0 rest tl (let_breaks _ _ _ _ _ _ Let B)) Out).
-      intros H1 g1 st1 w E1 [Frame [Ctx [L1 [S1 Abs]]]] T1.
+      intros H1 g1 st1 w E1 [Frame [Ctx [L1 [S1 [Abs Fmd1]]]]] T1.
       eapply outcome_pop. eapply O.outcome_breaks; [apply block_breaks_cons|].
       apply (sblk F _ rest tl exp xr t made Drest Avoid d _ H1 _ st1).
       split; [exact Frame|]. split; [exact (ctx_locals_push F C d types n t0 mu Frame Ctx Named)|].
-      split; [exact (locals_push W P H1 g1 types _ w _ L1 T1)|]. split; [exact S1|exact (realizes_same _ C _ _ _ eq_refl eq_refl eq_refl (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k)) Abs))].
+      split; [exact (locals_push W P H1 g1 types _ w _ L1 T1)|]. split; [exact S1|split; [exact (realizes_same _ C _ _ _ eq_refl eq_refl eq_refl (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k)) Abs))|]].
+      split; [|exact (proj2 Fmd1)]. apply (PublicFormation.add_local_formed W); [exact (proj1 Fmd1)|].
+      destruct declared as [dt|]; cbn in Decl.
+      * destruct Decl as [_ E0]. subst t0. destruct ann as [a|]; cbn in Ann; [|discriminate].
+        destruct Ann as [dd [Td E]]. injection E as <-.
+        exact (PublicFormation.tyof_ok W _ _ _ _ _ Td (PublicFormation.cf_ty _ _ (proj1 (proj1 Fmd1))) (proj2 (proj2 Fmd1))).
+      * subst t0. exact (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Dy (proj1 Fmd1) (proj2 Fmd1) (PublicFormation.optok_none W)).
     + (* assign *) cbn [I.eval].
       pose proof (assign_eval k Bel F C n y tv v vt d types H lg lst Found Named Dy Fits (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0

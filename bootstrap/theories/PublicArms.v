@@ -147,16 +147,17 @@ Proof.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
 Qed.
 
-Definition Selected F C (arms : list (apat * aexpr)) exp t xarms w : Prop :=
+Definition Selected F C st (arms : list (apat * aexpr)) exp t xarms w : Prop :=
   exists pat body bs eb binds et,
     I.select_arm xarms w = Some (bs, eb) /\ In (pat, body) arms /\
     A.Branch W Prog F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) body exp eb et /\
-    A.fits et t /\ A.opt_fits et exp /\ PatResult F binds bs.
+    A.fits et t /\ A.opt_fits et exp /\ PatResult F binds bs /\
+    exists xp hs ca, A.PatOf W F st pat xp binds hs ca.
 
 Lemma armslist_select : forall F C st arms exp xarms covered catch t w,
   A.ArmsList W Prog F C st arms exp xarms covered catch t ->
   UnionFormed st -> st <> A.never -> typed w (gr st) ->
-  Selected F C arms exp t xarms w \/
+  Selected F C st arms exp t xarms w \/
   (I.select_arm xarms w = None /\ catch = false /\ covered <> [] /\
    forall s, In s covered -> (forall inner, w <> VTag s inner) /\ exists xs, In (TNom s xs) (A.members st)).
 Proof.
@@ -165,7 +166,7 @@ Proof.
                     |F C st pat body rest exp xp binds hs ca bx bt xr hr cr tr t NonEmpty Pat Br Fits Rest IH Join].
   - destruct (pat_match F st pat xp binds hs ca w Pat Formed NotNever T) as [Heads [Catch [[bs [Match Res]]|[Match [NoCatch Miss]]]]].
     + left. exists pat, body, bs, bx, binds, bt. split; [cbn; rewrite Match; reflexivity|].
-      split; [left; reflexivity|]. split; [exact Br|]. split; [apply fits_refl|]. split; [exact Fits|exact Res].
+      split; [left; reflexivity|]. split; [exact Br|]. split; [apply fits_refl|]. split; [exact Fits|split; [exact Res|eauto]].
     + right. cbn. rewrite Match. split; [reflexivity|]. split; [exact NoCatch|].
       split; [exact (Catch NoCatch)|]. intros s In'. split; [exact (Miss s In')|exact (Heads s In')].
   - destruct (pat_match F st pat xp binds hs ca w Pat Formed NotNever T) as [Heads [Catch [[bs [Match Res]]|[Match [NoCatch Miss]]]]].
@@ -173,11 +174,11 @@ Proof.
       assert (Left : A.fits bt t).
       { destruct Join as [a b e|b|a b _ _]; [exact Fits|apply fits_never|apply fits_refl]. }
       split; [cbn; rewrite Match; reflexivity|].
-      split; [left; reflexivity|]. split; [exact Br|]. split; [exact Left|]. split; [exact Fits|exact Res].
+      split; [left; reflexivity|]. split; [exact Br|]. split; [exact Left|]. split; [exact Fits|split; [exact Res|eauto]].
     + destruct (IH Formed NotNever T) as
-        [[pat' [body' [bs [eb [binds' [et [Sel [In' [Br' [FitsT [FitsE Res]]]]]]]]]]]|[Sel [NoCatch' [Covered Miss']]]].
+        [[pat' [body' [bs [eb [binds' [et [Sel [In' [Br' [FitsT [FitsE [Res PO]]]]]]]]]]]]|[Sel [NoCatch' [Covered Miss']]]].
       * left. exists pat', body', bs, eb, binds', et. split; [cbn; rewrite Match; exact Sel|]. split; [right; exact In'|].
-        split; [exact Br'|]. split; [|split; [exact FitsE|exact Res]].
+        split; [exact Br'|]. split; [|split; [exact FitsE|split; [exact Res|exact PO]]].
         destruct Join as [a b e|b|a b [Never|Same] NotNever'].
         -- exact FitsE.
         -- exact FitsT.
@@ -192,7 +193,7 @@ Qed.
 
 Theorem arms_select : forall F C st arms exp xarms t w,
   A.Arms W Prog F C st arms exp xarms t -> UnionFormed st -> typed w (gr st) ->
-  Selected F C arms exp t xarms w.
+  Selected F C st arms exp t xarms w.
 Proof.
   intros F C st arms exp xarms t w Arms Formed T. destruct Arms as [F C exp|F C st arms exp xarms covered catch t NotNever List Exhaustive].
   - exfalso. exact (empty_union_uninhabited W P H w T).

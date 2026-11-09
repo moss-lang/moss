@@ -162,7 +162,8 @@ Theorem main_not_stuck : forall fuel d0 st0 H0,
   (forall dcl n rt b, A.w_decl W (program_main Prog) = Some dcl -> A.d_ast dcl = ADFn RPlain n [] rt (Some b) ->
      A.FnElab W Prog (program_main Prog)) ->
   (exists dcl n rt b, A.w_decl W (program_main Prog) = Some dcl /\ A.d_ast dcl = ADFn RPlain n [] rt (Some b)) ->
-  (forall C ns, A.CtxOf W (program_main Prog) C ns -> forall F, FrameOk F -> A.fr_this F = None ->
+  (forall C ns, A.CtxOf W (program_main Prog) C ns -> forall F g, FrameOk F -> A.fr_this F = None ->
+     A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
      S.Pre W Prog argv read state_ok fuel F C d0 [] H0 [] st0) ->
   ~ SR.stuck_signal (M.Reference.evaluation_signal (M.Reference.run_main fuel P (program_main Prog) d0 st0)).
 Proof.
@@ -173,7 +174,7 @@ Proof.
   unfold M.Reference.run_main. change (view_function P (program_main Prog)) with (A.body_of Prog (program_main Prog)).
   rewrite View.
   assert (Frame : FrameOk F) by (apply (numbering_frame F []); rewrite FThis; exact Num).
-  pose proof (Entry C ns Ctx F Frame FThis) as Pre0.
+  pose proof (Entry C ns Ctx F g Frame FThis Ret Sig) as Pre0.
   pose proof (Safe fuel) as Sf. unfold S.Safe in Sf. destruct Sf as [_ [_ [SBlkE _]]].
   pose proof (SBlkE F C b (Some (A.sg_ret g)) x t Body d0 [] H0 [] st0 Pre0) as Out.
   unfold S.O.Outcome in Out. unfold P. change (M.Reference.eval fuel (program_of Prog argv read) d0 [] st0 x) with (S.I.eval fuel (program_of Prog argv read) d0 [] st0 x).
@@ -182,13 +183,17 @@ Proof.
 Qed.
 
 (* main's initial state: its frame, no locals, the platform's provisions. *)
-Lemma entry_pre : forall n F C ns types platform H0 st0,
+Lemma entry_pre : forall n F C ns g types platform H0 st0,
+  PublicFormation.MergeFormed W -> PublicFormation.MentionsTyped W ->
   A.CtxOf W (program_main Prog) C ns -> FrameOk F -> A.fr_this F = None ->
+  A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
   state_ok H0 st0 -> S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
   S.Pre W Prog argv read state_ok n F C (Environment types platform) [] H0 [] st0.
 Proof.
-  intros n F C ns types platform H0 st0 Ctx Frame This St Real.
-  split; [exact Frame|]. split; [split|split; [constructor|split; [exact St|exact Real]]].
+  intros n F C ns g types platform H0 st0 Mf Mt Ctx Frame This Ret Sig St Real.
+  destruct (PublicFormation.fn_body_formed W _ C ns None g [] Mf Mt Ctx Sig (PublicFormation.optok_none W)) as [Sg Fc].
+  split; [exact Frame|]. split; [split|split; [apply Forall2_nil|split; [exact St|split; [exact Real|]]]].
+  3: { split; [exact Fc|]. split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite This; apply PublicFormation.optok_none]. }
   - intros m t mu Found. rewrite (S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
   - split; [intros t E; congruence|]. apply S.alias_none; [reflexivity|exact (proj1 Real)|].
     exact (proj1 (ctxof_formed W _ C ns Ctx)).
@@ -304,6 +309,7 @@ Theorem entry_safe : forall prelude
   (forall Prog iface initial bundle W, M.Compatible Prog iface ->
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
      exists H0, state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface H0 (iface, initial) /\
        forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> A.InitialTypes W C types ->
          program_environment Prog = Environment types platform ->
@@ -315,7 +321,7 @@ Theorem entry_safe : forall prelude
   SR.entry_never_stuck prelude.
 Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
-  destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [H0 [St Prims]]].
+  destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [[Mf Mt] [H0 [St Prims]]]].
   pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys & _) & _).
   destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries).
   destruct (function_context_unique Wd _ C' ns' C ns Ctx' Ctx) as [-> ->].
@@ -325,9 +331,9 @@ Proof.
     (Environment types platform) (iface, initial) H0 Safe).
   - intros dcl n rt b D Ast. exact (AllFn _ dcl RPlain n [] rt b D Ast).
   - exact MainDecl.
-  - intros C0 ns0 Ctx0 F Frame This.
+  - intros C0 ns0 Ctx0 F g Frame This Ret Sig.
     destruct (function_context_unique Wd _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
-    apply (entry_pre Wd Prog _ _ _ fuel F C ns types platform H0 _ Ctx Frame This St).
+    apply (entry_pre Wd Prog _ _ _ fuel F C ns g types platform H0 _ Mf Mt Ctx Frame This Ret Sig St).
     apply (entry_realizes Wd Prog _ _ _ fuel C ns types platform H0 Ctx Types Keys Entries).
     intros f op sg Ip Found At. exact (Prims fuel C ns types platform Ctx Types Env f op sg Ip Found At).
 Qed.
@@ -339,14 +345,15 @@ Theorem entry_safe_public : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial)
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
   SR.entry_never_stuck prelude.
 Proof.
   intros prelude Remaining. apply (entry_safe prelude PS.state_ok).
   intros Prog iface initial bundle W Compat Elab Link.
-  destruct (Remaining Prog iface initial bundle W Compat Elab Link) as [Safe Formed].
-  split; [exact Safe|]. exists (fun _ => None).
+  destruct (Remaining Prog iface initial bundle W Compat Elab Link) as [Safe [MM Formed]].
+  split; [exact Safe|]. split; [exact MM|]. exists (fun _ => None).
   pose proof Compat as [_ [Supports Laws]].
   split; [apply PS.state_ok_initial; apply Laws|].
   pose proof Link as (_ & Lay & Reps & _).
@@ -365,6 +372,7 @@ Theorem safety_public : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial)
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
+     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
   forall program interface initial,

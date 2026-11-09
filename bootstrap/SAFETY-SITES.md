@@ -24,10 +24,12 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 ## The entry (checked, conditional)
 
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_public`, which is
-`CORRECT.safety` for any `Public` instance, from two premises:
+`CORRECT.safety` for any `Public` instance, from three premises:
 
 - the slice's safety at every fuel, with the reference host's state
   invariant (`PublicPrimitiveSafety.state_ok`);
+- context formation's premises (`MergeFormed`, `MentionsTyped`), so main
+  starts in a formed context and frame;
 - handle formation of the platform signatures in main's context
   (`HandleFormed`, a T29 fact).
 
@@ -406,10 +408,7 @@ hypotheses, each a named remaining obligation:
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
-| `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
-| `lambda_keys_scoped` | a lambda's context lists method keys whose receivers mention only its generations | T29 |
-| `bind_nominal_formed` | a method bind's nominal key receiver has its arguments keyed by its requirements | T29 |
-| `ex_formed` | elaborated types are formed (unions of distinct nominal heads), also after `canon` | T29 |
+| `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigOk`); `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
 
