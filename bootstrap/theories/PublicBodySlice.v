@@ -3289,7 +3289,7 @@ Qed.
 (* A linked body's result sources: position by position, the body's
    runtime key for each item of F's declared result (LinkBody). *)
 Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (ks : list item) : list item :=
-  map (fun k => A.rkey_of Cb (A.at_site Cb (app_subst_item (A.link_renaming outs gen) k))) ks.
+  map (fun k => A.rkey_of Cb (A.at_site Cb k)) ks.
 
 (* The site a linked body's result keys are read at (A.link_site) has
    the body's provisions and merges, so it is realized where the body is,
@@ -3334,7 +3334,7 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
   NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
   A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
-  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.link_renaming outs gen) ks /\
+  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)

@@ -606,24 +606,6 @@ Proof.
     split; [apply in_map; exact It|exact (PublicFormation.gens_keep _ _ y I N)].
 Qed.
 
-Lemma ren_lookup : forall (g : nat -> nat) outs x v, lookup_subst x (map (fun t => (g t, TAbs (g t))) outs) = Some v -> v = TAbs x.
-Proof.
-  intros g outs x v. induction outs as [|t r IH]; intros L; [discriminate|]. cbn in L.
-  destruct (Nat.eqb_spec x (g t)) as [->|Ne]; [injection L as <-; reflexivity|exact (IH L)].
-Qed.
-
-Lemma ren_id : forall (g : nat -> nat) outs t, app_subst (A.link_renaming outs g) t = t.
-Proof.
-  intros g outs t. rewrite <- (app_subst_nil t) at 2. apply subst_agree_on. intros x _. cbn [app_subst].
-  destruct (lookup_subst x (A.link_renaming outs g)) as [v|] eqn:L; [exact (ren_lookup g outs x v L)|reflexivity].
-Qed.
-
-Lemma item_ren_id : forall (g : nat -> nat) outs k, app_subst_item (A.link_renaming outs g) k = k.
-Proof.
-  intros g outs [t|v|f|r m a|u]; try reflexivity. cbn. rewrite ren_id. f_equal.
-  unfold map_snd. induction a as [|[x t] a IH]; [reflexivity|]. cbn. rewrite ren_id, IH. reflexivity.
-Qed.
-
 Lemma lookup_site_role : forall Cg Cb outs (gen : nat -> nat) t, In t outs ->
   (forall a b, In a outs -> In b outs -> gen a = gen b -> a = b) ->
   lookup_subst (gen t) (A.c_ty (A.link_site Cg Cb outs gen)) =
@@ -700,7 +682,7 @@ Hypothesis Items : A.BindItems W Prog Fg Cg its wrap Cb Fb made.
 Hypothesis FrGf : PublicFormation.FrameFormed W Fg.
 Hypothesis MadeOut : forall t, In t made -> A.nlook t (A.c_ty Ch0) = None.
 Hypothesis FrGen : forall t, In t outs -> A.Fresh W (gen t).
-Hypothesis RR : A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.link_renaming outs gen) ks.
+Hypothesis RR : A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen) ks.
 
 Let DG := map fst (A.c_ty Cg).
 Let D0 := map fst (A.c_ty Ch0).
@@ -756,10 +738,9 @@ Proof.
       apply in_flat_map in Iy as [[x t] [Ixt Iy]]. apply in_flat_map. exists (x, Some t). split; [|exact Iy].
       apply in_map_iff. exists (x, t). split; [reflexivity|exact Ixt]. }
   set (Ls := A.link_site Cg Cb outs gen) in *.
-  set (ren := A.link_renaming outs gen) in *.
-  set (rr := A.read_rename Ls ren).
+  set (rr := A.role_reads Ls outs gen) in *.
   assert (RrNone : forall y, In y D0 -> lookup_subst y rr = None).
-  { intros y Iy. unfold rr, A.read_rename, ren, A.link_renaming. rewrite map_map.
+  { intros y Iy. unfold rr, A.role_reads.
     apply (lookup_map_none gen (fun t => A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t)))) outs y (d0_not_role y Iy)). }
   destruct (RR k Ik) as [req [act [Lr [La Ref]]]].
   rewrite Lp in Lr. injection Lr as <-.
@@ -785,8 +766,8 @@ Proof.
     rewrite <- E in Ik2. destruct (Back ta y Ik2) as [Iy''|D']; [|exfalso; exact (Ny D')].
     apply in_flat_map. exists (x, ta). split; [exact Ita|exact Iy''].
   - intros r m a y -> Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [exact I'|exfalso].
-    apply (proj2 (InCb _ _ Iact y Ny Iy0)). cbn [app_subst_item A.at_site A.provision_id PublicCallRealize.key_gens].
-    unfold ren. rewrite PublicScoping.map_pair_id, ren_id. unfold A.canon. change (A.c_sub Ls) with (A.c_sub Cb).
+    apply (proj2 (InCb _ _ Iact y Ny Iy0)). cbn [A.at_site A.provision_id PublicCallRealize.key_gens].
+    rewrite PublicScoping.map_pair_id. unfold A.canon. change (A.c_sub Ls) with (A.c_sub Cb).
     apply (PublicFormation.gens_keep _ _ y); [|exact (SubNone y Ny)].
     apply (PublicFormation.gens_keep _ _ y Iy).
     unfold Ls. rewrite (lookup_site_in Cg Cb outs gen y (d0_not_role y Iy0)), lookup_subst_nlook'.
@@ -1056,11 +1037,10 @@ Proof.
   { intros y Iy I. apply in_map_iff in I as [t [<- It]].
     exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed h0 Ch0 nsh0 FC0 (gen t) Iy (FrG t It)). }
   set (Ls := A.link_site Cg Cb outs' gen).
-  set (ren := A.link_renaming outs' gen).
-  set (rr := A.read_rename Ls ren).
+  set (rr := A.role_reads Ls outs' gen).
   set (T0 := Tv (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin gen outs').
   assert (RrE : rr = map (fun t => (gen t, A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t))))) outs')
-    by (unfold rr, A.read_rename, ren, A.link_renaming; rewrite map_map; reflexivity).
+    by reflexivity.
   (* a role reads as its output's meaning *)
   assert (Role : forall t0, In t0 outs' -> ground d3 (app_subst (A.c_ty Ls) (TAbs (gen t0))) = CSg.FL.CF.CN.CC.LR.read_meaning d3 t0).
   { intros t0 It. destruct (OutM t0 It) as [v0 Lv]. cbn [app_subst]. unfold Ls. rewrite (lookup_site_role Cg Cb outs' gen t0 It Inj), Lv.
@@ -1092,7 +1072,7 @@ Proof.
     - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity. }
   exists gen, outs', Cr, ks'. split; [exact OutsR|]. split; [exact FrG|]. split; [exact Inj|]. split; [exact PR|].
   intros i k Ki. pose proof (nth_error_In _ _ Ki) as Ik.
-  destruct (CSg.FL.CF.CN.CC.body_provides W Prog argv read state_ok n Ls d3 H3 Cr ks' ren (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok n Cg Cb outs' gen d3 H3 Real3) RR k Ik)
+  destruct (CSg.FL.CF.CN.CC.body_provides W Prog argv read state_ok n Ls d3 H3 Cr ks' rr (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok n Cg Cb outs' gen d3 H3 Real3) RR k Ik)
     as [p [pv [Lp [Lpv BR]]]].
   destruct (r2 W Prog World merge_formed mentions_typed h0 gg Ch0 Cg Cb nsh0 nsg Fg Fb _ wrap made outs' gen Cr ks'
     FC0 FCg Items FrGf MadeOut FrG RR k Ik p Lp) as [R2s R2r].
@@ -1105,7 +1085,6 @@ Proof.
     - right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity]. }
   exists p, pv. split; [exact Lp|]. split.
   { cbn [chain_sources fold_left]. unfold CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite (nth_map_error _ _ _ ks' i k _ Ki). exact Lpv. }
-  assert (Ek : app_subst_item ren k = k) by (unfold ren; apply item_ren_id). rewrite Ek in BR. fold rr in BR.
   destruct p as [t a0|g a0|g a0|fx]; unfold CSg.FL.CF.CN.CC.BodyReal in BR; unfold RealAt; lazy beta iota in BR |- *; fold T0.
   - destruct BR as [w [-> Tw]]. exists w. split; [reflexivity|].
     rewrite <- (KeyTy t); [exact Tw|]. intros x Ix. apply OkP. unfold rel_gens, PublicCallRealize.provision_sig_gens, A.sig_gens. cbn.

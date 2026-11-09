@@ -53,7 +53,7 @@ Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
     Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
   exists Cu, nsu, Cg, nsg, binds0, (map ITy outs ++ map (A.rkey_of Cr) ks)%list,
-    (map (fun k => A.rkey_of (A.link_site Cg Cb outs gen) (A.at_site (A.link_site Cg Cb outs gen) (app_subst_item (A.link_renaming outs gen) k))) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
+    (map (fun k => A.rkey_of (A.link_site Cg Cb outs gen) (A.at_site (A.link_site Cg Cb outs gen) k)) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
 Qed.
 
 Lemma functx_table_in : forall u C ns, A.FunCtx W u C ns -> forall x v, In (x, v) (A.c_ty C) ->
@@ -226,10 +226,10 @@ Proof.
   destruct (RR (IMth rf m0 []) Ik1) as [req [act [Lr [La Ref]]]].
   cbn [A.provision_id] in Lr. rewrite Lp in Lr. injection Lr as <-. cbn [map] in La, Ref.
   pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ La) as Iact.
-  change (In (A.provision_id (A.at_site Ls (app_subst_item [] (IMth rf m0 []))), act) (A.c_provisions Cb)) in Iact.
+  change (In (A.provision_id (A.at_site Ls (IMth rf m0 [])), act) (A.c_provisions Cb)) in Iact.
   rewrite Eat in Iact. cbn [A.provision_id] in Iact.
-  cbn [app_subst_item A.at_site] in Eat. injection Eat as Erb Emb _. subst mb.
-  rewrite PublicTypeRead.app_subst_nil, PublicScoping.map_pair_id in Erb.
+  cbn [A.at_site] in Eat. injection Eat as Erb Emb _. subst mb.
+  rewrite PublicScoping.map_pair_id in Erb.
   change (A.canon Cb (app_subst (A.c_ty Cg) rf) = rb) in Erb.
   assert (SigNil : forall g, A.sig_subst [] g = g).
   { intros [ps0 rt0]. unfold A.sig_subst. cbn. rewrite PublicTypeRead.app_subst_nil, (map_ext _ _ PublicTypeRead.app_subst_nil), map_id. reflexivity. }
@@ -286,7 +286,7 @@ Proof.
   { intros l1' l2' F2. induction F2 as [|tc tf l1' l2' A1 _ IH]; intros Inc; [reflexivity|]. cbn [map].
     rewrite (GE tc tf A1 (fun y Iy => R2sig tf y (or_intror (Inc tf (or_introl eq_refl))) Iy)).
     rewrite IH; [reflexivity|]. intros t It. exact (Inc t (or_intror It)). }
-  cbn [A.read_rename map] in Call. rewrite PublicTypeRead.app_subst_nil, (map_ext _ _ PublicTypeRead.app_subst_nil), map_id in Call.
+  cbn [A.role_reads map] in Call. rewrite PublicTypeRead.app_subst_nil, (map_ext _ _ PublicTypeRead.app_subst_nil), map_id in Call.
   apply (CF.CN.CC.LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok rr rr H3 d3 d (rb :: A.sg_params gf) (r0 :: A.sg_params g0)
     (A.sg_ret gf) (A.sg_ret g0) pv (le_n _)); [| |exact Call].
   - cbn [map]. rewrite Recv, (GEp _ _ Rps (fun t I => I)). reflexivity.

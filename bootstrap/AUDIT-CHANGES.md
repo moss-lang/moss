@@ -391,8 +391,10 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
   - every symbol is read at G's own table, including an input occurrence
     of a symbol that is also an output.
 
-  `link_renaming` is the identity on the roles. Merges, provisions and
-  locals are Cb's.
+  The keys keep the roles, which the site's table alone reads. (Until
+  consolidation, LinkBody also applied `link_renaming`, the identity on
+  the roles, to each key; it is gone.) Merges, provisions and locals are
+  Cb's.
 - **History.**
   - 94d89ce introduced `link_site`. It read the output *symbols* at Cb.
   - fc75de7 made only the *roles* read at Cb.
@@ -817,8 +819,10 @@ Totals: 13 B, 1 C, 9 D, 17 A, 7 E.
 - **Class A** (the frame premise is argued).
 
 ### 38. `ResultRealizes` compares at the body's output meanings (671b6a5)
-- **Rule now.** F's promised provisions are compared with the renamed
-  outputs read through the body's type table (`read_rename`), as the
+- **Rule now.** F's promised provisions are compared with each output
+  role read through the body's type table (`role_reads`; before
+  consolidation, `read_rename` at the identity `link_renaming`, an
+  equivalent form, `PublicConsol.result_realizes_restated`), as the
   oracle's `promised_result_type` does.
 - **Why.** A body that binds `T = Bool` and provides `mk(): T` could never
   match, so Audit rejected the standard functor pattern.
@@ -923,6 +927,16 @@ green.
 | `~ In t (fr_pins F)` in the kept-output case (#13, 268bf3a) | `BApplyAbstract` | relaxation toward both implementations: [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) is now accepted (oracle 7, native 7) | "Drop BApplyAbstract's pin clause" |
 | "G has a body" (`exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))`) | `BFunClosure` | none: `LinkBody` states it (`w_decl W gg = Some dg`, `d_ast dg = ADFunctor n ps a r (Some bodies)`) | "BFunClosure: drop the body premise LinkBody states" |
 | `Fresh W (gensof t)` in the fresh-output case | `BApplyAbstract` | none: the case asks `In (gensof t) newgens`, and `FreshFor W F C newgens` makes every member `Fresh W` (`PublicFormation.freshfor_fresh`) | "BApplyAbstract: a fresh output's freshness is FreshFor's" |
+| `output_renaming` (unused definition) | Audit.v | none | "Audit: remove the unused output_renaming" |
+
+Restatements (equivalence-preserving, each proved in
+[PublicConsol.v](theories/PublicConsol.v) against the old definitions,
+restated there verbatim):
+
+| Restated | Old form | New form | Proof |
+|---|---|---|---|
+| `ResultRealizes` and LinkBody's result sources | each key renamed by `link_renaming outs gen` (the identity on the roles), promised types read through `read_rename` at it | keys used as they are; promised types read through `role_reads site outs gen` (each role at the site's table) | `result_realizes_restated`, `link_sources_restated` |
+| BFunClosure's removed body premise | `exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))` | implied by LinkBody | `link_body_has_body` |
 
 ## Implementation bugs filed (E31–E37)
 
