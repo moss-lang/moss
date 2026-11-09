@@ -100,6 +100,7 @@ entry they belong to.
 | 49 | Pins constrain only a linked body's own binds | proposals | relaxation (toward both) |
 | 50 | A call's θ is principal (`CallTheta`) | coherence | A |
 | 51 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
+| 52 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch.
 
@@ -1202,6 +1203,65 @@ executable tests unless noted.
   there is no lambda or linked body).
 - **Class B** (a strengthening of #48's check, which the implementations
   lack). No program found whose verdict changes.
+
+### 52. Main's fixed machine types are read by class (coherence2 branch; PART-DESIGN §1.5 #5)
+- **Rule now.** `FixedMachinesRead` (Platform.Entry, for each platform
+  functor in main's context) asks, for each machine type `symbol` the
+  functor fixes at meaning t:
+  - `canon C t = canon C (TAbs symbol)`: t is in the machine type's merge
+    class;
+  - `canon C (TAbs symbol)` is a symbol: the class has no structure;
+  - every y with `canon C (TAbs y) = canon C (TAbs symbol)` is `symbol`:
+    the class is the machine type alone.
+
+  Before, it asked `canon C t = TAbs symbol`.
+- **Why.** The old clause held exactly when the machine type represented
+  its class. If main merges I32 with an abstract X, the clause passed with
+  representative I32 and failed with X, so acceptance depended on an open
+  choice. All three new conditions are about classes, and the classes do
+  not depend on the choice (`PublicOrientation.mgm_classes_iff`; a class
+  merged with a structure reads as a structure under every most general
+  merge).
+- **Form chosen.** PART-DESIGN proposed a permissive form: a class with
+  no structure and no other *machine* member, with `InitialTypes` mapping
+  every member to the machine. I chose the strict form instead:
+  - Both implementations reject a machine type merged with an abstract
+    symbol, in either order (tests below).
+  - The permissive form would accept those programs (class C). Its proof
+    would need `InitialTypes` and the platform proofs (`entry_realizes`,
+    `entry_primitive`) restated at a non-machine representative.
+  - The strict form implies the old clause in a canonical context
+    (`PublicEntry.fixed_machine_self`), so the proof is unchanged in
+    substance.
+
+  The strict form agrees with design note 7.1's orientation rule ("main:
+  a machine symbol") and with R1 (b).
+- **Criterion: coherence** (criteria.md section 2), and fidelity
+  (section 6).
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [platform-fixed-merge-xi.moss](examples/platform-fixed-merge-xi.moss) (`context Two = X, i32_eqz[I32 = X], i32_eqz`) | rejects ("incompatible assumed fixed type") | rejects ("incompatible types: `Arrays`") | clause passes with representative I32, fails with X (argued) | rejects |
+  | [platform-fixed-merge-ix.moss](examples/platform-fixed-merge-ix.moss) (the same merge, the other order) | rejects | rejects | the same | rejects |
+  | [platform-fixed-merge.moss](examples/platform-fixed-merge.moss) (I32 = Bool, #39) | rejects | rejects | rejects | rejects |
+
+- **Corpus.** An oracle variant whose `check_platform_entry_view` asks
+  the same class condition (`scratch/oracle/fixedcls`: the class of the
+  machine type, over the env's `en_uf` and `en_tn` symbols, is the type
+  alone), against the oracle, over `tests/`, `examples/` and
+  `bootstrap/examples/` (with the new tests): 419 same / 0 diff.
+- **Remaining.** Other platform-entry clauses of main read types
+  syntactically and so also depend on the representative: `Entry`'s
+  I32 constant (`MachineType`), `AtKey` and `HandlesRead`. They are
+  reached only after this clause, which now rejects every class that
+  merges a machine type with anything, so for machine types these
+  clauses now see the type itself. Main's structure-free classes with no
+  machine member (R1) are untouched.
+- **Proof.** `public_safety` unchanged. `entry_realizes` derives the old
+  reading from the new clause (`fixed_machine_self`, by idempotence of
+  main's merge).
+- **Class A** (reject-only, mirroring both implementations).
 
 ---
 

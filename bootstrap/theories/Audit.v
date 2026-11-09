@@ -5125,11 +5125,21 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
    itself (the oracle's check_platform_entry_view: "platform functor has an
    incompatible assumed fixed type"): the platform's provision exists only
    at the machine types, so a merge of main's context may not read one as
-   another type. *)
+   another type.  Stated by class (criteria section 2, coherence): the
+   fixed meaning t is in the machine type's merge class, and that class is
+   the machine type alone, with no structure.  A class merging the machine
+   type with another symbol is rejected whichever member represents it
+   (both implementations reject it, in either order:
+   examples/platform-fixed-merge-{xi,ix}.moss); before, the clause asked
+   `canon C t = TAbs symbol`, which held exactly when the machine type
+   was the representative.  The classes do not depend on that choice
+   (PublicOrientation.mgm_classes_iff). *)
 Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
   forall fixed, nlook source (c_funs C) = Some fixed ->
   forall name machine symbol t, In (name, machine) initial_machines ->
-    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed -> canon C t = TAbs symbol.
+    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed ->
+    canon C t = canon C (TAbs symbol) /\ (exists z, canon C (TAbs symbol) = TAbs z) /\
+    (forall y, canon C (TAbs y) = canon C (TAbs symbol) -> y = symbol).
 
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
