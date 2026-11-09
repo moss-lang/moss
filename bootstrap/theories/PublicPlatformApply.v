@@ -24,14 +24,14 @@
 
    The same holds of a family application of a platform family
    (PublicFamilyStep's FamilyPlatformApplyOk, `family_platform_ok`), from
-   FamilyResultAgrees (the family-application form of the result
+   FamilyKeysTyped (a formation fact giving the family-application form of the result
    agreement, through the shared ItemsAgree) and PrimsGroundOk (the
    primitives callable wherever the fixed machine inputs read as the
    machine types). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
-From NM Require PublicFormation PublicCopyApply PublicFamilyStep.
+From NM Require PublicFormation PublicCopyApply PublicFamilyStep PublicFamilyAgree.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -239,27 +239,10 @@ Proof. intros u code (i & n & o & k & b & D). exists i, n, o, k, b. exact D. Qed
 Definition app_env (d : environment) (code : usym) (th : subst) (d1 : environment) : environment :=
   application_environment P d code th (append_environment d1 (EnvironmentWithAliases [] [] [])).
 
-(* A caller's signature type and a family's, read at θ: the family's
-   type over the inputs of its code (Ch0's table). *)
-Definition SigAgree (C Ch0 : A.cx) (th : subst) (tc tf : ty) : Prop :=
-  incl (A.gens tf) (map fst (A.c_ty Ch0)) /\ A.canon C tc = A.canon C (app_subst th tf).
-
-(* The new method provisions of a result Cr (New r m g: a new method r.m
-   of Cr, with signature g) and a family's own items (outputs, keys, read
-   at its inputs Ch0) agree at θ, read in the caller's context C: each new
-   method is filed under the run-time key a family item gets at θ and read
-   with that item's signature at θ, and every family item is one of them.
-   Shared by the chain (ResultAgree) and the family (FamilyResultAgrees)
-   correspondences. *)
-Definition ItemsAgree (C Cr Ch0 outputs : A.cx) (th : subst) (New : ty -> nat -> A.fsig -> Prop)
-    (keys : list item) : Prop :=
-  (forall r m g, New r m g ->
-     (exists key, In key keys /\ app_subst_item th (A.rkey_of outputs key) = A.rkey Cr r m) /\
-     (forall key rf a gf, In key keys -> key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
-        app_subst_item th (A.rkey_of outputs key) = A.rkey Cr r m ->
-        Forall2 (SigAgree C Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf))) /\
-  (forall key, In key keys -> exists r m g,
-     New r m g /\ app_subst_item th (A.rkey_of outputs key) = A.rkey Cr r m).
+(* SigAgree and ItemsAgree: PublicFamilyAgree's (the agreement a
+   family's run needs, shared by the chain and the family application). *)
+Notation SigAgree := PublicFamilyAgree.SigAgree.
+Notation ItemsAgree := PublicFamilyAgree.ItemsAgree.
 
 (* The caller's result C' (at θ) and a family's own result (outputs, at
    its inputs Ch0) agree: C' adds to C's provisions methods only (news;
@@ -751,23 +734,40 @@ Proof.
     code sms gfx Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e name mach x Inm Lang Fx Ix).
 Qed.
 
-(* PREMISE (static correspondence, T15/T16), ChainResultAgrees for a
-   family application: a platform family u applied at θ in a context C
-   (FamilyApplication, read in the family context) provides Cr, whose new
-   methods (keyed in ks) agree with u's own items (ItemsAgree, read
-   canonically in the family context). It is ResultAgree without the
-   provisions' shape, which family_news gives. The substitution lemma
-   PublicOutputSubst.provide_result_rel relates the two readings, but the
-   family context's table and u's inputs have different domains (DomGap),
-   and the run-time keys' instantiations need their own argument. *)
-Definition FamilyResultAgrees : Prop := forall C u matching th sm Cr ks,
-  A.FamilyApplication W C u matching th sm Cr ks ->
+(* PREMISE (formation, T29). An extra key of a family context's table
+   (one the family's own inputs lack) that a path names is a type symbol:
+   a context's table keys are type symbols or fresh generations, which no
+   path names (PublicFormation.TysScoped says so of a formed context; the
+   family application's context C need not be formed here). With it, the
+   family's result read at its own inputs and at the family context agree
+   (PublicFamilyAgree.family_items_agree): a receiver is a table key on
+   both sides or on neither. *)
+Definition FamilyKeysTyped : Prop := forall C u matching th sm Cr ks,
+  A.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
+  forall q pa x, A.resolve_sym W q pa = Some x -> A.nlook x (A.c_ty (A.family_context C matching)) <> None ->
+  A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
+
+(* The agreement family_platform_ok needs (FamilyResultAgrees, formerly a
+   premise), from FamilyKeysTyped and the family context's idempotent
+   merge. *)
+Lemma family_result_agrees : FamilyKeysTyped -> forall C u matching th sm Cr ks,
+  A.FamilyApplication W C u matching th sm Cr ks -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
   forall code Cu needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
   ItemsAgree (A.family_context C matching) Cr Cu outputs th
     (fun r m g => In (A.mkey r m) ks /\ A.mlook r m (A.c_mths Cr) = Some g) keys.
+Proof.
+  intros KT C u matching th sm Cr ks FA Idem code Cu needs outputs keys bindings (FC & NoOut & PRf & _ & Binds).
+  apply (PublicFamilyAgree.family_items_agree W C u matching th sm Cr ks Cu needs outputs keys FA FC NoOut PRf).
+  - intros key Ik. destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
+    destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).
+    exists r0, m0, a0. split; [reflexivity|]. unfold A.kind_sym. rewrite Dm, Ast. cbn.
+    destruct form; [contradiction|reflexivity|reflexivity].
+  - exact Idem.
+  - exact (KT C u matching th sm Cr ks FA Cu needs FC).
+Qed.
 
 Hypothesis prims_ground : PrimsGroundOk.
-Hypothesis family_agrees : FamilyResultAgrees.
+Hypothesis family_keys : FamilyKeysTyped.
 
 (* FamilyPlatformApplyOk (PublicFamilyStep): a family application of a
    platform family selects u's inputs at θ, runs the code's installs, and
@@ -795,7 +795,8 @@ Proof.
   { destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & gfh & E & _). injection E as _ E _.
     destruct sms'; discriminate. }
   destruct CP as (code' & _ & _ & Mach).
-  pose proof (family_agrees C u matching th sm Cr ks FA code Cu ns outputs keys bindings FD) as [NewSig NewAll].
+  pose proof (family_result_agrees family_keys C u matching th sm Cr ks FA
+    ltac:(intros t; unfold A.canon; rewrite Es; exact (Idem t)) code Cu ns outputs keys bindings FD) as [NewSig NewAll].
   intros rest. rewrite S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
