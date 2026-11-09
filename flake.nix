@@ -666,7 +666,7 @@
         };
         # For working on bootstrap/: `dune build` there and
         # `bootstrap/check.sh` need nothing else.
-        bootstrap = pkgs.mkShellNoCC { buildInputs = (oracleTools pkgs).inputs ++ [ pkgs.python3 ]; };
+        bootstrap = pkgs.mkShellNoCC { buildInputs = (oracleTools pkgs).inputs; };
       });
       overlays.default = final: prev: {
         moss = self.packages.${prev.stdenv.hostPlatform.system}.default;

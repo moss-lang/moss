@@ -140,24 +140,6 @@ block ongoing development.
 Use the full audit at integration checkpoints. Keep expensive stable
 computations and reusable witnesses separate from frequently edited proofs.
 
-When changing shared definitions, check selected downstream proofs against
-statement-only dependencies for faster development feedback:
-
-```sh
-nix develop .#bootstrap -c python3 bootstrap/quick-check.py FrontEnd
-```
-
-This runs the selected module's proofs with Rocq's `-vok`. Dependencies are
-built with `-vos`, which checks their definitions and statements while skipping
-opaque proofs. The cache lives in `scratch/rocq-quick`, separate from Dune's
-fully checked artifacts, and invalidates on source, dependency and toolchain
-changes. Use `bootstrap/check.sh` to validate all proofs and assumptions before
-integration. To check the quick workflow's failure and cache handling:
-
-```sh
-nix develop .#bootstrap -c python3 -m unittest discover -s bootstrap/tests
-```
-
 When a proof is slow, measure both tactic construction and kernel checking;
 replace repeated search with named lemmas where it helps. Generic tactics
 should inspect the relevant hypothesis, such as `discriminate H`, rather
