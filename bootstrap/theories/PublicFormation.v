@@ -833,7 +833,7 @@ Proof.
   - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
   - intros g t Iq. split.
     + exact (merge_formed σ (es ++ er) MGM (Forall_impl _ entry_ok_formed Ok) g t Iq).
-    + destruct MGM as [_ [_ [_ Dom]]]. intros y Iy. exact (All y (proj2 (Dom g t Iq) y Iy)).
+    + destruct MGM as [_ [_ [_ [Dom _]]]]. intros y Iy. exact (All y (proj2 (Dom g t Iq) y Iy)).
 Qed.
 
 (* The context a functor's argument telescope forms is formed. *)
@@ -853,7 +853,7 @@ Proof.
   - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
   - intros g t Iq. split.
     + exact (merge_formed σ es MGM (Forall_impl _ entry_ok_formed OkT) g t Iq).
-    + destruct MGM as [_ [_ [_ Dom]]]. intros y Iy. exact (Sub y (EsT y (proj2 (Dom g t Iq) y Iy))).
+    + destruct MGM as [_ [_ [_ [Dom _]]]]. intros y Iy. exact (Sub y (EsT y (proj2 (Dom g t Iq) y Iy))).
 Qed.
 
 End Initial.

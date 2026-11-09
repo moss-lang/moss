@@ -3011,7 +3011,9 @@ Definition entry_sig (s : subst) (e : entry) : option fsig :=
    one key (read under σ) have one signature under σ.  The merge of a
    telescope is a most general such σ that is idempotent (no cyclic merge:
    a finding of the mechanization, [D43] calculus note), mapping only
-   generations of the telescope.  A merge identifying two distinct
+   generations of the telescope, each to one value (as the elaborator's
+   union-find does; a shadowed second value would never be read, but
+   would still sit in the context's substitution).  A merge identifying two distinct
    concrete heads has no unifier, so the telescope does not form. *)
 Definition Unifies (s : subst) (es : list entry) : Prop :=
   forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
@@ -3033,7 +3035,9 @@ Definition MostGeneralMerge (s : subst) (es : list entry) : Prop :=
   (forall t, app_subst s (app_subst s t) = app_subst s t) /\
   (forall s', Unifies s' es -> (forall t, app_subst s' (app_subst s t) = app_subst s' t)) /\
   (* σ maps only generations of the telescope, to types over them *)
-  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)).
+  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)) /\
+  (* σ is a function: no generation has a second, shadowed value *)
+  (forall g t, In (g, t) s -> lookup_subst g s = Some t).
 
 (* The context a merged telescope makes: its tables are the entries read
    under σ.  Instantiations keep None for a requirement not in force where
