@@ -39,6 +39,25 @@ Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Pri
    PublicPrimitiveSafety. *)
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 
+(* public_safety is CORRECT.safety, the statement Audit.v gives, for the
+   same Public instance: the statement below is read off CORRECT's
+   `safety` (abstracted over its `prelude`), not written out again, so
+   changing public_safety's statement alone, or Audit.v's alone, fails
+   here. *)
+Module SafetyIsCorrect (C : PublicPublic.CORRECT).
+Definition statement : Prop.
+Proof.
+  let t := type of C.safety in
+  lazymatch eval pattern C.prelude in t with ?f _ => exact (forall prelude, f prelude) end.
+Defined.
+Goal True.
+  let s := eval cbv beta delta [statement] in statement in
+  let t := type of PublicEntryTop.public_safety in
+  constr_eq s t; exact I.
+Qed.
+Definition public_safety_is_safety : statement := PublicEntryTop.public_safety.
+End SafetyIsCorrect.
+
 (* One dependency traversal computes the union for every root below. The
    roots are a list, not a tuple: a nested pair repeats the types of all
    the roots before it, so a tuple of n roots has a term quadratic in n.
