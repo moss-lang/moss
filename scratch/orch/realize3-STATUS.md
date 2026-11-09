@@ -170,3 +170,83 @@ Candidate repairs (for the coordinator; neither is made):
   (FamilyCopyRealizeOk) is not affected by this hole. It still needs step 3's
   CopyChain induction with PublicCopyFresh.copy_outputs_read, and the run of
   the root.
+
+## Round 2 progress and handoff (steps 2-4 not proved)
+
+I stopped here to keep a clean, compiling handoff. My context is large after
+the Audit change, the corpus run and the assessment. `safety_obligations`
+still assumes CN.ChainRealizeOk and FS.FamilyCopyRealizeOk. Commits:
+fc75de7 (Audit), 52af307 (status), and earlier 2d5567d (run fact).
+
+### What the new link_site makes simpler for step 2
+
+The site is `Ls := A.link_site Cg Cb outs' gen` and the renaming is
+`ren := A.link_renaming outs' gen`, the identity on the roles. Then:
+- **Promised types.** `read_rename Ls ren` sends gen t to `canon Cb m_t`,
+  where m_t is Cb's meaning of t (OutM gives it). It leaves every other
+  symbol alone.
+- **Receivers.** at_site reads gen t at Cb (m_t) and every declared
+  symbol y at `c_ty Cg`.
+  - Roles are Fresh and Cg's keys are declared
+    (PublicCopyFresh.functx_keys_declared). So for y ∈ dom Cu ∩ dom Cg the
+    table entry is `Cg.ty y` even when y is also an output of F. The
+    output-input case of round 1 is gone.
+- **The pointwise target.** For a formal type t (gens in dom Cu ∪ roles,
+  PublicCopyFresh.result_gens), define N by:
+  - N y = ground d (θ y) for y ∈ dom Cu;
+  - N (gen t) = read_meaning d3 t.
+
+  Then:
+  - ground d3 (rr t) = N t. Inputs: LRn.link_run_fact / link_input_meaning
+    (needs the dom-Cu gens ⊆ dom Cg, "R2"). Roles: AliasOk Cb d3 (in Pre3's
+    CtxLocals) and Absorbs Cb d3.
+  - ground env' (s1 t) = N t, with s1 = θ ++ map (gen t ↦ TAbs (gensof t)).
+    This uses LR.dest_scope (gensof t avoids C's scope), result_of (first in
+    append_environment), and gensof injective on outs (AppPremises).
+  - N ∘ σ_Cu = N, by th_sigma-style reasoning (Satisfies' merges, as
+    PublicFamilyAgree.th_sigma).
+- **Relating the readings.** Relate the caller's entries (tm2 =
+  output_type_map C outs (TAbs ∘ gensof)) to the formal ones (tm1 =
+  output_type_map Cu outs (TAbs ∘ gen)) at s1 / s2 = c_sub C:
+  - vals, fns and functors: PublicOutputSubst.output_entries_rel;
+  - methods: PublicFamilyAgree.family_entries_rel (generic in u, s1, s2,
+    K). Its K = dom Cu ++ map gen outs. Its DomT second half is
+    CF.app_keys_typed. Its ResultMentions ⊆ dom Cu, as
+    FamilyAgree.mentions_dom, using b = None since F is abstract.
+  - Positions: the last caller position for a key is also the last formal
+    position for the related key (the caller key is a function of the
+    formal key). Then use PublicCallerKeys.selection_at / selection_last,
+    as in family_link_new_ok steps 4-5.
+- **R2** (a formal type's dom-Cu gens lie in dom Cg). Generalize
+  family_link_new_ok step 6, still inline, into a lemma over any kind of
+  provision:
+  - Use PublicLinkScope.items_scope (scope grows only by made) and
+    LinkData's made clause (made avoids dom Cu).
+  - Functor provisions are not covered by provision_refines (no signature),
+    so their fixed readings need their own scope argument, through
+    BodyReal's gfx clause and the body's CxScoped.
+- **EnvOkOn's functor clause** also needs FixedMeans' first half for C''s
+  functor entry (every Fixed input has a reading). Take it from
+  FormedCx/CxScoped of C' (PublicFormation.apply_abstract_formed,
+  PublicScoping.apply_abstract_cxscoped).
+
+### Suggested structure
+
+- New file PublicChainRealize.v, module `ChainRealize (Prims) (I0)` over
+  PublicFamilyLink.FamilyLink's CF.CN, so the instances match PublicEntry.
+- `chain_realize_refl`: the CCRefl case.
+- `ChainRealizeCopyOk`: ChainRealizeOk with the chain built by CCStep. This
+  narrows the obligation, as callerkeys2 did with ChainForwardCopySigs.
+- `chain_realize_ok : ChainRealizeCopyOk -> CN.ChainRealizeOk`.
+- PublicEntry then assumes ChainRealizeCopyOk in its place.
+
+### Step 3 and step 4
+
+Unchanged from realize2-STATUS.md:
+- Step 3 is the CopyChain induction with PublicCopyFresh.copy_outputs_read
+  (tau = the application's meanings, rho0 = d's meanings at the copy
+  site).
+- Step 4 is the family version (outs = []). Its root is a linked root
+  (family_link_new_ok's argument) or a platform root (family_platform_ok),
+  and it must also run the root's code (the apply_functor clause of
+  FamilyCopyRealizeOk).
