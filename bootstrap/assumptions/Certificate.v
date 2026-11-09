@@ -15,7 +15,8 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
-  PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree.
+  PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
+  PublicChainCore.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -28,6 +29,7 @@ Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims Publi
 Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.Prims PublicInterp.
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
 Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
+Module PublicChainCoreI := PublicChainCore.ChainCore PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
@@ -129,6 +131,11 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @PublicLinkRes.chain_results_scoped,
+  @PublicChainCoreI.chain_core_ok,
+  @PublicChainCoreI.chain_results_of_new,
+  @PublicChainCoreI.family_link_results_ok,
+  @PublicChainCoreI.body_provides,
+  @PublicChainCoreI.bindings_writes,
   @PublicLinkRes.pre_junk_meaning,
   @NM.PublicGenerationFacts.result_environment_shadows_occupied,
   @NM.PublicOutputSubst.output_entries_rel,
