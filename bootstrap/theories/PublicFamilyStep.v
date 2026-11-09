@@ -4,7 +4,7 @@
    the family u at its family context `family_context C matching`, with no
    outputs and no new generations. Its run is the abstract application's
    run (PublicBodySlice.app_step): the closure found for u is linked (run
-   its body: link_entry, refile_run), a copy, or a platform family. What
+   its body: link_entry, chain_run), a copy, or a platform family. What
    it installs (FamilyResultOk) is a set of provisions, no type meanings
    and no aliases, under the run-time keys of the family's new method
    provisions, each callable at its signature.
@@ -24,7 +24,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.
-From NM Require PublicFormation.
+From NM Require PublicFormation PublicCopyApply.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -216,7 +216,8 @@ Proof.
 Qed.
 
 Module FamilyStep (Prims : PRIMITIVES) (I0 : INTERP Prims).
-Module BS := PublicBodySlice.BodySlice Prims I0.
+Module CopyA := PublicCopyApply.CopyApply Prims I0.
+Module BS := CopyA.S.
 Module I := BS.I.
 
 Section Fam.
@@ -227,14 +228,13 @@ Variable state_ok : heap_types -> Prims.mstate -> Prop.
 (* The slice's premises the abstract application uses. *)
 Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
-Hypothesis family_sig_ok : PublicFormation.FamilySigOk W.
+Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
 Hypothesis link_merges : BS.LinkMergesOk W Prog.
 Hypothesis bind_merges : BS.BindMergesOk W Prog.
 Hypothesis captured_in_force : BS.CapturedInForceOk.
-Hypothesis refile_run : BS.RefileRunOk W Prog argv read state_ok.
 Hypothesis link_results : BS.LinkResultsOk W Prog argv read state_ok.
 Hypothesis copy_apply : BS.CopyApplyOk W Prog argv read state_ok.
 Hypothesis platform_apply : BS.PlatformApplyOk W Prog argv read state_ok.
@@ -285,13 +285,12 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   BS.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (BS.linked_needs ns nsg)) = Some d2 ->
-  I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st
-    (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr' k0))) ks')) binds0)
-    = inl (d3, g3, st3) ->
+  I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (inst_smap (result_substitution th [])
-      (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr' k0)) ks')%list) = Some dr /\
+    select_provisions d3 (result_smap (result_substitution th [])
+      (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr' k0)) ks')%list
+      (BS.link_sources Cb outs' gen Cr' ks')) = Some dr /\
     FamilyNewOk rr Cr ks d dr H3.
 
 (* HYPOTHESIS (T15), CopyApplyOk and PlatformApplyOk at a family
@@ -404,15 +403,21 @@ Proof.
     - apply BS.alias_self; [reflexivity|exact (proj1 RealG)|].
       destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
   pose proof (BS.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
-    link_merges bind_merges captured_in_force refile_run link_results copy_apply platform_apply k Bel (S j1)) as Ap.
+    link_merges bind_merges captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
   destruct (BS.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
     bind_merges captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply BS.bindsof_fold in BO. subst binds0.
   rewrite BS.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
-  cbn [fc_bindings fc_outputs]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
-  destruct (refile_run (S j1) k u gg h dg n0 ps0 a0 rs bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs _ LD Ch
-    rr j1 de H st Lr ltac:(lia) ltac:(lia) PreB) as [[d3 [g3 [st3 [H3 [E3 [Pre3 Run]]]]]]|[res [Run [NN Out]]]].
-  - rewrite Run.
+  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
+  destruct (BS.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
+    as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
+    [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
+  - destruct j' as [|j'].
+    { rewrite Run0. right. exists (I.with_g g (I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
+      exact (BS.body_stop W Prog argv read state_ok Fg de H [] TUnit False False F d H types g (I.Evaluation OutOfFuel g3 st3)
+        Ret Loop ltac:(intros v E; discriminate) Logic.I). }
+    assert (Run : I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
+    rewrite Run.
     destruct (family_link_results C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n0 ps0 a0 rs bodies
       Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
       as [dr [Sdr New]].

@@ -1490,7 +1490,11 @@ Record functor_code := FunctorCode {
   (* the inputs each application supplies (the rest are captured) *)
   fc_linked : list tsym;
   fc_outputs : tele;
-  fc_bindings : list binding
+  fc_bindings : list binding;
+  (* where the body left each result item: a result key (as the functor
+     declares it) paired with the body's own key for it; an item not
+     listed is read under its own key *)
+  fc_sources : list (item * item)
 }.
 Record program : Type := Program {
   program_functions : list (nat * expr);
@@ -1607,6 +1611,16 @@ Inductive signal : Type :=
    item read at θ — the key its scope refers to it by. *)
 Definition inst_smap (th : subst) (D : tele) : smap :=
   map (fun i => (app_subst_item th i, i)) (filter (fun i => negb (is_ty_item i)) D).
+(* A result item is read from the body under the key its source names
+   (fc_sources), by default its own: a linked body binds a result method
+   under its own receiver, not under F's spelling of it. *)
+Fixpoint source_key (sources : list (item * item)) (i : item) : item :=
+  match sources with
+  | [] => i
+  | (k, s) :: rest => if item_eqb i k then s else source_key rest i
+  end.
+Definition result_smap (th : subst) (D : tele) (sources : list (item * item)) : smap :=
+  map (fun q => (fst q, source_key sources (snd q))) (inst_smap th D).
 
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
@@ -2001,7 +2015,7 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (inst_smap (result_substitution th outputs) Dr) with
+                          match select_provisions d3 (result_smap (result_substitution th outputs) Dr (fc_sources code)) with
                           | Some dr => match result_environment d outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
@@ -3011,7 +3025,9 @@ Definition entry_sig (s : subst) (e : entry) : option fsig :=
    one key (read under σ) have one signature under σ.  The merge of a
    telescope is a most general such σ that is idempotent (no cyclic merge:
    a finding of the mechanization, [D43] calculus note), mapping only
-   generations of the telescope.  A merge identifying two distinct
+   generations of the telescope, each to one value (as the elaborator's
+   union-find does; a shadowed second value would never be read, but
+   would still sit in the context's substitution).  A merge identifying two distinct
    concrete heads has no unifier, so the telescope does not form. *)
 Definition Unifies (s : subst) (es : list entry) : Prop :=
   forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
@@ -3033,7 +3049,9 @@ Definition MostGeneralMerge (s : subst) (es : list entry) : Prop :=
   (forall t, app_subst s (app_subst s t) = app_subst s t) /\
   (forall s', Unifies s' es -> (forall t, app_subst s' (app_subst s t) = app_subst s' t)) /\
   (* σ maps only generations of the telescope, to types over them *)
-  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)).
+  (forall g t, In (g, t) s -> In g (flat_map entry_gens es) /\ incl (gens t) (flat_map entry_gens es)) /\
+  (* σ is a function: no generation has a second, shadowed value *)
+  (forall g t, In (g, t) s -> lookup_subst g s = Some t).
 
 (* The context a merged telescope makes: its tables are the entries read
    under σ.  Instantiations keep None for a requirement not in force where
@@ -3757,6 +3775,21 @@ Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
 
+(* [D78] (the oracle's copy_outputs_match): read at F's inputs with the
+   same fresh output roles, H's result gives each key of F's result the
+   provision F's result gives it (each key's last setter), F's fixed
+   inputs read as sigma says (as they are in force where F is bound). *)
+Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop :=
+  exists outs gen Cr ks Cr' ks',
+    (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs) /\
+    (forall t, In t outs -> Fresh W (gen t)) /\
+    ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
+    ProvideResult W h Cu (fun t => TAbs (gen t)) Cr' ks' /\
+    (forall k, In k ks -> exists p p',
+       ilook (provision_id k) (c_provisions Cr) = Some p /\
+       ilook (provision_id k) (c_provisions Cr') = Some p' /\
+       provision_subst sigma p = provision_subst sigma p').
+
 (* Restore fresh output generations to their declared symbols when filing
    the reusable code body. Input meanings remain those of the target. *)
 Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
@@ -3774,19 +3807,6 @@ Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
     | BValue _ _ => False
     | BApply family _ _ _ => Family W family
     | _ => True end) bindings.
-
-(* a method bind, filed also under each key it answers as another spelling
-   (pairs: the body's key, the key as declared) *)
-Definition refile (pairs : list (item * item)) (b : binding) : list binding :=
-  match b with
-  | BMethod t m th f types sm =>
-      b :: flat_map (fun p => match p with
-                              | (IMth t' m' _, IMth t0 _ th0) =>
-                                  if ty_eqb t t' && Nat.eqb m m' && negb (item_eqb (IMth t0 m th0) (IMth t m th))
-                                  then [BMethod t0 m th0 f types sm] else []
-                              | _ => [] end) pairs
-  | _ => [b]
-  end.
 
 Inductive BindsOf : expr -> list binding -> Prop :=
 | BOEnd : BindsOf EUnit []
@@ -4285,6 +4305,11 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x tx, nlook x (c_ty Ch) = Some tx -> canon Cu (TAbs x) = canon Cu tx) ->
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
+    (* and H's result reads as F's (the oracle: output interpretation, D78) *)
+    CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu ->
+    (* H's inputs, implicit ones too, are among F's (the oracle's input
+       interpretation check fails on one F lacks) *)
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are
@@ -4408,7 +4433,7 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
    that applications supply; 3d: pins may not rebind M(F); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
 with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds,
+| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
     (* 3b: a captured item (value, fn, method or functor) may mention fixed
@@ -4439,16 +4464,16 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
-    (* a result method item is filed under its key as F declares it too
-       (receiver and θ in F's terms, note 28) *)
-    binds = flat_map (refile (map (fun k =>
-      (at_site Cb (output_renaming outs gen k),
-       output_renaming outs gen (rkey_of Cr k))) ks)) binds0 ->
-    (Family W u -> FamilyBindings W binds) ->
+    (Family W u -> FamilyBindings W binds0) ->
     Fresh W h ->
+    (* a result item, keyed as F declares it (receiver and θ in F's terms,
+       note 28), is read where the body bound it: a method under the
+       body's runtime key for its receiver read in the body *)
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
-      (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds) ->
+      (map ITy outs ++ map (fun k => output_renaming outs gen (rkey_of Cr k)) ks) binds0
+      (map (fun k => (output_renaming outs gen (rkey_of Cr k),
+                      rkey_of Cb (at_site Cb (output_renaming outs gen k)))) ks)) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
@@ -4639,17 +4664,35 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
     ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
-    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) keys bindings) /\
+    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) keys bindings []) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive key operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation) keys bindings.
+
+(* The handle tags carry a raw machine handle (Ref a StructRef, Array an
+   ArrayRef, Addr an I32), which the primitives read as that machine value.
+   A platform fn's signature must read that requirement as itself: a
+   context item can bracket it (`i64_store[I32 = Addr[I32 = I64]]`), which
+   would type a handle whose payload is not the raw machine type. *)
+Definition raw_handles : list (string * string) :=
+  [("Ref", "StructRef"); ("Array", "ArrayRef"); ("Addr", "I32")].
+Definition RawHandleRead (W : world) (t : ty) : Prop :=
+  forall name handle symbol args, In (name, handle) raw_handles ->
+    LangSym W "wasm" NSName name symbol -> t = TNom symbol args ->
+    forall raw, LangSym W "wasm" NSName handle raw -> nlook raw args = Some (TAbs raw).
+Definition HandlesRead (W : world) (C : cx) (key : item) : Prop :=
+  match key with
+  | IFn f => forall signature, nlook f (c_fns C) = Some signature ->
+      Forall (RawHandleRead W) (sg_ret signature :: sg_params signature)
+  | _ => True
+  end.
 
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
-  | IFn _, PrimitiveClosure operation None => AtKey W C key operation
+  | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
   | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) => Family W P source code
   | _, _ => False
   end.

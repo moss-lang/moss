@@ -14,7 +14,8 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation PublicFamilyStep.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig PublicCopyApply
+  PublicFamilyStep.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -24,6 +25,7 @@ Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims Publ
 Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
+Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
@@ -96,9 +98,16 @@ Definition certificate_roots :=
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
   @PublicFamily.family_step_ok,
+  @PublicCopy.copy_apply_ok,
+  @PublicCopy.link_results_of_chain,
+  @PublicCopy.platform_apply_of_chain,
   @PublicEntryTop.entry_safe,
   @PublicEntryTop.safety_public,
   @PublicEntryTop.safety_obligations,
+  @PublicEntryTop.handles_formed,
+  @NM.PublicWorldFormation.merge_formed_of,
+  @NM.PublicWorldFormation.mentions_typed_of,
+  @NM.PublicFamilySig.family_sig_ok_readoff,
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,

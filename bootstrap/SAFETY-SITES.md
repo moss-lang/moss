@@ -25,14 +25,16 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
-obligations (the formation premises, `HandleFormed`, and the functor and
-family obligations `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
+obligations (the functor and family obligations `LinkMergesOk`, `BindMergesOk`,
+`CapturedInForceOk`, and `ChainResultsOk`,
+`ChainPlatformOk` from [PublicCopyApply.v](theories/PublicCopyApply.v),
+which prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `FamilyStepOk`, proved in
 [PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`,
 `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`; and the slice's
 `FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off
-`ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
+`ElaboratesIn` and `Linked`. The formation premises and `HandleFormed` are
+proved (PublicWorldFormation, PublicFamilySig, `handles_formed`). It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
 
 - the slice's safety at every fuel, with the reference host's state
@@ -97,7 +99,7 @@ the local store. *C* and *F* are the static context and frame.
 | `apply_functor` | `e_fun` (13), `e_nobody` (4) | no closure for `IFun u`, or no code | `BApplyAbstract`, `PrFamily`/`Demand` (`apply_expression`) | `nlook u (c_funs C)`, plus closure provenance (`LinkBody`'s `funbody_of`, or `PEFun`/`Platform.Family`). |
 | `apply_functor` | `e_compose` (3) | input `sm` selection fails | same | `Satisfies C Cu ns sm`. |
 | `apply_functor` | `e_chain` (8) | `adapt_provisions` along a copy chain fails | `BFunCopy` smaps over `incl nsh nsu` | Copy-chain provenance: each `sms` step selects keys provided by the previous step (T31, "link/copy-chain provenance"). |
-| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every refiled result key (T15/T16). |
+| `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every result item at its source key (`fc_sources`, T15/T16). |
 | `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable or its destination is occupied | `BApplyAbstract` `FreshFor` and the output clauses | Fresh destinations are absent from the caller's runtime `type_meanings` (T16). Needs runtime generations ⊆ static `context_gens`. |
 | primitive call | `e_missing_primitive` (15) | `supports interface p = false` | `BPrimitive`, platform entries, `Platform.Family` bodies | `Compatible` requires every operation in `required_primitives`. Invariant: every runtime `PrimitiveClosure` came from program code or the initial environment. |
 | primitive result | interface laws | ill-shaped arguments, or a missing `gc_pre` | `AtKey`/`PrimitiveSignature`, `MethodPrimitive` | Arguments typed at the signature yield `value_shape` (T11); GC arguments satisfy `gc_pre` under the ghost heap (T17). |
@@ -107,6 +109,37 @@ the local store. *C* and *F* are the static context and frame.
 `ERecord` and `eval_arguments` only propagate.
 
 ## Observations so far
+
+- **A merge could carry a shadowed, unformed pair (fixed).**
+  `MostGeneralMerge` constrained σ only through `app_subst`. A second pair
+  for a generation is never read, but it stays in the context's `c_sub`,
+  and formation (`cf_sub`) quantifies over every pair. So
+  `PublicFormation.MergeFormed` was false by definition. Example:
+  `s = [(g, TAbs g); (g, TUnion [TAbs g])]` merges `[NTy g]`.
+  **Decided:** σ is a function (`In (g, t) σ -> lookup_subst g σ = Some t`),
+  as the elaborator's union-find σ is. MergeFormed is now proved
+  (PublicWorldFormation.merge_formed_of): most generality alone forces σ's
+  values to be formed, by probing σ with a marking unifier. MentionsTyped is
+  proved from WorldOf (mentions_typed_of). Details are in
+  scratch/orch/worldform-AUDIT.md.
+- **Counterexample: a platform fn could read its raw handle as another type (fixed).**
+  [handle-rebind.moss](examples/handle-rebind.moss):
+  `context Store = ..., i64_store[I32 = Addr[I32 = I64]]` gives main a
+  platform i64_store at an Addr whose raw handle reads as I64. That is still
+  a Platform signature for PI64Store (prim_msig). The oracle rejects the
+  program (D20/D62 assumed-requirement coherence). Native accepts it, since
+  main never calls i64_store.
+  **Decided:** `Platform.Entry` asks each platform fn's signature to read
+  its raw handles as themselves (`HandlesRead`), so `HandleFormed` is
+  proved (PublicEntry.handles_formed).
+- **Counterexample: FamilySigOk was false as stated.**
+  [family-bracket-leaf.moss](examples/family-bracket-leaf.moss) is accepted
+  by both implementations. A family's context leaf `Ctx[X = Foo]` carries a
+  P(F) symbol into a signature that the key does not determine. A
+  FamilyApplication whose matching is not read off the key then gives a
+  non-ok signature. Every use already has FamilyReadOff, so the hypothesis
+  is now `FamilySigReadOffOk`, proved in
+  PublicFamilySig.family_sig_ok_readoff. Audit is unchanged.
 
 - **Counterexample: a record pattern may bind one name twice.**
   `FieldPats` does not require its bound names to be distinct. In
@@ -400,6 +433,43 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
+- **Counterexample: a copy whose result reads differently (fixed).**
+  `BFunCopy` compared results only leaf by leaf (`SameResult`). In
+  [copy-output-order.moss](examples/copy-output-order.moss) F lists
+  `out[P=U], out[P=V]` and H `out[P=V], out[P=U]`: the same leaves, but
+  the last setter types `out` as V after `bind F;` and as U for H. Applying
+  the copy runs G's body, which provides a U, so the caller's match on V is
+  stuck. The oracle rejects the copy ("effective output interpretation
+  differs (D78)", `copy_outputs_match`), and so does native (test
+  `copied_functors_compare_final_output_interpretations`). `BFunCopy` now
+  requires `CopyOutputs`: read in F's context with the same fresh output
+  roles, H's result gives each of F's keys F's provision, F's fixed inputs
+  read as they are in force. Details and the remaining differences from
+  the oracle's check: scratch/orch/copy-AUDIT.md.
+- **A copy's source takes no input its target lacks (now in Audit).**
+  `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
+  inputs (types only H's result mentions). An application of F reads its
+  root body's linked inputs from θ, which covers only F's inputs.
+  `BFunCopy` now requires H's type table to be among F's, as the oracle's
+  input interpretation check does (it fails on an input of H that F
+  lacks). Details: scratch/orch/copy-AUDIT.md.
+- **Refile shadowed a stale provision (now in Audit: no refile).**
+  `LinkBody` used to file each result method again under F's key right
+  after its bind (`refile`). F's key spells an output T as `TAbs T`; when
+  T is also an input of G, the body can bind `T.out` before rebinding T,
+  and that stale provision has the same runtime key.
+  [examples/refile-stale-shadow.moss](examples/refile-stale-shadow.moss)
+  binds `T.out`, then `Int.out`, then `T = Int`, and calls `seed.out()`
+  in between: the reference interpreter on the oracle's program stops
+  `Stuck` (`Int.out` on a Bool), native prints 7, so `RefileRunOk` was
+  false. Now, as native behaves, a linked body runs only its own binds
+  (`binds0`), and `functor_code` names each result item's source key
+  (`fc_sources`, default the item itself): the application selects
+  `result_smap θ' Dr sources`, reading F's key for a result method from
+  the body's runtime key `rkey_of Cb (at_site Cb (output_renaming outs gen k))`.
+  `RefileRunOk` and `refile_run` are gone; `app_step` runs the body with
+  `chain_run`. The oracle still refiles at bind time (task E31).
+  Details in scratch/orch/refile-AUDIT.md.
 
 - **Counterexample: an output type left its block (fixed).** `BApplyAbstract`
   returned only the fresh generations (`newgens`) as made. An output not
@@ -448,15 +518,26 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `family_step` | one family application, as a binding, its matching read off (`FamilyReadOff`) a receiver that is ok and in the code's scope: it completes with the family's provisions added, the code's table formed and realized, and every context among the code's provisions that agrees with the family at a shared run-time key (`FamilyCoherent`) still realized; or it stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it. Proved (`family_step_ok`, [PublicFamilyStep.v](theories/PublicFamilyStep.v)) from `refile_run`, the abstract application machinery and family versions of the application obligations (`FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`) | T15, T16 |
+| `family_step` | one family application, as a binding, its matching read off (`FamilyReadOff`) a receiver that is ok and in the code's scope: it completes with the family's provisions added, the code's table formed and realized, and every context among the code's provisions that agrees with the family at a shared run-time key (`FamilyCoherent`) still realized; or it stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it. Proved (`family_step_ok`, [PublicFamilyStep.v](theories/PublicFamilyStep.v)) from the abstract application machinery (`chain_run`) and family versions of the application obligations (`FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`) | T15, T16 |
 | `family_coherent` | the code's formed context agrees with a family applied around it at a shared run-time key (same receiver, method and θ, same signature). It is true of elaborated contexts (both are `SigOf` readings at θ), but `Pre` does not carry that as an invariant | T29 |
 | `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
-| `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
-| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
+| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
+
+`copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
+(`copy_apply_ok`): a closure's derivation is followed down its copy chain
+(`CopyChain`, `chain_entry`), each copy's context realized where its
+target's is (`copy_step_realizes`), to the root. A linked root's body runs
+as in the linked case (`link_entry`, `chain_run`); what it provides at
+the application, and a platform root, are the two obligations read
+through the chain: `ChainResultsOk` (`link_results` with a copy chain in
+between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
+likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
+it fixes the caller's functor to the body's own (its `LinkData`, closure
+shape and `AppPremises` all name u), and a copy's caller has neither.
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
-| `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigOk`); `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
+| `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
 

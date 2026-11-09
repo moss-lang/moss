@@ -2,6 +2,31 @@
 
 ## Changes to other obligations (read first)
 
+### Final D78 change (for the results agent's `MadeFor`)
+
+Audit `BApplyAbstract`, as merged with `safety`:
+- The bind item's `made` list is `map gensof outs`: every output
+  destination, fresh or installed as itself.
+- The frame is still `with_fresh F newgens`, and `FreshFor W F C newgens`
+  is unchanged.
+- The outputs premise reads:
+
+      (forall t, FunOutputs W u t ->
+         (nlook t (c_ty C) = None /\ gensof t = t /\
+            ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+                    (match fr_this F with Some r => gens r | None => [] end))) \/
+         (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens))
+
+  That is, an output installed as itself must not occur in the frame's
+  return or receiver type. `app_step` needs this for `FrameAvoids`.
+
+Where the slice and the copy proof use it:
+- `AppPremises`/`AppAt` carry the same premise.
+- `AppAt`'s `BindStep` made list is `map gensof outs`.
+- `LinkResultsOk`/`ChainResultsOk` conclude `MeaningsGrow (map gensof outs) ...`.
+- `CopyApplyOk`, `PlatformApplyOk` and `ChainPlatformOk` conclude
+  `StepOut ... (map gensof outs) ...`.
+
 - **Audit D78** (commit 914cd3c; scratch/orch/family-AUDIT.md):
   `BApplyAbstract`'s made list is now `map gensof outs`. The
   not-in-force output clause also requires that the frame's ret/this types
@@ -177,3 +202,21 @@ I stopped here to report, rather than start these changes.
     established at body entries and preserved by every step, including
     `RefileRunOk`/`LinkResultsOk`/`CopyApplyOk`, which conclude `Pre`.
     Multi-hour.
+
+
+## Merge with safety (ob-worldform, ob-copy, ob-refile)
+
+- `refile_run` is gone. `family_run` runs a linked body with `chain_run`,
+  as `app_step` now does.
+- `FamilyLinkResultsOk` selects the result with
+  `result_smap (result_substitution th []) ... (link_sources ...)` on the
+  unrefiled binds.
+- `FamilyStep` builds on `PublicCopyApply.CopyApply` (`BS := CopyA.S`),
+  so `PublicEntry` uses `FS.CopyA` and `S := CopyA.S`.
+- `ChainResultsOk`/`ChainPlatformOk` use the D78 made list.
+- Unification: `ChainResultsOk`/`ChainPlatformOk` take `S.AppPremises`
+  (a source path to u, `Pre` at the application's own context), which a
+  family application does not have. So the family versions stay separate.
+  A generalization of `AppPremises` to "read at a context Ca with the
+  state's merge and provisions, no path" would serve both. I did not do
+  this within the time box.

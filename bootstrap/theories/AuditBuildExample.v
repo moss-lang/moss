@@ -137,7 +137,7 @@ Proof.
   - split.
     + split; [intros e1 e2 k H;contradiction|]. split.
       * intros. repeat rewrite subst_empty. reflexivity.
-      * split; [intros; rewrite subst_empty; reflexivity|intros g t []].
+      * split; [intros; rewrite subst_empty; reflexivity|split; intros g t []].
     + split; [reflexivity|]. split; [split; [constructor|]; intros k; split; [contradiction|];
         intros [e [Member _]]; contradiction|]. reflexivity.
 Qed.

@@ -2203,7 +2203,8 @@
         "E27",
         "E28",
         "E29",
-        "E30"
+        "E30",
+        "E31"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2793,6 +2794,32 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/captured-merge.moss"
+        ]
+      }
+    },
+    {
+      "id": "E31",
+      "group": "E",
+      "title": "Read linked result methods from the body's keys",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The oracle's linked bodies file each result method as Audit's LinkBody now does: the body runs its own binds only, and the result selection reads each result key (as F declares it) from the body's runtime key for it (fc_sources), so a stale provision under F's spelling of the key is never overwritten inside the body.",
+      "approach": "Replace link_trace_rebinds (which refiles each result method under F's key right after its bind) by result sources in the emitted functor code, as native behaves; update LinkBodySound's link_output_certificate and LinkOutputRefile. bootstrap/examples/refile-stale-shadow.moss gets stuck on the oracle (moss_ref: stuck (XErr 14)) and prints 7 natively.",
+      "sources": [
+        "theories/LinkBodyTrace.v",
+        "theories/LinkBodySound.v",
+        "theories/LinkOutputRefile.v",
+        "theories/Audit.v",
+        "examples/refile-stale-shadow.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The refile obligation (RefileRunOk) was false: the oracle's refile at bind time overwrote a stale provision the body's context still listed, and a later call through it ran Int.out on a Bool. The coordinator chose native's behaviour for Audit.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/refile-stale-shadow.moss"
         ]
       }
     },

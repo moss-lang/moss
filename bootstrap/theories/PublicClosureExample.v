@@ -17,7 +17,7 @@ Module R := C.R.
 Definition captured_handle := VCheckedHandle false (TMachine MI32) 0.
 Definition replacement_handle := VCheckedHandle false (TMachine MI32) 1.
 Definition provider_bindings := [BType 2 (TMachine MI32); BValue 3 (EVal 1)].
-Definition provider_code := FunctorCode [] [] [ITy 2; IVal 3] provider_bindings.
+Definition provider_code := FunctorCode [] [] [ITy 2; IVal 3] provider_bindings [].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some provider_code else None)
   0 0 0 [] (fun _ => None) [(11, CastSpec false 9 None)].
