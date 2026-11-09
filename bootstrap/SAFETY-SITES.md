@@ -26,9 +26,12 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the formation premises, `HandleFormed`, and the functor and
-family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
+family obligations `LinkMergesOk`, `BindMergesOk`,
 `CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
-`PlatformApplyOk`), with the slice's elaboration and link facts read off
+`PlatformApplyOk`, and, for `FamilyStepOk` (proved in
+[PublicFamilyStep.v](theories/PublicFamilyStep.v)), `FamilyLinkResultsOk`,
+`FamilyCopyApplyOk`, `FamilyPlatformApplyOk`, `FamilyFormedOk`,
+`FamilyShadowOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
 
@@ -398,6 +401,36 @@ the local store. *C* and *F* are the static context and frame.
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
 
+- **`FamilyStepOk` is too general (statement gap, open).** It quantifies
+  over every `FamilyApplication` and every realized `C0`, but it does not
+  have the facts that make its conclusion true.
+  (1) `FamilyApplication` constrains the matching only to P(F) symbols.
+  `FamilyReadOff`, which reads the matching off the demanded key, is a
+  premise of `PrFamily`, `FamilyStep` and `LitOpFamily`, not of
+  `FamilyStepOk`. Take a family whose needs do not mention its P(F) symbol
+  T (a platform family, say), matched at `T = TAbs g` for a generation g
+  outside C0's scope. The application completes, but its member's key
+  `IMth (TAbs g) m []` is not `KeysScoped`, so `Pre`'s `Formed` fails at
+  `with_ty C0 Cr`. Even with `FamilyReadOff`, the receivers are scoped in
+  the demand's context C (its table may extend C0's) and not necessarily
+  in C0's, so the restated premise also needs the demanded receiver (an
+  `Ex` type) in C0's scope.
+  (2) `Pre` does not record that C0's method provisions are readings of
+  the declared signature at their instantiation. So C0 may hold a
+  provision for the same receiver, method and θ as a family member, but
+  with another signature. The family's closure then shadows it at the same
+  run-time key, and C0 (as in the keep clause that `family_then` and
+  `demand_gen` use) is no longer realized. For elaborated contexts this
+  looks true (`OIEMeth` and the needs' `IEMth` read `SigOf m` at the
+  receiver, and θ records exactly the requirements the signature mentions,
+  so `sig_rel` should give equal signatures), but `Pre` would have to carry
+  it as an invariant.
+  `PublicFamilyStep.v` proves everything else. `FamilyFormedOk` and
+  `FamilyShadowOk` state exactly these two facts, so a restated
+  `FamilyStepOk` (with `FamilyReadOff`, scoped receivers and a
+  signature-coherence invariant) needs only those parts of the proof
+  changed.
+
 ## Body-safety slice (checked, conditional)
 
 [PublicBodySlice.v](theories/PublicBodySlice.v) proves `safe_all`. For
@@ -416,7 +449,7 @@ hypotheses, each a named remaining obligation:
 
 | Hypothesis | Covers | Task |
 | --- | --- | --- |
-| `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it | T15, T16 |
+| `family_step` | one family application, as a binding: it completes with the family's provisions added and the code's own context still realized (rule 7 keeps members from being bound directly; a member a context lists has the family's signature), or stops. `demand_case`, `family_method_case` and `literal_family_case` are proved from it. Proved (`family_step_ok`, [PublicFamilyStep.v](theories/PublicFamilyStep.v)) from the abstract application machinery and family versions of the application obligations (`FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`), plus two static facts, `FamilyFormedOk` (the result context is formed) and `FamilyShadowOk` (a family provision at the run-time key of one of C0's has its signature). Neither of these holds at `FamilyStepOk`'s generality (see Observations), so `FamilyStepOk` needs restating | T15, T16 |
 | `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
