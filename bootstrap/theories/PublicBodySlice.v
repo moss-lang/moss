@@ -33,7 +33,7 @@ Hypothesis Layouts : Platform.Layouts W.
 (* HYPOTHESES (T29): context formation's own premises (PublicFormation). *)
 Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
-Hypothesis family_sig_ok : PublicFormation.FamilySigOk W.
+Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis Bools : BoolSymbols W Prog.
 
 Definition Absorbs (C : A.cx) (d : environment) : Prop :=

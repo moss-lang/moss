@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicWorldFormation PublicFamilySig.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -97,6 +97,10 @@ Definition certificate_roots :=
   @PublicEntryTop.entry_safe,
   @PublicEntryTop.safety_public,
   @PublicEntryTop.safety_obligations,
+  @PublicEntryTop.handles_formed,
+  @NM.PublicWorldFormation.merge_formed_of,
+  @NM.PublicWorldFormation.mentions_typed_of,
+  @NM.PublicFamilySig.family_sig_ok_readoff,
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,

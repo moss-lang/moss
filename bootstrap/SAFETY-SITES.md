@@ -25,11 +25,11 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
-obligations (the formation premises, `HandleFormed`, and the functor and
-family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
+obligations (the functor and family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
 `CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
 `PlatformApplyOk`), with the slice's elaboration and link facts read off
-`ElaboratesIn` and `Linked`. It goes through `safety_public`, which is
+`ElaboratesIn` and `Linked`. The formation premises and `HandleFormed` are
+proved (PublicWorldFormation, PublicFamilySig, `handles_formed`). It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
 
 - the slice's safety at every fuel, with the reference host's state
@@ -104,6 +104,37 @@ the local store. *C* and *F* are the static context and frame.
 `ERecord` and `eval_arguments` only propagate.
 
 ## Observations so far
+
+- **A merge could carry a shadowed, unformed pair (fixed).**
+  `MostGeneralMerge` constrained σ only through `app_subst`. A second pair
+  for a generation is never read, but it stays in the context's `c_sub`,
+  and formation (`cf_sub`) quantifies over every pair. So
+  `PublicFormation.MergeFormed` was false by definition. Example:
+  `s = [(g, TAbs g); (g, TUnion [TAbs g])]` merges `[NTy g]`.
+  **Decided:** σ is a function (`In (g, t) σ -> lookup_subst g σ = Some t`),
+  as the elaborator's union-find σ is. MergeFormed is now proved
+  (PublicWorldFormation.merge_formed_of): most generality alone forces σ's
+  values to be formed, by probing σ with a marking unifier. MentionsTyped is
+  proved from WorldOf (mentions_typed_of). Details are in
+  scratch/orch/worldform-AUDIT.md.
+- **Counterexample: a platform fn could read its raw handle as another type (fixed).**
+  [handle-rebind.moss](examples/handle-rebind.moss):
+  `context Store = ..., i64_store[I32 = Addr[I32 = I64]]` gives main a
+  platform i64_store at an Addr whose raw handle reads as I64. That is still
+  a Platform signature for PI64Store (prim_msig). The oracle rejects the
+  program (D20/D62 assumed-requirement coherence). Native accepts it, since
+  main never calls i64_store.
+  **Decided:** `Platform.Entry` asks each platform fn's signature to read
+  its raw handles as themselves (`HandlesRead`), so `HandleFormed` is
+  proved (PublicEntry.handles_formed).
+- **Counterexample: FamilySigOk was false as stated.**
+  [family-bracket-leaf.moss](examples/family-bracket-leaf.moss) is accepted
+  by both implementations. A family's context leaf `Ctx[X = Foo]` carries a
+  P(F) symbol into a signature that the key does not determine. A
+  FamilyApplication whose matching is not read off the key then gives a
+  non-ok signature. Every use already has FamilyReadOff, so the hypothesis
+  is now `FamilySigReadOffOk`, proved in
+  PublicFamilySig.family_sig_ok_readoff. Audit is unchanged.
 
 - **Counterexample: a record pattern may bind one name twice.**
   `FieldPats` does not require its bound names to be distinct. In
@@ -422,7 +453,7 @@ hypotheses, each a named remaining obligation:
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
-| `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigOk`); `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
+| `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
 | `Layouts`, `Representations`, `BoolSymbols` | platform layout, cast table and Bool symbols | from `Linked`/`ElaboratesIn` |
 

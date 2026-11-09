@@ -645,8 +645,9 @@ Import A.
    only as a most general idempotent unifier over the telescope's
    generations; it does not say that the merge's values are formed. A most
    general unifier of formed entries should map each generation to a formed
-   type (every node of a value is forced by some formed entry type), but
-   that is a fact of unification theory not proved here. *)
+   type (every node of a value is forced by some formed entry type).
+   Proved from most generality alone in
+   PublicWorldFormation.merge_formed_of. *)
 Definition MergeFormed : Prop := forall s es, MostGeneralMerge s es -> Forall (EntryP (TyFormed W)) es ->
   forall g t, In (g, t) s -> TyFormed W t.
 
@@ -654,7 +655,8 @@ Definition MergeFormed : Prop := forall s es, MostGeneralMerge s es -> Forall (E
    functor, and the fixed inputs main's root context puts in force, are
    symbols its result mentions: type symbols, never tags or units. This
    follows from [WorldOf] (requirements are assumed type symbols, closed
-   through relevance), via the least relevance-closed reading. *)
+   through relevance), via the least relevance-closed reading:
+   PublicWorldFormation.mentions_typed_of. *)
 Definition MentionsTyped : Prop := forall u t, Mentions W u t -> kind_sym W t = Some DKType.
 
 Hypothesis merge_formed : MergeFormed.
@@ -1259,17 +1261,27 @@ Import A.
    unit s is formed. This is [wo_reqs_none] of [WorldOf] (units_bare_of). *)
 Definition UnitsBare : Prop := forall s, kind_sym W s = Some DKUnit -> w_reqs W s = [].
 
-(* HYPOTHESIS (family signatures). A family applied to supply a method at
-   an ok receiver supplies it at an ok signature. [FamilyKeys] makes every
-   P(F) symbol a result item's signature mentions free in its receiver, so
-   the signature reads only what the (ok) receiver reads; the proof needs
-   FreeIn/RecvTy reasoning not done here. *)
+(* Family signatures, as first stated: a family applied to supply a method
+   at an ok receiver supplies it at an ok signature. False as stated (see
+   below); kept for reference, unused. *)
 Definition FamilySigOk : Prop := forall C u matching th sm Cr ks ot m g,
   FamilyApplication W C u matching th sm Cr ks -> FormedCx W C -> TyOk W ot ->
   In (mkey ot m) ks -> mlook ot m (c_mths Cr) = Some g -> SigOk W g.
 
+(* [FamilySigOk] is false as stated: FamilyApplication constrains the
+   matching only to P(F) symbols, and a family whose result is a bracketed
+   context leaf can carry a matching value into a signature its key does
+   not determine (PublicFamilySig.v has the accepted program). The family
+   case of [ex_ok] has the read-off of the matching from the demanded key
+   (FamilyReadOff) in hand, and under it the signature is ok
+   (PublicFamilySig.family_sig_ok_readoff), so that is what is assumed. *)
+Definition FamilySigReadOffOk : Prop := forall C u matching th sm Cr ks ot m g,
+  FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+  FormedCx W C -> TyOk W ot ->
+  In (mkey ot m) ks -> mlook ot m (c_mths Cr) = Some g -> SigOk W g.
+
 Hypothesis units_bare : UnitsBare.
-Hypothesis family_sig_ok : FamilySigOk.
+Hypothesis family_sig_ok : FamilySigReadOffOk.
 
 Lemma units_bare_of : forall b, WorldOf b W -> UnitsBare.
 Proof. intros b Wo s K. apply (@wo_reqs_none b W Wo). right. exact K. Qed.
@@ -1377,7 +1389,7 @@ Proof.
   - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th sm C' ks g xs Ml FAp Ro Ik Of Ml' As];
       intros Fc Ff Ot.
     + exact (proj2 (mths_ok W _ _ _ _ (proj1 Fc) Ml)).
-    + exact (proj2 (family_sig_ok _ _ _ _ _ _ _ ot m g FAp Fc Ot Ik Ml')).
+    + exact (proj2 (family_sig_ok _ _ _ _ _ _ _ ot m g FAp Ro Fc Ot Ik Ml')).
   (* ---- BlkE ---- *)
   - destruct D as [F C ss tl exp x t made Bk Esc Of]; intros Fc Ff Oe.
     exact (blk_ok _ _ _ _ _ _ _ _ Bk Fc Ff Oe).
@@ -1498,7 +1510,7 @@ Proof.
 Qed.
 
 Hypothesis units_bare : UnitsBare W.
-Hypothesis family_sig_ok : FamilySigOk W.
+Hypothesis family_sig_ok : FamilySigReadOffOk W.
 
 (* Corollary 1: elaborated types are formed, also canonically. *)
 Theorem ex_formed' : forall F C a exp x t, Ex W Prog F C a exp x t ->
