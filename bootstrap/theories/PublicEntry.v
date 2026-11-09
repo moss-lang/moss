@@ -142,7 +142,7 @@ Proof.
     destruct (Find (IFn f) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc|p held]; cbn in En; try contradiction.
     destruct held; cbn in En; try contradiction. exists (PrimitiveClosure p None). split; [exact L|].
-    exact (Prims f p g (lookup_entry_some _ _ _ L) Found En).
+    exact (Prims f p g (lookup_entry_some _ _ _ L) Found (proj1 En)).
   - intros r m g Found. destruct (mths_ilook _ r m g KM Found) as [a Il].
     destruct (Find (A.mkey r m) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn in En. contradiction.

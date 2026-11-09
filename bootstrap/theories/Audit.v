@@ -4641,12 +4641,30 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
       binding = BPrimitive key operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation) keys bindings.
 
+(* The handle tags carry a raw machine handle (Ref a StructRef, Array an
+   ArrayRef, Addr an I32), which the primitives read as that machine value.
+   A platform fn's signature must read that requirement as itself: a
+   context item can bracket it (`i64_store[I32 = Addr[I32 = I64]]`), which
+   would type a handle whose payload is not the raw machine type. *)
+Definition raw_handles : list (string * string) :=
+  [("Ref", "StructRef"); ("Array", "ArrayRef"); ("Addr", "I32")].
+Definition RawHandleRead (W : world) (t : ty) : Prop :=
+  forall name handle symbol args, In (name, handle) raw_handles ->
+    LangSym W "wasm" NSName name symbol -> t = TNom symbol args ->
+    forall raw, LangSym W "wasm" NSName handle raw -> nlook raw args = Some (TAbs raw).
+Definition HandlesRead (W : world) (C : cx) (key : item) : Prop :=
+  match key with
+  | IFn f => forall signature, nlook f (c_fns C) = Some signature ->
+      Forall (RawHandleRead W) (sg_ret signature :: sg_params signature)
+  | _ => True
+  end.
+
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
-  | IFn _, PrimitiveClosure operation None => AtKey W C key operation
+  | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
   | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) => Family W P source code
   | _, _ => False
   end.
