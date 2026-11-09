@@ -141,7 +141,6 @@ the local store. *C* and *F* are the static context and frame.
   - Fix: BFunCopy gains `exists n ps a r, ast_of W u = Some (ADFunctor n ps a
     r None)`, carried in `S.CopySite`. It mirrors the oracle's check, so it
     rejects nothing the oracle accepts. See scratch/orch/fwdsigs-AUDIT.md.
-||||||| 01e0647
 - **A linked body may not install an input of F as a kept output (realize2).**
   `CN.ChainRealizeOk` was false for a linked root (linknewpf's m7, made
   observable).
