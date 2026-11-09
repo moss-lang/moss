@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module FL := PublicFamilyLink.FamilyLink M.ReferenceHost M.Reference.
+Module CSg := PublicChainSigs.ChainSigs M.ReferenceHost M.Reference.
+Module FL := CSg.FL.
 Module CF := FL.CF.
 Module CN := CF.CN.
 Module CC := CN.CC.
@@ -649,9 +650,8 @@ Theorem safety_obligations : forall prelude,
      CN.ChainRealizeOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
         ChainForwardSigs from PublicChainFwd.chain_forward_sigs: the empty
-        chain is proved; a chain with a copy is ChainForwardCopySigs, the
-        signature agreement at each position *)
-     CF.ChainForwardCopySigs W Prog argv read so /\
+        chain is proved; a chain with a copy is ChainForwardCopySigs,
+        proved in PublicChainSigs.chain_forward_copy_sigs *)
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok,
         its FamilyLinkNewOk from PublicFamilyLink.family_link_new_ok *)
@@ -666,7 +666,11 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CRz [RAc FCA]].
+    as [CRz FCA].
+  assert (RAc : CF.ChainForwardCopySigs W Prog (M.arguments initial) (M.read_file initial)
+    (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
+    by exact (CSg.chain_forward_copy_sigs W (PublicWorldFormation.merge_formed_of W)
+      (PublicWorldFormation.mentions_typed_of bundle W (proj1 Elab)) Prog _ _ _).
   pose proof (family_coherent_ok W bundle (proj1 Elab)) as FCo.
   pose proof (CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.

@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
-  PublicLinkPins PublicLinkRun.
+  PublicLinkPins PublicLinkRun PublicChainSigs.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -35,6 +35,7 @@ Module PublicLinkRunI := PublicLinkRun.LinkRun PublicClosureExample.Prims Public
 Module PublicChainNewI := PublicChainNew.ChainNew PublicClosureExample.Prims PublicInterp.
 Module PublicChainFwdI := PublicChainFwd.ChainFwd PublicClosureExample.Prims PublicInterp.
 Module PublicFamilyLinkI := PublicFamilyLink.FamilyLink PublicClosureExample.Prims PublicInterp.
+Module PublicChainSigsI := PublicChainSigs.ChainSigs PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
@@ -159,6 +160,11 @@ Definition certificate_roots :=
   @NM.PublicLinkWalk.family_binds_no_dests,
   @NM.PublicLinkScope.items_scope,
   @PublicFamilyLinkI.family_link_new_ok,
+  @PublicChainSigsI.chain_forward_copy_sigs,
+  @PublicChainSigsI.chain_sigs,
+  @NM.PublicChainSigs.pos_last,
+  @NM.PublicChainSigs.result_gens_vals,
+  @NM.PublicChainSigs.entries_rel_kinds,
   @NM.PublicCopyFresh.ground_app_subst,
   @NM.PublicCopyFresh.result_gens,
   @NM.PublicCopyFresh.copy_outputs_read,

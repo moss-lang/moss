@@ -141,7 +141,9 @@ Definition CopySite (u h : nat) (Cu : A.cx) (rm : list nat) (gfx gfh : subst) : 
     gfx = ground_fixed (type_meanings d) fx /\
     A.nlook h (A.c_funs C1) = Some fxh /\ A.FixedAgreement W C1 h /\
     (forall x, A.Fixed W h x -> exists tx, In (x, tx) fxh) /\
-    (forall x tx, In (x, tx) fxh -> lookup_subst x gfh = Some (ground d tx)).
+    (forall x tx, In (x, tx) fxh -> lookup_subst x gfh = Some (ground d tx)) /\
+    (* u is abstract (only an abstract functor is bound) *)
+    (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)).
 
 (* A functor closure is applicable (structurally: its captured functors
    are subterms). ClosureOk n H0 u gfx pv: pv, provided for u with its
@@ -3189,6 +3191,7 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
 (* BFunCopy *)
 Lemma case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
+      (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
       A.nlook h (A.c_funs C) <> None ->
       A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
       
@@ -3204,7 +3207,7 @@ Lemma case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm
       (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BCopyFunctor u h sm rm).
 Proof.
-  intros k _ F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J rr _.
+  intros k _ F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]].
@@ -3230,7 +3233,7 @@ Proof.
     + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc rms rm _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact Same|].
       3: { exists C, fx, fxh, d. split; [exact (proj1 Fmd)|]. split; [exact Abs|]. split; [exact Idem|].
            split; [exact Fx|]. split; [exact CO|]. split; [reflexivity|]. split; [exact Lh|]. split; [exact Agr|].
-           split; [exact Covh|exact Vmh]. }
+           split; [exact Covh|]. split; [exact Vmh|exact Abst]. }
       2: { exists (map (fun q => (fst q, A.canon C (snd q))) fx), (type_meanings d). split; [exact CO|].
            unfold ground_fixed. rewrite map_map. apply map_ext. intros [x tx]. cbn. f_equal. symmetry. exact (Abs tx). }
       intros x Fh. pose proof (FixH x Fh) as Fu. split; [exact Fu|].
@@ -4675,7 +4678,7 @@ Proof.
                   |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App NoFam
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
-                  |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub
+                  |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub
                   |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep. exact FD.
@@ -4699,7 +4702,7 @@ Proof.
         Uniq Outs NdO OutsIff PR).
     + exists [BCopyFunctor u h sm rm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
+      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J).

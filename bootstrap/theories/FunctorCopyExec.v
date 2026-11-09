@@ -129,6 +129,7 @@ Proof.
  exists(A.set_fun C(gs_id fg)fx),(XBindFunA(gs_id fg)(gs_id bg)sm).
  split.
  - eapply A.BFunCopy with(Cu:=CF)(nsu:=map(key_tr Fl)fneeds)(Ch:=CG)(nsh:=map(key_tr Fl)gneeds).
+   all: try (exists fname,fps,fargs,fres;change(A.ast_of WW(gs_id fg)=Some(ADFunctor fname fps fargs fres None));unfold A.ast_of;rewrite(w_decl_read w R Fl _ _ Fg);cbn;now rewrite Fdecl).
    + exact PathTarget.
    + exact ProviderPath.
    + exact Held.
