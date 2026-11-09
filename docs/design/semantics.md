@@ -4511,6 +4511,12 @@ result mentions (`X = ∅`).
    takes. Both implementations already behave this way;
    `bootstrap/examples/copy-capture.moss` checks it, and Audit.v records
    the linked inputs in `fc_linked`.
+   *Note (November 2026, the audit):* `bind F = H;` also requires `H` to
+   read its needs and inputs as `F` does (D78's input interpretation), and
+   `bind F = G;` requires `G` to read each need `F` links as `F` does:
+   otherwise `G`'s or `H`'s own merges could identify types an application
+   of `F` keeps apart (`bootstrap/examples/linked-merge.moss`,
+   `copy-merge.moss`). The implementations already check both.
 5. **`bind F;`** `F` and its inputs in force; each `x ∈ X(F)` denotes what
    it did where `F` was provided (bound, or assumed: the identity), else a
    static error, as for any item mentioning a rebound type ([D72];

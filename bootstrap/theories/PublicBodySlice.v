@@ -2709,11 +2709,13 @@ Lemma case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm
       (forall x, A.Fixed W h x -> A.Fixed W u x) ->
       A.FixedAgreement W C h ->
       A.SameResult W u h ->
+      (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu)) ->
+      (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx) ->
       sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BCopyFunctor u h sm).
 Proof.
-  intros k _ F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx J rr _.
+  intros k _ F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
   pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
@@ -3615,7 +3617,7 @@ Proof.
                   |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
-                  |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx
+                  |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx
                   |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx].
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep.
@@ -3639,7 +3641,7 @@ Proof.
         Uniq Outs NdO OutsIff PR).
     + exists [BCopyFunctor u h sm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx J).
+      exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx J).
     + exists [BFunctor u h sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx J).

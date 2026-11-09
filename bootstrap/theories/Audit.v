@@ -4270,6 +4270,10 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x, Fixed W h x -> Fixed W u x) ->
     FixedAgreement W C h ->
     SameResult W u h ->
+    (* H reads its needs and inputs as F does (the oracle: input
+       interpretation, D78) *)
+    (forall k, In k nsh -> ilook (provision_id k) (c_provisions Ch) = ilook (provision_id k) (c_provisions Cu)) ->
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> canon Cu (TAbs x) = canon Cu tx) ->
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (set_fun C u fx) F []
@@ -4405,6 +4409,12 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     (forall k p t, In k nsg -> ~ In k nsu -> ilook (provision_id k) (c_provisions Cg) = Some p ->
        In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
        nlook t (c_ty Cu) <> None -> Fixed W u t) ->
+    (* G reads each need F links as F does, and its readings of F's inputs
+       hold in F's context (the oracle: linked input interpretation, D84) *)
+    (forall k, In k nsg -> In k nsu ->
+       ilook (provision_id k) (c_provisions Cg) = ilook (provision_id k) (c_provisions Cu)) ->
+    (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
+       (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) -> canon Cu (TAbs x) = canon Cu tx) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
     fr_this Fg = None -> fr_loop Fg = false ->
     (* its locals are numbered as a body's are *)

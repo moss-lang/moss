@@ -363,6 +363,22 @@ the local store. *C* and *F* are the static context and frame.
   all inputs for a platform family), and only those are read from θ.
   After discussion: a captured value has a fixed representation, and a
   copy should behave as its source does at the source's inputs.
+- **Counterexamples: a linked body or a copy read F's needs differently
+  (fixed).** `LinkBody` checked G's body only in G's terms. In
+  [linked-merge.moss](examples/linked-merge.moss) G's context merges X,
+  which F links, with Y, which G captures, so G reads the linked `vx: X`
+  as a Y. Bound at X = Y = Bool and applied at X = Char, the body calls the
+  captured Bool `not` on 'a'. This depends on which representative the
+  merge picks: with X, 3b rejects the program. Copies had the same gap:
+  `BFunCopy` compared needs only as keys, and in
+  [copy-merge.moss](examples/copy-merge.moss) H merges X with Y while F
+  does not. The oracle rejects both programs (`defined_link_inputs_compatible`,
+  D84; `copy_output_compatible`, D78), and native rejects them with type
+  errors. Now `LinkBody` requires each need F links to have the same
+  provision in G's context as in F's, and G's readings of F's inputs to
+  hold in F's context. `BFunCopy` requires the same of H's needs and
+  inputs. An oracle variant with these simpler checks gives the same
+  verdict as the oracle on all 353 test programs.
 
 ## Body-safety slice (checked, conditional)
 
