@@ -160,13 +160,13 @@ Proof.
   set (Ls := A.link_site Cg Cb [] gen) in *.
   set (srcs := CF.CN.CC.LR.PA.FS.CopyA.S.link_sources Ls [] gen ks') in *.
   set (rs := map (A.rkey_of Cr) ks) in *.
-  assert (LenRs : List.length (chain_sources [] srcs) = List.length rs)
-    by (unfold rs, srcs, CF.CN.CC.LR.PA.FS.CopyA.S.link_sources; cbn [chain_sources fold_left]; rewrite !length_map; exact (eq_sym (Forall2_length Pos))).
+  assert (LenRs : List.length (closure_sources None srcs) = List.length rs)
+    by (unfold rs, srcs, CF.CN.CC.LR.PA.FS.CopyA.S.link_sources; cbn [closure_sources]; rewrite !length_map; exact (eq_sym (Forall2_length Pos))).
   destruct (In_nth_error _ _ Ik0) as [i0 E0].
   assert (R0 : nth_error rs i0 = Some (A.rkey Cr r0 m0)) by (unfold rs; rewrite nth_error_map, E0; reflexivity).
-  destruct (PublicCallerKeys.selection_at rs [] srcs i0 _ R0 LenRs) as [s Fs].
-  destruct (PublicCallerKeys.selection_last rs [] srcs _ s Fs LenRs) as [i [Ri [Si _]]].
-  cbn [chain_sources fold_left] in Si. unfold srcs, CF.CN.CC.LR.PA.FS.CopyA.S.link_sources in Si. rewrite nth_error_map in Si.
+  destruct (PublicCallerKeys.selection_at rs None srcs i0 _ R0 LenRs) as [s Fs].
+  destruct (PublicCallerKeys.selection_last rs None srcs _ s Fs LenRs) as [i [Ri [Si _]]].
+  cbn [closure_sources] in Si. unfold srcs, CF.CN.CC.LR.PA.FS.CopyA.S.link_sources in Si. rewrite nth_error_map in Si.
   destruct (nth_error ks' i) as [key1|] eqn:Ek1; [|discriminate]. injection Si as Es'.
   unfold rs in Ri. rewrite nth_error_map in Ri.
   destruct (nth_error ks i) as [ki|] eqn:Ki; [|discriminate]. injection Ri as Eki.

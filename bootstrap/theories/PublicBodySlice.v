@@ -192,7 +192,7 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
       CapturedFuns n H0 gm dc (captured_funs Cg (captured Cu nsu nsg))) ->
     ClosureOk n H0 u gfx (FunctorClosure h
-      [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg)] dc [])
+      (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg))) dc None)
 | CCopy : forall u h Cu nsu Ch nsh code sms dc rms rm gfx gfh,
     ClosureOk n H0 h gfh (FunctorClosure code sms dc rms) ->
     A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> NeedsAmong Cu nsh nsu ->
@@ -207,9 +207,9 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     A.SameResult W u h ->
     CopySite u h Cu rm gfx gfh ->
     ClosureOk n H0 u gfx (FunctorClosure code
-      (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh])%list dc (rms ++ [rm])%list)
+      (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh)) dc (compose_positions rms rm))
 | CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx -> PlatformRead u gfx ->
-    ClosureOk n H0 u gfx (FunctorClosure code [] (EnvironmentWithAliases [] [] []) [])
+    ClosureOk n H0 u gfx (FunctorClosure code None (EnvironmentWithAliases [] [] []) None)
 with CapturedFuns (n : nat) (H0 : heap_types) : subst -> environment -> list (nat * subst) -> Prop :=
 | CFNil : forall gm dc, CapturedFuns n H0 gm dc []
 | CFCons : forall gm dc u fx pv gfx rest,
@@ -3126,7 +3126,7 @@ Lemma bindings_copy_eq : forall j d g st u h sm rm r,
   AR.O.I.eval_bindings (S j) P d g st (BCopyFunctor u h sm rm :: r) =
   match lookup_provision (IFun h) d with
   | Some (FunctorClosure c sms dc rms) =>
-      AR.O.I.eval_bindings j P (install_provision (IFun u) (FunctorClosure c (sms ++ [sm])%list dc (rms ++ [rm])%list) d) g st r
+      AR.O.I.eval_bindings j P (install_provision (IFun u) (FunctorClosure c (compose_adaptation sms sm) dc (compose_positions rms rm)) d) g st r
   | _ => inr (AR.O.I.Evaluation (Stuck AR.O.I.e_fun) g st)
   end.
 Proof. reflexivity. Qed.
@@ -3268,7 +3268,7 @@ Proof.
   destruct (A.nlook h (A.c_funs C)) as [fxh|] eqn:Lh; [|congruence].
   destruct (Funs h fxh Lh) as [pv [gfh [Look [Okh [Covh Vmh]]]]].
   destruct (closure_shape _ _ _ _ _ Okh) as [c [sms [dc [rms ->]]]]. rewrite Look. left.
-  set (d' := install_provision (IFun u) (FunctorClosure c (sms ++ [sm])%list dc (rms ++ [rm])%list) d).
+  set (d' := install_provision (IFun u) (FunctorClosure c (compose_adaptation sms sm) dc (compose_positions rms rm)) d).
   assert (FunFx : forall x t t', In (x, t) fx -> In (x, t') fx -> t = t').
   { intros x t t' I I'. destruct (proj1 (Fx x t) I) as [_ E]. destruct (proj1 (Fx x t') I') as [_ E']. congruence. }
   exists d', g, st, H. split; [intros a0 c0 L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
@@ -3281,7 +3281,7 @@ Proof.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
   - reflexivity.
   - intros k0 Ne. apply install_other. exact Ne.
-  - exists (FunctorClosure c (sms ++ [sm])%list dc (rms ++ [rm])%list), (ground_fixed (type_meanings d) fx).
+  - exists (FunctorClosure c (compose_adaptation sms sm) dc (compose_positions rms rm)), (ground_fixed (type_meanings d) fx).
     split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
     + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc rms rm _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact Same|].
       3: { exists C, fx, fxh, d. split; [exact (proj1 Fmd)|]. split; [exact Abs|]. split; [exact Idem|].
@@ -3322,7 +3322,7 @@ Hypothesis captured_in_force : CapturedInForceOk.
 Lemma bindings_functor_eq : forall j d g st u h types sm smc r,
   AR.O.I.eval_bindings (S j) P d g st (BFunctor u h types sm smc :: r) =
   match select_provisions d smc with
-  | Some dc => AR.O.I.eval_bindings j P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc) []) d) g st r
+  | Some dc => AR.O.I.eval_bindings j P (install_provision (IFun u) (FunctorClosure h (Some sm) (typed_capture d types dc) None) d) g st r
   | None => inr (AR.O.I.Evaluation (Stuck AR.O.I.e_compose) g st)
   end.
 Proof. reflexivity. Qed.
@@ -3364,14 +3364,6 @@ Lemma combine_in_r : forall (rs ss : list item) a b, In (a, b) (combine rs ss) -
 Proof.
   induction rs as [|r rs IH]; intros ss a b I; [contradiction|]. destruct ss as [|s ss]; [contradiction|].
   destruct I as [E|I]; [injection E as _ <-; left; reflexivity|right; exact (IH ss a b I)].
-Qed.
-
-(* A source read through copies is a root source or the stray default. *)
-Lemma chain_sources_in : forall rms srcs s, In s (chain_sources rms srcs) -> In s srcs \/ s = ITy 0.
-Proof.
-  unfold chain_sources. induction rms as [|rm rms IH]; intros srcs s I; [left; exact I|].
-  cbn [fold_left] in I. destruct (IH _ s I) as [I'|E]; [|right; exact E].
-  apply in_map_iff in I' as [j [<- _]]. destruct (nth_in_or_default j srcs (ITy 0)) as [In'|E]; [left; exact In'|right; exact E].
 Qed.
 
 Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 : Prop :=
@@ -3519,7 +3511,7 @@ Proof.
     change (app_subst (type_meanings d) (A.canon C tx)) with (ground d (A.canon C tx)). rewrite (Abs tx).
     rewrite (Am1 x Fu (Sc x Ix)). unfold gfx. rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
     reflexivity. }
-  set (d' := install_provision (IFun u) (FunctorClosure h [sm] dc []) d).
+  set (d' := install_provision (IFun u) (FunctorClosure h (Some sm) dc None) d).
   exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
   split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
@@ -3530,7 +3522,7 @@ Proof.
   - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
   - reflexivity.
   - intros k0 Ne. apply install_other. exact Ne.
-  - exists (FunctorClosure h [sm] dc []), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
+  - exists (FunctorClosure h (Some sm) dc None), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
     + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
       { exact U. }
@@ -3992,7 +3984,7 @@ Proof. reflexivity. Qed.
 (* How a closure came to be applicable. *)
 Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists gg h Cu nsu Cg nsg dc,
-     pv = FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg)] dc [] /\
+     pv = FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg))) dc None /\
      A.LinkBody W Prog u gg h /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
      (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) /\
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
@@ -4005,13 +3997,13 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
         CapturedFuns n H0 gm dc (captured_funs Cg (captured Cu nsu nsg)))) \/
   (exists h Cu nsu Ch nsh code sms dc rms rm gfh,
-     pv = FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh])%list dc (rms ++ [rm])%list /\
+     pv = FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh)) dc (compose_positions rms rm) /\
      ClosureOk n H0 h gfh (FunctorClosure code sms dc rms) /\
      A.FunCtx W u Cu nsu /\ A.FunCtx W h Ch nsh /\ NeedsAmong Cu nsh nsu /\
      (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) /\
      (forall k, In k nsh -> option_map (A.canon_provision Cu) (A.ilook (A.provision_id k) (A.c_provisions Ch)) = A.ilook (A.provision_id (A.canon_item Cu k)) (A.c_provisions Cu)) /\
      (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx)) \/
-  (exists code, pv = FunctorClosure code [] (EnvironmentWithAliases [] [] []) [] /\ Platform.Family W Prog u code /\
+  (exists code, pv = FunctorClosure code None (EnvironmentWithAliases [] [] []) None /\ Platform.Family W Prog u code /\
      PlatformFixed u gfx).
 Proof.
   intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn _ Caps CF
@@ -4024,13 +4016,12 @@ Proof.
 Qed.
 
 (* A linked closure's functor is abstract (CLink). *)
-Lemma closure_link_abstract : forall n H0 u gfx h sm dc, ClosureOk n H0 u gfx (FunctorClosure h [sm] dc []) ->
+Lemma closure_link_abstract : forall n H0 u gfx h sm dc, ClosureOk n H0 u gfx (FunctorClosure h (Some sm) dc None) ->
   exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None).
 Proof.
   intros n H0 u gfx h sm dc Ok. inversion Ok as [u' gg h' Cu nsu Cg nsg dc' gfx' LB FCu FCg FxIn AbU Caps CF
     |u' h' Cu nsu Ch nsh code sms dc' rms rm gfx' gfh Okh FCu FCh Incl Fx SN ST CO InCu Same Site|u' code gfx' Fam Mach PR]; subst.
-  - exact AbU.
-  - destruct rms; discriminate.
+  exact AbU.
 Qed.
 
 Lemma ilook_some_of_in : forall X k (l : list (item * X)) p, In (k, p) l -> exists p', A.ilook k l = Some p'.
@@ -4834,8 +4825,8 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st h dc gfx gg dg n ps a r bodies nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j',
   Pre rr F C d types H g st ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg)] dc []) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg))) dc None) ->
+  ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg))) dc None) ->
   FixedMeans u d fx gfx ->
   LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
@@ -4843,7 +4834,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (result_selection (map (A.rkey_of C') ks) [] (link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of C') ks) None (link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
     result_environment (map (fun t => (t, gensof t)) outs) d3 (map ITy outs') dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     MeaningsGrow (map gensof outs) d (append_environment result d).
@@ -4856,7 +4847,7 @@ Definition CopyApplyOk : Prop := forall k, Below k -> forall J, (forall J', J' <
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> j < J -> Pre rr F C d types H g st ->
   forall gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
-  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh])%list dc (rms ++ [rm])%list) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) dc (compose_positions rms rm)) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
   A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> NeedsAmong Cu0 nsh nsu ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
@@ -4868,7 +4859,7 @@ Hypothesis copy_apply : CopyApplyOk.
 Definition PlatformApplyOk : Prop := forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> Pre rr F C d types H g st ->
-  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] []) []) ->
+  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code None (EnvironmentWithAliases [] [] []) None) ->
   Platform.Family W Prog u code ->
   StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs) (BApply u th (map (fun t => (t, gensof t)) outs) sm (map (A.rkey_of C') ks)) j d types H g st.
 Hypothesis platform_apply : PlatformApplyOk.

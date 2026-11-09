@@ -1,7 +1,7 @@
 (* The caller-keyed result install (Audit.result_selection), static and
    list facts. An application files position i of F's declared result
    under the caller's key for it, read from the root's source for i
-   through each copy's positions (chain_sources). Positions are
+   through the closure's composed positions (closure_sources). Positions are
    context-independent: two readings of one declared result have entries
    of the same kinds (same_kind_entries), so the same number of keys, a
    key at the same position in each (provide_result_length). *)
@@ -130,11 +130,7 @@ Proof.
   injection E as -> -> _. reflexivity.
 Qed.
 
-(* ---- chain_sources and the selection ---------------------------------------- *)
-
-Lemma chain_sources_snoc : forall rms rm srcs,
-  chain_sources (rms ++ [rm]) srcs = map (fun j => nth j (chain_sources rms srcs) (ITy 0)) rm.
-Proof. intros rms rm srcs. unfold chain_sources. rewrite fold_left_app. reflexivity. Qed.
+(* ---- closure_sources and the selection ---------------------------------------- *)
 
 (* A copy's positions in range of its source's positions. *)
 Definition PositionsIn (rm : list nat) (n m : nat) : Prop :=
@@ -252,7 +248,7 @@ Proof.
 Qed.
 
 Lemma selection_in : forall rs rms srcs K s, In (K, s) (result_selection rs rms srcs) ->
-  In K rs /\ In s (chain_sources rms srcs).
+  In K rs /\ In s (closure_sources rms srcs).
 Proof.
   intros rs rms srcs K s I. unfold result_selection in I. apply (proj2 (in_rev _ _)) in I.
   destruct (in_combine_nth _ _ _ _ I) as [i [R S]]. split; [exact (nth_error_In _ _ R)|exact (nth_error_In _ _ S)].
@@ -292,20 +288,20 @@ Qed.
 (* The selection under a caller key: its last position, whose source is
    the selection's. *)
 Lemma selection_last : forall rs rms srcs K s, sm_find K (result_selection rs rms srcs) = Some s ->
-  List.length (chain_sources rms srcs) = List.length rs ->
-  exists i, nth_error rs i = Some K /\ nth_error (chain_sources rms srcs) i = Some s /\
+  List.length (closure_sources rms srcs) = List.length rs ->
+  exists i, nth_error rs i = Some K /\ nth_error (closure_sources rms srcs) i = Some s /\
     forall i', i < i' -> nth_error rs i' <> Some K.
 Proof.
   intros rs rms srcs K s F L. destruct (sm_find_rev_combine _ _ _ _ F) as [i [R [S Last]]].
   exists i. split; [exact R|]. split; [exact S|]. intros i' Lt E.
-  pose proof (Last i' Lt E) as N. destruct (nth_error_same_length _ _ rs (chain_sources rms srcs) i' K (eq_sym L) E) as [y Y].
+  pose proof (Last i' Lt E) as N. destruct (nth_error_same_length _ _ rs (closure_sources rms srcs) i' K (eq_sym L) E) as [y Y].
   congruence.
 Qed.
 
 Lemma selection_at : forall rs rms srcs i K, nth_error rs i = Some K ->
-  List.length (chain_sources rms srcs) = List.length rs ->
+  List.length (closure_sources rms srcs) = List.length rs ->
   exists s, sm_find K (result_selection rs rms srcs) = Some s.
 Proof.
-  intros rs rms srcs i K R L. destruct (nth_error_same_length _ _ rs (chain_sources rms srcs) i K (eq_sym L) R) as [y Y].
+  intros rs rms srcs i K R L. destruct (nth_error_same_length _ _ rs (closure_sources rms srcs) i K (eq_sym L) R) as [y Y].
   apply (sm_find_of_in K _ y). unfold result_selection. apply (proj1 (in_rev _ _)). exact (combine_nth_in _ _ _ _ _ R Y).
 Qed.

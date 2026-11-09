@@ -1413,8 +1413,11 @@ Definition bind_primitive_expression key operation e := EBind (BPrimitive key op
 Inductive provision_value : Type :=
 | ValueProvision : value -> provision_value
 | FunctionClosure : fsym -> environment -> provision_value
-(* code, needs adaptations, captures, result positions (one list per copy) *)
-| FunctorClosure : usym -> list smap -> environment -> list (list nat) -> provision_value
+(* code, needs adaptation, captures, result positions. A copy composes its
+   step into both at once (compose_adaptation, compose_positions), so a closure
+   carries one of each however many copies made it. None is the root's
+   own: a platform family's needs as they are, a root's sources in order. *)
+| FunctorClosure : usym -> option smap -> environment -> option (list (option nat)) -> provision_value
 | PrimitiveClosure : prim -> option ty -> provision_value
 with environment : Type :=
 | EnvironmentWithAliases : subst -> subst -> list (item * provision_value) -> environment.
@@ -1480,15 +1483,29 @@ Fixpoint select_provisions (d : environment) (sm : smap) : option environment :=
       end
   end.
 
-Fixpoint adapt_provisions (d : environment) (sms : list smap) : option environment :=
-  match sms with
-  | [] => Some d
-  | sm :: r =>
-      match adapt_provisions d r with
-      | Some d' => select_provisions d' sm
-      | None => None
-      end
+(* A closure's needs adaptation, applied to what the application selected. *)
+Definition adapt_provisions (d : environment) (a : option smap) : option environment :=
+  match a with
+  | None => Some d
+  | Some sm => select_provisions d sm
   end.
+(* The source a satisfaction map selects for a requirement: its first
+   entry's, as select_provisions installs them. *)
+Fixpoint smap_source (req : item) (sm : smap) : option item :=
+  match sm with
+  | [] => None
+  | (r, s) :: rest => if item_eqb req r then Some s else smap_source req rest
+  end.
+(* `bind F = H;` composes its smap sm (H's needs, read from F's) under H's
+   adaptation a: each requirement a reads from H's key s reads from sm's
+   source for s. Selecting through the composition is selecting through sm
+   and then a (EagerCopy.adapt_compose). A key sm lacks is kept, which only
+   matters where the two-step selection is stuck. *)
+Definition compose_adaptation (a : option smap) (sm : smap) : option smap :=
+  Some (match a with
+    | None => sm
+    | Some c => map (fun q => (fst q, match smap_source (snd q) sm with Some s => s | None => snd q end)) c
+    end).
 
 Definition parameter_values (ws : list value) : locals := combine (seq 0 (List.length ws)) ws.
 
@@ -1594,13 +1611,25 @@ Definition application_environment (P : program_view) (d : environment) (h : usy
     end)) inputs in
   EnvironmentWithAliases meanings meanings (provision_values dc).
 
-(* A closure's result positions: the root's sources, read through each
-   copy's positions in turn (the first copy made first). Each position of
-   a copy names a position of its source's declared result; the default
-   is unreachable for a checked program (CopyOutputs), and no provision is
-   keyed by a type item, so a stray position makes the selection stuck. *)
-Definition chain_sources (rms : list (list nat)) (sources : list item) : list item :=
-  fold_left (fun s rm => map (fun j => nth j s (ITy 0)) rm) rms sources.
+(* A closure's result positions: position i reads the root's source at
+   the i-th entry (None, the root's own sources in order). Each position of
+   a copy names a position of its source's declared result; a stray one
+   (None) is unreachable for a checked program (CopyOutputs), and no
+   provision is keyed by a type item, so it makes the selection stuck. *)
+Definition closure_sources (p : option (list (option nat))) (sources : list item) : list item :=
+  match p with
+  | None => sources
+  | Some q => map (fun o => match o with Some i => nth i sources (ITy 0) | None => ITy 0 end) q
+  end.
+(* `bind F = H;` composes its positions rm (position j of F's result is
+   position rm_j of H's) under H's positions p. Reading the root's sources
+   through the composition is reading them through p and then rm
+   (EagerCopy.sources_compose), exactly. *)
+Definition compose_positions (p : option (list (option nat))) (rm : list nat) : option (list (option nat)) :=
+  Some (match p with
+    | None => map Some rm
+    | Some q => map (fun j => nth j q None) rm
+    end).
 (* An application's selection: the caller's key for each position, read
    from that position's source. A later position wins, as the caller's
    static context reads a repeated key at its last setter (output_cx's
@@ -1608,8 +1637,8 @@ Definition chain_sources (rms : list (list nat)) (sources : list item) : list it
    one its static type describes, whatever the sources of the earlier
    positions (two of F's keys may meet only at the caller: A.m and B.m
    with A and B read as one type). *)
-Definition result_selection (rs : list item) (rms : list (list nat)) (sources : list item) : smap :=
-  rev (combine rs (chain_sources rms sources)).
+Definition result_selection (rs : list item) (p : option (list (option nat))) (sources : list item) : smap :=
+  rev (combine rs (closure_sources p sources)).
 (* Read every output from one completed body snapshot before installing any
    caller destination. An unchanged formal may be an output too. *)
 Fixpoint read_result_types (d : environment) (Dr : tele) (outputs : list (tsym * tsym))
@@ -1668,7 +1697,7 @@ Inductive signal : Type :=
 
 (* Rule A: an application files each item of F's declared result under
    the caller's key for it (the key its scope refers to it by), read from
-   the body where the root left it (chain_sources, result_selection).
+   the body where the root left it (closure_sources, result_selection).
    Exactly F's declared result is installed, as `bind F;` keeps exactly
    F's result (examples/copy-extra-key.moss), and no key of the body's is
    read in the caller's terms (examples/linked-copy-bracket.moss). *)
@@ -2032,13 +2061,13 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
           end
       | BFunctor u h types sm smc :: r =>
           match select_provisions d smc with
-          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc) []) d) g st r
+          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h (Some sm) (typed_capture d types dc) None) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
       | BCopyFunctor u u' sm rm :: r =>
           match lookup_provision (IFun u') d with
-          | Some (FunctorClosure h sms dc rms) =>
-              eval_bindings k P (install_provision (IFun u) (FunctorClosure h (sms ++ [sm]) dc (rms ++ [rm])) d) g st r
+          | Some (FunctorClosure h a dc p) =>
+              eval_bindings k P (install_provision (IFun u) (FunctorClosure h (compose_adaptation a sm) dc (compose_positions p rm)) d) g st r
           | _ => inr (Evaluation (Stuck e_fun) g st)
           end
       | BApply u th outputs sm rs :: r =>
@@ -2056,18 +2085,18 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
   | 0 => inr (Evaluation OutOfFuel [] st)
   | S k =>
       match lookup_provision (IFun u) d with
-      | Some (FunctorClosure h sms dc rms) =>
+      | Some (FunctorClosure h a dc p) =>
           match view_functor P h with
           | Some code =>
               let Dr := fc_outputs code in
               let bs := fc_bindings code in
               match select_provisions d sm with
               | Some d1 =>
-                  match adapt_provisions d1 sms with
+                  match adapt_provisions d1 a with
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (result_selection rs rms (fc_sources code)) with
+                          match select_provisions d3 (result_selection rs p (fc_sources code)) with
                           | Some dr => match result_environment outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
@@ -4785,7 +4814,7 @@ Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> P
     PlatformEntry W P (IFn f) (PrimitiveClosure (PUnsupported i) None)
 | PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
-    PlatformEntry W P (IFun u) (FunctorClosure h [] empty_environment []).
+    PlatformEntry W P (IFun u) (FunctorClosure h None empty_environment None).
 
 (* The runtime type prefix is a representation of the source context,
    separate from the values and code supplied by the platform. Its machine
@@ -5209,7 +5238,7 @@ Definition Entry (W : world) (P : program) (C : cx)
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
-  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) [] =>
+  | IFun source, FunctorClosure code None (EnvironmentWithAliases [] [] []) None =>
       Family W P source code /\ FixedMachinesRead W C source
   | _, _ => False
   end.

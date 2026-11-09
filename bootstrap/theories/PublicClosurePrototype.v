@@ -135,12 +135,12 @@ Definition compile_step (binding : binding) : option bcode :=
       | None => inr (Evaluation (Stuck e_compose) g st) end)
   | BFunctor u body plan linked captures => Some (fun _ d g st =>
       match select_provisions d captures with
-      | Some dc => inl (install_provision (IFun u) (FunctorClosure body [linked] (typed_capture d plan dc) []) d,g,st)
+      | Some dc => inl (install_provision (IFun u) (FunctorClosure body (Some linked) (typed_capture d plan dc) None) d,g,st)
       | None => inr (Evaluation (Stuck e_compose) g st) end)
   | BCopyFunctor u provider sm rm => Some (fun _ d g st =>
       match lookup_provision (IFun provider) d with
       | Some (FunctorClosure body maps dc rms) =>
-          inl (install_provision (IFun u) (FunctorClosure body (maps ++ [sm]) dc (rms ++ [rm])) d,g,st)
+          inl (install_provision (IFun u) (FunctorClosure body (compose_adaptation maps sm) dc (compose_positions rms rm)) d,g,st)
       | _ => inr (Evaluation (Stuck e_fun) g st) end)
   | BApply u th destinations sm rs => Some (fun fuel d g st =>
       match compiled_apply fuel d u th destinations sm rs st with

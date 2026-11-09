@@ -130,7 +130,7 @@ Definition output_program := Program []
   [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine MI32)] [])]
   0 0 0 0 empty_environment [] [].
 Definition output_environment :=
-  Environment [] [(IFun 3,FunctorClosure 2 [] empty_environment [])].
+  Environment [] [(IFun 3,FunctorClosure 2 None empty_environment None)].
 Example fresh_output_meaning_is_exported :
   Reference.apply_functor 6 (program_of output_program [] (fun _ => None))
     output_environment 3 [] [(1,9)] [] [] (Model.default_interface,initial) =

@@ -28,7 +28,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd
   PublicLinkResults PublicChainCore PublicLinkScope.
-From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink
+From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig.
 From NM Require PublicMergeClass.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -828,16 +828,16 @@ Definition Tv (g : nat -> nat) (outs : list nat) : subst := (map (fun t => (g t,
 (* Every position of v's own result (read at Cv with some fresh roles g)
    has a source (through the chain's positions rmsv) whose value realizes
    the position's provision at v's valuation. *)
-Definition LevelReal (v : nat) (Cv : A.cx) (rmsv : list (list nat)) : Prop :=
+Definition LevelReal (v : nat) (Cv : A.cx) (rmsv : option (list (option nat))) : Prop :=
   exists g outs Crv ksv, (forall t, In t outs <-> A.FunOutputs W v t) /\ (forall t, In t outs -> A.Fresh W (g t)) /\
     (forall a b, In a outs -> In b outs -> g a = g b -> a = b) /\
     A.ProvideResult W v Cv (fun t => TAbs (g t)) Crv ksv /\
     forall i k, nth_error ksv i = Some k -> exists p pv,
       A.ilook (A.provision_id k) (A.c_provisions Crv) = Some p /\
-      lookup_provision (nth i (chain_sources rmsv srcs) (ITy 0)) d3 = Some pv /\ RealAt (Tv g outs) k p pv.
+      lookup_provision (nth i (closure_sources rmsv srcs) (ITy 0)) d3 = Some pv /\ RealAt (Tv g outs) k p pv.
 
 Variable th : subst.
-Hypothesis Root : PublicChainSigs.TableOk Tin Ch0 -> PublicChainSigs.TableOk th Ch0 -> LevelReal h0 Ch0 [].
+Hypothesis Root : PublicChainSigs.TableOk Tin Ch0 -> PublicChainSigs.TableOk th Ch0 -> LevelReal h0 Ch0 None.
 
 (* A valuation satisfying a copy's table satisfies its source's. *)
 Lemma tableok_down : forall u Cu nsu Ch T, A.FunCtx W u Cu nsu ->
@@ -849,7 +849,7 @@ Proof.
 Qed.
 
 Lemma chain_real : forall v gfv sms rmsv h0' gf0 sms0 rms0, CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.CopyChain W v gfv sms rmsv h0' gf0 sms0 rms0 ->
-  h0' = h0 -> rms0 = [] -> forall Cv nsv, A.FunCtx W v Cv nsv -> PublicChainSigs.TableOk Tin Cv -> PublicChainSigs.TableOk th Cv ->
+  h0' = h0 -> rms0 = None -> forall Cv nsv, A.FunCtx W v Cv nsv -> PublicChainSigs.TableOk Tin Cv -> PublicChainSigs.TableOk th Cv ->
   (forall x, A.Fixed W v x -> lookup_subst x gfv = Some (app_subst Tin (TAbs x))) -> LevelReal v Cv rmsv.
 Proof.
   intros v gfv sms rmsv h0' gf0 sms0 rms0 Ch.
@@ -925,7 +925,7 @@ Proof.
         destruct (SubScH g0 t Iq) as [Ig _]. destruct (nlook_some _ g0 _ Ig) as [w Lw].
         pose proof (SameT g0 w Lw) as E. rewrite (TyAH g0 w Lw) in E. cbn [app_subst] in E. rewrite (FnH g0 t Iq) in E.
         exact E. }
-      split; [exact (CSg.chain_abs W h gfh sms rms h0 gf0 sms0 [] Sub Abs0)|exact PRh']. }
+      split; [exact (CSg.chain_abs W h gfh sms rms h0 gf0 sms0 None Sub Abs0)|exact PRh']. }
     assert (KTh : forall q pa x, A.resolve_sym W q pa = Some x -> A.nlook x (A.c_ty Cu) <> None ->
       A.nlook x (A.c_ty Ch) = None -> A.kind_sym W x = Some A.DKType).
     { intros q pa x _ N _. destruct (PublicFormation.functx_cx_formed W merge_formed mentions_typed u Cu nsu FCu) as [_ [_ Ty]].
@@ -987,7 +987,7 @@ Proof.
       (PublicChainSigs.sub_inv W h Ch nsh Th FCh TokH') (PublicChainSigs.sub_inv W u Cu nsu Tu FCu TokU') OnK
       (fst pp) (snd pp) k1 q1 k' p' R1 R2 R4 P1 P2 R5) as [PE KR].
     exists p, pv. split; [exact Lp|]. split.
-    + rewrite PublicCallerKeys.chain_sources_snoc, (nth_map_error _ _ _ rm i j _ Rj). exact Spv.
+    + rewrite EagerCopy.sources_compose, (nth_map_error _ _ _ rm i j _ Rj). exact Spv.
     + apply (real_transfer Tu k' p' Tu k p pv (real_transfer Th k1 q1 Tu k' p' pv Rh PE KR)).
       * exact (peq_of_subst Tu p' p (eq_sym Ept)).
       * exact (keyrel_id Tu k' k Idk).
@@ -1020,7 +1020,7 @@ Hypothesis Pre3 : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok
 Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list.
 
 Lemma root_level : PublicChainSigs.TableOk Tin Ch0 -> PublicChainSigs.TableOk th Ch0 ->
-  LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 [].
+  LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 None.
 Proof.
   intros Tok TokT.
   pose proof LD as (FC0 & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR & RR & BO & FB & MadeOut).
@@ -1085,7 +1085,7 @@ Proof.
     - left. split; [exact I0|exact (R2s y Iy I0)].
     - right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity]. }
   exists p, pv. split; [exact Lp|]. split.
-  { cbn [chain_sources fold_left]. unfold CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite (nth_map_error _ _ _ ks' i k _ Ki). exact Lpv. }
+  { cbn [closure_sources]. unfold CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite (nth_map_error _ _ _ ks' i k _ Ki). exact Lpv. }
   destruct p as [t a0|g a0|g a0|fx]; unfold CSg.FL.CF.CN.CC.BodyReal in BR; unfold RealAt; lazy beta iota in BR |- *; fold T0.
   - destruct BR as [w [-> Tw]]. exists w. split; [reflexivity|].
     rewrite <- (KeyTy t); [exact Tw|]. intros x Ix. apply OkP. unfold rel_gens, PublicCallRealize.provision_sig_gens, A.sig_gens. cbn.
@@ -1123,7 +1123,7 @@ Section Top.
 Variables (F : A.frame) (C : A.cx) (pa : list string) (u : nat) (fx : subst) (Cu : A.cx) (ns : list item) (sm : smap)
   (th : subst) (gensof : nat -> nat) (C' : A.cx) (ks : list item) (newgens : list nat) (outs : list nat).
 Hypothesis AP : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs.
-Variables (d d3 dr : environment) (rms : list (list nat)) (srcs : list item).
+Variables (d d3 dr : environment) (rms : option (list (option nat))) (srcs : list item).
 Hypothesis Absd : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Absorbs C d.
 Hypothesis IdemC : forall t, A.canon C (A.canon C t) = A.canon C t.
 Hypothesis KMc : PublicCallRealize.KeysMatch (A.c_provisions C).
@@ -1134,7 +1134,7 @@ Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list
 Let M := CSg.FL.CF.CN.CC.LR.read_meaning d3.
 Hypothesis LvU : LevelReal srcs d3 M Tin u Cu rms.
 Hypothesis Sdr : select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms srcs) = Some dr.
-Hypothesis LenS : List.length (chain_sources rms srcs) = List.length ks.
+Hypothesis LenS : List.length (closure_sources rms srcs) = List.length ks.
 Variable news : list (item * A.provision).
 Hypothesis En : A.c_provisions C' = (news ++ A.c_provisions C)%list.
 Let d' := append_environment (CSg.FL.CF.CN.CC.LR.result_of d3 outs gensof dr) d.
@@ -1186,7 +1186,7 @@ Proof.
   apply in_map_iff in Ik as [[k0 p0] [Ek Ip0]]. cbn in Ek. subst k0.
   pose proof (PublicCallerKeys.provide_result_news_key W u C _ C' ks PR news En k p0 Ip0) as Iks.
   set (rs := map (A.rkey_of C') ks).
-  assert (LenR : List.length (chain_sources rms srcs) = List.length rs) by (unfold rs; rewrite length_map; exact LenS).
+  assert (LenR : List.length (closure_sources rms srcs) = List.length rs) by (unfold rs; rewrite length_map; exact LenS).
   destruct (In_nth_error _ _ Iks) as [i0 E0].
   assert (R0 : nth_error rs i0 = Some (A.rkey_of C' k)) by (unfold rs; rewrite nth_error_map, E0; reflexivity).
   destruct (PublicCallerKeys.selection_at rs rms srcs i0 _ R0 LenR) as [s Fs].
@@ -1310,7 +1310,7 @@ Proof.
   pose proof LD as (FC0 & FCg & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & _ & _ & FB & _).
   (* the root and the top are abstract *)
   assert (Abs0 : CSg.Abstract W h0) by exact (CSg.abstract_of_ast W h0 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_link_abstract W Prog argv read state_ok _ _ _ _ _ _ _ Ok0)).
-  assert (AbU : CSg.Abstract W u) by exact (CSg.chain_abs W u gfx sms rms h0 gf0 _ [] Chn Abs0).
+  assert (AbU : CSg.Abstract W u) by exact (CSg.chain_abs W u gfx sms rms h0 gf0 _ None Chn Abs0).
   (* G's input condition, in full (cap3b), from the closure *)
   assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.canon Ch0 (TAbs x) = A.canon Ch0 tx).
@@ -1348,7 +1348,7 @@ Proof.
     unfold Tin. rewrite <- PublicCopyFresh.ground_app_subst, PublicChainSigs.app_subst_abs, Lx, (PublicChainSigs.app_subst_abs (A.c_ty C)),
       lookup_subst_nlook', Lh, Eh. symmetry. exact (Abs tx). }
   assert (ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None).
-  { intros z Iz. pose proof (CSg.FL.CF.CN.CC.LR.PA.chain_keys W u gfx sms rms h0 gf0 _ [] Chn Cu ns Ch0 nsh0 FC FC0 z Iz) as Iu.
+  { intros z Iz. pose proof (CSg.FL.CF.CN.CC.LR.PA.chain_keys W u gfx sms rms h0 gf0 _ None Chn Cu ns Ch0 nsh0 FC FC0 z Iz) as Iu.
     pose proof (PublicFamilyAgree.lookup_keys (fun y => A.canon C (app_subst (A.c_ty C) (TAbs y))) (A.c_ty Cu) z Iu) as L.
     assert (L' : lookup_subst z th = Some (A.canon C (app_subst (A.c_ty C) (TAbs z)))) by (rewrite Th; exact L).
     rewrite L'. discriminate. }
@@ -1356,9 +1356,9 @@ Proof.
   pose proof (root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 LD LRs th d d3 _ j' g3 st st3 ThDom Run Pre3) as Root.
   pose proof (chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
-    th Root u gfx sms rms h0 gf0 _ [] Chn eq_refl eq_refl Cu ns FC TokIn TokTh FixT) as LvU.
-  assert (LenS : List.length (chain_sources rms srcs) = List.length ks).
-  { refine (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W u gfx sms rms h0 gf0 _ [] Chn eq_refl srcs _) _ _ _ _ PR).
+    th Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn TokTh FixT) as LvU.
+  assert (LenS : List.length (closure_sources rms srcs) = List.length ks).
+  { refine (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W u gfx sms rms h0 gf0 _ None Chn eq_refl srcs _) _ _ _ _ PR).
     intros C0 o C0' ks0 P0. unfold srcs, CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite length_map.
     exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ Cr ks' C0 o C0' ks0 PR' P0). }
   exact (top_envok W Prog argv read state_ok merge_formed mentions_typed rr H3 F C pa u fx Cu ns sm th gensof C' ks newgens outs AP

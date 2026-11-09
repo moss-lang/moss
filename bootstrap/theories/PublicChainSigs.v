@@ -26,7 +26,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd.
-From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink PublicMergeClass.
+From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink PublicMergeClass.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -433,11 +433,11 @@ Let srcs := map (A.rkey_of outputs) keys.
 (* What a level v's own reading at Cv gives: at each position, the method
    there and the root item the chain's sources give that position agree at
    T (receiver and signature). *)
-Definition SigInv (v : nat) (Cv : A.cx) (rmsv : list (list nat)) : Prop :=
+Definition SigInv (v : nat) (Cv : A.cx) (rmsv : option (list (option nat))) : Prop :=
   exists Crv ksv, A.ProvideResult W v Cv (fun t => TAbs t) Crv ksv /\
   forall i r m a g a0, nth_error ksv i = Some (IMth r m a) ->
     A.ilook (IMth r m a) (A.c_provisions Crv) = Some (A.ProvidedMethod g a0) ->
-    forall key, In key keys -> nth_error (chain_sources rmsv srcs) i = Some (A.rkey_of outputs key) ->
+    forall key, In key keys -> nth_error (closure_sources rmsv srcs) i = Some (A.rkey_of outputs key) ->
     exists rf a' gf a1, key = IMth rf m a' /\ A.ilook (IMth rf m a') (A.c_provisions outputs) = Some (A.ProvidedMethod gf a1) /\
       app_subst T r = app_subst T rf /\ A.sig_subst T g = A.sig_subst T gf.
 
@@ -470,7 +470,7 @@ Lemma kinds_of : forall (s1 s2 th : subst) K (L : list (A.entry * A.entry)),
 Proof. intros s1 s2 th K L FL p Ip. rewrite Forall_forall in FL. exact (same_kind_none s1 s2 _ _ (proj2 (FL p Ip))). Qed.
 
 Lemma chain_sigs : forall v gfv sms rmsv h0' gf0 sms0 rms0, FL.CF.CN.CC.LR.PA.FS.CopyA.CopyChain W v gfv sms rmsv h0' gf0 sms0 rms0 ->
-  h0' = h0 -> rms0 = [] ->
+  h0' = h0 -> rms0 = None ->
   forall Cv nsv, A.FunCtx W v Cv nsv -> TableOk T Cv ->
   (forall x, A.Fixed W v x -> lookup_subst x gfv = Some (app_subst T (TAbs x))) ->
   SigInv v Cv rmsv.
@@ -480,14 +480,14 @@ Proof.
     intros E0 Er Cv nsv FCv Tok FixT.
   - subst u rms. destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FC0) as [Ecv _]. subst Cv.
     exists outputs, keys. split; [exact PR0|].
-    intros i r m a g a0 Ki Lk key Ik Si. cbn [chain_sources fold_left] in Si. unfold srcs in Si.
+    intros i r m a g a0 Ki Lk key Ik Si. cbn [closure_sources] in Si. unfold srcs in Si.
     rewrite nth_error_map, Ki in Si. injection Si as Es.
     pose proof (PublicCallerKeys.rkey_of_inj outputs (IMth r m a) key Es) as Pid.
     rewrite (PublicCallerKeys.result_key_id W h0 Ch0 _ outputs keys (IMth r m a) PR0 (nth_error_In _ _ Ki)),
       (PublicCallerKeys.result_key_id W h0 Ch0 _ outputs keys key PR0 Ik) in Pid.
     subst key. exists r, a, g, a0. split; [reflexivity|]. split; [exact Lk|]. split; reflexivity.
   - subst h0' rms0.
-    pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W h gfh sms rms h0 gf0 sms0 [] Sub NoH) as NoHh.
+    pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W h gfh sms rms h0 gf0 sms0 None Sub NoH) as NoHh.
     assert (NoU : forall t, ~ A.FunOutputs W u t) by (intros t Ft; exact (NoHh t (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.S.same_result_outputs W u h Same t) Ft))).
     destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FCu) as [Ecv _]. subst Cv.
     pose proof (sub_inv W u Cu nsu T FCu Tok) as InvU.
@@ -554,7 +554,7 @@ Proof.
         destruct (SubScH g0 t Iq) as [Ig _]. destruct (nlook_some _ g0 _ Ig) as [w Lw].
         pose proof (SameT g0 w Lw) as E. rewrite (TyAH g0 w Lw) in E. cbn [app_subst] in E. rewrite (FnH g0 t Iq) in E.
         exact E. }
-      split; [exact (chain_abs h gfh sms rms h0 gf0 sms0 [] Sub Abs0)|exact PRh']. }
+      split; [exact (chain_abs h gfh sms rms h0 gf0 sms0 None Sub Abs0)|exact PRh']. }
     assert (KTh : forall q pa x, A.resolve_sym W q pa = Some x -> A.nlook x (A.c_ty Cu) <> None ->
       A.nlook x (A.c_ty Ch) = None -> A.kind_sym W x = Some A.DKType).
     { intros q pa x _ N _. destruct (PublicFormation.functx_cx_formed W merge_formed mentions_typed u Cu nsu FCu) as [_ [_ Ty]].
@@ -576,12 +576,12 @@ Proof.
     { pose proof (I2 (A.c_provisions Cu)) as I2'. rewrite ECr' in Lp'. cbn [A.output_cx A.c_provisions] in Lp'. congruence. }
     injection Eg' as -> _.
     (* the chain's source for i is h's for j *)
-    rewrite PublicCallerKeys.chain_sources_snoc, nth_error_map, Rj in Si. injection Si as Es.
-    assert (LenS : List.length (chain_sources rms srcs) = List.length ks').
-    { refine (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W h gfh sms rms h0 gf0 sms0 [] Sub eq_refl srcs _) _ _ _ _ PRh').
+    rewrite EagerCopy.sources_compose, nth_error_map, Rj in Si. injection Si as Es.
+    assert (LenS : List.length (closure_sources rms srcs) = List.length ks').
+    { refine (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W h gfh sms rms h0 gf0 sms0 None Sub eq_refl srcs _) _ _ _ _ PRh').
       intros C0 o C0' ks0 P0. unfold srcs. rewrite length_map.
       exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ outputs keys C0 o C0' ks0 PR0 P0). }
-    assert (Sj : nth_error (chain_sources rms srcs) j = Some (A.rkey_of outputs key)).
+    assert (Sj : nth_error (closure_sources rms srcs) j = Some (A.rkey_of outputs key)).
     { rewrite <- Es. apply nth_error_nth'. rewrite LenS. apply nth_error_Some. rewrite Kj. discriminate. }
     assert (Nh : nth_error ksh j = Some (A.mkey (app_subst (A.c_sub Ch) r1) m)).
     { rewrite EKh, keys_of_map. exact N1. }
@@ -610,8 +610,8 @@ Proof.
   assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
   { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }
   pose proof (PublicMergeClass.functx_merges W u Cu ns C FC Force0 Merge0) as Merge.
-  assert (AbU : Abstract u) by exact (chain_abs u gfx sms rms h0 gf0 [] [] Chn Abst0).
-  pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W u gfx sms rms h0 gf0 [] [] Chn NoH) as NoU.
+  assert (AbU : Abstract u) by exact (chain_abs u gfx sms rms h0 gf0 None None Chn Abst0).
+  pose proof (FL.CF.CN.CC.LR.PA.chain_no_outputs W u gfx sms rms h0 gf0 None None Chn NoH) as NoU.
   assert (Parts : th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) /\
     (forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None) /\
     (forall g t, In (g, t) (A.c_sub Cu) -> (forall x, In x (g :: A.gens t) -> A.nlook x (A.c_ty C) <> None) ->
@@ -635,7 +635,7 @@ Proof.
     assert (Lx : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x)))).
     { rewrite Th. exact (PublicFamilyAgree.lookup_keys (fun y => A.canon C (app_subst (A.c_ty C) (TAbs y))) (A.c_ty Cu) x Ix). }
     rewrite <- GT, app_subst_abs, Lx, (app_subst_abs (A.c_ty C)), lookup_subst_nlook', Lh, Eh. symmetry. exact (Abs tx). }
-  destruct (chain_sigs h0 Ch0 needs outputs keys FC0 NoH PRf Abst0 T u gfx sms rms h0 gf0 [] [] Chn eq_refl eq_refl
+  destruct (chain_sigs h0 Ch0 needs outputs keys FC0 NoH PRf Abst0 T u gfx sms rms h0 gf0 None None Chn eq_refl eq_refl
     Cu ns FC Tok FixT) as (Crv & ksv & PRv & Inv).
   pose proof (FL.CF.app_keys_typed W F C pa u fx Cu ns sm th gensof C' ks newgens outs (proj2 (proj2 (proj1 Fmd))) AP) as KT.
   destruct (entries_rel_kinds W C u th C (fun t => TAbs (gensof t)) C' ks Cu ns Crv ksv eq_refl Parts FC NoU PRv Idem KT)

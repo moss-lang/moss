@@ -277,8 +277,8 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   Pre rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)] dc []) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg))) dc None) ->
+  ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
@@ -286,7 +286,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) None (CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
     FamilyNewOk rr Cr ks d dr H3.
 
 (* HYPOTHESIS (T15), CopyApplyOk and PlatformApplyOk at a family
@@ -299,7 +299,7 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh])%list dc (rms ++ [rm])%list) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) dc (compose_positions rms rm)) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
   A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
@@ -323,7 +323,7 @@ Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matc
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh])%list dc (rms ++ [rm])%list) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) dc (compose_positions rms rm)) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
   A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
@@ -375,7 +375,7 @@ Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u ma
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
-  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] []) []) ->
+  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code None (EnvironmentWithAliases [] [] []) None) ->
   Platform.Family W Prog u code ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 

@@ -29,7 +29,7 @@ Definition runtime := ProgramView (fun _ => None)
 
    Provider's own inputs contain F but no type T. Its captured provision F
    remains usable; the ambient stable T must not occupy its local output. *)
-Definition initial := Environment [] [(IFun 1,FunctorClosure 20 [] empty_environment [])].
+Definition initial := Environment [] [(IFun 1,FunctorClosure 20 None empty_environment None)].
 Definition no_input_setup :=
   match R.eval_bindings 30 runtime initial [] tt
     [BApply 1 [] [(2,2)] [] []; BFunctor 3 21 (TypeCapture [] []) [] [(IFun 1,IFun 1)]] with

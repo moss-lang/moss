@@ -30,7 +30,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
-From NM Require PublicFormation PublicCopyApply PublicFamilyStep PublicFamilyAgree PublicChainAgree PublicCallerKeys.
+From NM Require PublicFormation PublicCopyApply PublicFamilyStep PublicFamilyAgree PublicChainAgree PublicCallerKeys EagerCopy.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -267,12 +267,12 @@ Definition ChainForwardSigs : Prop :=
   forall rr d types H g st, Pre rr F C d types H g st ->
   forall code sms rms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms FS.CopyA.empty_env rms) ->
   FS.CopyA.S.FixedMeans W u d fx gfx ->
-  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
+  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
   forall i r m g key, nth_error ks i = Some (A.mkey r m) ->
   (forall i', i < i' -> nth_error ks i' <> Some (A.mkey r m)) ->
   A.mlook r m (A.c_mths C') = Some g ->
-  In key keys -> nth_error (chain_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
+  In key keys -> nth_error (closure_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
   exists rf a gf, key = IMth rf m a /\ A.mlook rf m (A.c_mths outputs) = Some gf /\
     Forall2 (SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf).
 
@@ -288,8 +288,8 @@ Definition ChainPrimsOk : Prop :=
   forall rr d types H g st, Pre rr F C d types H g st ->
   forall code sms rms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms FS.CopyA.empty_env rms) ->
   FS.CopyA.S.FixedMeans W u d fx gfx ->
-  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
-  FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [] FS.CopyA.empty_env []) ->
+  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
+  FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code None FS.CopyA.empty_env None) ->
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
   forall e key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
   Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
@@ -406,12 +406,12 @@ Proof.
 Qed.
 
 (* Down a copy chain the needs are selected again by each copy's smap. *)
-Lemma chain_adapt : forall u gfx sms rms h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
+Lemma chain_adapt : forall u gfx sms rms h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
   forall rr H d f Cu nsu e1, A.FunCtx W u Cu nsu ->
   FS.CopyA.S.Realizes W Prog argv read state_ok rr Cu (FS.CopyA.S.callee_env d (FS.CopyA.thof f Cu) e1) H ->
   exists e2, adapt_provisions e1 sms = Some e2.
 Proof.
-  intros u gfx sms rms h0 gf0 Ch. remember [] as sms0 eqn:E0. remember (@nil (list nat)) as rms0 eqn:E1.
+  intros u gfx sms rms h0 gf0 Ch. remember None as sms0 eqn:E0. remember (@None (list (option nat))) as rms0 eqn:E1.
   induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh Incl _ SN ST _ Sub _ _];
     intros rr H d f Cu' nsu' e1 FCu' Real.
   - subst sms. exists e1. reflexivity.
@@ -419,7 +419,7 @@ Proof.
     destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl SN ST Sub Real)
       as [e1' [Sel RealH]].
     destruct (IH E0 E1 rr H d f Ch nsh e1' FCh RealH) as [e2 A2].
-    exists e2. rewrite FS.CopyA.adapt_snoc, Sel. exact A2.
+    exists e2. exact (EagerCopy.adapt_compose _ _ _ _ _ Sel A2).
 Qed.
 
 (* At an application of a closure whose copy chain ends at a platform
@@ -433,8 +433,8 @@ Lemma chain_fixed_ground : forall F C pa u fx Cu ns sm th gensof C' ks newgens o
   FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st, Pre rr F C d types H g st ->
   forall code sms rms gfx, FS.CopyA.S.FixedMeans W u d fx gfx ->
-  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
-  FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code [] FS.CopyA.empty_env []) ->
+  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
+  FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code None FS.CopyA.empty_env None) ->
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
   forall e name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
   A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) ->
@@ -450,8 +450,7 @@ Proof.
   destruct (FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn x F0) as [Fx Egf].
   destruct (FS.CopyA.S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok0) as [CL|[CC|CP]].
   - destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E; intros; discriminate.
-  - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & rms' & rm' & gfh & E & _). injection E; intros.
-    destruct sms'; discriminate.
+  - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & rms' & rm' & gfh & E & _). discriminate E.
   - destruct CP as (code' & _ & _ & Mach).
     destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx.
     rewrite <- Egf, (Mach name mach x Inm Lang F0) in Gx.
@@ -482,12 +481,12 @@ Lemma family_core : forall k, FS.CopyA.S.Below W Prog argv read state_ok k ->
   (forall t, ~ A.FunOutputs W u t) ->
   (exists news, A.c_provisions C' = (news ++ A.c_provisions C)%list /\
      (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a)) ->
-  (forall s, In s (chain_sources rms (map (A.rkey_of outputs) keys)) -> In s (map (A.rkey_of outputs) keys)) ->
-  List.length (chain_sources rms (map (A.rkey_of outputs) keys)) = List.length ks ->
+  (forall s, In s (closure_sources rms (map (A.rkey_of outputs) keys)) -> In s (map (A.rkey_of outputs) keys)) ->
+  List.length (closure_sources rms (map (A.rkey_of outputs) keys)) = List.length ks ->
   (forall i r m g key, nth_error ks i = Some (A.mkey r m) ->
     (forall i', i < i' -> nth_error ks i' <> Some (A.mkey r m)) ->
     A.mlook r m (A.c_mths C') = Some g ->
-    In key keys -> nth_error (chain_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
+    In key keys -> nth_error (closure_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
     exists rf a gf, key = IMth rf m a /\ A.mlook rf m (A.c_mths outputs) = Some gf /\
       Forall2 (SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf)) ->
   (forall d1, select_provisions d sm = Some d1 ->
@@ -531,7 +530,7 @@ Proof.
   set (Dr := map (A.rkey_of outputs) keys) in *.
   set (rs := map (A.rkey_of C') ks).
   set (sel := result_selection rs rms Dr).
-  assert (LenRs : List.length (chain_sources rms Dr) = List.length rs) by (unfold rs; rewrite length_map; exact SrcLen).
+  assert (LenRs : List.length (closure_sources rms Dr) = List.length rs) by (unfold rs; rewrite length_map; exact SrcLen).
   (* the family's items, each installed *)
   assert (SrcKey : forall s, In s Dr -> exists key op, In key keys /\ s = A.rkey_of outputs key /\ last_prim s bindings = Some op).
   { intros s Is. unfold Dr in Is. apply in_map_iff in Is as [key [<- Ik]].
@@ -697,18 +696,18 @@ Lemma chain_core_premises : forall F C pa u fx Cu ns sm th gensof C' ks newgens 
   forall rr d types H g st, Pre rr F C d types H g st ->
   forall code sms rms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms FS.CopyA.empty_env rms) ->
   FS.CopyA.S.FixedMeans W u d fx gfx ->
-  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
+  forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
   incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)) /\
   (forall t, ~ A.FunOutputs W u t) /\
   (exists news, A.c_provisions C' = (news ++ A.c_provisions C)%list /\
      (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a)) /\
-  (forall s, In s (chain_sources rms (map (A.rkey_of outputs) keys)) -> In s (map (A.rkey_of outputs) keys)) /\
-  List.length (chain_sources rms (map (A.rkey_of outputs) keys)) = List.length ks /\
+  (forall s, In s (closure_sources rms (map (A.rkey_of outputs) keys)) -> In s (map (A.rkey_of outputs) keys)) /\
+  List.length (closure_sources rms (map (A.rkey_of outputs) keys)) = List.length ks /\
   (forall i r m g key, nth_error ks i = Some (A.mkey r m) ->
     (forall i', i < i' -> nth_error ks i' <> Some (A.mkey r m)) ->
     A.mlook r m (A.c_mths C') = Some g ->
-    In key keys -> nth_error (chain_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
+    In key keys -> nth_error (closure_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
     exists rf a gf, key = IMth rf m a /\ A.mlook rf m (A.c_mths outputs) = Some gf /\
       Forall2 (SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf)).
 Proof.
@@ -928,7 +927,7 @@ Proof.
     destruct MP as (r0 & m0 & a0 & _ & _ & _ & _ & _ & _ & -> & _). exists r0, m0, a0, op. split; [reflexivity|exact Ib]. }
   set (Dr := map (A.rkey_of outputs) keys) in *.
   set (rs := map (A.rkey_of Cr) ks).
-  set (sel := result_selection rs [] Dr).
+  set (sel := result_selection rs None Dr).
   (* position by position, the family's run-time key at θ is the caller's *)
   pose proof (PublicFamilyAgree.family_items_pos W C u matching th sm Cr ks Cu ns outputs keys FA FC
     (proj1 (proj2 FD)) PRf
@@ -938,15 +937,15 @@ Proof.
           destruct form; [contradiction|reflexivity|reflexivity])
     ltac:(intros t; unfold A.canon; rewrite Es; exact (Idem t))
     (family_keys C u matching th sm Cr ks Ts FA Cu ns FC)) as Pos.
-  assert (LenRs : List.length (chain_sources [] Dr) = List.length rs)
-    by (unfold rs, Dr; cbn [chain_sources fold_left]; rewrite !length_map; exact (eq_sym (Forall2_length Pos))).
+  assert (LenRs : List.length (closure_sources None Dr) = List.length rs)
+    by (unfold rs, Dr; cbn [closure_sources]; rewrite !length_map; exact (eq_sym (Forall2_length Pos))).
   assert (Inst : forall s, In s Dr -> exists op, last_prim s bindings = Some op).
   { intros s Is. unfold Dr in Is. apply in_map_iff in Is as [key [<- Ik]].
     destruct (KeysM key Ik) as (r0 & m0 & a0 & op & _ & Ib). exact (last_prim_some _ _ _ Ib). }
   destruct (select_ok (installs de bindings) sel) as [dr Sdr].
   { intros [a b] Iq. cbn [snd]. destruct (PublicCallerKeys.selection_in _ _ _ _ _ Iq) as [_ Ib].
     destruct (Inst b Ib) as [op Lp]. rewrite installs_lookup, Lp. discriminate. }
-  change (select_provisions (installs de bindings) (result_selection (map (A.rkey_of Cr) ks) [] Dr)) with
+  change (select_provisions (installs de bindings) (result_selection (map (A.rkey_of Cr) ks) None Dr)) with
     (select_provisions (installs de bindings) sel).
   rewrite Sdr. cbn [map result_environment read_result_types fresh_result_types].
   pose proof PR as PRc.
@@ -971,9 +970,9 @@ Proof.
     intros r m g0 Ik Mg. destruct (NewSig r m g0 (conj Ik Mg)) as [_ AllSig].
     destruct (In_nth_error _ _ Ik) as [i0 E0].
     assert (R0 : nth_error rs i0 = Some (A.rkey Cr r m)) by (unfold rs; rewrite nth_error_map, E0; reflexivity).
-    destruct (PublicCallerKeys.selection_at rs [] Dr i0 _ R0 LenRs) as [s Fs].
-    destruct (PublicCallerKeys.selection_last rs [] Dr _ s Fs LenRs) as [i [Ri [Si _]]].
-    cbn [chain_sources fold_left] in Si. unfold Dr in Si. rewrite nth_error_map in Si.
+    destruct (PublicCallerKeys.selection_at rs None Dr i0 _ R0 LenRs) as [s Fs].
+    destruct (PublicCallerKeys.selection_last rs None Dr _ s Fs LenRs) as [i [Ri [Si _]]].
+    cbn [closure_sources] in Si. unfold Dr in Si. rewrite nth_error_map in Si.
     destruct (nth_error keys i) as [key1|] eqn:Ek1; [|discriminate]. injection Si as Es'.
     unfold rs in Ri. rewrite nth_error_map in Ri.
     destruct (nth_error ks i) as [ki|] eqn:Ki; [|discriminate]. injection Ri as Eki.

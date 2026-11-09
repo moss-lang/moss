@@ -78,14 +78,14 @@ Definition ChainForwardCopySigs : Prop :=
   CN.CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st, Pre rr F C d types H g st ->
   forall code sms rms gfx, lookup_provision (IFun u) d = Some (FunctorClosure code sms CN.CC.LR.PA.FS.CopyA.empty_env rms) ->
-  sms <> [] ->
+  sms <> None ->
   CN.CC.LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  forall h0 gf0, CN.CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [] [] ->
+  forall h0 gf0, CN.CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
   forall Ch0 needs outputs keys bindings, CN.CC.LR.PA.FamilyData W Prog h0 code Ch0 needs outputs keys bindings ->
   forall i r m g key, nth_error ks i = Some (A.mkey r m) ->
   (forall i', i < i' -> nth_error ks i' <> Some (A.mkey r m)) ->
   A.mlook r m (A.c_mths C') = Some g ->
-  In key keys -> nth_error (chain_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
+  In key keys -> nth_error (closure_sources rms (map (A.rkey_of outputs) keys)) i = Some (A.rkey_of outputs key) ->
   exists rf a gf, key = IMth rf m a /\ A.mlook rf m (A.c_mths outputs) = Some gf /\
     Forall2 (CN.CC.LR.PA.SigAgreeG d Ch0 th) (A.sg_ret g :: r :: A.sg_params g) (A.sg_ret gf :: rf :: A.sg_params gf).
 
@@ -100,11 +100,11 @@ Definition AppKeysTyped : Prop :=
   forall q pa' x, A.resolve_sym W q pa' = Some x -> A.nlook x (A.c_ty C) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
 
-Lemma chain_nil : forall u gfx sms rms h0 gf0 sms0 rms0, CN.CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 sms0 rms0 -> sms = [] ->
-  u = h0 /\ sms0 = [] /\ rms = rms0.
+Lemma chain_nil : forall u gfx sms rms h0 gf0 sms0 rms0, CN.CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 sms0 rms0 -> sms = None ->
+  u = h0 /\ sms0 = None /\ rms = rms0.
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch. destruct Ch; intros E; [subst; split; [reflexivity|split; reflexivity]|].
-  exfalso. destruct sms; discriminate.
+  discriminate E.
 Qed.
 
 Lemma app_keys_typed : AppKeysTyped.
@@ -122,9 +122,9 @@ Theorem chain_forward_sigs : AppKeysTyped ->
 Proof.
   intros AKT Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
     code sms rms gfx Look Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD i r m g0 key Ki Last Mg Ikey Si.
-  destruct sms as [|s0 sms'].
-  2: { exact (Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
-         code (s0 :: sms') rms gfx Look ltac:(discriminate) Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD
+  destruct sms as [s0|].
+  1: { exact (Copy F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
+         code (Some s0) rms gfx Look ltac:(discriminate) Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD
          i r m g0 key Ki Last Mg Ikey Si). }
   destruct (chain_nil _ _ _ _ _ _ _ _ Chn eq_refl) as [<- [_ ->]].
   pose proof FD as (FC0 & NoH & PRf & FB & Binds & MD & Abst & KD).
@@ -157,7 +157,7 @@ Proof.
   pose proof (PublicFamilyAgree.items_agree_gen W C u th C (fun t => TAbs (gensof t)) C' ks Cu ns outputs keys
     eq_refl Parts (or_intror (conj KD MD)) FC0 NoH PRf KeysM Idem KT) as [IA _].
   (* the item at position i is key *)
-  cbn [chain_sources fold_left] in Si. rewrite nth_error_map in Si.
+  cbn [closure_sources] in Si. rewrite nth_error_map in Si.
   destruct (nth_error keys i) as [key1|] eqn:Ek1; [|discriminate]. injection Si as Es.
   assert (E1 : key1 = key).
   { pose proof (PublicCallerKeys.rkey_of_inj outputs key1 key Es) as Pid.

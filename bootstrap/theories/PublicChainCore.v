@@ -209,8 +209,8 @@ Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newg
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg)] [] ->
-  ClosureOk rr H h0 gf0 (FunctorClosure code [map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg)] dc []) ->
+  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
+  ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
   LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -243,7 +243,7 @@ Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms,
   LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
   A.ResultRealizes Cb Cr (A.role_reads Cb outs' gen) ks' ->
-  (forall s, In s (chain_sources rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) -> In s (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) ->
+  (forall s, In s (closure_sources rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) -> In s (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) ->
   exists dr, select_provisions d3 (result_selection rs rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) = Some dr.
 Proof.
   intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms Real PR RR Rg. apply select_ok. intros [a b] Iq.
@@ -546,15 +546,15 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)] dc []) ->
-  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)] dc []) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
+  ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
   LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) None (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
   forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
      lookup_provision (A.rkey Cr r m) dr = Some pv /\ CallableOk rr H3 d (r :: A.sg_params g) (A.sg_ret g) pv.
 
@@ -564,7 +564,7 @@ Proof.
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
-  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) []
+  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) None
     Real3 PR' RR
     ltac:(intros s0 I0; exact I0)) as [dr Sdr].
   exists dr. split; [exact Sdr|]. split.

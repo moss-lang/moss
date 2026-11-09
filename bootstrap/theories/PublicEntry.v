@@ -201,8 +201,8 @@ Proof.
   - intros u fx Found. pose proof (funs_ilook _ u fx KM Found) as Il.
     destruct (Find (IFun u) (ProvNs _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u' sms dc rms0|p held]; cbn in En; try contradiction.
-    destruct sms; [|contradiction]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction. destruct rms0; [|contradiction].
-    exists (FunctorClosure u' [] (EnvironmentWithAliases [] [] []) []),
+    destruct sms; [contradiction|]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction. destruct rms0; [contradiction|].
+    exists (FunctorClosure u' None (EnvironmentWithAliases [] [] []) None),
       (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ground_fixed (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)) fx).
     destruct (ctx_fun_fixed W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
     split; [exact L|]. split; [apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CPlatform; [exact (proj1 En)| |]|].
