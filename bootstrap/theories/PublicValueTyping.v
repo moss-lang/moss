@@ -171,3 +171,9 @@ End Values.
 Module Type INTERP (Prims : PRIMITIVES).
   Include Interpreter Prims.
 End INTERP.
+
+(* A Public instance, kept transparent, for the same reason: CORRECT's
+   obligations are stated inside one particular instance. *)
+Module Type PUBLIC (Host : HOST).
+  Include Public Host.
+End PUBLIC.

@@ -5,11 +5,11 @@
    compatible interface never reaches a Stuck entry signal, is stated here
    as entry_never_stuck and passed as an explicit premise. *)
 From Stdlib Require Import List.
-From NM Require Import Audit.
+From NM Require Import Audit PublicValueTyping.
 Import Audit.Semantics ListNotations.
 
-Module SafetyReduction (Host : HOST).
-Module M := Public Host.
+Module SafetyReduction (Host : HOST) (M0 : PUBLIC Host).
+Module M := M0.
 Import M.
 
 Definition stuck_signal (signal : signal) : Prop :=

@@ -18,14 +18,15 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
-Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host.
+Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
+Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
 Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims PublicInterp.
 Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
-Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host.
-Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host.
-Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host.
+Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
+Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
+Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
 
 (* One dependency traversal computes the union for every field below.
    Closed.v separately checks the roots that must not assume primitives. *)
@@ -94,6 +95,8 @@ Definition certificate_roots :=
   @NM.PublicBodySafety.ctx_locals_push_distinct,
   @PublicSlice.safe_all,
   @PublicEntryTop.entry_safe,
+  @PublicEntryTop.safety_public,
+  @PublicEntryTop.entry_primitive,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @NM.PublicCallRealize.ctxof_formed,

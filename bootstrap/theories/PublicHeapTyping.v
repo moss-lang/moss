@@ -59,8 +59,8 @@ Proof. intros; constructor; apply heap_add_here. Qed.
 
 End HeapTyping.
 
-Module HeapSafety (Host : HOST).
-Module M := Public Host.
+Module HeapSafety (Host : HOST) (M0 : PUBLIC Host).
+Module M := M0.
 
 Theorem box_preserves_heap : forall W P interface H state tag value held raw next,
   M.interface_laws P interface -> M.supports interface (PBox tag) = true ->

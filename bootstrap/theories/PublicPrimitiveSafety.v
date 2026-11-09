@@ -369,8 +369,8 @@ Definition HeldAt (m : subst) (params : list ty) (held : option ty) : Prop :=
   | Some tau => exists first rest, params = first :: rest /\ tau = app_subst m first
   end.
 
-Module PrimitiveSafety (Host : HOST).
-Module M := Public Host.
+Module PrimitiveSafety (Host : HOST) (M0 : PUBLIC Host).
+Module M := M0.
 
 (* HeapTyping.HeapSafety's allocation lemmas, at this instance of Public
    (functor instances have distinct interface records). *)

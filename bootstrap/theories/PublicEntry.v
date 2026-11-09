@@ -4,14 +4,15 @@
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
-  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck.
+  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
-Module EntrySafety (Host : HOST).
-Module SR := SafetyReduction Host.
-Module M := SR.M.
+Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
+Module SR := SafetyReduction Host M0.
+Module PS := PrimitiveSafety Host M0.
+Module M := M0.
 Module S := BodySlice M.ReferenceHost M.Reference.
 
 Section Entry.
@@ -59,6 +60,14 @@ Proof.
   rewrite (Form y vy Ly), (subst_fixed_gens u _ Fix y Iy). reflexivity.
 Qed.
 
+Lemma lookup_entry_some : forall key (l : list (item * provision_value)) pv,
+  lookup_entry key l = Some pv -> In (key, pv) l.
+Proof.
+  intros key l pv. induction l as [|[k v] r IH]; intros L; [discriminate|]. cbn in L.
+  destruct (item_eqb key k) eqn:E; [apply item_eqb_spec in E; subst k; injection L as ->; left; reflexivity|].
+  right. exact (IH L).
+Qed.
+
 Lemma lookup_entry_in : forall key (l : list (item * provision_value)), In key (map fst l) ->
   exists pv, lookup_entry key l = Some pv /\ In (key, pv) l.
 Proof.
@@ -96,7 +105,8 @@ Lemma entry_realizes : forall n C ns types platform H0,
   A.CtxOf W (program_main Prog) C ns -> A.InitialTypes W C types ->
   map fst platform = map (A.rkey_of C) ns ->
   Forall (fun ie => Platform.Entry W Prog C (fst ie) (snd ie)) platform ->
-  (forall f op sg, A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
+  (forall f op sg, In (IFn f, PrimitiveClosure op None) platform ->
+     A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
      S.CallableOk W Prog argv read state_ok n H0 (Environment types platform) (A.sg_params sg) (A.sg_ret sg)
        (PrimitiveClosure op None)) ->
   S.Realizes W Prog argv read state_ok n C (Environment types platform) H0.
@@ -132,7 +142,7 @@ Proof.
     destruct (Find (IFn f) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc|p held]; cbn in En; try contradiction.
     destruct held; cbn in En; try contradiction. exists (PrimitiveClosure p None). split; [exact L|].
-    exact (Prims f p g Found En).
+    exact (Prims f p g (lookup_entry_some _ _ _ L) Found En).
   - intros r m g Found. destruct (mths_ilook _ r m g KM Found) as [a Il].
     destruct (Find (A.mkey r m) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn in En. contradiction.
@@ -180,17 +190,123 @@ Proof.
 Qed.
 End Entry.
 
+(* ---- the platform's primitives at the entry ----------------------------------- *)
+
+Lemma machine_lookup : forall W name mach x, Platform.Layouts W -> In (name, mach) A.initial_machines ->
+  A.LangSym W "wasm" A.NSName name x -> lookup_subst x (A.initial_machine_subst W) = Some (TMachine mach).
+Proof.
+  intros W name mach x [_ [Uniq _]] Inm Lang.
+  pose proof Lang as (d & p & Decl & Lib & Scope).
+  unfold A.LibraryModule in Lib. unfold A.initial_machine_subst.
+  destruct (A.w_library W) as [dir|] eqn:Ld; [|contradiction]. subst p.
+  change (String.append dir (String.append "wasm" ".moss")) with (String.append dir "wasm.moss") in Scope.
+  assert (Abs : forall n' m', In (n', m') A.initial_machines -> In n' Platform.abstract_names)
+    by (intros n' m' I; cbn in I; repeat (destruct I as [E|I]; [injection E as <- _; cbn; tauto|]); contradiction).
+  assert (Names : NoDup (map fst A.initial_machines)) by (cbn; repeat constructor; cbn; intuition discriminate).
+  assert (Gen : forall l, incl l A.initial_machines -> NoDup (map fst l) -> In (name, mach) l ->
+    lookup_subst x (flat_map (fun q => match A.w_scope W (String.append dir "wasm.moss") A.NSName (fst q) with
+      | Some (A.ESym symbol) => [(symbol, TMachine (snd q))] | _ => [] end) l) = Some (TMachine mach)).
+  { induction l as [|[n' m'] rest IH]; intros Sub Nd Il; [contradiction|].
+    inversion Nd as [|? ? Out Nd']; subst. cbn [flat_map fst snd].
+    destruct (A.w_scope W (String.append dir "wasm.moss") A.NSName n') as [[s'|t']|] eqn:E.
+    - cbn [app lookup_subst]. destruct (Nat.eqb_spec x s') as [->|Ne].
+      + assert (L' : A.LangSym W "wasm" A.NSName n' s') by (exists d, (String.append dir "wasm.moss");
+          split; [exact Decl|split; [unfold A.LibraryModule; rewrite Ld; reflexivity|exact E]]).
+        destruct Il as [Eq|Il]; [injection Eq as -> ->; reflexivity|].
+        exfalso. apply Out. replace n' with name; [change name with (fst (name, mach)); apply in_map, Il|].
+        exact (Uniq name n' s' (Abs name mach (Sub _ (or_intror Il))) (Abs n' m' (Sub _ (or_introl eq_refl))) Lang L').
+      + destruct Il as [Eq|Il]; [injection Eq as -> ->; congruence|].
+        apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il].
+    - cbn [app]. destruct Il as [Eq|Il]; [injection Eq as -> ->; congruence|].
+      apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il].
+    - cbn [app]. destruct Il as [Eq|Il]; [injection Eq as -> ->; congruence|].
+      apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il]. }
+  apply Gen; [intros q Iq; exact Iq|exact Names|exact Inm].
+Qed.
+
+(* A context's fn signatures are canonical: read under its merges. *)
+Lemma ctx_fn_canonical : forall W f C ns g sg a, A.CtxOf W f C ns ->
+  In (IFn g, A.ProvidedFn sg a) (A.c_provisions C) ->
+  forall t, In t (A.sg_ret sg :: A.sg_params sg) -> A.canon C t = t.
+Proof.
+  intros W f C ns g sg a Ctx I t It. pose proof (function_context_canonical W f C ns Ctx) as Idem.
+  destruct Ctx as (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & _ & _).
+  cbn [A.c_provisions A.entries_cx] in I. apply in_flat_map in I as [e [_ Ie]].
+  destruct e as [x|v' t0 a0|f' g0 a0|r m g0 a0|u fx]; cbn in Ie; try (destruct Ie as [E|[]]; discriminate); [contradiction|].
+  destruct Ie as [E|[]]. injection E as -> <- _. cbn [A.sg_ret A.sg_params] in It.
+  destruct It as [<-|It]; [exact (Idem _)|]. apply in_map_iff in It as [u [<- _]]. exact (Idem u).
+Qed.
+
+Lemma lookup_app : forall x (l m : subst),
+  lookup_subst x (l ++ m)%list = match lookup_subst x l with Some v => Some v | None => lookup_subst x m end.
+Proof. intros x l m. rewrite !lookup_subst_nlook. apply nlook_app'. Qed.
+
+(* A platform primitive in main's initial environment is a typed call. *)
+Lemma entry_primitive : forall W Prog argv read iface C ns types platform n H0 f op sg,
+  Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
+  M.interface_laws (program_of Prog argv read) iface -> M.supports iface op = true ->
+  A.CtxOf W (program_main Prog) C ns -> A.InitialTypes W C types ->
+  A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
+  Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg) ->
+  S.CallableOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface) n H0
+    (Environment types platform) (A.sg_params sg) (A.sg_ret sg) (PrimitiveClosure op None).
+Proof.
+  intros W Prog argv read iface C ns types platform n H0 f op sg Lay Reps Bools Laws Supp Ctx Types Found At Formed.
+  destruct At as [sg' [Found' Sig]]. rewrite Found in Found'. injection Found' as <-.
+  pose proof (ctx_keys_match W _ C ns Ctx) as KM.
+  destruct (fns_ilook _ f sg KM Found) as [a Il]. pose proof (S.ilook_in _ _ _ Il) as InP.
+  destruct (ctx_provision_scoped W _ C ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
+  pose proof (ctx_fn_canonical W _ C ns f sg a Ctx InP) as Canon.
+  destruct (ctxof_formed W _ C ns Ctx) as [Form _].
+  set (d0 := Environment types platform).
+  set (K := A.sig_gens sg).
+  set (m' := (S.capture_meanings d0 K ++ A.initial_machine_subst W)%list).
+  assert (OnK : forall x, In x K -> app_subst m' (TAbs x) = ground d0 (TAbs x)).
+  { intros x Ix. cbn [app_subst]. unfold m'. rewrite lookup_app, (S.lookup_capture d0 K x Ix). reflexivity. }
+  assert (SigK : forall t, In t (A.sg_ret sg :: A.sg_params sg) -> incl (A.gens t) K).
+  { intros t It x Ix. unfold K, A.sig_gens. apply in_flat_map. exists t. split; [exact It|exact Ix]. }
+  assert (G : forall t, In t (A.sg_ret sg :: A.sg_params sg) -> app_subst m' t = ground d0 t).
+  { intros t It. unfold ground. apply subst_agree_on. intros x Ix. exact (OnK x (SigK t It x Ix)). }
+  assert (Ground : MachinesGround W m').
+  { intros name mach sym Inm Lang. destruct (in_dec Nat.eq_dec sym K) as [Ik|Ok].
+    - rewrite (OnK sym Ik). unfold d0, ground. unfold A.InitialTypes in Types. subst types.
+      cbn [type_meanings Environment app_subst]. rewrite S.lookup_map_snd, lookup_subst_nlook.
+      assert (Ikey : In sym (map fst (A.c_ty C))) by exact (Sc sym Ik).
+      destruct (keys_in (A.c_ty C) sym Ikey) as [v Lv]. rewrite Lv. cbn [option_map].
+      unfold K, A.sig_gens in Ik. apply in_flat_map in Ik as [t [It Ix]].
+      pose proof (subst_fixed_gens t (A.c_sub C) (Canon t It) sym Ix) as Fix.
+      rewrite (Form sym v Lv), Fix. cbn [app_subst]. rewrite (machine_lookup W name mach sym Lay Inm Lang). reflexivity.
+    - cbn [app_subst]. unfold m'. rewrite lookup_app.
+      assert (Out : lookup_subst sym (S.capture_meanings d0 K) = None).
+      { unfold S.capture_meanings. clear -Ok. induction K as [|y r IH]; [reflexivity|]. cbn.
+        destruct (Nat.eqb_spec sym y) as [->|_]; [exfalso; apply Ok; left; reflexivity|].
+        apply IH. intro I; apply Ok; right; exact I. }
+      rewrite Out, (machine_lookup W name mach sym Lay Inm Lang). reflexivity. }
+  cbn [S.CallableOk]. intros H st ws Ext St Args.
+  rewrite <- (G (A.sg_ret sg) (or_introl eq_refl)).
+  apply (PS.primitive_safe W Prog argv read iface op None (A.sg_params sg) (A.sg_ret sg) m' H st ws
+    Lay Reps Bools Laws Supp Sig Ground Formed I St).
+  clear -Args G. induction Args as [|w t ws ts T Rest IH]; constructor.
+  - rewrite G; [exact T|right; left; reflexivity].
+  - apply IH. intros t' It'. apply G. destruct It' as [<-|It']; [left; reflexivity|right; right; exact It'].
+Qed.
+
 (* T20: an admissible program never reaches a Stuck entry signal, given the
    slice's safety, an initial ghost heap the state realizes, and callable
    platform primitives. *)
-Theorem entry_safe : forall prelude (state_ok : M.interface -> heap_types -> M.ReferenceHost.mstate -> Prop),
+Theorem entry_safe : forall prelude
+    (state_ok : A.world -> program_view -> M.interface -> heap_types -> M.ReferenceHost.mstate -> Prop),
   (forall Prog iface initial bundle W, M.Compatible Prog iface ->
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
-     (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok iface) k) /\
-     exists H0, state_ok iface H0 (iface, initial) /\
-       forall n C f op sg d0, A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
-         S.CallableOk W Prog (M.arguments initial) (M.read_file initial) (state_ok iface) n H0 d0
-           (A.sg_params sg) (A.sg_ret sg) (PrimitiveClosure op None)) ->
+     (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
+     exists H0, state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface H0 (iface, initial) /\
+       forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> A.InitialTypes W C types ->
+         program_environment Prog = Environment types platform ->
+         forall f op sg, In (IFn f, PrimitiveClosure op None) platform ->
+         A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
+         S.CallableOk W Prog (M.arguments initial) (M.read_file initial)
+           (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) n H0
+           (Environment types platform) (A.sg_params sg) (A.sg_ret sg) (PrimitiveClosure op None)) ->
   SR.entry_never_stuck prelude.
 Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
@@ -200,7 +316,7 @@ Proof.
   destruct (function_context_unique Wd _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
   unfold M.runtime. rewrite Env.
-  apply (main_not_stuck Wd Prog (M.arguments initial) (M.read_file initial) (state_ok iface) fuel
+  apply (main_not_stuck Wd Prog (M.arguments initial) (M.read_file initial) (state_ok Wd (program_of Prog (M.arguments initial) (M.read_file initial)) iface) fuel
     (Environment types platform) (iface, initial) H0 Safe).
   - intros dcl n rt b D Ast. exact (AllFn _ dcl RPlain n [] rt b D Ast).
   - exact MainDecl.
@@ -208,6 +324,46 @@ Proof.
     destruct (function_context_unique Wd _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
     apply (entry_pre Wd Prog _ _ _ fuel F C ns types platform H0 _ Ctx Frame This St).
     apply (entry_realizes Wd Prog _ _ _ fuel C ns types platform H0 Ctx Types Keys Entries).
-    intros f op sg Found At. exact (Prims fuel C f op sg _ Found At).
+    intros f op sg Ip Found At. exact (Prims fuel C ns types platform Ctx Types Env f op sg Ip Found At).
 Qed.
+(* The entry with the reference host's state invariant and its primitives:
+   what remains is the slice's safety and the platform signatures' handle
+   formation (T29). *)
+Theorem entry_safe_public : forall prelude,
+  (forall Prog iface initial bundle W, M.Compatible Prog iface ->
+     A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
+     (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial)
+        (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
+     (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
+        Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
+  SR.entry_never_stuck prelude.
+Proof.
+  intros prelude Remaining. apply (entry_safe prelude PS.state_ok).
+  intros Prog iface initial bundle W Compat Elab Link.
+  destruct (Remaining Prog iface initial bundle W Compat Elab Link) as [Safe Formed].
+  split; [exact Safe|]. exists (fun _ => None).
+  pose proof Compat as [_ [Supports Laws]].
+  split; [apply PS.state_ok_initial; apply Laws|].
+  pose proof Link as (_ & Lay & Reps & _).
+  intros n C ns types platform Ctx Types Env f op sg Ip Found At.
+  apply (entry_primitive W Prog _ _ iface C ns types platform n _ f op sg Lay Reps
+    (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _)); [|exact Ctx|exact Types|exact Found|exact At|
+    exact (Formed C ns f sg op Ctx Found At)].
+  apply Supports. unfold required_primitives. apply in_or_app. right. apply in_or_app. right.
+  rewrite Env. cbn [provision_values Environment]. apply in_flat_map.
+  exists (IFn f, PrimitiveClosure op None). split; [exact Ip|left; reflexivity].
+Qed.
+
+(* G05, conditionally: no Wrong result. *)
+Theorem safety_public : forall prelude,
+  (forall Prog iface initial bundle W, M.Compatible Prog iface ->
+     A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
+     (forall k, S.Safe W Prog (M.arguments initial) (M.read_file initial)
+        (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
+     (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
+        Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
+  forall program interface initial,
+    M.Admissible prelude program -> M.Compatible program interface ->
+    forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
+Proof. intros prelude Remaining. exact (SR.safety_from_entry prelude (entry_safe_public prelude Remaining)). Qed.
 End EntrySafety.

@@ -23,7 +23,20 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 
 ## The entry (checked, conditional)
 
-[PublicEntry.v](theories/PublicEntry.v) proves `entry_safe`:
+[PublicEntry.v](theories/PublicEntry.v) proves `safety_public`, which is
+`CORRECT.safety` for any `Public` instance, from two premises:
+
+- the slice's safety at every fuel, with the reference host's state
+  invariant (`PublicPrimitiveSafety.state_ok`);
+- handle formation of the platform signatures in main's context
+  (`HandleFormed`, a T29 fact).
+
+The initial ghost heap is the empty one (`state_ok_initial`). Each platform
+primitive is a typed call (`entry_primitive`, from `primitive_safe`): its
+signature's machine types are read through main's initial type table,
+which is canonical and scoped, extended by `initial_machine_subst`
+(`machine_lookup`). `Compatible` supplies support for every primitive in
+the initial environment. The steps on the way are `entry_safe`:
 `entry_never_stuck` follows from three premises, stated for every
 admissible program, compatible interface and initial state:
 
@@ -42,7 +55,9 @@ because `Platform.Entry` has no method entries. Functor needs are platform
 closures.
 
 The slice now takes its interpreter instance as a parameter (`INTERP`, in
-[PublicValueTyping.v](theories/PublicValueTyping.v)). The entry
+[PublicValueTyping.v](theories/PublicValueTyping.v)), and the safety
+reduction, the primitives and the entry take the `Public` instance
+(`PUBLIC`), since `CORRECT`'s obligations are stated inside one instance. The entry
 instantiates it with `Public(Host).Reference`, the interpreter the safety
 statement is about. Separate instances of `Interpreter` have distinct
 `evaluation` types and cannot be related.
@@ -424,3 +439,5 @@ without touching any proof.
 - Primitives (T11/T17) by a background agent (`primitive_safe`), merged;
   `ShapeNever` after approval; realization without a fuel drop
   (`callee_realizes_le`, `lambda_realizes_le`) (02:00 to 03:00).
+- `PUBLIC` refactor; primitives at the entry (`machine_lookup`,
+  `entry_primitive`) and `safety_public` (03:00 to 03:40).
