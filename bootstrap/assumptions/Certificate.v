@@ -166,6 +166,8 @@ Definition certificate_roots :=
   @NM.PublicLinkPins.link_dests_avoid,
   @NM.PublicLinkRun.app_env_meaning,
   @PublicLinkRunI.body_meaning_mentioned,
+  @PublicLinkRunI.body_meaning_input,
+  @NM.PublicLinkPins.link_dests_out,
   @NM.PublicCallerKeys.provide_result_key_news,
   @PublicChainCoreI.selection_news,
   @PublicCopy.chain_sources_range,

@@ -88,4 +88,17 @@ Proof.
   exact (PublicLinkPins.link_dests_avoid W Prog u Fg Cg its wrap Cb Fb made binds Pins D B x Ix Mx Nf).
 Qed.
 
+(* With LinkBody's made clause: every input of F keeps its meaning. *)
+Lemma body_meaning_input : forall W Prog (Cu : A.cx) Fg Cg its wrap Cb Fb made binds,
+  (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
+  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  forall j Pv d g st d' g' st', S.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
+  forall x, A.nlook x (A.c_ty Cu) <> None ->
+  lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d).
+Proof.
+  intros W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B j Pv d g st d' g' st' E x Nx.
+  apply (body_meaning_kept j Pv d g st binds d' g' st' E). intros Ix.
+  exact (Nx (PublicLinkPins.link_dests_out W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B x Ix)).
+Qed.
+
 End LinkRun.

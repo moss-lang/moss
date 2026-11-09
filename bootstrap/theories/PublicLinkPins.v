@@ -27,13 +27,16 @@ Fixpoint expr_applies (e : expr) : list (nat * list (nat * nat)) :=
   end.
 
 (* An application's destinations are fresh or outside the pins. *)
-Definition DestsOk (pins : list nat) (p : nat * list (nat * nat)) : Prop :=
-  forall q, In q (snd p) -> A.Fresh W (snd q) \/ ~ In (snd q) pins.
+Definition DestsOk (pins made : list nat) (p : nat * list (nat * nat)) : Prop :=
+  forall q, In q (snd p) -> (A.Fresh W (snd q) \/ ~ In (snd q) pins) /\ In (snd q) made.
 
-Definition WrapPins (pins : list nat) (w : expr -> expr) : Prop :=
-  forall x p, In p (expr_applies (w x)) -> In p (expr_applies x) \/ DestsOk pins p.
+Definition WrapPins (pins made : list nat) (w : expr -> expr) : Prop :=
+  forall x p, In p (expr_applies (w x)) -> In p (expr_applies x) \/ DestsOk pins made p.
 
-Lemma wrap_pins_bind : forall pins b, bind_apply b = [] -> WrapPins pins (fun x => EBind b x).
+Lemma dests_ok_mono : forall pins m m' p, incl m m' -> DestsOk pins m p -> DestsOk pins m' p.
+Proof. intros pins m m' p I O q Iq. destruct (O q Iq) as [A B]. exact (conj A (I _ B)). Qed.
+
+Lemma wrap_pins_bind : forall pins b, bind_apply b = [] -> WrapPins pins [] (fun x => EBind b x).
 Proof. intros pins b E x p I. cbn [expr_applies] in I. rewrite E in I. left. exact I. Qed.
 
 Lemma lambda_expr_applies : forall F C ps rt body sg this pid pre sm,
@@ -52,13 +55,13 @@ Proof.
 Qed.
 
 Lemma wrap_pins_pre : forall pins (pre : expr -> expr) b, (forall x, expr_applies (pre x) = expr_applies x) ->
-  bind_apply b = [] -> WrapPins pins (fun x => pre (EBind b x)).
+  bind_apply b = [] -> WrapPins pins [] (fun x => pre (EBind b x)).
 Proof. intros pins pre b Pre E x p I. rewrite Pre in I. cbn [expr_applies] in I. rewrite E in I. left. exact I. Qed.
 
 Fixpoint item_pins F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
-  A.fr_pins F' = A.fr_pins F /\ WrapPins (A.fr_pins F) w
+  A.fr_pins F' = A.fr_pins F /\ WrapPins (A.fr_pins F) m w
 with items_pins F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
-  A.fr_pins F' = A.fr_pins F /\ WrapPins (A.fr_pins F) w.
+  A.fr_pins F' = A.fr_pins F /\ WrapPins (A.fr_pins F) m w.
 Proof.
   - destruct D.
     all: try (split; [reflexivity|apply wrap_pins_bind; reflexivity]).
@@ -69,6 +72,7 @@ Proof.
       split; [reflexivity|]. intros x p I. unfold apply_output_expression in I. cbn [expr_applies bind_apply app] in I.
       destruct I as [<-|I]; [right|left; exact I].
       intros q Iq. cbn [snd] in Iq. apply in_map_iff in Iq as [t [<- It]]. cbn [snd].
+      split; [|apply in_map; exact It].
       match goal with
       | OI : forall t, In t outs <-> A.FunOutputs W u t,
         Os : forall t, A.FunOutputs W u t -> _ |- _ =>
@@ -78,7 +82,10 @@ Proof.
     + split; [reflexivity|]. intros x p I. left. exact I.
     + destruct (item_pins _ _ _ _ _ _ _ D1) as [P1 W1]. destruct (items_pins _ _ _ _ _ _ _ D2) as [P2 W2].
       rewrite P1 in W2. split; [rewrite P2; exact P1|].
-      intros x p I. cbv beta in I. destruct (W1 (w2 x) p I) as [I'|O]; [exact (W2 x p I')|right; exact O].
+      intros x p I. cbv beta in I. destruct (W1 (w2 x) p I) as [I'|O].
+      * destruct (W2 x p I') as [I''|O]; [left; exact I''|right].
+        apply (dests_ok_mono _ m2); [intros z Iz; apply in_or_app; right; exact Iz|exact O].
+      * right. apply (dests_ok_mono _ m1); [intros z Iz; apply in_or_app; left; exact Iz|exact O].
 Qed.
 
 Lemma bindsof_expr_applies : forall e l, A.BindsOf e l -> expr_applies e = flat_map bind_apply l.
@@ -91,7 +98,7 @@ Definition bind_dests (bs : list binding) : list nat :=
    or outside the frame's pins. *)
 Theorem items_dests_pins : forall F C its wrap C' F' made binds,
   A.BindItems W Prog F C its wrap C' F' made -> A.BindsOf (wrap EUnit) binds ->
-  forall y, In y (bind_dests binds) -> A.Fresh W y \/ ~ In y (A.fr_pins F).
+  forall y, In y (bind_dests binds) -> (A.Fresh W y \/ ~ In y (A.fr_pins F)) /\ In y made.
 Proof.
   intros F C its wrap C' F' made binds D B y Iy.
   destruct (items_pins _ _ _ _ _ _ _ D) as [_ Wp].
@@ -111,7 +118,18 @@ Corollary link_dests_avoid : forall u Fg Cg its wrap Cb Fb made binds,
   forall y, In y (bind_dests binds) -> A.Mentions W u y -> ~ A.Fresh W y -> False.
 Proof.
   intros u Fg Cg its wrap Cb Fb made binds Pins D B y Iy My Nf.
-  destruct (items_dests_pins _ _ _ _ _ _ _ _ D B y Iy) as [Fr|Np]; [exact (Nf Fr)|exact (Np (proj2 (Pins y) My))].
+  destruct (items_dests_pins _ _ _ _ _ _ _ _ D B y Iy) as [[Fr|Np] _]; [exact (Nf Fr)|exact (Np (proj2 (Pins y) My))].
+Qed.
+
+(* With LinkBody's clause that nothing the body makes is an input of F,
+   no destination is. *)
+Corollary link_dests_out : forall (Cu : A.cx) Fg Cg its wrap Cb Fb made binds,
+  (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
+  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  forall y, In y (bind_dests binds) -> A.nlook y (A.c_ty Cu) = None.
+Proof.
+  intros Cu Fg Cg its wrap Cb Fb made binds Out D B y Iy.
+  exact (Out y (proj2 (items_dests_pins _ _ _ _ _ _ _ _ D B y Iy))).
 Qed.
 
 End Pins.
