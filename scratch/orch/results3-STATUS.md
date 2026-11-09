@@ -30,6 +30,11 @@ there is one slice instance.
   From `ResultRealizes` plus Pre3's Absorbs/EnvOk.
 - `family_link_results_ok : FamilyLinkNewOk -> FS.FamilyLinkResultsOk`
   (the selection is `chain_selection`).
+- `bindings_writes`: a run of bindings (`eval_bindings ... = inl d'`) grows
+  the meanings only at its applications' destinations (`binding_dests`)
+  and the aliases only at their outputs and type bindings
+  (`binding_aliases`), as `Grows`. This is the dynamic half of the run fact
+  below.
 
 `safety_obligations` lists `CC.ChainNewOk` in place of `LRes.ChainCoreOk`
 and `CC.FamilyLinkNewOk` in place of `FS.FamilyLinkResultsOk`.
@@ -86,9 +91,15 @@ What is missing splits into two parts.
      `MeaningsGrow made de d3`, although `app_step` has it from
      `chain_run` (it discards it). Proving it inside ChainNewOk means
      either:
-     - a standalone lemma on `eval_bindings` (only BApply writes
-       meanings, at its destinations) plus a static walk over `BindItems`
-       (destinations are never keys of the body's table); or
+     - the standalone lemma on `eval_bindings`, now proved
+       (`bindings_writes`), plus a static walk over `BindItems`/`BindsOf`
+       that is still to do. It must show that a binding's destinations
+       and alias symbols are never inputs of the body. Fresh destinations
+       follow from FreshFor. Kept outputs are not in force. An in-force
+       output t gets an alias, so this needs the pins ([D84] 3d,
+       `fr_pins`): a body may not rebind M(F). BTypeBind's t must also be
+       new. The walk covers BApplyBody's nested items and the providers'
+       `pre` wraps; or
      - a statement change, which the rules forbid for the `...Ok`
        obligations.
    - Then `application_environment`'s reading of a linked input
@@ -97,4 +108,4 @@ What is missing splits into two parts.
 
 ## Time
 
-About 2.5 hours.
+About 3.5 hours.
