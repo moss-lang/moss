@@ -4267,8 +4267,11 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     SameResult W u gg ->
     LinkBody W P u gg h ->
     sm = map (fun k => (rkey_of Cg k, rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
-    smc = map (fun k => (rkey_of Cg k, rkey_of C (at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
-    (forall k k', In (k, k') smc -> provides C k') ->
+    (* 3b: the captured needs are answered here as a call would answer
+       them, at G's inputs read here: provided, coherent, at G's view of
+       their types, and G's merges holding of the meanings here *)
+    Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
+      (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h sm smc) (set_fun C u fx) F []
 
@@ -4384,6 +4387,8 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
        | _ => True end) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
     fr_this Fg = None -> fr_loop Fg = false ->
+    (* its locals are numbered as a body's are *)
+    Numbering Fg None [] ->
     (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
     (forall t, In t outs <-> FunOutputs W u t) ->

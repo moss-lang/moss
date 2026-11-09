@@ -216,6 +216,20 @@ the local store. *C* and *F* are the static context and frame.
   generations from a global counter. `LambdaProvider` now requires the body
   frame's `fr_fresh` to include `fr_fresh F` and `context_gens C`
   (user-approved; see Later cleanup).
+- **Gap: a functor closure's captured needs were unchecked (fixed).**
+  [captured-merge.moss](examples/captured-merge.moss): `bind F = G;`
+  captures G's needs that F does not take from the binding site, and
+  `BFunClosure` only required each to be provided there. G's context merges
+  `X` with `Y`, here `X = Char` and `Y = Bool`, so G's body would call
+  Bool's `not` on a Char. Both implementations reject the program (the
+  oracle checks captured readings, D84 3b), but the relation accepted it.
+  **Decided** (user-approved): the captured needs must satisfy G's context
+  as a call's needs do (`Satisfies`, at G's inputs read here). Its merge
+  clause covers every merge of G's context whose types are in force here.
+  Also `LinkBody` now requires a functor body's frame to number its locals
+  (`Numbering Fg None []`), as `FnElab` and `LambdaProvider` do; without it a
+  value bind with nested `let`s could put two live locals in one slot. The
+  implementation follow-up is [E30](proofs/build-run.md#e30).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -463,3 +477,6 @@ without touching any proof.
   running in parallel). Earlier entries in this log written from my own
   estimate rather than commit times overstated durations; these are
   corrected to commit times.
+- Functor invariant design (step-indexing problem, structural closure
+  invariant), the captured-merge gap and functor body numbering after
+  approval (02:09 to 02:45).

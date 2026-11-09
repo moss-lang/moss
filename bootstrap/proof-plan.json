@@ -2202,7 +2202,8 @@
         "E26",
         "E27",
         "E28",
-        "E29"
+        "E29",
+        "E30"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2768,6 +2769,30 @@
         "reason": "The user approved a ShapeNever result shape after the primitives proof found that interface_laws let unreachable, declared to return `|`, return ().",
         "sources": [
           "SAFETY-SITES.md"
+        ]
+      }
+    },
+    {
+      "id": "E30",
+      "group": "E",
+      "title": "Check captured functor needs and body numbering",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The executable elaborators' checks of a functor closure's captured needs (the oracle's D84 3b) imply Audit's Satisfies for them at the closure's inputs read where it is bound, and a functor body's frame numbers its locals, as Audit's BFunClosure and LinkBody now require.",
+      "approach": "Relate the D84 3b frozen-interpretation check to Satisfies' coherence, type and merge clauses; check the body frame's numbering. bootstrap/examples/captured-merge.moss is rejected by both implementations already.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/captured-merge.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved checking a closure's captured needs with Satisfies and numbering functor bodies after the relation accepted a program whose captured needs violate the functor's merges.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/captured-merge.moss"
         ]
       }
     },

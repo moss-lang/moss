@@ -3098,8 +3098,8 @@ Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu 
       A.SameResult W u gg ->
       A.LinkBody W Prog u gg h ->
       sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (filter (fun k => existsb (item_eqb k) nsu) nsg) ->
-      smc = map (fun k => (A.rkey_of Cg k, A.rkey_of C (A.at_site C k))) (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) ->
-      (forall k k', In (k, k') smc -> A.provides C k') ->
+      A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
+        (filter (fun k => negb (existsb (item_eqb k) nsu)) nsg) smc ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
   forall rr, rr <= S k -> BindStep rr F C F (A.set_fun C u fx) False [] (BFunctor u h sm smc).
 
@@ -3132,7 +3132,7 @@ Proof.
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm Smc Prov Fx].
+                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx].
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep.
     + exists [BValue v x]. split; [reflexivity|].
@@ -3158,7 +3158,7 @@ Proof.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx).
     + exists [BFunctor u h sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm Smc Prov Fx).
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U G FCu FCg FixU Same LB Sm SatC Fx).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
