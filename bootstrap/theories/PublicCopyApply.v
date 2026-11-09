@@ -44,6 +44,8 @@ Inductive CopyChain : nat -> subst -> list smap -> nat -> subst -> list smap -> 
     (exists sg m, A.CopyOutputs W sg u h Cu /\ gfx = S.ground_fixed m sg) ->
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
     A.SameResult W u h ->
+    (* the copy site, syntactically (S.CopySite) *)
+    S.CopySite W u h Cu gfx gfh ->
     CopyChain u gfx (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list h0 gf0 sms0.
 
 Lemma chain_fixed : forall u gfx sms h0 gf0 sms0, CopyChain u gfx sms h0 gf0 sms0 ->
@@ -190,7 +192,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      ClosureOk rr H h0 gf0 (FunctorClosure code [] dc)).
 Proof.
   intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
-    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub SO|u code gfx Fam Mach];
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub SO Site|u code gfx Fam Mach PR];
     intros code0 sms0 dc0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (S.linked_needs nsu nsg))) as [e2 Sel2].
@@ -221,15 +223,15 @@ Proof.
       [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & e2 & Chn & Ok0 & LB & FC0 & FCg & Keys & A2 & RealG)
       |(h0 & gf0 & Chn & Edc & Fam & Ok0)].
     + left. exists h0, gf0, gg, Ch0, nsh0, Cg, nsg, e2.
-      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO)|].
+      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO Site)|].
       split; [exact Ok0|]. split; [exact LB|]. split; [exact FC0|]. split; [exact FCg|].
       split; [intros x I; exact (keys_sub _ _ Sub x (Keys x I))|].
       split; [exact (Ad e2 A2)|exact RealG].
     + right. exists h0, gf0.
-      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO)|].
+      split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO Site)|].
       split; [exact Edc|]. split; [exact Fam|exact Ok0].
   - right. exists u, gfx. split; [constructor|]. split; [reflexivity|]. split; [exact Fam|].
-    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach).
+    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach PR).
 Qed.
 
 Lemma app_meanings_ext : forall (b1 b2 : nat -> ty) (tb : list (nat * ty)) l, (forall x, b1 x = b2 x) ->

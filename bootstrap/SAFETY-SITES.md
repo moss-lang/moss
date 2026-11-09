@@ -31,7 +31,8 @@ obligations (the functor and family obligations
 `PublicChainCore.chain_results_of_new`, from `ChainNewOk`, the
 formal/caller result correspondence for the result's new provisions
 (selection, outputs, aliases, kinds and the provisions kept from the
-caller are proved: `chain_core_ok`), and `KeptOutputsUnmentioned`, an
+caller are proved: `chain_core_ok`; ChainNewOk itself from the static
+`ChainKeysOk` and `ChainRealizeOk`: `PublicChainNew.chain_new_ok`), and `KeptOutputsUnmentioned`, an
 open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
@@ -561,6 +562,42 @@ the local store. *C* and *F* are the static context and frame.
   roles, H's result gives each of F's keys F's provision, F's fixed inputs
   read as they are in force. Details and the remaining differences from
   the oracle's check: scratch/orch/copy-AUDIT.md.
+- **Counterexample: a copy's source with an extra result key (fixed).**
+  `CopyOutputs` checked one direction only, as the oracle's
+  `copy_outputs_match` does: each key of F's result is one of H's. Leaves
+  drop a method item's brackets, so H may have two items on one leaf
+  (`Box.m[T=Bool], Box.m[T=Char]`) where F has one. An application of F
+  runs the root body and selects every key of the root's result
+  (`fc_outputs`), so the extra key overwrites the caller's own provision
+  of it. [copy-extra-key.moss](examples/copy-extra-key.moss) binds
+  `Box.m[T=Char]` to 3 and applies F: native keeps exactly F's result
+  (docs/reference/semantics.md, Functors) and prints 31; the oracle
+  installs G's `Box.m[T=Char]` and prints 21. The caller's static context
+  no longer describes its environment, and `ChainNewOk`'s first clause
+  (every key the selection fills is a new provision's) was false.
+  `CopyOutputs` now also requires every key of H's result to be one of
+  F's. The oracle should check the same converse (task E32); over the
+  corpus, an oracle with that converse gives the same verdicts. Native
+  accepts the program (correctly), so Audit is stricter than native here.
+  Details: scratch/orch/results4-AUDIT.md.
+- **Counterexample: a result key spelled through an output's input
+  meaning (fixed).** F's merges can make an input X read as an input T
+  that is also an output of F (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
+  merge representative). F's result key `X.m`, read at F's inputs, is then
+  `T.m` with the input T. `LinkBody`'s code renames the output roles back
+  to the output symbols (`output_renaming`), so the code's key reads, at
+  the application, as the new T, while the caller keys `X.m` at X's
+  meaning (the old T). [output-merge-key.moss](examples/output-merge-key.moss):
+  the reference interpreter on the oracle's program stops `stuck (XErr 6)`
+  (e_entry) at `x.m()`; native prints 7; with the representative swapped
+  the oracle prints 7. `ChainKeysOk` was false. `LinkBody` now requires
+  that no result key read at F's inputs (`rkey_of Cr k`) mention an output
+  symbol (only output roles `gen t`). Native accepts the program, so this
+  rejects something native runs, including the corpus regression
+  tests/regressions/functor_input_output_generations.moss (native `yn`;
+  the oracle is stuck there too, a known ignored test); the faithful alternative is to keep the
+  roles distinct in the code's keys (an interpreter change). Oracle bug:
+  E33. Details: scratch/orch/results4-AUDIT.md.
 - **A copy's source takes no input its target lacks (now in Audit).**
   `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
   inputs (types only H's result mentions). An application of F reads its
@@ -678,7 +715,8 @@ likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
-| `ChainNewOk` (PublicChainCore) | what is left of `ChainCoreOk` (`chain_core_ok` proves the rest): in a linked root's application through a copy chain, every key the result selection `dr` fills is the run-time key of a new provision of the caller's result C', and C''s new provisions are realized after the application (`EnvOkOn` the new keys). It is the caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`) | T15, T16 |
+| `ChainKeysOk` (PublicChainNew) | static, ChainNewOk's first clause (`chain_new_ok` proves that clause from it): at an application of F through a copy chain to a root h0, each key of h0's formal result, its output roles renamed back and substituted as the selection does (outputs to destinations, inputs by θ), is `rkey_of C'` of a key of F's result as the caller reads it. Needs `CopyOutputs` both ways (copy-extra-key.moss) | T15, T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk's second clause: C''s new provisions are realized after the application (`EnvOkOn` the new keys). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`) | T15, T16 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |

@@ -1,6 +1,6 @@
 # family3: scoping up to declared symbols — STATUS
 
-Branch `ob-family3`. `safety` 7b39518 is merged (7f08649). `check.sh` passes.
+Branch `ob-family3`. `safety` 93581f2 is merged. `check.sh` passes.
 
 ## Done
 

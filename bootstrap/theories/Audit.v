@@ -3806,7 +3806,13 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
 (* [D78] (the oracle's copy_outputs_match): read at F's inputs with the
    same fresh output roles, H's result gives each key of F's result the
    provision F's result gives it (each key's last setter), F's fixed
-   inputs read as sigma says (as they are in force where F is bound). *)
+   inputs read as sigma says (as they are in force where F is bound).
+   Conversely every key of H's result is one of F's: an application of F
+   runs the root body, whose result selection fills every key of the
+   root's result, and `bind F;` keeps exactly F's result. A bracketed key
+   H has and F lacks (one leaf, two receivers) would otherwise be
+   installed over the caller's provision of that key
+   (examples/copy-extra-key.moss). *)
 Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop :=
   exists outs gen Cr ks Cr' ks',
     (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs) /\
@@ -3816,7 +3822,8 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop 
     (forall k, In k ks -> exists p p',
        ilook (provision_id k) (c_provisions Cr) = Some p /\
        ilook (provision_id k) (c_provisions Cr') = Some p' /\
-       provision_subst sigma p = provision_subst sigma p').
+       provision_subst sigma p = provision_subst sigma p') /\
+    (forall k', In k' ks' -> exists k, In k ks /\ provision_id k = provision_id k').
 
 (* Restore fresh output generations to their declared symbols when filing
    the reusable code body. Input meanings remain those of the target. *)
@@ -4497,6 +4504,15 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* Every output has the promised signature and known type meanings. *)
     ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks ->
+    (* A result key, read at F's inputs, mentions no output symbol as an
+       input. F's merges can make an input X read as an input T that is
+       also an output (`A.gimme[Foo=X], A.gimme[Foo=T]`, T the
+       representative); the code's key would spell X.m as T.m, which the
+       application reads as the new T while the caller keys it at X
+       (examples/output-merge-key.moss; the oracle's program is stuck,
+       native prints 7). Output roles (gen t) are what the key may use. *)
+    (forall k t r m i, In k ks -> In t outs -> rkey_of Cr k = IMth r m i ->
+       ~ In t (gens r) /\ forall x tx, In (x, tx) i -> ~ In t (gens tx)) ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->

@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -16,7 +16,8 @@ Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
 (* The slice, as the family, copy and platform-family steps instantiate it. *)
-Module CC := PublicChainCore.ChainCore M.ReferenceHost M.Reference.
+Module CN := PublicChainNew.ChainNew M.ReferenceHost M.Reference.
+Module CC := CN.CC.
 Module LRes := CC.LR.
 Module PA := LRes.PA.
 Module FS := PA.FS.
@@ -193,7 +194,7 @@ Proof.
     exists (FunctorClosure u' [] (EnvironmentWithAliases [] [] [])),
       (S.ground_fixed (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)) fx).
     destruct (ctx_fun_fixed W _ C ns Ctx u fx (S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
-    split; [exact L|]. split; [apply S.CPlatform; [exact (proj1 En)|]|].
+    split; [exact L|]. split; [apply S.CPlatform; [exact (proj1 En)| |]|].
     { (* main's table reads a fixed machine input as its machine type *)
       intros name mach x Inm Lang Fx. destruct (Cov x Fx) as [tx Itx].
       rewrite (S.lookup_ground_fixed _ fx x tx Fun Itx).
@@ -209,6 +210,16 @@ Proof.
       change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ev. rewrite Cx in Ev. subst v.
       cbn [app_subst]. rewrite S.lookup_map_snd, lookup_subst_nlook, Lv. cbn [option_map app_subst].
       rewrite (machine_lookup W name mach x Lay Inm Lang). reflexivity. }
+    { (* the same, syntactically: main records a fixed machine input as itself *)
+      exists fx, (map (fun q => (fst q, app_subst (A.initial_machine_subst W) (snd q))) (A.c_ty C)).
+      split; [reflexivity|]. split; [exact Cov|]. split; [exact Fun|].
+      intros name mach x tx Inm Lang Itx.
+      pose proof (ctx_fun_self W _ C ns Ctx u fx (S.ilook_in _ _ _ Il) x tx Itx) as Etx.
+      destruct En as [_ FMR]. pose proof (FMR fx Found name mach x tx Inm Lang Itx) as Ct.
+      assert (Cx : A.canon C (TAbs x) = TAbs x).
+      { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
+        rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
+      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Etx. rewrite Cx in Etx. exact Etx. }
     split; [exact Cov|].
     intros x tx I. exact (S.lookup_ground_fixed _ fx x tx Fun I).
 Qed.
@@ -606,9 +617,11 @@ Theorem safety_obligations : forall prelude,
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
      S.CapturedInForceOk /\
-     (* ChainResultsOk, from PublicChainCore.chain_results_of_new: the new
-        provisions of the caller's result are realized *)
-     CC.ChainNewOk W Prog argv read so /\
+     (* ChainResultsOk, from PublicChainCore.chain_results_of_new and
+        PublicChainNew.chain_new_ok: the root's result keys are the
+        caller's (static), and the new provisions of the caller's result
+        are realized *)
+     CN.ChainKeysOk W /\ CN.ChainRealizeOk W Prog argv read so /\
      (* a kept output is unmentioned by the context: open, for the user to
         decide (scratch/orch/results2-AUDIT.md section 2) *)
      LRes.KeptOutputsUnmentioned W /\
@@ -629,11 +642,11 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CN [KU [RA [FLN [FCA [FRA FCo]]]]]]].
+    as [CIF [CK [CRz [KU [RA [FLN [FCA [FRA FCo]]]]]]]].
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.
-  pose proof (CC.chain_results_of_new W Prog _ _ _ CN KU) as CR.
+  pose proof (CC.chain_results_of_new W Prog _ _ _ (CN.chain_new_ok W Prog _ _ _ CK CRz) KU) as CR.
   pose proof (CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).

@@ -117,6 +117,32 @@ Definition PlatformFixed (u : nat) (gfx : subst) : Prop :=
   forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
     A.Fixed W u x -> lookup_subst x gfx = Some (TMachine mach).
 
+(* PlatformFixed syntactically: the context the family was provided in
+   (main's) records each fixed machine-type input as itself, and gfx is
+   that record read by some meanings. *)
+Definition PlatformRead (u : nat) (gfx : subst) : Prop :=
+  exists fx gm, gfx = ground_fixed gm fx /\
+    (forall x, A.Fixed W u x -> exists tx, In (x, tx) fx) /\
+    (forall x t t', In (x, t) fx -> In (x, t') fx -> t = t') /\
+    (forall name mach x tx, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
+       In (x, tx) fx -> tx = TAbs x).
+
+(* A copy `bind u = h;` at its site C1, syntactically (BFunCopy): fx is
+   u's fixed readings in C1 (what set_fun records), CopyOutputs compares
+   at them read canonically, gfx is them read by d (which realizes C1);
+   h's recorded readings fxh in C1 agree with C1's (FixedAgreement) and
+   mean in d what h's closure takes them to (gfh). *)
+Definition CopySite (u h : nat) (Cu : A.cx) (gfx gfh : subst) : Prop :=
+  exists C1 fx fxh d,
+    PublicFormation.FormedCx W C1 /\ Absorbs C1 d /\
+    (forall t, A.canon C1 (A.canon C1 t) = A.canon C1 t) /\
+    (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C1) = Some tx) /\
+    A.CopyOutputs W (map (fun q => (fst q, A.canon C1 (snd q))) fx) u h Cu /\
+    gfx = ground_fixed (type_meanings d) fx /\
+    A.nlook h (A.c_funs C1) = Some fxh /\ A.FixedAgreement W C1 h /\
+    (forall x, A.Fixed W h x -> exists tx, In (x, tx) fxh) /\
+    (forall x tx, In (x, tx) fxh -> lookup_subst x gfh = Some (ground d tx)).
+
 (* A functor closure is applicable (structurally: its captured functors
    are subterms). ClosureOk n H0 u gfx pv: pv, provided for u with its
    fixed inputs meaning what gfx says, is a body linked for u whose
@@ -149,9 +175,10 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     (* H's result is u's, leaf by leaf (so the same type outputs:
        same_result_outputs) *)
     A.SameResult W u h ->
+    CopySite u h Cu gfx gfh ->
     ClosureOk n H0 u gfx (FunctorClosure code
       (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list dc)
-| CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx ->
+| CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx -> PlatformRead u gfx ->
     ClosureOk n H0 u gfx (FunctorClosure code [] (EnvironmentWithAliases [] [] []))
 with CapturedFuns (n : nat) (H0 : heap_types) : subst -> environment -> list (nat * subst) -> Prop :=
 | CFNil : forall gm dc, CapturedFuns n H0 gm dc []
@@ -309,9 +336,9 @@ Proof.
       exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
     + intros r m' a g I L. destruct (Mths r m' a g I L) as [pv [Look Ok]]. exists pv. split; [exact Look|].
       exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
-  - intros u h Cu nsu Ch nsh code sms dc gfx gfh _ IH FCu FCh Incl Fx SN ST CO Sub SO.
-    exact (CCopy m H1 u h Cu nsu Ch nsh code sms dc gfx gfh IH FCu FCh Incl Fx SN ST CO Sub SO).
-  - intros u code gfx Fam Mach. exact (CPlatform m H1 u code gfx Fam Mach).
+  - intros u h Cu nsu Ch nsh code sms dc gfx gfh _ IH FCu FCh Incl Fx SN ST CO Sub SO Site.
+    exact (CCopy m H1 u h Cu nsu Ch nsh code sms dc gfx gfh IH FCu FCh Incl Fx SN ST CO Sub SO Site).
+  - intros u code gfx Fam Mach PR. exact (CPlatform m H1 u code gfx Fam Mach PR).
   - intros gm dc. constructor.
   - intros gm dc u fx pv gfx rest Look _ IH1 Fx _ IH2. exact (CFCons m H1 gm dc u fx pv gfx rest Look IH1 Fx IH2).
 Qed.
@@ -3157,7 +3184,7 @@ Proof.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [_ KM]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
   destruct (A.nlook h (A.c_funs C)) as [fxh|] eqn:Lh; [|congruence].
   destruct (Funs h fxh Lh) as [pv [gfh [Look [Okh [Covh Vmh]]]]].
   destruct (closure_shape _ _ _ _ _ Okh) as [c [sms [dc ->]]]. rewrite Look. left.
@@ -3176,7 +3203,10 @@ Proof.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure c (sms ++ [sm])%list dc), (ground_fixed (type_meanings d) fx).
     split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
-    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact Same].
+    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact Same|].
+      3: { exists C, fx, fxh, d. split; [exact (proj1 Fmd)|]. split; [exact Abs|]. split; [exact Idem|].
+           split; [exact Fx|]. split; [exact CO|]. split; [reflexivity|]. split; [exact Lh|]. split; [exact Agr|].
+           split; [exact Covh|exact Vmh]. }
       2: { exists (map (fun q => (fst q, A.canon C (snd q))) fx), (type_meanings d). split; [exact CO|].
            unfold ground_fixed. rewrite map_map. apply map_ext. intros [x tx]. cbn. f_equal. symmetry. exact (Abs tx). }
       intros x Fh. pose proof (FixH x Fh) as Fu. split; [exact Fu|].
@@ -3280,7 +3310,7 @@ Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Fam FrH FB].
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR NoRaw BO Fam FrH FB].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   refine (conj FCu (conj FCg (conj LPeq (conj LRd (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
     (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO FB))))))))))))))))))).
