@@ -535,8 +535,8 @@ the local store. *C* and *F* are the static context and frame.
   in force is installed as itself, and the application writes its meaning,
   but it was not made, so `BlkE` let a value of that type leave the block.
   [output-escape.moss](examples/output-escape.moss) does this. The oracle
-  rejects it (D78). Native was not run: no built compiler in that
-  checkout. `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
+  rejects it (D78), and native too ("a type created by a binding cannot
+  escape its block"). `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
   applications. The rule now makes every output destination
   (`map gensof outs`), and requires that the frame's return and receiver
   types not mention an output installed as itself (they are read where

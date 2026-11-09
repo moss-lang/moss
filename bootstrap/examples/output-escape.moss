@@ -5,7 +5,8 @@
 # although the application writes T's meaning only inside the block.
 # The oracle rejects it: "this block yields `T`, which mentions `T`, a type
 # `bind F;` made in it: a value of that type cannot leave the block (D78)".
-# Native was not run (no built compiler in the moss-safety checkout).
+# Native rejects it too: "a type created by a binding cannot escape its
+# block: `T`".
 # Audit now counts every output destination as made.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;

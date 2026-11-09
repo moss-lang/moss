@@ -6,7 +6,7 @@
 # Need lists T and T.twice[A=T]. main does not bind T, so the call reads
 # the need at the site as T itself. Family F is applied at A := T and adds
 # T.twice : () -> T to main's context, where T is not a key of the type
-# table. The oracle accepts this (exit 0).
+# table. The oracle and native both accept and run it (exit 0).
 type A;
 type T;
 assume A { fn .twice(): A; }

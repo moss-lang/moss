@@ -299,3 +299,101 @@ Options:
   runtime capture change, and still needs (b) for signature mentions.
 
 Not started pending a decision.
+
+## Native results (supersede the "native not run" notes above)
+
+Run with `MOSS_SEED=/nix/store/1h1710x0wvzmnhj5hna8ax9bpzxyvq02-mossc.wasm
+./target/release/moss run FILE`. Without a seed, `moss run` needs
+`nix build .#compiler`, which takes over 30 minutes.
+- `output-escape.moss`: native rejects it ("a type created by a binding
+  cannot escape its block: `T`").
+- `family-unbound-need.moss` and `family-unbound-need-sig.moss`: native
+  accepts and runs both (exit 0).
+
+# HANDOFF BRIEF (for a fresh agent)
+
+Branch `ob-family`, worktree `~/github/moss-lang/moss-ob-family`. Follow
+ORCH-RULES.md.
+
+## State
+
+- `safety` 5522b69 is merged (b9db3e1), and `check.sh` passes.
+- Later commits add only examples and notes.
+
+## Done on this branch
+
+- **`FamilyStepOk`** is proved (`PublicFamilyStep.family_step_ok`) from
+  the family versions of the application obligations:
+  - `FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`,
+    all in `PublicFamilyStep.v`;
+  - plus the slice's `chain_run` and `case_BApplyAbstract`.
+- **Restated `FamilyStepOk`** (PublicBodySlice) takes:
+  - `FamilyReadOff`;
+  - `TyOk ot` and `incl (gens ot) (scope_gens C0)`;
+  - `FamilyTableIn C C0`;
+  - and its keep clause requires `FamilyCoherent Cx Cr ks`.
+- **Audit D78** (commit 914cd3c; details in family-AUDIT.md):
+  - `BApplyAbstract` makes `map gensof outs`;
+  - an output installed as itself must not occur in `fr_ret`/`fr_this`.
+
+## Open: the four slice hypotheses
+
+`FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`, in
+PublicBodySlice after `family_step`. They are used by `family_then`,
+`demand_gen`, `demand_case`, `attached_step`, the call case of `ex_step`,
+`provided_step` and `lit_step`.
+
+## Key finding blocking the planned invariants
+
+`family-unbound-need.moss` and `-sig.moss` (oracle and native accept both):
+- A callee requirement the caller leaves unbound is read as itself
+  (`theta_at`, `at_site`).
+- A family demand then installs keys and signatures that mention a
+  declared type symbol T that is not in the caller's table.
+- So these are all false for accepted programs:
+  - `KeysScoped`, as stated with `scope_gens`;
+  - `DemandScopedOk`;
+  - repair's planned `DeclaredInForce`;
+  - results' `DeclaredScopedOk` ("declared symbols mentioned are table
+    keys").
+
+## Suggested design (needs the lead's choice)
+
+1. **Relax the scoping invariants to admit declared type symbols**
+   (`kind_sym W y = Some DKType`), as `TysScoped` already does:
+   - `KeysScoped`, the new locals/provisions scoping, and
+     `ExScoped`/`DemandScoped`.
+   - What actually needs "in force" (lambda capture's grounding, and
+     `CapturedInForceOk`) then needs a runtime fact instead: a declared
+     symbol that is not a table key has no meaning in `d`.
+   - The results agent's `MeaningsScoped` (meaning keys ⊆ table keys ∪
+     `fr_fresh` ∪ `context_gens`) gives this, if `fr_fresh` and
+     `context_gens` hold only fresh or scoped symbols. Check that, or state
+     `MeaningsScoped` with a "declared ⇒ table key" disjunct. Declared
+     symbols are never `Fresh`.
+2. **Add the scoping invariant to `PublicFormation.FormedCx`**: locals'
+   and provisions' types mention only `scope_gens` or declared symbols.
+   - Prove a mutual fixpoint `ex_scoped` alongside `ex_ok` (same case
+     structure).
+   - `BindItem`s grow the scope by `made`; `BlkE`'s escape check (now
+     over all outputs) removes it.
+   - Discharge `ExScopedOk`/`LitScopedOk`/`DemandScopedOk`. At call
+     sites, `at_site` reads callee need receivers through the table:
+     their gens are table-value gens (scoped) or unbound callee symbols
+     (declared).
+3. **`SigCoherent C`** (a named conjunct inside the slice's `Formed`):
+   each method provision `(mkey r m, ProvidedMethod g a)` has `g` equal to
+   `canon` of the declared `SigOf m` read at its θ (`theta_of C a`) with
+   receiver r.
+   - Establish it at body entries (`CtxOf`/`FunCtx` contexts:
+     `IEMth`/`OIEMeth` readings).
+   - Preserve it through binds (`BMethBind` reads `SigOf`; `family_direct`
+     excludes members) and through family results (`OIEMeth`).
+   - Then prove `FamilyCoherentOk`: the same receiver, m and θ give the
+     same `SigOf` reading. Use `sig_rel` (used in `attached_step`) or
+     TyOfSubst/TyOfRestrict.
+   - Obligations concluding `Pre` (`ChainResultsOk`, `ChainPlatformOk`,
+     the `Family*` ones) must then deliver it.
+
+**Merging:** merge `safety` often; other agents change `Pre`/`Formed`
+too.

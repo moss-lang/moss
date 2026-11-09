@@ -6,8 +6,8 @@
 # T is a declared type symbol that is not in main's table, so it is not in
 # scope_gens and the result context is not KeysScoped (PublicFormation),
 # although TysScoped already admits declared type symbols. The oracle
-# accepts and runs it (exit 0). Native was not run (no built compiler in
-# the moss-safety checkout).
+# accepts and runs it (exit 0), and so does native
+# (target/release/moss run, exit 0).
 type A;
 type T;
 assume A { fn .foo(); }
