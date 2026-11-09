@@ -4,7 +4,8 @@
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
-  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping.
+  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
+  PublicPlatformApply.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -13,7 +14,9 @@ Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
 Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
-Module S := BodySlice M.ReferenceHost M.Reference.
+(* The slice, as the platform-family application step (PA) instantiates it. *)
+Module PA := PlatformApply M.ReferenceHost M.Reference.
+Module S := PA.S.
 
 Section Entry.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -301,6 +304,84 @@ Proof.
   - apply IH. intros t' It'. apply G. destruct It' as [<-|It']; [left; reflexivity|right; right; exact It'].
 Qed.
 
+(* PREMISE (T11/T29), what platform_prims_public leaves of PlatformPrimsOk:
+   at an application of a platform family, each primitive's AtKey
+   signature has its handle tags formed (as HandleFormed asks of main's
+   platform signatures), and the machine type symbols it mentions are read
+   as their machines in the environment the family's code runs in (each
+   is a fixed input of the platform's functors, read through θ in the
+   caller; the slice's invariant does not yet record that a platform
+   closure's fixed inputs mean the machine types). *)
+Definition PlatformSigsOk (W : A.world) (Prog : program) argv read (so : heap_types -> M.ReferenceHost.mstate -> Prop) : Prop :=
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr d types H g st, S.Pre W Prog argv read so rr F C d types H g st ->
+  forall code needs outputs keys bindings, PA.FamilyData W Prog u code Cu needs outputs keys bindings ->
+  forall d1, select_provisions d sm = Some d1 ->
+  forall key op rf m a gf, In key keys -> Platform.AtKey W outputs key op ->
+  key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
+  Forall (HandleFormed W) (A.sg_ret gf :: rf :: A.sg_params gf) /\
+  (forall name mach sym, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name sym ->
+     In sym (flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)) ->
+     ground (PA.app_env Prog argv read d code th d1) (TAbs sym) = TMachine mach).
+
+(* A platform family's primitives are typed calls (PlatformPrimsOk) for the
+   reference host, from primitive_safe, as main's are (entry_primitive). *)
+Lemma platform_prims_public : forall W Prog argv read iface,
+  Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
+  M.interface_laws (program_of Prog argv read) iface ->
+  (forall op, In op (required_primitives Prog) -> M.supports iface op = true) ->
+  PlatformSigsOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface) ->
+  PA.PlatformPrimsOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface).
+Proof.
+  intros W Prog argv read iface Lay Reps Bools Laws Supp Sigs F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
+    rr d types H g st Pre0 code needs outputs keys bindings FD d1 Sel key op rf m a gf Ik Ib MP AK Ek Mgf.
+  destruct (Sigs F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
+    code needs outputs keys bindings FD d1 Sel key op rf m a gf Ik AK Ek Mgf) as [Formed Mach].
+  pose proof AK as AK'. rewrite Ek in AK'. destruct AK' as [sg' [M' Sig]]. rewrite Mgf in M'. injection M' as <-.
+  set (de := PA.app_env Prog argv read d code th d1) in *.
+  set (K := flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)).
+  set (m' := (S.capture_meanings de K ++ A.initial_machine_subst W)%list).
+  assert (OnK : forall x, In x K -> app_subst m' (TAbs x) = ground de (TAbs x)).
+  { intros x Ix. cbn [app_subst]. unfold m'. rewrite lookup_app, (S.lookup_capture de K x Ix). reflexivity. }
+  assert (G : forall t, In t (A.sg_ret gf :: rf :: A.sg_params gf) -> app_subst m' t = ground de t).
+  { intros t It. unfold ground. apply subst_agree_on. intros x Ix. apply OnK.
+    unfold K. apply in_flat_map. exists t. split; [exact It|exact Ix]. }
+  assert (Ground : MachinesGround W m').
+  { intros name mach sym Inm Lang. destruct (in_dec Nat.eq_dec sym K) as [Ik'|Ok].
+    - rewrite (OnK sym Ik'). exact (Mach name mach sym Inm Lang Ik').
+    - cbn [app_subst]. unfold m'. rewrite lookup_app.
+      assert (Out : lookup_subst sym (S.capture_meanings de K) = None).
+      { unfold S.capture_meanings. clear -Ok. induction K as [|y r IH]; [reflexivity|]. cbn.
+        destruct (Nat.eqb_spec sym y) as [->|_]; [exfalso; apply Ok; left; reflexivity|].
+        apply IH. intro I; apply Ok; right; exact I. }
+      rewrite Out, (machine_lookup W name mach sym Lay Inm Lang). reflexivity. }
+  assert (Supported : M.supports iface op = true).
+  { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
+    pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
+    apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Cu)) (map fst (A.c_ty Cu))
+      (map (A.rkey_of outputs) keys) bindings). split; [exact (nlook_in _ _ _ _ FB)|].
+    cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
+    split; [exact Ib|left; reflexivity]. }
+  assert (Held : HeldAt m' (rf :: A.sg_params gf)
+    (match op, A.rkey_of outputs key with
+     | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (ground de tau)
+     | _, _ => None end)).
+  { rewrite Ek. cbn [A.rkey_of A.rkey]. unfold A.rkey.
+    destruct op; cbn; try exact I; exists rf, (A.sg_params gf); (split; [reflexivity|]);
+      symmetry; apply G; right; left; reflexivity. }
+  unfold primitive_closure. cbn [S.CallableOk]. intros H1 st1 ws Ext St Args.
+  rewrite <- (G (A.sg_ret gf) (or_introl eq_refl)).
+  apply (PS.primitive_safe W Prog argv read iface op _ (rf :: A.sg_params gf) (A.sg_ret gf) m' H1 st1 ws
+    Lay Reps Bools Laws Supported Sig Ground Formed Held St).
+  assert (G' : forall t, In t (rf :: A.sg_params gf) -> app_subst m' t = ground de t)
+    by (intros t It; apply G; right; exact It).
+  revert Args G'. generalize (rf :: A.sg_params gf) as ps. clearbody m'. intros ps Args G'.
+  clear -Args G'. induction Args as [|w t ws ts T Rest IH]; constructor.
+  - rewrite G'; [exact T|left; reflexivity].
+  - apply IH. intros t' It'. apply G'. right. exact It'.
+Qed.
+
 (* T20: an admissible program never reaches a Stuck entry signal, given the
    slice's safety, an initial ghost heap the state realizes, and callable
    platform primitives. *)
@@ -392,7 +473,8 @@ Theorem safety_obligations : forall prelude,
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg)) /\
      S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
      S.RefileRunOk W Prog argv read so /\ S.LinkResultsOk W Prog argv read so /\
-     S.CopyApplyOk W Prog argv read so /\ S.PlatformApplyOk W Prog argv read so) ->
+     S.CopyApplyOk W Prog argv read so /\
+     PA.PlatformResultAgrees W Prog /\ PlatformSigsOk W Prog argv read so) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -400,12 +482,16 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [[Mf [Mt Fs]] [Handles [FSt [LM [BM [CIF [RR [LR [CA PA]]]]]]]]].
+    as [[Mf [Mt Fs]] [Handles [FSt [LM [BM [CIF [RR [LR [CA [RA Sigs]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
+  pose proof Compat as [_ [Supports Laws]].
+  pose proof (PA.platform_apply_ok W Prog _ _ _
+    (platform_prims_public W Prog _ _ iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Sigs)
+    RA) as PlA.
   split; [|split; [split; assumption|exact Handles]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA).
+    (ex_intro _ bundle Wo) LM BM CIF RR LR CA PlA).
 Qed.
 
 End EntrySafety.

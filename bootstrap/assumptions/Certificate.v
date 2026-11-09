@@ -14,7 +14,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation.
+  PublicEntry PublicPrimitiveSafety PublicFormation PublicPlatformApply.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -24,6 +24,7 @@ Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims Publ
 Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
+Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
 Module PublicPrims := PublicPrimitiveSafety.PrimitiveSafety AuditExamples.Host PublicPublic.
@@ -98,6 +99,8 @@ Definition certificate_roots :=
   @PublicEntryTop.safety_public,
   @PublicEntryTop.safety_obligations,
   @PublicEntryTop.entry_primitive,
+  @PublicEntryTop.platform_prims_public,
+  @PublicPlatform.platform_apply_ok,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @NM.PublicCallRealize.ctxof_formed,
