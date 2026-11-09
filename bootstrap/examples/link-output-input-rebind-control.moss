@@ -1,7 +1,8 @@
 # realize3 control for link-output-input-rep.moss: ACCEPTED by the oracle and
 # native. An input T of F that is also an output, which the linked body G
-# rebinds (`bind T = Char`), with no merge. So an Audit repair for
-# link-output-input-rep.moss must not forbid rebinding such a T outright.
+# rebinds (`bind T = Char`), with no merge. Audit accepts it too: F's key
+# T.m has the output role as its receiver, which link_site reads at the body's
+# final table (Char.m, which G binds).
 # Oracle (ob-sigclose var moss_m2): prints 7. Native (ob-family, seed
 # 1h1710x0): prints 7.
 import "../../lib/wasi.moss" use WasiStd;

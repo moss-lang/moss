@@ -1,8 +1,9 @@
-# realize3 (scratch/orch/realize3-STATUS.md): NOT YET REJECTED by Audit
-# (reported, no Audit change made). For a world whose merge for F picks T as
-# the representative of X (MostGeneralMerge allows either, and w_context is a
-# witness), it is a COUNTEREXAMPLE to CN.ChainRealizeOk at the length-zero
-# chain (CCRefl), by hand reading of Audit's rules.
+# realize3 (scratch/orch/realize3-AUDIT.md): REJECTED by Audit at `bind F = G`
+# since link_site reads F's input symbols at G's own table and only the output
+# roles (gen t) at the body's final table. Before that, for a world whose merge
+# for F picks T as the representative of X (MostGeneralMerge allows either, and
+# w_context is a witness), it was a COUNTEREXAMPLE to CN.ChainRealizeOk at the
+# length-zero chain (CCRefl), by hand reading of Audit's rules.
 # It is link-kept-output-rep.moss with the write done by `bind T = Char`
 # instead of an application's kept output: BTypeBind has made = [], so
 # LinkBody's made clause does not see it, and T is not a pin since outputs
@@ -11,8 +12,9 @@
 #   input of F (through Merge) and an output of F.
 # - F's key X.m reads at F's inputs as T.m: the input T, not the output role
 #   gen T, since the receiver goes through Cu's table (σ X = T).
-# - link_site reads every output at G's final table Cb, input occurrences
-#   included, so the formal T.m reads there as Char.m, which G binds.
+# - The old link_site read every output symbol at G's final table Cb, input
+#   occurrences included, so the formal T.m read there as Char.m, which G
+#   binds. Now the input T reads at G's table as T, and T.m is not bound.
 # - The caller (X = T = Bool, T in force, so T's destination is fresh)
 #   reads the key X.m at its own table as Bool.m, and files G's Char.m
 #   closure under it. `true.m()` would run `putchar` on a Bool.

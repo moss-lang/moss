@@ -141,6 +141,28 @@ the local store. *C* and *F* are the static context and frame.
   - Fix: BFunCopy gains `exists n ps a r, ast_of W u = Some (ADFunctor n ps a
     r None)`, carried in `S.CopySite`. It mirrors the oracle's check, so it
     rejects nothing the oracle accepts. See scratch/orch/fwdsigs-AUDIT.md.
+- **A linked body's result keys read F's input symbols at G's table, the output roles at the body's (realize3).**
+  `CN.ChainRealizeOk` was false (by hand reading) for
+  [link-output-input-rep.moss](examples/link-output-input-rep.moss).
+  - T is an input and an output of F, and a world's merge for F picks T
+    as X's representative, so F's key X.m reads as T.m with the input T.
+  - G rebinds `T = Char`. That is a BTypeBind, so `made = []`, and T is not
+    a pin.
+  - The old link_site read every output symbol at the body's final table,
+    the input occurrence included. So G's Char.m was accepted, and the
+    caller filed it under Bool.m.
+
+  Repair: link_site's table sends the roles `gen t` to the body's
+  meanings, and every symbol to G's table. LinkBody's renaming is the
+  identity on the roles (`link_renaming`). The oracle already reads this
+  way (Elab.v `made_tys`/`body_key`).
+  - The oracle and native reject the example.
+  - The control (link-output-input-rebind-control.moss) is accepted by
+    all three.
+  - Corpus (oracle against a variant reading as the old rule): 414 the
+    same, 1 different. The difference is output-merge-key.moss, which the
+    old rule rejected and the oracle accepts. See
+    scratch/orch/realize3-AUDIT.md.
 - **A linked body may not install an input of F as a kept output (realize2).**
   `CN.ChainRealizeOk` was false for a linked root (linknewpf's m7, made
   observable).

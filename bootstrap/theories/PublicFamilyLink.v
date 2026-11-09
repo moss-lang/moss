@@ -55,7 +55,7 @@ Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
     Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
   exists Cu, nsu, Cg, nsg, binds0, (map ITy outs ++ map (A.rkey_of Cr) ks)%list,
-    (map (fun k => A.rkey_of (A.link_site Cg Cb outs) (A.at_site (A.link_site Cg Cb outs) (A.output_renaming outs gen k))) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
+    (map (fun k => A.rkey_of (A.link_site Cg Cb outs gen) (A.at_site (A.link_site Cg Cb outs gen) (app_subst_item (A.link_renaming outs gen) k))) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
 Qed.
 
 Lemma functx_table_in : forall u C ns, A.FunCtx W u C ns -> forall x v, In (x, v) (A.c_ty C) ->
@@ -159,7 +159,7 @@ Proof.
     A.kind_sym W x = Some A.DKType) by (intros q pa x _ Lx Nu; exact (PublicFormation.family_keys_typed W C u matching th sm Cr ks Ts FA Cu ns FC x Lx Nu)).
   pose proof (PublicFamilyAgree.family_items_pos W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as Pos.
   pose proof (PublicFamilyAgree.family_items_agree W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as [NewSig _].
-  set (Ls := A.link_site Cg Cb []) in *.
+  set (Ls := A.link_site Cg Cb [] gen) in *.
   set (srcs := S.link_sources Ls [] gen ks') in *.
   set (rs := map (A.rkey_of Cr) ks) in *.
   assert (LenRs : List.length (chain_sources [] srcs) = List.length rs)
