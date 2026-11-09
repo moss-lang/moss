@@ -1,13 +1,16 @@
-# consol: REJECTED by Audit, ACCEPTED by both implementations (a known
-# divergence, not changed). Like block-kept-output-pin.moss, but the block
-# nested in G's body rebinds the pin itself: `bind seven = { bind T = Char;
-# 7 };`. M(F) = {T} (F's result lists `tick`, a defined fn under
-# `assume T`), and BTypeBind asks `~ In t (fr_pins F)` in every frame
-# derived from the linked body's, nested blocks included. The rebind is
-# local to the block and its value (an Int) does not mention T, so no
-# result of G reads it. Lambda bodies inside G are not constrained this
-# way (LambdaProvider leaves the body frame's pins free), so the pins'
-# scope is incoherent: see scratch/consol-STATUS.md, "Incoherences".
+# Pins scope (proposals item 3). Like block-kept-output-pin.moss, but the
+# block nested in G's body rebinds the pin itself: `bind seven = { bind T =
+# Char; 7 };`. M(F) = {T} (F's result lists `tick`, a defined fn under
+# `assume T`). Until item 3, BTypeBind asked `~ In t (fr_pins F)` in every
+# frame derived from the linked body's, nested blocks included, while
+# lambda bodies were unconstrained (LambdaProvider leaves the body frame's
+# pins free): an incoherent scope, and Audit rejected this program. Now a
+# nested block runs without pins (BlkECheck, `without_pins`), as a lambda
+# body does: the rebind is local to the block and its value (an Int) does
+# not mention T, so no result of G reads it. The same rebind at the top of
+# G's body is still rejected (block-pin-rebind-top.moss).
+# Verdicts: Audit accepts (since item 3; before: rejected); oracle prints 7;
+# native prints 7.
 # Oracle (moss_m2 at ob-consol): prints 7, exit 0.
 # Native (moss-safety target/release/moss, MOSS_SEED
 #   /nix/store/1h1710x0...-mossc.wasm): prints 7, exit 0.

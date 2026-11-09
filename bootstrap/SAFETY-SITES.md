@@ -133,6 +133,18 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **Pins constrain only a linked body's own binds (proposals, #49).**
+  `BlkECheck` runs a nested block in `without_pins F`, so D84 3d's pins
+  M(F) reach the linked body's own binds (where only they can affect the
+  result) and no longer the binds of blocks nested in it; lambda bodies
+  were already free. Criteria: coherence (blocks and lambdas alike) and
+  fidelity: examples/block-pin-rebind.moss, which both implementations
+  run (7), is accepted; the same rebind at the body's top
+  (examples/block-pin-rebind-top.moss) is still rejected, as native does.
+  The slice's BlkE case transports `Pre` and `Outcome` across
+  `FrameSame F (without_pins F)`. An oracle variant with pinless nested
+  blocks agrees with the oracle on all 413 corpus files. See
+  AUDIT-CHANGES.md #49.
 - **M(F) counts every type symbol a fn's signature mentions (proposals,
   #12b).** `RMValFn` adds, for a fn, its `SigMentions` (as `RMMeth` has
   done for methods since sigclose), in Audit, ExecutionModel and the

@@ -5378,7 +5378,11 @@ Proof.
       intros [Rest|[[sp oy] [Iit Bi]]]; [apply block_breaks_cons; exact Rest|].
       apply stmt_breaks_block. eapply A.SBBind; [exact Iit|exact Bi].
   (* ---------------- BlkE ---------------- *)
-  - destruct D as [F C ss tl exp x t made Dblk Escape Fits]. exact (blk_step F C ss tl exp x t made Dblk Escape).
+  - destruct D as [F C ss tl exp x t made Dblk Escape Fits]. intros d types H lg lst Pre0.
+    (* a nested block runs in the frame without pins, which code safety does not read *)
+    assert (FS : FrameSame F (A.without_pins F)) by (repeat split).
+    apply (outcome_frame F (A.without_pins F) d H types t _ _ FS).
+    exact (blk_step (A.without_pins F) C ss tl exp x t made Dblk Escape d types H lg lst (pre_frame _ _ _ _ _ _ _ _ _ FS Pre0)).
   (* ---------------- Branch ---------------- *)
   - destruct D as [F C b exp x t Db|F C y exp x t NotBlock Dy]; intros d types H lg lst Pre0.
     + destruct (blke_branch_ty _ _ _ _ _ _ Db) as [Branch FitsExp].

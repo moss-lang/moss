@@ -90,8 +90,9 @@ entry they belong to.
 | 46 | A platform family's items have distinct methods | 3544241 | E |
 | 47 | A platform family is abstract, with distinct keys | cf21df4 | E |
 | 48 | **No expanding cycle (`NoExpandingCycle`, D16/D30)** | branch ob-expand | **B** |
+| 49 | Pins constrain only a linked body's own binds | proposals | relaxation (toward both) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1015,6 +1016,38 @@ executable tests unless noted.
   control-functor-const, which it compiles. Follow-up: E38 (open; the
   oracle needs the check for E11).
 
+### 49. Pins constrain only a linked body's own binds (proposals, item 3)
+- **Rule now.** `BlkECheck` checks a nested block in `without_pins F`, a
+  frame with no pins. The pins M(F) (D84 3d, `BTypeBind`'s `~ In t
+  (fr_pins F)`) therefore constrain only the linked body's own binds
+  (LinkBody's `BindItems`, with `bind G;` bodies it inlines), as before,
+  and no longer the binds of a block nested in the body. Lambda bodies were
+  already unconstrained (LambdaProvider leaves their frame's pins free), so
+  blocks and lambdas are now treated alike.
+- **Why.** Only the body's own binds can reach its result (P2 of the
+  consolidation spec), and a block's binds stay in the block. The old
+  scope was incoherent: the same rebind was rejected in a block and
+  accepted in a lambda.
+- **Criterion: coherence and fidelity** (criteria.md sections 2 and 6).
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [block-pin-rebind.moss](examples/block-pin-rebind.moss) (rebind in a nested block) | 7 | 7 | rejects | accepts |
+  | [block-pin-rebind-top.moss](examples/block-pin-rebind-top.moss) (same rebind at the body's top) | 7 | rejects ("compilation failed: `T`") | rejects | rejects |
+
+- **Corpus.** An oracle variant whose nested blocks run without pins
+  (`scratch/oracle/pinscope`), against the oracle: 413 same, 0 diff (the
+  oracle's own pins, P(F) ∩ M(F) less X(F), never rejected a nested
+  rebind in the corpus). An attempt to give the oracle Audit's pin set
+  (M(F)) was not faithful (it rejects `lib/wasistd.moss`'s top-level
+  `bind size::Size`, which the oracle treats as a manifest pin of X(F)),
+  so it was not used.
+- **Proof.** PublicBodySlice's BlkE case runs the block in the pinless
+  frame: `FrameSame F (without_pins F)`, and code safety reads no pins
+  (`pre_frame`, `outcome_frame`).
+- **Class.** A relaxation toward both implementations.
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1046,14 +1079,9 @@ restated there verbatim):
 
 Open points found in consolidation (not changed; the owner decides). The
 details are in `scratch/consol-STATUS.md`.
-- **Pins reach nested blocks but not lambda bodies.** A frame carries
-  `fr_pins` into every expression of a linked body, but
-  `LambdaProvider` leaves the body frame's pins free. BTypeBind's 3d
-  check therefore rejects
-  [block-pin-rebind.moss](examples/block-pin-rebind.moss), which both
-  implementations run, while the same rebind in a lambda is accepted.
-  Since only a linked body's own binds can reach its result, pins could
-  be scoped to them.
+- **Pins reach nested blocks but not lambda bodies.** Resolved by #49:
+  a nested block runs without pins, as a lambda body does, so
+  [block-pin-rebind.moss](examples/block-pin-rebind.moss) is accepted.
 - **M(F) counts a method's non-requirement signature symbols (#12), not
   a fn's.** Resolved by #12b: `RMValFn` counts a fn's `SigMentions` too,
   in Audit and the oracle.
@@ -1132,11 +1160,7 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   still says it must be accepted, which conflicts with the oracle's new
   D62 rejection. This should be settled.
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
-- [block-pin-rebind.moss](examples/block-pin-rebind.moss) (found in
-  consolidation; predates it). A block nested in a linked body rebinds a
-  pin of F (`bind T = Char;`). BTypeBind's D84 3d check reaches nested
-  blocks through the frame; both implementations accept and print 7. See
-  "Open points" below.
+- ~~block-pin-rebind.moss~~: accepted since #49.
 - Native's verdict is not recorded for stale-provision-type (#4) or
   unbound-merge-representative (#3).
 

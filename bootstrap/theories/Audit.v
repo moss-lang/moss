@@ -3484,6 +3484,10 @@ Definition with_mod (F : frame) (p : string) (u : nat) : frame :=
   Frame p (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F) (u :: fr_applying F) (fr_pins F).
 Definition with_fresh (F : frame) (gs : list nat) : frame :=
   Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F ++ gs) (fr_applying F) (fr_pins F).
+(* A nested block's frame: [D84] 3d's pins constrain only a linked body's
+   own binds, as a lambda body's frame is unconstrained. *)
+Definition without_pins (F : frame) : frame :=
+  Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F) (fr_applying F) [].
 
 Definition add_local (C : cx) (n : name) (t : ty) (mu : lmut) : cx :=
   Cx (c_ty C) (c_sub C) (c_provisions C) ((n, (t, mu)) :: c_locals C).
@@ -4273,8 +4277,10 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
 (* a block whose type is checked against `exp` and may not let a value of
    a generation it made escape ([D78]) *)
 with BlkE (W : world) (P : program) : frame -> cx -> ablock -> option ty -> expr -> ty -> Prop :=
+(* a nested block may rebind a pin for its own use: only the linked
+   body's own binds reach its result (examples/block-pin-rebind.moss) *)
 | BlkECheck : forall F C ss tl exp x t made,
-    Blk W P F C ss tl exp x t made ->
+    Blk W P (without_pins F) C ss tl exp x t made ->
     (forall g, In g made -> ~ In g (gens t)) ->
     opt_fits t exp ->
     BlkE W P F C (ABlock ss tl) exp x t
