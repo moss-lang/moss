@@ -1,0 +1,44 @@
+# `bind F;` for an output not in force here keeps its name (T) but still
+# makes it: inside the block T means Bool (FM's binding), outside it means
+# nothing, and `bind G;` later makes T again, as Int. Audit's
+# BApplyAbstract recorded only the fresh generations of outputs already in
+# force as made, so its D78 check let `mk()` (a T) leave the block, and
+# `take(v)` would run GM's `x + 1` on `true`. Both implementations reject
+# the program (the oracle: "a type `bind F;` made in it ... (D78)",
+# native: "a type created by a binding cannot escape its block"); Audit
+# now counts every output's destination as made (MadeFor).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn mk(): T;
+fn take(x: T): Int;
+
+functor F: -> T, mk;
+functor FM: -> T, mk { bind T = Bool; bind mk = () => true; }
+functor G: Std -> T, take;
+functor GM: Std -> T, take { bind T = Int; bind take = (x) => x + 1; }
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind F = FM;
+    bind G = GM;
+    let v = { bind F; mk() };
+    bind G;
+    print_int(take(v));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

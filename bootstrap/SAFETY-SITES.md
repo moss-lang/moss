@@ -450,6 +450,24 @@ the local store. *C* and *F* are the static context and frame.
   `BFunCopy` now requires H's type table to be among F's, as the oracle's
   input interpretation check does (it fails on an input of H that F
   lacks). Details: scratch/orch/copy-AUDIT.md.
+- **Counterexample: an output not in force escaped its block (fixed).**
+  [kept-output-escape.moss](examples/kept-output-escape.moss): `bind F;`
+  for an output `T` not in force keeps the name `T`, and `BApplyAbstract`
+  counted only the fresh generations of outputs already in force as made.
+  So D78 let `{ bind F; mk() }` (a `T`, `Bool` inside) leave the block, and
+  a later `bind G;` (`T = Int`) called `take(v)`, running `x + 1` on `true`.
+  Both implementations reject it: the oracle's `cx_fresh` gets every
+  output's destination, and native reports "a type created by a binding
+  cannot escape its block". It also made `LinkResultsOk` false, since
+  `result_environment` writes a meaning for the kept `T` but
+  `MeaningsGrow newgens` allowed only the fresh ones
+  ([captured-output-scope.moss](examples/captured-output-scope.moss) is an
+  instance). `BApplyAbstract` now requires `MadeFor W F C outs newgens`
+  (each member fresh, or an output not in force, and none in `fr_fresh F`,
+  `context_gens C` or the frame's types), with every output's destination
+  in `newgens`. The obligations' statements are unchanged. An oracle
+  variant that also checks the scope conditions for kept outputs gives the
+  oracle's verdict on all 356 test programs (scratch/orch/results-AUDIT.md).
 
 ## Body-safety slice (checked, conditional)
 

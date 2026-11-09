@@ -3436,6 +3436,17 @@ Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
     ~ In g (fr_fresh F ++ context_gens C ++
        (match fr_ret F with Some t => gens t | None => [] end) ++
        match fr_this F with Some t => gens t | None => [] end)) gs.
+(* The generations `bind F;` makes ([D78]): a fresh one for each output
+   already in force, and each output not in force, which keeps its name.
+   Both are new here, as the oracle's [cx_fresh] records them
+   (Elab.apply_abstract appends every output's destination): a value of
+   either kind of type may not leave the block, and no type here mentions
+   either one. *)
+Definition MadeFor (W : world) (F : frame) (C : cx) (outs : list nat) (gs : list nat) : Prop :=
+  NoDup gs /\ Forall (fun g => (Fresh W g \/ (In g outs /\ nlook g (c_ty C) = None)) /\
+    ~ In g (fr_fresh F ++ context_gens C ++
+       (match fr_ret F with Some t => gens t | None => [] end) ++
+       match fr_this F with Some t => gens t | None => [] end)) gs.
 
 (* The meaning of a decimal literal ([D68]): digits, an optional fraction
    and an optional exponent, as numerator / denominator. *)
@@ -4267,12 +4278,13 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x tx, In (x, tx) fx -> exists here,
       nlook x (c_ty C) = Some here /\ canon C here = canon C tx) ->
     Satisfies C Cu th ns sm ->
-    FreshFor W F C newgens ->
+    (* newgens: what the application makes, the destinations of its outputs *)
+    MadeFor W F C outs newgens ->
     (* Repeated output roles share a generation; distinct roles do not. *)
     (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-    (* outputs: fresh where the symbol is already in force *)
+    (* outputs: fresh where the symbol is already in force, else itself *)
     (forall t, FunOutputs W u t ->
-       (nlook t (c_ty C) = None /\ gensof t = t) \/
+       (nlook t (c_ty C) = None /\ gensof t = t /\ In t newgens) \/
        (nlook t (c_ty C) <> None /\ Fresh W (gensof t) /\ In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->

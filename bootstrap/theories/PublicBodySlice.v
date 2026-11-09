@@ -2932,10 +2932,10 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
   ((forall x tx, In (x, tx) fx -> exists here,
         A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx)) /\
   (A.Satisfies C Cu th ns sm) /\
-  (A.FreshFor W F C newgens) /\
+  (A.MadeFor W F C outs newgens) /\
   ((forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b)) /\
   ((forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\ In t newgens) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
@@ -2961,12 +2961,12 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
       (forall x tx, In (x, tx) fx -> exists here,
         A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx) ->
       A.Satisfies C Cu th ns sm ->
-      A.FreshFor W F C newgens ->
+      A.MadeFor W F C outs newgens ->
       
       (forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b) ->
       
       (forall t, A.FunOutputs W u t ->
-         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t /\ In t newgens) \/
          (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
