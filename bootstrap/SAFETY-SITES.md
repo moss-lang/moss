@@ -36,7 +36,9 @@ open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
 [PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
-premises; for `FamilyStepOk`, proved in
+premise `ChainForwardKeys` (the caller's new methods filed under the root
+family's run-time keys; the converse and the rest of `ChainResultAgrees`
+proved, `chain_result_agrees`, `chain_forward_agrees`); for `FamilyStepOk`, proved in
 [PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`
 (its selection proved, `PublicChainCore.family_link_results_ok`, from
 `FamilyLinkNewOk`: the family's new methods installed by the selection),
@@ -620,6 +622,24 @@ the local store. *C* and *F* are the static context and frame.
   pattern, which both implementations accept. `ResultRealizes` now compares
   at the body's meanings of the outputs, as the oracle's
   `promised_result_type` does (scratch/orch/results-AUDIT.md).
+- **A platform family's items have distinct methods (`Platform.MethodsDistinct`).**
+  `ChainResultAgrees` needs every item of a closure's root platform
+  family to be one of the caller's new methods (`ItemsAgree`'s clause B;
+  `family_core` uses it to rule out a primitive shadowing an old method).
+  A copy (`BFunCopy`) checks only one direction (`CopyOutputs`, as the
+  oracle's `copy_outputs_match`): each of F's items is one of H's. With
+  `SameResult` (same leaves), F has an item on each of H's leaves, but a
+  leaf (receiver symbol, name) does not fix the key: F's module may
+  resolve a detached `.m` to another method, and brackets add keys. So
+  `Platform.Family` now asks that the family's items have pairwise
+  distinct methods, at most one of them detached. Then the method F
+  resolves on each leaf is H's (an attached method is global; the one
+  detached method is the only detached candidate), and every root item is
+  matched. It constrains only the platform world: the oracle provides
+  platform families only for lib/wasm.moss's functors (Elab.v
+  `platform_fun`, `plat`), and Heap, Mutable, Arrays and Memories each
+  have distinct methods, one detached at most (`.boxed`, `.arrayed`).
+  Details in scratch/orch/chainagree-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 
@@ -644,7 +664,7 @@ hypotheses, each a named remaining obligation:
 | `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
 | `copy_apply` | applying a copy runs its source at the source's interface | T15 |
-| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, and F has no type output; needs a substitution lemma for result readings) and `ChainPrimsOk`, which `PublicEntry.platform_prims_public` discharges for the reference host (`platform_handles_formed`, `platform_sigs_fixed`, from Platform.Family's `HandlesRead` and `MachinesFixed`). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `Platform.Entry`'s `FixedMachinesRead`; a linked root never shares a family's primitives (`platform_not_linked`). The family application's version `FamilyPlatformApplyOk` is proved too (`family_platform_ok`), from `FamilyKeysTyped` (an extra key of the family context's table that a path names is a type symbol; with it `PublicFamilyAgree.family_items_agree` proves that Cr's new methods agree with the family's own items at θ, the shared `ItemsAgree` that `ChainResultAgrees` is also stated through) and `PrimsGroundOk` (the primitive half of `ChainPrimsOk`, for any environment reading the fixed machine inputs as the machine types; `platform_prims_public` now discharges it, and `chain_prims_of_ground` gives `ChainPrimsOk`). The machine grounding comes from `FixedAgreement` at the family context and the closure's `PlatformFixed` | T15, T11, T29 |
+| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, signatures agreeing at the state's ground meanings, and F has no type output) and `ChainPrimsOk`. `ChainResultAgrees` is proved from its forward clause `ChainForwardKeys` (each new method is filed under a root item's run-time key, signatures agreeing): no outputs and methods only from the chain's `SameResult` (`PublicChainAgree.copy_news_methods`), and every root item a new method by counting methods (`PublicChainAgree.chain_cover`, from `Platform.MethodsDistinct` and `WorldOf`'s scopes). `ChainForwardKeys` needs the readings composed along the chain (open), which `PublicEntry.platform_prims_public` discharges for the reference host (`platform_handles_formed`, `platform_sigs_fixed`, from Platform.Family's `HandlesRead` and `MachinesFixed`). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `Platform.Entry`'s `FixedMachinesRead`; a linked root never shares a family's primitives (`platform_not_linked`). The family application's version `FamilyPlatformApplyOk` is proved too (`family_platform_ok`), from `FamilyKeysTyped` (an extra key of the family context's table that a path names is a type symbol; with it `PublicFamilyAgree.family_items_agree` proves that Cr's new methods agree with the family's own items at θ, the shared `ItemsAgree` that `ChainResultAgrees` is also stated through) and `PrimsGroundOk` (the primitive half of `ChainPrimsOk`, for any environment reading the fixed machine inputs as the machine types; `platform_prims_public` now discharges it, and `chain_prims_of_ground` gives `ChainPrimsOk`). The machine grounding comes from `FixedAgreement` at the family context and the closure's `PlatformFixed` | T15, T11, T29 |
 
 `copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
 (`copy_apply_ok`): a closure's derivation is followed down its copy chain

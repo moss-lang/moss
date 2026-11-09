@@ -355,7 +355,7 @@ Definition PlatformSigsFixed (W : A.world) (Prog : program) : Prop :=
 Lemma platform_sigs_fixed : forall W Prog, PlatformSigsFixed W Prog.
 Proof.
   intros W Prog u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is.
-  pose proof FD as (_ & _ & _ & _ & Binds).
+  pose proof FD as (_ & _ & _ & _ & Binds & _).
   destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op' [_ [_ [_ [MF _]]]]]]].
   rewrite Ek in MF. exact (MF gf Mgf name mach sym Inm Lang Is).
 Qed.
@@ -384,7 +384,7 @@ Qed.
 Lemma platform_handles_formed : forall W Prog, (exists b, A.WorldOf b W) -> PlatformHandlesFormed W Prog.
 Proof.
   intros W Prog [b Wo] u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf.
-  pose proof FD as (FC & _ & PRf & _ & Binds).
+  pose proof FD as (FC & _ & PRf & _ & Binds & _).
   destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op' [_ [_ [_ [_ HR]]]]]]].
   rewrite Ek in HR. pose proof (HR gf Mgf) as Raws.
   pose proof (PublicFormation.functx_cx_formed W (PublicWorldFormation.merge_formed_of W)
@@ -612,8 +612,9 @@ Theorem safety_obligations : forall prelude,
      (* a kept output is unmentioned by the context: open, for the user to
         decide (scratch/orch/results2-AUDIT.md section 2) *)
      LRes.KeptOutputsUnmentioned W /\
-     (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
-     PA.ChainResultAgrees W Prog /\
+     (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok, its
+        ChainResultAgrees from this forward half (chain_result_agrees) *)
+     PA.ChainForwardKeys W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
      CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
@@ -643,7 +644,7 @@ Proof.
   pose proof (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps
     (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports (platform_handles_formed W Prog (ex_intro _ bundle Wo))
     (platform_sigs_fixed W Prog)) as PG.
-  pose proof (PA.chain_platform_ok W Prog _ _ _ RA (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
+  pose proof (PA.chain_platform_ok W Prog _ _ _ (PA.chain_result_agrees W Prog _ _ _ bundle Wo (PA.chain_forward_agrees W Prog _ _ _ RA)) (PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
   pose proof (PA.family_platform_ok W Prog _ _ _ PG FRA) as FPA.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
