@@ -677,6 +677,22 @@ the local store. *C* and *F* are the static context and frame.
   `platform_fun`, `plat`), and Heap, Mutable, Arrays and Memories each
   have distinct methods, one detached at most (`.boxed`, `.arrayed`).
   Details in scratch/orch/chainagree-AUDIT.md.
+- **A platform family is abstract, with distinct items (`Platform.Family`).**
+  The empty-chain case of `ChainForwardKeys` reads F's result at θ in
+  the caller's context against the family's own
+  (`PublicFamilyAgree.items_agree_gen`). That needs:
+  - the family to be an abstract functor, so every symbol its result
+    mentions is one of its inputs (implicit inputs);
+  - its result's keys to be distinct, since AppPremises, unlike a
+    family application, does not check `NoDup` of the caller's keys.
+
+  `Platform.Family` now asks both: a declaration with no body, and
+  `NoDup (map provision_id keys)`. They constrain only the platform
+  world. The oracle builds a platform family only for a `KyFun` whose
+  `functor_parts` body is `None` in the platform module (Elab.v
+  `platform_entry`). lib/wasm.moss's Heap, Mutable, Arrays and Memories
+  declare distinct items (Memories' 27 `Addr.*` methods have no
+  duplicate). Details in scratch/orch/chainfwd-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 

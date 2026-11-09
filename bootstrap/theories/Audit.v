@@ -4767,7 +4767,12 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
       HandlesRead W outputs key) keys bindings /\
-    MethodsDistinct W keys.
+    MethodsDistinct W keys /\
+    (* an abstract functor (the oracle's platform_entry: KyFun with no
+       body), whose items are distinct (lib/wasm.moss: each its own
+       declaration) *)
+    (forall d ps a r b, w_decl W source = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None) /\
+    NoDup (map provision_id keys).
 
 (* main's context reads each machine type a platform functor fixes as
    itself (the oracle's check_platform_entry_view: "platform functor has an

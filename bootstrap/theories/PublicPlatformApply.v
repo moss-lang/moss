@@ -230,7 +230,9 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
     Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key /\
     Platform.HandlesRead W outputs key) keys bindings /\
-  Platform.MethodsDistinct W keys.
+  Platform.MethodsDistinct W keys /\
+  (forall dl ps a r b, A.w_decl W u = Some dl -> A.functor_parts (A.d_ast dl) = Some (ps, a, r, b) -> b = None) /\
+  NoDup (map A.provision_id keys).
 
 Lemma family_data : forall u code, Platform.Family W Prog u code ->
   exists inputs needs outputs keys bindings, FamilyData u code inputs needs outputs keys bindings.
@@ -746,7 +748,7 @@ Proof.
     h0 gf0 Chn Ch0 needs outputs keys bindings FD) as [NoOut (news & Enews & NewM & A1)].
   split; [exact NoOut|]. exists news. split; [exact Enews|]. split; [exact NewM|].
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR).
-  pose proof FD as (_ & _ & PRf & _ & Binds & MD).
+  pose proof FD as (_ & _ & PRf & _ & Binds & MD & _).
   split; [exact A1|].
   apply (PublicChainAgree.chain_cover b W Wo u h0 (chain_leaves _ _ _ _ _ _ Chn) C _ C' ks PR Ch0 outputs keys PRf MD).
   - intros key Ik. destruct (forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op [_ [MP _]]]]].

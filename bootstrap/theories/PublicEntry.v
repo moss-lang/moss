@@ -631,8 +631,7 @@ Theorem safety_obligations : forall prelude,
         ChainForwardKeys from PublicChainFwd.chain_forward_keys: the empty
         chain is proved; a chain with a copy is ChainForwardCopyKeys,
         false as stated (examples/linked-copy-bracket.moss) *)
-     CF.ChainForwardCopyKeys W Prog argv read so /\
-     CF.PlatformAbstract W Prog /\ CF.PlatformKeysDistinct W Prog /\ CF.AppKeysTyped W /\
+     CF.ChainForwardCopyKeys W Prog argv read so /\ CF.AppKeysTyped W /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
      CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
@@ -647,8 +646,8 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CIF [CK [CRz [KU [RAc [PAb [PKD [AKT [FLN [FCA [FRA FCo]]]]]]]]]]].
-  pose proof (CF.chain_forward_keys W Prog _ _ _ PAb PKD AKT RAc) as RA.
+    as [CIF [CK [CRz [KU [RAc [AKT [FLN [FCA [FRA FCo]]]]]]]]].
+  pose proof (CF.chain_forward_keys W Prog _ _ _ AKT RAc) as RA.
   pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
   pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.
