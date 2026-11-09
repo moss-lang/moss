@@ -217,7 +217,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
   (exists h0 gf0, CopyChain u gfx sms rms h0 gf0 [] [] /\ dc = empty_env /\ Platform.Family W Prog h0 code /\
      ClosureOk rr H h0 gf0 (FunctorClosure code [] dc [])).
 Proof.
-  intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
+  intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn AbU Caps CF
     |u h Cu nsu Ch nsh code sms dc rms rm gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub SO Site|u code gfx Fam Mach PR];
     intros code0 sms0 dc0 rms0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
@@ -230,7 +230,7 @@ Proof.
       change (lookup_provision (A.rkey_of Cu k0) e1) with (lookup_provision (A.rkey_of Cu k0) (S.callee_env d (thof f Cu) e1)).
       rewrite L0. discriminate. }
     exists u, gfx, gg, Cu, nsu, Cg, nsg, e2.
-    split; [constructor|]. split; [exact (S.CLink W Prog argv read state_ok rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF)|].
+    split; [constructor|]. split; [exact (S.CLink W Prog argv read state_ok rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn AbU Caps CF)|].
     split; [exact LB|]. split; [exact FCu|]. split; [exact FCg|]. split; [intros x I; exact I|].
     split; [cbn [adapt_provisions]; exact Sel2|].
     assert (Keys : map fst (thof f Cu) = map fst (A.c_ty Cu)) by (unfold thof; rewrite map_map; reflexivity).

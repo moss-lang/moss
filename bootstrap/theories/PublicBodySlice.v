@@ -154,6 +154,8 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
 | CLink : forall u gg h Cu nsu Cg nsg dc gfx,
     A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
     (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
+    (* u is abstract (BFunClosure binds only an abstract functor) *)
+    (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
       (forall v t, In (IVal v) (captured nsu nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
          lookup_provision (IVal v) dc = Some (ValueProvision w) /\ value_typed W P H0 w (app_subst gm t)) /\
@@ -329,8 +331,8 @@ Lemma closure_lower : forall n m H0 H1, m <= n -> heap_extends H0 H1 ->
 Proof.
   intros n m H0 H1 Le Ext.
   apply (closure_ok_mut n H0 (fun u gfx pv _ => ClosureOk m H1 u gfx pv) (fun gm dc l _ => CapturedFuns m H1 gm dc l)).
-  - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps _ IH.
-    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn); [|exact IH].
+  - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn AbU Caps _ IH.
+    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn AbU); [|exact IH].
     intros gm Am. destruct (Caps gm Am) as [Vals [Fns Mths]]. split; [|split].
     + intros v t I L. destruct (Vals v t I L) as [w [Look T]]. exists w. split; [exact Look|].
       eapply value_typed_extends; eassumption.
@@ -3468,6 +3470,7 @@ Proof.
   - exists (FunctorClosure h [sm] dc []), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
     + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
+      { exact U. }
       * intros gm Am. split; [|split].
         -- (* vals *) intros v t Ik Lt.
            destruct (vals_ilook _ v t KMg Lt) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
@@ -3922,13 +3925,23 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists code, pv = FunctorClosure code [] (EnvironmentWithAliases [] [] []) [] /\ Platform.Family W Prog u code /\
      PlatformFixed u gfx).
 Proof.
-  intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
+  intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn _ Caps CF
     |u h Cu nsu Ch nsh code sms dc rms rm gfx gfh Okh FCu FCh Incl Fx SN ST _ _|u code gfx Fam Mach].
   - left. exists gg, h, Cu, nsu, Cg, nsg, dc. split; [reflexivity|].
     exact (conj LB (conj FCu (conj FCg (conj FxIn (conj Caps CF))))).
   - right; left. exists h, Cu, nsu, Ch, nsh, code, sms, dc, rms, rm, gfh. split; [reflexivity|].
     exact (conj Okh (conj FCu (conj FCh (conj Incl (conj Fx (conj SN ST)))))).
   - right; right. exists code. split; [reflexivity|exact (conj Fam Mach)].
+Qed.
+
+(* A linked closure's functor is abstract (CLink). *)
+Lemma closure_link_abstract : forall n H0 u gfx h sm dc, ClosureOk n H0 u gfx (FunctorClosure h [sm] dc []) ->
+  exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None).
+Proof.
+  intros n H0 u gfx h sm dc Ok. inversion Ok as [u' gg h' Cu nsu Cg nsg dc' gfx' LB FCu FCg FxIn AbU Caps CF
+    |u' h' Cu nsu Ch nsh code sms dc' rms rm gfx' gfh Okh FCu FCh Incl Fx SN ST CO InCu Same Site|u' code gfx' Fam Mach PR]; subst.
+  - exact AbU.
+  - destruct rms; discriminate.
 Qed.
 
 Lemma ilook_some_of_in : forall X k (l : list (item * X)) p, In (k, p) l -> exists p', A.ilook k l = Some p'.
