@@ -1368,21 +1368,25 @@ with binding : Type :=
 | BFunction            : fsym -> fsym -> type_capture -> smap -> binding
 | BMethod              : ty -> msym -> subst -> fsym -> type_capture -> smap -> binding
 | BFunctor             : usym -> usym -> type_capture -> smap -> smap -> binding
-| BCopyFunctor         : usym -> usym -> smap -> binding
-| BApply               : usym -> subst -> list (tsym * tsym) -> smap -> binding
+(* `bind F = H;`: the closure of H, its needs read through the smap and
+   each position of F's declared result read at the given position of H's *)
+| BCopyFunctor         : usym -> usym -> smap -> list nat -> binding
+(* an application: θ, the output destinations, the needs, and the caller's
+   key for each position of F's declared result *)
+| BApply               : usym -> subst -> list (tsym * tsym) -> smap -> list item -> binding
 | BPrimitive           : item -> prim -> binding.
 
 (* Named builders are notation for the single binding form. *)
-Definition apply_expression u arguments inputs body := EBind (BApply u arguments [] inputs) body.
-Definition apply_output_expression u arguments outputs inputs body :=
-  EBind (BApply u arguments outputs inputs) body.
+Definition apply_expression u arguments inputs results body := EBind (BApply u arguments [] inputs results) body.
+Definition apply_output_expression u arguments outputs inputs results body :=
+  EBind (BApply u arguments outputs inputs results) body.
 Definition bind_type_expression t tau e := EBind (BType t tau) e.
 Definition bind_value_expression v value e := EBind (BValue v value) e.
 Definition bind_function_expression f body types captures e := EBind (BFunction f body types captures) e.
 Definition bind_method_expression receiver method application body types captures e :=
   EBind (BMethod receiver method application body types captures) e.
 Definition bind_functor_expression u body types linked captured e := EBind (BFunctor u body types linked captured) e.
-Definition copy_functor_expression u provider inputs e := EBind (BCopyFunctor u provider inputs) e.
+Definition copy_functor_expression u provider inputs positions e := EBind (BCopyFunctor u provider inputs positions) e.
 Definition bind_primitive_expression key operation e := EBind (BPrimitive key operation) e.
 
 (* ===================== Runtime structures ================================ *)
@@ -1393,7 +1397,8 @@ Definition bind_primitive_expression key operation e := EBind (BPrimitive key op
 Inductive provision_value : Type :=
 | ValueProvision : value -> provision_value
 | FunctionClosure : fsym -> environment -> provision_value
-| FunctorClosure : usym -> list smap -> environment -> provision_value
+(* code, needs adaptations, captures, result positions (one list per copy) *)
+| FunctorClosure : usym -> list smap -> environment -> list (list nat) -> provision_value
 | PrimitiveClosure : prim -> option ty -> provision_value
 with environment : Type :=
 | EnvironmentWithAliases : subst -> subst -> list (item * provision_value) -> environment.
@@ -1493,18 +1498,16 @@ Record functor_code := FunctorCode {
      type reads as that type over the inputs' meanings, so the body's
      environment absorbs G's merges; an input it omits reads as itself *)
   fc_table : list (tsym * ty);
+  (* the result telescope; an application reads only its type items *)
   fc_outputs : tele;
   fc_bindings : list binding;
-  (* where the body left each result item: a result key (as the functor
-     declares it) paired with the body's own key for it; an item not
-     listed is read under its own key *)
-  fc_sources : list (item * item);
-  (* each output symbol t with the role (generation) the result keys
-     (fc_outputs' items, fc_sources' first components) use for it: a raw
-     t there is the input t, which F's merges may have made another
-     input's representative (tests/regressions/
-     functor_input_output_generations.moss) *)
-  fc_roles : list (tsym * tsym)
+  (* where the body left each item of the declared result, position by
+     position (the declared result's keys, ResultKeys): the body's own key
+     for it. An application installs the item at position i under the
+     caller's key for position i, so no key of the body's is read in the
+     caller's terms (tests/regressions/functor_input_output_generations.moss,
+     examples/copy-extra-key.moss, examples/linked-copy-bracket.moss) *)
+  fc_sources : list item
 }.
 Record program : Type := Program {
   program_functions : list (nat * expr);
@@ -1574,21 +1577,22 @@ Definition application_environment (P : program_view) (d : environment) (h : usy
     end)) inputs in
   EnvironmentWithAliases meanings meanings (provision_values dc).
 
-(* Formal input interpretation and output destination roles are distinct.
-   Result provisions use the output roles in preference to input roles. *)
-Definition result_substitution (inputs : subst) (outputs : list (tsym * tsym)) : subst :=
-  map (fun q => (fst q, TAbs (snd q))) outputs ++ inputs.
-(* An application's destination for output symbol t (t itself if none). *)
-Fixpoint output_destination (outputs : list (tsym * tsym)) (t : tsym) : tsym :=
-  match outputs with
-  | [] => t
-  | (source, destination) :: rest => if Nat.eqb source t then destination else output_destination rest t
-  end.
-(* A body's result keys name each output by its role: the role reads as
-   the output's destination, every other symbol (an input, even one
-   spelled as an output) by θ. *)
-Definition role_outputs (roles outputs : list (tsym * tsym)) : list (tsym * tsym) :=
-  map (fun q => (snd q, output_destination outputs (fst q))) roles.
+(* A closure's result positions: the root's sources, read through each
+   copy's positions in turn (the first copy made first). Each position of
+   a copy names a position of its source's declared result; the default
+   is unreachable for a checked program (CopyOutputs), and no provision is
+   keyed by a type item, so a stray position makes the selection stuck. *)
+Definition chain_sources (rms : list (list nat)) (sources : list item) : list item :=
+  fold_left (fun s rm => map (fun j => nth j s (ITy 0)) rm) rms sources.
+(* An application's selection: the caller's key for each position, read
+   from that position's source. A later position wins, as the caller's
+   static context reads a repeated key at its last setter (output_cx's
+   `rev es`), so the run-time provision under a repeated caller key is the
+   one its static type describes, whatever the sources of the earlier
+   positions (two of F's keys may meet only at the caller: A.m and B.m
+   with A and B read as one type). *)
+Definition result_selection (rs : list item) (rms : list (list nat)) (sources : list item) : smap :=
+  rev (combine rs (chain_sources rms sources)).
 (* Read every output from one completed body snapshot before installing any
    caller destination. An unchanged formal may be an output too. *)
 Fixpoint read_result_types (d : environment) (Dr : tele) (outputs : list (tsym * tsym))
@@ -1645,20 +1649,12 @@ Inductive signal : Type :=
 (* Part III. Dynamic semantics                                               *)
 (* ######################################################################## *)
 
-(* Rule A: an application at θ files each result entry under the result
-   item read at θ — the key its scope refers to it by. *)
-Definition inst_smap (th : subst) (D : tele) : smap :=
-  map (fun i => (app_subst_item th i, i)) (filter (fun i => negb (is_ty_item i)) D).
-(* A result item is read from the body under the key its source names
-   (fc_sources), by default its own: a linked body binds a result method
-   under its own receiver, not under F's spelling of it. *)
-Fixpoint source_key (sources : list (item * item)) (i : item) : item :=
-  match sources with
-  | [] => i
-  | (k, s) :: rest => if item_eqb i k then s else source_key rest i
-  end.
-Definition result_smap (th : subst) (D : tele) (sources : list (item * item)) : smap :=
-  map (fun q => (fst q, source_key sources (snd q))) (inst_smap th D).
+(* Rule A: an application files each item of F's declared result under
+   the caller's key for it (the key its scope refers to it by), read from
+   the body where the root left it (chain_sources, result_selection).
+   Exactly F's declared result is installed, as `bind F;` keeps exactly
+   F's result (examples/copy-extra-key.moss), and no key of the body's is
+   read in the caller's terms (examples/linked-copy-bracket.moss). *)
 
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
@@ -2019,17 +2015,17 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
           end
       | BFunctor u h types sm smc :: r =>
           match select_provisions d smc with
-          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc)) d) g st r
+          | Some dc => eval_bindings k P (install_provision (IFun u) (FunctorClosure h [sm] (typed_capture d types dc) []) d) g st r
           | None => inr (Evaluation (Stuck e_compose) g st)
           end
-      | BCopyFunctor u u' sm :: r =>
+      | BCopyFunctor u u' sm rm :: r =>
           match lookup_provision (IFun u') d with
-          | Some (FunctorClosure h sms dc) =>
-              eval_bindings k P (install_provision (IFun u) (FunctorClosure h (sms ++ [sm]) dc) d) g st r
+          | Some (FunctorClosure h sms dc rms) =>
+              eval_bindings k P (install_provision (IFun u) (FunctorClosure h (sms ++ [sm]) dc (rms ++ [rm])) d) g st r
           | _ => inr (Evaluation (Stuck e_fun) g st)
           end
-      | BApply u th outputs sm :: r =>
-          match apply_functor k P d u th outputs sm st with
+      | BApply u th outputs sm rs :: r =>
+          match apply_functor k P d u th outputs sm rs st with
           | inl (dr, st1) => eval_bindings k P (append_environment dr d) g st1 r
           | inr rr => inr (with_g g rr)
           end
@@ -2037,12 +2033,13 @@ with eval_bindings (fuel : nat) (P : program_view) (d : environment) (g : locals
       end
   end
 with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) (th : subst)
-    (outputs : list (tsym * tsym)) (sm : smap) (st : mstate) {struct fuel} : (environment * mstate) + evaluation :=
+    (outputs : list (tsym * tsym)) (sm : smap) (rs : list item) (st : mstate) {struct fuel}
+    : (environment * mstate) + evaluation :=
   match fuel with
   | 0 => inr (Evaluation OutOfFuel [] st)
   | S k =>
       match lookup_provision (IFun u) d with
-      | Some (FunctorClosure h sms dc) =>
+      | Some (FunctorClosure h sms dc rms) =>
           match view_functor P h with
           | Some code =>
               let Dr := fc_outputs code in
@@ -2053,7 +2050,7 @@ with apply_functor (fuel : nat) (P : program_view) (d : environment) (u : usym) 
                   | Some d2 =>
                       match eval_bindings k P (application_environment P d h th (append_environment d2 dc)) [] st bs with
                       | inl (d3, _, st3) =>
-                          match select_provisions d3 (result_smap (result_substitution th (role_outputs (fc_roles code) outputs)) Dr (fc_sources code)) with
+                          match select_provisions d3 (result_selection rs rms (fc_sources code)) with
                           | Some dr => match result_environment d outputs d3 Dr dr with
                               | Some result => inl (result, st3)
                               | None => inr (Evaluation (Stuck e_compose) [] st3) end
@@ -3629,7 +3626,7 @@ Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr ->
     FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u t m matching ->
     In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
     mlook t m (c_mths C') = Some (FSig [t] t) ->
-    LitOp W C t m ox oy (apply_expression u th sm (EMethod ox m (rkey C' t m) [oy])).
+    LitOp W C t m ox oy (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' t m) [oy])).
 
 (* Interpret exactly the prescribed tree through contextual arithmetic.
    A family may supply an operation, using the same rule as an explicit call. *)
@@ -3828,13 +3825,17 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
    same fresh output roles, H's result gives each key of F's result the
    provision F's result gives it (each key's last setter), F's fixed
    inputs read as sigma says (as they are in force where F is bound).
-   Conversely every key of H's result is one of F's: an application of F
-   runs the root body, whose result selection fills every key of the
-   root's result, and `bind F;` keeps exactly F's result. A bracketed key
-   H has and F lacks (one leaf, two receivers) would otherwise be
-   installed over the caller's provision of that key
-   (examples/copy-extra-key.moss). *)
-Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop :=
+   rm records, for each position i of F's result, the position j of H's
+   whose item F's i-th is: a position with the same provision id (the
+   keys are read at Cu, so this is the same key there), whose provision
+   agrees with F's after the copy site's substitution sigma (the clause
+   above, at each key's last setter), and the last such position (the
+   oracle's `find ... (rev gkeys)`), so repeated positions of F read one
+   source. An application of F installs exactly F's result, position by
+   position under the caller's keys (Rule A, result_selection), so a key
+   H has and F lacks is never installed (examples/copy-extra-key.moss;
+   results4's converse conjunct, which rejected that copy, is reverted). *)
+Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : list nat) : Prop :=
   exists outs gen Cr ks Cr' ks',
     (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs) /\
     (forall t, In t outs -> Fresh W (gen t)) /\
@@ -3844,7 +3845,10 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop 
        ilook (provision_id k) (c_provisions Cr) = Some p /\
        ilook (provision_id k) (c_provisions Cr') = Some p' /\
        provision_subst sigma p = provision_subst sigma p') /\
-    (forall k', In k' ks' -> exists k, In k ks /\ provision_id k = provision_id k').
+    length rm = length ks /\
+    (forall i k, nth_error ks i = Some k -> exists j k',
+       nth_error rm i = Some j /\ nth_error ks' j = Some k' /\ provision_id k' = provision_id k /\
+       (forall j' k'', j < j' -> nth_error ks' j' = Some k'' -> provision_id k'' <> provision_id k)).
 
 (* Restore fresh output generations to their declared symbols when filing
    the reusable code body. Input meanings remain those of the target. *)
@@ -3868,7 +3872,7 @@ Definition ResultRealizes (body promised : cx) (rename : subst) (keys : list ite
 Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
   Forall (fun binding => match binding with
     | BValue _ _ => False
-    | BApply family _ _ _ => Family W family
+    | BApply family _ _ _ _ => Family W family
     | _ => True end) bindings.
 
 Inductive BindsOf : expr -> list binding -> Prop :=
@@ -3942,13 +3946,13 @@ Definition family_restore (C Cr : cx) : cx :=
   Cx (c_ty C) (c_sub Cr) (c_provisions Cr) (c_locals Cr).
 
 Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
-    : cx -> nat -> subst -> subst -> smap -> cx -> Prop :=
+    : cx -> nat -> subst -> subst -> smap -> list item -> cx -> Prop :=
 | FamilyStepApply : forall C ot m u matching th sm Cr ks,
     In (mkey ot m) wanted -> mlook ot m (c_mths C0) = None ->
     OnlyFamily W C0 u (mkey ot m) ->
     FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks ->
-    FamilyStep W C0 wanted C u matching th sm (family_restore C Cr).
+    FamilyStep W C0 wanted C u matching th sm (map (rkey_of Cr) ks) (family_restore C Cr).
 
 (* Group identity is the inferred matching substitution.  Distinct groups
    may emit equal complete type arguments after reading the other inputs. *)
@@ -3956,10 +3960,10 @@ Inductive Demand (W : world) (C0 : cx) (wanted : list item)
     : list (nat * subst) -> cx -> (expr -> expr) -> cx -> Prop :=
 | DemandDone : forall used C,
     Demand W C0 wanted used C (fun x => x) C
-| DemandApply : forall used C u matching th sm Cm wrap Cf,
-    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th sm Cm ->
+| DemandApply : forall used C u matching th sm rs Cm wrap Cf,
+    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th sm rs Cm ->
     Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
-    Demand W C0 wanted used C (fun x => apply_expression u th sm (wrap x)) Cf.
+    Demand W C0 wanted used C (fun x => apply_expression u th sm rs (wrap x)) Cf.
 
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
@@ -4190,7 +4194,7 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
     FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks -> OnlyFamily W C u (mkey ot m) ->
     mlook ot m (c_mths C') = Some g -> Args W P F C args (sg_params g) xs ->
-    Provided W P F C ox ot m args (apply_expression u th sm (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
+    Provided W P F C ox ot m args (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
 
 (* a block whose type is checked against `exp` and may not let a value of
    a generation it made escape ([D78]) *)
@@ -4351,11 +4355,11 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* [D78]: every output destination, fresh or not, is made here: a
        value of its type may not leave the block *)
     BindItem W P F C (Spec (Some pa) None None, None)
-      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm)
+      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm (map (rkey_of C') ks))
       C' (with_fresh F newgens) (map gensof outs)
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
-| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx,
+| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh -> incl nsh nsu ->
@@ -4372,11 +4376,11 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     (* and H's result reads as F's (the oracle: output interpretation, D78) *)
-    CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu ->
+    CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu rm ->
     (* H's inputs, implicit ones too, are among F's (the oracle's input
        interpretation check fails on one F lacks) *)
     (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (set_fun C u fx) F []
+    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are
    captured here (vals by value) and must be in force here; G's body is
@@ -4542,16 +4546,14 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->
     Fresh W h ->
-    (* a result item, keyed as F declares it (receiver and θ in F's terms,
-       note 28, each output by its role gen t, not renamed back to t: a
-       raw t is the input t), is read where the body bound it: a method
-       under the body's runtime key for its receiver read in the body.
-       The application reads each role as its destination (fc_roles). *)
+    (* each item of F's declared result, position by position, is read
+       where the body bound it: a method under the body's runtime key for
+       its receiver read in the body (the application installs it under
+       the caller's key for that position) *)
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
       (map ITy outs ++ map (rkey_of Cr) ks) binds0
-      (map (fun k => (rkey_of Cr k, rkey_of Cb (at_site Cb (output_renaming outs gen k)))) ks)
-      (map (fun t => (t, gen t)) outs)) ->
+      (map (fun k => rkey_of Cb (at_site Cb (output_renaming outs gen k))) ks)) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
@@ -4602,7 +4604,7 @@ Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> P
     PlatformEntry W P (IFn f) (PrimitiveClosure (PUnsupported i) None)
 | PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
-    PlatformEntry W P (IFun u) (FunctorClosure h [] empty_environment).
+    PlatformEntry W P (IFun u) (FunctorClosure h [] empty_environment []).
 
 (* The runtime type prefix is a representation of the source context,
    separate from the values and code supplied by the platform. Its machine
@@ -4798,7 +4800,7 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
     (* each item is installed and returned under its run-time key, the
        instantiation it is made at (rkey_of), as a linked body's are *)
     funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) []
-      (map (rkey_of outputs) keys) bindings [] []) /\
+      (map (rkey_of outputs) keys) bindings (map (rkey_of outputs) keys)) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
@@ -4826,7 +4828,7 @@ Definition Entry (W : world) (P : program) (C : cx)
   | IVal value, ValueProvision (VI32 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
-  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) =>
+  | IFun source, FunctorClosure code [] (EnvironmentWithAliases [] [] []) [] =>
       Family W P source code /\ FixedMachinesRead W C source
   | _, _ => False
   end.
@@ -4924,7 +4926,7 @@ with binding_primitives (binding : binding) : list prim :=
 Fixpoint entry_primitives (entry : provision_value) : list prim :=
   match entry with
   | PrimitiveClosure operation _ => [operation]
-  | FunctionClosure _ (EnvironmentWithAliases _ _ captured) | FunctorClosure _ _ (EnvironmentWithAliases _ _ captured) =>
+  | FunctionClosure _ (EnvironmentWithAliases _ _ captured) | FunctorClosure _ _ (EnvironmentWithAliases _ _ captured) _ =>
       flat_map (fun entry => entry_primitives (snd entry)) captured
   | _ => []
   end.

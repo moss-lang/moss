@@ -30,19 +30,24 @@ obligations (the functor and family obligations: `ChainResultsOk` from
 `PublicChainCore.chain_results_of_new`, from `ChainNewOk`, the
 formal/caller result correspondence for the result's new provisions
 (selection, outputs, aliases, kinds and the provisions kept from the
-caller are proved: `chain_core_ok`; ChainNewOk itself from the static
-`ChainKeysOk` and `ChainRealizeOk`: `PublicChainNew.chain_new_ok`), and `KeptOutputsUnmentioned`, an
+caller are proved: `chain_core_ok`; that the selection fills only the
+caller's keys is by construction, so ChainNewOk is `ChainRealizeOk`:
+`PublicChainNew.chain_new_ok`), and `KeptOutputsUnmentioned`, an
 open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
 [PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
-premise `ChainForwardKeys` (the caller's new methods filed under the root
-family's run-time keys; the converse and the rest of `ChainResultAgrees`
-proved, `chain_result_agrees`, `chain_forward_agrees`); for `FamilyStepOk`, proved in
+premise `ChainForwardSigs` (at the caller's last position for a key, the
+caller's method agrees with the root family's item there; the keys are the
+caller's by construction; the empty chain proved,
+`PublicChainFwd.chain_forward_sigs`, the copy case `ChainForwardCopySigs`
+open); for `FamilyStepOk`, proved in
 [PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`
 (its selection proved, `PublicChainCore.family_link_results_ok`, from
-`FamilyLinkNewOk`: the family's new methods installed by the selection),
-`FamilyCopyApplyOk`, and `FamilyKeysTyped` (for
+`FamilyLinkNewOk`: the family's new methods installed by the selection,
+callable), `FamilyCopyRealizeOk` (`FamilyCopyApplyOk`'s realization half;
+its key half is by construction, `family_copy_apply_of_realize`), and
+`FamilyKeysTyped` (for
 `FamilyPlatformApplyOk`, proved in PublicPlatformApply.v); and the slice's
 `FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. The formation premises and main's `HandleFormed` are
@@ -786,6 +791,32 @@ the local store. *C* and *F* are the static context and frame.
 
   Details in scratch/orch/chainfwd-AUDIT.md section 2.
 
+- **The caller-keyed result install (callerkeys, E32/E33).** An
+  application now installs exactly F's declared result, position by
+  position, under the caller's keys (`BApply`'s new field, `map (rkey_of
+  C') ks`), reading position i from the root's source for it through each
+  copy's position map (`BCopyFunctor`'s new field, `FunctorClosure`'s
+  `rms`, `chain_sources`, `result_selection`). `fc_sources` lists the
+  root's body key for each position; `fc_roles`, `result_smap`,
+  `inst_smap`, `role_outputs` are gone. `CopyOutputs` records, for each of
+  F's positions, the last position of H's result with the same provision
+  id (whose provision agrees after the copy site's substitution), and
+  results4's converse conjunct is reverted. A later position wins at the
+  caller, as its static context reads a repeated key at the last setter.
+  - Fixes three false obligations: `ChainForwardCopyKeys`
+    (examples/linked-copy-bracket.moss), `ChainKeysOk` (the same shape) and
+    `FamilyCopyApplyOk`'s key half (examples/family-copy-linked-bracket.moss,
+    hunt t11). All three keys are now the caller's by construction; the
+    obligations are deleted or reduced to their realization halves
+    (`ChainRealizeOk`, `ChainForwardCopySigs`, `FamilyCopyRealizeOk`).
+  - examples/copy-extra-key.moss is accepted again and, under Audit's
+    semantics, prints 31 as native does (the oracle prints 21, E32).
+  - The copy check accepts what it accepted before E32: an oracle variant
+    matching F's keys to H's by key equality plus agreement after the copy
+    substitution agrees with the oracle on all 398 corpus files
+    (scratch/orch/callerkeys2-AUDIT.md, scratch/ck/cmp.out).
+  - The oracle is unchanged (E32, E33 stay oracle-conformance gaps).
+
 ## Body-safety slice (checked, conditional)
 
 [PublicBodySlice.v](theories/PublicBodySlice.v) proves `safe_all`. For
@@ -809,7 +840,7 @@ hypotheses, each a named remaining obligation:
 | `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
 | `copy_apply` | applying a copy runs its source at the source's interface | T15 |
-| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, signatures agreeing at the state's ground meanings, and F has no type output) and `ChainPrimsOk`. `ChainResultAgrees` is proved from its forward clause `ChainForwardKeys` (each new method is filed under a root item's run-time key, signatures agreeing): no outputs and methods only from the chain's `SameResult` (`PublicChainAgree.copy_news_methods`), and every root item a new method by counting methods (`PublicChainAgree.chain_cover`, from `Platform.MethodsDistinct` and `WorldOf`'s scopes). `ChainForwardKeys` needs the readings composed along the chain (open), which `PublicEntry.platform_prims_public` discharges for the reference host (`platform_handles_formed`, `platform_sigs_fixed`, from Platform.Family's `HandlesRead` and `MachinesFixed`). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `Platform.Entry`'s `FixedMachinesRead`; a linked root never shares a family's primitives (`platform_not_linked`). The family application's version `FamilyPlatformApplyOk` is proved too (`family_platform_ok`), from `FamilyKeysTyped` (an extra key of the family context's table that a path names is a type symbol; with it `PublicFamilyAgree.family_items_agree` proves that Cr's new methods agree with the family's own items at θ, the shared `ItemsAgree` that `ChainResultAgrees` is also stated through) and `PrimsGroundOk` (the primitive half of `ChainPrimsOk`, for any environment reading the fixed machine inputs as the machine types; `platform_prims_public` now discharges it, and `chain_prims_of_ground` gives `ChainPrimsOk`). The machine grounding comes from `FixedAgreement` at the family context and the closure's `PlatformFixed` | T15, T11, T29 |
+| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainForwardSigs` (at the caller's last position for a key, the caller's method and the root family's item at the chain's source agree in name and signature at the state's ground meanings; the keys are the caller's by construction, `Audit.result_selection`) and `ChainPrimsOk`. No outputs and methods only come from the chain's `SameResult` (`PublicChainAgree.copy_news_methods`), each position's source in range from `CopyOutputs` (`PublicCopyApply.chain_sources_range`); `chain_core_premises` assembles them. `ChainForwardSigs`'s copy case needs the readings composed along the chain (open, `ChainForwardCopySigs`); `ChainPrimsOk` `PublicEntry.platform_prims_public` discharges for the reference host (`platform_handles_formed`, `platform_sigs_fixed`, from Platform.Family's `HandlesRead` and `MachinesFixed`). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `Platform.Entry`'s `FixedMachinesRead`; a linked root never shares a family's primitives (`platform_not_linked`). The family application's version `FamilyPlatformApplyOk` is proved too (`family_platform_ok`), from `FamilyKeysTyped` (an extra key of the family context's table that a path names is a type symbol; with it `PublicFamilyAgree.family_items_agree` proves that Cr's new methods agree with the family's own items at θ, and `family_items_pos` that they do so position by position) and `PrimsGroundOk` (the primitive half of `ChainPrimsOk`, for any environment reading the fixed machine inputs as the machine types; `platform_prims_public` now discharges it, and `chain_prims_of_ground` gives `ChainPrimsOk`). The machine grounding comes from `FixedAgreement` at the family context and the closure's `PlatformFixed` | T15, T11, T29 |
 
 `copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
 (`copy_apply_ok`): a closure's derivation is followed down its copy chain
@@ -823,8 +854,9 @@ likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
 | `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
-| `ChainKeysOk` (PublicChainNew) | static, ChainNewOk's first clause (`chain_new_ok` proves that clause from it): at an application of F through a copy chain to a root h0, each key of h0's formal result, its output roles renamed back and substituted as the selection does (outputs to destinations, inputs by θ), is `rkey_of C'` of a key of F's result as the caller reads it. Needs `CopyOutputs` both ways (copy-extra-key.moss) | T15, T16 |
-| `ChainRealizeOk` (PublicChainNew) | ChainNewOk's second clause: C''s new provisions are realized after the application (`EnvOkOn` the new keys). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`) | T15, T16 |
+| `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
+| `ChainForwardCopySigs` (PublicChainFwd) | at an application of F through at least one copy to a platform family: at the caller's last position for a key, the caller's method and the family's item at the chain's source have the same name and agreeing signatures (SigAgreeG). The signature half of the former `ChainForwardCopyKeys`, whose key half was false (linked-copy-bracket.moss) and is by construction since callerkeys | T15, T16 |
+| `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`) | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |
