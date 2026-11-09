@@ -140,12 +140,17 @@ the local store. *C* and *F* are the static context and frame.
     E37); native rejects it.
 
   Repair: BApplyAbstract's kept-output case also asks `~ In t (fr_pins F)`,
-  so every destination of a linked body avoids M(F).
+  so every destination of a linked body avoids M(F). That was not enough:
+  [link-kept-output-rep.moss](examples/link-kept-output-rep.moss) keeps
+  an output at T, an unmentioned merge representative of X, which a world
+  may pick. So `LinkBody` also asks that nothing the body makes is an input
+  of F: `forall t, In t made -> nlook t (c_ty Cu) = None`. The oracle and
+  native reject that program.
   - The control (link-kept-output-pin-control.moss, where the meanings
     agree) is rejected too. Native rejects it; the oracle runs it.
   - Corpus (oracle against a variant whose `check_link_pins` rejects a
-    pin installed by the body): 398 the same, 5 different (the new
-    programs). See scratch/orch/realize2-AUDIT.md.
+    pin, or input of F, installed by the body as itself): 401 the same,
+    5 different (the new programs). See scratch/orch/realize2-AUDIT.md.
 - **A linked body's result keys are read at G's readings of the inputs (linknewpf).**
   `CC.FamilyLinkNewOk` was false, and so, very likely, was
   `CN.ChainRealizeOk` for a linked root.

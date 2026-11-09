@@ -4611,6 +4611,12 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     Numbering Fg None [] ->
     (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
+    (* no generation the body makes is an input of F: each application
+       supplies F's inputs, and a body write would replace one under a
+       key the caller files at its own reading (a kept output at an
+       unmentioned merge representative, examples/link-kept-output-rep.moss;
+       scratch/orch/realize2-AUDIT.md) *)
+    (forall t, In t made -> nlook t (c_ty Cu) = None) ->
     (forall t, In t outs <-> FunOutputs W u t) ->
     (forall t, In t outs -> exists meaning, nlook t (c_ty Cb) = Some meaning) ->
     NoDup (map gen outs) ->
