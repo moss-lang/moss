@@ -3012,6 +3012,227 @@ Proof.
     exact (callable_transfer r r H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
 Qed.
 
+(* ---- lambda prefixes as steps ------------------------------------------------- *)
+
+Definition cap_cx (C : A.cx) (qs : list (name * vsym)) : A.cx :=
+  fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs C.
+
+(* A narrower context that keeps every provision of C is realized too. *)
+Lemma realizes_narrow : forall n C C2 d H, Realizes n C2 d H -> A.c_sub C2 = A.c_sub C ->
+  PublicCallRealize.KeysMatch (A.c_provisions C) ->
+  (forall k, In k (map fst (A.c_provisions C)) -> A.ilook k (A.c_provisions C2) = A.ilook k (A.c_provisions C)) ->
+  Realizes n C d H.
+Proof.
+  intros n C C2 d H [Abs [[Vals [Fns [Mths Funs]]] [Idem KM2]]] Sub KM Same.
+  assert (Canon : forall t, A.canon C2 t = A.canon C t) by (intros t; unfold A.canon; rewrite Sub; reflexivity).
+  assert (Key : forall k p, A.ilook k (A.c_provisions C) = Some p -> A.ilook k (A.c_provisions C2) = Some p).
+  { intros k p L. rewrite Same; [exact L|]. change k with (fst (k, p)). apply in_map. exact (ilook_in _ _ _ L). }
+  split; [intros t; rewrite <- Canon; exact (Abs t)|].
+  split; [|split; [intros t; rewrite <- !Canon; exact (Idem t)|exact KM]].
+  split; [|split; [|split]].
+  - intros v t Found. change (A.c_vals C) with (vals_of (A.c_provisions C)) in Found.
+    rewrite (vals_by_ilook _ v KM) in Found.
+    destruct (A.ilook (IVal v) (A.c_provisions C)) as [[t' a|g a|g a|fx]|] eqn:Il; try discriminate. injection Found as <-.
+    apply Vals. change (A.c_vals C2) with (vals_of (A.c_provisions C2)). rewrite (vals_by_ilook _ v KM2), (Key _ _ Il).
+    reflexivity.
+  - intros f g Found. change (A.c_fns C) with (fns_of (A.c_provisions C)) in Found.
+    rewrite (fns_by_ilook _ f KM) in Found.
+    destruct (A.ilook (IFn f) (A.c_provisions C)) as [[t' a|g' a|g' a|fx]|] eqn:Il; try discriminate. injection Found as ->.
+    apply Fns. change (A.c_fns C2) with (fns_of (A.c_provisions C2)). rewrite (fns_by_ilook _ f KM2), (Key _ _ Il).
+    reflexivity.
+  - intros r m g Found. change (A.c_mths C) with (mths_of (A.c_provisions C)) in Found.
+    rewrite (mths_by_ilook _ r m KM) in Found.
+    destruct (A.ilook (A.mkey r m) (A.c_provisions C)) as [[t' a|g' a|g' a|fx]|] eqn:Il; try discriminate. injection Found as ->.
+    assert (L2 : A.mlook r m (A.c_mths C2) = Some g).
+    { change (A.c_mths C2) with (mths_of (A.c_provisions C2)). rewrite (mths_by_ilook _ r m KM2), (Key _ _ Il). reflexivity. }
+    destruct (Mths r m g L2) as [pv [Look Ok]]. exists pv. split; [|exact Ok].
+    replace (A.rkey C r m) with (A.rkey C2 r m); [exact Look|].
+    unfold A.rkey. rewrite !capps_ilook, (Key _ _ Il), Il. cbn [option_map].
+    f_equal. apply theta_of_sub. exact Sub.
+  - intros u fx Found. change (A.c_funs C) with (funs_of (A.c_provisions C)) in Found.
+    rewrite (funs_by_ilook _ u KM) in Found.
+    destruct (A.ilook (IFun u) (A.c_provisions C)) as [[t' a|g' a|g' a|fx']|] eqn:Il; try discriminate. injection Found as ->.
+    apply (Funs u fx). change (A.c_funs C2) with (funs_of (A.c_provisions C2)). rewrite (funs_by_ilook _ u KM2), (Key _ _ Il).
+    reflexivity.
+Qed.
+
+(* A captured local's value, bound to its val. *)
+Lemma cap_bstep : forall r F C n v, A.Named F n -> A.slook n (A.c_locals C) <> None ->
+  A.ilook (IVal v) (A.c_provisions C) = None ->
+  BindStep r F C F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) False [] (BValue v (EVar (A.var_of F n))).
+Proof.
+  intros r F C n v Named Loc Out. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+  intros j d types H g st Lj Pre0 rest. rewrite bindings_value_eq.
+  destruct j as [|j]; [right; eexists; split; [reflexivity|]; split; [intros v' E; discriminate|exact Logic.I]|].
+  rewrite eval_var_eq.
+  pose proof Pre0 as [Frame [[Locals Recv] [Lt [St Real]]]].
+  destruct (A.slook n (A.c_locals C)) as [[t mu]|] eqn:L; [|congruence].
+  destruct (locals_lookup W P H g types _ _ Lt (Locals _ t mu L Named)) as [w [Look T]]. rewrite Look.
+  left. exists (install_provision (IVal v) (ValueProvision w) d), g, st, H.
+  split; [intros a c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
+  split; [exact Frame|]. split; [exact (conj Locals Recv)|]. split; [exact Lt|]. split; [exact St|].
+  apply (realizes_set r C d H (IVal v) (A.ProvidedVal (capty C n) [])).
+  - exact Real.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists w. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. unfold capty. rewrite L. exact T.
+Qed.
+
+Lemma prefix_chain : forall k F C qs,
+  (forall q, In q qs -> A.Named F (fst q) /\ A.slook (fst q) (A.c_locals C) <> None /\
+     A.ilook (IVal (snd q)) (A.c_provisions C) = None) ->
+  NoDup (map snd qs) ->
+  Chain k F C F (cap_cx C qs) False [] (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs).
+Proof.
+  intros k F C qs. revert C. induction qs as [|[n v] rest IH]; intros C Ok Nd; [constructor|].
+  inversion Nd as [|? ? Out Nd']; subst. cbn [map].
+  destruct (Ok (n, v) (or_introl eq_refl)) as [Named [Loc Unp]].
+  change ([] : list nat) with ([] ++ [] : list nat)%list.
+  apply (ChainCons k F C F (set_cx C (IVal v) (A.ProvidedVal (capty C n) [])) F _ False False False [] [] _ _
+    (fun r _ => cap_bstep r F C n v Named Loc Unp)); [|tauto].
+  apply (IH (set_cx C (IVal v) (A.ProvidedVal (capty C n) []))); [|exact Nd'].
+  intros q Iq. destruct (Ok q (or_intror Iq)) as [N [Lq Uq]]. split; [exact N|]. split; [exact Lq|].
+  cbn [set_cx A.c_provisions]. rewrite ilook_set.
+  destruct (item_eqb (IVal (snd q)) (IVal v)) eqn:E; [|exact Uq].
+  apply item_eqb_spec in E. injection E as E. exfalso. apply Out. rewrite <- E. apply in_map. exact Iq.
+Qed.
+
+Lemma cap_cx_fields : forall C qs B,
+  let Cm := fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs B in
+  A.c_ty Cm = A.c_ty B /\ A.c_sub Cm = A.c_sub B /\ A.c_locals Cm = A.c_locals B.
+Proof.
+  intros C qs. induction qs as [|q rest IH]; intros B; [repeat split|]. cbn [fold_left].
+  destruct (IH (set_cx B (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) []))) as [E1 [E2 E3]].
+  cbn zeta in *. rewrite E1, E2, E3. repeat split.
+Qed.
+
+Lemma cap_cx_other : forall C qs B k, (forall q, In q qs -> k <> IVal (snd q)) ->
+  A.ilook k (A.c_provisions (fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs B)) =
+  A.ilook k (A.c_provisions B).
+Proof.
+  intros C qs. induction qs as [|q rest IH]; intros B k Out; [reflexivity|]. cbn [fold_left].
+  rewrite IH by (intros q' Iq; apply Out; right; exact Iq). cbn [set_cx A.c_provisions]. rewrite ilook_set.
+  destruct (item_eqb k (IVal (snd q))) eqn:E; [|reflexivity].
+  apply item_eqb_spec in E. exfalso. exact (Out q (or_introl eq_refl) E).
+Qed.
+
+Lemma cap_cx_val : forall C qs B n v, NoDup (map snd qs) -> In (n, v) qs ->
+  A.ilook (IVal v) (A.c_provisions (fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs B)) =
+  Some (A.ProvidedVal (capty C n) []).
+Proof.
+  intros C qs. induction qs as [|q rest IH]; intros B n v Nd Iq; [contradiction|].
+  inversion Nd as [|? ? Out Nd']; subst. cbn [fold_left]. destruct Iq as [Eq|Iq]; [subst q|].
+  - rewrite cap_cx_other.
+    + cbn [set_cx A.c_provisions snd fst]. rewrite ilook_set, (proj2 (item_eqb_spec _ _) eq_refl). reflexivity.
+    + intros q' Iq' E. injection E as E. apply Out. cbn. rewrite E. apply in_map. exact Iq'.
+  - exact (IH _ n v Nd' Iq).
+Qed.
+
+Lemma cap_cx_incl : forall C qs B k p, In (k, p) (A.c_provisions B) -> (forall q, In q qs -> k <> IVal (snd q)) ->
+  In (k, p) (A.c_provisions (fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs B)).
+Proof.
+  intros C qs. induction qs as [|q rest IH]; intros B k p I Out; [exact I|]. cbn [fold_left].
+  apply IH; [|intros q' Iq; apply Out; right; exact Iq].
+  cbn [set_cx A.c_provisions set_list]. right. apply filter_In. split; [exact I|].
+  cbn [fst]. destruct (item_eqb (IVal (snd q)) k) eqn:E; [|reflexivity].
+  apply item_eqb_spec in E. exfalso. exact (Out q (or_introl eq_refl) (eq_sym E)).
+Qed.
+
+Lemma in_ilook : forall k p (l : list (item * A.provision)), In (k, p) l -> A.ilook k l <> None.
+Proof.
+  intros k p l. induction l as [|[k' p'] r IH]; intros I; [contradiction|]. cbn.
+  destruct (item_eqb k k') eqn:E; [discriminate|]. destruct I as [Eq|I]; [|exact (IH I)].
+  injection Eq as -> ->. rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E. discriminate.
+Qed.
+
+Lemma fold_bind_values : forall F (qs : list (name * vsym)) x,
+  fold_right (fun q x => bind_value_expression (snd q) (EVar (A.var_of F (fst q))) x) x qs =
+  fold_right (fun b x => EBind b x) x (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs).
+Proof. intros F qs x. induction qs as [|q r IH]; cbn; [reflexivity|]. rewrite IH. reflexivity. Qed.
+
+(* A function lambda bind: its prefix of captured values, then the closure. *)
+Lemma lambda_fn_chain : forall k, Below k -> forall F C sp f sg ps rt body pid pre sm a,
+  A.SigOf W f (A.c_ty C) None sg ->
+  A.LambdaProvider W Prog F C ps rt body sg None pid pre sm ->
+  exists bs, (forall x, pre (bind_function_expression f pid (A.lexical_capture C) sm x) =
+                        fold_right (fun b x => EBind b x) x bs) /\
+    Chain k F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AELam ps rt body))) [] bs.
+Proof.
+  intros k Bel F C sp f sg ps rt body pid pre sm a Sig LP.
+  pose proof (lambda_keys_scoped _ _ _ _ _ _ _ _ _ _ LP) as KS.
+  remember (@None ty) as none eqn:NoneE in LP.
+  destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
+    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+  subst sm this.
+  assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
+    by exact ClE.
+  set (qs := combine caps capvals) in *.
+  assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
+  assert (Sq : map snd qs = capvals) by (apply snd_combine; congruence).
+  assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
+  assert (InCaps : forall q, In q qs -> In (fst q) caps) by (intros q Iq; rewrite <- Fq; apply in_map, Iq).
+  assert (InVals : forall q, In q qs -> In (snd q) capvals) by (intros q Iq; rewrite <- Sq; apply in_map, Iq).
+  assert (CapsIn : forall n, In n caps -> A.slook n (A.c_locals C) <> None /\ ~ In n (map fst ps))
+    by (intros n0 I0; apply CapsIff in I0 as [_ [L [O _]]]; split; assumption).
+  rewrite Forall_forall in NamedF, Unprov.
+  assert (NotCap : forall k0 p0, In (k0, p0) (A.c_provisions C) -> forall q, In q qs -> k0 <> IVal (snd q)).
+  { intros k0 p0 I q Iq E. subst k0. exact (in_ilook _ _ _ I (Unprov _ (InVals q Iq))). }
+  exists (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs ++ [BFunction f pid (A.lexical_capture C)
+    (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys)])%list.
+  split.
+  { intros x. cbn beta. rewrite fold_bind_values, fold_right_app. reflexivity. }
+  apply (chain_app k F C F (cap_cx C qs) F (A.provide C (IFn f) a (A.set_fn C f sg)) False
+    (ItemBreaks F (sp, Some (AELam ps rt body))) (ItemBreaks F (sp, Some (AELam ps rt body))) [] []);
+    [| |tauto].
+  - apply prefix_chain; [|exact Ndq]. intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|].
+    split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|exact (Unprov _ (InVals q Iq))].
+  - apply (ChainCons k F (cap_cx C qs) F (A.provide C (IFn f) a (A.set_fn C f sg)) F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AELam ps rt body))) False (ItemBreaks F (sp, Some (AELam ps rt body))) [] []);
+      [|constructor|tauto].
+    intros r Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
+    intros j d types H g st Lj Pre0 rest. rewrite bindings_function_eq.
+    pose proof Pre0 as [Frame [Ctx [L [St RealM]]]].
+    destruct (cap_cx_fields C qs C) as [Ety [Esub Eloc]]. cbn zeta in Ety, Esub, Eloc.
+    pose proof RealM as [_ [_ [_ KMm]]].
+    assert (KMc : PublicCallRealize.KeysMatch (A.c_provisions C)).
+    { intros k0 p0 I. apply KMm. exact (cap_cx_incl C qs C k0 p0 I (NotCap k0 p0 I)). }
+    assert (RealC : Realizes r C d H).
+    { apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub KMc).
+      intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
+      exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)). }
+    assert (Inst : Installed C qs d H).
+    { intros q Iq. pose proof RealM as [_ [[Vals _] _]].
+      assert (Lv : A.nlook (snd q) (A.c_vals (cap_cx C qs)) = Some (capty C (fst q))).
+      { change (A.c_vals (cap_cx C qs)) with (vals_of (A.c_provisions (cap_cx C qs))).
+        rewrite (vals_by_ilook _ _ KMm). unfold cap_cx. rewrite (cap_cx_val C qs C (fst q) (snd q) Ndq ltac:(destruct q; exact Iq)).
+        reflexivity. }
+      exact (Vals _ _ Lv). }
+    destruct (lambda_select r C qs Cl d H keys ClE' RealC Inst Ndq
+      (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
+    rewrite Sel. left.
+    pose proof (lambda_callable k Bel r Lr C ps sg None body pid caps capvals Cl Fl lbody ltype d H dc keys
+      Len CapsIn NdC LenV NdV ClE' FRet FThis FLoop Num NamedFl Blk Fits BodyOf KeysIff Sel RealC Inst KS
+      (sigof_scoped f C sg Sig)) as Ok.
+    cbn [this_list app] in Ok.
+    set (d'' := install_provision (IFn f) (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc)) d).
+    exists d'', g, st, H. split; [intros a0 c L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|].
+    split; [|reflexivity].
+    unfold A.set_fn. rewrite (provide_set C (IFn f) (A.ProvidedFn sg []) a ltac:(intros; discriminate)).
+    split; [exact Frame|]. split.
+    { destruct Ctx as [Loc Rcv]. split; [|exact Rcv]. intros n t mu Found Nm. apply (Loc n t mu); [|exact Nm].
+      change (A.c_locals (cap_cx C qs)) with (A.c_locals (fold_left (fun C' q => set_cx C' (IVal (snd q))
+        (A.ProvidedVal (capty C (fst q)) [])) qs C)). rewrite Eloc. exact Found. }
+    split; [exact L|]. split; [exact St|].
+    apply (realizes_set r C d H (IFn f) (A.ProvidedFn sg a)).
+    + exact RealC.
+    + intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+    + reflexivity.
+    + intros k0 Ne. apply install_other. exact Ne.
+    + exists (FunctionClosure pid (typed_capture d (A.lexical_capture C) dc)).
+      split; [cbn; rewrite Nat.eqb_refl; reflexivity|].
+      exact (callable_transfer r r H d d'' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
+Qed.
+
 (* Code safety reads a frame only through its return type, receiver, loop
    flag and local numbering. *)
 Lemma codesafe_frame : forall n F1 F2 C t (B : Prop) x,
