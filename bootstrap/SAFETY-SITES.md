@@ -1212,3 +1212,11 @@ without touching any proof.
   (removing `fresh_result_types`), `MachinesFixed`/`HandlesRead` in
   families, and key-receiver capture in lambdas; `KeptOutputsUnmentioned`
   left for the user; fresh agents results4, family3 and chainagree started.
+- Falsification hunts and the last obligations (from 08:30, with breaks,
+  to 18:31): two hunt rounds, Audit fixes (caller-keyed install,
+  LinkBody input condition, method θ widening, copy fresh symbols and their
+  avoidance, link_site, kept outputs avoid pins, nothing made is an input,
+  abstract copy targets), and the proofs of FamilyCoherentOk,
+  FamilyLinkNewOk, ChainForwardCopySigs, ChainRealizeOk and
+  FamilyCopyRealizeOk. `public_safety` is closed: Print Assumptions lists
+  only PrimInt63.int and PrimFloat.float. check.sh: 914s (15m14s).
