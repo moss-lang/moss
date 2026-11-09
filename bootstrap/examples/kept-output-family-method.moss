@@ -8,9 +8,13 @@
 # both print 0 (exit 0). So the re-grounded family method behaves
 # correctly. Audit (with results2's shadowing) accepts it. Re-grounding
 # changes only the types of this parametric family provision.
-# Audit now rejects this program, though both implementations run it
-# correctly: BApplyAbstract asks that a kept output not in force be
-# unmentioned by the context (scratch/orch/chainfwd-AUDIT.md section 2).
+# Audit rejected this program from 642490e (AUDIT-CHANGES.md #10). Since
+# #10 option (b), the lambda's `bind H;` gives T a fresh generation T'
+# (T is mentioned by the key T.dup), mk() has type T', and y.dup() is
+# demanded from F afresh at A := T' (FamilyStep), leaving T.dup's meaning
+# alone. An oracle variant that does the same (fresh where mentioned)
+# also prints 0.
+# Verdicts: Audit accepts (by reading); oracle prints 0; native prints 0.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

@@ -7,9 +7,11 @@
 # was Stuck (fresh_result_types, b4f8279), though Audit accepts the program.
 # The oracle and native both run it (exit 0). Audit now shadows
 # (results2-AUDIT.md).
-# Audit now rejects this program, though both implementations run it
-# correctly: BApplyAbstract asks that a kept output not in force be
-# unmentioned by the context (scratch/orch/chainfwd-AUDIT.md section 2).
+# Audit rejected this program from 642490e (AUDIT-CHANGES.md #10: a kept
+# output had to be unmentioned by the context). Since #10 option (b),
+# BApplyAbstract gives an output that is mentioned in scope but not in
+# force a fresh generation, so T.foo keeps its meaning (stability).
+# Verdicts: Audit accepts; oracle exit 0; native exit 0.
 type A;
 type T;
 tag Concrete;

@@ -3147,7 +3147,8 @@ Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop 
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
             ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
-         (A.nlook t (A.c_ty C) <> None /\ In (gensof t) newgens))) /\
+         ((A.nlook t (A.c_ty C) <> None \/ In t (A.context_gens C ++ A.key_receiver_gens C)) /\
+            In (gensof t) newgens))) /\
   (NoDup outs) /\
   ((forall t, In t outs <-> A.FunOutputs W u t)) /\
   (A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks).
@@ -3181,7 +3182,8 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
             ~ In t ((match A.fr_ret F with Some r => A.gens r | None => [] end) ++
                     (match A.fr_this F with Some r => A.gens r | None => [] end)) /\
             ~ In t (A.context_gens C ++ A.key_receiver_gens C)) \/
-         (A.nlook t (A.c_ty C) <> None /\ In (gensof t) newgens)) ->
+         ((A.nlook t (A.c_ty C) <> None \/ In t (A.context_gens C ++ A.key_receiver_gens C)) /\
+            In (gensof t) newgens)) ->
       NoDup outs -> (forall t, In t outs <-> A.FunOutputs W u t) ->
       A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
   forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False (map gensof outs)

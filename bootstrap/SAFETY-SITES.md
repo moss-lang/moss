@@ -133,6 +133,20 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A mentioned output is fresh (proposals, #10 option (b)).** In
+  `BApplyAbstract` an output that is not in force but is mentioned in
+  scope (`context_gens C ++ key_receiver_gens C`, the proof's
+  `capture_gens`) now gets a fresh generation from `newgens`, as one in
+  force does; only an output neither in force nor mentioned is installed
+  as itself. Criterion: stability (docs/design/criteria.md section 5): a
+  write `T |-> m` would silently re-ground a captured `T.foo`. The kept
+  case's "unmentioned" clause (chainfwd) now holds by construction, and
+  examples/lambda-declared-output.moss and
+  examples/kept-output-family-method.moss, which both implementations run
+  correctly, are accepted again. `kept_outputs_unmentioned` is restated
+  for outputs kept as themselves (`gensof t = t`). Corpus: an oracle
+  variant with the old clause differs from the oracle on exactly those
+  two of 414 files. See AUDIT-CHANGES.md #10.
 - **ResultRealizes reads the roles directly (consol).** LinkBody applied
   `link_renaming`, the identity on the output roles, to each result key
   and read the promised types through `read_rename` at it, a leftover of
@@ -1083,7 +1097,7 @@ between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
 likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
-| `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
+| `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context or a key receiver. Proved (`kept_outputs_unmentioned`): BApplyAbstract gives a mentioned output a fresh generation (#10 option (b)); formerly an Audit clause that rejected two correct programs | T16 |
 | `ChainRealizeOk` (PublicChainNew) | ChainNewOk: C''s new provisions are realized after the application (`EnvOkOn` the new keys), the selection filing position i of F's declared result under the caller's key for it from the root's source through the chain's positions (`Audit.result_selection`). The caller's ProvideResult reading against the root's formal one through θ, the destinations and the chain's `CopyOutputs`, with the body's provisions at its meanings (`ResultRealizes`, `read_rename`, `body_provides`). Known false for a captured-merge shape (hunt-chain `captured-rep-result.moss`), which cap3b's LinkBody repair addresses. Also known false for a copy whose fixed reading names one of F's non-fixed inputs (examples/copy-bracket-nonfixed.moss), which copyfresh's CopyOutputs repair addresses. It was still false after that repair (examples/copy-fresh-collide.moss: `cg y` equal to a fresh generation in sigma's image), which realizepf's CopyOutputs repair addresses (the fresh symbols avoid sigma's image). It was also false for a linked body whose application keeps an output at an input of F (examples/link-kept-output-pin.moss), which realize2's LinkBody made clause addresses (its BApplyAbstract pin clause, implied by the made clause there, was dropped in consolidation). Its former key clause (and `ChainKeysOk`) is by construction since callerkeys | T15, T16 |
 | `FamilyCopyRealizeOk` (PublicFamilyStep) | `FamilyCopyApplyOk`'s realization half: a copy applied at a family application completes with provisions under which each new method of Cr is callable, or stops. Its key half was false (examples/family-copy-linked-bracket.moss) and is by construction since callerkeys (`apply_functor_keys`, `family_copy_apply_of_realize`). Its realization half was false for a copy whose fixed reading names F's poly symbol (examples/copy-fixed-reads-poly.moss), which copyfresh's CopyOutputs repair addresses. It (and `FamilyCopyApplyOk`) now assumes `PublicFormation.TysScoped W C`, as `FamilyLinkResultsOk` and `FamilyPlatformApplyOk` do (`family_run` has it). Proved (realize5, [PublicFamilyCopy.v](theories/PublicFamilyCopy.v), `family_copy_realize_ok`): the run is `copy_apply_ok`'s; the root's level (`root_level` for a linked root, `platform_level` for a platform family: each position is the primitive installed for the family's own item, `PrimsGroundOk`) is carried up the chain by `chain_real` with no outputs, and `family_top` reads the caller's new methods at the family context against u's result at its own (`level_rel`, with `family_keys_typed`) | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |

@@ -4394,7 +4394,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
              (Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F') (fr_applying F) (fr_pins F)) made
 (* [D78]/[D84] rule 5, `bind F;` for F abstract and in force: an
    application at θ = F's inputs read here; each type output already in
-   force here becomes a fresh rigid generation ([D72]); F's fixed inputs
+   force or mentioned here becomes a fresh rigid generation ([D72]); F's fixed inputs
    X(F) must denote what they did where F was provided, else a static error;
    exactly F's result is then in force, its items at the application's
    generations. *)
@@ -4411,12 +4411,14 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     FreshFor W F C newgens ->
     (* Repeated output roles share a generation; distinct roles do not. *)
     (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-    (* outputs: fresh where the symbol is already in force; one not in
-       force is installed as itself, and the frame's return and receiver
-       types (read where every symbol they mention is in force) do not
-       mention it, nor does the context or a method key's receiver (the
-       result's write would re-ground what mentions it; stricter than the
-       oracle and native, scratch/orch/chainfwd-AUDIT.md section 2).
+    (* outputs: fresh where the symbol is already in force, or is
+       mentioned in scope (by the context or a method key's receiver,
+       e.g. a family demand's key at an unbound declared T): writing it
+       as itself would re-ground what mentions it (stability, criteria.md
+       section 5; examples/lambda-declared-output.moss). One neither in
+       force nor mentioned is installed as itself, and the frame's return
+       and receiver types (read where every symbol they mention is in
+       force) do not mention it.
        In a body bound to F, a kept output at an input of F is ruled out
        by LinkBody (nothing the body makes is an input of F,
        examples/link-kept-output-pin.moss); a block nested in the body
@@ -4427,7 +4429,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
           ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
                   (match fr_this F with Some r => gens r | None => [] end)) /\
           ~ In t (context_gens C ++ key_receiver_gens C)) \/
-       (nlook t (c_ty C) <> None /\ In (gensof t) newgens)) ->
+       ((nlook t (c_ty C) <> None \/ In t (context_gens C ++ key_receiver_gens C)) /\
+          In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
     (* [D78]: every output destination, fresh or not, is made here: a

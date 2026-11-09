@@ -105,8 +105,9 @@ correctly, and it accepts nothing that both reject.
   criteria decide, and the implementation that is wrong gets a proof-plan
   entry.
 - A rule that breaks this criterion only to make a proof easier is a debt.
-  It should be listed with its alternative, as the kept-output clause is in
-  [`bootstrap/AUDIT-CHANGES.md`](../../bootstrap/AUDIT-CHANGES.md).
+  It should be listed with its alternative, as the kept-output clause was in
+  [`bootstrap/AUDIT-CHANGES.md`](../../bootstrap/AUDIT-CHANGES.md) (#10) until
+  it was replaced.
 
 ## Using the criteria
 

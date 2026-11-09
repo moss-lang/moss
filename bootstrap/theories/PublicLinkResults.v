@@ -70,28 +70,27 @@ Section Run.
 Variable W : A.world.
 
 (* (T16; proved below, kept_outputs_unmentioned, from BApplyAbstract's
-   clause added by chainfwd-AUDIT.md section 2; formerly a premise,
-   scratch/orch/results2-AUDIT.md section 2). An output that
-   `bind F;` installs as itself (not in force here) is not mentioned by the
-   context, nor by a method key's receiver. Otherwise the result's write
-   re-grounds what mentions it. It can be mentioned only as an unbound
-   declared symbol in family method provisions or their keys
-   (examples/lambda-declared-output.moss, examples/family-unbound-need.moss:
-   KeysScoped admits declared symbols), where re-grounding is harmless by
-   parametricity (unproved). For the user to decide: either an Audit clause
-   `~ In t (context_gens C ++ key_receiver_gens C)`, which rejects correct
-   programs both implementations accept, or the parametricity proof. *)
+   case split; formerly a premise, scratch/orch/results2-AUDIT.md
+   section 2). An output that `bind F;` installs as itself is not
+   mentioned by the context, nor by a method key's receiver: otherwise the
+   result's write would re-ground what mentions it. BApplyAbstract gives a
+   mentioned output not in force (an unbound declared symbol in family
+   method provisions or their keys, examples/lambda-declared-output.moss)
+   a fresh generation instead (AUDIT-CHANGES.md #10, option (b)). *)
 Definition KeptOutputsUnmentioned : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs -> PublicFormation.FormedCx W C ->
-  forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> ~ In t (PA.FS.CopyA.S.capture_gens C).
+  forall t, A.FunOutputs W u t -> A.nlook t (A.c_ty C) = None -> gensof t = t ->
+    ~ In t (PA.FS.CopyA.S.capture_gens C).
 
-(* KeptOutputsUnmentioned holds: BApplyAbstract asks it of an output not
-   in force (chainfwd-AUDIT.md section 2). *)
+(* KeptOutputsUnmentioned holds: BApplyAbstract keeps an output as itself
+   only when it is neither in force nor mentioned; a mentioned one gets a
+   fresh generation, which is no declared symbol. *)
 Lemma kept_outputs_unmentioned : KeptOutputsUnmentioned.
 Proof.
-  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft None'.
-  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & Outs & _).
-  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[N _]]; [exact Nm|congruence].
+  intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft _ E.
+  pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _).
+  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[_ Ig]]; [exact Nm|].
+  rewrite E in Ig. exfalso. exact (funoutputs_declared W u t Ft (PublicFormation.freshfor_fresh W _ _ _ _ FreshG Ig)).
 Qed.
 
 (* Each output destination is out of scope at the application: no key of
@@ -110,7 +109,7 @@ Proof.
   destruct (Outs t Ft) as [[None' [E [Fr _]]]|[_ Ig]].
   - rewrite E. pose proof (funoutputs_declared W u t Ft) as Nf.
     split; [intros Ik; destruct (nlook_some _ t _ Ik) as [v L]; congruence|].
-    split; [exact (Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc t Ft None')|].
+    split; [exact (Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc t Ft None' E)|].
     split; [intros r Er I; apply Fr; apply in_or_app; left; rewrite Er; exact I|].
     intros r Er I; apply Fr; apply in_or_app; right; rewrite Er; exact I.
   - pose proof (PublicFormation.freshfor_fresh W _ _ _ _ FreshG Ig) as Fresh.

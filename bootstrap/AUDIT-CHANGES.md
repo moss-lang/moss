@@ -51,7 +51,7 @@ entry they belong to.
 | 7 | 3b covers every captured item | 43cd6d9 | B |
 | 8 | Main's platform fns read raw handles as themselves | 1f5f71d | B |
 | 9 | A family's listed polymorphic inputs are types | f6ca908 | B |
-| 10 | **A kept output is unmentioned by the context** | 642490e | **B** |
+| 10 | A kept output is unmentioned by the context; since option (b), a mentioned output is fresh | 642490e, proposals | B, then none |
 | 11 | A linked input reads in G over F's inputs (cap3b) | 807bbbf | B |
 | 12 | A method's θ records every signature type symbol (sigclose) | 61040f2 | B |
 | 13 | A linked body does not keep an output at an input of F | 268bf3a, 4d55710 | B |
@@ -94,8 +94,9 @@ entry they belong to.
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
 
 **Points that most need a decision.**
-- #10 rejects two programs that both implementations accept and run
-  correctly. The coordinator chose this over a parametricity proof.
+- #10 rejected two programs that both implementations accept and run
+  correctly. Resolved by option (b): a mentioned output is fresh, and
+  both are accepted again.
 - #20 removes a run-time check from the user's own commit b4f8279.
 - #14 makes Audit accept a `tests/errors` program that both implementations
   reject.
@@ -267,29 +268,52 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
   restricted to families.
 - **Class B.** Native accepts the program. Native bug E34.
 
-### 10. A kept output is unmentioned by the context (642490e)
-- **Rule now.** In `BApplyAbstract`, an output t that is not in force (so
-  is installed as itself) must not be among
-  `context_gens C ++ key_receiver_gens C`.
-- **Why.** The premise `KeptOutputsUnmentioned` was false for two programs
-  Audit accepted, which made `safety_obligations` vacuous. In both, an
-  unbound declared T appears in family method keys and signatures. The
-  result's write `T |-> m` re-grounds those. The record argues this is
-  harmless by parametricity, but that is unproved.
-- **Tests.** Audit now rejects both programs, which both implementations
-  run correctly:
+### 10. A kept output is unmentioned by the context (642490e); a mentioned output is fresh (proposals, option (b))
+- **Rule now (option (b), owner-approved).** In `BApplyAbstract` an
+  output is fresh (a new generation from `newgens`) when it is in force
+  *or mentioned in scope*, that is in `context_gens C ++
+  key_receiver_gens C` (the proof's `capture_gens`). Only an output that
+  is neither is installed as itself. The former clause, "a kept output is
+  unmentioned", now holds by construction, and the case split stays
+  deterministic.
+- **Criterion: stability** (criteria.md section 5). Writing a mentioned T
+  as itself silently re-grounds what captured it (a family method key
+  `T.foo`, its signature). A fresh generation leaves those meanings alone.
+- **Rule before (642490e).** An output not in force had to be unmentioned,
+  else the program was rejected.
+- **Why the old rule.** The premise `KeptOutputsUnmentioned` was false for
+  two programs Audit accepted, which made `safety_obligations` vacuous. In
+  both, an unbound declared T appears in family method keys and
+  signatures, and the result's write `T |-> m` re-grounds those.
+- **Tests.** Audit rejected both programs from 642490e and accepts them
+  again under (b); both implementations run them correctly:
   - [lambda-declared-output.moss](examples/lambda-declared-output.moss):
     oracle exit 0; native exit 0;
   - [kept-output-family-method.moss](examples/kept-output-family-method.moss):
-    oracle prints 0; native prints 0 (the right answer).
+    oracle prints 0; native prints 0. Under (b), y has the fresh type T'
+    and `y.dup()` is demanded from F at A := T'. An oracle variant that
+    gives a mentioned output a fresh generation
+    (`scratch/oracle/keptfresh`) prints 0 too, as does the plain oracle
+    (`MODE=run` comparison: same output on both programs).
 
   The neighbour [kept-output-captured-fn.moss](examples/kept-output-captured-fn.moss)
-  is rejected by both implementations and by Audit.
-- **Corpus.** `scratch/orch/chainfwd-cmp.out`: 376 same, 2 diff. The two
-  differences are exactly the two programs above.
-- **Decision.** The coordinator's. The alternative is the parametricity
-  proof (see "Deferred alternatives").
-- **Class B.** An incompleteness relative to both implementations.
+  is rejected by both implementations and by Audit (unchanged).
+- **Corpus.** `scratch/orch/chainfwd-cmp.out` (old rule): 376 same, 2 diff.
+  Under (b), an oracle variant with the old rule (`scratch/oracle/kept`,
+  chainfwd's patch ported) against the plain oracle over `tests/`,
+  `examples/`, `bootstrap/examples/` and the new test programs: 412 same,
+  2 diff, exactly the two programs above, which (b) now accepts.
+- **Proof.** `kept_outputs_unmentioned` (PublicLinkResults) is restated
+  for an output kept as itself (`gensof t = t`): a fresh one is a fresh
+  symbol, never a declared one (`funoutputs_declared`). BodySlice's
+  `AppPremises`/`AppAt` repeat the new clause. No other proof changed.
+- **Run time.** Audit writes the fresh generation where the
+  implementations write T itself. Elaborated code reads T through the
+  table, so this is a class D difference in generation naming only (as
+  for #18), not observable.
+- **Decision.** The owner's (option (b) of consolidation proposal 1).
+- **Class.** Was B (rejected two programs both implementations run);
+  now no longer an incompleteness for them.
 
 ### 11. A linked input reads in G as a type over F's inputs (807bbbf)
 - **Rule now.** In LinkBody's input condition, "G's reading of an input x
@@ -525,7 +549,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above).
     0; native rejects the use of the val for an unrelated reason (it
     rejects every use of a defined val); old Audit stuck.
   - [lambda-declared-output.moss](examples/lambda-declared-output.moss):
-    oracle exit 0; native exit 0; old Audit stuck. #10 now rejects it.
+    oracle exit 0; native exit 0; old Audit stuck. #10 rejected it until
+    its option (b), which accepts it.
 
   The b4f8279 examples (saved-type-rebinding, saved-generic-rebinding,
   captured-output-scope, captured-type-input) do not mention the check.
@@ -1063,8 +1088,8 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
 - handle-rebind (#8). The platform fn is unused; native rejects it once it
   is called.
 - family-poly-nontype (#9, E34).
-- **lambda-declared-output and kept-output-family-method (#10).** Native
-  runs both correctly.
+- ~~lambda-declared-output and kept-output-family-method (#10)~~: Audit
+  accepts both again since #10 option (b).
 - partially-bound-merge (#12). Native accepts it. The oracle has rejected
   it since 61040f2. **Audit's own verdict on it is not recorded.** E24
   still says it must be accepted, which conflicts with the oracle's new
@@ -1119,8 +1144,8 @@ On copy-capture, Audit matches both implementations.
       input. This needs a logical-relation lemma for closure safety
       under renaming an abstract generation, or family obligations
       restated to give callability at every grounding.
-  - Estimate: "days, not hours". If it is done, revert 642490e's
-    conjunct, and the two programs are accepted again.
+  - Estimate: "days, not hours". Superseded by option (b) (a mentioned
+    output is fresh), which accepts the two programs without it.
 - **Drop the redundant pin clause (#13).** Done in consolidation (see
   #13).
 - **Pin merge representatives as the oracle does (#14, option a).** This
