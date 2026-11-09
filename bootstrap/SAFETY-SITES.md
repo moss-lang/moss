@@ -385,7 +385,7 @@ hypotheses, each a named remaining obligation:
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and abstract applications, now stated as binding steps (`BindStep`); `bind F;` for F with a body is proved (`item_chain`) | T15, T16 |
+| `case_BApplyAbstract` (as `AppAt`, capped by eval fuel), `case_BFunClosure` | abstract applications and closure binds, stated as binding steps (`BindStep`); `bind F;` for F with a body and copies (`case_BFunCopy`) are proved | T15, T16 |
 | `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
 | `lambda_keys_scoped` | a lambda's context lists method keys whose receivers mention only its generations | T29 |
 | `bind_nominal_formed` | a method bind's nominal key receiver has its arguments keyed by its requirements | T29 |

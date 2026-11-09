@@ -2609,6 +2609,26 @@ Definition BindStep (J r : nat) F C F' C' (Bi : Prop) (made : list nat) (b : bin
     (exists res, I.eval_bindings (S j) P d g st (b :: rest) = inr res /\
        (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
 
+Lemma bindings_copy_eq : forall j d g st u h sm r,
+  I.eval_bindings (S j) P d g st (BCopyFunctor u h sm :: r) =
+  match lookup_provision (IFun h) d with
+  | Some (FunctorClosure c sms dc) =>
+      I.eval_bindings j P (install_provision (IFun u) (FunctorClosure c (sms ++ [sm])%list dc) d) g st r
+  | _ => inr (I.Evaluation (Stuck I.e_fun) g st)
+  end.
+Proof. reflexivity. Qed.
+
+Lemma closure_shape : forall n H u gfx pv, ClosureOk n H u gfx pv -> exists c sms dc, pv = FunctorClosure c sms dc.
+Proof. intros n H u gfx pv Ok. destruct Ok; eauto. Qed.
+
+Lemma nlook_fixed_app : forall fx x, (exists t, In (x, t) fx) ->
+  exists t, A.nlook x (A.fixed_app fx) = Some (Some t) /\ In (x, t) fx.
+Proof.
+  intros fx x [t0 I0]. induction fx as [|[y v] rest IH]; [contradiction|]. cbn.
+  destruct (Nat.eqb_spec x y) as [->|Ne]; [exists v; split; [reflexivity|left; reflexivity]|].
+  destruct I0 as [E|I0]; [injection E as E; congruence|]. destruct (IH I0) as [t [N I]]. exists t. split; [exact N|right; exact I].
+Qed.
+
 (* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
 Local Close Scope string_scope.
 (* BApplyAbstract *)
@@ -2638,7 +2658,7 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
 Hypothesis case_BApplyAbstract : forall k, Below k -> forall J, AppAt J k.
 
 (* BFunCopy *)
-Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
+Lemma case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some h ->
       A.nlook h (A.c_funs C) <> None ->
       A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
@@ -2650,6 +2670,41 @@ Hypothesis case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch n
       sm = map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BCopyFunctor u h sm).
+Proof.
+  intros k _ F C pa u pg h Cu nsu Ch nsh sm fx R1 R2 Hf FCu FCh Incl FixU FixH Agr Same Sm Fx J rr _.
+  split; [repeat split|]. split; [split; intros t0 _ g0 []|].
+  intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
+  pose proof Pre0 as [Frame [Ctx [L [St Real]]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [_ KM]]].
+  destruct (A.nlook h (A.c_funs C)) as [fxh|] eqn:Lh; [|congruence].
+  destruct (Funs h fxh Lh) as [pv [gfh [Look [Okh [Covh Vmh]]]]].
+  destruct (closure_shape _ _ _ _ _ Okh) as [c [sms [dc ->]]]. rewrite Look. left.
+  set (d' := install_provision (IFun u) (FunctorClosure c (sms ++ [sm])%list dc) d).
+  assert (FunFx : forall x t t', In (x, t) fx -> In (x, t') fx -> t = t').
+  { intros x t t' I I'. destruct (proj1 (Fx x t) I) as [_ E]. destruct (proj1 (Fx x t') I') as [_ E']. congruence. }
+  exists d', g, st, H. split; [intros a0 c0 L0; exact L0|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
+  change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
+  split; [exact Frame|]. split; [exact Ctx|]. split; [exact L|]. split; [exact St|].
+  apply (realizes_set rr C d H (IFun u) (A.ProvidedFunctor fx)).
+  - exact Real.
+  - intros k0 p0 [Eq|[]]. injection Eq as <- <-. exact Logic.I.
+  - reflexivity.
+  - intros k0 Ne. apply install_other. exact Ne.
+  - exists (FunctorClosure c (sms ++ [sm])%list dc), (ground_fixed (type_meanings d) fx).
+    split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
+    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl).
+      intros x Fh. pose proof (FixH x Fh) as Fu. split; [exact Fu|].
+      destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
+      rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
+      destruct (nlook_fixed_app fxh x (Covh x Fh)) as [was [Nw Iw]].
+      rewrite (Vmh x was Iw). f_equal.
+      pose proof (Agr x Fh) as Ag. rewrite (ilook_apps_fun C h fxh (funs_ilook _ h fxh KM Lh)), Lx, Nw in Ag.
+      change (ground d was = ground d tx). rewrite <- (Abs was), <- (Abs tx), Ag. reflexivity.
+    + split.
+      * intros x Fu. destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
+        exists tx. exact (proj2 (Fx x tx) (conj Fu Lx)).
+      * intros x tx I. exact (lookup_ground_fixed _ fx x tx FunFx I).
+Qed.
 
 (* BFunClosure *)
 Hypothesis case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
