@@ -68,7 +68,7 @@ Variable state_ok : heap_types -> Prims.mstate -> Prop.
 
 Notation Pre := (S.Pre W Prog argv read state_ok).
 
-(* PREMISE (static correspondence, T15/T16): ChainForwardSigs for a copy
+(* (Proved: PublicChainSigs.chain_forward_copy_sigs.) ChainForwardSigs for a copy
    chain of at least one copy (sms nonempty). The caller's last position
    for a key reads, through each copy's positions, an item of the root
    family; the caller's method there and the item have agreeing
