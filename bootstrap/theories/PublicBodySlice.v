@@ -2732,6 +2732,34 @@ Qed.
 (* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
 Local Close Scope string_scope.
 (* BApplyAbstract *)
+(* The premises of an abstract application, together. *)
+Definition AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs : Prop :=
+  (A.resolve_sym W (A.fr_mod F) pa = Some u) /\
+  (A.nlook u (A.c_funs C) = Some fx) /\
+  (A.FunCtx W u Cu ns) /\
+  ((forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here)) /\
+  (th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) /\
+  ((forall x tx, In (x, tx) fx -> exists here,
+        A.nlook x (A.c_ty C) = Some here /\ A.canon C here = A.canon C tx)) /\
+  (A.Satisfies C Cu th ns sm) /\
+  (A.FreshFor W F C newgens) /\
+  ((forall a b, A.FunOutputs W u a -> A.FunOutputs W u b -> gensof a = gensof b -> a = b)) /\
+  ((forall t, A.FunOutputs W u t ->
+         (A.nlook t (A.c_ty C) = None /\ gensof t = t) \/
+         (A.nlook t (A.c_ty C) <> None /\ A.Fresh W (gensof t) /\ In (gensof t) newgens))) /\
+  (NoDup outs) /\
+  ((forall t, In t outs <-> A.FunOutputs W u t)) /\
+  (A.ProvideResult W u C (fun t => TAbs (gensof t)) C' ks).
+
+(* One step of a binding, from a given state: it completes or stops. *)
+Definition StepOut r F F' C' (Bi : Prop) (made : list nat) (b : binding) j d types H g st : Prop :=
+  forall rest,
+    (exists d' g' st' H', heap_extends H H' /\ MeaningsGrow made d d' /\
+       Pre r F' C' d' types H' g' st' /\
+       I.eval_bindings (S j) P d g st (b :: rest) = I.eval_bindings j P d' g' st' rest) \/
+    (exists res, I.eval_bindings (S j) P d g st (b :: rest) = inr res /\
+       (forall v, I.evaluation_signal res <> Normal v) /\ Outcome F d H types TUnit Bi res).
+
 (* A `bind F;` of an abstract F in force, as a step below the cap J. *)
 Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
@@ -2755,7 +2783,6 @@ Definition AppAt (J k : nat) : Prop := forall F C pa u fx Cu ns sm th gensof C' 
   forall rr, rr <= S k -> BindStep J rr F C (A.with_fresh F newgens) C' False newgens
       (BApply u th (map (fun t => (t, gensof t)) outs) sm).
 
-Hypothesis case_BApplyAbstract : forall k, Below k -> forall J, AppAt J k.
 
 (* BFunCopy *)
 Lemma case_BFunCopy : forall k, Below k -> forall F C pa u pg h Cu nsu Ch nsh sm fx,
@@ -2858,7 +2885,7 @@ Proof.
 Qed.
 
 (* What an application reads of a linked body. *)
-Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
+Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 : Prop :=
   A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
   (forall k, In k nsg -> In k nsu -> A.ilook (A.provision_id k) (A.c_provisions Cg) = A.ilook (A.provision_id k) (A.c_provisions Cu)) /\
   (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
@@ -2878,6 +2905,9 @@ Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r
       (map ITy outs ++ map (fun k => A.output_renaming outs gen (A.rkey_of Cr k)) ks)%list
       (flat_map (A.refile (map (fun k =>
          (A.at_site Cb (A.output_renaming outs gen k), A.output_renaming outs gen (A.rkey_of Cr k))) ks)) binds0)).
+
+Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
+  LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
 Proof.
   intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 binds
     Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items Outs OutM NdG FrG PR RR BO Eb Fam FrH FB].
@@ -3389,6 +3419,121 @@ Lemma bindings_apply_eq : forall j d g st u th outs sm r,
   | inr rr => inr (I.with_g g rr)
   end.
 Proof. reflexivity. Qed.
+
+(* How a closure came to be applicable. *)
+Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
+  (exists gg h Cu nsu Cg nsg dc,
+     pv = FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs nsu nsg)] dc /\
+     A.LinkBody W Prog u gg h /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
+     (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) /\
+     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
+        (forall v t, In (IVal v) (captured nsu nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
+           lookup_provision (IVal v) dc = Some (ValueProvision w) /\ value_typed W P H0 w (app_subst gm t)) /\
+        (forall f g, In (IFn f) (captured nsu nsg) -> A.nlook f (A.c_fns Cg) = Some g -> exists pv,
+           lookup_provision (IFn f) dc = Some pv /\ CallableOk n H0 (denv gm) (A.sg_params g) (A.sg_ret g) pv) /\
+        (forall r m a g, In (IMth r m a) (captured nsu nsg) -> A.mlook r m (A.c_mths Cg) = Some g -> exists pv,
+           lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv) /\
+        (* G's merges among its fixed and captured inputs hold *)
+        (forall x tx, A.nlook x (A.c_ty Cg) = Some tx ->
+           (forall y, In y (x :: A.gens tx) -> In y (map fst (A.c_ty Cu)) -> A.Fixed W u y) ->
+           app_subst gm (TAbs x) = app_subst gm tx)) /\
+     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
+        CapturedFuns n H0 gm dc (captured_funs Cg (captured nsu nsg)))) \/
+  (exists h Cu nsu Ch nsh code sms dc gfh,
+     pv = FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list dc /\
+     ClosureOk n H0 h gfh (FunctorClosure code sms dc) /\
+     A.FunCtx W u Cu nsu /\ A.FunCtx W h Ch nsh /\ incl nsh nsu /\
+     (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) /\
+     (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu)) /\
+     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx)) \/
+  (exists code, pv = FunctorClosure code [] (EnvironmentWithAliases [] [] []) /\ Platform.Family W Prog u code).
+Proof.
+  intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh FCu FCh Incl Fx SN ST|u code gfx Fam].
+  - left. exists gg, h, Cu, nsu, Cg, nsg, dc. split; [reflexivity|].
+    exact (conj LB (conj FCu (conj FCg (conj FxIn (conj Caps CF))))).
+  - right; left. exists h, Cu, nsu, Ch, nsh, code, sms, dc, gfh. split; [reflexivity|].
+    exact (conj Okh (conj FCu (conj FCh (conj Incl (conj Fx (conj SN ST)))))).
+  - right; right. exists code. split; [reflexivity|exact Fam].
+Qed.
+
+Lemma ilook_some_of_in : forall X k (l : list (item * X)) p, In (k, p) l -> exists p', A.ilook k l = Some p'.
+Proof.
+  intros X k l p. induction l as [|[k' p'] r IH]; intros I; [contradiction|]. cbn.
+  destruct (item_eqb k k') eqn:E; [eauto|]. destruct I as [Eq|I]; [injection Eq as -> ->; rewrite (proj2 (item_eqb_spec _ _) eq_refl) in E; discriminate|exact (IH I)].
+Qed.
+
+(* A realized context's provisions are found under their run-time keys. *)
+Lemma realized_key : forall n C d H k p, Realizes n C d H -> In (k, p) (A.c_provisions C) -> NeedShape k ->
+  exists pv, lookup_provision (A.rkey_of C k) d = Some pv.
+Proof.
+  intros n C d H k p [_ [[Vals [Fns [Mths Funs]]] [_ KM]]] I Sh.
+  destruct (ilook_some_of_in _ k _ p I) as [p' Il]. pose proof (KM _ _ (ilook_in _ _ _ Il)) as Kind.
+  destruct k as [t|v|f|r m th|u]; cbn in Sh |- *; try contradiction.
+  - destruct p' as [t' a|g a|g a|fx]; cbn in Kind; try contradiction.
+    destruct (Vals v t' (ilook_vals _ v t' a KM Il)) as [w [Look _]]. eauto.
+  - destruct p' as [t' a|g a|g a|fx]; cbn in Kind; try contradiction.
+    destruct (Fns f g (ilook_fns _ f g a KM Il)) as [pv [Look _]]. eauto.
+  - subst th. destruct p' as [t' a|g a|g a|fx]; cbn in Kind; try contradiction.
+    destruct (Mths r m g (ilook_mths _ r m g a KM Il)) as [pv [Look _]]. eauto.
+  - destruct p' as [t' a|g a|g a|fx]; cbn in Kind; try contradiction.
+    assert (L : A.nlook u (A.c_funs C) = Some fx).
+    { change (A.c_funs C) with (funs_of (A.c_provisions C)). rewrite (funs_by_ilook _ u KM), Il. reflexivity. }
+    destruct (Funs u fx L) as [pv [gfx [Look _]]]. eauto.
+Qed.
+
+Lemma bindsof_fold : forall bs l, A.BindsOf (fold_right (fun b x => EBind b x) EUnit bs) l -> l = bs.
+Proof.
+  induction bs as [|b r IH]; intros l D; cbn in D; inversion D; subst; [reflexivity|]. f_equal. apply IH. assumption.
+Qed.
+
+Lemma functx_locals : forall u C ns, A.FunCtx W u C ns -> A.c_locals C = [].
+Proof. intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & _ & _ & -> & _ & _). reflexivity. Qed.
+
+Lemma apply_functor_eq : forall j d u th outs sm st,
+  I.apply_functor (S j) P d u th outs sm st =
+  match lookup_provision (IFun u) d with
+  | Some (FunctorClosure h sms dc) =>
+      match view_functor P h with
+      | Some code =>
+          match select_provisions d sm with
+          | Some d1 =>
+              match adapt_provisions d1 sms with
+              | Some d2 =>
+                  match I.eval_bindings j P (application_environment P d h th (append_environment d2 dc)) [] st (fc_bindings code) with
+                  | inl (d3, _, st3) =>
+                      match select_provisions d3 (inst_smap (result_substitution th outs) (fc_outputs code)) with
+                      | Some dr => match result_environment d outs d3 (fc_outputs code) dr with
+                          | Some result => inl (result, st3)
+                          | None => inr (I.Evaluation (Stuck I.e_compose) [] st3) end
+                      | None => inr (I.Evaluation (Stuck I.e_compose) [] st3)
+                      end
+                  | inr rr => inr rr
+                  end
+              | None => inr (I.Evaluation (Stuck I.e_chain) [] st)
+              end
+          | None => inr (I.Evaluation (Stuck I.e_compose) [] st)
+          end
+      | None => inr (I.Evaluation (Stuck I.e_nobody) [] st)
+      end
+  | _ => inr (I.Evaluation (Stuck I.e_fun) [] st)
+  end.
+Proof. reflexivity. Qed.
+
+(* A body that neither returns nor loops stops only by trapping, exiting,
+   an unsupported operation or running out of fuel: the caller's step
+   stops the same way. *)
+Lemma body_stop : forall Fb d' H' types' t (B Bi : Prop) F d H types g res,
+  A.fr_ret Fb = None -> A.fr_loop Fb = false -> (forall v, I.evaluation_signal res <> Normal v) ->
+  Outcome Fb d' H' types' t B res ->
+  (forall v, I.evaluation_signal (I.with_g g res) <> Normal v) /\ Outcome F d H types TUnit Bi (I.with_g g res).
+Proof.
+  intros Fb d' H' types' t B Bi F d H types g [sig g' st] Ret Loop NN Out. cbn in NN, Out |- *.
+  split; [exact NN|]. destruct sig; cbn in Out |- *; auto.
+  - exfalso. exact (NN v eq_refl).
+  - destruct Out as [H2 [ret [R _]]]. congruence.
+  - destruct Out as [_ [L _]]. congruence.
+Qed.
 
 (* Chains of steps run below the eval-fuel cap J (a functor body runs
    below its application's fuel). *)
@@ -4055,6 +4200,148 @@ Proof.
 Qed.
 
 End Cap.
+
+(* ---- abstract applications ------------------------------------------------- *)
+
+(* HYPOTHESIS (T15). A linked body's binds, refiled under the keys F
+   declares, run as their chain does: refile's extra installs (a method
+   bind filed again under F's spelling of its key) leave the body's
+   context realized. *)
+Hypothesis refile_run : forall J' k u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 B,
+  LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
+  Chain J' k Fg Cg Fb Cb B made binds0 ->
+  forall rr j' d H st, rr <= S k -> j' < rr -> j' <= J' -> Pre rr Fg Cg d [] H [] st ->
+  (exists d3 g3 st3 H3, heap_extends H H3 /\ Pre rr Fb Cb d3 [] H3 g3 st3 /\
+     I.eval_bindings j' P d [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inl (d3, g3, st3)) \/
+  (exists res, I.eval_bindings j' P d [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inr res /\
+     (forall v, I.evaluation_signal res <> Normal v) /\ Outcome Fg d H [] TUnit B res).
+
+(* HYPOTHESIS (T15). A linked body that completes provides F's result at
+   the application: its result provisions are selected under the caller's
+   keys (through θ and the output renaming), the output generations are
+   fresh in the caller, and the caller's context after the application is
+   realized. *)
+Hypothesis link_results : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr d types H g st h dc gfx gg dg n ps a r bodies nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j',
+  Pre rr F C d types H g st ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs ns nsg)] dc) ->
+  ClosureOk rr H u gfx (FunctorClosure h [map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs ns nsg)] dc) ->
+  FixedMeans u d fx gfx ->
+  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
+  select_provisions d sm = Some d1 ->
+  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (linked_needs ns nsg)) = Some d2 ->
+  I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inl (d3, g3, st3) ->
+  heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
+  exists dr result,
+    select_provisions d3 (inst_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list) = Some dr /\
+    result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
+    Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
+    MeaningsGrow newgens d (append_environment result d).
+
+(* HYPOTHESIS (T15). Applying a copy runs its source at the source's
+   interface, and applying a platform family installs its primitives. *)
+Hypothesis copy_apply : forall k, Below k -> forall J, (forall J', J' < J -> AppAt J' k) ->
+  forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> j < J -> Pre rr F C d types H g st ->
+  forall gfx h Cu0 nsu Ch nsh code sms dc gfh,
+  lookup_provision (IFun u) d = Some (FunctorClosure code (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 k)) nsh])%list dc) ->
+  ClosureOk rr H h gfh (FunctorClosure code sms dc) ->
+  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> incl nsh nsu ->
+  (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
+  (forall k, In k nsh -> A.ilook (A.provision_id k) (A.c_provisions Ch) = A.ilook (A.provision_id k) (A.c_provisions Cu0)) ->
+  (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
+  FixedMeans u d fx gfx ->
+  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+Hypothesis platform_apply : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
+  AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
+  forall rr, rr <= S k -> forall j d types H g st, S j <= rr -> Pre rr F C d types H g st ->
+  forall code, lookup_provision (IFun u) d = Some (FunctorClosure code [] (EnvironmentWithAliases [] [] [])) ->
+  Platform.Family W Prog u code ->
+  StepOut rr F (A.with_fresh F newgens) C' False newgens (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st.
+
+(* An abstract application below the cap J, given those below it: the
+   closure found for F is linked (run its body), a copy or a platform
+   family. *)
+Lemma app_step : forall k, Below k -> forall J, (forall J', J' < J -> AppAt J' k) -> AppAt J k.
+Proof.
+  intros k Bel J IH F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR rr Lr.
+  assert (AP : AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs)
+    by exact (conj R (conj Fx (conj FC (conj Inp (conj Th (conj Fixed (conj Sat (conj FreshG (conj Uniq (conj Outs (conj NdO (conj OutsIff PR)))))))))))).
+  split; [repeat split|]. split.
+  { destruct FreshG as [_ Fr]. rewrite Forall_forall in Fr.
+    split; intros t E g0 Ig Ig'; destruct (Fr g0 Ig) as [_ Out]; apply Out; apply in_or_app; right; apply in_or_app; right;
+      [apply in_or_app; left; rewrite E; exact Ig'|apply in_or_app; right; rewrite E; exact Ig']. }
+  intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False newgens
+    (BApply u th (map (fun t => (t, gensof t)) outs) sm) j d types H g st).
+  pose proof Pre0 as [Frame [Ctx [Lt [St Real]]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
+  destruct (Funs u fx Fx) as [pv [gfx [Look [Ok Fm]]]].
+  destruct (closure_cases _ _ _ _ _ Ok) as [CL|[CC|CP]].
+  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
+       exact (copy_apply k Bel J IH F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj LJ Pre0
+         gfx h Cu0 nsu Ch nsh code sms dc gfh Look Okh FCu0 FCh Incl FxC SN ST Fm). }
+  2: { destruct CP as (code & -> & Fam).
+       exact (platform_apply k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0 code Look Fam). }
+  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
+  destruct (functx_unique _ _ _ _ _ FC FCu0) as [<- <-].
+  intros rest. rewrite bindings_apply_eq.
+  destruct j as [|j1].
+  { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
+  subst th. set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) in *.
+  destruct (static_realizes_le rr rr C d H u Cu ns sm th (le_n _) Real (functx_static _ _ _ FC) Sat
+    (apply_theta C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
+  destruct (link_facts _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+    & outs' & gen & Cr & ks' & binds0 & LD).
+  pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
+  destruct (functx_unique _ _ _ _ _ FC FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
+  (* the closure's own needs, from those the caller selected *)
+  destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (linked_needs ns nsg))) as [d2 Sel2].
+  { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
+    unfold linked_needs in Ik. apply filter_In in Ik as [Ig E]. apply existsb_exists in E as [k1 [Iu E]]. apply item_eqb_spec in E. subst k1.
+    destruct (functx_needs_provided W u Cu ns FC k0 Iu) as [p0 Ip].
+    destruct (functx_static _ _ _ FC) as [_ [_ [_ [_ [_ [ShU _]]]]]].
+    destruct (realized_key _ _ _ _ _ _ RealU Ip (ShU k0 Iu)) as [pv0 L0].
+    change (lookup_provision (A.rkey_of Cu k0) d1) with (lookup_provision (A.rkey_of Cu k0) (callee_env d th d1)). rewrite L0. discriminate. }
+  assert (Keys : map fst th = map fst (A.c_ty Cu)) by (unfold th; rewrite map_map; reflexivity).
+  assert (GfxA : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)).
+  { intros x Fx' _. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).
+    destruct (Fixed x tx Ixt) as [here [Lh Ceq]].
+    assert (Lx : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x))))
+      by (unfold th; exact (lookup_on_keys (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ x (FxIn x Fx'))).
+    rewrite Lx. cbn [option_map].
+    replace (app_subst (A.c_ty C) (TAbs x)) with here by (cbn [app_subst]; rewrite lookup_subst_nlook', Lh; reflexivity).
+    f_equal. rewrite <- (Abs tx), <- Ceq. reflexivity. }
+  pose proof (link_entry rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2 LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
+  set (de := application_environment P d h th (append_environment d2 dc)) in *.
+  assert (PreB : Pre rr Fg Cg de [] H [] st).
+  { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
+    split; [split; [|split]|split; [constructor|split; [exact St|exact RealG]]].
+    - intros n1 t mu Found. rewrite (functx_locals _ _ _ FCg) in Found. discriminate.
+    - intros t E. congruence.
+    - apply alias_self; [reflexivity|exact (proj1 RealG)|].
+      destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
+  destruct (items_chain (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
+  pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply bindsof_fold in BO. subst binds0.
+  rewrite apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.
+  cbn [fc_bindings fc_outputs]. rewrite Sel. cbn [adapt_provisions]. rewrite Sel2. fold de.
+  destruct (refile_run (S j1) k u gg h dg n0 ps0 a0 rs bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs _ LD Ch
+    rr j1 de H st Lr ltac:(lia) ltac:(lia) PreB) as [[d3 [g3 [st3 [H3 [E3 [Pre3 Run]]]]]]|[res [Run [NN Out]]]].
+  - rewrite Run.
+    destruct (link_results F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st h dc gfx gg dg n0 ps0 a0 rs bodies
+      nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
+      as [dr [result [Sdr [Rres [PreC GrowC]]]]].
+    rewrite Sdr, Rres. left. exists (append_environment result d), g, st3, H3.
+    split; [exact E3|]. split; [exact GrowC|]. split; [exact PreC|reflexivity].
+  - rewrite Run. right. exists (I.with_g g res). split; [reflexivity|].
+    exact (body_stop Fg de H [] TUnit _ False F d H types g res Ret Loop NN Out).
+Qed.
+
+Lemma case_BApplyAbstract : forall k, Below k -> forall J, AppAt J k.
+Proof.
+  intros k Bel J. induction J as [J IHJ] using lt_wf_ind. exact (app_step k Bel J IHJ).
+Qed.
 
 Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
   A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks F it) m w.

@@ -727,6 +727,13 @@ Proof.
   injection E as <- <-. cbn in Ce. destruct Ce as [Cv _]. intros x Fx. destruct (Cv x Fx) as [t It].
   exists (app_subst σ t). unfold fixed_subst. apply in_map_iff. exists (x, t). split; [reflexivity|exact It].
 Qed.
+Theorem functx_needs_provided : forall u C ns, FunCtx W u C ns -> forall k, In k ns -> exists p, In (k, p) (c_provisions C).
+Proof.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & -> & _ & -> & [_ Keys] & _) k Ik.
+  destruct (proj1 (Keys k) Ik) as [e [Ie E]]. cbn [c_provisions entries_cx].
+  destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx] eqn:Ee; cbn in E; try discriminate; injection E as <-;
+    eexists; apply in_flat_map; exists e; (split; [rewrite Ee; exact Ie|]); rewrite Ee; cbn; left; reflexivity.
+Qed.
 End Support2.
 
 (* ---- tables read through the provision list ------------------------------- *)

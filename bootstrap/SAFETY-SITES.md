@@ -401,7 +401,9 @@ hypotheses, each a named remaining obligation:
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BApplyAbstract` (as `AppAt`, capped by eval fuel) | abstract applications, stated as a binding step (`BindStep`); `bind F;` for F with a body, copies (`case_BFunCopy`) and closures (`case_BFunClosure`, as `ClosureOk`'s `CLink`) are proved | T15, T16 |
+| `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
+| `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
+| `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
 | `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
