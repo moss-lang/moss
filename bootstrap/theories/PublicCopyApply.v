@@ -169,7 +169,6 @@ Proof.
     intros x tx I. rewrite (Vm x tx I). f_equal. symmetry. exact (GA tx (ScFH x tx I)).
 Qed.
 
-Hypothesis link_merges : S.LinkMergesOk W Prog.
 
 Definition empty_env : environment := EnvironmentWithAliases [] [] [].
 
@@ -191,7 +190,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      ClosureOk rr H h0 gf0 (FunctorClosure code [] dc)).
 Proof.
   intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
-    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub SO|u code gfx Fam];
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub SO|u code gfx Fam Mach];
     intros code0 sms0 dc0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (S.linked_needs nsu nsg))) as [e2 Sel2].
@@ -207,7 +206,7 @@ Proof.
     split; [exact LB|]. split; [exact FCu|]. split; [exact FCg|]. split; [intros x I; exact I|].
     split; [cbn [adapt_provisions]; exact Sel2|].
     assert (Keys : map fst (thof f Cu) = map fst (A.c_ty Cu)) by (unfold thof; rewrite map_map; reflexivity).
-    apply (S.link_entry W Prog argv read state_ok link_merges rr H d (thof f Cu) e1 u gg h Cu nsu Cg nsg dc gfx e2
+    apply (S.link_entry W Prog argv read state_ok rr H d (thof f Cu) e1 u gg h Cu nsu Cg nsg dc gfx e2
       LB FCu FCg Keys FxIn Real); [|exact Caps|exact CF|exact Sel2].
     intros x Fx' _. rewrite (Fixd x Fx'). unfold thof.
     rewrite (S.lookup_on_keys f _ x (FxIn x Fx')). reflexivity.
@@ -230,17 +229,29 @@ Proof.
       split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub SO)|].
       split; [exact Edc|]. split; [exact Fam|exact Ok0].
   - right. exists u, gfx. split; [constructor|]. split; [reflexivity|]. split; [exact Fam|].
-    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam).
+    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach).
 Qed.
 
-Lemma app_env_thof : forall d code f Cu Ch0 Cg outs bs srcs X,
+Lemma app_meanings_ext : forall (b1 b2 : nat -> ty) (tb : list (nat * ty)) l, (forall x, b1 x = b2 x) ->
+  map (fun s => (s, match lookup_subst s tb with
+    | Some t => app_subst (map (fun s0 => (s0, b1 s0)) l) t | None => b1 s end)) l =
+  map (fun s => (s, match lookup_subst s tb with
+    | Some t => app_subst (map (fun s0 => (s0, b2 s0)) l) t | None => b2 s end)) l.
+Proof.
+  intros b1 b2 tb l Eb.
+  assert (Em : map (fun s0 => (s0, b1 s0)) l = map (fun s0 => (s0, b2 s0)) l)
+    by (apply map_ext; intros y; rewrite Eb; reflexivity).
+  apply map_ext. intros s0. destruct (lookup_subst s0 tb); [rewrite Em; reflexivity|rewrite Eb; reflexivity].
+Qed.
+
+Lemma app_env_thof : forall d code f Cu Ch0 Cg tb outs bs srcs X,
   A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Cg))
-    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) outs bs srcs) ->
+    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) tb outs bs srcs) ->
   (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) ->
   application_environment P d code (thof f Cu) X = application_environment P d code (thof f Ch0) X.
 Proof.
-  intros d code f Cu Ch0 Cg outs bs srcs X FB Keys. unfold application_environment.
-  change (view_functor P code) with (A.funbody_of Prog code). rewrite FB. cbn [fc_inputs fc_linked].
+  intros d code f Cu Ch0 Cg tb outs bs srcs X FB Keys. unfold application_environment.
+  change (view_functor P code) with (A.funbody_of Prog code). rewrite FB. cbn [fc_inputs fc_linked fc_table].
   assert (E : forall x, (if existsb (Nat.eqb x) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg)))
       then lookup_subst x (thof f Cu) else None) =
     (if existsb (Nat.eqb x) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg)))
@@ -249,18 +260,13 @@ Proof.
     apply existsb_exists in Ex as [y [Iy Ey]]. apply Nat.eqb_eq in Ey. subst y.
     apply filter_In in Iy as [_ Ih]. apply existsb_exists in Ih as [z [Iz Ez]]. apply Nat.eqb_eq in Ez. subst z.
     unfold thof. rewrite (S.lookup_on_keys f _ x Iz), (S.lookup_on_keys f _ x (Keys x Iz)). reflexivity. }
-  assert (M : forall l, map (fun source => (source,
-      match (if existsb (Nat.eqb source) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg)))
-        then lookup_subst source (thof f Cu) else None) with
-      | Some meaning => ground d meaning
-      | None => match output_meaning X source with Some meaning => meaning | None => TAbs source end end)) l =
-    map (fun source => (source,
+  rewrite (app_meanings_ext _ (fun source =>
       match (if existsb (Nat.eqb source) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg)))
         then lookup_subst source (thof f Ch0) else None) with
       | Some meaning => ground d meaning
-      | None => match output_meaning X source with Some meaning => meaning | None => TAbs source end end)) l).
-  { intros l. apply map_ext. intros x. rewrite (E x). reflexivity. }
-  rewrite M. reflexivity.
+      | None => match output_meaning X source with Some meaning => meaning | None => TAbs source end end)).
+  - reflexivity.
+  - intros x. cbv beta. rewrite (E x). reflexivity.
 Qed.
 
 (* ---- the obligations about a closure's root ------------------------------- *)
@@ -331,7 +337,6 @@ Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis bind_merges : S.BindMergesOk W Prog.
 Hypothesis captured_in_force : S.CapturedInForceOk.
 Hypothesis chain_results : ChainResultsOk.
 Hypothesis chain_platform : ChainPlatformOk.
@@ -368,7 +373,7 @@ Proof.
     & outs' & gen & Cr & ks' & binds0 & LD).
   pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
   destruct (S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
-  rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
+  rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
   set (de := application_environment P d code th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
@@ -385,7 +390,7 @@ Proof.
   intros rest. rewrite S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
-  destruct (S.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World bind_merges
+  destruct (S.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
     captured_in_force (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch']].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply S.bindsof_fold in BO. subst binds0.
   rewrite S.apply_functor_eq, Look. change (view_functor (program_of Prog argv read) code) with (PublicBodySlice.A.funbody_of Prog code). rewrite FB.
