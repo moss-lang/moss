@@ -1,0 +1,23 @@
+# Linked body G does not take T (an input of F that F's result key's
+# receiver mentions); G's body applies Make, whose output T is not in
+# force in G, so it is installed as itself (kept), then binds T.m at Make's
+# T. F's key T.m is read at G's site as T.m; the caller's key is its own T.
+type T;
+fn .m();
+fn done();
+tag Concrete;
+functor Make: -> T;
+functor Maker: -> T { bind T = Bool; }
+functor F: T -> T.m, done;
+functor G: Make -> T.m, done {
+  bind Make;
+  bind T.m = () => { if this { } };
+  bind done = () => {};
+}
+fn main() {
+  bind T = Concrete;
+  bind Make = Maker;
+  bind F = G;
+  bind F;
+  Concrete.m();
+}

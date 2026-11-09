@@ -1,108 +1,106 @@
 # linknewpf: status
 
-Branch ob-linknewpf, from safety e69a7cd, fast-forwarded to safety 460a720
-(copyfresh). No Rocq file changed; check.sh
-not rerun (only a .moss example and scratch files are added).
+Branch ob-linknewpf.
 
-## Stopped: CC.FamilyLinkNewOk is false for an Audit-accepted program
+## Done
 
-Counterexample: bootstrap/examples/link-merge-rep-rebind.moss (header has
-the full walk). Scratch variants: scratch/linknewpf/m2-*.moss, m5-*.moss,
-m3-rebind-unmentioned-input.moss (control), run.sh.
+- **Audit change, 94d89ce (merged into safety):** `A.link_site`. LinkBody
+  reads result keys with the inputs at G's own table. Details:
+  scratch/orch/linknewpf-AUDIT.md and a SAFETY-SITES Observation.
+  - Counterexample: bootstrap/examples/link-merge-rep-rebind.moss.
+  - Companion: link-merge-rep-rebind-both.moss.
+- **Corpus comparison, 17c5108:** scratch/linknewpf/cmp.sh and cmp.out;
+  the analysis is in the AUDIT file.
+- **Lemmas (PublicBodySlice):** `realizes_link_site`,
+  `rkey_of_link_site` and `canon_link_site`.
+- `BodyReal` and `body_provides` in PublicChainCore are unchanged. They
+  apply at `A.link_site Cg Cb outs'`, since Realizes at Cb converts to
+  Realizes at the site.
 
-- F[X]: Merge -> X.m, where Merge merges X with T (A.gimme[Foo=X] and
-  A.gimme[Foo=T]). G: Merge -> X.m { bind T = Bool; bind T.m = ... }.
-- Audit's world is a witness, and w_context is unconstrained by WorldOf,
-  so the merge representative is free. Take T for both F and G.
-- F's key X.m reads at Cu as T.m. M(F) = {X}, so G's pins (3d) are {X},
-  and `bind T = Bool` is allowed.
-- LinkBody's ResultRealizes (and the code's sources, link_sources) look
-  the key up at `at_site Cb (T.m)`, which re-reads T through G's final
-  table: Bool.m. G's Bool.m (`if this {}`) is the result source.
-- main demands Concrete.m (X := Concrete; T = Concrete there, so the
-  merge holds). The install puts the Bool.m closure under the caller's
-  Concrete.m key, and `if this` runs on a Concrete: stuck.
-- Both implementations reject it. The oracle says "functor `G` does not
-  bind `X.m`"; native says "the functor does not bind every item its
-  result promises: `m`".
-- Why: a linked input's run-time meaning is the caller's (the
-  application environment), but `bind T = ...` writes only an alias, and
-  at_site reads the receiver through the table (aliases). Signatures are
-  compared under c_sub only, so they are not affected. Only receivers are.
+## Suspected hole for realizepf (ChainRealizeOk, non-family linked root)
 
-The same hole should affect CN.ChainRealizeOk for a non-family linked
-root, since it uses the same ResultRealizes and link_sources. I did not
-build a test for that case.
+scratch/linknewpf/m7-kept-output-receiver.moss. This is not checked
+against Audit in full; I read the rules by hand.
+- F: T -> T.m, done. G does not take T. G's body applies Make, whose
+  output T is not in force in G, so the application installs T as
+  itself. Make provides T.flipit = Bool.flip.
+- G then binds T.m = () => { this.flipit(); }. F's key T.m is read at
+  G's site as T.m (T is not in G's table), so the body's T.m is found.
+- The caller files that closure under its own T.m (Concrete). So
+  Concrete.m() would run Bool.flip on a Concrete.
+- The pins only stop `bind T`; they do not stop an application's output.
+- Oracle: accepts it and runs to exit 0. Native: rejects ("compilation
+  failed: `T`").
+- The hole predates link_site: at_site Cb read it the same way.
+- It cannot occur for a family body, since FamilyBindings allows only
+  family applications, and families have no outputs.
 
-### Fix options (for the coordinator / user)
+## FamilyLinkNewOk: proved
 
-(a) Pins include the merge representatives of M(F): x is pinned iff
-    Mentions W u x, or x is in gens (canon Cu (TAbs y)) for some
-    mentioned y.
-    - This mirrors the oracle. On m5-XT (G also binds X.m), the oracle
-      says "`bind T` ... changes a type its result mentions (D84 3d)"
-      when its representative is T.
-    - Native accepts m5-XT and m5-TX and runs them correctly (exit 0).
-      So (a) rejects a program native accepts. The oracle accepts m5-TX,
-      whose representative is X, and Audit with representative X still
-      accepts it.
-    - It is a minimal one-conjunct change to LinkBody's pins clause.
-(b) Faithful: read the result key's receiver with the inputs at G's own
-    readings (c_ty Cg) and the outputs at the body's (Cb), in both
-    LinkBody's ResultRealizes lookup and link_sources.
-    - This matches native on m5.
-    - It changes the code's sources and LinkData, with proof repair in
-      PublicBodySlice, PublicChainCore and PublicLinkResults.
-(c) Require that the body does not rebind an input that a result key's
-    receiver mentions at Cu. This is close to (a), with the same native
-    disagreement on m5-XT.
+`CC.FamilyLinkNewOk` is no longer in `safety_obligations`.
 
-## Plan for FamilyLinkNewOk once fixed (findings, nothing committed)
+- **theories/PublicFamilyLink.v**, module `FamilyLink`. It is now the
+  root instance: PublicEntry takes `CF := FL.CF`.
+  - `family_link_new_ok : CC.FamilyLinkNewOk`, under the premises
+    WorldOf, MergeFormed and MentionsTyped. PublicEntry discharges all
+    three.
+  - Helpers: `link_body_parts` (a LinkBody's FunCtx, cap3b's input
+    condition, FamilyBindings and funbody_of), `functx_table_in` (a
+    FunCtx table entry is `σ (TAbs x)`), `sig_subst_gens`,
+    `forall2_cons_inv`, `subst_nil_item`.
+- **theories/PublicLinkWalk.v.** `family_binds_no_dests`, with
+  `items_applies` and `bindsof_applies`: for a family body,
+  `made = []`, `binding_dests binds = []`, and every BApply has
+  `outs = []`.
+- **theories/PublicLinkScope.v.** `items_scope`, with `step_provide`,
+  `step_set_fun`, `step_trans` and `provide_set_in`:
+  - every provision a run of bind items adds has its gens and key gens
+    in `scope_gens` of the result;
+  - scope grows only by `made`;
+  - c_sub is unchanged;
+  - unlike PublicScoping's GenScoped, there is no declared-symbol
+    escape;
+  - premises: UnitsBare and FamilySigReadOffOk.
+- **Statement change (the top-level assumptions only shrink).**
+  `FS.FamilyLinkResultsOk` and `CC.FamilyLinkNewOk` gained
+  `PublicFormation.TysScoped W C`, as `FamilyPlatformApplyOk` already
+  has. `family_run` supplies it. It is needed for KeysT in
+  family_items_pos/agree.
+- **Proof shape** (realize2 may reuse it):
+  1. The run fact `RunFact`: ground d3 t = ground d (θ t) for t over
+     dom Cg ∩ dom Cu, from the application environment's meanings
+     (Mde), cap3b's condition and PublicFamilyAgree.th_sigma.
+  2. Positions: family_items_pos and family_items_agree at
+     outputs := Cr', keys := ks'.
+  3. body_provides at `A.link_site Cg Cb []`.
+  4. R2, F's signature and receiver gens ⊆ dom Cg: ResultRealizes
+     with items_scope and functx_scoped.
+  5. callable_transfer.
 
-Proof outline:
-- Positions. FamilyApplication's NoDup means the caller key mkey r m has
-  exactly one position i. Use family_items_pos with
-  `outputs := Cr'`, `keys := ks'` (LinkData's ProvideResult; F is
-  abstract, so `b = None` holds; outs = [] by family_no_outputs, so the
-  out map is irrelevant). It gives θ(rkey_of Cr' key_i) = rkey Cr r m.
-  PublicCallerKeys.selection_* gives dr's lookup at rkey Cr r m as the
-  body's source at position i.
-- Body side. body_provides with ren = [] (read_rename Cb [] = [])
-  gives pv callable at d3 at (rb :: params gf) -> ret gf, where
-  rb = canon Cb (c_ty Cb rf).
-- Signature side. family_items_agree gives SigAgree, which is
-  canon Cfam tc = canon Cfam (θ tf) with gens tf ⊆ dom Cu. Absorbs at the
-  caller then gives ground d tc = ground d (θ tf).
-- Run fact. The body's dests are empty: FamilyBindings means every
-  BApply is of a family, and a family has no outputs. A static walk over
-  BindItems, like PublicPlatformApply's items_np, is needed to see that
-  each BApply's outs are its functor's FunOutputs. Then bindings_writes
-  gives type_meanings d3 = the application environment's meanings.
-  - For x ∈ dom Cu ∩ dom Cg, cap3b's LinkBody condition and θ's merge
-    clause (th_sigma) give ground d3 (TAbs x) = ground d (θ x). The
-    condition has to be recovered from Ok0's CLink LinkBody, since
-    LinkData carries the weaker form.
-  - Still needed: every gen of gf's types is in dom Cg. ResultRealizes
-    compares under c_sub Cb = c_sub Cg, which is scoped in dom Cg. The
-    body's new provisions have gens in scope_gens, never the
-    declared-symbol escape that PublicScoping.binditems_scoped allows.
-    That needs a tighter BindItems walk.
-- Receivers. They also need c_ty Cb y = c_ty Cg y for y ∈ gens rf, so
-  that the alias equals the meaning. That is exactly what the
-  counterexample breaks, and what the fix must deliver.
+## CF.ChainForwardCopySigs: not started (handoff)
 
-## Lemmas for realizepf
+I stopped here to keep a clean, compiling handoff; my context is large.
 
-No new lemma was proved. BodyReal and body_provides already exist in
-PublicChainCore. realizepf should note that the same receiver hole
-(above) likely makes ChainRealizeOk false for a linked root with merges
-whose body rebinds an unpinned representative.
-
-## CF.ChainForwardCopySigs
-
-Not started. It waits for copyfresh's CopyOutputs change, and I stopped
-at the FamilyLinkNewOk finding as instructed.
+Pointers for whoever continues:
+- **Statement.** PublicChainFwd.v, `ChainForwardCopySigs` (sms <> []).
+  The empty chain is `chain_forward_sigs`, from
+  PublicFamilyAgree.items_agree_gen and items_agree_pos.
+- **Argument.** moss-safety scratch/hunt/hunt2-chain/REPORT.md:
+  - a platform root's polymorphic inputs all sit in receivers (keys);
+  - everything else H mentions is fixed in H, hence in F;
+  - it is checked by FixedAgreement at the copy site and pinned at the
+    application.
+- **Copy-site facts.** These are in `CCStep`/`CopySite` (PublicCopyApply,
+  PublicBodySlice). CopyOutputs now compares after
+  `sigma ++ [y := cg y]` (fresh cg avoiding sigma's image).
+  PublicCopyFresh.v's `copy_outputs_at` / `copy_provision_read` read that
+  agreement back at a substitution. Use them to step SigAgreeG down the
+  chain.
+- **Shape.** Mirror PublicPlatformApply.family_platform_ok's
+  selection/position argument, at each CCStep. The root is a platform
+  family (FamilyData), where SigAgreeG is items_agree_gen at the root's
+  context.
 
 ## Time
 
-About 1.5 hours.
+About 5.5 hours in total.

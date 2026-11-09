@@ -274,6 +274,7 @@ Definition FamilyStepOut (rr : nat) F (Cr : A.cx) (ks : list item) u th sm j d t
    context, from a state realizing C0) in place of AppPremises. *)
 Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
@@ -483,7 +484,7 @@ Proof.
         Ret Loop ltac:(intros v E; discriminate) Logic.I). }
     assert (Run : I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
-    destruct (family_link_results C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n0 ps0 a0 rs bodies
+    destruct (family_link_results C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n0 ps0 a0 rs bodies
       Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
       as [dr [Sdr New]].
     rewrite Sdr. left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.

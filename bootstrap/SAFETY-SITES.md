@@ -45,7 +45,7 @@ open); for `FamilyStepOk`, proved in
 [PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`
 (its selection proved, `PublicChainCore.family_link_results_ok`, from
 `FamilyLinkNewOk`: the family's new methods installed by the selection,
-callable), `FamilyCopyRealizeOk` (`FamilyCopyApplyOk`'s realization half;
+callable; proved, `PublicFamilyLink.family_link_new_ok`), `FamilyCopyRealizeOk` (`FamilyCopyApplyOk`'s realization half;
 its key half is by construction, `family_copy_apply_of_realize`), and
 `FamilyKeysTyped` (for
 `FamilyPlatformApplyOk`, proved in PublicPlatformApply.v); and the slice's

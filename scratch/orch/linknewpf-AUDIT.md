@@ -66,7 +66,40 @@ permissive as the oracle there.
 
 ## Corpus
 
-See the "Corpus comparison" section below.
+The oracle's own check is by written leaf, and its D84 3d pins already
+include the gens of F's key receivers in F's merged terms (Elab.v `mf`).
+So no oracle code mirrors the change.
+
+Instead I compared the oracle (A) with a variant (B) whose pins leave
+those receiver gens out (scratch/linknewpf/cmp.sh). A file where A and B
+differ has a linked body that changes a symbol of a result key's
+receiver. Those are the only programs where `link_site` and
+`at_site Cb` read a key differently.
+- 426 files: tests, examples, bootstrap/examples, scratch/hunt,
+  scratch/linknewpf.
+- 423 are the same. The 3 that differ (scratch/linknewpf/cmp.out):
+  - **link-merge-rep-rebind-both.moss and m5-XT.moss**: the new tests.
+  - **tests/errors/functor_output_input_changed.moss**:
+    - Provider (bound to Target[T]: T -> T.out, done) binds T.out and
+      then applies Make, whose output T is in force, so the application
+      gives T a fresh generation.
+    - Old Audit rejected it: at_site Cb read T.out as T'.out, which is
+      not bound.
+    - New Audit accepts it: the key is read at G's T, where the body
+      bound it.
+    - Both implementations reject it (oracle: "a functor provider
+      changes the polymorphic result input `T` (D84 3d)").
+    - Audit's acceptance is sound. T's meaning in the body is the
+      caller's; the application writes only the fresh generation and T's
+      alias. The closure bound at T.out was typed at that meaning and is
+      installed under the caller's θ(T).out.
+    - This is a new, documented divergence: Audit is more permissive
+      than both implementations here.
+
+Apart from that file, no corpus program changes verdict. In particular
+the change rejects nothing the implementations accept: in a program the
+oracle accepts, no linked body changes a receiver symbol, so the two
+readings agree there.
 
 ## Proof repair
 

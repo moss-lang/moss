@@ -545,6 +545,7 @@ Qed.
    family_link_results_ok. *)
 Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     d1 d2 d3 g3 st3 H3 j',
@@ -563,7 +564,7 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
 
 Theorem family_link_results_ok : FamilyLinkNewOk -> FS.FamilyLinkResultsOk W Prog argv read state_ok.
 Proof.
-  intros New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+  intros New C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
@@ -576,7 +577,7 @@ Proof.
     destruct (PublicCallerKeys.selection_in _ _ _ _ _ (PublicCallerKeys.sm_find_some_in _ _ _ Fs)) as [Ik _].
     apply in_map_iff in Ik as [k1 [<- Ik1]]. destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
     destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
-  - exact (New C0 C u matching th sm Cr ks Es Ep El FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+  - exact (New C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
       Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).
 Qed.
 
