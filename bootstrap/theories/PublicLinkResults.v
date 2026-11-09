@@ -224,13 +224,16 @@ Qed.
 
 (* ---- Pre does not bound the caller's meanings ---------------------------- *)
 
-(* The realization only reads the meanings at types the context mentions. *)
-Lemma envok_scoped : forall n C d d' H, S.KeysMatch C -> PublicFormation.KeysScoped C ->
+(* The realization only reads the meanings at types the context mentions
+   (or its method keys' receivers mention). *)
+Lemma envok_scoped : forall n C d d' H, S.KeysMatch C ->
   S.EnvOk W Prog argv read state_ok n C d H -> provision_values d' = provision_values d ->
-  (forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t) ->
+  (forall t, incl (A.gens t) (S.capture_gens C) -> ground d' t = ground d t) ->
   S.EnvOk W Prog argv read state_ok n C d' H.
 Proof.
-  intros n C d d' H KM Ks [Vals [Fns [Mths Funs]]] Ep G.
+  intros n C d d' H KM [Vals [Fns [Mths Funs]]] Ep G0.
+  assert (G : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
+    by (intros t I; apply G0; intros x Ix; exact (S.cg_l C x (I x Ix))).
   assert (Lk : forall k, lookup_provision k d' = lookup_provision k d) by (intros k; unfold lookup_provision; rewrite Ep; reflexivity).
   assert (Gm : forall ps, (forall t, In t ps -> incl (A.gens t) (A.context_gens C)) -> map (ground d) ps = map (ground d') ps).
   { intros ps Inc. apply map_ext_in. intros t It. symmetry. exact (G t (Inc t It)). }
@@ -248,9 +251,9 @@ Proof.
     destruct (mths_ilook _ r m g0 KM Found) as [a Il]. apply S.ilook_in in Il.
     destruct (S.sig_provision_gens (A.ProvidedMethod g0 a) g0 eq_refl) as [Gr Gp].
     refine (S.callable_transfer W Prog argv read state_ok n n H d d' _ _ _ _ pv (le_n n) _ _ Ok).
-    + apply Gm. intros t [<-|It] x Ix.
-      * exact (scope_context_gens C x (Ks r m [] _ Il x Ix)).
-      * exact (S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
+    + rewrite (map_ext_in (ground d) (ground d') (r :: A.sg_params g0)); [reflexivity|].
+      intros t [<-|It]; symmetry; [apply G0; exact (S.cg_key C r m [] _ Il)|].
+      apply G. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
     + symmetry. apply G. intros x Ix. exact (S.prov_context_gens C _ _ Il x (Gr x Ix)).
   - intros u fx Found. destruct (Funs u fx Found) as [pv [gfx [Look [Ok [Cov Vm]]]]].
     exists pv, gfx. rewrite Lk. split; [exact Look|]. split; [exact Ok|]. split; [exact Cov|].
@@ -275,13 +278,15 @@ Lemma pre_meanings_free : forall rr F C d types H g st d',
   S.Pre W Prog argv read state_ok rr F C d types H g st ->
   provision_values d' = provision_values d -> type_aliases d' = type_aliases d ->
   (forall x, In x (map fst (A.c_ty C)) -> lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d)) ->
-  (forall t, incl (A.gens t) (A.context_gens C ++ match A.fr_this F with Some r => A.gens r | None => [] end) ->
+  (forall t, incl (A.gens t) (S.capture_gens C ++ match A.fr_this F with Some r => A.gens r | None => [] end) ->
      ground d' t = ground d t) ->
   S.Pre W Prog argv read state_ok rr F C d' types H g st.
 Proof.
   intros rr F C d types H g st d' [Frame [[Lo [Re Al]] [L [St [[Abs [Env [Idem KM]]] [Fc Ff]]]]]] Ep Ea Ek G.
-  assert (Gc : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
+  assert (Gk : forall t, incl (A.gens t) (S.capture_gens C) -> ground d' t = ground d t)
     by (intros t I; apply G; intros x Ix; apply in_or_app; left; exact (I x Ix)).
+  assert (Gc : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
+    by (intros t I; apply Gk; intros x Ix; exact (S.cg_l C x (I x Ix))).
   split; [exact Frame|]. split; [split; [|split]|].
   - intros n t mu Found Nm. rewrite Gc; [exact (Lo n t mu Found Nm)|exact (S.local_context_gens C n t mu Found)].
   - intros t Th. rewrite G; [exact (Re t Th)|]. intros x Ix. apply in_or_app. right. rewrite Th. exact Ix.
@@ -297,7 +302,7 @@ Proof.
         change (ground d' u = ground d' (TAbs x)). rewrite (Gc u Iu), (Gc (TAbs x) ltac:(intros y [<-|[]]; exact Ix)).
         pose proof (Abs (TAbs x)) as E. unfold A.canon in E. cbn [app_subst] in E. rewrite Ls in E. exact E.
       * reflexivity.
-    + exact (envok_scoped rr C d d' H KM (proj1 (proj2 Fc)) Env Ep Gc).
+    + exact (envok_scoped rr C d d' H KM Env Ep Gk).
 Qed.
 
 (* In particular, a meaning appended for a generation outside the context's
@@ -305,7 +310,7 @@ Qed.
 Lemma pre_junk_meaning : forall rr F C d types H g st x m,
   S.Pre W Prog argv read state_ok rr F C d types H g st ->
   ~ In x (map fst (A.c_ty C)) ->
-  ~ In x (A.context_gens C ++ match A.fr_this F with Some r => A.gens r | None => [] end) ->
+  ~ In x (S.capture_gens C ++ match A.fr_this F with Some r => A.gens r | None => [] end) ->
   S.Pre W Prog argv read state_ok rr F C
     (EnvironmentWithAliases (type_meanings d ++ [(x, m)]) (type_aliases d) (provision_values d)) types H g st.
 Proof.

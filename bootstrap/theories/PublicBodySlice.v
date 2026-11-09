@@ -416,7 +416,7 @@ Proof. reflexivity. Qed.
    each entry ok and mentioning only C0's generations. *)
 Definition FamilyTableIn (C C0 : A.cx) : Prop :=
   forall x v, In (x, v) (A.c_ty C) ->
-    PublicFormation.TyOk W (A.canon C v) /\ incl (A.gens (A.canon C v)) (PublicFormation.scope_gens C0).
+    PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.ScopedTy W C0 (A.canon C v).
 
 (* A context's method provisions agree with a family's new provision at
    the same receiver, method and θ (so at the same run-time key). *)
@@ -435,7 +435,7 @@ Definition FamilyCoherent (Cx Cr : A.cx) (ks : list item) : Prop :=
 Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
-  PublicFormation.TyOk W ot -> incl (A.gens ot) (PublicFormation.scope_gens C0) -> FamilyTableIn C C0 ->
+  PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot -> FamilyTableIn C C0 ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
   (exists d' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\ type_aliases d' = type_aliases d /\
      Pre rr F (with_ty C0 Cr) d' types H' g st' /\
@@ -462,12 +462,12 @@ Hypothesis family_coherent : FamilyCoherentOk.
    scoped (only ok), and a callee need's symbol the caller leaves unbound
    reads as itself (theta_at), so these are not yet derivable. *)
 Definition ExScopedOk : Prop := forall F C a exp x t, A.Ex W Prog F C a exp x t -> Formed F C ->
-  incl (A.gens t) (PublicFormation.scope_gens C).
+  PublicFormation.ScopedTy W C t.
 Definition LitScopedOk : Prop := forall F C tree x t, A.Literal W C tree x t -> Formed F C ->
-  incl (A.gens t) (PublicFormation.scope_gens C).
+  PublicFormation.ScopedTy W C t.
 Definition DemandScopedOk : Prop := forall F C X f Cf ns r m, Formed F C -> FamilyTableIn X C ->
   A.CtxOf W f Cf ns -> In (A.mkey r m) (map (A.at_site X) ns) ->
-  PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens C).
+  PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C r.
 Hypothesis ex_scoped : ExScopedOk.
 Hypothesis lit_scoped : LitScopedOk.
 Hypothesis demand_scoped : DemandScopedOk.
@@ -476,14 +476,14 @@ Lemma table_in_self : forall F C, Formed F C -> FamilyTableIn C C.
 Proof.
   intros F C [Fc _] x v Iq. split.
   - exact (PublicFormation.canon_ok W C v (proj1 Fc) (PublicFormation.cf_ty W C (proj1 Fc) x v Iq)).
-  - intros y Iy. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
+  - intros y Iy. left. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
 Qed.
 
 (* Code after a family application runs with the families' provisions
    and the code's own context both realized. *)
 Lemma family_then : forall k, Below k -> forall C u matching th sm Cr ks ot m F t (B : Prop) x,
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
-  (Formed F C -> PublicFormation.TyOk W ot /\ incl (A.gens ot) (PublicFormation.scope_gens C)) ->
+  (Formed F C -> PublicFormation.TyOk W ot /\ PublicFormation.ScopedTy W C ot) ->
   (forall j, j <= k -> forall d types H g st, Pre j F (with_ty C Cr) d types H g st -> Pre j F C d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C t B (EBind (BApply u th [] sm) x).
@@ -1032,7 +1032,7 @@ Lemma family_method_case : forall k, Below k -> forall F C o ox ot0 m args u mat
   A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
   A.FamilyApplication W C u matching th sm C' ks -> A.FamilyReadOff W C u (A.canon C ot0) m matching ->
-  (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ incl (A.gens (A.canon C ot0)) (PublicFormation.scope_gens C)) ->
+  (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ PublicFormation.ScopedTy W C (A.canon C ot0)) ->
   In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
   A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B
@@ -1054,7 +1054,7 @@ Lemma literal_family_case : forall n, Below n -> forall F C t m ox oy u matching
   CodeSafe n F C t False ox -> CodeSafe n F C t False oy ->
   A.mlook t m (A.c_mths C) = None -> A.FamilyApplication W C u matching th sm C' ks ->
   A.FamilyReadOff W C u t m matching ->
-  (Formed F C -> PublicFormation.TyOk W t /\ incl (A.gens t) (PublicFormation.scope_gens C)) ->
+  (Formed F C -> PublicFormation.TyOk W t /\ PublicFormation.ScopedTy W C t) ->
   In (A.mkey t m) ks -> A.OnlyFamily W C u (A.mkey t m) -> A.mlook t m (A.c_mths C') = Some (A.FSig [t] t) ->
   StepSafe n F C t False (apply_expression u th sm (EMethod ox m (A.rkey C' t m) [oy])).
 Proof.
@@ -1593,7 +1593,7 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   A.c_sub C = A.c_sub Cc -> A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
   incl (A.c_provisions Corig) (A.c_provisions Cc) -> A.c_sub Corig = A.c_sub Cc ->
   FamilyTableIn C Cc ->
-  (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens Cc)) ->
+  (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W Cc r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty Cc C') d types H g st -> Pre j F Corig d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   forall n, n <= S k -> forall d types H g st, Pre n F Cc d types H g st -> Pre n F Corig d types H g st ->
@@ -1623,10 +1623,10 @@ Proof.
       apply (IH F (with_ty Cc Cr) Corig t B x eq_refl eq_refl eq_refl).
       * intros q I. apply IncCr. rewrite Ep. exact (Inc q I).
       * cbn. rewrite SubCr, Es. exact Eo.
-      * intros x0 v Iq. cbn in Iq. rewrite ScE.
+      * intros x0 v Iq. cbn in Iq.
         replace (A.canon (A.family_restore C Cr) v) with (A.canon C v) by (unfold A.canon; cbn; rewrite SubCr; reflexivity).
-        exact (Tin x0 v Iq).
-      * intros r0 m0 I0. rewrite ScE. exact (Wk r0 m0 I0).
+        destruct (Tin x0 v Iq) as [O1 S1]. exact (conj O1 (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE) S1)).
+      * intros r0 m0 I0. destruct (Wk r0 m0 I0) as [O1 S1]. exact (conj O1 (PublicFormation.scoped_ext W _ _ _ (eq_sym ScE) S1)).
       * exact Cont.
       * lia.
       * exact (pre_lower PreN).
@@ -1638,7 +1638,7 @@ Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Pro
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.Demand W C wanted [] C wrap C' ->
   (Formed F C0 -> FamilyTableIn C C0 /\
-     forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ incl (A.gens r) (PublicFormation.scope_gens C0)) ->
+     forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C0 r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty C0 C') d types H g st -> Pre j F C0 d types H g st ->
      Outcome F d H types t B (I.eval j P d g st x)) ->
   StepSafe k F C0 t B (wrap x).
@@ -1961,7 +1961,7 @@ Proof.
   - rewrite Esub. exact Sub.
   - intros k p I. exact (Pr k p (Inc _ I)).
   - rewrite Eloc. exact Lo.
-  - intros r m th p I. rewrite Sc. exact (Ks r m th p (Inc _ I)).
+  - intros r m th p I. exact (PublicFormation.scoped_ext W _ _ _ (eq_sym Sc) (Ks r m th p (Inc _ I))).
   - intros x Ix. unfold PublicFormation.TysScoped in *. rewrite Ety in Ix. rewrite Sc. exact (Ts x Ix).
 Qed.
 
@@ -4885,17 +4885,17 @@ Proof.
   assert (Cty : A.c_ty Cd = (rev xs0 ++ A.c_ty C)%list) by (rewrite (demand_ty _ _ _ _ _ _ Dem); exact Et).
   refine (demand_case k Bel F C Cd0 _ Cd wrap (A.sg_ret g) B _ Es Ep El Dem _ _ d types H lg lst Pre0).
   { intros Fm.
-    assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ incl (A.gens (TNom h xs0)) (PublicFormation.scope_gens C)).
+    assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ PublicFormation.ScopedTy W C (TNom h xs0)).
     { rewrite Ot. split.
       - exact (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
           (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj2 Fm) (PublicFormation.optok_none W))).
-      - exact (PublicFormation.canon_scope C ot0 (ex_scoped F C o None ox ot0 Do Fm)). }
+      - exact (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o None ox ot0 Do Fm)). }
     assert (Tin : FamilyTableIn Cd0 C).
     { intros xq v Iq. replace (A.canon Cd0 v) with (A.canon C v) by (unfold A.canon, Cd0; rewrite Es; reflexivity).
       unfold Cd0 in Iq. rewrite Et in Iq. apply in_app_or in Iq as [Iq|Iq]; [|exact (table_in_self F C Fm xq v Iq)].
       apply (proj2 (in_rev _ _)) in Iq. destruct Rok as [Ok Sc].
       split; [exact (PublicFormation.canon_ok W C v (proj1 (proj1 Fm)) (proj2 (PublicFormation.nom_ok_elim W h xs0 Ok) xq v Iq))|].
-      apply PublicFormation.canon_scope. intros y Iy. apply Sc. rewrite PublicFormation.gens_nom.
+      apply PublicFormation.canon_scoped. intros y Iy. apply Sc. rewrite PublicFormation.gens_nom.
       exact (PublicFormation.in_tm_gens _ _ _ _ Iq Iy). }
     split; [exact Tin|]. intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Ctx I0). }
   intros j Lj d' types' H' g' st' PreD PreC.
@@ -4941,7 +4941,7 @@ Proof.
           None' Fam Ro
           (fun Fm => conj (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
               (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj2 Fm) (PublicFormation.optok_none W)))
-            (PublicFormation.canon_scope C ot0 (ex_scoped F C o None ox ot0 Do Fm)))
+            (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o None ox ot0 Do Fm)))
           InK Only Found Args). }
   intros d types H lg lst Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [[Abs [[_ [_ [Mths _]]] _]] _]]]]]. destruct (Mths ot m g Found) as [pv [Look Ok]].
