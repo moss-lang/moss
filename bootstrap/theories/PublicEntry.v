@@ -344,16 +344,22 @@ Definition PlatformHandlesFormed (W : A.world) (Prog : program) : Prop :=
   forall u inputs outputs keys, FamilySig W Prog u inputs outputs keys
     (fun gf rf => Forall (HandleFormed W) (A.sg_ret gf :: rf :: A.sg_params gf)).
 
-(* PREMISE (D84, static). A machine type symbol a platform family's
-   signature mentions is a fixed input of the family's functor (not one it
-   is polymorphic in), in its context's table: the platform's provision
-   exists only at the machine types (lib/wasm.moss: Heap, Mutable, Arrays
-   and Memories are polymorphic only in Boxed, Arrayed and Memory). *)
+(* A machine type symbol a platform family's signature mentions is a fixed
+   input of the family's functor, in its context's table
+   (Platform.MachinesFixed). *)
 Definition PlatformSigsFixed (W : A.world) (Prog : program) : Prop :=
   forall u inputs outputs keys, FamilySig W Prog u inputs outputs keys (fun gf rf =>
     forall name mach sym, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name sym ->
     In sym (flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)) ->
     A.Fixed W u sym /\ In sym (map fst (A.c_ty inputs))).
+
+Lemma platform_sigs_fixed : forall W Prog, PlatformSigsFixed W Prog.
+Proof.
+  intros W Prog u inputs outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf name mach sym Inm Lang Is.
+  pose proof FD as (_ & _ & _ & _ & Binds).
+  destruct (PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op' [_ [_ [_ MF]]]]]].
+  rewrite Ek in MF. exact (MF gf Mgf name mach sym Inm Lang Is).
+Qed.
 
 (* A platform family's primitives are typed calls (ChainPrimsOk) for the
    reference host, from primitive_safe, as main's are (entry_primitive). *)
@@ -545,7 +551,7 @@ Theorem safety_obligations : forall prelude,
      CopyA.ChainResultsOk W Prog argv read so /\
      (* ChainPlatformOk, from PublicPlatformApply.chain_platform_ok *)
      MainMachinesUnmerged W Prog /\ PlatformHandlesFormed W Prog /\
-     PA.ChainResultAgrees W Prog /\ PlatformSigsFixed W Prog /\
+     PA.ChainResultAgrees W Prog /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      FS.FamilyLinkResultsOk W Prog argv read so /\ FS.FamilyCopyApplyOk W Prog argv read so /\
      FS.FamilyPlatformApplyOk W Prog argv read so /\
@@ -558,7 +564,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [LM [BM [CIF [CR [Unm [Handles [RA [Sigs [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]]]].
+    as [LM [BM [CIF [CR [Unm [Handles [RA [FLR [FCA [FPA [FCo [ExS [LitS DemS]]]]]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
@@ -566,7 +572,7 @@ Proof.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].
   pose proof (PA.chain_platform_ok W Prog _ _ _ LM RA
-    (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Handles Sigs)
+    (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Handles (platform_sigs_fixed W Prog))
     ) as CP.
   pose proof (CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
   pose proof (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP) as CA.

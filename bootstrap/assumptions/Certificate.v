@@ -111,6 +111,7 @@ Definition certificate_roots :=
   @NM.PublicFamilySig.family_sig_ok_readoff,
   @PublicEntryTop.entry_primitive,
   @PublicEntryTop.platform_prims_public,
+  @PublicEntryTop.platform_sigs_fixed,
   @PublicPlatform.chain_platform_ok,
   @PublicPlatform.platform_not_linked,
   @PublicEntryTop.entry_realizes,
