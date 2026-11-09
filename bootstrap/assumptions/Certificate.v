@@ -126,7 +126,7 @@ Definition certificate_roots :=
   @PublicSlice.callee_realizes,
   @PublicLinkRes.chain_results_scoped,
   @PublicLinkRes.pre_junk_meaning,
-  @NM.PublicLinkResults.result_environment_occupied,
+  @NM.PublicGenerationFacts.result_environment_shadows_occupied,
   @NM.PublicOutputSubst.output_entries_rel,
   @NM.PublicOutputSubst.provide_result_rel,
   @PublicLinkMergesI.captured_in_force_unprovable,

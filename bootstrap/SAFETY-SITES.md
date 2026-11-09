@@ -27,7 +27,10 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the functor and family obligations
 `CapturedInForceOk`, and `ChainResultsOk` from
-[PublicCopyApply.v](theories/PublicCopyApply.v), which with
+[PublicCopyApply.v](theories/PublicCopyApply.v) (itself proved,
+`PublicLinkResults.chain_results_scoped`, from `ChainCoreOk`, the
+formal/caller result correspondence, and `KeptOutputsUnmentioned`, an
+open premise for the user to decide: results2-AUDIT section 2), which with
 `ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`; for `ChainPlatformOk`, proved in
 [PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
@@ -103,7 +106,7 @@ the local store. *C* and *F* are the static context and frame.
 | `apply_functor` | `e_compose` (3) | input `sm` selection fails | same | `Satisfies C Cu ns sm`. |
 | `apply_functor` | `e_chain` (8) | `adapt_provisions` along a copy chain fails | `BFunCopy` smaps over `incl nsh nsu` | Copy-chain provenance: each `sms` step selects keys provided by the previous step (T31, "link/copy-chain provenance"). |
 | `apply_functor` | `e_compose` (3) | result items absent from the body environment | `LinkBody` `ResultRealizes`, `ProvideResult` | The body's binds provide every result item at its source key (`fc_sources`, T15/T16). |
-| `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable or its destination is occupied | `BApplyAbstract` `FreshFor` and the output clauses | Fresh destinations are absent from the caller's runtime `type_meanings` (T16). Needs runtime generations ⊆ static `context_gens`. |
+| `apply_functor` | `e_compose` (3) | `result_environment` fails: an output is unreadable | `LinkBody` (outputs bound in the body) | The body's final environment has a meaning for each output (T16). An occupied destination is no longer Stuck: the writes shadow (results2, below). |
 | primitive call | `e_missing_primitive` (15) | `supports interface p = false` | `BPrimitive`, platform entries, `Platform.Family` bodies | `Compatible` requires every operation in `required_primitives`. Invariant: every runtime `PrimitiveClosure` came from program code or the initial environment. |
 | primitive result | interface laws | ill-shaped arguments, or a missing `gc_pre` | `AtKey`/`PrimitiveSignature`, `MethodPrimitive` | Arguments typed at the signature yield `value_shape` (T11); GC arguments satisfy `gc_pre` under the ghost heap (T17). |
 | `run_main` | `e_nobody` (4) | no body for `main` | `ElaboratesIn` | `main` is a defined fn, so `FnElab` gives its body. |
@@ -113,6 +116,35 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **Removed: b4f8279's runtime freshness check on functor results
+  (results2, coordinator-approved).** `result_environment` was Stuck when
+  an output destination already had a meaning in the caller
+  (`fresh_result_types`, added by the user's commit b4f8279, "preserve
+  type generations"). Audit accepts programs that reach it, and the
+  oracle (which shadows: `dr ++ d`) runs them:
+  [const-kept-output.moss](examples/const-kept-output.moss) (a defined
+  val's initializer is elaborated in the empty context, so its `bind F;`
+  keeps output T, and it is inlined where T already has a meaning; the
+  oracle runs it, and native rejects the use of the val for an unrelated
+  reason), and
+  [lambda-declared-output.moss](examples/lambda-declared-output.moss) (a
+  lambda's capture gives a meaning to a declared T its demand context
+  mentions; oracle and native run it). The writes now shadow. The safety
+  argument moves from the runtime check into the proof: `dest_scope`
+  (PublicLinkResults) keeps every destination out of the caller's
+  context and frame types, so no typed local, provision or return value
+  is re-grounded (`ground_grow`). For outputs installed as themselves this
+  still relies on the named premise `DeclaredScoped` (a declared symbol
+  the context mentions is a table key). `family-unbound-need.moss` shows
+  that premise is false, so the kept-output case needs its own fix: an
+  Audit kept-output clause `~ In t (context_gens C)`, which would reject
+  lambda-declared-output.moss, or a proof that re-grounding an unbound
+  declared symbol is harmless. With the check gone, `MeaningsScoped` and
+  the formation hypothesis planned for it are not needed.
+  `PublicGenerationFacts` keeps generation preservation as a theorem
+  under the freshness the static rules give. Its examples, and
+  `PublicGenerationCallExample`'s, now check shadowing.
+  scratch/orch/results2-AUDIT.md has the details.
 - **A merge could carry a shadowed, unformed pair (fixed).**
   `MostGeneralMerge` constrained σ only through `app_subst`. A second pair
   for a generation is never read, but it stays in the context's `c_sub`,
@@ -536,8 +568,8 @@ the local store. *C* and *F* are the static context and frame.
   in force is installed as itself, and the application writes its meaning,
   but it was not made, so `BlkE` let a value of that type leave the block.
   [output-escape.moss](examples/output-escape.moss) does this. The oracle
-  rejects it (D78). Native was not run: no built compiler in that
-  checkout. `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
+  rejects it (D78), and native too ("a type created by a binding cannot
+  escape its block"). `LinkResultsOk`'s `MeaningsGrow newgens` was false for such
   applications. The rule now makes every output destination
   (`map gensof outs`), and requires that the frame's return and receiver
   types not mention an output installed as itself (they are read where
@@ -604,6 +636,7 @@ between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
 likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
 it fixes the caller's functor to the body's own (its `LinkData`, closure
 shape and `AppPremises` all name u), and a copy's caller has neither.
+| `KeptOutputsUnmentioned` (PublicLinkResults) | an output `bind F;` installs as itself is not mentioned by the context (`~ In t (context_gens C)`). False only where an unbound declared T is mentioned by family method provisions, where re-grounding is harmless by parametricity (unproved); decide between an Audit clause, which rejects correct programs, and that proof (scratch/orch/results2-AUDIT.md section 2) | T16 |
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
 | `Pre` / `Absorbs` | merge absorption for the realized context | T29 |

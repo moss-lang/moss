@@ -25,8 +25,10 @@ frame's types. That is the new premise.
 
 **Test.** `bootstrap/examples/output-escape.moss`. The oracle rejects it:
 "this block yields `T`, which mentions `T`, a type `bind F;` made in it: a
-value of that type cannot leave the block (D78)". Native was not run: the
-moss-safety checkout has no built compiler (`MOSS_SEED` unset).
+value of that type cannot leave the block (D78)". Native also rejects it
+("a type created by a binding cannot escape its block: `T`", run with
+`MOSS_SEED=<a store mossc.wasm> target/release/moss run`). [Earlier note: the
+moss-safety checkout has no built compiler (`MOSS_SEED` unset).]
 
 **Rejects nothing the implementations accept (argument).**
 - Escape: the oracle already treats every output as made (the test

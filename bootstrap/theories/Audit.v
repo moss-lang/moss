@@ -1595,13 +1595,18 @@ Fixpoint fresh_result_types (writes occupied : subst) : bool :=
       | None => fresh_result_types rest ((destination, meaning) :: occupied)
       end
   end.
+(* The writes shadow any meaning the caller has for a destination, as the
+   oracle's (dr ++ d) does. Audit's static rules keep every destination out
+   of the caller's context and frame types (FreshFor, the output clauses),
+   so nothing typed in scope is re-grounded; an occupied destination can
+   still occur at run time (an inlined defined val's kept output, a
+   lambda's capture of a declared symbol it mentions), so a freshness check
+   here would make accepted programs Stuck (scratch/orch/results2-AUDIT.md).
+   [fresh_result_types] stays as the check's statement. *)
 Definition result_environment (caller : environment) (outputs : list (tsym * tsym))
     (d3 : environment) (Dr : tele) (dr : environment) : option environment :=
   match read_result_types d3 Dr outputs with
-  | Some (writes, aliases) =>
-      if fresh_result_types writes (type_meanings caller) then
-        Some (EnvironmentWithAliases writes aliases (provision_values dr))
-      else None
+  | Some (writes, aliases) => Some (EnvironmentWithAliases writes aliases (provision_values dr))
   | None => None
   end.
 

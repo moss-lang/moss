@@ -220,3 +220,180 @@ I stopped here to report, rather than start these changes.
   A generalization of `AppPremises` to "read at a context Ca with the
   state's merge and provisions, no path" would serve both. I did not do
   this within the time box.
+
+## Follow-up 3: discharging the four named premises (findings; not discharged)
+
+- **`DemandScopedOk` is false for an accepted program.**
+  `bootstrap/examples/family-unbound-need.moss`:
+  - A callee lists `T, T.foo`, and main calls it without binding T.
+  - The need reads at the site as `TAbs T` (T itself), and family F is
+    applied at `A := TAbs T`.
+  - The installed key mentions T. T is a declared type symbol that is not
+    in main's table, so it is outside `scope_gens`, and the post-family
+    context is not `KeysScoped`.
+  - The oracle accepts and runs it. Native was not run (no built
+    compiler).
+  This is a gap in a formation invariant, not in Audit. `KeysScoped`
+  should, like `TysScoped`, admit declared type symbols
+  (`In y (scope_gens C) \/ kind_sym W y = Some DKType`).
+- **Cost of relaxing `KeysScoped`.** Its only consumer outside
+  PublicFormation is lambda capture (`keys_scoped` gives `context_gens`,
+  which `lambda_realizes_le` uses to show that a captured method key's
+  receiver grounds the same in the captured environment). With a declared
+  symbol y outside `context_gens`, that needs y to have no meaning in the
+  current environment. Nothing in `Pre` says so today. It would need a new
+  invariant: "every key of `type_meanings d` is in `context_gens C` or in
+  C's table".
+- **`ExScopedOk` / `LitScopedOk`.** Elaborated and literal types can
+  mention such declared symbols too (e.g. a call result at an unbound
+  callee requirement), so they too should be stated up to declared type
+  symbols. Proving them needs new conjuncts in `FormedCx`: locals' types
+  and val/fn/method provision types scoped (up to declared symbols). Today
+  `FormedCx` checks these only for being ok. They would have to be
+  preserved through all of PublicFormation's `ex_ok`/`binditems_ok`
+  family, the slice's `Formed` steps, and the obligations that conclude
+  `Pre`.
+- **`FamilyCoherentOk`.** Needs a `SigCoherent` conjunct (each method
+  provision's signature is the declared `SigOf` reading at its θ),
+  established at body entries and preserved likewise.
+- **Plan, if wanted.**
+  1. Relax `KeysScoped`/`ExScoped`/`DemandScoped` to admit declared type
+     symbols, and add the meanings-keys invariant to `Pre` for lambda
+     capture.
+  2. Add `TypesScoped` (locals and provisions) to `FormedCx`, with a
+     mutual scoping fixpoint alongside `ex_ok`.
+  3. Add `SigCoherent` to `Formed`.
+  Each is multi-hour and changes what `LinkResultsOk`/`ChainResultsOk`
+  must deliver.
+
+## Follow-up 4: the planned "declared symbols in force" invariants are false
+
+`bootstrap/examples/family-unbound-need-sig.moss` (oracle: accepted,
+exit 0; native: pending, the nix build of mossc.wasm is slow):
+- `use_it`'s context lists `T` and `T.twice[A=T]`. main never binds T.
+- The call reads the need at the site as T itself.
+- Family F[A] is applied at A := T, adding `T.twice : () -> T` to main's
+  context. T is a declared type symbol that is not a key of main's type
+  table.
+
+So both of these are false for an accepted program:
+- repair's DeclaredInForce: declared symbols in `context_gens C` are
+  table keys;
+- results' DeclaredScopedOk: a declared symbol the context mentions is a
+  key of its table.
+`family-unbound-need.moss` (same shape, with the symbol only in the
+receiver) already breaks `KeysScoped`.
+
+The root is that `theta_at` reads an unbound callee requirement as itself,
+both at calls and when demands read needs at the site.
+
+Options:
+- **(a)** Audit rejects a call or demand whose callee requirement, as
+  read at the site, is a declared symbol not in force. Native's behaviour
+  needs checking first, and the oracle accepts these programs.
+- **(b)** The invariants admit such symbols. Then lambda capture
+  (`lexical_capture` maps only `context_gens`) needs "no meaning in d for
+  a declared symbol outside the table". That is the results agent's
+  `MeaningsScoped`, if `fr_fresh` holds only fresh symbols.
+- **(c)** `context_gens` includes method-key receiver gens. This is a
+  runtime capture change, and still needs (b) for signature mentions.
+
+Not started pending a decision.
+
+## Native results (supersede the "native not run" notes above)
+
+Run with `MOSS_SEED=/nix/store/1h1710x0wvzmnhj5hna8ax9bpzxyvq02-mossc.wasm
+./target/release/moss run FILE`. Without a seed, `moss run` needs
+`nix build .#compiler`, which takes over 30 minutes.
+- `output-escape.moss`: native rejects it ("a type created by a binding
+  cannot escape its block: `T`").
+- `family-unbound-need.moss` and `family-unbound-need-sig.moss`: native
+  accepts and runs both (exit 0).
+
+# HANDOFF BRIEF (for a fresh agent)
+
+Branch `ob-family`, worktree `~/github/moss-lang/moss-ob-family`. Follow
+ORCH-RULES.md.
+
+## State
+
+- `safety` 5522b69 is merged (b9db3e1), and `check.sh` passes.
+- Later commits add only examples and notes.
+
+## Done on this branch
+
+- **`FamilyStepOk`** is proved (`PublicFamilyStep.family_step_ok`) from
+  the family versions of the application obligations:
+  - `FamilyLinkResultsOk`, `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`,
+    all in `PublicFamilyStep.v`;
+  - plus the slice's `chain_run` and `case_BApplyAbstract`.
+- **Restated `FamilyStepOk`** (PublicBodySlice) takes:
+  - `FamilyReadOff`;
+  - `TyOk ot` and `incl (gens ot) (scope_gens C0)`;
+  - `FamilyTableIn C C0`;
+  - and its keep clause requires `FamilyCoherent Cx Cr ks`.
+- **Audit D78** (commit 914cd3c; details in family-AUDIT.md):
+  - `BApplyAbstract` makes `map gensof outs`;
+  - an output installed as itself must not occur in `fr_ret`/`fr_this`.
+
+## Open: the four slice hypotheses
+
+`FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`, in
+PublicBodySlice after `family_step`. They are used by `family_then`,
+`demand_gen`, `demand_case`, `attached_step`, the call case of `ex_step`,
+`provided_step` and `lit_step`.
+
+## Key finding blocking the planned invariants
+
+`family-unbound-need.moss` and `-sig.moss` (oracle and native accept both):
+- A callee requirement the caller leaves unbound is read as itself
+  (`theta_at`, `at_site`).
+- A family demand then installs keys and signatures that mention a
+  declared type symbol T that is not in the caller's table.
+- So these are all false for accepted programs:
+  - `KeysScoped`, as stated with `scope_gens`;
+  - `DemandScopedOk`;
+  - repair's planned `DeclaredInForce`;
+  - results' `DeclaredScopedOk` ("declared symbols mentioned are table
+    keys").
+
+## Suggested design (needs the lead's choice)
+
+1. **Relax the scoping invariants to admit declared type symbols**
+   (`kind_sym W y = Some DKType`), as `TysScoped` already does:
+   - `KeysScoped`, the new locals/provisions scoping, and
+     `ExScoped`/`DemandScoped`.
+   - What actually needs "in force" (lambda capture's grounding, and
+     `CapturedInForceOk`) then needs a runtime fact instead: a declared
+     symbol that is not a table key has no meaning in `d`.
+   - The results agent's `MeaningsScoped` (meaning keys ⊆ table keys ∪
+     `fr_fresh` ∪ `context_gens`) gives this, if `fr_fresh` and
+     `context_gens` hold only fresh or scoped symbols. Check that, or state
+     `MeaningsScoped` with a "declared ⇒ table key" disjunct. Declared
+     symbols are never `Fresh`.
+2. **Add the scoping invariant to `PublicFormation.FormedCx`**: locals'
+   and provisions' types mention only `scope_gens` or declared symbols.
+   - Prove a mutual fixpoint `ex_scoped` alongside `ex_ok` (same case
+     structure).
+   - `BindItem`s grow the scope by `made`; `BlkE`'s escape check (now
+     over all outputs) removes it.
+   - Discharge `ExScopedOk`/`LitScopedOk`/`DemandScopedOk`. At call
+     sites, `at_site` reads callee need receivers through the table:
+     their gens are table-value gens (scoped) or unbound callee symbols
+     (declared).
+3. **`SigCoherent C`** (a named conjunct inside the slice's `Formed`):
+   each method provision `(mkey r m, ProvidedMethod g a)` has `g` equal to
+   `canon` of the declared `SigOf m` read at its θ (`theta_of C a`) with
+   receiver r.
+   - Establish it at body entries (`CtxOf`/`FunCtx` contexts:
+     `IEMth`/`OIEMeth` readings).
+   - Preserve it through binds (`BMethBind` reads `SigOf`; `family_direct`
+     excludes members) and through family results (`OIEMeth`).
+   - Then prove `FamilyCoherentOk`: the same receiver, m and θ give the
+     same `SigOf` reading. Use `sig_rel` (used in `attached_step`) or
+     TyOfSubst/TyOfRestrict.
+   - Obligations concluding `Pre` (`ChainResultsOk`, `ChainPlatformOk`,
+     the `Family*` ones) must then deliver it.
+
+**Merging:** merge `safety` often; other agents change `Pre`/`Formed`
+too.

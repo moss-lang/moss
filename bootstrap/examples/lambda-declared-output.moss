@@ -1,0 +1,25 @@
+# The lambda's context is the call's demand context C', whose family
+# provision key T.foo mentions T, a declared type that is not in main's table
+# (family-unbound-need.moss). lexical_capture gives the closure a meaning
+# for every generation its context mentions, T included (T |-> T). The
+# lambda body's `bind H;` installs output T as itself (T is not in force),
+# so the destination T was already occupied and Audit's result_environment
+# was Stuck (fresh_result_types, b4f8279), though Audit accepts the program.
+# The oracle and native both run it (exit 0). Audit now shadows
+# (results2-AUDIT.md).
+type A;
+type T;
+tag Concrete;
+assume A { fn .foo(); }
+functor F[A]: A -> A.foo;
+functor G: A -> A.foo { bind A.foo = () => (); }
+fn mk(): T;
+fn run();
+functor H: -> T, mk;
+functor HM: -> T, mk { bind T = Concrete; bind mk = () => Concrete; }
+assume T, T.foo { fn use_it(x: ()) { } }
+fn main() {
+  bind F = G;
+  bind H = HM;
+  use_it({ bind run = () => { bind H; let y = mk(); }; run() });
+}
