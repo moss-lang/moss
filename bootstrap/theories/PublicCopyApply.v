@@ -43,7 +43,7 @@ Inductive CopyChain : nat -> subst -> list smap -> nat -> subst -> list smap -> 
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx) ->
     (exists sg m, A.CopyOutputs W sg u h Cu /\ gfx = S.ground_fixed m sg) ->
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
-    (forall t, A.FunOutputs W u t <-> A.FunOutputs W h t) ->
+    A.SameResult W u h ->
     CopyChain u gfx (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list h0 gf0 sms0.
 
 Lemma chain_fixed : forall u gfx sms h0 gf0 sms0, CopyChain u gfx sms h0 gf0 sms0 ->

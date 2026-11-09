@@ -146,8 +146,9 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     (* H's result reads as u's, u's fixed inputs read as the copy site did *)
     (exists sg m, A.CopyOutputs W sg u h Cu /\ gfx = ground_fixed m sg) ->
     (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
-    (* the same type outputs (SameResult) *)
-    (forall t, A.FunOutputs W u t <-> A.FunOutputs W h t) ->
+    (* H's result is u's, leaf by leaf (so the same type outputs:
+       same_result_outputs) *)
+    A.SameResult W u h ->
     ClosureOk n H0 u gfx (FunctorClosure code
       (sms ++ [map (fun k => (A.rkey_of Ch k, A.rkey_of Cu k)) nsh])%list dc)
 | CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx ->
@@ -3151,7 +3152,7 @@ Proof.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure c (sms ++ [sm])%list dc), (ground_fixed (type_meanings d) fx).
     split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
-    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact (same_result_outputs u h Same)].
+    + subst sm. apply (CCopy rr H u h Cu nsu Ch nsh c sms dc _ gfh Okh FCu FCh Incl); [|exact SameN|exact SameT| |exact Sub|exact Same].
       2: { exists (map (fun q => (fst q, A.canon C (snd q))) fx), (type_meanings d). split; [exact CO|].
            unfold ground_fixed. rewrite map_map. apply map_ext. intros [x tx]. cbn. f_equal. symmetry. exact (Abs tx). }
       intros x Fh. pose proof (FixH x Fh) as Fu. split; [exact Fu|].
