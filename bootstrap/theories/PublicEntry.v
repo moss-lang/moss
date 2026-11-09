@@ -6,7 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
-From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -623,6 +623,14 @@ Proof.
   exact (PublicFormation.family_keys_typed W C u matching th sm Cr ks Ts FA Cu needs FC x Lx Nu).
 Qed.
 
+(* ---- a family agrees with the code's context (PublicFamilyCoherent) ---------- *)
+
+Lemma family_coherent_ok : forall W b, A.WorldOf b W -> S.FamilyCoherentOk W.
+Proof.
+  intros W b Wo F C Fm C1 u matching th sm Cr ks Es Inc FA r m g a g' a' Ik Il L Eth.
+  exact (PublicFamilyCoherent.family_coherent b W Wo F C Fm C1 u matching th sm Cr ks Es Inc FA r m g a g' a' Ik Il L Eth).
+Qed.
+
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
    ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
@@ -645,11 +653,10 @@ Theorem safety_obligations : forall prelude,
      CF.ChainForwardCopySigs W Prog argv read so /\
      (* FamilyStepOk, from PublicFamilyStep.family_step_ok *)
      (* FamilyLinkResultsOk, from PublicChainCore.family_link_results_ok *)
-     CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyRealizeOk W Prog argv read so /\
+     CC.FamilyLinkNewOk W Prog argv read so /\ FS.FamilyCopyRealizeOk W Prog argv read so
      (* FamilyPlatformApplyOk, from PublicPlatformApply.family_platform_ok
         (its FamilyKeysTyped proved: family_keys_typed_ok) *)
-     (* a family agrees with the code's context *)
-     S.FamilyCoherentOk W) ->
+     (* FamilyCoherentOk, from family_coherent_ok *)) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -657,7 +664,8 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [CRz [RAc [FLN [FCA FCo]]]].
+    as [CRz [RAc [FLN FCA]]].
+  pose proof (family_coherent_ok W bundle (proj1 Elab)) as FCo.
   pose proof (CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.
   pose proof (captured_in_force_ok W) as CIF.
