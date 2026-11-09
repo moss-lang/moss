@@ -4708,6 +4708,167 @@ Definition initial_machine_subst (W : world) : subst :=
 Definition InitialTypes (W : world) (C : cx) (types : subst) : Prop :=
   types = map (fun q => (fst q, app_subst (initial_machine_subst W) (snd q))) (c_ty C).
 
+(* [D16]/[D30] no expanding cycle (Kennedy and Pierce's expansive
+   cycles, decided generically, before monomorphization).  A specializer
+   makes one copy of each code node per instantiation it reaches, and one
+   WasmGC type per nominal instance; both sets must be finite.
+
+   Instantiations.  A code node is a body of P: a fn (a defined fn, a
+   lambda, a forwarder, a wrapper, a method provider) or a core functor
+   body.  A vertex (n, x) is n's formal type symbol x.  An edge
+   (n, u) -> (m, x) says that some way n reaches m gives x a meaning built
+   from u's; it is strict when u occurs under a type constructor (a
+   nominal, a record or a union), so m's instantiation can be larger:
+   - a direct call `ECall m θ` (plain calls, bracket applications, and
+     attached methods at the receiver's instantiation, [D74]): x ↦ θ x;
+   - a closure made by `bind f = g`, `bind R.m = g`, a lambda, or
+     `bind F = G`: the closure's code at the types it captures
+     (generations and aliases);
+   - an application `bind F;` and a family member demanded on demand
+     ([D84] rule 7), both `BApply θ`: every core functor body, at each of
+     its linked inputs θ supplies (which body is bound to F is not known
+     statically);
+   Types in force at a site are already read in the site's θ and
+   captures (CallTheta, lexical_capture), so a `bind T = τ` in force
+   counts through them.  Within a node, a symbol is read as itself, a
+   functor body's input through its table, and an output an application
+   writes as possibly containing, strictly, everything its θ mentions:
+   the abstract functor's body is not inspected (the owner's choice (a);
+   it rejects scratch/expand/mono/c3c_control.moss, a functor whose output
+   is constant, which native compiles).
+   The check: a level for every vertex that no edge raises and every
+   strict edge lowers.  Such a level exists iff no cycle of the (finite)
+   graph has a strict edge, which is decidable: the level of a vertex can
+   be taken as the most strict edges on a path from it, at most the
+   number of vertices, computed on the graph's condensation.  It bounds
+   the specializer: an instantiation reached from main's at vertex v has
+   depth at most main's plus level v times the deepest type P writes. *)
+Inductive code_node : Type := CodeFn (f : nat) | CodeFunctor (h : nat).
+
+(* The type symbols of a type, each with whether it occurs under a
+   constructor. *)
+Fixpoint ty_occurrences (tau : ty) : list (tsym * bool) :=
+  let under := map (fun q : tsym * bool => (fst q, true)) in
+  match tau with
+  | TUnit | TMachine _ => []
+  | TAbs t => [(t, false)]
+  | TRecord fs => under ((fix go (fs : list (string * ty)) :=
+      match fs with [] => [] | (_, t) :: r => ty_occurrences t ++ go r end) fs)
+  | TNom _ args => under ((fix go (l : list (tsym * ty)) :=
+      match l with [] => [] | (_, t) :: r => ty_occurrences t ++ go r end) args)
+  | TUnion ms => under ((fix go (l : list ty) :=
+      match l with [] => [] | t :: r => ty_occurrences t ++ go r end) ms)
+  end.
+
+(* The nominal instances a type mentions, nested ones included. *)
+Fixpoint ty_nominals (tau : ty) : list (nsym * subst) :=
+  match tau with
+  | TUnit | TMachine _ | TAbs _ => []
+  | TRecord fs => (fix go (fs : list (string * ty)) :=
+      match fs with [] => [] | (_, t) :: r => ty_nominals t ++ go r end) fs
+  | TNom n args => (n, args) :: (fix go (l : list (tsym * ty)) :=
+      match l with [] => [] | (_, t) :: r => ty_nominals t ++ go r end) args
+  | TUnion ms => (fix go (l : list ty) :=
+      match l with [] => [] | t :: r => ty_nominals t ++ go r end) ms
+  end.
+
+(* What a node's code does to instantiations: it enters a node at a
+   substitution, or applies an abstract functor at θ with outputs. *)
+Inductive code_site : Type :=
+| SiteEnter (n : code_node) (th : subst)
+| SiteApply (th : subst) (outputs : list (tsym * tsym)).
+
+Fixpoint expr_sites (e : expr) : list code_site :=
+  let many := fix go (l : list expr) := match l with [] => [] | x :: r => expr_sites x ++ go r end in
+  match e with
+  | EVar _ | EUnit | EVal _ | EBreak => []
+  | ETag _ _ e1 | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => expr_sites e1
+  | ECall f th _ args => SiteEnter (CodeFn f) th :: many args
+  | EInvoke _ args => many args
+  | EMethod e0 _ _ args => expr_sites e0 ++ many args
+  | ELet _ e1 e2 | ESeq e1 e2 | EWhile e1 e2 => expr_sites e1 ++ expr_sites e2
+  | EBind b e1 => binding_sites b ++ expr_sites e1
+  | EIf c e1 e2 => expr_sites c ++ expr_sites e1 ++ expr_sites e2
+  | ERecord fs => (fix go (l : list (fld * expr)) :=
+      match l with [] => [] | (_, x) :: r => expr_sites x ++ go r end) fs
+  | EMatch e0 arms => expr_sites e0 ++ (fix go (l : list (pattern * expr)) :=
+      match l with [] => [] | (_, x) :: r => expr_sites x ++ go r end) arms
+  end
+with binding_sites (b : binding) : list code_site :=
+  match b with
+  | BType _ _ | BCopyFunctor _ _ _ _ | BPrimitive _ _ => []
+  | BValue _ e => expr_sites e
+  | BFunction _ g types _ | BMethod _ _ _ g types _ =>
+      [SiteEnter (CodeFn g) (capture_generations types ++ capture_aliases types)]
+  | BFunctor _ h types _ _ =>
+      [SiteEnter (CodeFunctor h) (capture_generations types ++ capture_aliases types)]
+  | BApply _ th outputs _ _ => [SiteApply th outputs]
+  end.
+
+Definition node_sites (P : program) (n : code_node) : list code_site :=
+  match n with
+  | CodeFn f => match body_of P f with Some e => expr_sites e | None => [] end
+  | CodeFunctor h => match funbody_of P h with
+      | Some code => flat_map binding_sites (fc_bindings code) | None => [] end
+  end.
+Definition node_table (P : program) (n : code_node) : subst :=
+  match n with
+  | CodeFunctor h => match funbody_of P h with Some code => fc_table code | None => [] end
+  | CodeFn _ => []
+  end.
+
+(* `NodeReads P n t u s`: in n's code, the type symbol t contains n's
+   formal u (strictly if s). *)
+Inductive NodeReads (P : program) (n : code_node) : tsym -> tsym -> bool -> Prop :=
+| ReadsSelf : forall t, NodeReads P n t t false
+| ReadsTable : forall x tau v s u s',
+    In (x, tau) (node_table P n) -> In (v, s) (ty_occurrences tau) -> NodeReads P n v u s' ->
+    NodeReads P n x u (s || s')
+| ReadsOutput : forall th outputs source t x tau v s u s',
+    In (SiteApply th outputs) (node_sites P n) -> In (source, t) outputs ->
+    In (x, tau) th -> In (v, s) (ty_occurrences tau) -> NodeReads P n v u s' ->
+    NodeReads P n t u true.
+
+(* The nodes a site enters, each at the substitution of its formals. *)
+Definition site_targets (P : program) (site : code_site) : list (code_node * subst) :=
+  match site with
+  | SiteEnter n th => [(n, th)]
+  | SiteApply th _ => map (fun q => (CodeFunctor (fst q),
+      filter (fun p => existsb (Nat.eqb (fst p)) (fc_linked (snd q))) th)) (program_functors P)
+  end.
+
+Definition InstantiationEdge (P : program) (a b : code_node * tsym) (strict : bool) : Prop :=
+  exists site th tau v s s',
+    In site (node_sites P (fst a)) /\ In (fst b, th) (site_targets P site) /\
+    In (snd b, tau) th /\ In (v, s) (ty_occurrences tau) /\
+    NodeReads P (fst a) v (snd a) s' /\ strict = s || s'.
+
+Definition InstantiationsBounded (P : program) : Prop :=
+  exists level : code_node * tsym -> nat, forall a b strict,
+    InstantiationEdge P a b strict -> level b + (if strict then 1 else 0) <= level a.
+
+(* Types.  A nominal's payload, read at its own requirements, mentions
+   nominal instances; an edge (g, x) -> (g', y) says g' is mentioned with
+   y's argument built from x, strictly under a constructor.  Every
+   instance mentioned counts, behind a `Ref` or an `Array` too: a WasmGC
+   type names the types of its fields, so `Cons[T]` holding a
+   `Ref[Boxed=Nest[T=Box]]` needs `Cons[T=Box[T]]`, and so on
+   (scratch/expand/mono/c8c_type_only.moss).  [D58]'s finite layout (no
+   tag containing itself, with no heap between) is a separate check of
+   the oracle's and is not stated here; it is not needed for finiteness. *)
+Definition TypeEdge (W : world) (a b : nsym * tsym) (strict : bool) : Prop :=
+  exists pay args tau,
+    PayloadOf W (fst a) (map (fun t => (t, TAbs t)) (w_reqs W (fst a))) pay /\
+    In (fst b, args) (ty_nominals pay) /\ In (snd b, tau) args /\
+    In (snd a, strict) (ty_occurrences tau).
+
+Definition TypesBounded (W : world) : Prop :=
+  exists level : nsym * tsym -> nat, forall a b strict,
+    TypeEdge W a b strict -> level b + (if strict then 1 else 0) <= level a.
+
+Definition NoExpandingCycle (W : world) (P : program) : Prop :=
+  TypesBounded W /\ InstantiationsBounded P.
+
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
   WorldOf b W /\
@@ -4723,7 +4884,9 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
     (LangSym W "bool" NSName "Bool" (program_bool P) /\ LangSym W "bool" NSName "True" (program_true P) /\
      LangSym W "bool" NSName "False" (program_false P)
-     \/ ((forall s, ~ LangSym W "bool" NSName "Bool" s) /\ program_bool P = 0 /\ program_true P = 0 /\ program_false P = 0)).
+     \/ ((forall s, ~ LangSym W "bool" NSName "Bool" s) /\ program_bool P = 0 /\ program_true P = 0 /\ program_false P = 0)) /\
+    (* [D16]/[D30]: finitely many instantiations *)
+    NoExpandingCycle W P.
 
 Definition Elaborates (b : bundle) (P : program) : Prop :=
   exists W, ElaboratesIn b W P.

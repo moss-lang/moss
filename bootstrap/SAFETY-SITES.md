@@ -153,6 +153,20 @@ the local store. *C* and *F* are the static context and frame.
   (`items_dests_made`); `link_dests_avoid` and
   `PublicLinkRun.body_meaning_mentioned` are gone. See
   scratch/consol-STATUS.md.
+- **No expanding cycle (expand).** `ElaboratesIn` gains `NoExpandingCycle W P`
+  (Audit.v, before `ElaboratesIn`): no cycle of instantiation edges between
+  P's code nodes, and no cycle of nominal-payload edges, has a strict edge
+  (stated as a level function, which gives the specializer an explicit
+  depth bound). It removes programs only, so `public_safety` needed only two
+  destructuring repairs (PublicBoolTyping, AuditBuildExample). It is the
+  D16 planned resolution: polymorphic recursion in every shape of
+  scratch/expand/mono is rejected (bootstrap/examples/expand-*.moss), and an
+  abstract functor's output counts as containing its inputs, so
+  expand-control-functor-const.moss, which native compiles, is rejected.
+  An oracle variant agrees on the corpus (395 same, 0 diff) and accepts
+  src/main.moss. Neither implementation has it yet (E38): the oracle runs
+  the growing programs, native crashes compiling them, including the
+  type-only non-regular datatype behind `Ref`. See AUDIT-CHANGES.md #48.
 - **FamilyCopyRealizeOk assumes the family application's table is scoped (realize5).**
   `FS.FamilyCopyRealizeOk` and `FS.FamilyCopyApplyOk` gain the premise
   `PublicFormation.TysScoped W C`, which `FamilyLinkResultsOk` and
