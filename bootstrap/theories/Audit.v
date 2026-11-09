@@ -3761,6 +3761,21 @@ Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
 
+(* [D78] (the oracle's copy_outputs_match): read at F's inputs with the
+   same fresh output roles, H's result gives each key of F's result the
+   provision F's result gives it (each key's last setter), F's fixed
+   inputs read as sigma says (as they are in force where F is bound). *)
+Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) : Prop :=
+  exists outs gen Cr ks Cr' ks',
+    (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs) /\
+    (forall t, In t outs -> Fresh W (gen t)) /\
+    ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
+    ProvideResult W h Cu (fun t => TAbs (gen t)) Cr' ks' /\
+    (forall k, In k ks -> exists p p',
+       ilook (provision_id k) (c_provisions Cr) = Some p /\
+       ilook (provision_id k) (c_provisions Cr') = Some p' /\
+       provision_subst sigma p = provision_subst sigma p').
+
 (* Restore fresh output generations to their declared symbols when filing
    the reusable code body. Input meanings remain those of the target. *)
 Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
@@ -4282,6 +4297,11 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x tx, nlook x (c_ty Ch) = Some tx -> canon Cu (TAbs x) = canon Cu tx) ->
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu k)) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
+    (* and H's result reads as F's (the oracle: output interpretation, D78) *)
+    CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu ->
+    (* H's inputs, implicit ones too, are among F's (the oracle's input
+       interpretation check fails on one F lacks) *)
+    (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes are linked (supplied by each application), the rest are

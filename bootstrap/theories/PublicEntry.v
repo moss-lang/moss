@@ -4,7 +4,8 @@
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
-  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping.
+  PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
+  PublicCopyApply.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -14,7 +15,8 @@ Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
 Module SR := SafetyReduction Host M0.
 Module PS := PrimitiveSafety Host M0.
 Module M := M0.
-Module S := BodySlice M.ReferenceHost M.Reference.
+Module CopyA := CopyApply M.ReferenceHost M.Reference.
+Module S := CopyA.S.
 
 Section Entry.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -415,15 +417,17 @@ Qed.
 
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
-   ElaboratesIn and Linked. *)
+   ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
+   and PlatformApplyOk, follow from the obligations about a closure's root
+   read through its copy chain (PublicCopyApply). *)
 Theorem safety_obligations : forall prelude,
   (forall Prog iface initial bundle W, M.Compatible Prog iface ->
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
      S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
-     S.RefileRunOk W Prog argv read so /\ S.LinkResultsOk W Prog argv read so /\
-     S.CopyApplyOk W Prog argv read so /\ S.PlatformApplyOk W Prog argv read so) ->
+     S.RefileRunOk W Prog argv read so /\
+     CopyA.ChainResultsOk W Prog argv read so /\ CopyA.ChainPlatformOk W Prog argv read so) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -431,7 +435,7 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [FSt [LM [BM [CIF [RR [LR [CA PA]]]]]]].
+    as [FSt [LM [BM [CIF [RR [CR CP]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
@@ -439,7 +443,9 @@ Proof.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR LR CA PA).
+    (ex_intro _ bundle Wo) LM BM CIF RR (CopyA.link_results_of_chain W Prog _ _ _ CR)
+    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF RR CR CP)
+    (CopyA.platform_apply_of_chain W Prog _ _ _ CP)).
 Qed.
 
 End EntrySafety.

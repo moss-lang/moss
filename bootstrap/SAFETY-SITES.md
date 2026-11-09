@@ -26,7 +26,9 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the functor and family obligations `FamilyStepOk`, `LinkMergesOk`, `BindMergesOk`,
-`CapturedInForceOk`, `RefileRunOk`, `LinkResultsOk`, `CopyApplyOk`,
+`CapturedInForceOk`, `RefileRunOk`, and `ChainResultsOk`,
+`ChainPlatformOk` from [PublicCopyApply.v](theories/PublicCopyApply.v),
+which prove the slice's `CopyApplyOk`, `LinkResultsOk` and
 `PlatformApplyOk`), with the slice's elaboration and link facts read off
 `ElaboratesIn` and `Linked`. The formation premises and `HandleFormed` are
 proved (PublicWorldFormation, PublicFamilySig, `handles_formed`). It goes through `safety_public`, which is
@@ -428,6 +430,26 @@ the local store. *C* and *F* are the static context and frame.
   `~ FamilyProduces` for every family, after discussion. It rejects nothing
   the implementations accept, and family applications no longer need an
   argument that the shadowed provision has the same signature.
+- **Counterexample: a copy whose result reads differently (fixed).**
+  `BFunCopy` compared results only leaf by leaf (`SameResult`). In
+  [copy-output-order.moss](examples/copy-output-order.moss) F lists
+  `out[P=U], out[P=V]` and H `out[P=V], out[P=U]`: the same leaves, but
+  the last setter types `out` as V after `bind F;` and as U for H. Applying
+  the copy runs G's body, which provides a U, so the caller's match on V is
+  stuck. The oracle rejects the copy ("effective output interpretation
+  differs (D78)", `copy_outputs_match`), and so does native (test
+  `copied_functors_compare_final_output_interpretations`). `BFunCopy` now
+  requires `CopyOutputs`: read in F's context with the same fresh output
+  roles, H's result gives each of F's keys F's provision, F's fixed inputs
+  read as they are in force. Details and the remaining differences from
+  the oracle's check: scratch/orch/copy-AUDIT.md.
+- **A copy's source takes no input its target lacks (now in Audit).**
+  `BFunCopy` compared needs (`incl nsh nsu`), which do not list implicit
+  inputs (types only H's result mentions). An application of F reads its
+  root body's linked inputs from θ, which covers only F's inputs.
+  `BFunCopy` now requires H's type table to be among F's, as the oracle's
+  input interpretation check does (it fails on an input of H that F
+  lacks). Details: scratch/orch/copy-AUDIT.md.
 
 ## Body-safety slice (checked, conditional)
 
@@ -451,6 +473,18 @@ hypotheses, each a named remaining obligation:
 | `refile_run` | a linked body's binds, refiled under the keys F declares, run as their chain does (refile's extra installs leave the body's context realized) | T15 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys, fresh output generations, the caller's context after it realized | T15, T16 |
 | `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
+
+`copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
+(`copy_apply_ok`): a closure's derivation is followed down its copy chain
+(`CopyChain`, `chain_entry`), each copy's context realized where its
+target's is (`copy_step_realizes`), to the root. A linked root's body runs
+as in the linked case (`link_entry`, `refile_run`); what it provides at
+the application, and a platform root, are the two obligations read
+through the chain: `ChainResultsOk` (`link_results` with a copy chain in
+between; `link_results_of_chain`) and `ChainPlatformOk` (`platform_apply`
+likewise; `platform_apply_of_chain`). `LinkResultsOk` alone cannot serve:
+it fixes the caller's functor to the body's own (its `LinkData`, closure
+shape and `AppPremises` all name u), and a copy's caller has neither.
 | `captured_in_force` | what a closure captures mentions, among G's inputs, only fixed inputs and types in force where it is bound | T29 |
 | `link_merges`, `bind_merges` | a merge of a linked body's context that touches an input F links (and does not fix) stays among F's inputs; other merges involve only symbols in force at the bind (the causing item is linked, so read as F's, or captured, so 3b applies) | T15 |
 | `merge_formed`, `mentions_typed`, `family_sig_ok` | context formation's own premises (PublicFormation's `MergeFormed`, `MentionsTyped`, `FamilySigReadOffOk`), proved: `PublicWorldFormation.merge_formed_of`, `mentions_typed_of`, `PublicFamilySig.family_sig_ok_readoff`; `Pre` carries `FormedCx`/`FrameFormed`, so formation of elaborated types, nominal receivers and method keys follows from PublicFormation's corollaries | T29 |
