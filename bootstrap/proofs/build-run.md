@@ -8,7 +8,7 @@ Generated from [one canonical task plan](../proof-plan.json). Task IDs and finis
 
 [Task records](#task-records) · [Checkpoint history](#checkpoint-changes)
 
-Ready tasks with tentative hour estimates: [B01](#b01), [F17](#f17), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26), [E27](#e27), [E28](#e28), [E29](#e29), [E30](#e30), [E31](#e31).
+Ready tasks with tentative hour estimates: [B01](#b01), [F17](#f17), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26), [E27](#e27), [E28](#e28), [E29](#e29), [E30](#e30), [E31](#e31), [E32](#e32), [E33](#e33), [E34](#e34).
 
 Ready tasks needing decomposition: [F10](#f10), [E02](#e02), [L01](#l01), [K09](#k09).
 
@@ -195,6 +195,9 @@ flowchart TB
     E29["○ E29: Never-returning primitives"]:::open
     E30["○ E30: Check captured functor needs and body numbering"]:::open
     E31["○ E31: Read linked result methods from the body's keys"]:::open
+    E32["○ E32: Check a copy's result keys both ways"]:::open
+    E33["○ E33: No result key spelled through an output's input meaning"]:::open
+    E34["○ E34: Native: a family's listed polymorphic inputs are types"]:::open
   end
   E01 --> E02
   E01 --> E03
@@ -241,6 +244,9 @@ flowchart TB
   E29 --> E11
   E30 --> E11
   E31 --> E11
+  E32 --> E11
+  E33 --> E11
+  E34 --> E11
   click E01 "#e01"
   click E02 "#e02"
   click E03 "#e03"
@@ -270,6 +276,9 @@ flowchart TB
   click E29 "#e29"
   click E30 "#e30"
   click E31 "#e31"
+  click E32 "#e32"
+  click E33 "#e33"
+  click E34 "#e34"
   classDef done stroke:#238636,stroke-width:2px
   classDef partial stroke:#b8860b,stroke-width:2px,stroke-dasharray:5 3
   classDef open stroke:#888,stroke-dasharray:2 3
@@ -557,7 +566,7 @@ to that record, including across diagrams and pages.
 | <a id="e17"></a> **E17** Cover direct ordinary function bodies | ○ open; ? Decompose | Every defined source function has a public function-elaboration receipt in the final program, under explicit global induction premises. | [E03](#e03), [E04](#e04), [S29](#s29) | Port completed-body coverage and final lookup transport; keep final-state obligations visible.  [Audit.v](../theories/Audit.v), [FnCompleted.v](../theories/FnCompleted.v), [FnElabExec.v](../theories/FnElabExec.v) |
 | <a id="e18"></a> **E18** Cover direct generated provider bodies | ○ open; ? Decompose | Generated lambda, wrapper, forwarder and linked bodies have final public elaboration receipts. | [E04](#e04), [E05](#e05), [E08](#e08) | Inventory emission forms and split their coverage proofs rather than assuming a generated-body callback.  [Audit.v](../theories/Audit.v), [FinalLambdas.v](../theories/FinalLambdas.v), [FinalForwarders.v](../theories/FinalForwarders.v) |
 | <a id="e10"></a> **E10** Assemble direct final-state coverage | ○ open; ≤1h, tentative | One final public program/world contains all required source/generated body and initial-environment receipts. | [E17](#e17), [E18](#e18), [E09](#e09) | Assemble coverage and monotonic final-table facts under clearly stated smaller-fuel assumptions.  [Audit.v](../theories/Audit.v), [FunctionFrameProgram.v](../theories/FunctionFrameProgram.v) |
-| <a id="e11"></a> **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | [E03](#e03), [E04](#e04), [E05](#e05), [E07](#e07), [E08](#e08), [E10](#e10), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26), [E27](#e27), [E28](#e28), [E29](#e29), [E30](#e30), [E31](#e31) | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
+| <a id="e11"></a> **E11** Close direct public elaboration soundness | ○ open; ? Decompose | Every successful direct executable elaboration satisfies public ElaboratesIn with no unresolved project callbacks. | [E03](#e03), [E04](#e04), [E05](#e05), [E07](#e07), [E08](#e08), [E10](#e10), [E21](#e21), [E22](#e22), [E23](#e23), [E24](#e24), [E25](#e25), [E26](#e26), [E27](#e27), [E28](#e28), [E29](#e29), [E30](#e30), [E31](#e31), [E32](#e32), [E33](#e33), [E34](#e34) | Close the mutual fuel/final-state induction. Do not first complete internal elaborate_sound and then prove a second source-model refinement.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
 | <a id="e12"></a> **E12** Direct public elaboration completeness | ○ open; ? Decompose | Every public-buildable bundle is accepted by direct elaboration, with the implementation fresh names permitted by the public contract. | [F10](#f10), [F11](#f11), [F12](#f12), [F13](#f13), [F14](#f14), [E02](#e02) | Assemble backward rule proofs and justified resource bounds, including the direct entry environment.  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v) |
 | <a id="e19"></a> **E19** Emit public type metadata | ✓ done; Proved / defined | Direct type emission preserves structural field names and commutes with the existing input-bounded executable type substitution. | None | Verified emit_type and emit_full_substitution. This does not establish context meaning, machine initialization or whole elaboration soundness. Origin: refinement under [E02](#e02). Named result: `emit_full_substitution`.  [PublicEmit.v](../theories/PublicEmit.v) |
 | <a id="e20"></a> **E20** Read public declaration and scope metadata | ✓ done; Proved / defined | Read actual loaded metadata into public worlds, with declaration provenance/completeness, exact exports/scopes/attached methods and acyclic imports. | None | Reuse shared source predicates, without field numbering or whole elaboration refinement. The conditional WorldOf assembler explicitly retains all six public requirements premises. Origin: refinement under [E01](#e01). Named result: `load_world_world_of_from_requirements`.  [PublicWorld.v](../theories/PublicWorld.v), [PublicWorldScope.v](../theories/PublicWorldScope.v) |
@@ -572,6 +581,9 @@ to that record, including across diagrams and pages.
 | <a id="e29"></a> **E29** Never-returning primitives | ○ open; ≤1h, tentative | The default host satisfies the interface law for ShapeNever (its unreachable never returns normally), and the executable link check accepts unreachable's declared `\|` result as Platform.PrimitiveSignature now requires. | None | Check the host's PUnreachable traps; extend the link-check correspondence with ShapeNever and the never type. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [PublicPrimitiveSafety.v](../theories/PublicPrimitiveSafety.v) |
 | <a id="e30"></a> **E30** Check captured functor needs and body numbering | ○ open; ≤1h, tentative | The executable elaborators' checks of a functor closure's captured needs (the oracle's D84 3b) imply Audit's Satisfies for them at the closure's inputs read where it is bound, and a functor body's frame numbers its locals, as Audit's BFunClosure and LinkBody now require. | None | Relate the D84 3b frozen-interpretation check to Satisfies' coherence, type and merge clauses; check the body frame's numbering. bootstrap/examples/captured-merge.moss is rejected by both implementations already. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [captured-merge.moss](../examples/captured-merge.moss) |
 | <a id="e31"></a> **E31** Read linked result methods from the body's keys | ○ open; ≤1h, tentative | The oracle's linked bodies file each result method as Audit's LinkBody now does: the body runs its own binds only, and the result selection reads each result key (as F declares it) from the body's runtime key for it (fc_sources), so a stale provision under F's spelling of the key is never overwritten inside the body. | None | Replace link_trace_rebinds (which refiles each result method under F's key right after its bind) by result sources in the emitted functor code, as native behaves; update LinkBodySound's link_output_certificate and LinkOutputRefile. bootstrap/examples/refile-stale-shadow.moss gets stuck on the oracle (moss_ref: stuck (XErr 14)) and prints 7 natively. Origin: discovery under [E11](#e11).  [LinkBodyTrace.v](../theories/LinkBodyTrace.v), [LinkBodySound.v](../theories/LinkBodySound.v), [LinkOutputRefile.v](../theories/LinkOutputRefile.v), [Audit.v](../theories/Audit.v), [refile-stale-shadow.moss](../examples/refile-stale-shadow.moss) |
+| <a id="e32"></a> **E32** Check a copy's result keys both ways | ○ open; ≤1h, tentative | The oracle's copy_outputs_match also checks that every key of the source H's result (read at F's inputs with F's output roles) is a key of F's, as Audit's CopyOutputs now requires, so `bind F = H;` is rejected when H's result has a bracketed method key F's lacks. | None | Add the converse to copy_outputs_match (Elab.v) and to FinalCopyOutputs/copy_outputs_match_sound (CopyOutputExec.v). An extracted variant with the converse gives the same verdicts over tests/, examples/ and bootstrap/examples/ except copy-extra-key.moss. bootstrap/examples/copy-extra-key.moss prints 21 on the oracle (the extra key overwrites the caller's Box[T=Char].m) and 31 natively (native keeps exactly F's result). Origin: discovery under [E11](#e11).  [Elab.v](../theories/Elab.v), [CopyOutputExec.v](../theories/CopyOutputExec.v), [Audit.v](../theories/Audit.v), [copy-extra-key.moss](../examples/copy-extra-key.moss) |
+| <a id="e33"></a> **E33** No result key spelled through an output's input meaning | ○ open; ≤1h, tentative | A linked functor whose result key, read at F's inputs, mentions an input symbol that is also an output (through F's merges) is filed and applied correctly: the code keeps output roles distinct from input symbols and the application maps the roles (decided fix; Audit and oracle), so output-merge-key.moss prints 7 and functor_input_output_generations.moss prints yn (cf. E06). | None | functor_code gains the role map (fc_roles); LinkBody files rkey_of Cr k unrenamed; apply_functor substitutes roles to destinations and inputs by theta. The oracle runs ExecutionModel code, so its link_body and runtime change too (scratch/orch/results4-AUDIT.md, change 3). bootstrap/examples/output-merge-key.moss: oracle `moss_ref: stuck (XErr 6)`, native prints 7. Origin: discovery under [E11](#e11).  [Elab.v](../theories/Elab.v), [Audit.v](../theories/Audit.v), [output-merge-key.moss](../examples/output-merge-key.moss) |
+| <a id="e34"></a> **E34** Native: a family's listed polymorphic inputs are types | ○ open; ≤1h, tentative | Native rejects an abstract functor whose bracket list names a symbol that is not a type in scope, as the oracle's functor_params does and as Audit's FamilyShape now requires (D84 rule 1: P(F) are type symbols). | None | Add the kind check where native resolves a functor's polymorphic inputs. bootstrap/examples/family-poly-nontype.moss: oracle rejects (`g`, listed as a polymorphic input of `F`, is not a type in scope), native accepts and exits 0. Origin: discovery under [E11](#e11).  [Audit.v](../theories/Audit.v), [Elab.v](../theories/Elab.v), [family-poly-nontype.moss](../examples/family-poly-nontype.moss) |
 
 ### Selected runtime lowering
 

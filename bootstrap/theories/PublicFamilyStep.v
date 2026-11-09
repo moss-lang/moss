@@ -77,7 +77,7 @@ Lemma family_news : forall W C u matching th sm Cr ks, A.FamilyApplication W C u
     (forall k, In k ks <-> exists p, In (k, p) news).
 Proof.
   intros W C u matching th sm Cr ks (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
-  destruct Shape as (d & n & ps & a & r & D & Ast & FrAll).
+  destruct Shape as (d & n & ps & a & r & D & Ast & FrAll & _).
   destruct PR as (d' & ps' & a' & r' & b' & outs & es & tm' & D' & FP & Outs & OIE & RK & ->).
   rewrite D in D'. injection D' as <-. rewrite Ast in FP. cbn in FP. injection FP as <- <- <- <-.
   pose proof (proj2 (family_entries_methods W) _ _ _ _ _ _ OIE FrAll) as Ms. rewrite Forall_forall in Ms.

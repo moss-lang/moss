@@ -3349,9 +3349,13 @@ Inductive FamilyResult (W : world) : string -> spec -> Prop :=
     Forall (FamilyResult W (d_mod d)) its ->
     FamilyResult W mi (Spec (Some pa) None br).
 
+(* A family's listed polymorphic inputs are type symbols ([D84] rule 1; the
+   oracle's functor_params rejects any other, examples/family-poly-nontype.moss). *)
 Definition FamilyShape (W : world) (u : nat) : Prop :=
   exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None /\
-    Forall (FamilyResult W (d_mod d)) r.
+    Forall (FamilyResult W (d_mod d)) r /\
+    (forall names x t, ps = Some names -> In x names -> resolve_sym W (d_mod d) [x] = Some t ->
+       kind_sym W t = Some DKType).
 
 Definition FamilyBracketBound (W : world) (p : string)
     (a : option (list (path * spec))) (t : nat) : Prop :=

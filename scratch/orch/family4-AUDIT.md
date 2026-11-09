@@ -64,3 +64,32 @@ need mentions (3b) and so no captured provision's typing depends on.
 - A run-time alias fact in `Pre`: false for const code.
 - Keeping `capture_environment` and restricting only aliases: still needs
   a fact about `d`'s meanings for symbols outside the table.
+
+## 2. A family's listed polymorphic inputs are type symbols
+
+**What.** `Audit.v` `FamilyShape` gains a conjunct: when the functor lists
+its polymorphic inputs (`F[A, B]`), each name resolves (if at all) to a
+declared type symbol. `Family` (hence every family application) requires it.
+
+**Why.** `FamilyKeysTyped` (PublicPlatformApply, goal 5): a key of the
+family context's table that a path names and that F's inputs lack must be
+a type symbol. Those keys are the context's own (declared types, now
+`TysScoped`) or the matching's, which are P(F) symbols (`Poly`). An
+unlisted P(F) is M(F), so it is an input of F. A listed one had no kind
+constraint, so `F[A, g]` with `g` a fn put `g` in the matching.
+
+**Test.** examples/family-poly-nontype.moss. Oracle: rejected ("`g`,
+listed as a polymorphic input of `F`, is not a type in scope (D84)",
+`Elab.functor_params`, whose soundness lemma is
+`NestingTypesExec.functor_params_names`). Native: accepts, exit 0. D84
+rule 1 makes P(F) type symbols, so native is the outlier: filed as
+proof-plan E34. Audit now rejects the program (the demand finds no family).
+
+**Mirrors.** Exactly the oracle's check, restricted to families (the
+oracle checks every listed functor, at its first use as a family or an
+application). Programs the oracle accepts are unaffected.
+
+**Alternatives.** Reading the matching's keys off FamilyReadOff (a key's
+receiver mentions only M(F) symbols): a long argument through
+ProvideResult/RecvTy that would still need the kind of a listed but
+unmentioned name.

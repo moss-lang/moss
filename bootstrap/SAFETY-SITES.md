@@ -122,6 +122,14 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A family's listed polymorphic inputs are type symbols (family4).**
+  `FamilyShape` requires each name in `F[...]` to resolve to a type
+  symbol, as the oracle's `functor_params` does (D84 rule 1).
+  [family-poly-nontype.moss](examples/family-poly-nontype.moss) lists a fn:
+  the oracle rejects it, native accepts it (proof-plan E34). With it and
+  `TysScoped` (a formed context's keys are declared type symbols, now
+  strict), `FamilyKeysTyped` and `AppKeysTyped` are proved
+  (scratch/orch/family4-AUDIT.md section 2).
 - **A functor closure captures types as a lambda does (family4).**
   `BFunctor` carries a `type_capture`, and `BFunClosure` gives it
   `lexical_capture C`: the closure keeps the table's readings as aliases

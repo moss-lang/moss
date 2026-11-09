@@ -1087,7 +1087,7 @@ Qed.
 
 Lemma family_no_outputs : forall u t, FamilyShape W u -> FunOutputs W u t -> False.
 Proof.
-  intros u t (d & n & ps & a & r & D & Ast & Fr) (d' & ps' & a' & r' & b' & sp & D' & FP & Isp & ST).
+  intros u t (d & n & ps & a & r & D & Ast & Fr & _) (d' & ps' & a' & r' & b' & sp & D' & FP & Isp & ST).
   rewrite D in D'. injection D' as <-. rewrite Ast in FP. cbn in FP. injection FP as _ _ <- _.
   rewrite Forall_forall in Fr. exact (family_result_spec _ _ _ (Fr sp Isp) ST).
 Qed.

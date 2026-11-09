@@ -2206,7 +2206,8 @@
         "E30",
         "E31",
         "E32",
-        "E33"
+        "E33",
+        "E34"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2871,6 +2872,30 @@
         "sources": [
           "SAFETY-SITES.md",
           "examples/output-merge-key.moss"
+        ]
+      }
+    },
+    {
+      "id": "E34",
+      "group": "E",
+      "title": "Native: a family's listed polymorphic inputs are types",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "Native rejects an abstract functor whose bracket list names a symbol that is not a type in scope, as the oracle's functor_params does and as Audit's FamilyShape now requires (D84 rule 1: P(F) are type symbols).",
+      "approach": "Add the kind check where native resolves a functor's polymorphic inputs. bootstrap/examples/family-poly-nontype.moss: oracle rejects (`g`, listed as a polymorphic input of `F`, is not a type in scope), native accepts and exits 0.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/family-poly-nontype.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "FamilyKeysTyped needs a family's matching keys to be type symbols or inputs of F; Audit did not constrain a listed P(F) name's kind, and native accepts a fn there.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/family-poly-nontype.moss"
         ]
       }
     },
