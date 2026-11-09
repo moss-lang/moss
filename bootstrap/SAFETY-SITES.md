@@ -445,18 +445,21 @@ without touching any proof.
   `lambda_meth_bind_safe`) (22:40 to 23:20).
 - Wrapped `main` test, `theta_ctx` after approval, and wrapper method
   providers (`wrapped_callable`, `wrapped_meth_bind_safe`); method binds
-  are now fully proved (23:25 to 00:05).
+  are now fully proved (23:21 to 23:35, by commit times).
 - Functor design reading; functor-body `break` counterexample, `Breaks`
   with the world after approval, and `bind F;` for a functor with a body
-  (00:05 to 00:50).
+  (23:35 to 00:01).
 - Functor design (binding-level refactor needed), the `INTERP` refactor,
-  and the entry assembly `entry_safe` (00:55 to 02:00).
+  and the entry assembly `entry_safe` (00:01 to 00:17).
 - Primitives (T11/T17) by a background agent (`primitive_safe`), merged;
   `ShapeNever` after approval; realization without a fuel drop
-  (`callee_realizes_le`, `lambda_realizes_le`) (02:00 to 03:00).
+  (`callee_realizes_le`, `lambda_realizes_le`) (00:17 to 01:23, mostly
+  discussion of `ShapeNever`).
 - `PUBLIC` refactor; primitives at the entry (`machine_lookup`,
-  `entry_primitive`) and `safety_public` (03:00 to 03:40).
+  `entry_primitive`) and `safety_public` (01:23 to 01:27).
 - Binding-level refactor: `BindStep`/`Chain` with generations made,
   `chain_wrap`/`chain_run`, every non-functor bind as a chain, functor
-  hypotheses restated as steps (03:00 to 05:10, with the formation agent
-  running in parallel).
+  hypotheses restated as steps (01:27 to 02:09, with the formation agent
+  running in parallel). Earlier entries in this log written from my own
+  estimate rather than commit times overstated durations; these are
+  corrected to commit times.
