@@ -393,13 +393,26 @@ Qed.
 
 (* ---- a platform family applied as a family: its result agrees ----------------- *)
 
+(* Generally: u's result read in a context Cf (c_sub Cf = c_sub C) at
+   θ = Cf's readings of u's inputs (Parts: a family application's facts,
+   or an application's, AppPremises, with Cf = C), against its result at
+   its own inputs. Uniq: the caller's keys are distinct (a family
+   application checks it), or the family's are, with distinct methods
+   (Platform.MethodsDistinct). *)
 Section FamilyAgree.
 Variable W : A.world.
-Variables (C : A.cx) (u : nat) (matching th : subst) (sm : smap) (Cr : A.cx) (ks : list item).
+Variables (C : A.cx) (u : nat) (th : subst) (Cf : A.cx) (out2 : nat -> ty) (Cr : A.cx) (ks : list item).
 Variables (Cu : A.cx) (needs : list item) (outputs : A.cx) (keys : list item).
 Import A.
 
-Hypothesis FA : FamilyApplication W C u matching th sm Cr ks.
+Hypothesis SubCf0 : c_sub Cf = c_sub C.
+Hypothesis Parts : th = map (fun q => (fst q, canon Cf (app_subst (c_ty Cf) (TAbs (fst q))))) (c_ty Cu) /\
+  (forall t, In t (map fst (c_ty Cu)) -> nlook t (c_ty Cf) <> None) /\
+  (forall g t, In (g, t) (c_sub Cu) -> (forall x, In x (g :: gens t) -> nlook x (c_ty Cf) <> None) ->
+     canon Cf (app_subst (c_ty Cf) (TAbs g)) = canon Cf (app_subst (c_ty Cf) t)) /\
+  (forall d ps a r b, w_decl W u = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None) /\
+  ProvideResult W u Cf out2 Cr ks.
+Hypothesis Uniq : NoDup (map provision_id ks) \/ (NoDup (map provision_id keys) /\ Platform.MethodsDistinct W keys).
 Hypothesis FCu : FunCtx W u Cu needs.
 Hypothesis NoOut : forall t, ~ FunOutputs W u t.
 Hypothesis PRf : ProvideResult W u Cu (fun t => TAbs t) outputs keys.
@@ -408,9 +421,8 @@ Hypothesis Idem : forall t, canon C (canon C t) = canon C t.
 (* An extra key of the family context's table that a path names is a type
    symbol (a table's keys are type symbols or generations). *)
 Hypothesis KeysT : forall q pa x, resolve_sym W q pa = Some x ->
-  nlook x (c_ty (family_context C matching)) <> None -> nlook x (c_ty Cu) = None -> kind_sym W x = Some DKType.
+  nlook x (c_ty Cf) <> None -> nlook x (c_ty Cu) = None -> kind_sym W x = Some DKType.
 
-Let Cf := family_context C matching.
 Let σ := c_sub Cu.
 Let cS := c_sub C.
 Let Dom := map fst (c_ty Cu).
@@ -426,19 +438,15 @@ Lemma fa_parts : th = map (fun q => (fst q, canon Cf (app_subst (c_ty Cf) (TAbs 
   (forall t, In t Dom -> nlook t (c_ty Cf) <> None) /\
   (forall g t, In (g, t) (c_sub Cu) -> (forall x, In x (g :: gens t) -> nlook x (c_ty Cf) <> None) ->
      canon Cf (app_subst (c_ty Cf) (TAbs g)) = canon Cf (app_subst (c_ty Cf) t)) /\
-  FamilyShape W u /\ ProvideResult W u Cf (fun t => TAbs t) Cr ks /\ NoDup (map provision_id ks).
-Proof.
-  destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
-  destruct (functx_uniq _ _ _ _ FC FCu) as [-> ->].
-  destruct Sat as [_ [_ [_ [_ Merge]]]].
-  repeat split; assumption.
-Qed.
+  (forall d ps a r b, w_decl W u = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None) /\
+  ProvideResult W u Cf out2 Cr ks.
+Proof. exact Parts. Qed.
 
 Lemma sub_cf : c_sub Cf = cS.
-Proof. exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))). Qed.
+Proof. exact SubCf0. Qed.
 
 Lemma canon_f : forall t, canon Cf t = canon C t.
-Proof. intros t. unfold canon, Cf. rewrite (proj1 (proj2 (PublicFormation.family_context_shape matching C))). reflexivity. Qed.
+Proof. intros t. unfold canon. rewrite SubCf0. reflexivity. Qed.
 
 Lemma th_lookup : forall x, In x Dom -> lookup_subst x th = Some (canon C (app_subst (c_ty Cf) (TAbs x))).
 Proof.
@@ -502,7 +510,7 @@ Proof.
     assert (Ix : In x Dom) by (apply nlook_dom; rewrite K1; discriminate).
     destruct fa_parts as [_ [InF _]]. pose proof (InF x Ix) as N2. destruct (nlook x (c_ty Cf)); [discriminate|exfalso; exact (N2 eq_refl)].
   - intros q pa x R N2 N1. rewrite t1_look in N1. rewrite t2_look in N2.
-    apply (KeysT q pa x R); [fold Cf; destruct (nlook x (c_ty Cf)); [intros E; discriminate E|exfalso; exact (N2 eq_refl)]|].
+    apply (KeysT q pa x R); [destruct (nlook x (c_ty Cf)); [intros E; discriminate E|exfalso; exact (N2 eq_refl)]|].
     destruct (nlook x (c_ty Cu)); [discriminate|reflexivity].
 Qed.
 
@@ -529,8 +537,7 @@ Qed.
 
 Lemma family_shape_b : forall d ps a r b, w_decl W u = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None.
 Proof.
-  intros d ps a r b D FP. destruct fa_parts as [_ [_ [_ [(d' & n & ps' & a' & r' & D' & Ast & _) _]]]].
-  rewrite D in D'. injection D' as <-. rewrite Ast in FP. cbn in FP. injection FP as _ _ _ <-. reflexivity.
+  intros d ps a r b D FP. exact (proj1 (proj2 (proj2 (proj2 fa_parts))) d ps a r b D FP).
 Qed.
 
 Lemma mentions_dom : forall t, Mentions W u t -> In t Dom.
@@ -563,7 +570,7 @@ Lemma entries_rel : exists es1 es2,
   Forall2 (EntryRelM W th cS Dom) es1 es2.
 Proof.
   destruct PRf as (d & ps & a & r & b & outs1 & es1 & tm1 & D & FP & O1 & E1 & K1 & Eo).
-  destruct fa_parts as [_ [_ [_ [_ [PR _]]]]].
+  destruct fa_parts as [_ [_ [_ [_ PR]]]].
   destruct PR as (d' & ps' & a' & r' & b' & outs2 & es2 & tm2 & D' & FP' & O2 & E2 & K2 & ECr).
   rewrite D in D'. injection D' as <-. rewrite FP in FP'. injection FP' as <- <- <- <-.
   rewrite (no_outs outs1 O1) in *. rewrite (no_outs outs2 O2) in *.
@@ -617,7 +624,7 @@ Proof.
   rewrite !canon_f, th_sigma, R. change (canon C (canon C t2) = canon C (canon C t2)). reflexivity.
 Qed.
 
-Theorem family_items_agree : ItemsAgree Cf Cr Cu outputs th
+Theorem items_agree_gen : ItemsAgree Cf Cr Cu outputs th
   (fun r m g => In (mkey r m) ks /\ mlook r m (c_mths Cr) = Some g) keys.
 Proof.
   destruct entries_rel as (es1 & es2 & Eo & EK1 & ECr & EK2 & Fr).
@@ -625,10 +632,8 @@ Proof.
   rewrite Forall_forall in FL.
   assert (SubO : c_sub outputs = σ) by (rewrite Eo; reflexivity).
   assert (SubR : c_sub Cr = cS).
-  { rewrite ECr. cbn. unfold cS. exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))). }
-  assert (SubCf : c_sub Cf = cS) by exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))).
-  assert (NdK : NoDup (keys_of (fun p => entry_key cS (snd p)) L)).
-  { pose proof (proj2 (proj2 (proj2 (proj2 (proj2 fa_parts))))) as Nd. rewrite EK2, prov_id_keys, keys_of_map in Nd. exact Nd. }
+  { rewrite ECr. cbn. unfold cS. exact SubCf0. }
+  assert (SubCf : c_sub Cf = cS) by exact SubCf0.
   (* a method pair *)
   assert (Pm : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 -> exists r2 g2 a2, snd p = NMth r2 m g2 a2 /\
      app_subst th r1 = app_subst cS r2 /\ PublicOutputSubst.SigRel th cS g1 g2 /\
@@ -639,9 +644,26 @@ Proof.
   assert (Pm2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 -> exists r1 g1 a1, fst p = NMth r1 m g1 a1).
   { intros p r2 m g2 a2 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
     destruct (fst p) as [?|?|?|r1 m1 g1 a1|?]; try contradiction. destruct R as (-> & _). eauto. }
-  (* the pairs are determined by their caller keys *)
-  assert (Upair : forall p p' k, In p L -> In p' L -> entry_key cS (snd p) = Some k -> entry_key cS (snd p') = Some k -> p = p')
-    by (intros p p' k Ip Ip' E E'; exact (keys_unique _ _ L NdK p p' k Ip Ip' E E')).
+  (* the pairs are determined by their caller method keys: the caller's
+     keys are distinct, or a caller key's method names one family key *)
+  assert (Upair : forall p p' r m, In p L -> In p' L -> entry_key cS (snd p) = Some (mkey r m) ->
+    entry_key cS (snd p') = Some (mkey r m) -> p = p').
+  { intros p p' r m Ip Ip' E E'. destruct Uniq as [Nd|[Nd1 MD]].
+    - rewrite EK2, prov_id_keys, keys_of_map in Nd. exact (keys_unique _ _ L Nd p p' _ Ip Ip' E E').
+    - rewrite EK1, prov_id_keys, keys_of_map in Nd1.
+      destruct (snd p) as [?|?|?|r2 m2 g2 a2|?] eqn:S2; cbn in E; try discriminate. injection E as _ Em. subst m2.
+      destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?] eqn:S2'; cbn in E'; try discriminate. injection E' as _ Em'. subst m2'.
+      destruct (Pm2 p r2 m g2 a2 Ip S2) as (r1 & g1 & a1 & F1).
+      destruct (Pm2 p' r2' m g2' a2' Ip' S2') as (r1' & g1' & a1' & F1').
+      assert (I1 : In (mkey (app_subst σ r1) m) (keys_of (entry_key σ) (map fst L))).
+      { apply keys_of_in. exists (NMth r1 m g1 a1). split; [rewrite <- F1; exact (in_map fst _ _ Ip)|reflexivity]. }
+      assert (I1' : In (mkey (app_subst σ r1') m) (keys_of (entry_key σ) (map fst L))).
+      { apply keys_of_in. exists (NMth r1' m g1' a1'). split; [rewrite <- F1'; exact (in_map fst _ _ Ip')|reflexivity]. }
+      rewrite <- EK1 in I1, I1'.
+      pose proof (MD _ _ _ _ _ _ _ _ I1 I1' eq_refl eq_refl (or_introl eq_refl)) as Ek.
+      apply (keys_unique _ _ L Nd1 p p' (mkey (app_subst σ r1) m) Ip Ip').
+      + rewrite F1. reflexivity.
+      + rewrite F1', Ek. reflexivity. }
   (* each side's method key is unique *)
   assert (Key2 : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 ->
      entry_key cS (snd p) = Some (mkey (app_subst th (app_subst σ r1)) m)).
@@ -652,12 +674,12 @@ Proof.
   { intros p r1 m g1 a1 Ip E e' Ie' Ek. apply in_map_iff in Ie' as [p' [<- Ip']].
     destruct (fst p') as [?|?|?|r1' m' g1' a1'|?] eqn:E'; cbn in Ek; try discriminate.
     injection Ek as Er ->. pose proof (Key2 p' r1' m g1' a1' Ip' E') as K'. rewrite Er in K'.
-    rewrite (Upair p' p _ Ip' Ip K' (Key2 p r1 m g1 a1 Ip E)) in E'. congruence. }
+    rewrite (Upair p' p _ _ Ip' Ip K' (Key2 p r1 m g1 a1 Ip E)) in E'. congruence. }
   assert (Un2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 ->
      forall e', In e' (map snd L) -> entry_key cS e' = Some (mkey (app_subst cS r2) m) -> e' = NMth r2 m g2 a2).
   { intros p r2 m g2 a2 Ip E e' Ie' Ek. apply in_map_iff in Ie' as [p' [<- Ip']].
     assert (Ek0 : entry_key cS (snd p) = Some (mkey (app_subst cS r2) m)) by (rewrite E; reflexivity).
-    rewrite (Upair p' p _ Ip' Ip Ek Ek0). exact E. }
+    rewrite (Upair p' p _ _ Ip' Ip Ek Ek0). exact E. }
   (* one pair: the family's run-time key at θ is the caller's *)
   assert (Core : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 -> In (mkey (app_subst σ r1) m) keys ->
      exists r2 g2 a2, snd p = NMth r2 m g2 a2 /\
@@ -699,7 +721,7 @@ Proof.
     assert (Er2 : app_subst cS r2' = r).
     { unfold rkey in Kr'. injection Kr' as Er2 _. symmetry. exact Er2. }
     assert (Pp : p' = p).
-    { apply (Upair p' p (mkey r m) Ip' Ip); [rewrite E2'; cbn; rewrite Er2; reflexivity|rewrite Ep; cbn; rewrite Er; reflexivity]. }
+    { apply (Upair p' p r m Ip' Ip); [rewrite E2'; cbn; rewrite Er2; reflexivity|rewrite Ep; cbn; rewrite Er; reflexivity]. }
     subst p'. rewrite Ep' in E1. injection E1 as <- <- <-. rewrite <- Erf in Mgf. rewrite M1 in Mgf. injection Mgf as <-.
     destruct (Pm p r1' m g1' a1' Ip Ep') as (r2x & g2x & a2x & E2x & Rr & [Sp Sr] & _ & Sc).
     rewrite Ep in E2x. injection E2x as <- <- <-.
@@ -722,3 +744,44 @@ Proof.
 Qed.
 
 End FamilyAgree.
+
+(* A family application (FamilyApplication), as PlatformApply's
+   family_result_agrees uses it. *)
+Section FamilyAgreeFA.
+Variable W : A.world.
+Variables (C : A.cx) (u : nat) (matching th : subst) (sm : smap) (Cr : A.cx) (ks : list item).
+Variables (Cu : A.cx) (needs : list item) (outputs : A.cx) (keys : list item).
+Import A.
+
+Hypothesis FA : FamilyApplication W C u matching th sm Cr ks.
+Hypothesis FCu : FunCtx W u Cu needs.
+Hypothesis NoOut : forall t, ~ FunOutputs W u t.
+Hypothesis PRf : ProvideResult W u Cu (fun t => TAbs t) outputs keys.
+Hypothesis KeysM : forall key, In key keys -> exists r m a, key = IMth r m a /\ kind_sym W m = Some DKMeth.
+Hypothesis Idem : forall t, canon C (canon C t) = canon C t.
+(* An extra key of the family context's table that a path names is a type
+   symbol (a table's keys are type symbols or generations). *)
+Hypothesis KeysT : forall q pa x, resolve_sym W q pa = Some x ->
+  nlook x (c_ty (family_context C matching)) <> None -> nlook x (c_ty Cu) = None -> kind_sym W x = Some DKType.
+
+Theorem family_items_agree : ItemsAgree (family_context C matching) Cr Cu outputs th
+  (fun r m g => In (mkey r m) ks /\ mlook r m (c_mths Cr) = Some g) keys.
+Proof.
+  destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
+  destruct Sat as [_ [_ [_ [_ Merge]]]].
+  apply (items_agree_gen W C u th (family_context C matching) (fun t => TAbs t) Cr ks Cu needs outputs keys).
+  - exact (proj1 (proj2 (PublicFormation.family_context_shape matching C))).
+  - split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].
+    intros d ps a r b D FP. destruct Shape as (d' & n & ps' & a' & r' & D' & Ast & _).
+    rewrite D in D'. injection D' as <-. rewrite Ast in FP. cbn in FP. injection FP as _ _ _ <-. reflexivity.
+  - left. exact Nd.
+  - exact FCu.
+  - exact NoOut.
+  - exact PRf.
+  - exact KeysM.
+  - exact Idem.
+  - exact KeysT.
+Qed.
+
+End FamilyAgreeFA.

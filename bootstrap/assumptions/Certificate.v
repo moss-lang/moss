@@ -16,7 +16,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
-  PublicChainCore PublicChainNew PublicScoping.
+  PublicChainCore PublicChainNew PublicChainFwd PublicScoping.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -31,6 +31,7 @@ Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims Public
 Module PublicLinkRes := PublicLinkResults.LinkResults PublicClosureExample.Prims PublicInterp.
 Module PublicChainCoreI := PublicChainCore.ChainCore PublicClosureExample.Prims PublicInterp.
 Module PublicChainNewI := PublicChainNew.ChainNew PublicClosureExample.Prims PublicInterp.
+Module PublicChainFwdI := PublicChainFwd.ChainFwd PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
@@ -131,6 +132,9 @@ Definition certificate_roots :=
   @NM.PublicChainAgree.copy_news_methods,
   @PublicPlatform.family_result_agrees,
   @NM.PublicFamilyAgree.family_items_agree,
+  @NM.PublicFamilyAgree.items_agree_gen,
+  @PublicChainFwdI.chain_forward_keys,
+  @NM.PublicChainFwd.news_method_key,
   @NM.PublicFamilyAgree.family_entries_rel,
   @PublicPlatform.platform_not_linked,
   @PublicEntryTop.entry_realizes,

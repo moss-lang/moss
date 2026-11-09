@@ -1,7 +1,6 @@
 # Status: ChainForwardKeys ("chainfwd")
 
-Branch ob-chainfwd, from safety at 7b39518, with safety 67343d6 merged. check.sh passed at
-step 1 (1188d54). After that only an example and this file changed.
+Branch ob-chainfwd, from safety at 7b39518, with safety 67343d6 merged. check.sh passes.
 
 ## Step 1 (done): copy-chain facts
 
@@ -67,26 +66,46 @@ Consequences:
       under them.
   This needs a decision by the coordinator or user.
 
-What still looks provable:
-- The empty-chain case (u = h0, a direct `bind Heap;`/`bind Arrays;`),
-  from a generalisation of PublicFamilyAgree.family_items_agree to
-  AppPremises with Cf = C.
-- Needed for that:
-  - The section hypotheses replace FamilyApplication by its parts:
-    th's shape, InF, the merge clause, functor body None, ProvideResult
-    at Cf, and c_sub Cf = c_sub C.
-  - NoDup (map provision_id ks) has to be replaced. AppPremises does not
-    give it, and duplicate root items cannot be excluded without it.
-    Use a "last pair" lookup lemma: with MethodsDistinct, caller keys
-    are equal exactly when root keys are equal, so ilook on both sides
-    hits the same pair.
-  - KeysT for C (DomT's second clause): FormedCx's TysScoped is too
-    weak alone. It also needs "a path names no generation" or a premise
-    like FamilyKeysTyped.
-  - Body None for a platform root: not derivable from Platform.Family
-    as it stands.
-- Not started, since the copy case is blocked on the decision above.
+## Step 2b: the empty chain is proved
+
+- `PublicFamilyAgree`:
+  - The FamilyAgree section now takes its facts as parts, so it no
+    longer needs a FamilyApplication:
+    - Cf with `c_sub Cf = c_sub C`;
+    - th's shape, InF, the merge clause, the functor having no body;
+    - `ProvideResult W u Cf out2 Cr ks`, for any out2;
+    - `Uniq`: `NoDup (map provision_id ks)`, or the family's keys
+      distinct with `Platform.MethodsDistinct`.
+  - `Upair`, which says pairs are determined by their caller method
+    keys, is proved in either case.
+  - `items_agree_gen` is the general theorem. `family_items_agree`
+    keeps its statement and is now a corollary of it.
+- `PublicChainFwd.v` (new; a Certificate root):
+  - `news_method_key` and `mlook_news`.
+  - `ChainFwd.chain_forward_keys : PlatformAbstract ->
+    PlatformKeysDistinct -> AppKeysTyped -> ChainForwardCopyKeys ->
+    PA.ChainForwardKeys`.
+  - For sms = [], the chain is empty (`chain_nil`, u = h0).
+    items_agree_gen at Cf = C (AppPremises) gives the keys clause. The
+    signature clause comes from the syntactic agreement through
+    Absorbs.
+  - New premises:
+    - `ChainForwardCopyKeys`: ChainForwardKeys with `sms <> []`. False
+      as stated (above); waiting on the roles design.
+    - `PlatformAbstract`: a platform family's declaration has no body
+      (lib/wasm.moss).
+    - `PlatformKeysDistinct`: a platform family's items are distinct
+      (`NoDup (map provision_id keys)`).
+    - `AppKeysTyped`: FamilyKeysTyped at an AppPremises. An extra key
+      of the caller's table that a path names is a type symbol.
+- `safety_obligations` lists these four in place of
+  `PA.ChainForwardKeys`. `KeptOutputsUnmentioned` is unchanged.
+
+The two platform premises could also be added to Platform.Family as
+Audit conjuncts, like MethodsDistinct. AppKeysTyped and FamilyKeysTyped
+share one argument (formation: no path names a generation) and could be
+discharged together.
 
 ## Time
 
-About 2 hours.
+About 3.5 hours.
