@@ -65,31 +65,69 @@ it asks for a root key k0 with `θ(rkey_of outputs k0) = rkey C' r m`
    in Cu, from CCStep's ST/Sub; s2 = c_sub Cu). Then induct along the
    chain.
 
-**Concern: the syntactic key may fail.** CopyOutputs equates the
-instantiations (and signatures) only up to sg. sg reads the copy's fixed
-inputs as at the copy site. The caller's run-time key needs the
-instantiation syntactically.
+### The edge case, settled (no Audit change)
 
-Example: a copy F[Arrayed, Y] of Arrays has an item
-`Array[I32 = Y].length`. The copy site binds `I32 = Y`, so sg I32 = Y.
-Later, at the application, Y (polymorphic in F) is rebound, say
-`bind Y = Int`. Then:
-- the caller's instantiation reads I32 as Int;
-- θ reads the root's I32 as C's entry for I32, TAbs Y.
-The two agree at ground d but not syntactically, so the caller's lookup
-at `rkey C' r m` would miss the installed primitive.
+Tested on the oracle (moss_m2.exe at this worktree) and native
+(ob-family's `target/release/moss`):
 
-This is the saved-type-rebinding family of issues
-(examples/saved-type-rebinding.moss). I have not checked whether
-Audit/oracle/native accept such a program. If they do, ChainForwardKeys
-is false for it, and the fix belongs in CopyOutputs (compare
-instantiations without sg, or forbid a fixed input whose copy-site
-reading mentions a polymorphic input of F). Check this before investing
-in steps 1-3. results3's ChainNewOk (linked roots through copies) faces
-the same converse and the same sg question. MethodsDistinct does not
-help there (user code), so it needs option 1 or 3 from
-famplat-STATUS.md.
+- **`bootstrap/examples/copy-fixed-rebind.moss`.** A copy F[Arrayed, Y]
+  of Arrays with `Array.length[I32 = Y]`, copied after `bind I32 = Y`,
+  then Y rebound before `bind F;`. Both implementations reject the copy:
+  - the oracle: "copying `Arrays` after rebinding its fixed input `I32`
+    changes its interpretation (D84)";
+  - native: "the available binding was provided at a different type
+    instantiation: `Arrays`".
+
+  Audit rejects it too, through BFunCopy's `FixedAgreement W C h`
+  (syntactic, at canon C). A copy site reads h's fixed inputs exactly as
+  h's recorded readings.
+- **`bootstrap/examples/copy-fixed-bracket.moss`.** A valid variant: F's
+  `Array.length[I32 = Z]`, Z fixed in F and read as I32 at the copy site.
+  It runs and prints 42 on both. Rebinding Z before `bind F;` is
+  rejected by both:
+  - the oracle: "applying `F` here reads `Z` as `Bool`, but `F` is fixed
+    in it ...";
+  - native: "provided at a different type instantiation".
+
+  This is AppPremises' fixed clause.
+
+Why the mismatch cannot arise for a platform root:
+- CopyOutputs compares receivers exactly (`provision_id`). The root's
+  polymorphic inputs (Boxed, Arrayed, Memory) are its receivers or
+  receiver parameters, so their instantiation entries are pinned on both
+  sides.
+- The other instantiation and signature positions hold fixed inputs of h.
+  The copy site must read these exactly as recorded (FixedAgreement),
+  back to the root's own readings (main's machine types).
+- A fixed input of u is pinned at the application by AppPremises.
+
+So for every position, sg's image never mentions a polymorphic input of
+u, and equality up to sg becomes equality at θ, canonically in C.
+
+### What the proof of ChainForwardKeys needs (not started)
+
+The argument above uses syntactic facts that the copy chain does not
+carry. `CCStep`/`ClosureOk.CCopy` record sg only grounded
+(`gfx = ground_fixed m sg`). Before step 1 of the plan, extend
+`CCopy`/`CCStep` (PublicBodySlice, PublicCopyApply; shared with results4,
+so coordinate) with, at the copy site C1:
+- `sg = map (fun q => (fst q, canon C1 (snd q))) fx`, where fx is the
+  `c_funs` entry `set_fun` records for u. BFunCopy has it verbatim. In a
+  formed C1 the entries are canonical, so sg = fx.
+- h's `FixedAgreement` at C1, relating sg on h's fixed inputs to h's own
+  recorded readings.
+- The root's fixed readings, which are the machine types (PlatformFixed).
+  This is syntactic at main through FixedMachinesRead and needs a
+  syntactic version of CPlatform's PlatformFixed.
+
+Then, at the application, AppPremises' fixed clause gives
+`canon C (C.ty x) = canon C (fx x)`. With these, steps 1-3 of the plan
+apply. One gap remains: the application's canon C versus the copy site's
+canon C1 on the recorded readings. This needs `canon C (canon C1 t) =
+canon C t` for recorded t, or that the recorded readings are canonical
+at both sites, and has to be checked. results4's linked-root chains need
+the same facts.
 
 ## Time
 
-About 3.5 hours.
+About 4.5 hours.
