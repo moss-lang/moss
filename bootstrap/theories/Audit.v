@@ -3911,11 +3911,6 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : l
        nth_error rm i = Some j /\ nth_error ks' j = Some k' /\ provision_id k' = provision_id k /\
        (forall j' k'', j < j' -> nth_error ks' j' = Some k'' -> provision_id k'' <> provision_id k)).
 
-(* Restore fresh output generations to their declared symbols when filing
-   the reusable code body. Input meanings remain those of the target. *)
-Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : item :=
-  app_subst_item (map (fun t => (gen t, TAbs t)) outs) k.
-
 (* A promised item is compared with the body's at the body's meanings of
    the renamed symbols (each output role at what the body's type table
    makes of its output, canonically), as the oracle's promised_result_type
