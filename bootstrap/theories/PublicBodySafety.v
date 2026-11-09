@@ -126,7 +126,10 @@ Definition cmeaning (d : environment) (x : nat) : ty :=
 
 (* The type table, as the environment's aliases record it. *)
 Definition AliasOk (C : A.cx) (d : environment) : Prop :=
-  forall x tx, A.nlook x (A.c_ty C) = Some tx -> cmeaning d x = ground d tx.
+  forall x tx, A.nlook x (A.c_ty C) = Some tx -> output_meaning d x = Some (ground d tx).
+
+Lemma alias_cmeaning : forall C d x tx, AliasOk C d -> A.nlook x (A.c_ty C) = Some tx -> cmeaning d x = ground d tx.
+Proof. intros C d x tx Al L. unfold cmeaning. rewrite (Al x tx L). reflexivity. Qed.
 
 (* The static locals and receiver, realized in a positional type list,
    and the type table in the environment's aliases. *)

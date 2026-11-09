@@ -388,7 +388,7 @@ Lemma chain_keys : forall u gfx sms h0 gf0 sms0, CopyA.CopyChain W u gfx sms h0 
   forall Cu nsu Ch0 nsh0, A.FunCtx W u Cu nsu -> A.FunCtx W h0 Ch0 nsh0 ->
   incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)).
 Proof.
-  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh _ _ _ _ _ Sub];
+  intros u gfx sms h0 gf0 sms0 Ch. induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh _ _ _ _ _ Sub _];
     intros Cu' nsu' Ch0 nsh0 FCu' FC0.
   - destruct (S.functx_unique W _ _ _ _ _ FCu' FC0) as [-> _]. intros x I. exact I.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu') as [<- _].
@@ -402,7 +402,7 @@ Lemma chain_adapt : forall u gfx sms h0 gf0, CopyA.CopyChain W u gfx sms h0 gf0 
   exists e2, adapt_provisions e1 sms = Some e2.
 Proof.
   intros u gfx sms h0 gf0 Ch. remember [] as sms0 eqn:E0.
-  induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh Incl _ SN ST _ Sub];
+  induction Ch as [u gfx sms|u h Cu nsu Ch nsh gfx gfh sms h0 gf0 sms0 _ IH FCu FCh Incl _ SN ST _ Sub _];
     intros rr H d f Cu' nsu' e1 FCu' Real.
   - subst sms. exists e1. reflexivity.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu') as [<- <-].
@@ -640,7 +640,7 @@ Proof.
       unfold A.output_type_map in Lx. cbn [map app] in Lx. rewrite !S.lookup_map_snd in Lx.
       destruct (lookup_subst x (A.c_ty C)) as [t0|] eqn:L0; [|discriminate]. cbn [option_map] in Lx.
       injection Lx as <-. rewrite lookup_subst_nlook in L0.
-      change (cmeaning d x = ground d (A.canon C (A.canon C t0))). rewrite !Abs. exact (Al x t0 L0). }
+      change (output_meaning d x = Some (ground d (A.canon C (A.canon C t0)))). rewrite !Abs. exact (Al x t0 L0). }
   split; [exact Lt|]. split; [exact St|]. split; [exact RealC'|].
   split; [|exact (proj2 Fmd)].
   apply (PublicFormation.apply_abstract_formed W C u gensof C' ks (proj1 Fmd)); [|exact PR].

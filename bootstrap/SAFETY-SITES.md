@@ -558,6 +558,14 @@ the local store. *C* and *F* are the static context and frame.
   elaborated contexts but not for every formed one. Proving them needs
   invariants in `Formed` (scoped local and provision types, signature
   coherence) preserved through the slice.
+- **Gap: a linked body could not rebind an output its result mentions (fixed).**
+  [result-output-meaning.moss](examples/result-output-meaning.moss): G binds
+  `T = Bool` and provides F's `fn mk(): T`. G's body files `mk` at
+  `() -> Bool`, but `ResultRealizes` compared it with F's promise renamed to
+  `() -> T`, so `LinkBody` failed and Audit rejected the standard functor
+  pattern, which both implementations accept. `ResultRealizes` now compares
+  at the body's meanings of the outputs, as the oracle's
+  `promised_result_type` does (scratch/orch/results-AUDIT.md).
 
 ## Body-safety slice (checked, conditional)
 

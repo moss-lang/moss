@@ -398,8 +398,11 @@ Proof.
          split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]. }
     - intros n1 t mu Found. rewrite (BS.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply BS.alias_self; [reflexivity|exact (proj1 RealG)|].
-      destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG. }
+    - apply BS.alias_self; [reflexivity|exact (proj1 RealG)| |].
+      + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
+      + intros k0 v0 L0. unfold de, application_environment. change (view_functor P h) with (A.funbody_of Prog h).
+        rewrite FB. cbn [type_meanings fc_inputs]. rewrite BS.lookup_map_nat; [discriminate|].
+        change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
   pose proof (BS.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
     captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
   destruct (BS.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
