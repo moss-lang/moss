@@ -3650,34 +3650,43 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 (* Whether a `break` in an expression, block or statement leaves the
    innermost loop around it: one not inside a nested `while` or `loop`
    (note 42). *)
-Inductive Breaks : aexpr -> Prop :=
-| BkBreak : Breaks AEBreak
-| BkCall : forall p a args y, In y args -> Breaks y -> Breaks (AECall p a args)
-| BkField : forall o n, Breaks o -> Breaks (AEField o n)
-| BkMethRecv : forall o p args, Breaks o -> Breaks (AEMeth o p args)
-| BkMethArg : forall o p args y, In y args -> Breaks y -> Breaks (AEMeth o p args)
-| BkRec : forall p a fs n y, In (n, Some y) fs -> Breaks y -> Breaks (AERec p a fs)
-| BkIfC : forall c b e, Breaks c -> Breaks (AEIf c b e)
-| BkIfB : forall c b e, BlockBreaks b -> Breaks (AEIf c b e)
-| BkIfE : forall c b y, Breaks y -> Breaks (AEIf c b (Some y))
-| BkMatchS : forall s arms, Breaks s -> Breaks (AEMatch s arms)
-| BkMatchA : forall s arms pt y, In (pt, y) arms -> Breaks y -> Breaks (AEMatch s arms)
-| BkReturn : forall y, Breaks y -> Breaks (AEReturn (Some y))
-| BkBlock : forall b, BlockBreaks b -> Breaks (AEBlock b)
-| BkUnary : forall op y, Breaks y -> Breaks (AEUnary op y)
-| BkBinL : forall op l r, Breaks l -> Breaks (AEBinary op l r)
-| BkBinR : forall op l r, Breaks r -> Breaks (AEBinary op l r)
-with BlockBreaks : ablock -> Prop :=
-| BBStmt : forall ss tl s, In s ss -> StmtBreaks s -> BlockBreaks (ABlock ss tl)
-| BBTail : forall ss y, Breaks y -> BlockBreaks (ABlock ss (Some y))
-with StmtBreaks : astmt -> Prop :=
-| SBLet : forall n t y, Breaks y -> StmtBreaks (ASLet n t y)
-| SBVar : forall n t y, Breaks y -> StmtBreaks (ASVar n t y)
-| SBAssign : forall n y, Breaks y -> StmtBreaks (ASAssign n y)
-| SBExpr : forall y, Breaks y -> StmtBreaks (ASExpr y)
-| SBBind : forall its sp y, In (sp, Some y) its -> Breaks y -> StmtBreaks (ASBind its)
+Inductive Breaks (W : world) : string -> aexpr -> Prop :=
+| BkBreak : forall md,Breaks W md AEBreak
+| BkCall : forall md p a args y, In y args -> Breaks W md y -> Breaks W md (AECall p a args)
+| BkField : forall md o n, Breaks W md o -> Breaks W md (AEField o n)
+| BkMethRecv : forall md o p args, Breaks W md o -> Breaks W md (AEMeth o p args)
+| BkMethArg : forall md o p args y, In y args -> Breaks W md y -> Breaks W md (AEMeth o p args)
+| BkRec : forall md p a fs n y, In (n, Some y) fs -> Breaks W md y -> Breaks W md (AERec p a fs)
+| BkIfC : forall md c b e, Breaks W md c -> Breaks W md (AEIf c b e)
+| BkIfB : forall md c b e, BlockBreaks W md b -> Breaks W md (AEIf c b e)
+| BkIfE : forall md c b y, Breaks W md y -> Breaks W md (AEIf c b (Some y))
+| BkMatchS : forall md s arms, Breaks W md s -> Breaks W md (AEMatch s arms)
+| BkMatchA : forall md s arms pt y, In (pt, y) arms -> Breaks W md y -> Breaks W md (AEMatch s arms)
+| BkReturn : forall md y, Breaks W md y -> Breaks W md (AEReturn (Some y))
+| BkBlock : forall md b, BlockBreaks W md b -> Breaks W md (AEBlock b)
+| BkUnary : forall md op y, Breaks W md y -> Breaks W md (AEUnary op y)
+| BkBinL : forall md op l r, Breaks W md l -> Breaks W md (AEBinary op l r)
+| BkBinR : forall md op l r, Breaks W md r -> Breaks W md (AEBinary op l r)
+with BlockBreaks (W : world) : string -> ablock -> Prop :=
+| BBStmt : forall md ss tl s, In s ss -> StmtBreaks W md s -> BlockBreaks W md (ABlock ss tl)
+| BBTail : forall md ss y, Breaks W md y -> BlockBreaks W md (ABlock ss (Some y))
+with StmtBreaks (W : world) : string -> astmt -> Prop :=
+| SBLet : forall md n t y, Breaks W md y -> StmtBreaks W md (ASLet n t y)
+| SBVar : forall md n t y, Breaks W md y -> StmtBreaks W md (ASVar n t y)
+| SBAssign : forall md n y, Breaks W md y -> StmtBreaks W md (ASAssign n y)
+| SBExpr : forall md y, Breaks W md y -> StmtBreaks W md (ASExpr y)
+| SBBind : forall md its it, In it its -> ItemBreaks W md it -> StmtBreaks W md (ASBind its)
 (* a `while` condition is evaluated outside the loop it controls *)
-| SBWhile : forall c b, Breaks c -> StmtBreaks (ASWhile c b).
+| SBWhile : forall md c b, Breaks W md c -> StmtBreaks W md (ASWhile c b)
+(* a bind item breaks when its expression does, or, for `bind F;` with F
+   a functor with a body, when an item of F's body does: the body's binds
+   run in place, inside the loop around the `bind` (read in F's module) *)
+with ItemBreaks (W : world) : string -> spec * option aexpr -> Prop :=
+| IBExpr : forall md sp y, Breaks W md y -> ItemBreaks W md (sp, Some y)
+| IBApply : forall md pa u d n ps a r bodies it,
+    resolve_sym W md pa = Some u -> w_decl W u = Some d -> d_ast d = ADFunctor n ps a r (Some bodies) ->
+    In it (concat bodies) -> ItemBreaks W (d_mod d) it ->
+    ItemBreaks W md (Spec (Some pa) None None, None).
 
 (* The type a block has as a branch of an `if` or a `match` arm: its
    tail's, and `()` without a tail, even if it cannot fall through
@@ -4119,14 +4128,14 @@ with Blk (W : world) (P : program) : frame -> cx -> list astmt -> option aexpr -
     Blk W P F C rest tl exp xr t made ->
     Blk W P F C (ASWhile c b :: rest) tl exp (ESeq (EWhile cx' bx) xr) t made
 | BlkLoop : forall F C b rest tl exp bx bt xr t made,
-    (rest <> [] \/ tl <> None \/ BlockBreaks b) ->
+    (rest <> [] \/ tl <> None \/ BlockBreaks W (fr_mod F) b) ->
     BlkE W P (with_loop F) C b None bx bt ->
     Blk W P F C rest tl exp xr t made ->
     Blk W P F C (ASLoop b :: rest) tl exp (ESeq (ELoop bx) xr) t made
 (* a block whose last statement is a `loop` no `break` leaves cannot fall
    through (note 42) *)
 | BlkLoopLast : forall F C b exp bx bt,
-    BlkE W P (with_loop F) C b None bx bt -> ~ BlockBreaks b ->
+    BlkE W P (with_loop F) C b None bx bt -> ~ BlockBreaks W (fr_mod F) b ->
     Blk W P F C [ASLoop b] None exp (ESeq (ELoop bx) EUnit) never []
 (* a bind statement: its items in order, each wrapping the rest *)
 | BlkBind : forall F C its rest tl exp wrap C' F' xr t made made',

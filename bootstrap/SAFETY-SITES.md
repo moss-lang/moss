@@ -139,6 +139,18 @@ the local store. *C* and *F* are the static context and frame.
   environment has exactly the outer call's meanings and provisions
   (`self_meanings`, `realizes_transfer`). The implementation follow-up is
   [E27](proofs/build-run.md#e27).
+- **Counterexample: a functor body's `break` (fixed).**
+  [functor-body-break.moss](examples/functor-body-break.moss): `bind G;`,
+  for `G` with a body, runs `G`'s binds in place, in the caller's frame, so
+  `G`'s `bind v = break;` leaves the loop around `bind G;`. `Breaks` was
+  syntactic and counted `bind G;` as never breaking, so
+  `fn f(): Int { loop { bind G; } }` typed the loop `never`. The oracle
+  accepts it and reports `stuck (XErr 14)`. The native compiler counts the
+  break and rejects it, and both run the well-typed variant correctly.
+  **Decided** (user-approved): `Breaks`, `BlockBreaks` and `StmtBreaks`
+  take the world and module, and a new `ItemBreaks` counts `bind F;` as
+  breaking when an item of `F`'s body does (in `F`'s module). The oracle's
+  follow-up is [E28](proofs/build-run.md#e28).
 - **Counterexample: a call could bind a callee's merged class inconsistently
   (fixed).**
   [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
@@ -256,7 +268,7 @@ hypotheses, each a named remaining obligation:
 | `demand_case` | family applications a call demands (`Demand` wrappers) | T15, T16 |
 | `family_method_case` | methods a family supplies at the call (functor application) | T15, T16 |
 | `literal_family_case` | literal arithmetic a family supplies (functor application) | T15, T16 |
-| `case_BApplyBody`, `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and applications | T15, T16 |
+| `case_BApplyAbstract`, `case_BFunCopy`, `case_BFunClosure` | functor binds and abstract applications (`bind F;` for F with a body is proved in `item_safe`) | T15, T16 |
 | `ex_nominal_formed` | a nominal receiver's arguments are keyed by its requirements | T29 |
 | `lambda_keys_scoped` | a lambda's context lists method keys whose receivers mention only its generations | T29 |
 | `bind_nominal_formed` | a method bind's nominal key receiver has its arguments keyed by its requirements | T29 |
@@ -364,3 +376,6 @@ without touching any proof.
 - Wrapped `main` test, `theta_ctx` after approval, and wrapper method
   providers (`wrapped_callable`, `wrapped_meth_bind_safe`); method binds
   are now fully proved (23:25 to 00:05).
+- Functor design reading; functor-body `break` counterexample, `Breaks`
+  with the world after approval, and `bind F;` for a functor with a body
+  (00:05 to 00:50).

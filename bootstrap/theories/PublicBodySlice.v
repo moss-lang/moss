@@ -99,20 +99,20 @@ Notation Outcome := (O.Outcome W P state_ok).
 
 Definition SafeEx k : Prop := forall F C a exp x t, A.Ex W Prog F C a exp x t ->
   forall d types H g st, Pre k F C d types H g st ->
-  Outcome F d H types t (A.Breaks a) (I.eval k P d g st x).
+  Outcome F d H types t (A.Breaks W (A.fr_mod F) a) (I.eval k P d g st x).
 Definition SafeBlk k : Prop := forall F C ss tl exp x t made, A.Blk W Prog F C ss tl exp x t made ->
   forall d types H g st, Pre k F C d types H g st ->
-  Outcome F d H types t (A.BlockBreaks (ABlock ss tl)) (I.eval k P d g st x).
+  Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) (ABlock ss tl)) (I.eval k P d g st x).
 Definition SafeBlkE k : Prop := forall F C b exp x t, A.BlkE W Prog F C b exp x t ->
   forall d types H g st, Pre k F C d types H g st ->
-  Outcome F d H types t (A.BlockBreaks b) (I.eval k P d g st x).
+  Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) b) (I.eval k P d g st x).
 Definition SafeBranch k : Prop := forall F C y exp x t, A.Branch W Prog F C y exp x t ->
   forall d types H g st, Pre k F C d types H g st ->
-  Outcome F d H types t (A.Breaks y) (I.eval k P d g st x).
+  Outcome F d H types t (A.Breaks W (A.fr_mod F) y) (I.eval k P d g st x).
 Definition SafeCond k : Prop := forall F C c x, A.Cond W Prog F C c x ->
   forall d types H g st, Pre k F C d types H g st ->
   exists b, A.LangSym W "bool" A.NSName "Bool" b /\
-    Outcome F d H types (TNom b []) (A.Breaks c) (I.eval k P d g st x).
+    Outcome F d H types (TNom b []) (A.Breaks W (A.fr_mod F) c) (I.eval k P d g st x).
 Definition Safe k : Prop := SafeEx k /\ SafeBlk k /\ SafeBlkE k /\ SafeBranch k /\ SafeCond k.
 Definition Below k : Prop := forall j, j <= k -> Safe j.
 
@@ -124,7 +124,7 @@ Definition StepSafe (k : nat) F C t (breaks : Prop) (x : expr) : Prop :=
 
 (* A method a family supplies at the call: a functor application (T15/T16). *)
 Hypothesis family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
   A.FamilyApplication W C u matching th sm C' ks ->
   In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
@@ -307,20 +307,20 @@ Proof.
   - destruct Out as [_ [L _]]; congruence.
 Qed.
 
-Lemma block_breaks_cons : forall s rest tl,
-  A.BlockBreaks (ABlock rest tl) -> A.BlockBreaks (ABlock (s :: rest) tl).
+Lemma block_breaks_cons : forall md s rest tl,
+  A.BlockBreaks W md (ABlock rest tl) -> A.BlockBreaks W md (ABlock (s :: rest) tl).
 Proof.
-  intros s rest tl B. inversion B; subst.
+  intros md s rest tl B. inversion B; subst.
   - eapply A.BBStmt; [right; eassumption|eassumption].
   - apply A.BBTail; assumption.
 Qed.
 
-Lemma stmt_breaks_block : forall s rest tl,
-  A.StmtBreaks s -> A.BlockBreaks (ABlock (s :: rest) tl).
-Proof. intros s rest tl B. eapply A.BBStmt; [left; reflexivity|exact B]. Qed.
+Lemma stmt_breaks_block : forall md s rest tl,
+  A.StmtBreaks W md s -> A.BlockBreaks W md (ABlock (s :: rest) tl).
+Proof. intros md s rest tl B. eapply A.BBStmt; [left; reflexivity|exact B]. Qed.
 
-Lemma path_never_breaks : forall pa a, ~ A.Breaks (AEPath pa a).
-Proof. intros pa a B; inversion B. Qed.
+Lemma path_never_breaks : forall md pa a, ~ A.Breaks W md (AEPath pa a).
+Proof. intros md pa a B; inversion B. Qed.
 
 Lemma assoc_slook : forall f (fs : list (fld * value)), I.assoc_fld f fs = A.slook f fs.
 Proof. intros f fs; induction fs as [|[g v] r IH]; cbn; [reflexivity|rewrite IH; reflexivity]. Qed.
@@ -354,7 +354,7 @@ Lemma while_safe : forall k, Below k -> forall j, j <= k ->
   forall F C c cx b bx bt d types H g st,
   A.Cond W Prog F C c cx -> A.BlkE W Prog (A.with_loop F) C b None bx bt ->
   Pre j F C d types H g st ->
-  Outcome F d H types TUnit (A.Breaks c) (I.eval j P d g st (EWhile cx bx)).
+  Outcome F d H types TUnit (A.Breaks W (A.fr_mod F) c) (I.eval j P d g st (EWhile cx bx)).
 Proof.
   intros k Bel j. induction j as [|j IH]; intros Le F C c cx b bx bt d types H g st Cond Body Pre0;
     [exact Logic.I|].
@@ -386,7 +386,7 @@ Lemma loop_safe : forall k, Below k -> forall j, j <= k ->
   A.BlkE W Prog (A.with_loop F) C b None bx bt ->
   Pre j F C d types H g st ->
   Outcome F d H types TUnit False (I.eval j P d g st (ELoop bx)) /\
-  (forall w, I.evaluation_signal (I.eval j P d g st (ELoop bx)) = Normal w -> A.BlockBreaks b).
+  (forall w, I.evaluation_signal (I.eval j P d g st (ELoop bx)) = Normal w -> A.BlockBreaks W (A.fr_mod F) b).
 Proof.
   intros k Bel j. induction j as [|j IH]; intros Le F C b bx bt d types H g st Body Pre0;
     [split; [exact Logic.I|cbn; discriminate]|].
@@ -408,7 +408,7 @@ Qed.
 (* Arguments evaluated in order: typed values, or a non-Normal outcome. *)
 Definition ArgSafe F C (breaks : Prop) (e : expr) (t : ty) : Prop :=
   exists a exp t', A.Ex W Prog F C a exp e t' /\
-    (A.fits t' t \/ A.fits (A.canon C t') (A.canon C t)) /\ (A.Breaks a -> breaks).
+    (A.fits t' t \/ A.fits (A.canon C t') (A.canon C t)) /\ (A.Breaks W (A.fr_mod F) a -> breaks).
 
 Lemma outcome_conv : forall F d H types t t' breaks r,
   (forall H' w, value_typed W P H' w (ground d t) -> value_typed W P H' w (ground d t')) ->
@@ -471,11 +471,11 @@ Proof.
   exists H; repeat split; auto. intros ? ? E; exact E.
 Qed.
 
-Lemma let_breaks : forall st n ann y mu, A.LetStmt st n ann y mu -> A.Breaks y -> A.StmtBreaks st.
-Proof. intros st n ann y mu Let B; destruct Let; [apply A.SBLet|apply A.SBVar]; exact B. Qed.
+Lemma let_breaks : forall md st n ann y mu, A.LetStmt st n ann y mu -> A.Breaks W md y -> A.StmtBreaks W md st.
+Proof. intros md st n ann y mu Let B; destruct Let; [apply A.SBLet|apply A.SBVar]; exact B. Qed.
 
-Lemma unit_never_breaks : ~ A.Breaks AEUnit.
-Proof. intro B; inversion B. Qed.
+Lemma unit_never_breaks : forall md, ~ A.Breaks W md AEUnit.
+Proof. intros md B; inversion B. Qed.
 
 Lemma unit_value : forall H w d, value_typed W P H w (ground d TUnit) -> w = VUnit.
 Proof. intros H w d T; inversion T; reflexivity. Qed.
@@ -497,7 +497,7 @@ Lemma record_args : forall F C pa a fs ftys xfs,
     exists n v vt, n = fst ft /\ In (n, v) fs /\
       A.Ex W Prog F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
       A.fits vt (snd ft)) ftys xfs ->
-  Forall2 (ArgSafe F C (A.Breaks (AERec pa a fs))) (map snd xfs) (map snd ftys) /\
+  Forall2 (ArgSafe F C (A.Breaks W (A.fr_mod F) (AERec pa a fs))) (map snd xfs) (map snd ftys) /\
   map fst xfs = map fst ftys.
 Proof.
   intros F C pa a fs ftys xfs Fields. induction Fields as [|ft xf ftys xfs [Name [n [v [vt [-> [In' [D Fits]]]]]]] Rest [IHA IHN]];
@@ -528,9 +528,9 @@ Qed.
 
 Lemma record_eval : forall k, Below k ->
   forall F C pa a fs ftys xfs d types H g st,
-  Forall2 (ArgSafe F C (A.Breaks (AERec pa a fs))) (map snd xfs) (map snd ftys) ->
+  Forall2 (ArgSafe F C (A.Breaks W (A.fr_mod F) (AERec pa a fs))) (map snd xfs) (map snd ftys) ->
   map fst xfs = map fst ftys -> Pre k F C d types H g st ->
-  Outcome F d H types (TRecord ftys) (A.Breaks (AERec pa a fs)) (I.eval k P d g st (ERecord xfs)).
+  Outcome F d H types (TRecord ftys) (A.Breaks W (A.fr_mod F) (AERec pa a fs)) (I.eval k P d g st (ERecord xfs)).
 Proof.
   intros [|k] Bel F C pa a fs ftys xfs d types H g st Args Names Pre0; [exact Logic.I|].
   cbn [I.eval]. pose proof (args_safe (S k) Bel k ltac:(lia) _ _ _ _ _ d types H g st Args (pre_lower Pre0)) as Out.
@@ -547,7 +547,7 @@ Lemma assign_eval : forall k, Below k ->
   forall F C n y tv v vt d types H g st,
   A.slook n (A.c_locals C) = Some (tv, A.LVar) -> A.Named F n ->
   A.Ex W Prog F C y (Some tv) v vt -> A.fits vt tv -> Pre k F C d types H g st ->
-  Outcome F d H types TUnit (A.Breaks y) (I.eval k P d g st (EAssign (A.var_of F n) v)).
+  Outcome F d H types TUnit (A.Breaks W (A.fr_mod F) y) (I.eval k P d g st (EAssign (A.var_of F n) v)).
 Proof.
   intros [|k] Bel F C n y tv v vt d types H g st Found Named D Fits Pre0; [exact Logic.I|].
   destruct (Bel k ltac:(lia)) as [SEx _].
@@ -562,7 +562,7 @@ Proof.
 Qed.
 
 Lemma args_argsafe : forall F C args ts xs, A.Args W Prog F C args ts xs ->
-  forall (B : Prop), (forall a, In a args -> A.Breaks a -> B) -> Forall2 (ArgSafe F C B) xs ts.
+  forall (B : Prop), (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) -> Forall2 (ArgSafe F C B) xs ts.
 Proof.
   intros F C args ts xs D. induction D as [F C|F C a r t ts x xs at' Dx Fits Rest IH]; intros B Brk; constructor.
   - exists a, (Some t), at'. split; [exact Dx|]. split; [right; exact Fits|]. intro Ba; exact (Brk a (or_introl eq_refl) Ba).
@@ -724,7 +724,7 @@ Proof.
 Qed.
 
 Lemma ex_code : forall k, Below k -> forall F C a exp e t' t (B : Prop),
-  A.Ex W Prog F C a exp e t' -> Conv C t' t -> (A.Breaks a -> B) -> CodeSafe k F C t B e.
+  A.Ex W Prog F C a exp e t' -> Conv C t' t -> (A.Breaks W (A.fr_mod F) a -> B) -> CodeSafe k F C t B e.
 Proof.
   intros k Bel F C a exp e t' t B D Cv Brk j Le d types H g st Pre0.
   destruct (Bel j Le) as [SEx _].
@@ -735,7 +735,7 @@ Proof.
 Qed.
 
 Lemma args_code_of : forall k, Below k -> forall F C args ts xs, A.Args W Prog F C args ts xs ->
-  forall (B : Prop), (forall a, In a args -> A.Breaks a -> B) -> Forall2 (fun e t => CodeSafe k F C t B e) xs ts.
+  forall (B : Prop), (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) -> Forall2 (fun e t => CodeSafe k F C t B e) xs ts.
 Proof.
   intros k Bel F C args ts xs D. induction D as [F C|F C a r t ts x xs at' Dx Fits Rest IH]; intros B Brk; constructor.
   - eapply ex_code; [exact Bel|exact Dx|right; left; exact Fits|]. intro Ba; exact (Brk a (or_introl eq_refl) Ba).
@@ -1118,7 +1118,7 @@ Qed.
 Lemma call_core : forall j, Below j -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
-  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   StepSafe j F C (A.sg_ret g) B (ECall f th sm xs).
 Proof.
   intros j Bel F C args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0.
@@ -1157,7 +1157,7 @@ Hypothesis demand_case : forall k, Below k -> forall F C wanted C' wrap t (B : P
 Lemma call_code : forall k, Below k -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
-  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   CodeSafe (S k) F C (A.sg_ret g) B (ECall f th sm xs).
 Proof.
   intros k Bel F C args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk [|j] Le d types H lg lst Pre0;
@@ -1282,28 +1282,19 @@ Qed.
 
 (* ---- bind statements --------------------------------------------------------- *)
 
-Definition ItemBreaks (it : spec * option aexpr) : Prop :=
-  match snd it with Some y => A.Breaks y | None => False end.
-Definition ItemsBreak (its : list (spec * option aexpr)) : Prop :=
-  exists it, In it its /\ ItemBreaks it.
+Definition ItemBreaks (F : A.frame) (it : spec * option aexpr) : Prop := A.ItemBreaks W (A.fr_mod F) it.
+Definition ItemsBreak (F : A.frame) (its : list (spec * option aexpr)) : Prop :=
+  exists it, In it its /\ ItemBreaks F it.
 
 (* A bind's wrapper turns safe continuation code into safe code. *)
 Definition WrapSafe n F C F' C' (Bi : Prop) (w : expr -> expr) : Prop :=
   forall t (B : Prop) x, CodeSafe n F' C' t B x -> CodeSafe n F C t (B \/ Bi) (w x).
 
 Definition ItemWrap n F C (it : spec * option aexpr) (w : expr -> expr) (C' : A.cx) (F' : A.frame) (made : list nat) : Prop :=
-  WrapSafe n F C F' C' (ItemBreaks it) w.
+  WrapSafe n F C F' C' (ItemBreaks F it) w.
 
 (* Item rules not yet proved: one hypothesis per rule, its premises verbatim. *)
 Local Close Scope string_scope.
-(* BApplyBody *)
-Hypothesis case_BApplyBody : forall k, Below k -> forall F C pa u d n ps a r bodies wrap C' F' made,
-  A.resolve_sym W (A.fr_mod F) pa = Some u -> A.w_decl W u = Some d ->
-      A.d_ast d = ADFunctor n ps a r (Some bodies) -> ~ In u (A.fr_applying F) ->
-      A.BindItems W Prog (A.with_mod F (A.d_mod d) u) C (List.concat bodies) wrap C' F' made ->
-  forall nf, nf <= S k -> ItemWrap nf F C (Spec (Some pa) None None, None) wrap C'
-             (A.Frame (A.fr_mod F) (A.fr_ret F) (A.fr_this F) (A.fr_loop F) (A.fr_var F) (A.fr_fresh F') (A.fr_applying F) (A.fr_pins F)) made.
-
 (* BApplyAbstract *)
 Hypothesis case_BApplyAbstract : forall k, Below k -> forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.nlook u (A.c_funs C) = Some fx ->
@@ -1429,7 +1420,7 @@ Proof.
     (SEx F C y _ x xt Dy d types H g st (pre_lower (pre_lower Pre0)))) as Out.
   destruct (I.eval j P d g st x) as [[] g1 st1] eqn:E;
     try (lazymatch goal with |- O.Outcome _ _ _ _ _ _ _ _ _ ?r => let r' := eval cbn in r in change r with r' end;
-         refine (outcome_pass F d H types declared t (A.Breaks y) _ _ (fun b => or_intror b) _ Out);
+         refine (outcome_pass F d H types declared t (A.Breaks W (A.fr_mod F) y) _ _ (fun b => or_intror (A.IBExpr sp b)) _ Out);
          cbn; congruence).
   destruct Out as [H1 [E1 [S1 [L1 T1]]]].
   destruct j as [|j]; [exact Logic.I|]. rewrite bindings_nil_eq.
@@ -2752,33 +2743,65 @@ Proof.
     exact (callable_transfer (S (S j)) (S (S j)) H d d' _ _ _ _ _ (le_n _) eq_refl eq_refl Ok).
 Qed.
 
-Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
-  A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks it) w.
+(* A bind item changes only the frame's fresh generations. *)
+Lemma bind_item_frame : forall F C it w C' F' m, A.BindItem W Prog F C it w C' F' m ->
+  A.fr_mod F' = A.fr_mod F /\ A.fr_ret F' = A.fr_ret F /\ A.fr_this F' = A.fr_this F /\
+  A.fr_loop F' = A.fr_loop F /\ A.fr_var F' = A.fr_var F.
+Proof. intros F C it w C' F' m D. destruct D; cbn; auto 10. Qed.
+
+Lemma bind_items_frame : forall F C its w C' F' m, A.BindItems W Prog F C its w C' F' m ->
+  A.fr_mod F' = A.fr_mod F /\ A.fr_ret F' = A.fr_ret F /\ A.fr_this F' = A.fr_this F /\
+  A.fr_loop F' = A.fr_loop F /\ A.fr_var F' = A.fr_var F.
 Proof.
-  intros k Bel n F C it w C' F' m D Le.
-  destruct D.
-  - intros t' B x Safe. apply (wrap_breaks n F C t' (B \/ False)); [tauto|]. apply type_bind_safe. exact Safe.
-  - eapply val_bind_safe; eassumption.
-  - eapply fn_bind_safe; eassumption.
-  - eapply lambda_fn_bind_safe; eassumption.
-  - eapply meth_bind_safe; eassumption.
-  - eapply case_BApplyBody; eassumption.
-  - eapply case_BApplyAbstract; eassumption.
-  - eapply case_BFunCopy; eassumption.
-  - eapply case_BFunClosure; eassumption.
+  intros F C its w C' F' m D. induction D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest IH]; [auto 10|].
+  destruct (bind_item_frame _ _ _ _ _ _ _ D1) as [E1 [E2 [E3 [E4 E5]]]].
+  destruct IH as [I1 [I2 [I3 [I4 I5]]]]. repeat split; congruence.
 Qed.
 
-Lemma items_safe : forall k, Below k -> forall n F C its w C' F' m,
-  A.BindItems W Prog F C its w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemsBreak its) w.
+(* Code safety reads a frame only through its return type, receiver, loop
+   flag and local numbering. *)
+Lemma codesafe_frame : forall n F1 F2 C t (B : Prop) x,
+  A.fr_ret F1 = A.fr_ret F2 -> A.fr_this F1 = A.fr_this F2 -> A.fr_loop F1 = A.fr_loop F2 -> A.fr_var F1 = A.fr_var F2 ->
+  CodeSafe n F1 C t B x -> CodeSafe n F2 C t B x.
 Proof.
-  intros k Bel n F C its w C' F' m D Le. induction D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest IH].
-  - intros t B x Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
-  - intros t B x Safe.
-    pose proof (IH t B x Safe) as S2.
-    pose proof (item_safe k Bel n F C it w1 C1 F1 m1 D1 Le t _ (w2 x) S2) as S1.
-    apply (wrap_breaks n F C t ((B \/ ItemsBreak r) \/ ItemBreaks it) _ (w1 (w2 x))); [|exact S1].
-    intros [[b|[it' [I' Bi]]]|b]; [left; exact b|right; exists it'; split; [right; exact I'|exact Bi]|].
-    right. exists it. split; [left; reflexivity|exact b].
+  intros n [m1 r1 t1 l1 v1 f1 a1 p1] [m2 r2 t2 l2 v2 f2 a2 p2] C t B x; cbn; intros <- <- <- <- Safe.
+  exact Safe.
+Qed.
+
+Fixpoint item_safe k (Bel : Below k) n F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) (Le : n <= S k)
+  {struct D} : WrapSafe n F C F' C' (ItemBreaks F it) w
+with items_safe k (Bel : Below k) n F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) (Le : n <= S k)
+  {struct D} : WrapSafe n F C F' C' (ItemsBreak F its) w.
+Proof.
+  - destruct D as [| | | | |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems| | |].
+    + intros t' B x Safe. apply (wrap_breaks n F C t' (B \/ False)); [tauto|]. apply type_bind_safe. exact Safe.
+    + eapply val_bind_safe; eassumption.
+    + eapply fn_bind_safe; eassumption.
+    + eapply lambda_fn_bind_safe; eassumption.
+    + eapply meth_bind_safe; eassumption.
+    + (* `bind F;` for F with a body: its binds, in place *)
+      pose proof (items_safe k Bel n (A.with_mod F (A.d_mod dcl) u) C (List.concat bodies) wrap C' F' made Ditems Le) as Inner.
+      destruct (bind_items_frame _ _ _ _ _ _ _ Ditems) as [_ [Er [Et [El Ev]]]]. cbn in Er, Et, El, Ev.
+      intros t B x Safe.
+      assert (Safe' : CodeSafe n F' C' t B x) by (apply (codesafe_frame n (A.Frame (A.fr_mod F) (A.fr_ret F) (A.fr_this F) (A.fr_loop F) (A.fr_var F) (A.fr_fresh F') (A.fr_applying F) (A.fr_pins F)) F' C' t B x); cbn; try congruence; exact Safe).
+      pose proof (Inner t B x Safe') as Out.
+      apply (codesafe_frame n (A.with_mod F (A.d_mod dcl) u) F C t _ (wrap x)); [reflexivity..|].
+      apply (wrap_breaks n _ C t (B \/ ItemsBreak (A.with_mod F (A.d_mod dcl) u) (List.concat bodies))); [|exact Out].
+      intros [b|[it [Iit Bi]]]; [left; exact b|right].
+      eapply A.IBApply; [exact R|exact Dcl|exact Ast|exact Iit|exact Bi].
+    + eapply case_BApplyAbstract; eassumption.
+    + eapply case_BFunCopy; eassumption.
+    + eapply case_BFunClosure; eassumption.
+  - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
+    + intros t B x Safe. apply (wrap_breaks n F C t B); [tauto|exact Safe].
+    + intros t B x Safe.
+      pose proof (items_safe k Bel n F1 C1 r w2 C2 F2 m2 Rest Le t B x Safe) as S2.
+      pose proof (item_safe k Bel n F C it w1 C1 F1 m1 D1 Le t _ (w2 x) S2) as S1.
+      destruct (bind_item_frame _ _ _ _ _ _ _ D1) as [Mod _].
+      unfold ItemsBreak, ItemBreaks in S1. rewrite Mod in S1. fold (ItemBreaks F it) in S1.
+      apply (wrap_breaks n F C t ((B \/ ItemsBreak F r) \/ ItemBreaks F it) _ (w1 (w2 x))); [|exact S1].
+      intros [[b|[it' [I' Bi]]]|b]; [left; exact b|right; exists it'; split; [right; exact I'|exact Bi]|].
+      right. exists it. split; [left; reflexivity|exact b].
 Qed.
 
 Section Step.
@@ -2796,13 +2819,13 @@ Lemma unit_k : forall F C d types H g st, Pre k F C d types H g st ->
 Proof.
   intros F C d types H g st Pre0.
   eapply O.outcome_breaks; [|exact (sex F C AEUnit None EUnit TUnit (A.ExUnit W Prog F C None) d types H g st Pre0)].
-  exact unit_never_breaks.
+  exact (unit_never_breaks _).
 Qed.
 
 
 
 Lemma val_step : forall F C pa s t, A.nlook s (A.c_vals C) = Some t ->
-  StepSafe k F C t (A.Breaks (AEPath pa None)) (EVal s).
+  StepSafe k F C t (A.Breaks W (A.fr_mod F) (AEPath pa None)) (EVal s).
 Proof.
   intros F C pa s t Found d types H lg lst Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [_ [[Vals _] _]]]]]]. destruct (Vals s t Found) as [w [Look T]].
@@ -2811,11 +2834,11 @@ Qed.
 
 Lemma invoke_step : forall F C pa args f g xs,
   A.nlook f (A.c_fns C) = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
-  StepSafe k F C (A.sg_ret g) (A.Breaks (AECall pa None args)) (EInvoke f xs).
+  StepSafe k F C (A.sg_ret g) (A.Breaks W (A.fr_mod F) (AECall pa None args)) (EInvoke f xs).
 Proof.
   intros F C pa args f g xs Found Args d types H lg lst Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [_ [[_ [Fns _]] _]]]]]]. destruct (Fns f g Found) as [pv [Look Ok]].
-  pose proof (args_safe k Bel k (le_n k) F C (A.Breaks (AECall pa None args)) xs (A.sg_params g) d types H lg lst
+  pose proof (args_safe k Bel k (le_n k) F C (A.Breaks W (A.fr_mod F) (AECall pa None args)) xs (A.sg_params g) d types H lg lst
     (args_argsafe F C args _ xs Args _ (fun a In' B => A.BkCall pa None args In' B)) (pre_lower Pre0)) as AOut.
   cbn [I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
@@ -2834,7 +2857,7 @@ Unshelve. all: exact TUnit.
 Qed.
 
 Lemma attached_step : forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   ot = A.canon C ot0 ->
   A.head ot = Some h -> A.Attached W h n att ->
   (exists rn ps rt b, A.ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
@@ -2899,7 +2922,7 @@ Unshelve. all: exact TUnit.
 Qed.
 
 Lemma provided_step : forall F C o ox ot0 m args x t (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.Provided W Prog F C ox (A.canon C ot0) m args x t -> StepSafe k F C t B x.
 Proof.
   intros F C o ox ot0 m args x t B Do BrkO BrkA Prov.
@@ -2939,7 +2962,7 @@ Unshelve. all: exact TUnit.
 Qed.
 
 Lemma methcall_step : forall F C o ox ot0 pa args x t (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks o -> B) -> (forall a, In a args -> A.Breaks a -> B) ->
+  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.MethCall W Prog F C ox (A.canon C ot0) pa args x t -> StepSafe k F C t B x.
 Proof.
   intros F C o ox ot0 pa args x t B Do BrkO BrkA Meth.
@@ -2956,20 +2979,20 @@ Qed.
 
 Fixpoint ex_step F C a exp x t (D : A.Ex W Prog F C a exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
-  Outcome F d H types t (A.Breaks a) (I.eval (S k) P d g st x)
+  Outcome F d H types t (A.Breaks W (A.fr_mod F) a) (I.eval (S k) P d g st x)
 with blk_step F C ss tl exp x t made (D : A.Blk W Prog F C ss tl exp x t made) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
-  Outcome F d H types t (A.BlockBreaks (ABlock ss tl)) (I.eval (S k) P d g st x)
+  Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) (ABlock ss tl)) (I.eval (S k) P d g st x)
 with blke_step F C b exp x t (D : A.BlkE W Prog F C b exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
-  Outcome F d H types t (A.BlockBreaks b) (I.eval (S k) P d g st x)
+  Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) b) (I.eval (S k) P d g st x)
 with branch_step F C y exp x t (D : A.Branch W Prog F C y exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
-  Outcome F d H types t (A.Breaks y) (I.eval (S k) P d g st x)
+  Outcome F d H types t (A.Breaks W (A.fr_mod F) y) (I.eval (S k) P d g st x)
 with cond_step F C c x (D : A.Cond W Prog F C c x) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
   exists b, A.LangSym W "bool" A.NSName "Bool" b /\
-    Outcome F d H types (TNom b []) (A.Breaks c) (I.eval (S k) P d g st x).
+    Outcome F d H types (TNom b []) (A.Breaks W (A.fr_mod F) c) (I.eval (S k) P d g st x).
 Proof.
   (* ---------------- Ex ---------------- *)
   - destruct D as
@@ -3025,7 +3048,7 @@ Proof.
         split; [intros t1; unfold A.canon; cbn; rewrite !app_subst_nil; reflexivity|intros k0 p0 []].
     + (* tag *) subst args. cbn [I.eval].
       pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits (sex F C y _ v vty Dy d types H lg lst (pre_lower Pre0))) as Out.
-      apply (outcome_seq _ F C d types H lg lst pay _ (A.Breaks y) _ _ _ Pre0
+      apply (outcome_seq _ F C d types H lg lst pay _ (A.Breaks W (A.fr_mod F) y) _ _ _ Pre0
         (fun B => A.BkCall pa a [y] (or_introl eq_refl) B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
@@ -3159,7 +3182,7 @@ Proof.
           [destruct Decl as [Fd E0]; subst t0; exact Fd|subst t0; apply fits_refl]. }
       pose proof (O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits0 (sex F C y _ v vt Dy d types H lg lst (pre_lower Pre0))) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0
-        (fun B => stmt_breaks_block st0 rest tl (let_breaks _ _ _ _ _ Let B)) Out).
+        (fun B => stmt_breaks_block _ st0 rest tl (let_breaks _ _ _ _ _ _ Let B)) Out).
       intros H1 g1 st1 w E1 [Frame [Ctx [L1 [S1 Abs]]]] T1.
       eapply outcome_pop. eapply O.outcome_breaks; [apply block_breaks_cons|].
       apply (sblk F _ rest tl exp xr t made Drest d _ H1 _ st1).
@@ -3168,13 +3191,13 @@ Proof.
     + (* assign *) cbn [I.eval].
       pose proof (assign_eval k Bel F C n y tv v vt d types H lg lst Found Named Dy Fits (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0
-        (fun B => stmt_breaks_block _ rest tl (A.SBAssign n B)) Out).
+        (fun B => stmt_breaks_block _ _ rest tl (A.SBAssign n B)) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
       eapply O.outcome_breaks; [apply block_breaks_cons|exact (sblk F C rest tl exp xr t made Drest d types H1 g1 st1 (pre_lower Pre1))].
     + (* last expression *) cbn [I.eval].
       pose proof (sex F C y None v vt Dy d types H lg lst (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0
-        (fun B => stmt_breaks_block _ [] None (A.SBExpr B)) Out).
+        (fun B => stmt_breaks_block _ _ [] None (A.SBExpr B)) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
       destruct (ty_eqb vt A.never) eqn:Never.
       * apply PublicTypeFacts.ty_eqb_spec in Never. subst vt. exfalso; exact (ground_never d H1 w T1).
@@ -3182,13 +3205,13 @@ Proof.
     + (* expression *) cbn [I.eval].
       pose proof (sex F C y None v vt Dy d types H lg lst (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0
-        (fun B => stmt_breaks_block _ rest tl (A.SBExpr B)) Out).
+        (fun B => stmt_breaks_block _ _ rest tl (A.SBExpr B)) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
       eapply O.outcome_breaks; [apply block_breaks_cons|exact (sblk F C rest tl exp xr t made Drest d types H1 g1 st1 (pre_lower Pre1))].
     + (* while *) cbn [I.eval].
       pose proof (while_safe k Bel k (le_n k) F C c cx' b bx bt d types H lg lst Dc Db (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0
-        (fun B => stmt_breaks_block _ rest tl (A.SBWhile b B)) Out).
+        (fun B => stmt_breaks_block _ _ rest tl (A.SBWhile b B)) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
       eapply O.outcome_breaks; [apply block_breaks_cons|exact (sblk F C rest tl exp xr t made Drest d types H1 g1 st1 (pre_lower Pre1))].
     + (* loop *) cbn [I.eval].
@@ -3202,15 +3225,16 @@ Proof.
         try (destruct Out as [[] _]).
       exfalso. exact (NotBreaks (Normal' v eq_refl)).
     + (* bind *)
-      assert (XR : CodeSafe (S k) F' C' t (A.BlockBreaks (ABlock rest tl)) xr).
-      { intros j Le d' types' H' g' st' Pre'. destruct (Nat.eq_dec j (S k)) as [->|Ne].
+      assert (XR : CodeSafe (S k) F' C' t (A.BlockBreaks W (A.fr_mod F) (ABlock rest tl)) xr).
+      { destruct (bind_items_frame _ _ _ _ _ _ _ Ditems) as [ModI _].
+        intros j Le d' types' H' g' st' Pre'. rewrite <- ModI. destruct (Nat.eq_dec j (S k)) as [->|Ne].
         - exact (blk_step F' C' rest tl exp xr t made' Drest d' types' H' g' st' Pre').
         - destruct (Bel j ltac:(lia)) as [_ [SBj _]]. exact (SBj F' C' rest tl exp xr t made' Drest d' types' H' g' st' Pre'). }
       pose proof (items_safe k Bel (S k) F C its wrap C' F' made Ditems (le_n _) t _ xr XR (S k) (le_n _)
         d types H lg lst Pre0) as Out.
       eapply O.outcome_breaks; [|exact Out].
       intros [Rest|[[sp oy] [Iit Bi]]]; [apply block_breaks_cons; exact Rest|].
-      destruct oy as [y|]; [|contradiction]. apply stmt_breaks_block. eapply A.SBBind; [exact Iit|exact Bi].
+      apply stmt_breaks_block. eapply A.SBBind; [exact Iit|exact Bi].
   (* ---------------- BlkE ---------------- *)
   - destruct D as [F C ss tl exp x t made Dblk Escape Fits]. exact (blk_step F C ss tl exp x t made Dblk).
   (* ---------------- Branch ---------------- *)

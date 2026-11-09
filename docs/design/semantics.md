@@ -1518,6 +1518,13 @@ thing this design exists to test. (That `Std` stays a signature is
 independent of [D52]'s point that the *compiler* skips it and assumes
 `Wasi` directly; `Wasi` is a signature too.)
 
+*Breaks through `bind F;`.* `bind F;` for `F` with a body runs `F`'s binds
+in place, in the caller's frame, so a `break` among them leaves the loop
+around the `bind` (and a `return` returns from the caller). A loop is
+counted as breaking when such a body breaks, transitively through the
+functors it applies (`bootstrap/examples/functor-body-break.moss` is
+rejected).
+
 **[D61] DECIDED by the designer (how a method call finds its method).**
 The two kinds of method reach the (receiver type, method symbol) key by
 different routes, and the difference is not a detail:

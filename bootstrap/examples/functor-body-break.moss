@@ -1,0 +1,30 @@
+# `bind G;` runs G's binds in place, so G's `break` leaves the loop around
+# it. The loop does break, so `f` is ill-typed: it can fall through.
+# Rejected by the native compiler; the oracle accepted it and got stuck.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+val v: Int;
+
+functor G: Std -> v {
+  bind v = break;
+}
+
+assume Std {
+  fn f(): Int {
+    loop {
+      bind G;
+    }
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    let n = f();
+    putchar((n % 10 + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

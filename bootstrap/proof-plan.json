@@ -2200,7 +2200,8 @@
         "E24",
         "E25",
         "E26",
-        "E27"
+        "E27",
+        "E28"
       ],
       "status": "open",
       "budget": "unknown",
@@ -2720,6 +2721,30 @@
         "reason": "The user approved indexing the wrapper's instantiation by the wrapped fn's context after the safety proof found theta_at omits main's root types; a wrapped main runs correctly on both implementations.",
         "sources": [
           "SAFETY-SITES.md"
+        ]
+      }
+    },
+    {
+      "id": "E28",
+      "group": "E",
+      "title": "Count functor-body breaks",
+      "requires": [],
+      "status": "open",
+      "budget": "hour",
+      "goal": "The bootstrap elaborator (Elab.v) counts `bind F;`, for F with a body, as breaking when an item of F's body breaks, as Audit's ItemBreaks now does and the native compiler already does, with a regression test.",
+      "approach": "Extend has_break_s for bind statements to look through applied functor bodies. bootstrap/examples/functor-body-break.moss must be rejected.",
+      "sources": [
+        "theories/Audit.v",
+        "theories/Elab.v",
+        "examples/functor-body-break.moss"
+      ],
+      "origin": {
+        "kind": "discovery",
+        "parent": "E11",
+        "reason": "The user approved counting functor-body breaks after the oracle accepted a loop typed never that a functor body's break left, and got stuck.",
+        "sources": [
+          "SAFETY-SITES.md",
+          "examples/functor-body-break.moss"
         ]
       }
     },
