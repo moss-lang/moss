@@ -52,3 +52,29 @@ type result item (`SpecTypes`), so the change rejects nothing it accepts.
 
 Alternative: `FamilyShape W source` (D84 family shape); it is stronger
 than needed and not what the oracle checks (it allows contexts).
+
+## 3. A platform family's machine types are fixed inputs (MachinesFixed)
+
+What: each item of a platform family satisfies
+`Platform.MachinesFixed W source inputs outputs key`: every wasm machine
+type symbol (I32, I64, F32, F64, StructRef, ArrayRef) its AtKey signature
+mentions (receiver, parameters, result) is a fixed input of the source
+functor (`Fixed`: mentioned by its result, not a bracket) and in its
+context's table.
+
+Why: a primitive is typed only at the machine types; the safety proof
+reads the family's signature types through θ, and only a fixed input is
+guaranteed to mean, at the application, what it meant where the closure
+was provided (the platform's provision exists only at the machine types,
+CPlatform's PlatformFixed). A family polymorphic in, say, I32 could be
+applied where I32 means Bool (the oracle accepts `bind I32 = Bool;`), and
+its `Array.get` would then be typed at Bool. Previously this was the
+premise PlatformSigsFixed in safety_obligations.
+
+Rejects nothing accepted: the oracle provides platform families only for
+lib/wasm.moss's functors (Elab.v platform_fun), Heap[Boxed], Mutable[Boxed],
+Arrays[Arrayed] and Memories[Memory], whose brackets are Boxed, Arrayed and
+Memory, none a machine type, and whose result signatures mention the
+machine types through their inputs (Wasm, I32 etc.).
+
+Test: none executable (no implementation provides such a family).

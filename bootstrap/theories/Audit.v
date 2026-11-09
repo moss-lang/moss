@@ -4660,6 +4660,20 @@ Definition MethodPrimitive (W : world) (key : item) (operation : prim) : Prop :=
     | RPlain => False
     end.
 
+(* The machine types a platform item's signature mentions are fixed
+   inputs of its functor, in its context: the platform's provision exists
+   only at the machine types, so it may not be polymorphic in one
+   (lib/wasm.moss: Heap, Mutable, Arrays and Memories bracket only Boxed,
+   Arrayed and Memory). *)
+Definition MachinesFixed (W : world) (source : usym) (inputs outputs : cx) (key : item) : Prop :=
+  match key with
+  | IMth receiver method _ => forall signature, mlook receiver method (c_mths outputs) = Some signature ->
+      forall name machine symbol, In (name, machine) initial_machines -> LangSym W "wasm" NSName name symbol ->
+      In symbol (flat_map gens (sg_ret signature :: receiver :: sg_params signature)) ->
+      Fixed W source symbol /\ In symbol (map fst (c_ty inputs))
+  | _ => True
+  end.
+
 Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
@@ -4673,7 +4687,7 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
       (map (rkey_of outputs) keys) bindings []) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
-      AtKey W outputs key operation) keys bindings.
+      AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key) keys bindings.
 
 (* The handle tags carry a raw machine handle (Ref a StructRef, Array an
    ArrayRef, Addr an I32), which the primitives read as that machine value.

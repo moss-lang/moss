@@ -221,7 +221,7 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
     (map (A.rkey_of outputs) keys) bindings []) /\
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
-    Platform.AtKey W outputs key operation) keys bindings.
+    Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key) keys bindings.
 
 Lemma family_data : forall u code, Platform.Family W Prog u code ->
   exists inputs needs outputs keys bindings, FamilyData u code inputs needs outputs keys bindings.
@@ -592,7 +592,7 @@ Proof.
         destruct (sm_find_some _ _ _ Iq0) as [s Fs].
         destruct (SmKeys _ s (sm_find_in _ _ _ Fs)) as (key1 & r1 & m1 & a1 & Ik1 & Es & _ & Ek1).
         destruct (Inst s ltac:(rewrite Es; apply in_map, Ik1)) as [op Lp].
-        destruct (S.Forall2_In_r _ _ _ _ _ _ Binds (last_prim_in _ _ _ Lp)) as [key2 [Ik2 [op' [Eb [MP AK]]]]].
+        destruct (S.Forall2_In_r _ _ _ _ _ _ Binds (last_prim_in _ _ _ Lp)) as [key2 [Ik2 [op' [Eb [MP [AK _]]]]]].
         injection Eb as Es2 <-.
         pose proof MP as (rf & m2 & a2 & dd & form & nm & pars & res & body & Ek2 & _). pose proof AK as AK'.
         rewrite Ek2 in AK'. destruct AK' as [gf [Mgf PS]].
