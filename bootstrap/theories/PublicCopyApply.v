@@ -189,7 +189,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      ClosureOk rr H h0 gf0 (FunctorClosure code [] dc)).
 Proof.
   intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn Caps CF
-    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub|u code gfx Fam];
+    |u h Cu nsu Ch nsh code sms dc gfx gfh Okh IH FCu FCh Incl Fx SN ST CO Sub|u code gfx Fam Mach];
     intros code0 sms0 dc0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu k0)) (S.linked_needs nsu nsg))) as [e2 Sel2].
@@ -228,7 +228,7 @@ Proof.
       split; [exact (CCStep u h Cu nsu Ch nsh gfx gfh sms h0 gf0 _ Chn FCu FCh Incl Fx SN ST CO Sub)|].
       split; [exact Edc|]. split; [exact Fam|exact Ok0].
   - right. exists u, gfx. split; [constructor|]. split; [reflexivity|]. split; [exact Fam|].
-    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam).
+    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach).
 Qed.
 
 Lemma app_meanings_ext : forall (b1 b2 : nat -> ty) (tb : list (nat * ty)) l, (forall x, b1 x = b2 x) ->

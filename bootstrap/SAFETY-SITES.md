@@ -26,14 +26,16 @@ an admissible program and a compatible interface, `run_main`'s signal is never
 [PublicEntry.v](theories/PublicEntry.v) proves `safety_obligations`:
 `CORRECT.safety` for any `Public` instance from exactly the remaining named
 obligations (the functor and family obligations
-`CapturedInForceOk`, and `ChainResultsOk`,
-`ChainPlatformOk` from [PublicCopyApply.v](theories/PublicCopyApply.v),
-which prove the slice's `CopyApplyOk`, `LinkResultsOk` and
-`PlatformApplyOk`; for `FamilyStepOk`, proved in
+`CapturedInForceOk`, and `ChainResultsOk` from
+[PublicCopyApply.v](theories/PublicCopyApply.v), which with
+`ChainPlatformOk` prove the slice's `CopyApplyOk`, `LinkResultsOk` and
+`PlatformApplyOk`; for `ChainPlatformOk`, proved in
+[PublicPlatformApply.v](theories/PublicPlatformApply.v), its platform
+premises; for `FamilyStepOk`, proved in
 [PublicFamilyStep.v](theories/PublicFamilyStep.v), `FamilyLinkResultsOk`,
 `FamilyCopyApplyOk`, `FamilyPlatformApplyOk`; and the slice's
 `FamilyCoherentOk`, `ExScopedOk`, `LitScopedOk`, `DemandScopedOk`), with the slice's elaboration and link facts read off
-`ElaboratesIn` and `Linked`. The formation premises and `HandleFormed` are
+`ElaboratesIn` and `Linked`. The formation premises and main's `HandleFormed` are
 proved (PublicWorldFormation, PublicFamilySig, `handles_formed`). It goes through `safety_public`, which is
 `CORRECT.safety` from three premises:
 
@@ -474,6 +476,22 @@ the local store. *C* and *F* are the static context and frame.
   only that the model's run-time environment ignored a merge the static
   context had made. `LinkMergesOk`, `BindMergesOk`, their hypotheses, and
   `ClosureOk`'s merge clause are gone. See scratch/orch/repair-AUDIT.md.
+- **Counterexamples: a platform family filed its items under bare keys,
+  and could have a type output (fixed).** `Platform.Family` installed each
+  primitive, and returned the result, under the result's static key
+  (`mkey`, no instantiation). A caller reads a method provision under its
+  run-time key (`rkey`), which carries the instantiation the item was made
+  at: `Ref.deref` mentions `Boxed`, so after `bind Heap;` at `Boxed = Int`
+  the call `r.deref()` looks for `IMth Ref[..] deref [Boxed=Int]` and finds
+  nothing ([platform-family-keys.moss](examples/platform-family-keys.moss);
+  the oracle and native run it and exit 0, filing the items under
+  `key_item_at`, `Elab.v` `platform_fun`). `PlatformApplyOk` was false.
+  Now the family's code and result use `rkey_of outputs`, as a linked
+  body's do. Separately, nothing forbade a type output, which the code
+  cannot return (`read_result_types` is stuck); `Platform.Family` now
+  requires none. The oracle provides method items only ("the platform
+  cannot provide a non-method item"), so neither change rejects anything
+  it accepts. Recorded in `scratch/orch/platform-AUDIT.md`.
 - **Counterexample: a copy whose result reads differently (fixed).**
   `BFunCopy` compared results only leaf by leaf (`SameResult`). In
   [copy-output-order.moss](examples/copy-output-order.moss) F lists
@@ -563,7 +581,8 @@ hypotheses, each a named remaining obligation:
 | `family_coherent` | the code's formed context agrees with a family applied around it at a shared run-time key (same receiver, method and θ, same signature). It is true of elaborated contexts (both are `SigOf` readings at θ), but `Pre` does not carry that as an invariant | T29 |
 | `ex_scoped`, `lit_scoped`, `demand_scoped` | a demanded family key's receiver is in the code's scope: elaborated expression and literal types, and a callee need read at the call site, mention only the context's generations. `Formed` scopes neither locals' nor provisions' types (only ok), and `theta_at` reads a callee symbol the caller leaves unbound as itself | T29 |
 | `link_results` | a completed linked body provides F's result at the application: result provisions selected under the caller's keys from their sources in the body (`fc_sources`), fresh output generations, the caller's context after it realized; its meanings grow only at the application's made list (every output destination, D78) | T15, T16 |
-| `copy_apply`, `platform_apply` | applying a copy runs its source at the source's interface; applying a platform family installs its primitives | T15 |
+| `copy_apply` | applying a copy runs its source at the source's interface | T15 |
+| `platform_apply` | applying a platform family installs its primitives, also through a copy chain. Proved as `ChainPlatformOk` ([PublicPlatformApply.v](theories/PublicPlatformApply.v), `chain_platform_ok`; `PlatformApplyOk` is its empty chain) from `ChainResultAgrees` (the caller's and the root family's ProvideResult list the same method items at θ, under the run-time keys the family files them at, and F has no type output; needs a substitution lemma for result readings), `PlatformNotLinked` (a family's code with primitives is no linked body's) and `ChainPrimsOk`, which `PublicEntry.platform_prims_public` discharges for the reference host from `PlatformHandlesFormed` (the families' handle formation, as `handles_formed` proves main's) and `PlatformSigsFixed` (machine symbols a family signature mentions are its fixed inputs). A platform closure records that its fixed machine inputs mean the machine types (`CPlatform`'s `PlatformFixed`), established at the entry from `MainMachinesUnmerged` | T15, T11, T29 |
 
 `copy_apply` is proved in [PublicCopyApply.v](theories/PublicCopyApply.v)
 (`copy_apply_ok`): a closure's derivation is followed down its copy chain

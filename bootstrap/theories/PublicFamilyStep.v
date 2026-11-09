@@ -341,7 +341,7 @@ Proof.
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
          fx gfx h Cu0 nsu Ch nsh code sms dc gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
-  2: { destruct CP as (code & -> & PFam).
+  2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
   destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).

@@ -15,7 +15,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
-  PublicFamilyStep.
+  PublicPlatformApply PublicFamilyStep.
 
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicCasts := PublicCastTyping.CastTyping PublicClosureExample.Prims PublicInterp.
@@ -25,6 +25,7 @@ Module PublicBool := PublicBoolTyping.BoolTruthy PublicClosureExample.Prims Publ
 Module PublicArmsI := PublicArms.Arms PublicClosureExample.Prims PublicInterp.
 Module PublicTags := PublicTagCheck.Checks PublicClosureExample.Prims PublicInterp.
 Module PublicSlice := PublicBodySlice.BodySlice PublicClosureExample.Prims PublicInterp.
+Module PublicPlatform := PublicPlatformApply.PlatformApply PublicClosureExample.Prims PublicInterp.
 Module PublicCopy := PublicCopyApply.CopyApply PublicClosureExample.Prims PublicInterp.
 Module PublicSafetyTop := PublicSafety.SafetyReduction AuditExamples.Host PublicPublic.
 Module PublicFamily := PublicFamilyStep.FamilyStep PublicClosureExample.Prims PublicInterp.
@@ -110,6 +111,8 @@ Definition certificate_roots :=
   @NM.PublicWorldFormation.mentions_typed_of,
   @NM.PublicFamilySig.family_sig_ok_readoff,
   @PublicEntryTop.entry_primitive,
+  @PublicEntryTop.platform_prims_public,
+  @PublicPlatform.chain_platform_ok,
   @PublicEntryTop.entry_realizes,
   @PublicSlice.callee_realizes,
   @PublicLinkMergesI.captured_in_force_unprovable,
