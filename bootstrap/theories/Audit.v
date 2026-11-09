@@ -4632,9 +4632,12 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
   exists inputs needs outputs keys bindings,
     FunCtx W source inputs needs /\
     ProvideResult W source inputs (fun t => TAbs t) outputs keys /\
-    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) keys bindings) /\
+    (* each item is installed and returned under its run-time key, the
+       instantiation it is made at (rkey_of), as a linked body's are *)
+    funbody_of P code = Some (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs))
+      (map (rkey_of outputs) keys) bindings) /\
     Forall2 (fun key binding => exists operation,
-      binding = BPrimitive key operation /\ MethodPrimitive W key operation /\
+      binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
       AtKey W outputs key operation) keys bindings.
 
 Definition Entry (W : world) (P : program) (C : cx)
