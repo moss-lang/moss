@@ -3285,6 +3285,16 @@ Qed.
 Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (ks : list item) : list item :=
   map (fun k => A.rkey_of Cb (A.at_site Cb (A.output_renaming outs gen k))) ks.
 
+(* The site a linked body's result keys are read at (A.link_site) has
+   the body's provisions and merges, so it is realized where the body is,
+   and files keys as the body does. *)
+Lemma realizes_link_site : forall n Cg Cb outs d H, Realizes n Cb d H -> Realizes n (A.link_site Cg Cb outs) d H.
+Proof. intros n Cg Cb outs d H R. exact R. Qed.
+Lemma rkey_of_link_site : forall Cg Cb outs k, A.rkey_of (A.link_site Cg Cb outs) k = A.rkey_of Cb k.
+Proof. reflexivity. Qed.
+Lemma canon_link_site : forall Cg Cb outs t, A.canon (A.link_site Cg Cb outs) t = A.canon Cb t.
+Proof. reflexivity. Qed.
+
 (* An application's selection pairs the caller's keys with the sources. *)
 Lemma combine_in_l : forall (rs ss : list item) a b, In (a, b) (combine rs ss) -> In a rs.
 Proof.
@@ -3318,12 +3328,12 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
   NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
   A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
-  A.ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs) ks /\
+  A.ResultRealizes (A.link_site Cg Cb outs) Cr (map (fun t => (gen t, TAbs t)) outs) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
       (map ITy outs ++ map (A.rkey_of Cr) ks)%list binds0
-      (link_sources Cb outs gen ks)).
+      (link_sources (A.link_site Cg Cb outs) outs gen ks)).
 
 Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
@@ -4723,7 +4733,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (result_selection (map (A.rkey_of C') ks) [] (link_sources Cb outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of C') ks) [] (link_sources (A.link_site Cg Cb outs') outs' gen ks')) = Some dr /\
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (A.rkey_of Cr) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     MeaningsGrow (map gensof outs) d (append_environment result d).

@@ -379,7 +379,7 @@ Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks new
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr,
-    select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources Cb outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources (A.link_site Cg Cb outs') outs' gen ks')) = Some dr /\
     (forall t, In t outs -> output_meaning d3 t <> None) /\
     AliasOk C' (append_environment (result_of d3 outs gensof dr) d) /\
     S.EnvOk W Prog argv read state_ok rr C' (append_environment (result_of d3 outs gensof dr) d) H3 /\

@@ -127,6 +127,40 @@ the local store. *C* and *F* are the static context and frame.
 
 ## Observations so far
 
+- **A linked body's result keys are read at G's readings of the inputs (linknewpf).**
+  `CC.FamilyLinkNewOk` was false, and so, very likely, was
+  `CN.ChainRealizeOk` for a linked root.
+  - LinkBody looked each result key up at `at_site Cb`, which re-reads
+    the receiver through the body's final table.
+  - A body may rebind an input that F's result does not mention, since
+    the pins (D84 3d) are M(F). If that input is the merge representative
+    of a mentioned one, the key follows the rebind.
+  - But an input's meaning at an application is the caller's, and
+    `bind T = ...` writes only the alias.
+  - [link-merge-rep-rebind.moss](examples/link-merge-rep-rebind.moss):
+    F[X]'s and G's contexts merge X with T, with representative T.
+    Audit's world picks the representative freely, since `w_context` is
+    a witness.
+    - G binds T = Bool and then `T.m`, and the key `X.m` (T.m at F's
+      inputs) was found at Bool.m.
+    - main's demand of Concrete.m installed that closure, and `if this`
+      ran on a Concrete.
+    - Both implementations reject the program.
+
+  Fix (the faithful option): `A.link_site Cg Cb outs` reads outputs at
+  the body's table and every other symbol at G's own (`c_ty Cg`).
+  - LinkBody's ResultRealizes and the code's sources use it. It has
+    Cb's provisions and merges, so it is realized and keys as Cb does.
+  - The m2 variants are now rejected, as both implementations reject
+    them.
+  - scratch/linknewpf/m5-*.moss (G also binds `X.m`) is accepted, and
+    the application now selects G's `X.m`, as native does. The oracle
+    rejects the XT order through its pins, which include the
+    representatives of M(F) (Elab.v `mf`).
+  - Proof repair: LinkData and the result selections in the obligations
+    read `S.link_sources (A.link_site Cg Cb outs') ...`.
+
+  See scratch/orch/linknewpf-AUDIT.md.
 - **A copy reads F's non-fixed inputs as fresh symbols (copyfresh).**
   `CN.ChainRealizeOk` and `FS.FamilyCopyRealizeOk` were false (moss-safety
   scratch/hunt/hunt2-chain and hunt2-family). BFunCopy's `CopyOutputs`
