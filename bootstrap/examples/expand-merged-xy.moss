@@ -1,0 +1,55 @@
+# expand, merge classes (AUDIT-CHANGES #52; criteria section 2, coherence):
+# REJECTED (NoExpandingCycle, InstantiationsBounded) in either orientation.
+# nest's context merges X and Y (`context M = ff[T = X], ff[T = Y]`: the two
+# bindings of ff are one key, so their types are one type). nest binds
+# X = Wrap over its X and Y = X, so its call θ is X, Y := Wrap(X), a strict
+# edge; specializing needs nest at A, Wrap[A], Wrap[Wrap[A]], ...
+# expand-merged-yx.moss lists the merge the other way round, so the oracle
+# spells the class by the other member. The cycle is found either way: each
+# member of the class is a formal of nest, every call supplies all of them, and
+# InstantiationsBounded now also gives merged members one level, so the
+# verdict does not depend on which member spells the class.
+# Audit: rejects (before and after #51).
+# Oracle (moss_m2): accepts and prints 5.
+# Oracle variant with the check (scratch/oracle/expand, the ob-expand
+# check ported): rejects, with and without the merge edges (it spells the
+# class by X (1295)).
+# Native (ob-family moss, seed 1h1710x0): crashes at compile time (call stack exhausted).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+type X;
+type Y;
+assume T { fn ff(): T; }
+context M = ff[T = X], ff[T = Y];
+
+tag A;
+assume X { tag Wrap(X); }
+assume Std, T, X, Y, M {
+  fn nest(x: Y, n: Int): Int {
+    if n == 0 { return 0; }
+    let w = Wrap(x);
+    bind X = Wrap;
+    bind Y = X;
+    bind T = X;
+    bind ff = () => w;
+    1 + nest(w, n - 1)
+  }
+}
+assume Std {
+  fn mk(): A { A }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind X = A;
+    bind Y = A;
+    bind T = A;
+    bind ff = mk;
+    putchar((nest(A, 5) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

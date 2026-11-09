@@ -158,14 +158,32 @@ Proof.
       * left. reflexivity.
 Qed.
 
+(* The only node with a context is main, whose context merges nothing. *)
+Lemma node_cx_unmerged : forall n C, NodeCx world_main AuditExamples.unit_program n C -> c_sub C = [].
+Proof.
+  intros n C H. destruct H as [f C ns Ctx|F C ps rt body sg this pid pre sm Lam|u gg h Cg nsg Link Ctx].
+  - cbn in Ctx. destruct (Nat.eqb f 1); [injection Ctx as <- _; reflexivity|discriminate].
+  - exfalso. inversion Lam; subst.
+    match goal with
+    | Fr : Fresh _ pid, Body : body_of _ pid = Some _ |- _ =>
+        unfold body_of in Body; cbn in Body; destruct (Nat.eqb pid 1) eqn:E; [|discriminate];
+        apply Nat.eqb_eq in E; subst pid; unfold Fresh in Fr; discriminate
+    end.
+  - exfalso. inversion Link; subst.
+    match goal with Body : funbody_of _ h = Some _ |- _ => discriminate Body end.
+Qed.
+
 (* No nominal has a payload and the one body enters nothing, so no edge. *)
 Lemma main_bounded : NoExpandingCycle world_main AuditExamples.unit_program.
 Proof.
-  split; exists (fun _ => 0).
+  split; [exists (fun _ => 0)|exists (fun _ => 0); split;
+    [|split; [intros n C t v s Cx Occ|intros; lia]]].
   - intros a b strict (pay & args & tau & Pay & _). inversion Pay as [s xs d n ps t p Read Ast].
     apply reads_decl in Read as [_ ->]. discriminate.
   - intros [[f|h] t] b strict (site & th & tau & v & s & s' & At & _); cbn in At;
       [destruct (Nat.eqb f 1)|]; cbn in At; contradiction.
+  - unfold canon in Occ. rewrite (node_cx_unmerged n C Cx) in Occ. cbn in Occ.
+    destruct Occ as [[= <- <-]|[]]. lia.
 Qed.
 
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.

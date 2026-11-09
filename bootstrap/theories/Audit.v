@@ -3293,10 +3293,20 @@ Definition Satisfies (C : cx) (Cs : cx) (th : subst) (ns : list item) (sm : smap
   (forall k p, In k ns -> ilook k (c_provisions Cs) = Some p ->
      exists p', ilook (at_th C th k) (c_provisions C) = Some p' /\
        option_map (canon_sig C) (provision_signature p') = option_map (sig_at C th) (provision_signature p)) /\
-  (* merges: every equation of the callee's σ holds of the caller's meanings *)
-  (forall g t, In (g, t) (c_sub Cs) ->
-     (forall x, In x (g :: gens t) -> nlook x (c_ty C) <> None) ->
-     canon C (app_subst (c_ty C) (TAbs g)) = canon C (app_subst (c_ty C) t)).
+  (* merges: every merge class of the callee whose members, and the
+     classes of the symbols of its structure, are all in force here holds
+     of the caller's meanings.  Stated by class (criteria section 2,
+     coherence): the classes do not depend on the callee's choice of
+     representatives (PublicOrientation.mgm_classes_iff), while the
+     equations of its σ do.  A class only partly in force here is not
+     checked under any representative (a closure's class with a linked
+     member: BFunClosure; before, an equation of σ was skipped only when it
+     mentioned a symbol not in force, so such a class was checked under a
+     representative that is captured and not under one that is linked).
+     At a call, CallTheta's merge clause already holds of every class. *)
+  (forall g, (forall y, (exists x, (x = g \/ In x (gens (canon Cs (TAbs g)))) /\
+                          canon Cs (TAbs y) = canon Cs (TAbs x)) -> nlook y (c_ty C) <> None) ->
+     canon C (app_subst (c_ty C) (TAbs g)) = canon C (app_subst (c_ty C) (canon Cs (TAbs g)))).
 
 (* Arguments checked against parameter types ([D17] fits), elaborated in order. *)
 
@@ -4897,9 +4907,36 @@ Definition InstantiationEdge (P : program) (a b : code_node * tsym) (strict : bo
     In (snd b, tau) th /\ In (v, s) (ty_occurrences tau) /\
     NodeReads P (fst a) v (snd a) s' /\ strict = s || s'.
 
-Definition InstantiationsBounded (P : program) : Prop :=
-  exists level : code_node * tsym -> nat, forall a b strict,
-    InstantiationEdge P a b strict -> level b + (if strict then 1 else 0) <= level a.
+(* The context a node's code is elaborated in: a fn's own (the world's
+   record), a lambda provider's (the enclosing context, whose merges it
+   keeps), a linked functor body's (G's). *)
+Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
+| NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
+| NCLambda : forall F C ps rt body sg this pid pre sm,
+    LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
+| NCBody : forall u gg h Cg nsg, LinkBody W P u gg h -> w_context W gg = Some (Cg, nsg) ->
+    NodeCx W P (CodeFunctor h) Cg.
+
+(* Merges are edges too (criteria section 2, coherence).  Within a node,
+   a type symbol t is the type its context's merge reads it as, `canon C
+   (TAbs t)`: an edge from each symbol that reading mentions to t, strict
+   under a constructor, and, where t reads as a symbol z, an edge back from
+   t to z.  So the members of a merge class share a level, and a class
+   merged with a structure lies strictly above what the structure
+   mentions.  Which member a context spells a class by is the merge's
+   choice of representative (MostGeneralMerge); the classes do not depend
+   on it (PublicOrientation.mgm_classes_iff), and two orientations read a
+   structure alike up to renaming within classes (mgm_reorient), so these
+   constraints do not either.  Without them a cycle could enter a class at
+   one member and leave it at another (or at the structure it is merged
+   with), and whether it is seen would depend on the spelling. *)
+Definition InstantiationsBounded (W : world) (P : program) : Prop :=
+  exists level : code_node * tsym -> nat,
+    (forall a b strict,
+       InstantiationEdge P a b strict -> level b + (if strict then 1 else 0) <= level a) /\
+    (forall n C t v s, NodeCx W P n C -> In (v, s) (ty_occurrences (canon C (TAbs t))) ->
+       level (n, t) + (if s then 1 else 0) <= level (n, v)) /\
+    (forall n C t z, NodeCx W P n C -> canon C (TAbs t) = TAbs z -> level (n, z) <= level (n, t)).
 
 (* Types.  A nominal's payload, read at its own requirements, mentions
    nominal instances; an edge (g, x) -> (g', y) says g' is mentioned with
@@ -4921,7 +4958,7 @@ Definition TypesBounded (W : world) : Prop :=
     TypeEdge W a b strict -> level b + (if strict then 1 else 0) <= level a.
 
 Definition NoExpandingCycle (W : world) (P : program) : Prop :=
-  TypesBounded W /\ InstantiationsBounded P.
+  TypesBounded W /\ InstantiationsBounded W P.
 
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
@@ -5120,11 +5157,21 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
    itself (the oracle's check_platform_entry_view: "platform functor has an
    incompatible assumed fixed type"): the platform's provision exists only
    at the machine types, so a merge of main's context may not read one as
-   another type. *)
+   another type.  Stated by class (criteria section 2, coherence): the
+   fixed meaning t is in the machine type's merge class, and that class is
+   the machine type alone, with no structure.  A class merging the machine
+   type with another symbol is rejected whichever member represents it
+   (both implementations reject it, in either order:
+   examples/platform-fixed-merge-{xi,ix}.moss); before, the clause asked
+   `canon C t = TAbs symbol`, which held exactly when the machine type
+   was the representative.  The classes do not depend on that choice
+   (PublicOrientation.mgm_classes_iff). *)
 Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
   forall fixed, nlook source (c_funs C) = Some fixed ->
   forall name machine symbol t, In (name, machine) initial_machines ->
-    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed -> canon C t = TAbs symbol.
+    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed ->
+    canon C t = canon C (TAbs symbol) /\ (exists z, canon C (TAbs symbol) = TAbs z) /\
+    (forall y, canon C (TAbs y) = canon C (TAbs symbol) -> y = symbol).
 
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=

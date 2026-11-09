@@ -16,7 +16,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicChainCore PublicLinkWalk PublicLinkScope.
-From NM Require PublicLinkRun.
+From NM Require PublicLinkRun PublicMergeClass.
 From NM Require PublicChainFwd PublicFormation PublicCallerKeys PublicFamilyAgree PublicFamilyStep PublicFamilyCoherent PublicFamilySig PublicScoping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -122,7 +122,7 @@ Proof.
        A.canon Cf (app_subst (A.c_ty Cf) (TAbs g)) = A.canon Cf (app_subst (A.c_ty Cf) t)) /\
     (forall d ps a r b, A.w_decl W u = Some d -> A.functor_parts (A.d_ast d) = Some (ps, a, r, b) -> b = None) /\
     A.ProvideResult W u Cf (fun t => TAbs t) Cr ks).
-  { destruct Sat as [_ [_ [_ [_ Merge]]]]. split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].
+  { destruct Sat as [_ [_ [_ [_ Merge0]]]]. pose proof (PublicMergeClass.functx_merges W u Cu ns _ FCu InF Merge0) as Merge. split; [exact Th|]. split; [exact InF|]. split; [exact Merge|]. split; [|exact PR].
     intros d' ps' a' r' b' D FP. destruct Fam as [Shape _]. destruct Shape as (d'' & n'' & ps'' & a'' & r'' & D' & Ast'' & _).
     rewrite D in D'. injection D' as <-. rewrite Ast'' in FP. cbn in FP. injection FP as _ _ _ <-. reflexivity. }
   pose proof (PublicFamilyAgree.th_sigma W C u th Cf (fun t => TAbs t) Cr ks Cu ns EsubF Parts FCu) as ThSig.

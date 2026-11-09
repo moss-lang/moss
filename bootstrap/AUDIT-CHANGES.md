@@ -100,8 +100,11 @@ entry they belong to.
 | 49 | Pins constrain only a linked body's own binds | proposals | relaxation (toward both) |
 | 50 | A call's θ is principal (`CallTheta`) | coherence | A |
 | 51 | F's congruence decides "same need" across contexts (`canon_item`) | 71be6ac (sameneed) | C and D (a relaxation) |
+| 52 | A merge class is one vertex of the expanding-cycle check | coherence2 | B (no verdict found that changes) |
+| 53 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
+| 54 | `Satisfies` checks the callee's merges by class | coherence2 | relaxation (toward native) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, and #51, from the sameneed branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, and #52 to #54, from the coherence2 branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1240,6 +1243,182 @@ executable tests unless noted.
   coherence decides, criteria.md section 6). sameneed-meaning.moss's
   meaning changes from "1 or 2, by orientation" to 2. The oracle's
   orientation, reading order, gives 1 there.
+### 52. A merge class is one vertex of the expanding-cycle check (coherence2 branch; PART-DESIGN §1.5 #8)
+- **Rule now.** `InstantiationsBounded` takes the world, and its level
+  also satisfies two constraints per code node n and its context C
+  (`NodeCx`: a fn's `w_context`, a lambda provider's enclosing context,
+  a linked functor body's G context):
+  - every symbol v that `canon C (TAbs t)` mentions is at least t's
+    level, strictly above it under a constructor (an edge v → t);
+  - if `canon C (TAbs t) = TAbs z`, t is at least z's level (an edge
+    t → z).
+
+  So the members of a merge class share a level, and a class merged with
+  a structure lies strictly above what the structure mentions.
+- **Why.** The vertices are (node, symbol), and the edges come from the
+  θ, tables and captures P spells. Which member spells a class is the
+  merge's representative, an open choice (`MostGeneralMerge`). Without
+  edges inside a class, a cycle could enter the class at one member and
+  leave it at another, or at the structure the class is merged with, and
+  then whether it is seen would depend on the spelling. The classes do
+  not depend on the choice (`PublicOrientation.mgm_classes_iff`), and
+  two orientations read a structure alike up to renaming inside classes
+  (`mgm_reorient`), so the new constraints do not depend on it either.
+  The future `mono` finiteness proof relies on this check.
+- **Criterion: coherence** (criteria.md section 2), for specialization
+  (section 4, part 2).
+- **No counterexample today.** I found no program the old check misses.
+  Audit spells every class canonically, θ covers every formal of the
+  callee (`CallTheta`: `map fst th = map fst (c_ty Cs)`), and a caller
+  gives all members of a callee class one meaning. A cycle through a
+  non-representative member therefore also runs through the members the
+  code mentions. The change makes this hold by construction. It also
+  covers raw spellings, which PART-DESIGN's M5 (and R6) introduces and
+  for which the old check would be unsound.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [expand-merged-xy.moss](examples/expand-merged-xy.moss) (nest merges X, Y; polymorphic recursion through the class) | prints 5 | crashes at compile time (call stack exhausted) | rejects | rejects |
+  | [expand-merged-yx.moss](examples/expand-merged-yx.moss) (the same, merge listed the other way, so the oracle spells the class by Y) | prints 5 | crashes at compile time | rejects | rejects |
+  | expand-*.moss (#48) | unchanged | unchanged | unchanged | unchanged |
+
+  The oracle variant (below) rejects both merged tests with and without
+  the merge edges, and keeps every expand-*.moss verdict.
+- **Corpus.** The ob-expand oracle variant (expand.ml, expandty.ml)
+  ported to this branch's oracle (`scratch/oracle/expand`), with
+  `MOSS_EXPAND_MERGE=1` adding each fn's merge edges (its `fi_merges`,
+  read through the oracle's union-find, as above). Over `tests/`,
+  `examples/` and `bootstrap/examples/`: 415 same / 0 diff before the
+  two new tests. Both new tests are rejected with and without the merge
+  edges (for expand-merged-yx only the message's vertex differs). The variant has no lambda or functor-body merges; Audit
+  has them too.
+- **Proof.** `public_safety` unchanged: safety never reads the conjunct.
+  `AuditBuildExample.main_bounded` proves the new constraints for the
+  unit program (`node_cx_unmerged`: main's context merges nothing, and
+  there is no lambda or linked body).
+- **Class B** (a strengthening of #48's check, which the implementations
+  lack). No program found whose verdict changes.
+
+### 53. Main's fixed machine types are read by class (coherence2 branch; PART-DESIGN §1.5 #5)
+- **Rule now.** `FixedMachinesRead` (Platform.Entry, for each platform
+  functor in main's context) asks, for each machine type `symbol` the
+  functor fixes at meaning t:
+  - `canon C t = canon C (TAbs symbol)`: t is in the machine type's merge
+    class;
+  - `canon C (TAbs symbol)` is a symbol: the class has no structure;
+  - every y with `canon C (TAbs y) = canon C (TAbs symbol)` is `symbol`:
+    the class is the machine type alone.
+
+  Before, it asked `canon C t = TAbs symbol`.
+- **Why.** The old clause held exactly when the machine type represented
+  its class. If main merges I32 with an abstract X, the clause passed with
+  representative I32 and failed with X, so acceptance depended on an open
+  choice. All three new conditions are about classes, and the classes do
+  not depend on the choice (`PublicOrientation.mgm_classes_iff`; a class
+  merged with a structure reads as a structure under every most general
+  merge).
+- **Form chosen.** PART-DESIGN proposed a permissive form: a class with
+  no structure and no other *machine* member, with `InitialTypes` mapping
+  every member to the machine. I chose the strict form instead:
+  - Both implementations reject a machine type merged with an abstract
+    symbol, in either order (tests below).
+  - The permissive form would accept those programs (class C). Its proof
+    would need `InitialTypes` and the platform proofs (`entry_realizes`,
+    `entry_primitive`) restated at a non-machine representative.
+  - The strict form implies the old clause in a canonical context
+    (`PublicEntry.fixed_machine_self`), so the proof is unchanged in
+    substance.
+
+  The strict form agrees with design note 7.1's orientation rule ("main:
+  a machine symbol") and with R1 (b).
+- **Criterion: coherence** (criteria.md section 2), and fidelity
+  (section 6).
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [platform-fixed-merge-xi.moss](examples/platform-fixed-merge-xi.moss) (`context Two = X, i32_eqz[I32 = X], i32_eqz`) | rejects ("incompatible assumed fixed type") | rejects ("incompatible types: `Arrays`") | clause passes with representative I32, fails with X (argued) | rejects |
+  | [platform-fixed-merge-ix.moss](examples/platform-fixed-merge-ix.moss) (the same merge, the other order) | rejects | rejects | the same | rejects |
+  | [platform-fixed-merge.moss](examples/platform-fixed-merge.moss) (I32 = Bool, #39) | rejects | rejects | rejects | rejects |
+
+- **Corpus.** An oracle variant whose `check_platform_entry_view` asks
+  the same class condition (`scratch/oracle/fixedcls`: the class of the
+  machine type, over the env's `en_uf` and `en_tn` symbols, is the type
+  alone), against the oracle, over `tests/`, `examples/` and
+  `bootstrap/examples/` (with the new tests): 419 same / 0 diff.
+- **Remaining.** Other platform-entry clauses of main read types
+  syntactically and so also depend on the representative: `Entry`'s
+  I32 constant (`MachineType`), `AtKey` and `HandlesRead`. They are
+  reached only after this clause, which now rejects every class that
+  merges a machine type with anything, so for machine types these
+  clauses now see the type itself. Main's structure-free classes with no
+  machine member (R1) are untouched.
+- **Proof.** `public_safety` unchanged. `entry_realizes` derives the old
+  reading from the new clause (`fixed_machine_self`, by idempotence of
+  main's merge).
+- **Class A** (reject-only, mirroring both implementations).
+
+### 54. `Satisfies` checks the callee's merges by class (coherence2 branch; PART-DESIGN §1.5 #6)
+- **Rule now.** The merges clause of `Satisfies` checks each class of
+  the callee's merge that is wholly in force here. That means all its
+  members are in force, and so are the classes of the symbols of the
+  structure it is merged with. For such a class, the caller reads a
+  member g as it reads `canon Cs (TAbs g)`. Before, the clause checked
+  each equation (g, t) of the callee's σ whose symbols g and `gens t`
+  were in force.
+- **Why.** Whether an equation mentions a symbol that is not in force
+  depends on the representative. At a closure (`bind F = G;`, BFunClosure
+  3b), take a G class {X, Y, Z} where X is linked and in force, Y is
+  captured and in force, and Z is not in force.
+  - With representative X, the clause checked Y = X and skipped Z = X.
+  - With representative Z, every equation mentions Z and was skipped.
+
+  So a class only partly in force was checked under one representative
+  and not under another. Classes, and "wholly in force", do not depend on
+  the choice (`PublicOrientation.mgm_classes_iff`).
+  - At calls, `CallTheta`'s merge clause already holds of every class,
+    so this clause adds nothing there.
+  - At applications and families, every input is in force. There the
+    class form gives every equation of σ
+    (`PublicOrientation.merges_by_pairs`,
+    `PublicMergeClass.functx_merges`), which is what the proofs use.
+  - At closures, the permissive form is sufficient (PART-DESIGN): a
+    class only partly in force has a linked member, and each application
+    reads the class at θ.
+- **Criterion: coherence** (criteria.md section 2).
+- **Coordination.** Built on `sameneed` (#51, merged): the clause it
+  restates sits next to 71be6ac's `canon_item` filters, which are
+  unchanged.
+- **Tests** (Audit verdicts argued from the rules, not run):
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [closure-partial-class-xyz.moss](examples/closure-partial-class-xyz.moss) (X = Bool and Y = Char at the bind, Z unbound) | rejects ("linked input interpretation differs") | prints k | rejects (LinkBody forces representative X; Y = X fails) | accepts |
+  | [closure-partial-class-zyx.moss](examples/closure-partial-class-zyx.moss) (the same, merge listed the other way) | prints k | prints k | rejects | accepts |
+  | [closure-partial-unbound-xyz.moss](examples/closure-partial-unbound-xyz.moss) (X unbound at the bind) | rejects | prints k | accepts | accepts |
+  | [closure-partial-unbound-zyx.moss](examples/closure-partial-unbound-zyx.moss) | prints k | prints k | accepts | accepts |
+
+  The oracle is itself order-dependent on these programs. Its linked
+  input interpretation check (`defined_link_inputs_compatible`) reads the
+  class through its union-find representative. That is an oracle
+  coherence bug, not fixed here.
+- **Corpus.** No oracle variant changes acceptance. The oracle has no
+  check of G's merges at a closure's bind: it checks only that captured
+  keys are present and that their frozen readings agree
+  (`check_captured_reading`). Audit's change is a relaxation, and it
+  changes Audit's verdict only where Audit rejected before (as on
+  closure-partial-class-*.moss). Neither implementation runs Audit, so
+  no corpus verdict of theirs moves.
+- **Proof.** `public_safety` unchanged. Ten sites that read the merges
+  clause at an application, a family or a copy now derive the per-equation
+  form from the class form through `PublicMergeClass.functx_merges`
+  (new file, added to the certificate's roots): PublicBodySlice
+  (`apply_theta`), PublicFamilyAgree (two), PublicChainFwd,
+  PublicChainSigs, PublicChainRealize (two), PublicFamilyLink and
+  PublicFamilyCopy (two).
+- **Class:** a relaxation, toward native (and toward the oracle in one
+  merge order).
 
 ---
 

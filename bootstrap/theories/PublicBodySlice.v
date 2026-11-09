@@ -12,7 +12,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize.
-From NM Require PublicFormation PublicScoping PublicWorldFormation.
+From NM Require PublicFormation PublicScoping PublicWorldFormation PublicOrientation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -3947,7 +3947,10 @@ Proof.
   - intros r Ir _. exact (Lth r Ir).
   - intros g t Ig. destruct (Dom g t Ig) as [Gg Gt].
     rewrite (Through (TAbs g)) by (intros y [<-|[]]; exact Gg). rewrite (Through t Gt).
-    apply Merg; [exact Ig|]. intros x Ix.
+    assert (Force : forall x, In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None).
+    { intros x Kx. destruct (keys_in _ x Kx) as [v Lv]. destruct (Inp x v Lv) as [here Lh]. rewrite Lh. discriminate. }
+    apply (PublicOrientation.merges_by_pairs C Cu (map fst (A.c_ty Cu)) Dom
+             (PublicOrientation.functx_sub_function W u Cu ns FC) Force Merg); [exact Ig|]. intros x Ix.
     assert (Kx : In x (map fst (A.c_ty Cu))) by (destruct Ix as [<-|Ix]; [exact Gg|exact (Gt x Ix)]).
     destruct (keys_in _ x Kx) as [v Lv]. destruct (Inp x v Lv) as [here Lh]. rewrite Lh. discriminate.
   - (* every input is in force here, so no class is wholly unbound *)

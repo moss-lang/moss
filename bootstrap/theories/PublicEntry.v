@@ -140,6 +140,17 @@ Proof.
   rewrite Scope. cbn. rewrite Nat.eqb_refl. reflexivity.
 Qed.
 
+(* A fixed machine type's class is the type alone, so a canonical context
+   reads it, and the fixed meaning, as itself. *)
+Lemma fixed_machine_self : forall C t x, canonical_context C ->
+  A.canon C t = A.canon C (TAbs x) -> (exists z, A.canon C (TAbs x) = TAbs z) ->
+  (forall y, A.canon C (TAbs y) = A.canon C (TAbs x) -> y = x) ->
+  A.canon C t = TAbs x.
+Proof.
+  intros C t x Can Et [z Ez] Only. rewrite Et, Ez. f_equal. apply Only.
+  rewrite <- Ez at 1. exact (Can (TAbs x)).
+Qed.
+
 (* The platform's provisions realize main's context, given the machine
    types' meanings and its primitives' callability. *)
 Lemma entry_realizes : forall n C ns types platform H0, Platform.Layouts W ->
@@ -199,7 +210,8 @@ Proof.
       intros name mach x Inm Lang Fx. destruct (Cov x Fx) as [tx Itx].
       rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed _ fx x tx Fun Itx).
       pose proof (ctx_fun_self W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) x tx Itx) as Etx.
-      destruct En as [_ FMR]. pose proof (FMR fx Found name mach x tx Inm Lang Itx) as Ct.
+      destruct En as [_ FMR]. destruct (FMR fx Found name mach x tx Inm Lang Itx) as (Ct0 & Str & Only).
+      pose proof (fixed_machine_self C tx x (function_context_canonical W _ C ns Ctx) Ct0 Str Only) as Ct.
       assert (Cx : A.canon C (TAbs x) = TAbs x).
       { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
         rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
@@ -215,7 +227,8 @@ Proof.
       split; [reflexivity|]. split; [exact Cov|]. split; [exact Fun|].
       intros name mach x tx Inm Lang Itx.
       pose proof (ctx_fun_self W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) x tx Itx) as Etx.
-      destruct En as [_ FMR]. pose proof (FMR fx Found name mach x tx Inm Lang Itx) as Ct.
+      destruct En as [_ FMR]. destruct (FMR fx Found name mach x tx Inm Lang Itx) as (Ct0 & Str & Only).
+      pose proof (fixed_machine_self C tx x (function_context_canonical W _ C ns Ctx) Ct0 Str Only) as Ct.
       assert (Cx : A.canon C (TAbs x) = TAbs x).
       { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
         rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
