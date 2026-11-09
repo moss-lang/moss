@@ -273,7 +273,7 @@ Lemma merged_meaning_tf : forall f Cf C th d x,
   In x (map fst (c_ty Cf)) ->
   app_subst (callee_meanings d th) (app_subst (c_sub Cf) (TAbs x)) = ground d (app_subst th (TAbs x)).
 Proof.
-  intros f Cf C th d x Tf [Keys [_ Merges]] Abs Ix.
+  intros f Cf C th d x Tf [Keys [_ [Merges _]]] Abs Ix.
   rewrite callee_ground by exact (merge_image_dom_tf Cf th x Tf Keys Ix).
   replace (app_subst (c_sub Cf) (TAbs x)) with
     (match lookup_subst x (c_sub Cf) with Some t => t | None => TAbs x end) by reflexivity.

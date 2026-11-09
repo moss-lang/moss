@@ -1,0 +1,40 @@
+# Principal θ (criteria section 3; AUDIT-CHANGES #50, proposals item 5).
+# use_it's context lists T and T.foo. demo leaves T unbound, and T's
+# merge class in use_it's context has no member demo binds, so the call
+# instantiates T as T itself: the need T.foo is wanted at demo as
+# `T.foo`, which demo does not provide. demo provides `Concrete.foo`;
+# before the change, `CallTheta` let a derivation guess θ T = Concrete,
+# which made the need succeed.
+# Audit: rejects (CallTheta's principal clause gives θ T = T, and demo
+#   does not provide `T.foo`); before AUDIT-CHANGES #50 it accepted with
+#   θ T = Concrete.
+# Oracle: rejects ("calling `use_it` needs `T.foo`, which is not
+#   available in the context here").
+# Native: rejects ("this item is not available in the current context:
+#   `foo`").
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+tag Concrete;
+fn .foo();
+
+assume T, T.foo {
+  fn use_it() { }
+}
+
+assume Std {
+  fn demo() {
+    bind Concrete.foo = () => ();
+    use_it();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

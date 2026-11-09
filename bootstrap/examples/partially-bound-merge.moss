@@ -10,6 +10,13 @@ import "../../lib/wasip1.moss" use Wasi;
 # `Y` one type too, so `f` may return its `X` as a `Y`. Accepted by
 # both compilers (the bootstrap used to key `B.w` and `C.w` apart when
 # they came first, and rejected `f`). Prints `k`.
+#
+# Principal θ (AUDIT-CHANGES #50): demo binds X but not Y; X and Y are
+# one merge class in f's context, so θ Y is read through X as Char, and
+# the need `C.w[Foo=Y]` is wanted at Foo = Char, which demo provides.
+# Audit: accepts. Native: prints `k`. Oracle: rejects since 61040f2
+# ("needs `Char.w` at another instantiation", D62); the fix designed in
+# #50 (not committed) prints `k`.
 
 type Foo;
 type A;

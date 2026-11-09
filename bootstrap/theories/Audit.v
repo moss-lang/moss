@@ -3234,12 +3234,22 @@ Definition theta_ctx (C : cx) : subst :=
    of s's context ([D43]) must hold of θ, including for requirements C
    leaves unbound: merged types are one type, so a merged class bound
    here gives its unbound members that meaning too, and a caller cannot
-   bind two members of one class differently. *)
+   bind two members of one class differently.
+   θ is principal (criteria, principality): a requirement C leaves unbound
+   whose merge class in Cs (the generations Cs reads as one generation z)
+   has no member C binds is instantiated as itself, read through the
+   class's representative z, canonically; no other instance is allowed.
+   With a member C binds, the merge clause reads it through that member;
+   a requirement Cs merges with a structured type reads through its
+   structure. *)
 Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
   map fst th = map fst (c_ty Cs) /\
   (forall r, In r (map fst (c_ty Cs)) -> nlook r (c_ty C) <> None ->
      lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
-  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
+  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)) /\
+  (forall r z, In r (map fst (c_ty Cs)) -> canon Cs (TAbs r) = TAbs z ->
+     (forall y, canon Cs (TAbs y) = TAbs z -> nlook y (c_ty C) = None) ->
+     lookup_subst r th = Some (canon C (TAbs z))).
 
 (* A signature in Cs's terms, read here at instantiation th. *)
 (* A need of the callee, read here at instantiation th. *)

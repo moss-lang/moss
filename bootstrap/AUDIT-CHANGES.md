@@ -98,8 +98,9 @@ entry they belong to.
 | 47 | A platform family is abstract, with distinct keys | cf21df4 | E |
 | 48 | **No expanding cycle (`NoExpandingCycle`, D16/D30)** | branch ob-expand | **B** |
 | 49 | Pins constrain only a linked body's own binds | proposals | relaxation (toward both) |
+| 50 | A call's θ is principal (`CallTheta`) | coherence | A |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -109,7 +110,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - #14 makes Audit accept a `tests/errors` program that both implementations
   reject.
 - #12 changed the oracle as well (Elab.v, ExecutionModel.v). It rejects
-  `partially-bound-merge.moss`, which native accepts.
+  `partially-bound-merge.moss`, which native and Audit (#50) accept; the
+  oracle fix is designed in #50.
 - #13 rejects a control program that the oracle runs correctly.
 
 ---
@@ -152,6 +154,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     gets the class's meaning;
   - θ covers the callee's whole context type table (for `main`, its root
     types too).
+  - since #50, θ is principal: a requirement in a callee class with no
+    member the caller binds is the class itself (its representative).
 
   `Satisfies` maps each need to the caller's key through θ (`at_th`,
   added in 6fd598a).
@@ -167,8 +171,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     Since #12 the oracle rejects it too (D62).
   - [partially-bound-merge.moss](examples/partially-bound-merge.moss): the
     oracle printed `k` before #12. Under `CallTheta` it was meant to be
-    accepted (E24 says it "must be accepted"). Audit's verdict on it after
-    #12 is not recorded; see "Known divergences".
+    accepted (E24 says it "must be accepted"). Audit accepts it (θ Y is
+    read through the bound X; recorded in #50); native prints `k`.
 - **Corpus.** None.
 - **Decision.** User-approved (E24).
 - **Class B.** The oracle at the time accepted unbound-merge-representative.
@@ -1081,6 +1085,66 @@ executable tests unless noted.
   (`pre_frame`, `outcome_frame`).
 - **Class.** A relaxation toward both implementations.
 
+### 50. A call's θ is principal (coherence branch; proposals item 5)
+- **Rule now.** `CallTheta` has a fourth clause. A requirement r of the
+  callee that the caller leaves unbound, whose merge class in the
+  callee's context (the generations `canon Cs` reads as one generation
+  z) has no member the caller binds, is instantiated as itself, read
+  through the class's representative: `θ r = canon C (TAbs z)`. No other
+  instance is allowed. Where the class has a member the caller binds,
+  the merge clause reads r through that member, as before; a requirement
+  the callee merges with a structured type reads through its structure.
+  For a singleton class, θ r is r itself. A class with several members
+  and none bound reads through z, not each member as itself, because
+  the merge clause must still hold of θ (each member as itself would
+  reject every call whose callee merges two requirements the caller
+  leaves unbound).
+- **Why.** Before, θ was fixed only where the caller binds a
+  requirement, so a derivation could guess an unbound requirement at any
+  type that made `Satisfies` succeed (`ExCallD`, `FPDefined`,
+  `MPAttached`, the attached-call rules).
+- **Criterion: principality** (criteria.md section 3), which also gives
+  coherence (section 2): θ is determined by the call.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [principal-theta-unbound.moss](examples/principal-theta-unbound.moss) (main binds `Concrete.foo`, calls a fn needing `T.foo` with T unbound) | rejects ("needs `T.foo`, which is not available") | rejects ("not available in the current context: `foo`") | accepts (θ T = Concrete) | rejects |
+  | [partially-bound-merge.moss](examples/partially-bound-merge.moss) (f merges X with Y; the caller binds X only) | rejects (D62); the oracle fix below prints `k` | prints `k` | accepts (θ Y = Char, forced by the merge clause) | accepts (θ Y read through X) |
+  | [unbound-merge-representative.moss](examples/unbound-merge-representative.moss) | rejects | (not recorded) | rejects | rejects |
+
+- **Oracle.** Its `call_theta` already reads an unbound requirement as
+  itself, so it never guessed; but it also reads a requirement as itself
+  when a member of its callee class is bound, and so rejects
+  partially-bound-merge (E24). The fix, `principal_env` in Elab.v (read a
+  requirement not in force through a member of its callee class, under
+  `fi_merges`, that is in force, before `require_needs`, `fn_sig` and
+  `call_theta` at a direct or attached call), makes it print `k`. It is
+  **not committed**: the oracle's specification
+  (`ExecutionModel.Elaboration`, `ExCallD` and the attached-call rules)
+  states a call at `theta_at W C f` and `Satisfies C`, and Elab's
+  soundness proofs (CallDefined, MethodCallCore and the files over
+  them) would need the call restated at the principal context. That is
+  the remaining part (E24).
+- **Corpus.** Oracle variants against the oracle at 9e2fb21, over
+  tests/, examples/ and bootstrap/examples/ (with the new test):
+  - the fix (`principal_env` at direct and attached calls and at fn
+    providers): elaboration 412 same / 2 diff, full runs 412 same / 2
+    diff. partially-bound-merge changes verdict (rejected, now prints
+    `k`); unbound-merge-representative stays rejected with another
+    message (now the merge check: Y and Z are Bool and Char).
+  - the Audit-mirroring variant (the fix, plus: a wholly unbound class
+    reads through its representative): 413 same / 2 diff against the
+    oracle (the same two), 415 same / 0 diff against the fix.
+  No program changes from accepted to rejected.
+- **Proof.** `public_safety` unchanged. `apply_theta` (PublicBodySlice)
+  proves the new clause vacuously (an application reads every input of
+  F here); `call_theta_merged` and `merged_meaning_tf` destructure one
+  more conjunct.
+- **Class A** (reject-only, mirroring both implementations, which reject
+  principal-theta-unbound), and it settles E24 for Audit: partially-bound-
+  merge is accepted, as native does.
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1137,16 +1201,13 @@ details are in `scratch/consol-STATUS.md`.
     link_site spells F's keys with F's representative. Class-based
     restatements make every orientation agree without changing which
     programs some orientation accepts.
-  - *Principal θ:* `CallTheta` lets an unbound requirement take any type
-    that satisfies the callee's merges. **Open (proposals item 5,
-    stopped):** read through a bound member of the *callee's* merge
-    class, the principal θ keeps partially-bound-merge.moss accepted (f
-    merges X with Y, the caller binds X, so θ Y is Char, as today's merge
-    clause already forces); only the oracle's reading (each requirement
-    "here, or itself", i.e. the caller's class) rejects it, and that
-    reading makes the merge clause reject calls whose callee merges two
-    requirements the caller leaves unbound, which the oracle accepts. The
-    owner should choose the class; E24 is unchanged.
+  - *Principal θ:* **resolved by #50** (proposals item 5; criterion:
+    principality). An unbound requirement reads through a bound member
+    of its callee merge class, else as itself through the class's
+    representative; partially-bound-merge.moss stays accepted, and
+    principal-theta-unbound.moss (a guessed θ T = Concrete) is rejected,
+    as both implementations reject it. The oracle fix is designed and
+    corpus-checked but not committed (see #50).
   - *Ambiguous family read-off:* resolved by item 6 (#31): the
     matching item must be unique, as the oracle's `family_member` asks.
 - **#14 after fc75de7, by reading (not run):** Audit still accepts
@@ -1198,10 +1259,9 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
 - family-poly-nontype (#9, E34).
 - ~~lambda-declared-output and kept-output-family-method (#10)~~: Audit
   accepts both again since #10 option (b).
-- partially-bound-merge (#12). Native accepts it. The oracle has rejected
-  it since 61040f2. **Audit's own verdict on it is not recorded.** E24
-  still says it must be accepted, which conflicts with the oracle's new
-  D62 rejection. This should be settled.
+- ~~partially-bound-merge (#12)~~: Audit accepts it (#50: θ Y reads
+  through the bound X), as native does (`k`). The oracle still rejects it
+  (D62); its fix is designed in #50 (E24).
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
 - ~~block-pin-rebind.moss~~: accepted since #49.
 - Native's verdict is not recorded for stale-provision-type (#4) or

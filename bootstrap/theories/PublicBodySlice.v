@@ -3895,13 +3895,16 @@ Proof.
       rewrite lookup_subst_nlook', Lh. reflexivity.
     - intros x Ix. destruct (keys_in _ x (Sc x Ix)) as [v Lv]. destruct (Inp x v Lv) as [here Lh].
       rewrite lookup_subst_nlook', Lh. discriminate. }
-  split; [unfold th; rewrite map_map; reflexivity|]. split.
+  split; [unfold th; rewrite map_map; reflexivity|]. split; [|split].
   - intros r Ir _. exact (Lth r Ir).
   - intros g t Ig. destruct (Dom g t Ig) as [Gg Gt].
     rewrite (Through (TAbs g)) by (intros y [<-|[]]; exact Gg). rewrite (Through t Gt).
     apply Merg; [exact Ig|]. intros x Ix.
     assert (Kx : In x (map fst (A.c_ty Cu))) by (destruct Ix as [<-|Ix]; [exact Gg|exact (Gt x Ix)]).
     destruct (keys_in _ x Kx) as [v Lv]. destruct (Inp x v Lv) as [here Lh]. rewrite Lh. discriminate.
+  - (* every input is in force here, so no class is wholly unbound *)
+    intros r z Ir Cr Unb. destruct (keys_in _ r Ir) as [v Lv]. destruct (Inp r v Lv) as [here Lh].
+    rewrite (Unb r Cr) in Lh. discriminate.
 Qed.
 
 Lemma bindings_apply_eq : forall j d g st u th outs sm rs r,
