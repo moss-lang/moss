@@ -6,6 +6,7 @@ From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicPlatformApply.
+From NM Require PublicFormation PublicWorldFormation PublicFamilySig.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -185,7 +186,7 @@ Proof.
     destruct (Find (IFn f) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc|p held]; cbn in En; try contradiction.
     destruct held; cbn in En; try contradiction. exists (PrimitiveClosure p None). split; [exact L|].
-    exact (Prims f p g (lookup_entry_some _ _ _ L) Found En).
+    exact (Prims f p g (lookup_entry_some _ _ _ L) Found (proj1 En)).
   - intros r m g Found. destruct (mths_ilook _ r m g KM Found) as [a Il].
     destruct (Find (A.mkey r m) (ProvNs _ _ (S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn in En. contradiction.
@@ -334,14 +335,13 @@ Definition FamilySig (W : A.world) (Prog : program) (u : nat) (inputs outputs : 
   forall key op rf m a gf, In key keys -> Platform.AtKey W outputs key op ->
   key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf -> P gf rf.
 
-(* PREMISE (T29, one with main's): the platform signatures have their
-   handle tags formed, main's (AtKey in main's context) and each platform
-   family's (AtKey in its result). *)
+(* PREMISE (T29). A platform family's primitive signatures (AtKey in its
+   result) have their handle tags formed, as main's platform fns' are
+   (handles_formed, from Platform.HandlesRead); Platform.Family asks no
+   HandlesRead of its items yet. *)
 Definition PlatformHandlesFormed (W : A.world) (Prog : program) : Prop :=
-  (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
-     Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg)) /\
-  (forall u inputs outputs keys, FamilySig W Prog u inputs outputs keys
-     (fun gf rf => Forall (HandleFormed W) (A.sg_ret gf :: rf :: A.sg_params gf))).
+  forall u inputs outputs keys, FamilySig W Prog u inputs outputs keys
+    (fun gf rf => Forall (HandleFormed W) (A.sg_ret gf :: rf :: A.sg_params gf)).
 
 (* PREMISE (D84, static). A machine type symbol a platform family's
    signature mentions is a fixed input of the family's functor (not one it
@@ -363,7 +363,7 @@ Lemma platform_prims_public : forall W Prog argv read iface,
   PlatformHandlesFormed W Prog -> PlatformSigsFixed W Prog ->
   PA.ChainPrimsOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface).
 Proof.
-  intros W Prog argv read iface Lay Reps Bools Laws Supp [_ Handles] Fixed F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
+  intros W Prog argv read iface Lay Reps Bools Laws Supp Handles Fixed F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
     rr d types H g st Pre0 code sms gfx Look Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD d1 key op rf m a gf
     Ik Ib MP AK Ek Mgf.
   pose proof (Handles h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf) as Formed.
@@ -396,7 +396,7 @@ Proof.
   { apply Supp. unfold required_primitives. apply in_or_app. right. apply in_or_app. left.
     pose proof FD as (_ & _ & _ & FB & _). unfold A.funbody_of in FB.
     apply in_flat_map. exists (code, FunctorCode (map fst (A.c_ty Ch0)) (map fst (A.c_ty Ch0))
-      (map (A.rkey_of outputs) keys) bindings). split; [exact (nlook_in _ _ _ _ FB)|].
+      (map (A.rkey_of outputs) keys) bindings []). split; [exact (nlook_in _ _ _ _ FB)|].
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
   assert (Held : HeldAt m' (rf :: A.sg_params gf)
@@ -497,6 +497,39 @@ Theorem safety_public : forall prelude,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
 Proof. intros prelude Remaining. exact (SR.safety_from_entry prelude (entry_safe_public prelude Remaining)). Qed.
+(* The platform signatures' handles are formed (T29): a fn main assumes is
+   a platform entry, whose signature reads each raw handle as itself
+   (Platform.HandlesRead), and is formed, since main's context is. *)
+Theorem handles_formed : forall bundle W Prog, A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
+  forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
+    Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg).
+Proof.
+  intros bundle W Prog Elab Link C ns f sg op Ctx Found _.
+  pose proof Elab as (Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys & _) & _).
+  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries).
+  destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
+  destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].
+  rewrite Env in Env'. injection Env' as <- <-.
+  pose proof (PublicFormation.ctxof_cx_formed W (PublicWorldFormation.merge_formed_of W)
+    (PublicWorldFormation.mentions_typed_of bundle W Wo) _ C ns Ctx) as Fc.
+  pose proof (PublicFormation.fns_ok W C f sg (proj1 Fc) Found) as [Fp Fr].
+  assert (Formed : Forall (PublicFormation.TyOk W) (A.sg_ret sg :: A.sg_params sg)) by (constructor; assumption).
+  pose proof (ctx_keys_match W _ C ns Ctx) as KM.
+  destruct (ctx_needs W _ C ns Ctx) as [_ [ProvNs _]].
+  destruct (fns_ilook _ f sg KM Found) as [a Il].
+  assert (Im : In (IFn f) (map fst platform))
+    by (rewrite Keys; change (IFn f) with (A.rkey_of C (IFn f)); apply in_map; exact (ProvNs _ _ (S.ilook_in _ _ _ Il))).
+  apply in_map_iff in Im as [[k pv] [Ek Ie]]. cbn in Ek. subst k.
+  rewrite Forall_forall in Entries. pose proof (Entries _ Ie) as En. cbn in En.
+  destruct pv as [w|f' df|u sms dc|p held]; try contradiction. destruct held; try contradiction.
+  destruct En as [_ Raw]. pose proof (Raw sg Found) as Raws.
+  rewrite Forall_forall in Formed, Raws |- *. intros t It name param handle symbol args Tag Sym ->.
+  split.
+  - destruct (Formed _ It) as [Ft _]. exact (proj1 (proj1 (PublicFormation.nom_formed W symbol args) Ft)).
+  - apply (Raws _ It name handle symbol args); [|exact Sym|reflexivity].
+    cbn in Tag. destruct Tag as [E|[E|[E|[]]]]; injection E as <- <- <-; cbn; auto.
+Qed.
+
 (* G05 from the remaining obligations alone: the slice's safety follows
    from them, with the elaboration and link facts it assumes read off
    ElaboratesIn and Linked. Applying a copy, and the slice's LinkResultsOk
@@ -507,11 +540,9 @@ Theorem safety_obligations : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      let argv := M.arguments initial in let read := M.read_file initial in
      let so := PS.state_ok W (program_of Prog argv read) iface in
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W /\ PublicFormation.FamilySigOk W /\
-      MainMachinesUnmerged W Prog) /\
-     PlatformHandlesFormed W Prog /\
+     MainMachinesUnmerged W Prog /\ PlatformHandlesFormed W Prog /\
      S.FamilyStepOk W Prog argv read so /\ S.LinkMergesOk W Prog /\ S.BindMergesOk W Prog /\ S.CapturedInForceOk /\
-     S.RefileRunOk W Prog argv read so /\ CopyA.ChainResultsOk W Prog argv read so /\
+     CopyA.ChainResultsOk W Prog argv read so /\
      PA.ChainResultAgrees W Prog /\ PA.PlatformNotLinked W Prog /\ PlatformSigsFixed W Prog) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
@@ -520,17 +551,20 @@ Proof.
   intros prelude Obl. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
   destruct (Obl Prog iface initial bundle W Compat Elab Link)
-    as [[Mf [Mt [Fs Unm]]] [Handles [FSt [LM [BM [CIF [RR [CR [RA [NL Sigs]]]]]]]]]].
+    as [Unm [Handles [FSt [LM [BM [CIF [CR [RA [NL Sigs]]]]]]]]].
   pose proof Elab as (Wo & AllFn & _).
   pose proof Link as (_ & Lay & Reps & _).
+  pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
+  pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.
+  pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].
   pose proof (PA.chain_platform_ok W Prog _ _ _ LM RA
     (platform_prims_public W Prog (M.arguments initial) (M.read_file initial) iface Lay Reps (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _) Supports Handles Sigs)
     NL) as CP.
-  split; [|split; [split; [|split]; assumption|exact (proj1 Handles)]].
+  split; [|split; [split; [|split]; assumption|exact (handles_formed bundle W Prog Elab Link)]].
   exact (S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt AllFn
-    (ex_intro _ bundle Wo) LM BM CIF RR (CopyA.link_results_of_chain W Prog _ _ _ CR)
-    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF RR CR CP)
+    (ex_intro _ bundle Wo) LM BM CIF (CopyA.link_results_of_chain W Prog _ _ _ CR)
+    (CopyA.copy_apply_ok W Prog _ _ _ LM Mf Mt Fs AllFn (ex_intro _ bundle Wo) BM CIF CR CP)
     (CopyA.platform_apply_of_chain W Prog _ _ _ CP)).
 Qed.
 

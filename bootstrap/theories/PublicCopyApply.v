@@ -1,7 +1,7 @@
 (* Applying a copy (T15): a functor bound to a copy of another runs its
    source's code at the source's interface, reached through the copy
    chain. This discharges PublicBodySlice's CopyApplyOk from the body
-   run (RefileRunOk) and two obligations about a closure's root, stated
+   run and two obligations about a closure's root, stated
    for a whole copy chain: what a completed linked body provides at the
    application (ChainResultsOk, LinkResultsOk read through copies) and
    what applying a platform family through copies does (ChainPlatformOk,
@@ -232,13 +232,13 @@ Proof.
     exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach).
 Qed.
 
-Lemma app_env_thof : forall d code f Cu Ch0 Cg outs bs X,
+Lemma app_env_thof : forall d code f Cu Ch0 Cg outs bs srcs X,
   A.funbody_of Prog code = Some (FunctorCode (map fst (A.c_ty Cg))
-    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) outs bs) ->
+    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) outs bs srcs) ->
   (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) ->
   application_environment P d code (thof f Cu) X = application_environment P d code (thof f Ch0) X.
 Proof.
-  intros d code f Cu Ch0 Cg outs bs X FB Keys. unfold application_environment.
+  intros d code f Cu Ch0 Cg outs bs srcs X FB Keys. unfold application_environment.
   change (view_functor P code) with (A.funbody_of Prog code). rewrite FB. cbn [fc_inputs fc_linked].
   assert (E : forall x, (if existsb (Nat.eqb x) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg)))
       then lookup_subst x (thof f Cu) else None) =
@@ -283,10 +283,10 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
-  I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st (flat_map (A.refile (map (fun k0 => (A.at_site Cb (A.output_renaming outs' gen k0), A.output_renaming outs' gen (A.rkey_of Cr k0))) ks')) binds0) = inl (d3, g3, st3) ->
+  I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (inst_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list) = Some dr /\
+    select_provisions d3 (result_smap (result_substitution th (map (fun t => (t, gensof t)) outs)) (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list (S.link_sources Cb outs' gen Cr ks')) = Some dr /\
     result_environment d (map (fun t => (t, gensof t)) outs) d3 (map ITy outs' ++ map (fun k0 => A.output_renaming outs' gen (A.rkey_of Cr k0)) ks')%list dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     S.MeaningsGrow newgens d (append_environment result d).
@@ -326,13 +326,12 @@ Qed.
 
 Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
-Hypothesis family_sig_ok : PublicFormation.FamilySigOk W.
+Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
   A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
 Hypothesis bind_merges : S.BindMergesOk W Prog.
 Hypothesis captured_in_force : S.CapturedInForceOk.
-Hypothesis refile_run : S.RefileRunOk W Prog argv read state_ok.
 Hypothesis chain_results : ChainResultsOk.
 Hypothesis chain_platform : ChainPlatformOk.
 
@@ -368,7 +367,7 @@ Proof.
     & outs' & gen & Cr & ks' & binds0 & LD).
   pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB).
   destruct (S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
-  rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
+  rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
   set (de := application_environment P d code th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
@@ -386,11 +385,17 @@ Proof.
     captured_in_force (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch']].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply S.bindsof_fold in BO. subst binds0.
   rewrite S.apply_functor_eq, Look. change (view_functor (program_of Prog argv read) code) with (PublicBodySlice.A.funbody_of Prog code). rewrite FB.
-  cbn [fc_bindings fc_outputs]. rewrite Sel, A2.
+  cbn [fc_bindings fc_outputs fc_sources]. rewrite Sel, A2.
   change (application_environment (program_of Prog argv read) d code th (append_environment d2 dc)) with de.
-  destruct (refile_run (S j1) k h0 gg code dg n0 ps0 a0 rs bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs _ LD Ch'
-    rr j1 de H st Lr ltac:(lia) ltac:(lia) PreB) as [[d3 [g3 [st3 [H3 [E3 [Pre3 Run]]]]]]|[res [Run [NN Out]]]].
-  - rewrite Run.
+  destruct (S.chain_run W Prog argv read state_ok (S j1) k Fg Cg Fb Cb _ made bs Ch' rr j1 de [] H [] st [] Lr ltac:(lia) ltac:(lia) PreB)
+    as [[d3 [g3 [st3 [H3 [j' [_ [E3 [_ [Pre3 Run0]]]]]]]]]|[res [Run [NN Out]]]];
+    [rewrite app_nil_r in Run0|rewrite app_nil_r in Run].
+  - destruct j' as [|j'].
+    { rewrite Run0. right. exists (I.with_g g (I.Evaluation OutOfFuel g3 st3)). split; [reflexivity|].
+      exact (S.body_stop W Prog argv read state_ok Fg de H [] TUnit False False F d H types g (I.Evaluation OutOfFuel g3 st3) Ret Loop
+        ltac:(intros v E; discriminate) Logic.I). }
+    assert (Run : I.eval_bindings j1 (program_of Prog argv read) de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
+    rewrite Run.
     destruct (chain_results F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms' dc gfx h0 gf0 gg dg n0
       ps0 a0 rs bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm Chn Ok0 LD
       Sel A2 Run E3 Pre3) as [dr [result [Sdr [Rres [PreC GrowC]]]]].

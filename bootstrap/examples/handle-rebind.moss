@@ -1,0 +1,26 @@
+# main assumes the platform's i64_store through a context item that brackets
+# its I32 requirement: `i64_store[I32 = Addr[I32 = I64]]`. main's context then
+# files i64_store at (Addr[Memory=Memory, I32=I64], I64) -> (), which is a
+# Platform signature for PI64Store (prim_msig: an Addr and an I64), so the
+# platform provides the store primitive at a handle whose raw-handle
+# requirement (I32) reads as I64. Audit's Platform.Entry now requires each
+# platform fn's signature to read its raw handles as themselves
+# (HandlesRead). The oracle rejects this program (assumed-requirement
+# coherence, D20/D62: i64_store needs Memories, fixed at I32). Native accepts
+# it, but main never calls i64_store (i64_store is defined, so a call would
+# be direct and native rejects that call with a type error).
+import "../../lib/wasm.moss" use I32;
+import "../../lib/wasm.moss" use I64;
+import "../../lib/wasm.moss" use F32;
+import "../../lib/wasm.moss" use F64;
+import "../../lib/wasm.moss" use Memory;
+import "../../lib/wasm.moss" use Memories;
+import "../../lib/wasm.moss" use i32_zero;
+import "../../lib/wasm.moss" use i64_store;
+import "../../lib/wasm.moss" use Addr;
+
+context Store = I32, I64, F32, F64, Memory, Memories, i32_zero, i64_store[I32 = Addr[I32 = I64]];
+
+assume Store {
+  fn main() {}
+}
