@@ -1193,14 +1193,44 @@ details are in `scratch/consol-STATUS.md`.
   as the statement #20 refers to.
 - **Owner-decided principles, analysed but not implemented** (proposals
   5–7 in `scratch/consol-STATUS.md`):
-  - *Merge orientation* (**open**, proposals item 4 not done; design in
-    scratch/proposals-STATUS.md, git-ignored): LinkBody's 3b (#7) and #11 split one condition
-    by orientation (G merging an input of F with a symbol only G has is
-    rejected under one representative and can be accepted under the
-    other), `fc_table` makes the run time follow the representative, and
-    link_site spells F's keys with F's representative. Class-based
-    restatements make every orientation agree without changing which
-    programs some orientation accepts.
+  - *Merge orientation* (**open**, proposals item 4; criterion:
+    coherence, criteria.md section 2). LinkBody's 3b (#7) and #11 split
+    one condition by orientation (G merging an input of F with a symbol
+    only G has is rejected under one representative and can be accepted
+    under the other), `fc_table` makes the run time follow the
+    representative, and link_site spells F's keys with F's
+    representative. The class-based restatement (design in
+    PROPOSALS-STATUS.md: 3b and #11 by `canon Cg`-class, `fc_table`
+    through a substitution `lr` sending each class that meets F's inputs
+    to a linked member, link_site reading an input G lacks through a
+    `canon Cu`-class member G has) was attempted on the coherence branch
+    and stopped before any Audit change. What blocks it is the proof of
+    `public_safety`, not acceptance:
+    - under the orientation whose representative y is G's own, the
+      class-based `fc_table` reads y at θ of the linked x, so a captured
+      item typed at y (which the class form of 3b must allow when the
+      class has a fixed input of F, since the x-rep orientation allows
+      it today) is read at θ x. `PublicBodySlice.link_entry` types
+      captured items at their captured meanings (`AppMeanings`), so it
+      would need a new bind-time invariant: the captured meaning of y is
+      the fixed reading of x. BFunClosure does not establish it (its 3b
+      `Satisfies` checks G's merges only between symbols in force at the
+      bind);
+    - `PublicLinkRun.link_input_meaning` and the ChainRealize proofs
+      read `fc_table = c_ty Cg` and "G's readings are over F's inputs"
+      directly, and link_site's table (`lookup_site_in`) is used in
+      PublicChainRealize's key-scoping proofs;
+    - reducing the y-rep case to today's x-rep proof would need the body
+      typing (`BindItems`) to be invariant under re-orienting Cg, a
+      renaming lemma over every typing rule.
+    Groundwork, proved: `PublicOrientation.mgm_classes_iff` (two most
+    general merges of one telescope identify the same types, so a
+    clause stated by class is orientation-invariant) and
+    `mgm_reorient`. Native exits 0 on
+    [link-merge-rep-rebind-both.moss](examples/link-merge-rep-rebind-both.moss)
+    in both context orders; the oracle rejects the `[Foo=X], [Foo=T]`
+    order (D84 3d, its pins include the representative) and exits 0 on
+    the reversed one; Audit accepts both (by reading, as before).
   - *Principal θ:* **resolved by #50** (proposals item 5; criterion:
     principality). An unbound requirement reads through a bound member
     of its callee merge class, else as itself through the class's
