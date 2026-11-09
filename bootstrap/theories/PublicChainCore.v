@@ -220,7 +220,7 @@ Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newg
   adapt_provisions d1 sms = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources (A.link_site Cg Cb outs') outs' gen ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of C') ks) rms (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
   EnvOkOn (fun k => In k (map fst news)) rr C' (append_environment (LR.result_of d3 outs gensof dr) d) H3.
 
@@ -246,7 +246,7 @@ Qed.
 Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms,
   S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
-  A.ResultRealizes Cb Cr (map (fun t => (gen t, TAbs t)) outs') ks' ->
+  A.ResultRealizes Cb Cr (A.link_renaming outs' gen) ks' ->
   (forall s, In s (chain_sources rms (S.link_sources Cb outs' gen ks')) -> In s (S.link_sources Cb outs' gen ks')) ->
   exists dr, select_provisions d3 (result_selection rs rms (S.link_sources Cb outs' gen ks')) = Some dr.
 Proof.
@@ -255,10 +255,10 @@ Proof.
   pose proof (Rg b Ib) as Ib'. unfold S.link_sources in Ib'. apply in_map_iff in Ib' as [k' [<- Ik']].
   destruct (RR k' Ik') as [req [act [_ [La _]]]].
   assert (NT : forall t, k' <> ITy t) by (intros t E; subst k'; exact (provide_result_keys_not_ty W _ _ _ _ _ t PR Ik')).
-  assert (NT' : forall t, A.at_site Cb (app_subst_item (map (fun t => (gen t, TAbs t)) outs') k') <> ITy t)
+  assert (NT' : forall t, A.at_site Cb (app_subst_item (A.link_renaming outs' gen) k') <> ITy t)
     by (apply at_site_not_ty, app_subst_item_not_ty, NT).
   destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real (ilook_in_gen _ _ _ _ La) (need_shape_id _ NT')) as [pv L].
-  rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item (map (fun t => (gen t, TAbs t)) outs') k'))) d3 = None) in E. congruence.
+  rewrite rkey_of_provision_id in L. intros E. change (lookup_provision (A.rkey_of Cb (A.at_site Cb (app_subst_item (A.link_renaming outs' gen) k'))) d3 = None) in E. congruence.
 Qed.
 
 (* ---- the caller's aliases after the application ---------------------------- *)
@@ -435,10 +435,10 @@ Proof.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
-  destruct (CA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (S.link_sources (A.link_site Cg Cb outs') outs' gen ks')
+  destruct (CA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')
     ltac:(intros C0 o C0' ks0 P0; unfold S.link_sources; rewrite length_map;
           exact (PublicCallerKeys.provide_result_length W h0 _ _ _ _ _ _ _ _ PR' P0))) as [_ Rg].
-  destruct (chain_selection rr (A.link_site Cg Cb outs') d3 H3 h0 Ch0 _ outs' gen Cr ks' (map (A.rkey_of C') ks) rms
+  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr ks' (map (A.rkey_of C') ks) rms
     Real3 PR' RR Rg) as [dr Sdr].
   destruct (provide_result_news W _ _ _ _ _ PR) as [news [En KMn]].
   pose proof (selection_news u C _ C' ks rms _ d3 dr PR Sdr news En) as Cov.
@@ -558,7 +558,7 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu k)) (S.linked_needs ns nsg)) = Some d2 ->
   S.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
-  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (S.link_sources (A.link_site Cg Cb outs') outs' gen ks')) = Some dr ->
+  forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) [] (S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr ->
   forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
      lookup_provision (A.rkey Cr r m) dr = Some pv /\ CallableOk rr H3 d (r :: A.sg_params g) (A.sg_ret g) pv.
 
@@ -568,7 +568,7 @@ Proof.
     Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
-  destruct (chain_selection rr (A.link_site Cg Cb outs') d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) []
+  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) []
     Real3 PR' RR
     ltac:(intros s0 I0; exact I0)) as [dr Sdr].
   exists dr. split; [exact Sdr|]. split.

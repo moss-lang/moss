@@ -3923,16 +3923,23 @@ Definition output_renaming (outs : list nat) (gen : nat -> nat) (k : item) : ite
    The key is read at the body's site (at_site re-reads its receiver). *)
 Definition read_rename (body : cx) (rename : subst) : subst :=
   map (fun q => (fst q, canon body (app_subst (c_ty body) (snd q)))) rename.
-(* Where a linked body's result key is read (LinkBody): an output at the
-   body's final table (a body that binds T = Bool provides T.m as Bool.m),
-   every other symbol at G's own readings. An input's meaning at an
-   application is the caller's, and a rebind in the body writes only its
+(* Where a linked body's result key is read (LinkBody): an output role
+   (gen t) at the body's final table (a body that binds T = Bool provides
+   T.m as Bool.m), every symbol at G's own readings. An input's meaning at
+   an application is the caller's, and a rebind in the body writes only its
    alias, so a key's receiver may not follow it (an unpinned merge
    representative, examples/link-merge-rep-rebind.moss; the oracle's
-   check is by written leaf, scratch/orch/linknewpf-AUDIT.md). *)
-Definition link_site (Cg Cb : cx) (outs : list nat) : cx :=
-  Cx (map (fun t => (t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ c_ty Cg)
+   check is by written leaf, scratch/orch/linknewpf-AUDIT.md). That holds
+   for an input of F that is also an output: its input occurrences (a
+   merge representative's) read at G's table, only its role at the body's
+   (examples/link-output-input-rep.moss, scratch/orch/realize3-AUDIT.md).
+   The roles stay in the keys and promised types (link_renaming is the
+   identity on them), so the site's table alone reads them. *)
+Definition link_site (Cg Cb : cx) (outs : list nat) (gen : nat -> nat) : cx :=
+  Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ c_ty Cg)
      (c_sub Cb) (c_provisions Cb) (c_locals Cb).
+Definition link_renaming (outs : list nat) (gen : nat -> nat) : subst :=
+  map (fun t => (gen t, TAbs (gen t))) outs.
 Definition ResultRealizes (body promised : cx) (rename : subst) (keys : list item) : Prop :=
   forall k, In k keys -> exists required actual,
     ilook (provision_id k) (c_provisions promised) = Some required /\
@@ -4623,7 +4630,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     (forall t, In t outs -> Fresh W (gen t)) ->
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* Every output has the promised signature and known type meanings. *)
-    ResultRealizes (link_site Cg Cb outs) Cr (map (fun t => (gen t, TAbs t)) outs) ks ->
+    ResultRealizes (link_site Cg Cb outs gen) Cr (link_renaming outs gen) ks ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->
@@ -4635,7 +4642,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
       (map ITy outs ++ map (rkey_of Cr) ks) binds0
-      (map (fun k => rkey_of (link_site Cg Cb outs) (at_site (link_site Cg Cb outs) (output_renaming outs gen k))) ks)) ->
+      (map (fun k => rkey_of (link_site Cg Cb outs gen) (at_site (link_site Cg Cb outs gen) (app_subst_item (link_renaming outs gen) k))) ks)) ->
     LinkBody W P u gg h.
 
 (* ======================================================================== *)
