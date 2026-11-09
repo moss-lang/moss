@@ -265,3 +265,37 @@ I stopped here to report, rather than start these changes.
   3. Add `SigCoherent` to `Formed`.
   Each is multi-hour and changes what `LinkResultsOk`/`ChainResultsOk`
   must deliver.
+
+## Follow-up 4: the planned "declared symbols in force" invariants are false
+
+`bootstrap/examples/family-unbound-need-sig.moss` (oracle: accepted,
+exit 0; native: pending, the nix build of mossc.wasm is slow):
+- `use_it`'s context lists `T` and `T.twice[A=T]`. main never binds T.
+- The call reads the need at the site as T itself.
+- Family F[A] is applied at A := T, adding `T.twice : () -> T` to main's
+  context. T is a declared type symbol that is not a key of main's type
+  table.
+
+So both of these are false for an accepted program:
+- repair's DeclaredInForce: declared symbols in `context_gens C` are
+  table keys;
+- results' DeclaredScopedOk: a declared symbol the context mentions is a
+  key of its table.
+`family-unbound-need.moss` (same shape, with the symbol only in the
+receiver) already breaks `KeysScoped`.
+
+The root is that `theta_at` reads an unbound callee requirement as itself,
+both at calls and when demands read needs at the site.
+
+Options:
+- **(a)** Audit rejects a call or demand whose callee requirement, as
+  read at the site, is a declared symbol not in force. Native's behaviour
+  needs checking first, and the oracle accepts these programs.
+- **(b)** The invariants admit such symbols. Then lambda capture
+  (`lexical_capture` maps only `context_gens`) needs "no meaning in d for
+  a declared symbol outside the table". That is the results agent's
+  `MeaningsScoped`, if `fr_fresh` holds only fresh symbols.
+- **(c)** `context_gens` includes method-key receiver gens. This is a
+  runtime capture change, and still needs (b) for signature mentions.
+
+Not started pending a decision.

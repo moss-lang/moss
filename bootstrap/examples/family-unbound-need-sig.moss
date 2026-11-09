@@ -1,0 +1,20 @@
+# A declared type symbol that is not in force appears in a provision's
+# signature after a family demand. So "every declared symbol the context
+# mentions is in force" is false: this breaks the invariant planned for
+# CapturedInForceOk (DeclaredInForce), and the results agent's
+# DeclaredScopedOk.
+# Need lists T and T.twice[A=T]. main does not bind T, so the call reads
+# the need at the site as T itself. Family F is applied at A := T and adds
+# T.twice : () -> T to main's context, where T is not a key of the type
+# table. The oracle accepts this (exit 0).
+type A;
+type T;
+assume A { fn .twice(): A; }
+functor F[A]: -> A.twice;
+functor G: A -> A.twice { bind A.twice = () => this; }
+context Need = T, T.twice[A=T];
+assume Need { fn use_it() { } }
+fn main() {
+  bind F = G;
+  use_it();
+}
