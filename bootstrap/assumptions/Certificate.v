@@ -165,6 +165,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMerge.merge_section_kernel);
   root (@NM.PublicMerge.merge_semantic_reading_with_section);
   root (@NM.PublicMerge.section_is_most_general);
+  root (@NM.PublicMerge.merge_has_mgm);
   root (@NM.PublicMerge.expand_mergeeq);
   root (@NM.PublicMerge.solved_has_section);
   root (@NM.PublicMerge.merge_semantic_reading);
