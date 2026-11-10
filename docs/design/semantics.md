@@ -81,11 +81,10 @@ unaffected. The oracle's elaborator (`bootstrap/theories/Elab.v`) was built
 against the same decisions and reproduces the Python bootstrap's error
 messages, but where an entry says what the bootstrap did, only the
 self-hosted compiler is claimed to still do it. Likewise
-`docs/design/core/`, the home of the core calculus: its Rocq files
-(`CoreMoss.v`, `Narrowing.v`) are now in
-[`bootstrap/theories/`](../../bootstrap/theories), and the paper
-`core-moss.tex` is no longer kept (it is in the history, at
-`docs/design/core/core-moss.tex` as of 5ea4e2e).
+`docs/design/core/`, the former home of the core calculus. Its Rocq
+proofs are preserved in [Git history](https://github.com/moss-lang/moss/tree/401e385/bootstrap/theories).
+The paper `core-moss.tex` is also in the history, at
+`docs/design/core/core-moss.tex` as of 5ea4e2e.
 
 ## 1. Design thesis
 

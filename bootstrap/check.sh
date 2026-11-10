@@ -6,8 +6,8 @@
 # - assumptions/Certificate.v: public_safety, the pass theorems, and the extracted
 #   roots, assume only the kernel's `Primitive` declarations (Rocq's
 #   primitive integers, floats and arrays).
-# - assumptions/Closed.v: the theorems the design notes cite as closed are
-#   closed under the global context.
+# - assumptions/Closed.v: the source-type readers are closed under the
+#   global context.
 # - Nothing is Admitted, and Parameters and Axioms are declared only inside
 #   module types (public and component obligations, never assumptions).
 # - theories/Audit.v, the trusted statement, holds no proofs: its helper

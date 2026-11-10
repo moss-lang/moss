@@ -16,7 +16,7 @@
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrameCore BodyTr.
-From NM Require CoreMoss.
+From NM Require ExecutionTypeFacts.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -323,7 +323,7 @@ Qed.
 (* a substitution leaves alone a type none of whose generations it maps *)
 Lemma app_subst_off : forall s t, (forall h, In h (A.gens t) -> lookup_subst h s = None) -> asub s t = t.
 Proof.
-  intros s t. induction t as [|g|n xs IH|ms IH] using CoreMoss.ty_ind'; intro N.
+  intros s t. induction t as [|g|n xs IH|ms IH] using ExecutionTypeFacts.ty_ind'; intro N.
   - reflexivity.
   - cbn. rewrite (N g (or_introl eq_refl)). reflexivity.
   - rewrite app_subst_nom. f_equal. rewrite <- (map_id xs) at 2. apply map_ext_in. intros [a y] Hp.
@@ -335,7 +335,7 @@ Qed.
 
 Lemma suf_idem : forall uf, RkOK uf -> forall t, asub (suf uf) (asub (suf uf) t) = asub (suf uf) t.
 Proof.
-  intros uf R t. induction t as [|g|n xs IH|ms IH] using CoreMoss.ty_ind'.
+  intros uf R t. induction t as [|g|n xs IH|ms IH] using ExecutionTypeFacts.ty_ind'.
   - reflexivity.
   - cbn [ExecutionModel.app_subst]. destruct (lookup_subst g (suf uf)) as [v|] eqn:E.
     + rewrite lookup_suf in E. destruct (nassoc g uf); [|discriminate]. injection E as <-.
@@ -377,7 +377,7 @@ Proof. intros s uf H t. exact (resp_canon_go s uf H _ t). Qed.
 Lemma resp_mg : forall s uf, RkOK uf -> RespE s uf ->
   forall t, asub s (asub (suf uf) t) = asub s t.
 Proof.
-  intros s uf R H t. induction t as [|g|n xs IH|ms IH] using CoreMoss.ty_ind'.
+  intros s uf R H t. induction t as [|g|n xs IH|ms IH] using ExecutionTypeFacts.ty_ind'.
   - reflexivity.
   - cbn [ExecutionModel.app_subst]. rewrite lookup_suf. destruct (nassoc g uf) eqn:E; [|reflexivity]. cbn [option_map].
     rewrite (resp_res s uf H (YAbs g)). reflexivity.

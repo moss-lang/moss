@@ -19,7 +19,6 @@ in `Wrong`.
 - Proved as `public_safety` (`PublicEntry.v`), which `assumptions/Certificate.v`
   checks has exactly the type of `CORRECT.safety` and assumes only the
   kernel's primitives.
-- The core calculus has its own version, `CoreMoss.safety`.
 
 ## 2. Coherence
 
@@ -36,8 +35,7 @@ a program is accepted or how it runs.
 - When two derivations would give different results and neither is more
   general, the program is ambiguous and is rejected. A family key that
   matches two items with different matchings is an example.
-- Not yet stated as a theorem for `Audit.v`. `CoreMoss.method_resolution_functional`
-  and `D84.on_demand_theta_determined` are instances in the calculus.
+- Not yet stated as a theorem for `Audit.v`.
 
 ## 3. Principality
 
@@ -73,16 +71,17 @@ It has three parts:
    many (code, ground instantiation) pairs, up to renaming of the fresh
    generations that functor applications create. This needs a check that
    rejects expanding cycles, in code and in type definitions (D30's planned
-   resolution, Kennedy and Pierce's expansive cycles). Without it the
-   property is false: `Specialization.polyrec_infinite`. `Audit.v` states
+   resolution, Kennedy and Pierce's expansive cycles). Without this check,
+   expanding polymorphic recursion can reach infinitely many instantiations.
+   The earlier calculus gives a [counterexample](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/Specialization.v#L2825).
+   `Audit.v` states
    the check as `NoExpandingCycle`, part of `ElaboratesIn`; neither
    compiler implements it yet.
 3. **A behaviour-preserving specialization.** A translation removes every
    run-time type computation and preserves behaviour. Together with safety,
    specialized programs are safe too.
 
-- The calculus has `CoreMoss.phase_separation` and the D16 theorem in
-  `Specialization.v`. None of the three parts is yet stated for `Audit.v`.
+- None of the three parts is yet stated as a theorem for `Audit.v`.
 
 ## 5. Stability under rebinding
 
@@ -91,8 +90,6 @@ change what the capture means. A functor's fixed inputs keep the meaning
 they had where it was bound, and a linked body reads its inputs as the
 caller supplied them, whatever the body rebinds.
 
-- The calculus has `CoreMoss.fixed_inputs_never_stale`,
-  `CoreMoss.capture_at_bind` and `CoreMoss.capture_through_copy`.
 - In `Audit.v`, this is what the D84 rule 3b checks, the fixed-input
   agreement, and `link_site`'s readings enforce. It is not yet stated as one
   theorem.

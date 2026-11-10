@@ -21,7 +21,7 @@
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Import Strings.Byte.
 From NM Require Export Sx.
-From NM Require Import ExecutionModel DumpRoundTrip.
+From NM Require Import ExecutionModel SourceNames.
 Import ListNotations.
 Import ExecutionModel.Input ExecutionModel.Syntax Sx.Dump ExecutionModel.Loader.
 Local Open Scope string_scope.
@@ -985,7 +985,7 @@ Fixpoint walk (fuel : nat) (read : string -> option string) (root prelude : stri
           match parse_moss text with
           | Bad m => Bad ("bundle: " ++ p ++ ": " ++ m)
           | Good f =>
-              if DumpRoundTrip.wf_names f then
+              if SourceNames.wf_names f then
               let w := wants_prelude prelude p in
               let ts := map (fun i => resolve root prelude p (i_path i)) (f_imports f) in
               let todo := app ts todo in

@@ -4,7 +4,7 @@
    This is not yet completeness of the typed bundle/dump adapter. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit SourceSnapshot.
-From NM Require Sx Parse DumpRoundTrip.
+From NM Require Sx Parse SourceNames.
 Import Audit.Semantics ListNotations.
 Module I := Audit.Input.
 Module L := Audit.Loader.
@@ -118,7 +118,7 @@ Qed.
 Section Stabilization.
 Variable snapshot : source.
 Variables root prelude : string.
-Local Strategy opaque [source_read Parse.parse_moss DumpRoundTrip.wf_names].
+Local Strategy opaque [source_read Parse.parse_moss SourceNames.wf_names].
 
 Theorem walk_stable_above_potential : forall fuel todo seen acc extra,
   work_potential snapshot todo seen < fuel ->
@@ -131,7 +131,7 @@ Proof.
   - apply IH. unfold work_potential in *; cbn [List.length] in *; lia.
   - destruct (source_read snapshot path) as [text|] eqn:Read; [|reflexivity].
     destruct (Parse.parse_moss text) as [ast|message] eqn:Parsed; [|reflexivity].
-    destruct (DumpRoundTrip.wf_names ast); [|reflexivity].
+    destruct (SourceNames.wf_names ast); [|reflexivity].
     change (Parse.walk (fuel + extra) (source_read snapshot) root prelude
       (next_todo root prelude path ast todo) (path :: seen)
       (Parse.LMod path (L.wants_prelude prelude path)
@@ -171,7 +171,7 @@ Proof.
   - eapply IH; exact Run.
   - destruct (read path) as [text|]; [|discriminate].
     destruct (Parse.parse_moss text) as [ast|message]; [|discriminate].
-    destruct (DumpRoundTrip.wf_names ast); [|discriminate].
+    destruct (SourceNames.wf_names ast); [|discriminate].
     eapply IH; exact Run.
 Qed.
 

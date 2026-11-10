@@ -1265,10 +1265,5 @@ Qed.
    FrontEndComplete.v from the lemmas above (lex_complete, lexes_ends,
    comma_list_complete, path_complete) by induction on the parser's fuel. *)
 
-(* ===================== Dump and loader =================================== *)
-
-(* DumpRoundTrip.dump_reads proves that a name-safe AST whose dump reads
-   successfully reads back as that very AST. Parse.walk checks the small
-   wf_names predicate at the serialization boundary. The old oracle's
-   FrontEndLoader.load_sound therefore proved Bundled with the exact parsed
-   AST, not merely an AST obtained by reading its dump. `_` is a wildcard token, never a name. *)
+(* Parse.walk applies SourceNames.wf_names at the AST boundary. The
+   SnapshotLoader proofs consume the parsed AST directly. *)

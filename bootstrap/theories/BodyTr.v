@@ -8,7 +8,7 @@
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ExecutionModel NMap Sx Elab.
-From NM Require CoreMoss.
+From NM Require ExecutionTypeFacts.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -112,7 +112,7 @@ Lemma is_never_tr : forall t, WFty t -> is_never t = ty_eqb (tr t) A.never.
 Proof.
   intros t W. destruct (is_never t) eqn:E1, (ty_eqb (tr t) A.never) eqn:E2; try reflexivity.
   - exfalso. destruct t; try discriminate; cbn in E2; discriminate.
-  - exfalso. apply CoreMoss.ty_eqb_eq in E2. apply (never_tr t W) in E2. subst. discriminate.
+  - exfalso. apply ExecutionTypeFacts.ty_eqb_eq in E2. apply (never_tr t W) in E2. subst. discriminate.
 Qed.
 
 (* D17: what the elaborator's fits accepts (without merges), the relation's
