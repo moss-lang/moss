@@ -435,13 +435,32 @@ Proof.
   - rewrite (sig_mark s g (proj1 (proj2 Fe))). reflexivity.
 Qed.
 
+Definition mark_inst (l : list (nat * ty)) : list (nat * ty) := map (fun q => (fst q, mark (snd q))) l.
+
+Lemma inst_read_mark : forall s a, InstP (TyFormed W) a -> inst_read (msubst s) a = mark_inst (inst_read s a).
+Proof.
+  intros s a Fa. unfold inst_read, mark_inst. rewrite map_map. apply map_ext_in. intros [x [t|]] I; cbn.
+  - rewrite (mark_subst t s (Fa x t I)). reflexivity.
+  - rewrite lookup_msubst. destruct (lookup_subst x s); reflexivity.
+Qed.
+
+Lemma inst_entry_mark : forall s e, EntryP (TyFormed W) e -> entry_inst (msubst s) e = option_map mark_inst (entry_inst s e).
+Proof.
+  intros s [x|v t a|f g a|r m g a|u fx] Fe; try reflexivity; cbn; f_equal; apply inst_read_mark.
+  - exact (proj2 Fe).
+  - exact (proj2 Fe).
+  - exact (proj2 (proj2 Fe)).
+Qed.
+
 Theorem unifies_mark : forall s es, Forall (EntryP (TyFormed W)) es -> Unifies s es -> Unifies (msubst s) es.
 Proof.
   intros s es Fe U e1 e2 k I1 I2 K1 K2. rewrite Forall_forall in Fe.
   rewrite (key_mark s e1 (Fe e1 I1)) in K1. rewrite (key_mark s e2 (Fe e2 I2)) in K2.
   destruct (entry_key s e1) as [k1|] eqn:E1; [|discriminate]. destruct (entry_key s e2) as [k2|] eqn:E2; [|discriminate].
   cbn in K1, K2. injection K1 as K1. injection K2 as K2. rewrite <- K2 in K1. apply mark_item_inj in K1. subst k2.
-  rewrite (sig_entry_mark s e1 (Fe e1 I1)), (sig_entry_mark s e2 (Fe e2 I2)), (U e1 e2 k1 I1 I2 E1 E2). reflexivity.
+  destruct (U e1 e2 k1 I1 I2 E1 E2) as [Es Ei]. split.
+  - rewrite (sig_entry_mark s e1 (Fe e1 I1)), (sig_entry_mark s e2 (Fe e2 I2)), Es. reflexivity.
+  - rewrite (inst_entry_mark s e1 (Fe e1 I1)), (inst_entry_mark s e2 (Fe e2 I2)), Ei. reflexivity.
 Qed.
 
 (* The merge of formed entries maps each generation to a formed type. *)

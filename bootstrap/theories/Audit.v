@@ -3194,8 +3194,23 @@ Definition entry_sig (s : subst) (e : entry) : option fsig :=
   | _ => None
   end.
 
+(* An entry's instantiation, read under σ.  A requirement not in force
+   where the item was read (None) is read as itself: the context's freeze
+   completes it from the type table, where each assumed type is its own
+   generation. *)
+Definition inst_read (s : subst) (a : inst) : list (nat * ty) :=
+  map (fun q => (fst q, app_subst s (match snd q with Some t => t | None => TAbs (fst q) end))) a.
+Definition entry_inst (s : subst) (e : entry) : option (list (nat * ty)) :=
+  match e with
+  | NVal _ _ a | NFn _ _ a | NMth _ _ _ a => Some (inst_read s a)
+  | _ => None
+  end.
+
 (* [D43] Merging.  σ *unifies* the entries if any two entries filed under
-   one key (read under σ) have one signature under σ.  The merge of a
+   one key (read under σ) have one signature and one instantiation under
+   σ: merging two entries of one item also unifies their instantiations,
+   so the merged key's instantiation does not depend on which entry comes
+   first (criteria section 2, coherence; Δ4).  The merge of a
    telescope is a most general such σ that is idempotent (no cyclic merge:
    a finding of the mechanization, [D43] calculus note), mapping only
    generations of the telescope, each to one value (as the elaborator's
@@ -3204,7 +3219,7 @@ Definition entry_sig (s : subst) (e : entry) : option fsig :=
    concrete heads has no unifier, so the telescope does not form. *)
 Definition Unifies (s : subst) (es : list entry) : Prop :=
   forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
-    entry_sig s e1 = entry_sig s e2.
+    entry_sig s e1 = entry_sig s e2 /\ entry_inst s e1 = entry_inst s e2.
 
 Definition inst_gens (a : inst) : list nat :=
   flat_map (fun q => match snd q with Some t => gens t | None => [] end) a.
