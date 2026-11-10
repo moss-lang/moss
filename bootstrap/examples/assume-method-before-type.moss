@@ -6,7 +6,7 @@
 # `kind_sym W T <> Some DKType` there, so IEMeth does not apply; argued).
 # Oracle (moss_m2): rejects ("type `T` is not available in the context here").
 # Native (ob-family moss, seed 1h1710x0): accepts (exit 0), a native bug
-# (E39): it reads the list as a set here, while it rejects `assume f, T` with
+# (E41): it reads the list as a set here, while it rejects `assume f, T` with
 # f mentioning T, and assume-method-before-type-use.moss.
 type T;
 fn .m(): This;
