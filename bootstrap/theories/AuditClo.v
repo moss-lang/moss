@@ -20,7 +20,7 @@
 (* is bound, rather than at every evaluation.                              *)
 (* ------------------------------------------------------------------------ *)
 
-From Stdlib Require Import List Bool Arith String.
+From Stdlib Require Import List Bool Arith String Lia.
 From NM Require Import Audit NatTrie AuditLazy AuditFast.
 Import Audit.Semantics ListNotations.
 
@@ -182,6 +182,157 @@ Definition cc_bind (f : expr -> code) (b : binding) (r : bcode) : bcode :=
       end
   end.
 
+(* ===================== Folding small direct calls (LazyFold) ============ *)
+
+(* A direct call to a small fn is translated, to a bounded depth, into an
+   `sexpr` over the caller's environment, every provision lookup remapped
+   through the satisfaction maps into the caller's (a `plan`). Run on the
+   caller's environment, it gives the call's result directly, when it
+   gives one; otherwise, or when the fuel may not suffice, the call runs as
+   compiled. fold_sound: the folded result is the call's result. *)
+Definition lk := option item.
+Definition plan := list (item * lk).
+Definition read (d : fenv) (i : lk) : option fprov :=
+  match i with Some key => flookup_provision key d | None => None end.
+Fixpoint remap (pl : plan) (i : item) : lk :=
+  match pl with [] => None | (req, src) :: rest => if item_eqb i req then src else remap rest i end.
+Definition remapo (pl : option plan) (i : item) : lk :=
+  match pl with None => Some i | Some ps => remap ps i end.
+Definition remap_plan (pl : option plan) (sm : smap) : plan := map (fun p => (fst p, remapo pl (snd p))) sm.
+Definition checks (d : fenv) (pl : plan) : bool :=
+  forallb (fun p => match read d (snd p) with Some _ => true | None => false end) pl.
+
+Inductive sexpr :=
+| SVar (x : var) | SUnit | SVl (i : lk)
+| STag (n : nsym) (body : sexpr)
+| SPrim (i : lk) (args : list sexpr)
+| SCall (guard : plan) (args : list sexpr) (body : sexpr)
+| SMatch1 (scrutinee : sexpr) (pat : pattern) (body : sexpr).
+
+(* m bounds the translation's structural recursion; n bounds call unfolding. *)
+Fixpoint tos (m n : nat) (pl : option plan) (e : expr) {struct m} : option sexpr :=
+  match m with
+  | 0 => None
+  | S m' =>
+      match e with
+      | EVar x => Some (SVar x)
+      | EUnit => Some SUnit
+      | EVal v => Some (SVl (remapo pl (IVal v)))
+      | ETag t th e1 =>
+          match lookup_cast t (view_casts P) with
+          | Some _ => None
+          | None => option_map (STag t) (tos m' n pl e1)
+          end
+      | EInvoke f args => option_map (SPrim (remapo pl (IFn f))) (tosl m' n pl args)
+      | ECall f th sm args =>
+          match n with
+          | 0 => None
+          | S n' =>
+              match view_function P f with
+              | None => None
+              | Some body =>
+                  let guard := remap_plan pl sm in
+                  match tosl m' n pl args, tos m' n' (Some guard) body with
+                  | Some ss, Some sb => Some (SCall guard ss sb)
+                  | _, _ => None
+                  end
+              end
+          end
+      | EMatch e0 [(p, b)] =>
+          match tos m' n pl e0, tos m' n pl b with
+          | Some s, Some sb => Some (SMatch1 s p sb)
+          | _, _ => None
+          end
+      | _ => None
+      end
+  end
+with tosl (m n : nat) (pl : option plan) (es : list expr) {struct m} : option (list sexpr) :=
+  match m with
+  | 0 => None
+  | S m' =>
+      match es with
+      | [] => Some []
+      | e :: rest =>
+          match tos m' n pl e, tosl m' n pl rest with
+          | Some s, Some ss => Some (s :: ss)
+          | _, _ => None
+          end
+      end
+  end.
+
+(* Fuel the original expression needs, its calls unfolded. *)
+Fixpoint sdepth (s : sexpr) : nat :=
+  match s with
+  | SVar _ | SUnit | SVl _ => 1
+  | STag _ s => S (sdepth s)
+  | SPrim _ ss => S ((fix needed ss := match ss with [] => 1 | s :: ss => S (Nat.max (sdepth s) (needed ss)) end) ss)
+  | SCall _ ss body =>
+      S (Nat.max ((fix needed ss := match ss with [] => 1 | s :: ss => S (Nat.max (sdepth s) (needed ss)) end) ss)
+           (sdepth body))
+  | SMatch1 e _ b => S (Nat.max (sdepth e) (sdepth b))
+  end.
+Fixpoint needed (ss : list sexpr) : nat :=
+  match ss with [] => 1 | s :: ss => S (Nat.max (sdepth s) (needed ss)) end.
+
+Fixpoint sev (d : fenv) (g : locals) (st : mstate) (s : sexpr) {struct s} : option (value * mstate) :=
+  match s with
+  | SVar x => option_map (fun w => (w, st)) (lookup_local x g)
+  | SUnit => Some (VUnit, st)
+  | SVl i => match read d i with Some (FValue w) => Some (w, st) | _ => None end
+  | STag n e => option_map (fun p => (VTag n (fst p), snd p)) (sev d g st e)
+  | SPrim i args =>
+      let ev := (fix ev args st := match args with
+                 | [] => Some ([], st)
+                 | s :: rest => match sev d g st s with
+                     | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
+                     | None => None end end) args st in
+      match read d i with
+      | Some (FPrimitive p held) =>
+          match ev with
+          | Some (ws, st1) => match I.run_prim_at P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+          | None => None
+          end
+      | _ => None
+      end
+  | SCall guard args body =>
+      if checks d guard then
+        match (fix ev args st := match args with
+               | [] => Some ([], st)
+               | s :: rest => match sev d g st s with
+                   | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
+                   | None => None end end) args st with
+        | Some (ws, st1) => sev d (parameter_values ws) st1 body
+        | None => None
+        end
+      else None
+  | SMatch1 e pat b =>
+      match sev d g st e with
+      | Some (w, st1) => match I.match_pat pat w with I.PMatch bs => sev d (bs ++ g) st1 b | _ => None end
+      | None => None
+      end
+  end.
+Definition sevl (d : fenv) (g : locals) : list sexpr -> mstate -> option (list value * mstate) :=
+  fix ev ss st := match ss with
+  | [] => Some ([], st)
+  | s :: rest => match sev d g st s with
+      | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
+      | None => None end end.
+
+(* A call's code, folded where its translation runs. *)
+Definition fold_call (e : expr) (fallback : code) : code :=
+  match tos 48 6 None e with
+  | None => fallback
+  | Some s =>
+      let depth := sdepth s in
+      fun m d g st =>
+        if Nat.leb depth m then
+          match sev d g st s with
+          | Some (w, st1) => I.Evaluation (Normal w) g st1
+          | None => fallback m d g st
+          end
+        else fallback m d g st
+  end.
+
 Fixpoint cc (e : expr) {struct e} : code :=
   match e with
   | EVar x => fun m d g st =>
@@ -211,7 +362,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | r => r
           end
       end
-  | ECall f th sm args => let ca := cc_list cc args in fun m d g st =>
+  | ECall f th sm args => let ca := cc_list cc args in fold_call (ECall f th sm args) (fun m d g st =>
       match m with
       | 0 => I.Evaluation OutOfFuel g st
       | S k =>
@@ -227,7 +378,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
               end
           | None => I.Evaluation (Stuck I.e_nobody) g st
           end
-      end
+      end)
   | EInvoke f args => let ca := cc_list cc args in fun m d g st =>
       match m with
       | 0 => I.Evaluation OutOfFuel g st
@@ -450,6 +601,128 @@ Proof.
   destruct (I.match_pat p w); [reflexivity|apply IH|reflexivity].
 Qed.
 
+Lemma skipn_length_app : forall (A : Type) (bs g : list A), skipn (List.length bs) (bs ++ g) = g.
+Proof. intros A bs g. induction bs as [|b bs IH]; [reflexivity|exact IH]. Qed.
+
+Lemma read_remap_select : forall d de pl,
+  (forall i, flookup_provision i de = read d (remapo pl i)) ->
+  forall sm, checks d (remap_plan pl sm) = true ->
+  exists d', fselect_provisions de sm = Some d' /\
+    forall i, fget i (fstore_of d') = read d (remap (remap_plan pl sm) i).
+Proof.
+  intros d de pl H sm. induction sm as [|[req src] r IH]; intro C.
+  - exists fempty. split; [reflexivity|]. intro i. apply fget_empty.
+  - cbn [remap_plan map checks forallb fst snd fselect_provisions] in C |- *. apply andb_prop in C as [C1 C2].
+    destruct (IH C2) as (d'' & E & Hd).
+    rewrite H. destruct (read d (remapo pl src)) as [en|] eqn:R; [|discriminate C1].
+    rewrite E. eexists. split; [reflexivity|]. intro i. cbn [finstall fstore_of remap fst snd].
+    rewrite fget_fset. destruct (item_eqb i req); [symmetry; exact R|apply Hd].
+Qed.
+
+Lemma call_env_lookup : forall de th d' i,
+  flookup_provision i (fcall_environment de th d') = fget i (fstore_of d').
+Proof.
+  intros. unfold flookup_provision, fcall_environment, fappend, finstantiate. cbn [fstore_of].
+  rewrite fget_funion, fget_empty. reflexivity.
+Qed.
+
+Lemma ret_call_normal : forall g w g' st, I.ret_call g (I.Evaluation (Normal w) g' st) = I.Evaluation (Normal w) g st.
+Proof. reflexivity. Qed.
+
+Lemma fold_sound : forall m,
+  (forall n pl e s, tos P m n pl e = Some s ->
+     forall d de, (forall i, flookup_provision i de = read d (remapo pl i)) ->
+     forall g st w st', sev P d g st s = Some (w, st') ->
+     forall fuel, sdepth s <= fuel -> F.feval fuel P de g st e = I.Evaluation (Normal w) g st') /\
+  (forall n pl es ss, tosl P m n pl es = Some ss ->
+     forall d de, (forall i, flookup_provision i de = read d (remapo pl i)) ->
+     forall g st ws st', sevl P d g ss st = Some (ws, st') ->
+     forall fuel, needed ss <= fuel -> F.feval_arguments fuel P de g st es = inl (ws, g, st')).
+Proof.
+  induction m as [|m [IHe IHl]]; [split; intros; discriminate|]. split.
+  - intros n pl e s T d de H g st w st' Ev fuel Fu.
+    destruct e; cbn [tos] in T; try discriminate.
+    + (* EVar *) injection T as <-. cbn in Ev, Fu. destruct fuel as [|k]; [inversion Fu|]. cbn.
+      match goal with |- context [lookup_local ?y g] => destruct (lookup_local y g) end;
+        [|discriminate]. injection Ev as <- <-. reflexivity.
+    + (* EUnit *) injection T as <-. cbn in Ev, Fu. destruct fuel as [|k]; [inversion Fu|].
+      injection Ev as <- <-. reflexivity.
+    + (* EVal *) injection T as <-. cbn [sev] in Ev. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval].
+      rewrite H. destruct (read d (remapo pl (IVal v))) as [[]|]; try discriminate.
+      injection Ev as <- <-. reflexivity.
+    + (* ETag *) destruct (lookup_cast n0 (view_casts P)) eqn:Cast; [discriminate|].
+      destruct (tos P m n pl e) as [s1|] eqn:T1; cbn [option_map] in T; [|discriminate]. injection T as <-.
+      cbn [sev] in Ev. destruct (sev P d g st s1) as [[w1 st1]|] eqn:E1; cbn [option_map] in Ev; [|discriminate].
+      injection Ev as <- <-. cbn [sdepth] in Fu. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval].
+      rewrite (IHe n pl e s1 T1 d de H g st w1 st1 E1 k ltac:(lia)).
+      unfold L.lcheck_tag. rewrite Cast. reflexivity.
+    + (* ECall *) destruct n as [|n']; [discriminate|].
+      destruct (view_function P f) as [body|] eqn:Vf; [|discriminate].
+      destruct (tosl P m (S n') pl l) as [ss|] eqn:Ta; [|discriminate].
+      destruct (tos P m n' (Some (remap_plan pl s1)) body) as [sb|] eqn:Tb; [|discriminate].
+      injection T as <-. cbn [sev] in Ev.
+      destruct (checks d (remap_plan pl s1)) eqn:C; [|discriminate].
+      change ((fix ev (args : list sexpr) (st : mstate) {struct args} : option (list value * mstate) :=
+        match args with
+        | [] => Some ([], st)
+        | s :: rest => match sev P d g st s with
+            | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
+            | None => None end end) ss st) with (sevl P d g ss st) in Ev.
+      destruct (sevl P d g ss st) as [[ws st1]|] eqn:Ea; [|discriminate].
+      fold needed in Fu. cbn [sdepth] in Fu. fold needed in Fu.
+      destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval]. rewrite Vf.
+      rewrite (IHl (S n') pl l ss Ta d de H g st ws st1 Ea k ltac:(lia)).
+      destruct (read_remap_select d de pl H s1 C) as (d' & Es & Hd'). rewrite Es.
+      rewrite (IHe n' (Some (remap_plan pl s1)) body sb Tb d (fcall_environment de s0 d')
+        (fun i => eq_trans (call_env_lookup de s0 d' i) (Hd' i)) _ st1 w st' Ev k ltac:(lia)).
+      reflexivity.
+    + (* EInvoke *) destruct (tosl P m n pl l) as [ss|] eqn:Ta; cbn [option_map] in T; [|discriminate].
+      injection T as <-. cbn [sev] in Ev.
+      change ((fix ev (args : list sexpr) (st : mstate) {struct args} : option (list value * mstate) :=
+        match args with
+        | [] => Some ([], st)
+        | s :: rest => match sev P d g st s with
+            | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
+            | None => None end end) ss st) with (sevl P d g ss st) in Ev.
+      destruct (read d (remapo pl (IFn f))) as [[| | |p held]|] eqn:R; try discriminate.
+      destruct (sevl P d g ss st) as [[ws st1]|] eqn:Ea; [|discriminate].
+      destruct (I.run_prim_at P p held ws st1) as [[]  st2] eqn:Rp; try discriminate.
+      injection Ev as <- <-. cbn [sdepth] in Fu. fold needed in Fu.
+      destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval]. rewrite H, R.
+      rewrite (IHl n pl l ss Ta d de H g st ws st1 Ea k ltac:(lia)). rewrite Rp. reflexivity.
+    + (* EMatch *) destruct l as [|[p b] [|]]; try discriminate.
+      destruct (tos P m n pl e) as [s1|] eqn:T1; [|discriminate].
+      destruct (tos P m n pl b) as [sb|] eqn:Tb; [|discriminate]. injection T as <-.
+      cbn [sev] in Ev. destruct (sev P d g st s1) as [[w1 st1]|] eqn:E1; [|discriminate].
+      destruct (I.match_pat p w1) as [bs| |] eqn:Mp; try discriminate.
+      cbn [sdepth] in Fu. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval].
+      rewrite (IHe n pl e s1 T1 d de H g st w1 st1 E1 k ltac:(lia)). cbn [I.select_arm]. rewrite Mp.
+      rewrite (IHe n pl b sb Tb d de H (bs ++ g) st1 w st' Ev k ltac:(lia)).
+      cbn. rewrite skipn_length_app. reflexivity.
+  - intros n pl es ss T d de H g st ws st' Ev fuel Fu.
+    destruct es as [|e r]; cbn [tosl] in T.
+    + injection T as <-. cbn in Ev. injection Ev as <- <-. destruct fuel as [|k]; [inversion Fu|]. reflexivity.
+    + destruct (tos P m n pl e) as [s1|] eqn:T1; [|discriminate].
+      destruct (tosl P m n pl r) as [ss'|] eqn:T2; [|discriminate]. injection T as <-.
+      cbn [sevl] in Ev. destruct (sev P d g st s1) as [[w1 st1]|] eqn:E1; [|discriminate].
+      fold (sevl P d g ss' st1) in Ev.
+      destruct (sevl P d g ss' st1) as [[ws' st2]|] eqn:E2; [|discriminate]. injection Ev as <- <-.
+      cbn [needed] in Fu. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval_arguments].
+      rewrite (IHe n pl e s1 T1 d de H g st w1 st1 E1 k ltac:(lia)).
+      rewrite (IHl n pl r ss' T2 d de H g st1 ws' st2 E2 k ltac:(lia)). reflexivity.
+Qed.
+
+Lemma fold_call_ok : forall e fb n d g st,
+  fb n d g st = F.feval n P d g st e -> fold_call P e fb n d g st = F.feval n P d g st e.
+Proof.
+  intros e fb n d g st Hfb. unfold fold_call.
+  destruct (tos P 48 6 None e) as [s|] eqn:T; [|exact Hfb].
+  destruct (Nat.leb (sdepth s) n) eqn:Le; [|exact Hfb].
+  destruct (sev P d g st s) as [[w st1]|] eqn:Ev; [|exact Hfb].
+  symmetry. apply Nat.leb_le in Le.
+  exact (proj1 (fold_sound 48) 6 None e s T d d (fun i => eq_refl) g st w st1 Ev n Le).
+Qed.
+
 Definition agree (n : nat) : Prop :=
   (forall e d g st, cc P tbl ftbl e n d g st = F.feval n P d g st e) /\
   (forall l d g st, cc_list (cc P tbl ftbl) l n d g st = F.feval_arguments n P d g st l) /\
@@ -460,7 +733,7 @@ Definition agree (n : nat) : Prop :=
 Lemma agree_zero : agree 0.
 Proof.
   repeat split.
-  - intros e d g st. destruct e; reflexivity.
+  - intros e d g st. destruct e; try reflexivity. apply fold_call_ok. reflexivity.
   - intros l d g st. destruct l; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
 Qed.
@@ -469,7 +742,11 @@ Lemma agree_step : forall k, agree k -> agree (S k).
 Proof.
   intros k [IHe [IHl [IHb IHa]]]. destruct Tables as [Ht Hf].
   repeat split.
-  - intros e. destruct e; intros d g st; cbn [cc F.feval].
+  - intros e. destruct e; intros d g st; cbn [cc];
+      lazymatch goal with
+      | |- _ = F.feval _ _ _ _ _ (ECall _ _ _ _) => apply fold_call_ok; cbn [F.feval]
+      | _ => cbn [F.feval]
+      end.
     + reflexivity.
     + reflexivity.
     + reflexivity.
