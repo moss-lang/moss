@@ -1,0 +1,14 @@
+# D90: a function whose assume list holds `A = B` may be called only where
+# `A` and `B` are already one type (Satisfies' merges clause). Here the
+# caller binds them to the distinct `P` and `Q`: refused at the call.
+# With both bound to `P` the call is accepted (eq_caller_same.moss).
+type A;
+type B;
+assume A = B { fn g(b: B): A { b } }
+tag P;
+tag Q;
+fn main() {
+  bind A = P;
+  bind B = Q;
+  g(Q);
+}

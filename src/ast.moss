@@ -103,6 +103,14 @@ assume Std {
   # every reader of declarations reads it as it reads any other.
   fn k_ty_known(): Int { 52 }  # a=elaborated type
 
+  # D90: a type equation `l = r`, an item of a context or an assume list
+  # beside its specs. Each side is a type reference (`k_ty_ref`); `c` is a
+  # run of the references the sides write (each side's head, and its
+  # brackets' right sides, not their left sides), as unbracketed specs,
+  # which the equation assumes. The dump writes it as `V`, a letter
+  # `k_d_bad` (never dumped) leaves free.
+  fn k_eq(): Int { 53 }        # a=left type b=right type c=written specs run d=len
+
   # `for x in e { body }` (draft) is parsed into a bare block of `let`,
   # `var` and `while`, whose calls of access.moss's iteration methods are
   # operator nodes with these operators: past every token code, and past

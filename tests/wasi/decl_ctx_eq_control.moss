@@ -1,0 +1,9 @@
+# Criteria section 7 and D90: control for an equation in an unused
+# context. Its sides are read as written, each type symbol standing for
+# itself, so `T = U` forms although no nesting has T or U in force
+# (DeclsForm, AUDIT-CHANGES #74 and #80). All three accept.
+type T;
+type U;
+assume T { fn T.m(); }
+context A = T = U, T.m;
+fn main() {}

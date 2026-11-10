@@ -61,6 +61,7 @@ assume Std {
     if code == prog::e_const_assumes() { return "a defined val cannot be declared inside an assume block"; }
     if code == prog::e_alias_cycle() { return "this alias is defined in terms of itself"; }
     if code == prog::e_result_collide() { return "two distinct result items of the functor are one item here"; }
+    if code == prog::e_eq_result() { return "a functor's result cannot hold a type equation"; }
     return "compilation failed";
   }
 

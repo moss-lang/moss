@@ -1,0 +1,11 @@
+# D90, rule B: the type symbols an equation writes are requirements of the
+# items it is assumed for, so a caller needs them in force, itself or
+# through a member of the class (binding `B` alone would do, as binding
+# one member of a merged class binds them all, D43). `main` binds neither
+# `A` nor `B`: refused at the call.
+type A;
+type B;
+assume A = B { fn g() {} }
+fn main() {
+  g();
+}

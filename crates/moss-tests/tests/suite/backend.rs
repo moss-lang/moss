@@ -2186,3 +2186,39 @@ fn functor_identity_copy_preserves_latent_interfaces() {
     rejects_with(&stale, PRELUDE);
     assert!(oracle_rejects(&stale).contains("fixed"));
 }
+
+/// D90: a type equation as a context or assume item requires the
+/// equation and merges its two sides, as D43 merges two bindings of one
+/// key. merged_int_size.moss is the convenience context merging `Int` and
+/// `Size` (`context IntIsSize = Int = Size;`), with library code written
+/// against the separate types and called from inside the merged context;
+/// merged_size_int.moss is the same program with the equation the other
+/// way round, in the assume list itself. Both spellings print the same, on
+/// both front ends. eq_link_tx.moss and eq_link_xt.moss put the equation,
+/// in either spelling, in the argument context of a linked functor body:
+/// the self-hosted compiler runs both, and the oracle the first (it
+/// rejects the second, a merge-orientation gap: agreement.rs). A clash
+/// (two structures in one class), a caller where the two sides differ,
+/// and a caller without the sides in force are refused (tests/errors).
+#[test]
+fn type_equations() {
+    for name in ["merged_int_size", "merged_size_int"] {
+        let entry = wasi(name);
+        assert_eq!(oracle_run(&entry, &[]), "21\n", "{entry}");
+        assert_eq!(run_moss(&entry, PRELUDE), "21\n", "{entry}");
+    }
+    for name in ["eq_link_tx", "eq_link_xt", "eq_caller_same"] {
+        let entry = wasi(name);
+        assert_eq!(run_moss(&entry, PRELUDE), "", "{entry}");
+    }
+    for name in ["eq_link_tx", "eq_caller_same"] {
+        let entry = wasi(name);
+        assert_eq!(oracle_run(&entry, &[]), "", "{entry}");
+    }
+    oracle_says(&wasi("eq_link_xt"), "`bind T` in a functor bound to an abstract one changes a type its result mentions");
+    for name in ["eq_clash", "eq_clash_structure", "eq_caller_differs", "eq_caller_unbound", "eq_result"] {
+        let entry = errors(name);
+        assert!(!compile(&entry, PRELUDE).is_module(), "{entry}");
+        oracle_rejects(&entry);
+    }
+}

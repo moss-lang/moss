@@ -186,12 +186,100 @@ assume Std {
     }
 
     fn parse_assume_item_inner(): Int {
+      let start = tstart.read();
       let p = parse_path();
       var dot = ast::none();
       if accept(tk_dot()) {
         dot = take_name();
+        return ast::node4(ast::k_spec(), p, dot, ast::none(), 0);
+      }
+      if here(tk_lbracket()) {
+        return parse_equation(type_ref_after(p, start));
+      }
+      if here(tk_equal()) {
+        return parse_equation(type_ref_after(p, start));
       }
       ast::node4(ast::k_spec(), p, dot, ast::none(), 0)
+    }
+
+    # D90: a type equation's side, `p` or `p[...]`, its path already read.
+    fn type_ref_after(p: Int, start: Int): Int {
+      var run = ast::none();
+      var n = 0;
+      var applied = 0;
+      if accept(tk_lbracket()) {
+        let xs = int_list();
+        parse_app(xs);
+        run = ast::commit(xs);
+        n = xs.length();
+        applied = 1;
+      }
+      ast::located(ast::node4(ast::k_ty_ref(), p, run, n, applied), start, previous_end.read())
+    }
+
+    fn parse_type_ref(): Int {
+      let start = tstart.read();
+      if !here(tk_name()) {
+        fail();
+        skip_one();
+        return ast::located(ast::node0(ast::k_ty_unit()), start, previous_end.read());
+      }
+      type_ref_after(parse_path(), start)
+    }
+
+    # D90: `l = r`, the left side read; the `=` follows it, outside any
+    # brackets (in `f[T=A] = B` the first `=` is the bracket's).
+    fn parse_equation(lhs: Int): Int {
+      expect(tk_equal());
+      let rhs = parse_type_ref();
+      let heads = int_list();
+      written_refs(ast::a_of(lhs), ast::b_of(lhs), ast::c_of(lhs), heads);
+      if ast::is_kind(rhs, ast::k_ty_ref()) {
+        written_refs(ast::a_of(rhs), ast::b_of(rhs), ast::c_of(rhs), heads);
+      }
+      ast::node4(ast::k_eq(), lhs, rhs, ast::commit(heads), heads.length())
+    }
+
+    # The references `path[run]` writes, as unbracketed specs: its head,
+    # then those of its brackets' right sides (D90).
+    fn written_refs(path: Int, run: Int, n: Int, out: IntList) {
+      out.push(ast::node4(ast::k_spec(), path, ast::none(), ast::none(), 0));
+      var i = 0;
+      while i < n {
+        let side = ast::b_of(ast::kid_at(run, i));
+        if !ast::is_some(ast::b_of(side)) {
+          if ast::is_some(ast::a_of(side)) {
+            written_refs(ast::a_of(side), ast::c_of(side), ast::d_of(side), out);
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # A context's item: a spec, or a type equation (D90) when `=` follows
+    # a spec that is a type reference.
+    fn parse_ctx_item(): Int {
+      let start = tstart.read();
+      let sp = parse_spec();
+      if !here(tk_equal()) {
+        return sp;
+      }
+      if ast::is_some(ast::b_of(sp)) {
+        fail();
+        return sp;
+      }
+      if !ast::is_some(ast::a_of(sp)) {
+        fail();
+        return sp;
+      }
+      var applied = 0;
+      if ast::is_some(ast::c_of(sp)) {
+        applied = 1;
+      }
+      let lhs = ast::located(ast::node4(ast::k_ty_ref(), ast::a_of(sp), ast::c_of(sp), ast::d_of(sp), applied),
+        start, previous_end.read());
+      let node = parse_equation(lhs);
+      ast::located(node, start, previous_end.read())
     }
 
     # Types.
@@ -1361,6 +1449,22 @@ assume Std {
       }
     }
 
+    # A context's items (D90: specs and type equations).
+    fn parse_ctx_items(xs: IntList) {
+      loop {
+        if here(tk_semi()) {
+          break;
+        }
+        if here(tk_eof()) {
+          break;
+        }
+        xs.push(parse_ctx_item());
+        if !accept(tk_comma()) {
+          break;
+        }
+      }
+    }
+
     fn parse_functor(): Int {
       let start = tstart.read();
       let node = parse_functor_inner();
@@ -1561,7 +1665,7 @@ assume Std {
         let nm = take_name();
         expect(tk_equal());
         let xs = int_list();
-        parse_specs(xs, tk_semi());
+        parse_ctx_items(xs);
         expect(tk_semi());
         return ast::node3(ast::k_d_context(), nm, ast::commit(xs), xs.length());
       }

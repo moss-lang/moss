@@ -16,6 +16,11 @@ import "./tcode.moss" use *;
 assume Std {
   assume ast::Ast, intern::Interner {
     fn kind_char(k: Int) {
+      # D90: an equation is `V` (`k_d_bad`'s letter: no dump holds one).
+      if k == ast::k_eq() {
+        putchar(char::V);
+        return ();
+      }
       if k < 26 {
         putchar((char::a.code() + k).char());
       } else {
@@ -260,6 +265,11 @@ assume Std {
         opt_name(ast::b_of(id));
         sp();
         dump_app(ast::c_of(id), ast::d_of(id));
+      } else if k == ast::k_eq() {
+        sp();
+        dump(ast::a_of(id));
+        sp();
+        dump(ast::b_of(id));
       } else if k == ast::k_binding() {
         sp();
         put_path(ast::a_of(id));

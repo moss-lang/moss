@@ -1,0 +1,9 @@
+# D90: a merge class holds at most one structure. `Buf = P` and `Buf = Q`
+# put the distinct nominals `P` and `Q` in one class, so the context does
+# not form: refused where it is assumed, by both front ends.
+tag P;
+tag Q;
+type Buf;
+context Clash = Buf = P, Buf = Q;
+assume Clash { fn f(b: Buf) {} }
+fn main() {}

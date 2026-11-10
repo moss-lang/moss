@@ -1,0 +1,12 @@
+# D90: the control of tests/errors/eq_caller_differs.moss: the caller binds
+# `A` and `B` to one type, so it satisfies `g`'s equation `A = B`, and the
+# equation adds no need: `g` asks for nothing else. Exits 0.
+type A;
+type B;
+assume A = B { fn g(b: B): A { b } }
+tag P;
+fn main() {
+  bind A = P;
+  bind B = P;
+  g(P);
+}

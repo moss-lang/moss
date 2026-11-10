@@ -69,6 +69,7 @@ pub const ORACLE_ACCEPTS: &[&str] = &[
     "tests/errors/decl_const_in_assume.moss",
     "tests/errors/decl_const_mistyped.moss",
     "tests/errors/decl_ctx_bracket.moss",
+    "tests/errors/decl_ctx_eq_unresolved.moss",
     "tests/errors/decl_ctx_unresolved.moss",
     "tests/errors/decl_fn_sig.moss",
     "tests/errors/decl_functor_arg.moss",

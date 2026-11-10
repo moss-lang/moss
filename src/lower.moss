@@ -496,10 +496,13 @@ assume Std {
           let d = prog::sym_decl.get(gc);
           var i = 0;
           while i < ast::c_of(d) {
-            let fu = prog::resolve_path(w, ast::a_of(ast::kid_at(ast::b_of(d), i)));
-            if ast::is_some(fu) {
-              if prog::sym_kind.get(fu) == prog::sk_functor() {
-                functor_fixed(fu, out);
+            let item = ast::kid_at(ast::b_of(d), i);
+            if !ast::is_kind(item, ast::k_eq()) {
+              let fu = prog::resolve_path(w, ast::a_of(item));
+              if ast::is_some(fu) {
+                if prog::sym_kind.get(fu) == prog::sk_functor() {
+                  functor_fixed(fu, out);
+                }
               }
             }
             i = i + 1;
@@ -599,7 +602,37 @@ assume Std {
     }
 
     fn add_assume_item_inner(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
+      if ast::is_kind(spec, ast::k_eq()) {
+        return add_eq_item(env, m, spec, recv, sym, int_list(), int_list());
+      }
       add_spec(env, m, spec, recv, sym, int_list(), int_list())
+    }
+
+    # D90: a type equation item `l = r`. The references its sides write
+    # (each side's head and its brackets' right sides, not their left
+    # sides) are assumed as unbracketed items, so the type symbols among
+    # them are in force, as requirements (rule B); then its two sides,
+    # read under the enclosing brackets, are merged, as two bindings of
+    # one key are (D43). Clashing structures are `e_merge`. The
+    # bootstrap's `add_eq_merge` is the same.
+    fn add_eq_item(
+      env: Int, m: Int, item: Int, recv: IntList, sym: IntList, walking: IntList,
+      over: IntList
+    ): Int {
+      let lhs = ast::a_of(item);
+      let rhs = ast::b_of(item);
+      var e = env;
+      var i = 0;
+      while i < ast::d_of(item) {
+        e = add_spec(e, m, ast::kid_at(ast::c_of(item), i), recv, sym, walking, over);
+        i = i + 1;
+      }
+      let named = prog::resolve_path(m, ast::a_of(lhs));
+      if !ast::is_some(named) {
+        return e;
+      }
+      let view = overlay(e, over);
+      unify(e, elab(view, lhs, m), elab(view, rhs, m), m, named)
     }
 
     # One type binding of a context item's application. The left-hand side
@@ -769,10 +802,12 @@ assume Std {
         let d = prog::sym_decl.get(s);
         var i = 0;
         while i < ast::c_of(d) {
-          e = add_spec(
-            e, prog::sym_mod.get(s), ast::kid_at(ast::b_of(d), i),
-            recv, sym, within, over
-          );
+          let item = ast::kid_at(ast::b_of(d), i);
+          if ast::is_kind(item, ast::k_eq()) {
+            e = add_eq_item(e, prog::sym_mod.get(s), item, recv, sym, within, over);
+          } else {
+            e = add_spec(e, prog::sym_mod.get(s), item, recv, sym, within, over);
+          }
           i = i + 1;
         }
         return e;
@@ -1199,7 +1234,10 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
-        let t = prog::resolve_path(m, ast::a_of(spec));
+        var t = ast::none();
+        if !ast::is_kind(spec, ast::k_eq()) {
+          t = prog::resolve_path(m, ast::a_of(spec));
+        }
         if ast::is_some(t) {
           let syms = int_list();
           var item = true;
@@ -1579,7 +1617,10 @@ assume Std {
       var i = 0;
       while i < len {
         let spec = ast::kid_at(run, i);
-        if !ast::is_some(ast::b_of(spec)) {
+        if ast::is_kind(spec, ast::k_eq()) {
+          # D90: an equation requires the references its sides write.
+          nest_types(m, ast::c_of(spec), ast::d_of(spec), out, seen);
+        } else if !ast::is_some(ast::b_of(spec)) {
           if ast::is_some(ast::a_of(spec)) {
             let target = prog::resolve_path(m, ast::a_of(spec));
             if ast::is_some(target) {
@@ -1753,7 +1794,9 @@ assume Std {
       i = 0;
       while i < ast::c_of(d) {
         let spec = ast::kid_at(ast::b_of(d), i);
-        if !ast::is_some(ast::b_of(spec)) {
+        if ast::is_kind(spec, ast::k_eq()) {
+          # D90: an equation names no context its items walk.
+        } else if !ast::is_some(ast::b_of(spec)) {
           let t = prog::resolve_path(prog::sym_mod.get(s), ast::a_of(spec));
           if ast::is_some(t) {
             if prog::sym_kind.get(t) == prog::sk_context() {
@@ -1890,7 +1933,9 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
-        if !ast::is_some(ast::b_of(spec)) {
+        if ast::is_kind(spec, ast::k_eq()) {
+          # D90: an equation lists no defined function.
+        } else if !ast::is_some(ast::b_of(spec)) {
           let s = prog::resolve_path(m, ast::a_of(spec));
           if ast::is_some(s) {
             let view = app_view(env, m, spec);

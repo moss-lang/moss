@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/eq_result.moss: functor `F` does not bind `A`, `B`]

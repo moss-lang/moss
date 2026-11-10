@@ -251,6 +251,11 @@ assume Std {
   # nothing it assumes could be there. Named by the val.
   fn e_const_assumes(): Int { 16 + 16 }
 
+  # D90: a functor's result names a context holding a type equation. An
+  # equation is a requirement, and a result provides; as the bootstrap's
+  # "a functor's result cannot hold the type equations of `C`".
+  fn e_eq_result(): Int { 16 + 17 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, mtext, sources, pinfo,
     ent_head, ent_link,

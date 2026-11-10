@@ -1,0 +1,2 @@
+!Z tests/errors/eq_result.moss A
+!Z tests/errors/eq_result.moss B

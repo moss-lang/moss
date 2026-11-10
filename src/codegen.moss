@@ -7060,6 +7060,10 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
+        # D90: a family's result holds methods, no equation.
+        if ast::is_kind(spec, ast::k_eq()) {
+          return false;
+        }
         let s = prog::resolve_path(m, ast::a_of(spec));
         if !ast::is_some(s) {
           return false;
@@ -8184,7 +8188,10 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
-        if !ast::is_some(ast::b_of(spec)) {
+        if ast::is_kind(spec, ast::k_eq()) {
+          # D90: the types an equation's sides write.
+          result_types(m, ast::c_of(spec), ast::d_of(spec), out, depth + 1);
+        } else if !ast::is_some(ast::b_of(spec)) {
           let s = prog::resolve_path(m, ast::a_of(spec));
           if ast::is_some(s) {
             let kind = prog::sym_kind.get(s);
@@ -8324,6 +8331,11 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
+        # D90: an equation is a requirement, and a result provides.
+        if ast::is_kind(spec, ast::k_eq()) {
+          semantic_error(prog::e_eq_result(), ast::none());
+          return ();
+        }
         let outer = lower::overlay(env, over);
         let inner = lower::app_view(outer, m, spec);
         let s = prog::resolve_path(m, ast::a_of(spec));
@@ -8386,7 +8398,10 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
-        let s = prog::resolve_path(m, ast::a_of(spec));
+        var s = ast::none();
+        if !ast::is_kind(spec, ast::k_eq()) {
+          s = prog::resolve_path(m, ast::a_of(spec));
+        }
         if ast::is_some(s) {
           let genv = cg_genv.read();
           let outer = lower::overlay(genv, over);
@@ -9389,7 +9404,13 @@ assume Std {
       var i = 0;
       while i < n {
         let spec = ast::kid_at(run, i);
-        let s = prog::resolve_path(m, ast::a_of(spec));
+        var s = ast::none();
+        if ast::is_kind(spec, ast::k_eq()) {
+          # D90: an equation's leaves are the references its sides write.
+          sig_items(m, ast::c_of(spec), ast::d_of(spec), syms, dots, depth + 1);
+        } else {
+          s = prog::resolve_path(m, ast::a_of(spec));
+        }
         if ast::is_some(s) {
           if ast::is_some(ast::b_of(spec)) {
             syms.push(s);
@@ -9465,6 +9486,9 @@ assume Std {
       if depth > 2 * prog::sym_count() {
         semantic_error(prog::e_deep(), ast::none());
         return false;
+      }
+      if ast::is_kind(spec, ast::k_eq()) {
+        return true;
       }
       if ast::is_some(ast::b_of(spec)) {
         return true;

@@ -1,0 +1,20 @@
+# D90: a type equation in a linked functor body's argument context. As
+# bootstrap/examples/link-merge-rep-rebind-both.moss, which merges `X` and
+# `T` through `A.gimme[Foo=X], A.gimme[Foo=T]`, but with the equation
+# `T = X`. G pins `X` (a fixed input of F, bracketed `[X]`), rebinds `T`
+# to `Bool`, and binds `X.m` and `T.m`; the caller's `Concrete.m` is G's
+# `X.m`. Both implementations accept it and exit 0. Written `X = T`
+# (eq_link_xt.moss) the program means the same, but the oracle rejects it
+# (merge orientation, AUDIT-CHANGES item 4 of the consolidation).
+type T;
+type X;
+tag Concrete;
+fn .m();
+context Merge = X, T, T = X;
+functor F[X]: Merge -> X.m;
+functor G: Merge -> X.m { bind T = Bool; bind X.m = () => { }; bind T.m = () => { if this { } }; }
+fn main() {
+  bind T = Concrete;
+  bind F = G;
+  Concrete.m();
+}

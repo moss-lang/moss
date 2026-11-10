@@ -63,6 +63,15 @@ const ORACLE_GAP_STALE_PROVISION: &str = "oracle gap: a provision read at anothe
 /// keeping the first result position's; the semantics and the
 /// self-hosted compiler reject the application.
 const ORACLE_GAP_RESULT_COLLIDE: &str = "oracle gap: two result items of a functor filed under one key (E40)";
+/// Merge orientation (AUDIT-CHANGES, consolidation, item 4): the oracle
+/// merges toward the right side of a type equation (D90), so `X = T`
+/// makes `T` the representative of a linked body's merged input class,
+/// its pins then include `T`, and it rejects the body's `bind T` (D84 3d);
+/// written `T = X` (eq_link_tx.moss) it accepts the same program. The
+/// spellings give one merge class (PublicEquation.eq_swap_classes), and
+/// the self-hosted compiler accepts both, as it does
+/// bootstrap/examples/link-merge-rep-rebind-both.moss in either order.
+const ORACLE_GAP_ORIENTATION: &str = "oracle gap: a linked body's checks follow the merge's representative (orientation)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -95,6 +104,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/decl_const_in_assume.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
     ("tests/errors/decl_const_mistyped.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
     ("tests/errors/decl_ctx_bracket.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_ctx_eq_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
     ("tests/errors/decl_ctx_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
     ("tests/errors/decl_fn_sig.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
     ("tests/errors/decl_functor_arg.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
@@ -115,6 +125,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/arrays_in_scratch.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/bridge.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
+    ("tests/wasi/eq_link_xt.moss", Accept, Reject, ORACLE_GAP_ORIENTATION),
     ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memories.moss", Accept, Unsupported, MEMORIES),

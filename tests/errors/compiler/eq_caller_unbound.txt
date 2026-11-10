@@ -1,0 +1,2 @@
+!P tests/errors/eq_caller_unbound.moss A
+!P tests/errors/eq_caller_unbound.moss B

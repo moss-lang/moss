@@ -1,0 +1,50 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/array.moss" use Item, Array, .arrayed;
+import "../../lib/int.moss" use Int;
+import "../../lib/size.moss" use Size;
+
+# D90: merged_int_size.moss with the equation the other way round,
+# `Size = Int`, and written in the assume list itself rather than in a
+# context: the same merge, so the same program. Prints `21`.
+
+# Library code, written against the separate types: under `Std`, `Int`
+# and `Size` are two abstract types (size_mix.moss).
+assume Std {
+  fn at(xs: Array[Item=Int], i: Size): Int { xs.get(i) }
+  fn count(xs: Array[Item=Int]): Size { xs.length() }
+
+  fn print_int(n: Int) {
+    if n >= 10 {
+      print_int(n / 10);
+    }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+# Inside the merged context an `Int` is a `Size`: the index loop needs no
+# conversion, and calls the library code above, which requires `Int` and
+# `Size` (rule B) and merges nothing, so any caller may call it.
+assume Std, Size = Int {
+  fn total(xs: Array[Item=Int]): Int {
+    var s = 0;
+    var i = 0;
+    while i < count(xs) {
+      s = s + at(xs, i);
+      i = i + 1;
+    }
+    s
+  }
+}
+
+# A caller satisfies the equation where the two types are already one:
+# `WasiStd` binds both `Int` and `Size` to `Num`. Prints `21`.
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    print_int(total(7.arrayed(3.size())));
+    putchar(char::newline);
+  }
+}

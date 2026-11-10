@@ -1,0 +1,9 @@
+# D90: a structured equation (`Buf = Box[T=T]`) beside another structure
+# for the same class (`Buf = Bool`): two structures in one class must
+# unify (Δ4's rule), and `Bool` and `Box[T=T]` do not. Refused.
+type T;
+assume T { tag Box[T](T); }
+type Buf;
+context Clash = T, Buf = Bool, Buf = Box[T=T];
+assume Clash { fn f(b: Buf) {} }
+fn main() {}

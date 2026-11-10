@@ -1,0 +1,17 @@
+# D90: an equation is a requirement, and a functor's result provides. A
+# result naming a context that holds one (`R = A = B, A.m`) is refused
+# where the functor is applied: the self-hosted compiler and the oracle
+# both report the equation's types as result items the body does not
+# make (the oracle's provide_spec would refuse the equation itself, and
+# the self-hosted compiler's result walk too, `e_eq_result`).
+type A;
+type B;
+tag P;
+fn .m();
+context R = A = B, A.m;
+functor F: A -> R { bind A.m = () => { }; }
+fn main() {
+  bind A = P;
+  bind F;
+  P.m();
+}
