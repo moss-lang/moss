@@ -766,10 +766,7 @@ Qed.
 
 Lemma call_env_lookup : forall de th d' i,
   flookup_provision i (fcall_environment de th d') = fget i (fstore_of d').
-Proof.
-  intros. unfold flookup_provision, fcall_environment, fappend, finstantiate. cbn [fstore_of].
-  rewrite fget_funion, fget_empty. reflexivity.
-Qed.
+Proof. reflexivity. Qed.
 
 Lemma ret_call_normal : forall g w g' st, I.ret_call g (I.Evaluation (Normal w) g' st) = I.Evaluation (Normal w) g st.
 Proof. reflexivity. Qed.

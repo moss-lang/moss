@@ -210,8 +210,6 @@ Definition finstall (key : item) (entry : fprov) (d : fenv) :=
   FEnv (fmeanings d) (faliases d) (fset key entry (fstore_of d)).
 Definition fappend (a b : fenv) :=
   FEnv (dappend (fmeanings a) (fmeanings b)) (dappend (faliases a) (faliases b)) (funion (fstore_of a) (fstore_of b)).
-Definition finstantiate (d : fenv) (th : subst) : fenv :=
-  let meanings := ldefer_all (fmeanings d) th in FEnv meanings meanings fempty_store.
 Definition ftyped_capture (d : fenv) (types : type_capture) (dc : fenv) : fenv :=
   FEnv (ldefer_all (fmeanings d) (capture_generations types))
     (ldefer_all (fmeanings d) (capture_aliases types)) (fstore_of dc).
@@ -252,7 +250,8 @@ Definition fadapt_provisions (d : fenv) (a : option smap) : option fenv :=
 Definition fbind_type (d : fenv) (t : tsym) (tau : ty) : fenv :=
   FEnv (fmeanings d) (DS ((t, ldefer (fmeanings d) tau) :: dforce (faliases d))) (fstore_of d).
 Definition fcall_environment (d : fenv) (th : subst) (dc : fenv) : fenv :=
-  fappend (finstantiate d th) dc.
+  FEnv (ldefer_onto (fmeanings d) th (fmeanings dc))
+    (ldefer_onto (fmeanings d) th (faliases dc)) (fstore_of dc).
 Definition fapplication_environment (P : program_view) (d : fenv) (h : usym) (th : subst) (dc : fenv) : fenv :=
   let e := lapplication_environment P (lshadow d) h th (lshadow dc) in
   FEnv (lmeanings e) (laliases e) (fstore_of dc).
@@ -301,15 +300,13 @@ Qed.
 Lemma erel_empty : ERel fempty lempty.
 Proof. constructor. intro i. rewrite fget_empty. constructor. Qed.
 
-Lemma erel_instantiate : forall fd ld th, ERel fd ld -> ERel (finstantiate fd th) (linstantiate ld th).
-Proof.
-  intros fd ld th H. destruct (erel_meanings fd ld H) as [Em _]. unfold finstantiate, linstantiate.
-  rewrite Em. constructor. intro i. rewrite fget_empty. constructor.
-Qed.
-
 Lemma erel_call : forall fd ld th fc lc, ERel fd ld -> ERel fc lc ->
   ERel (fcall_environment fd th fc) (lcall_environment ld th lc).
-Proof. intros. apply erel_append; [apply erel_instantiate|]; assumption. Qed.
+Proof.
+  intros fd ld th fc lc H Hc. destruct (erel_meanings fd ld H) as [Em _].
+  unfold fcall_environment, lcall_environment. rewrite Em.
+  destruct Hc. constructor. assumption.
+Qed.
 
 Lemma erel_typed_capture : forall fd ld types fc lc, ERel fd ld -> ERel fc lc ->
   ERel (ftyped_capture fd types fc) (ltyped_capture ld types lc).

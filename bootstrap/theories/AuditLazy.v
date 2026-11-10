@@ -180,8 +180,13 @@ Definition lappend (a b : lenv) :=
   LEnv (dappend (lmeanings a) (lmeanings b)) (dappend (laliases a) (laliases b)) (lprovs a ++ lprovs b).
 Definition linstall (key : item) (entry : lprov) (d : lenv) :=
   LEnv (lmeanings d) (laliases d) ((key, entry) :: lprovs d).
-Definition ldefer_all (s : lsubst) (th : subst) : lsubst :=
-  DS (map (fun q => (fst q, ldefer s (snd q))) th).
+Definition ldefer_entries (s : lsubst) (th : subst) :=
+  map (fun q => (fst q, ldefer s (snd q))) th.
+Definition ldefer_all (s : lsubst) (th : subst) : lsubst := DS (ldefer_entries s th).
+(* A call adds its instantiated parameters to each captured type table.
+   Fuse the two deferred steps, and share the tail for a monomorphic call. *)
+Definition ldefer_onto (s : lsubst) (th : subst) (tail : lsubst) : lsubst :=
+  match th with [] => tail | _ => DS (ldefer_entries s th ++ dforce tail) end.
 Definition linstantiate (d : lenv) (th : subst) : lenv :=
   let meanings := ldefer_all (lmeanings d) th in LEnv meanings meanings [].
 Definition ltyped_capture (d : lenv) (types : type_capture) (dc : lenv) : lenv :=
@@ -227,7 +232,8 @@ Definition ladapt_provisions (d : lenv) (a : option smap) : option lenv :=
 Definition lbind_type (d : lenv) (t : tsym) (tau : ty) : lenv :=
   LEnv (lmeanings d) (DS ((t, ldefer (lmeanings d) tau) :: dforce (laliases d))) (lprovs d).
 Definition lcall_environment (d : lenv) (th : subst) (dc : lenv) : lenv :=
-  lappend (linstantiate d th) dc.
+  LEnv (ldefer_onto (lmeanings d) th (lmeanings dc))
+    (ldefer_onto (lmeanings d) th (laliases dc)) (lprovs dc).
 Definition loutput_meaning (d : lenv) (source : tsym) : option dty :=
   match llookup source (laliases d) with
   | Some meaning => Some meaning
@@ -292,7 +298,7 @@ Proof. intros. apply map_app. Qed.
 Lemma ldefer_all_to : forall s th,
   to_subst (ldefer_all s th) = map (fun q => (fst q, app_subst (to_subst s) (snd q))) th.
 Proof.
-  intros s th. unfold ldefer_all. unfold to_subst at 1. cbn [dforce]. rewrite map_map. apply map_ext.
+  intros s th. unfold ldefer_all, ldefer_entries. unfold to_subst at 1. cbn [dforce]. rewrite map_map. apply map_ext.
   intros [t tau]. cbn [fst snd]. rewrite force_ldefer, lapp_spec. reflexivity.
 Qed.
 
@@ -318,7 +324,9 @@ Qed.
 Lemma call_to : forall d th dc,
   call_environment (to_env d) th (to_env dc) = to_env (lcall_environment d th dc).
 Proof.
-  intros d th dc. unfold call_environment, lcall_environment. rewrite instantiate_to. apply append_to.
+  intros d [|p th] dc.
+  - destruct dc. reflexivity.
+  - unfold call_environment. rewrite instantiate_to, append_to. reflexivity.
 Qed.
 
 Lemma typed_capture_to : forall d types dc,
