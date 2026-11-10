@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass PublicMerge EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
+  PublicMergeClass PublicMerge PublicMergePresent EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -174,6 +174,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMerge.expand_children);
   root (@NM.PublicMerge.item_eqbM_spec);
   root (@NM.PublicMerge.ilookM_key);
+  root (@NM.PublicMergePresent.mgm_structured_image_reads_shape);
  root (@NM.AuditExamples.bare_return_requires_unit);
   root (@NM.AuditExamples.one_does_not_insert_a_multiply);
   root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
