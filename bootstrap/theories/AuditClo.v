@@ -577,14 +577,26 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | r => r
           end
       end
-  | EBind b e1 => let cb := cc_bind cc b bnil in let c1 := cc e1 in fun m d g st =>
-      match m with
-      | 0 => I.Evaluation OutOfFuel g st
-      | S k =>
-          match cb k d g st with
-          | inl (d1, g1, st1) => c1 k d1 g1 st1
-          | inr result => result
+  | EBind b e1 =>
+      let c1 := cc e1 in
+      match b with
+      | BPrimitive i p => fun m d g st =>
+          match m with
+          (* The singleton binding and the empty tail each need fuel. *)
+          | S (S (S _) as k) => c1 k (finstall i (fprimitive_closure d i p) d) g st
+          | _ => I.Evaluation OutOfFuel g st
           end
+      | _ =>
+          let cb := cc_bind cc b bnil in
+          fun m d g st =>
+            match m with
+            | 0 => I.Evaluation OutOfFuel g st
+            | S k =>
+                match cb k d g st with
+                | inl (d1, g1, st1) => c1 k d1 g1 st1
+                | inr result => result
+                end
+            end
       end
   | ESeq e1 e2 => let c1 := cc e1 in let c2 := cc e2 in fun m d g st =>
       match m with
@@ -1000,7 +1012,8 @@ Definition agree (n : nat) : Prop :=
 Lemma agree_zero : agree 0.
 Proof.
   repeat split.
-  - intros e d g st. destruct e; try reflexivity. apply fold_call_ok. reflexivity.
+  - intros e d g st. destruct e; try reflexivity; try (destruct b; reflexivity).
+    apply fold_call_ok. reflexivity.
   - intros l d g st. destruct l as [|e rest]; [reflexivity|].
     cbn [cc_list]. destruct (immediate e) as [[get err]|]; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
@@ -1036,9 +1049,14 @@ Proof.
         rewrite IHl. reflexivity.
     + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
       rewrite IHe. reflexivity.
-    + change (cc_bind P ftbl (cc P tbl ftbl) b bnil) with (ccbs P tbl ftbl [b]).
-      rewrite IHb. destruct (F.feval_bindings k P d g st [b]) as [[[d1 g1] st1]|r]; [|reflexivity].
-      apply IHe.
+    + destruct b; try (
+        match goal with
+        | |- context [cc_bind P ftbl (cc P tbl ftbl) ?b bnil] =>
+            change (cc_bind P ftbl (cc P tbl ftbl) b bnil) with (ccbs P tbl ftbl [b]);
+            rewrite IHb; destruct (F.feval_bindings k P d g st [b]) as [[[d1 g1] st1]|r];
+              [apply IHe|reflexivity]
+        end).
+      destruct k as [|[|k']]; cbn [F.feval_bindings]; try reflexivity. apply IHe.
     + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity. apply IHe.
     + rewrite IHe. reflexivity.
     + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
