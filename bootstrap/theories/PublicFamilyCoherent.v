@@ -290,7 +290,8 @@ Theorem family_coherent : forall F C, FormedCx W C /\ FrameFormed W F /\ CxScope
   ilook (mkey r m) (c_provisions Cr) = Some (ProvidedMethod g' a') ->
   theta_of C a = theta_of Cr a' -> g = g'.
 Proof.
-  intros F C [_ [_ [_ [_ [_ [_ [_ Pr]]]]]]] C1 u matching th sm Cr ks Es _ FA r m g a g' a' Ik Il L Eth.
+  intros F C [_ [_ [_ [_ [_ Mr]]]]] C1 u matching th sm Cr ks Es _ FA r m g a g' a' Ik Il L Eth.
+  pose proof (methsread_canon W C Mr) as [_ [_ Pr]].
   pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (family_context_shape matching C1) as [_ [Esub _]].
   destruct (provide_result_shape W _ _ _ _ _ PR) as [SubR _].

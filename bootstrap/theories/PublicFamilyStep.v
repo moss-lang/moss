@@ -665,7 +665,7 @@ Proof.
     eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Emg Ep FA Real0 E Res)
     |exact E|exact St'| |].
   - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
-  - exact (PublicScoping.family_result_cxscoped W F C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc
+  - exact (PublicScoping.family_result_cxscoped W F C0 C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc
       (fun x v I => proj2 (Tin x v I)) Cs0).
 Qed.
 

@@ -2119,11 +2119,11 @@ Proof.
 Qed.
 
 (* Fewer provisions keep a context formed. *)
-Lemma formed_narrow : forall F C C', A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_locals C' = A.c_locals C ->
+Lemma formed_narrow : forall F C C', A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_merge C' = A.c_merge C -> A.c_locals C' = A.c_locals C ->
   incl (A.c_provisions C') (A.c_provisions C) -> Formed F C -> Formed F C'.
 Proof.
-  intros F C C' Ety Esub Eloc Inc [[[Ty Sub Pr Lo] [Ks Ts]] [Ff Cs]].
-  split; [|split; [exact Ff|exact (PublicScoping.cxscoped_narrow W F C C' Ety Esub Eloc Inc Cs)]].
+  intros F C C' Ety Esub Merge Eloc Inc [[[Ty Sub Pr Lo] [Ks Ts]] [Ff Cs]].
+  split; [|split; [exact Ff|exact (PublicScoping.cxscoped_narrow W F C C' Ety Esub Merge Eloc Inc Cs)]].
   assert (Sc : PublicFormation.scope_gens C' = PublicFormation.scope_gens C)
     by (unfold PublicFormation.scope_gens, A.canon; rewrite Ety, Esub; reflexivity).
   split; [constructor|split].
@@ -4697,7 +4697,7 @@ Proof.
       (fun q Iq => proj1 (CapsIn _ (InCaps q Iq))) KeysIff) as [dc Sel].
     rewrite Sel. left.
     assert (FmdC : Formed F C).
-    { apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym Eloc)); [|exact FmdM].
+    { apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym (cap_cx_merge C qs)) (eq_sym Eloc)); [|exact FmdM].
       intros [k1 p1] I1. exact (cap_cx_incl C qs C k1 p1 I1 (NotCap k1 p1 I1)). }
     pose proof (PublicFormation.sigof_ok W _ _ _ _ Sig (PublicFormation.cf_ty _ _ (proj1 (proj1 FmdC))) (PublicFormation.optok_none W)) as SgOk.
     pose proof (lambda_callable k Bel r Lr C ps sg None body pid caps capvals Cl Fl lbody ltype d H dc keys
@@ -4779,7 +4779,7 @@ Proof.
     + apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub (cap_cx_merge C qs) KMc).
       intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
       exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)).
-    + apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym Eloc)); [|exact FmdM].
+    + apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym (cap_cx_merge C qs)) (eq_sym Eloc)); [|exact FmdM].
       intros [k1 p1] I1. exact (cap_cx_incl C qs C k1 p1 I1 (NotCap k1 p1 I1)).
   - intros q Iq. pose proof RealM as [_ [[Vals _] _]].
     assert (Lv : A.nlook (snd q) (A.c_vals (cap_cx C qs)) = Some (capty C (fst q))).
@@ -5405,7 +5405,7 @@ Proof.
              split; [intros r9 m9 th9 p9 []|intros x9 []].
            - split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
              split; [intros n9 t9 mu9 []|split; [intros k9 p9 []|split; [intros t9 E9; rewrite This in E9; discriminate|]]].
-             split; [intros t9; unfold A.canon; cbn; rewrite !app_subst_nil; reflexivity|split; [intros x9 v9 []|intros r9 m9 g9 a9 []]]. }
+             split; [exact PublicMergePresent.empty_merge_section|split; [intros x9 v9 []|intros r9 m9 g9 a9 []]]. }
       * apply (numbering_frame F0 []). rewrite This. exact Num.
       * split; [intros n' t1 mu Found; discriminate|split; [intros t1 This'; congruence|intros x1 tx1 Lx1; discriminate]].
       * split.

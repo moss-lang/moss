@@ -246,6 +246,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicContextFacts.function_context_unique);
   root (@NM.PublicContextFacts.functor_context_unique);
   root (@NM.PublicContextFacts.call_theta_merged);
+  root (@NM.PublicScoping.methread_merge_iff);
+  root (@NM.PublicScoping.methsread_canon_iff);
+  root (@NM.PublicScoping.methsread_mlook_canonical);
   root (@NM.PublicCaptureScopeFacts.typed_capture_generation_lookup);
   root (@NM.PublicCaptureScopeFacts.typed_capture_alias_lookup);
   root (@NM.PublicGenerationCallExample.actual_application_exports_unchanged_formal_not_stale_capture);
