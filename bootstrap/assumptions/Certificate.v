@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim.
+  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -140,6 +140,12 @@ Proof.
   rewrite (captrim_runs_agree _ _ _ _ Hb).
   exact (fastpath_prune_runs_agree prelude program interface initial result Ha Hc Hb).
 Qed.
+
+(* Deferred type substitution (AuditLazy.v): moss-ref runs the reference
+   interpreter as AuditLazy.LazyInterpreter, which returns exactly what the
+   reference returns, at every fuel, for every primitive implementation
+   (run/driver.ml), here at the public reference host. *)
+Module LazyTop := AuditLazy.LazyInterpreter PublicPublic.ReferenceHost.
 
 (* One dependency traversal computes the union for every root below. The
    roots are a list, not a tuple: a nested pair repeats the types of all
@@ -393,7 +399,11 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@CapTrimTop.observe_trimmed);
   root (@CapTrimTop.runs_trimmed);
   root (@captrim_runs_agree);
-  root (@fastpath_prune_captrim_runs_agree)].
+  root (@fastpath_prune_captrim_runs_agree);
+
+(* Deferred type substitution. *)
+  root (@LazyTop.leval_agrees);
+  root (@LazyTop.lrun_main_agrees)].
 
 Print Assumptions certificate_roots.
 
