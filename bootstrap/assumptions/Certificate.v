@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
+  PublicMergeClass PublicMerge EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -160,6 +160,11 @@ Module CloTop := AuditClo.CloInterpreter PublicPublic.ReferenceHost.
 Import Stdlib.Lists.List.ListNotations.
 Definition root {T : Type} (x : T) : {T : Type & T} := existT (fun T => T) T x.
 Definition certificate_roots : list {T : Type & T} := [
+  root (@NM.PublicMerge.merge_eq_substitute);
+  root (@NM.PublicMerge.merge_eq_sound);
+  root (@NM.PublicMerge.merge_section_kernel);
+  root (@NM.PublicMerge.merge_semantic_reading_with_section);
+  root (@NM.PublicMerge.section_is_most_general);
  root (@NM.AuditExamples.bare_return_requires_unit);
   root (@NM.AuditExamples.one_does_not_insert_a_multiply);
   root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
