@@ -1,8 +1,8 @@
-# Q4 control (AUDIT-CHANGES "Q4"): as args-context-provision-wins.moss,
+# Q4 control (AUDIT-CHANGES #72): as args-context-provision-wins.moss,
 # but `d.describe()` is not an argument of a call that demands `Desc`. A
 # family that would supply `.describe` at Meter on demand is not a
 # provision of it (D77), so the attached method is called.
-# Verdicts: Audit m (under either Q4 choice too); oracle m; native m.
+# Verdicts: Audit m (before and after #72); oracle m; native m.
 tag Meter(Int);
 type Q;
 fn .describe(): Char;

@@ -1,17 +1,16 @@
-# Q4 (semantics.typ, "where a direct method call checks its arguments";
-# open, see AUDIT-CHANGES "Q4"). `f` and `Meter.g` both need the detached
-# `.describe` at Meter (through Q), which only the family `Desc` supplies,
-# on demand. The argument `d.describe()` resolves by D77: the provision of
-# the detached `.describe` wins over the attached method where the context
-# provides it, and a family that would supply it on demand does not count.
-# So the argument's meaning depends on whether the call's demand is in
-# force for it: in Γ it is the attached method (m), in Γ ⊕ D the family's
-# (x). Audit and the oracle check a fn call's arguments in Γ ⊕ D (ExCallD)
-# and a defined attached method call's in Γ (MCAttachedDefined).
-# Verdicts: Audit xm; oracle xm; native xx.
-#   Audit with arguments in Γ at every call (scratch/lang-q/q4-gamma.patch;
-#   its oracle variant): mm. With Γ ⊕ D at every call
-#   (q4-gamma-plus-D.patch; its oracle variant): xx.
+# Q4 (AUDIT-CHANGES #72): every call checks its arguments in the caller's
+# context Γ, never with the families the call demands in force (Γ ⊕ D).
+# `f` and `Meter.g` both need the detached `.describe` at Meter (through
+# Q), which only the family `Desc` supplies, on demand. The argument
+# `d.describe()` resolves by D77: the provision of the detached
+# `.describe` wins over the attached method where the context provides
+# it, and a family that would supply it on demand does not count. Checked
+# in Γ, as `let a = d.describe(); f(a)` would be, it is the attached
+# method (m), for the fn call as for the attached method call.
+# Verdicts: Audit mm; oracle mm; native xx (a native bug, E72: it checks
+# a fn call's and a defined attached call's arguments in Γ ⊕ D).
+#   Before #72: Audit and oracle xm (ExCallD read the arguments in Γ ⊕ D,
+#   MCAttachedDefined in Γ).
 tag Meter(Int);
 type Q;
 fn .describe(): Char;

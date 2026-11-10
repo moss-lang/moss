@@ -112,6 +112,7 @@ entry they belong to.
 | 61 | Merging two entries of one item unifies their instantiations (Δ4, D43) | lang-b | B and C (coherence; with the oracle; native E43) |
 | 70 | A defined method is not bound (`BMethBind`) | lang-q | B (native accepts; E70) |
 | 71 | A body may pin a fixed input that agrees with the bind site (`LinkBody` pins Π = P(F) ∩ M(F), `BFunClosure` agreement) | lang-q | relaxation toward both implementations (Audit used to reject every program binding `StdBase`) |
+| 72 | **Every call checks its arguments in the caller's context Γ** (`ExCallD`, as `MCAttachedDefined` and `PrFamily`; semantics.typ Q4) | lang-bq | relaxation, with the oracle (accepts a program both implementations reject; native E72) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
@@ -2036,53 +2037,95 @@ executable tests unless noted.
   agreement check mirrors the oracle. Native needs no change on these
   tests.
 
-### Q4 (open, not applied): which context a call's arguments are checked in
-The owner decided that the arguments of every kind of call are checked in
-one context (semantics.typ, "where a direct method call checks its
-arguments"). Audit is not consistent today, and the oracle mirrors it
-exactly:
+### 72. Every call checks its arguments in the caller's context (`ExCallD`; lang-bq branch; semantics.typ Q4, owner-approved "Γ everywhere")
+- **Rule now.** A call's arguments are checked in the caller's context Γ,
+  never in Γ ⊕ D, the context with the families the call demands in
+  force. `ExCallD` (a defined fn) now checks `Args W P F C args ...` in
+  the caller's `C`, not in `C'` (after `Demand`), as `MCAttachedDefined`
+  (a defined attached method) and `PrFamily` (a method a family supplies
+  on demand) already did. The callee's needs, signature and θ are still
+  read in `C'`.
 
-| call | rule | arguments checked in | oracle | native |
-|---|---|---|---|---|
-| a defined fn | `ExCallD` | Γ ⊕ D (`C'`, after `Demand`) | Γ ⊕ D (`synth`, defined fn) | Γ ⊕ D |
-| a defined attached method | `MCAttachedDefined` | Γ (`C`; the demand runs at the receiver's instantiation, `Cd`) | Γ (`synth_method`) | Γ ⊕ D |
-| a method a family supplies on demand | `PrFamily` (through `Provided`) | Γ (`C`, not the application's `C'`) | Γ (`provided_call`) | Γ |
-| an abstract fn, a provided method | `ExCallA`, `PrIn` | Γ (D is empty) | Γ | Γ |
+  | call | rule | arguments before | arguments now | native |
+  |---|---|---|---|---|
+  | a defined fn | `ExCallD` | Γ ⊕ D (`C'`) | Γ (`C`) | Γ ⊕ D (E72) |
+  | a defined attached method | `MCAttachedDefined` | Γ | Γ | Γ ⊕ D (E72) |
+  | a method a family supplies on demand | `PrFamily` | Γ | Γ | Γ |
+  | an abstract fn, a provided method | `ExCallA`, `PrIn` | Γ (D is empty) | Γ | Γ |
 
-Both consistent forms were implemented and proved (`dune build
-@theories/all` green for each), with an oracle variant for each, but
-**each rejects a program both implementations accept**, so neither is
-committed (the task's stop rule):
-- **Γ everywhere** (`ExCallD` checks `Args` in `C`; `call_core` takes the
-  arguments' context separately; patches `scratch/lang-q/q4-gamma.patch`
-  and `q4-gamma-oracle.patch`). Corpus against the oracle: 466 same /
-  2 diff. It accepts [args-context-shadow-call](examples/args-context-shadow-call.moss)
-  (42), which both implementations reject, and **rejects
-  [functor-captured-unbound](examples/functor-captured-unbound.moss)**,
-  which both accept: its argument block binds a closure that captures a
-  family method only the call's demand puts in force.
-- **Γ ⊕ D everywhere** (`MCAttachedDefined` and `PrFamily` check `Args`
-  in `family_restore C Cd` and `family_restore C C'`; `method_code_at2`
-  and `args_code2` run the receiver in Γ and the arguments in Γ ⊕ D;
-  patches `q4-gamma-plus-D.patch` and `q4-gamma-plus-D-oracle.patch`).
-  Corpus: 464 same / 1 diff. It **rejects
-  [sig-nonreq-shadow](examples/sig-nonreq-shadow.moss)**, which both
-  accept (42): the application a call demands installs the family's whole
-  result, so its `Int.m` (read with U = Bool) shadows the caller's own
-  `Int.m` for the arguments.
+- **Why** (the owner's decision: no "spooky action at a distance").
+  `f(e)` means what `let a = e; f(a)` means: the argument is evaluated in
+  the caller's terms, before the call and before what the call demands.
+  What a call demands is the callee's business, and should not change
+  what the caller's own expressions mean.
+- **Criteria.**
+  - Stability under rebinding (section 5): a family application that a
+    call demands installs the family's whole result, so in Γ ⊕ D it could
+    shadow what the caller itself provides
+    ([args-context-shadow-call](examples/args-context-shadow-call.moss):
+    F's `Int.m`, read with U = Bool, shadowed the caller's `Int.m`). In Γ a
+    demand cannot rebind anything an argument reads.
+  - Locality: an argument's meaning depends only on the context it is
+    written in, not on the needs of the callee it is passed to. D77
+    already says that a family that would supply a key on demand is not a
+    provision of it; with Γ ⊕ D an argument would see the demanded
+    provision anyway
+    ([args-context-provision-wins](examples/args-context-provision-wins.moss)).
+  - The D89 analogy (#55): a bracket call `f[A=T](e)` is
+    `{ let %arg0 = e; bind A = T; f(%arg0) }`, its arguments evaluated
+    before the binds. A call's demands are binds the call makes on the
+    caller's behalf, so its arguments come first in the same way.
+  - Coherence (section 2): before, `f(d.describe())` and
+    `d.g(d.describe())` read the same argument differently (xm) because
+    of which rule checked the call. Now every kind of call agrees.
+- **Proof.** `PublicBodySlice.call_core` and `call_code` take the
+  arguments' context `CA` separately from the callee's `C`, with a `Pre`
+  for each; the defined-call case of `ex_code` passes `C'` for the callee
+  and `C` for the arguments (`demand_case` gives both). `public_safety`
+  is still proved and `check.sh` is green. This is lang-q's
+  `scratch/lang-q/q4-gamma.patch`, adapted to rule B (#60): `ExCallD`
+  keeps `RequirementsInForce` and its demand reads needs through θ.
+- **Oracle.** `Elab.synth_call`, defined fn: `check_args` runs in the
+  caller's `e`, not in the env after `principal_env` and `demand_needs`
+  (the needs, signature, `layout_ok` and θ still read that env), as
+  `synth_method` already did for a defined attached method. The oracle's
+  specification (ExecutionModel.v) changes the same way: `ExCallD` and
+  `ExCallDDemand` check `Args` in the caller's `C`, not in the principal
+  `Cp` or the demand context `C'` (as `MCAttachedDefinedDemand` already
+  did). The soundness proofs `CallDefinedCore`, `CallDefined`,
+  `CallDefinedAny` and `CallDefinedDemand` follow; in the demand case the
+  parameters read in the caller's env equal those read after the demand
+  (`canon_uf`, `demand_types`).
+- **Tests.**
 
-Other tests (verdicts in their headers):
-[args-context-provision-wins](examples/args-context-provision-wins.moss)
-(Audit xm, oracle xm, native xx; Γ: mm; Γ ⊕ D: xx),
-[args-context-family-call](examples/args-context-family-call.moss)
-(all m; Γ ⊕ D: x), [args-context-alone](examples/args-context-alone.moss)
-(control, all m). The difference also decides D77 for an argument: in
-Γ ⊕ D a family's on-demand method counts as a provision there.
+  | program | Audit before | Audit now | oracle before | oracle now | native |
+  |---|---|---|---|---|---|
+  | [args-context-provision-wins](examples/args-context-provision-wins.moss) | xm | mm | xm | mm | xx (E72) |
+  | [args-context-shadow-call](examples/args-context-shadow-call.moss) | rejects | 42 | rejects | 42 | rejects (E72) |
+  | [args-context-family-call](examples/args-context-family-call.moss) | m | m | m | m | m |
+  | [args-context-alone](examples/args-context-alone.moss) (control) | m | m | m | m | m |
+  | [sig-nonreq-shadow](examples/sig-nonreq-shadow.moss) (the method-call form) | 42 | 42 | 42 | 42 | 42 |
+  | [functor-captured-unbound](examples/functor-captured-unbound.moss) | rejects (rule B, #60) | rejects | rejects (rule B) | rejects | exit 0 (E42) |
 
-Γ ⊕ D would be clean if a demanded application did not shadow what the
-caller provides (only the keys demanded, or none already present), which
-is a change to `FamilyStep`/`Demand` (lang-b's area). Γ would be clean if
-functor-captured-unbound's capture were not wanted. The owner decides.
+  Audit's verdicts are by reading the rules; the oracle's are run.
+  lang-q found that Γ everywhere rejected functor-captured-unbound, which
+  both implementations then accepted (its argument block binds a closure
+  that captures a family method only the call's demand puts in force).
+  Since rule B (#60) that program is rejected before its arguments are
+  checked (the call needs `T` in force), so Γ rejects no program that
+  either implementation accepts. The alternative, Γ ⊕ D everywhere
+  (`scratch/lang-q/q4-gamma-plus-D.patch`), rejects sig-nonreq-shadow,
+  which both implementations accept.
+- **Corpus.** The oracle with this change against the oracle before it
+  (lang-bq after Q3 and Q6), over `src/main.moss` (with `lib/`), `tests/`,
+  `examples/` and `bootstrap/examples/`, `ulimit -s unlimited`:
+  `--elab-only` 481 same / 1 diff (args-context-shadow-call, now
+  accepted); run 480 same / 2 diff (args-context-shadow-call: 42;
+  args-context-provision-wins: xm to mm). No program is newly rejected.
+- **Class.** A relaxation (it accepts args-context-shadow-call, which both
+  implementations rejected) and a run-time change on
+  args-context-provision-wins, with the oracle. Native needs the same
+  change (E72).
 
 ---
 
@@ -2206,6 +2249,7 @@ All of these come from `proof-plan.json`.
 | E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | open | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 | #60 |
 | E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | open | [merge-inst-order-ab.moss](examples/merge-inst-order-ab.moss): oracle rejects; native exit 0. [merge-inst-val.moss](examples/merge-inst-val.moss): oracle accepts; native rejects | #61 |
 | E70 | Reject a bind of a defined method (`bind Meter.describe = …` where `Meter.describe` has a body) | native | open | [bind-attached-defined.moss](examples/bind-attached-defined.moss): oracle rejects; native mm | #70 |
+| E72 | Check every call's arguments in the caller's context Γ, never with the call's family demands in force: a defined fn call and a defined attached method call (a family-demanded call already does) | native | open | [args-context-provision-wins.moss](examples/args-context-provision-wins.moss): oracle mm; native xx. [args-context-shadow-call.moss](examples/args-context-shadow-call.moss): oracle 42; native rejects (incompatible types) | #72 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
 changes. All are open:
@@ -2251,6 +2295,7 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   unbound-merge-representative (#3).
 
 **Audit accepts; native rejects.**
+- args-context-shadow-call.moss (#72, E72). The oracle accepts it too (42).
 - sameneed-copy.moss (#51). The oracle rejects it too, but both accept the
   same program with the merge orders agreeing.
 - tests/errors/functor_output_input_changed.moss (#14). Audit accepted it
@@ -2273,6 +2318,9 @@ describe it, matches native and not the oracle:
 - family-copy-linked-bracket (exit 0).
 
 On copy-capture, Audit matches both implementations.
+
+On args-context-provision-wins.moss (#72, E72), Audit and the oracle
+print mm and native prints xx.
 
 On sameneed-meaning.moss (#51), Audit prints 2, while native and the
 oracle print 1. On sameneed-meaning-agree.moss, Audit and the oracle print
