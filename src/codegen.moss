@@ -3888,7 +3888,7 @@ assume Std {
         let tt = int_list();
         let fu = family_member(recv_ty, sym, ts, tt);
         if ast::is_some(fu) {
-          matching_in_force(tt);
+          matching_in_force(tt, ast::none());
           return emit_literal_on_demand(body, recv_ty, slot, sym, fu, ts, tt);
         }
         semantic_error(prog::e_method(), prog::sym_name.get(sym));
@@ -4074,7 +4074,7 @@ assume Std {
         let tt = int_list();
         let fu = family_member(recv_ty, sym, ts, tt);
         if ast::is_some(fu) {
-          matching_in_force(tt);
+          matching_in_force(tt, ast::none());
           return emit_on_demand(body, recv, recv_ty, sym, run, n, m, e, fu, ts, tt);
         }
         semantic_error(prog::e_method(), prog::sym_name.get(sym));
@@ -7245,8 +7245,12 @@ assume Std {
 
     # Rule B for a family demand (`MatchingInForce`): the matching read
     # off the demanded key is in force here, each symbol it mentions one
-    # that a type in force here means.
-    fn matching_in_force(tt: IntList) {
+    # that a type in force here means. For a demand made by a call of
+    # `f` (none otherwise), a symbol is also meant through `f`'s merge
+    # class (`InForceThrough`, as `requirements_in_force` reads it): the
+    # demand reads the need through the call's principal θ (#50), where a
+    # requirement the caller leaves unbound means a member it binds.
+    fn matching_in_force(tt: IntList, f: Int) {
       let genv = cg_genv.read();
       let meant = int_list();
       var e = genv;
@@ -7266,17 +7270,44 @@ assume Std {
         while j < syms.length() {
           let a = syms.get(j);
           if !types::contains_sym(meant, a) {
-            var named = a;
-            if ast::is_some(prog::origin_of(a)) {
-              named = prog::origin_of(a);
+            if !meant_through(a, genv, f) {
+              var named = a;
+              if ast::is_some(prog::origin_of(a)) {
+                named = prog::origin_of(a);
+              }
+              semantic_error(prog::e_absent(), prog::sym_name.get(named));
+              return ();
             }
-            semantic_error(prog::e_absent(), prog::sym_name.get(named));
-            return ();
           }
           j = j + 1;
         }
         i = i + 1;
       }
+    }
+
+    # Whether the symbol `a` of a demand made by a call of `f` is in
+    # force here through `f`'s merge class of it.
+    fn meant_through(a: Int, genv: Int, f: Int): Bool {
+      if !ast::is_some(f) {
+        return false;
+      }
+      if is_lambda(f) {
+        return false;
+      }
+      var r = a;
+      if ast::is_some(prog::origin_of(a)) {
+        r = prog::origin_of(a);
+      }
+      let fbase = lower::env_of(f);
+      let members = int_list();
+      var e = fbase;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          types::push_new(members, lower::env_sym_of(e));
+        }
+        e = lower::env_next_of(e);
+      }
+      in_force_through(r, genv, int_list(), fbase, members)
     }
 
     # D84 rule 7: the family in force (in the generic environment) that
@@ -7346,7 +7377,7 @@ assume Std {
             let t1 = int_list();
             let fu = family_member(key, s, s1, t1);
             if ast::is_some(fu) {
-              matching_in_force(t1);
+              matching_in_force(t1, f);
               if !demand_seen(fus, starts, ts, tt, fu, s1, t1) {
                 fus.push(fu);
                 starts.push(ts.length());

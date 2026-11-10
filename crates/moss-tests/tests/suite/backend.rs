@@ -1137,6 +1137,19 @@ fn a_use_needs_its_requirements_in_force() {
     build_with(&wasi("ruleb_closure_bound"), PRELUDE);
 }
 
+/// Rule B through a merge class, for a family demand: `f`'s `Y`, which
+/// `demo` leaves unbound, is in force through the `X` it merges with, so
+/// the demand of `Y.foo` is made (bootstrap/examples/
+/// ruleb-merge-family-demand.moss; AUDIT-CHANGES #60). The self-hosted
+/// compiler read the demand's matching in `demo`'s context only, and
+/// refused it (`e_absent`, `Y`).
+#[test]
+fn a_family_demand_is_in_force_through_a_merge() {
+    let entry = wasi("ruleb_merge_family_demand");
+    assert_eq!(oracle_run(&entry, &[]), "k\n");
+    assert_eq!(run_moss(&entry, PRELUDE), "k\n");
+}
+
 /// Q4: a call's arguments are checked in the caller's context, not with
 /// the call's demanded families in force, so `d.describe()` passed to `f`
 /// or to `d.g` is the attached method both times (`mm`). The oracle here
