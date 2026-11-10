@@ -61,9 +61,9 @@ Proof.
  cstep H I4 W4 L a s5 Ea I5 W5 L5.
  pose proof(method_provision_app_rel w R Fl b Hload m rcv n ps rt body(subst++tymap e)(ob++tm)e s4 a s5
   Hm Dm Km Ea I4 W4 L5 TR)as App.
- apply bind_inv in H as(ee&s6&Eee&H). injection H as <- <- <-.
+ apply bind_inv in H as(eu&s6&Eeu&H). apply bind_inv in H as(ee&s7&Eee&H). injection H as <- <- <-.
  exists(gs_id m),(tr Fl this),(tr_sig Fl sg),(tr_inst Fl a),[LMth this(gs_id m)sg a].
  split;[exact Named|]. split;[exact Km|]. split;[exact Rthis|]. split;[exact Sg|]. split;[exact App|]. split;[reflexivity|].
- exact(ws_mth Fl U e ec ee tm les needs this(gs_id m)sg a s5 s6 W Hthis Othis C Eee Cout).
+ exact(ws_mth Fl U e ec eu ee tm les needs this(gs_id m)sg a mi(gs_name m)s5 s6 s6 s7 W Hthis Othis C Eeu Eee Cout).
 Qed.
 End Method.

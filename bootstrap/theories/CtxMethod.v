@@ -31,11 +31,20 @@ Lemma ws_method_common : forall U e e1 tm les needs r m sg a,
     forall sb, RespE Fl sb (en_uf e1) -> ExecutionModel.app_subst sb (tr Fl r0) = ExecutionModel.app_subst sb (tr Fl rq)) ->
   (en_uf e1 = U -> forall k, nofun k = true -> option_map fst (get_app e1 k) = lfirst e1 k (les ++ [LMth r m sg a])) ->
   MethodRowsUnique e1 -> (en_uf e1 = U -> MethodRowsCanonical e1) ->
+  (en_uf e1 = U -> forall k a', lkey e1 (LMth r m sg a) = Some k -> linst (LMth r m sg a) = Some a' ->
+     exists a0, lfirst e1 k (les ++ [LMth r m sg a]) = Some a0 /\ InstCanon e1 a0 a') ->
+  (forall k a0, option_map fst (get_app e1 k) = Some a0 -> AppIn Fl e1 k a0 (les ++ [LMth r m sg a])) ->
   WS Fl U e1 tm (les ++ [LMth r m sg a]) (add_need needs (KyMth (canon e r) m)).
 Proof.
-  intros U e e1 tm les needs r m sg a W Tn Tv Tf Tu Ex Tr C Th Mg Mo Mi Ap Unique Canonical.
+  intros U e e1 tm les needs r m sg a W Tn Tv Tf Tu Ex Tr C Th Mg Mo Mi Ap Unique Canonical Inew Ain.
   assert (Hu : en_uf e1 = U -> en_uf e = U /\ en_uf e1 = en_uf e).
   { intro E. exact (uf_squeeze U e e1 (ws_ext _ _ _ _ _ _ W) Ex E). }
+  assert (Ins : en_uf e1 = U -> forall l' k a', In l' (les ++ [LMth r m sg a]) -> lkey e1 l' = Some k -> linst l' = Some a' ->
+            exists a0, lfirst e1 k (les ++ [LMth r m sg a]) = Some a0 /\ InstCanon e1 a0 a').
+  { intros E l' k' a' Hl Hk' Hi. apply in_app_iff in Hl as [Hl|[<-|[]]]; [|exact (Inew E k' a' Hk' Hi)].
+    destruct (Hu E) as [E0 E01].
+    rewrite (lkey_same e e1 _ E01) in Hk'. destruct (ws_insts _ _ _ _ _ _ W E0 l' k' a' Hl Hk' Hi) as (a0 & F & C').
+    exists a0. rewrite (lfirst_same e e1 _ _ E01). split; [exact (lfirst_keep e k' les _ a0 F) | exact (instcanon_same e e1 _ _ E01 C')]. }
   constructor; auto.
   - intro k. unfold tn_get. rewrite Tn. exact (ws_tn _ _ _ _ _ _ W k).
   - rewrite Tn. exact (ws_tnabs _ _ _ _ _ _ W).

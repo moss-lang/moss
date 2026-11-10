@@ -19,10 +19,10 @@ Lemma root_type_support:forall cf mi xs e needs s e' needs' s' U tm les,
  mfold(fun acc t=>let! tg:=sym t in add_symbol_item cf(fst acc)mi tg[](snd acc))(e,needs)xs s=
    Good((e',needs'),s')->
  Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl s'->WS Fl U e tm les needs->
- Forall(fun x=>A.kind_sym WW x=Some A.DKType)xs->EnvSupport WW e->EnvSupport WW e'.
+ Forall(fun x=>A.kind_sym WW x=Some A.DKType)xs->EnvSupport WW e->AppsSupport w R Fl e->EnvSupport WW e'/\AppsSupport w R Fl e'.
 Proof.
- intros cf mi xs;induction xs as[|x rest IH];intros e needs s e' needs' s' U tm les Run Inv Hw Mi Late W Types Support.
- - cbn[mfold]in Run;injection Run as <- <- <-;exact Support.
+ intros cf mi xs;induction xs as[|x rest IH];intros e needs s e' needs' s' U tm les Run Inv Hw Mi Late W Types Support Apps.
+ - cbn[mfold]in Run;injection Run as <- <- <-;exact(conj Support Apps).
  - inversion Types as[|x0 rest0 HeadType Rest];subst x0 rest0.
    cbn[mfold]in Run;apply bind_inv in Run as[[e1 needs1][s1[Head Tail]]].
    apply bind_inv in Head as[tg[mid[Read Add]]].
@@ -34,29 +34,29 @@ Proof.
    destruct(proj1(walk_all w(P:=P)R Fl b Hload(meth_step_holds w R Fl b Hload)cf)
      e mi tg[]needs s e1 needs1 s1 U tm les[] Add Inv Hw Mi Loaded Late1 W eq_refl(Forall_nil _))
      as(added&es&tm1&Entry&Map&W1).
-   assert(S1:EnvSupport WW e1).
+   assert(S1:EnvSupport WW e1/\AppsSupport w R Fl e1).
    { eapply(proj1(context_walk_support w(P:=P)R Fl b Hload cf));
        [exact Add|exact Inv|exact Hw|exact Mi|exact Loaded| |constructor|constructor|
-        exact(ws_clean _ _ _ _ _ _ W)|exact(ws_tri _ _ _ _ _ _ W)|exact Support|exact Late1].
+        exact(ws_clean _ _ _ _ _ _ W)|exact(ws_tri _ _ _ _ _ _ W)|exact Support|exact Apps|exact Late1].
      intros k y Bad;discriminate. }
    eapply IH;[exact Tail|exact Inv1|rewrite(fr_w _ _ Frame);exact Hw|exact Mi|exact Late|
-     exact W1|exact Rest|exact S1].
+     exact W1|exact Rest|exact(proj1 S1)|exact(proj2 S1)].
 Qed.
 
 Lemma root_item_support:forall mi gi e needs sp s e' needs' s' U tm les,
  root_item_step mi gi(e,needs)sp s=Good((e',needs'),s')->
  Inv s->st_w s=w->In mi(w_order w)->In gi(w_order w)->Later w P R Fl s'->
- WS Fl U e tm les needs->EnvSupport WW e->EnvSupport WW e'.
+ WS Fl U e tm les needs->EnvSupport WW e->AppsSupport w R Fl e->EnvSupport WW e'/\AppsSupport w R Fl e'.
 Proof.
- intros mi gi e needs[pa dn brackets]s e' needs' s' U tm les Run Inv Hw Mi Gi Late W Support.
+ intros mi gi e needs[pa dn brackets]s e' needs' s' U tm les Run Inv Hw Mi Gi Late W Support Apps.
  unfold root_item_step in Run;cbn beta iota zeta in Run.
- destruct pa as[path|],dn as[name|];try(injection Run as <- <- <-;exact Support).
+ destruct pa as[path|],dn as[name|];try(injection Run as <- <- <-;exact(conj Support Apps)).
  apply bind_inv in Run as[found[mid[Resolve Run]]].
  destruct(esym_rel w R Fl b Hload gi path s found mid Inv Hw Gi Resolve)as[-> Resolved].
- destruct found as[fg|];[|injection Run as <- <- <-;exact Support].
+ destruct found as[fg|];[|injection Run as <- <- <-;exact(conj Support Apps)].
  destruct Resolved as[Res Loaded].
  destruct(negb(kind_eqb(gs_kind fg)KFunctor)||is_some(nget(en_funs e)(gs_id fg)))eqn:Choice;
-   [injection Run as <- <- <-;exact Support|].
+   [injection Run as <- <- <-;exact(conj Support Apps)|].
  apply orb_false_iff in Choice as[Kind Missing];apply negb_false_iff in Kind;apply kind_eqb_spec in Kind.
  apply bind_inv in Run as[xs[s1[Fixed Run]]];apply bind_inv in Run as[cf[s2[Fuel Run]]].
  apply bind_inv in Run as[[e1 needs1][s3[Types Apply]]].
@@ -75,20 +75,20 @@ Proof.
  destruct(root_type_walk w(P:=P)R Fl b Hload cf mi xs e needs s2 e1 needs1 s3 U tm les
    Types Inv2 Hw2 Mi Late3 W Typed)as[added[Map W1]].
  pose proof(root_type_support cf mi xs e needs s2 e1 needs1 s3 U tm les
-   Types Inv2 Hw2 Mi Late3 W Typed Support)as Support1.
+   Types Inv2 Hw2 Mi Late3 W Typed Support Apps)as[Support1 Apps1].
  eapply(proj1(context_walk_support w(P:=P)R Fl b Hload cf));
    [exact Apply|exact Inv3|rewrite(fr_w _ _ Frame3);exact Hw2|exact Mi|exact Loaded|
     |constructor|constructor|exact(ws_clean _ _ _ _ _ _ W1)|exact(ws_tri _ _ _ _ _ _ W1)|
-    exact Support1|exact Late].
+    exact Support1|exact Apps1|exact Late].
  intros k y Bad;discriminate.
 Qed.
 Lemma root_items_support:forall mi gi specs e needs s e' needs' s' U tm les,
  mfold(root_item_step mi gi)(e,needs)specs s=Good((e',needs'),s')->
  Inv s->st_w s=w->In mi(w_order w)->In gi(w_order w)->Later w P R Fl s'->
- WS Fl U e tm les needs->EnvSupport WW e->EnvSupport WW e'.
+ WS Fl U e tm les needs->EnvSupport WW e->AppsSupport w R Fl e->EnvSupport WW e'/\AppsSupport w R Fl e'.
 Proof.
- intros mi gi specs;induction specs as[|sp rest IH];intros e needs s e' needs' s' U tm les Run Inv Hw Mi Gi Late W Support.
- - cbn[mfold]in Run;injection Run as <- <- <-;exact Support.
+ intros mi gi specs;induction specs as[|sp rest IH];intros e needs s e' needs' s' U tm les Run Inv Hw Mi Gi Late W Support Apps.
+ - cbn[mfold]in Run;injection Run as <- <- <-;exact(conj Support Apps).
  - cbn[mfold]in Run;apply bind_inv in Run as[[e1 needs1][s1[Head Tail]]].
    destruct(ok_root_item_step mi gi(e,needs)sp s _ s1 Inv Head)as[Inv1 Frame].
    assert(Otail:ok(mfold(root_item_step mi gi)(e1,needs1)rest)).
@@ -98,17 +98,17 @@ Proof.
    destruct(root_item_exec w(P:=P)R Fl b Hload Hworld mi gi e needs sp s e1 needs1 s1 U tm les
      Head Inv Hw Mi Gi Late1 W)as(added&es&tm1&Entry&Map&W1).
    pose proof(root_item_support mi gi e needs sp s e1 needs1 s1 U tm les
-     Head Inv Hw Mi Gi Late1 W Support)as Support1.
+     Head Inv Hw Mi Gi Late1 W Support Apps)as[Support1 Apps1].
    eapply IH;[exact Tail|exact Inv1|rewrite(fr_w _ _ Frame);exact Hw|exact Mi|exact Gi|
-     exact Late|exact W1|exact Support1].
+     exact Late|exact W1|exact Support1|exact Apps1].
 Qed.
 
 Theorem add_root_context_support:forall e mi needs s e' needs' s' U tm les,
  add_root_context e mi needs s=Good((e',needs'),s')->
  Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl s'->
- WS Fl U e tm les needs->EnvSupport WW e->EnvSupport WW e'.
+ WS Fl U e tm les needs->EnvSupport WW e->AppsSupport w R Fl e->EnvSupport WW e'.
 Proof.
- intros e mi needs s e' needs' s' U tm les Run Inv Hw Mi Late W Support.
+ intros e mi needs s e' needs' s' U tm les Run Inv Hw Mi Late W Support Apps.
  assert(O:ok(add_root_context e mi needs))by(unfold add_root_context;okt).
  destruct(O _ _ _ Inv Run)as[_ Frame].
  pose proof(later_back w P R Fl _ _ Frame Late)as Late0.
@@ -130,6 +130,6 @@ Proof.
    try(injection Run as <- <- <-;exact Support).
  change(mfold(root_item_step mi(gs_mod gc))(e,needs)its s=Good((e',needs'),s'))in Run.
  eapply root_items_support;[exact Run|exact Inv|exact Hw|exact Mi|
-   exact(loader_mod_in w R Fl b Hload _ _ Loaded)|exact Late|exact W|exact Support].
+   exact(loader_mod_in w R Fl b Hload _ _ Loaded)|exact Late|exact W|exact Support|exact Apps].
 Qed.
 End Root.

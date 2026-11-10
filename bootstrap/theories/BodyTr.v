@@ -145,6 +145,20 @@ Fixpoint ety_ok (t : ety) : bool :=
   | _ => true
   end.
 
+Lemma forallb_ext_forall : forall X (f g : X -> bool) l, Forall (fun x => f x = g x) l -> forallb f l = forallb g l.
+Proof. intros X f g l F. induction F as [|x r E _ IH]; cbn; [reflexivity|]. rewrite E, IH. reflexivity. Qed.
+
+(* Elab's copy of ety_ok (unify_app checks it) is ety_ok *)
+Lemma ety_okb_ok : forall t, ety_okb t = ety_ok t.
+Proof.
+  induction t as [| |g|n xs IH|ms IH|fs IH] using ety_ind'.
+  all: cbn [ety_okb ety_ok]; try reflexivity.
+  all: try (f_equal; apply forallb_ext_forall; exact IH).
+  all: try (apply forallb_ext_forall; exact IH).
+  all: destruct ms as [|m r]; [reflexivity|]; apply forallb_ext_forall;
+    eapply Forall_impl; [|exact IH]; intros [| | | | |] E; cbn beta; try reflexivity; exact E.
+Qed.
+
 Lemma ety_ok_wf : forall t, ety_ok t = true -> WFty t.
 Proof.
   induction t as [| |g|n xs IH|ms IH|fs IH] using ety_ind'; intro H; try reflexivity.

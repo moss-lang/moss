@@ -46,6 +46,28 @@ Proof.
   rewrite (us_same _ _ U). apply context_clean_with_uf; assumption.
 Qed.
 
+Lemma unify_app_context_clean : forall (Fl : string -> nat) e mi k a nm s e' s',
+  ContextClean e -> Tri (en_uf e) -> unify_app e mi k a nm s = Good (e',s') -> ContextClean e'.
+Proof.
+  intros Fl e mi k a nm s e' s' C T H.
+  destruct (unify_app_spec Fl e mi k a nm s e' s' T H) as (_ & U & Nn & Sm).
+  destruct (get_app e k) as [[old st]|] eqn:G; [|rewrite (Nn eq_refl); exact C].
+  destruct (Sm old st eq_refl) as (Ok & _).
+  rewrite forallb_forall in Ok.
+  assert (Fa : forall l, incl l (old ++ a) -> Forall (fun t => ety_ok t = true) (map inst_ety l)).
+  { intros l Il. apply Forall_forall. intros t Ht. apply in_map_iff in Ht as (q & <- & Hq).
+    rewrite <- ety_okb_ok. exact (Ok q (Il q Hq)). }
+  unfold unify_app in H. rewrite G in H.
+  destruct (list_eq_dec Nat.eq_dec (map fst old) (map fst a)); [|Merge.noerr H].
+  destruct (forallb (fun q => ety_okb (inst_ety q)) (old ++ a)); [|Merge.noerr H].
+  assert (U' : UfOK (en_uf e')).
+  { eapply mfold_uf_ok; [| |exact (cc_uf _ C)|exact H].
+    - intros ea [x y] sa eb sb' Ua [Ox Oy] Hs. cbn [fst snd] in Hs.
+      exact (unify_preserves_uf_ok 200 ea mi x y _ sa eb sb' Ua Ox Oy Hs).
+    - apply combine_ok; apply Fa; intros q Hq; apply in_or_app; [left|right]; exact Hq. }
+  rewrite (us_same _ _ U). apply context_clean_with_uf; assumption.
+Qed.
+
 Lemma context_clean_val : forall e n t,
   ContextClean e -> ety_ok t = true -> ContextClean (set_val e n t).
 Proof.

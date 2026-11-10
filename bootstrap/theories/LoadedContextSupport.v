@@ -41,7 +41,8 @@ Proof.
  cbn[List.app]in W1.
  destruct(support_edges_start WW U CleanU TriU SupportU)as[InitialClean[InitialTri InitialSupport]].
  pose proof(assume_items_context_support w(P:=P)R Fl b Hload(gs_mod g)(gs_assumes g)
-   (env_with_edges[]U)[]s e1 needs1 s1 Assumes Inv Hw Mi InitialClean InitialTri InitialSupport Late1)as Support1.
+   (env_with_edges[]U)[]s e1 needs1 s1 Assumes Inv Hw Mi InitialClean InitialTri InitialSupport
+   (apps_support_edges w R Fl [] U) Late1)as Support1.
  destruct main.
  - assert(TrueMain:A.IsMainFn WW(gs_id g)).
    {apply(proj1(is_main_spec w R Fl b Hload g s1 true s2 Loaded
@@ -50,9 +51,10 @@ Proof.
      TriU CleanU Inv Hw Late Whole)as(les&tm'&Rd&WF).
    split;[exact(ws_clean _ _ _ _ _ _ WF)|]. split;[exact(ws_tri _ _ _ _ _ _ WF)|].
    eapply add_root_context_support;[exact Hload|exact Hworld|exact Run|exact Inv2|
-     rewrite(fr_w _ _ Frame2),(fr_w _ _ Frame1);exact Hw|exact Mi|exact Late|exact W1|exact(proj2(proj2 Support1))].
+     rewrite(fr_w _ _ Frame2),(fr_w _ _ Frame1);exact Hw|exact Mi|exact Late|exact W1|exact(proj1(proj2(proj2 Support1)))|
+     exact(proj2(proj2(proj2 Support1)))].
  - injection Run as <- <- <-;split;[exact(ws_clean _ _ _ _ _ _ W1)|].
-   split;[exact(ws_tri _ _ _ _ _ _ W1)|exact(proj2(proj2 Support1))].
+   split;[exact(ws_tri _ _ _ _ _ _ W1)|exact(proj1(proj2(proj2 Support1)))].
 Qed.
 
 Theorem loaded_merged_context_valid:forall g s e needs final,

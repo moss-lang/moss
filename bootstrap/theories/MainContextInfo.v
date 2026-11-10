@@ -31,15 +31,15 @@ Proof.
    + pose proof(proj1(Forall_forall _ _)Neutral e2 H2)as R2.
      destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|].
      cbn[A.entry_key]in K2;injection K2 as <-.
-     destruct e1;cbn[A.entry_key]in K1;try discriminate K1;reflexivity.
+     destruct e1;cbn[A.entry_key]in K1;try discriminate K1;split;reflexivity.
    + pose proof(proj1(Forall_forall _ _)Neutral e1 H1)as R1.
      destruct e1;cbn[root_entry]in R1;try contradiction;[discriminate K1|].
      cbn[A.entry_key]in K1;injection K1 as <-.
-     destruct e2;cbn[A.entry_key]in K2;try discriminate K2;reflexivity.
+     destruct e2;cbn[A.entry_key]in K2;try discriminate K2;split;reflexivity.
    + pose proof(proj1(Forall_forall _ _)Neutral e1 H1)as R1.
      pose proof(proj1(Forall_forall _ _)Neutral e2 H2)as R2.
      destruct e1;cbn[root_entry]in R1;try contradiction;[discriminate K1|].
-     destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|reflexivity].
+     destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|split;reflexivity].
 Qed.
 Section Main.
 Variable w:Elab.world. Context{P:xprogram}.

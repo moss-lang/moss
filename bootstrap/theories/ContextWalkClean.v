@@ -38,6 +38,14 @@ Proof.
   - exact (us_tri _ _ (proj1 (proj2 (unify_sig_spec (fun _ => 0) e mi old sg why s e' s' T H)))).
 Qed.
 
+Lemma unify_app_clean_tri : forall e mi k a nm s e' s',
+  ContextClean e -> Tri (en_uf e) -> unify_app e mi k a nm s = Good (e',s') -> ContextClean e' /\ Tri (en_uf e').
+Proof.
+  intros e mi k a nm s e' s' C T H. split.
+  - exact (unify_app_context_clean (fun _ => 0) e mi k a nm s e' s' C T H).
+  - exact (us_tri _ _ (proj1 (proj2 (unify_app_spec (fun _ => 0) e mi k a nm s e' s' T H)))).
+Qed.
+
 Section Walk.
 Variable w : Elab.world. Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
@@ -91,8 +99,9 @@ Proof.
       + exact (us_tri _ _ (proj1 (proj2 (unify_sig_spec Fl e mi old sg (gs_name m) s3 ec s4 T Eec)))).
     - injection Eec as <- _. split; [apply context_clean_method; assumption|exact T]. }
   cstep H I4 W4 L a s5 Ea I5 W5 L5.
-  apply bind_inv in H as (ee & s6 & Eee & H). injection H as <- <- <-.
-  exact (setdefault_clean_tri ec k a s5 ee s6 (proj1 Cc) (proj2 Cc) Eee).
+  apply bind_inv in H as (eu & s6 & Eeu & H). apply bind_inv in H as (ee & s7 & Eee & H). injection H as <- <- <-.
+  destruct (unify_app_clean_tri _ _ _ _ _ _ _ _ (proj1 Cc) (proj2 Cc) Eeu) as [Cu Tu].
+  exact (setdefault_clean_tri eu k a s6 ee s7 Cu Tu Eee).
 Qed.
 Definition SymWalkClean f : Prop := forall e mi g subst needs s e' needs' s',
   add_symbol_item f e mi g subst needs s = Good ((e',needs'),s') ->
@@ -131,8 +140,9 @@ Proof.
       - eapply unify_clean_tri; [exact C|exact T|exact (cc_vals _ C _ _ Old)|exact Oy|exact Eec].
       - injection Eec as <- _. split; [apply context_clean_val; assumption|exact T]. }
     cstep H I3 W3 L a s4 Ea I4 W4 L4.
-    apply bind_inv in H as (ee & s5 & Eee & H). injection H as <- <- <-.
-    exact (setdefault_clean_tri ec _ a s4 ee s5 (proj1 Cc) (proj2 Cc) Eee).
+    apply bind_inv in H as (eu & s5 & Eeu & H). apply bind_inv in H as (ee & s6 & Eee & H). injection H as <- <- <-.
+    destruct (unify_app_clean_tri _ _ _ _ _ _ _ _ (proj1 Cc) (proj2 Cc) Eeu) as [Cu Tu].
+    exact (setdefault_clean_tri eu _ a s5 ee s6 Cu Tu Eee).
   - cstep H I1 W1 L sg s2 Esg I2 W2 L2.
     pose proof (fn_sig_clean w R Fl b Hload g (subst ++ tymap e) e None s1 sg s2 Esg I1 W1 Hg Tm (cc_types _ C) I L2) as Osg.
     cstep H I2 W2 L ec s3 Eec I3 W3 L3.
@@ -144,8 +154,9 @@ Proof.
     cstep H I4 W4 L mem s5 Emem I5 W5 L5.
     cstep H I5 W5 L ms s6 Ems I6 W6 L6.
     cbn beta zeta in H.
-    apply bind_inv in H as (ee & s7 & Eee & H). injection H as <- <- <-.
-    eapply setdefault_clean_tri; [exact (proj1 Cc)|exact (proj2 Cc)|exact Eee].
+    apply bind_inv in H as (eu & s7 & Eeu & H). apply bind_inv in H as (ee & s8 & Eee & H). injection H as <- <- <-.
+    destruct (unify_app_clean_tri _ _ _ _ _ _ _ _ (proj1 Cc) (proj2 Cc) Eeu) as [Cu Tu].
+    eapply setdefault_clean_tri; [exact Cu|exact Tu|exact Eee].
   - destruct (gs_decl g) as [| | | | | | |n its|]; try impossible H.
     assert (Gen : forall its0 acc s0 res s3,
       mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)) acc its0 s0 = Good (res,s3) ->

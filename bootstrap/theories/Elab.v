@@ -1679,6 +1679,35 @@ Definition provision_app (g : gsym) (tm : list (nat * ety)) (meth : bool) : M in
 Definition freeze_app (e : env) (a : inst) : inst :=
   map (fun p => (fst p, option_map (canon e) (snd p))) a.
 
+(* D43 (Δ4): merging two entries of one item also unifies their
+   instantiations.  A requirement not in force where the item was read
+   (None) is read as itself, as freeze_all_apps completes it.  The first
+   recorded instantiation is kept (setdefault_app); after this step the
+   others agree with it up to the merges. *)
+(* the types the proofs' tr reads apart (BodyTr.ety_ok) *)
+Fixpoint ety_okb (t : ety) : bool :=
+  match t with
+  | YNom h xs => negb (Nat.eqb h 0) && forallb (fun p => ety_okb (snd p)) xs
+  | YUnion ms => match ms with [] => false | _ =>
+      forallb (fun m => match m with YNom _ _ => ety_okb m | _ => false end) ms end
+  | YRec fs => forallb (fun p => ety_okb (snd p)) fs
+  | _ => true
+  end.
+
+Definition inst_ety (q : nat * option ety) : ety :=
+  match snd q with Some y => y | None => YAbs (fst q) end.
+
+Definition unify_app (e : env) (mi : nat) (k : key) (a : inst) (nm : string) : M env :=
+  match get_app e k with
+  | Some (old, _) =>
+      if list_eq_dec Nat.eq_dec (map fst old) (map fst a) then
+      if forallb (fun q => ety_okb (inst_ety q)) (old ++ a) then mfold (fun e p => unify 200 e mi (fst p) (snd p) (" for the instantiations of `" ++ nm ++ "`")%string) e
+                 (combine (map inst_ety old) (map inst_ety a))
+      else err mi ("internal: an instantiation of `" ++ nm ++ "` is malformed")
+      else err mi ("internal: two entries of `" ++ nm ++ "` have different requirements")
+  | None => ret e
+  end.
+
 Definition setdefault_app (e : env) (k : key) (a : inst) : M env :=
   match get_app e k with
   | Some _ => ret e
@@ -1838,6 +1867,7 @@ Definition add_method_item (e : env) (mi : nat) (recv : gsym) (n : name) (subst 
                 | _ => ret e
                 end in
       let! a := provision_app m tm true in
+      let! e := unify_app e mi k a (gs_name m) in
       let! e := setdefault_app e k a in
       ret (e, add_need needs k)
   end.
@@ -1874,6 +1904,7 @@ Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : l
                         | None => ret (set_val e (gs_id g) y)
                         end in
               let! a := provision_app g tm false in
+              let! e := unify_app e mi (KyVal (gs_id g)) a (gs_name g) in
               let! e := setdefault_app e (KyVal (gs_id g)) a in
               ret (e, add_need needs (KyVal (gs_id g)))
           | _ => fail "internal: val"
@@ -1891,6 +1922,7 @@ Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : l
                                | Some x => filter (fun p => negb (Nat.eqb (fst p) x)) a
                                | None => a end
                    else a in
+          let! e := unify_app e mi (KyFn (gs_id g)) a (gs_name g) in
           let! e := setdefault_app e (KyFn (gs_id g)) a in
           ret (e, add_need needs (KyFn (gs_id g)))
       | KCtx =>

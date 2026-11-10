@@ -203,6 +203,7 @@ Proof.
   apply bind_inv in H as (a & s4 & _ & H).
   apply bind_inv in H as (mem & s5 & _ & H).
   apply bind_inv in H as (ms & s6 & _ & H). cbn beta zeta in H.
+  apply bind_inv in H as (eu & s6u & _ & H).
   apply bind_inv in H as (e2 & s7 & _ & H). injection H as _ <- _. reflexivity.
 Qed.
 

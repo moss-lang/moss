@@ -6,26 +6,47 @@ Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Section Table.
 Variable Fl:string->nat.
-Lemma ws_mth:forall U e e1 e2 tm les needs r m sg a s0 s0',
+Lemma ws_mth:forall U e e0 e1 e2 tm les needs r m sg a mi0 nm0 s1 s1' s0 s0',
  WS Fl U e tm les needs->sg_this sg=Some r->ety_ok r=true->
- ((get_mth e(canon e r)m=None/\e1=set_mth e(canon e r)m sg)\/
-  exists old mi nm s s',get_mth e(canon e r)m=Some old/\unify_sig e mi old sg nm s=Good(e1,s'))->
+ ((get_mth e(canon e r)m=None/\e0=set_mth e(canon e r)m sg)\/
+  exists old mi nm s s',get_mth e(canon e r)m=Some old/\unify_sig e mi old sg nm s=Good(e0,s'))->
+ unify_app e0 mi0(KyMth(canon e r)m)a nm0 s1=Good(e1,s1')->
  setdefault_app e1(KyMth(canon e r)m)a s0=Good(e2,s0')->ContextClean e2->
  WS Fl U e2 tm(les++[LMth r m sg a])(add_need needs(KyMth(canon e r)m)).
 Proof.
- intros U e e1 e2 tm les needs r m sg a s0 s0' W Hthis Or C Hsd Clean.
+ intros U e e0 e1 e2 tm les needs r m sg a mi0 nm0 s1 s1' s0 s0' W Hthis Or C0 Hua Hsd Clean.
  set(R:=canon e r)in *.
  destruct(setdefault_env _ _ _ _ _ _ Hsd)as(D1&D2&D3&D4&D5&D6).
- assert(Cnorm:(get_mth e R m=None/\e1=set_mth e R m sg)\/
+ assert(Cnorm:(get_mth e R m=None/\e0=set_mth e R m sg)\/
+  exists old,get_mth e R m=Some old/\UStep e e0/\
+   List.length(sg_params old)=List.length(sg_params sg)/\
+   (forall sb,RespE Fl sb(en_uf e)->SigResp Fl sb old sg->RespE Fl sb(en_uf e0))/\
+   (en_uf e0=en_uf e->Forall(fun p=>canon e(fst p)=canon e(snd p))
+     (combine(map snd(sg_params old))(map snd(sg_params sg)))/\canon e(sg_ret old)=canon e(sg_ret sg))).
+ { destruct C0 as[C|(old&mi&nm&s&s'&O&H)];[left;exact C|].
+   destruct(unify_sig_spec Fl e mi old sg nm s e0 s'(ws_tri _ _ _ _ _ _ W)H)as(_&Us&Len&Re&Ce).
+   right;exists old;auto. }
+ clear C0.
+ assert(Ea0:en_apps e0=en_apps e/\Tri(en_uf e0)/\exists n,en_uf e0=en_uf e++n).
+ { destruct Cnorm as[[N ->]|(old&O&U1&_)].
+   - split;[reflexivity|]. split;[exact(ws_tri _ _ _ _ _ _ W)|]. exists[]. rewrite app_nil_r. reflexivity.
+   - split;[rewrite(us_same _ _ U1);reflexivity|]. split;[exact(us_tri _ _ U1)|exact(us_ext _ _ U1)]. }
+ destruct Ea0 as(Ea0&Tr0&Ex0).
+ destruct(compose_app Fl e e0 e1(KyMth R m)a mi0 nm0 s1 s1' Tr0 Ex0 Ea0 Hua)as(Uu&Nn&Ru&Cu).
+ assert(C:(get_mth e R m=None/\e1=set_mth e R m sg)\/
   exists old,get_mth e R m=Some old/\UStep e e1/\
    List.length(sg_params old)=List.length(sg_params sg)/\
-   (forall sb,RespE Fl sb(en_uf e)->SigResp Fl sb old sg->RespE Fl sb(en_uf e1))/\
+   (forall sb,RespE Fl sb(en_uf e)->SigResp Fl sb old sg->
+      (forall a0 st,get_app e(KyMth R m)=Some(a0,st)->InstResp Fl sb a0 a)->RespE Fl sb(en_uf e1))/\
    (en_uf e1=en_uf e->Forall(fun p=>canon e(fst p)=canon e(snd p))
      (combine(map snd(sg_params old))(map snd(sg_params sg)))/\canon e(sg_ret old)=canon e(sg_ret sg))).
- { destruct C as[C|(old&mi&nm&s&s'&O&H)];[left;exact C|].
-   destruct(unify_sig_spec Fl e mi old sg nm s e1 s'(ws_tri _ _ _ _ _ _ W)H)as(_&Us&Len&Re&Ce).
-   right;exists old;auto. }
- clear C. rename Cnorm into C.
+ { destruct Cnorm as[[N ->]|(old&O&U1&L1&R1&C1)].
+   - left. split;[exact N|]. apply Nn.
+     destruct(get_app e(KyMth R m))as[[a0 st]|]eqn:G;[|reflexivity]. exfalso.
+     destruct(appin_of_get Fl e _ a0 st les(ws_apps_in _ _ _ _ _ _ W)G)as(_&Gm). exact(Gm N).
+   - right. exists old. split;[exact O|]. split;[exact(ustep_trans _ _ _ U1 Uu)|]. split;[exact L1|]. split.
+     + intros sb Hr E Hi. apply Ru;[exact(R1 sb Hr E)|exact Hi].
+     + intro E. exact(C1(Cu E)). }
  assert(Data:en_tn e1=en_tn e/\en_vals e1=en_vals e/\en_fns e1=en_fns e/\
   en_funs e1=en_funs e/\en_apps e1=en_apps e/\(exists nw,en_uf e1=en_uf e++nw)/\Tri(en_uf e1)).
  { destruct C as[[N ->]|(old&O&Us&_)].
@@ -65,13 +86,24 @@ Proof.
  - intros sb Hr Hun. rewrite D2. rewrite map_app in Hun.
    assert(R0:RespE Fl sb(en_uf e)).
    { apply(ws_mg _ _ _ _ _ _ W sb Hr). exact(unifies_app _ _ _ Hun). }
-   destruct C as[[N ->]|(old&O&Us&Len&Re&Ce)];[exact R0|]. apply(Re sb R0).
+   assert(Hi:forall a0 st,get_app e(KyMth R m)=Some(a0,st)->InstResp Fl sb a0 a).
+   { intros a0 st G. destruct(appin_of_get Fl e _ a0 st les(ws_apps_in _ _ _ _ _ _ W)G)as((r0&g0&Hin&Eq)&_).
+     assert(Er:asub sb(tr Fl r0)=asub sb(tr Fl r)).
+     { rewrite(Eq sb R0). unfold R,canon. apply(resp_canon_go Fl);exact R0. }
+     assert(Ei:Some(A.inst_read sb(tr_inst Fl a0))=Some(A.inst_read sb(tr_inst Fl a))).
+     { refine(proj2(Hun(tr_ent Fl(LMth r0 m g0 a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _)).
+       - apply in_or_app;left;apply in_map;exact Hin.
+       - apply in_or_app;right;left;reflexivity.
+       - cbn[tr_ent A.entry_key]. rewrite Er;reflexivity.
+       - reflexivity. }
+     injection Ei as Ei. exact(instresp_of_read Fl sb a0 a Ei). }
+   destruct C as[[N ->]|(old&O&Us&Len&Re&Ce)];[exact R0|]. apply(Re sb R0);[|exact Hi].
    destruct(ws_mths_in _ _ _ _ _ _ W R m old O)as(r0&a0&Ho&Equiv).
    pose proof(ws_mthis _ _ _ _ _ _ W r0 m old a0 Ho)as Hto.
    assert(Er:asub sb(tr Fl r0)=asub sb(tr Fl r)).
    { rewrite(Equiv sb R0). unfold R,canon. apply(resp_canon_go Fl);exact R0. }
    assert(Sg:Some(A.sig_subst sb(tr_sig Fl old))=Some(A.sig_subst sb(tr_sig Fl sg))).
-   { refine(Hun(tr_ent Fl(LMth r0 m old a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _).
+   { refine(proj1(Hun(tr_ent Fl(LMth r0 m old a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _)).
      - apply in_or_app;left;apply in_map;exact Ho.
      - apply in_or_app;right;left;reflexivity.
      - cbn[tr_ent A.entry_key]. rewrite Er;reflexivity.
@@ -128,6 +160,15 @@ Proof.
    + rewrite(us_same _ _ Us)in AtRows.
      pose proof(ws_method_canonical _ _ _ _ _ _ W E0 _ _ AtRows)as Rows.
      unfold canon in *;rewrite E01;exact Rows.
-
+ - intros E k a' Hk Hi'. destruct(Hu E)as[E0 E01]. cbn[lkey linst]in Hk,Hi'.
+   rewrite(canon_same e e2 r E01)in Hk. injection Hk as <-. injection Hi' as <-.
+   apply(insts_new Fl U e e1 e2 les(LMth r m sg a)(KyMth R m)a mi0 nm0 s1 s1' s0 s0'(ws_apps _ _ _ _ _ _ W)e0 Ea0 Ex0
+     (ws_ext _ _ _ _ _ _ W)Hua Tr0 Hsd);[|exact E].
+   cbn[lapp]. rewrite(canon_same e e2 r E01). reflexivity.
+ - assert(Mm:forall rq mq,get_mth e rq mq<>None->get_mth e1 rq mq<>None).
+   { intros rq mq H. rewrite Q1. destruct(Nat.eqb mq m&&ety_eqb rq R);[discriminate|exact H]. }
+   assert(Mk:forall rq mq,KyMth R m=KyMth rq mq->get_mth e1 rq mq<>None).
+   { intros rq mq Eq. injection Eq as <- <-. rewrite Q1,Nat.eqb_refl,ety_eqb_refl. discriminate. }
+   exact(appin_step Fl e e1 e2 les(LMth r m sg a)(KyMth R m)a s0 s0'(ws_apps_in _ _ _ _ _ _ W)Ta Ex1 Mm eq_refl Mk Hsd).
 Qed.
 End Table.

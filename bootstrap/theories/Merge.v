@@ -629,4 +629,28 @@ Proof.
     pose proof (ustep_same_uf _ _ U1 E1) as ->. split; [exact (C1 E1) | exact (C2 E2)].
 Qed.
 
+(* Δ4: the instantiations unify_app equates, read by tr *)
+Definition InstResp (sb : tsubst) (old a : Elab.inst) : Prop :=
+  Forall (fun p => asub sb (trF (fst p)) = asub sb (trF (snd p))) (combine (map inst_ety old) (map inst_ety a)).
+Definition InstCanon (e : env) (old a : Elab.inst) : Prop :=
+  map fst old = map fst a /\ Forall (fun p => canon e (fst p) = canon e (snd p)) (combine (map inst_ety old) (map inst_ety a)).
+
+Lemma unify_app_spec : forall e mi k a nm s e' s', Tri (en_uf e) -> unify_app e mi k a nm s = Good (e', s') ->
+  s' = s /\ UStep e e' /\ (get_app e k = None -> e' = e) /\
+  (forall old st, get_app e k = Some (old, st) ->
+     forallb (fun q => ety_okb (inst_ety q)) (old ++ a) = true /\
+     (forall sb, RespE sb (en_uf e) -> InstResp sb old a -> RespE sb (en_uf e')) /\
+     (en_uf e' = en_uf e -> InstCanon e old a) /\ map fst old = map fst a).
+Proof.
+  intros e mi k a nm s e' s' T H. unfold unify_app in H. destruct (get_app e k) as [[old st]|] eqn:G.
+  - destruct (list_eq_dec Nat.eq_dec (map fst old) (map fst a)) as [Ed|]; [|noerr H].
+    destruct (forallb (fun q => ety_okb (inst_ety q)) (old ++ a)) eqn:Ok; [|noerr H].
+    destruct (mfold_unify _ (fun e0 p s0 e3 s3 T0 H0 => unify_spec 200 e0 mi (fst p) (snd p) _ s0 e3 s3 T0 H0) _ e s e' s' T H)
+      as (-> & U & R1 & C1).
+    split; [reflexivity|]. split; [exact U|]. split; [discriminate|].
+    intros old' st' E. injection E as <- <-. split; [exact Ok|]. split; [exact R1|]. split; [|exact Ed].
+    intro E. split; [exact Ed | exact (C1 E)].
+  - injection H as <- <-. split; [reflexivity|]. split; [exact (ustep_refl e T)|]. split; [reflexivity|]. discriminate.
+Qed.
+
 End Sigma.

@@ -176,15 +176,17 @@ Lemma entry_shape_key:forall sb e,A.entry_key sb(entry_shape e)=A.entry_key sb e
 Proof. intros sb [];reflexivity. Qed.
 Lemma entry_shape_sig:forall sb e,A.entry_sig sb(entry_shape e)=A.entry_sig sb e.
 Proof. intros sb [];reflexivity. Qed.
+Lemma entry_shape_inst:forall sb e,A.entry_inst sb(entry_shape e)=A.entry_inst sb e.
+Proof. intros sb [];reflexivity. Qed.
 Lemma unifies_entry_shapes:forall sb es,A.Unifies sb es<->A.Unifies sb(map entry_shape es).
 Proof.
  intros sb es;split.
  - intros H a b k Ha Hb Ka Kb.
    apply in_map_iff in Ha as[x[<- Hx]];apply in_map_iff in Hb as[y[<- Hy]].
-   rewrite !entry_shape_key in Ka,Kb;rewrite !entry_shape_sig;exact(H x y k Hx Hy Ka Kb).
+   rewrite !entry_shape_key in Ka,Kb;rewrite !entry_shape_sig,!entry_shape_inst;exact(H x y k Hx Hy Ka Kb).
  - intros H a b k Ha Hb Ka Kb.
    pose proof(H(entry_shape a)(entry_shape b)k(in_map entry_shape es a Ha)(in_map entry_shape es b Hb))as E.
-   rewrite !entry_shape_key,!entry_shape_sig in E;exact(E Ka Kb).
+   rewrite !entry_shape_key,!entry_shape_sig,!entry_shape_inst in E;exact(E Ka Kb).
 Qed.
 Lemma unifies_shape_equal:forall es es',map entry_shape es=map entry_shape es'->
  forall sb,A.Unifies sb es<->A.Unifies sb es'.
@@ -305,11 +307,50 @@ Lemma sigcanon_tr : forall U e g g', en_uf e = U -> Tri U -> SigCanon e g g' ->
   A.sig_subst (suf Fl U) (tr_sig Fl g) = A.sig_subst (suf Fl U) (tr_sig Fl g').
 Proof. intros U e g g' E T [P R]. rewrite !(sig_tr U e _ E T), P, R. reflexivity. Qed.
 
+Lemma instcanon_read : forall U e a0 a, en_uf e = U -> Tri U -> InstCanon e a0 a ->
+  A.inst_read (suf Fl U) (tr_inst Fl a0) = A.inst_read (suf Fl U) (tr_inst Fl a).
+Proof.
+  intros U e a0 a E T [F C]. rewrite !(inst_read_tr Fl). revert a F C.
+  induction a0 as [|q r IH]; intros [|q' r'] F C; cbn [map combine] in F, C |- *; try discriminate; [reflexivity|].
+  injection F as Fq F. apply Forall_cons_iff in C as [Cq Cr]. cbn [fst snd] in Cq.
+  rewrite !(sigma_tr U e _ E T), Cq, Fq. f_equal. exact (IH r' F Cr).
+Qed.
+
+Lemma settled_insts : forall U e tm les needs, WS Fl U e tm les needs -> en_uf e = U ->
+  forall l1 l2 k, In l1 les -> In l2 les -> lkey e l1 = Some k -> lkey e l2 = Some k ->
+  A.entry_inst (suf Fl U) (tr_ent Fl l1) = A.entry_inst (suf Fl U) (tr_ent Fl l2).
+Proof.
+  intros U e tm les needs Hws E l1 l2 k H1 H2 K1 K2. pose proof (ws_tri _ _ _ _ _ _ Hws) as T. rewrite E in T.
+  destruct (linst l1) as [a1|] eqn:L1; destruct (linst l2) as [a2|] eqn:L2.
+  - destruct (ws_insts _ _ _ _ _ _ Hws E l1 k a1 H1 K1 L1) as (a0 & F1 & C1).
+    destruct (ws_insts _ _ _ _ _ _ Hws E l2 k a2 H2 K2 L2) as (a0' & F2 & C2).
+    rewrite F1 in F2. injection F2 as <-.
+    destruct l1, l2; cbn [linst] in L1, L2; try discriminate; injection L1 as ->; injection L2 as ->;
+      cbn [tr_ent A.entry_inst]; f_equal;
+      rewrite <- (instcanon_read U e a0 a1 E T C1), <- (instcanon_read U e a0 a2 E T C2); reflexivity.
+  - destruct l1, l2; cbn [linst lkey] in *; try discriminate; congruence.
+  - destruct l1, l2; cbn [linst lkey] in *; try discriminate; congruence.
+  - destruct l1, l2; cbn [linst] in *; try discriminate; reflexivity.
+Qed.
+
 Lemma settled_unifies : forall U e tm les needs, WS Fl U e tm les needs -> en_uf e = U ->
   A.Unifies (suf Fl U) (map (tr_ent Fl) les).
 Proof.
   intros U e tm les needs Hws E. pose proof (ws_tri _ _ _ _ _ _ Hws) as T. rewrite E in T.
   intros e1 e2 k H1 H2 K1 K2. apply in_map_iff in H1 as (l1 & <- & Hl1). apply in_map_iff in H2 as (l2 & <- & Hl2).
+  assert (Kl : exists k', lkey e l1 = Some k' /\ lkey e l2 = Some k').
+  { rewrite (entry_key_tr U e _ E T) in K1. rewrite (entry_key_tr U e _ E T) in K2.
+    destruct (lkey e l1) as [k1|] eqn:Ek1; [|discriminate]. destruct (lkey e l2) as [k2|] eqn:Ek2; [|discriminate].
+    exists k1. split; [reflexivity|]. f_equal. cbn [option_map] in K1, K2. rewrite <- K2 in K1. injection K1 as K1.
+    destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2];
+      cbn [lkey] in Ek1, Ek2; try discriminate; injection Ek1 as <-; injection Ek2 as <-; cbn [key_tr] in K1;
+      try discriminate; try (injection K1 as ->; reflexivity).
+    injection K1 as Er <-.
+    rewrite (tr_inj Fl Finj _ _ (proj1 (ws_mths _ _ _ _ _ _ Hws E r1 m1 g1 a1 Hl1)) (proj1 (ws_mths _ _ _ _ _ _ Hws E r2 m1 g2 a2 Hl2)) Er).
+    reflexivity. }
+  destruct Kl as (k' & Kl1 & Kl2).
+  split; [|exact (settled_insts U e tm les needs Hws E l1 l2 k' Hl1 Hl2 Kl1 Kl2)].
+  clear Kl1 Kl2 k'.
   rewrite (entry_key_tr U e _ E T) in K1. rewrite (entry_key_tr U e _ E T) in K2.
   destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2];
     cbn [lkey option_map key_tr] in K1, K2; try discriminate; try (rewrite <- K2 in K1; discriminate K1);

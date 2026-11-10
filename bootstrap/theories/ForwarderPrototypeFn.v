@@ -37,6 +37,9 @@ Proof.
  apply bind_inv in Run as[ms[s4[Memory Run]]].
  assert(Om:ok memory_sym)by(unfold memory_sym;okt).
  destruct(Om _ _ _ I3 Memory)as[I4 F4].
+ apply bind_inv in Run as[eu[su[Uapp Run]]].
+ unfold unify_app in Uapp;unfold get_app in Uapp.
+ cbn[set_fn en_apps]in Uapp;rewrite(seed_apps _ _ Seed)in Uapp;cbn[assoc]in Uapp;injection Uapp as <- <-.
  apply bind_inv in Run as[stored[s5[Store Run]]];injection Run as <- <- <-.
  unfold setdefault_app in Store;unfold get_app in Store.
  cbn[set_fn en_apps]in Store;rewrite(seed_apps _ _ Seed)in Store;cbn[assoc]in Store.

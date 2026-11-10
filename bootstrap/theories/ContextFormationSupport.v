@@ -34,8 +34,9 @@ Proof.
    injection E as -> -> ->.
    destruct(ok_is_main g _ _ _ I1 E2)as[_ F2].
    destruct(support_edges_start WW U O T SU)as[C0[T0 S0]].
-   exact(assume_items_context_support w R Fl b Hload(gs_mod g)(gs_assumes g)(env_with_edges [] U)[]
-    s0 e0 ns s1 E1 Ii Wi Hmi C0 T0 S0(later_back w P R Fl _ _ F2 Li)).
+   destruct(assume_items_context_support w R Fl b Hload(gs_mod g)(gs_assumes g)(env_with_edges [] U)[]
+    s0 e0 ns s1 E1 Ii Wi Hmi C0 T0 S0(apps_support_edges w R Fl [] U)(later_back w P R Fl _ _ F2 Li))as(Cx&Tx&Sx&_).
+   exact(conj Cx(conj Tx Sx)).
 Qed.
 Theorem fn_info_support_nonroot:forall g s i s',
  nget(w_syms w)(gs_id g)=Some g->(forall t,gs_origin g<>OForwarder t)->

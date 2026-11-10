@@ -27,14 +27,67 @@ Ltac cstep H Hi Hw L a si E Ii Wi Li :=
     clear O Q It Ft
   end.
 
+(* Δ4: the instantiations the walk records are supported, so unify_app's
+   merges are *)
+Definition AppsSupport (e : env) : Prop :=
+ forall k a st, get_app e k = Some (a, st) -> Forall (fun q => Support WW (inst_ety q)) a.
+
+Lemma apps_support_edges : forall tne ufe, AppsSupport (env_with_edges tne ufe).
+Proof. intros tne ufe k a st G. discriminate G. Qed.
+
+Lemma apps_support_same : forall e e', en_apps e' = en_apps e -> AppsSupport e -> AppsSupport e'.
+Proof. intros e e' E A k a st G. apply (A k a st). unfold get_app in *. rewrite <- E. exact G. Qed.
+
+Lemma setdefault_apps_support : forall e k a s e' s', AppsSupport e ->
+ Forall (fun q => Support WW (inst_ety q)) a -> setdefault_app e k a s = Good (e', s') -> AppsSupport e'.
+Proof.
+ intros e k a s e' s' A Sa H. unfold setdefault_app in H. destruct (get_app e k) as [p|] eqn:G.
+ - injection H as <- _. exact A.
+ - apply bind_inv in H as (stamp & s1 & _ & H). injection H as <- _.
+   intros k' a' st' G'. unfold get_app, set_app in G'. cbn [en_apps] in G'. rewrite assoc_aset_key in G'.
+   destruct (key_eqb k' k); [injection G' as <- _; exact Sa | exact (A k' a' st' G')].
+Qed.
+
+Lemma unify_app_support : forall e mi k a nm s e' s', EnvSupport WW e -> AppsSupport e -> Tri (en_uf e) ->
+ Forall (fun q => Support WW (inst_ety q)) a -> unify_app e mi k a nm s = Good (e', s') ->
+ EnvSupport WW e' /\ AppsSupport e'.
+Proof.
+ intros e mi k a nm s e' s' S A T Sa H.
+ destruct (unify_app_spec Fl e mi k a nm s e' s' T H) as (_ & U & _).
+ assert (Ea : en_apps e' = en_apps e) by (rewrite (us_same _ _ U); reflexivity).
+ split; [|exact (apps_support_same e e' Ea A)].
+ rewrite (us_same _ _ U). apply env_support_with_uf; [exact S|].
+ unfold unify_app in H. destruct (get_app e k) as [[old st]|] eqn:G; [|injection H as <- _; exact (es_uf S)].
+ destruct (list_eq_dec Nat.eq_dec (map fst old) (map fst a)); [|Merge.noerr H].
+ destruct (forallb (fun q => ety_okb (inst_ety q)) (old ++ a)); [|Merge.noerr H].
+ eapply mfold_uf_support; [| |exact (es_uf S)|exact H].
+ - intros ex [l r] sx ex' sx' Ux [OL OR] Step; cbn [fst snd] in Step.
+   exact (@unify_preserves_uf_support WW 200 ex mi l r _ sx ex' sx' Ux OL OR Step).
+ - apply combine_support; apply Forall_map; [exact (A k old st G) | exact Sa].
+Qed.
+
+Section ProvisionAppSupport.
+Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
+Lemma provision_app_support : forall g tm meth s a s', provision_app g tm meth s = Good (a, s') ->
+ Forall (fun p => Support WW (snd p)) tm -> Forall (fun q => Support WW (inst_ety q)) a.
+Proof.
+ intros g tm meth s a s' H Stm. unfold provision_app in H.
+ apply bind_inv in H as (rs & s1 & _ & H). apply bind_inv in H as (rs' & s2 & _ & H). injection H as <- _.
+ apply Forall_map. apply Forall_forall. intros t _. unfold inst_ety. cbn [fst snd].
+ destruct (nassoc t tm) as [y|] eqn:N.
+ - exact (support_tm_lookup WW tm t y Stm N).
+ - exact (SupportAbs WW t).
+Qed.
+End ProvisionAppSupport.
+
 Lemma method_context_support : forall e mi recv n subst needs s e' needs' s',
  add_method_item e mi recv n subst needs s = Good ((e',needs'),s') ->
  Inv s -> st_w s = w -> In mi (w_order w) -> nget (w_syms w) (gs_id recv) = Some recv ->
  TmClean subst -> Forall (fun p => Support WW (snd p)) subst ->
  Forall (fun p => WFty (snd p)) subst -> ContextClean e -> Tri (en_uf e) ->
- EnvSupport WW e -> Later w P R Fl s' -> EnvSupport WW e'.
+ EnvSupport WW e -> AppsSupport e -> Later w P R Fl s' -> EnvSupport WW e' /\ AppsSupport e'.
 Proof.
- intros e mi recv n subst needs s e' needs' s' H Hi Hw Hmi Hr Ts Ss Ws C T S L.
+ intros e mi recv n subst needs s e' needs' s' H Hi Hw Hmi Hr Ts Ss Ws C T S A L.
  unfold add_method_item in H. apply bind_inv in H as (mo & s1 & E1 & H).
  destruct mo as [m|]; [|impossible H].
  destruct (find_method_decl_loaded b w R Fl mi recv n s m s1 Hload Hmi Hr Hi Hw E1) as [-> Hm].
@@ -71,23 +124,33 @@ Proof.
    - injection Eec as <- _. apply env_support_method; [exact S| |exact Ssg].
      apply canon_support; [exact (@es_uf WW e S)|exact Sthis]. }
  cstep H I4 W4 L a s5 Ea I5 W5 L5.
- apply bind_inv in H as (ee & s6 & Eee & H). injection H as <- <- <-.
- exact (setdefault_support WW ec _ a s5 ee s6 Sc Eee).
+ pose proof (provision_app_support _ _ _ _ _ _ Ea Stm) as Sa.
+ assert (Tc : Tri (en_uf ec)).
+ { destruct (get_mth e (canon e this) (gs_id m)) as [old|] eqn:Old.
+   - exact (us_tri _ _ (proj1 (proj2 (unify_sig_spec Fl e mi old sg (gs_name m) s3 ec s4 T Eec)))).
+   - injection Eec as <- _. exact T. }
+ assert (Ac : AppsSupport ec).
+ { apply (apps_support_same e); [|exact A]. destruct (get_mth e (canon e this) (gs_id m)) as [old|] eqn:Old.
+   - rewrite (us_same _ _ (proj1 (proj2 (unify_sig_spec Fl e mi old sg (gs_name m) s3 ec s4 T Eec)))). reflexivity.
+   - injection Eec as <- _. reflexivity. }
+ apply bind_inv in H as (eu & s6 & Eeu & H). apply bind_inv in H as (ee & s7 & Eee & H). injection H as <- <- <-.
+ destruct (unify_app_support _ _ _ _ _ _ _ _ Sc Ac Tc Sa Eeu) as [Su Au].
+ split; [exact (setdefault_support WW eu _ a s6 ee s7 Su Eee) | exact (setdefault_apps_support _ _ _ _ _ _ Au Sa Eee)].
 Qed.
 
 Definition SymWalkSupport f : Prop := forall e mi g subst needs s e' needs' s',
  add_symbol_item f e mi g subst needs s = Good((e',needs'),s') ->
  Inv s -> st_w s=w -> In mi(w_order w) -> nget(w_syms w)(gs_id g)=Some g ->
  TmClean subst -> Forall(fun p=>Support WW(snd p))subst -> Forall(fun p=>WFty(snd p))subst ->
- ContextClean e -> Tri(en_uf e) -> EnvSupport WW e -> Later w P R Fl s' -> EnvSupport WW e'.
+ ContextClean e -> Tri(en_uf e) -> EnvSupport WW e -> AppsSupport e -> Later w P R Fl s' -> EnvSupport WW e' /\ AppsSupport e'.
 Definition SpecWalkSupport f : Prop := forall e mi sp subst needs s e' needs' s',
  add_spec f e mi sp subst needs s = Good((e',needs'),s') ->
  Inv s -> st_w s=w -> In mi(w_order w) ->
  TmClean subst -> Forall(fun p=>Support WW(snd p))subst -> Forall(fun p=>WFty(snd p))subst ->
- ContextClean e -> Tri(en_uf e) -> EnvSupport WW e -> Later w P R Fl s' -> EnvSupport WW e'.
+ ContextClean e -> Tri(en_uf e) -> EnvSupport WW e -> AppsSupport e -> Later w P R Fl s' -> EnvSupport WW e' /\ AppsSupport e'.
 Lemma sym_walk_support_step : forall f, SpecWalkSupport f -> SymWalkSupport(S f).
 Proof.
- intros f IH e mi g subst needs s e' needs' s' H Hi Hw Hmi Hg Ts Ss Ws C T S L.
+ intros f IH e mi g subst needs s e' needs' s' H Hi Hw Hmi Hg Ts Ss Ws C T S A L.
  cbn[add_symbol_item]in H. cstep H Hi Hw L u s1 Etotal I1 W1 L1. cbn beta zeta in H.
  assert(Stm:Forall(fun p=>Support WW(snd p))(subst++tymap e)).
  { apply Forall_app;split;[exact Ss|exact(tymap_support WW e S)]. }
@@ -95,14 +158,14 @@ Proof.
  { apply Forall_app;split;[exact Ws|exact(context_tymap_wf e C)]. }
  pose proof(loader_mod_in w R Fl b Hload _ _ Hg)as Hgm.
  destruct(gs_kind g).
- - destruct(tn_get e(gs_id g));[injection H as <- <- <-;exact S|].
+ - destruct(tn_get e(gs_id g));[injection H as <- <- <-;exact(conj S A)|].
    apply bind_inv in H as(stamp&s2&E&H). injection H as <- <- <-.
-   apply env_support_type;[exact S|constructor].
- - injection H as <- <- <-;exact S.
- - injection H as <- <- <-;exact S.
- - injection H as <- <- <-;exact S.
+   split;[apply env_support_type;[exact S|constructor]|exact(apps_support_same e _ eq_refl A)].
+ - injection H as <- <- <-;exact(conj S A).
+ - injection H as <- <- <-;exact(conj S A).
+ - injection H as <- <- <-;exact(conj S A).
  - destruct(gs_decl g)as[| | | | |n t init| | |];try impossible H.
-   destruct init;[injection H as <- <- <-;exact S|].
+   destruct init;[injection H as <- <- <-;exact(conj S A)|].
    cstep H I1 W1 L y s2 Ey I2 W2 L2.
    assert(Sy:Support WW y).
    { eapply(ety_of_support w R Fl b Hload);try eassumption.
@@ -113,9 +176,16 @@ Proof.
    { destruct(nget(en_vals e)(gs_id g))as[old|]eqn:Old.
      - eapply(@unify_env_support WW Fl);[exact S|exact T|exact(@es_vals WW e S _ _ Old)|exact Sy|exact Eec].
      - injection Eec as <- _. apply env_support_val;assumption. }
+   assert(TA:Tri(en_uf ec)/\AppsSupport ec).
+   { destruct(nget(en_vals e)(gs_id g))as[old|]eqn:Old.
+     - destruct(unify_spec Fl _ _ _ _ _ _ _ _ _ T Eec)as(_&Us&_).
+       split;[exact(us_tri _ _ Us)|apply(apps_support_same e);[rewrite(us_same _ _ Us);reflexivity|exact A]].
+     - injection Eec as <- _. split;[exact T|exact(apps_support_same e _ eq_refl A)]. }
    cstep H I3 W3 L a s4 Ea I4 W4 L4.
-   apply bind_inv in H as(ee&s5&Eee&H). injection H as <- <- <-.
-   exact(setdefault_support WW ec _ a s4 ee s5 Sc Eee).
+   pose proof(provision_app_support _ _ _ _ _ _ Ea Stm)as Sa.
+   apply bind_inv in H as(eu&s5&Eeu&H). apply bind_inv in H as(ee&s6&Eee&H). injection H as <- <- <-.
+   destruct(unify_app_support _ _ _ _ _ _ _ _ Sc(proj2 TA)(proj1 TA)Sa Eeu)as[Su Au].
+   split;[exact(setdefault_support WW eu _ a s5 ee s6 Su Eee)|exact(setdefault_apps_support _ _ _ _ _ _ Au Sa Eee)].
  - cstep H I1 W1 L sg s2 Esg I2 W2 L2.
    assert(Ssg:SigSupport WW sg).
    { eapply(fn_sig_support w R Fl b Hload);try eassumption.
@@ -126,23 +196,31 @@ Proof.
    { destruct(nget(en_fns e)(gs_id g))as[old|]eqn:Old.
      - eapply(@unify_sig_env_support WW Fl);[exact S|exact T|exact(@es_fns WW e S _ _ Old)|exact Ssg|exact Eec].
      - injection Eec as <- _. apply env_support_fn;assumption. }
+   assert(TA:Tri(en_uf ec)/\AppsSupport ec).
+   { destruct(nget(en_fns e)(gs_id g))as[old|]eqn:Old.
+     - destruct(unify_sig_spec Fl _ _ _ _ _ _ _ _ T Eec)as(_&Us&_).
+       split;[exact(us_tri _ _ Us)|apply(apps_support_same e);[rewrite(us_same _ _ Us);reflexivity|exact A]].
+     - injection Eec as <- _. split;[exact T|exact(apps_support_same e _ eq_refl A)]. }
    cstep H I3 W3 L a s4 Ea I4 W4 L4.
+   pose proof(provision_app_support _ _ _ _ _ _ Ea Stm)as Sa.
    cstep H I4 W4 L mem s5 Emem I5 W5 L5.
    cstep H I5 W5 L ms s6 Ems I6 W6 L6. cbn beta zeta in H.
-   apply bind_inv in H as(ee&s7&Eee&H). injection H as <- <- <-.
-   eapply setdefault_support;[exact Sc|exact Eee].
+   unfold is_memory_instruction in Emem. injection Emem as <- _. cbn beta iota in H.
+   apply bind_inv in H as(eu&s7&Eeu&H). apply bind_inv in H as(ee&s8&Eee&H). injection H as <- <- <-.
+   destruct(unify_app_support _ _ _ _ _ _ _ _ Sc(proj2 TA)(proj1 TA)Sa Eeu)as[Su Au].
+   split;[eapply setdefault_support;[exact Su|exact Eee]|exact(setdefault_apps_support _ _ _ _ _ _ Au Sa Eee)].
  - destruct(gs_decl g)as[| | | | | | |n its|];try impossible H.
    assert(Gen:forall its0 acc s0 res s3,
     mfold(fun acc sp=>add_spec f(fst acc)(gs_mod g)sp subst(snd acc))acc its0 s0=Good(res,s3)->
-    Inv s0->st_w s0=w->ContextClean(fst acc)->Tri(en_uf(fst acc))->EnvSupport WW(fst acc)->
-    Later w P R Fl s3->EnvSupport WW(fst res)).
-   { induction its0 as[|sp rest IR];intros[ce ns]s0[re nr]s3 Hf Ii Wi Ci Ti Si Li.
-     - injection Hf as <- <- <-;exact Si.
+    Inv s0->st_w s0=w->ContextClean(fst acc)->Tri(en_uf(fst acc))->EnvSupport WW(fst acc)->AppsSupport(fst acc)->
+    Later w P R Fl s3->EnvSupport WW(fst res)/\AppsSupport(fst res)).
+   { induction its0 as[|sp rest IR];intros[ce ns]s0[re nr]s3 Hf Ii Wi Ci Ti Si Ai Li.
+     - injection Hf as <- <- <-;exact(conj Si Ai).
      - cbn[mfold]in Hf. cstep Hf Ii Wi Li a si Ea Ia Wa La. destruct a as[ae an];cbn in *.
-       pose proof(IH ce(gs_mod g)sp subst ns s0 ae an si Ea Ii Wi Hgm Ts Ss Ws Ci Ti Si La)as Sa.
+       destruct(IH ce(gs_mod g)sp subst ns s0 ae an si Ea Ii Wi Hgm Ts Ss Ws Ci Ti Si Ai La)as[Sa Aa].
        destruct(proj2(context_walk_clean w R Fl b Hload f)ce(gs_mod g)sp subst ns s0 ae an si Ea Ii Wi Hgm Ts Ci Ti La)as[Ca Ta].
-       exact(IR(ae,an)si(re,nr)s3 Hf Ia Wa Ca Ta Sa Li). }
-   exact(Gen its(e,needs)s1(e',needs')s' H I1 W1 C T S L).
+       exact(IR(ae,an)si(re,nr)s3 Hf Ia Wa Ca Ta Sa Aa Li). }
+   exact(Gen its(e,needs)s1(e',needs')s' H I1 W1 C T S A L).
  - impossible H.
  - destruct(gs_decl g)as[| | | | | | | |n ps args res body];try impossible H.
    destruct body;[impossible H|].
@@ -150,11 +228,14 @@ Proof.
    cstep H I2 W2 L xs s3 Exs I3 W3 L3.
    cstep H I3 W3 L u0 s4 Eu0 I4 W4 L4. cbn beta zeta in H.
    apply bind_inv in H as(ee&s5&Eee&H). injection H as <- <- <-.
-   eapply setdefault_support;[apply env_support_fun;exact S|exact Eee].
+   split;[eapply setdefault_support;[apply env_support_fun;exact S|exact Eee]|].
+   eapply setdefault_apps_support;[| |exact Eee];[exact(apps_support_same e _ eq_refl A)|].
+   apply Forall_forall. intros q Hq. apply in_map_iff in Hq as(x&<-&_). unfold inst_ety,tn_get. cbn[fst snd set_fun en_tn].
+   destruct(nassoc x(en_tn e))as[p|]eqn:N;cbn[option_map];[exact(es_tn S x p(Merge.nassoc_in _ _ _ _ N))|constructor].
 Qed.
 Lemma spec_walk_support_step : forall f, SymWalkSupport f -> SpecWalkSupport(S f).
 Proof.
- intros f IH e mi[p d a]outer needs s e' needs' s' H Hi Hw Hmi Ts Ss Ws C T S L.
+ intros f IH e mi[p d a]outer needs s e' needs' s' H Hi Hw Hmi Ts Ss Ws C T S A L.
  cbn[add_spec]in H. cstep H Hi Hw L subst0 s1 Esub I1 W1 L1.
  assert(Ts0:TmClean subst0).
  { destruct a as[bs|].
@@ -179,7 +260,7 @@ Proof.
  cbn beta zeta in H. destruct d as[dn|],p as[pp|];try impossible H.
  - apply bind_inv in H as(r&s2&Er&H).
    destruct(rts_spec w R Fl b Hload mi pp s1 r s2 I1 W1 Hmi Er)as(->&_&Hr&_).
-   exact(method_context_support e mi r dn subst0 needs s1 e' needs' s' H I1 W1 Hmi Hr Ts0 Ss0 Ws0 C T S L).
+   exact(method_context_support e mi r dn subst0 needs s1 e' needs' s' H I1 W1 Hmi Hr Ts0 Ss0 Ws0 C T S A L).
  - apply bind_inv in H as(tg&s2&Er&H).
    destruct(rpath_rel w R Fl b Hload mi pp s1 tg s2 W1 Hmi Er)as[-> Hres].
    destruct tg as[[x|j]|];try impossible H.
@@ -189,7 +270,7 @@ Proof.
    cstep H I1 W1 L u s4 Eu I4 W4 L4.
    destruct(is_some a&&match gs_kind g,gs_decl g with
     |KCtx,_|KFn,_|KVal,ADVal _ _ None=>false|_,_=>true end);[impossible H|].
-   exact(IH e mi g subst0 needs s4 e' needs' s' H I4 W4 Hmi Hg Ts0 Ss0 Ws0 C T S L).
+   exact(IH e mi g subst0 needs s4 e' needs' s' H I4 W4 Hmi Hg Ts0 Ss0 Ws0 C T S A L).
 Qed.
 Theorem context_walk_support : forall f, SymWalkSupport f /\ SpecWalkSupport f.
 Proof.
@@ -200,17 +281,17 @@ Qed.
 
 Lemma assume_item_context_support:forall e mi it needs s e' needs' s',
  add_assume_item e mi it needs s=Good((e',needs'),s')->Inv s->st_w s=w->In mi(w_order w)->
- ContextClean e->Tri(en_uf e)->EnvSupport WW e->Later w P R Fl s'->
- ContextClean e' /\ Tri(en_uf e') /\ EnvSupport WW e'.
+ ContextClean e->Tri(en_uf e)->EnvSupport WW e->AppsSupport e->Later w P R Fl s'->
+ ContextClean e' /\ Tri(en_uf e') /\ EnvSupport WW e' /\ AppsSupport e'.
 Proof.
- intros e mi[p[dn|]]needs s e' needs' s' H Hi Hw Hmi C T S L;cbn[add_assume_item]in H.
+ intros e mi[p[dn|]]needs s e' needs' s' H Hi Hw Hmi C T S A L;cbn[add_assume_item]in H.
  - apply bind_inv in H as(r&s1&Er&H).
    destruct(rts_spec w R Fl b Hload mi p s r s1 Hi Hw Hmi Er)as(->&_&Hr&_).
    destruct(method_context_clean w R Fl b Hload e mi r dn [] needs s e' needs' s' H Hi Hw Hmi Hr
      (ltac:(intros k y E;discriminate E)) C T L)as[Ce Te].
    split;[exact Ce|]. split;[exact Te|].
    exact(method_context_support e mi r dn [] needs s e' needs' s' H Hi Hw Hmi Hr
-     (ltac:(intros k y E;discriminate E))(Forall_nil _)(Forall_nil _)C T S L).
+     (ltac:(intros k y E;discriminate E))(Forall_nil _)(Forall_nil _)C T S A L).
  - apply bind_inv in H as(tg&s1&Er&H).
    destruct(rpath_rel w R Fl b Hload mi p s tg s1 Hw Hmi Er)as[-> Hres].
    destruct tg as[[x|j]|];try impossible H.
@@ -222,18 +303,18 @@ Proof.
      (ltac:(intros k y E;discriminate E)) C T L)as[Ce Te].
    split;[exact Ce|]. split;[exact Te|].
    exact(proj1(context_walk_support cf)e mi g [] needs s3 e' needs' s' H I3 W3 Hmi Hg
-     (ltac:(intros k y E;discriminate E))(Forall_nil _)(Forall_nil _)C T S L).
+     (ltac:(intros k y E;discriminate E))(Forall_nil _)(Forall_nil _)C T S A L).
 Qed.
 #[local] Hint Resolve ok_add_assume_item : okdb.
 Lemma assume_items_context_support:forall mi its e needs s e' needs' s',
  mfold(fun acc it=>add_assume_item(fst acc)mi it(snd acc))(e,needs)its s=Good((e',needs'),s')->
- Inv s->st_w s=w->In mi(w_order w)->ContextClean e->Tri(en_uf e)->EnvSupport WW e->Later w P R Fl s'->
- ContextClean e' /\ Tri(en_uf e') /\ EnvSupport WW e'.
+ Inv s->st_w s=w->In mi(w_order w)->ContextClean e->Tri(en_uf e)->EnvSupport WW e->AppsSupport e->Later w P R Fl s'->
+ ContextClean e' /\ Tri(en_uf e') /\ EnvSupport WW e' /\ AppsSupport e'.
 Proof.
- intros mi its. induction its as[|it rest IH];intros e needs s e' needs' s' H Hi Hw Hmi C T S L.
+ intros mi its. induction its as[|it rest IH];intros e needs s e' needs' s' H Hi Hw Hmi C T S A L.
  - injection H as <- <- <-. auto.
  - cbn[mfold]in H. cstep H Hi Hw L a s1 Ea I1 W1 L1. destruct a as[ea na].
-   destruct(assume_item_context_support e mi it needs s ea na s1 Ea Hi Hw Hmi C T S L1)as[Ca[Ta Sa]].
-   exact(IH ea na s1 e' needs' s' H I1 W1 Hmi Ca Ta Sa L).
+   destruct(assume_item_context_support e mi it needs s ea na s1 Ea Hi Hw Hmi C T S A L1)as[Ca[Ta[Sa Aa]]].
+   exact(IH ea na s1 e' needs' s' H I1 W1 Hmi Ca Ta Sa Aa L).
 Qed.
 End Walk.
