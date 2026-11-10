@@ -3,8 +3,8 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
-# The coherence premise on val and fn requirements (CoreMoss.v deviation
-# 8): `seed` and `make` are provided while T = Char, then T is rebound
+# The coherence premise on val and fn requirements: `seed` and `make`
+# are provided while T = Char, then T is rebound
 # [D25] and generic functions that require them are called at T = Int.
 # Both compilers reject it.
 

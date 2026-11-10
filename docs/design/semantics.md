@@ -354,8 +354,8 @@ sentence above false as a description of the compilers. What stands:
   before them it compiled `nest` once and ran it). The Python bootstrap's
   interpreter, which specialized nothing, ran it. (The Python bootstrap
   has since been replaced, [D86]; the self-hosted compiler still crashes.)
-  The calculus agrees that specialization need not be finite
-  (`polyrec_infinite`, in `bootstrap/theories/Specialization.v`). **Planned
+  The earlier calculus has a [counterexample to finite specialization](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/Specialization.v#L2825).
+  **Planned
   resolution, chosen by the designer:** a static check that rejects a
   cycle of calls whose type bindings grow along it (an *expanding*
   cycle), made generically, before specialization — so this stops being
@@ -1851,8 +1851,8 @@ so the signature check of [D27] is `g`'s signature against `f`'s under
 the substitutions in force, the requirement at the bind site is `g`
 itself, and a later rebind of `g` — in the same block or anywhere deeper
 in the call tree — does not reach `f`. This is pure sugar over the core
-calculus (`CoreMoss.v`, then in `docs/design/core/`, now
-`bootstrap/theories/`): the forwarder is one more
+calculus ([`CoreMoss.v` in Git history](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/CoreMoss.v)):
+the forwarder is one more
 defined declaration in the signature, `EBindFn f g' sm e` with it
 satisfies `TBindFnR` as stated (its requirements, `g` and the types,
 hold at the bind site), it evaluates by `EvBindFn` to a closure over the
@@ -2332,10 +2332,9 @@ instantiations that agree on the relevant parameters
 (`vty_narrow_invariant`), every well-formed type at such a signature is
 already narrowed (`wf_ty_narrowed`), and soundness holds for it
 (`narrowed_soundness`, an instance of the existing theorem, which never
-needed a tag's telescope to be its whole assume nesting). These are now
-in the tracked development: `Narrowing.v`, built and audited by the
-`core-calculus-rocq` flake check (then in `docs/design/core/`; now in
-`bootstrap/theories/`, checked by the `bootstrap-rocq` flake check).
+needed a tag's telescope to be its whole assume nesting). Those proofs
+were checked by the former `core-calculus-rocq` and later `bootstrap-rocq`
+flake checks. They are preserved [in Git history](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/Narrowing.v).
 
 *What it depends on: coherence keyed by θ.* The calculus is protected because
 a method item `IMth τ m θ` carries the method's own type arguments θ, and
@@ -2482,7 +2481,8 @@ else in a bind is ([D26], [D66]):
 A lambda has no name, so it cannot call itself; recursion takes a named fn.
 
 Elaboration — pure sugar over the core calculus, so the soundness proof of
-`CoreMoss.v` (now `bootstrap/theories/CoreMoss.v`) covers it unchanged (as for [D66]): each
+the [earlier calculus](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/CoreMoss.v)
+covers it unchanged (as for [D66]): each
 captured local `k` becomes a fresh val symbol (new: neither declared nor
 already provided where the bind is, as in an enclosing lambda's captures)
 bound to `k`'s value immediately before the bind (`EBindVal`), and the lambda becomes a fresh
@@ -2776,7 +2776,8 @@ assume Layout {
 
 *Why it is sound.* The calculus's `TNom n θ` is total over a tag's
 telescope; [D71]'s implementations narrow it to the relevant parameters,
-and `Narrowing.v` shows that narrowing is safe. Its theorems are already
+and its [historical narrowing proof](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/Narrowing.v)
+shows that narrowing is safe. Its theorems were
 stated for any relevance map `R` that is *closed* — whatever a tag's
 payload mentions, read with nested references narrowed, is in `R` of that
 tag (`rel_closed`) — with each tag's telescope exactly its `R`, without
@@ -3740,10 +3741,11 @@ makes the substitution of τ_t for α_t through `e`'s typing derivation
 *Mechanized (October 2026).* The plan above, existential included, was put
 in `docs/design/core/` — the paper's §3.4 (Figures 8–9) and `CoreMoss.v`
 (deviations 11–13, the README's "Abstract functors" section); the paper
-and that README are in the history now (as of 5ea4e2e), and `CoreMoss.v`
-is in `bootstrap/theories/` — and every
-theorem (determinism, interpreter adequacy, phase separation, soundness)
-is re-proved over it, still closed under the global context.
+and that README are in the history now (as of 5ea4e2e). The Rocq
+[proofs are also preserved in Git history](https://github.com/moss-lang/moss/blob/401e385/bootstrap/theories/CoreMoss.v).
+At that checkpoint, every theorem (determinism, interpreter adequacy,
+phase separation, soundness) was re-proved over it and closed under the
+global context.
 
 - *As planned:* `IFun φ`; `EBindFun φ g ς e` checked on signatures alone
   (args(g) satisfied at the identity application in args(φ)'s merged
@@ -4620,9 +4622,9 @@ as I see more real examples").
 calculus (an application `EApply u θ sm e` at a substitution θ, a binding
 `EBindFun u h sm smc e` recording what it captured, a runtime entry `DFun
 h sms dc` carrying it), in a `CoreMoss.v` and a `D84.v` that were then yet
-to be moved into `docs/design/core/` (both are now in
-`bootstrap/theories/`); every theorem closes under the global
-context.
+to be moved into `docs/design/core/`. Both are preserved
+[in Git history](https://github.com/moss-lang/moss/tree/401e385/bootstrap/theories).
+The checked theorems were closed under the global context.
 
 - *Bind.* The captured telescope is closed, which is 3b's last sentence;
   pins are equations on captured types checked at the bind; a captured

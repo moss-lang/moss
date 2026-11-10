@@ -3,7 +3,7 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
-# D84 rule 7 (strengthened, D84.v): `F[A, B]: -> A.m, B.m` and a call at
+# D84 rule 7 (strengthened): `F[A, B]: -> A.m, B.m` and a call at
 # A = B: two items of one family share an instance of their key.
 # Expected: refused at the call (ambiguity).
 type A;

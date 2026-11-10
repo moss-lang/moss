@@ -3,7 +3,7 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
 import "../../lib/wasip1.moss" use Wasi;
 
-# D84 rule 7 (strengthened; D84.v `family_apply_placement`): a family's
+# D84 rule 7 (placement of family applications): a family's
 # binding that binds no val but applies a functor whose binding does.
 # Expected: refused at `bind F = G;`.
 type A;

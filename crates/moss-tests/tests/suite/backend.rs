@@ -1863,8 +1863,8 @@ fn a_callee_requires_what_it_assumes_and_does_not_use() {
 
 /// Coherence: a callee's val, fn or method requirement is met only by a
 /// provision made at the instantiation the callee means — a method item
-/// carries its application, and a val or fn its ambient one (CoreMoss.v
-/// deviation 8). Each of these was once accepted by the Python bootstrap,
+/// carries its application, and a val or fn its ambient one.
+/// Each of these was once accepted by the Python bootstrap,
 /// which matched the requirement by its key alone, and read a `Char` as an
 /// `Int` or a `Point`. Both front ends reject each at the call: the oracle
 /// with the message below, the self-hosted compiler with `e_incoherent`
