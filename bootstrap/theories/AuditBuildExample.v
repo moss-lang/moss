@@ -186,6 +186,13 @@ Proof.
     destruct Occ as [[= <- <-]|[]]. lia.
 Qed.
 
+(* No nominal has a payload, so every layout is finite. *)
+Lemma main_layouts : FiniteLayouts world_main.
+Proof.
+  intros n pay Pay. inversion Pay as [s xs d n' ps t p Read Ast].
+  apply reads_decl in Read as [_ ->]. discriminate.
+Qed.
+
 (* main's nesting is empty; it is the only symbol. *)
 Lemma main_assumes : AssumesComplete world_main.
 Proof.
@@ -214,7 +221,7 @@ Proof.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|constructor].
-      * split; [|split; [exact main_bounded|split; [exact main_assumes|exact main_decls]]]. right. split.
+      * split; [|split; [exact main_bounded|split; [exact main_assumes|split; [exact main_decls|exact main_layouts]]]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.

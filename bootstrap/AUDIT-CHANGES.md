@@ -118,6 +118,7 @@ entry they belong to.
 | 75 | Every symbol's assume nesting forms, whatever its kind (`AssumesComplete`; criteria section 7) | n234 | B |
 | 76 | Every other declaration forms as written: tag payloads, alias bodies, val types and initializers, fn and method signatures, functor arguments and results (`DeclsForm`; criteria section 7) | n234 | B |
 | 77 | A functor with a body binds its whole result, by written leaf, applied or not (`FunctorTotal`; D55) | n234 | A (applied or linked; mirrors both); B for an unapplied functor |
+| 90 | **Every tag has a finite layout** (`FiniteLayouts`, D58/D59; on definitions, with no case for `Ref`) | layout | A for used types; B for an unused cyclic tag, with the oracle and native changed to match |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2484,6 +2485,119 @@ executable tests unless noted.
 - **Proof.** No proof reads `DeclsForm`; the example world has no functor.
 - **Class.** A for applied and linked functors (mirrors both); B for an
   unapplied one, by criteria section 7.
+### 90. Every tag has a finite layout (`FiniteLayouts`, `LayoutReaches`; layout branch; D58, D59)
+- **The gap.** Audit had no notion of layout. It accepted
+  [tests/wasi/cyclic.moss](../tests/wasi/cyclic.moss)
+  (`tag Cell { head: I32, tail: Nil | Cell }`), which both implementations
+  reject: a value is a run of scalars (D59), there is no heap between a
+  type and what it contains (D58), so a type that contains itself unboxed
+  has no finite layout. The comment on `TypeEdge` said this was "a separate
+  check of the oracle's".
+- **Rule now.** `ElaboratesIn` gains a last conjunct, `FiniteLayouts W`.
+  - `LayoutReaches W τ n` says that computing τ's layout computes the
+    nominal n's. A tag's layout is its payload's, read at its arguments
+    (`PayloadOf W n args`). A record's is its fields' in sequence. A
+    union's is its members' beside a discriminating word. Every other type
+    is a leaf: a machine type, as the platform declares it (machine
+    reference types included), is one scalar, and so is an abstract type.
+  - `FiniteLayouts W`: no tag's payload, read at the tag's own requirements
+    (each as itself), reaches the tag.
+  - The check is on definitions. A cyclic tag is rejected whether or not
+    the program builds or names it.
+- **No special case for `Ref`** (criteria section 7). `Ref` is
+  `tag Ref[Boxed](StructRef)`: a tag whose payload is a machine reference
+  type. So `Ref[Boxed=Cell]`'s layout is `StructRef`'s one scalar, and the
+  rule never looks at `Boxed`. `tag Cell { head: I32, tail: Nil | Ref[Boxed=Cell] }`
+  has a layout. A user's own tag over `StructRef` gets the same treatment,
+  and so does any library that names these things differently.
+  - This is a different graph from `TypesBounded`'s `TypeEdge` (#48,
+    #52), so the two are not shared. `TypeEdge` counts every nominal
+    instance a payload mentions, behind a `Ref` too, because a WasmGC type
+    names the types of its fields. A layout follows only what a payload
+    holds unboxed: `Cell` mentions itself through `Ref[Boxed=Cell]`, which
+    is a `TypeEdge` (not strict, so allowed) and no `LayoutReaches`.
+- **Why an abstract type can be a leaf.** An abstract type is one scalar
+  here, but at run time it is bound to some type. That type cannot make a
+  layout infinite. A bind's right-hand side is read at the old meanings
+  (D72, `BTypeBind` reads `τ` in `c_ty C` before `set_ty`), so
+  `bind T = Cell` under `tag Cell { tail: Nil | T }` makes T mean
+  `Cell[T=<T's old meaning>]`, a finite term. No sequence of binds builds a
+  type that contains itself, so every ground type is a finite term.
+  Laying out a finite term then terminates. "g's payload, read at g's own
+  requirements, reaches h" is transitive (reaching is stable under
+  substituting arguments for the requirements), so with no tag reaching
+  itself it is a strict order on the finitely many tags. A nominal that a
+  layout reaches through a tag's own payload text is below that tag in the
+  order; one that it reaches through the tag's arguments is a subterm of
+  the finite ground type being laid out. So no path of the layout
+  computation is infinite. (This is an argument, not a Rocq theorem; the
+  conjunct only rejects programs, so `public_safety` does not need it.)
+  ([layout-opaque](examples/layout-opaque.moss) binds `Link = LHold`,
+  a tag holding a `Ref[Boxed=LNode]`, after `LNode { next: LNil | Link }`.)
+- **Criteria.**
+  - Fidelity (section 6), for every program that uses a type: both
+    implementations compute layouts this way and reject a type that
+    contains itself. Neither special-cases `Ref`: the oracle's `slots_go`
+    (Elab.v) and native's `width` (src/types.moss) treat an abstract type
+    as one scalar and follow a tag's payload at its arguments.
+  - Specialization (section 4): every type has a finite run of scalars, so
+    the compilers can lay it out.
+  - Separation of the language from its platform library (section 7): the
+    rule mentions no library name.
+- **The definition-site choice, and the implementations.** Before this
+  change both implementations checked a layout only where a type is used,
+  so they accepted a cyclic tag that nothing builds. The owner chose the
+  rule on definitions. The oracle and native now check every tag's
+  definition the same way, so they agree with Audit again:
+  - Oracle: `Elab.check_layouts`, run by `elaborate` and
+    `elaborate_with_metadata` after `elab_program` accepts, so no other
+    diagnostic changes. It reports "`X` contains itself, so it has no
+    finite layout (D58)". A payload that does not read is not a cycle there
+    (elaboration reports it if it matters). `layout_reaches` compares
+    symbols, as `LayoutReaches` does, and treats running out of fuel (300
+    levels) as a cycle, as `slots_go`'s depth limit does.
+  - Native: `lower::check_layouts` (after `check_listed`), with
+    `types::layout_reaches`, reporting `e_shape` ("this type has no finite
+    runtime layout") at the tag.
+  - One corpus program relied on the old reading:
+    [tests/wasi/relevance_applied.moss](../tests/wasi/relevance_applied.moss)
+    declared `tag A { b: B, t: T }` and `tag B { a: A }` only to name them
+    ("neither type has a layout, so they are only named, never built").
+    It tests D71's relevance fixpoint, not layouts, so `A` now holds `B`
+    through a `Ref[Boxed=B]`. The mutual mention, and so the fixpoint, is
+    unchanged (the relevance closure reads a bracket's right-hand side), and
+    both implementations still print `y`.
+- **Tests.**
+
+  | program | oracle before | native before | Audit before | Audit now | oracle, native now |
+  |---|---|---|---|---|---|
+  | [tests/wasi/cyclic.moss](../tests/wasi/cyclic.moss) | rejects (D58) | rejects (no finite layout) | accepts | rejects | reject |
+  | [layout-self](examples/layout-self.moss) (cyclic.moss without imports) | rejects | rejects | accepts | rejects | reject |
+  | [layout-self-unused](examples/layout-self-unused.moss) (the same tag, never built) | accepts | accepts | accepts | rejects | reject |
+  | [layout-generic-self](examples/layout-generic-self.moss) (through `LBox[LT=LC]`; a generic `LList[LT]`) | rejects | rejects | accepts | rejects | reject |
+  | [layout-ref](examples/layout-ref.moss) (recursion through `Ref[Boxed=LCell]`) | 6 | 6 | accepts | accepts | 6 |
+  | [layout-opaque](examples/layout-opaque.moss) (an abstract `Link` in force through a context and bound to a tag holding a `Ref` afterwards; a user's phantom tag over `StructRef`; a generic tag with abstract members) | 7 | 7 | accepts | accepts | 7 |
+  | [tests/wasi/relevance_applied.moss](../tests/wasi/relevance_applied.moss), as it was | y | y | accepts | rejects | reject |
+  | the same, through a `Ref` (as it is now) | y | y | accepts | accepts | y |
+
+  Audit's verdicts are argued from the rules, not run.
+- **Corpus.** The oracle with `check_layouts` against the oracle before it,
+  `--elab-only`, over `src/main.moss`, `tests/`, `examples/` and
+  `bootstrap/examples/` (521 files, `ulimit -s unlimited`): 519 same,
+  2 diff. The two are layout-self-unused (new) and relevance_applied, as it
+  was, both now rejected; nothing else changes. `src/main.moss`, with the
+  whole library, is accepted.
+- **Proof.** `public_safety` is still proved and `check.sh` is green. The
+  conjunct only rejects programs, and no proof reads it.
+  `AuditBuildExample.main_layouts` proves it of the example world (it has
+  no tag). For the oracle, `Elab.elaborate_with_metadata_run` and
+  `Elab.elaborate_run` recover `elab_program`'s result from an accepted
+  bundle; `ElabFrame.elaborate_frame`, `FnCoverage`,
+  `ReifyHeaderProgram` and `Certified` use them in place of unfolding
+  `elaborate`.
+- **Class.** A (reject-only, mirroring both implementations) for every
+  type a program uses. For an unused cyclic tag, B against the
+  implementations as they were; they now match.
 
 ---
 

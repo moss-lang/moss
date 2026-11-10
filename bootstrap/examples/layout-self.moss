@@ -1,0 +1,10 @@
+# D58 (AUDIT-CHANGES #90): a tag that contains itself unboxed has no finite
+# layout (a value is a run of scalars, D59). `LCell`'s payload is a record
+# whose field `tail` is `LNil | LCell`: computing LCell's layout computes
+# LCell's. tests/wasi/cyclic.moss with no prelude items.
+# Verdicts: oracle rejects ("`LCell` contains itself, so it has no finite
+# layout (D58)"); native rejects ("this type has no finite runtime layout");
+# Audit before #90 accepts, now rejects (FiniteLayouts).
+tag LNil;
+tag LCell { head: (), tail: LNil | LCell };
+fn main() { let c = LCell { head = (), tail = LNil }; }

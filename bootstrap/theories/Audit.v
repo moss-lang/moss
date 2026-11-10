@@ -5168,8 +5168,9 @@ Definition InstantiationsBounded (W : world) (P : program) : Prop :=
    type names the types of its fields, so `Cons[T]` holding a
    `Ref[Boxed=Nest[T=Box]]` needs `Cons[T=Box[T]]`, and so on
    (scratch/expand/mono/c8c_type_only.moss).  [D58]'s finite layout (no
-   tag containing itself, with no heap between) is a separate check of
-   the oracle's and is not stated here; it is not needed for finiteness. *)
+   tag containing itself, with no heap between) is a different graph,
+   `LayoutReaches` below: it follows a tag's payload at its arguments, so
+   it does not look behind a `Ref`, whose payload does not mention them. *)
 Definition TypeEdge (W : world) (a b : nsym * tsym) (strict : bool) : Prop :=
   exists pay args tau,
     PayloadOf W (fst a) (map (fun t => (t, TAbs t)) (w_reqs W (fst a))) pay /\
@@ -5182,6 +5183,37 @@ Definition TypesBounded (W : world) : Prop :=
 
 Definition NoExpandingCycle (W : world) (P : program) : Prop :=
   TypesBounded W /\ InstantiationsBounded W P.
+
+(* [D58]/[D59] finite layouts.  A value is a run of scalars, and there is
+   no heap between a type and what it contains, so a type containing itself
+   has no finite layout.  `LayoutReaches W τ n`: computing τ's layout
+   computes the nominal n's: a tag's layout is its payload's, at its
+   arguments; a record's is its fields' in sequence; a union's is its
+   members' beside a discriminating word.  Everything else is one scalar or
+   none, a leaf: a machine type, as the platform declares it (machine
+   reference types included), and an abstract type.  So there is no case
+   for any library's names: `Ref[Boxed=X]` is a tag whose payload is a
+   machine reference type, so its layout is that one scalar, whatever X is,
+   and `tag Cell { head: I32, tail: Nil | Ref[Boxed=Cell] }` has a layout
+   (AUDIT-CHANGES #90).
+   The check is on definitions: a tag whose payload, read at its own
+   requirements, reaches the tag is rejected, used or not.  An abstract
+   type is a leaf because no meaning given to it can make a layout
+   infinite: a bind's right-hand side is read at the old meanings ([D72]),
+   so every ground type is a finite term, and unfolding one only reaches
+   payloads of tags, none of which reaches itself. *)
+Inductive LayoutReaches (W : world) : ty -> nsym -> Prop :=
+| LayoutTag : forall n args, LayoutReaches W (TNom n args) n
+| LayoutPayload : forall n args pay m,
+    PayloadOf W n args pay -> LayoutReaches W pay m -> LayoutReaches W (TNom n args) m
+| LayoutField : forall fs f t m,
+    In (f, t) fs -> LayoutReaches W t m -> LayoutReaches W (TRecord fs) m
+| LayoutMember : forall ms t m,
+    In t ms -> LayoutReaches W t m -> LayoutReaches W (TUnion ms) m.
+
+Definition FiniteLayouts (W : world) : Prop :=
+  forall n pay, PayloadOf W n (map (fun t => (t, TAbs t)) (w_reqs W n)) pay ->
+    ~ LayoutReaches W pay n.
 
 (* [D20]: an assumed provision brings its requirements and its needs, not
    just a signature.  `AssumeCtx W s C ns`: the context the assume nesting
@@ -5315,7 +5347,9 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (* [D20]: assumed items bring their requirements and needs *)
     AssumesComplete W /\
     (* criteria section 7: every declaration forms as written *)
-    DeclsForm W P.
+    DeclsForm W P /\
+    (* [D58]/[D59]: every tag has a finite layout *)
+    FiniteLayouts W.
 
 Definition Elaborates (b : bundle) (P : program) : Prop :=
   exists W, ElaboratesIn b W P.

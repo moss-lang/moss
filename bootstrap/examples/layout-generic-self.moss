@@ -1,0 +1,12 @@
+# D58 (AUDIT-CHANGES #90): a layout follows a tag's payload at its
+# arguments. `LBox[LT]`'s payload is `LT`, so `LBox[LT=LC]`'s layout is
+# LC's, and `LC` contains itself through it. A generic tag that contains
+# itself is rejected too (`LList`).
+# Verdicts: oracle rejects (D58); native rejects; Audit before #90 accepts,
+# now rejects.
+type LT;
+tag LNil;
+assume LT { tag LBox[LT](LT); }
+tag LC { tail: LNil | LBox[LT=LC] };
+assume LT { tag LList[LT] { head: LT, tail: LNil | LList }; }
+fn main() { let c = LC { tail = LNil }; }
