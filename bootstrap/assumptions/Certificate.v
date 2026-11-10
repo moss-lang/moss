@@ -18,7 +18,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy AuditPrune AuditFastPath AuditCapTrim.
+  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim EaMain.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -173,6 +173,10 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicWorld.load_world_resolves);
   root (@NM.PublicWorldScope.load_world_world_of_from_requirements);
   root (@NM.PublicWorldRequirements.elaborate_public_world_of);
+  root (@NM.ElabWorld.bundle_world_sound);
+  root (@NM.ElabWorld.bundle_world_with_sound);
+  root (@NM.ElabWorldExample.example_world);
+  root (@NM.ElabWorldExample.unlisted_rejected);
   root (@NM.PublicTypeFacts.ty_eqb_spec);
   root (@NM.PublicValueTyping.typing_extends);
   root (@NM.PublicValueTyping.field_lookup_typed);
@@ -467,6 +471,12 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.LazyOracle.Certified.fast_path_agrees);
   root (@NM.LazyOracle.Certified.engine_agrees);
   root (@NM.LazyOracle.Certified.fast_engine_agrees);
+
+(* The executable elaborator (EaMain.v), which run/Extract.v will
+   extract. *)
+  root (@NM.EaMain.elaborate);
+  root (@NM.EaMain.elaborate_with);
+  root (@NM.EaBase.default_strategy);
 
 (* Read-set pruning of Audit programs. *)
   root (@PruneTop.PS.prune_sound);

@@ -6,6 +6,7 @@ scratch/
 /.direnv/
 /.envrc
 /bootstrap/_build/
+/bootstrap/_build2/
 /cargo-update.txt
 /nix-flake-update.txt
 /vscode/bin/
