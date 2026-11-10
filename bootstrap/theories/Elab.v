@@ -558,7 +558,7 @@ Definition nesting_types (mi : nat) (specs : list spec) : M (list nat) :=
 
 (* an assume item `p` (not `R.m`) is the context item `p`; an equation
    names its sides' references (D90) *)
-Definition assume_specs (its : list aitem) : list spec := flat_map aitem_specs its.
+Definition assume_specs := LoadWorld.assume_specs.
 
 Definition assume_type_syms (g : gsym) : M (list nat) :=
   nesting_types (gs_mod g) (assume_specs (gs_assumes g)).

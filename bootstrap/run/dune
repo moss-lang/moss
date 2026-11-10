@@ -8,12 +8,12 @@
  (prelude Extract)
  (extracted_modules
   Ascii Audit ProgramCapTrim InterpreterCompiled InterpreterFast ProgramFastPath InterpreterLazy ProgramPrune BinInt BinNat BinNums
-  LoadWorld BinPos Bool0 Byte Byte0 CoreFragment Datatypes Decimal SourceNames EaBase
+  LoadWorld LoadListed BinPos Bool0 Byte Byte0 Datatypes Decimal SourceNames EaBase
   EaBind EaCall EaCtx EaDecide EaExpand EaExpr EaFamily EaFunctor EaMain
-  EaPlatform EaTypes Elab ElabFrameCore ElabWorld ExecutionModel
+  EaPlatform EaTypes ElabWorld ExecutionModel
   FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap
   Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicMergePresent PublicWorld
-  ReifyData ReqsSolve ReqsTotal Specif String0 Sx Uint63Axioms WorldSound)
+  ReqsSolve ReqsTotal Specif String0 Sx Uint63Axioms WorldSound)
  (theories NM Stdlib))
 
 ; The OCaml must be flambda: only flambda honours the `[@inlined]` in

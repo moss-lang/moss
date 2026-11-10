@@ -329,7 +329,7 @@ Qed.
 (* the requirements of a val, fn, method, context or functor *)
 Definition Passume (s : nat) : list nat :=
   match A.w_decl W s with
-  | Some d => clean (walkset CT (A.d_mod d) (assume_specs (A.d_assumes d)))
+  | Some d => clean (walkset CT (A.d_mod d) (LoadWorld.assume_specs (A.d_assumes d)))
   | None => []
   end.
 

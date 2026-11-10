@@ -10,7 +10,7 @@
 
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap EaBase EaTypes EaCtx EaCall EaFamily EaDecide EaExpr EaFunctor EaBind EaPlatform EaExpand.
-From NM Require Elab Sx ElabWorld PublicWorld ElabFrameCore.
+From NM Require Sx ElabWorld PublicWorld LoadListed.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -260,7 +260,7 @@ Definition bundle_world_r (b : bundle) : er (world * nat) :=
   match LoadWorld.load_world b with
   | Sx.Bad m => Err m
   | Sx.Good w =>
-      match Elab.check_listed (ElabFrameCore.s_init w) with
+      match LoadListed.check w with
       | Sx.Bad m => Err m
       | Sx.Good _ =>
           match ElabWorld.world_requirements b w with

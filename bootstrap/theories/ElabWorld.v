@@ -22,7 +22,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit.
 From NM Require ExecutionModel ComponentContracts.
-From NM Require Import NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsTotal ElabFrame.
+From NM Require Import NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsTotal ElabFrame LoadListedFacts.
 From NM Require PublicWorld PublicWorldRequirements.
 Import ListNotations.
 
@@ -210,7 +210,7 @@ Local Notation N := (ls_next_sym ls).
    (by conversion). *)
 Definition PassumeX (CTR : nat -> list nat) (s : nat) : list nat :=
   match M.w_decl W s with
-  | Some d => clean ls (walkset b ls e CTR (M.d_mod d) (assume_specs (M.d_assumes d)))
+  | Some d => clean ls (walkset b ls e CTR (M.d_mod d) (LoadWorld.assume_specs (M.d_assumes d)))
   | None => []
   end.
 
@@ -426,7 +426,7 @@ Definition bundle_world (b : bundle) : option AE.world :=
   match load_world b with
   | Bad _ => None
   | Good w =>
-      match check_listed (s_init w) with
+      match LoadListed.check w with
       | Bad _ => None
       | Good _ =>
           match world_requirements b w with
@@ -440,7 +440,9 @@ Theorem bundle_world_sound : forall b W, bundle_world b = Some W -> AE.WorldOf b
 Proof.
   intros b W Run. unfold bundle_world in Run.
   destruct (load_world b) as [w|m] eqn:Hw; [|discriminate].
-  destruct (check_listed (s_init w)) as [[u s1]|m] eqn:Hc; [|discriminate].
+  destruct (LoadListed.check w) as [[]|m] eqn:Hc; [|discriminate].
+  assert (Hlegacy : check_listed (s_init w) = Good (tt, s_init w)).
+  { rewrite check_initial_equal, Hc. reflexivity. }
   destruct (world_requirements b w) as [R|] eqn:Hr; [|discriminate].
   injection Run as <-.
   apply PublicWorldRequirements.load_world_world_of_from_reading; [exact Hw|].
@@ -467,8 +469,9 @@ Proof.
     + apply RC_empty.
     + apply RL_empty.
     + apply (check_listed_ok b ls e HI (s_init (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls)
-        (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) u s1);
-        [split; [reflexivity|intros i g Hi; exact Hi]|exact Hc].
+        (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) tt (s_init (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls)
+        (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))));
+        [split; [reflexivity|intros i g Hi; exact Hi]|exact Hlegacy].
   - intro x. apply same_sym. exact (proj1 (reqs_tables_same b ls e HI Ptab Ltab Ht x)).
   - intro x. exact (proj2 (reqs_tables_same b ls e HI Ptab Ltab Ht x)).
 Qed.

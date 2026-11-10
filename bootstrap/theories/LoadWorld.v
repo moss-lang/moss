@@ -477,3 +477,6 @@ Definition resolve_detached (w : world) (mi : nat) (p : path) : res (option nat)
           end
       end
   end.
+
+(* Assume nesting as context specifications, including equation sides. *)
+Definition assume_specs (its : list aitem) : list spec := flat_map aitem_specs its.

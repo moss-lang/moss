@@ -15,6 +15,12 @@ the test suite holds the compiler to it. It runs one pipeline:
    interpreter of Audit.v's run-time semantics. Its primitives are
    `MossX.run_prim`.
 
+Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
+`LoadListed.v`; `LoadListedFacts.v` proves its complete result, including
+diagnostics, equal to the legacy checker. The existing `WorldOf` proof
+uses that equality. Legacy elaborator state remains in proof dependencies
+and is absent from executable extraction.
+
 ## Trust
 
 Audit.v defines the semantics, and steps 3 and 4 are Audit's own interpreter
