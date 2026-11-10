@@ -120,6 +120,7 @@ entry they belong to.
 | 77 | A functor with a body binds its whole result, by written leaf, applied or not (`FunctorTotal`; D55) | n234 | A (applied or linked; mirrors both); B for an unapplied functor |
 | 90 | **Every tag has a finite layout** (`FiniteLayouts`, D58/D59; on definitions, with no case for `Ref`) | layout | A for used types; B for an unused cyclic tag, with the oracle and native changed to match |
 | 91 | Main's platform provisions are Platform's contract (`PlatformEntry` moves from `ElaboratesIn` to `Platform.Linked`) | layout | none (`Builds` and `Ready` are unchanged) |
+| 92 | The language items go through one table (`lang_item`, `LangItem`) | layout | none (definitional) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2632,6 +2633,24 @@ executable tests unless noted.
   clauses and `AuditBuildExample`'s example world change by one pattern
   each.
 - **Class.** None (a move).
+
+### 92. The language items go through one table (`lang_item`, `lang_item_key`, `LangItem`; layout branch; criteria section 7)
+- **Rule now.** After `LangSym`, `lang_item` lists the library items the
+  language's own rules need: `Bool`, `True`, `False` (a condition's type
+  and values, D45), `int::zero`, `int::one`, `num.moss`'s `add`, `mul` and
+  `div` (a numeric literal's arithmetic, D68) and `float::float`.
+  `lang_item_key` gives each its module, namespace and name, and
+  `LangItem W i s` is `LangSym` at that key. `Literal`, `Cond`,
+  `ElaboratesIn`'s Bool clause, and `Platform.ValueType`'s and
+  `Platform.Layouts`' Bool name them through `LangItem`. The operators keep
+  their own table, `operator_method` (D68, D85), and a string literal's
+  desugaring names `byte::…` and `string_…` in scope.
+- **Why.** A library name used by a language rule is visible in one place,
+  so a reader can tell a language item from a leak (criteria section 7).
+- **Nothing changes.** `LangItem W i s` reduces to the `LangSym` it
+  replaced. The proofs go through unchanged; `AuditBuildExample.main_linked`
+  unfolds `LangItem` once.
+- **Class.** None (definitional).
 
 ---
 

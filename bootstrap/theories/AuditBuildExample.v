@@ -237,7 +237,7 @@ Proof.
       split; [reflexivity|]. split; [reflexivity|]. split; [constructor|reflexivity].
     + split; [reflexivity|constructor].
   - split.
-    + unfold Platform.Layouts, Platform.TagLayout. repeat split; intros;
+    + unfold Platform.Layouts, Platform.TagLayout. repeat split; intros; unfold LangItem, lang_item_key in *;
       exfalso; first [eapply NoWasm; eassumption | eapply NoBool; eassumption].
     + split.
       * exists None, None. split; [right;split;[exact (NoWasm NSName "Ref")|reflexivity]|].

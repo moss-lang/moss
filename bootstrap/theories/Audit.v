@@ -2789,6 +2789,27 @@ Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : na
   exists d p, w_decl W s = Some d /\ LibraryModule W short p /\
               w_scope W p ns n = Some (ESym s).
 
+(* The language items: the library items the language's own rules need
+   (criteria section 7), each by its module's short name, namespace and
+   name.  The rules outside Platform name library items only through this
+   table, `operator_method` (the operators, [D68], [D85]) and the string
+   literal's desugaring (Syntax.string_desugar, resolved in scope).
+   - Bool, True, False ([D45]): a condition's type, and its two values.
+   - zero, one, and num.moss's add, mul and div ([D68]): a numeric
+     literal's arithmetic; float.moss's float: a fractional literal's. *)
+Inductive lang_item := LIBool | LITrue | LIFalse | LIZero | LIOne | LIAdd | LIMul | LIDiv | LIFloat.
+Definition lang_item_key (i : lang_item) : string * nspace * name :=
+  match i with
+  | LIBool => ("bool", NSName, "Bool") | LITrue => ("bool", NSName, "True")
+  | LIFalse => ("bool", NSName, "False")
+  | LIZero => ("int", NSName, "zero") | LIOne => ("int", NSName, "one")
+  | LIAdd => ("num", NSDetached, "add") | LIMul => ("num", NSDetached, "mul")
+  | LIDiv => ("num", NSDetached, "div")
+  | LIFloat => ("float", NSName, "float")
+  end.
+Definition LangItem (W : world) (i : lang_item) (s : nat) : Prop :=
+  let '(short, ns, n) := lang_item_key i in LangSym W short ns n s.
+
 (* ======================================================================== *)
 (* V.2 Types                                                                 *)
 (* ======================================================================== *)
@@ -3839,25 +3860,25 @@ Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr ->
    A family may supply an operation, using the same rule as an explicit call. *)
 Inductive Literal (W : world) (C : cx) : literal_tree -> expr -> ty -> Prop :=
 | LiteralZero : forall z t,
-    LangSym W "int" NSName "zero" z -> nlook z (c_vals C) = Some t ->
+    LangItem W LIZero z -> nlook z (c_vals C) = Some t ->
     Literal W C LZero (EVal z) t
 | LiteralOne : forall o t,
-    LangSym W "int" NSName "one" o -> nlook o (c_vals C) = Some t ->
+    LangItem W LIOne o -> nlook o (c_vals C) = Some t ->
     Literal W C LOne (EVal o) t
 | LiteralAdd : forall a b x y result t m,
     Literal W C a x t -> Literal W C b y t ->
-    LangSym W "num" NSDetached "add" m -> LitOp W C t m x y result ->
+    LangItem W LIAdd m -> LitOp W C t m x y result ->
     Literal W C (LAdd a b) result t
 | LiteralMul : forall a b x y result t m,
     Literal W C a x t -> Literal W C b y t ->
-    LangSym W "num" NSDetached "mul" m -> LitOp W C t m x y result ->
+    LangItem W LIMul m -> LitOp W C t m x y result ->
     Literal W C (LMul a b) result t
 | LiteralDiv : forall a b x y result t m,
     Literal W C a x t -> Literal W C b y t ->
-    LangSym W "num" NSDetached "div" m -> LitOp W C t m x y result ->
+    LangItem W LIDiv m -> LitOp W C t m x y result ->
     Literal W C (LDiv a b) result t
 | LiteralFloat : forall a x ti tp t f,
-    Literal W C a x ti -> LangSym W "float" NSName "float" f ->
+    Literal W C a x ti -> LangItem W LIFloat f ->
     nlook f (c_fns C) = Some (FSig [tp] t) -> fits ti tp ->
     Literal W C (LFloat a) (EInvoke f [x]) t.
 
@@ -4379,7 +4400,7 @@ with Args (W : world) (P : program) : frame -> cx -> list aexpr -> list ty -> li
 (* [D45] a condition is a Bool (lib/bool.moss's) *)
 with Cond (W : world) (P : program) : frame -> cx -> aexpr -> expr -> Prop :=
 | CondBool : forall F C c x t b,
-    LangSym W "bool" NSName "Bool" b ->
+    LangItem W LIBool b ->
     Ex W P F C c (Some (TNom b [])) x t -> fits t (TNom b []) -> Cond W P F C c x
 
 (* a branch of an `if` (its `else`) or a match arm: a block has its
@@ -5317,9 +5338,9 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (exists C ns types platform, CtxOf W (program_main P) C ns /\ InitialTypes W C types /\
        program_environment P = Environment types platform /\ map fst platform = map (rkey_of C) ns) /\
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
-    (LangSym W "bool" NSName "Bool" (program_bool P) /\ LangSym W "bool" NSName "True" (program_true P) /\
-     LangSym W "bool" NSName "False" (program_false P)
-     \/ ((forall s, ~ LangSym W "bool" NSName "Bool" s) /\ program_bool P = 0 /\ program_true P = 0 /\ program_false P = 0)) /\
+    (LangItem W LIBool (program_bool P) /\ LangItem W LITrue (program_true P) /\
+     LangItem W LIFalse (program_false P)
+     \/ ((forall s, ~ LangItem W LIBool s) /\ program_bool P = 0 /\ program_true P = 0 /\ program_false P = 0)) /\
     (* [D16]/[D30]: finitely many instantiations *)
     NoExpandingCycle W P /\
     (* [D20]: assumed items bring their requirements and needs *)
@@ -5356,7 +5377,7 @@ Definition ValueType (W : world) (t : ty) (shape : shape) : Prop :=
   | ShapeF32 => MachineType W "F32" t
   | ShapeF64 => MachineType W "F64" t
   | ShapeUnit => t = TUnit
-  | ShapeBool => exists symbol, LangSym W "bool" NSName "Bool" symbol /\ t = TNom symbol []
+  | ShapeBool => exists symbol, LangItem W LIBool symbol /\ t = TNom symbol []
   | ShapeAddress => NominalType W "wasm" "Addr" t
   | ShapeTag => exists symbol args, t = TNom symbol args
   | ShapeNever => t = never
@@ -5577,9 +5598,9 @@ Definition Layouts (W : world) : Prop :=
   TagLayout W "Ref" "Boxed" "StructRef" /\
   TagLayout W "Array" "Arrayed" "ArrayRef" /\
   TagLayout W "Addr" "Memory" "I32" /\
-  (forall symbol, LangSym W "bool" NSName "Bool" symbol ->
+  (forall symbol, LangItem W LIBool symbol ->
     exists truth falsity,
-      LangSym W "bool" NSName "True" truth /\ LangSym W "bool" NSName "False" falsity /\
+      LangItem W LITrue truth /\ LangItem W LIFalse falsity /\
       kind_sym W symbol = Some DKTag /\ kind_sym W truth = Some DKUnit /\
       kind_sym W falsity = Some DKUnit /\ truth <> falsity /\ w_reqs W symbol = [] /\
       (PayloadOf W symbol [] (TUnion [TNom truth []; TNom falsity []]) \/
