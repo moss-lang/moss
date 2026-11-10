@@ -4,7 +4,7 @@
 From Stdlib Require Import String List Arith Bool Lia.
 From NM Require Import Audit.
 From NM Require PublicMerge PublicTypeRead PublicTypeFacts PublicOrientation
-  PublicFormation PublicCallRealize.
+  PublicFormation PublicCallRealize PublicEquation.
 Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 Set Implicit Arguments.
@@ -303,4 +303,345 @@ Proof.
   destruct q; cbn [hide] in Principal; rewrite PublicTypeFacts.ty_eqb_refl in Principal;
     cbn [app_subst] in Principal; try discriminate.
   exfalso. eapply Sq. reflexivity.
+Qed.
+
+Lemma subterm_gens : forall u t, TypeSubterm u t -> incl (gens u) (gens t).
+Proof.
+  intros u t S. induction S; intros g G; [exact G | | |].
+  - rewrite PublicFormation.gens_record_flat. apply in_flat_map. exists (f,t). auto.
+  - rewrite PublicFormation.gens_nom_flat. apply in_flat_map. exists (x,t). auto.
+  - rewrite PublicFormation.gens_union_flat. apply in_flat_map. exists t. auto.
+Qed.
+
+Lemma abs_has_no_shape : forall t x, TypeSubterm t (TAbs x) -> Structured t -> False.
+Proof.
+  intros t x S H. inversion S; subst. exact (H x eq_refl).
+Qed.
+
+Lemma inst_subterm_support : forall a t u,
+  In t (map snd (read_inst a)) -> TypeSubterm u t -> Structured u -> incl (gens u) (inst_gens a).
+Proof.
+  induction a as [|[x [v|]] a IH]; intros t u I Sub Su g G; cbn [read_inst inst_gens map fst snd flat_map] in *.
+  - contradiction.
+  - destruct I as [<- | I].
+    + apply in_or_app. left. exact (@subterm_gens u v Sub g G).
+    + apply in_or_app. right. exact (IH t u I Sub Su g G).
+  - destruct I as [<- | I].
+    + exfalso. eapply abs_has_no_shape; eassumption.
+    + exact (IH t u I Sub Su g G).
+Qed.
+
+Lemma entry_subterm_support : forall e t u,
+  In t (entry_types e) -> TypeSubterm u t -> Structured u -> incl (gens u) (entry_gens e).
+Proof.
+  intros e t u I Sub Su g G. pose proof (@subterm_gens u t Sub g G) as Gt.
+  destruct e as [x|v tv a|f sig a|r m sig a|f fx|l r]; cbn [entry_types entry_gens] in I |- *.
+  - destruct I as [<-|[]]. exfalso. eapply abs_has_no_shape; eassumption.
+  - destruct I as [<-|I]; apply in_or_app.
+    + left. exact Gt.
+    + right. eapply inst_subterm_support; eassumption.
+  - change (In t ((sg_ret sig :: sg_params sig) ++ map snd (read_inst a))) in I.
+    apply in_app_or in I as [I|I]; apply in_or_app.
+    + left. apply in_flat_map. exists t. auto.
+    + right. eapply inst_subterm_support; eassumption.
+  - destruct I as [<-|I]; apply in_or_app; [left; exact Gt|right].
+    change (In t ((sg_ret sig :: sg_params sig) ++ map snd (read_inst a))) in I.
+    apply in_app_or in I as [I|I]; apply in_or_app.
+    + left. apply in_flat_map. exists t. auto.
+    + right. eapply inst_subterm_support; eassumption.
+  - apply in_map_iff in I as [[x q] [<- I]].
+    apply in_flat_map. exists (x,q). auto.
+  - destruct I as [<-|[<-|[]]]; apply in_or_app; auto.
+Qed.
+
+Lemma raw_subterm_support : forall es u,
+  In u (raw_subterms es) -> Structured u -> incl (gens u) (flat_map entry_gens es).
+Proof.
+  intros es u InU Su g G. apply raw_subterms_spec in InU as [e [t [Ie [It S]]]].
+  apply in_flat_map. exists e. split; [exact Ie | eapply entry_subterm_support; eassumption].
+Qed.
+
+Local Fixpoint type_depth (t : ty) : nat :=
+  match t with
+  | TRecord fs => S (fold_right Nat.max 0 (map (fun p => type_depth (snd p)) fs))
+  | TNom _ args => S (fold_right Nat.max 0 (map (fun p => type_depth (snd p)) args))
+  | TUnion ms => S (fold_right Nat.max 0 (map type_depth ms))
+  | _ => 0
+  end.
+
+Lemma fold_max_bounds : forall ns x, In x ns -> x <= fold_right Nat.max 0 ns.
+Proof.
+  induction ns as [|h rest IH]; intros x I; [contradiction |].
+  destruct I as [<-|I]; cbn.
+  - apply Nat.le_max_l.
+  - apply Nat.le_trans with (m := fold_right Nat.max 0 rest); [apply IH; exact I | apply Nat.le_max_r].
+Qed.
+
+Lemma raw_generation_depth : forall s t x, In x (gens t) ->
+  type_depth (app_subst s (TAbs x)) <= type_depth (app_subst s t) /\
+  (Structured t -> type_depth (app_subst s (TAbs x)) < type_depth (app_subst s t)).
+Proof.
+  intros s t. induction t as [m|fs IH| |g|n args IH|ms IH] using PublicFormation.aty_ind;
+    intros x I.
+  - contradiction.
+  - rewrite PublicFormation.gens_record_flat in I. apply in_flat_map in I as [[f t] [InT I]].
+    pose proof (proj1 (IH f t InT x I)) as L.
+    rewrite PublicTypeRead.subst_record. cbn [type_depth]. rewrite map_map. cbn [snd].
+    assert (D : In (type_depth (app_subst s t))
+      (map (fun p : string * ty => type_depth (app_subst s (snd p))) fs)).
+    { apply in_map_iff. exists (f,t). auto. }
+    apply fold_max_bounds in D. split; [|intros _]; lia.
+  - contradiction.
+  - destruct I as [<- | []]. split; [lia | intros H; exfalso; exact (H g eq_refl)].
+  - rewrite PublicFormation.gens_nom_flat in I. apply in_flat_map in I as [[f t] [InT I]].
+    pose proof (proj1 (IH f t InT x I)) as L.
+    rewrite PublicTypeRead.subst_nom. unfold PublicTypeRead.smap. cbn [type_depth]. rewrite map_map. cbn [snd].
+    assert (D : In (type_depth (app_subst s t))
+      (map (fun p : nat * ty => type_depth (app_subst s (snd p))) args)).
+    { apply in_map_iff. exists (f,t). auto. }
+    apply fold_max_bounds in D. split; [|intros _]; lia.
+  - rewrite PublicFormation.gens_union_flat in I. apply in_flat_map in I as [t [InT I]].
+    pose proof (proj1 (IH t InT x I)) as L.
+    rewrite PublicTypeRead.subst_union. cbn [type_depth].
+    assert (D : In (type_depth (app_subst s t)) (map type_depth (map (app_subst s) ms))).
+    { apply in_map. apply in_map. exact InT. }
+    apply fold_max_bounds in D. split; [|intros _]; lia.
+Qed.
+
+Local Definition telescope_symbols (es : list entry) : list tsym :=
+  nodup Nat.eq_dec (flat_map entry_gens es).
+
+Local Definition image (s : subst) (x : tsym) : ty := app_subst s (TAbs x).
+
+Local Definition type_dec (t u : ty) : {t = u} + {t <> u}.
+Proof.
+  destruct (ty_eqb t u) eqn:E.
+  - left. now apply PublicTypeFacts.ty_eqb_spec.
+  - right. intros <-. now rewrite PublicTypeFacts.ty_eqb_refl in E.
+Defined.
+
+Local Definition images (s : subst) (es : list entry) : list ty :=
+  nodup type_dec (map (image s) (telescope_symbols es)).
+
+Local Definition members_of (s : subst) (es : list entry) (q : ty) : list tsym :=
+  filter (fun x => ty_eqb (image s x) q) (telescope_symbols es).
+
+Local Definition shape_of (s : subst) (es : list entry) (q : ty) : option ty :=
+  if structureb q then
+    find (fun u => structureb u && ty_eqb (app_subst s u) q) (raw_subterms es)
+  else None.
+
+Local Definition class_of (s : subst) (es : list entry) (q : ty) : mclass :=
+  MClass (members_of s es q) (shape_of s es q).
+
+Local Definition present (s : subst) (es : list entry) : merge :=
+  map (class_of s es) (images s es).
+
+Lemma class_members : forall s es q x,
+  In x (mc_members (class_of s es q)) <->
+  In x (flat_map entry_gens es) /\ image s x = q.
+Proof.
+  intros. cbn [class_of mc_members]. unfold members_of, telescope_symbols.
+  now rewrite filter_In, nodup_In, PublicTypeFacts.ty_eqb_spec.
+Qed.
+
+Lemma class_shape : forall s es q t,
+  mc_shape (class_of s es q) = Some t ->
+  In t (raw_subterms es) /\ Structured t /\ app_subst s t = q.
+Proof.
+  intros s es q t E. cbn [class_of mc_shape] in E. unfold shape_of in E.
+  destruct (structureb q); [|discriminate].
+  apply find_some in E as [I E]. apply andb_true_iff in E as [S Eq].
+  rewrite structureb_spec in S. rewrite PublicTypeFacts.ty_eqb_spec in Eq. auto.
+Qed.
+
+Lemma class_shape_exists : forall s es q, ReadsShape s es q -> Structured q ->
+  exists t, mc_shape (class_of s es q) = Some t.
+Proof.
+  intros s es q (e & t & u & Ie & It & S & Su & Eq) Sq.
+  cbn [class_of mc_shape]. unfold shape_of. apply structureb_spec in Sq. rewrite Sq.
+  destruct (find (fun v => structureb v && ty_eqb (app_subst s v) q) (raw_subterms es))
+    as [v|] eqn:F; [eauto |].
+  assert (I : In u (raw_subterms es)) by (apply raw_subterms_spec; exists e,t; auto).
+  apply find_none with (x := u) in F; [|exact I].
+  apply structureb_spec in Su. rewrite Su, Eq, PublicTypeFacts.ty_eqb_refl in F. discriminate.
+Qed.
+
+Lemma image_class_present : forall s es x,
+  In x (flat_map entry_gens es) ->
+  In (class_of s es (image s x)) (present s es).
+Proof.
+  intros s es x I. unfold present. apply in_map. unfold images. apply nodup_In, in_map.
+  unfold telescope_symbols. now apply nodup_In.
+Qed.
+
+Lemma present_class_image : forall s es c,
+  In c (present s es) -> exists x, In x (flat_map entry_gens es) /\ c = class_of s es (image s x).
+Proof.
+  intros s es c I. unfold present in I. apply in_map_iff in I as [q [<- I]].
+  unfold images in I. apply nodup_In, in_map_iff in I. destruct I as [x [<- I]].
+  exists x. unfold telescope_symbols in I. apply nodup_In in I. auto.
+Qed.
+
+Lemma nodup_disjoint_append : forall A (xs ys : list A),
+  NoDup xs -> NoDup ys -> (forall x, In x xs -> ~ In x ys) -> NoDup (xs ++ ys).
+Proof.
+  intros A xs ys ND Y. induction ND as [|x xs X ND IH]; cbn; intros D; [exact Y|].
+  constructor.
+  - intro I. apply in_app_or in I as [I|I]; [contradiction |].
+    eapply D; [left; reflexivity | exact I].
+  - apply IH. intros z I. apply D. right. exact I.
+Qed.
+
+Lemma present_disjoint : forall s es, NoDup (flat_map mc_members (present s es)).
+Proof.
+  intros s es. unfold present.
+  assert (N : NoDup (images s es)) by (unfold images; apply NoDup_nodup).
+  induction N as [|q qs New ND IH]; cbn; [constructor |].
+  apply nodup_disjoint_append; [|exact IH |].
+  - unfold class_of, members_of, telescope_symbols. cbn [mc_members].
+    apply NoDup_filter, NoDup_nodup.
+  - intros x I J. apply in_flat_map in J as [c [InC J]].
+    apply in_map_iff in InC as [q' [<- InQ]].
+    apply class_members in I, J. destruct I as [_ L], J as [_ R].
+    apply New. congruence.
+Qed.
+
+Lemma present_solved : forall s es, Solved (present s es).
+Proof.
+  intros s es. split; [apply present_disjoint |].
+  split.
+  - intros c t C Shape. apply present_class_image in C as [z [_ ->]].
+    exact (proj1 (proj2 (@class_shape s es (image s z) t Shape))).
+  - exists (fun x => type_depth (image s x)). split.
+    + intros c x y C X Y. apply present_class_image in C as [z [_ ->]].
+      apply class_members in X, Y. rewrite (proj2 X), (proj2 Y). reflexivity.
+    + intros c t x y C Shape X Y. apply present_class_image in C as [z [_ ->]].
+      apply class_members in X as [_ X]. apply class_shape in Shape as [_ [S E]].
+      rewrite X, <- E. exact (proj2 (@raw_generation_depth s t y Y) S).
+Qed.
+
+Lemma present_shapes_read : forall s es, ShapesRead es (present s es).
+Proof.
+  intros s es c t C Shape. apply present_class_image in C as [z [_ ->]].
+  apply class_shape in Shape. apply raw_subterms_spec. exact (proj1 Shape).
+Qed.
+
+Lemma present_support : forall s es, incl (merge_symbols (present s es)) (flat_map entry_gens es).
+Proof.
+  intros s es x I. unfold merge_symbols in I.
+  apply in_flat_map in I as [c [C I]]. apply present_class_image in C as [z [_ ->]].
+  apply in_app_or in I as [Member|Shape]; [apply class_members in Member; tauto|].
+  destruct (mc_shape (class_of s es (image s z))) as [t|] eqn:Sh; [|contradiction].
+  apply class_shape in Sh as [Raw [S _]]. exact (@raw_subterm_support es t Raw S x Shape).
+Qed.
+
+Lemma present_old_section : forall s es, MostGeneralMerge s es -> SectionOf (present s es) s.
+Proof.
+  intros s es MGM. pose proof MGM as Details.
+  destruct Details as [_ [Idempotent [_ [Support _]]]].
+  split.
+  - assert (Read : forall n x, type_depth (image s x) < n ->
+      MergeEq (present s es) (TAbs x) (image s x)).
+    { induction n as [|n IH]; intros x L; [lia |].
+      destruct (in_dec Nat.eq_dec x (flat_map entry_gens es)) as [X|X].
+      - set (c := class_of s es (image s x)).
+        assert (C : In c (present s es)) by (apply image_class_present; exact X).
+        assert (Member : In x (mc_members c)) by (apply class_members; auto).
+        destruct (mc_shape c) as [t|] eqn:Shape.
+        + eapply METrans; [eapply MEShape; eassumption |].
+          apply class_shape in Shape as [_ [St E]]. rewrite <- E.
+          rewrite <- (PublicTypeRead.app_subst_nil t) at 1. apply MECong.
+          intros y Y. rewrite PublicTypeRead.app_subst_nil.
+          apply IH. pose proof (proj2 (@raw_generation_depth s t y Y) St) as Bound.
+          unfold image in L |- *. rewrite E in Bound. unfold image in Bound. lia.
+        + assert (Abs : exists h, image s x = TAbs h).
+          { destruct (structureb (image s x)) eqn:S.
+            - apply structureb_spec in S.
+              destruct (@class_shape_exists s es (image s x)
+                (@mgm_structured_image_reads_shape s es x (image s x) MGM eq_refl S) S) as [t T].
+              unfold c in Shape. congruence.
+            - destruct (image s x); cbn [structureb] in S; try discriminate; eauto. }
+          destruct Abs as [h E].
+          assert (H : In h (flat_map entry_gens es)).
+          { assert (I : In h (gens (image s x))) by (rewrite E; left; reflexivity).
+            unfold image in I. apply PublicCallRealize.gens_subst in I.
+            destruct I as (y & Y & [[_ ->] | (v & Lookup & InV)]).
+            - destruct Y as [<-|[]]. exact X.
+            - apply PublicOrientation.lookup_subst_pair in Lookup.
+              exact (proj2 (Support y v Lookup) h InV). }
+          assert (Id : image s h = image s x).
+          { unfold image in E |- *. rewrite <- E. apply Idempotent. }
+          rewrite E. eapply MEClass; [exact C | exact Member |].
+          apply class_members. auto.
+      - unfold image. cbn [app_subst].
+        destruct (lookup_subst x s) as [v|] eqn:Lookup; [|apply MERefl].
+        apply PublicOrientation.lookup_subst_pair in Lookup.
+        exfalso. exact (X (proj1 (Support x v Lookup))). }
+    intro x. apply (Read (S (type_depth (image s x)))). lia.
+  - apply PublicMerge.merge_eq_sound. split.
+    + intros c x y C X Y. apply present_class_image in C as [z [_ ->]].
+      apply class_members in X as [_ X], Y as [_ Y].
+      unfold image in X, Y. congruence.
+    + intros c x t C X Sh. apply present_class_image in C as [z [_ ->]].
+      apply class_members in X as [_ X]. apply class_shape in Sh as [_ [_ Sh]].
+      unfold image in X, Sh. congruence.
+Qed.
+
+Lemma old_unifies_section : forall s es M, SectionOf M s -> Unifies s es -> UnifiesMerge M es.
+Proof.
+  intros s es M Section [Collision Equations]. split.
+  - intros e e' k k' E E' K K' Eq.
+    apply (PublicMerge.section_key_eq Section) in Eq.
+    rewrite (@PublicMerge.raw_key_identity e k K), (@PublicMerge.raw_key_identity e' k' K') in Eq.
+    assert (L : entry_key s e = Some (app_subst_item s k))
+      by (rewrite PublicMerge.entry_key_raw, K; reflexivity).
+    assert (R : entry_key s e' = Some (app_subst_item s k))
+      by (rewrite PublicMerge.entry_key_raw, K', Eq; reflexivity).
+    destruct (Collision e e' _ E E' L R) as [Sig Inst]. split.
+    + apply PublicMerge.option_eq_map with (f := sig_subst s);
+        [apply PublicMerge.section_sig_eq; exact Section |].
+      rewrite <- !PublicMerge.entry_sig_raw. exact Sig.
+    + apply PublicMerge.option_eq_map with (f := map (fun q => (fst q, app_subst s (snd q))));
+        [apply PublicMerge.section_inst_eq; exact Section |].
+      rewrite <- !PublicMerge.entry_inst_raw. exact Inst.
+  - intros l r E. apply (PublicMerge.merge_section_kernel Section). now apply Equations.
+Qed.
+
+Theorem mgm_has_merge : forall s es, MostGeneralMerge s es ->
+  exists M, MergeOf es M /\ (forall t u, MergeEq M t u <-> app_subst s t = app_subst s u).
+Proof.
+  intros s es MGM. pose proof (present_old_section MGM) as Section.
+  destruct MGM as [Unifier [_ [Principal _]]].
+  exists (present s es). split; [|apply PublicMerge.merge_section_kernel; exact Section].
+  split; [apply present_solved |]. split; [apply present_shapes_read |].
+  split; [apply present_support |]. split; [eapply old_unifies_section; eassumption |].
+  intros r U t u E. apply (PublicMerge.merge_section_kernel Section) in E.
+  rewrite <- (Principal r U t), <- (Principal r U u). now rewrite E.
+Qed.
+
+Corollary canon_iff_mergeeq : forall C M, SectionOf M (c_sub C) ->
+  forall t u, canon C t = canon C u <-> MergeEq M t u.
+Proof.
+  intros C M Section t u. symmetry. apply PublicMerge.merge_section_kernel. exact Section.
+Qed.
+
+Theorem merge_same_swap : forall es es' M,
+  PublicEquation.SameUpToSwap es es' -> PublicEquation.SameUpToSwap es' es ->
+  MergeOf es M -> MergeOf es' M.
+Proof.
+  intros es es' M Forward Backward [S [Shapes [Support [UnifiesM Principal]]]].
+  split; [exact S |]. split.
+  - intros c t C Sh. destruct (Shapes c t C Sh) as (e & u & E & U & Sub).
+    destruct (Forward e E) as [E' | (a & b & -> & E')].
+    + exists e,u. auto.
+    + exists (NEq b a),u. cbn [entry_types In] in U |- *. tauto.
+  - split; [intros x I; eapply PublicEquation.gens_same_swap; [exact Forward|apply Support; exact I] |].
+    split.
+    + destruct (PublicMerge.solved_has_section S) as [s Section].
+      eapply old_unifies_section; [exact Section |].
+      eapply PublicEquation.unifies_same_swap; [exact Backward |].
+      eapply PublicMerge.section_unifies; eassumption.
+    + intros r U t u E. apply Principal; [|exact E].
+      eapply PublicEquation.unifies_same_swap; eassumption.
 Qed.

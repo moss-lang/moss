@@ -175,6 +175,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMerge.item_eqbM_spec);
   root (@NM.PublicMerge.ilookM_key);
   root (@NM.PublicMergePresent.mgm_structured_image_reads_shape);
+  root (@NM.PublicMergePresent.mgm_has_merge);
+  root (@NM.PublicMergePresent.canon_iff_mergeeq);
+  root (@NM.PublicMergePresent.merge_same_swap);
  root (@NM.AuditExamples.bare_return_requires_unit);
   root (@NM.AuditExamples.one_does_not_insert_a_multiply);
   root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
