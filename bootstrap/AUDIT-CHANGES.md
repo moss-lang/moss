@@ -126,8 +126,9 @@ entry they belong to.
 | 94 | Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6) | layout | none (Audit already rejects; the executable elaborator's gap) |
 | 95 | A linked body may pin a fixed input that G takes (`LinkBody`: protected inputs P(F) ∩ M(F), pins every fixed input the body rebinds; closes N5) | n5 | relaxation toward both implementations (closes #93's fidelity gap) |
 | 96 | A copy reads its source as F does at every application of F (`CopyInterpretation`: H's merges, needs and result compared at the copy site's fixed readings; corrects #32) | copyfix | relaxation toward both implementations |
+| 97 | Recorded, not fixed: needs at a site-made merge are matched by syntax (BFunCopy since #96; `LinkBody` as strict as #32 was) | linkfix | a coherence gap (acceptance depends on a merge's representative) and a fidelity gap; folded into the representative-free refactor |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, and #96 from the copyfix branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -3045,6 +3046,48 @@ executable tests unless noted.
 - **Class.** A relaxation toward both implementations.
 
 ---
+
+### 97. Recorded, not fixed: needs at a site-made merge are matched by syntax (linkfix branch)
+- **The programs.** Four examples, each with a header giving every
+  implementation's verdict:
+
+  | program | oracle | native | Audit | moss-ref |
+  |---|---|---|---|---|
+  | [copy-site-method](examples/copy-site-method.moss) (H's merge of T and U represented by U) | rejects | accepts | accepts | rejects |
+  | [copy-site-method-flip](examples/copy-site-method-flip.moss) (the same, H's entries swapped) | accepts | accepts | accepts | accepts |
+  | [link-site-merge](examples/link-site-merge.moss) (the closure analogue: G merges F's fixed T and U, and its body uses the merge) | rejects | prints 1006 | rejects | rejects |
+  | [copy-unmentioned-apart](examples/copy-unmentioned-apart.moss) (inputs neither fixed nor mentioned, applied apart) | rejects | rejects | rejects | rejects |
+
+- **Coherence (criteria section 2).** #96 asks H's merges to hold only at
+  the copy site, no longer in F's declared context. BFunCopy's needs
+  clause still asks `In (canon_item Cu k) nsu`, so H's need `T.m` reads as
+  `U.m` or `T.m` according to the representative H's merge picks. Audit
+  accepts both orders only because `Elaborates` chooses the world, so some
+  orientation passes; an elaborator that fixes one orientation (Ea, the
+  oracle) accepts one order and rejects the other. Before #96 the
+  clause was orientation-free, as `need_reading_orientation_free_G` is
+  for closures.
+- **Fidelity (criteria section 6).** `LinkBody`'s linked-input clause still
+  compares G's readings with F's in F's declared context, as #32 did for
+  copies, so link-site-merge is rejected although every application reads
+  T and U as the bind site does. Loosening it as #96 did would make the
+  split between linked and captured needs (`BFunClosure`, and `LinkBody`'s
+  3b and provision-agreement clauses) depend on the representative too.
+  That changes behaviour, not only acceptance: a linked need is supplied
+  at each application, a captured one keeps the bind site's value.
+- **No soundness gap.** copy-unmentioned-apart and its closure analogue
+  are rejected everywhere: `copy_subst` reads inputs F's result does not
+  mention as fresh symbols.
+- **The fix, and why it is not made here.** In both rules, match each need
+  to the unique need of F it equals when read at the copy or bind site,
+  and take the matched need, not `canon_item Cu k`. That is copyfix-sized
+  proof work twice (`NeedsAmong`, `CopyInterpretation`'s needs clause,
+  `LinkBody`'s clauses; PublicCopyApply, PublicBodySlice, PublicChainCore,
+  PublicFamilyStep, PublicLinkRun, PublicFamilyLink, PublicChainRealize,
+  PublicFamilyCopy; `PublicSameNeed.link_need_unambiguous` would become
+  false). The representative-free refactor (merges as classes, compared
+  up to the congruence) states exactly this matching, so the fix is
+  folded into it, with these four examples among its acceptance tests.
 
 ## Consolidation (branch ob-consol)
 
