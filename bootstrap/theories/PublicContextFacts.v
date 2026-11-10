@@ -90,6 +90,16 @@ Proof.
   rewrite IH. reflexivity.
 Qed.
 
+Lemma family_application_merge : forall W C u matching th sm Cr ks,
+  A.FamilyApplication W C u matching th sm Cr ks -> A.c_merge Cr = A.c_merge C.
+Proof.
+  intros W C u matching th sm Cr ks
+    (fixed & formal & needs & _ & _ & _ & _ & _ & _ & _ & _ & Result & _).
+  transitivity (A.c_merge (A.family_context C matching)).
+  - eapply provided_result_merge. exact Result.
+  - apply family_context_merge.
+Qed.
+
 Theorem type_binding_preserves_canonical : forall C source meaning,
   canonical_context C -> canonical_context (A.set_ty C source meaning).
 Proof. intros C source meaning Canonical; exact Canonical. Qed.

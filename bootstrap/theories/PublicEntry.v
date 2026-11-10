@@ -132,7 +132,8 @@ Proof.
     destruct (lookup_entry_in _ _ Im) as [pv [L Ipv]]. exists pv. split; [exact L|exact (Entries _ Ipv)]. }
   unfold A.InitialTypes in Types. subst types.
   split; [exact (entry_absorbs _ C ns _ platform Ctx)|].
-  split; [|split; [exact (function_context_canonical W _ C ns Ctx)|exact KM]].
+  split; [|split; [split; [exact (function_context_canonical W _ C ns Ctx) |
+    exact (proj2 (function_context_merge W _ C ns Ctx))] |exact KM]].
   split; [|split; [|split]].
   - intros v t Found. destruct (vals_ilook _ v t KM Found) as [a Il].
     destruct (Find (IVal v) (ProvNs _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il))) as [pv [L En]].

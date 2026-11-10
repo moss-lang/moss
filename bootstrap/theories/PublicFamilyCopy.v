@@ -29,7 +29,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicLinkResults PublicChainCore PublicLinkScope.
 From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig PublicChainRealize.
-From NM Require PublicMergeClass.
+From NM Require PublicMergeClass PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -237,13 +237,13 @@ Hypothesis prims_ground : CRz.CSg.FL.CF.CN.CC.LR.PA.PrimsGroundOk W Prog argv re
 
 Theorem family_copy_realize_ok : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.FamilyCopyRealizeOk W Prog argv read state_ok.
 Proof.
-  intros k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
+  intros k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
     fx0 gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh _ Look _ _ _ _ _ _.
   pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
@@ -252,7 +252,8 @@ Proof.
   set (f := fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))).
   assert (Thf : th = CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.thof f Cu) by exact Th.
   assert (RealF : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok rr Cf d H)
-    by (apply (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|rewrite EprF; exact Ep|exact Real]).
+    by (apply (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|unfold Cf; rewrite (PublicContextFacts.family_context_merge matching C); exact Emg|
+      rewrite EprF; exact Ep|exact Real]).
   assert (IdemF : forall t, A.canon Cf (A.canon Cf t) = A.canon Cf t) by (intros t; rewrite !CanonEq; apply Idem).
   assert (Inp : forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty Cf) = Some here).
   { intros t tt L. apply nlook_in in L. destruct (A.nlook t (A.c_ty Cf)) as [here|] eqn:Lh; [exists here; reflexivity|].

@@ -233,8 +233,8 @@ Lemma copy_step_realizes : forall rr H d (f : nat -> ty) e1 u Cu nsu h Ch nsh,
     Realizes rr Ch (S.callee_env d (thof f Ch) e1') H.
 Proof.
   intros rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl RdT NdT Sub RealU.
-  destruct (S.functx_static W _ _ _ FCh) as [[CanH DomH] [CnH [KMh [NdH [ProvNsH [ShapeH [ScH FixH]]]]]]].
-  destruct (S.functx_static W _ _ _ FCu) as [[CanU DomU] [CnU [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
+  destruct (S.functx_static W _ _ _ FCh) as [[CanH DomH] [[CnH SectionH] [KMh [NdH [ProvNsH [ShapeH [ScH FixH]]]]]]].
+  destruct (S.functx_static W _ _ _ FCu) as [[CanU DomU] [[CnU SectionU] [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
   set (ce := S.callee_env d (thof f Cu) e1) in *.
   pose proof RealU as [AbsU [[ValsU [FnsU [MthsU FunsU]]] _]].
   pose proof (keys_sub _ _ Sub) as SubK.
@@ -262,7 +262,7 @@ Proof.
     rewrite (sm_find_map (A.rkey_of Ch) (fun k => A.rkey_of Cu (A.canon_item Cu k)) nsh k0 Ik).
     - exact L.
     - intros k' Ik' E. exact (rkey_of_injective Ch k' k0 (ShapeH k' Ik') (ShapeH k0 Ik) E). }
-  split; [|split; [split; [|split; [|split]]|split; [exact CnH|exact KMh]]].
+  split; [|split; [split; [|split; [|split]]|exact (conj (conj CnH SectionH) KMh)]].
   - (* H's merges hold: they are F's readings *)
     intros t. unfold A.canon. change (ground ch (app_subst (A.c_sub Ch) t) = ground ch t).
     unfold ground. rewrite <- (app_subst_nil t) at 2. apply subst2_agree. intros x Ix. rewrite app_subst_nil.
@@ -542,7 +542,7 @@ Proof.
     gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh Look _ _ _ _ _ _.
   pose proof AP as (R & Fx & FC & Inp & Th & Fixed & Sat & FreshG & Uniq & Outs & NdO & OutsIff & PR).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
   destruct (Funs u fx Fx) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
   set (sms' := compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) in *.
   set (rms' := compose_positions rms rm) in *.

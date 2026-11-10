@@ -645,7 +645,7 @@ Proof.
     code sms rms gfx Look Nn Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD i r m g0 key Ki Last Mg Ikey Si.
   pose proof FD as (FC0 & NoH & PRf & _ & _ & _ & Abst0 & _).
   pose proof AP as (_ & _ & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem KMc]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [[Idem Section] KMc]]] & Fmd).
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
   { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }

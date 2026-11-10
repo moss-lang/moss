@@ -130,7 +130,7 @@ Proof.
   pose proof FD as (FC0 & NoH & PRf & FB & Binds & MD & Abst & KD).
   pose proof AP as (_ & _ & FC & Inp & Th & _ & Sat & _ & _ & _ & _ & _ & PR).
   destruct (CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem _]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [[Idem _] _]]] & Fmd).
   assert (KeysM : forall key, In key keys -> exists r m a, key = IMth r m a /\ A.kind_sym W m = Some A.DKMeth).
   { intros key0 Ik. destruct (CN.CC.LR.PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [b [_ [op [_ [MP _]]]]].
     destruct MP as (r0 & m0 & a0 & d0 & form & nm & pars & res & body & -> & Dm & Ast & Form).

@@ -1363,7 +1363,7 @@ Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En.
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem KMc]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [[Idem Section] KMc]]] & Fmd).
   pose proof AP as (_ & Fx & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).

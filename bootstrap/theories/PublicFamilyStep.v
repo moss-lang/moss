@@ -295,7 +295,8 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
    application: applying a copy runs its source at the source's interface,
    and applying a platform family installs its primitives. *)
 Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
@@ -317,7 +318,8 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
    (family_copy_apply_of_realize). The former key half was false
    (tests/wasi/family_copy_linked_bracket.moss). *)
 Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
@@ -353,9 +355,9 @@ Qed.
 
 Lemma family_copy_apply_of_realize : FamilyCopyRealizeOk -> FamilyCopyApplyOk.
 Proof.
-  intros Rz k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
+  intros Rz k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
     fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm.
-  destruct (Rz k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
+  destruct (Rz k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
     fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm)
     as [(dr & st' & H' & Ext & St' & Tm & Ta & New & Ap)|Stop]; intros rest; [left|right; exact (Stop rest)].
   exists dr, st', H'. split; [exact Ext|]. split; [exact St'|]. split.
@@ -369,7 +371,8 @@ Proof.
 Qed.
 
 Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
@@ -385,26 +388,27 @@ Hypothesis family_platform_apply : FamilyPlatformApplyOk.
 (* ---- the run --------------------------------------------------------------- *)
 
 Lemma family_run : forall k, Below k -> forall C0 C u matching th sm Cr ks,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C -> A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 Proof.
-  intros k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0.
+  intros k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0.
   pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
   destruct (CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC).
-       exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
+       exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC Fm). }
   2: { destruct CP as (code & -> & PFam & _).
-       exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
+       exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
   destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & [pins [LB PinsOk]] & FCu0 & FCg & FxIn & Caps & CF).
   destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu0) as [<- <-].
@@ -414,7 +418,8 @@ Proof.
   subst th. set (th := map (fun q => (fst q, A.canon Cf (app_subst (A.c_ty Cf) (TAbs (fst q))))) (A.c_ty Cu)) in *.
   (* the state realizes the family context: it differs from C0 only in its table *)
   assert (RealF : Realizes rr Cf d H)
-    by (apply (CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|rewrite EprF; exact Ep|exact Real]).
+    by (apply (CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|unfold Cf; rewrite (PublicContextFacts.family_context_merge matching C); exact Emg|
+      rewrite EprF; exact Ep|exact Real]).
   assert (IdemF : forall t, A.canon Cf (A.canon Cf t) = A.canon Cf t) by (intros t; rewrite !CanonEq; apply Idem).
   assert (Inp : forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty Cf) = Some here).
   { intros t tt L. apply nlook_in in L. destruct (A.nlook t (A.c_ty Cf)) as [here|] eqn:Lh; [exists here; reflexivity|].
@@ -496,14 +501,15 @@ Qed.
 
 (* The family's provisions, with the code's table: realized. *)
 Lemma realizes_family : forall rr C0 C u matching th sm Cr ks d dr H H',
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   Realizes rr C0 d H -> heap_extends H H' -> FamilyResultOk rr Cr ks d dr H' ->
   Realizes rr (CopyA.S.with_ty C0 Cr) (append_environment dr d) H'.
 Proof.
-  intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real Ext [Em [Ea [Dom New]]].
+  intros rr C0 C u matching th sm Cr ks d dr H H' Es Emg Ep FA Real Ext [Em [Ea [Dom New]]].
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
-  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr C0 d H H' Ext Real) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr C0 d H H' Ext Real) as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
   set (d' := append_environment dr d).
   assert (G : forall t, ground d' t = ground d t)
     by (intros t; unfold ground, d'; cbn [type_meanings append_environment]; rewrite Em; reflexivity).
@@ -522,7 +528,10 @@ Proof.
   assert (KMw : PublicCallRealize.KeysMatch (A.c_provisions Cw)).
   { rewrite Epw. intros k p I. apply in_app_or in I as [I|I]; [exact (KMn k p I)|exact (KM k p I)]. }
   split; [intros t; rewrite CanonEq, !G; exact (Abs t)|].
-  split; [|split; [intros t; rewrite !CanonEq; exact (Idem t)|exact KMw]].
+  split; [|apply CopyA.S.static_from_section; [|exact KMw]].
+  2: { eapply PublicContextFacts.section_same_fields; [exact Esw | |exact Section].
+    unfold Cw. change (A.c_merge Cr = A.c_merge C0).
+    rewrite (PublicContextFacts.family_application_merge W _ _ _ _ _ _ _ FA). exact Emg. }
   split; [|split; [|split]].
   - intros v t Found. change (A.nlook v (vals_of (A.c_provisions Cw)) = Some t) in Found.
     rewrite Epw in Found. unfold vals_of in Found. rewrite flat_map_app, (flat_map_methods_nil _ _ news Meth) in Found by reflexivity.
@@ -574,7 +583,7 @@ Lemma keep_family : forall rr C0 C u matching th sm Cr ks d dr H H',
 Proof.
   intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Ext [Em [Ea [Dom New]]] Cx Inc Esx Coh RealX.
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
-  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
   set (d' := append_environment dr d).
   assert (G : forall t, ground d' t = ground d t)
     by (intros t; unfold ground, d'; cbn [type_meanings append_environment]; rewrite Em; reflexivity).
@@ -584,7 +593,7 @@ Proof.
     destruct (Dom K pv L) as [r [m [_ ->]]]. exfalso. exact (Nm r m _ eq_refl). }
   assert (KMn : PublicCallRealize.KeysMatch news).
   { intros k p I. destruct (Meth k p I) as (r & m & g & a & -> & ->). exact Logic.I. }
-  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|split; [exact Idem|exact KM]].
+  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|exact (conj (conj Idem Section) KM)].
   split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [L T]]. exists w.
     rewrite G, LookN; [exact (conj L T)|intros r m th0 E; discriminate].
@@ -638,8 +647,8 @@ Qed.
 
 Theorem family_step_ok : CopyA.S.FamilyStepOk W Prog argv read state_ok.
 Proof.
-  intros k Bel C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Ts F rr j d types H g st Lr Lj Pre0 rest.
-  destruct (family_run k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0 rest)
+  intros k Bel C0 C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin Ts F rr j d types H g st Lr Lj Pre0 rest.
+  destruct (family_run k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0 rest)
     as [[dr [st' [H' [E [St' [Res Run]]]]]]|Stop]; [left|right; exact Stop].
   pose proof Res as [Em [Ea _]].
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [Elo _]]]].
@@ -650,7 +659,7 @@ Proof.
   split; [exact E|]. split; [exact Em'|]. split; [exact Ea'|].
   split; [|split; [exact (keep_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA E Res)|exact Run]].
   apply (pre_same_table rr F C0 (CopyA.S.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
-    eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Real0 E Res)
+    eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Emg Ep FA Real0 E Res)
     |exact E|exact St'| |].
   - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
   - exact (PublicScoping.family_result_cxscoped W F C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc

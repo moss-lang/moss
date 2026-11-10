@@ -12,7 +12,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize.
-From NM Require PublicFormation PublicScoping PublicWorldFormation PublicOrientation.
+From NM Require PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -263,7 +263,12 @@ Definition KeysMatch (C : A.cx) : Prop := PublicCallRealize.KeysMatch (A.c_provi
 
 (* Static facts of a context in force (T29). *)
 Definition StaticOk (C : A.cx) : Prop :=
-  (forall t, A.canon C (A.canon C t) = A.canon C t) /\ KeysMatch C.
+  (PublicContextFacts.canonical_context C /\ PublicContextFacts.CxSection C) /\ KeysMatch C.
+
+Lemma static_from_section : forall C, PublicContextFacts.CxSection C -> KeysMatch C -> StaticOk C.
+Proof.
+  intros C Section Keys. exact (conj (conj (PublicContextFacts.section_canonical C Section) Section) Keys).
+Qed.
 
 Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
   Absorbs C d /\ EnvOk n C d H /\ StaticOk C.
@@ -409,10 +414,11 @@ Proof.
 Qed.
 
 Lemma realizes_same : forall n C C' d H,
-  A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_provisions C' = A.c_provisions C ->
+  A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_merge C' = A.c_merge C ->
+  A.c_provisions C' = A.c_provisions C ->
   Realizes n C d H -> Realizes n C' d H.
 Proof.
-  intros n [ty sub classes provs locs] [ty' sub' classes' provs' locs'] d H; cbn; intros -> -> -> Real; exact Real.
+  intros n [ty sub classes provs locs] [ty' sub' classes' provs' locs'] d H; cbn; intros -> -> -> -> Real; exact Real.
 Qed.
 
 Lemma pre_lower : forall n F C d types H g st, Pre (S n) F C d types H g st -> Pre n F C d types H g st.
@@ -499,7 +505,8 @@ Definition FamilyCoherent (Cx Cr : A.cx) (ks : list item) : Prop :=
    demanded key whose receiver is ok and in the code's scope (proved:
    PublicFamilyStep.family_step_ok). *)
 Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks ot m,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
   PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot -> FamilyTableIn C C0 -> PublicFormation.TysScoped W C ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
@@ -560,7 +567,7 @@ Proof.
   rewrite eval_bind_eq0. destruct k as [|k1]; [cbn; exact Logic.I|].
   pose proof Pre0 as [_ [_ [_ [_ [Real0 Fm0]]]]].
   destruct (Rcv Fm0) as [Ok Sc].
-  destruct (family_step (S k1) Bel C C u matching th sm Cr ks ot m eq_refl eq_refl eq_refl FA Ro Ok Sc (table_in_self F C Fm0) (proj2 (proj2 (proj1 Fm0)))
+  destruct (family_step (S k1) Bel C C u matching th sm Cr ks ot m eq_refl eq_refl eq_refl eq_refl FA Ro Ok Sc (table_in_self F C Fm0) (proj2 (proj2 (proj1 Fm0)))
     F (S (S k1)) k1 d types H g st (le_n _) ltac:(lia) Pre0 []) as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
   - rewrite Run. destruct k1 as [|k2]; [cbn; exact Logic.I|].
     assert (Enil : AR.O.I.eval_bindings (S k2) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
@@ -846,6 +853,10 @@ Proof. induction binds as [|q r IH]; intros C; [reflexivity|cbn; rewrite IH; ref
 
 Lemma add_locals_sub : forall binds C,
   A.c_sub (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) = A.c_sub C.
+Proof. induction binds as [|q r IH]; intros C; [reflexivity|cbn; rewrite IH; reflexivity]. Qed.
+
+Lemma add_locals_merge : forall binds C,
+  A.c_merge (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) = A.c_merge C.
 Proof. induction binds as [|q r IH]; intros C; [reflexivity|cbn; rewrite IH; reflexivity]. Qed.
 
 Lemma record_args : forall F C pa a fs ftys xfs,
@@ -1317,7 +1328,7 @@ Proof.
       + unfold parameter_values, types0. rewrite <- (map_length (ground de)).
         apply params_typed. rewrite Params.
         clear -Args. induction Args; constructor; auto.
-      + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]|].
+      + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_merge|apply add_locals_provisions|exact Real]|].
         destruct (PublicFormation.fn_body_formed W f Cf ns None g0 (map fst ps) merge_formed mentions_typed Ctx Sig
           (PublicFormation.optok_none W)) as [Sg FBf].
         split; [exact FBf|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; apply PublicFormation.optok_none]|].
@@ -1376,7 +1387,7 @@ Proof.
       + unfold parameter_values, types0.
         apply params_typed. unfold all. constructor; [rewrite This; exact Recv|].
         rewrite Params. clear -Args. induction Args; constructor; auto.
-      + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|exact Real]|].
+      + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_merge|apply add_locals_provisions|exact Real]|].
         pose proof (PublicFormation.ctxof_cx_formed W merge_formed mentions_typed att Cf ns Ctx) as Fc.
         assert (Ot : PublicFormation.OptOk W (Some (TNom r args))).
         { apply PublicFormation.optok_some. exact (PublicFormation.attached_this_ok W Cf r args (proj1 Fc) Reqs). }
@@ -1464,7 +1475,8 @@ Qed.
 
 (* What a call reads of the callee's context. *)
 Definition CtxStatic (Cf : A.cx) (ns : list item) : Prop :=
-  TableFormed Cf /\ PublicContextFacts.canonical_context Cf /\ PublicCallRealize.KeysMatch (A.c_provisions Cf) /\
+  TableFormed Cf /\ (PublicContextFacts.canonical_context Cf /\ PublicContextFacts.CxSection Cf) /\
+  PublicCallRealize.KeysMatch (A.c_provisions Cf) /\
   NoDup ns /\ (forall k p, In (k, p) (A.c_provisions Cf) -> In k ns) /\ (forall k, In k ns -> NeedShape k) /\
   (forall k p, In (k, p) (A.c_provisions Cf) ->
      incl (provision_sig_gens p) (map fst (A.c_ty Cf)) /\ incl (key_gens k) (map fst (A.c_ty Cf))) /\
@@ -1474,7 +1486,8 @@ Definition CtxStatic (Cf : A.cx) (ns : list item) : Prop :=
 Lemma ctxof_static : forall f Cf ns, A.CtxOf W f Cf ns -> CtxStatic Cf ns.
 Proof.
   intros f Cf ns Ctx. destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
-  split; [exact (ctx_table_formed W f Cf ns Ctx)|]. split; [exact (PublicContextFacts.function_context_canonical W f Cf ns Ctx)|].
+  split; [exact (ctx_table_formed W f Cf ns Ctx)|]. split; [split; [exact (PublicContextFacts.function_context_canonical W f Cf ns Ctx)|
+    exact (proj2 (PublicContextFacts.function_context_merge W f Cf ns Ctx))] |].
   split; [exact (ctx_keys_match W f Cf ns Ctx)|]. split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
   split; [exact (ctx_provision_scoped W f Cf ns Ctx)|].
   intros u fx I. destruct (ctx_fun_fixed W f Cf ns Ctx u fx I) as [Cov [Sc _]]. split; assumption.
@@ -1483,7 +1496,8 @@ Qed.
 Lemma functx_static : forall u Cf ns, A.FunCtx W u Cf ns -> CtxStatic Cf ns.
 Proof.
   intros u Cf ns FC. destruct (functx_scoped W u Cf ns FC) as [Can [Sc [KM [Nd [ProvNs [Shape Dom]]]]]].
-  split; [split; [exact Can|exact Dom]|]. split; [exact (PublicContextFacts.functor_context_canonical W u Cf ns FC)|].
+  split; [split; [exact Can|exact Dom]|]. split; [split; [exact (PublicContextFacts.functor_context_canonical W u Cf ns FC)|
+    exact (proj2 (PublicContextFacts.functor_context_merge W u Cf ns FC))] |].
   split; [exact KM|]. split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
   split; [intros k p I; destruct (Sc k p I) as [S1 [S2 _]]; split; assumption|].
   intros u' fx I. split.
@@ -1498,8 +1512,8 @@ Lemma static_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
     Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
     Realizes n Cf (callee_env d th dc) H.
 Proof.
-  intros n0 n C d H f Cf ns sm th Le [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] St Sat CT.
-  destruct St as [TfC [CanC [KMf [NdC [ProvC [ShapeC [ScC FixC]]]]]]].
+  intros n0 n C d H f Cf ns sm th Le [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] St Sat CT.
+  destruct St as [TfC [[CanC SectionC] [KMf [NdC [ProvC [ShapeC [ScC FixC]]]]]]].
   destruct Sat as [SmEq [Prov [Coh [Types _]]]].
   pose proof NdC as Nd. pose proof ProvC as ProvNs. pose proof ShapeC as Shape.
   pose proof CT as [Keys [_ _]].
@@ -1537,7 +1551,7 @@ Proof.
     - rewrite <- Abs, Er. symmetry. apply GroundDe. intros x Ix. apply Sc. apply in_or_app. left. exact Ix. }
   split; [exact (call_agree_tf W f Cf C th d TfC CT Abs Idem)|].
   split; [intros t; unfold ground; rewrite Meanings; exact (call_absorbs_tf W f Cf C th d TfC CT Abs t)|].
-  split; [|split; [exact CanC|exact KMf]].
+  split; [|exact (conj (conj CanC SectionC) KMf)].
   split; [|split; [|split]].
   - (* vals *) intros v tf Found.
     destruct (vals_ilook _ v tf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
@@ -1705,7 +1719,7 @@ Proof.
     cbn beta. unfold apply_expression. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
     destruct n1 as [|n2]; [cbn; exact Logic.I|].
     destruct (Wk ot m Iw) as [Ok Sc].
-    destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Ts F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
+    destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin Ts F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
       as [[d' [st' [H' [E [Em [Ea [PreN [Keep Run]]]]]]]]|[res [Run [NN Out]]]].
     + rewrite Run. destruct n2 as [|n3]; [cbn; exact Logic.I|].
       assert (Enil : AR.O.I.eval_bindings (S n3) P d' g st' [] = inl (d', g, st')) by reflexivity. rewrite Enil.
@@ -1806,11 +1820,11 @@ Lemma realizes_set : forall n C d H k0 p0 d',
   NewOk n (set_cx C k0 p0) d' H k0 p0 ->
   Realizes n (set_cx C k0 p0) d' H.
 Proof.
-  intros n C d H k0 p0 d' [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] K0 Meq Other New.
+  intros n C d H k0 p0 d' [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] K0 Meq Other New.
   assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Meq; reflexivity).
   assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
   pose proof (keys_match_set k0 p0 _ KM K0) as KM'.
-  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|split; [exact Idem|exact KM']].
+  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|exact (conj (conj Idem Section) KM')].
   split; [|split; [|split]].
   - intros v t Found. change (A.c_vals (set_cx C k0 p0)) with (vals_of (set_list k0 p0 (A.c_provisions C))) in Found.
     rewrite vals_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
@@ -1991,7 +2005,7 @@ Lemma provider_callable : forall k, Below k -> forall jn, jn <= S k -> forall F 
     CallableOk jn H d (A.sg_params sg) (A.sg_ret sg) (FunctionClosure g (typed_capture d types dc)).
 Proof.
   intros k Bel jn Ljn F C pa sg g types sm d H Prov Real.
-  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
   remember (AEPath pa None) as src eqn:Src. remember (@None ty) as none eqn:NoThis.
   destruct Prov as [F C pa' g sg Cg ns sm th R K Def Ctx Sat CT SigG|F C pa' g sg w n R K Abs' Fn Len Fresh Body].
   - destruct (callee_realizes_le jn jn C d H g Cg ns sm th (le_n jn) Real Ctx Sat CT) as [dc [Sel [Ag RealG]]].
@@ -2149,10 +2163,10 @@ Qed.
 
 (* Realization does not read the type table. *)
 Lemma realizes_ty_free : forall n C C' d H,
-  A.c_sub C' = A.c_sub C -> A.c_provisions C' = A.c_provisions C ->
+  A.c_sub C' = A.c_sub C -> A.c_merge C' = A.c_merge C -> A.c_provisions C' = A.c_provisions C ->
   Realizes n C d H -> Realizes n C' d H.
 Proof.
-  intros n [ty sub classes provs locs] [ty' sub' classes' provs' locs'] d H; cbn; intros -> -> Real; exact Real.
+  intros n [ty sub classes provs locs] [ty' sub' classes' provs' locs'] d H; cbn; intros -> -> -> Real; exact Real.
 Qed.
 
 (* An attached method bound at a key is entered at the key's receiver. *)
@@ -2174,7 +2188,7 @@ Proof.
   set (Cd := fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) in *.
   destruct (set_tys_fields rargs C) as [Es [Ep [El Et]]].
   pose proof Real as [Abs _].
-  pose proof (realizes_ty_free _ C Cd d H Es Ep Real) as RealD.
+  pose proof (realizes_ty_free _ C Cd d H Es (PublicContextFacts.family_context_merge rargs C) Ep Real) as RealD.
   pose proof RealD as [AbsD _].
   destruct (callee_realizes_le jn jn Cd d H att Ca ns sm th (le_n jn) RealD Ctx Sat CT) as [dc [Sel [Ag RealA]]].
   exists dc. split; [exact Sel|].
@@ -2305,6 +2319,15 @@ Proof.
   rewrite E1, E2. split; reflexivity.
 Qed.
 
+Lemma cl_merge : forall C qs B,
+  A.c_merge (fold_left (cl_fold C) qs B) = A.c_merge B.
+Proof.
+  intros C qs. induction qs as [|[n v] rest IH]; intros B; [reflexivity |].
+  cbn [fold_left]. rewrite cl_fold_eq. destruct (A.slook n (A.c_locals C)) as [[t mu]|];
+    [|apply IH].
+  rewrite cl_step_eq, IH. reflexivity.
+Qed.
+
 Lemma cl_other : forall C qs B k, (forall q, In q qs -> k <> IVal (snd q)) ->
   A.ilook k (A.c_provisions (fold_left (cl_fold C) qs B)) = A.ilook k (A.c_provisions B).
 Proof.
@@ -2403,7 +2426,7 @@ Lemma lambda_realizes_le : forall n0 n C qs Cl d1 H dc keys, n <= n0 ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
 Proof.
   intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps Keys Sel KsC.
-  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (K := capture_gens C).
   assert (Meq : type_meanings de = capture_meanings d1 K) by apply typed_capture_meanings.
@@ -2424,7 +2447,8 @@ Proof.
       injection Id as E. exact E. }
     intros k' Ik' E. exact (rkey_of_injective Cl k' k (Shape k' Ik') (Shape k Ik) E). }
   split; [intros t; unfold ground; rewrite Meq, Canon; exact (capture_absorbs C d1 Abs t)|].
-  split; [|split; [intros t; rewrite !Canon; exact (Idem t)|exact KMl]].
+  split; [|apply static_from_section; [|exact KMl]].
+  2: { eapply PublicContextFacts.section_same_fields; [exact Sub | rewrite ClE, cl_merge; reflexivity | exact Section]. }
   split; [|split; [|split]].
   - (* vals *) intros v t Found.
     assert (Ik : In (IVal v) keys) by (apply Keys; cbn; split; [congruence|auto]).
@@ -2739,7 +2763,7 @@ Proof.
         rewrite Forall_forall in NamedC.
         exact (var_of_not_receiver Fl c Frame ltac:(rewrite This; discriminate) (NamedC c Ic) (eq_sym Ec)).
     - split; [exact Lg'|]. split; [exact Sok|]. split.
-      + apply (realizes_same _ Cl); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions|].
+      + apply (realizes_same _ Cl); [apply add_locals_ty|apply add_locals_sub|apply add_locals_merge|apply add_locals_provisions|].
         apply (realizes_extends _ _ _ H); [exact E|]. eapply realizes_lower; [|exact RealCl]. lia.
       + split.
         * unfold Cb. apply (PublicFormation.params_formed W Cl (map fst ps) (A.sg_params sg)); [|exact (proj1 SgOk)].
@@ -2786,8 +2810,8 @@ Qed.
 Lemma realizes_install_val : forall n C d H v pv, Realizes n C d H -> A.ilook (IVal v) (A.c_provisions C) = None ->
   Realizes n C (install_provision (IVal v) pv d) H.
 Proof.
-  intros n C d H v pv [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Out.
-  split; [exact Abs|]. split; [|exact (conj Idem KM)]. split; [|split; [|split]].
+  intros n C d H v pv [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] Out.
+  split; [exact Abs|]. split; [|exact (conj (conj Idem Section) KM)]. split; [|split; [|split]].
   - intros v' t Found. destruct (Vals v' t Found) as [w [Look T]]. exists w. split; [|exact T].
     rewrite install_other; [exact Look|]. intros E. injection E as ->.
     change (A.c_vals C) with (vals_of (A.c_provisions C)) in Found. rewrite (vals_by_ilook _ v KM), Out in Found. discriminate.
@@ -2926,9 +2950,9 @@ Lemma realizes_transfer : forall n C d d' H, Realizes n C d H ->
   (forall k p, In (k, p) (A.c_provisions C) -> lookup_provision (A.rkey_of C k) d' = lookup_provision (A.rkey_of C k) d) ->
   Realizes n C d' H.
 Proof.
-  intros n C d d' H [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] G Same.
+  intros n C d d' H [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] G Same.
   assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
-  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|exact (conj Idem KM)]. split; [|split; [|split]].
+  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|exact (conj (conj Idem Section) KM)]. split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [Look T]]. exists w. rewrite G. split; [|exact T].
     destruct (vals_ilook _ v t KM Found) as [a Il]. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
   - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]]. exists pv. split.
@@ -2948,7 +2972,7 @@ Lemma callee_found : forall n C d H f Cf ns sm th dc,
   select_provisions d sm = Some dc ->
   forall k, In k ns -> lookup_provision (A.rkey_of Cf k) (callee_env d th dc) <> None.
 Proof.
-  intros n C d H f Cf ns sm th dc [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]] Ctx Sat CT Sel k Ik.
+  intros n C d H f Cf ns sm th dc [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] Ctx Sat CT Sel k Ik.
   destruct Sat as [SmEq [Prov _]].
   destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
   change (lookup_provision (A.rkey_of Cf k) (callee_env d th dc)) with (lookup_provision (A.rkey_of Cf k) dc).
@@ -3296,7 +3320,7 @@ Proof.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
   destruct (A.nlook h (A.c_funs C)) as [fxh|] eqn:Lh; [|congruence].
   destruct (Funs h fxh Lh) as [pv [gfh [Look [Okh [Covh Vmh]]]]].
   destruct (closure_shape _ _ _ _ _ Okh) as [c [sms [dc [rms ->]]]]. rewrite Look. left.
@@ -3498,7 +3522,7 @@ Proof.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
-  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
   set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg)) in *.
   change (filter (fun k => negb (existsb (item_eqb (A.canon_item Cu k)) nsu)) nsg) with (captured Cu nsu nsg) in SatC.
   pose proof SatC as SatC'. set (caps := captured Cu nsu nsg) in *.
@@ -3821,8 +3845,8 @@ Proof.
   destruct (link_facts _ _ _ _ LB) as (dg & n0 & ps & a & rspec & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs & gen & Cr & ks & binds0 & FCu' & FCg' & LPeq & LRd & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & FB & _).
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
-  destruct (functx_static _ _ _ FCg) as [[CanG DomG] [CnG [KMg [NdG [ProvNsG [ShapeG [ScG FixG]]]]]]].
-  destruct (functx_static _ _ _ FCu) as [[CanU DomU] [CnU [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
+  destruct (functx_static _ _ _ FCg) as [[CanG DomG] [[CnG SectionG] [KMg [NdG [ProvNsG [ShapeG [ScG FixG]]]]]]].
+  destruct (functx_static _ _ _ FCu) as [[CanU DomU] [[CnU SectionU] [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
   set (ce := callee_env d th d1). set (de := application_environment P d h th (append_environment d2 dc)).
   (* each input's own meaning (B), and the body's environment over it *)
   set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
@@ -3832,7 +3856,7 @@ Proof.
     end).
   set (B := map (fun source => (source, base source)) (map fst (A.c_ty Cg))).
   set (de0 := EnvironmentWithAliases B B (provision_values (append_environment d2 dc))).
-  pose proof RealU as [AbsU [[ValsU [FnsU [MthsU FunsU]]] [IdemU KMU']]].
+  pose proof RealU as [AbsU [[ValsU [FnsU [MthsU FunsU]]] [[IdemU _] KMU']]].
   assert (Code : view_functor P h = A.funbody_of Prog h) by reflexivity.
   destruct (select_provisions_empty _ _ _ Sel) as [Em2 Ea2].
   set (caps := captured Cu nsu nsg) in *. set (lks := linked_needs Cu nsu nsg) in *.
@@ -3993,7 +4017,7 @@ Proof.
       exists pv, gfx'. split; [pose proof (LookC (IFun u') (InCaps _ Ik Ou)) as LC; cbn [A.rkey_of] in LC; rewrite LC; exact Look|]. split; [exact Ok|].
       split; [exact CovG|]. intros x tx I. exact (Vm x tx I).
 }
-  split; [|split; [|split; [exact CnG|exact KMg]]].
+  split; [|split; [|exact (conj (conj CnG SectionG) KMg)]].
   - (* G's merges hold in the body's environment, by its table *)
     intros t. rewrite (GD (A.canon Cg t)), (GD t), (CnG t). reflexivity.
   - apply (envok_transfer rr Cg de0 de H (fun t => A.canon Cg t = t)); [reflexivity| | | | | |exact Env0].
@@ -4395,17 +4419,18 @@ Definition cap_cx (C : A.cx) (qs : list (name * vsym)) : A.cx :=
   fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs C.
 
 (* A narrower context that keeps every provision of C is realized too. *)
-Lemma realizes_narrow : forall n C C2 d H, Realizes n C2 d H -> A.c_sub C2 = A.c_sub C ->
+Lemma realizes_narrow : forall n C C2 d H, Realizes n C2 d H -> A.c_sub C2 = A.c_sub C -> A.c_merge C2 = A.c_merge C ->
   PublicCallRealize.KeysMatch (A.c_provisions C) ->
   (forall k, In k (map fst (A.c_provisions C)) -> A.ilook k (A.c_provisions C2) = A.ilook k (A.c_provisions C)) ->
   Realizes n C d H.
 Proof.
-  intros n C C2 d H [Abs [[Vals [Fns [Mths Funs]]] [Idem KM2]]] Sub KM Same.
+  intros n C C2 d H [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM2]]] Sub Merge KM Same.
   assert (Canon : forall t, A.canon C2 t = A.canon C t) by (intros t; unfold A.canon; rewrite Sub; reflexivity).
   assert (Key : forall k p, A.ilook k (A.c_provisions C) = Some p -> A.ilook k (A.c_provisions C2) = Some p).
   { intros k p L. rewrite Same; [exact L|]. change k with (fst (k, p)). apply in_map. exact (ilook_in _ _ _ L). }
   split; [intros t; rewrite <- Canon; exact (Abs t)|].
-  split; [|split; [intros t; rewrite <- !Canon; exact (Idem t)|exact KM]].
+  split; [|apply static_from_section; [|exact KM]].
+  2: { eapply PublicContextFacts.section_same_fields; [symmetry; exact Sub | symmetry; exact Merge | exact Section]. }
   split; [|split; [|split]].
   - intros v t Found. change (A.c_vals C) with (vals_of (A.c_provisions C)) in Found.
     rewrite (vals_by_ilook _ v KM) in Found.
@@ -4501,6 +4526,13 @@ Proof.
   cbn zeta in *. rewrite E1, E2, E3. repeat split.
 Qed.
 
+Lemma cap_cx_merge : forall C qs, A.c_merge (cap_cx C qs) = A.c_merge C.
+Proof.
+  intros C qs. unfold cap_cx.
+  generalize C at 2 3. induction qs as [|q rest IH]; intros B; [reflexivity |].
+  cbn [fold_left]. rewrite IH. reflexivity.
+Qed.
+
 Lemma cap_cx_other : forall C qs B k, (forall q, In q qs -> k <> IVal (snd q)) ->
   A.ilook k (A.c_provisions (fold_left (fun C' q => set_cx C' (IVal (snd q)) (A.ProvidedVal (capty C (fst q)) [])) qs B)) =
   A.ilook k (A.c_provisions B).
@@ -4591,7 +4623,7 @@ Proof.
     assert (KMc : PublicCallRealize.KeysMatch (A.c_provisions C)).
     { intros k0 p0 I. apply KMm. exact (cap_cx_incl C qs C k0 p0 I (NotCap k0 p0 I)). }
     assert (RealC : Realizes r C d H).
-    { apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub KMc).
+    { apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub (cap_cx_merge C qs) KMc).
       intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
       exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)). }
     assert (Inst : Installed C qs d H).
@@ -4684,7 +4716,7 @@ Proof.
       change (A.c_locals (cap_cx C qs)) with (A.c_locals (fold_left (fun C' q => set_cx C' (IVal (snd q))
         (A.ProvidedVal (capty C (fst q)) [])) qs C)). rewrite Eloc. exact Found. }
     split; [exact L|]. split; [exact St|]. split.
-    + apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub KMc).
+    + apply (realizes_narrow r C (cap_cx C qs) d H RealM Esub (cap_cx_merge C qs) KMc).
       intros k0 Ik. apply in_map_iff in Ik as [[k1 p1] [<- I1]]. cbn [fst].
       exact (cap_cx_other C qs C k1 (NotCap k1 p1 I1)).
     + apply (formed_narrow F (cap_cx C qs) C (eq_sym Ety) (eq_sym Esub) (eq_sym Eloc)); [|exact FmdM].
@@ -4948,7 +4980,7 @@ Proof.
   intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs)
     (BApply u th (map (fun t => (t, gensof t)) outs) sm (map (A.rkey_of C') ks)) j d types H g st).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [Idem KM]]].
+  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
   destruct (Funs u fx Fx) as [pv [gfx [Look [Ok Fm]]]].
   destruct (closure_cases _ _ _ _ _ Ok) as [CL|[CC|CP]].
   2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC).
@@ -5160,7 +5192,7 @@ Proof.
   2: { destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out]. }
   destruct AOut as [H1 [E1 [S1 [L1 T1]]]].
   inversion T1 as [|w0 t0' ws' ts' Tw0 Tws]; subst.
-  pose proof PreD as [_ [_ [_ [_ [RealD _]]]]]. apply (realizes_ty_free _ _ Cd) in RealD; [|reflexivity|reflexivity].
+  pose proof PreD as [_ [_ [_ [_ [RealD _]]]]]. apply (realizes_ty_free _ _ Cd) in RealD; [|reflexivity|reflexivity|reflexivity].
   destruct (callee_realizes j Cd d' H1 att Ca ns sm th (realizes_extends _ _ _ _ _ E1 RealD) Ctx Sat CT)
     as [dc [Sel [Ag RealA]]].
   rewrite Sel, (call_environment_callee d' _ sm dc Sel).
@@ -5316,7 +5348,7 @@ Proof.
         split; [split; [intros v' t1 Found; discriminate|]|].
         { split; [intros f g Found; discriminate|]. split; [intros r m g Found; discriminate|].
           intros u fx Found; discriminate. }
-        split; [intros t1; unfold A.canon; cbn; rewrite !app_subst_nil; reflexivity|intros k0 p0 []].
+        apply static_from_section; [exact PublicMergePresent.empty_merge_section | intros k0 p0 []].
     + (* tag *) subst args. cbn [AR.O.I.eval].
       pose proof (AR.O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits (sex F C y _ v vty Dy d types H lg lst (pre_lower Pre0))) as Out.
       apply (outcome_seq _ F C d types H lg lst pay _ (A.Breaks W (A.fr_mod F) y) _ _ _ Pre0
@@ -5392,7 +5424,7 @@ Proof.
       * split; [exact Frame|]. split; [exact (ctx_locals_push_distinct F binds C d types Frame Ctx NamedB Distinct)|].
         split; [apply Forall2_app; [exact LB|exact L1]|]. split; [exact S1|].
         apply (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k))) in Real. split.
-        -- refine (realizes_same _ C _ _ _ _ _ _ Real); [apply add_locals_ty|apply add_locals_sub|apply add_locals_provisions].
+        -- refine (realizes_same _ C _ _ _ _ _ _ _ Real); [apply add_locals_ty|apply add_locals_sub|apply add_locals_merge|apply add_locals_provisions].
         -- split; [apply (PublicFormation.add_locals_formed W); [exact (proj1 Fmd1)|];
              exact (PublicFormation.patof_ok W _ _ _ _ _ _ _ PO (PublicFormation.canon_ok W C st (proj1 (proj1 Fmd1)) OkSt))|].
            split; [exact (proj1 (proj2 Fmd1))|].
@@ -5472,7 +5504,7 @@ Proof.
       eapply outcome_pop. eapply AR.O.outcome_breaks; [apply block_breaks_cons|].
       apply (sblk F _ rest tl exp xr t made Drest Avoid d _ H1 _ st1).
       split; [exact Frame|]. split; [exact (ctx_locals_push F C d types n t0 mu Frame Ctx Named)|].
-      split; [exact (locals_push W P H1 g1 types _ w _ L1 T1)|]. split; [exact S1|split; [exact (realizes_same _ C _ _ _ eq_refl eq_refl eq_refl (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k)) Abs))|]].
+      split; [exact (locals_push W P H1 g1 types _ w _ L1 T1)|]. split; [exact S1|split; [exact (realizes_same _ C _ _ _ eq_refl eq_refl eq_refl eq_refl (realizes_lower (S k) k C d H1 (le_S _ _ (le_n k)) Abs))|]].
       assert (T0 : PublicFormation.TyOk W t0 /\ PublicFormation.ScopedTy W C t0).
       { destruct declared as [dt|]; cbn in Decl.
         * destruct Decl as [_ E0]. subst t0. destruct ann as [a|]; cbn in Ann; [|discriminate].

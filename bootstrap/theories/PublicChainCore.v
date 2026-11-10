@@ -428,7 +428,7 @@ Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCor
 Proof.
   intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3.
-  pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[Abs [Env [Idem KM]]] [Fc _]]]]]].
+  pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[Abs [Env [[Idem Section] KM]]] [Fc _]]]]]].
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
