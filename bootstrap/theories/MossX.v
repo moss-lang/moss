@@ -58,7 +58,7 @@ Local Open Scope nat_scope.
 (* [M4_runtime] moved to ExecutionModel.v *)
 
 (* The machine: a linear memory of 64 KiB pages, each a persistent array of
-   bytes, and the output written so far (most recent byte first). *)
+   its bytes packed four to an element (get_byte), and the output written so far (most recent byte first). *)
 (* The GC heap's objects.  A GC array is its elements as a trie over its
    indices (HTrie.v) with a default for the indices never set: no primitive
    array, so the heap's laws hold without the kernel's array axioms
@@ -336,13 +336,22 @@ Definition max_pages : int := 65536.
 Definition in_bounds (st : mstate) (a n : int) : bool :=
   (a + n <=? (ms_pages st) * page_bytes)%uint63.
 
+(* A page holds its 65536 bytes four to an element, little-endian: byte
+   a is bits 8*(a mod 4) to 8*(a mod 4)+7 of element (a mod 65536)/4.  An
+   element is an int63 that only ever holds 32 bits, so a page is 16384
+   machine words rather than 65536, a quarter of the memory. *)
 Definition get_byte (st : mstate) (a : int) : int :=
-  PArray.get (PArray.get (ms_mem st) (a >> 16)) (a land 65535).
+  let w := PArray.get (PArray.get (ms_mem st) (a >> 16)) ((a land 65535) >> 2) in
+  (w >> ((a land 3) << 3)) land 255.
 
 Definition set_byte (st : mstate) (a b : int) : mstate :=
   let p := a >> 16 in
   let pg := PArray.get (ms_mem st) p in
-  MS (PArray.set (ms_mem st) p (PArray.set pg (a land 65535) (b land 255)))
+  let i := (a land 65535) >> 2 in
+  let sh := (a land 3) << 3 in
+  let w := PArray.get pg i in
+  let w' := (w land (4294967295 lxor (255 << sh))) lor ((b land 255) << sh) in
+  MS (PArray.set (ms_mem st) p (PArray.set pg i w'))
      (ms_pages st) (ms_out st) (ms_err st) (ms_heap st) (ms_hnext st) (ms_fds st) (ms_nextfd st).
 
 (* little-endian, n bytes, no bounds check *)
@@ -379,7 +388,7 @@ Fixpoint int_loop {A : Type} (fuel : nat) (i n : int) (f : int -> A -> option A)
       else Some acc
   end.
 
-Definition fresh_page (_ : unit) : array int := PArray.make page_bytes 0.
+Definition fresh_page (_ : unit) : array int := PArray.make 16384 0.
 
 Definition mem_grow (st : mstate) (delta : int) : int * mstate :=
   let old := ms_pages st in
