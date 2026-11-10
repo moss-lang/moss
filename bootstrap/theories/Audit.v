@@ -2988,10 +2988,106 @@ Definition merge_symbols (M : merge) : list tsym :=
   flat_map (fun c => mc_members c ++
     match mc_shape c with Some t => gens t | None => [] end) M.
 
+(* Expand the structured classes simultaneously. Along any dependency
+   path, a solved merge visits each class at most once. *)
+Fixpoint shape_table (M : merge) (fuel : nat) : subst :=
+  match fuel with
+  | 0 => []
+  | S n =>
+      let rest := shape_table M n in
+      flat_map (fun c => match mc_shape c with
+        | Some t => map (fun x => (x, app_subst rest t)) (mc_members c)
+        | None => []
+        end) M
+  end.
+
+Definition expand (M : merge) (t : ty) : ty :=
+  app_subst (shape_table M (length M)) t.
+
+Definition same_classb (M : merge) (x y : tsym) : bool :=
+  Nat.eqb x y ||
+  existsb (fun c => existsb (Nat.eqb x) (mc_members c) &&
+                     existsb (Nat.eqb y) (mc_members c)) M.
+
+Fixpoint ty_eqb_with (eq_abs : tsym -> tsym -> bool) (a b : ty) {struct a} : bool :=
+  match a, b with
+  | TMachine a, TMachine b => Nat.eqb a b
+  | TRecord fs, TRecord gs =>
+      (fix go (fs gs : list (string * ty)) :=
+        match fs, gs with
+        | [], [] => true
+        | (f,t)::fs, (g,u)::gs => String.eqb f g && ty_eqb_with eq_abs t u && go fs gs
+        | _, _ => false end) fs gs
+  | TUnit, TUnit => true
+  | TAbs t1, TAbs t2 => eq_abs t1 t2
+  | TNom n1 th1, TNom n2 th2 =>
+      Nat.eqb n1 n2 &&
+      ((fix go (l1 l2 : list (tsym * ty)) : bool :=
+          match l1, l2 with
+          | [], [] => true
+          | p1 :: r1, p2 :: r2 =>
+              Nat.eqb (fst p1) (fst p2) && ty_eqb_with eq_abs (snd p1) (snd p2) && go r1 r2
+          | _, _ => false
+          end) th1 th2)
+  | TUnion m1, TUnion m2 =>
+      (fix go (l1 l2 : list ty) : bool :=
+         match l1, l2 with
+         | [], [] => true
+         | t1 :: r1, t2 :: r2 => ty_eqb_with eq_abs t1 t2 && go r1 r2
+         | _, _ => false
+         end) m1 m2
+  | _, _ => false
+  end.
+
+Definition merge_eqb (M : merge) (t u : ty) : bool :=
+  ty_eqb_with (same_classb M) (expand M t) (expand M u).
+
+(* Keep the outer constructor and its labels, with children erased. *)
+Definition type_outer (t : ty) : ty :=
+  match t with
+  | TMachine m => TMachine m
+  | TRecord fs => TRecord (map (fun p => (fst p, TUnit)) fs)
+  | TUnit => TUnit
+  | TAbs _ => TAbs 0
+  | TNom n args => TNom n (map (fun p => (fst p, TUnit)) args)
+  | TUnion ms => TUnion (map (fun _ => TUnit) ms)
+  end.
+
+Definition type_children (t : ty) : list ty :=
+  match t with
+  | TRecord fs => map snd fs
+  | TNom _ args => map snd args
+  | TUnion ms => ms
+  | _ => []
+  end.
+
 Definition KeyEq (M : merge) (k k' : item) : Prop :=
   match k, k' with
   | IMth t m _, IMth u n _ => m = n /\ MergeEq M t u
   | _, _ => provision_id k = provision_id k'
+  end.
+
+Definition item_eqbM (M : merge) (k k' : item) : bool :=
+  match k, k' with
+  | IMth t m _, IMth u n _ => Nat.eqb m n && merge_eqb M t u
+  | _, _ => item_eqb (provision_id k) (provision_id k')
+  end.
+
+(* Return the stored key along with its provision. *)
+Fixpoint ilookM {A : Type} (M : merge) (k : item)
+    (l : list (item * A)) : option (item * A) :=
+  match l with
+  | [] => None
+  | (k', a) :: rest => if item_eqbM M k k' then Some (k', a) else ilookM M k rest
+  end.
+
+Fixpoint mlookM {A : Type} (M : merge) (r : ty) (m : msym)
+    (l : list ((ty * msym) * A)) : option ((ty * msym) * A) :=
+  match l with
+  | [] => None
+  | ((r', m'), a) :: rest =>
+      if Nat.eqb m m' && merge_eqb M r r' then Some ((r', m'), a)
+      else mlookM M r m rest
   end.
 
 Definition SigEq (M : merge) (g g' : fsig) : Prop :=
@@ -3031,6 +3127,12 @@ Definition provides (C : cx) (i : item) : Prop :=
   | IMth r m _ => mlook r m (c_mths C) <> None
   | IFun u => nlook u (c_funs C) <> None
   | ITy t => nlook t (c_ty C) <> None
+  end.
+
+Definition providesM (M : merge) (C : cx) (i : item) : Prop :=
+  match i with
+  | IMth r m _ => mlookM M r m (c_mths C) <> None
+  | _ => provides C i
   end.
 
 Definition provision_inst (p : provision) : inst :=

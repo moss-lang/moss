@@ -165,6 +165,15 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMerge.merge_section_kernel);
   root (@NM.PublicMerge.merge_semantic_reading_with_section);
   root (@NM.PublicMerge.section_is_most_general);
+  root (@NM.PublicMerge.expand_mergeeq);
+  root (@NM.PublicMerge.solved_has_section);
+  root (@NM.PublicMerge.merge_semantic_reading);
+  root (@NM.PublicMerge.merge_presentation_independent);
+  root (@NM.PublicMerge.merge_eqb_spec);
+  root (@NM.PublicMerge.expand_outer);
+  root (@NM.PublicMerge.expand_children);
+  root (@NM.PublicMerge.item_eqbM_spec);
+  root (@NM.PublicMerge.ilookM_key);
  root (@NM.AuditExamples.bare_return_requires_unit);
   root (@NM.AuditExamples.one_does_not_insert_a_multiply);
   root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
