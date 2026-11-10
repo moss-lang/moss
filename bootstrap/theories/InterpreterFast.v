@@ -1,25 +1,25 @@
 (* ------------------------------------------------------------------------ *)
-(* AuditFast.v: AuditLazy's interpreter with trie-keyed provisions.         *)
+(* InterpreterFast.v: InterpreterLazy's interpreter with trie-keyed provisions.         *)
 (*                                                                           *)
-(* AuditLazy (like Audit's reference interpreter) keeps an environment's    *)
+(* InterpreterLazy (like Audit's reference interpreter) keeps an environment's    *)
 (* provisions as an association list, searched with item_eqb from the      *)
 (* front. Here the same interpreter, clause for clause, keeps them in a     *)
 (* store of tries keyed by the item's symbol, one per item kind; a method   *)
 (* item's trie holds, per method symbol, a short bucket of (receiver, θ)    *)
-(* entries searched from the front. Type meanings are AuditLazy's,          *)
+(* entries searched from the front. Type meanings are InterpreterLazy's,          *)
 (* unchanged.                                                                *)
 (*                                                                           *)
 (* A store is related to a list when every lookup agrees (ERel, with the    *)
 (* provisions related in turn). Proved, for every primitive implementation *)
 (* and every fuel:                                                          *)
 (*  - feval_agrees: on related environments, `feval` returns exactly what  *)
-(*    AuditLazy's `leval` returns (bindings and applications: related      *)
+(*    InterpreterLazy's `leval` returns (bindings and applications: related      *)
 (*    environments, equal locals and states);                               *)
 (*  - frun_main_agrees: `frun_main` on `fast_env d0` is `run_main` on d0.   *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith String.
-From NM Require Import Audit NatTrie AuditLazy.
+From NM Require Import Audit NatTrie InterpreterLazy.
 Import Audit.Semantics ListNotations.
 
 Local Open Scope nat_scope.
@@ -235,7 +235,7 @@ Qed.
 Lemma fget_empty : forall i, fget i fempty_store = None.
 Proof. intros []; reflexivity. Qed.
 
-(* ===================== Relation to AuditLazy's environments ============== *)
+(* ===================== Relation to InterpreterLazy's environments ============== *)
 
 Inductive orel {A B} (R : A -> B -> Prop) : option A -> option B -> Prop :=
 | ORNone : orel R None None
@@ -294,8 +294,8 @@ Proof. apply parameter_values_from_spec. Qed.
 
 (* ===================== Environment operations ============================ *)
 
-(* The type meanings of a fast environment, as an AuditLazy environment
-   without provisions: AuditLazy's type operations read only meanings. *)
+(* The type meanings of a fast environment, as an InterpreterLazy environment
+   without provisions: InterpreterLazy's type operations read only meanings. *)
 Definition lshadow (d : fenv) : lenv := LEnv (fmeanings d) (faliases d) [].
 
 Definition flookup_provision (i : item) (d : fenv) := fget i (fstore_of d).

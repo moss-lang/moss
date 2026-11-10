@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* AuditLazy.v: Audit's reference interpreter with deferred type           *)
+(* InterpreterLazy.v: Audit's reference interpreter with deferred type           *)
 (* substitution.                                                            *)
 (*                                                                           *)
 (* Audit.Semantics.Interpreter grounds every type an activation receives    *)

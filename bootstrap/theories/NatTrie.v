@@ -1,8 +1,8 @@
 (* ------------------------------------------------------------------------ *)
 (* NatTrie.v — binary tries keyed by nat, with their get/set laws.          *)
 (*                                                                           *)
-(* The tables of the proved passes on Audit programs (AuditPrune.v's read  *)
-(* sets, AuditCapTrim.v's).  run/Extract.v realizes the key                *)
+(* The tables of the proved passes on Audit programs (ProgramPrune.v's read  *)
+(* sets, ProgramCapTrim.v's).  run/Extract.v realizes the key                *)
 (* steps `tleft` and `tdown` on OCaml ints.                                 *)
 (* ------------------------------------------------------------------------ *)
 

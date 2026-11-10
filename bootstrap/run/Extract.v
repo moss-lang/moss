@@ -1,19 +1,19 @@
 (* Extraction for the reference implementation's executable (run/dune,
    README.md): the Rocq front end (Parse.load, and Parse.parse_moss with
    the AST dump for --dump), the elaborator (EaMain.elaborate), the proved
-   passes on Audit programs (AuditFastPath.fastpath, AuditPrune.prune,
-   AuditCapTrim.captrim) and Audit.v's reference interpreter
+   passes on Audit programs (ProgramFastPath.fastpath, ProgramPrune.prune,
+   ProgramCapTrim.captrim) and Audit.v's reference interpreter
    (Audit.Semantics.Interpreter, with program_of), run through
-   AuditClo.CloInterpreter (the same interpreter with deferred type
-   substitution, AuditLazy, trie-keyed provisions, AuditFast, and compiled
-   to closures, AuditClo; proved equal to it: AuditClo.crun_main_reference),
+   InterpreterCompiled.CloInterpreter (the same interpreter with deferred type
+   substitution, InterpreterLazy, trie-keyed provisions, InterpreterFast, and compiled
+   to closures, InterpreterCompiled; proved equal to it: InterpreterCompiled.crun_main_reference),
    plus the primitives the
    driver runs it with (MossX.run_prim, MossX.init_state).
    assumptions/Certificate.v audits these roots. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require EaMain AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
+From NM Require EaMain ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -46,17 +46,17 @@ Extract Inlined Constant NMap.is_even_nat => "(fun k -> k land 1 = 0)".
 Extract Inlined Constant Nat.div2 => "(fun k -> k asr 1)".
 Extract Inlined Constant tleft => "(fun k -> k = 0 || k land 1 = 1)".
 Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
-Extraction Inline AuditClo.scalar_nil AuditClo.scalar_cons AuditClo.push_arg.
+Extraction Inline InterpreterCompiled.scalar_nil InterpreterCompiled.scalar_cons InterpreterCompiled.push_arg.
 Extraction Blacklist String List Char Bool.
 Separate Extraction init_state run_prim
   parse_moss Dump.dump_file print_sx Parse.load
   EaMain.elaborate
-  AuditFastPath.fastpath AuditPrune.prune AuditCapTrim.captrim
+  ProgramFastPath.fastpath ProgramPrune.prune ProgramCapTrim.captrim
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program
-  AuditLazy.LazyInterpreter AuditLazy.lift_env
-  AuditFast.FastInterpreter AuditFast.fast_env AuditClo.CloInterpreter.
-(* AuditClo again, alone, with the extraction's term optimizations off
-   (flag 0): this rewrites the AuditClo.ml written above, and must follow
+  InterpreterLazy.LazyInterpreter InterpreterLazy.lift_env
+  InterpreterFast.FastInterpreter InterpreterFast.fast_env InterpreterCompiled.CloInterpreter.
+(* InterpreterCompiled again, alone, with the extraction's term optimizations off
+   (flag 0): this rewrites the InterpreterCompiled.ml written above, and must follow
    Separate Extraction. The closure compiler's speed depends on where its
    closures are built, and the optimizations may move them: inline
    `let c1 := cc e1 in fun m d g st => ..` (the child's code would then be
@@ -64,4 +64,4 @@ Separate Extraction init_state run_prim
    the expression (a function matching on it at every call). Unchanged in
    meaning: the same terms, extracted literally. *)
 Set Extraction Flag 0.
-Extraction Library AuditClo.
+Extraction Library InterpreterCompiled.

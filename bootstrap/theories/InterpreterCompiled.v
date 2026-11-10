@@ -1,7 +1,7 @@
 (* ------------------------------------------------------------------------ *)
-(* AuditClo.v: AuditFast's interpreter, compiled to closures.              *)
+(* InterpreterCompiled.v: InterpreterFast's interpreter, compiled to closures.              *)
 (*                                                                           *)
-(* AuditFast.feval dispatches on the expression at every step. Here each   *)
+(* InterpreterFast.feval dispatches on the expression at every step. Here each   *)
 (* expression is compiled once, before the run, into an OCaml closure      *)
 (* (`code`) that runs it: the children's code is built first and captured, *)
 (* so the dispatch happens at compile time. A fn body's code is found      *)
@@ -11,9 +11,9 @@
 (*                                                                           *)
 (* Proved, for every primitive implementation, every fuel and environment: *)
 (*  - cc_agrees: under tbl_ok, the code of e returns exactly what           *)
-(*    AuditFast.feval returns on e (likewise lists, bindings, applications);*)
-(*  - crun_main_agrees: crun_main is AuditFast.frun_main, so (by            *)
-(*    AuditFast.frun_main_agrees) Interpreter.run_main.                     *)
+(*    InterpreterFast.feval returns on e (likewise lists, bindings, applications);*)
+(*  - crun_main_agrees: crun_main is InterpreterFast.frun_main, so (by            *)
+(*    InterpreterFast.frun_main_agrees) Interpreter.run_main.                     *)
 (*                                                                           *)
 (* run/Extract.v extracts this file with the extraction's term             *)
 (* optimizations off, which keeps each child's code built once, where it   *)
@@ -21,9 +21,9 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith String Lia.
-From NM Require Import Audit NatTrie AuditLazy AuditFast.
+From NM Require Import Audit NatTrie InterpreterLazy InterpreterFast.
 Import Audit.Semantics ListNotations.
-From NM Require AuditPrune.
+From NM Require ProgramPrune.
 
 Local Open Scope nat_scope.
 
@@ -895,7 +895,7 @@ Qed.
 Lemma lk_eqb_true : forall i j, lk_eqb i j = true <-> i = j.
 Proof.
   intros [i|] [j|]; cbn [lk_eqb]; try (split; congruence).
-  rewrite fast_item_eqb_spec, AuditPrune.item_eqb_true. split; congruence.
+  rewrite fast_item_eqb_spec, ProgramPrune.item_eqb_true. split; congruence.
 Qed.
 
 Lemma gather_slots : forall keys d slots, gather d keys = Some slots ->

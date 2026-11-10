@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* AuditCapTrim.v — trimming the type captures of fn and method closures,  *)
+(* ProgramCapTrim.v — trimming the type captures of fn and method closures,  *)
 (* for Audit's programs.                                                    *)
 (*                                                                           *)
 (* Audit's elaboration gives every lambda, method provider and closure a    *)
@@ -40,7 +40,7 @@
 
 From Stdlib Require Import List Bool Arith Lia.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
-From NM Require NatTrie AuditPrune.
+From NM Require NatTrie ProgramPrune.
 Import Audit.Semantics ListNotations.
 
 Set Implicit Arguments.
@@ -642,7 +642,7 @@ End Agree.
 
 Module Sim (Prims : PRIMITIVES) (I : INTERP Prims).
 Import Prims I.
-Module PS := AuditPrune.Sim Prims I.
+Module PS := ProgramPrune.Sim Prims I.
 
 Ltac andb_split :=
   repeat match goal with H : (_ && _) = true |- _ => apply andb_true_iff in H as [? ?] end.
@@ -1153,7 +1153,7 @@ Proof. intros p argv rd P' P. unfold P', P, captrim. destruct (compute_T 64 p (i
 Module TrimRuns (Host : HOST) (M : PUBLIC Host).
 Module PS := Sim M.ReferenceHost M.Reference.
 
-(* As AuditPrune.PruneRuns.code_blind: the interface's primitives do not
+(* As ProgramPrune.PruneRuns.code_blind: the interface's primitives do not
    read the program view's code. *)
 Definition code_blind (interface : M.interface) : Prop :=
   forall P P', view_bool P' = view_bool P -> view_true P' = view_true P ->

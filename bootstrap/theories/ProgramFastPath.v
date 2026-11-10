@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* AuditFastPath.v — applying a platform family keeping only the members    *)
+(* ProgramFastPath.v — applying a platform family keeping only the members    *)
 (* used, for Audit's programs (FastPath.v's pass, ported from XIR).          *)
 (*                                                                           *)
 (* `bind F;` (BApply F θ [] [] rs) runs F's whole body and installs every   *)
@@ -36,21 +36,21 @@
 (*   the original run is eventually Stuck, or eventually equal to it.      *)
 (* FastRuns.runs_fast: for a program that never runs to Wrong (what        *)
 (* public_safety gives), Runs of the transformed program iff Runs of the   *)
-(* original, for code-blind interfaces (as AuditPrune.PruneRuns).          *)
+(* original, for code-blind interfaces (as ProgramPrune.PruneRuns).          *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
-From NM Require AuditPrune.
+From NM Require ProgramPrune.
 From Stdlib Require PrimInt63.
 Import Audit.Semantics ListNotations.
 
 Set Implicit Arguments.
 Local Open Scope nat_scope.
 
-Notation item_eqb_true := AuditPrune.item_eqb_true.
-Notation lookup_entry_app := AuditPrune.lookup_entry_app.
-Notation lookup_entry_filter := AuditPrune.lookup_entry_filter.
+Notation item_eqb_true := ProgramPrune.item_eqb_true.
+Notation lookup_entry_app := ProgramPrune.lookup_entry_app.
+Notation lookup_entry_filter := ProgramPrune.lookup_entry_filter.
 
 (* ===================== 1. What an expression looks up ==================== *)
 
@@ -112,7 +112,7 @@ Proof.
   cbn [smap_source] in Hs. unfold sm_ok in Hok. cbn [forallb] in Hok.
   apply andb_true_iff in Hok as [Hp Hrest].
   destruct (item_eqb s r) eqn:E.
-  - injection Hs as <-. apply AuditPrune.item_eqb_true in E. subst r.
+  - injection Hs as <-. apply ProgramPrune.item_eqb_true in E. subst r.
     apply Bool.eqb_prop in Hp. cbn in Hp. symmetry. exact Hp.
   - exact (IH s x Hrest Hs).
 Qed.
@@ -480,7 +480,7 @@ Lemma result_env_rel : forall S outputs d3 d3' Dr dr dr', agree S d3 d3' -> lrel
   oprel lrel (result_environment outputs d3 Dr dr) (result_environment outputs d3' Dr dr').
 Proof.
   intros S outputs d3 d3' Dr dr dr' Hd Hr. unfold result_environment.
-  rewrite (AuditPrune.read_result_types_eq _ _ (ag_tm Hd) (ag_ta Hd)).
+  rewrite (ProgramPrune.read_result_types_eq _ _ (ag_tm Hd) (ag_ta Hd)).
   destruct (read_result_types d3' Dr outputs) as [[w a]|]; simpl; auto.
   constructor; auto. exact (lrel_pv Hr).
 Qed.
@@ -688,7 +688,7 @@ End Body.
 Module Sim (Prims : PRIMITIVES) (I : INTERP Prims).
 Import Prims I.
 Local Unset Implicit Arguments.
-Module PS := AuditPrune.Sim Prims I.
+Module PS := ProgramPrune.Sim Prims I.
 
 Definition oof (r : evaluation) : Prop := evaluation_signal r = OutOfFuel.
 Definition stuck (r : evaluation) : Prop := exists c, evaluation_signal r = Stuck c.
@@ -1980,7 +1980,7 @@ End Sim.
 
 Module FastRuns (Host : HOST) (M : PUBLIC Host).
 Module FS := Sim M.ReferenceHost M.Reference.
-Module PR := AuditPrune.PruneRuns Host M.
+Module PR := ProgramPrune.PruneRuns Host M.
 Local Unset Implicit Arguments.
 
 Lemma observe_none : forall r, FS.oof r -> M.observe r = None.

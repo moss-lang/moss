@@ -8,9 +8,9 @@ the test suite holds the compiler to it. It runs one pipeline:
    bundles the program and its imports. The driver only reads files.
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
    `Audit.Semantics.program` from the bundle, or rejects it.
-3. **Passes**: `AuditFastPath.fastpath`, `AuditPrune.prune` and
-   `AuditCapTrim.captrim`, in that order. Each is proved to keep `Runs`
-   (`theories/AuditFastPath.v`, `AuditPrune.v`, `AuditCapTrim.v`).
+3. **Passes**: `ProgramFastPath.fastpath`, `ProgramPrune.prune` and
+   `ProgramCapTrim.captrim`, in that order. Each is proved to keep `Runs`
+   (`theories/ProgramFastPath.v`, `ProgramPrune.v`, `ProgramCapTrim.v`).
 4. **Interpreter**: `Audit.Semantics.Interpreter.run_main`, the reference
    interpreter of Audit.v's run-time semantics. Its primitives are
    `MossX.run_prim`.

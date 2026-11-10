@@ -7,8 +7,8 @@
    PROGRAM.moss is read, lexed, parsed and bundled by the Rocq front end
    (Parse.load; this driver only reads files) and elaborated by the
    executable elaborator (EaMain.elaborate) into an Audit.Semantics
-   program.  That program is given the proved passes (AuditFastPath.fastpath,
-   AuditPrune.prune, AuditCapTrim.captrim, each proved to keep Runs) and run
+   program.  That program is given the proved passes (ProgramFastPath.fastpath,
+   ProgramPrune.prune, ProgramCapTrim.captrim, each proved to keep Runs) and run
    by Audit.v's reference interpreter (Audit.Semantics.Interpreter.run_main),
    its primitives MossX.run_prim (prims.ml).  The prelude is P (`--prelude ""`
    for none), else $MOSS_LIB/prelude.moss, else lib/prelude.moss, from the
@@ -30,7 +30,7 @@
    proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of fuel; 2
    a usage error. *)
 module A = Audit.Semantics
-module C = AuditClo.CloInterpreter(Prims.P)
+module C = InterpreterCompiled.CloInterpreter(Prims.P)
 module I = C.I
 
 let read_file f = try Some (In_channel.with_open_bin f In_channel.input_all) with Sys_error _ -> None
@@ -108,9 +108,9 @@ let output l =
   Buffer.contents b
 
 let passes = [
-  ("fastpath", AuditFastPath.fastpath);
-  ("prune", AuditPrune.prune);
-  ("captrim", AuditCapTrim.captrim);
+  ("fastpath", ProgramFastPath.fastpath);
+  ("prune", ProgramPrune.prune);
+  ("captrim", ProgramCapTrim.captrim);
 ]
 
 let trap_name = function
@@ -177,7 +177,7 @@ let () =
   let view = { (A.program_of p argv read) with
                A.view_function = T.find_opt fns; A.view_functor = T.find_opt funs } in
   let t2 = now () in
-  (* AuditClo.crun_main_reference: under tbl_ok, the compiled run on the
+  (* InterpreterCompiled.crun_main_reference: under tbl_ok, the compiled run on the
      converted environment returns exactly what Interpreter.run_main
      returns. The arrays are trusted driver code, as the Hashtbls realizing
      the view are: tbl and ftbl hold the code of the view's bodies (the
@@ -191,7 +191,7 @@ let () =
   List.iter (fun (f, e) -> a.(f) <- Some (C.cc view tbl ftbl e)) (List.rev p.A.program_functions);
   List.iter (fun (u, code) -> b.(u) <- Some (C.ccbs view tbl ftbl code.A.fc_bindings)) (List.rev p.A.program_functors);
   let r = C.crun_main view tbl max_int p.A.program_main
-    (AuditFast.fast_env (AuditLazy.lift_env p.A.program_environment)) (MossX.init_state (Uint63.of_int !pages)) in
+    (InterpreterFast.fast_env (InterpreterLazy.lift_env p.A.program_environment)) (MossX.init_state (Uint63.of_int !pages)) in
   let st = r.I.evaluation_state in
   print_string (output st.MossX.ms_out); flush stdout;
   prerr_string (output st.MossX.ms_err);

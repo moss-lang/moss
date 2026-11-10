@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* AuditPrune.v — read-set pruning of satisfaction maps, for Audit's        *)
+(* ProgramPrune.v — read-set pruning of satisfaction maps, for Audit's        *)
 (* programs (Prune.v's pass, ported from ExecutionModel's XIR).              *)
 (*                                                                           *)
 (* The elaborator passes each callee its whole context: a call's            *)
