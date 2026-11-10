@@ -46,7 +46,7 @@ Extract Inlined Constant NMap.is_even_nat => "(fun k -> k land 1 = 0)".
 Extract Inlined Constant Nat.div2 => "(fun k -> k asr 1)".
 Extract Inlined Constant tleft => "(fun k -> k = 0 || k land 1 = 1)".
 Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
-Extraction Inline AuditClo.scalar_nil AuditClo.scalar_cons.
+Extraction Inline AuditClo.scalar_nil AuditClo.scalar_cons AuditClo.push_arg.
 Extraction Blacklist String List Char Bool.
 Separate Extraction init_state run_prim
   parse_moss Dump.dump_file print_sx Parse.load

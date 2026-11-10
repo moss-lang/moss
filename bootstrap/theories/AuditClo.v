@@ -45,6 +45,14 @@ Definition scalar_cons {D S : Type}
     | None => None
     end.
 
+Definition push_arg {D S R : Type}
+    (rest : nat -> D -> locals -> S -> (list value * locals * S) + R)
+    (w : value) (m : nat) (d : D) (g : locals) (st : S) :=
+  match rest m d g st with
+  | inl (ws, g', st') => inl (w :: ws, g', st')
+  | inr result => inr result
+  end.
+
 Module CloInterpreter (Import Prims : PRIMITIVES).
 Module F := FastInterpreter Prims.
 Module L := F.L.
@@ -63,41 +71,38 @@ Variable ftbl : usym -> option bcode.
 Definition lnil : lcode := fun m d g st =>
   match m with 0 => inr (I.Evaluation OutOfFuel g st) | S _ => inl ([], g, st) end.
 
-(* Variables, values and unit do not change the locals or machine state.
-   When one is an argument, read it directly without an evaluation record. *)
-Definition immediate (e : expr) : option ((fenv -> locals -> option value) * nat) :=
-  match e with
-  | EVar x => Some ((fun _ g => lookup_local x g), I.e_var)
-  | EVal v => Some ((fun d _ =>
-      match flookup_provision (IVal v) d with Some (FValue w) => Some w | _ => None end), I.e_val)
-  | EUnit => Some ((fun _ _ => Some VUnit), I.e_var)
-  | _ => None
-  end.
-
-Definition push_arg (cr : lcode) (w : value) (m : nat) (d : fenv) (g : locals) (st : mstate) :=
-  match cr m d g st with
-  | inl (ws, g', st') => inl (w :: ws, g', st')
-  | inr rr => inr rr
-  end.
-
-(* Build both child closures before building the cons step. Returning the
-   step here gives the extracted closure only the four runtime arguments. *)
+(* Choose the immediate-argument cases before creating the runtime closure.
+   The inner fuel is the one the argument and the rest both receive. *)
 Fixpoint cc_list (f : expr -> code) (l : list expr) : lcode :=
   match l with
   | [] => lnil
   | e :: rest =>
       let cr := cc_list f rest in
-      match immediate e with
-      | Some (get, err) => fun m d g st =>
+      match e with
+      | EVar x => fun m d g st =>
           match m with
-          | S (S k as n) =>
-              match get d g with
-              | Some w => push_arg cr w n d g st
-              | None => inr (I.Evaluation (Stuck err) g st)
+          | S (S _ as k) =>
+              match lookup_local x g with
+              | Some w => push_arg cr w k d g st
+              | None => inr (I.Evaluation (Stuck I.e_var) g st)
               end
           | _ => inr (I.Evaluation OutOfFuel g st)
           end
-      | None =>
+      | EVal v => fun m d g st =>
+          match m with
+          | S (S _ as k) =>
+              match flookup_provision (IVal v) d with
+              | Some (FValue w) => push_arg cr w k d g st
+              | _ => inr (I.Evaluation (Stuck I.e_val) g st)
+              end
+          | _ => inr (I.Evaluation OutOfFuel g st)
+          end
+      | EUnit => fun m d g st =>
+          match m with
+          | S (S _ as k) => push_arg cr VUnit k d g st
+          | _ => inr (I.Evaluation OutOfFuel g st)
+          end
+      | _ =>
           let c := f e in
           fun m d g st =>
             match m with
@@ -736,19 +741,6 @@ Section Agreement.
 Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).
 Hypothesis Tables : tbl_ok P tbl ftbl.
 
-Lemma immediate_agrees : forall e get err k d g st,
-  immediate e = Some (get, err) ->
-  F.feval (S k) P d g st e =
-    I.Evaluation (match get d g with Some w => Normal w | None => Stuck err end) g st.
-Proof.
-  intros e get err k d g st E. destruct e; cbn [immediate] in E; try discriminate;
-    injection E as <- <-; cbn [F.feval]; try reflexivity.
-  - match goal with |- context [lookup_local ?x g] => destruct (lookup_local x g) end; reflexivity.
-  - match goal with
-    | |- context [flookup_provision (IVal ?v) d] => destruct (flookup_provision (IVal v) d) as [[]|]
-    end; reflexivity.
-Qed.
-
 Lemma select_carm_cc : forall arms w,
   select_carm (cc_arms (cc P tbl ftbl) arms) w =
   option_map (fun q => (fst q, cc P tbl ftbl (snd q))) (I.select_arm arms w).
@@ -1016,7 +1008,7 @@ Proof.
   - intros e d g st. destruct e; try reflexivity; try (destruct b; reflexivity).
     apply fold_call_ok. reflexivity.
   - intros l d g st. destruct l as [|e rest]; [reflexivity|].
-    cbn [cc_list]. destruct (immediate e) as [[get err]|]; reflexivity.
+    destruct e; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
 Qed.
 
@@ -1105,12 +1097,18 @@ Proof.
       rewrite select_carm_cc. destruct (I.select_arm l v) as [[bs eb]|]; cbn [option_map fst snd]; [|reflexivity].
       rewrite IHe. reflexivity.
   - intros l d g st. destruct l as [|e1 r]; cbn [cc_list F.feval_arguments]; [reflexivity|].
-    destruct (immediate e1) as [[get err]|] eqn:Immediate.
-    + destruct k as [|k']; [reflexivity|].
-      rewrite (immediate_agrees e1 get err k' d g st Immediate).
-      destruct (get d g) as [w|]; [|reflexivity]. unfold push_arg. rewrite IHl. reflexivity.
-    + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
-      unfold push_arg. rewrite IHl. reflexivity.
+    destruct e1; cbn [cc_list]; try match goal with
+    | |- context [cc P tbl ftbl ?e k d g st] =>
+        rewrite (IHe e d g st);
+        destruct (F.feval k P d g st e) as [[] g1 st1]; try reflexivity;
+        unfold push_arg; rewrite IHl; reflexivity
+    end.
+    all: destruct k as [|k']; [reflexivity|]; cbn [F.feval].
+    all: try match goal with
+      | |- context [lookup_local ?x ?env] => destruct (lookup_local x env)
+      | |- context [flookup_provision (IVal ?v) ?env] => destruct (flookup_provision (IVal v) env) as [[]|]
+      end.
+    all: unfold push_arg; try rewrite IHl; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|].
     change (ccbs P tbl ftbl (b :: bs)) with (cc_bind P ftbl (cc P tbl ftbl) b (ccbs P tbl ftbl bs)).
     destruct b; cbn [cc_bind F.feval_bindings]; try (rewrite IHb; reflexivity).
