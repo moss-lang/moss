@@ -108,6 +108,7 @@ entry they belong to.
 | 57 | Assumed items bring their requirements and needs (`AssumesComplete`, D20) | deltafix | A (one test B: rejects a program native accepts) |
 | 58 | Result items distinct in F stay distinct at an application, and H's at a copy (`CollidesOnlyAs`) | deltafix | B (coherence) |
 | 59 | `RecvTy` reads no type symbol out of force as a nominal | deltafix | A (rejects a program native accepts: a native bug, E41) |
+| 60 | **Rule B: a use needs the item's type requirements in force; demands read needs through θ; a closure's captured inputs in force** | lang-b | **B** (with the oracle; native E42) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
@@ -1760,6 +1761,97 @@ executable tests unless noted.
   first test, which is a native bug (E41), since native itself rejects
   the same program once g uses the method.
 
+### 60. Rule B: a use needs the item's type requirements in force (lang-b branch; owner-approved)
+- **Rule now.** To use an item (call a defined fn or attached method,
+  bind it as a fn or method provider, or demand a family), each type
+  requirement of the item must be in force where it is used
+  (`RequirementsInForce C Cs`, `InForceThrough`): assumed or bound there,
+  or in force through the item's merge class in its own context Cs (a
+  member of the class in force, or a structured type all of whose symbols
+  are in force). Premises: ExCallD, MCAttachedDefined, FPDefined,
+  MPAttached. A family demand's matching is in force
+  (`MatchingInForce`: FamilyStepApply, PrFamily, LitOpFamily).
+  Two companions:
+  - **Demands read needs through θ.** ExCallD's and MCAttachedDefined's
+    `Demand` take the callee's needs read at θ (`at_th C th`), not at the
+    call site (`at_site`), so a need `Y.m` of a callee that merges Y with
+    an X the caller binds is demanded at X's meaning.
+  - **Closures.** BFunClosure asks each of G's inputs that F does not
+    take in force where G is bound, through G's merge class. Inputs F
+    takes stay exempt (closure-partial-unbound-*).
+- **Why.** Before, a requirement the caller left unbound was read as
+  itself (`theta_at`, `at_site`): a family demand could key a method at a
+  declared symbol out of force (family-unbound-need.moss), a lambda or
+  closure then captured it (key-receiver capture, `captured_mentioned`),
+  and scoping had to admit every declared type symbol. Rule B makes the
+  instantiation of every use determined by the use.
+- **Criteria:** principality (section 3: no requirement is read as an
+  unbound symbol; θ is fixed by the use, up to the merges) and coherence
+  (section 2). criteria.md section 3's example now states rule B.
+- **Removed as dead** (each by proof, `public_safety` unchanged):
+  - CallTheta's unbound-class clause (#50). It moves to `AssumedComplete`
+    (#57): assuming an item is not a use, so rule B does not apply there,
+    and the clause keeps its reading as before.
+  - Method-key receivers in `lexical_capture` (key_receiver_gens stays,
+    for #10's fresh-output clause, unchanged).
+  - The declared-symbol disjunct of `PublicFormation.GenScoped`:
+    `ScopedTy` and `KeysScoped` are now strict (in `scope_gens`).
+    `keys_scoped` and `keys_scoped_context` are strengthened to match.
+  - **Not removed:** most of `captured_mentioned`. It is dead only under a
+    strict closure rule (each captured input in force itself), which
+    rejects bind-merge-unbound.moss and closure-partial-class-zyx.moss,
+    both accepted by both implementations. With the through-class rule an
+    input can be out of force while a member of its class is in force, so
+    the lemma stays; its key-receiver case now goes through the strict
+    `KeysScoped`, and `CapturedInForceOk` takes `KeysScoped`.
+- **Proof.** `DemandScopedOk` is restated for the θ reading and proved by
+  `PublicScoping.demand_at_th_scoped`, from rule B and CallTheta's merge
+  clause (`theta_canon_lift`, `PublicTypeRead.subst3_agree`). `cg_key`,
+  `lambda_realizes` and `envok_scoped` take `KeysScoped`.
+- **Oracle.** Elab.v: `requirements_in_force` at defined direct and
+  attached calls and in `match_fn_sig` (fn and method providers);
+  `family_inputs_in_force` in `apply_family`; the closure check in
+  `bind_functor`; and `principal_env` (#50's oracle half, E24), now
+  *before* `demand_needs`, so demands read needs principally. The
+  oracle's specification states the call at a principal context
+  (`ExecutionModel.PrincipalCx`: each requirement out of force read as the
+  meaning of a type in force); its class condition is not stated, and
+  `principal_env` reads only through a member in force, not through a
+  structured class. Proofs: new PrincipalEnvExec.v and RuleBKeep.v;
+  CallDefined*, MethodCallCore, AttachedCall*, BodyPending and the
+  provider and family proofs restated. Direct calls check arguments in
+  the principal env, as #50's patch did.
+- **Tests** (Audit verdicts by reading):
+
+  | program | Audit | oracle before | oracle now | native |
+  |---|---|---|---|---|
+  | [ruleb-call-unbound](examples/ruleb-call-unbound.moss) | rejects | accepts | rejects | accepts (E42) |
+  | [ruleb-provider-unbound](examples/ruleb-provider-unbound.moss) | rejects | accepts | rejects | accepts (E42) |
+  | [ruleb-closure-unbound](examples/ruleb-closure-unbound.moss) | rejects | accepts | rejects | accepts (E42) |
+  | [ruleb-closure-bound](examples/ruleb-closure-bound.moss) (control) | accepts | accepts | accepts | accepts |
+  | [ruleb-merge-family-demand](examples/ruleb-merge-family-demand.moss) | accepts | rejects (D62) | k | k |
+  | [partially-bound-merge](examples/partially-bound-merge.moss) | accepts | rejects (D62, E24) | k | k |
+  | family-unbound-need, family-unbound-need-sig, lambda-declared-output, kept-output-family-method, functor-captured-unbound, const-family-unbound | rejects (before: accepts) | accepts | rejects | accepts (E42; const-family-unbound: rejects, unrelated) |
+  | bind-merge-unbound, closure-partial-class-zyx, closure-partial-unbound-zyx | accepts | accepts | accepts | accepts |
+
+  The six edge-case tests are kept, as rejection tests (their headers say
+  so); none was deleted. copy-result-collide{,-hba,-mba} (#58) assumed
+  `Foo` in use_it although use_it binds it, so rule B rejected main's call;
+  they no longer assume it and still exercise #58 (oracle a, b, a as
+  before).
+- **Corpus.** The oracle at c89de1f against the new oracle, `--elab-only`,
+  over `tests/`, `examples/`, `bootstrap/examples/` and `src/main.moss`
+  (with lib/), before the test edits above: 448 same / 13 diff.
+  - accepted, now rejected: the six edge-case tests and
+    copy-result-collide{,-hba,-mba} (since edited, see above);
+  - rejected, now accepted: partially-bound-merge;
+  - rejected before and now, other message: principal-theta-unbound,
+    unbound-merge-representative (now the merge check: Y and Z are Bool
+    and Char), tests/fixtures/imported_main/provider.moss.
+  `src/main.moss`, `lib/` and every non-edge-case test keep their verdict.
+- **Class B**: it rejects programs both implementations accept (the
+  edge-case tests); owner-approved. Native needs rule B (E42).
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1879,6 +1971,7 @@ All of these come from `proof-plan.json`.
 | E37 | Oracle 3d: a linked body may not install an input of F as a kept output | oracle | open | [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): oracle stuck XErr 14; native rejects | #13 |
 | E40 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b; [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
 | E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | open | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 | #59 |
+| E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | open | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 | #60 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
 changes. All are open:
@@ -1907,8 +2000,8 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
 - ~~lambda-declared-output and kept-output-family-method (#10)~~: Audit
   accepts both again since #10 option (b).
 - ~~partially-bound-merge (#12)~~: Audit accepts it (#50: θ Y reads
-  through the bound X), as native does (`k`). The oracle still rejects it
-  (D62); its fix is designed in #50 (E24).
+  through the bound X), as native does (`k`). The oracle prints `k` since
+  #60 (E24 done).
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
 - ~~block-pin-rebind.moss~~: accepted since #49.
 - assumed-need-incoherent.moss (#57). The oracle rejects it too. Native
