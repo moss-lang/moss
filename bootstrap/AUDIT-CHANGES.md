@@ -134,6 +134,7 @@ entry they belong to.
 | 100 | Main's root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`) | sep S0 | none (definitional regrouping) |
 | 101 | Machine types and their classes use a table keyed by declaration symbol | sep S1 | representation change |
 | 103 | Formed contexts carry merge classes beside their spelling section | merge refactor M2 | representation change |
+| 105 | Base's host laws are independent of the public interface record | BaseLaws | none (definitional refactoring) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3299,6 +3300,37 @@ using one fresh atom per abstract class must preserve that behaviour
   The medians were 105.895 and 104.171 seconds.
 - **Class.** Representation change. The old substitution and acceptance
   checks still drive elaboration in this stage.
+
+### 105. Base's host laws are independent of the interface record
+
+- **Rule.** `BaseLaws` defines the primitive-result predicate and the
+  host laws, parameterized by the host's state, supported operations,
+  primitive step and heap predicate. `Public.interface_laws` applies
+  this contract to the interface's fields.
+- **Why.** The primitive signatures and heap behavior describe Base's
+  host contract ([criteria section 8](../docs/design/criteria.md#8-the-language-is-separate-from-its-platform-library)). Naming that contract directly
+  prepares the laws component of the platform interface.
+- **Fidelity.** The public predicates reduce to their previous bodies.
+  Rocq accepts `eq_refl` witnesses comparing both predicates with the
+  definitions read from 401e385. Their clauses cover the same primitive
+  outcomes, unsupported indices and heap obligations. The clean extracted
+  executable is byte-for-byte identical to the build from 401e385.
+
+  | Program | Native before → after | moss-ref before → after | Audit before → after |
+  |---|---|---|---|
+  | [float](../tests/wasi/float.moss) | same output | same output | definitionally equal host contract |
+  | [gc_tree](../tests/wasi/gc_tree.moss), [gc_array](../tests/wasi/gc_array.moss) | same output | same output | definitionally equal heap laws |
+  | [saved_type_rebinding](../tests/wasi/saved_type_rebinding.moss) | rejects → rejects | trap → same trap | definitionally equal outcome laws |
+
+- **Proof.** The certificate checks `public_safety` against the exact
+  `Public.CORRECT.safety` type, with only kernel primitive assumptions.
+  The extracted implementation uses the existing value and primitive
+  representations. These relocated predicates have type `Prop`.
+- **Alternative.** Parameterizing `Public` by a full platform also
+  requires adapting its consumers and the interpreter interface. The
+  state-parameterized law definition supplies that contract component
+  while preserving the current public module interface by conversion.
+- **Class.** None (definitional refactoring).
 
 ---
 

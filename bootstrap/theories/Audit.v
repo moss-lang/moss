@@ -6072,6 +6072,57 @@ Definition is_gc (p : prim) : bool :=
 
 End Heap.
 
+(* Base's host contract, applied by Public to an interface's fields. *)
+Module BaseLaws.
+Local Unset Implicit Arguments.
+
+  Definition primitive_result P result (out : signal) : Prop :=
+    match out with
+    | Normal value => value_shape P value result
+    | Trap _ | Exit _ => True
+    | _ => False
+    end.
+
+  Definition laws (S : Type) (P : program_view) (supported : prim -> bool)
+      (primitive : program_view -> prim -> list value -> S -> signal * S)
+      (heap_valid : Heap.hty -> S -> Prop) : Prop :=
+    let step := primitive P in
+    let valid_heap := heap_valid in
+    (forall p params result values state,
+      supported p = true -> prim_sig p = Some (params, result) ->
+      Forall2 (value_shape P) values params ->
+      primitive_result P result (fst (step p values state))) /\
+    (forall p params result values state,
+      supported p = true -> prim_msig p = Some (params, result) ->
+      Forall2 (value_shape P) values params ->
+      primitive_result P result (fst (step p values state))) /\
+    (forall code values state, supported (PUnsupported code) = true ->
+      fst (step (PUnsupported code) values state) = UnsupportedOperation code) /\
+    (forall typing weaker state,
+      valid_heap typing state ->
+      (forall address kind predicate,
+        weaker address = Some (kind, predicate) ->
+        exists original, typing address = Some (kind, original) /\
+          forall value, original value -> predicate value) ->
+      valid_heap weaker state) /\
+    (forall state, valid_heap (fun _ => None) state) /\
+    (forall p values state typing,
+      supported p = true ->
+      Heap.is_gc p = false -> valid_heap typing state ->
+      valid_heap typing (snd (step p values state))) /\
+    (forall p values state typing predicate,
+      supported p = true ->
+      valid_heap typing state -> Heap.gc_pre typing p values predicate ->
+      match step p values state with
+      | (Normal value, next) =>
+          exists extended, valid_heap extended next /\
+            Heap.gc_post typing extended p predicate value
+      | (Trap _, next) => valid_heap typing next
+      | _ => False
+      end).
+
+End BaseLaws.
+
 (* ######################################################################## *)
 (* Public source-to-world contract                                           *)
 (* ######################################################################## *)
@@ -6142,50 +6193,10 @@ Module Public (Host : HOST).
   Definition runtime (program : program) (initial : state) : program_view :=
     program_of program (arguments initial) (read_file initial).
 
-  Definition primitive_result P result (out : signal) : Prop :=
-    match out with
-    | Normal value => value_shape P value result
-    | Trap _ | Exit _ => True
-    | _ => False
-    end.
+  Definition primitive_result := BaseLaws.primitive_result.
 
-  (* Laws of supplied operations, under the platform's audited signatures.
-     The source-side agreement with these signatures is Platform.Linked. *)
   Definition interface_laws (P : program_view) (interface : interface) : Prop :=
-    let step := primitive interface P in
-    let valid_heap := heap_ok interface in
-    (forall p params result values state,
-      supports interface p = true -> prim_sig p = Some (params, result) ->
-      Forall2 (value_shape P) values params ->
-      primitive_result P result (fst (step p values state))) /\
-    (forall p params result values state,
-      supports interface p = true -> prim_msig p = Some (params, result) ->
-      Forall2 (value_shape P) values params ->
-      primitive_result P result (fst (step p values state))) /\
-    (forall code values state, supports interface (PUnsupported code) = true ->
-      fst (step (PUnsupported code) values state) = UnsupportedOperation code) /\
-    (forall typing weaker state,
-      valid_heap typing state ->
-      (forall address kind predicate,
-        weaker address = Some (kind, predicate) ->
-        exists original, typing address = Some (kind, original) /\
-          forall value, original value -> predicate value) ->
-      valid_heap weaker state) /\
-    (forall state, valid_heap (fun _ => None) state) /\
-    (forall p values state typing,
-      supports interface p = true ->
-      Heap.is_gc p = false -> valid_heap typing state ->
-      valid_heap typing (snd (step p values state))) /\
-    (forall p values state typing predicate,
-      supports interface p = true ->
-      valid_heap typing state -> Heap.gc_pre typing p values predicate ->
-      match step p values state with
-      | (Normal value, next) =>
-          exists extended, valid_heap extended next /\
-            Heap.gc_post typing extended p predicate value
-      | (Trap _, next) => valid_heap typing next
-      | _ => False
-      end).
+    BaseLaws.laws Host.state P (supports interface) (primitive interface) (heap_ok interface).
 
   Definition Compatible (program : program) (interface : interface) : Prop :=
     Platform.Ready program /\
