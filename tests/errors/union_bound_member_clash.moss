@@ -1,0 +1,17 @@
+import "../../lib/wasm.moss" use Wasm, I32;
+
+# D15: where a union is written, a type symbol member is read at the
+# meaning the context gives it, and its head is then held to the other
+# members' heads. Here `T` is `A[X=I32]` and the other member is
+# `A[X=Red]`: one head twice, so an `A(y)` arm could not say which y is.
+type X;
+assume X { tag A[X](X); }
+tag Red;
+type T;
+
+assume Wasm {
+  fn main() {
+    bind T = A[X=I32];
+    let x: T | A[X=Red] = A[X=Red](Red);
+  }
+}

@@ -1,0 +1,1 @@
+!] tests/errors/union_abstract_member_let.moss T

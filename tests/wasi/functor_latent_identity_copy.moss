@@ -1,5 +1,9 @@
+# An identity copy of Inner preserves an interface nothing inhabits.
+# `offered` returns a union with a nominal wrapper for the abstract T
+# (`Wrap | U`, Wrap[T](T)), as D15 asks: a bare `T | U` is refused where
+# it is written.
 type T;tag U;
-assume T {fn offered():T|U;}
+assume T {tag Wrap[T](T); fn offered():Wrap|U;}
 functor Inner[T]: T -> offered;
 val x:();
 functor Outer[]: Inner -> x;

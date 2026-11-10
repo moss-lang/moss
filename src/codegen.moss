@@ -2515,8 +2515,13 @@ assume Std {
 
     # A type elaborated in module `m` and read in the generic environment:
     # a type bind is what makes a declared symbol mean something here.
+    # Where the type is written in a body, this is also where D15 is
+    # checked: a type symbol member is nominal if this environment makes
+    # it so (`lower::check_written`).
     fn elab_ty(t: Int, m: Int): Int {
-      canon_in(cg_genv.read(), types::elab(t, m))
+      let ty = types::elab(t, m);
+      lower::check_written(cg_genv.read(), t, m);
+      canon_in(cg_genv.read(), ty)
     }
 
     # What a generic type is in this specialization.
@@ -9944,6 +9949,7 @@ assume Std {
       lower::lower_all();
       lower::check_listed();
       lower::check_layouts();
+      lower::check_unions();
       cg_real.write(1);
       check_runtime_library();
       cg_real.write(0);

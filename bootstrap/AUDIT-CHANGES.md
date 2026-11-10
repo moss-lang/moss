@@ -3085,6 +3085,16 @@ so it rejects `tests/wasi/functor_latent_identity_copy.moss` and
   [union-latent-wrapped-reexport](examples/union-latent-wrapped-reexport.moss)
   are accepted by the oracle, native and Audit. Since #76 Audit rejects
   the latent tests at `offered`'s declaration rather than at the copy.
+- **Native, done (impl-d15 branch).** Native enforces D15 where a union
+  is written: at every declaration as written (`lower::check_unions`: tag
+  payloads, alias bodies, val types, fn and method signatures, used or
+  not), and in a body at the body's generic environment (`elab_ty`), so
+  `bind T = U; let x: T | V` is accepted and a member whose meaning
+  shares a head with another is refused. union-latent-overlap and
+  union-latent-identity are rejected; the two latent tests are rewritten
+  with a wrapper (tests/errors/union_latent_overlap.moss,
+  union_abstract_member_let.moss, union_bound_member_clash.moss,
+  tests/wasi/union_bound_member.moss).
 
 **Audit rejects; both implementations accept (criteria section 7, #74 to
 #77).** decl-ctx-unresolved, decl-ctx-bracket (#74); decl-nest-type,

@@ -1349,6 +1349,118 @@ assume Std {
       }
     }
 
+    # D15, where a union is written: each member is nominal there, and no
+    # two share a head. A type symbol member passes only if `env`, the
+    # context the union is written in, binds it to a nominal type (or to
+    # a union of them); as written, before anything binds it, it stands
+    # for itself and does not. Each declaration's types are checked so
+    # (`check_unions`), and a body's annotations in the body's generic
+    # environment (codegen's `elab_ty`).
+    fn check_written(env: Int, t: Int, m: Int) {
+      if !ast::is_some(t) {
+        return ();
+      }
+      let k = ast::kind_of(t);
+      if k == ast::k_ty_record() {
+        var i = 0;
+        while i < ast::b_of(t) {
+          check_written(env, ast::b_of(ast::kid_at(ast::a_of(t), i)), m);
+          i = i + 1;
+        }
+        return ();
+      }
+      if k != ast::k_ty_union() {
+        return ();
+      }
+      let members = int_list();
+      var i = 0;
+      while i < ast::b_of(t) {
+        let kid = ast::kid_at(ast::a_of(t), i);
+        check_written(env, kid, m);
+        # `This` in a union is an error of its own (`e_shape`), and a
+        # record member is reported by `types::check_members`.
+        let kk = ast::kind_of(kid);
+        if kk != ast::k_ty_this() {
+          if kk != ast::k_ty_record() {
+            types::add_member(members, canon(env, types::elab(kid, m)));
+          }
+        }
+        i = i + 1;
+      }
+      let saved = prog::location.read();
+      if ast::is_some(ast::source_start(t)) { prog::location.write(t + 1); }
+      i = 0;
+      while i < members.length() {
+        let x = members.get(i);
+        if types::is_kind(x, types::kd_nominal()) {
+          var j = 0;
+          while j < i {
+            let y = members.get(j);
+            if types::is_kind(y, types::kd_nominal()) {
+              if types::sym_of(y) == types::sym_of(x) {
+                prog::error(prog::e_union(), m, prog::sym_name.get(types::sym_of(x)));
+              }
+            }
+            j = j + 1;
+          }
+        } else if types::is_kind(x, types::kd_abstract()) {
+          prog::error(prog::e_union(), m, prog::sym_name.get(types::sym_of(x)));
+        } else {
+          prog::error(prog::e_union(), m, ast::none());
+        }
+        i = i + 1;
+      }
+      prog::location.write(saved);
+    }
+
+    # D15 at every declaration, used or not (criteria section 7): the
+    # types a tag's payload, an alias's body, a val's type and a fn's or
+    # method's signature write, each read as written.
+    fn check_unions() {
+      let saved = prog::location.read();
+      var s = 0;
+      while s < prog::sym_count() {
+        let d = prog::sym_decl.get(s);
+        let m = prog::sym_mod.get(s);
+        let kind = prog::sym_kind.get(s);
+        if ast::is_some(d) {
+          prog::location.write(d + 1);
+          if kind == prog::sk_fn() {
+            union_signature(d, m);
+          } else if kind == prog::sk_method() {
+            union_signature(d, m);
+          } else {
+            union_decl_type(d, m);
+          }
+        }
+        s = s + 1;
+      }
+      prog::location.write(saved);
+    }
+
+    fn union_decl_type(d: Int, m: Int) {
+      let k = ast::kind_of(d);
+      if k == ast::k_d_tag() {
+        check_written(env_empty(), ast::b_of(d), m);
+      } else if k == ast::k_d_alias() {
+        check_written(env_empty(), ast::b_of(d), m);
+      } else if k == ast::k_d_val() {
+        check_written(env_empty(), ast::b_of(d), m);
+      }
+    }
+
+    fn union_signature(d: Int, m: Int) {
+      if !ast::is_kind(d, ast::k_d_fn()) {
+        return ();
+      }
+      var i = 0;
+      while i < ast::fn_nparams(d) {
+        check_written(env_empty(), ast::b_of(ast::kid_at(ast::fn_params(d), i)), m);
+        i = i + 1;
+      }
+      check_written(env_empty(), ast::fn_ret(d), m);
+    }
+
     # Depth first, entering each context once (`seen`), so contexts nest
     # to any depth and a cycle of them is the union of their items; the
     # types come out in order of first reaching, as the bootstrap's

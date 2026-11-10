@@ -1,0 +1,18 @@
+import "../../lib/wasm.moss" use Wasm;
+
+# D15: a type symbol may be a union member only where the context the
+# union is written in binds it to a nominal type. Nothing binds `T` in
+# `f`, so `T | V` is refused at the `let`, though `f` is never called.
+# (tests/wasi/union_bound_member.moss is the same `let` after a bind.)
+type T;
+tag V;
+
+assume T, Wasm {
+  fn f(t: T) {
+    let x: T | V = V;
+  }
+}
+
+assume Wasm {
+  fn main() {}
+}

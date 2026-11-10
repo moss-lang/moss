@@ -1,0 +1,19 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, proc_exit;
+
+# D15: a type symbol may be a union member where the context the union
+# is written in binds it to a nominal type. After `bind T = U`, `T | V`
+# is `U | V`, and `x` holds a U (exit 2).
+# (tests/errors/union_abstract_member_let.moss: the same `let` unbound.)
+type T;
+tag U;
+tag V;
+
+assume Wasm, Wasi {
+  fn main() {
+    bind T = U;
+    let x: T | V = U;
+    let one = w::i32_one;
+    proc_exit(match x { U => w::i32_add(one, one), V => one });
+  }
+}

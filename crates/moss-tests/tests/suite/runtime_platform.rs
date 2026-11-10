@@ -649,7 +649,7 @@ fn opaque_nominal_arguments_do_not_force_their_unused_payloads() {
 
 #[test]
 fn latent_unformable_functor_capability_does_not_force_a_fake_interface() {
-    let entry = source("type T;tag U;assume T{fn offered():T|U;} \
+    let entry = source("type T;tag U;assume T{tag Wrap[T](T);fn offered():Wrap|U;} \
         functor Inner[T]:T->offered;val x:(); \
         functor Outer[]:Inner->x;functor G:Inner->x{bind x=();} \
         fn main(){bind Outer=G;}");

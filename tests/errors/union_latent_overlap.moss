@@ -1,0 +1,38 @@
+import "../../lib/wasm.moss" as w use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi, proc_exit;
+
+# D15: a union's members are nominal where the union is written. `T` is
+# abstract in `pick`'s signature, so `T | A[X=Colour]` is refused there.
+# Before the self-hosted compiler checked it, it compiled this program:
+# main binds T = A[X=I32] and passes A[X=I32](7), a T; matching by head
+# took the `A(y)` arm and read the I32 7 as a Colour (exit 3).
+# (bootstrap/examples/union-latent-overlap.moss, AUDIT-CHANGES N4.)
+type X;
+assume X { tag A[X](X); }
+tag Red;
+tag Green;
+type Colour = | Red | Green;
+type T;
+
+assume T, Wasm, Wasi {
+  fn pick(u: T | A[X=Colour]): I32 {
+    let one = w::i32_one;
+    match u {
+      A(y) => match y {
+        Red => w::i32_add(one, one),
+        Green => w::i32_add(w::i32_add(one, one), one),
+      },
+      _ => one,
+    }
+  }
+}
+
+assume Wasm, Wasi {
+  fn main() {
+    let one = w::i32_one;
+    let seven = w::i32_add(w::i32_add(w::i32_add(one, one), w::i32_add(one, one)), w::i32_add(w::i32_add(one, one), one));
+    bind T = A[X=I32];
+    let t: T = A[X=I32](seven);
+    proc_exit(pick(t));
+  }
+}

@@ -2156,6 +2156,19 @@ fn method_bind_brackets_read_caller_types() {
     assert_eq!(run_moss(&entry, PRELUDE), "");
 }
 
+/// D15: a type symbol may be a union member where the context the union
+/// is written in binds it to a nominal type (`bind T = U; let x: T | V`).
+/// Unbound, the same `let` is refused, and so is a member whose meaning
+/// shares a head with another (tests/errors/union_abstract_member_let.moss,
+/// union_bound_member_clash.moss and union_latent_overlap.moss, which the
+/// self-hosted compiler used to run, reading an I32 as a Colour).
+#[test]
+fn a_union_member_bound_to_a_nominal() {
+    let entry = wasi("union_bound_member");
+    assert_eq!(run_module_code(&build_with(&entry, ""), &[], 2), "");
+    assert_eq!(oracle(&entry, &[]).code, 2);
+}
+
 /// Copying a functor to itself preserves an untouched latent interface;
 /// an inhabited interface still applies with the original fixed reading.
 #[test]
