@@ -9,7 +9,7 @@
      Specialization.v;
    - semantics.md [D71] ("Why it is sound": "no Admitted, no axioms beyond
      the development's"): Narrowing.v's three. *)
-From NM Require CoreMoss D84 Specialization Narrowing DumpRoundTrip.
+From NM Require CoreMoss D84 Specialization Narrowing DumpRoundTrip EaTypesSound.
 
 (* [D78], CoreMoss.v's header *)
 Print Assumptions NM.CoreMoss.eval_deterministic.
@@ -50,3 +50,8 @@ Print Assumptions NM.Narrowing.wf_ty_narrowed.
 Print Assumptions NM.Narrowing.narrowed_soundness.
 
 Print Assumptions NM.DumpRoundTrip.dump_reads.
+
+(* Executable source-type readers against Audit.v's current judgments. *)
+Print Assumptions NM.EaTypesSound.ty_of_sound.
+Print Assumptions NM.EaTypesSound.brackets_sound.
+Print Assumptions NM.EaTypesSound.sig_of_sound.
