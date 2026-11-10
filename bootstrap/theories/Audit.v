@@ -4275,7 +4275,15 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     (* family demands read f's needs through θ (rule B's companion) *)
     Demand W C (map (at_th C th) ns) [] C wrap C' ->
     Satisfies C' Cf th ns sm -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
-    Args W P F C' args (sg_params g) xs ->
+    (* Q4: the arguments in the caller's context, as at every call
+       (MCAttachedDefined, PrFamily): what the call demands is not in force
+       for them, so an argument means what it means outside the call (D77:
+       a family supplying a key on demand is not a provision of it), and a
+       family's result does not shadow what the caller provides. An
+       argument means what `let a = e; f(a)` would (as a bracket call's
+       arguments, ExCallBr, D89). AUDIT-CHANGES #72;
+       examples/args-context-provision-wins.moss, args-context-shadow-call.moss *)
+    Args W P F C args (sg_params g) xs ->
     (* rule B *)
     RequirementsInForce C Cf ->
     Ex W P F C (AECall pa None args) exp

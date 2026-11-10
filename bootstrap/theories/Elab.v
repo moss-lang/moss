@@ -4230,14 +4230,17 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
               if is_defined_fn g then
                 let! info := fn_info g in
                 requirements_in_force mi e g info "calling" ;;
-                let e := principal_env e info in
-                let! (pre, e) := demand_needs f c e info in
-                let! pairs := require_needs mi e g info in
-                let! sm := smap_at (fi_env info) e pairs in
-                let! sg := fn_sig g (tymap e) e None in
+                let ed := principal_env e info in
+                let! (pre, ed) := demand_needs f c ed info in
+                let! pairs := require_needs mi ed g info in
+                let! sm := smap_at (fi_env info) ed pairs in
+                let! sg := fn_sig g (tymap ed) ed None in
+                (* Q4: the arguments in the caller's context e, without what
+                   the call demands (or its principal reading), as at a
+                   method call *)
                 let! xs := check_args f c e (gs_name g) sg (map AA args) in
-                layout_ok e (sg_ret sg) ;;
-                let! th := call_theta e g in
+                layout_ok ed (sg_ret sg) ;;
+                let! th := call_theta ed g in
                 ret (fold_stmts pre (XCallD s th sm xs), sg_ret sg)
               else
                 match nget (en_fns e) s with

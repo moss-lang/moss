@@ -1635,18 +1635,21 @@ Proof.
   destruct dc as [m al ps]; cbn in *. subst m al. rewrite !app_nil_r. reflexivity.
 Qed.
 
-Lemma call_core : forall j, Below j -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
+(* The callee is read in C (after any demand), the arguments in CA (Q4:
+   the caller's own context), both realized at the start. *)
+Lemma call_core : forall j, Below j -> forall F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
-  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
-  StepSafe j F C (A.sg_ret g) B (ECall f th sm xs).
+  A.Args W Prog F CA args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  forall d types H lg lst, Pre (S j) F C d types H lg lst -> Pre (S j) F CA d types H lg lst ->
+  Outcome F d H types (A.sg_ret g) B (AR.O.I.eval (S j) P d lg lst (ECall f th sm xs)).
 Proof.
-  intros j Bel F C args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0.
+  intros j Bel F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0 PreA.
   unfold A.ast_of in Ast. destruct (A.w_decl W f) as [dcl|] eqn:Decl; [|discriminate]. injection Ast as Ast.
   pose proof (all_fn_elab f dcl RPlain n0 ps0 rt0 b0 Decl Ast dcl RPlain n0 ps0 rt0 b0 Decl Ast)
     as (C0 & ns0 & this & g0 & F0 & x & t0 & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & View).
-  pose proof (args_code j j (le_n j) F C B xs (A.sg_params g) d types H lg lst
-    (args_code_of j Bel F C args _ xs Args B Brk) (pre_lower Pre0)) as AOut.
+  pose proof (args_code j j (le_n j) F CA B xs (A.sg_params g) d types H lg lst
+    (args_code_of j Bel F CA args _ xs Args B Brk) (pre_lower PreA)) as AOut.
   cbn [AR.O.I.eval]. change (view_function P f) with (A.body_of Prog f). rewrite View.
   destruct (AR.O.I.eval_arguments j P d lg lst xs) as [[[ws g1] st1]|r]; cbn in AOut.
   2: { destruct AOut as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out]. }
@@ -1745,16 +1748,17 @@ Proof.
     d types H g st Pre0 Pre0).
 Qed.
 
-Lemma call_code : forall k, Below k -> forall F C args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
+Lemma call_code : forall k, Below k -> forall F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
-  A.Args W Prog F C args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
-  CodeSafe (S k) F C (A.sg_ret g) B (ECall f th sm xs).
+  A.Args W Prog F CA args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  forall j, j <= S k -> forall d types H lg lst, Pre j F C d types H lg lst -> Pre j F CA d types H lg lst ->
+  Outcome F d H types (A.sg_ret g) B (AR.O.I.eval j P d lg lst (ECall f th sm xs)).
 Proof.
-  intros k Bel F C args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk [|j] Le d types H lg lst Pre0;
+  intros k Bel F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs B Ast Ctx Sat CT Sig Args Brk [|j] Le d types H lg lst Pre0 PreA;
     [exact Logic.I|].
-  exact (call_core j (fun i Li => Bel i ltac:(lia)) F C args f n0 ps0 rt0 b0 Cf ns sm th g xs B
-    Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0).
+  exact (call_core j (fun i Li => Bel i ltac:(lia)) F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs B
+    Ast Ctx Sat CT Sig Args Brk d types H lg lst Pre0 PreA).
 Qed.
 
 (* ---- adding a provision -------------------------------------------------------- *)
@@ -5329,9 +5333,9 @@ Proof.
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl Dem
         (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns th r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx
            (call_theta_same C' C Cf f th (demand_ty _ _ _ _ _ _ Dem) (demand_sub _ _ _ _ _ _ Dem) CT) RB I0)))
-        (fun j Lj d' types' H' g' st' Pre' _ => call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
+        (fun j Lj d' types' H' g' st' Pre' PreC => call_code k Bel F C' C args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
-          (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre')) d types H lg lst Pre0).
+          (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre') PreC) d types H lg lst Pre0).
     + exact (invoke_step F C pa args f sg xs Fn Args d types H lg lst Pre0).
     + (* bracketed call (D89): its expansion *)
       eapply AR.O.outcome_breaks; [exact (call_block_breaks (A.fr_mod F) pa bs args)|].

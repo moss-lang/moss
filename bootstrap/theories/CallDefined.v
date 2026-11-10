@@ -85,7 +85,7 @@ Theorem defined_ready_evidence : forall f,OK w P R Fl f->
  A.PrincipalCx WW C Cf(gs_id g)Cp/\
  A.Satisfies Cp Cf(map(key_tr Fl)(fi_needs info))sm/\
  A.SigOf WW(gs_id g)(A.c_ty Cp)None(canonical_sig Fl e sg)/\
- A.Args WW P F Cp args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
+ A.Args WW P F C args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
  x=XCallD(gs_id g)(A.theta_at WW Cp(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nf Nm Nm' Ready.
@@ -108,7 +108,7 @@ Proof.
  assert(Og:ok(fn_sig g(tymap ep)ep None))by(unfold fn_sig;okt).
  destruct(Og _ _ _ Iss Eg)as[Isg Fg].
  pose proof(info_step _ _ Iiss(frl_of_fr _ _ Fg)(ni_fn_sig _ _ _ _ _ _ _ Eg) ltac:(wrapper_cache_same))as Iisg.
- destruct(ok_check_args f c ep(gs_name g)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
+ destruct(ok_check_args f c e(gs_name g)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
  destruct(ok_layout_ok ep(sg_ret sg)_ _ _ Isa El)as[Isl Flay].
  assert(Ot:ok(call_theta ep g))by apply ok_call_theta.
  destruct(Ot _ _ _ Isl Et)as[Ifin Ft].
@@ -129,10 +129,8 @@ Proof.
  { apply Forall_forall;intros p Hin;split.
    - apply ety_ok_wf;exact(proj1(Forall_forall _ _)Wps(snd p)(in_map snd _ _ Hin)).
    - exact(proj1(Forall_forall _ _)Sp p Hin). }
- pose proof(@check_args_aa_ok w P R Fl f IH c ep(gs_name g)sg args sgstate xs sa F Cp Both Ea Isg
-   Iisg ltac:(fwd_inv) Hcp Hpa)as Args.
- replace(map(fun p=>tr Fl(canon ep(snd p)))(sg_params sg))with(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))in Args
-   by(apply map_ext;intro;rewrite(canon_uf e ep Uep);reflexivity).
+ pose proof(@check_args_aa_ok w P R Fl f IH c e(gs_name g)sg args sgstate xs sa F C Both Ea Isg
+   Iisg ltac:(fwd_inv) Hc Hpa)as Args.
  pose proof(call_theta_tr w R Fl c ep F Cp g sl th s' Et Isl(proj1 Hp)Hcp)as Theta.
  exists info,si,Cf,sm,sg,xs,Cp. split;[exact Ei|]. split;[exact Ctx|]. split;[exact(Pcx Cf)|]. split;[exact Sat|].
  split;[exact Sig|]. split;[exact Args|]. split;[cbn[fold_stmts];now rewrite Theta|].
@@ -152,7 +150,7 @@ Theorem defined_ready_loaded : forall f,OK w P R Fl f->
  A.PrincipalCx WW C Cf(gs_id g)Cp/\
  A.Satisfies Cp Cf(map(key_tr Fl)(fi_needs info))sm/\
  A.SigOf WW(gs_id g)(A.c_ty Cp)None(canonical_sig Fl e sg)/\
- A.Args WW P F Cp args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
+ A.Args WW P F C args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
  x=XCallD(gs_id g)(A.theta_at WW Cp(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nm Ready.
@@ -172,7 +170,7 @@ Theorem defined_empty_loaded : forall f,OK w P R Fl f->
  A.PrincipalCx WW C Cf(gs_id g)Cp/\
  A.Satisfies Cp Cf(map(key_tr Fl)(fi_needs info))sm/\
  A.SigOf WW(gs_id g)(A.c_ty Cp)None(canonical_sig Fl e sg)/\
- A.Args WW P F Cp args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
+ A.Args WW P F C args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
  x=XCallD(gs_id g)(A.theta_at WW Cp(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nm Empty.

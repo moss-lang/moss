@@ -48,7 +48,7 @@ Proof.
  assert(Og:ok(fn_sig g(tymap ed)ed None))by(unfold fn_sig;okt).
  destruct(Og _ _ _ Iss Eg)as[Isg Fg].
  pose proof(info_step _ _ Iiss(frl_of_fr _ _ Fg)(ni_fn_sig _ _ _ _ _ _ _ Eg) ltac:(wrapper_cache_same))as Iisg.
- destruct(ok_check_args f c ed(gs_name g)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
+ destruct(ok_check_args f c e(gs_name g)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
  destruct(ok_layout_ok ed(sg_ret sg)_ _ _ Isa El)as[Isl Flay].
  assert(Ot:ok(call_theta ed g))by apply ok_call_theta.
  destruct(Ot _ _ _ Isl Et)as[Ifin Ft].
@@ -74,13 +74,15 @@ Proof.
  { apply Forall_forall;intros p Hin;split.
    - apply ety_ok_wf;exact(proj1(Forall_forall _ _)Wps(snd p)(in_map snd _ _ Hin)).
    - exact(proj1(Forall_forall _ _)Sp p Hin). }
- pose proof(@check_args_aa_ok w P R Fl f IH c ed(gs_name g)sg args sgstate xs sa F Cd Both Ea Isg
-   Iisg ltac:(fwd_inv) HCd Hpa)as Args.
+ pose proof(@check_args_aa_ok w P R Fl f IH c e(gs_name g)sg args sgstate xs sa F C Both Ea Isg
+   Iisg ltac:(fwd_inv) Hc Hpa)as Args.
  pose proof(call_theta_tr w R Fl c ed F Cd g sl th s' Et Isl(proj1 Hp)HCd)as Theta.
  assert(Types:forall raw,tr Fl(canon ed raw)=tr Fl(canon ep raw)).
  {intro raw;rewrite <-!tr_canon by(first[exact(proj1(cr_uf _ _ _ _ _ _ _ HCd))|exact(proj1(cr_uf _ _ _ _ _ _ _ Hcp))]).
   rewrite <-(cr_sub _ _ _ _ _ _ _ HCd),<-(cr_sub _ _ _ _ _ _ _ Hcp).
   rewrite(proj2(demand_types _ _ _ _ _ _ _ Demand));reflexivity. }
+ replace(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))with(map(fun p=>tr Fl(canon ed(snd p)))(sg_params sg))in Args
+   by(apply map_ext;intro;rewrite Types,(canon_uf e ep Uep);reflexivity).
  split;[|split;[exact(ety_ok_wf _ Wr)|exact Sr]].
  rewrite <-(canon_uf e ep Uep(sg_ret sg)),<-Types;rewrite Theta.
  eapply A.ExCallDDemand with(Cf:=Cf)(ns:=map(key_tr Fl)(fi_needs info))(g:=canonical_sig Fl ed sg)(C':=Cd)(Cp:=Cp).

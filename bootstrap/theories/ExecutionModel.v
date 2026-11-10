@@ -2805,16 +2805,20 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns -> PrincipalCx W C Cf f Cp -> Satisfies Cp Cf ns sm ->
     SigOf W f (c_ty Cp) None g ->
-    Args W P F Cp args (sg_params g) xs ->
+    (* Q4: the arguments in the caller's context, as at every call *)
+    Args W P F C args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp (XCallD f (theta_at W Cp f) sm xs) (sg_ret g)
-(* Defined calls may first demand missing methods from unique families. *)
+(* Defined calls may first demand missing methods from unique families.
+   Their arguments are checked in the caller's context (Q4), as at a
+   defined attached call. *)
 | ExCallDDemand : forall F C exp pa args f Cf ns sm g xs wrap C' Cp,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns -> PrincipalCx W C Cf f Cp ->
     Demand W Cp (map (at_site Cp) ns) [] Cp wrap C' ->
     Satisfies C' Cf ns sm -> SigOf W f (c_ty C') None g ->
-    Args W P F C' args (sg_params g) xs ->
+    (* Q4: the arguments in the caller's context, without the demands *)
+    Args W P F C args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp
        (wrap (XCallD f (theta_at W C' f) sm xs)) (sg_ret g)
 (* an abstract fn: whatever provides it here *)

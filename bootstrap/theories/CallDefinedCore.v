@@ -41,7 +41,7 @@ Definition defined_call_code f c e (fid:nat)(g:gsym)args:M(xexpr*ety):=
  let! pairs:=require_needs(cx_mod c)ed g info in
  let! sm:=smap_at(fi_env info)ed pairs in
  let! sg:=fn_sig g(tymap ed)ed None in
- let! xs:=check_args f c ed(gs_name g)sg(map AA args)in
+ let! xs:=check_args f c e(gs_name g)sg(map AA args)in
  layout_ok ed(sg_ret sg);;
  let! th:=call_theta ed g in
  ret(fold_stmts pre(XCallD fid th sm xs),sg_ret sg).
@@ -52,7 +52,7 @@ Lemma defined_call_code_exec : forall f c e fid g args s x t s',
  require_needs(cx_mod c)ed g info sd=Good(pairs,sn)/\
  smap_at(fi_env info)ed pairs sn=Good(sm,ss)/\
  fn_sig g(tymap ed)ed None ss=Good(sg,sgstate)/\
- check_args f c ed(gs_name g)sg(map AA args)sgstate=Good(xs,sa)/\
+ check_args f c e(gs_name g)sg(map AA args)sgstate=Good(xs,sa)/\
  layout_ok ed(sg_ret sg)sa=Good(u,sl)/\call_theta ed g sl=Good(th,s')/\
  x=fold_stmts pre(XCallD fid th sm xs)/\t=sg_ret sg.
 Proof.
