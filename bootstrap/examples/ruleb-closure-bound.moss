@@ -1,0 +1,8 @@
+# Control for ruleb-closure-unbound.moss: T is bound before the closure.
+# Audit, oracle and native: accept.
+type T;
+tag Concrete;
+fn run();
+functor H: -> run;
+functor P: T -> run { bind run = () => (); }
+fn main() { bind T = Concrete; bind H = P; bind H; run(); }

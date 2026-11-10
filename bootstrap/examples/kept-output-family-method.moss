@@ -15,6 +15,12 @@
 # alone. An oracle variant that does the same (fresh where mentioned)
 # also prints 0.
 # Verdicts: Audit accepts (by reading); oracle prints 0; native prints 0.
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

@@ -4,6 +4,8 @@
 # Oracle (moss_m2): prints b (so the oracle's choice follows H's order).
 # Oracle variant d7: rejects.
 # Native (ob-family moss, seed 1h1710x0): rejects ("... required signature: `A`").
+# use_it no longer assumes Foo, which it binds itself: rule B (#60) would
+# otherwise reject the call use_it() in main, where Foo is not in force.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
@@ -25,7 +27,7 @@ assume Std {
   }
 }
 
-assume Std, H, Foo {
+assume Std, H {
   fn use_it() {
     bind F = H;
     bind A = Int; bind B = Int; bind C = Int; bind Foo = Int;

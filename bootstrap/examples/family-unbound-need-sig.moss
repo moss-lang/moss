@@ -7,6 +7,12 @@
 # the need at the site as T itself. Family F is applied at A := T and adds
 # T.twice : () -> T to main's context, where T is not a key of the type
 # table. The oracle and native both accept and run it (exit 0).
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
 type A;
 type T;
 assume A { fn .twice(): A; }

@@ -5,6 +5,12 @@
 # family F is applied at A := T. The argument block is checked in that
 # demand context: `bind H = P;` captures P's need T.twice, at receiver T,
 # which is not a key of the type table there.
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
 type A;
 type T;
 assume A { fn .twice(): A; }

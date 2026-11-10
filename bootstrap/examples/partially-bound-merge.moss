@@ -14,9 +14,9 @@ import "../../lib/wasip1.moss" use Wasi;
 # Principal θ (AUDIT-CHANGES #50): demo binds X but not Y; X and Y are
 # one merge class in f's context, so θ Y is read through X as Char, and
 # the need `C.w[Foo=Y]` is wanted at Foo = Char, which demo provides.
-# Audit: accepts. Native: prints `k`. Oracle: rejects since 61040f2
-# ("needs `Char.w` at another instantiation", D62); the fix designed in
-# #50 (not committed) prints `k`.
+# Audit: accepts. Native: prints `k`. Oracle: prints `k` since #60
+# (principal_env reads Y through X); it rejected from 61040f2 to #60
+# ("needs `Char.w` at another instantiation", D62).
 
 type Foo;
 type A;

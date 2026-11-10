@@ -1,0 +1,42 @@
+# Rule B with a merge, and a family demand through θ (AUDIT-CHANGES #60):
+# f merges X with Y; demo binds X only, so Y is in force through X. f needs
+# Y.foo, which family F supplies: the demand reads Y.foo through θ as
+# Char.foo and applies F at P := Char.
+# Audit: accepts. Oracle: prints k (before #60: rejects, D62, E24).
+# Native: prints k (recorded on the ruleb branch).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type Foo;
+type A;
+type B;
+type C;
+type X;
+type Y;
+type P;
+fn .gimme(): Foo;
+fn .w(): Foo;
+assume P { fn .foo(); }
+functor F[P]: P -> P.foo;
+functor G: P -> P.foo { bind P.foo = () => (); }
+context Ctx1 = A, B, A.gimme[Foo=B];
+context Ctx2 = A, C, A.gimme[Foo=C];
+context K0 = B, C, X, Y, B.w[Foo=X], C.w[Foo=Y], Y.foo;
+assume Std, K0, Ctx1, Ctx2 { fn f(x: X): X { x } }
+assume Std {
+  fn giveq(): Char { char::q }
+  fn demo() {
+    bind Foo = Char;
+    bind A = Char;
+    bind B = Char;
+    bind C = Char;
+    bind X = Char;
+    bind A.gimme = giveq;
+    bind C.w = giveq;
+    bind F = G;
+    putchar(f(char::k));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch { fn main() { bind WasiStd; demo(); } }

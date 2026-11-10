@@ -1,0 +1,7 @@
+# Rule B (AUDIT-CHANGES #60): f assumes T; main calls f with T neither
+# bound nor assumed. A use of an item needs its type requirements in force.
+# Audit: rejects. Oracle: rejects ("calling `f` needs `T` in force here");
+# before #60 it accepted. Native: accepts (exit 0; needs rule B).
+type T;
+assume T { fn f() {} }
+fn main() { f(); }

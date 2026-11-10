@@ -7,6 +7,12 @@
 # "inlined consts"). Oracle (moss_m2): accepted, runs, exit 0. Native:
 # rejects the use of K ("no binding provides this item"), as it does every
 # use of a defined val (even `val K: () = ();`), so it says nothing here.
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
 type A;
 type T;
 tag Concrete;
