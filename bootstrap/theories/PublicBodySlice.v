@@ -11,7 +11,7 @@
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
-  PublicCallRealize.
+  PublicCallRealize PublicRuntimeKeys.
 From NM Require PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -260,16 +260,72 @@ with captured_funs_ind' := Induction for CapturedFuns Sort Prop.
 Combined Scheme closure_ok_mut from closure_ok_ind', captured_funs_ind'.
 
 (* The static provisions, realized under their runtime keys (T31). *)
-Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
+Definition EnvOkWith (rk : item -> item) (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
   (forall v t, A.nlook v (A.c_vals C) = Some t -> exists w,
-     lookup_provision (IVal v) d = Some (ValueProvision w) /\ value_typed W P H w (ground d t)) /\
+     lookup_provision (rk (IVal v)) d = Some (ValueProvision w) /\ value_typed W P H w (ground d t)) /\
   (forall f g, A.nlook f (A.c_fns C) = Some g -> exists pv,
-     lookup_provision (IFn f) d = Some pv /\ CallableOk n H d (A.sg_params g) (A.sg_ret g) pv) /\
+     lookup_provision (rk (IFn f)) d = Some pv /\ CallableOk n H d (A.sg_params g) (A.sg_ret g) pv) /\
   (forall r m g, A.mlook r m (A.c_mths C) = Some g -> exists pv,
-     lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
+     lookup_provision (rk (IMth r m [])) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
   (* functor closures, applicable with their fixed inputs read here *)
   (forall u fx, A.nlook u (A.c_funs C) = Some fx -> exists pv gfx,
-     lookup_provision (IFun u) d = Some pv /\ ClosureOk n H u gfx pv /\ FixedMeans u d fx gfx).
+     lookup_provision (rk (IFun u)) d = Some pv /\ ClosureOk n H u gfx pv /\ FixedMeans u d fx gfx).
+
+(* Expand the key cases so existing users keep their concrete lookup keys. *)
+Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
+  EnvOkWith (fun k => match k with
+    | IMth r m _ => A.rkey C r m
+    | _ => k
+    end) n C d H.
+
+Lemma envok_concrete_iff : forall n C d H,
+  EnvOk n C d H <-> EnvOkWith (A.rkey_of C) n C d H.
+Proof. intros; reflexivity. Qed.
+
+(* Only keys of provisions present in this context need to agree. *)
+Lemma envok_with_keys : forall rk rk' n C d H,
+  (forall v t, A.nlook v (A.c_vals C) = Some t -> rk (IVal v) = rk' (IVal v)) ->
+  (forall f g, A.nlook f (A.c_fns C) = Some g -> rk (IFn f) = rk' (IFn f)) ->
+  (forall r m g, A.mlook r m (A.c_mths C) = Some g -> rk (IMth r m []) = rk' (IMth r m [])) ->
+  (forall u fx, A.nlook u (A.c_funs C) = Some fx -> rk (IFun u) = rk' (IFun u)) ->
+  EnvOkWith rk n C d H -> EnvOkWith rk' n C d H.
+Proof.
+  intros rk rk' n C d H V F M U [EV [EF [EM EU]]].
+  split; [|split; [|split]].
+  - intros v t L. rewrite <- (V v t L). exact (EV v t L).
+  - intros f g L. rewrite <- (F f g L). exact (EF f g L).
+  - intros r m g L. rewrite <- (M r m g L). exact (EM r m g L).
+  - intros u fx L. rewrite <- (U u fx L). exact (EU u fx L).
+Qed.
+
+Lemma envok_normalized_iff : forall n C d H,
+  (forall r m g, A.mlook r m (A.c_mths C) = Some g -> A.canon C r = r) ->
+  EnvOk n C d H <-> EnvOkWith (normalized_rkey C) n C d H.
+Proof.
+  intros n C d H Stored.
+  assert (Methods : forall r m g, A.mlook r m (A.c_mths C) = Some g ->
+    normalized_rkey C (A.mkey r m) = A.rkey_of C (A.mkey r m)).
+  { intros r m g L. apply normalized_rkey_stored.
+    change (A.mkey (A.canon C r) m = A.mkey r m). now rewrite (Stored r m g L). }
+  rewrite envok_concrete_iff.
+  split; intro Env; eapply envok_with_keys; try exact Env;
+    intros; try reflexivity.
+  - symmetry. eapply Methods; eassumption.
+  - eapply Methods; eassumption.
+Qed.
+
+Lemma envok_with_method_keyeq : forall C (keys : RuntimeKeys C) n d H r m g k,
+  EnvOkWith (runtime_key C keys) n C d H ->
+  A.mlook r m (A.c_mths C) = Some g ->
+  A.KeyEq (A.c_merge C) (A.mkey r m) k ->
+  exists pv, runtime_lookup C keys k d = Some pv /\
+    CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv.
+Proof.
+  intros C keys n d H r m g k [_ [_ [Methods _]]] Found Equal.
+  destruct (Methods r m g Found) as [pv [Lookup Callable]].
+  exists pv. split; [|exact Callable].
+  rewrite <- (runtime_lookup_proper C keys d (A.mkey r m) k Equal). exact Lookup.
+Qed.
 
 (* Every provision is filed under a key of its own kind. *)
 Definition KeysMatch (C : A.cx) : Prop := PublicCallRealize.KeysMatch (A.c_provisions C).
@@ -284,6 +340,28 @@ Proof.
   intro C. split.
   - intros [Section Keys]. exact (conj (conj (section_canonical C Section) Section) Keys).
   - intros [[_ Section] Keys]. exact (conj Section Keys).
+Qed.
+
+Lemma envok_runtime_iff : forall C (Section : CxSection C) n d H,
+  PublicScoping.MethsRead W C -> KeysMatch C ->
+  EnvOk n C d H <-> EnvOkWith (runtime_key C (canonical_runtime_keys C Section)) n C d H.
+Proof.
+  intros C Section n d H Methods Keys. apply envok_normalized_iff.
+  intros r m g Found.
+  exact (PublicScoping.methsread_mlook_canonical W C r m g Methods Keys Found).
+Qed.
+
+Lemma envok_runtime_method : forall C (Section : CxSection C) n d H r m g k,
+  PublicScoping.MethsRead W C -> KeysMatch C -> EnvOk n C d H ->
+  A.mlook r m (A.c_mths C) = Some g ->
+  A.KeyEq (A.c_merge C) (A.mkey r m) k ->
+  exists pv, lookup_provision (normalized_rkey C k) d = Some pv /\
+    CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv.
+Proof.
+  intros C Section n d H r m g k Methods Keys Env Found Equal.
+  apply (envok_runtime_iff C Section n d H Methods Keys) in Env.
+  exact (envok_with_method_keyeq C (canonical_runtime_keys C Section)
+    n d H r m g k Env Found Equal).
 Qed.
 
 Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=

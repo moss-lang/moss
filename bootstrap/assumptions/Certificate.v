@@ -249,6 +249,15 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicScoping.methread_merge_iff);
   root (@NM.PublicScoping.methsread_canon_iff);
   root (@NM.PublicScoping.methsread_mlook_canonical);
+  root (@NM.PublicRuntimeKeys.normalized_rkey_proper);
+  root (@NM.PublicRuntimeKeys.normalized_rkey_stored);
+  root (@NM.PublicRuntimeKeys.normalized_rkey_eq_iff);
+  root (@NM.PublicRuntimeKeys.runtime_lookup_proper);
+  root (@NM.PublicRuntimeKeys.keys_match_with_normalized);
+  root (@NM.PublicRuntimeKeys.keys_match_with_normalized_iff);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.envok_runtime_iff);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.envok_runtime_method);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.envok_with_of_on);
   root (@NM.PublicCaptureScopeFacts.typed_capture_generation_lookup);
   root (@NM.PublicCaptureScopeFacts.typed_capture_alias_lookup);
   root (@NM.PublicGenerationCallExample.actual_application_exports_unchanged_formal_not_stale_capture);

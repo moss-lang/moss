@@ -171,24 +171,43 @@ Notation CallableOk := (LR.PA.FS.CopyA.S.CallableOk W Prog argv read state_ok).
 Notation ClosureOk := (LR.PA.FS.CopyA.S.ClosureOk W Prog argv read state_ok).
 
 (* EnvOk, for the provisions whose keys K holds. *)
-Definition EnvOkOn (K : item -> Prop) (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
+Definition EnvOkOnWith (rk : item -> item) (K : item -> Prop) (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
   (forall v t, K (IVal v) -> A.nlook v (A.c_vals C) = Some t -> exists w,
-     lookup_provision (IVal v) d = Some (ValueProvision w) /\ value_typed W P H w (ground d t)) /\
+     lookup_provision (rk (IVal v)) d = Some (ValueProvision w) /\ value_typed W P H w (ground d t)) /\
   (forall f g, K (IFn f) -> A.nlook f (A.c_fns C) = Some g -> exists pv,
-     lookup_provision (IFn f) d = Some pv /\ CallableOk n H d (A.sg_params g) (A.sg_ret g) pv) /\
+     lookup_provision (rk (IFn f)) d = Some pv /\ CallableOk n H d (A.sg_params g) (A.sg_ret g) pv) /\
   (forall r m g, K (A.mkey r m) -> A.mlook r m (A.c_mths C) = Some g -> exists pv,
-     lookup_provision (A.rkey C r m) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
+     lookup_provision (rk (IMth r m [])) d = Some pv /\ CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv) /\
   (forall u fx, K (IFun u) -> A.nlook u (A.c_funs C) = Some fx -> exists pv gfx,
-     lookup_provision (IFun u) d = Some pv /\ ClosureOk n H u gfx pv /\ LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx).
+     lookup_provision (rk (IFun u)) d = Some pv /\ ClosureOk n H u gfx pv /\ LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx).
 
-Lemma envok_of_on : forall (K : item -> Prop) n C d H, (forall k, K k \/ ~ K k) ->
-  EnvOkOn K n C d H -> EnvOkOn (fun k => ~ K k) n C d H -> LR.PA.FS.CopyA.S.EnvOk W Prog argv read state_ok n C d H.
+Definition EnvOkOn (K : item -> Prop) (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
+  EnvOkOnWith (fun k => match k with
+    | IMth r m _ => A.rkey C r m
+    | _ => k
+    end) K n C d H.
+
+Lemma envok_with_of_on : forall rk (K : item -> Prop) n C d H,
+  (forall k, K k \/ ~ K k) ->
+  EnvOkOnWith rk K n C d H -> EnvOkOnWith rk (fun k => ~ K k) n C d H ->
+  LR.PA.FS.CopyA.S.EnvOkWith W Prog argv read state_ok rk n C d H.
 Proof.
-  intros K n C d H Dec [V1 [F1 [M1 U1]]] [V2 [F2 [M2 U2]]]. split; [|split; [|split]].
+  intros rk K n C d H Dec [V1 [F1 [M1 U1]]] [V2 [F2 [M2 U2]]].
+  split; [|split; [|split]].
   - intros v t L. destruct (Dec (IVal v)); [exact (V1 v t H0 L)|exact (V2 v t H0 L)].
   - intros f g L. destruct (Dec (IFn f)); [exact (F1 f g H0 L)|exact (F2 f g H0 L)].
   - intros r m g L. destruct (Dec (A.mkey r m)); [exact (M1 r m g H0 L)|exact (M2 r m g H0 L)].
   - intros u fx L. destruct (Dec (IFun u)); [exact (U1 u fx H0 L)|exact (U2 u fx H0 L)].
+Qed.
+
+Lemma envok_of_on : forall (K : item -> Prop) n C d H, (forall k, K k \/ ~ K k) ->
+  EnvOkOn K n C d H -> EnvOkOn (fun k => ~ K k) n C d H -> LR.PA.FS.CopyA.S.EnvOk W Prog argv read state_ok n C d H.
+Proof.
+  intros K n C d H Dec Yes No.
+  exact (envok_with_of_on (fun k => match k with
+    | IMth r m _ => A.rkey C r m
+    | _ => k
+    end) K n C d H Dec Yes No).
 Qed.
 
 (* PREMISE (T15/T16; the correspondence). In ChainCoreOk's situation, with
