@@ -106,11 +106,35 @@ correctly, and it accepts nothing that both reject.
   example programs on the oracle and on native, and by comparing an oracle
   variant over the test corpus.
 - Where the implementations disagree with each other, the first five
-  criteria decide.
+  criteria decide. Section 7 decides even where they agree.
 - A rule that breaks this criterion only to make a proof easier is a debt.
   It should be listed with its alternative, as the kept-output clause was in
   [`bootstrap/AUDIT-CHANGES.md`](../../bootstrap/AUDIT-CHANGES.md) (#10) until
   it was replaced.
+
+## 7. Every declaration is checked
+
+Every declaration is checked as written, whether or not anything uses it.
+A declaration that does not form makes the program wrong, even when no
+body reads it.
+
+- This is [D16]'s rule for defined functions, which must all elaborate,
+  reached or not, extended to every kind of declaration: a context's items,
+  a tag's payload, an alias's body, a val's type and initializer, a fn's or
+  method's signature, a functor's arguments, result and body, and the
+  assume nesting each one is written in.
+- *As written* means read where it is written, before anything is bound:
+  each type symbol stands for itself. A use reads the declaration at its
+  own meanings, and that reading is checked at the use, as before.
+- So whether a declaration is well formed does not depend on whether
+  something happens to use it, and a library's errors do not wait for the
+  first program that calls into the wrong part of it.
+- Where both implementations accept a declaration that does not form,
+  this criterion overrides fidelity (section 6): the implementations are
+  the ones to change.
+- In `Audit.v`, `DeclsForm` and `AssumesComplete` (every symbol's assume
+  nesting) are conditions of `ElaboratesIn`. This is a check, not a
+  theorem.
 
 ## Using the criteria
 
