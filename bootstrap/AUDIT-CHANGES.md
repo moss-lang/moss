@@ -1939,6 +1939,54 @@ executable tests unless noted.
   and no proof reads it.
 - **Class B** (native accepts bind-attached-defined; E70 below).
 
+### Q4 (open, not applied): which context a call's arguments are checked in
+The owner decided that the arguments of every kind of call are checked in
+one context (semantics.typ, "where a direct method call checks its
+arguments"). Audit is not consistent today, and the oracle mirrors it
+exactly:
+
+| call | rule | arguments checked in | oracle | native |
+|---|---|---|---|---|
+| a defined fn | `ExCallD` | Γ ⊕ D (`C'`, after `Demand`) | Γ ⊕ D (`synth`, defined fn) | Γ ⊕ D |
+| a defined attached method | `MCAttachedDefined` | Γ (`C`; the demand runs at the receiver's instantiation, `Cd`) | Γ (`synth_method`) | Γ ⊕ D |
+| a method a family supplies on demand | `PrFamily` (through `Provided`) | Γ (`C`, not the application's `C'`) | Γ (`provided_call`) | Γ |
+| an abstract fn, a provided method | `ExCallA`, `PrIn` | Γ (D is empty) | Γ | Γ |
+
+Both consistent forms were implemented and proved (`dune build
+@theories/all` green for each), with an oracle variant for each, but
+**each rejects a program both implementations accept**, so neither is
+committed (the task's stop rule):
+- **Γ everywhere** (`ExCallD` checks `Args` in `C`; `call_core` takes the
+  arguments' context separately; patches `scratch/lang-q/q4-gamma.patch`
+  and `q4-gamma-oracle.patch`). Corpus against the oracle: 466 same /
+  2 diff. It accepts [args-context-shadow-call](examples/args-context-shadow-call.moss)
+  (42), which both implementations reject, and **rejects
+  [functor-captured-unbound](examples/functor-captured-unbound.moss)**,
+  which both accept: its argument block binds a closure that captures a
+  family method only the call's demand puts in force.
+- **Γ ⊕ D everywhere** (`MCAttachedDefined` and `PrFamily` check `Args`
+  in `family_restore C Cd` and `family_restore C C'`; `method_code_at2`
+  and `args_code2` run the receiver in Γ and the arguments in Γ ⊕ D;
+  patches `q4-gamma-plus-D.patch` and `q4-gamma-plus-D-oracle.patch`).
+  Corpus: 464 same / 1 diff. It **rejects
+  [sig-nonreq-shadow](examples/sig-nonreq-shadow.moss)**, which both
+  accept (42): the application a call demands installs the family's whole
+  result, so its `Int.m` (read with U = Bool) shadows the caller's own
+  `Int.m` for the arguments.
+
+Other tests (verdicts in their headers):
+[args-context-provision-wins](examples/args-context-provision-wins.moss)
+(Audit xm, oracle xm, native xx; Γ: mm; Γ ⊕ D: xx),
+[args-context-family-call](examples/args-context-family-call.moss)
+(all m; Γ ⊕ D: x), [args-context-alone](examples/args-context-alone.moss)
+(control, all m). The difference also decides D77 for an argument: in
+Γ ⊕ D a family's on-demand method counts as a provision there.
+
+Γ ⊕ D would be clean if a demanded application did not shadow what the
+caller provides (only the keys demanded, or none already present), which
+is a change to `FamilyStep`/`Demand` (lang-b's area). Γ would be clean if
+functor-captured-unbound's capture were not wanted. The owner decides.
+
 ---
 
 ## Consolidation (branch ob-consol)

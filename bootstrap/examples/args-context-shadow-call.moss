@@ -1,0 +1,52 @@
+# Q4 (AUDIT-CHANGES "Q4"): sig-nonreq-shadow.moss's program with a plain
+# fn call. `call_n` needs `A.n`, read at Int; the family F supplies it on
+# demand, and its application also installs F's `Int.m`, read with
+# U = Bool. demo provides `Int.m` itself, with U = Int. Checked in the
+# caller's context Γ, the argument `k.m()` is demo's `Int.m` (() -> Int)
+# and the program prints 42. Checked in Γ ⊕ D, the family's `Int.m`
+# (() -> Bool) shadows demo's, and the program is rejected.
+# Verdicts: Audit rejects (ExCallD checks the arguments in Γ ⊕ D); oracle
+# rejects ("argument `x` of `call_n` is `Bool`, expected `Int`"); native
+# rejects ("incompatible types" at the argument).
+#   Under Γ at every call: prints 42 (oracle variant oracle-q4g.exe: 42).
+#   Under Γ ⊕ D at every call: rejects, and so does the method-call form,
+#   sig-nonreq-shadow.moss, which both implementations accept (42).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type U;
+val u0: U;
+assume A {
+  fn .m(): U;
+  fn .n(x: A): A;
+}
+functor F[A]: U, u0 -> A.m, A.n;
+functor G: A, U, u0 -> A.m, A.n {
+  bind A.m = () => u0;
+  bind A.n = (x) => x;
+}
+assume Std, A, A.n {
+  fn call_n(x: Int) { print_int(x); }
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Int;
+    bind U = Int;
+    bind Int.m = () => 42;
+    bind U = Bool;
+    bind u0 = true;
+    bind F = G;
+    let k: Int = 7;
+    call_n(k.m());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

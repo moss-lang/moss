@@ -1,0 +1,28 @@
+# Q4 control (AUDIT-CHANGES "Q4"): as args-context-provision-wins.moss,
+# but `d.describe()` is not an argument of a call that demands `Desc`. A
+# family that would supply `.describe` at Meter on demand is not a
+# provision of it (D77), so the attached method is called.
+# Verdicts: Audit m (under either Q4 choice too); oracle m; native m.
+tag Meter(Int);
+type Q;
+fn .describe(): Char;
+
+assume Std {
+  fn Meter.describe(): Char { char::m }
+}
+
+functor Desc[Q]: Std, Q -> Q.describe;
+functor ByX: Std, Q -> Q.describe {
+  bind Q.describe = () => char::x;
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Desc = ByX;
+    bind Q = Meter;
+    let d = Meter(3);
+    putchar(d.describe());
+    putchar(char::newline);
+  }
+}

@@ -1,0 +1,32 @@
+# Q4 (AUDIT-CHANGES "Q4"): the family-demanded method call (PrFamily).
+# The family `Both` supplies `.describe` and `.show` at Meter.
+# `d.show(...)` finds no provision of `.show` at Meter, so it applies
+# `Both` on demand, around the whole call. Its argument `d.describe()`
+# means the attached method if checked in Γ (m), and the family's if
+# checked with that application in force, Γ ⊕ D (x).
+# Verdicts: Audit m (PrFamily checks the arguments in Γ); oracle m;
+# native m. Under Γ at every call: m. Under Γ ⊕ D at every call: x.
+tag Meter(Int);
+type Q;
+fn .describe(): Char;
+fn .show(c: Char);
+
+assume Std {
+  fn Meter.describe(): Char { char::m }
+}
+
+functor Both[Q]: Std, Q -> Q.describe, Q.show;
+functor ByX: Std, Q -> Q.describe, Q.show {
+  bind Q.describe = () => char::x;
+  bind Q.show = (c) => putchar(c);
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Both = ByX;
+    let d = Meter(3);
+    d.show(d.describe());
+    putchar(char::newline);
+  }
+}
