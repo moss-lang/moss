@@ -1,6 +1,7 @@
 (* Declaration-cycle validation supplies the actual depth of family walks. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Definition context_check_specs(fuel:nat)(w:Elab.world)(stack:list nat)(mi:nat):list spec->res unit:=
  fix go(specs:list spec):res unit:=match specs with

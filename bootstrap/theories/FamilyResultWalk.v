@@ -3,6 +3,7 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  Merge CanonTypes NominalSupport CtxWalk KeyTranslation FamilyShapeExec FamilyMethodExec FamilyMethodCtx FamilyResultFold TySupport
  FamilyOutputSubst ProvideResultExec ProvideResultFold.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=ExecutionModel.Elaboration.

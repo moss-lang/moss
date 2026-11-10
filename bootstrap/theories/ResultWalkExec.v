@@ -5,6 +5,7 @@ From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFram
  CtxWalk CtxMerge NominalSupport FamilyResultFold FamilyResultWalk
  OutputScopeExec ResultItemsFold ResultTypedLeaves ResultTrivialLeaves ResultSymbolShapes
  ProvideResultDomain ProvideResultReading ProvideResultFunction ProvideResultMethod ProvideFunctorContext.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=ExecutionModel.Elaboration.

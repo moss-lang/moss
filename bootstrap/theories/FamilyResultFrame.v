@@ -1,6 +1,7 @@
 (* A family's semantic result updates method provisions only. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel Sx.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Definition FamilyMethodEntry(e:A.entry):Prop:=

@@ -1,6 +1,7 @@
 (* A successful family leaf scan contains methods and context wrappers only. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=ExecutionModel.Elaboration.

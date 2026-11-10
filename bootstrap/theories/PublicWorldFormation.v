@@ -10,6 +10,7 @@
      by probing the merge with a unifier that marks unformed nodes. *)
 From Stdlib Require Import List ListDec String Arith Bool Lia.
 From NM Require Import Audit PublicTypeRead PublicFormation.
+From NM Require Import AuditFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 

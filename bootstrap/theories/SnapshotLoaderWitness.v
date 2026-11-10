@@ -3,6 +3,7 @@
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit SourceSnapshot SnapshotLoader.
 From NM Require FrontEndComplete Parse Sx.
+From NM Require Import AuditFacts.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Module L := Audit.Loader.
 

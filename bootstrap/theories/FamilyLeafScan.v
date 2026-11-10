@@ -2,6 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTr BodyTy
  MethodLookup MethodLookupNone MethodKind FamilySelectTrace FamilyOutputLeaf.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Definition family_spec_scan(f:nat)(e:env)(mi:nat)(outer:list(nat*ety))(sp:spec):M(list family_leaf):=

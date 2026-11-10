@@ -2,6 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrameCore BodySoundCore BodyTy
  FreeVisitorCore ResultMentionExec ResultMentionsFold ResultMentionsCover FixedInputsStep NestingTypesExec MethodLookup MethodLookupNone.
+From NM Require Import AuditFacts.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements free_type_syms result_mentions_go functor_fixed_go].

@@ -8,6 +8,7 @@
 From Stdlib Require Import String List Arith Bool Lia.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicFormation.
+From NM Require Import AuditFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
