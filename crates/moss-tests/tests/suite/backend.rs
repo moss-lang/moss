@@ -1137,6 +1137,16 @@ fn a_use_needs_its_requirements_in_force() {
     build_with(&wasi("ruleb_closure_bound"), PRELUDE);
 }
 
+/// Q4: a call's arguments are checked in the caller's context, not with
+/// the call's demanded families in force, so `d.describe()` passed to `f`
+/// or to `d.g` is the attached method both times (`mm`). The oracle here
+/// prints `xm`: it checks a fn call's arguments with the demand in force
+/// (lang-q has the change).
+#[test]
+fn arguments_are_read_in_the_callers_context() {
+    assert_eq!(run_moss(&wasi("args_in_caller_context"), PRELUDE), "mm\n");
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a

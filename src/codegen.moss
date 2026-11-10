@@ -4180,7 +4180,7 @@ assume Std {
         cg_env.write(emark);
         cg_genv.write(gmark);
         push_bytes(body, recv);
-        emit_args(body, ast::c_of(e), ast::d_of(e), m, ps);
+        emit_args_in(body, ast::c_of(e), ast::d_of(e), m, ps, demark, dgmark);
         reach(meth, penv);
         push_needs(body, meth, penv, ast::none(), map);
         op_call(body, index_of_fn(meth, penv));
@@ -4559,7 +4559,7 @@ assume Std {
         check_callee(sym);
         let map = int_list();
         let env = callee_env(sym, map);
-        emit_args(body, ast::b_of(e), ast::c_of(e), m, sig_params(cg_genv.read(), sym, ast::none()));
+        emit_args_in(body, ast::b_of(e), ast::c_of(e), m, sig_params(cg_genv.read(), sym, ast::none()), demark, dgmark);
         reach(sym, env);
         push_needs(body, sym, env, ast::none(), map);
         op_call(body, index_of_fn(sym, env));
@@ -4922,6 +4922,24 @@ assume Std {
         i = i + 1;
       }
       out
+    }
+
+    # Q4: a call's arguments are checked and emitted in the caller's
+    # context Γ (`env`, `genv`, as they were before the call's family
+    # demands), never with the demanded families in force: an argument
+    # means what it means in `let a = e; f(a)`. The demands' binds bind
+    # no vals (D84 rule 7), so emitting their code first is not observed.
+    fn emit_args_in(body: IntList, run: Int, n: Int, m: Int, want: IntList, env: Int, genv: Int) {
+      let hon = cg_aon.read();
+      let haenv = cg_aenv.read();
+      let hagenv = cg_agenv.read();
+      cg_aenv.write(env);
+      cg_agenv.write(genv);
+      cg_aon.write(1);
+      emit_args(body, run, n, m, want);
+      cg_aon.write(hon);
+      cg_aenv.write(haenv);
+      cg_agenv.write(hagenv);
     }
 
     fn emit_args(body: IntList, run: Int, n: Int, m: Int, want: IntList) {

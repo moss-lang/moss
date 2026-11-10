@@ -1,0 +1,50 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Q4: every call checks its arguments in the caller's context, never with
+# the call's demanded families in force; an argument means what it means
+# in `let a = e; f(a)`. `f` and `Meter.g` both need the detached
+# `.describe` at `Meter` (through `Q`), which only the family `Desc`
+# supplies, on demand. In `main`'s own context `d.describe()` is the
+# attached method (D77: a family that would supply the detached one on
+# demand does not count), so both calls print `m`. The self-hosted
+# compiler used to check them with the demand in force and print `xx`;
+# the oracle here prints `xm` (lang-q has the change for it).
+
+tag Meter(Int);
+type Q;
+fn .describe(): Char;
+
+assume Std, Q, Q.describe {
+  fn f(c: Char) { putchar(c); }
+  fn Meter.g(c: Char) { putchar(c); }
+}
+
+assume Std {
+  fn Meter.describe(): Char { char::m }
+}
+
+functor Desc[Q]: Std, Q -> Q.describe;
+functor ByX: Std, Q -> Q.describe {
+  bind Q.describe = () => char::x;
+}
+
+assume Std {
+  fn demo() {
+    bind Desc = ByX;
+    bind Q = Meter;
+    let d = Meter(3);
+    f(d.describe());
+    d.g(d.describe());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
