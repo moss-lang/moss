@@ -5218,10 +5218,12 @@ Definition AssumedComplete (W : world) (C : cx) (ns : list item) : Prop :=
            (forall y, canon Cs (TAbs y) = TAbs z -> nlook y (c_ty Cv) = None) ->
            lookup_subst r th = Some (canon Cv (TAbs z))).
 
-(* Every val, fn, method, context and functor symbol's assume nesting
-   forms, with its assumed items complete (the oracle checks each). *)
+(* Every symbol's assume nesting forms, with its assumed items complete.
+   The oracle checks each val, fn, method, context and functor symbol's;
+   a type's, unit's, tag's or alias's nesting is checked too (criteria
+   section 7), so a nesting that holds only those is not exempt. *)
 Definition AssumesComplete (W : world) : Prop :=
-  forall s k, kind_sym W s = Some k -> In k [DKVal; DKFn; DKMeth; DKCtx; DKFunctor] ->
+  forall s k, kind_sym W s = Some k ->
     exists C ns, AssumeCtx W s C ns /\ AssumedComplete W C ns.
 
 (* Criteria section 7: every declaration is checked as written, whether

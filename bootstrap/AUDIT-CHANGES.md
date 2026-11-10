@@ -115,6 +115,7 @@ entry they belong to.
 | 72 | **Every call checks its arguments in the caller's context Γ** (`ExCallD`, as `MCAttachedDefined` and `PrFamily`; semantics.typ Q4) | lang-bq | relaxation, with the oracle (accepts a program both implementations reject; native E72) |
 | 73 | A linked body's result keys read a pinned fixed input at its pin (`link_site`; a key the pins re-read is one the body made) | pinsite | relaxation toward both implementations (completes #71: Audit still rejected every program binding `StdBase`) |
 | 74 | Every declared context forms as written (`DeclsForm`; criteria section 7) | n234 | A for cycles; B for an unused context naming what is not in scope |
+| 75 | Every symbol's assume nesting forms, whatever its kind (`AssumesComplete`; criteria section 7) | n234 | B |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2287,6 +2288,40 @@ executable tests unless noted.
   reads it. `AuditBuildExample.main_decls` proves it of the example world.
 - **Class.** A for the cycles (mirrors both implementations); B for an
   unused context that names something not in scope, by section 7.
+
+### 75. Every symbol's assume nesting forms (`AssumesComplete`, n234 branch; criteria section 7)
+- **The gap.** #57's `AssumesComplete` formed the assume nesting of every
+  val, fn, method, context and functor symbol, as the oracle's
+  `check_assumes` does, and skipped types, units, tags and aliases. A
+  nesting that holds only those was never formed:
+  `assume Nope { type T; }` was accepted.
+- **Rule now.** `AssumesComplete` asks it of every symbol, whatever its
+  kind: its nesting forms (`AssumeCtx`) and its assumed items are
+  complete (`AssumedComplete`). The list of kinds is gone.
+- **Criteria.** Section 7: an assume nesting is part of what each
+  declaration in it is written in, so it is checked as written whatever
+  is declared there. Fidelity: both implementations accept the three
+  rejected tests below, so they are class B, by section 7. In both, a
+  nesting is formed when something in it is elaborated or assumed.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [decl-nest-type](examples/decl-nest-type.moss) (`assume Nope { type T; }`) | accepts | accepts | accepts | rejects |
+  | [decl-nest-tag](examples/decl-nest-tag.moss) (only a tag in the nesting) | accepts | accepts | accepts | rejects |
+  | [decl-nest-incomplete](examples/decl-nest-incomplete.moss) (a tag's nesting assumes f without f's requirement) | accepts | accepts | accepts | rejects |
+  | [decl-nest-tag-control](examples/decl-nest-tag-control.moss) | accepts | accepts | accepts | accepts |
+  | `tests/errors/context_cycle_nominal.moss` (a tag's nesting through a cycle) | rejects | rejects | accepts | rejects (already by #74) |
+
+  Audit's verdicts are argued from the rules and run on the elaborator
+  variant of #74 (`assumes_complete` over every kind).
+- **Corpus.** The comparison of #74 (same variant): no corpus program's
+  verdict changes through this check alone. The one it reports
+  (`context_cycle_nominal.moss`, "N2nest") #74 already rejects.
+- **Proof.** No proof reads `AssumesComplete`. `main_assumes` loses its
+  kind hypothesis.
+- **Class.** B (both implementations accept the rejected tests), by
+  criteria section 7.
 
 ---
 

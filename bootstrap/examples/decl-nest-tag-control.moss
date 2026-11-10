@@ -1,0 +1,5 @@
+# Control for AUDIT-CHANGES #75: a tag in a nesting that forms.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.
+type T;
+assume T { tag Box[T](T); }
+fn main() {}

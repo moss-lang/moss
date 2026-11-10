@@ -189,7 +189,7 @@ Qed.
 (* main's nesting is empty; it is the only symbol. *)
 Lemma main_assumes : AssumesComplete world_main.
 Proof.
-  intros s k Kind _. unfold kind_sym in Kind.
+  intros s k Kind. unfold kind_sym in Kind.
   destruct (w_decl world_main s) as [d|] eqn:Read; [|discriminate].
   apply reads_decl in Read as [-> ->]. exists empty_context, [].
   split; [|intros k' s' []].

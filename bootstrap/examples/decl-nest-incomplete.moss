@@ -1,0 +1,10 @@
+# AssumesComplete for every kind (AUDIT-CHANGES #75): Box's nesting assumes
+# f without f's requirement T (D20), as tests/errors/
+# assume_missing_requirement_type.moss does for a fn's nesting.
+# Verdicts: oracle accepts (check_assumes skips a tag's nesting); native
+# accepts; Audit before accepts; now rejects (AssumedComplete: f's
+# requirement T is not in force). Class B.
+type T;
+assume T { fn f(); }
+assume f { tag Box; }
+fn main() {}
