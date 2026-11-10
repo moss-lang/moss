@@ -472,6 +472,30 @@ Definition fold_call (e : expr) (fallback : code) : code :=
         else fallback m d g st
   end.
 
+(* The cast table is fixed for the program. Ordinary tags can construct
+   their values directly, without reading a runtime type environment. *)
+Definition cc_tag (n : nsym) (th : subst) (c : code) : code :=
+  match lookup_cast n (view_casts P) with
+  | None => fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c k d g st with
+          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (Normal (VTag n w)) g1 st1
+          | r => r
+          end
+      end
+  | Some _ => fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c k d g st with
+          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
+          | r => r
+          end
+      end
+  end.
+
 Fixpoint cc (e : expr) {struct e} : code :=
   match e with
   | EVar x => fun m d g st =>
@@ -492,15 +516,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
                | _ => I.Evaluation (Stuck I.e_val) g st
                end
       end
-  | ETag n th e1 => let c1 := cc e1 in fun m d g st =>
-      match m with
-      | 0 => I.Evaluation OutOfFuel g st
-      | S k =>
-          match c1 k d g st with
-          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
-          | r => r
-          end
-      end
+  | ETag n th e1 => cc_tag n th (cc e1)
   | ECall f th sm args => let ca := cc_list cc args in fold_call (ECall f th sm args) (fun m d g st =>
       match m with
       | 0 => I.Evaluation OutOfFuel g st
@@ -681,12 +697,12 @@ Fixpoint cc (e : expr) {struct e} : code :=
       end
   | EBreak => fun m d g st =>
       match m with 0 => I.Evaluation OutOfFuel g st | S _ => I.Evaluation Breaking g st end
-  | ERecord fs => let ca := cc_list cc (map snd fs) in fun m d g st =>
+  | ERecord fs => let ca := cc_list cc (map snd fs) in let fields := map fst fs in fun m d g st =>
       match m with
       | 0 => I.Evaluation OutOfFuel g st
       | S k =>
           match ca k d g st with
-          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (combine (map fst fs) ws))) g1 st1
+          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (combine fields ws))) g1 st1
           | inr r => r
           end
       end
@@ -740,6 +756,23 @@ Definition tbl_ok (P : program_view) (tbl : fsym -> option code) (ftbl : usym ->
 Section Agreement.
 Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).
 Hypothesis Tables : tbl_ok P tbl ftbl.
+
+Lemma cc_tag_spec : forall n th c m d g st,
+  cc_tag P n th c m d g st =
+  match m with
+  | 0 => I.Evaluation OutOfFuel g st
+  | S k =>
+      match c k d g st with
+      | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
+      | r => r
+      end
+  end.
+Proof.
+  intros. unfold cc_tag. destruct (lookup_cast n (view_casts P)) eqn:Cast; [reflexivity|].
+  destruct m as [|k]; [reflexivity|].
+  destruct (c k d g st) as [[] g1 st1]; try reflexivity.
+  unfold L.lcheck_tag. rewrite Cast. reflexivity.
+Qed.
 
 Lemma select_carm_cc : forall arms w,
   select_carm (cc_arms (cc P tbl ftbl) arms) w =
@@ -1006,7 +1039,8 @@ Lemma agree_zero : agree 0.
 Proof.
   repeat split.
   - intros e d g st. destruct e; try reflexivity; try (destruct b; reflexivity).
-    apply fold_call_ok. reflexivity.
+    + apply cc_tag_spec.
+    + apply fold_call_ok. reflexivity.
   - intros l d g st. destruct l as [|e rest]; [reflexivity|].
     destruct e; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
@@ -1024,7 +1058,7 @@ Proof.
     + reflexivity.
     + reflexivity.
     + reflexivity.
-    + rewrite IHe. reflexivity.
+    + rewrite cc_tag_spec, IHe. reflexivity.
     + rewrite Ht. destruct (view_function P f) as [body|]; cbn [option_map]; [|reflexivity].
       rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].
       destruct (fprepare_call d s s0); [|reflexivity]. rewrite IHe. reflexivity.
