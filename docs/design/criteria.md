@@ -135,6 +135,33 @@ body reads it.
 - In `Audit.v`, `DeclsForm` and `AssumesComplete` (every symbol's assume
   nesting) are conditions of `ElaboratesIn`. This is a check, not a
   theorem.
+||||||| parent of 1462d9a (criteria: the language is separate from its platform library)
+
+## 8. The language is separate from its platform library
+
+The semantics of the *language* is kept apart from the semantics of
+`Base`, the platform library (`lib/wasm.moss` and the files beside it).
+The language's rules do not special-case `Base`'s names, such as `Ref`,
+`Array`, `Gc` or `Heap`. A program that declares the same things under
+other names, or a platform that names them differently, gets the same
+rules.
+
+- Facts about the platform belong in `Audit.v`'s `Platform` section. They
+  are a contract that the platform's world must meet, such as "`Ref` is a
+  tag whose payload is `StructRef`" or "`i32_one` is an `I32`", checked by
+  `Platform.Linked`.
+- The language's rules refer only to abstract notions that a platform
+  supplies, such as "machine types" or "the condition type". Where the
+  language itself needs a library item, for example `Bool` for a
+  conditional, it names the item through one explicit table of language
+  items, not ad hoc in each rule.
+- Example: D58's finite layouts need no case for `Ref`. `Ref` is a tag
+  whose payload is a machine reference type, so the general rule (a tag's
+  layout is its payload's, and an abstract type is one scalar) already gives
+  `Ref[Boxed=Cell]` a layout of one scalar
+  ([`AUDIT-CHANGES.md`](../../bootstrap/AUDIT-CHANGES.md) #90).
+- Not a theorem. It is checked by reading the rules: a name of `Base`
+  outside `Platform` and the language-items table is a leak.
 
 ## Using the criteria
 
