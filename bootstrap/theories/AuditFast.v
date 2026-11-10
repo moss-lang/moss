@@ -245,6 +245,21 @@ Proof.
       * exact IH.
 Qed.
 
+(* Number the arguments in one pass over the values. *)
+Fixpoint parameter_values_from (i : nat) (ws : list value) : locals :=
+  match ws with
+  | [] => []
+  | w :: rest => (i, w) :: parameter_values_from (S i) rest
+  end.
+Definition fast_parameter_values := parameter_values_from 0.
+
+Lemma parameter_values_from_spec : forall i ws,
+  parameter_values_from i ws = combine (seq i (List.length ws)) ws.
+Proof. intros i ws. revert i. induction ws; cbn; intros; [reflexivity|now rewrite IHws]. Qed.
+
+Lemma fast_parameter_values_spec : forall ws, fast_parameter_values ws = parameter_values ws.
+Proof. apply parameter_values_from_spec. Qed.
+
 (* ===================== Environment operations ============================ *)
 
 (* The type meanings of a fast environment, as an AuditLazy environment
@@ -470,7 +485,7 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
               match feval_arguments k P d g st args with
               | inl (ws, g1, st1) =>
                   match fprepare_call d th sm with
-                  | Some d' => I.ret_call g1 (feval k P d' (parameter_values ws) st1 body)
+                  | Some d' => I.ret_call g1 (feval k P d' (fast_parameter_values ws) st1 body)
                   | None => I.Evaluation (Stuck I.e_compose) g1 st1
                   end
               | inr r => r
@@ -483,7 +498,7 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
               match view_function P f' with
               | Some body =>
                   match feval_arguments k P d g st args with
-                  | inl (ws, g1, st1) => I.ret_call g1 (feval k P df (parameter_values ws) st1 body)
+                  | inl (ws, g1, st1) => I.ret_call g1 (feval k P df (fast_parameter_values ws) st1 body)
                   | inr r => r
                   end
               | None => I.Evaluation (Stuck I.e_nobody) g st
@@ -505,7 +520,7 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
                   | I.Evaluation (Normal w0) g0 st0 =>
                       match feval_arguments k P d g0 st0 args with
                       | inl (ws, g1, st1) =>
-                          I.ret_call g1 (feval k P d' (parameter_values (w0 :: ws)) st1 body)
+                          I.ret_call g1 (feval k P d' (fast_parameter_values (w0 :: ws)) st1 body)
                       | inr r => r
                       end
                   | r => r
@@ -775,12 +790,13 @@ Proof.
         destruct (L.leval_arguments k P ld g st l) as [[[ws g1] st1]|r]; [|reflexivity].
         rewrite fprepare_call_spec.
         destruct (erel_select fd ld s0 H) as [|d1 d2 R]; [reflexivity|].
-        cbn [option_map]. rewrite (IHe P _ _ _ _ _ (erel_call fd ld s d1 d2 H R)). reflexivity.
+        cbn [option_map]. rewrite fast_parameter_values_spec, (IHe P _ _ _ _ _ (erel_call fd ld s d1 d2 H R)).
+        reflexivity.
       * destruct (lookup_cases fd ld (IFn f) H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2; [reflexivity|].
         destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p o]; try reflexivity.
         -- destruct (view_function P f'); [|reflexivity]. rewrite (IHa P fd ld g st l H).
            destruct (L.leval_arguments k P ld g st l) as [[[ws g1] st1]|r]; [|reflexivity].
-           rewrite (IHe P _ _ _ _ _ R). reflexivity.
+           rewrite fast_parameter_values_spec, (IHe P _ _ _ _ _ R). reflexivity.
         -- rewrite (IHa P fd ld g st l H). reflexivity.
       * destruct (lookup_cases fd ld i H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2; [reflexivity|].
         destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p o]; try reflexivity.
@@ -788,7 +804,7 @@ Proof.
            destruct (L.leval k P ld g st e) as [[] g0 st0]; try reflexivity.
            rewrite (IHa P fd ld g0 st0 l H).
            destruct (L.leval_arguments k P ld g0 st0 l) as [[[ws g1] st1]|r]; [|reflexivity].
-           rewrite (IHe P _ _ _ _ _ R). reflexivity.
+           rewrite fast_parameter_values_spec, (IHe P _ _ _ _ _ R). reflexivity.
         -- rewrite (IHe P fd ld g st e H).
            destruct (L.leval k P ld g st e) as [[] g0 st0]; try reflexivity.
            rewrite (IHa P fd ld g0 st0 l H). reflexivity.

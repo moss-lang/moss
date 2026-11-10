@@ -349,7 +349,7 @@ Fixpoint sev (d : fenv) (g : locals) (st : mstate) (s : sexpr) {struct s} : opti
                | s :: rest => match sev d g st s with
                    | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
                    | None => None end end) args st with
-        | Some (ws, st1) => sev d (parameter_values ws) st1 body
+        | Some (ws, st1) => sev d (fast_parameter_values ws) st1 body
         | None => None
         end
       else None
@@ -432,7 +432,7 @@ Fixpoint scalar_compile (keys : list lk) (s : sexpr) {struct s} : scalar_code :=
       let cb := scalar_compile keys body in
       fun slots g st =>
         match ca slots g st with
-        | Some (ws, st1) => cb slots (parameter_values ws) st1
+        | Some (ws, st1) => cb slots (fast_parameter_values ws) st1
         | None => None
         end
   | SMatch1 e pat body =>
@@ -505,7 +505,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
               match ca k d g st with
               | inl (ws, g1, st1) =>
                   match fprepare_call d th sm with
-                  | Some d' => I.ret_call g1 (cf k d' (parameter_values ws) st1)
+                  | Some d' => I.ret_call g1 (cf k d' (fast_parameter_values ws) st1)
                   | None => I.Evaluation (Stuck I.e_compose) g1 st1
                   end
               | inr r => r
@@ -522,7 +522,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
               match tbl f' with
               | Some cf =>
                   match ca k d g st with
-                  | inl (ws, g1, st1) => I.ret_call g1 (cf k df (parameter_values ws) st1)
+                  | inl (ws, g1, st1) => I.ret_call g1 (cf k df (fast_parameter_values ws) st1)
                   | inr r => r
                   end
               | None => I.Evaluation (Stuck I.e_nobody) g st
@@ -548,7 +548,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
                   | I.Evaluation (Normal w0) g0 st0 =>
                       match ca k d g0 st0 with
                       | inl (ws, g1, st1) =>
-                          I.ret_call g1 (cf k d' (parameter_values (w0 :: ws)) st1)
+                          I.ret_call g1 (cf k d' (fast_parameter_values (w0 :: ws)) st1)
                       | inr r => r
                       end
                   | r => r
@@ -929,7 +929,7 @@ Lemma sev_call : forall d g st guard args body,
   sev P d g st (SCall guard args body) =
   if checks d guard then
     match sevl P d g args st with
-    | Some (ws, st1) => sev P d (parameter_values ws) st1 body
+    | Some (ws, st1) => sev P d (fast_parameter_values ws) st1 body
     | None => None
     end
   else None.
