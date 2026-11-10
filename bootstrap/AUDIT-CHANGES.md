@@ -3116,6 +3116,22 @@ declaration that does not form. Both implementations check a declaration
 where it is used (the oracle also checks context cycles, D73's listed
 parameters and every defined fn at declaration; native expands every
 context). By section 7 they are the ones to change.
+- **Native, done (impl-d15 branch).** Native now rejects all 18:
+  `lower::check_declarations` elaborates each tag payload, alias body,
+  val type and fn or method signature as written (and finds alias cycles
+  first, `e_alias_cycle`). It forms each context's items with every type
+  symbol in force as itself, and each functor's arguments, and resolves
+  its result items. `check_assumes` forms every symbol's nesting, whatever
+  its kind. `check_functor_total` runs for every functor with a body.
+  `check_const` emits each defined val's initializer against its type in
+  an empty frame (`e_const_assumes` for one inside an assume). The
+  controls are still accepted. tests/errors/decl_*.moss and
+  functor_partial_unused.moss are the rejected ones (15 of the 18:
+  decl-nest-tag and decl-alias-unresolved repeat decl-nest-type and
+  decl-tag-unresolved, and decl-tag-union-head the union_shared_head
+  tests). The controls are in tests/wasi/decl_*_control.moss.
+  The oracle is unchanged (gaps listed in agreement.rs and errors.rs),
+  except for D15 unions (N4).
 
 **Stale documentation.**
 - The header of kept-output-escape.moss says MadeFor (dropped).

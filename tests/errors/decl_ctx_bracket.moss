@@ -1,0 +1,14 @@
+# Criteria section 7: every declaration is checked as written, used or
+# not. From bootstrap/examples/decl-ctx-bracket.moss:
+#
+# DeclsForm (AUDIT-CHANGES #74; criteria section 7): a context item's
+# brackets are read as written: `Nope` is not in scope.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now
+# rejects (Brackets: the left side does not resolve). Class B.
+#
+# The verdicts above predate the self-hosted compiler's check: it now
+# rejects this too. The oracle still accepts it (a gap in agreement.rs).
+type T;
+assume T { fn f(x: T); }
+context A = f[Nope = T];
+fn main() {}

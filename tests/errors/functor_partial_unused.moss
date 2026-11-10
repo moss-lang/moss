@@ -1,0 +1,17 @@
+# Criteria section 7: every declaration is checked as written, used or
+# not. From bootstrap/examples/functor-partial-unused.moss:
+#
+# FunctorTotal (AUDIT-CHANGES #77; D55; criteria section 7): F promises
+# x and y and binds only x, and nothing applies or links F.
+# Verdicts: oracle accepts (functor_total runs at an application or a
+# link); native accepts (likewise); Audit before accepts; now rejects
+# (FunctorTotal is part of DeclsForm, checked for every functor with a
+# body). Class B, by criteria section 7.
+#
+# The verdicts above predate the self-hosted compiler's check: it now
+# rejects this too. The oracle still accepts it (a gap in agreement.rs).
+val x: ();
+val y: ();
+context XY = x, y;
+functor F: x -> XY { bind x = (); }
+fn main() {}

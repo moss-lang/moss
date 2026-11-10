@@ -630,14 +630,19 @@ fn private_checked_casts_preserve_chained_fixed_pin_meanings() {
 
 #[test]
 fn opaque_nominal_arguments_do_not_force_their_unused_payloads() {
-    let entry = source("type Broken=Broken;tag Bad(Broken); \
+    // `Bad`'s payload was an unformable one (`type Broken=Broken;`, an alias
+    // cycle). Every declaration is now checked as written (criteria section
+    // 7), and every tag must have a finite layout (D58), so no such payload
+    // is left to write. The payloads are ordinary; what remains is that a
+    // phantom argument's payload is not read, and the cast still traps.
+    let entry = source("tag Bad(()); \
         type T;assume T{tag Phantom[T](());}fn main(){Phantom[T=Bad](());}");
     let bytes = build_with(&entry, "");
     assert_eq!(wasmtime(&wasm_file(&bytes), None, &[]).code, 0);
     let reference = oracle_command(&["--prelude", "", &entry]);
     assert_eq!(reference.code, 0, "{}", reference.stderr);
     cast_probe(
-        "type Broken=Broken;tag Bad(Broken);tag Other(Broken); \
+        "tag Bad(());tag Other(()); \
          type Element;assume Element{tag Phantom[Element](());}",
         "bind Boxed=Phantom[Element=Bad];bind w::Heap; \
          let boxed=Phantom[Element=Bad](()).boxed(); \

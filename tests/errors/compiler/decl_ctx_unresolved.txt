@@ -1,0 +1,1 @@
+!B tests/errors/decl_ctx_unresolved.moss nope

@@ -1,0 +1,13 @@
+# Criteria section 7: every declaration is checked as written, used or
+# not. From bootstrap/examples/decl-meth-sig.moss:
+#
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): an abstract method's
+# signature denotes types as written; `Nope` is not in scope.
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# assumes R.m); now rejects. Class B.
+#
+# The verdicts above predate the self-hosted compiler's check: it now
+# rejects this too. The oracle still accepts it (a gap in agreement.rs).
+tag R;
+fn R.m(): Nope;
+fn main() {}

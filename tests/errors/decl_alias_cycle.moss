@@ -1,0 +1,14 @@
+# Criteria section 7: every declaration is checked as written, used or
+# not. From bootstrap/examples/decl-alias-cycle.moss:
+#
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): two aliases defined
+# in terms of each other have no reading (TyAlias has no finite
+# derivation).
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# reads them); now rejects. Class B.
+#
+# The verdicts above predate the self-hosted compiler's check: it now
+# rejects this too. The oracle still accepts it (a gap in agreement.rs).
+type X = Y;
+type Y = X;
+fn main() {}

@@ -9807,7 +9807,8 @@ assume Std {
     # each anonymous function a bind made that nothing called, including
     # the ones this pass makes, which come after it in symbol order. What
     # is reached was checked already: typing is generic, so every
-    # specialization of a frame says the same thing.
+    # specialization of a frame says the same thing. Last, each defined
+    # val's initializer, which no frame reaches (`check_const`).
     fn check_unreached() {
       let reached = int_list();
       var i = 0;
@@ -9822,6 +9823,7 @@ assume Std {
       cg_real.write(2);
       var f = 0;
       var g = 0;
+      var c = 0;
       loop {
         if f < prog::sym_count() {
           var done = false;
@@ -9837,12 +9839,52 @@ assume Std {
         } else if g < fb_sym.length() {
           check_functor_body(fb_sym.get(g));
           g = g + 1;
+        } else if c < prog::sym_count() {
+          if prog::sym_kind.get(c) == prog::sk_val() {
+            let cd = prog::sym_decl.get(c);
+            if ast::is_kind(cd, ast::k_d_val()) {
+              if ast::is_some(ast::c_of(cd)) { check_const(c); }
+            }
+          }
+          c = c + 1;
         } else {
           break;
         }
       }
       cg_real.write(1);
       cg_where.write(ast::none());
+    }
+
+    # Criteria section 7 (Audit's `ConstElab`): a defined val's
+    # initializer is checked as a use would read it, with nothing in
+    # context: its type read in an empty environment, and the initializer
+    # emitted against it in an empty frame. So it may assume nothing.
+    fn check_const(s: Int) {
+      let d = prog::sym_decl.get(s);
+      let m = prog::sym_mod.get(s);
+      cg_where.write(s);
+      prog::location.write(d + 1);
+      if prog::sym_nasm.get(s) > 0 {
+        semantic_error(prog::e_const_assumes(), prog::sym_name.get(s));
+        return ();
+      }
+      let genv = lower::env_empty();
+      lower::set_needs(s, genv, int_list(), int_list(), int_list());
+      lc_base.write(lc_name.length());
+      lc_visible.write(lc_name.length());
+      cg_depth.write(0);
+      cg_ntop.write(0);
+      pv_top.write(0);
+      pv_floor.write(0);
+      es_top.write(0);
+      cl_cur.write(lower::env_empty());
+      cl_base.write(ast::none());
+      cg_genv.write(genv);
+      cg_gbase.write(genv);
+      cg_env.write(types_of(genv));
+      cg_ret.write(ty_none());
+      let want = elab_ty(ast::b_of(d), m);
+      emit_as(int_list(), ast::c_of(d), m, want);
     }
 
     # D78: a functor bound to an abstract one may rely only on its own
@@ -9949,7 +9991,16 @@ assume Std {
       lower::lower_all();
       lower::check_listed();
       lower::check_layouts();
-      lower::check_unions();
+      lower::check_declarations();
+      # D55 for every functor with a body, applied or not (criteria
+      # section 7).
+      var fu = 0;
+      while fu < prog::sym_count() {
+        if prog::sym_kind.get(fu) == prog::sk_functor() {
+          check_functor_total(fu, 0);
+        }
+        fu = fu + 1;
+      }
       cg_real.write(1);
       check_runtime_library();
       cg_real.write(0);

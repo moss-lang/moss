@@ -1,1 +1,2 @@
 !L tests/errors/context_cycle_unused.moss A
+!L tests/errors/context_cycle_unused.moss B

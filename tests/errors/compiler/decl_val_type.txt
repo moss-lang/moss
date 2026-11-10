@@ -1,0 +1,1 @@
+!B tests/errors/decl_val_type.moss Nope

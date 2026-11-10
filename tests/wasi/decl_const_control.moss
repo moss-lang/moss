@@ -1,0 +1,9 @@
+# Criteria section 7: every declaration is checked as written, used or
+# not. From bootstrap/examples/decl-const-control.moss:
+#
+# Control for DeclsForm (AUDIT-CHANGES #76): an unused defined val that
+# elaborates, as lib/bool.moss's true and false.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.
+tag A;
+val x: A = A;
+fn main() {}

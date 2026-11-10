@@ -60,6 +60,27 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Programs the oracle wrongly accepts, by criteria section 7: an unused
+/// declaration that does not form, which it checks only where something
+/// uses it (agreement.rs lists the same gap). Each has no oracle golden.
+pub const ORACLE_ACCEPTS: &[&str] = &[
+    "tests/errors/decl_alias_cycle.moss",
+    "tests/errors/decl_const_bad.moss",
+    "tests/errors/decl_const_in_assume.moss",
+    "tests/errors/decl_const_mistyped.moss",
+    "tests/errors/decl_ctx_bracket.moss",
+    "tests/errors/decl_ctx_unresolved.moss",
+    "tests/errors/decl_fn_sig.moss",
+    "tests/errors/decl_functor_arg.moss",
+    "tests/errors/decl_functor_res.moss",
+    "tests/errors/decl_meth_sig.moss",
+    "tests/errors/decl_nest_incomplete.moss",
+    "tests/errors/decl_nest_type.moss",
+    "tests/errors/decl_tag_unresolved.moss",
+    "tests/errors/decl_val_type.moss",
+    "tests/errors/functor_partial_unused.moss",
+];
+
 /// Programs the oracle does not model, so it cannot reject them either.
 pub const ORACLE_UNSUPPORTED_ERRORS: &[(&str, &str)] = &[(
     "tests/errors/beyond_std.moss",
@@ -92,6 +113,10 @@ fn goldens() {
             check_golden(&format!("tests/errors/compiler/{name}.txt"), &compiled.text());
         }
         let checked = oracle(&entry, &[]);
+        if ORACLE_ACCEPTS.contains(&entry.as_str()) {
+            assert_eq!(checked.code, 0, "{entry} is listed as wrongly accepted by the oracle: {}", checked.stderr);
+            continue;
+        }
         if ORACLE_UNSUPPORTED_ERRORS.iter().any(|(e, _)| *e == entry) {
             assert_eq!(checked.code, ORACLE_UNSUPPORTED, "{entry}: {}", checked.stderr);
         } else {

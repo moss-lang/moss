@@ -1,0 +1,1 @@
+?B tests/errors/decl_const_bad.moss x nope

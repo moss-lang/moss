@@ -75,6 +75,13 @@ const MEMORIES: &str = "oracle gap: more than one memory (D79)";
 /// only runs whole programs, reports it unsupported.
 const LIBRARY: &str = "a library module with no `main`";
 
+/// Criteria section 7: every declaration is checked as written, used or
+/// not (AUDIT-CHANGES #74 to #77). The self-hosted compiler checks it; the
+/// oracle checks an unused declaration only for context cycles, D73's
+/// listed parameters and D15 unions, so it accepts these. It will be
+/// replaced rather than fixed.
+const ORACLE_GAP_UNUSED_DECL: &str = "oracle gap: an unused declaration that does not form (criteria section 7)";
+
 /// Known gaps: (program, the self-hosted compiler's verdict, the oracle's,
 /// why). Sorted by program.
 const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
@@ -83,6 +90,21 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/beyond_std.moss", Reject, Unsupported, BEYOND),
     ("tests/errors/context_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_CONTEXT_BRACKETS),
     ("tests/errors/context_item_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_ITEM_BRACKETS),
+    ("tests/errors/decl_alias_cycle.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_const_bad.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_const_in_assume.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_const_mistyped.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_ctx_bracket.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_ctx_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_fn_sig.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_functor_arg.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_functor_res.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_meth_sig.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_nest_incomplete.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_nest_type.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_tag_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/decl_val_type.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/functor_partial_unused.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
     ("tests/errors/merge_unsettled.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_ROUNDS),
     ("tests/errors/record_field_twice.moss", Accept, Reject, SELF_HOSTED_BUG_FIELD_TWICE),

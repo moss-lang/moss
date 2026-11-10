@@ -242,6 +242,15 @@ assume Std {
   # be used. Named by the method.
   fn e_bind_defined(): Int { 16 + 14 }
 
+  # An alias whose body reaches itself through aliases (`type X = Y;
+  # type Y = X;`), which has no reading. Named by the alias.
+  fn e_alias_cycle(): Int { 16 + 15 }
+
+  # A defined val declared inside an `assume` block. A use reads its
+  # initializer with nothing in context (D50, Audit's `ConstElab`), so
+  # nothing it assumes could be there. Named by the val.
+  fn e_const_assumes(): Int { 16 + 16 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, mtext, sources, pinfo,
     ent_head, ent_link,

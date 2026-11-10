@@ -1413,11 +1413,34 @@ assume Std {
       prog::location.write(saved);
     }
 
-    # D15 at every declaration, used or not (criteria section 7): the
-    # types a tag's payload, an alias's body, a val's type and a fn's or
-    # method's signature write, each read as written.
-    fn check_unions() {
+    # Criteria section 7: every declaration is checked as written, used or
+    # not, each type symbol standing for itself. A use reads it again at
+    # its own meanings, as before.
+    # - A tag's payload, an alias's body, a val's type and a fn's or
+    #   method's signature elaborate (names resolve, no alias cycle), and
+    #   their unions are D15's (`check_written`).
+    # - A context's items form, as an assume nesting of their own would,
+    #   with every type symbol in force as itself.
+    # - A functor's arguments form, and each item of its result resolves.
+    # (Every symbol's own nesting is formed by `check_assumes`, and a
+    # functor's totality by codegen's `check_functor_total`.)
+    fn check_declarations() {
       let saved = prog::location.read();
+      let cyclic = check_alias_cycles();
+      # Every type symbol standing for itself: a context's items are read
+      # at each use with the user's types, so its own nesting is not
+      # where they are read (`context Branch = i32_bool;` mentions `I32`).
+      # (`as_assumed` may make a parameter symbol, so the count is read
+      # first.)
+      var as_written = env_empty();
+      let declared = prog::sym_count();
+      var t = 0;
+      while t < declared {
+        if prog::sym_kind.get(t) == prog::sk_type() {
+          as_written = env_push(as_written, ek_type(), ast::none(), t, as_assumed(t), ast::none());
+        }
+        t = t + 1;
+      }
       var s = 0;
       while s < prog::sym_count() {
         let d = prog::sym_decl.get(s);
@@ -1426,11 +1449,17 @@ assume Std {
         if ast::is_some(d) {
           prog::location.write(d + 1);
           if kind == prog::sk_fn() {
-            union_signature(d, m);
+            if !cyclic { decl_signature(d, m); }
           } else if kind == prog::sk_method() {
-            union_signature(d, m);
-          } else {
-            union_decl_type(d, m);
+            if !cyclic { decl_signature(d, m); }
+          } else if kind == prog::sk_context() {
+            if ast::is_kind(d, ast::k_d_context()) {
+              assume_run(as_written, m, ast::b_of(d), ast::c_of(d), int_list(), int_list());
+            }
+          } else if kind == prog::sk_functor() {
+            decl_functor(d, m);
+          } else if !cyclic {
+            decl_type(d, m);
           }
         }
         s = s + 1;
@@ -1438,27 +1467,108 @@ assume Std {
       prog::location.write(saved);
     }
 
-    fn union_decl_type(d: Int, m: Int) {
+    # A type a declaration writes, as written.
+    fn decl_written(t: Int, m: Int) {
+      if !ast::is_some(t) {
+        return ();
+      }
+      # A bare `This` is the receiver's type, which only a use supplies.
+      if !ast::is_kind(t, ast::k_ty_this()) {
+        types::elab(t, m);
+      }
+      check_written(env_empty(), t, m);
+    }
+
+    fn decl_type(d: Int, m: Int) {
       let k = ast::kind_of(d);
       if k == ast::k_d_tag() {
-        check_written(env_empty(), ast::b_of(d), m);
+        decl_written(ast::b_of(d), m);
       } else if k == ast::k_d_alias() {
-        check_written(env_empty(), ast::b_of(d), m);
+        decl_written(ast::b_of(d), m);
       } else if k == ast::k_d_val() {
-        check_written(env_empty(), ast::b_of(d), m);
+        decl_written(ast::b_of(d), m);
       }
     }
 
-    fn union_signature(d: Int, m: Int) {
+    fn decl_signature(d: Int, m: Int) {
       if !ast::is_kind(d, ast::k_d_fn()) {
         return ();
       }
       var i = 0;
       while i < ast::fn_nparams(d) {
-        check_written(env_empty(), ast::b_of(ast::kid_at(ast::fn_params(d), i)), m);
+        decl_written(ast::b_of(ast::kid_at(ast::fn_params(d), i)), m);
         i = i + 1;
       }
-      check_written(env_empty(), ast::fn_ret(d), m);
+      decl_written(ast::fn_ret(d), m);
+    }
+
+    fn decl_functor(d: Int, m: Int) {
+      if !ast::is_kind(d, ast::k_d_functor()) {
+        return ();
+      }
+      assume_items(m, ast::fu_args(d), ast::fu_nargs(d), int_list(), int_list());
+      var i = 0;
+      while i < ast::fu_nres(d) {
+        let spec = ast::kid_at(ast::fu_res(d), i);
+        let path = ast::a_of(spec);
+        if ast::is_some(path) {
+          if !ast::is_some(prog::resolve_path(m, path)) {
+            let saved = prog::location.read();
+            if ast::is_some(ast::source_start(spec)) { prog::location.write(spec + 1); }
+            prog::error(prog::e_scope(), m, ast::path_last(path));
+            prog::location.write(saved);
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    # An alias whose body reaches itself through aliases has no reading
+    # (Audit: no finite `TyAlias` derivation); elaborating one would not
+    # end, so this is found first, and then no declaration's types are
+    # elaborated here. Whether any was found.
+    fn check_alias_cycles(): Bool {
+      let errors = prog::error_count();
+      let done = int_list();
+      var s = 0;
+      while s < prog::sym_count() {
+        if prog::sym_kind.get(s) == prog::sk_alias() {
+          alias_cycle_from(s, int_list(), done);
+        }
+        s = s + 1;
+      }
+      prog::error_count() > errors
+    }
+
+    fn alias_cycle_from(s: Int, walking: IntList, done: IntList) {
+      if types::contains_sym(walking, s) {
+        prog::error(prog::e_alias_cycle(), prog::sym_mod.get(s), prog::sym_name.get(s));
+        return ();
+      }
+      if types::contains_sym(done, s) {
+        return ();
+      }
+      let d = prog::sym_decl.get(s);
+      if !ast::is_kind(d, ast::k_d_alias()) {
+        return ();
+      }
+      let within = int_list();
+      var i = 0;
+      while i < walking.length() {
+        within.push(walking.get(i));
+        i = i + 1;
+      }
+      within.push(s);
+      let named = int_list();
+      types::mentioned(ast::b_of(d), prog::sym_mod.get(s), named);
+      i = 0;
+      while i < named.length() {
+        if prog::sym_kind.get(named.get(i)) == prog::sk_alias() {
+          alias_cycle_from(named.get(i), within, done);
+        }
+        i = i + 1;
+      }
+      done.push(s);
     }
 
     # Depth first, entering each context once (`seen`), so contexts nest
@@ -1814,13 +1924,9 @@ assume Std {
       let seen_root = int_list();
       var f = 0;
       while f < prog::sym_count() {
-        let kind = prog::sym_kind.get(f);
-        var checked = kind == prog::sk_fn();
-        if !checked { checked = kind == prog::sk_method(); }
-        if !checked { checked = kind == prog::sk_val(); }
-        if !checked { checked = kind == prog::sk_context(); }
-        if !checked { checked = kind == prog::sk_functor(); }
-        if checked {
+        # Every symbol's nesting, whatever its kind (criteria section 7):
+        # a nesting that holds only types or tags forms too.
+        if ast::is_some(prog::sym_decl.get(f)) {
           let run = prog::sym_asm.get(f);
           let len = prog::sym_nasm.get(f);
           var rooted = 0;

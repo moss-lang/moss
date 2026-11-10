@@ -58,6 +58,8 @@ assume Std {
     if code == prog::e_self_apply() { return "a functor cannot apply itself through its own inputs"; }
     if code == prog::e_union() { return "union members must be nominal types with distinct heads"; }
     if code == prog::e_bind_defined() { return "a defined method cannot be bound; bind the detached method instead"; }
+    if code == prog::e_const_assumes() { return "a defined val cannot be declared inside an assume block"; }
+    if code == prog::e_alias_cycle() { return "this alias is defined in terms of itself"; }
     if code == prog::e_result_collide() { return "two distinct result items of the functor are one item here"; }
     return "compilation failed";
   }

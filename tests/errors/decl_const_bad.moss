@@ -1,0 +1,13 @@
+# Criteria section 7: every declaration is checked as written, used or
+# not. From bootstrap/examples/decl-const-bad.moss:
+#
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): a defined val's
+# initializer elaborates, used or not, as ExConst reads it at a use;
+# `nope` is not in scope.
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# reads x); now rejects (ConstElab). Class B.
+#
+# The verdicts above predate the self-hosted compiler's check: it now
+# rejects this too. The oracle still accepts it (a gap in agreement.rs).
+val x: () = nope;
+fn main() {}

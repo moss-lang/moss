@@ -1,0 +1,1 @@
+!` tests/errors/decl_alias_cycle.moss X
