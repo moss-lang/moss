@@ -231,6 +231,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicOutputSubst.output_entries_rel);
   root (@NM.PublicOutputSubst.provide_result_rel);
   root (@PublicLinkMergesI.captured_in_force_ok);
+  root (@NM.PublicLinkMerges.captured_mentioned);
   root (@NM.PublicFormation.family_keys_typed);
   root (@NM.PublicCallRealize.ctxof_formed);
   root (@NM.PublicCallRealize.call_agree);

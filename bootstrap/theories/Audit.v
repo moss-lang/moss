@@ -4709,9 +4709,9 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
       (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     (* rule B for the closure: G's inputs that F does not take are
-       captured here, each read as its meaning here, so each is in force
-       here (inputs F takes are linked at each application) *)
-    (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> nlook x (c_ty C) <> None) ->
+       captured here, so each is in force here, through G's merge class
+       (inputs F takes are linked at each application) *)
+    (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> InForceThrough C Cg x) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
 
 (* [D66] a fn provider: a defined fn (its needs answered here), or an

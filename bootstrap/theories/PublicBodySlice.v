@@ -3322,15 +3322,20 @@ Proof.
 Qed.
 
 (* BFunClosure *)
-(* HYPOTHESIS (T29), now immediate. What a closure captures from where
-   it is bound is read at G's inputs there, and each of G's inputs that F
-   does not take is in force there (rule B for the closure, BFunClosure),
-   so the closure's `lexical_capture` has its meaning. Before rule B, a
-   captured need could be keyed at a declared symbol out of force
-   (examples/functor-captured-unbound.moss, now rejected).
+(* HYPOTHESIS (T29). What a closure captures from where it is bound
+   mentions, among G's own inputs that F does not take, only types in
+   force there or symbols the context mentions (which the closure's
+   `lexical_capture` keeps the meanings of). Rule B for the closure puts
+   each such input in force there through G's merge class; a member of
+   its class may be in force without the input itself
+   (examples/bind-merge-unbound.moss).
    Proved in PublicLinkMerges (`captured_in_force_ok`). *)
-#[using="W"] Definition CapturedInForceOk : Prop := forall C Cu Cg x,
-  (forall y, In y (map fst (A.c_ty Cg)) -> ~ In y (map fst (A.c_ty Cu)) -> A.nlook y (A.c_ty C) <> None) ->
+Definition CapturedInForceOk : Prop := forall C gg Cu nsu Cg nsg smc,
+  A.FunCtx W gg Cg nsg -> PublicFormation.KeysScoped W C ->
+  A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
+    (captured Cu nsu nsg) smc ->
+  forall k p x, In k (captured Cu nsu nsg) -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
+  In x (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
   In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
   A.nlook x (A.c_ty C) <> None \/ In x (capture_gens C).
 Hypothesis captured_in_force : CapturedInForceOk.
@@ -3463,10 +3468,9 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (filter (fun k => negb (existsb (item_eqb (A.canon_item Cu k)) nsu)) nsg) smc ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
-      (forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h (A.lexical_capture C) sm smc).
 Proof.
-  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx CapF J rr _.
+  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
@@ -3518,7 +3522,7 @@ Proof.
     rewrite (Lth x (Sc x Ix)). cbn [option_map].
     destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
     2: { rewrite (Am2 x (Sc x Ix) Ou). unfold dc.
-         rewrite (cmeaning_capture d C dsel x Abs (captured_in_force C Cu Cg x CapF (Sc x Ix) Ou)).
+         rewrite (cmeaning_capture d C dsel x Abs (captured_in_force C gg Cu nsu Cg nsg smc FCg (proj1 (proj2 (proj1 Fmd))) SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix) Ou)).
          reflexivity. }
     assert (Fu : A.Fixed W u x).
     { apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
@@ -4813,7 +4817,7 @@ Proof.
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       destruct (link_body_functx u gg h Cu nsu Cg nsg LB FCu FCg) as [FCu' FCg'].
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx CapF J).
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].

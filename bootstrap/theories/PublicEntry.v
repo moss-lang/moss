@@ -622,7 +622,10 @@ Qed.
 (* ---- what a functor closure captures (PublicLinkMerges) ---------------------- *)
 
 Lemma captured_in_force_ok : forall W, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CapturedInForceOk W.
-Proof. intros W C Cu Cg x Cap Ig Ou. left. exact (Cap x Ig Ou). Qed.
+Proof.
+  intros W C gg Cu nsu Cg nsg smc FCg Ks Sat k p x Ik Il Ix Ig Ou.
+  exact (PublicLinkMerges.captured_mentioned W C gg Cu nsu Cg nsg smc FCg Ks Sat k p x Ik Il Ix Ig Ou).
+Qed.
 
 (* ---- table keys a path names are types (PublicFormation) --------------------- *)
 
