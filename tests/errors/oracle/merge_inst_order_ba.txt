@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/merge_inst_order_ba.moss: calling `g` needs `f` at another instantiation than the one in the context here was provided at (a provision serves only the instantiation it was made at; D62)]
+[moss_m2 elab: tests/errors/merge_inst_order_ba.moss: calling `g` needs `B` and `A` to be one type, which its context merged (D43), but here they are `B` and `A`]

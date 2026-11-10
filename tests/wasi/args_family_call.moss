@@ -1,0 +1,29 @@
+# Q4 (AUDIT-CHANGES #72), from bootstrap/examples/args-context-family-call.moss:
+# `d.show(...)` applies the family `Both` on demand, around the whole
+# call; its argument `d.describe()` is checked in the caller's context,
+# where the application is not in force, so it is the attached method.
+# Prints `m`.
+tag Meter(Int);
+type Q;
+fn .describe(): Char;
+fn .show(c: Char);
+
+assume Std {
+  fn Meter.describe(): Char { char::m }
+}
+
+functor Both[Q]: Std, Q -> Q.describe, Q.show;
+functor ByX: Std, Q -> Q.describe, Q.show {
+  bind Q.describe = () => char::x;
+  bind Q.show = (c) => putchar(c);
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Both = ByX;
+    let d = Meter(3);
+    d.show(d.describe());
+    putchar(char::newline);
+  }
+}

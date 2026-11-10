@@ -1,0 +1,1 @@
+?_ tests/errors/bind_attached_defined.moss demo describe

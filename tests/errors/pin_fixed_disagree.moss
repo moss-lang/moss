@@ -1,0 +1,27 @@
+# Q6 (AUDIT-CHANGES #71), from bootstrap/examples/pin-fixed-disagree.moss:
+# as tests/wasi/pin_fixed_agree.moss, but `main` binds `Tok = Bool`
+# before `bind MakeTok = CharTok`, so CharTok's pin `Tok = Char`
+# disagrees with MakeTok's fixed reading of `Tok`; accepting the bind
+# would read a Char as a Bool.
+type Tok;
+
+assume Std, Tok {
+  fn tok(): Tok;
+}
+
+functor MakeTok[]: Std -> tok;
+functor CharTok: Std -> tok {
+  bind Tok = Char;
+  bind tok = () => char::q;
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Tok = Bool;
+    bind MakeTok = CharTok;
+    bind MakeTok;
+    if tok() { putchar(char::t); } else { putchar(char::f); }
+    putchar(char::newline);
+  }
+}

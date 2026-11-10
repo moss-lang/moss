@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/pin_fixed_disagree.moss: `CharTok` cannot be bound to `MakeTok` here: it binds `Tok` to `Chr[I32=I32]`, and here `Tok` is `Bool`; `MakeTok` is fixed in `Tok` (D84)]

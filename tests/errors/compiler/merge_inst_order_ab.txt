@@ -1,0 +1,2 @@
+!Y tests/errors/merge_inst_order_ab.moss A
+!R tests/errors/merge_inst_order_ab.moss f

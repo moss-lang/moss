@@ -1,0 +1,2 @@
+?X tests/errors/pin_fixed_disagree.moss main Tok
+?X tests/errors/pin_fixed_disagree.moss main tok

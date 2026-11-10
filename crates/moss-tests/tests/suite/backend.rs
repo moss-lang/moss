@@ -43,6 +43,10 @@ fn wasi(name: &str) -> String {
     format!("tests/wasi/{name}.moss")
 }
 
+fn errors(name: &str) -> String {
+    format!("tests/errors/{name}.moss")
+}
+
 /// What the self-hosted compiler writes for `entry`: a module or a report.
 fn compile_with_moss(entry: &str, prelude: &str) -> Vec<u8> {
     compile(entry, prelude).stdout
@@ -1088,15 +1092,21 @@ fn result_items_distinct_in_the_functor_stay_distinct() {
 /// instantiations, so the order of an assume list does not decide which
 /// instantiation the merged key has. `g` assumes `f` at `T = A` and at
 /// `T = B`, so its context merges `A` with `B`, and `h`, where they are
-/// distinct, cannot call it (`e_merge`, `Y`), in either order (the other
-/// is tests/errors/merge_inst_order_ba.moss); and a val's two entries
+/// distinct, cannot call it (`e_merge`, `Y`), in either order (both are
+/// in tests/errors, with merge_inst_order_ba.moss); and a val's two entries
 /// make `A` and `B` one type where the val's own type does not mention
 /// `T`.
 #[test]
 fn merging_an_item_unifies_its_instantiations() {
-    let entry = wasi("merge_inst_order_ab");
+    let entry = errors("merge_inst_order_ab");
     assert!(report(&entry, PRELUDE).starts_with(&format!("!Y {entry} A\n")), "{entry}");
     build_with(&wasi("merge_inst_val"), PRELUDE);
+    // A fn whose signature does not mention `T` likewise (merge_inst_fn);
+    // the controls merge nothing the program relies on, or merge through
+    // the signature.
+    for name in ["merge_inst_fn", "merge_inst_nomerge", "merge_inst_sig"] {
+        build_with(&wasi(name), PRELUDE);
+    }
 }
 
 /// Q3 (AUDIT-CHANGES #70): `bind Meter.describe = ...` names the
@@ -1107,7 +1117,7 @@ fn merging_an_item_unifies_its_instantiations() {
 /// get a meaning.
 #[test]
 fn a_defined_method_is_not_bound() {
-    let entry = wasi("bind_attached_defined");
+    let entry = errors("bind_attached_defined");
     assert_eq!(report(&entry, PRELUDE), format!("?_ {entry} demo describe\n"));
     for (name, out) in [("bind_attached_detached", "mxm\n"), ("bind_attached_abstract", "x\n")] {
         let entry = wasi(name);
@@ -1131,7 +1141,7 @@ fn a_use_needs_its_requirements_in_force() {
         ("ruleb_family_unbound", "!P {} T\n"),
         ("ruleb_closure_unbound", "?P {} main T\n"),
     ] {
-        let entry = wasi(name);
+        let entry = errors(name);
         assert_eq!(report(&entry, PRELUDE), fill(expected, &entry), "{entry}");
     }
     build_with(&wasi("ruleb_closure_bound"), PRELUDE);
@@ -1150,14 +1160,31 @@ fn a_family_demand_is_in_force_through_a_merge() {
     assert_eq!(run_moss(&entry, PRELUDE), "k\n");
 }
 
+/// Q6 (AUDIT-CHANGES #71): a body may pin a fixed input of the functor it
+/// is bound to when the pin agrees with the bind site's reading
+/// (pin_fixed_agree, `q`); tests/errors/pin_fixed_disagree.moss and
+/// tests/errors/pin_poly.moss are the refused variants.
+#[test]
+fn a_pin_of_a_fixed_input_agrees_with_the_bind_site() {
+    let entry = wasi("pin_fixed_agree");
+    assert_eq!(oracle_run(&entry, &[]), "q\n");
+    assert_eq!(run_moss(&entry, PRELUDE), "q\n");
+}
+
 /// Q4: a call's arguments are checked in the caller's context, not with
 /// the call's demanded families in force, so `d.describe()` passed to `f`
-/// or to `d.g` is the attached method both times (`mm`). The oracle here
-/// prints `xm`: it checks a fn call's arguments with the demand in force
-/// (lang-q has the change).
+/// or to `d.g` is the attached method both times (`mm`), on the oracle
+/// too (AUDIT-CHANGES #72; it printed `xm`, checking a fn call's arguments
+/// with the demand in force). So an argument a demand would shadow still
+/// has its caller's type (args_shadow_call, `42`), and a family-demanded
+/// method call already read its arguments so (args_family_call, `m`).
 #[test]
 fn arguments_are_read_in_the_callers_context() {
-    assert_eq!(run_moss(&wasi("args_in_caller_context"), PRELUDE), "mm\n");
+    for (name, out) in [("args_in_caller_context", "mm\n"), ("args_shadow_call", "42\n"), ("args_family_call", "m\n")] {
+        let entry = wasi(name);
+        assert_eq!(oracle_run(&entry, &[]), out, "{entry}");
+        assert_eq!(run_moss(&entry, PRELUDE), out, "{entry}");
+    }
 }
 
 /// D73's listed parameters must be types the declaration requires, and
@@ -1900,7 +1927,9 @@ fn a_provision_read_at_another_type_is_refused() {
 /// with, so `C.w`'s provision at `Foo = Char` has the type `f` reads.
 #[test]
 fn a_provision_is_read_through_the_principal_instantiation() {
-    assert_eq!(run_moss(&wasi("partially_bound_merge"), PRELUDE), "k\n");
+    let entry = wasi("partially_bound_merge");
+    assert_eq!(oracle_run(&entry, &[]), "k\n");
+    assert_eq!(run_moss(&entry, PRELUDE), "k\n");
 }
 
 /// `assume seed, T` — the type after the item — still puts `seed` at the

@@ -8,7 +8,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # and `demo` binds `X` but not `Y`, so `f` reads `C.w`'s `Foo = Y` as the
 # `Char` `X` means here, which `giveq` was provided at. The check that a
 # provision has the callee's type (E25) reads the callee's types through
-# that θ too. Prints `k`. The oracle still rejects it (D62; E24).
+# that θ too. Prints `k`, as the oracle does since AUDIT-CHANGES #60 (E24).
 type Foo;
 type A;
 type B;

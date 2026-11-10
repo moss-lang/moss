@@ -1,0 +1,12 @@
+# Δ4 control, from bootstrap/examples/merge-inst-nomerge.moss: two
+# entries of `v` at `T = A` and `T = B`; `g`'s own context merges `A`
+# with `B`, nothing relies on it and nothing calls `g`. Accepted.
+type T;
+type U;
+type A;
+type B;
+assume T, U { val v: U; }
+context K1 = U, A, v[T=A];
+context K2 = U, B, v[T=B];
+assume K1, K2 { fn g() {} }
+fn main() {}

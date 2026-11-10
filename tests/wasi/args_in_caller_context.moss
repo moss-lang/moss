@@ -11,7 +11,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # attached method (D77: a family that would supply the detached one on
 # demand does not count), so both calls print `m`. The self-hosted
 # compiler used to check them with the demand in force and print `xx`;
-# the oracle here prints `xm` (lang-q has the change for it).
+# the oracle printed `xm` before AUDIT-CHANGES #72 (lang-bq).
 
 tag Meter(Int);
 type Q;

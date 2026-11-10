@@ -1,0 +1,15 @@
+# Rule B (AUDIT-CHANGES #60), from bootstrap/examples/family-unbound-need-sig.moss:
+# `use_it`'s context lists `T` and `T.twice[A=T]`; `main` does not bind
+# `T`, so the call is refused (it would apply the family `F` at a type out
+# of force and give a provision a signature over it).
+type A;
+type T;
+assume A { fn .twice(): A; }
+functor F[A]: -> A.twice;
+functor G: A -> A.twice { bind A.twice = () => this; }
+context Need = T, T.twice[A=T];
+assume Need { fn use_it() { } }
+fn main() {
+  bind F = G;
+  use_it();
+}

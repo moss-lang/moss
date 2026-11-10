@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/ruleb_captured_unbound.moss: calling `use_it` needs `T` in force here (assume or bind it, or a type its context merges it with)]

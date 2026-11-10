@@ -1,0 +1,26 @@
+# Q6 (AUDIT-CHANGES #71), from bootstrap/examples/pin-fixed-agree.moss:
+# `MakeTok[]` is fixed in `Tok`; `CharTok`'s body pins `Tok` to `Char`,
+# and it is bound where `Tok` means `Char`, so the pin agrees with the
+# bind site. Prints `q`.
+type Tok;
+
+assume Std, Tok {
+  fn tok(): Tok;
+}
+
+functor MakeTok[]: Std -> tok;
+functor CharTok: Std -> tok {
+  bind Tok = Char;            # a pin: Tok must mean Char where CharTok is bound
+  bind tok = () => char::q;
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Tok = Char;
+    bind MakeTok = CharTok;
+    bind MakeTok;
+    putchar(tok());
+    putchar(char::newline);
+  }
+}

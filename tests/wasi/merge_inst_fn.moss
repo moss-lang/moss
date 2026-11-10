@@ -1,0 +1,13 @@
+# Δ4 (AUDIT-CHANGES #61, D43), from bootstrap/examples/merge-inst-fn.moss:
+# `f()`'s signature does not mention `T`, but merging `f[T=A]` with
+# `f[T=B]` unifies `A` with `B`, so `g` may pass a `B` as an `A`.
+# Accepted (the self-hosted compiler used to refuse it, E43).
+type T;
+type A;
+type B;
+assume T { fn f(); }
+context K1 = A, f[T=A];
+context K2 = B, f[T=B];
+assume A { fn take(a: A); }
+assume K1, K2, take { fn g(b: B) { take(b); } }
+fn main() {}

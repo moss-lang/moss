@@ -1,0 +1,18 @@
+# Rule B (AUDIT-CHANGES #60), from bootstrap/examples/functor-captured-unbound.moss:
+# `use_it` needs `T` in force; `main` neither binds nor assumes it, so the
+# call is refused before the family demand at `A := T`, and the closure
+# `bind H = P;` in its argument, would happen.
+type A;
+type T;
+assume A { fn .twice(): A; }
+functor F[A]: -> A.twice;
+functor G: A -> A.twice { bind A.twice = () => this; }
+fn run();
+functor H: -> run;
+functor P: T, T.twice[A=T] -> run { bind run = () => (); }
+context Need = T, T.twice[A=T];
+assume Need { fn use_it(x: ()) { } }
+fn main() {
+  bind F = G;
+  use_it({ bind H = P; bind H; run() });
+}

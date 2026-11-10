@@ -1,7 +1,7 @@
 # Δ4 (D43): `g` assumes `f` twice, at `T = A` (`K1`) and at `T = B`
 # (`K2`); merging the two entries of `f` unifies their instantiations,
 # so `g`'s context merges `A` with `B`, and `h`, where `A` and `B` are
-# distinct, cannot call it. merge_inst_order_ab.moss (tests/wasi) lists
+# distinct, cannot call it. merge_inst_order_ab.moss lists
 # the two contexts the other way round; both are refused.
 
 type T;

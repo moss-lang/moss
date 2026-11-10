@@ -1,0 +1,26 @@
+# Q6 (AUDIT-CHANGES #71), from bootstrap/examples/pin-poly.moss: a pin
+# of a polymorphic input stays forbidden. `MakeTok[Tok]` takes `Tok` from
+# each application, so a body that rebinds it would give `tok` another
+# type than the one each application reads (D84 3d).
+type Tok;
+
+assume Std, Tok {
+  fn tok(): Tok;
+}
+
+functor MakeTok[Tok]: Std, Tok -> tok;
+functor CharTok: Std, Tok -> tok {
+  bind Tok = Char;
+  bind tok = () => char::q;
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Tok = Char;
+    bind MakeTok = CharTok;
+    bind MakeTok;
+    putchar(tok());
+    putchar(char::newline);
+  }
+}

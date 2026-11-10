@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/ruleb_provider_unbound.moss: binding to `g` needs `T` in force here (assume or bind it, or a type its context merges it with)]
