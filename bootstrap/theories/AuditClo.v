@@ -504,8 +504,8 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | Some cf =>
               match ca k d g st with
               | inl (ws, g1, st1) =>
-                  match fselect_provisions d sm with
-                  | Some d' => I.ret_call g1 (cf k (fcall_environment d th d') (parameter_values ws) st1)
+                  match fprepare_call d th sm with
+                  | Some d' => I.ret_call g1 (cf k d' (parameter_values ws) st1)
                   | None => I.Evaluation (Stuck I.e_compose) g1 st1
                   end
               | inr r => r
@@ -826,7 +826,8 @@ Proof.
       fold needed in Fu. cbn [sdepth] in Fu. fold needed in Fu.
       destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval]. rewrite Vf.
       rewrite (IHl (S n') pl l ss Ta d de H g st ws st1 Ea k ltac:(lia)).
-      destruct (read_remap_select d de pl H s1 C) as (d' & Es & Hd'). rewrite Es.
+      destruct (read_remap_select d de pl H s1 C) as (d' & Es & Hd').
+      rewrite fprepare_call_spec, Es. cbn [option_map].
       rewrite (IHe n' (Some (remap_plan pl s1)) body sb Tb d (fcall_environment de s0 d')
         (fun i => eq_trans (call_env_lookup de s0 d' i) (Hd' i)) _ st1 w st' Ev k ltac:(lia)).
       reflexivity.
@@ -1034,7 +1035,7 @@ Proof.
     + rewrite IHe. reflexivity.
     + rewrite Ht. destruct (view_function P f) as [body|]; cbn [option_map]; [|reflexivity].
       rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].
-      destruct (fselect_provisions d s0); [|reflexivity]. rewrite IHe. reflexivity.
+      destruct (fprepare_call d s s0); [|reflexivity]. rewrite IHe. reflexivity.
     + destruct (flookup_provision (IFn f) d) as [[w|f' df|u a dc q|p o]|]; try reflexivity.
       * rewrite Ht. destruct (view_function P f') as [body|]; cbn [option_map]; [|reflexivity].
         rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].

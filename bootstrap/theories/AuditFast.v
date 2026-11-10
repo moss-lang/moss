@@ -304,6 +304,22 @@ Definition fbind_type (d : fenv) (t : tsym) (tau : ty) : fenv :=
 Definition fcall_environment (d : fenv) (th : subst) (dc : fenv) : fenv :=
   FEnv (ldefer_onto (fmeanings d) th (fmeanings dc))
     (ldefer_onto (fmeanings d) th (faliases dc)) (fstore_of dc).
+(* A direct call selects provisions into an environment with no captured
+   types. Its two type tables are the same instantiated parameters. *)
+Definition fprepare_call (d : fenv) (th : subst) (sm : smap) : option fenv :=
+  option_map (fun s => let meanings := ldefer_all (fmeanings d) th in FEnv meanings meanings s)
+    (fselect_store (fstore_of d) sm).
+
+Lemma fprepare_call_spec : forall d th sm,
+  fprepare_call d th sm = option_map (fcall_environment d th) (fselect_provisions d sm).
+Proof.
+  intros d th sm. unfold fprepare_call, fselect_provisions.
+  destruct (fselect_store (fstore_of d) sm); cbn [option_map]; [|reflexivity].
+  unfold fcall_environment, selected_environment. destruct th as [|q th]; [reflexivity|].
+  unfold ldefer_all, ldefer_onto. cbn [fmeanings faliases fstore_of dforce].
+  rewrite app_nil_r. reflexivity.
+Qed.
+
 Definition fapplication_environment (P : program_view) (d : fenv) (h : usym) (th : subst) (dc : fenv) : fenv :=
   let e := lapplication_environment P (lshadow d) h th (lshadow dc) in
   FEnv (lmeanings e) (laliases e) (fstore_of dc).
@@ -453,8 +469,8 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
           | Some body =>
               match feval_arguments k P d g st args with
               | inl (ws, g1, st1) =>
-                  match fselect_provisions d sm with
-                  | Some d' => I.ret_call g1 (feval k P (fcall_environment d th d') (parameter_values ws) st1 body)
+                  match fprepare_call d th sm with
+                  | Some d' => I.ret_call g1 (feval k P d' (parameter_values ws) st1 body)
                   | None => I.Evaluation (Stuck I.e_compose) g1 st1
                   end
               | inr r => r
@@ -757,8 +773,9 @@ Proof.
         rewrite (check_tag_rel P fd ld n s v H). reflexivity.
       * destruct (view_function P f); [|reflexivity]. rewrite (IHa P fd ld g st l H).
         destruct (L.leval_arguments k P ld g st l) as [[[ws g1] st1]|r]; [|reflexivity].
+        rewrite fprepare_call_spec.
         destruct (erel_select fd ld s0 H) as [|d1 d2 R]; [reflexivity|].
-        rewrite (IHe P _ _ _ _ _ (erel_call fd ld s d1 d2 H R)). reflexivity.
+        cbn [option_map]. rewrite (IHe P _ _ _ _ _ (erel_call fd ld s d1 d2 H R)). reflexivity.
       * destruct (lookup_cases fd ld (IFn f) H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2; [reflexivity|].
         destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p o]; try reflexivity.
         -- destruct (view_function P f'); [|reflexivity]. rewrite (IHa P fd ld g st l H).
