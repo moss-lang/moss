@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-functor-res-control.moss:
+# not. From tests/wasi/decl_functor_res_control.moss:
 #
 # Control for DeclsForm (AUDIT-CHANGES #76): a functor's result is read
 # over its argument context with each other type symbol standing for

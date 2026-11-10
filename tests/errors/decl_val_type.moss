@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-val-type.moss:
+# not. From tests/errors/decl_val_type.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): an abstract val's type
 # denotes a type as written; `Nope` is not in scope.

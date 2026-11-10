@@ -1,6 +1,0 @@
-# DeclsForm (AUDIT-CHANGES #76; criteria section 7): an alias's body
-# denotes a type as written; `Nope` is not in scope.
-# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
-# reads it); now rejects. Class B.
-type X = | Nope | ();
-fn main() {}

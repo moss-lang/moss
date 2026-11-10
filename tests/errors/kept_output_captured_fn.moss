@@ -1,0 +1,43 @@
+# Moved from bootstrap/examples/kept-output-captured-fn.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Variant (iii) of tests/errors/lambda_declared_output.moss: try to make a value or
+# provider at the unbound T before the keep (consume : T -> T bound while T
+# is not in demo's table), then use it at the kept, re-grounded T. Both
+# implementations reject it statically. The oracle says "type `T` is not
+# available in the context here": a fn binding's signature must have its
+# types in force. Native says "incompatible types": the T after `bind H;`
+# is a different type. No value, local or fn/val provision can be typed at
+# an unbound declared T; only family method provisions mention it.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type T;
+assume A { fn .dup(): A; }
+functor F[A]: -> A.dup;
+functor G: A -> A.dup { bind A.dup = () => this; }
+fn mk(): T;
+fn show(x: T);
+fn run();
+fn consume(x: T): T;
+functor H: Std -> T, mk, show;
+functor HM: Std -> T, mk, show {
+  bind T = Bool;
+  bind mk = () => true;
+  bind show = (x) => { if x { putchar(char::digit0.code().char()); } else { putchar((char::digit0.code() + 1).char()); } putchar(char::newline); };
+}
+context Need = T, T.dup[A=T];
+assume Need { fn use_it(x: ()) { } }
+assume Std {
+  fn demo() {
+    bind F = G;
+    bind H = HM;
+    bind consume = (x) => x.dup();
+    use_it({ bind run = () => { bind H; let y = mk(); show(consume(y)); }; run() });
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

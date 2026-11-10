@@ -1,0 +1,32 @@
+# Moved from bootstrap/examples/pin-taken-chain-disagree.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# tests/wasi/pin_taken_chain.moss with a bind site that disagrees with one pin of the
+# chain (AUDIT-CHANGES #95): G's body pins T = U, U = V and V = Old, and
+# main binds T = U = Old but V = New. The pin `U = V` then promises that U
+# means what V means, which is false here, so `q(a: T, b: U, c: V)` would
+# read the body's `(U, V, Old)` as `(Old, New, Old)`, not as the caller's
+# `(Old, Old, New)`.
+# Verdicts: oracle rejects (D84 3d's agreement); native rejects; Audit
+# rejects (BFunClosure: the pin `U = V` reads as New here, and U is Old).
+type T;
+type U;
+type V;
+tag Old;
+tag New;
+assume T, U, V { fn q(a: T, b: U, c: V); }
+functor F[]: T, U, V -> q;
+functor G: T, U, V -> q {
+  bind T = U;
+  bind U = V;
+  bind V = Old;
+  bind q = (a, b, c) => ();
+}
+fn main() {
+  bind T = Old;
+  bind U = Old;
+  bind V = New;
+  bind F = G;
+  bind F;
+  q(Old, Old, New);
+}

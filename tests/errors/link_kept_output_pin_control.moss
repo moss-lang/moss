@@ -1,0 +1,51 @@
+# Moved from bootstrap/examples/link-kept-output-pin-control.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# realize2: control for tests/errors/link_kept_output_pin.moss: the caller binds T = Char,
+# so the body's meaning agrees. The oracle runs it and prints 48 and 10. Audit
+# (LinkBody: the body makes T, an input of F) and native reject it.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn .m();
+fn .num(): Int;
+fn done();
+functor Make: Std -> T, T.num;
+functor Maker: Std -> T, T.num {
+  bind T = Char;
+  bind T.num = () => this.code();
+}
+functor F: T, Std -> T.m, done;
+functor G: Make, Std -> T.m, done {
+  bind Make;
+  bind T.m = () => { print_int(this.num()); putchar(char::newline); };
+  bind done = () => {};
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Char;
+    bind Make = Maker;
+    bind F = G;
+    bind F;
+    char::digit0.m();
+    char::newline.m();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

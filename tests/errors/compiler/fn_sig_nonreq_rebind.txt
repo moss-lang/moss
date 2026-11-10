@@ -1,0 +1,3 @@
+?R tests/errors/fn_sig_nonreq_rebind.moss demo F
+?Q tests/errors/fn_sig_nonreq_rebind.moss demo mk
+?P tests/errors/fn_sig_nonreq_rebind.moss demo

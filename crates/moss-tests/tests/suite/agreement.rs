@@ -14,7 +14,7 @@
 //! acceptance. What accepted programs *do* is checked program by program
 //! elsewhere in the suite, against goldens and against the oracle's run.
 
-use moss_tests::{compile, moss_files, oracle_command};
+use moss_tests::{moss_files, oracle_command};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Verdict {
@@ -22,6 +22,8 @@ enum Verdict {
     Reject,
     /// The oracle reports a construct it does not model.
     Unsupported,
+    /// The self-hosted compiler does not finish (a trap while compiling).
+    Crash,
 }
 use Verdict::*;
 
@@ -67,23 +69,58 @@ const MEMORIES: &str = "reference gap: more than one memory (D79)";
 /// only runs whole programs, reports it unsupported.
 const LIBRARY: &str = "a library module with no `main`";
 
+/// A self-hosted compiler bug or gap recorded with the program it was
+/// found by (the programs that were `bootstrap/examples/`): the reason is
+/// in `errors::COMPILER_ACCEPTS`, `errors::COMPILER_CRASHES` or
+/// `wasi_goldens::NATIVE_REJECTS`, and in AUDIT-CHANGES.
+const RECORDED: &str = "recorded with the program (see errors.rs or wasi_goldens.rs, and AUDIT-CHANGES)";
+/// E38: the self-hosted compiler has no expanding-cycle check and crashes.
+const NO_EXPANDING_CHECK: &str = "self-hosted compiler bug: no expanding-cycle check (E38)";
+
 /// Known gaps: (program, the self-hosted compiler's verdict, the oracle's,
 /// why). Sorted by program.
 const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/arg_count_mismatch.moss", Accept, Reject, SELF_HOSTED_BUG_ARITY),
     ("tests/errors/attached_on_abstract.moss", Accept, Reject, SELF_HOSTED_BUG_Q5),
     ("tests/errors/beyond_std.moss", Reject, Unsupported, BEYOND),
+    ("tests/errors/bracket_method_receiver.moss", Accept, Reject, RECORDED),
+    ("tests/errors/closure_partial_class_xyz.moss", Accept, Reject, RECORDED),
+    ("tests/errors/closure_partial_unbound_xyz.moss", Accept, Reject, RECORDED),
     ("tests/errors/context_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_CONTEXT_BRACKETS),
     ("tests/errors/context_item_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_ITEM_BRACKETS),
+    ("tests/errors/copy_site_method.moss", Accept, Reject, RECORDED),
+    ("tests/errors/duplicate_field_binder.moss", Accept, Reject, RECORDED),
+    ("tests/errors/expand_attached.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_call_brackets.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_control_functor_const.moss", Accept, Reject, RECORDED),
+    ("tests/errors/expand_family.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_fn_bind.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_functor_double.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_functor_forge.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_functor_output.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_lambda.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_merged_xy.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_merged_yx.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_polyrec.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_type_direct.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_type_ref.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/expand_type_ref_rec.moss", Crash, Reject, NO_EXPANDING_CHECK),
+    ("tests/errors/family_poly_nontype.moss", Accept, Reject, RECORDED),
     ("tests/errors/functor_output_input_changed.moss", Reject, Accept, AUDIT_ACCEPTS_14),
+    ("tests/errors/handle_rebind.moss", Accept, Reject, RECORDED),
+    ("tests/errors/link_site_merge.moss", Accept, Reject, RECORDED),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
     ("tests/errors/record_field_twice.moss", Accept, Reject, SELF_HOSTED_BUG_FIELD_TWICE),
+    ("tests/errors/sameneed_ambiguous.moss", Accept, Reject, RECORDED),
+    ("tests/errors/sameneed_ambiguous_other.moss", Accept, Reject, RECORDED),
     ("tests/errors/type_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_TYPE_BRACKETS),
+    ("tests/errors/while_condition_break.moss", Accept, Reject, RECORDED),
     ("tests/wasi/acrosslib.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/app.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/arena.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/arrays_in_scratch.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/bridge.moss", Reject, Unsupported, LIBRARY),
+    ("tests/wasi/const_kept_output.moss", Reject, Accept, RECORDED),
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
@@ -91,14 +128,19 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_reset.moss", Accept, Unsupported, MEMORIES),
+    ("tests/wasi/sameneed_copy.moss", Reject, Accept, RECORDED),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),
+    ("tests/wasi/saved_type_rebinding.moss", Reject, Accept, RECORDED),
     ("tests/wasi/shadowing.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/signature.moss", Reject, Unsupported, LIBRARY),
 ];
 
 /// What the self-hosted compiler says.
 fn compiler(entry: &str) -> Verdict {
-    if compile(entry, "lib/prelude.moss").is_module() {
+    let out = super::errors::compile_raw(entry);
+    if out.code != 0 {
+        Crash
+    } else if out.is_module() {
         Accept
     } else {
         Reject

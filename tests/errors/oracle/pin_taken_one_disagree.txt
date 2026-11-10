@@ -1,0 +1,1 @@
+[elab: tests/errors/pin_taken_one_disagree.moss: `G` cannot be bound to `F` here: it binds `T` to `Old`, and here `T` is `New`; `F` is fixed in `T` (D84)]

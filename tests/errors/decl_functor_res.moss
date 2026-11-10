@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-functor-res.moss:
+# not. From tests/errors/decl_functor_res.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): a functor's result
 # forms (ProvideResult), applied or not; `nope` is not in scope.

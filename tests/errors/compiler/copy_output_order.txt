@@ -1,0 +1,4 @@
+?X tests/errors/copy_output_order.moss main out
+?Q tests/errors/copy_output_order.moss main F
+?Q tests/errors/copy_output_order.moss main out
+?S tests/errors/copy_output_order.moss main V

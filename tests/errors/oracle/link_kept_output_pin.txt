@@ -1,0 +1,1 @@
+[elab: tests/errors/link_kept_output_pin.moss: `G`, bound to `F`, makes a type `F` takes as an input (D84)]

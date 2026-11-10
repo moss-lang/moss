@@ -1,0 +1,1 @@
+[elab: tests/errors/kept_output_captured_fn.moss: type `T` is not available in the context here]

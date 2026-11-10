@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-tag-outside-control.moss:
+# not. From tests/wasi/decl_tag_outside_control.moss:
 #
 # Control for DeclsForm (AUDIT-CHANGES #76): a payload is read with each
 # type symbol standing for itself, so a top-level tag over an abstract

@@ -1,0 +1,1 @@
+[elab: tests/errors/union_latent_identity.moss: union member `T` is abstract and not constrained to a nominal type (D15)]

@@ -1,0 +1,21 @@
+# Moved from bootstrap/examples/saved-type-rebinding.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+import "../../lib/wasm.moss" as w use Wasm, Gc, Boxed, StructRef, .boxed;
+type Saved;
+assume Wasm, Gc {
+ fn main() {
+  bind Boxed=w::I32;
+  bind w::Heap;
+  let integer_ref=w::i32_one.boxed();
+  let raw=match integer_ref { w::Ref(raw)=>raw };
+  bind Boxed=w::F64;
+  bind w::Heap;
+  bind Saved=w::F64;
+  bind w::F64=w::I32;
+  bind Boxed=Saved;
+  let bad=w::Ref(raw);
+  let y=bad.deref();
+  w::f64_add(y,y);
+ }
+}

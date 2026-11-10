@@ -1,0 +1,70 @@
+# Moved from bootstrap/examples/link-kept-output-pin.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# realize2 (scratch/orch/realize2-AUDIT.md): REJECTED by Audit at `bind F = G`
+# (G's `bind Make;`): LinkBody requires that nothing the body makes is an
+# input of F, and T is one. (realize2 first rejected it with a pin clause in
+# BApplyAbstract's kept-output case, `~ In t (fr_pins F)`, which the made
+# clause implies for the body's own binds; consol dropped it.) Before that,
+# Audit accepted it, and it was a
+# COUNTEREXAMPLE to CN.ChainRealizeOk (length-zero chain). It is the
+# observable form of linknewpf's m7 (ob-linknewpf
+# scratch/linknewpf/m7-kept-output-receiver.moss).
+# G does not take F's input T. G's body applies Make, whose output T is not
+# in force in G, so the application installs it as itself (gensof T = T).
+# The pins M(F) contain T, but they stopped only `bind T`. At run time T
+# means Char (Maker). G binds T.m = () => print_int(this.num()), num being
+# Make's Char method. F's key T.m reads at link_site as T.m (T is not in
+# G's table), and the caller, with T = Bool, files it under Bool.m. So
+# `true.m()` runs Char's `code` on a Bool.
+# Oracle (ob-sigclose var moss_m2): elaborates; the run is stuck
+#   (`[moss_ref: stuck (XErr 14)]`, exit 3). Filed as E37.
+# Native (ob-family, seed 1h1710x0): rejects at `bind F = G`, "compilation
+#   failed: `T`".
+# Control (tests/errors/link_kept_output_pin_control.moss, the caller's T = Char): the
+#   oracle prints 48 and 10; Audit rejects it too, as native does.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn .m();
+fn .num(): Int;
+fn done();
+functor Make: Std -> T, T.num;
+functor Maker: Std -> T, T.num {
+  bind T = Char;
+  bind T.num = () => this.code();
+}
+functor F: T, Std -> T.m, done;
+functor G: Make, Std -> T.m, done {
+  bind Make;
+  bind T.m = () => { print_int(this.num()); putchar(char::newline); };
+  bind done = () => {};
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Bool;
+    bind Make = Maker;
+    bind F = G;
+    bind F;
+    true.m();
+    false.m();
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

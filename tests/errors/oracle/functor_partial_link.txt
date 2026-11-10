@@ -1,0 +1,1 @@
+[elab: tests/errors/functor_partial_link.moss: functor `OverG` does not bind `Scalar.add`]

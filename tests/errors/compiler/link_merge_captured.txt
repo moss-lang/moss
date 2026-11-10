@@ -1,0 +1,2 @@
+?S tests/errors/link_merge_captured.moss demo
+?S tests/errors/link_merge_captured.moss go

@@ -1,0 +1,3 @@
+![ tests/errors/const_family_unbound.moss foo
+!P tests/errors/const_family_unbound.moss T
+!P tests/errors/const_family_unbound.moss foo

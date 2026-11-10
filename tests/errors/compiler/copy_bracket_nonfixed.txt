@@ -1,0 +1,4 @@
+?X tests/errors/copy_bracket_nonfixed.moss demo get
+?Q tests/errors/copy_bracket_nonfixed.moss demo F
+?Q tests/errors/copy_bracket_nonfixed.moss demo get
+?P tests/errors/copy_bracket_nonfixed.moss demo

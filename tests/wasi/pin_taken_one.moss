@@ -1,0 +1,26 @@
+# Moved from bootstrap/examples/pin-taken-one.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# A pin of one fixed input that G takes itself (AUDIT-CHANGES #93): F[] is
+# fixed in T, which its result `mk` mentions; G takes T and binds it to
+# Old, which agrees with the bind site, so `mk(): T` is `mk(): Old` at
+# every application.
+# Verdicts: oracle exit 0; native exit 0; Audit accepts since #95 (the
+# body's `bind T = Old` is a pin, (T, Old), which BFunClosure checks
+# against main's T = Old); before #95 it rejected (`BTypeBind`, T was in
+# fr_pins). Control: tests/wasi/pin_fixed_agree.moss, where G does not take the
+# pinned input, is accepted (#71).
+type T;
+tag Old;
+assume T { fn mk(): T; }
+functor F[]: T -> mk;
+functor G: T -> mk {
+  bind T = Old;
+  bind mk = () => Old;
+}
+fn main() {
+  bind T = Old;
+  bind F = G;
+  bind F;
+  match mk() { Old => () };
+}

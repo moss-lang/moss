@@ -1,0 +1,1 @@
+[elab: tests/errors/layout_generic_self.moss: `LC` contains itself, so it has no finite layout (D58)]

@@ -1,4 +1,4 @@
-# Rule B (AUDIT-CHANGES #60), from bootstrap/examples/functor-captured-unbound.moss:
+# Rule B (AUDIT-CHANGES #60), from tests/errors/functor_captured_unbound.moss:
 # `use_it` needs `T` in force; `main` neither binds nor assumes it, so the
 # call is refused before the family demand at `A := T`, and the closure
 # `bind H = P;` in its argument, would happen.

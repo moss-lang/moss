@@ -1,0 +1,16 @@
+# Moved from bootstrap/examples/assumed-need-coherent.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# AssumesComplete (AUDIT-CHANGES #57; D20; criteria section 6, fidelity).
+# Each assumed item's requirements are in force and its own needs provided.
+# Here: f needs h at T = U (through context H); g assumes H and f, so h is in force at that instantiation.
+# Audit before: accepts. Audit now: accepts (argued from the rules, not run).
+# Oracle (moss_m2): accepts.
+# Native (ob-family moss, seed 1h1710x0): accepts.
+type T;
+type U;
+assume T { fn h(); }
+context H = U, h[T = U];
+assume H { fn f(); }
+assume H, f { fn g() {} }
+fn main() {}

@@ -1,6 +1,0 @@
-# AssumesComplete for every kind (AUDIT-CHANGES #75): a nesting that holds
-# only a tag is checked too.
-# Verdicts: oracle accepts; native accepts; Audit before accepts; now
-# rejects (Box's nesting does not form). Class B.
-assume Nope { tag Box(()); }
-fn main() {}

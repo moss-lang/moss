@@ -1,0 +1,1 @@
+[elab: tests/errors/link_merge_captured.moss: `G` cannot provide `F`: its input interpretation differs (D84)]

@@ -1,0 +1,1 @@
+[elab: tests/errors/output_escape.moss: this block yields `T`, which mentions `T`, a type `bind F;` made in it: a value of that type cannot leave the block (D78)]

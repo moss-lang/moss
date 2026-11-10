@@ -1,0 +1,13 @@
+# Moved from bootstrap/examples/assumed-ctx-decl-only.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# AssumesComplete (AUDIT-CHANGES #57; D20; criteria section 6, fidelity).
+# Each assumed item's requirements are in force and its own needs provided.
+# Here: a context lists f without its requirement T, but nothing assumes the context; K's own assume nesting is empty.
+# Audit before: accepts. Audit now: accepts (argued from the rules, not run).
+# Oracle (moss_m2): accepts.
+# Native (ob-family moss, seed 1h1710x0): accepts.
+type T;
+assume T { fn f(); }
+context K = f;
+fn main() {}

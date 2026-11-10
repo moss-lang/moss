@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-const-control.moss:
+# not. From tests/wasi/decl_const_control.moss:
 #
 # Control for DeclsForm (AUDIT-CHANGES #76): an unused defined val that
 # elaborates, as lib/bool.moss's true and false.

@@ -1,8 +1,0 @@
-# Rule B (AUDIT-CHANGES #60) at a provider bind: `bind h = g;` uses g,
-# which assumes T, with T not in force.
-# Audit: rejects (FPDefined). Oracle: rejects ("binding to `g` needs `T` in
-# force here"); before #60 it accepted. Native: accepts (exit 0; needs rule B).
-type T;
-fn h();
-assume T { fn g() {} }
-fn main() { bind h = g; h(); }

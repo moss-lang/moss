@@ -1,0 +1,2 @@
+?W tests/errors/kept_output_escape.moss demo T
+?S tests/errors/kept_output_escape.moss demo

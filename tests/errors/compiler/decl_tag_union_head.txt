@@ -1,0 +1,1 @@
+!] tests/errors/decl_tag_union_head.moss A

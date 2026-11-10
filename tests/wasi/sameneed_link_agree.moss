@@ -1,0 +1,64 @@
+# Moved from bootstrap/examples/sameneed-link-agree.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Control for tests/wasi/sameneed_link.moss: the same program with F's and G's
+# contexts merging X with Y in the same order.
+# - Oracle: prints 7. Native: prints 7.
+# - Audit before and now: accepts under every orientation (7).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+val vx: X;
+fn .m(): Bool;
+
+assume Std {
+  fn run(): Int;
+}
+
+context MergeXY = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y];
+context MergeYX = A, X, Y, A.gimme[Foo=Y], A.gimme[Foo=X];
+
+functor F: Std, MergeXY, vx, X.m -> run;
+
+functor G: Std, MergeXY, vx, X.m -> run {
+  bind run = () => 7;
+}
+
+assume Std, MergeXY, vx, X.m, F {
+  fn go(): Int { bind F; run() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind Foo = Char;
+    bind X = Char;
+    bind Y = Char;
+    bind A.gimme = () => this;
+    bind vx = char::a;
+    bind X.m = () => true;
+    bind F = G;
+    bind X.m = () => false;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

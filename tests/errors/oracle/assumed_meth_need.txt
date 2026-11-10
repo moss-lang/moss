@@ -1,0 +1,1 @@
+[elab: tests/errors/assumed_meth_need.moss: calling `.m` needs `seed`, which is not available in the context here]

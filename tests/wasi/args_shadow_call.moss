@@ -1,4 +1,4 @@
-# Q4 (AUDIT-CHANGES #72), from bootstrap/examples/args-context-shadow-call.moss:
+# Q4 (AUDIT-CHANGES #72), from tests/wasi/args_context_shadow_call.moss:
 # `call_n` needs `A.n` at Int, which the family F supplies on demand; the
 # application also installs F's `Int.m`, read with U = Bool, but demo
 # provides `Int.m` itself with U = Int. A call's arguments are checked in

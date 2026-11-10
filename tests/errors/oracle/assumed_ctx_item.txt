@@ -1,0 +1,1 @@
+[elab: tests/errors/assumed_ctx_item.moss: assuming `f` needs `T` in force (D20)]

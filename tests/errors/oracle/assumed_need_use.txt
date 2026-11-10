@@ -1,0 +1,1 @@
+[elab: tests/errors/assumed_need_use.moss: calling `f` needs `seed`, which is not available in the context here]

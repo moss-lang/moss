@@ -1,0 +1,2 @@
+?S tests/errors/linked_merge.moss run
+?S tests/errors/linked_merge.moss run

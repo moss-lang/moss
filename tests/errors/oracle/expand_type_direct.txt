@@ -1,0 +1,1 @@
+[elab: tests/errors/expand_type_direct.moss: `Cons` contains itself, so it has no finite layout (D58)]

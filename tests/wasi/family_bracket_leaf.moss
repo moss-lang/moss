@@ -1,0 +1,20 @@
+# Moved from bootstrap/examples/family-bracket-leaf.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# PublicFormation.FamilySigOk as first stated is false: Fam is a family
+# (R.m's signature mentions no P(F) symbol), but its result leaf
+# `Ctx[X = Foo]` carries Y into R.m's result type through the context's
+# bracket. Applied at a matching Y := v that the demanded key R.m does not
+# determine, R.m is provided at the ok receiver R with result Foo[Y = v],
+# not ok for an arbitrary v. Elaboration reads the matching off the key
+# (FamilyReadOff), under which the signature is ok, so the proof assumes
+# that form (FamilySigReadOffOk, discharged by
+# PublicFamilySig.family_sig_ok_readoff). Oracle and native accept this.
+type R;
+type X;
+type Y;
+assume Y { tag Foo(Y); }
+assume X { fn R.m(): X; }
+assume X { context Ctx = R.m; }
+functor Fam[Y]: R, Y -> Ctx[X = Foo];
+fn main() {}

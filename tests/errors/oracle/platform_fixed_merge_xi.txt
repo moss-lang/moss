@@ -1,0 +1,1 @@
+[elab: lib/wasm.moss: platform functor has an incompatible assumed fixed type]

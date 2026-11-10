@@ -1,0 +1,1 @@
+[elab: tests/errors/functor_partial_unbacked_use.moss: functor `Over` does not bind `Scalar.add`]

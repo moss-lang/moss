@@ -1,0 +1,1 @@
+[elab: tests/errors/unbound_merge_representative.moss: calling `f` needs `X` and `Z` to be one type, which its context merged (D43), but here they are `Char` and `Bool`]

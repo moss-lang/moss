@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_tag_union_head.moss: union members `A[X=Red | Green]` and `A[X=Red]` share a head (D15)]

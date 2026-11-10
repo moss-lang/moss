@@ -1,3 +1,9 @@
+# From the copy that was bootstrap/examples/ruleb-call-unbound.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# Rule B (AUDIT-CHANGES #60): f assumes T; main calls f with T neither
+# bound nor assumed. A use of an item needs its type requirements in force.
+# Audit: rejects. Oracle: rejects ("calling `f` needs `T` in force here");
+# before #60 it accepted. Native: accepts (exit 0; needs rule B).
 # Rule B: a call of `f` needs each type `f` requires in force where it is
 # made. `main` leaves `T` unbound, so the call would read `T` as itself.
 

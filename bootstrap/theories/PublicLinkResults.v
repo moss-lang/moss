@@ -75,7 +75,7 @@ Variable W : A.world.
    mentioned by the context, nor by a method key's receiver: otherwise the
    result's write would re-ground what mentions it. BApplyAbstract gives a
    mentioned output not in force (an unbound declared symbol in family
-   method provisions or their keys, examples/lambda-declared-output.moss)
+   method provisions or their keys, tests/errors/lambda_declared_output.moss)
    a fresh generation instead (AUDIT-CHANGES.md #10, option (b)). *)
 Definition KeptOutputsUnmentioned : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs -> PublicFormation.FormedCx W C ->

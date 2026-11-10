@@ -1,0 +1,1 @@
+[elab: tests/errors/pin_taken_chain_disagree.moss: `G` cannot be bound to `F` here: it binds `U` to `New`, and here `U` is `Old`; `F` is fixed in `U` (D84)]

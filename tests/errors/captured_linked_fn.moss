@@ -1,0 +1,50 @@
+# Moved from bootstrap/examples/captured-linked-fn.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# G captures `g`, whose signature mentions T, an input F links: g is bound at
+# T = Int and would be called at the application's T = Bool. Rejected by both
+# implementations (D84 3b); Audit's 3b now covers every captured item.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+
+assume T {
+  fn run(x: T): T;
+  fn g(x: T): T;
+}
+
+functor F: T -> run;
+
+functor G: T, g -> run {
+  bind run = (x) => g(x);
+}
+
+assume Std, T, F {
+  fn go(x: T): T { bind F; run(x) }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind T = Int;
+    bind g = (x) => x + 1;
+    bind F = G;
+    bind T = Bool;
+    let b = go(true);
+    if b { putchar(char::t); } else { putchar(char::f); }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

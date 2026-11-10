@@ -1,0 +1,1 @@
+[elab: tests/errors/copy_fixed_reads_poly.moss: `H` cannot be copied to `F`: its effective output interpretation differs (D78)]

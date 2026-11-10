@@ -1,0 +1,1 @@
+[elab: tests/errors/copy_fixed_rebind.moss: copying `Arrays` after rebinding its fixed input changes its interpretation (D84)]

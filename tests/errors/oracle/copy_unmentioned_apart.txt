@@ -1,0 +1,1 @@
+[elab: tests/errors/copy_unmentioned_apart.moss: `H` cannot be copied to `F`: its input interpretation differs (D78)]

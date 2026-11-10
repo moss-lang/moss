@@ -1,0 +1,1 @@
+!P tests/errors/functor_captured_unbound.moss T

@@ -1151,8 +1151,8 @@ fn a_use_needs_its_requirements_in_force() {
 
 /// Rule B through a merge class, for a family demand: `f`'s `Y`, which
 /// `demo` leaves unbound, is in force through the `X` it merges with, so
-/// the demand of `Y.foo` is made (bootstrap/examples/
-/// ruleb-merge-family-demand.moss; AUDIT-CHANGES #60). The self-hosted
+/// the demand of `Y.foo` is made (tests/wasi/ruleb_merge_family_demand.moss;
+/// AUDIT-CHANGES #60). The self-hosted
 /// compiler read the demand's matching in `demo`'s context only, and
 /// refused it (`e_absent`, `Y`).
 #[test]

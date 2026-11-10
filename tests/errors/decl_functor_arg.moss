@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-functor-arg.moss:
+# not. From tests/errors/decl_functor_arg.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): a functor's argument
 # telescope forms (FunCtx), applied or not; `nope` is not in scope.

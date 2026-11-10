@@ -1,8 +1,0 @@
-# DeclsForm (AUDIT-CHANGES #74; criteria section 7): a context item's
-# brackets are read as written: `Nope` is not in scope.
-# Verdicts: oracle accepts; native accepts; Audit before accepts; now
-# rejects (Brackets: the left side does not resolve). Class B.
-type T;
-assume T { fn f(x: T); }
-context A = f[Nope = T];
-fn main() {}

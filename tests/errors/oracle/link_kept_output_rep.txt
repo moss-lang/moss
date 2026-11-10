@@ -1,0 +1,1 @@
+[elab: tests/errors/link_kept_output_rep.moss: `G` cannot be bound to `F`: it does not provide `X.m`, which `F` promises (D78)]

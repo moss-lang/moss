@@ -1,0 +1,73 @@
+# Moved from bootstrap/examples/linked-merge.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# G's context merges X (which F links) with Y (which G captures), so G reads
+# the linked `vx: X` as a Y. Bound at X = Y = Bool and applied at X = Char,
+# G's body would call the captured Bool `not` on 'a'. The oracle rejects it
+# ("linked input interpretation differs (D84)"), native with a type error
+# in G; Audit's LinkBody now requires G to read each linked need as F does.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+val vx: X;
+fn .flip(): Y;
+
+assume Std {
+  fn run(): Int;
+}
+
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y];
+context Lin = A, X, vx, A.gimme[Foo=X];
+
+# F links X, vx and A.gimme; G captures Y and Y.flip.
+functor F: Std, Lin -> run;
+
+functor G: Std, Merge, X, Y, vx, Y.flip -> run {
+  bind run = () => {
+    let y: Y = vx;
+    let z: Y = y.flip();
+    7
+  };
+}
+
+assume Std, Lin, F {
+  fn go(): Int { bind F; run() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind Foo = Bool;
+    bind X = Bool;
+    bind Y = Bool;
+    bind A.gimme = () => true;
+    bind vx = true;
+    bind Y.flip = () => this.not();
+    bind F = G;
+    bind X = Char;
+    bind Foo = Char;
+    bind A.gimme = () => this;
+    bind vx = char::a;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

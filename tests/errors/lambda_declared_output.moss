@@ -1,0 +1,39 @@
+# Moved from bootstrap/examples/lambda-declared-output.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# The lambda's context is the call's demand context C', whose family
+# provision key T.foo mentions T, a declared type that is not in main's table
+# (tests/errors/family_unbound_need.moss). lexical_capture gives the closure a meaning
+# for every generation its context mentions, T included (T |-> T). The
+# lambda body's `bind H;` installs output T as itself (T is not in force),
+# so the destination T was already occupied and Audit's result_environment
+# was Stuck (fresh_result_types, b4f8279), though Audit accepts the program.
+# The oracle and native both run it (exit 0). Audit now shadows
+# (results2-AUDIT.md).
+# Audit rejected this program from 642490e (AUDIT-CHANGES.md #10: a kept
+# output had to be unmentioned by the context). Since #10 option (b),
+# BApplyAbstract gives an output that is mentioned in scope but not in
+# force a fresh generation, so T.foo keeps its meaning (stability).
+# Verdicts: Audit accepts; oracle exit 0; native exit 0.
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
+type A;
+type T;
+tag Concrete;
+assume A { fn .foo(); }
+functor F[A]: A -> A.foo;
+functor G: A -> A.foo { bind A.foo = () => (); }
+fn mk(): T;
+fn run();
+functor H: -> T, mk;
+functor HM: -> T, mk { bind T = Concrete; bind mk = () => Concrete; }
+assume T, T.foo { fn use_it(x: ()) { } }
+fn main() {
+  bind F = G;
+  bind H = HM;
+  use_it({ bind run = () => { bind H; let y = mk(); }; run() });
+}

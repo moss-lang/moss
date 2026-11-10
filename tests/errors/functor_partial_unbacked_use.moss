@@ -1,0 +1,25 @@
+# Moved from bootstrap/examples/functor-partial-unbacked-use.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# The use for functor-partial-unbacked (AUDIT-CHANGES #77): after
+# `bind Over;`, `n + n` calls .add at Scalar, which reads Num here, and
+# Num.add is provided nowhere. Audit rejected it before this change, at
+# the use: the method key is looked up in the context the body's binds
+# made (Provided: PrIn, or a family producing it; neither applies), not
+# in Over's promise. So the unchecked promise was never unsafe.
+# Verdicts: oracle rejects; native rejects; Audit before rejects ("no
+# provision and no family for a method"); now rejects (FunctorTotal, first).
+import "../../lib/num.moss" use .add;
+type Scalar;
+tag Num;
+assume Scalar { context BaseAdd = Scalar, Scalar.add; }
+val x: ();
+functor Over: x -> BaseAdd { bind Scalar = Num; }
+assume x {
+  fn demo() {
+    bind Over;
+    let n: Scalar = Num;
+    match n + n { Num => () }
+  }
+}
+fn main() { bind x = (); demo(); }

@@ -1,0 +1,1 @@
+[elab: tests/errors/assumed_type_abstract.moss: assuming `f` needs `T` in force (D20)]

@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-ctx-outside-control.moss:
+# not. From tests/wasi/decl_ctx_outside_control.moss:
 #
 # Control for DeclsForm (AUDIT-CHANGES #74): a context's items are read as
 # written, each type symbol standing for itself, so an item mentioning a

@@ -1,7 +1,0 @@
-# DeclsForm (AUDIT-CHANGES #76; criteria section 7): a functor's argument
-# telescope forms (FunCtx), applied or not; `nope` is not in scope.
-# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
-# forms F's context); now rejects. Class B.
-val x: ();
-functor F: nope -> x;
-fn main() {}

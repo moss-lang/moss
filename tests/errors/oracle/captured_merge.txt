@@ -1,0 +1,1 @@
+[elab: tests/errors/captured_merge.moss: `G`, bound to `F`, needs `X` and `Y` to be one type, which its context merged (D43), but here they are `Char` and `Bool`]

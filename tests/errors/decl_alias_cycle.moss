@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-alias-cycle.moss:
+# not. From tests/errors/decl_alias_cycle.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): two aliases defined
 # in terms of each other have no reading (TyAlias has no finite

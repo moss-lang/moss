@@ -1,0 +1,1 @@
+[elab: tests/errors/bracket_method_receiver.moss: calling `Box.get` needs `Bool.k`, which is not available in the context here]

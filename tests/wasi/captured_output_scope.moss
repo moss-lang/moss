@@ -1,0 +1,15 @@
+# Moved from bootstrap/examples/captured-output-scope.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+type T;
+tag Concrete;
+functor F: -> T;
+functor Maker: -> T { bind T = Concrete; }
+functor Outer: -> T;
+functor Provider: F -> T { bind F; }
+fn main() {
+  bind F = Maker;
+  bind F;
+  bind Outer = Provider;
+  bind Outer;
+}

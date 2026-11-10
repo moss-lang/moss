@@ -1,0 +1,35 @@
+# Moved from bootstrap/examples/args-context-family-call.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Q4 (AUDIT-CHANGES #72): the family-demanded method call (PrFamily).
+# The family `Both` supplies `.describe` and `.show` at Meter.
+# `d.show(...)` finds no provision of `.show` at Meter, so it applies
+# `Both` on demand, around the whole call. Its argument `d.describe()`
+# is checked in the caller's context Γ, where the application is not in
+# force, so it is the attached method (m).
+# Verdicts: Audit m (PrFamily checks the arguments in Γ, before and after
+# #72); oracle m; native m.
+tag Meter(Int);
+type Q;
+fn .describe(): Char;
+fn .show(c: Char);
+
+assume Std {
+  fn Meter.describe(): Char { char::m }
+}
+
+functor Both[Q]: Std, Q -> Q.describe, Q.show;
+functor ByX: Std, Q -> Q.describe, Q.show {
+  bind Q.describe = () => char::x;
+  bind Q.show = (c) => putchar(c);
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Both = ByX;
+    let d = Meter(3);
+    d.show(d.describe());
+    putchar(char::newline);
+  }
+}

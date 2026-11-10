@@ -1,4 +1,4 @@
-# Δ4 control (D43's own shape), from bootstrap/examples/merge-inst-sig.moss:
+# Δ4 control (D43's own shape), from tests/wasi/merge_inst_sig.moss:
 # `f`'s signature mentions `T`, so `A` and `B` merge through the
 # signature. Accepted.
 type T;

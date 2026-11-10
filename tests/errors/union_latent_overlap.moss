@@ -1,3 +1,15 @@
+# From the copy that was bootstrap/examples/union-latent-overlap.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# N4 (AUDIT-CHANGES, "Known divergences"): a union with a type-symbol member
+# whose instantiation shares a head with another member. pick's parameter
+# `T | A[X=Colour]` is read where T is abstract; main binds T = A[X=I32]
+# and passes A[X=I32](7), a T. Matching by head takes the A arm and reads
+# the I32 7 as a Colour.
+# Verdicts: oracle rejects ("union member `T` is abstract and not
+# constrained to a nominal type (D15)"); native accepts and exits 3 (the
+# Green arm: 7 read as a Colour; the T member's arm, `_`, would exit 1);
+# Audit rejects (TyUnion: members are nominal where the union is written;
+# since #76 also at pick's declaration).
 import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasip1.moss" use Wasi, proc_exit;
 
@@ -6,7 +18,7 @@ import "../../lib/wasip1.moss" use Wasi, proc_exit;
 # Before the self-hosted compiler checked it, it compiled this program:
 # main binds T = A[X=I32] and passes A[X=I32](7), a T; matching by head
 # took the `A(y)` arm and read the I32 7 as a Colour (exit 3).
-# (bootstrap/examples/union-latent-overlap.moss, AUDIT-CHANGES N4.)
+# (tests/errors/union_latent_overlap.moss, AUDIT-CHANGES N4.)
 type X;
 assume X { tag A[X](X); }
 tag Red;

@@ -1,8 +1,0 @@
-# Control for assume-method-before-type.moss (AUDIT-CHANGES #59): T is listed
-# before T.m, and g calls x.m().
-# Audit before and now: accepts (argued).
-# Oracle (moss_m2): accepts. Native (ob-family moss, seed 1h1710x0): accepts.
-type T;
-fn .m(): This;
-assume T, T.m { fn g(x: T): T { x.m() } }
-fn main() {}

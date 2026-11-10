@@ -1,5 +1,5 @@
 # Rule B with a merge, and a family demand through θ (AUDIT-CHANGES #60),
-# from bootstrap/examples/ruleb-merge-family-demand.moss: `f`'s context
+# from tests/wasi/ruleb_merge_family_demand.moss: `f`'s context
 # merges `X` with `Y` (through `A.gimme`'s two entries and `B.w`, `C.w`);
 # `demo` binds `X` only, so `Y` is in force through `X`. `f` needs
 # `Y.foo`, which the family `F` supplies on demand; the demand's matching

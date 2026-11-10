@@ -1,0 +1,1 @@
+!P tests/errors/lambda_declared_output.moss T

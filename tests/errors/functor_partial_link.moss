@@ -1,0 +1,51 @@
+# Moved from bootstrap/examples/functor-partial-link.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# FunctorTotal (AUDIT-CHANGES #77; D55): tests/wasi/functor_partial.moss
+# with the body linked (`bind Over = OverG;`) instead of applied. OverG
+# binds Scalar = Int and not Scalar.add. Read at the link site the promise
+# is Int.add, which G's own input Std provides, so LinkBody's
+# ResultRealizes alone accepted it.
+# Verdicts: oracle rejects ("functor `OverG` does not bind `Scalar.add`");
+# native rejects ("the functor does not bind every item its result
+# promises: `add`"); Audit before accepts; now rejects (FunctorTotal).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/num.moss" use .add;
+
+type Scalar;
+
+assume Scalar {
+  context BaseAdd = Scalar, Scalar.add;
+}
+
+functor Over: Std -> BaseAdd;
+functor OverG: Std -> BaseAdd {
+  bind Scalar = Int;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+
+}
+
+assume Std, Over {
+  fn demo() {
+    bind Over;
+    print_int(2 + 3);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Over = OverG;
+    demo();
+  }
+}

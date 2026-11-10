@@ -1,0 +1,1 @@
+[elab: tests/errors/copy_into_body.moss: the right side of a bind of functor `F` must name a functor]

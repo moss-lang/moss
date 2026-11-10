@@ -1,0 +1,31 @@
+# Moved from bootstrap/examples/stale-provision-type.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+val v: T;
+
+assume T, v {
+  fn f(): T { v }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Char;
+    bind v = char::x;
+    bind T = Bool;
+    if f() { putchar(char::t) } else { putchar(char::f) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

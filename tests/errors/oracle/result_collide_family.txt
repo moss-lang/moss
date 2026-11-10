@@ -1,0 +1,1 @@
+[elab: tests/errors/result_collide_family.moss: `Int.m` is two items of the family `F` here, so which one is meant is ambiguous (D84 rule 7)]

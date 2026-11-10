@@ -1,0 +1,1 @@
+[elab: tests/errors/assumed_val_need.moss: calling `v` needs `seed`, which is not available in the context here]

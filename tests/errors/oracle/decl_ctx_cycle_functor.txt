@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_ctx_cycle_functor.moss: context `A` nests in a cycle]

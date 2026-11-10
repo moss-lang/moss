@@ -1,0 +1,1 @@
+[elab: tests/errors/stale_provision_type.moss: calling `f` needs `v` () -> Bool, but the context here provides it at another type, () -> Char (D20)]

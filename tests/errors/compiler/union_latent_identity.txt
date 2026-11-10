@@ -1,0 +1,1 @@
+!] tests/errors/union_latent_identity.moss T

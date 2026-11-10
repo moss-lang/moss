@@ -1,0 +1,13 @@
+# Moved from bootstrap/examples/captured-type-input.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+type T;
+type U;
+tag Concrete;
+functor Outer: -> U;
+functor Provider: T -> U { bind U = T; }
+fn main() {
+  bind T = Concrete;
+  bind Outer = Provider;
+  bind Outer;
+}

@@ -1,0 +1,1 @@
+[elab: tests/errors/captured_linked_fn.moss: `G`, bound to `F`, captures `g`, which mentions a type each application of `F` supplies (D84 3b)]

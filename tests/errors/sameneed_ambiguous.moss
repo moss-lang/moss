@@ -1,0 +1,72 @@
+# Moved from bootstrap/examples/sameneed-ambiguous.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# An ambiguous need (AUDIT-CHANGES.md #51; criteria.md section 2,
+# coherence). G's context merges X with Y and F's does not, while F needs
+# both X.m and Y.m. G's one need class {X.m, Y.m} meets two of F's need
+# classes: read through F's merge, G's need is X.m under one representative
+# and Y.m under the other. The program is ambiguous and is rejected.
+# tests/errors/sameneed_ambiguous_other.moss is this program with G's readings in the
+# other order.
+# - Oracle: rejects ("`G` cannot provide `F`: its linked input
+#   interpretation differs (D84)"). The other order prints 7.
+# - Native: prints 7, in both orders.
+# - Audit before and now: rejects under every orientation. LinkBody's
+#   input-reading clause (#11: G reads X as Y, or Y as X, which F does not
+#   merge) fails; PublicSameNeed.link_need_unambiguous proves that this clause
+#   rules out every need class of G that meets two of F's.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+fn .m(): Bool;
+
+assume Std {
+  fn run(): Int;
+}
+
+context Apart = A, X, Y, A.gimme[Foo=X], X.m, Y.m;
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], X.m;
+
+functor F: Std, Apart -> run;
+
+functor G: Std, Merge -> run {
+  bind run = () => 7;
+}
+
+assume Std, Apart, F {
+  fn go(): Int { bind F; run() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind Foo = Char;
+    bind X = Char;
+    bind Y = Char;
+    bind A.gimme = () => this;
+    bind X.m = () => true;
+    bind Y.m = () => false;
+    bind F = G;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

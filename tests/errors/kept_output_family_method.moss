@@ -1,0 +1,56 @@
+# Moved from bootstrap/examples/kept-output-family-method.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Variants (i)+(ii) of tests/errors/lambda_declared_output.moss: does re-grounding a kept
+# output T matter? Need's demand applies family F at A := T while T is not
+# in demo's table, so the lambda's context has T.dup : () -> T over the
+# unbound T. Inside the lambda, `bind H;` keeps T (now Bool, HM's binding)
+# and the code calls the family method on a value of the new T: y.dup()
+# (receiver and result at T). G's dup is parametric (`this`), so the
+# right answer is y itself (true), printed as 0. The oracle and native
+# both print 0 (exit 0). So the re-grounded family method behaves
+# correctly. Audit (with results2's shadowing) accepts it. Re-grounding
+# changes only the types of this parametric family provision.
+# Audit rejected this program from 642490e (AUDIT-CHANGES.md #10). Since
+# #10 option (b), the lambda's `bind H;` gives T a fresh generation T'
+# (T is mentioned by the key T.dup), mk() has type T', and y.dup() is
+# demanded from F afresh at A := T' (FamilyStep), leaving T.dup's meaning
+# alone. An oracle variant that does the same (fresh where mentioned)
+# also prints 0.
+# Verdicts: Audit accepts (by reading); oracle prints 0; native prints 0.
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type T;
+assume A { fn .dup(): A; }
+functor F[A]: -> A.dup;
+functor G: A -> A.dup { bind A.dup = () => this; }
+fn mk(): T;
+fn show(x: T);
+fn run();
+functor H: Std -> T, mk, show;
+functor HM: Std -> T, mk, show {
+  bind T = Bool;
+  bind mk = () => true;
+  bind show = (x) => { if x { putchar(char::digit0.code().char()); } else { putchar((char::digit0.code() + 1).char()); } putchar(char::newline); };
+}
+context Need = T, T.dup[A=T];
+assume Need { fn use_it(x: ()) { } }
+assume Std {
+  fn demo() {
+    bind F = G;
+    bind H = HM;
+    use_it({ bind run = () => { bind H; let y = mk(); show(y.dup()); }; run() });
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

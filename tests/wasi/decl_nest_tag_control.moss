@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-nest-tag-control.moss:
+# not. From tests/wasi/decl_nest_tag_control.moss:
 #
 # Control for AUDIT-CHANGES #75: a tag in a nesting that forms.
 # Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.

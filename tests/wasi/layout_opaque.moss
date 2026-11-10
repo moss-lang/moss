@@ -1,0 +1,54 @@
+# Moved from bootstrap/examples/layout-opaque.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# D58 (AUDIT-CHANGES #90): an abstract type is a leaf, however it is bound
+# later, and a user's own tag over a machine reference type is one scalar.
+# - `Link` is abstract, put in force by the context `Links`; `LNode`'s
+#   payload mentions it through the nominal wrapper `LLink` (a union
+#   member must be nominal, D15), so it is one scalar of LNode's layout. main binds
+#   `Link = LHold` afterwards, a tag holding a `Ref[Boxed=LNode]`: the
+#   bind's right-hand side is read at the old meanings (D72), so LHold here
+#   is `LHold[Link=LEnd]`, and no bind builds an infinite type.
+# - `Handle[Target]` is the program's own phantom wrapper of `StructRef`,
+#   so `LTree`, which holds `Handle[Target=LTree]`, has a layout.
+# - `LPair[LT]`'s members are abstract, and it is used at `LT = LEnd`.
+# Prints 7.
+# Verdicts: oracle 7; native 7; Audit accepts (with #76, the union member is the
+# wrapper `LLink`, not the abstract `Link`).
+import "../../lib/wasm.moss" use Wasm, StructRef, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Link;
+type Target;
+type LT;
+tag LNil;
+tag LEnd;
+context Links = Link;
+assume Links { tag LLink(Link); }
+assume Std, Links { tag LNode { value: Int, next: LNil | LLink }; }
+assume Std, Wasm, Links { tag LHold(Ref[Boxed=LNode]); }
+assume Target { tag Handle[Target](StructRef); }
+tag LTree { left: LNil | Handle[Target=LTree] };
+assume LT { tag LBox[LT](LT); tag LPair[LT] { a: LT, b: LBox, c: LNil | LBox }; }
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Link = LEnd;
+    let first = LNode { value = 3, next = LLink(LEnd) };
+    bind Boxed = LNode;
+    bind Heap;
+    bind Link = LHold;
+    let second = LNode { value = 4, next = LLink(LHold[Link=LEnd](first.boxed())) };
+    let t = LTree { left = LNil };
+    bind LT = LEnd;
+    let p = LPair { a = LEnd, b = LBox(LEnd), c = LNil };
+    let n = match second.next {
+      LNil => 0,
+      LLink(h) => match h { LHold(r) => second.value + r.deref().value, },
+    };
+    putchar((n + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

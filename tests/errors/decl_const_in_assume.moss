@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-const-in-assume.moss:
+# not. From tests/errors/decl_const_in_assume.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): a defined val has no
 # assumptions (ExConst; D50), so one inside an assume can never be read.

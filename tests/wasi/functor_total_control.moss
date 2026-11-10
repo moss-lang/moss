@@ -1,0 +1,26 @@
+# Moved from bootstrap/examples/functor-total-control.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Control for FunctorTotal (AUDIT-CHANGES #77): Over binds Scalar and
+# Scalar.add by name, and y by applying Inner, whose declared result is y.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.
+import "../../lib/num.moss" use .add;
+type Scalar;
+tag Num;
+assume Scalar { context BaseAdd = Scalar, Scalar.add; }
+val x: ();
+val y: ();
+functor Inner: x -> y { bind y = (); }
+functor Over: x -> BaseAdd, y {
+  bind Scalar = Num;
+  bind Scalar.add = (rhs) => Num;
+  bind Inner;
+}
+assume x {
+  fn demo() {
+    bind Over;
+    let n: Scalar = Num;
+    match n + n { Num => () }
+  }
+}
+fn main() { bind x = (); demo(); }

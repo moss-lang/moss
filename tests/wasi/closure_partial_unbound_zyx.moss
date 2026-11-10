@@ -1,0 +1,59 @@
+# Moved from bootstrap/examples/closure-partial-unbound-zyx.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# BFunClosure 3b: G's merges are checked by class (AUDIT-CHANGES #54; criteria
+# section 2, coherence). G merges X (an input F takes, so linked) with Y and Z,
+# which only G has (`context Merge = A, Z, Y, X, ...`: the three
+# bindings of A.gimme are one key). The other file of the pair, tests/errors/closure_partial_unbound_xyz.moss,
+# lists the merge the other way round.
+# At the bind Y is Bool, Z is Char and X is not in force yet.
+# Audit before and now: accepted (argued). Oracle (moss_m2): prints k. Native: prints k.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+type Z;
+
+fn .gimme(): Foo;
+assume X { val vx: X; val out: X; }
+
+context Merge = A, Z, Y, X, A.gimme[Foo=Z], A.gimme[Foo=Y], A.gimme[Foo=X];
+context FIn = A, X, A.gimme[Foo=X], vx;
+
+functor F: Std, FIn -> out;
+
+functor G: Std, Merge, vx -> out {
+  bind out = vx;
+}
+
+assume Std, FIn, F {
+  fn go(): X { bind F; out }
+}
+
+assume Std {
+  fn demo() {
+    bind A = Bool;
+    bind Foo = Bool;
+    bind Y = Bool;
+    bind Z = Char;
+    bind F = G;
+    bind X = Bool;
+    bind A.gimme = () => this;
+    bind vx = true;
+    let b: Bool = go();
+    if b { putchar(char::k); }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

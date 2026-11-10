@@ -1,0 +1,52 @@
+# Moved from bootstrap/examples/sig-nonreq-shadow.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# sigclose (E35): a method's θ must record every type symbol its signature
+# mentions. .m's signature mentions U, which is not in its assume nesting
+# (w_reqs m = [A]). Before the fix, .m's θ (AppOf: the requirements its
+# signature mentions) was [] and did not record U. demo binds Int.m while
+# U = Int (signature () -> Int), rebinds U = Bool, puts family F in force,
+# and calls k.n(k.m()). F's result also provides Int.m, read with U = Bool
+# (() -> Bool), at the same receiver, method and θ [], so the run-time keys
+# collide (S.FamilyCoherentOk fails with C1 = C): the argument k.m(),
+# typed Int, ran G's closure returning u0 = true.
+# Old oracle: elaborates, then "[moss_ref: stuck (XErr 14)]", exit 3.
+# Now (Audit AppOf/SigOutside, Elab.signature_type_syms): demo's Int.m is
+# keyed at θ [U := Int] and F's at θ [U := Bool], distinct keys; the
+# oracle prints 42, exit 0.
+# Native: prints 42, exit 0.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type A;
+type U;
+val u0: U;
+assume A {
+  fn .m(): U;
+  fn .n(x: A): A;
+}
+functor F[A]: U, u0 -> A.m, A.n;
+functor G: A, U, u0 -> A.m, A.n {
+  bind A.m = () => u0;
+  bind A.n = (x) => x;
+}
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind U = Int;
+    bind Int.m = () => 42;
+    bind U = Bool;
+    bind u0 = true;
+    bind F = G;
+    let k: Int = 7;
+    print_int(k.n(k.m()));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() { bind WasiStd; demo(); }
+}

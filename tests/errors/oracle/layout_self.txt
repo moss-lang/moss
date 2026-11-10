@@ -1,0 +1,1 @@
+[elab: tests/errors/layout_self.moss: `LCell` contains itself, so it has no finite layout (D58)]

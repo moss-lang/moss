@@ -1,8 +1,0 @@
-# Control for DeclsForm (AUDIT-CHANGES #76): a payload is read with each
-# type symbol standing for itself, so a top-level tag over an abstract
-# type outside its (empty) nesting forms: Num is Wrap's requirement.
-# Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.
-type Num;
-tag Wrap(Num);
-tag Pair { a: Wrap, b: Num };
-fn main() {}

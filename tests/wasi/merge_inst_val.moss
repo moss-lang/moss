@@ -1,3 +1,10 @@
+# From the copy that was bootstrap/examples/merge-inst-val.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# Δ4 (AUDIT-CHANGES #61, D43): two entries of v, at T=A and at T=B; v's
+# type does not mention T. Merging them unifies A with B, so take(b) with
+# b: B fits A.
+# Audit: accepts (by reading). Oracle: accepts (before: rejects, `b` is
+# `B`, expected `A`). Native: rejects (exit 1; needs the same change).
 # Δ4 (D43): two entries of `v`, at `T = A` and at `T = B`; `v`'s type does
 # not mention `T`. Merging them unifies their instantiations, so `A` and
 # `B` are one type in `g`, and `take(b)` with `b: B` fits `take`'s `A`.

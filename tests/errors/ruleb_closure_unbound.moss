@@ -1,3 +1,10 @@
+# From the copy that was bootstrap/examples/ruleb-closure-unbound.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# Rule B for a closure (AUDIT-CHANGES #60): `bind H = P;` captures P's
+# input T, which H does not take, and T is not in force where P is bound.
+# Audit: rejects (BFunClosure). Oracle: rejects ("binding `H` to `P`
+# captures `T`, which is not in force here"); before #60 it accepted.
+# Native: accepts (exit 0; needs rule B). Control: tests/wasi/ruleb_closure_bound.moss.
 # Rule B for a closure: `P` takes `T`, which `H` does not, so `bind H = P;`
 # captures `T` where it is made, and `T` must be in force there.
 

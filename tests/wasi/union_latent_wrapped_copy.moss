@@ -1,0 +1,16 @@
+# Moved from bootstrap/examples/union-latent-wrapped-copy.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# N4: tests/wasi/functor_latent_identity_copy.moss with the interface
+# written as D15 asks, a nominal wrapper for the abstract member
+# (`Wrap | U`, Wrap[T](T)), keeping what the test is about: an identity
+# copy of Inner preserves an interface nothing inhabits.
+# Verdicts: oracle accepts; native accepts; Audit accepts (before and after
+# #74-#77).
+type T;tag U;
+assume T {tag Wrap[T](T); fn offered():Wrap|U;}
+functor Inner[T]: T -> offered;
+val x:();
+functor Outer[]: Inner -> x;
+functor G: Inner -> x {bind Inner=Inner;bind x=();}
+fn main(){bind Outer=G;}

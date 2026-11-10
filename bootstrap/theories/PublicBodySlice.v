@@ -3339,7 +3339,7 @@ Qed.
    `lexical_capture` keeps the meanings of). Rule B for the closure puts
    each such input in force there through G's merge class; a member of
    its class may be in force without the input itself
-   (examples/bind-merge-unbound.moss).
+   (tests/wasi/bind_merge_unbound.moss).
    Proved in PublicLinkMerges (`captured_in_force_ok`). *)
 Definition CapturedInForceOk : Prop := forall C gg Cu nsu Cg nsg smc,
   A.FunCtx W gg Cg nsg -> PublicFormation.KeysScoped W C ->

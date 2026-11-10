@@ -1,0 +1,1 @@
+!Z tests/errors/pin_fixed_key_need.moss get

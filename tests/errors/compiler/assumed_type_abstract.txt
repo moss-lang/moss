@@ -1,0 +1,1 @@
+!P tests/errors/assumed_type_abstract.moss T

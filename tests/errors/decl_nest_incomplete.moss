@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-nest-incomplete.moss:
+# not. From tests/errors/decl_nest_incomplete.moss:
 #
 # AssumesComplete for every kind (AUDIT-CHANGES #75): Box's nesting assumes
 # f without f's requirement T (D20), as tests/errors/

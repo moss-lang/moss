@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-ctx-bracket.moss:
+# not. From tests/errors/decl_ctx_bracket.moss:
 #
 # DeclsForm (AUDIT-CHANGES #74; criteria section 7): a context item's
 # brackets are read as written: `Nope` is not in scope.

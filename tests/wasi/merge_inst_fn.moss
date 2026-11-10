@@ -1,4 +1,4 @@
-# Δ4 (AUDIT-CHANGES #61, D43), from bootstrap/examples/merge-inst-fn.moss:
+# Δ4 (AUDIT-CHANGES #61, D43), from tests/wasi/merge_inst_fn.moss:
 # `f()`'s signature does not mention `T`, but merging `f[T=A]` with
 # `f[T=B]` unifies `A` with `B`, so `g` may pass a `B` as an `A`.
 # Accepted (the self-hosted compiler used to refuse it, E43).

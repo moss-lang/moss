@@ -1,0 +1,24 @@
+# Moved from bootstrap/examples/assumed-main-calls.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# AssumesComplete (AUDIT-CHANGES #57; D20; criteria section 6, fidelity).
+# Each assumed item's requirements are in force and its own needs provided.
+# Here: g assumes f without f's requirement T; main binds f and calls g, so the program runs if accepted.
+# Audit before: accepts. Audit now: rejects (argued from the rules, not run).
+# Oracle (moss_m2): rejects ("assuming `f` needs `T` in force (D20)").
+# Native (ob-family moss, seed 1h1710x0): rejects ("not available in the current context: `T`").
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+type T;
+assume T { fn f(); }
+assume f { fn g() { f(); } }
+assume Std { fn hello() { putchar(char::h); putchar(char::newline); } }
+assume Wasm, Gc, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind f = hello;
+    g();
+  }
+}

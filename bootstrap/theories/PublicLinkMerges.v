@@ -2,8 +2,8 @@
 
    - `LinkMergesOk` and `BindMergesOk` (formerly of PublicBodySlice) were
      false for programs both implementations accept:
-     examples/linked-merge-captured.moss (G merges the captured Y into the
-     linked X) and examples/bind-merge-unbound.moss (G merges Y, not in
+     tests/wasi/linked_merge_captured.moss (G merges the captured Y into the
+     linked X) and tests/wasi/bind_merge_unbound.moss (G merges Y, not in
      force where G is bound, into Z). Audit's `application_environment`
      now reads G's inputs through G's table (`fc_table`), so G's merges
      hold by construction and both obligations are gone
@@ -14,7 +14,7 @@
      (`captured_mentioned`). Rule B for the closure puts each such input
      in force there through G's merge class, and a method key's receiver
      mentions only the context's generations (KeysScoped), so the closure's
-     `lexical_capture` keeps its meaning (examples/bind-merge-unbound.moss:
+     `lexical_capture` keeps its meaning (tests/wasi/bind_merge_unbound.moss:
      a member of its class is in force, the input itself is not). *)
 From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation.

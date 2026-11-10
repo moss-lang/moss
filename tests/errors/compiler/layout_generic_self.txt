@@ -1,0 +1,3 @@
+!N tests/errors/layout_generic_self.moss LC
+!N tests/errors/layout_generic_self.moss LList
+!N tests/errors/layout_generic_self.moss LBox

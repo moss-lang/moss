@@ -1,0 +1,4 @@
+?X tests/errors/copy_unmentioned_apart.moss demo X
+?Q tests/errors/copy_unmentioned_apart.moss demo F
+?Q tests/errors/copy_unmentioned_apart.moss demo go
+?P tests/errors/copy_unmentioned_apart.moss demo

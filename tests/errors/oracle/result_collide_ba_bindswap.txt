@@ -1,0 +1,1 @@
+[elab: tests/errors/result_collide_ba_bindswap.moss: applying `F` provides two of its result items under one key here (D84 rule 7)]

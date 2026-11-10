@@ -1,0 +1,1 @@
+[elab: tests/errors/link_output_input_rep.moss: functor `G` does not bind `X.m`]

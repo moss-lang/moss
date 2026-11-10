@@ -1,0 +1,34 @@
+# Moved from bootstrap/examples/pin-fixed-key-need.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# The control for pin-fixed-key (AUDIT-CHANGES #73): a key the pins
+# re-read must be one the body binds. `Get[]` is fixed in `Handle` and
+# `Item`. `NeedGet` takes `Item` and `Box.get` at `Handle = Raw` (its need
+# `Box[Item=Item, Handle=Raw].get`, captured at the bind), pins
+# `Handle = Raw`, and binds nothing else. Read through the pin, Get's key
+# `Box.get` is NeedGet's own need, not an item its body made.
+# Verdicts: oracle rejects ("functor `NeedGet` does not bind `Box.get`");
+# native rejects ("the functor does not bind every item its result
+# promises: `get`"); Audit before #73 rejects (the key read as
+# `Box[Item=Item, Handle=Handle].get`, not provided); now rejects
+# (LinkBody: a key the pins re-read is none of G's own provisions).
+# Without that clause, #73's reading alone would accept it.
+type Item;
+type Handle;
+tag Raw;
+tag Elt;
+assume Handle, Item { tag Box[Item](Handle); }
+assume Handle, Item { fn Box.get(): Handle; }
+assume Handle, Item { context BoxGet = Box.get; }
+functor Get[]: Handle -> Box.get;
+functor NeedGet: Item, BoxGet[Handle = Raw] -> Box.get {
+  bind Handle = Raw;
+}
+fn main() {
+  bind Handle = Raw;
+  bind Item = Elt;
+  bind Box.get = () => Raw;
+  bind Get = NeedGet;
+  bind Get;
+  match Box(Raw).get() { Raw => () };
+}

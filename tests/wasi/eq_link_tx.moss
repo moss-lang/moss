@@ -1,5 +1,5 @@
 # D90: a type equation in a linked functor body's argument context. As
-# bootstrap/examples/link-merge-rep-rebind-both.moss, which merges `X` and
+# tests/wasi/link_merge_rep_rebind_both.moss, which merges `X` and
 # `T` through `A.gimme[Foo=X], A.gimme[Foo=T]`, but with the equation
 # `T = X`. G pins `X` (a fixed input of F, bracketed `[X]`), rebinds `T`
 # to `Bool`, and binds `X.m` and `T.m`; the caller's `Concrete.m` is G's

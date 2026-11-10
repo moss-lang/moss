@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-const-bad.moss:
+# not. From tests/errors/decl_const_bad.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): a defined val's
 # initializer elaborates, used or not, as ExConst reads it at a use;

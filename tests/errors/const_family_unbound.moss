@@ -1,0 +1,32 @@
+# Moved from bootstrap/examples/const-family-unbound.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# A defined val's initializer is elaborated in the empty context and
+# inlined at its use. Here it applies family F at A := T with T unbound
+# (read as itself, as in tests/errors/family_unbound_need.moss), and is used inside
+# `outer`, which assumes T, so the caller's environment gives T a meaning
+# (Concrete). Audit evaluates the inlined code in the caller's environment,
+# so the family's key mentions T while T means Concrete there (family2-STATUS,
+# "inlined consts"). Oracle (moss_m2): accepted, runs, exit 0. Native:
+# rejects the use of K ("no binding provides this item"), as it does every
+# use of a defined val (even `val K: () = ();`), so it says nothing here.
+# Rule B (AUDIT-CHANGES #60): now a rejection test. The call use_it()
+# needs use_it's requirement T in force, and T is neither bound nor
+# assumed where it is called (nor merged with anything in force), so the
+# family demand described above never happens.
+# Audit: rejects. Oracle: rejects ("calling `use_it` needs `T` in force
+# here"). Native: accepts (exit 0) until it implements rule B.
+type A;
+type T;
+tag Concrete;
+assume A { fn .foo(); }
+functor F[A]: A -> A.foo;
+functor G: A -> A.foo { bind A.foo = () => (); }
+fn run();
+assume T, T.foo { fn use_it(x: ()) { } }
+val K: () = { bind F = G; use_it({ bind run = () => (); run() }); };
+assume T { fn outer() { let k = K; } }
+fn main() {
+  bind T = Concrete;
+  outer();
+}

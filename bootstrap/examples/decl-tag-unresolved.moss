@@ -1,6 +1,0 @@
-# DeclsForm (AUDIT-CHANGES #76; criteria section 7): a tag's payload
-# denotes a type as written, used or not; `Nope` is not in scope.
-# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
-# reads the payload); now rejects (TyOf). Class B.
-tag Box(Nope);
-fn main() {}

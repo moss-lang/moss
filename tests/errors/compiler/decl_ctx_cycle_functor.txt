@@ -1,0 +1,2 @@
+!L tests/errors/decl_ctx_cycle_functor.moss A
+!L tests/errors/decl_ctx_cycle_functor.moss B

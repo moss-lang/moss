@@ -1,0 +1,31 @@
+# Moved from bootstrap/examples/args-context-alone.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Q4 control (AUDIT-CHANGES #72): as tests/wasi/args_context_provision_wins.moss,
+# but `d.describe()` is not an argument of a call that demands `Desc`. A
+# family that would supply `.describe` at Meter on demand is not a
+# provision of it (D77), so the attached method is called.
+# Verdicts: Audit m (before and after #72); oracle m; native m.
+tag Meter(Int);
+type Q;
+fn .describe(): Char;
+
+assume Std {
+  fn Meter.describe(): Char { char::m }
+}
+
+functor Desc[Q]: Std, Q -> Q.describe;
+functor ByX: Std, Q -> Q.describe {
+  bind Q.describe = () => char::x;
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Desc = ByX;
+    bind Q = Meter;
+    let d = Meter(3);
+    putchar(d.describe());
+    putchar(char::newline);
+  }
+}

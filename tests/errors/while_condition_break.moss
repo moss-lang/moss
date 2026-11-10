@@ -1,0 +1,27 @@
+# Moved from bootstrap/examples/while-condition-break.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn escape(): Bool {
+    loop {
+      while break {}
+    }
+  }
+
+  fn demo() {
+    if escape() { putchar(char::t) } else { putchar(char::f) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

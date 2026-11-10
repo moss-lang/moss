@@ -1,0 +1,1 @@
+!Z tests/errors/functor_partial_link.moss add

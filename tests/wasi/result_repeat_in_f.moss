@@ -1,0 +1,32 @@
+# Moved from bootstrap/examples/result-repeat-in-f.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# AUDIT-CHANGES #58 (criteria section 2, coherence; D84 rule 7).
+# Control: F's result repeats a key in F's own terms (A.m, and K's
+# A.m), so the two positions are one item; a plain NoDup of the caller's keys
+# would reject this.
+# Audit before and now: accepts, prints a (argued).
+# Oracle (moss_m2) and oracle variant d7: print a.
+# Native (ob-family moss, seed 1h1710x0): prints a.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type A;
+assume A { fn .m(); }
+context K = A.m;
+functor F: Std, A -> A.m, K;
+assume Std {
+  functor G: Std, A -> A.m, K {
+    bind A.m = () => putchar(char::a);
+  }
+}
+
+assume Std, F {
+  fn use_it() { bind A = Int; bind F; one.m(); }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind F = G; use_it(); putchar(char::newline); }
+}

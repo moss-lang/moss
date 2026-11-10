@@ -1,0 +1,4 @@
+?X tests/errors/copy_result_collide_mba.moss use_it B
+?Q tests/errors/copy_result_collide_mba.moss use_it F
+?[ tests/errors/copy_result_collide_mba.moss use_it m
+?^ tests/errors/copy_result_collide_mba.moss use_it m

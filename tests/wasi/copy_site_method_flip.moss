@@ -1,0 +1,14 @@
+# Moved from bootstrap/examples/copy-site-method-flip.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# The flipped order of tests/errors/copy_site_method.moss (H lists its two A.gimme
+# entries the other way round). Accepted by the oracle, native, Audit and
+# moss-ref. See that file for the finding.
+type T; type U; type A; type Foo; tag Old;
+fn .gimme(): Foo;
+fn .m(): Old;
+assume T, U { fn out(a: T, b: U); }
+functor F[]: T, U, A, A.gimme[Foo=T], T.m -> out;
+functor H[]: T, U, A, A.gimme[Foo=U], A.gimme[Foo=T], T.m -> out;
+functor G: T, U, A, A.gimme[Foo=U], A.gimme[Foo=T], T.m -> out { bind out = (a, b) => (); }
+fn main() { bind T = Old; bind U = Old; bind A = Old; bind Foo = Old; bind A.gimme = () => this; bind T.m = () => this; bind H = G; bind F = H; }

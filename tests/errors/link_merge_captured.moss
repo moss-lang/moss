@@ -1,0 +1,67 @@
+# Moved from bootstrap/examples/link-merge-captured.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# ChainRealizeOk counterexample (scratch/hunt/hunt-chain, cap3b-AUDIT.md).
+# G's context merges X, an input F takes (linked), with Y, which only G has
+# (captured): two readings of the captured `A.gimme`, oriented X := Y. The
+# closure captures Y at the bind (Bool), each application supplies X afresh
+# (Char), yet G's body reads X as Y: `out` is installed as `true` where the
+# caller types it at Char, and `c.code()` runs Char's code on a Bool.
+# Before cap3b, Audit accepted it: its 3b reads the captured `A.gimme` after
+# the merge (it mentions Y, not X), and LinkBody's input condition held
+# vacuously (X reads Y, not a type over F's inputs). LinkBody now requires
+# each input of F to read in G as a type over F's inputs.
+# Oracle: rejects (D84 3b, on the first unmerged reading of `A.gimme`).
+# Native: rejects ("incompatible types" at `bind out = vy;`).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+assume Y { val vy: Y; }
+assume X { val out: X; }
+
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y];
+
+functor F: Std, X -> out;
+
+functor G: Std, Merge, vy -> out {
+  bind out = vy;
+}
+
+assume Std, X, F {
+  fn go(): X { bind F; out }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Bool;
+    bind Foo = Bool;
+    bind X = Bool;
+    bind Y = Bool;
+    bind A.gimme = () => this;
+    bind vy = true;
+    bind F = G;
+    bind X = Char;
+    let c: Char = go();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

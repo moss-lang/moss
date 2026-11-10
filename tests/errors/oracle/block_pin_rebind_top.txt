@@ -1,0 +1,1 @@
+[elab: tests/errors/block_pin_rebind_top.moss: `bind T` in a functor bound to an abstract one changes a type its result mentions; the fixed set is not widened per binding (D84 3d)]

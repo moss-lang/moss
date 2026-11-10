@@ -1,0 +1,57 @@
+# Moved from bootstrap/examples/block-pin-rebind-top.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Pins scope (proposals item 3), control for tests/wasi/block_pin_rebind.moss: the same
+# rebind of the pin T (M(F) = {T}: F's result lists `tick`, a fn under
+# `assume T`) at the top of G's linked body, `bind T = Char; bind seven = 7;`.
+# Pins still constrain the linked body's own binds (D84 3d), so this stays
+# rejected, while the rebind inside a nested block is accepted.
+# Verdicts: Audit rejects (BTypeBind, pins = M(F)); native rejects
+# ("compilation failed: `T`"); the oracle accepts and prints 7 (its pins,
+# P(F) ∩ M(F) less X(F) here, do not contain T: a known divergence).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+fn .num(): Int;
+val seven: Int;
+assume T {
+  fn tick() {}
+}
+functor Make: Std -> T, T.num;
+functor Maker: Std -> T, T.num {
+  bind T = Char;
+  bind T.num = () => this.code();
+}
+functor F: Std -> tick, seven;
+functor G: Make, Std -> tick, seven {
+  bind T = Char;
+  bind seven = 7;
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Bool;
+    bind Make = Maker;
+    bind F = G;
+    bind F;
+    print_int(seven);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

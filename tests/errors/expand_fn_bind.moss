@@ -1,0 +1,46 @@
+# Moved from bootstrap/examples/expand-fn-bind.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# expand (scratch/orch/expand-AUDIT.md): REJECTED (NoExpandingCycle, InstantiationsBounded).
+# Growth through `bind step = rec` after `bind T = Box`: the closure of rec is
+# made at T := Box(T), so the provider edge (rec, T) -> (rec, T) is strict.
+# Oracle (this worktree's moss_m2): accepts and prints 5
+# Oracle variant with the check (scratch/expand/variant): rejects: expanding cycle
+# Native (ob-family moss, seed 1h1710x0): crashes at compile time (call stack exhausted)
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn nl() { putchar(char::newline); }
+}
+type T;
+tag A;
+assume Std, T {
+  tag Box(T);
+  fn step(x: T, n: Int): Int;
+}
+assume Std, T, step {
+  fn drive(x: T, n: Int): Int { step(x, n) }
+}
+assume Std, T {
+  fn rec(x: T, n: Int): Int {
+    if n == 0 { return 0; }
+    let w = Box(x);
+    bind T = Box;
+    bind step = rec;
+    1 + drive(w, n - 1)
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = A;
+    print_int(rec(A, 5)); nl();
+  }
+}

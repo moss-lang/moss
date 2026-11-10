@@ -140,7 +140,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - #14 makes Audit accept a `tests/errors` program that both implementations
   reject.
 - #12 changed the oracle as well (Elab.v, ExecutionModel.v). It rejects
-  `partially-bound-merge.moss`, which native and Audit (#50) accept; the
+  `tests/wasi/partially_bound_merge.moss`, which native and Audit (#50) accept; the
   oracle fix is designed in #50.
 - #13 rejects a control program that the oracle runs correctly.
 
@@ -153,7 +153,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   distinct (D34).
 - **Why.** `Pair { a = y, b = y }` was typed by its last field and read
   from its first, so the reference interpreter could get stuck.
-- **Tests.** [duplicate-field-binder.moss](examples/duplicate-field-binder.moss):
+- **Tests.** [tests/errors/duplicate_field_binder.moss](../tests/errors/duplicate_field_binder.moss):
   - oracle (built at 386e418): accepts, then `stuck (XErr 10)`;
   - native: the executable elaborators (Elab.v and src/) accept it (E21);
     no native run is recorded;
@@ -168,7 +168,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   while condition counts as leaving the enclosing loop.
 - **Why.** `loop { while break {} }` was typed `never` and could still
   return.
-- **Tests.** [while-condition-break.moss](examples/while-condition-break.moss):
+- **Tests.** [tests/errors/while_condition_break.moss](../tests/errors/while_condition_break.moss):
   - oracle: accepts, then `stuck (XErr 10)`;
   - native: accepts, per E22 and the commit message; no run is recorded;
   - Audit: rejects.
@@ -193,13 +193,13 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   were bound at the caller, so a caller could bind two members of one
   merged class differently.
 - **Tests.**
-  - [unbound-merge-representative.moss](examples/unbound-merge-representative.moss):
+  - [tests/errors/unbound_merge_representative.moss](../tests/errors/unbound_merge_representative.moss):
     - oracle (at 386e418): accepts, then `stuck (XErr 10)`;
     - native: not recorded;
     - Audit: rejects.
 
     Since #12 the oracle rejects it too (D62).
-  - [partially-bound-merge.moss](examples/partially-bound-merge.moss): the
+  - [tests/wasi/partially_bound_merge.moss](../tests/wasi/partially_bound_merge.moss): the
     oracle printed `k` before #12. Under `CallTheta` it was meant to be
     accepted (E24 says it "must be accepted"). Audit accepts it (θ Y is
     read through the bound X; recorded in #50); native prints `k`.
@@ -216,7 +216,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   generations of the telescope.
 - **Why.** In stale-provision-type, `val v: T` with T not a requirement
   was provided at T = Char and read by the callee at T = Bool.
-- **Tests.** [stale-provision-type.moss](examples/stale-provision-type.moss):
+- **Tests.** [tests/errors/stale_provision_type.moss](../tests/errors/stale_provision_type.moss):
   - oracle: accepts, then `stuck (XErr 10)`;
   - native: not recorded;
   - Audit: rejects.
@@ -231,7 +231,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   arguments set as types, as a direct attached call does.
 - **Why.** Under T = Char, `Box.get`'s need `T.k` was answered by
   `Char.k`, and then called on a Bool payload.
-- **Tests.** [bracket-method-receiver.moss](examples/bracket-method-receiver.moss):
+- **Tests.** [tests/errors/bracket_method_receiver.moss](../tests/errors/bracket_method_receiver.moss):
   - oracle: accepts, then `stuck (XErr 14)`;
   - native: accepts and prints `1`, reading `true` as a character code;
   - Audit: rejects.
@@ -246,7 +246,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   when an item of F's body breaks.
 - **Why.** `bind F;` runs F's binds in place, so a `break` among them
   leaves the loop around it. `loop { bind G; }` was typed `never`.
-- **Tests.** [functor-body-break.moss](examples/functor-body-break.moss):
+- **Tests.** [tests/errors/functor_body_break.moss](../tests/errors/functor_body_break.moss):
   - oracle: accepts, then `stuck (XErr 14)`;
   - native: rejects;
   - Audit: rejects.
@@ -265,9 +265,9 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Why.** 3b covered only captured values, so G could call a captured fn
   at a different meaning of a linked type.
 - **Tests.**
-  - [captured-linked-fn.moss](examples/captured-linked-fn.moss): both
+  - [tests/errors/captured_linked_fn.moss](../tests/errors/captured_linked_fn.moss): both
     implementations reject (D84 3b); Audit rejects.
-  - [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss),
+  - [tests/errors/link_merge_captured_fn.moss](../tests/errors/link_merge_captured_fn.moss),
     found later (807bbbf):
     - oracle: accepts, since its 3b reads one stored signature per fn;
       then `stuck (XErr 14)`;
@@ -287,7 +287,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Why.** `PublicEntry` needed `HandleFormed` for every fn in main's
   context. A context item could bracket the requirement away
   (`i64_store[I32 = Addr[I32 = I64]]`).
-- **Tests.** [handle-rebind.moss](examples/handle-rebind.moss):
+- **Tests.** [tests/errors/handle_rebind.moss](../tests/errors/handle_rebind.moss):
   - oracle: rejects (D20/D62 assumed-requirement coherence);
   - native: accepts, exit 0, because main never calls `i64_store`; with a
     call, native rejects;
@@ -303,7 +303,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   a type symbol (D84 rule 1).
 - **Why.** `FamilyKeysTyped` needs the matching's keys to be F's inputs or
   type symbols.
-- **Tests.** [family-poly-nontype.moss](examples/family-poly-nontype.moss):
+- **Tests.** [tests/errors/family_poly_nontype.moss](../tests/errors/family_poly_nontype.moss):
   - oracle: rejects ("not a type in scope (D84)");
   - native: accepts, exit 0;
   - Audit: rejects.
@@ -330,16 +330,16 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   signatures, and the result's write `T |-> m` re-grounds those.
 - **Tests.** Audit rejected both programs from 642490e and accepts them
   again under (b); both implementations run them correctly:
-  - [lambda-declared-output.moss](examples/lambda-declared-output.moss):
+  - [tests/errors/lambda_declared_output.moss](../tests/errors/lambda_declared_output.moss):
     oracle exit 0; native exit 0;
-  - [kept-output-family-method.moss](examples/kept-output-family-method.moss):
+  - [tests/errors/kept_output_family_method.moss](../tests/errors/kept_output_family_method.moss):
     oracle prints 0; native prints 0. Under (b), y has the fresh type T'
     and `y.dup()` is demanded from F at A := T'. An oracle variant that
     gives a mentioned output a fresh generation
     (`scratch/oracle/keptfresh`) prints 0 too, as does the plain oracle
     (`MODE=run` comparison: same output on both programs).
 
-  The neighbour [kept-output-captured-fn.moss](examples/kept-output-captured-fn.moss)
+  The neighbour [tests/errors/kept_output_captured_fn.moss](../tests/errors/kept_output_captured_fn.moss)
   is rejected by both implementations and by Audit (unchanged).
 - **Corpus.** `scratch/orch/chainfwd-cmp.out` (old rule): 376 same, 2 diff.
   Under (b), an oracle variant with the old rule (`scratch/oracle/kept`,
@@ -367,19 +367,19 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   the σ-read 3b saw only Y, and the condition held vacuously. A closure
   then installed a captured Bool at the caller's Char.
 - **Tests.**
-  - [link-merge-captured.moss](examples/link-merge-captured.moss): oracle
+  - [tests/errors/link_merge_captured.moss](../tests/errors/link_merge_captured.moss): oracle
     rejects (D84 3b); native rejects ("incompatible types"); Audit now
     rejects.
-  - [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss):
+  - [tests/errors/link_merge_captured_fn.moss](../tests/errors/link_merge_captured_fn.moss):
     oracle accepts, then `stuck (XErr 14)`; native rejects; Audit rejects
     (this rule for X := Y, #7 for Y := X).
   - Neighbours in `scratch/cap3b/` (not committed) are listed in
     `cap3b-AUDIT.md`. One of them, n7b, is rejected by the oracle and
     accepted by native, and this rule rejects it as the oracle does.
 - **Corpus.** `scratch/orch/cap3b-cmp.out`: 398 same, 2 diff. The
-  differences are link-merge-captured.moss and its hunt original. The
+  differences are tests/errors/link_merge_captured.moss and its hunt original. The
   oracle rejects both.
-- **Class B.** The oracle accepts link-merge-captured-fn.moss and runs it
+- **Class B.** The oracle accepts tests/errors/link_merge_captured_fn.moss and runs it
   unsafely (E36). Native accepts n7b (scratch only).
 
 ### 12. A method's θ records every type symbol its signature mentions (61040f2, "sigclose")
@@ -394,7 +394,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   `assume A`, two provisions of `Int.m` read at U = Int and at U = Bool
   shared θ `[]` and so one run-time key.
 - **Tests.**
-  - [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss): the old
+  - [tests/wasi/sig_nonreq_shadow.moss](../tests/wasi/sig_nonreq_shadow.moss): the old
     oracle was `stuck (XErr 14)`; the new oracle prints 42; native prints
     42.
   - The corpus differences below.
@@ -408,7 +408,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     rejection was not checked (sigclose-STATUS.md).
 - **Decision.** The user's (D20: a signature is closed over its
   requirements).
-- **Class B.** It rejects partially-bound-merge.moss, which native accepts
+- **Class B.** It rejects tests/wasi/partially_bound_merge.moss, which native accepts
   and the old oracle ran. It also changes run-time keys (a D aspect). E35
   is done.
 
@@ -433,16 +433,16 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     PublicWorldFormation and XBridge take the new disjunct. `ExecutionModel.v`'s copy
     of `ResultMentions` changes alike.
   - **Native first.** Native already treats such a U as a fixed input of F:
-    [fn-sig-nonreq.moss](examples/fn-sig-nonreq.moss) prints 7, and
-    [fn-sig-nonreq-rebind.moss](examples/fn-sig-nonreq-rebind.moss) (U
+    [tests/wasi/fn_sig_nonreq.moss](../tests/wasi/fn_sig_nonreq.moss) prints 7, and
+    [tests/errors/fn_sig_nonreq_rebind.moss](../tests/errors/fn_sig_nonreq_rebind.moss) (U
     rebound before `bind F;`) is rejected ("the available binding was
     provided at a different type instantiation: `F`").
   - **Tests.**
 
     | program | oracle before | oracle now | native | Audit now |
     |---|---|---|---|---|
-    | [fn-sig-nonreq.moss](examples/fn-sig-nonreq.moss) | rejects (U not available) | 7 | 7 | accepts (reading) |
-    | [fn-sig-nonreq-rebind.moss](examples/fn-sig-nonreq-rebind.moss) | rejects (U not available) | rejects (rule 5) | rejects | rejects (rule 5) |
+    | [tests/wasi/fn_sig_nonreq.moss](../tests/wasi/fn_sig_nonreq.moss) | rejects (U not available) | 7 | 7 | accepts (reading) |
+    | [tests/errors/fn_sig_nonreq_rebind.moss](../tests/errors/fn_sig_nonreq_rebind.moss) | rejects (U not available) | rejects (rule 5) | rejects | rejects (rule 5) |
 
   - **Corpus.** The new oracle against the old over `tests/`, `examples/`,
     `bootstrap/examples/` and the new programs (elaboration verdicts): 412
@@ -464,7 +464,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     clause").** Outside the body's own binds the pin clause was stricter
     than both implementations: a block nested in a linked body keeps its
     `made` to itself, but the frame's pins still reached it.
-    [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) was
+    [tests/wasi/block_kept_output_pin.moss](../tests/wasi/block_kept_output_pin.moss) was
     rejected by Audit only; the oracle and native both print 7. Audit now
     accepts it. This is a relaxation toward both implementations.
 - **Why.** `CN.ChainRealizeOk` was false. G's `bind Make;` installed Make's
@@ -476,9 +476,9 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 
   | program | oracle | native | Audit now |
   |---|---|---|---|
-  | [link-kept-output-pin.moss](examples/link-kept-output-pin.moss) | accepts, then `stuck (XErr 14)` (E37) | rejects ("compilation failed: `T`") | rejects |
-  | [link-kept-output-pin-control.moss](examples/link-kept-output-pin-control.moss) (caller's T = Char) | prints 48, 10 | rejects | rejects |
-  | [link-kept-output-rep.moss](examples/link-kept-output-rep.moss) | rejects ("does not provide `X.m`") | rejects | rejects. Before: accepted for a world picking T, by hand reading |
+  | [tests/errors/link_kept_output_pin.moss](../tests/errors/link_kept_output_pin.moss) | accepts, then `stuck (XErr 14)` (E37) | rejects ("compilation failed: `T`") | rejects |
+  | [tests/errors/link_kept_output_pin_control.moss](../tests/errors/link_kept_output_pin_control.moss) (caller's T = Char) | prints 48, 10 | rejects | rejects |
+  | [tests/errors/link_kept_output_rep.moss](../tests/errors/link_kept_output_rep.moss) | rejects ("does not provide `X.m`") | rejects | rejects. Before: accepted for a world picking T, by hand reading |
 
 - **Corpus.** `scratch/orch/realize2-cmp.out` compares against a variant
   whose `check_link_pins` and `check_link_inputs` reject a pin, or an input
@@ -516,12 +516,12 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 
   | program | oracle | native | Audit now |
   |---|---|---|---|
-  | [link-merge-rep-rebind.moss](examples/link-merge-rep-rebind.moss) | rejects ("does not bind `X.m`") | rejects | rejects (before: accepted, then stuck) |
-  | [link-merge-rep-rebind-both.moss](examples/link-merge-rep-rebind-both.moss) (= m5-XT) | rejects in this order (D84 3d); accepts the other order and exits 0 | accepts both orders, exit 0 | accepts; selects G's `X.m` |
+  | [tests/errors/link_merge_rep_rebind.moss](../tests/errors/link_merge_rep_rebind.moss) | rejects ("does not bind `X.m`") | rejects | rejects (before: accepted, then stuck) |
+  | [tests/wasi/link_merge_rep_rebind_both.moss](../tests/wasi/link_merge_rep_rebind_both.moss) (= m5-XT) | rejects in this order (D84 3d); accepts the other order and exits 0 | accepts both orders, exit 0 | accepts; selects G's `X.m` |
   | [tests/errors/functor_output_input_changed.moss](../tests/errors/functor_output_input_changed.moss) | rejects (D84 3d) | rejects | accepted after 94d89ce (rejected before). The record argues this is sound. Still accepted after fc75de7, by a consolidation reading |
-  | [link-output-input-rep.moss](examples/link-output-input-rep.moss) | rejects | rejects | rejects (before fc75de7: accepted, by hand reading) |
-  | [link-output-input-rebind-control.moss](examples/link-output-input-rebind-control.moss) | prints 7 | prints 7 | accepts |
-  | [output-merge-key.moss](examples/output-merge-key.moss) | accepts | accepts, prints 7 | accepted after fc75de7 (the old rule rejected it) |
+  | [tests/errors/link_output_input_rep.moss](../tests/errors/link_output_input_rep.moss) | rejects | rejects | rejects (before fc75de7: accepted, by hand reading) |
+  | [tests/wasi/link_output_input_rebind_control.moss](../tests/wasi/link_output_input_rebind_control.moss) | prints 7 | prints 7 | accepts |
+  | [tests/wasi/output_merge_key.moss](../tests/wasi/output_merge_key.moss) | accepts | accepts, prints 7 | accepted after fc75de7 (the old rule rejected it) |
 
 - **Corpus.**
   - 94d89ce: `scratch/linknewpf/cmp.out`, against a variant whose pins
@@ -560,8 +560,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   `theta_at` (requirements only).
 - **Why.** A fn in scope as `main` also has its root context's types,
   which the wrapper left unbound.
-- **Tests.** [wrapped-main.moss](examples/wrapped-main.moss) with
-  [wrapped-main-root.moss](examples/wrapped-main-root.moss): both
+- **Tests.** [tests/wasi/wrapped_main.moss](../tests/wasi/wrapped_main.moss) with
+  [tests/wasi/wrapped_main_root.moss](../tests/wasi/wrapped_main_root.moss): both
   implementations run it correctly (expected: 2, twice).
 - **Decision.** User-approved.
 - **Class D.** Audit's wrapper semantics changes, toward what the
@@ -574,7 +574,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   meaning, as the oracle's `runtime_provider_inputs` does.
 - **Why.** A copy whose target takes an input that the body captured
   replaced the captured type.
-- **Tests.** [copy-capture.moss](examples/copy-capture.moss):
+- **Tests.** [tests/wasi/copy_capture.moss](../tests/wasi/copy_capture.moss):
   - oracle and native: keep the captured X = I32, and the rebuild traps
     (cast failure);
   - old Audit: stuck (an `f64_add` on an i32);
@@ -592,8 +592,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Why.** `LinkMergesOk` and `BindMergesOk` were false on programs that
   all three accept. The body's environment did not absorb G's merge.
 - **Tests.** Audit, the oracle and native all accept and print 7 on both:
-  - [linked-merge-captured.moss](examples/linked-merge-captured.moss);
-  - [bind-merge-unbound.moss](examples/bind-merge-unbound.moss).
+  - [tests/wasi/linked_merge_captured.moss](../tests/wasi/linked_merge_captured.moss);
+  - [tests/wasi/bind_merge_unbound.moss](../tests/wasi/bind_merge_unbound.moss).
 - **Corpus.** None. No premise changed, so nothing is rejected.
 - **Class D.** A run-time change. The record argues that elaborated code
   cannot observe it, since it reads only canonical types. Two obligations
@@ -607,7 +607,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Why.** `RefileRunOk` was false. Refiling F's key right after the bind
   overwrote a stale provision that the body's context still listed.
 - **Tests.**
-  - [refile-stale-shadow.moss](examples/refile-stale-shadow.moss): oracle
+  - [tests/wasi/refile_stale_shadow.moss](../tests/wasi/refile_stale_shadow.moss): oracle
     `stuck (XErr 14)` (8 with `() => 8`); native prints 7; Audit now
     behaves as native does.
   - `scratch/refile/v4.moss`: prints 6 on both implementations.
@@ -627,10 +627,10 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Why.** Audit accepted programs that reached the check, and its run was
   Stuck there. No `Pre` invariant can rule this out.
 - **Tests.**
-  - [const-kept-output.moss](examples/const-kept-output.moss): oracle exit
+  - [tests/wasi/const_kept_output.moss](../tests/wasi/const_kept_output.moss): oracle exit
     0; native rejects the use of the val for an unrelated reason (it
     rejects every use of a defined val); old Audit stuck.
-  - [lambda-declared-output.moss](examples/lambda-declared-output.moss):
+  - [tests/errors/lambda_declared_output.moss](../tests/errors/lambda_declared_output.moss):
     oracle exit 0; native exit 0; old Audit stuck. #10 rejected it until
     its option (b), which accepts it.
 
@@ -654,10 +654,10 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 
   | program | oracle | native |
   |---|---|---|
-  | [family-unbound-need.moss](examples/family-unbound-need.moss) | 0 | 0 |
-  | [family-unbound-need-sig.moss](examples/family-unbound-need-sig.moss) | 0 | 0 |
-  | [lambda-declared-output.moss](examples/lambda-declared-output.moss) | 0 | 0 |
-  | [const-family-unbound.moss](examples/const-family-unbound.moss) | 0 | rejects (native rejects every defined-val use) |
+  | [tests/errors/family_unbound_need.moss](../tests/errors/family_unbound_need.moss) | 0 | 0 |
+  | [tests/errors/family_unbound_need_sig.moss](../tests/errors/family_unbound_need_sig.moss) | 0 | 0 |
+  | [tests/errors/lambda_declared_output.moss](../tests/errors/lambda_declared_output.moss) | 0 | 0 |
+  | [tests/errors/const_family_unbound.moss](../tests/errors/const_family_unbound.moss) | 0 | rejects (native rejects every defined-val use) |
 
 - **Corpus.** None. The change is run-time only.
 - **Decision.** Coordinator-approved (option c).
@@ -673,7 +673,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   was its alias, which in inlined const code need not equal its meaning.
   The obligation was restated (lead-approved), proved, and removed from
   `safety_obligations`.
-- **Tests.** [functor-captured-unbound.moss](examples/functor-captured-unbound.moss):
+- **Tests.** [tests/errors/functor_captured_unbound.moss](../tests/errors/functor_captured_unbound.moss):
   oracle exit 0; native exit 0.
 - **Corpus.** None. The change is run-time only.
 - **Class D.** The record argues the reading is unchanged for symbols in
@@ -695,7 +695,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **What happened on the way.**
   1. 0e211e6 (results4) added a converse to `CopyOutputs`: every key of
      H's result must be one of F's. It rejected
-     [copy-extra-key.moss](examples/copy-extra-key.moss), which native
+     [tests/wasi/copy_extra_key.moss](../tests/wasi/copy_extra_key.moss), which native
      runs (31) and the oracle runs wrongly (21). Corpus with that converse:
      373 same, per the record.
   2. e029263 added a LinkBody premise: no output symbol appears in a
@@ -721,10 +721,10 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 
   | program | oracle | native | Audit now |
   |---|---|---|---|
-  | [copy-extra-key.moss](examples/copy-extra-key.moss) | prints 21 (E32) | prints 31 | accepted; 31 |
-  | [linked-copy-bracket.moss](examples/linked-copy-bracket.moss) | `stuck (XErr 6)` | prints 42 | the call finds the primitive |
-  | [family-copy-linked-bracket.moss](examples/family-copy-linked-bracket.moss) | `stuck (XErr 6)`, exit 3 | exit 0 | the demand finds the key |
-  | [output-merge-key.moss](examples/output-merge-key.moss) | `stuck (XErr 6)` (E33) | prints 7 | as native |
+  | [tests/wasi/copy_extra_key.moss](../tests/wasi/copy_extra_key.moss) | prints 21 (E32) | prints 31 | accepted; 31 |
+  | [tests/wasi/linked_copy_bracket.moss](../tests/wasi/linked_copy_bracket.moss) | `stuck (XErr 6)` | prints 42 | the call finds the primitive |
+  | [tests/wasi/family_copy_linked_bracket.moss](../tests/wasi/family_copy_linked_bracket.moss) | `stuck (XErr 6)`, exit 3 | exit 0 | the demand finds the key |
+  | [tests/wasi/output_merge_key.moss](../tests/wasi/output_merge_key.moss) | `stuck (XErr 6)` (E33) | prints 7 | as native |
   | [functor_input_output_generations.moss](../tests/regressions/functor_input_output_generations.moss) | `n`, then stuck | `yn` | as native |
 
 - **Corpus.** For the copy check's position matching,
@@ -798,7 +798,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   context as a call's needs do (`Satisfies`, at G's inputs read here).
   `LinkBody` also requires `Numbering Fg None []`.
 - **Why.** G's merges could be violated by the captured needs.
-- **Tests.** [captured-merge.moss](examples/captured-merge.moss): both
+- **Tests.** [tests/errors/captured_merge.moss](../tests/errors/captured_merge.moss): both
   implementations reject (the oracle by D84 3b); Audit rejects. The
   numbering clause has no test.
 - **Decision.** User-approved.
@@ -829,7 +829,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     family ... ambiguous (D84 rule 7)").
   - **Native first:** native rejects such a program too ("conflicting
     method bindings from a family: `m`").
-  - **Test.** [family-ambiguous-member.moss](examples/family-ambiguous-member.moss):
+  - **Test.** [tests/errors/family_ambiguous_member.moss](../tests/errors/family_ambiguous_member.moss):
     `F[A, B]: Std -> A.m, B.m` with A and B in force and the demand `k.m()`
     at Int. Oracle rejects (ambiguous); native rejects; Audit now rejects
     (before, a derivation could take either G's A.m, printing 1, or B.m,
@@ -852,14 +852,14 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Tests.** Both programs are rejected by the oracle
   (`defined_link_inputs_compatible`, `copy_output_compatible`) and by
   native (type errors):
-  - [linked-merge.moss](examples/linked-merge.moss);
-  - [copy-merge.moss](examples/copy-merge.moss).
+  - [tests/errors/linked_merge.moss](../tests/errors/linked_merge.moss);
+  - [tests/errors/copy_merge.moss](../tests/errors/copy_merge.moss).
 - **Corpus.** A variant with these checks gives the oracle's verdict on all
   353 programs. The record does not name the output file.
 - **Class A** for `LinkBody`. **Corrected by #96 for `BFunCopy`:** the copy
   clause compared H's readings in F's declared context, which is stricter
   than both implementations. It rejected a copy whose merge F's fixed
-  inputs make true (copy-site-merge.moss), which the oracle and native
+  inputs make true (tests/wasi/copy_site_merge.moss), which the oracle and native
   accept and run.
 
 ### 33. A family member is not bound directly (1cd1ce5)
@@ -902,12 +902,12 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
     image.
 - **Tests.** Every program below is rejected by the oracle (D78), by
   native, and now by Audit:
-  - [copy-output-order.moss](examples/copy-output-order.moss): native's
+  - [tests/errors/copy_output_order.moss](../tests/errors/copy_output_order.moss): native's
     test is `copied_functors_compare_final_output_interpretations`;
-  - [copy-bracket-nonfixed.moss](examples/copy-bracket-nonfixed.moss);
-  - [copy-fixed-reads-poly.moss](examples/copy-fixed-reads-poly.moss):
+  - [tests/errors/copy_bracket_nonfixed.moss](../tests/errors/copy_bracket_nonfixed.moss);
+  - [tests/errors/copy_fixed_reads_poly.moss](../tests/errors/copy_fixed_reads_poly.moss):
     native rejects at the use of F;
-  - [copy-fresh-collide.moss](examples/copy-fresh-collide.moss).
+  - [tests/errors/copy_fresh_collide.moss](../tests/errors/copy_fresh_collide.moss).
 
   The *role* half of a8ef896 is untested. The proof
   (`PublicCopyFresh.copy_outputs_at`) needs it.
@@ -942,15 +942,15 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   - b2c4a90 (`made` plus `unforced`) was dropped in merge 1d4f5c5. Its
     example `block-output-escape.moss` is not at HEAD.
 
-  The header of [kept-output-escape.moss](examples/kept-output-escape.moss)
+  The header of [tests/errors/kept_output_escape.moss](../tests/errors/kept_output_escape.moss)
   still says "MadeFor".
 - **Why.** A value of an output's type could leave its block (D78), and
   `MeaningsGrow` was false.
 - **Tests.** Both programs are rejected by the oracle ("a type `bind F;`
   made in it ... (D78)"), by native ("cannot escape its block") and by
   Audit:
-  - [output-escape.moss](examples/output-escape.moss);
-  - [kept-output-escape.moss](examples/kept-output-escape.moss).
+  - [tests/errors/output_escape.moss](../tests/errors/output_escape.moss);
+  - [tests/errors/kept_output_escape.moss](../tests/errors/kept_output_escape.moss).
 - **Corpus.**
   - 914cd3c: none ("I did not run an oracle-variant comparison"). The
     frame premise is argued.
@@ -966,7 +966,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   oracle's `promised_result_type` does.
 - **Why.** A body that binds `T = Bool` and provides `mk(): T` could never
   match, so Audit rejected the standard functor pattern.
-- **Tests.** [result-output-meaning.moss](examples/result-output-meaning.moss):
+- **Tests.** [tests/wasi/result_output_meaning.moss](../tests/wasi/result_output_meaning.moss):
   both implementations print 1; Audit had rejected it and now accepts it.
 - **Class A, as the closest fit.** It mirrors both implementations, but it
   is a relaxation, not a rejection. It accepts nothing known that an
@@ -977,7 +977,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   `FixedMachinesRead`: each machine type among the functor's fixed
   readings in main's context reads canonically as itself.
 - **Why.** The proof needed this, as the premise `MainMachinesUnmerged`.
-- **Tests.** [platform-fixed-merge.moss](examples/platform-fixed-merge.moss):
+- **Tests.** [tests/errors/platform_fixed_merge.moss](../tests/errors/platform_fixed_merge.moss):
   - oracle: rejects ("incompatible assumed fixed type",
     `check_platform_entry_view`);
   - native: rejects;
@@ -988,7 +988,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Rule now.** `BFunCopy` requires F to be declared without a body.
 - **Why.** `ChainForwardCopySigs` needs every symbol of a copy's result to
   be an input, which holds only for an abstract functor.
-- **Tests.** [copy-into-body.moss](examples/copy-into-body.moss): the
+- **Tests.** [tests/errors/copy_into_body.moss](../tests/errors/copy_into_body.moss): the
   oracle rejects (exit 64) and native rejects (exit 1). The control
   (scratch) prints 7 on both.
 - **Class A.** It is exactly the oracle's `bind_functor` check.
@@ -1011,7 +1011,7 @@ executable tests unless noted.
 - **Rule now.** The family code's outputs and bindings use
   `rkey_of outputs key`.
 - **Why.** `PlatformApplyOk` was false: `r.deref()` found no provision.
-- **Tests.** [platform-family-keys.moss](examples/platform-family-keys.moss):
+- **Tests.** [tests/wasi/platform_family_keys.moss](../tests/wasi/platform_family_keys.moss):
   oracle exit 0; native exit 0. This mirrors the oracle's `key_item_at`.
 - **Class E.**
 
@@ -1071,7 +1071,7 @@ executable tests unless noted.
 - **Why.** The planned monomorphization theorem needs finitely many
   instantiations; a falsification hunt (scratch/expand/mono) found Audit
   accepting polymorphic recursion through every channel above.
-- **Tests.** bootstrap/examples/expand-*.moss. Rejected: polyrec,
+- **Tests.** tests/errors/expand_*.moss and tests/wasi/expand_control_loop.moss (from bootstrap/examples/expand-*.moss). Rejected: polyrec,
   attached, functor-output, functor-double, family, lambda, fn-bind,
   type-direct (also D58 in the oracle), type-ref-rec, type-ref,
   functor-forge. Controls: control-loop is accepted; control-functor-const
@@ -1107,8 +1107,8 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [block-pin-rebind.moss](examples/block-pin-rebind.moss) (rebind in a nested block) | 7 | 7 | rejects | accepts |
-  | [block-pin-rebind-top.moss](examples/block-pin-rebind-top.moss) (same rebind at the body's top) | 7 | rejects ("compilation failed: `T`") | rejects | rejects |
+  | [tests/wasi/block_pin_rebind.moss](../tests/wasi/block_pin_rebind.moss) (rebind in a nested block) | 7 | 7 | rejects | accepts |
+  | [tests/errors/block_pin_rebind_top.moss](../tests/errors/block_pin_rebind_top.moss) (same rebind at the body's top) | 7 | rejects ("compilation failed: `T`") | rejects | rejects |
 
 - **Corpus.** An oracle variant whose nested blocks run without pins
   (`scratch/oracle/pinscope`), against the oracle: 413 same, 0 diff (the
@@ -1146,9 +1146,9 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [principal-theta-unbound.moss](examples/principal-theta-unbound.moss) (main binds `Concrete.foo`, calls a fn needing `T.foo` with T unbound) | rejects ("needs `T.foo`, which is not available") | rejects ("not available in the current context: `foo`") | accepts (θ T = Concrete) | rejects |
-  | [partially-bound-merge.moss](examples/partially-bound-merge.moss) (f merges X with Y; the caller binds X only) | rejects (D62); the oracle fix below prints `k` | prints `k` | accepts (θ Y = Char, forced by the merge clause) | accepts (θ Y read through X) |
-  | [unbound-merge-representative.moss](examples/unbound-merge-representative.moss) | rejects | (not recorded) | rejects | rejects |
+  | [tests/errors/principal_theta_unbound.moss](../tests/errors/principal_theta_unbound.moss) (main binds `Concrete.foo`, calls a fn needing `T.foo` with T unbound) | rejects ("needs `T.foo`, which is not available") | rejects ("not available in the current context: `foo`") | accepts (θ T = Concrete) | rejects |
+  | [tests/wasi/partially_bound_merge.moss](../tests/wasi/partially_bound_merge.moss) (f merges X with Y; the caller binds X only) | rejects (D62); the oracle fix below prints `k` | prints `k` | accepts (θ Y = Char, forced by the merge clause) | accepts (θ Y read through X) |
+  | [tests/errors/unbound_merge_representative.moss](../tests/errors/unbound_merge_representative.moss) | rejects | (not recorded) | rejects | rejects |
 
 - **Oracle.** Its `call_theta` already reads an unbound requirement as
   itself, so it never guessed; but it also reads a requirement as itself
@@ -1235,16 +1235,16 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [sameneed-link.moss](examples/sameneed-link.moss) (F links X.m, vx, A.gimme; opposite orders) | rejects (D84 3b: "captures `X.m`") | 7 | depends on the orientation: accepts when F and G choose the same representative, else rejects (linked provisions; 3b) | 7, every orientation |
-  | [sameneed-link-agree.moss](examples/sameneed-link-agree.moss) | 7 | 7 | as above | 7 |
-  | [sameneed-meaning.moss](examples/sameneed-meaning.moss) (X fixed; X.m rebound between bind and application) | 1 (captured) | 1 | accepts with two meanings: 2 (linked) or 1 (captured), by orientation | 2, every orientation |
-  | [sameneed-meaning-agree.moss](examples/sameneed-meaning-agree.moss) | 2 | 1 | 2 or 1, by orientation | 2 |
-  | [sameneed-copy.moss](examples/sameneed-copy.moss) (`bind F = H;`, opposite orders) | rejects (D78: "needs `X.m`, which `F` does not take") | rejects ("does not satisfy the required signature: `X`") | depends on the orientation (`incl nsh nsu`; provisions) | 7, every orientation |
-  | [sameneed-copy-agree.moss](examples/sameneed-copy-agree.moss) | 7 | 7 | as above | 7 |
-  | [sameneed-ambiguous.moss](examples/sameneed-ambiguous.moss) (G merges X, Y; F does not, and needs X.m and Y.m) | rejects ("linked input interpretation differs") | 7 | rejects (#11) | rejects (#11) |
-  | [sameneed-ambiguous-other.moss](examples/sameneed-ambiguous-other.moss) | 7 | 7 | rejects (#11) | rejects (#11) |
+  | [tests/wasi/sameneed_link.moss](../tests/wasi/sameneed_link.moss) (F links X.m, vx, A.gimme; opposite orders) | rejects (D84 3b: "captures `X.m`") | 7 | depends on the orientation: accepts when F and G choose the same representative, else rejects (linked provisions; 3b) | 7, every orientation |
+  | [tests/wasi/sameneed_link_agree.moss](../tests/wasi/sameneed_link_agree.moss) | 7 | 7 | as above | 7 |
+  | [tests/wasi/sameneed_meaning.moss](../tests/wasi/sameneed_meaning.moss) (X fixed; X.m rebound between bind and application) | 1 (captured) | 1 | accepts with two meanings: 2 (linked) or 1 (captured), by orientation | 2, every orientation |
+  | [tests/wasi/sameneed_meaning_agree.moss](../tests/wasi/sameneed_meaning_agree.moss) | 2 | 1 | 2 or 1, by orientation | 2 |
+  | [tests/wasi/sameneed_copy.moss](../tests/wasi/sameneed_copy.moss) (`bind F = H;`, opposite orders) | rejects (D78: "needs `X.m`, which `F` does not take") | rejects ("does not satisfy the required signature: `X`") | depends on the orientation (`incl nsh nsu`; provisions) | 7, every orientation |
+  | [tests/wasi/sameneed_copy_agree.moss](../tests/wasi/sameneed_copy_agree.moss) | 7 | 7 | as above | 7 |
+  | [tests/errors/sameneed_ambiguous.moss](../tests/errors/sameneed_ambiguous.moss) (G merges X, Y; F does not, and needs X.m and Y.m) | rejects ("linked input interpretation differs") | 7 | rejects (#11) | rejects (#11) |
+  | [tests/errors/sameneed_ambiguous_other.moss](../tests/errors/sameneed_ambiguous_other.moss) | 7 | 7 | rejects (#11) | rejects (#11) |
 
-  Native prints 1 on sameneed-meaning-agree.moss and also when no merge
+  Native prints 1 on tests/wasi/sameneed_meaning_agree.moss and also when no merge
   is involved, where the oracle and Audit print 2: native captures needs
   keyed at fixed inputs. That divergence predates #51.
 - **Corpus.** An oracle variant whose `bind F = G;` and `bind F = H;`
@@ -1271,9 +1271,9 @@ executable tests unless noted.
   its table), keeps the scoping. The full re-orientation lemma was not
   needed: the proof never re-orients a context. It reads G's spelling
   through F's merge where F's provision is used.
-- **Class C and D, a relaxation.** sameneed-copy.moss is accepted although
+- **Class C and D, a relaxation.** tests/wasi/sameneed_copy.moss is accepted although
   both implementations reject it (they reject only this merge order, so
-  coherence decides, criteria.md section 6). sameneed-meaning.moss's
+  coherence decides, criteria.md section 6). tests/wasi/sameneed_meaning.moss's
   meaning changes from "1 or 2, by orientation" to 2. The oracle's
   orientation, reading order, gives 1 there.
 ### 52. A merge class is one vertex of the expanding-cycle check (coherence2 branch; PART-DESIGN §1.5 #8)
@@ -1312,8 +1312,8 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [expand-merged-xy.moss](examples/expand-merged-xy.moss) (nest merges X, Y; polymorphic recursion through the class) | prints 5 | crashes at compile time (call stack exhausted) | rejects | rejects |
-  | [expand-merged-yx.moss](examples/expand-merged-yx.moss) (the same, merge listed the other way, so the oracle spells the class by Y) | prints 5 | crashes at compile time | rejects | rejects |
+  | [tests/errors/expand_merged_xy.moss](../tests/errors/expand_merged_xy.moss) (nest merges X, Y; polymorphic recursion through the class) | prints 5 | crashes at compile time (call stack exhausted) | rejects | rejects |
+  | [tests/errors/expand_merged_yx.moss](../tests/errors/expand_merged_yx.moss) (the same, merge listed the other way, so the oracle spells the class by Y) | prints 5 | crashes at compile time | rejects | rejects |
   | expand-*.moss (#48) | unchanged | unchanged | unchanged | unchanged |
 
   The oracle variant (below) rejects both merged tests with and without
@@ -1371,9 +1371,9 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [platform-fixed-merge-xi.moss](examples/platform-fixed-merge-xi.moss) (`context Two = X, i32_eqz[I32 = X], i32_eqz`) | rejects ("incompatible assumed fixed type") | rejects ("incompatible types: `Arrays`") | clause passes with representative I32, fails with X (argued) | rejects |
-  | [platform-fixed-merge-ix.moss](examples/platform-fixed-merge-ix.moss) (the same merge, the other order) | rejects | rejects | the same | rejects |
-  | [platform-fixed-merge.moss](examples/platform-fixed-merge.moss) (I32 = Bool, #39) | rejects | rejects | rejects | rejects |
+  | [tests/errors/platform_fixed_merge_xi.moss](../tests/errors/platform_fixed_merge_xi.moss) (`context Two = X, i32_eqz[I32 = X], i32_eqz`) | rejects ("incompatible assumed fixed type") | rejects ("incompatible types: `Arrays`") | clause passes with representative I32, fails with X (argued) | rejects |
+  | [tests/errors/platform_fixed_merge_ix.moss](../tests/errors/platform_fixed_merge_ix.moss) (the same merge, the other order) | rejects | rejects | the same | rejects |
+  | [tests/errors/platform_fixed_merge.moss](../tests/errors/platform_fixed_merge.moss) (I32 = Bool, #39) | rejects | rejects | rejects | rejects |
 
 - **Corpus.** An oracle variant whose `check_platform_entry_view` asks
   the same class condition (`scratch/oracle/fixedcls`: the class of the
@@ -1427,10 +1427,10 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [closure-partial-class-xyz.moss](examples/closure-partial-class-xyz.moss) (X = Bool and Y = Char at the bind, Z unbound) | rejects ("linked input interpretation differs") | prints k | rejects (LinkBody forces representative X; Y = X fails) | accepts |
-  | [closure-partial-class-zyx.moss](examples/closure-partial-class-zyx.moss) (the same, merge listed the other way) | prints k | prints k | rejects | accepts |
-  | [closure-partial-unbound-xyz.moss](examples/closure-partial-unbound-xyz.moss) (X unbound at the bind) | rejects | prints k | accepts | accepts |
-  | [closure-partial-unbound-zyx.moss](examples/closure-partial-unbound-zyx.moss) | prints k | prints k | accepts | accepts |
+  | [tests/errors/closure_partial_class_xyz.moss](../tests/errors/closure_partial_class_xyz.moss) (X = Bool and Y = Char at the bind, Z unbound) | rejects ("linked input interpretation differs") | prints k | rejects (LinkBody forces representative X; Y = X fails) | accepts |
+  | [tests/wasi/closure_partial_class_zyx.moss](../tests/wasi/closure_partial_class_zyx.moss) (the same, merge listed the other way) | prints k | prints k | rejects | accepts |
+  | [tests/errors/closure_partial_unbound_xyz.moss](../tests/errors/closure_partial_unbound_xyz.moss) (X unbound at the bind) | rejects | prints k | accepts | accepts |
+  | [tests/wasi/closure_partial_unbound_zyx.moss](../tests/wasi/closure_partial_unbound_zyx.moss) | prints k | prints k | accepts | accepts |
 
   The oracle is itself order-dependent on these programs. Its linked
   input interpretation check (`defined_link_inputs_compatible`) reads the
@@ -1490,7 +1490,7 @@ executable tests unless noted.
   |---|---|---|---|---|
   | `tests/wasi/call_brackets.moss` | `2`, `21` | `2`, `21` | `2`, `21` | accepts (by reading) |
   | `tests/wasi/call_brackets_unrequired.moss` (`stack[Elem=Float]()`, `Elem` not required) | rejects ("binds `Elem`, which is not a type `stack` requires") | rejects | rejects (`e_irrelevant`) | rejects (`CallBrackets`) |
-  | [expand-call-brackets.moss](examples/expand-call-brackets.moss) (`nest[T=Wrap](Wrap(x), n - 1)` inside `nest`) | accepts, prints 5 | rejects: expanding cycle, nest's T grows into nest's T | crashes at compile time (wasm call stack exhausted), as on expand-polyrec | rejects (`InstantiationsBounded`: the strict edge (nest, T) -> (nest, T), by reading) |
+  | [tests/errors/expand_call_brackets.moss](../tests/errors/expand_call_brackets.moss) (`nest[T=Wrap](Wrap(x), n - 1)` inside `nest`) | accepts, prints 5 | rejects: expanding cycle, nest's T grows into nest's T | crashes at compile time (wasm call stack exhausted), as on expand-polyrec | rejects (`InstantiationsBounded`: the strict edge (nest, T) -> (nest, T), by reading) |
   | `stack[Item=Float](1)`, `stack` taking no argument (scratch) | rejects ("`stack` takes 0 argument(s), got 1") | rejects | **invalid Wasm** ("values remaining on stack at end of block", reported as a compiler bug) | rejects (the expansion's call has no `Args` derivation: `ArgsNil` needs as many arguments as parameters) |
   | `stack[Item=Float, Int=Int]()` under `assume Std, Item` (scratch) | prints 0 | (not run) | prints 0 | accepts (`Int` is in `w_reqs`, through `Std`) |
 
@@ -1653,14 +1653,14 @@ executable tests unless noted.
   | `tests/errors/assume_missing_requirement_type.moss` | rejects ("assuming `f` needs `T` in force (D20)") | rejects | accepts | rejects |
   | `tests/errors/assume_missing_requirement_need.moss` | rejects ("calling `f` needs `seed`") | rejects | accepts | rejects |
   | `tests/errors/assume_main_without_root.moss` (`assume main`, main imported as `start`) | rejects ("needs `StructRef` in force") | rejects | accepts | rejects (start's root needs Heap, Mutable, Arrays) |
-  | [assumed-ctx-item](examples/assumed-ctx-item.moss), [assumed-main-calls](examples/assumed-main-calls.moss), [assumed-type-abstract](examples/assumed-type-abstract.moss), [assumed-type-use](examples/assumed-type-use.moss), [assumed-val-type](examples/assumed-val-type.moss) (a requirement missing) | rejects | rejects | accepts | rejects |
-  | [assumed-meth-need](examples/assumed-meth-need.moss), [assumed-need-use](examples/assumed-need-use.moss), [assumed-val-need](examples/assumed-val-need.moss) (a need missing) | rejects | rejects | accepts | rejects |
-  | [assumed-need-incoherent](examples/assumed-need-incoherent.moss) (f needs h at T = U; g has h at T = T) | rejects (D62) | accepts | accepts | rejects |
+  | [assumed-ctx-item](../tests/errors/assumed_ctx_item.moss), [assumed-main-calls](../tests/errors/assumed_main_calls.moss), [assumed-type-abstract](../tests/errors/assumed_type_abstract.moss), [assumed-type-use](../tests/errors/assumed_type_use.moss), [assumed-val-type](../tests/errors/assumed_val_type.moss) (a requirement missing) | rejects | rejects | accepts | rejects |
+  | [assumed-meth-need](../tests/errors/assumed_meth_need.moss), [assumed-need-use](../tests/errors/assumed_need_use.moss), [assumed-val-need](../tests/errors/assumed_val_need.moss) (a need missing) | rejects | rejects | accepts | rejects |
+  | [assumed-need-incoherent](../tests/errors/assumed_need_incoherent.moss) (f needs h at T = U; g has h at T = T) | rejects (D62) | accepts | accepts | rejects |
   | `tests/wasi/assume_requirements_same_list.moss` (`assume f, seed, T`) | accepts | accepts | accepts | accepts |
-  | [assumed-bracket-ok](examples/assumed-bracket-ok.moss) (`f[T=U]` in a context) | accepts | accepts | accepts | accepts |
-  | [assumed-ctx-decl-only](examples/assumed-ctx-decl-only.moss) (an unassumed context lists f) | accepts | accepts | accepts | accepts |
-  | [assumed-functor-input](examples/assumed-functor-input.moss) (F's input f) | accepts | accepts | accepts | accepts |
-  | [assumed-need-coherent](examples/assumed-need-coherent.moss) | accepts | accepts | accepts | accepts |
+  | [assumed-bracket-ok](../tests/wasi/assumed_bracket_ok.moss) (`f[T=U]` in a context) | accepts | accepts | accepts | accepts |
+  | [assumed-ctx-decl-only](../tests/wasi/assumed_ctx_decl_only.moss) (an unassumed context lists f) | accepts | accepts | accepts | accepts |
+  | [assumed-functor-input](../tests/wasi/assumed_functor_input.moss) (F's input f) | accepts | accepts | accepts | accepts |
+  | [assumed-need-coherent](../tests/wasi/assumed_need_coherent.moss) | accepts | accepts | accepts | accepts |
 
   The tests come from the Δ3 hunt (scratch/deltas, `d3_*`).
 - **Corpus.** The oracle has the check, so the comparison is the oracle
@@ -1668,7 +1668,7 @@ executable tests unless noted.
   `elab_program`; scratch/variants/noassume), `--elab-only`, over
   `tests/`, `examples/` and `bootstrap/examples/` (with the new tests):
   434 same / 13 diff. The 13 are the 12 rejected programs of the table
-  and [handle-rebind.moss](examples/handle-rebind.moss) (#8), which Audit
+  and [tests/errors/handle_rebind.moss](../tests/errors/handle_rebind.moss) (#8), which Audit
   already rejected through `HandlesRead`; the oracle's reason for
   rejecting it (i64_store needs Memories at another instantiation) is
   now Audit's too. No program both implementations accept is rejected.
@@ -1677,7 +1677,7 @@ executable tests unless noted.
 - **Proof.** `public_safety` unchanged: the conjunct is last and no proof
   reads it. `AuditBuildExample.main_assumes` proves it of the example
   world (main is the only symbol and its nesting is empty).
-- **Class A**, except assumed-need-incoherent.moss, which native accepts
+- **Class A**, except tests/errors/assumed_need_incoherent.moss, which native accepts
   (class B on that program). Native accepted it only because g never calls
   f; it did not check an assumed item's needs' instantiations. Fixed
   natively in f8c380c (lang-all).
@@ -1706,10 +1706,10 @@ executable tests unless noted.
   When two derivations disagree and neither is more general, the program
   is ambiguous and is rejected. That is D84 rule 7 for families, which
   both implementations already apply (`FamilyApplication`'s `NoDup`;
-  result-collide-family.moss).
+  tests/errors/result_collide_family.moss).
 - **Form chosen.** A plain `NoDup` of the caller's keys would reject a key F
   itself repeats (A.m, and a context listing A.m), which all three
-  accept and run alike (result-repeat-in-f.moss). The check compares with
+  accept and run alike (tests/wasi/result_repeat_in_f.moss). The check compares with
   F's own reading, so only a collision the caller makes is rejected, and
   F's merges decide what F counts as one item (the classes, not the
   representative: provision ids under F's σ).
@@ -1726,16 +1726,16 @@ executable tests unless noted.
 
   | program | oracle | variant | native | Audit before | Audit now |
   |---|---|---|---|---|---|
-  | [result-collide-ab](examples/result-collide-ab.moss) | a | rejects | b | b | rejects |
-  | [result-collide-ba](examples/result-collide-ba.moss) | b | rejects | b | a | rejects |
-  | [result-collide-ab-bindswap](examples/result-collide-ab-bindswap.moss) | a | rejects | a | b | rejects |
-  | [result-collide-ba-bindswap](examples/result-collide-ba-bindswap.moss) | b | rejects | a | a | rejects |
-  | [result-repeat-in-f](examples/result-repeat-in-f.moss) (control) | a | a | a | a | a |
-  | [result-collide-family](examples/result-collide-family.moss) (control) | rejects | rejects | rejects | rejects | rejects |
-  | [copy-result-collide](examples/copy-result-collide.moss) | a | rejects | rejects ("the functor does not satisfy the required signature") | b | rejects |
-  | [copy-result-collide-hba](examples/copy-result-collide-hba.moss) | b | rejects | rejects | a | rejects |
-  | [copy-result-collide-mba](examples/copy-result-collide-mba.moss) | a | rejects | rejects | b | rejects |
-  | [copy-result-repeat](examples/copy-result-repeat.moss) (control) | a | a | a | a | a |
+  | [result-collide-ab](../tests/wasi/result_collide_ab.moss) | a | rejects | b | b | rejects |
+  | [result-collide-ba](../tests/errors/result_collide_ba.moss) | b | rejects | b | a | rejects |
+  | [result-collide-ab-bindswap](../tests/errors/result_collide_ab_bindswap.moss) | a | rejects | a | b | rejects |
+  | [result-collide-ba-bindswap](../tests/errors/result_collide_ba_bindswap.moss) | b | rejects | a | a | rejects |
+  | [result-repeat-in-f](../tests/wasi/result_repeat_in_f.moss) (control) | a | a | a | a | a |
+  | [result-collide-family](../tests/errors/result_collide_family.moss) (control) | rejects | rejects | rejects | rejects | rejects |
+  | [copy-result-collide](../tests/errors/copy_result_collide.moss) | a | rejects | rejects ("the functor does not satisfy the required signature") | b | rejects |
+  | [copy-result-collide-hba](../tests/errors/copy_result_collide_hba.moss) | b | rejects | rejects | a | rejects |
+  | [copy-result-collide-mba](../tests/errors/copy_result_collide_mba.moss) | a | rejects | rejects | b | rejects |
+  | [copy-result-repeat](../tests/wasi/copy_result_repeat.moss) (control) | a | a | a | a | a |
 
   The application tests come from the Δ7 hunt (scratch/deltas, `d7_*`).
 - **Corpus.** The variant against the oracle, `--elab-only`, over
@@ -1770,9 +1770,9 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [assume-method-before-type](examples/assume-method-before-type.moss) (`assume T.m, T`) | rejects | **accepts** (E41) | accepts | rejects |
-  | [assume-method-before-type-use](examples/assume-method-before-type-use.moss) (and g calls `x.m()`) | rejects | rejects ("no matching method is available for this receiver") | rejects (no m at x's type) | rejects |
-  | [assume-method-after-type](examples/assume-method-after-type.moss) (`assume T, T.m`, control) | accepts | accepts | accepts | accepts |
+  | [assume-method-before-type](../tests/errors/assume_method_before_type.moss) (`assume T.m, T`) | rejects | **accepts** (E41) | accepts | rejects |
+  | [assume-method-before-type-use](../tests/errors/assume_method_before_type_use.moss) (and g calls `x.m()`) | rejects | rejects ("no matching method is available for this receiver") | rejects (no m at x's type) | rejects |
+  | [assume-method-after-type](../tests/wasi/assume_method_after_type.moss) (`assume T, T.m`, control) | accepts | accepts | accepts | accepts |
 
 - **Corpus.** The oracle already rejects every such list (its method
   item reads the receiver's meaning in force), so no oracle variant
@@ -1809,7 +1809,7 @@ executable tests unless noted.
     takes stay exempt (closure-partial-unbound-*).
 - **Why.** Before, a requirement the caller left unbound was read as
   itself (`theta_at`, `at_site`): a family demand could key a method at a
-  declared symbol out of force (family-unbound-need.moss), a lambda or
+  declared symbol out of force (tests/errors/family_unbound_need.moss), a lambda or
   closure then captured it (key-receiver capture, `captured_mentioned`),
   and scoping had to admit every declared type symbol. Rule B makes the
   instantiation of every use determined by the use.
@@ -1827,7 +1827,7 @@ executable tests unless noted.
     `keys_scoped` and `keys_scoped_context` are strengthened to match.
   - **Not removed:** most of `captured_mentioned`. It is dead only under a
     strict closure rule (each captured input in force itself), which
-    rejects bind-merge-unbound.moss and closure-partial-class-zyx.moss,
+    rejects tests/wasi/bind_merge_unbound.moss and tests/wasi/closure_partial_class_zyx.moss,
     both accepted by both implementations. With the through-class rule an
     input can be out of force while a member of its class is in force, so
     the lemma stays; its key-receiver case now goes through the strict
@@ -1853,12 +1853,12 @@ executable tests unless noted.
 
   | program | Audit | oracle before | oracle now | native |
   |---|---|---|---|---|
-  | [ruleb-call-unbound](examples/ruleb-call-unbound.moss) | rejects | accepts | rejects | accepts (E42) |
-  | [ruleb-provider-unbound](examples/ruleb-provider-unbound.moss) | rejects | accepts | rejects | accepts (E42) |
-  | [ruleb-closure-unbound](examples/ruleb-closure-unbound.moss) | rejects | accepts | rejects | accepts (E42) |
-  | [ruleb-closure-bound](examples/ruleb-closure-bound.moss) (control) | accepts | accepts | accepts | accepts |
-  | [ruleb-merge-family-demand](examples/ruleb-merge-family-demand.moss) | accepts | rejects (D62) | k | k |
-  | [partially-bound-merge](examples/partially-bound-merge.moss) | accepts | rejects (D62, E24) | k | k |
+  | [ruleb-call-unbound](../tests/errors/ruleb_call_unbound.moss) | rejects | accepts | rejects | accepts (E42) |
+  | [ruleb-provider-unbound](../tests/errors/ruleb_provider_unbound.moss) | rejects | accepts | rejects | accepts (E42) |
+  | [ruleb-closure-unbound](../tests/errors/ruleb_closure_unbound.moss) | rejects | accepts | rejects | accepts (E42) |
+  | [ruleb-closure-bound](../tests/wasi/ruleb_closure_bound.moss) (control) | accepts | accepts | accepts | accepts |
+  | [ruleb-merge-family-demand](../tests/wasi/ruleb_merge_family_demand.moss) | accepts | rejects (D62) | k | k |
+  | [partially-bound-merge](../tests/wasi/partially_bound_merge.moss) | accepts | rejects (D62, E24) | k | k |
   | family-unbound-need, family-unbound-need-sig, lambda-declared-output, kept-output-family-method, functor-captured-unbound, const-family-unbound | rejects (before: accepts) | accepts | rejects | accepts (E42; const-family-unbound: rejects, unrelated) |
   | bind-merge-unbound, closure-partial-class-zyx, closure-partial-unbound-zyx | accepts | accepts | accepts | accepts |
 
@@ -1888,8 +1888,8 @@ executable tests unless noted.
   signatures, and the merged key kept the first entry's instantiation.
 - **Why.** D43 says merging two entries unifies their instantiations. The
   Δ4 hunt (scratch/deltas) found the verdict depended on the order of the
-  assume list: merge-inst-order-ab.moss was accepted and
-  merge-inst-order-ba.moss rejected, by Audit, the oracle and native.
+  assume list: tests/errors/merge_inst_order_ab.moss was accepted and
+  tests/errors/merge_inst_order_ba.moss rejected, by Audit, the oracle and native.
 - **Criterion: coherence** (criteria section 2: an order in the rules must
   not change acceptance), and fidelity to D43.
 - **Oracle.** Elab.v's assume walk (`unify_app`, before `setdefault_app`,
@@ -1907,19 +1907,19 @@ executable tests unless noted.
 
   | program | Audit before | Audit now | oracle before | oracle now | native |
   |---|---|---|---|---|---|
-  | [merge-inst-order-ab](examples/merge-inst-order-ab.moss) | accepts | rejects | accepts | rejects (A and B merged) | accepts (E43) |
-  | [merge-inst-order-ba](examples/merge-inst-order-ba.moss) | rejects | rejects | rejects (D62) | rejects (A and B merged) | rejects |
-  | [merge-inst-val](examples/merge-inst-val.moss) (v's type does not mention T) | rejects | accepts | rejects | accepts | rejects (E43) |
-  | [merge-inst-fn](examples/merge-inst-fn.moss) | rejects | accepts | rejects | accepts | rejects (E43) |
-  | [merge-inst-sig](examples/merge-inst-sig.moss) (control) | accepts | accepts | accepts | accepts | accepts |
-  | [merge-inst-nomerge](examples/merge-inst-nomerge.moss) (control) | accepts | accepts | accepts | accepts | accepts |
+  | [merge-inst-order-ab](../tests/errors/merge_inst_order_ab.moss) | accepts | rejects | accepts | rejects (A and B merged) | accepts (E43) |
+  | [merge-inst-order-ba](../tests/errors/merge_inst_order_ba.moss) | rejects | rejects | rejects (D62) | rejects (A and B merged) | rejects |
+  | [merge-inst-val](../tests/wasi/merge_inst_val.moss) (v's type does not mention T) | rejects | accepts | rejects | accepts | rejects (E43) |
+  | [merge-inst-fn](../tests/wasi/merge_inst_fn.moss) | rejects | accepts | rejects | accepts | rejects (E43) |
+  | [merge-inst-sig](../tests/wasi/merge_inst_sig.moss) (control) | accepts | accepts | accepts | accepts | accepts |
+  | [merge-inst-nomerge](../tests/wasi/merge_inst_nomerge.moss) (control) | accepts | accepts | accepts | accepts | accepts |
 
 - **Corpus.** The oracle at c89de1f against the oracle with #60 and #61,
   `--elab-only`, over `tests/`, `examples/`, `bootstrap/examples/` and
   `src/main.moss`: 451 same / 10 diff, all from #60 (the six edge-case
   tests, partially-bound-merge, and three changed messages); #61 changes
   no corpus verdict (besides its own tests above).
-- **Class B and C.** It rejects merge-inst-order-ab.moss, which both
+- **Class B and C.** It rejects tests/errors/merge_inst_order_ab.moss, which both
   implementations accept, and accepts merge-inst-val and merge-inst-fn,
   which both reject; coherence decides (criteria section 6). Native needs
   the same change (E43).
@@ -1952,9 +1952,9 @@ executable tests unless noted.
 
   | program | oracle before | oracle now | native | Audit before | Audit now |
   |---|---|---|---|---|---|
-  | [bind-attached-defined](examples/bind-attached-defined.moss) | mm | rejects | mm | accepts | rejects |
-  | [bind-attached-detached-ok](examples/bind-attached-detached-ok.moss) (control: the detached method through an abstract Q) | mxm | mxm | mxm | accepts | accepts |
-  | [bind-attached-abstract-ok](examples/bind-attached-abstract-ok.moss) (control: an abstract attached method) | x | x | x | accepts | accepts |
+  | [bind-attached-defined](../tests/errors/bind_attached_defined.moss) | mm | rejects | mm | accepts | rejects |
+  | [bind-attached-detached-ok](../tests/wasi/bind_attached_detached_ok.moss) (control: the detached method through an abstract Q) | mxm | mxm | mxm | accepts | accepts |
+  | [bind-attached-abstract-ok](../tests/wasi/bind_attached_abstract_ok.moss) (control: an abstract attached method) | x | x | x | accepts | accepts |
 
 - **Corpus.** The oracle with the check (`scratch/lang-q/oracle-q3.exe`)
   against the oracle at c89de1f, `--elab-only`, over `src/main.moss`,
@@ -2009,9 +2009,9 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [pin-fixed-agree](examples/pin-fixed-agree.moss) (thesis 08b-fixed) | q | q | rejects | accepts (q) |
-  | [pin-fixed-disagree](examples/pin-fixed-disagree.moss) (main binds `Tok = Bool` first) | rejects ("it binds `Tok` to `Chr[I32=I32]`, and here `Tok` is `Bool`") | rejects ("the functor does not satisfy the required signature: `Tok`") | rejects | rejects |
-  | [pin-poly](examples/pin-poly.moss) (`MakeTok[Tok]`) | rejects ("the fixed set is not widened per binding") | rejects ("compilation failed: `Tok`") | rejects | rejects |
+  | [pin-fixed-agree](../tests/wasi/pin_fixed_agree.moss) (thesis 08b-fixed) | q | q | rejects | accepts (q) |
+  | [pin-fixed-disagree](../tests/errors/pin_fixed_disagree.moss) (main binds `Tok = Bool` first) | rejects ("it binds `Tok` to `Chr[I32=I32]`, and here `Tok` is `Bool`") | rejects ("the functor does not satisfy the required signature: `Tok`") | rejects | rejects |
+  | [pin-poly](../tests/errors/pin_poly.moss) (`MakeTok[Tok]`) | rejects ("the fixed set is not widened per binding") | rejects ("compilation failed: `Tok`") | rejects | rejects |
 
   Audit verdicts are argued from the rules, not run.
 - **Corpus.** The oracle already has this rule (pins P(F) ∩ M(F) less
@@ -2090,7 +2090,7 @@ executable tests unless noted.
   - Stability under rebinding (section 5): a family application that a
     call demands installs the family's whole result, so in Γ ⊕ D it could
     shadow what the caller itself provides
-    ([args-context-shadow-call](examples/args-context-shadow-call.moss):
+    ([args-context-shadow-call](../tests/wasi/args_context_shadow_call.moss):
     F's `Int.m`, read with U = Bool, shadowed the caller's `Int.m`). In Γ a
     demand cannot rebind anything an argument reads.
   - Locality: an argument's meaning depends only on the context it is
@@ -2098,7 +2098,7 @@ executable tests unless noted.
     already says that a family that would supply a key on demand is not a
     provision of it; with Γ ⊕ D an argument would see the demanded
     provision anyway
-    ([args-context-provision-wins](examples/args-context-provision-wins.moss)).
+    ([args-context-provision-wins](../tests/wasi/args_context_provision_wins.moss)).
   - The D89 analogy (#55): a bracket call `f[A=T](e)` is
     `{ let %arg0 = e; bind A = T; f(%arg0) }`, its arguments evaluated
     before the binds. A call's demands are binds the call makes on the
@@ -2128,12 +2128,12 @@ executable tests unless noted.
 
   | program | Audit before | Audit now | oracle before | oracle now | native |
   |---|---|---|---|---|---|
-  | [args-context-provision-wins](examples/args-context-provision-wins.moss) | xm | mm | xm | mm | xx (E72) |
-  | [args-context-shadow-call](examples/args-context-shadow-call.moss) | rejects | 42 | rejects | 42 | rejects (E72) |
-  | [args-context-family-call](examples/args-context-family-call.moss) | m | m | m | m | m |
-  | [args-context-alone](examples/args-context-alone.moss) (control) | m | m | m | m | m |
-  | [sig-nonreq-shadow](examples/sig-nonreq-shadow.moss) (the method-call form) | 42 | 42 | 42 | 42 | 42 |
-  | [functor-captured-unbound](examples/functor-captured-unbound.moss) | rejects (rule B, #60) | rejects | rejects (rule B) | rejects | exit 0 (E42) |
+  | [args-context-provision-wins](../tests/wasi/args_context_provision_wins.moss) | xm | mm | xm | mm | xx (E72) |
+  | [args-context-shadow-call](../tests/wasi/args_context_shadow_call.moss) | rejects | 42 | rejects | 42 | rejects (E72) |
+  | [args-context-family-call](../tests/wasi/args_context_family_call.moss) | m | m | m | m | m |
+  | [args-context-alone](../tests/wasi/args_context_alone.moss) (control) | m | m | m | m | m |
+  | [sig-nonreq-shadow](../tests/wasi/sig_nonreq_shadow.moss) (the method-call form) | 42 | 42 | 42 | 42 | 42 |
+  | [functor-captured-unbound](../tests/errors/functor_captured_unbound.moss) | rejects (rule B, #60) | rejects | rejects (rule B) | rejects | exit 0 (E42) |
 
   Audit's verdicts are by reading the rules; the oracle's are run.
   lang-q found that Γ everywhere rejected functor-captured-unbound, which
@@ -2202,9 +2202,9 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [pin-fixed-key](examples/pin-fixed-key.moss) (the prelude's pattern without the prelude; a family demand, then `bind Fam;`) | exit 0 | exit 0 | rejects (the key is not provided) | accepts |
-  | [pin-fixed-key-need](examples/pin-fixed-key-need.moss) (the pin re-reads the key onto G's own need) | rejects ("functor `NeedGet` does not bind `Box.get`") | rejects ("the functor does not bind every item its result promises: `get`") | rejects (not provided) | rejects (the new premise) |
-  | [pin-fixed-agree](examples/pin-fixed-agree.moss) (#71; binds `StdBase`) | q | q | rejects (GcArrays) | accepts |
+  | [pin-fixed-key](../tests/wasi/pin_fixed_key.moss) (the prelude's pattern without the prelude; a family demand, then `bind Fam;`) | exit 0 | exit 0 | rejects (the key is not provided) | accepts |
+  | [pin-fixed-key-need](../tests/errors/pin_fixed_key_need.moss) (the pin re-reads the key onto G's own need) | rejects ("functor `NeedGet` does not bind `Box.get`") | rejects ("the functor does not bind every item its result promises: `get`") | rejects (not provided) | rejects (the new premise) |
+  | [pin-fixed-agree](../tests/wasi/pin_fixed_agree.moss) (#71; binds `StdBase`) | q | q | rejects (GcArrays) | accepts |
 
   The Audit verdicts are argued from the rules. They are confirmed by the
   executable elaborator (moss-elab 41b4e3c). Its faithful mode
@@ -2284,10 +2284,10 @@ executable tests unless noted.
   |---|---|---|---|---|
   | `tests/errors/context_cycle_unused.moss` | rejects ("nests in a cycle") | rejects | accepts | rejects |
   | `tests/errors/context_cycle_nominal.moss` | rejects | rejects | accepts | rejects |
-  | [decl-ctx-cycle-functor](examples/decl-ctx-cycle-functor.moss) (the cycle only in an unused functor's result) | rejects | rejects | accepts | rejects |
-  | [decl-ctx-unresolved](examples/decl-ctx-unresolved.moss) (`context A = nope;`) | accepts | accepts | accepts | rejects |
-  | [decl-ctx-bracket](examples/decl-ctx-bracket.moss) (`f[Nope = T]`) | accepts | accepts | accepts | rejects |
-  | [decl-ctx-outside-control](examples/decl-ctx-outside-control.moss) (items mention a type outside the nesting) | accepts | accepts | accepts | accepts |
+  | [decl-ctx-cycle-functor](../tests/errors/decl_ctx_cycle_functor.moss) (the cycle only in an unused functor's result) | rejects | rejects | accepts | rejects |
+  | [decl-ctx-unresolved](../tests/errors/decl_ctx_unresolved.moss) (`context A = nope;`) | accepts | accepts | accepts | rejects |
+  | [decl-ctx-bracket](../tests/errors/decl_ctx_bracket.moss) (`f[Nope = T]`) | accepts | accepts | accepts | rejects |
+  | [decl-ctx-outside-control](../tests/wasi/decl_ctx_outside_control.moss) (items mention a type outside the nesting) | accepts | accepts | accepts | accepts |
 
   Audit's verdicts are argued from the rules and run on an executable
   elaborator variant: moss-elab 64b606c (`--frontend audit`, Audit at
@@ -2325,10 +2325,10 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [decl-nest-type](examples/decl-nest-type.moss) (`assume Nope { type T; }`) | accepts | accepts | accepts | rejects |
-  | [decl-nest-tag](examples/decl-nest-tag.moss) (only a tag in the nesting) | accepts | accepts | accepts | rejects |
-  | [decl-nest-incomplete](examples/decl-nest-incomplete.moss) (a tag's nesting assumes f without f's requirement) | accepts | accepts | accepts | rejects |
-  | [decl-nest-tag-control](examples/decl-nest-tag-control.moss) | accepts | accepts | accepts | accepts |
+  | [decl-nest-type](../tests/errors/decl_nest_type.moss) (`assume Nope { type T; }`) | accepts | accepts | accepts | rejects |
+  | [decl-nest-tag](../tests/errors/decl_nest_tag.moss) (only a tag in the nesting) | accepts | accepts | accepts | rejects |
+  | [decl-nest-incomplete](../tests/errors/decl_nest_incomplete.moss) (a tag's nesting assumes f without f's requirement) | accepts | accepts | accepts | rejects |
+  | [decl-nest-tag-control](../tests/wasi/decl_nest_tag_control.moss) | accepts | accepts | accepts | accepts |
   | `tests/errors/context_cycle_nominal.moss` (a tag's nesting through a cycle) | rejects | rejects | accepts | rejects (already by #74) |
 
   Audit's verdicts are argued from the rules and run on the elaborator
@@ -2398,15 +2398,15 @@ executable tests unless noted.
 
   | program | Audit now |
   |---|---|
-  | [decl-tag-unresolved](examples/decl-tag-unresolved.moss) | rejects (`TyOf`: not in scope) |
-  | [decl-tag-union-head](examples/decl-tag-union-head.moss) (`A[X=Colour] \| A[X=Red]`) | rejects (`TyUnion`: one head twice) |
-  | [decl-alias-cycle](examples/decl-alias-cycle.moss) | rejects (no finite `TyAlias` derivation) |
-  | [decl-alias-unresolved](examples/decl-alias-unresolved.moss) | rejects |
-  | [decl-val-type](examples/decl-val-type.moss), [decl-fn-sig](examples/decl-fn-sig.moss), [decl-meth-sig](examples/decl-meth-sig.moss) | reject |
-  | [decl-const-bad](examples/decl-const-bad.moss), [decl-const-mistyped](examples/decl-const-mistyped.moss) | reject (`ConstElab`) |
-  | [decl-const-in-assume](examples/decl-const-in-assume.moss) (unusable: a use is rejected by all three) | rejects (`ConstElab`: assumptions) |
-  | [decl-functor-arg](examples/decl-functor-arg.moss), [decl-functor-res](examples/decl-functor-res.moss) | reject |
-  | [decl-tag-outside-control](examples/decl-tag-outside-control.moss), [decl-const-control](examples/decl-const-control.moss), [decl-functor-res-control](examples/decl-functor-res-control.moss) | accept |
+  | [decl-tag-unresolved](../tests/errors/decl_tag_unresolved.moss) | rejects (`TyOf`: not in scope) |
+  | [decl-tag-union-head](../tests/errors/decl_tag_union_head.moss) (`A[X=Colour] \| A[X=Red]`) | rejects (`TyUnion`: one head twice) |
+  | [decl-alias-cycle](../tests/errors/decl_alias_cycle.moss) | rejects (no finite `TyAlias` derivation) |
+  | [decl-alias-unresolved](../tests/errors/decl_alias_unresolved.moss) | rejects |
+  | [decl-val-type](../tests/errors/decl_val_type.moss), [decl-fn-sig](../tests/errors/decl_fn_sig.moss), [decl-meth-sig](../tests/errors/decl_meth_sig.moss) | reject |
+  | [decl-const-bad](../tests/errors/decl_const_bad.moss), [decl-const-mistyped](../tests/errors/decl_const_mistyped.moss) | reject (`ConstElab`) |
+  | [decl-const-in-assume](../tests/errors/decl_const_in_assume.moss) (unusable: a use is rejected by all three) | rejects (`ConstElab`: assumptions) |
+  | [decl-functor-arg](../tests/errors/decl_functor_arg.moss), [decl-functor-res](../tests/errors/decl_functor_res.moss) | reject |
+  | [decl-tag-outside-control](../tests/wasi/decl_tag_outside_control.moss), [decl-const-control](../tests/wasi/decl_const_control.moss), [decl-functor-res-control](../tests/wasi/decl_functor_res_control.moss) | accept |
 
   Audit's verdicts are argued from the rules and run on the elaborator
   variant of #74.
@@ -2429,7 +2429,7 @@ executable tests unless noted.
   `LinkBody` has the same gap: its `ResultRealizes` reads the promise at
   the link site, where `Scalar.add` reads `Int.add`, and G's own input
   `Std` provides that, so
-  [functor-partial-link](examples/functor-partial-link.moss) (the same
+  [functor-partial-link](../tests/errors/functor_partial_link.moss) (the same
   body, linked) was accepted too.
 - **Rule now.** `DeclForms` asks of every functor with a body that it is
   total (`FunctorTotal`): each leaf of its declared result (`ResultLeaf`,
@@ -2465,11 +2465,11 @@ executable tests unless noted.
     an fn call needs `c_fns C'`. If the caller lacks the provision that
     would back the promise, there is none in C', and the use has no
     derivation:
-    [functor-partial-unbacked-use](examples/functor-partial-unbacked-use.moss)
+    [functor-partial-unbacked-use](../tests/errors/functor_partial_unbacked_use.moss)
     is rejected before this change ("no provision and no family for a
     method (D62)").
   - Without a use, nothing reads the missing provision at run time:
-    [functor-partial-unbacked](examples/functor-partial-unbacked.moss) is
+    [functor-partial-unbacked](../tests/errors/functor_partial_unbacked.moss) is
     accepted before this change and runs to exit 0 on Audit's interpreter
     (moss-elab `audit_run`).
   - For a link, the promise is read by `ResultRealizes` against the
@@ -2487,11 +2487,11 @@ executable tests unless noted.
   |---|---|---|---|---|
   | `tests/wasi/functor_partial.moss` | rejects | rejects | accepts (prints 5) | rejects |
   | `tests/wasi/functor_partial_unreached.moss` (applied in a fn nothing calls) | rejects | rejects | accepts | rejects |
-  | [functor-partial-link](examples/functor-partial-link.moss) | rejects | rejects | accepts | rejects |
-  | [functor-partial-unbacked](examples/functor-partial-unbacked.moss) (nothing backs the promise; no use) | rejects | rejects | accepts (exit 0) | rejects |
-  | [functor-partial-unbacked-use](examples/functor-partial-unbacked-use.moss) (the use) | rejects | rejects | rejects (at the use) | rejects |
-  | [functor-partial-unused](examples/functor-partial-unused.moss) (never applied) | accepts | accepts | accepts | rejects |
-  | [functor-total-control](examples/functor-total-control.moss) (binds by name and through `bind Inner;`) | accepts | accepts | accepts | accepts |
+  | [functor-partial-link](../tests/errors/functor_partial_link.moss) | rejects | rejects | accepts | rejects |
+  | [functor-partial-unbacked](../tests/errors/functor_partial_unbacked.moss) (nothing backs the promise; no use) | rejects | rejects | accepts (exit 0) | rejects |
+  | [functor-partial-unbacked-use](../tests/errors/functor_partial_unbacked_use.moss) (the use) | rejects | rejects | rejects (at the use) | rejects |
+  | [functor-partial-unused](../tests/errors/functor_partial_unused.moss) (never applied) | accepts | accepts | accepts | rejects |
+  | [functor-total-control](../tests/wasi/functor_total_control.moss) (binds by name and through `bind Inner;`) | accepts | accepts | accepts | accepts |
 
   Audit's verdicts are argued from the rules and run on the elaborator
   variant of #74 (its "N3total" check).
@@ -2617,7 +2617,7 @@ executable tests unless noted.
   merged input class, the oracle's pins then include `T`, and it rejects
   the body's `bind T = Bool;` (D84 3d), while it runs `T = X`; native runs
   both. This is the oracle's behaviour on
-  [link-merge-rep-rebind-both](examples/link-merge-rep-rebind-both.moss)
+  [link-merge-rep-rebind-both](../tests/wasi/link_merge_rep_rebind_both.moss)
   in the two context orders, not a new divergence; it is listed in
   `agreement.rs` (`ORACLE_GAP_ORIENTATION`) and not worked around.
 - **Corpus.** Against the oracle of the branch's base, the oracle's
@@ -2678,7 +2678,7 @@ executable tests unless noted.
   the finite ground type being laid out. So no path of the layout
   computation is infinite. (This is an argument, not a Rocq theorem; the
   conjunct only rejects programs, so `public_safety` does not need it.)
-  ([layout-opaque](examples/layout-opaque.moss) binds `Link = LHold`,
+  ([layout-opaque](../tests/wasi/layout_opaque.moss) binds `Link = LHold`,
   a tag holding a `Ref[Boxed=LNode]`, after `LNode { next: LNil | Link }`.)
 - **Criteria.**
   - Fidelity (section 6), for every program that uses a type: both
@@ -2723,11 +2723,11 @@ executable tests unless noted.
   | program | oracle before | native before | Audit before | Audit now | oracle, native now |
   |---|---|---|---|---|---|
   | [tests/wasi/cyclic.moss](../tests/wasi/cyclic.moss) | rejects (D58) | rejects (no finite layout) | accepts | rejects | reject |
-  | [layout-self](examples/layout-self.moss) (cyclic.moss without imports) | rejects | rejects | accepts | rejects | reject |
-  | [layout-self-unused](examples/layout-self-unused.moss) (the same tag, never built) | accepts | accepts | accepts | rejects | reject |
-  | [layout-generic-self](examples/layout-generic-self.moss) (through `LBox[LT=LC]`; a generic `LList[LT]`) | rejects | rejects | accepts | rejects | reject |
-  | [layout-ref](examples/layout-ref.moss) (recursion through `Ref[Boxed=LCell]`) | 6 | 6 | accepts | accepts | 6 |
-  | [layout-opaque](examples/layout-opaque.moss) (an abstract `Link` in force through a context and bound to a tag holding a `Ref` afterwards; a user's phantom tag over `StructRef`; a generic tag with abstract members) | 7 | 7 | accepts | accepts | 7 |
+  | [layout-self](../tests/errors/layout_self.moss) (cyclic.moss without imports) | rejects | rejects | accepts | rejects | reject |
+  | [layout-self-unused](../tests/errors/layout_self_unused.moss) (the same tag, never built) | accepts | accepts | accepts | rejects | reject |
+  | [layout-generic-self](../tests/errors/layout_generic_self.moss) (through `LBox[LT=LC]`; a generic `LList[LT]`) | rejects | rejects | accepts | rejects | reject |
+  | [layout-ref](../tests/wasi/layout_ref.moss) (recursion through `Ref[Boxed=LCell]`) | 6 | 6 | accepts | accepts | 6 |
+  | [layout-opaque](../tests/wasi/layout_opaque.moss) (an abstract `Link` in force through a context and bound to a tag holding a `Ref` afterwards; a user's phantom tag over `StructRef`; a generic tag with abstract members) | 7 | 7 | accepts | accepts | 7 |
   | [tests/wasi/relevance_applied.moss](../tests/wasi/relevance_applied.moss), as it was | y | y | accepts | rejects | reject |
   | the same, through a `Ref` (as it is now) | y | y | accepts | accepts | y |
 
@@ -2799,8 +2799,8 @@ executable tests unless noted.
 ### 93. Recorded, not fixed: a linked body may not pin a fixed input that G takes (the oracle plan's N5; layout branch)
 - **The program.** `runtime_platform::private_checked_casts_preserve_chained_fixed_pin_meanings`
   (crates/moss-tests), and without its casts
-  [pin-taken-chain](examples/pin-taken-chain.moss) and
-  [pin-taken-one](examples/pin-taken-one.moss): `F[]` is fixed in `T`
+  [pin-taken-chain](../tests/wasi/pin_taken_chain.moss) and
+  [pin-taken-one](../tests/wasi/pin_taken_one.moss): `F[]` is fixed in `T`
   (and `U`, `V`), which its result mentions, and G *takes* T and binds it
   in its body, agreeing with the bind site.
 
@@ -2907,12 +2907,12 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [pin-taken-one](examples/pin-taken-one.moss) | exit 0 | exit 0 | rejects (`BTypeBind`) | accepts |
-  | [pin-taken-chain](examples/pin-taken-chain.moss) (`bind T=U; bind U=V; bind V=Old`) | exit 0 | exit 0 | rejects (`BTypeBind`) | accepts |
-  | [pin-taken-one-disagree](examples/pin-taken-one-disagree.moss) (main has `T = New`) | rejects ("it binds `T` to `Old`, and here `T` is `New`") | rejects ("the functor does not satisfy the required signature: `T`") | rejects (`BTypeBind`) | rejects (`BFunClosure`'s agreement) |
-  | [pin-taken-chain-disagree](examples/pin-taken-chain-disagree.moss) (main has `V = New`) | rejects ("it binds `U` to `New`, and here `U` is `Old`") | rejects ("… signature: `U`") | rejects (`BTypeBind`) | rejects (`BFunClosure`: the pin `U = V` reads as New, and U is Old) |
+  | [pin-taken-one](../tests/wasi/pin_taken_one.moss) | exit 0 | exit 0 | rejects (`BTypeBind`) | accepts |
+  | [pin-taken-chain](../tests/wasi/pin_taken_chain.moss) (`bind T=U; bind U=V; bind V=Old`) | exit 0 | exit 0 | rejects (`BTypeBind`) | accepts |
+  | [pin-taken-one-disagree](../tests/errors/pin_taken_one_disagree.moss) (main has `T = New`) | rejects ("it binds `T` to `Old`, and here `T` is `New`") | rejects ("the functor does not satisfy the required signature: `T`") | rejects (`BTypeBind`) | rejects (`BFunClosure`'s agreement) |
+  | [pin-taken-chain-disagree](../tests/errors/pin_taken_chain_disagree.moss) (main has `V = New`) | rejects ("it binds `U` to `New`, and here `U` is `Old`") | rejects ("… signature: `U`") | rejects (`BTypeBind`) | rejects (`BFunClosure`: the pin `U = V` reads as New, and U is Old) |
   | `runtime_platform::private_checked_casts_preserve_chained_fixed_pin_meanings` (crates/moss-tests; the chain, with `Wasm`, `raw` and a `Ref[Boxed=T]` cast) | exit 0 | exit 0 | rejects | accepts |
-  | [pin-fixed-agree](examples/pin-fixed-agree.moss), [pin-fixed-disagree](examples/pin-fixed-disagree.moss) (#71) | q, rejects | q, rejects | accepts, rejects | accepts, rejects |
+  | [pin-fixed-agree](../tests/wasi/pin_fixed_agree.moss), [pin-fixed-disagree](../tests/errors/pin_fixed_disagree.moss) (#71) | q, rejects | q, rejects | accepts, rejects | accepts, rejects |
 
   Audit's verdicts are argued from the rules. The executable elaborator
   confirms them. With the change below, its faithful mode (`audit_run
@@ -3034,9 +3034,9 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [copy-site-merge](examples/copy-site-merge.moss) (F fixes X, Y; both Char where F is bound) | prints 7 | prints 7 | rejects (#32) | accepts |
-  | [copy-site-apart](examples/copy-site-apart.moss) (X, Y two types where F is bound) | rejects ("input interpretation differs") | rejects (`?X … copy X`) | rejects (#32) | rejects (the input reading at `copy_subst`) |
-  | [copy-merge](examples/copy-merge.moss) (X, Y polymorphic in F) | rejects ("input interpretation differs") | rejects (`!P … F`) | rejects (#32) | rejects (X, Y read as distinct fresh symbols) |
+  | [copy-site-merge](../tests/wasi/copy_site_merge.moss) (F fixes X, Y; both Char where F is bound) | prints 7 | prints 7 | rejects (#32) | accepts |
+  | [copy-site-apart](../tests/errors/copy_site_apart.moss) (X, Y two types where F is bound) | rejects ("input interpretation differs") | rejects (`?X … copy X`) | rejects (#32) | rejects (the input reading at `copy_subst`) |
+  | [copy-merge](../tests/errors/copy_merge.moss) (X, Y polymorphic in F) | rejects ("input interpretation differs") | rejects (`!P … F`) | rejects (#32) | rejects (X, Y read as distinct fresh symbols) |
   | `runtime_platform::copied_input_merge_must_hold_for_every_target_application`, `F[]` | exit 0 | exit 0 | rejects | accepts |
   | the same, `F[T,U]` | rejects ("input interpretation") | rejects | rejects | rejects |
 
@@ -3055,10 +3055,10 @@ executable tests unless noted.
 
   | program | oracle | native | Audit | moss-ref |
   |---|---|---|---|---|
-  | [copy-site-method](examples/copy-site-method.moss) (H's merge of T and U represented by U) | rejects | accepts | accepts | rejects |
-  | [copy-site-method-flip](examples/copy-site-method-flip.moss) (the same, H's entries swapped) | accepts | accepts | accepts | accepts |
-  | [link-site-merge](examples/link-site-merge.moss) (the closure analogue: G merges F's fixed T and U, and its body uses the merge) | rejects | prints 1006 | rejects | rejects |
-  | [copy-unmentioned-apart](examples/copy-unmentioned-apart.moss) (inputs neither fixed nor mentioned, applied apart) | rejects | rejects | rejects | rejects |
+  | [copy-site-method](../tests/errors/copy_site_method.moss) (H's merge of T and U represented by U) | rejects | accepts | accepts | rejects |
+  | [copy-site-method-flip](../tests/wasi/copy_site_method_flip.moss) (the same, H's entries swapped) | accepts | accepts | accepts | accepts |
+  | [link-site-merge](../tests/errors/link_site_merge.moss) (the closure analogue: G merges F's fixed T and U, and its body uses the merge) | rejects | prints 1006 | rejects | rejects |
+  | [copy-unmentioned-apart](../tests/errors/copy_unmentioned_apart.moss) (inputs neither fixed nor mentioned, applied apart) | rejects | rejects | rejects | rejects |
 
 - **Coherence (criteria section 2).** #96 asks H's merges to hold only at
   the copy site, no longer in F's declared context. BFunCopy's needs
@@ -3104,7 +3104,7 @@ green.
 
 | Removed | From | Effect on acceptance | Commit |
 |---|---|---|---|
-| `~ In t (fr_pins F)` in the kept-output case (#13, 268bf3a) | `BApplyAbstract` | relaxation toward both implementations: [block-kept-output-pin.moss](examples/block-kept-output-pin.moss) is now accepted (oracle 7, native 7) | "Drop BApplyAbstract's pin clause" |
+| `~ In t (fr_pins F)` in the kept-output case (#13, 268bf3a) | `BApplyAbstract` | relaxation toward both implementations: [tests/wasi/block_kept_output_pin.moss](../tests/wasi/block_kept_output_pin.moss) is now accepted (oracle 7, native 7) | "Drop BApplyAbstract's pin clause" |
 | "G has a body" (`exists n ps a r b, ast_of W gg = Some (ADFunctor n ps a r (Some b))`) | `BFunClosure` | none: `LinkBody` states it (`w_decl W gg = Some dg`, `d_ast dg = ADFunctor n ps a r (Some bodies)`) | "BFunClosure: drop the body premise LinkBody states" |
 | `Fresh W (gensof t)` in the fresh-output case | `BApplyAbstract` | none: the case asks `In (gensof t) newgens`, and `FreshFor W F C newgens` makes every member `Fresh W` (`PublicFormation.freshfor_fresh`) | "BApplyAbstract: a fresh output's freshness is FreshFor's" |
 | `output_renaming` (unused definition) | Audit.v | none | "Audit: remove the unused output_renaming" |
@@ -3122,7 +3122,7 @@ Open points found in consolidation (not changed; the owner decides). The
 details are in `scratch/consol-STATUS.md`.
 - **Pins reach nested blocks but not lambda bodies.** Resolved by #49:
   a nested block runs without pins, as a lambda body does, so
-  [block-pin-rebind.moss](examples/block-pin-rebind.moss) is accepted.
+  [tests/wasi/block_pin_rebind.moss](../tests/wasi/block_pin_rebind.moss) is accepted.
 - **M(F) counts a method's non-requirement signature symbols (#12), not
   a fn's.** Resolved by #12b: `RMValFn` counts a fn's `SigMentions` too,
   in Audit and the oracle.
@@ -3171,15 +3171,15 @@ details are in `scratch/consol-STATUS.md`.
     general merges of one telescope identify the same types, so a
     clause stated by class is orientation-invariant) and
     `mgm_reorient`. Native exits 0 on
-    [link-merge-rep-rebind-both.moss](examples/link-merge-rep-rebind-both.moss)
+    [tests/wasi/link_merge_rep_rebind_both.moss](../tests/wasi/link_merge_rep_rebind_both.moss)
     in both context orders; the oracle rejects the `[Foo=X], [Foo=T]`
     order (D84 3d, its pins include the representative) and exits 0 on
     the reversed one; Audit accepts both (by reading, as before).
   - *Principal θ:* **resolved by #50** (proposals item 5; criterion:
     principality). An unbound requirement reads through a bound member
     of its callee merge class, else as itself through the class's
-    representative; partially-bound-merge.moss stays accepted, and
-    principal-theta-unbound.moss (a guessed θ T = Concrete) is rejected,
+    representative; tests/wasi/partially_bound_merge.moss stays accepted, and
+    tests/errors/principal_theta_unbound.moss (a guessed θ T = Concrete) is rejected,
     as both implementations reject it. The oracle fix is designed and
     corpus-checked but not committed (see #50).
   - *Ambiguous family read-off:* resolved by item 6 (#31): the
@@ -3199,26 +3199,26 @@ All of these come from `proof-plan.json`.
 
 | ID | Title | Who must change | Status | Example | Entry |
 |---|---|---|---|---|---|
-| E31 | Read linked result methods from the body's keys (no bind-time refile) | oracle | open | [refile-stale-shadow.moss](examples/refile-stale-shadow.moss): oracle stuck XErr 14; native 7 | #19 |
-| E32 | Install exactly F's result at a copy's application | oracle | open | [copy-extra-key.moss](examples/copy-extra-key.moss): oracle 21; native 31 | #23 |
-| E33 | No result key spelled through an output's input meaning | oracle (ExecutionModel and link_body) | open | [output-merge-key.moss](examples/output-merge-key.moss): oracle stuck XErr 6; native 7. Also functor_input_output_generations (E06) | #23 |
-| E34 | A family's listed polymorphic inputs are types | **native** | open | [family-poly-nontype.moss](examples/family-poly-nontype.moss): oracle rejects; native exit 0 | #9 |
-| E35 | A method's θ records every signature type symbol | oracle | **done** (in 61040f2) | [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss): now 42 on both | #12 |
-| E36 | Oracle 3b checks every reading of a captured fn or method | oracle | open | [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss): oracle accepts, stuck XErr 14; native rejects | #7, #11 |
-| E37 | Oracle 3d: a linked body may not install an input of F as a kept output | oracle | open | [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): oracle stuck XErr 14; native rejects | #13 |
-| E40 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | native **done** (9a62948, lang-all); oracle open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b (now rejects); [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
-| E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | **done** (4071c84, lang-all) | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 (now rejects) | #59 |
-| E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | **done** (2361b25, ca92046, lang-all) | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 (now rejects); [ruleb-merge-family-demand.moss](examples/ruleb-merge-family-demand.moss): k on both | #60 |
-| E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | **done** (4934f50, lang-all) | [merge-inst-order-ab.moss](examples/merge-inst-order-ab.moss): oracle rejects; native exit 0 (now rejects). [merge-inst-val.moss](examples/merge-inst-val.moss): oracle accepts; native rejects (now accepts) | #61 |
-| E70 | Reject a bind of a defined method (`bind Meter.describe = …` where `Meter.describe` has a body) | native | **done** (7d5bcd5, lang-all) | [bind-attached-defined.moss](examples/bind-attached-defined.moss): oracle rejects; native mm (now rejects) | #70 |
-| E72 | Check every call's arguments in the caller's context Γ, never with the call's family demands in force: a defined fn call and a defined attached method call (a family-demanded call already does) | native | **done** (dff4b35, lang-all) | [args-context-provision-wins.moss](examples/args-context-provision-wins.moss): oracle mm; native xx (now mm). [args-context-shadow-call.moss](examples/args-context-shadow-call.moss): oracle 42; native rejects (incompatible types; now 42) | #72 |
+| E31 | Read linked result methods from the body's keys (no bind-time refile) | oracle | open | [tests/wasi/refile_stale_shadow.moss](../tests/wasi/refile_stale_shadow.moss): oracle stuck XErr 14; native 7 | #19 |
+| E32 | Install exactly F's result at a copy's application | oracle | open | [tests/wasi/copy_extra_key.moss](../tests/wasi/copy_extra_key.moss): oracle 21; native 31 | #23 |
+| E33 | No result key spelled through an output's input meaning | oracle (ExecutionModel and link_body) | open | [tests/wasi/output_merge_key.moss](../tests/wasi/output_merge_key.moss): oracle stuck XErr 6; native 7. Also functor_input_output_generations (E06) | #23 |
+| E34 | A family's listed polymorphic inputs are types | **native** | open | [tests/errors/family_poly_nontype.moss](../tests/errors/family_poly_nontype.moss): oracle rejects; native exit 0 | #9 |
+| E35 | A method's θ records every signature type symbol | oracle | **done** (in 61040f2) | [tests/wasi/sig_nonreq_shadow.moss](../tests/wasi/sig_nonreq_shadow.moss): now 42 on both | #12 |
+| E36 | Oracle 3b checks every reading of a captured fn or method | oracle | open | [tests/errors/link_merge_captured_fn.moss](../tests/errors/link_merge_captured_fn.moss): oracle accepts, stuck XErr 14; native rejects | #7, #11 |
+| E37 | Oracle 3d: a linked body may not install an input of F as a kept output | oracle | open | [tests/errors/link_kept_output_pin.moss](../tests/errors/link_kept_output_pin.moss): oracle stuck XErr 14; native rejects | #13 |
+| E40 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | native **done** (9a62948, lang-all); oracle open | [tests/wasi/result_collide_ab.moss](../tests/wasi/result_collide_ab.moss): oracle a, native b (now rejects); [tests/errors/copy_result_collide.moss](../tests/errors/copy_result_collide.moss): oracle a, native rejects | #58 |
+| E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | **done** (4071c84, lang-all) | [tests/errors/assume_method_before_type.moss](../tests/errors/assume_method_before_type.moss): oracle rejects; native exit 0 (now rejects) | #59 |
+| E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | **done** (2361b25, ca92046, lang-all) | [tests/errors/ruleb_call_unbound.moss](../tests/errors/ruleb_call_unbound.moss): oracle rejects; native exit 0 (now rejects); [tests/wasi/ruleb_merge_family_demand.moss](../tests/wasi/ruleb_merge_family_demand.moss): k on both | #60 |
+| E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | **done** (4934f50, lang-all) | [tests/errors/merge_inst_order_ab.moss](../tests/errors/merge_inst_order_ab.moss): oracle rejects; native exit 0 (now rejects). [tests/wasi/merge_inst_val.moss](../tests/wasi/merge_inst_val.moss): oracle accepts; native rejects (now accepts) | #61 |
+| E70 | Reject a bind of a defined method (`bind Meter.describe = …` where `Meter.describe` has a body) | native | **done** (7d5bcd5, lang-all) | [tests/errors/bind_attached_defined.moss](../tests/errors/bind_attached_defined.moss): oracle rejects; native mm (now rejects) | #70 |
+| E72 | Check every call's arguments in the caller's context Γ, never with the call's family demands in force: a defined fn call and a defined attached method call (a family-demanded call already does) | native | **done** (dff4b35, lang-all) | [tests/wasi/args_context_provision_wins.moss](../tests/wasi/args_context_provision_wins.moss): oracle mm; native xx (now mm). [tests/wasi/args_context_shadow_call.moss](../tests/wasi/args_context_shadow_call.moss): oracle 42; native rejects (incompatible types; now 42) | #72 |
 
 Native bugs fixed on lang-all that had no E-number:
 
 | Fix | Native bug | Example | Entry |
 |---|---|---|---|
-| 3f91e25, a55e060 | A selected provision's type was not compared with the callee's reading (the native half of E25) | [stale-provision-type.moss](examples/stale-provision-type.moss), `tests/wasi/stale_provision{,_fn}.moss`: native printed `t`, now rejects; the oracle still accepts and gets stuck (E25 open for the oracle) | #4 |
-| f8c380c | An assumed item's needs were not checked at their instantiation | [assumed-need-incoherent.moss](examples/assumed-need-incoherent.moss): native accepted, now rejects, as the oracle does | #57 |
+| 3f91e25, a55e060 | A selected provision's type was not compared with the callee's reading (the native half of E25) | [tests/errors/stale_provision_type.moss](../tests/errors/stale_provision_type.moss), `tests/wasi/stale_provision{,_fn}.moss`: native printed `t`, now rejects; the oracle still accepts and gets stuck (E25 open for the oracle) | #4 |
+| f8c380c | An assumed item's needs were not checked at their instantiation | [tests/errors/assumed_need_incoherent.moss](../tests/errors/assumed_need_incoherent.moss): native accepted, now rejects, as the oracle does | #57 |
 | 833d9a6 | A functor copy's captured vals were looked up under the original target's entry, so applying the copy in a frame without it failed ("no binding provides `seed`") | `tests/wasi/functor_copy_capture.moss`: native rejected, now 2454, as the oracle | D84 6 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
@@ -3252,28 +3252,28 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   through the bound X), as native does (`k`). The oracle prints `k` since
   #60 (E24 done).
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
-- ~~block-pin-rebind.moss~~: accepted since #49.
-- ~~assumed-need-incoherent.moss (#57)~~: native rejects it since
+- ~~tests/wasi/block_pin_rebind.moss~~: accepted since #49.
+- ~~tests/errors/assumed_need_incoherent.moss (#57)~~: native rejects it since
   f8c380c (lang-all).
-- ~~assume-method-before-type.moss (#59, E41)~~: native rejects it since
+- ~~tests/errors/assume_method_before_type.moss (#59, E41)~~: native rejects it since
   4071c84 (lang-all).
 - ~~result-collide-{ab,ba}{,-bindswap}.moss (#58, E40)~~: native rejects
   them since 9a62948 (lang-all); the oracle still accepts them.
-- sameneed-ambiguous.moss and sameneed-ambiguous-other.moss (#11; tests of
+- tests/errors/sameneed_ambiguous.moss and tests/errors/sameneed_ambiguous_other.moss (#11; tests of
   #51). Native prints 7 on both, and the oracle accepts the second.
-- ~~bind-attached-defined.moss (#70, E70)~~: native rejects it since
+- ~~tests/errors/bind_attached_defined.moss (#70, E70)~~: native rejects it since
   7d5bcd5 (lang-all).
 - Native rejects stale-provision-type (#4) since 3f91e25 (lang-all).
   Its verdict is not recorded for unbound-merge-representative (#3).
 
 **Audit accepts; native rejects.**
-- ~~args-context-shadow-call.moss (#72, E72)~~: native prints 42 since
+- ~~tests/wasi/args_context_shadow_call.moss (#72, E72)~~: native prints 42 since
   dff4b35 (lang-all).
-- sameneed-copy.moss (#51). The oracle rejects it too, but both accept the
+- tests/wasi/sameneed_copy.moss (#51). The oracle rejects it too, but both accept the
   same program with the merge orders agreeing.
 - tests/errors/functor_output_input_changed.moss (#14). Audit accepted it
   after 94d89ce, and still does after fc75de7 (consolidation reading).
-- const-kept-output.moss and const-family-unbound.moss (#20, #21). Native
+- tests/wasi/const_kept_output.moss and tests/errors/const_family_unbound.moss (#20, #21). Native
   rejects every use of a defined val, which is unrelated to these changes.
 - scratch/copyfresh/r3c-target-merge-ok.moss (#35, the known residual).
   The oracle prints 97, native rejects at the copy, and Audit accepts.
@@ -3292,11 +3292,11 @@ describe it, matches native and not the oracle:
 
 On copy-capture, Audit matches both implementations.
 
-On args-context-provision-wins.moss (#72, E72), Audit, the oracle and
+On tests/wasi/args_context_provision_wins.moss (#72, E72), Audit, the oracle and
 native print mm (native printed xx before dff4b35, lang-all).
 
-On sameneed-meaning.moss (#51), Audit prints 2, while native and the
-oracle print 1. On sameneed-meaning-agree.moss, Audit and the oracle print
+On tests/wasi/sameneed_meaning.moss (#51), Audit prints 2, while native and the
+oracle print 1. On tests/wasi/sameneed_meaning_agree.moss, Audit and the oracle print
 2 and native prints 1.
 
 **N4: a union with a type-symbol member ("latent identity"; n234 branch, no
@@ -3319,11 +3319,11 @@ so it rejects `tests/wasi/functor_latent_identity_copy.moss` and
   nominal type (D15)"), but not where it reads an abstract fn's signature
   for a functor's result or a copy, so it accepts the two latent tests.
   Native does not enforce D15 at all, and is unsound on it:
-  [union-latent-overlap](examples/union-latent-overlap.moss) writes
+  [union-latent-overlap](../tests/errors/union_latent_overlap.moss) writes
   `T | A[X=Colour]`, binds T = A[X=I32] and passes a T holding 7; native
   matches it by head into the `A(y)` arm, reads the I32 as a Colour and
   exits 3. When T turns out to be U itself
-  ([union-latent-identity](examples/union-latent-identity.moss)) native's
+  ([union-latent-identity](../tests/errors/union_latent_identity.moss)) native's
   head match is consistent (the value is a U) and exits 2. A scalar
   instantiation (T = I32) falls to the catch-all arm.
 - **The narrowest safe rule.** Head matching goes wrong only when an
@@ -3345,8 +3345,8 @@ so it rejects `tests/wasi/functor_latent_identity_copy.moss` and
   enforce D15 (its acceptance of union-latent-overlap is a miscompile).
   Rewrite the two latent tests with a nominal wrapper, which keeps what
   they test (an identity copy preserving an interface nothing inhabits):
-  [union-latent-wrapped-copy](examples/union-latent-wrapped-copy.moss) and
-  [union-latent-wrapped-reexport](examples/union-latent-wrapped-reexport.moss)
+  [union-latent-wrapped-copy](../tests/wasi/union_latent_wrapped_copy.moss) and
+  [union-latent-wrapped-reexport](../tests/wasi/union_latent_wrapped_reexport.moss)
   are accepted by the oracle, native and Audit. Since #76 Audit rejects
   the latent tests at `offered`'s declaration rather than at the copy.
 - **Native, done (impl-d15 branch).** Native enforces D15 where a union
@@ -3398,8 +3398,8 @@ context). By section 7 they are the ones to change.
   except for D15 unions (N4).
 
 **Stale documentation.**
-- The header of kept-output-escape.moss says MadeFor (dropped).
-- The header of output-merge-key.moss describes `fc_roles` (superseded by
+- The header of tests/errors/kept_output_escape.moss says MadeFor (dropped).
+- The header of tests/wasi/output_merge_key.moss describes `fc_roles` (superseded by
   callerkeys).
 - The SAFETY-SITES entry "a copy's source with an extra result key" still
   says `CopyOutputs` checks the converse. A later entry records that the

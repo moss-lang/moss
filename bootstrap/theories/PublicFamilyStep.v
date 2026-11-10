@@ -315,7 +315,7 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
    i of the family's result under the caller's key ks[i];
    apply_functor_keys), so FamilyCopyApplyOk follows
    (family_copy_apply_of_realize). The former key half was false
-   (examples/family-copy-linked-bracket.moss). *)
+   (tests/wasi/family_copy_linked_bracket.moss). *)
 Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->

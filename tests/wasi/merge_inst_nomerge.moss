@@ -1,4 +1,4 @@
-# Δ4 control, from bootstrap/examples/merge-inst-nomerge.moss: two
+# Δ4 control, from tests/wasi/merge_inst_nomerge.moss: two
 # entries of `v` at `T = A` and `T = B`; `g`'s own context merges `A`
 # with `B`, nothing relies on it and nothing calls `g`. Accepted.
 type T;

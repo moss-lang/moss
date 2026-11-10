@@ -1,0 +1,30 @@
+# Moved from bootstrap/examples/link-merge-rep-rebind-both.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Companion of tests/errors/link_merge_rep_rebind.moss: G binds `X.m` (keyed T.m, since
+# X is pinned and reads as the representative T in G's context) and also
+# rebinds T = Bool and binds `T.m` (keyed Bool.m). Audit, reading result
+# keys at A.link_site, selects G's X.m for the caller's Concrete.m; before
+# the change, at representative T, it selected Bool.m and got stuck on
+# `if this`. Native accepts and runs it (exit 0), with either context
+# order. The oracle rejects this order, because its pins include the
+# representative T (D84 3d), and accepts the other order (representative X),
+# running it to exit 0.
+type Foo;
+type A;
+type T;
+type X;
+tag Concrete;
+fn .gimme(): Foo;
+fn .m();
+context Merge = A, X, T, A.gimme[Foo=X], A.gimme[Foo=T];
+functor F[X]: Merge -> X.m;
+functor G: Merge -> X.m { bind T = Bool; bind X.m = () => { }; bind T.m = () => { if this { } }; }
+fn main() {
+  bind A = Concrete;
+  bind T = Concrete;
+  bind Foo = Concrete;
+  bind A.gimme = () => Concrete;
+  bind F = G;
+  Concrete.m();
+}

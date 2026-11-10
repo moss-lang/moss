@@ -1,0 +1,2 @@
+!B tests/errors/decl_alias_unresolved.moss Nope
+!] tests/errors/decl_alias_unresolved.moss

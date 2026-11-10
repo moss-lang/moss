@@ -1,0 +1,31 @@
+# Moved from bootstrap/examples/result-collide-ba.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# AUDIT-CHANGES #58 (criteria section 2, coherence; D84 rule 7).
+# As tests/wasi/result_collide_ab.moss, with F's result listed B.m, A.m.
+# Audit before: accepts, prints a (argued). Audit now: rejects (argued).
+# Oracle (moss_m2): prints b. Oracle variant d7: rejects.
+# Native (ob-family moss, seed 1h1710x0): prints b.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type A;
+type B;
+assume A { fn .m(); }
+functor F: Std, A, B -> B.m, A.m;
+assume Std {
+  functor G: Std, A, B -> B.m, A.m {
+    bind A.m = () => putchar(char::a);
+    bind B.m = () => putchar(char::b);
+  }
+}
+
+assume Std, F {
+  fn use_it() { bind A = Int; bind B = Int; bind F; one.m(); }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind F = G; use_it(); putchar(char::newline); }
+}

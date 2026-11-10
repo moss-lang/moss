@@ -1,0 +1,59 @@
+# Moved from bootstrap/examples/link-merge-captured-fn.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# A neighbour of tests/errors/link_merge_captured.moss the oracle accepts and runs
+# unsafely. G's context reads the captured `gimme` at Y, then at X (X an
+# input F takes), so X and Y merge. The oracle's D84 3b sees only the first
+# reading (Y) and accepts; at run time `out` is the captured `true` where
+# the caller reads it at its X = Char, and the reference interpreter is
+# stuck. Audit rejects it: under X := Y LinkBody's input condition fails
+# (X reads Y, not a type over F's inputs); under Y := X its 3b sees X in
+# the captured `gimme`. Native: rejects ("incompatible types").
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type X;
+type Y;
+
+assume Foo { fn gimme(): Foo; }
+assume X { val out: X; }
+
+context Merge = Y, X, gimme[Foo=Y], gimme[Foo=X];
+
+functor F: Std, X -> out;
+
+functor G: Std, Merge -> out {
+  bind out = gimme();
+}
+
+assume Std, X, F {
+  fn go(): X { bind F; out }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind Foo = Bool;
+    bind X = Bool;
+    bind Y = Bool;
+    bind gimme = () => true;
+    bind F = G;
+    bind X = Char;
+    let c: Char = go();
+    print_int(c.code());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

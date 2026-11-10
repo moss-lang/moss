@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-const-mistyped.moss:
+# not. From tests/errors/decl_const_mistyped.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): a defined val's
 # initializer has its declared type (A does not fit ()).

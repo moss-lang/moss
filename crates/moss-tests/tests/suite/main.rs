@@ -18,6 +18,7 @@ mod runtime_platform;
 mod native_platform;
 mod parallel;
 mod validate;
+mod wasi_goldens;
 mod wasm_backend;
 
 mod solved_merges;

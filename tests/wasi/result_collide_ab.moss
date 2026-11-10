@@ -1,3 +1,15 @@
+# From the copy that was bootstrap/examples/result-collide-ab.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# AUDIT-CHANGES #58 (criteria section 2, coherence; D84 rule 7).
+# F's result is A.m, B.m (distinct keys in F); use_it binds A and B both to
+# Int, so the application files both under Int.m. G's A.m prints a, its B.m b.
+# result-collide-{ba,ab-bindswap,ba-bindswap}.moss vary the result order and
+# the order G binds them in: the three runs disagree, each by its own convention.
+# Audit before: accepts, prints b (the last result position; argued).
+# Audit now: rejects (BApplyAbstract: CollidesOnlyAs ks ksf fails; argued).
+# Oracle (moss_m2): prints a (the first result position).
+# Oracle variant (scratch/variants/d7, the same check): rejects.
+# Native (ob-family moss, seed 1h1710x0): prints b (the last bind in G).
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;

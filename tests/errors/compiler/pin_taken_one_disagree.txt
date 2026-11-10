@@ -1,0 +1,2 @@
+?X tests/errors/pin_taken_one_disagree.moss main T
+?X tests/errors/pin_taken_one_disagree.moss main mk

@@ -1,9 +1,0 @@
-# D58 (AUDIT-CHANGES #90): the check is on definitions. `LCell` contains
-# itself, and nothing uses it.
-# Verdicts: Audit rejects (FiniteLayouts). Before #90 the oracle and native
-# checked layouts only where a type is used, and accepted this program;
-# with #90's changes both reject it ("`LCell` contains itself, so it has no
-# finite layout (D58)"; "this type has no finite runtime layout").
-tag LNil;
-tag LCell { head: (), tail: LNil | LCell };
-fn main() {}

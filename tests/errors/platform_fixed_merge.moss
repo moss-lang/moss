@@ -1,0 +1,29 @@
+# Moved from bootstrap/examples/platform-fixed-merge.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# main's context may merge a machine type away: `Two` lists `ff` read
+# with I32 = Bool and as declared, so main's merge makes I32 Bool. The
+# root context's platform functors (Arrays, Memories, ...) fix I32, and the
+# platform provides them only at the machine I32; read through the merge,
+# their primitives would take Bools as I32s. The oracle rejects this
+# ("platform functor has an incompatible assumed fixed type",
+# check_platform_entry_view); native rejects it too ("incompatible
+# types" at a platform functor, `Memories`). Audit's Platform.Entry now asks the same of a platform
+# functor (FixedMachinesRead).
+
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, I32;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume I32 {
+  fn ff(): I32;
+}
+
+context Two = ff[I32 = Bool], ff;
+
+assume Wasm, Wasi, Branch, Two {
+  fn main() {
+    bind WasiStd;
+  }
+}

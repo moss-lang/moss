@@ -1,4 +1,4 @@
-# Rule B, from bootstrap/examples/family-unbound-need.moss: `use_it`
+# Rule B, from tests/errors/family_unbound_need.moss: `use_it`
 # requires `T` and `T.foo`; `main` does not bind `T`, so the call would
 # read `T` as itself, and the family `F` would be applied at a type out
 # of force, keying `T.foo` there. Refused: `use_it` needs `T` in force.

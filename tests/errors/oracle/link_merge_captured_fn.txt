@@ -1,0 +1,1 @@
+[elab: tests/errors/link_merge_captured_fn.moss: `G`, bound to `F`, captures `gimme`, which mentions a type each application of `F` supplies (D84 3b)]

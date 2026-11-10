@@ -1,0 +1,69 @@
+# Moved from bootstrap/examples/closure-partial-class-xyz.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# BFunClosure 3b: G's merges are checked by class (AUDIT-CHANGES #54; criteria
+# section 2, coherence). G merges X (an input F takes, so linked) with Y and Z,
+# which only G has (`context Merge = A, X, Y, Z, ...`: the three
+# bindings of A.gimme are one key). The other file of the pair, tests/wasi/closure_partial_class_zyx.moss,
+# lists the merge the other way round.
+# At the bind X is Bool, Y is Char and Z is not in force, so the class is only
+# partly in force here.
+# Audit before: rejected. LinkBody forces X to represent the class (an input of
+# F must read in G over F's inputs); 3b's Satisfies then skipped the equation
+# Z = X (Z not in force) but checked Y = X, Char against Bool. With Z as the
+# representative, every equation mentions Z and would be skipped, so the clause
+# itself depended on the choice. Audit now: accepted (argued from the rules): a
+# class only partly in force is not checked, and the class has a linked member,
+# which each application supplies (fc_table reads the class at θ). G's body reads
+# Y as X, never as the captured Char.
+# Oracle (moss_m2): rejects ("its linked input interpretation differs (D84)");
+# with the other merge order it prints k, so the oracle is order-dependent here.
+# Native (ob-family moss, seed 1h1710x0): prints k.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+type Z;
+
+fn .gimme(): Foo;
+assume X { val vx: X; val out: X; }
+
+context Merge = A, X, Y, Z, A.gimme[Foo=X], A.gimme[Foo=Y], A.gimme[Foo=Z];
+context FIn = A, X, A.gimme[Foo=X], vx;
+
+functor F: Std, FIn -> out;
+
+functor G: Std, Merge, vx -> out {
+  bind out = vx;
+}
+
+assume Std, FIn, F {
+  fn go(): X { bind F; out }
+}
+
+assume Std {
+  fn demo() {
+    bind A = Bool;
+    bind Foo = Bool;
+    bind X = Bool;
+    bind Y = Char;
+    bind F = G;
+    bind A.gimme = () => this;
+    bind vx = true;
+    let b: Bool = go();
+    if b { putchar(char::k); }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

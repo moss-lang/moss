@@ -1,0 +1,2 @@
+?S tests/errors/captured_linked_fn.moss run
+?S tests/errors/captured_linked_fn.moss run

@@ -1,0 +1,1 @@
+[elab: tests/errors/duplicate_field_binder.moss: a pattern binds a name twice]

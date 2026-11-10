@@ -1,0 +1,12 @@
+# Moved from bootstrap/examples/union-latent-wrapped-reexport.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# N4: tests/wasi/functor_latent_identity_reexport.moss with a D15 wrapper,
+# as tests/wasi/union_latent_wrapped_copy.moss.
+# Verdicts: oracle accepts; native accepts; Audit accepts.
+type T;tag U;
+assume T {tag Wrap[T](T); fn offered():Wrap|U;}
+functor Inner[T]: T -> offered;
+functor Outer[]: Inner -> Inner;
+functor G: Inner -> Inner {bind Inner=Inner;}
+fn main(){bind Outer=G;}

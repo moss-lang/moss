@@ -1,3 +1,9 @@
+# From the copy that was bootstrap/examples/ruleb-provider-unbound.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# Rule B (AUDIT-CHANGES #60) at a provider bind: `bind h = g;` uses g,
+# which assumes T, with T not in force.
+# Audit: rejects (FPDefined). Oracle: rejects ("binding to `g` needs `T` in
+# force here"); before #60 it accepted. Native: accepts (exit 0; needs rule B).
 # Rule B: binding `g` as a provider is a use of it, so it needs `T` in
 # force too.
 

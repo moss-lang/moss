@@ -1,0 +1,64 @@
+# Moved from bootstrap/examples/expand-control-loop.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# expand (scratch/orch/expand-AUDIT.md): ACCEPTED.
+# CONTROL: a larger instantiation and an abstract functor's output in a loop,
+# not on a cycle of calls: looped calls id at T := Box(T) and at F's output,
+# and nothing calls looped back, so no cycle has a strict edge.
+# Oracle (this worktree's moss_m2): accepts and prints 7
+# Oracle variant with the check (scratch/expand/variant): accepts and prints 7
+# Native (ob-family moss, seed 1h1710x0): accepts and prints 7
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn nl() { putchar(char::newline); }
+}
+type T;
+type U;
+tag A;
+assume U { tag Box(U); }
+assume U, T { fn wrap(x: U): T; }
+functor F: U -> T, wrap;
+functor G: U -> T, wrap {
+  bind T = Box;
+  bind wrap = (x) => Box(x);
+}
+assume Std, T {
+  fn id(x: T): T { x }
+}
+assume Std, U, T, F {
+  fn looped(x: T, n: Int): Int {
+    var i = 0;
+    var acc = 0;
+    while i < n {
+      {
+        bind U = T;
+        let w = Box(x);
+        bind T = Box;
+        let z = id(w);
+      }
+      bind U = T;
+      bind F;
+      let y = id(wrap(x));
+      acc = acc + 1;
+      i = i + 1;
+    }
+    acc
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = A;
+    bind U = A;
+    bind F = G;
+    print_int(looped(A, 7)); nl();
+  }
+}

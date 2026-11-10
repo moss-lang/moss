@@ -1644,7 +1644,7 @@ Record functor_code := FunctorCode {
      for it. An application installs the item at position i under the
      caller's key for position i, so no key of the body's is read in the
      caller's terms (tests/regressions/functor_input_output_generations.moss,
-     examples/copy-extra-key.moss, examples/linked-copy-bracket.moss) *)
+     tests/wasi/copy_extra_key.moss, tests/wasi/linked_copy_bracket.moss) *)
   fc_sources : list item
 }.
 Record program : Type := Program {
@@ -1803,8 +1803,8 @@ Inductive signal : Type :=
    the caller's key for it (the key its scope refers to it by), read from
    the body where the root left it (closure_sources, result_selection).
    Exactly F's declared result is installed, as `bind F;` keeps exactly
-   F's result (examples/copy-extra-key.moss), and no key of the body's is
-   read in the caller's terms (examples/linked-copy-bracket.moss). *)
+   F's result (tests/wasi/copy_extra_key.moss), and no key of the body's is
+   read in the caller's terms (tests/wasi/linked_copy_bracket.moss). *)
 
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
@@ -3053,7 +3053,7 @@ Definition AppOf (W : world) (s : nat) (tm : subst) (a : inst) : Prop :=
    symbol, else R as a nominal at its requirements' meanings.  A type
    symbol not in force has no meaning: it is not read as a nominal `TNom R
    []` ([D20]: a type an item mentions must already be in force; the
-   oracle rejects `assume T.m, T`, examples/assume-method-before-type.moss). *)
+   oracle rejects `assume T.m, T`, tests/errors/assume_method_before_type.moss). *)
 Definition RecvTy (W : world) (r : nat) (tm : list (nat * ty)) (t : ty) : Prop :=
   match nlook r tm with
   | Some t' => t = t'
@@ -3415,7 +3415,7 @@ Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
    a structured type all of whose symbols are in force in C.  Before, a
    requirement the caller left unbound was read as itself, so a family
    demand could key a provision at a declared symbol out of force
-   (examples/family-unbound-need.moss), and a closure could capture one. *)
+   (tests/errors/family_unbound_need.moss), and a closure could capture one. *)
 Definition InForceThrough (C Cs : cx) (r : nat) : Prop :=
   (exists y, canon Cs (TAbs y) = canon Cs (TAbs r) /\ nlook y (c_ty C) <> None) \/
   ((forall z, canon Cs (TAbs r) <> TAbs z) /\
@@ -3605,7 +3605,7 @@ Inductive FamilyResult (W : world) : string -> spec -> Prop :=
     FamilyResult W mi (Spec (Some pa) None br).
 
 (* A family's listed polymorphic inputs are type symbols ([D84] rule 1; the
-   oracle's functor_params rejects any other, examples/family-poly-nontype.moss). *)
+   oracle's functor_params rejects any other, tests/errors/family_poly_nontype.moss). *)
 Definition FamilyShape (W : world) (u : nat) : Prop :=
   exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None /\
     Forall (FamilyResult W (d_mod d)) r /\
@@ -3863,7 +3863,7 @@ Definition MatchingInForce (C : cx) (matching : subst) : Prop :=
    unique: every item of the family with method m whose receiver matches
    the key gives the same matching (up to the merges here), else which one
    is meant is ambiguous and the demand fails (D84 rule 7; the oracle's
-   `family_member`, examples/family-ambiguous-member.moss). *)
+   `family_member`, tests/errors/family_ambiguous_member.moss). *)
 Definition FamilyReadOff (W : world) (C : cx) (u : usym) (ot : ty) (m : nat)
     (matching : subst) : Prop :=
   exists marks formal_result formal_keys rf a,
@@ -4108,8 +4108,8 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
    F's merge (H's inputs are among F's), then at copy_subst, and there:
    - H's inputs read as F's: each of H's merges holds. A merge of H that
      F lacks is accepted when F's fixed readings make it hold, as they do
-     at every application (copy-site-merge.moss); one a later application
-     could break is not (copy-poly-merge.moss, copy-merge.moss).
+     at every application (tests/wasi/copy_site_merge.moss); one a later application
+     could break is not (copy-poly-merge.moss, tests/errors/copy_merge.moss).
    - H's needs read as F's: each provision H takes is F's (its signature
      and instantiation), read the same way.
    - H's result gives each key of F's result the provision F's result
@@ -4122,19 +4122,19 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
      terms, of which j is the last (the oracle's `find ... (rev gkeys)`).
      So two result items distinct in H's own terms are never one key of
      F's, where choosing either would be a choice (coherence, criteria
-     section 2; examples/copy-result-collide.moss), and repeated
+     section 2; tests/errors/copy_result_collide.moss), and repeated
      positions of F read one source. An application of F installs
      exactly F's result, position by position under the caller's keys
      (Rule A, result_selection), so a key H has and F lacks is never
-     installed (examples/copy-extra-key.moss).
+     installed (tests/wasi/copy_extra_key.moss).
    sigma's readings are the copy site's and may name a symbol that is also
    one of F's inputs, which must not be identified with it
-   (examples/copy-bracket-nonfixed.moss, copy-fixed-reads-poly.moss;
+   (tests/errors/copy_bracket_nonfixed.moss, tests/errors/copy_fixed_reads_poly.moss;
    scratch/orch/copyfresh-AUDIT.md). Fresh means fresh for sigma's image
    too, as the oracle's @copy symbols are: a copy site can read a fixed
    input as a fresh application generation, and a cg y or output role
    equal to it would identify it with F's input or output again
-   (examples/copy-fresh-collide.moss, scratch/orch/realizepf-AUDIT.md). *)
+   (tests/errors/copy_fresh_collide.moss, scratch/orch/realizepf-AUDIT.md). *)
 Definition copy_subst (sigma : subst) (ys : list nat) (cg : nat -> nat) : subst :=
   sigma ++ map (fun y => (y, TAbs (cg y))) ys.
 
@@ -4180,7 +4180,7 @@ Definition role_reads (site : cx) (outs : list nat) (gen : nat -> nat) : subst :
   map (fun t => (gen t, canon site (app_subst (c_ty site) (TAbs (gen t))))) outs.
 (* Q6: a fixed input of F that the body pins (binds, whether or not G takes
    it) is compared at the pin, canonically: a body that pins `Tok = Char`
-   provides `tok(): Tok` as `tok(): Char` (examples/pin-fixed-agree.moss).
+   provides `tok(): Tok` as `tok(): Char` (tests/wasi/pin_fixed_agree.moss).
    Every application reads Tok as the bind site did (rule 5), and the bind
    site's reading is the pin's (BFunClosure), so the two agree. *)
 Definition pin_reads (body : cx) (pins : subst) : subst :=
@@ -4190,17 +4190,17 @@ Definition pin_reads (body : cx) (pins : subst) : subst :=
    T.m as Bool.m), every symbol at G's own readings. An input's meaning at
    an application is the caller's, and a rebind in the body writes only its
    alias, so a key's receiver may not follow it (an unpinned merge
-   representative, examples/link-merge-rep-rebind.moss; the oracle's
+   representative, tests/errors/link_merge_rep_rebind.moss; the oracle's
    check is by written leaf, scratch/orch/linknewpf-AUDIT.md). That holds
    for an input of F that is also an output: its input occurrences (a
    merge representative's) read at G's table, only its role at the body's
-   (examples/link-output-input-rep.moss, scratch/orch/realize3-AUDIT.md).
+   (tests/errors/link_output_input_rep.moss, scratch/orch/realize3-AUDIT.md).
    The roles stay in the keys and promised types, so the site's table
    alone reads them.  A pinned fixed input (Q6, LinkBody's pins) reads at
    its pin, the body's meaning of it: every application reads it as the
    bind site did, which BFunClosure checks is the pin, so the body's key
    is the caller's (lib/wasistd.moss's GcArrays binds `Array.get` at
-   `ArrayHandle = ArrayRef`; examples/pin-fixed-key.moss, AUDIT-CHANGES
+   `ArrayHandle = ArrayRef`; tests/wasi/pin_fixed_key.moss, AUDIT-CHANGES
    #73). *)
 Definition link_site (Cg Cb : cx) (pins : subst) (outs : list nat) (gen : nat -> nat) : cx :=
   Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ pins ++ c_ty Cg)
@@ -4374,7 +4374,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
        family's result does not shadow what the caller provides. An
        argument means what `let a = e; f(a)` would (as a bracket call's
        arguments, ExCallBr, D89). AUDIT-CHANGES #72;
-       examples/args-context-provision-wins.moss, args-context-shadow-call.moss *)
+       tests/wasi/args_context_provision_wins.moss, tests/wasi/args_context_shadow_call.moss *)
     Args W P F C args (sg_params g) xs ->
     (* rule B *)
     RequirementsInForce C Cf ->
@@ -4573,7 +4573,7 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
    a generation it made escape ([D78]) *)
 with BlkE (W : world) (P : program) : frame -> cx -> ablock -> option ty -> expr -> ty -> Prop :=
 (* a nested block may rebind a pin for its own use: only the linked
-   body's own binds reach its result (examples/block-pin-rebind.moss) *)
+   body's own binds reach its result (tests/wasi/block_pin_rebind.moss) *)
 | BlkECheck : forall F C ss tl exp x t made,
     Blk W P (without_pins F) C ss tl exp x t made ->
     (forall g, In g made -> ~ In g (gens t)) ->
@@ -4687,7 +4687,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* Q3: the method item is not a defined (attached) method: a call
        resolves to the definition (MCAttachedDefined), never to the key,
        so the provision could not be used (criteria section 6; the
-       oracle's check_bind; examples/bind-attached-defined.moss). A
+       oracle's check_bind; tests/errors/bind_attached_defined.moss). A
        detached method, or an abstract attached one, is bound as before. *)
     ~ (exists rc nm ps rt0 b, ast_of W m = Some (ADFn rc nm ps rt0 (Some b))) ->
     BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
@@ -4723,15 +4723,15 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
        mentioned in scope (by the context or a method key's receiver,
        e.g. a family demand's key at an unbound declared T): writing it
        as itself would re-ground what mentions it (stability, criteria.md
-       section 5; examples/lambda-declared-output.moss). One neither in
+       section 5; tests/errors/lambda_declared_output.moss). One neither in
        force nor mentioned is installed as itself, and the frame's return
        and receiver types (read where every symbol they mention is in
        force) do not mention it.
        In a body bound to F, a kept output at an input of F is ruled out
        by LinkBody (nothing the body makes is an input of F,
-       examples/link-kept-output-pin.moss); a block nested in the body
+       tests/errors/link_kept_output_pin.moss); a block nested in the body
        may keep one, as both implementations allow
-       (examples/block-kept-output-pin.moss) *)
+       (tests/wasi/block_kept_output_pin.moss) *)
     (forall t, FunOutputs W u t ->
        (nlook t (c_ty C) = None /\ gensof t = t /\
           ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
@@ -4744,8 +4744,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* [D84] rule 7, coherence (criteria section 2): two result items
        distinct in F's own terms (its result read at its inputs, each
        output role itself) are not filed here under one key, where which
-       one is installed would be a choice (examples/result-collide-ab.moss);
-       a key F itself repeats may repeat (result-repeat-in-f.moss) *)
+       one is installed would be a choice (tests/wasi/result_collide_ab.moss);
+       a key F itself repeats may repeat (tests/wasi/result_repeat_in_f.moss) *)
     (exists Cf ksf, ProvideResult W u Cu (fun t => TAbs t) Cf ksf /\ CollidesOnlyAs ks ksf) ->
     (* [D78]: every output destination, fresh or not, is made here: a
        value of its type may not leave the block *)
@@ -4757,14 +4757,14 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
     (* only an abstract functor is bound (D78; the oracle's bind_functor,
-       examples/copy-into-body.moss) *)
+       tests/errors/copy_into_body.moss) *)
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
     (* each need of H is one of F's, read through F's merge (F's
        congruence decides "same need": H may spell it through another
        representative of the class; criteria.md section 2,
-       examples/sameneed-copy.moss) *)
+       tests/wasi/sameneed_copy.moss) *)
     (forall k, In k nsh -> In (canon_item Cu k) nsu) ->
     (* Copying requires the target fixed inputs now and preserves every
        known fixed interpretation carried by the existing source binding. *)
@@ -4791,7 +4791,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
    The closure keeps types as a lambda does (`lexical_capture`): the
    table's readings and the meanings of what the context mentions, method
    keys' receivers included, so a captured need keyed at a declared symbol
-   not in force reads as it was provided (examples/functor-captured-unbound.moss,
+   not in force reads as it was provided (tests/errors/functor_captured_unbound.moss,
    family4-AUDIT.md). *)
 | BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
@@ -4818,7 +4818,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* Q6: each pin of a fixed input agrees with the bind site: the
        input's meaning here is the pin's, read with G's types as they are
        here (the oracle's link check, "it binds `Tok` to ..., and here
-       `Tok` is ..."; examples/pin-fixed-disagree.moss) *)
+       `Tok` is ..."; tests/errors/pin_fixed_disagree.moss) *)
     (forall x tx, In (x, tx) pins -> exists here, nlook x (c_ty C) = Some here /\
        (forall y, In y (gens tx) -> nlook y (c_ty C) <> None) /\
        canon C here = canon C (app_subst (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg)) tx)) ->
@@ -4947,7 +4947,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
        not send a linked input to a type only G has, which the closure
        captures at the bind while each application supplies the input
        afresh (the oracle's 3b sees the first unmerged reading;
-       examples/link-merge-captured.moss, scratch/orch/cap3b-AUDIT.md) *)
+       tests/errors/link_merge_captured.moss, scratch/orch/cap3b-AUDIT.md) *)
     (forall k, In k nsg -> In (canon_item Cu k) nsu ->
        option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)) =
        ilook (provision_id (canon_item Cu k)) (c_provisions Cu)) ->
@@ -4966,7 +4966,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     (* no generation the body makes is an input of F: each application
        supplies F's inputs, and a body write would replace one under a
        key the caller files at its own reading (a kept output at an
-       unmentioned merge representative, examples/link-kept-output-rep.moss;
+       unmentioned merge representative, tests/errors/link_kept_output_rep.moss;
        scratch/orch/realize2-AUDIT.md) *)
     (forall t, In t made -> nlook t (c_ty Cu) = None) ->
     (forall t, In t outs <-> FunOutputs W u t) ->
@@ -4976,7 +4976,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* a key the pins re-read must be one the body made, not one of G's
        own provisions (the oracle's and native's "does not bind", by
-       written leaf; examples/pin-fixed-key-need.moss, AUDIT-CHANGES #73) *)
+       written leaf; tests/errors/pin_fixed_key_need.moss, AUDIT-CHANGES #73) *)
     (forall k, In k ks ->
        at_site (link_site Cg Cb pins outs gen) k <> at_site (link_site Cg Cb [] outs gen) k ->
        ilook (provision_id (at_site (link_site Cg Cb pins outs gen) k)) (c_provisions Cg) = None) ->
@@ -4997,9 +4997,9 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
       (map (fun k => rkey_of (link_site Cg Cb pins outs gen) (at_site (link_site Cg Cb pins outs gen) k)) ks)) ->
     (* the pins of fixed inputs: what the body binds each to, in G's input
        terms (each bind reads its type where it is made, and a later bind
-       writes only its own alias; examples/pin-taken-chain.moss).  A fixed
+       writes only its own alias; tests/wasi/pin_taken_chain.moss).  A fixed
        input that G takes is pinned when the body leaves it at another
-       reading than G's own (examples/pin-taken-one.moss, #95) *)
+       reading than G's own (tests/wasi/pin_taken_one.moss, #95) *)
     (forall x tx, In (x, tx) pins <->
        Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
        (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx)) ->

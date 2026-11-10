@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-nest-type.moss:
+# not. From tests/errors/decl_nest_type.moss:
 #
 # AssumesComplete for every kind (AUDIT-CHANGES #75; criteria section 7):
 # an assume nesting that holds only a type is checked too. `Nope` is not

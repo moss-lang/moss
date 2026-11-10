@@ -71,7 +71,7 @@ Notation Pre := (CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok).
    family; the caller's method there and the item have agreeing
    signatures. It is the signature half of the former
    ChainForwardCopyKeys, whose key half (false:
-   examples/linked-copy-bracket.moss) the caller-keyed install makes true
+   tests/wasi/linked_copy_bracket.moss) the caller-keyed install makes true
    by construction (scratch/orch/callerkeys2-AUDIT.md). *)
 Definition ChainForwardCopySigs : Prop :=
   forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,

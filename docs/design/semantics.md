@@ -606,14 +606,14 @@ meaning. Every merged equation must hold of θ, including for
 requirements the caller leaves unbound. So a merged class bound at the
 call gives its unbound members the same meaning, and a caller cannot bind
 two members of one class to different types
-(`bootstrap/examples/unbound-merge-representative.moss` is rejected).
+(`tests/errors/unbound_merge_representative.moss` is rejected).
 
 Each provision a call selects must also have the type the callee expects:
 the caller's type or signature for it equals the callee's, read at θ. A
 provision's type can mention types that are not its requirements, so the
 requirement meanings it records do not determine it. A caller that
 rebinds such a type after providing the item cannot pass it on at the new
-meaning (`bootstrap/examples/stale-provision-type.moss` is rejected).
+meaning (`tests/errors/stale_provision_type.moss` is rejected).
 
 *Implementation note (rev 6):* the bootstrap now implements this. The
 union-find lives in the environment's type map (an entry pointing anywhere
@@ -1526,7 +1526,7 @@ independent of [D52]'s point that the *compiler* skips it and assumes
 in place, in the caller's frame, so a `break` among them leaves the loop
 around the `bind` (and a `return` returns from the caller). A loop is
 counted as breaking when such a body breaks, transitively through the
-functors it applies (`bootstrap/examples/functor-body-break.moss` is
+functors it applies (`tests/errors/functor_body_break.moss` is
 rejected).
 
 **[D61] DECIDED by the designer (how a method call finds its method).**
@@ -1635,13 +1635,13 @@ are therefore read as that receiver's arguments, as at a direct call
 at the surrounding context's meanings. Otherwise `bind Box.m[T=Bool] =
 Box.get;` under `T = Char` would hand `Box.get` a `Box[T=Bool]` while it
 reads its payload, and calls its needs, at `Char`
-(`bootstrap/examples/bracket-method-receiver.moss` is rejected).
+(`tests/errors/bracket_method_receiver.moss` is rejected).
 
 **A wrapped fn is called at its own context.** When `bind R.m = f;`
 binds a defined fn, the wrapper that takes the receiver calls `f` with each
 type in force in `f`'s context read as it reads there, as any call does,
 not just `f`'s requirements: a fn in scope as `main` also has its root
-context's types (`bootstrap/examples/wrapped-main.moss`).
+context's types (`tests/wasi/wrapped_main.moss`).
 
 **[D62] DECIDED by the designer (provisions keyed by identity; first found by the mechanization).** The
 core-calculus soundness proof
@@ -4511,14 +4511,14 @@ result mentions (`X = ∅`).
    captured values were made at the captured meaning, and a copy is
    transparent, so applying `F` behaves as applying `H` at the inputs `H`
    takes. Both implementations already behave this way;
-   `bootstrap/examples/copy-capture.moss` checks it, and Audit.v records
+   `tests/wasi/copy_capture.moss` checks it, and Audit.v records
    the linked inputs in `fc_linked`.
    *Note (November 2026, the audit):* `bind F = H;` also requires `H` to
    read its needs and inputs as `F` does (D78's input interpretation), and
    `bind F = G;` requires `G` to read each need `F` links as `F` does:
    otherwise `G`'s or `H`'s own merges could identify types an application
-   of `F` keeps apart (`bootstrap/examples/linked-merge.moss`,
-   `copy-merge.moss`). The implementations already check both.
+   of `F` keeps apart (`tests/errors/linked_merge.moss`,
+   `tests/errors/copy_merge.moss`). The implementations already check both.
 5. **`bind F;`** `F` and its inputs in force; each `x ∈ X(F)` denotes what
    it did where `F` was provided (bound, or assumed: the identity), else a
    static error, as for any item mentioning a rebound type ([D72];
@@ -5167,7 +5167,7 @@ a body (`lower::desugar_call_brackets`), and the bootstrap elaborates
 that grows the callee's own instantiation (`nest[T=Wrap](...)` inside
 `nest`) is polymorphic recursion like any other, and [D16]'s
 expanding-cycle check (`NoExpandingCycle`) rejects it
-(`bootstrap/examples/expand-call-brackets.moss`). Standing tests:
+(`tests/errors/expand_call_brackets.moss`). Standing tests:
 `tests/wasi/call_brackets.moss` and
 `tests/wasi/call_brackets_unrequired.moss`.
 

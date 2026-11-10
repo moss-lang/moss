@@ -1,0 +1,4 @@
+?X tests/errors/copy_fresh_collide.moss demo get
+?Q tests/errors/copy_fresh_collide.moss demo F
+?Q tests/errors/copy_fresh_collide.moss demo get
+?P tests/errors/copy_fresh_collide.moss demo

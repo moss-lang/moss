@@ -1,0 +1,2 @@
+?S tests/errors/captured_merge.moss run
+?S tests/errors/captured_merge.moss run

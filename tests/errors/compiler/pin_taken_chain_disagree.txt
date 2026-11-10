@@ -1,0 +1,3 @@
+?X tests/errors/pin_taken_chain_disagree.moss main U
+?X tests/errors/pin_taken_chain_disagree.moss main V
+?X tests/errors/pin_taken_chain_disagree.moss main q

@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/functor-partial-unused.moss:
+# not. From tests/errors/functor_partial_unused.moss:
 #
 # FunctorTotal (AUDIT-CHANGES #77; D55; criteria section 7): F promises
 # x and y and binds only x, and nothing applies or links F.

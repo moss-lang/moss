@@ -1,0 +1,1 @@
+[elab: tests/errors/link_merge_rep_rebind.moss: functor `G` does not bind `X.m`]

@@ -1,0 +1,2 @@
+!P tests/errors/principal_theta_unbound.moss T
+!P tests/errors/principal_theta_unbound.moss foo

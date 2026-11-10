@@ -1,3 +1,13 @@
+# From the copy that was bootstrap/examples/merge-inst-order-ab.moss (removed; its
+# oracle verdicts are the old Rocq oracle's, historical):
+# Δ4 (AUDIT-CHANGES #61, D43): g assumes f twice, at T=A (K1) and at T=B
+# (K2), in the order K1, K2; h provides f at T=A only and calls g.
+# Merging the two entries of f unifies their instantiations, so g's
+# context merges A with B, and h (where A and B are distinct) cannot call
+# g. Before, the merged key kept the first entry's instantiation (T=A),
+# so this order was accepted and tests/errors/merge_inst_order_ba.moss was rejected.
+# Audit: rejects (by reading). Oracle: rejects (before: accepted).
+# Native: accepts (exit 0; needs the same change).
 # Δ4 (D43): as tests/errors/merge_inst_order_ba.moss, with `g`'s contexts
 # in the order `K1`, `K2`. Merging the two entries of `f` unifies their
 # instantiations, so `g`'s context merges `A` with `B`, and `h` cannot

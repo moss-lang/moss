@@ -1,0 +1,1 @@
+[elab: tests/errors/fn_sig_nonreq_rebind.moss: applying `F` here reads `U` as `Bool`, but `F` is fixed in it and was provided where it was `Int` (D84 rule 5, D72)]

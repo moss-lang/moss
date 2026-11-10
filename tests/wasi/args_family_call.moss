@@ -1,4 +1,4 @@
-# Q4 (AUDIT-CHANGES #72), from bootstrap/examples/args-context-family-call.moss:
+# Q4 (AUDIT-CHANGES #72), from tests/wasi/args_context_family_call.moss:
 # `d.show(...)` applies the family `Both` on demand, around the whole
 # call; its argument `d.describe()` is checked in the caller's context,
 # where the application is not in force, so it is the attached method.

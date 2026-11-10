@@ -1,0 +1,1 @@
+[elab: tests/errors/copy_result_collide_hba.moss: `H` cannot be copied to `F`: two of its result items fall under one key of `F`'s (D84 rule 7)]

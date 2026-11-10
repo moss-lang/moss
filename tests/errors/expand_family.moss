@@ -1,0 +1,42 @@
+# Moved from bootstrap/examples/expand-family.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# expand (scratch/orch/expand-AUDIT.md): REJECTED (NoExpandingCycle, InstantiationsBounded).
+# Growth through a family-produced type: `Box[T=Array[Item=Box]](a).deep` calls
+# the attached method at T := Array[Item=Box(T)]; `.arrayed` is a family
+# member demanded on demand (D84 rule 7), an application whose θ also counts.
+# Oracle (this worktree's moss_m2): accepts and prints 5
+# Oracle variant with the check (scratch/expand/variant): rejects: expanding cycle
+# Native (ob-family moss, seed 1h1710x0): crashes at compile time (call stack exhausted)
+import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
+import "../../lib/access.moss" use .get, .length;
+import "../../lib/size.moss" use Size, Sizes, .size;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn nl() { putchar(char::newline); }
+}
+type T;
+tag A;
+assume Std, T {
+  tag Box(T);
+  fn Box.deep(n: Int): Int {
+    if n == 0 { return 0; }
+    let a = this.arrayed(2.size());
+    1 + Box[T=Array[Item=Box]](a).deep(n - 1)
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = A;
+    print_int(Box(A).deep(5)); nl();
+  }
+}

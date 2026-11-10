@@ -1,0 +1,2 @@
+?R tests/errors/copy_fixed_rebind.moss demo Arrays
+?Q tests/errors/copy_fixed_rebind.moss demo F

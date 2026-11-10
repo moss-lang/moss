@@ -1,5 +1,5 @@
 # Criteria section 7: every declaration is checked as written, used or
-# not. From bootstrap/examples/decl-fn-sig.moss:
+# not. From tests/errors/decl_fn_sig.moss:
 #
 # DeclsForm (AUDIT-CHANGES #76; criteria section 7): an abstract fn's
 # signature denotes types as written; `Nope` is not in scope.

@@ -9,7 +9,7 @@
    reading's generations avoid the cg symbols). Audit's CopyInterpretation
    requires this since realizepf (Fresh W only says undeclared, and a copy
    site can read a fixed input as a fresh application generation:
-   examples/copy-fresh-collide.moss).
+   tests/errors/copy_fresh_collide.moss).
 
    Also: grounding after a substitution is one substitution
    (ground_app_subst), and the lemmas lift from types to provisions. *)

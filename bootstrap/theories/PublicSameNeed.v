@@ -16,7 +16,7 @@
      input-reading clause);
    - `link_need_unambiguous`: no need class of G meets two need classes of
      F. The input-reading clause rules the ambiguous case out
-     (examples/sameneed-ambiguous.moss). A copy compares H's readings with
+     (tests/errors/sameneed_ambiguous.moss). A copy compares H's readings with
      F's only at F's applications (CopyInterpretation, AUDIT-CHANGES #96),
      where two of F's needs that one class of H meets are one key. *)
 From Stdlib Require Import List.

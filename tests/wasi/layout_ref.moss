@@ -1,0 +1,40 @@
+# Moved from bootstrap/examples/layout-ref.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# D58 (AUDIT-CHANGES #90): a recursive type through a GC reference. `Ref`
+# is a tag whose payload is the machine reference type `StructRef`, one
+# scalar, so `Ref[Boxed=LCell]`'s layout does not reach LCell and the rule
+# needs no case for `Ref`. `LLink` holds the reference, so `sum` can take
+# it apart. A list of three cells, summed: prints 6.
+# Verdicts: oracle 6; native 6; Audit accepts (before and after #90).
+import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasip1.moss" use Wasi;
+
+tag LNil;
+assume Std, Wasm {
+  tag LCell { head: Int, tail: LNil | LLink };
+  tag LLink(Ref[Boxed=LCell]);
+  context Cells = LCell.boxed[Boxed=LCell], Ref.deref[Boxed=LCell];
+}
+assume Std, Wasm, Cells {
+  fn sum(c: LCell): Int {
+    match c.tail {
+      LNil => c.head,
+      LLink(r) => c.head + sum(r.deref()),
+    }
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind Boxed = LCell;
+    bind Heap;
+    let a = LCell { head = 3, tail = LNil };
+    let b = LCell { head = 2, tail = LLink(a.boxed()) };
+    let c = LCell { head = 1, tail = LLink(b.boxed()) };
+    putchar((sum(c) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}

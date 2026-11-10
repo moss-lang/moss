@@ -1,0 +1,1 @@
+[elab: tests/errors/closure_partial_class_xyz.moss: `G` cannot provide `F`: its linked input interpretation differs (D84)]

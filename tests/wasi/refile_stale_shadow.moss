@@ -1,0 +1,58 @@
+# Moved from bootstrap/examples/refile-stale-shadow.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# Refile shadowed a stale provision (Audit change; RefileRunOk was false).
+# F promises `T.out` for its output T; G's body binds `T.out` while T is
+# still G's input (receiver TAbs T), then `Int.out`, then T = Int. The old
+# LinkBody refiled `Int.out` under F's key for T.out, `IMth (TAbs T) out []`,
+# right after its bind; that is also the runtime key of the stale `T.out`
+# the body's context still lists. `seed.out()` (seed: T = Bool at run time)
+# then runs `Int.out` with a Bool receiver: the reference interpreter on the
+# oracle's program stops Stuck (`moss_ref: stuck (XErr 14)`; with `() => 8`
+# instead it prints 8), native prints 7. Audit now runs the body's own binds
+# and reads F's `T.out` from the body's key `Int.out` when selecting the
+# result (fc_sources), as native does; the caller's `T.out` is `Int.out` in
+# both implementations. The oracle's fix is task E31.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T;
+assume T { val seed: T; }
+fn .out(): Int;
+
+functor F: Std, T, seed -> T, T.out, r;
+val r: Int;
+
+functor G: Std, T, seed -> T, T.out, r {
+  bind T.out = () => 7;
+  bind Int.out = () => this + 1;
+  bind r = seed.out();
+  bind T = Int;
+}
+
+assume Std, T, seed, F {
+  fn go(): Int { bind F; r }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind T = Bool;
+    bind seed = true;
+    bind F = G;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

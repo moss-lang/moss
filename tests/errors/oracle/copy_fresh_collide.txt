@@ -1,0 +1,1 @@
+[elab: tests/errors/copy_fresh_collide.moss: `H` cannot be copied to `F`: its effective output interpretation differs (D78)]

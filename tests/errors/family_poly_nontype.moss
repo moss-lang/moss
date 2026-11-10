@@ -1,0 +1,22 @@
+# Moved from bootstrap/examples/family-poly-nontype.moss. Verdicts below credited to the
+# oracle are the old Rocq oracle's (moss_m2, removed when moss-ref replaced
+# it), so they are historical; the suite checks the current verdicts.
+# A family lists `g`, a fn, as a polymorphic input. D84 rule 1 makes P(F)
+# type symbols; the oracle rejects it ("`g`, listed as a polymorphic input
+# of `F`, is not a type in scope (D84)"), native accepts and runs it
+# (exit 0; E34). Audit's FamilyShape now requires the listed
+# names to be types (family4-AUDIT.md section 2), so the demand in main
+# finds no family and Audit rejects it too.
+type A;
+fn g();
+assume A { fn .twice(): A; }
+functor F[A, g]: -> A.twice;
+functor G: A -> A.twice { bind A.twice = () => this; }
+context Need = A, A.twice;
+assume Need { fn use_it() { } }
+tag Concrete;
+fn main() {
+  bind A = Concrete;
+  bind F = G;
+  use_it();
+}
