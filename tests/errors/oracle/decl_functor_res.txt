@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_functor_res.moss: `nope` is not in scope]

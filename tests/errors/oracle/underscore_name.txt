@@ -1,1 +1,1 @@
-[moss_m2 front end: bundle: tests/errors/underscore_name.moss: 2:6: ParseError: expected NAME, found UNDERSCORE]
+[front end: bundle: tests/errors/underscore_name.moss: 2:6: ParseError: expected NAME, found UNDERSCORE]

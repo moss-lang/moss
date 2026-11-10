@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_ctx_bracket.moss: `Nope` is not in scope]

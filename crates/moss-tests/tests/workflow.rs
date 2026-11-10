@@ -32,16 +32,16 @@ fn oracle_build_tracks_the_runtime_checkout() {
         "tools",
         "current-oracle/bin",
         "result-oracle/bin",
-        "bootstrap/_build/default/ocaml",
+        "bootstrap/_build/default/run",
     ] {
         fs::create_dir_all(root.join(directory)).unwrap();
     }
     for file in [
         "crates/moss-tests/Cargo.toml",
         "src/main.moss",
-        "current-oracle/bin/moss_m2",
-        "result-oracle/bin/moss_m2",
-        "bootstrap/_build/default/ocaml/moss_m2.exe",
+        &format!("current-oracle/bin/{}", moss_tests::REFERENCE),
+        &format!("result-oracle/bin/{}", moss_tests::REFERENCE),
+        "bootstrap/_build/default/run/driver.exe",
         "custom-oracle",
     ] {
         fs::write(root.join(file), "").unwrap();
@@ -59,11 +59,11 @@ printf '%s\n' "$MOSS_WORKFLOW_STORE"
     fs::set_permissions(&nix, fs::Permissions::from_mode(0o755)).unwrap();
 
     let run = |fail: bool, explicit: bool| -> Output {
-        let expected = root.join(if explicit {
-            "custom-oracle"
+        let expected = if explicit {
+            root.join("custom-oracle")
         } else {
-            "current-oracle/bin/moss_m2"
-        });
+            root.join("current-oracle/bin").join(moss_tests::REFERENCE)
+        };
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
             .args([
@@ -96,7 +96,7 @@ printf '%s\n' "$MOSS_WORKFLOW_STORE"
     assert_eq!(calls.lines().filter(|line| *line == "build").count(), 1);
     assert!(calls
         .lines()
-        .any(|line| line == format!("{}#oracle", root.display())));
+        .any(|line| line == format!("{}#{}", root.display(), moss_tests::REFERENCE)));
 
     let out = run(true, false);
     assert!(!out.status.success());

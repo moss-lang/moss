@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/context_cycle_unused.moss: context `A` nests in a cycle]
+[elab: tests/errors/context_cycle_unused.moss: context `A` nests in a cycle]

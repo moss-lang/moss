@@ -666,36 +666,19 @@ fn latent_unformable_functor_capability_does_not_force_a_fake_interface() {
 
 #[test]
 fn fresh_functor_output_generations_retain_their_runtime_types() {
-    use moss_tests::{build_with, oracle_path, output, repo, wasm_file, wasmtime};
-    use std::process::Command;
+    use moss_tests::{build_with, oracle_command, wasm_file, wasmtime};
 
     let entry = "tests/regressions/functor_output_generation_cast.moss";
     let bytes = build_with(entry, "lib/prelude.moss");
     let native = wasmtime(&wasm_file(&bytes), None, &[]);
     assert_eq!(native.code, 0, "{}", native.stderr);
 
-    // `clo` and `fold` run the cached interpreter. Keep each engine selection
-    // local to its child process so parallel tests retain their own settings.
-    for engine in [
-        None, Some("ref"), Some("fast"), Some("slot"), Some("clo"), Some("fold"),
-        Some("lazy"), Some("lazy-ref"),
-    ] {
-        let mut command = Command::new("sh");
-        command
-            .arg("-c")
-            .arg(r#"ulimit -s unlimited 2>/dev/null || ulimit -s "$(ulimit -H -s)"; exec "$0" "$@""#)
-            .arg(oracle_path())
-            .arg(entry)
-            .env_remove("MOSS_LIB")
-            .env_remove("MOSS_ENGINE")
-            .current_dir(repo());
-        if let Some(engine) = engine {
-            command.env("MOSS_ENGINE", engine);
-        }
-        let reference = output(&mut command);
-        assert_eq!(
-            reference.code, 0, "engine {}: {}",
-            engine.unwrap_or("default"), reference.stderr,
-        );
+    // The proved passes keep Runs: the program runs alike with and without
+    // them (`--debug-no-passes`).
+    for options in [&[][..], &["--debug-no-passes"][..]] {
+        let mut args = options.to_vec();
+        args.push(entry);
+        let reference = oracle_command(&args);
+        assert_eq!(reference.code, 0, "{options:?}: {}", reference.stderr);
     }
 }

@@ -32,7 +32,11 @@
             }
           )
         );
-      # The oracle's toolchain: an OCaml with flambda, the only one that
+      # The reference implementation's name: its package attribute and its
+      # executable, bin/${referenceName}. crates/moss-tests/src/lib.rs
+      # (REFERENCE) names it too.
+      referenceName = "moss-ref";
+      # The reference implementation's toolchain: an OCaml with flambda, the only one that
       # honours the `[@inlined]` the extracted interpreter relies on to keep
       # its memory in check; Rocq and its standard
       # library built with it (a few minutes); and dune. The extracted code
@@ -42,7 +46,7 @@
       # binary cache, so it is built from source; its own test suite is
       # skipped, since it adds minutes to every CI run and tests OCaml, not
       # Moss.
-      oracleTools = pkgs: rec {
+      rocqTools = pkgs: rec {
         ocamlFlambda =
           (pkgs.ocaml-ng.ocamlPackages_4_14.ocaml.override { flambdaSupport = true; }).overrideAttrs
             { doCheck = false; };
@@ -120,34 +124,36 @@
               ./bootstrap/assumptions
               ./bootstrap/check.sh
               ./bootstrap/dune-project
-              ./bootstrap/ocaml
+              ./bootstrap/run
               ./bootstrap/theories
             ];
           };
-          # The bootstrap: the Rocq front end, elaborator and interpreter,
-          # extracted to OCaml.
-          oracle = pkgs.stdenv.mkDerivation {
-            pname = "moss-oracle";
+          # The reference implementation (bootstrap/run/README.md): the
+          # Rocq front end, the executable elaborator, the proved passes and
+          # Audit.v's reference interpreter, extracted to OCaml. Its build
+          # compiles every theory and audits the assumptions (check.sh), in
+          # the release build tree the extraction then reuses.
+          reference = pkgs.stdenv.mkDerivation {
+            pname = referenceName;
             version = "0.0.0";
             src = bootstrapSource;
-            nativeBuildInputs = (oracleTools pkgs).inputs;
+            nativeBuildInputs = (rocqTools pkgs).inputs;
             DUNE_CACHE = "disabled"; # there is no home to keep it in
             buildPhase = ''
               runHook preBuild
-              # Audit and extract in one release-profile build tree, so the
-              # shared Rocq dependencies are compiled only once.
               export DUNE_JOBS=$NIX_BUILD_CORES
               DUNE_PROFILE=release bash check.sh
-              dune build --release -j $NIX_BUILD_CORES ocaml/moss_m2.exe
+              dune build --release -j $NIX_BUILD_CORES run/driver.exe
               runHook postBuild
             '';
             installPhase = ''
               runHook preInstall
-              install -D _build/default/ocaml/moss_m2.exe $out/bin/moss_m2
+              install -D _build/default/run/driver.exe $out/bin/${referenceName}
               mkdir -p $out/share/moss/audit
               cp _build/Certificate.log _build/Closed.log $out/share/moss/audit/
               runHook postInstall
             '';
+            meta.mainProgram = referenceName;
           };
           installData = ''
             mkdir -p $out/share/moss
@@ -194,8 +200,8 @@
               platforms = old.meta.platforms ++ [ "x86_64-windows" ];
             };
           });
-          # The compiler, bootstrapped by the oracle. `moss_m2` reads
-          # src/main.moss with the Rocq front end, elaborates it, and
+          # The compiler, bootstrapped by the reference implementation, which
+          # reads src/main.moss with the Rocq front end, elaborates it, and
           # interprets it compiling src/main.moss: what it writes is the
           # module the compiler written in src/ makes of itself, S1, without
           # any compiled compiler involved. This interpreted self-compile
@@ -218,14 +224,15 @@
               }
               ''
                 export HOME=$TMPDIR # wasmtime wants a writable cache directory
-                # The interpreter recurses as deeply as the program it runs.
+                # The interpreter recurses as deeply as the program it runs,
+                # and the self-compile needs about 5 GB.
                 ulimit -s unlimited 2>/dev/null || ulimit -s "$(ulimit -H -s)"
                 bootstrap_started=$SECONDS
                 bootstrap_phase() {
                   echo "bootstrap: $* (elapsed $((SECONDS - bootstrap_started))s)" >&2
                 }
                 bootstrap_phase "interpreting the compiler to produce S1"
-                (cd ${compilerSource} && MOSS_REF_TIME=1 ${oracle}/bin/moss_m2 --pages 2 \
+                (cd ${compilerSource} && ${pkgs.lib.getExe reference} --time --pages 2 \
                   --argv0 lib/prelude.moss src/main.moss src/main.moss) > s1.wasm
                 bootstrap_phase "validating S1"
                 wasm-tools validate --features=${validatorFeatures} s1.wasm
@@ -321,7 +328,7 @@
         in
         (rec {
           compiler = portableCompiler;
-          inherit oracle;
+          ${referenceName} = reference;
           # Just the Rust driver: no compiler baked in, so editing `src` or
           # `lib` does not recompile it.
           #
@@ -476,11 +483,12 @@
       checks = forAll (
         pkgs:
         {
-          # Building the oracle already compiles every theory and audits
-          # assumptions. Keep the named check without a second proof build.
+          # Building the reference implementation already compiles every
+          # theory and audits assumptions. Keep the named check without a
+          # second proof build.
           bootstrap-rocq =
             pkgs.runCommand "moss-bootstrap-rocq" { } ''
-              audit=${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle}/share/moss/audit
+              audit=${self.packages.${pkgs.stdenv.hostPlatform.system}.${referenceName}}/share/moss/audit
               test -s "$audit/Certificate.log"
               test -s "$audit/Closed.log"
               mkdir -p $out
@@ -555,7 +563,7 @@
           '';
           # The test suite (crates/moss-tests): every program of tests/ and
           # examples/ compiled and run, the expected errors, the fixpoint,
-          # the generated sources, and the oracle's agreement with the
+          # the generated sources, and the reference implementation's agreement with the
           # compiler, with the compiler built above as the seed.
           tests = pkgs.rustPlatform.buildRustPackage {
             pname = "moss-tests";
@@ -589,7 +597,7 @@
               pkgs.wasmtime
             ];
             MOSS_SEED = self.packages.${pkgs.stdenv.hostPlatform.system}.compiler;
-            MOSS_ORACLE = "${self.packages.${pkgs.stdenv.hostPlatform.system}.oracle}/bin/moss_m2";
+            MOSS_ORACLE = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.${referenceName};
             preCheck = ''
               export HOME=$TMPDIR # wasmtime wants a writable cache directory
             '';
@@ -636,7 +644,7 @@
         default = pkgs.mkShellNoCC {
           buildInputs =
             let
-              tools = oracleTools pkgs;
+              tools = rocqTools pkgs;
             in
             tools.inputs
             ++ [
@@ -666,7 +674,7 @@
         };
         # For working on bootstrap/: `dune build` there and
         # `bootstrap/check.sh` need nothing else.
-        bootstrap = pkgs.mkShellNoCC { buildInputs = (oracleTools pkgs).inputs; };
+        bootstrap = pkgs.mkShellNoCC { buildInputs = (rocqTools pkgs).inputs; };
       });
       overlays.default = final: prev: {
         moss = self.packages.${prev.stdenv.hostPlatform.system}.default;

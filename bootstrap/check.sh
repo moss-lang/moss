@@ -41,7 +41,7 @@ other=$(grep -v -e '^Axioms:$' -e '^Closed under the global context$' -e '^ ' "$
 open=$(grep -vx 'Closed under the global context' "$build_dir/Closed.log" || true)
 [ -z "$open" ] || fail "a theorem of assumptions/Closed.v is not closed: $open"
 
-if grep -nE '\b(Admitted|admit)\.' theories/*.v ocaml/*.v; then fail "Admitted"; fi
+if grep -snE '\b(Admitted|admit)\.' theories/*.v ocaml/*.v run/*.v; then fail "Admitted"; fi
 if grep -nE '\b(Proof|Qed|Defined|Admitted)\.' theories/Audit.v; then
   fail "theories/Audit.v contains a proof; put lemmas in theories/AuditFacts.v and write definitions as terms"
 fi

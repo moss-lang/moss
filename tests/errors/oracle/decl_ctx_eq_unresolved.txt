@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_ctx_eq_unresolved.moss: `Nope` is not in scope]

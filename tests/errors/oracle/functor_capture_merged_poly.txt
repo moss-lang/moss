@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/functor_capture_merged_poly.moss: `Provider`, bound to `Target`, captures `captured`, which mentions a type each application of `Target` supplies (D84 3b)]
+[elab: tests/errors/functor_capture_merged_poly.moss: `Provider`, bound to `Target`, captures `captured`, which mentions a type each application of `Target` supplies (D84 3b)]

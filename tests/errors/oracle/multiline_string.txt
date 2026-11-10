@@ -1,1 +1,1 @@
-[moss_m2 front end: bundle: tests/errors/multiline_string.moss: 1:8: LexError: unclosed string]
+[front end: bundle: tests/errors/multiline_string.moss: 1:8: LexError: unclosed string]

@@ -1,1 +1,1 @@
-[moss_m2 front end: bundle: tests/errors/operators_unordered.moss: 11:14: ParseError: `&` and `|` are not ordered; add parentheses (D68)]
+[front end: bundle: tests/errors/operators_unordered.moss: 11:14: ParseError: `&` and `|` are not ordered; add parentheses (D68)]

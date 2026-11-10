@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/merge_inst_order_ba.moss: calling `g` needs `B` and `A` to be one type, which its context merged (D43), but here they are `B` and `A`]
+[elab: tests/errors/merge_inst_order_ba.moss: calling `g` needs `B` and `A` to be one type, which its context merged (D43), but here they are `B` and `A`]

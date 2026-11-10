@@ -1,10 +1,10 @@
 # D90: eq_link_tx.moss with the equation written `X = T`. The two
 # spellings give one merge class (PublicEquation.eq_swap_classes), and
-# the self-hosted compiler accepts both and exits 0. The oracle merges
-# toward the right side, so here `T` represents the class; its pins then
-# include `T`, and it rejects G's `bind T = Bool;` (D84 3d), as it rejects
-# link-merge-rep-rebind-both.moss in the same orientation. A known oracle
-# gap (agreement.rs), not a difference in meaning.
+# the self-hosted compiler and moss-ref accept both and exit 0. (The old
+# oracle merged toward the right side, so here `T` represented the class,
+# its pins included `T`, and it rejected G's `bind T = Bool;` (D84 3d): an
+# orientation gap, not a difference in meaning. moss-ref's elaborator does
+# not depend on the merge's orientation.)
 type T;
 type X;
 tag Concrete;

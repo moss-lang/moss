@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/bind_attached_defined.moss: `Meter.describe` is a defined method of `Meter`, which calls always reach; it cannot be bound (bind the detached method instead)]
+[elab: tests/errors/bind_attached_defined.moss: `Meter.describe` is a defined method of `Meter`, which calls always reach; it cannot be bound (bind the detached method instead)]

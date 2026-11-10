@@ -18,7 +18,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim EaMain.
+  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim EaMain MossX.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -472,11 +472,19 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.LazyOracle.Certified.engine_agrees);
   root (@NM.LazyOracle.Certified.fast_engine_agrees);
 
-(* The executable elaborator (EaMain.v), which run/Extract.v will
-   extract. *)
+(* What the reference implementation, moss-ref, runs on a source file
+   (run/Extract.v): the Gallina front end (and the AST dump of --dump),
+   the Audit-side elaborator, and the primitives. Audit's interpreter and
+   the passes are covered by public_safety and the pass theorems. *)
+  root (@NM.Parse.parse_moss);
+  root (@NM.Sx.Dump.dump_file);
+  root (@NM.Parse.print_sx);
+  root (@NM.Parse.load);
   root (@NM.EaMain.elaborate);
   root (@NM.EaMain.elaborate_with);
   root (@NM.EaBase.default_strategy);
+  root (@NM.MossX.run_prim);
+  root (@NM.MossX.init_state);
 
 (* Read-set pruning of Audit programs. *)
   root (@PruneTop.PS.prune_sound);

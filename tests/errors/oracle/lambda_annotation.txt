@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/lambda_annotation.moss: the anonymous function bound to `step` is annotated to return `Int`, but `step` returns `Char` (D70)]
+[elab: tests/errors/lambda_annotation.moss: the anonymous function bound to `step` is annotated to return `Int`, but `step` returns `Char` (D70)]

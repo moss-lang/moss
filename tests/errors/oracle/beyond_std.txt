@@ -1,1 +1,1 @@
-[moss_m2 elab: unsupported: main assumes `example`, which only the bootstrap's native Std provides]
+[elab: unsupported: main assumes `example`, which no platform library provides]

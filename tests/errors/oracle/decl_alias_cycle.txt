@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_alias_cycle.moss: type nests too deeply (a cyclic alias?)]

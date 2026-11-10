@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/context_item_brackets.moss: `T` takes no brackets in a context (D71)]
+[elab: tests/errors/context_item_brackets.moss: `T` takes no brackets in a context (D71)]

@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/union_bound_member_clash.moss: union members `A[X=I32]` and `A[X=Red]` share a head (D15)]
+[elab: tests/errors/union_bound_member_clash.moss: union members `A[X=I32]` and `A[X=Red]` share a head (D15)]

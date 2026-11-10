@@ -1,0 +1,37 @@
+; The reference implementation's executable (README.md): Extract.v
+; extracts the front end, the elaborator, the proved passes and Audit.v's
+; interpreter, and driver.ml drives them. The extracted code links Rocq's
+; own runtime library for its primitive integers, floats and arrays
+; (Uint63, Float64, Parray, from rocq-runtime.kernel).
+
+(rocq.extraction
+ (prelude Extract)
+ (extracted_modules
+  Ascii Audit AuditCapTrim AuditFastPath AuditPrune BinInt BinNat BinNums
+  BinPos Bool0 Byte Byte0 CoreFragment Datatypes Decimal DumpRoundTrip EaBase
+  EaBind EaCall EaCtx EaDecide EaExpand EaExpr EaFamily EaFunctor EaMain
+  EaPlatform EaTypes Elab ElabFrameCore ElabWorld ExecutionModel
+  FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap
+  Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicWorld
+  ReifyData ReqsSolve ReqsTotal Specif String0 Sx Uint63Axioms WorldSound)
+ (theories NM Stdlib))
+
+; The OCaml must be flambda: only flambda honours the `[@inlined]` in
+; Extract.v's `nat_case`, without which the interpreter keeps every
+; frame's incoming machine state alive, and the self-compile takes more
+; than 17 GB instead of about 5.
+
+(rule
+ (target flambda)
+ (action
+  (progn
+   (system
+    "test %{ocaml-config:flambda} = true || { echo 'the driver needs a flambda OCaml: without it the interpreter retains every version of linear memory' >&2; exit 1; }")
+   (write-file %{target} ""))))
+
+(executable
+ (name driver)
+ (libraries unix rocq-runtime.kernel)
+ (link_deps flambda)
+ (flags (:standard -w -a))
+ (ocamlopt_flags (:standard -O3 -inline 200 -unsafe)))

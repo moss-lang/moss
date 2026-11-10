@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/eq_clash.moss: cannot merge `P` with `Q` in a type equation (D90) (D43)]
+[elab: tests/errors/eq_clash.moss: cannot merge `P` with `Q` in a type equation (D90) (D43)]

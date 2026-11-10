@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_fn_sig.moss: `Nope` is not in scope]

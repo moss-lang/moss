@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/eq_caller_unbound.moss: calling `g` needs `A` in force here (assume or bind it, or a type its context merges it with)]
+[elab: tests/errors/eq_caller_unbound.moss: calling `g` needs `B` in force here (assume or bind it, or a type its context merges it with)]

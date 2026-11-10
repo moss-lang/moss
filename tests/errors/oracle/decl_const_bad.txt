@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_const_bad.moss: `nope` is not in scope]

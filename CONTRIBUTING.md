@@ -10,16 +10,24 @@ nix develop
 ## How the compiler is built
 
 The compiler is written in Moss, under [`src`](src), and compiles itself.
-Building it from nothing is the job of [`bootstrap`](bootstrap): a front
-end and interpreter for Moss written in Rocq and extracted to OCaml (the
-*oracle*), which runs `src/main.moss` compiling itself. That is the
-flake's `compiler` package. This is an expensive interpreted self-compile;
+Building it from nothing is the job of [`bootstrap`](bootstrap). There,
+`moss-ref`, the *reference implementation* (the suite calls it the
+*oracle*), runs `src/main.moss` compiling itself. `moss-ref` is written in
+Rocq and extracted to OCaml
+([`bootstrap/run`](bootstrap/run/README.md)), and it has four parts: the
+front end, the executable elaborator (`Ea*.v`), the passes proved to keep
+Audit.v's `Runs`, and Audit.v's reference interpreter. That self-compile
+is the flake's `compiler` package. It is an expensive interpreted run, and
 the build prints phase timings to stderr:
 
 ```sh
 nix build .#compiler -o result-compiler   # the bootstrap
-nix build .#oracle -o result-oracle       # audited oracle without self-compilation
+nix build .#moss-ref -o result-moss-ref   # audited moss-ref without self-compilation
 ```
+
+The interpreter and the passes are Audit's own, proved against it. The
+elaborator and the driver's glue are not proved
+([`bootstrap/run/README.md`](bootstrap/run/README.md)).
 
 You do not do that for everyday work. Any compiler built before, from an
 older commit too, can build the current one, as long as it compiles the
@@ -59,13 +67,14 @@ It needs a seed (above):
 cargo test
 ```
 
-Before the first test that needs the Rocq oracle, the harness runs
-`nix build .#oracle` for the current checkout and uses that exact executable.
-Nix reuses an existing build when its inputs have not changed. This builds
-the interpreter and audits its proofs; it does not bootstrap the Moss
-compiler. Old `result-oracle` links and local Dune executables are not
-selected automatically. To test a particular interpreter deliberately,
-set `MOSS_ORACLE` to its executable; CI also supplies this explicitly.
+Before the first test that needs the oracle, the harness runs
+`nix build .#moss-ref` for the current checkout and uses that exact
+executable. Nix reuses an existing build when its inputs have not changed.
+This builds `moss-ref` and audits its proofs. It does not bootstrap the
+Moss compiler. Old `result-moss-ref` links and local Dune executables are
+not selected automatically. To test a particular build deliberately, set
+`MOSS_ORACLE` to its executable, such as
+`bootstrap/_build/default/run/driver.exe`. CI also supplies this explicitly.
 
 The harness reports the source root, seed and oracle paths as it selects
 them. It gets the source root from Cargo's run-time manifest directory,
@@ -112,11 +121,12 @@ Everything CI enforces is a flake check:
 nix flake check
 ```
 
-That includes `bootstrap-rocq`, which depends on the audited oracle build.
-The oracle compiles every Rocq theory, audits the assumptions of what it
-certifies, and extracts the executable in the same release build tree;
-`bootstrap/check.sh` runs the same in `nix develop .#bootstrap`, where
-`dune build` in `bootstrap` builds the oracle.
+That includes `bootstrap-rocq`, which depends on the audited `moss-ref`
+build. That build compiles every Rocq theory, audits the assumptions of
+what it certifies, and extracts the executable in the same release build
+tree. `bootstrap/check.sh` runs the same checks in `nix develop .#bootstrap`,
+and `dune build --release run/driver.exe` in `bootstrap` builds the
+executable.
 
 For a proof edit, build the individual module so Dune reuses its unchanged
 dependencies (choose a job count that fits available memory):
@@ -124,17 +134,18 @@ dependencies (choose a job count that fits available memory):
 ```sh
 nix develop .#bootstrap
 cd bootstrap
-dune build -j 2 theories/BodyPending.vo
+dune build -j 2 theories/PublicEntry.vo
 ```
 
 Keep Rocq checking within two minutes, including the full audit at integration
 checkpoints. Measure slow checks and investigate overruns rather than letting
 proof checking become an obstacle to iteration.
 
-On the local x86 Linux VM, keep full bootstrap runs within one hour. Start
-them periodically in the background and continue other work while they run.
-Record timings and investigate overruns; bootstrap completion should not
-block ongoing development.
+A full bootstrap on Audit's reference interpreter takes hours, far more
+than the old oracle's 40 minutes on the local x86 Linux VM, and about 5 GB.
+Start it in the background and continue other work while it runs
+(`bootstrap/run/self-compile.sh`). Record timings and investigate
+regressions. Bootstrap completion should not block ongoing development.
 
 Use the full audit at integration checkpoints. Keep expensive stable
 computations and reusable witnesses separate from frequently edited proofs.

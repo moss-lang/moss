@@ -1,8 +1,9 @@
-# D43: merging this context takes more rounds than the elaborator runs:
-# each round only finds that B(k-1) and C(k-1) are one, which makes
-# B(k-1).w and C(k-1).w one key, so B(k) and C(k) one type, in the next.
-# A walk that has not settled is no merge of the telescope, so it is
-# rejected, not used (Audit.v note 52).
+# D43: merging this context takes several rounds: each round only finds
+# that B(k-1) and C(k-1) are one, which makes B(k-1).w and C(k-1).w one
+# key, so B(k) and C(k) one type, in the next. The merge is the fixpoint,
+# however many rounds that takes. Audit.v and the self-hosted compiler
+# accept it. The old oracle stopped after 8 rounds and rejected it, which
+# is why it used to be in tests/errors.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

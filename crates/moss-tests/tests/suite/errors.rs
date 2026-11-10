@@ -5,8 +5,7 @@
 //!   (one line per diagnostic, a letter and the names involved, D48), which
 //!   is what `moss` prints;
 //! - `tests/errors/oracle/NAME.txt`: the oracle's message, with the
-//!   repository's path taken out. Its messages are the Python bootstrap's,
-//!   which the old goldens held, with a line and column for lexing and
+//!   repository's path taken out, and a line and column for lexing and
 //!   parsing errors.
 //!
 //! `MOSS_BLESS=1 cargo test -p moss-tests errors` rewrites the goldens.
@@ -44,11 +43,6 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          contains it (no occurs check; Audit.v note 53)",
     ),
     (
-        "tests/errors/merge_unsettled.moss",
-        "the self-hosted compiler stops merging a context after 7 rounds \
-         and uses what it has, settled or not (Audit.v note 52)",
-    ),
-    (
         "tests/errors/record_field_twice.moss",
         "the self-hosted compiler does not check that a record literal \
          gives a payload's fields once each (Audit.v note 62)",
@@ -60,27 +54,13 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Programs the oracle wrongly accepts, by criteria section 7: an unused
-/// declaration that does not form, which it checks only where something
-/// uses it (agreement.rs lists the same gap). Each has no oracle golden.
-pub const ORACLE_ACCEPTS: &[&str] = &[
-    "tests/errors/decl_alias_cycle.moss",
-    "tests/errors/decl_const_bad.moss",
-    "tests/errors/decl_const_in_assume.moss",
-    "tests/errors/decl_const_mistyped.moss",
-    "tests/errors/decl_ctx_bracket.moss",
-    "tests/errors/decl_ctx_eq_unresolved.moss",
-    "tests/errors/decl_ctx_unresolved.moss",
-    "tests/errors/decl_fn_sig.moss",
-    "tests/errors/decl_functor_arg.moss",
-    "tests/errors/decl_functor_res.moss",
-    "tests/errors/decl_meth_sig.moss",
-    "tests/errors/decl_nest_incomplete.moss",
-    "tests/errors/decl_nest_type.moss",
-    "tests/errors/decl_tag_unresolved.moss",
-    "tests/errors/decl_val_type.moss",
-    "tests/errors/functor_partial_unused.moss",
-];
+/// Programs the oracle accepts, for a recorded reason, and the self-hosted
+/// compiler rejects. They have no oracle golden.
+pub const ORACLE_ACCEPTS: &[(&str, &str)] = &[(
+    "tests/errors/functor_output_input_changed.moss",
+    "AUDIT-CHANGES #14: Audit.v reads the application's result at the \
+     body's table (the consolidation reading), so no stale key arises",
+)];
 
 /// Programs the oracle does not model, so it cannot reject them either.
 pub const ORACLE_UNSUPPORTED_ERRORS: &[(&str, &str)] = &[(
@@ -114,8 +94,8 @@ fn goldens() {
             check_golden(&format!("tests/errors/compiler/{name}.txt"), &compiled.text());
         }
         let checked = oracle(&entry, &[]);
-        if ORACLE_ACCEPTS.contains(&entry.as_str()) {
-            assert_eq!(checked.code, 0, "{entry} is listed as wrongly accepted by the oracle: {}", checked.stderr);
+        if ORACLE_ACCEPTS.iter().any(|(e, _)| *e == entry) {
+            assert_eq!(checked.code, 0, "{entry} is listed as accepted by the oracle: {}", checked.stderr);
             continue;
         }
         if ORACLE_UNSUPPORTED_ERRORS.iter().any(|(e, _)| *e == entry) {
@@ -144,6 +124,12 @@ fn every_golden_belongs_to_a_program() {
             let path = file.unwrap().path();
             let stem = path.file_stem().unwrap().to_str().unwrap().to_string();
             assert!(programs.contains(&stem), "{} has no program", path.display());
+            let entry = format!("tests/errors/{stem}.moss");
+            assert!(
+                dir != "oracle" || !ORACLE_ACCEPTS.iter().any(|(e, _)| *e == entry),
+                "{} belongs to a program the oracle accepts",
+                path.display()
+            );
         }
     }
 }

@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/eq_caller_differs.moss: calling `g` needs `A` and `B` to be one type, which its context merged (D43), but here they are `P` and `Q`]
+[elab: tests/errors/eq_caller_differs.moss: calling `g` needs `A` and `B` to be one type, which its context merged (D43), but here they are `P` and `Q`]

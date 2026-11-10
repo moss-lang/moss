@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/undefined.moss: `foo` is not in scope]
+[elab: tests/errors/undefined.moss: `foo` is not in scope]

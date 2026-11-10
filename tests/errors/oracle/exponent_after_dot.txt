@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/exponent_after_dot.moss: `Int` has no fields]
+[elab: tests/errors/exponent_after_dot.moss: `Int` has no fields]

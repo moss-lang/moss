@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/ruleb_closure_unbound.moss: binding `H` to `P` captures `T`, which is not in force here (assume or bind it)]
+[elab: tests/errors/ruleb_closure_unbound.moss: binding `H` to `P` captures `T`, which is not in force here (assume or bind it)]

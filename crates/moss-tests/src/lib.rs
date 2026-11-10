@@ -10,11 +10,12 @@
 //!   fine as long as it still compiles the current source correctly;
 //! - **Wasmtime**, which runs what that compiler writes, after
 //!   `wasm-tools validate` has accepted it ([`wasm_file`]);
-//! - **the oracle** (`bootstrap/`, see [`oracle_path`]): the Rocq front end,
-//!   elaborator and interpreter, extracted to OCaml. It replaces the Python
-//!   interpreter the suite used to have as its third runner, and its
-//!   diagnostics are the Python bootstrap's messages, which is why the
-//!   suite checks error messages against it.
+//! - **the oracle**, the reference implementation (`bootstrap/run`, see
+//!   [`oracle_path`]): the Rocq front end, the executable elaborator, the
+//!   proved passes and Audit.v's reference interpreter, extracted to OCaml.
+//!   It is the implementation the compiler is bootstrapped with, so the
+//!   suite holds the compiler to its verdicts, its output and some of its
+//!   messages.
 //!
 //! Every external tool is a hard requirement: a missing one is an
 //! environment bug, not a reason to pass. The Nix dev shell provides
@@ -408,8 +409,13 @@ pub fn rejects_with(entry: &str, prelude: &str) -> String {
     out.text()
 }
 
-/// The current oracle, built through Nix once per test process. CI and
-/// deliberate comparisons can select an explicit build with `MOSS_ORACLE`.
+/// The reference implementation's name: its flake package and its
+/// executable (`flake.nix`'s `referenceName`).
+pub const REFERENCE: &str = "moss-ref";
+
+/// The current oracle (the reference implementation), built through Nix
+/// once per test process. CI and deliberate comparisons can select an
+/// explicit build with `MOSS_ORACLE`.
 pub fn oracle_path() -> PathBuf {
     // Remember failures too: parallel tests must not each retry a failed build.
     static ORACLE: OnceLock<Result<PathBuf, String>> = OnceLock::new();
@@ -424,7 +430,7 @@ pub fn oracle_path() -> PathBuf {
                     "--print-out-paths",
                     "--print-build-logs",
                 ])
-                .arg(format!("{}#oracle", repo().display()))
+                .arg(format!("{}#{REFERENCE}", repo().display()))
                 .stderr(Stdio::inherit())
                 .output()
                 .map_err(|error| format!(
@@ -435,7 +441,7 @@ pub fn oracle_path() -> PathBuf {
             }
             let store = String::from_utf8(out.stdout)
                 .map_err(|error| format!("invalid oracle store path: {error}"))?;
-            Path::new(store.trim()).join("bin/moss_m2")
+            Path::new(store.trim()).join("bin").join(REFERENCE)
         };
         if !path.is_file() {
             return Err(format!("no Rocq oracle at {}", path.display()));
@@ -450,7 +456,7 @@ pub fn oracle_path() -> PathBuf {
     .clone()
 }
 
-/// The oracle's exit statuses (`bootstrap/ocaml/moss_m2.ml`).
+/// The oracle's exit statuses (`bootstrap/run/driver.ml`).
 pub const ORACLE_FRONT_END: i32 = 63;
 pub const ORACLE_REJECTED: i32 = 64;
 pub const ORACLE_UNSUPPORTED: i32 = 65;
@@ -488,8 +494,7 @@ pub fn oracle_run(entry: &str, args: &[&str]) -> String {
 }
 
 /// The oracle's message for `entry`, which its elaborator must reject (exit
-/// 64; a front-end rejection is 63). Its messages are the Python
-/// bootstrap's, which it was written to reproduce.
+/// 64; a front-end rejection is 63).
 pub fn oracle_rejects(entry: &str) -> String {
     let out = oracle(entry, &[]);
     assert!(

@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/return_never.moss: `return` with no value, but the function returns `|`]
+[elab: tests/errors/return_never.moss: `return` with no value, but the function returns `|`]

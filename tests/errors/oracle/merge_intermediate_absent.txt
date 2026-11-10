@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/merge_intermediate_absent.moss: calling `bad` needs `A` and `()` to be one type, which its context merged (D43), but here they are `R` and `()`]
+[elab: tests/errors/merge_intermediate_absent.moss: calling `bad` needs `A` and `()` to be one type, which its context merged (D43), but here they are `R` and `()`]

@@ -2,7 +2,8 @@
 //!
 //! The Rocq front end (the oracle's lexer, parser and elaborator, the
 //! front end of the bootstrap) and the self-hosted compiler are run on
-//! every program of `tests/wasi`, `tests/errors` and `examples`. Each
+//! every program of `tests/wasi`, `tests/errors`, `tests/regressions` and
+//! `examples`. Each
 //! either accepts a program (writes a module; elaborates it) or rejects it
 //! (writes a report; refuses it), and the two must say the same, except
 //! for the programs listed in `GAPS` below, each with the verdicts it gets
@@ -46,50 +47,25 @@ const SELF_HOSTED_BUG_ITEM_BRACKETS: &str = "self-hosted compiler bug: brackets 
 /// A self-hosted compiler bug: it merges a generation with a type that
 /// contains it; the oracle rejects it (Audit.v note 53).
 const SELF_HOSTED_BUG_MERGE_CYCLE: &str = "self-hosted compiler bug: a cyclic merge is accepted";
-/// A self-hosted compiler bug: it stops merging a context after 7 rounds
-/// and uses an unsettled merge; the oracle rejects it (Audit.v note 52).
-const SELF_HOSTED_BUG_MERGE_ROUNDS: &str = "self-hosted compiler bug: an unsettled merge is used";
 /// A record literal of a payload that names a field twice: the oracle (and
 /// Part V's ExRecord) asks for every field once, the self-hosted compiler
 /// does not check it (Audit.v note 62).
 const SELF_HOSTED_BUG_FIELD_TWICE: &str = "self-hosted compiler bug: a record literal of a payload that names a field twice is accepted";
-/// AUDIT-CHANGES #4 (E25): the oracle does not compare a selected
-/// provision's type with the callee's reading of it; it elaborates the
-/// program and gets stuck at run time. The semantics and the self-hosted
-/// compiler reject it.
-const ORACLE_GAP_STALE_PROVISION: &str = "oracle gap: a provision read at another type than it was made at (E25)";
-/// AUDIT-CHANGES #58 (E40): the oracle installs two result items that F
-/// keeps distinct under the one key the application files them under,
-/// keeping the first result position's; the semantics and the
-/// self-hosted compiler reject the application.
-const ORACLE_GAP_RESULT_COLLIDE: &str = "oracle gap: two result items of a functor filed under one key (E40)";
-/// Merge orientation (AUDIT-CHANGES, consolidation, item 4): the oracle
-/// merges toward the right side of a type equation (D90), so `X = T`
-/// makes `T` the representative of a linked body's merged input class,
-/// its pins then include `T`, and it rejects the body's `bind T` (D84 3d);
-/// written `T = X` (eq_link_tx.moss) it accepts the same program. The
-/// spellings give one merge class (PublicEquation.eq_swap_classes), and
-/// the self-hosted compiler accepts both, as it does
-/// bootstrap/examples/link-merge-rep-rebind-both.moss in either order.
-const ORACLE_GAP_ORIENTATION: &str = "oracle gap: a linked body's checks follow the merge's representative (orientation)";
+/// AUDIT-CHANGES #14: Audit.v accepts the program, by the consolidation
+/// reading of `link_site`; the self-hosted compiler rejects it (D84 3d).
+const AUDIT_ACCEPTS_14: &str = "Audit.v accepts what the self-hosted compiler rejects (#14)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
 const BEYOND: &str = "oracle gap: `main` assumes more than the platform provides";
-/// D79: the oracle's machine (MossX) has one linear memory, so it reports a
-/// program that binds `Memory` and uses memory unsupported.
-const MEMORIES: &str = "oracle gap: more than one memory (D79)";
+/// D79: the host (MossX) has one linear memory, so the oracle reports a
+/// program that binds `Memory` unsupported rather than run its memories on
+/// one address space.
+const MEMORIES: &str = "reference gap: more than one memory (D79)";
 /// A library module that other tests import, with no `main`: the
 /// self-hosted compiler reports the missing `main`, and the oracle, which
 /// only runs whole programs, reports it unsupported.
 const LIBRARY: &str = "a library module with no `main`";
-
-/// Criteria section 7: every declaration is checked as written, used or
-/// not (AUDIT-CHANGES #74 to #77). The self-hosted compiler checks it; the
-/// oracle checks an unused declaration only for context cycles, D73's
-/// listed parameters and D15 unions, so it accepts these. It will be
-/// replaced rather than fixed.
-const ORACLE_GAP_UNUSED_DECL: &str = "oracle gap: an unused declaration that does not form (criteria section 7)";
 
 /// Known gaps: (program, the self-hosted compiler's verdict, the oracle's,
 /// why). Sorted by program.
@@ -99,24 +75,8 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/beyond_std.moss", Reject, Unsupported, BEYOND),
     ("tests/errors/context_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_CONTEXT_BRACKETS),
     ("tests/errors/context_item_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_ITEM_BRACKETS),
-    ("tests/errors/decl_alias_cycle.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_const_bad.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_const_in_assume.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_const_mistyped.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_ctx_bracket.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_ctx_eq_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_ctx_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_fn_sig.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_functor_arg.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_functor_res.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_meth_sig.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_nest_incomplete.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_nest_type.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_tag_unresolved.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/decl_val_type.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
-    ("tests/errors/functor_partial_unused.moss", Reject, Accept, ORACLE_GAP_UNUSED_DECL),
+    ("tests/errors/functor_output_input_changed.moss", Reject, Accept, AUDIT_ACCEPTS_14),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
-    ("tests/errors/merge_unsettled.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_ROUNDS),
     ("tests/errors/record_field_twice.moss", Accept, Reject, SELF_HOSTED_BUG_FIELD_TWICE),
     ("tests/errors/type_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_TYPE_BRACKETS),
     ("tests/wasi/acrosslib.moss", Reject, Unsupported, LIBRARY),
@@ -125,20 +85,15 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/arrays_in_scratch.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/bridge.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
-    ("tests/wasi/eq_link_xt.moss", Accept, Reject, ORACLE_GAP_ORIENTATION),
     ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memories.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_reset.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/result_collide_ab.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
-    ("tests/wasi/result_collide_bindswap.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/shadowing.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/signature.moss", Reject, Unsupported, LIBRARY),
-    ("tests/wasi/stale_provision.moss", Reject, Accept, ORACLE_GAP_STALE_PROVISION),
-    ("tests/wasi/stale_provision_fn.moss", Reject, Accept, ORACLE_GAP_STALE_PROVISION),
 ];
 
 /// What the self-hosted compiler says.
@@ -166,6 +121,7 @@ fn oracle(entry: &str) -> (Verdict, String) {
 fn the_front_ends_accept_and_reject_alike() {
     let mut programs = moss_files("tests/wasi");
     programs.extend(moss_files("tests/errors"));
+    programs.extend(moss_files("tests/regressions"));
     programs.extend(moss_files("examples"));
     let mut failures = Vec::new();
     let mut counts = std::collections::BTreeMap::new();

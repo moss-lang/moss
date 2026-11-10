@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_const_mistyped.moss: `x` is declared `()` but initialized with `A`]

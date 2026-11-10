@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/eq_clash_structure.moss: cannot merge `Bool` with `Box[T=T]` in a type equation (D90) (D43)]
+[elab: tests/errors/eq_clash_structure.moss: cannot merge `Bool` with `Box[T=T]` in a type equation (D90) (D43)]

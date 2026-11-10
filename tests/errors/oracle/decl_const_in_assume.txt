@@ -1,0 +1,1 @@
+[elab: tests/errors/decl_const_in_assume.moss: the constant `x` assumes items; a constant's initializer reads only constants]

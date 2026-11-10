@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/assume_missing_requirement_need.moss: calling `f` needs `seed`, which is not available in the context here]
+[elab: tests/errors/assume_missing_requirement_need.moss: calling `f` needs `seed`, which is not available in the context here]

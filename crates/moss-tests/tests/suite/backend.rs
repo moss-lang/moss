@@ -18,7 +18,7 @@
 use moss_tests::{
     build_with, compile, oracle, oracle_rejects, oracle_run, rejects_with,
     run_module, run_module_code, starts_with_rec_group, wasm_file, wasm_text, wasmtime, Out,
-    ORACLE_UNSUPPORTED, TRAP,
+    ORACLE_REJECTED, ORACLE_UNSUPPORTED, TRAP,
 };
 
 const PRELUDE: &str = "lib/prelude.moss";
@@ -77,6 +77,7 @@ fn oracle_says(entry: &str, message: &str) {
 fn oracle_unsupported(entry: &str) {
     let out = oracle(entry, &[]);
     assert_eq!(out.code, ORACLE_UNSUPPORTED, "{entry}: {}", out.stderr);
+    assert!(out.stderr.contains("unsupported: D79"), "{entry}: {}", out.stderr);
 }
 
 
@@ -472,7 +473,7 @@ fn float_lists() {
 #[test]
 fn an_oversized_literal_does_what_the_arithmetic_does() {
     let entry = wasi("overflow");
-    oracle_traps(&entry, OVERFLOW_OUT, "[moss_ref: trap unreachable]");
+    oracle_traps(&entry, OVERFLOW_OUT, "[trap unreachable]");
     let out = wasmtime_out(&build_with(&entry, PRELUDE));
     assert_eq!((out.code, out.text().as_str()), (TRAP, OVERFLOW_OUT));
     assert!(out.stderr.contains("unreachable"), "{}", out.stderr);
@@ -564,8 +565,8 @@ fn matches_the_bootstrap_on_behaviour() {
         let entry = wasi(name);
         assert_eq!(run_moss(&entry, prelude), *expected, "{entry}");
         if *name == "gc_array_memory" {
-            // Oracle gap (D79): one linear memory, so a `Memory` bind is
-            // unsupported.
+            // Reference gap (D79): one linear memory, so the oracle
+            // refuses a `Memory` bind as not modelled.
             oracle_unsupported(&entry);
         } else {
             assert_eq!(oracle_run(&entry, &[]), *expected, "{entry}");
@@ -614,8 +615,8 @@ fn gc_arrays() {
     ] {
         let entry = wasi(name);
         if name == "gc_array_memory" {
-            // Oracle gap (D79): one linear memory, so a `Memory` bind is
-            // unsupported.
+            // Reference gap (D79): one linear memory, so the oracle
+            // refuses a `Memory` bind as not modelled.
             oracle_unsupported(&entry);
         } else {
             assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
@@ -660,11 +661,11 @@ fn gc_arrays_trap() {
     ] {
         let entry = wasi(name);
         if name == "gc_array_forge" {
-            oracle_traps(&entry, "42\n", "[moss_ref: trap 37]");
+            oracle_traps(&entry, "42\n", "[trap 37]");
         } else {
             // The oracle names this trap only by its code (7, an array
             // index out of bounds): its driver has no message for it.
-            oracle_traps(&entry, "42\n", "[moss_ref: trap 7]");
+            oracle_traps(&entry, "42\n", "[trap 7]");
         }
         let module = build_with(&entry, PRELUDE);
         assert_eq!(wasm_text(&module).matches("ref.cast").count(), casts, "{entry}");
@@ -681,7 +682,7 @@ fn gc_arrays_trap() {
 #[test]
 fn a_forged_reference_traps_where_it_is_forged() {
     let entry = wasi("gc_forge");
-    oracle_traps(&entry, "3\n4\n", "[moss_ref: trap 37]");
+    oracle_traps(&entry, "3\n4\n", "[trap 37]");
     let module = build_with(&entry, PRELUDE);
     assert_eq!(wasm_text(&module).matches("ref.cast").count(), 2);
     let out = wasmtime_out(&module);
@@ -774,8 +775,8 @@ fn d84_functors_run() {
     ] {
         let entry = wasi(name);
         if matches!(name, "functor_capture_memory" | "arrays_in_scratch") {
-            // Oracle gap (D79): one linear memory, so a `Memory` bind is
-            // unsupported.
+            // Reference gap (D79): one linear memory, so the oracle
+            // refuses a `Memory` bind as not modelled.
             oracle_unsupported(&entry);
         } else {
             assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
@@ -1019,7 +1020,7 @@ fn receiver_first_then_arguments_left_to_right() {
 #[test]
 fn a_load_past_the_end_of_memory_traps() {
     let entry = wasi("memory_bounds");
-    oracle_traps(&entry, "a\n", "[moss_ref: trap out of bounds memory access]");
+    oracle_traps(&entry, "a\n", "[trap out of bounds memory access]");
     let out = wasmtime_out(&build_with(&entry, PRELUDE));
     assert_eq!((out.code, out.text().as_str()), (TRAP, "a\n"));
     assert!(out.stderr.contains("out of bounds memory access"), "{}", out.stderr);
@@ -1074,14 +1075,15 @@ fn a_functor_copy_keeps_its_capture() {
 /// `F`'s own reading stay distinct where it is applied. Binding `A` and
 /// `B` both to `Int` would file `A.m` and `B.m` under one key; the
 /// self-hosted compiler refuses it (`e_result_collide`, `^`) in `use_it`, named by the
-/// method, as the semantics does. The oracle still runs both, each by its
-/// own convention. A key `F` itself repeats is one item, and runs.
+/// method, as the semantics and the oracle do. A key `F` itself repeats is
+/// one item, and runs.
 #[test]
 fn result_items_distinct_in_the_functor_stay_distinct() {
     for name in ["result_collide_ab", "result_collide_bindswap"] {
         let entry = wasi(name);
         assert_eq!(report(&entry, PRELUDE), format!("?^ {entry} use_it m\n"));
-        assert_eq!(oracle_run(&entry, &[]), "a\n", "{entry}");
+        let out = oracle(&entry, &[]);
+        assert_eq!(out.code, ORACLE_REJECTED, "the oracle on {entry}: {}", out.stderr);
     }
     let entry = wasi("result_repeat");
     assert_eq!(oracle_run(&entry, &[]), "a\n");
@@ -1260,8 +1262,8 @@ fn multiple_memories() {
         ("memory_copy", "hi\nih\n"),
     ] {
         let entry = wasi(name);
-        // Oracle gap (D79): one linear memory, so a `Memory` bind is
-        // unsupported.
+        // Reference gap (D79): one linear memory, so the oracle refuses
+        // a `Memory` bind as not modelled.
         oracle_unsupported(&entry);
         let module = build_with(&entry, PRELUDE);
         let text = wasm_text(&module);
@@ -1282,7 +1284,7 @@ fn multiple_memories() {
 #[test]
 fn any_type_names_a_memory() {
     let entry = wasi("memory_any_type");
-    // Oracle gap (D79): one linear memory.
+    // Reference gap (D79): one linear memory.
     oracle_unsupported(&entry);
     let module = build_with(&entry, PRELUDE);
     let text = wasm_text(&module);
@@ -1304,7 +1306,7 @@ fn any_type_names_a_memory() {
 #[test]
 fn an_arena_whose_data_cannot_outlive_it() {
     let entry = wasi("arena");
-    // Oracle gap (D79): one linear memory.
+    // Reference gap (D79): one linear memory.
     oracle_unsupported(&entry);
     let module = build_with(&entry, PRELUDE);
     let text = wasm_text(&module);
@@ -1910,15 +1912,15 @@ fn a_provision_from_before_a_rebind_is_refused() {
 /// requiring it, so their provisions are at no instantiation; provided
 /// while `T` meant `Char`, they are read by `f` after `T` was rebound to
 /// `Bool`. The self-hosted compiler refuses both (`e_incoherent`, `R`),
-/// as the semantics does; it used to print `t`, reading a `Char` as a
-/// `Bool`. The oracle elaborates both and gets stuck at run time.
+/// as the semantics and the oracle do; it used to print `t`, reading a
+/// `Char` as a `Bool`.
 #[test]
 fn a_provision_read_at_another_type_is_refused() {
     for (name, item) in [("stale_provision", "v"), ("stale_provision_fn", "g")] {
         let entry = wasi(name);
         assert_eq!(report(&entry, PRELUDE), format!("!R {entry} {item}\n"));
         let out = oracle(&entry, &[]);
-        assert!(out.stderr.contains("stuck"), "the oracle on {entry}: {} {}", out.code, out.stderr);
+        assert_eq!(out.code, ORACLE_REJECTED, "the oracle on {entry}: {}", out.stderr);
     }
 }
 
@@ -2195,9 +2197,9 @@ fn functor_identity_copy_preserves_latent_interfaces() {
 /// merged_size_int.moss is the same program with the equation the other
 /// way round, in the assume list itself. Both spellings print the same, on
 /// both front ends. eq_link_tx.moss and eq_link_xt.moss put the equation,
-/// in either spelling, in the argument context of a linked functor body:
-/// the self-hosted compiler runs both, and the oracle the first (it
-/// rejects the second, a merge-orientation gap: agreement.rs). A clash
+/// in either spelling, in the argument context of a linked functor body,
+/// and both front ends run both: the spellings give one merge class
+/// (PublicEquation.eq_swap_classes), whichever member the merge keeps. A clash
 /// (two structures in one class), a caller where the two sides differ,
 /// and a caller without the sides in force are refused (tests/errors).
 #[test]
@@ -2210,12 +2212,8 @@ fn type_equations() {
     for name in ["eq_link_tx", "eq_link_xt", "eq_caller_same"] {
         let entry = wasi(name);
         assert_eq!(run_moss(&entry, PRELUDE), "", "{entry}");
-    }
-    for name in ["eq_link_tx", "eq_caller_same"] {
-        let entry = wasi(name);
         assert_eq!(oracle_run(&entry, &[]), "", "{entry}");
     }
-    oracle_says(&wasi("eq_link_xt"), "`bind T` in a functor bound to an abstract one changes a type its result mentions");
     for name in ["eq_clash", "eq_clash_structure", "eq_caller_differs", "eq_caller_unbound", "eq_result"] {
         let entry = errors(name);
         assert!(!compile(&entry, PRELUDE).is_module(), "{entry}");

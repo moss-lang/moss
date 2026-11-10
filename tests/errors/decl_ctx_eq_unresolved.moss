@@ -4,8 +4,8 @@
 # right side `Nope` is not in scope.
 # Verdicts: Audit rejects (IsEq: `Nope` does not resolve, so the context's
 # ItemsEntries has no derivation); native rejects (e_scope, from forming
-# the context's items); the oracle accepts (it forms a context only where
-# it is used: the ORACLE_GAP_UNUSED_DECL of agreement.rs).
+# the context's items); moss-ref rejects. The old oracle accepted: it
+# formed a context only where it was used.
 type T;
 context A = T = Nope;
 fn main() {}

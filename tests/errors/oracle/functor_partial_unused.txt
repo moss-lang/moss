@@ -1,0 +1,1 @@
+[elab: tests/errors/functor_partial_unused.moss: functor `F` does not bind `y`]

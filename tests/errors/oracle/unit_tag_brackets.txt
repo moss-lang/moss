@@ -1,1 +1,1 @@
-[moss_m2 front end: bundle: tests/errors/unit_tag_brackets.moss: 3:14: ParseError: a tag with listed parameters has a payload; a unit tag is `tag Nothing;` (D73)]
+[front end: bundle: tests/errors/unit_tag_brackets.moss: 3:14: ParseError: a tag with listed parameters has a payload; a unit tag is `tag Nothing;` (D73)]

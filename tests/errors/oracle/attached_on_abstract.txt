@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/attached_on_abstract.moss: attached method `A.m` requires a nominal receiver (Q5); `A` is abstract]
+[elab: tests/errors/attached_on_abstract.moss: attached method `A.m` requires a nominal receiver (Q5); `A` is abstract]

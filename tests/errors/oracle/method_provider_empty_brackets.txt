@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/method_provider_empty_brackets.moss: the right side of a fn bind must name a defined function]
+[elab: tests/errors/method_provider_empty_brackets.moss: the right side of a fn bind must name a defined function]

@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/pin_poly.moss: `bind Tok` in a functor bound to an abstract one changes a type its result mentions; the fixed set is not widened per binding (D84 3d)]
+[elab: tests/errors/pin_poly.moss: `bind Tok` in a functor bound to an abstract one changes a type its result mentions; the fixed set is not widened per binding (D84 3d)]

@@ -1,1 +1,1 @@
-[moss_m2 elab: tests/errors/assume_missing_requirement_type.moss: assuming `f` needs `T` in force (D20)]
+[elab: tests/errors/assume_missing_requirement_type.moss: assuming `f` needs `T` in force (D20)]
