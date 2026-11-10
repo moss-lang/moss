@@ -2508,7 +2508,7 @@ executable tests unless noted.
     (each as itself), reaches the tag.
   - The check is on definitions. A cyclic tag is rejected whether or not
     the program builds or names it.
-- **No special case for `Ref`** (criteria section 7). `Ref` is
+- **No special case for `Ref`** (criteria section 8). `Ref` is
   `tag Ref[Boxed](StructRef)`: a tag whose payload is a machine reference
   type. So `Ref[Boxed=Cell]`'s layout is `StructRef`'s one scalar, and the
   rule never looks at `Boxed`. `tag Cell { head: I32, tail: Nil | Ref[Boxed=Cell] }`
@@ -2546,7 +2546,7 @@ executable tests unless noted.
     as one scalar and follow a tag's payload at its arguments.
   - Specialization (section 4): every type has a finite run of scalars, so
     the compilers can lay it out.
-  - Separation of the language from its platform library (section 7): the
+  - Separation of the language from its platform library (section 8): the
     rule mentions no library name.
 - **The definition-site choice, and the implementations.** Before this
   change both implementations checked a layout only where a type is used,
@@ -2608,7 +2608,7 @@ executable tests unless noted.
   type a program uses. For an unused cyclic tag, B against the
   implementations as they were; they now match.
 
-### 91. Main's platform provisions are Platform's contract (`PlatformEntry`; layout branch; criteria section 7)
+### 91. Main's platform provisions are Platform's contract (`PlatformEntry`; layout branch; criteria section 8)
 - **Rule now.** `platform_mod` and `PlatformEntry` (which library module
   may supply main's needs, `i32_zero` and `i32_one` as the I32 constants,
   a platform fn as `prim_of_name` of its name, an abstract functor of those
@@ -2621,7 +2621,7 @@ executable tests unless noted.
   beside `Forall Entry`, for the same `entries`.
 - **Why.** These are facts about one platform (the names of `lib/wasm.moss`,
   `lib/wasip1.moss` and `lib/wasistd.moss`, and the primitive table), not
-  rules of the language (criteria section 7). The language rule said, in
+  rules of the language (criteria section 8). The language rule said, in
   the middle of `ElaboratesIn`, that a val named `i32_one` in `wasistd.moss`
   means 1.
 - **Nothing is accepted or rejected differently.** `Builds`, `Ready` and so
@@ -2636,7 +2636,7 @@ executable tests unless noted.
   each.
 - **Class.** None (a move).
 
-### 92. The language items go through one table (`lang_item`, `lang_item_key`, `LangItem`; layout branch; criteria section 7)
+### 92. The language items go through one table (`lang_item`, `lang_item_key`, `LangItem`; layout branch; criteria section 8)
 - **Rule now.** After `LangSym`, `lang_item` lists the library items the
   language's own rules need: `Bool`, `True`, `False` (a condition's type
   and values, D45), `int::zero`, `int::one`, `num.moss`'s `add`, `mul` and
@@ -2648,7 +2648,7 @@ executable tests unless noted.
   their own table, `operator_method` (D68, D85), and a string literal's
   desugaring names `byte::…` and `string_…` in scope.
 - **Why.** A library name used by a language rule is visible in one place,
-  so a reader can tell a language item from a leak (criteria section 7).
+  so a reader can tell a language item from a leak (criteria section 8).
 - **Nothing changes.** `LangItem W i s` reduces to the `LangSym` it
   replaced. The proofs go through unchanged; `AuditBuildExample.main_linked`
   unfolds `LangItem` once.

@@ -2790,7 +2790,7 @@ Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : na
               w_scope W p ns n = Some (ESym s).
 
 (* The language items: the library items the language's own rules need
-   (criteria section 7), each by its module's short name, namespace and
+   (criteria section 8), each by its module's short name, namespace and
    name.  The rules outside Platform name library items only through this
    table, `operator_method` (the operators, [D68], [D85]) and the string
    literal's desugaring (Syntax.string_desugar, resolved in scope).
