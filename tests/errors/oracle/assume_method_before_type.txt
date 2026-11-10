@@ -1,0 +1,1 @@
+[moss_m2 elab: tests/errors/assume_method_before_type.moss: type `T` is not available in the context here]

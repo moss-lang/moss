@@ -1,0 +1,1 @@
+!P tests/errors/assume_method_before_type.moss T

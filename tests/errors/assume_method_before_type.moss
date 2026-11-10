@@ -1,0 +1,6 @@
+type T;
+fn .m(): This;
+# E41 (AUDIT-CHANGES #59, D20): `T.m`'s receiver is the type `T` in force,
+# and `T` is listed after it.
+assume T.m, T { fn g() {} }
+fn main() {}

@@ -823,6 +823,15 @@ assume Std {
       # provision is keyed by what the receiver has been substituted to,
       # which is why an abstract receiver an application fixes lands the
       # provision where calls on the concrete type will look for it.
+      # E41 (D20): a type symbol is a receiver only through its meaning in
+      # force, so `assume T.m, T` needs `T` before `T.m`, as an item whose
+      # signature mentions `T` does.
+      if prog::sym_kind.get(receiver) == prog::sk_type() {
+        if !env_has(view, ek_type(), ast::none(), receiver) {
+          prog::error(prog::e_absent(), m, prog::sym_name.get(receiver));
+          return env;
+        }
+      }
       let this_ty = canon(view, types::ty_of_decl(receiver));
       # A union or a record has no declaration for a method to attach
       # to, but a detached method is keyed by the type itself, so it may
