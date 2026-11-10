@@ -117,6 +117,7 @@ entry they belong to.
 | 74 | Every declared context forms as written (`DeclsForm`; criteria section 7) | n234 | A for cycles; B for an unused context naming what is not in scope |
 | 75 | Every symbol's assume nesting forms, whatever its kind (`AssumesComplete`; criteria section 7) | n234 | B |
 | 76 | Every other declaration forms as written: tag payloads, alias bodies, val types and initializers, fn and method signatures, functor arguments and results (`DeclsForm`; criteria section 7) | n234 | B |
+| 77 | A functor with a body binds its whole result, by written leaf, applied or not (`FunctorTotal`; D55) | n234 | A (applied or linked; mirrors both); B for an unapplied functor |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2400,6 +2401,89 @@ executable tests unless noted.
   now shows main's signature forms.
 - **Class.** B, by criteria section 7 (both implementations accept every
   rejected test).
+
+### 77. A functor with a body binds its whole result (`FunctorTotal`, n234 branch; D55)
+- **The gap (N3).** `BApplyBody` (`bind F;` for F with a body: F's binds,
+  inlined) had no result check, so `tests/wasi/functor_partial.moss`
+  (`Over` promises `Scalar.add` and binds only `Scalar = Int`) and
+  `functor_partial_unreached.moss` were accepted; both implementations
+  reject them ("functor `Over` does not bind `Scalar.add`"; "the functor
+  does not bind every item its result promises"). The executable
+  elaborator found this (`scratch/elab-STATUS.md`, row N3).
+  `LinkBody` has the same gap: its `ResultRealizes` reads the promise at
+  the link site, where `Scalar.add` reads `Int.add`, and G's own input
+  `Std` provides that, so
+  [functor-partial-link](examples/functor-partial-link.moss) (the same
+  body, linked) was accepted too.
+- **Rule now.** `DeclForms` asks of every functor with a body that it is
+  total (`FunctorTotal`): each leaf of its declared result (`ResultLeaf`,
+  as `SameResult` reads leaves) is bound by an item of its body, by
+  written name (`BodyBinds`): `bind p = e` and `bind R.m = e` bind their
+  own leaf, `bind G;` binds G's declared result's leaves. This is the
+  oracle's `functor_total` (Elab.v) exactly, and native's check
+  (`src/codegen.moss`, at `e_partial`).
+- **Form chosen.** The task suggested an analogue of `LinkBody`'s
+  `ResultRealizes` in `BApplyBody`: after the body's binds (C'), each
+  promised key read at C' is provided there at a refining provision. That
+  does not reject `functor_partial.moss`: at C', `Scalar.add` reads
+  `Int.add`, which the caller's `Std` provides. A semantic form that does
+  reject it would ask each key to be one some binding of the body writes;
+  it would then accept `bind Scalar = Int; bind Int.add = f;`, which both
+  implementations reject (they compare leaves by written name), and it
+  needs the body's binding list in `BApplyBody`. The leaf check is
+  simpler, mirrors both, and covers direct application and links alike.
+  It is checked at the declaration, applied or not (criteria section 7),
+  rather than at each application: the implementations check it at an
+  application or link only, so an unapplied partial functor is class B.
+  Transparency is unchanged: the caller still sees exactly the body's
+  binds, and nothing installs F's promise.
+- **Safety without the check.** Checked by reading Audit.v; the check is
+  not needed for `public_safety`, which is why the proof is untouched.
+  - `BApplyBody`'s output context C' is `BindItems`' output and nothing
+    else: no `ProvideResult`, and its expression is the body's binds,
+    `wrap`, with no `BApply` (so `apply_functor` never runs and no result
+    is installed). The block continues in C' (`BlkBind`).
+  - A later use of a promised item is checked against C' like any other:
+    a call through `Provided` needs the key in C' (`PrIn`) or a family
+    in force that produces it (`PrFamily`); `ExVal` needs `c_vals C'`;
+    an fn call needs `c_fns C'`. If the caller lacks the provision that
+    would back the promise, there is none in C', and the use has no
+    derivation:
+    [functor-partial-unbacked-use](examples/functor-partial-unbacked-use.moss)
+    is rejected before this change ("no provision and no family for a
+    method (D62)").
+  - Without a use, nothing reads the missing provision at run time:
+    [functor-partial-unbacked](examples/functor-partial-unbacked.moss) is
+    accepted before this change and runs to exit 0 on Audit's interpreter
+    (moss-elab `audit_run`).
+  - For a link, the promise is read by `ResultRealizes` against the
+    body's final context, so each installed key names a provision the
+    body's environment has (bound by the body or supplied by the
+    caller through G's linked inputs, which `Satisfies` asks of each
+    application).
+
+  So the unchecked promise was a fidelity gap, not a safety gap.
+- **Criteria.** Fidelity (section 6) for applied and linked functors;
+  section 7 for an unapplied one.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | `tests/wasi/functor_partial.moss` | rejects | rejects | accepts (prints 5) | rejects |
+  | `tests/wasi/functor_partial_unreached.moss` (applied in a fn nothing calls) | rejects | rejects | accepts | rejects |
+  | [functor-partial-link](examples/functor-partial-link.moss) | rejects | rejects | accepts | rejects |
+  | [functor-partial-unbacked](examples/functor-partial-unbacked.moss) (nothing backs the promise; no use) | rejects | rejects | accepts (exit 0) | rejects |
+  | [functor-partial-unbacked-use](examples/functor-partial-unbacked-use.moss) (the use) | rejects | rejects | rejects (at the use) | rejects |
+  | [functor-partial-unused](examples/functor-partial-unused.moss) (never applied) | accepts | accepts | accepts | rejects |
+  | [functor-total-control](examples/functor-total-control.moss) (binds by name and through `bind Inner;`) | accepts | accepts | accepts | accepts |
+
+  Audit's verdicts are argued from the rules and run on the elaborator
+  variant of #74 (its "N3total" check).
+- **Corpus.** The comparison of #74: the two `tests/wasi` programs above
+  are the only corpus programs whose verdict this changes.
+- **Proof.** No proof reads `DeclsForm`; the example world has no functor.
+- **Class.** A for applied and linked functors (mirrors both); B for an
+  unapplied one, by criteria section 7.
 
 ---
 

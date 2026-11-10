@@ -5241,6 +5241,26 @@ Definition ConstElab (W : world) (P : program) (d : decl) (t0 : aty) (i : aexpr)
       fr_mod F0 = d_mod d /\ fr_ret F0 = None /\ fr_this F0 = None /\ fr_loop F0 = false /\
       fr_fresh F0 = [] /\ fr_applying F0 = [] /\ fr_pins F0 = [] /\ Numbering F0 None [].
 
+(* [D55] a functor with a body binds everything its result promises: each
+   leaf of its declared result (ResultLeaf) is bound by an item of the
+   body, by written name, as the oracle's functor_total and native check
+   it: `bind p = e` and `bind R.m = e` bind their own leaf, and `bind G;`
+   binds G's declared result.  A promise is not kept by an item that
+   merely reads as it here (`bind Scalar = Int` does not bind
+   `Scalar.add`, even where `Int.add` is in force).  For a direct
+   application this is a check only: the caller sees the body's binds
+   (BApplyBody), not the promise. *)
+Inductive BodyBinds (W : world) (p : string) : spec * option aexpr -> nat * option name -> Prop :=
+| BBItem : forall pa dn a y s,
+    resolve_sym W p pa = Some s -> BodyBinds W p (Spec (Some pa) dn a, Some y) (s, dn)
+| BBApply : forall pa dn a g k,
+    resolve_sym W p pa = Some g -> kind_sym W g = Some DKFunctor -> ResultLeaf W g k ->
+    BodyBinds W p (Spec (Some pa) dn a, None) k.
+
+Definition FunctorTotal (W : world) (u : nat) : Prop :=
+  forall d n ps a r bodies k, w_decl W u = Some d -> d_ast d = ADFunctor n ps a r (Some bodies) ->
+    ResultLeaf W u k -> exists it, In it (concat bodies) /\ BodyBinds W (d_mod d) it k.
+
 (* `DeclForms W P s`: s's declaration forms as written.
    - A context's items form (ItemsEntries), so a context that nests in a
      cycle, or names an item not in scope, is an error even when nothing
@@ -5255,7 +5275,8 @@ Definition ConstElab (W : world) (P : program) (d : decl) (t0 : aty) (i : aexpr)
    - A functor's argument telescope forms (FunCtx) and its result forms
      over it, each other type symbol standing for itself (a body may bind
      a type its result mentions, as lib/wasistd.moss's WasiFloats binds
-     Int). *)
+     Int), and, if it has a body, the body binds its whole result
+     (FunctorTotal), applied or not. *)
 Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
   forall d, w_decl W s = Some d ->
     match d_ast d with
@@ -5267,7 +5288,7 @@ Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
     | ADFn _ _ _ _ _ => exists L this g, SigOf W s (as_written L) (Some this) g
     | ADFunctor _ _ _ _ _ => exists C ns L C' ks, FunCtx W s C ns /\
         ProvideResult W s (Cx (c_ty C ++ as_written L) (c_sub C) (c_provisions C) (c_locals C))
-          (fun t => TAbs t) C' ks
+          (fun t => TAbs t) C' ks /\ FunctorTotal W s
     | _ => True
     end.
 

@@ -1,0 +1,23 @@
+# FunctorTotal (AUDIT-CHANGES #77; D55), and the safety of today's rule: Over
+# promises Scalar.add and binds only Scalar = Num; no Num.add exists
+# anywhere, so nothing backs the promise. Nothing calls .add after
+# `bind Over;`. Audit before accepted it and runs it (exit 0): the caller
+# sees the body's binds, not the promise, so the missing provision is
+# never read. See functor-partial-unbacked-use for the use.
+# Verdicts: oracle rejects ("functor `Over` does not bind `Scalar.add`");
+# native rejects ("does not bind every item its result promises");
+# Audit before accepts (exit 0); now rejects (FunctorTotal).
+import "../../lib/num.moss" use .add;
+type Scalar;
+tag Num;
+assume Scalar { context BaseAdd = Scalar, Scalar.add; }
+val x: ();
+functor Over: x -> BaseAdd { bind Scalar = Num; }
+assume x {
+  fn demo() {
+    bind Over;
+    let n: Scalar = Num;
+    match n { Num => () }
+  }
+}
+fn main() { bind x = (); demo(); }

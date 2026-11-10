@@ -1,0 +1,11 @@
+# FunctorTotal (AUDIT-CHANGES #77; D55; criteria section 7): F promises
+# x and y and binds only x, and nothing applies or links F.
+# Verdicts: oracle accepts (functor_total runs at an application or a
+# link); native accepts (likewise); Audit before accepts; now rejects
+# (FunctorTotal is part of DeclsForm, checked for every functor with a
+# body). Class B, by criteria section 7.
+val x: ();
+val y: ();
+context XY = x, y;
+functor F: x -> XY { bind x = (); }
+fn main() {}
