@@ -355,7 +355,7 @@ Proof.
     TyOk (TNom r args)).
   { intros args F. destruct (reqs_ok _ _ _ F Tm) as [K A0]. exact (nom_ok_intro r args K A0). }
   destruct (w_decl W r) as [d|].
-  - destruct (d_ast d); try (destruct Recv as [args [-> F]]; exact (Nom args F)).
+  - destruct (d_ast d); try (destruct Recv as [_ [args [-> F]]]; exact (Nom args F)).
     exact (tyof_ok _ _ _ _ _ Recv Tm optok_none).
   - destruct Recv as [args [-> F]]. exact (Nom args F).
 Qed.

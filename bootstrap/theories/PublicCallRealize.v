@@ -92,7 +92,7 @@ Proof.
     cbn in Ia. apply in_app_or in Ia as [Here|There]; [exact (Sc g (nlook_gens _ _ _ _ L Here))|exact (IH There)]. }
   destruct (nlook r tm0) as [t'|] eqn:Found; [subst rt; exact (Sc g (nlook_gens _ _ _ _ Found Ig))|].
   destruct (w_decl W r) as [d|].
-  - destruct (d_ast d); try (destruct Recv as [args [-> F]]; exact (Nom args F Ig)).
+  - destruct (d_ast d); try (destruct Recv as [_ [args [-> F]]]; exact (Nom args F Ig)).
     exact (tyof_scoped _ _ _ _ _ _ Recv Sc Ig).
   - destruct Recv as [args [-> F]]. exact (Nom args F Ig).
 Qed.

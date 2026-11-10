@@ -124,7 +124,7 @@ Proof.
         inversion F2 as [|? xb ? xbs [Eb Lb] Fr2]; subst; constructor; [|apply IH; assumption].
       split; [congruence|]. exact (Ag _ _ _ La Lb). }
     destruct (w_decl W r) as [d|].
-    + destruct (d_ast d); try (destruct R1 as [a1 [-> F1]]; destruct R2 as [a2 [-> F2]]; exact (Nom a1 a2 F1 F2)).
+    + destruct (d_ast d); try (destruct R1 as [_ [a1 [-> F1]]]; destruct R2 as [_ [a2 [-> F2]]]; exact (Nom a1 a2 F1 F2)).
       exact (tyof_rel W s1 s2 _ _ _ _ _ R1 _ _ _ R2 Ag (fun _ _ E _ => ltac:(discriminate E))).
     + destruct R1 as [a1 [-> F1]]. destruct R2 as [a2 [-> F2]]. exact (Nom a1 a2 F1 F2).
 Qed.

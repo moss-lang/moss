@@ -107,8 +107,9 @@ entry they belong to.
 | 56 | A copy composes its smap and positions into the closure (eager copies) | eagercopy | D (unobservable) |
 | 57 | Assumed items bring their requirements and needs (`AssumesComplete`, D20) | deltafix | A (one test B: rejects a program native accepts) |
 | 58 | Result items distinct in F stay distinct at an application, and H's at a copy (`CollidesOnlyAs`) | deltafix | B (coherence) |
+| 59 | `RecvTy` reads no type symbol out of force as a nominal | deltafix | A (rejects a program native accepts: a native bug, E39) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 on, from the deltafix branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1723,6 +1724,42 @@ executable tests unless noted.
   implementations and the copy tests by the oracle. Both
   implementations need the same check (E38 below).
 
+### 59. `RecvTy` reads no type symbol out of force as a nominal (deltafix branch; D20)
+- **Rule now.** `RecvTy`'s fallback, which reads a method item's receiver
+  R as the nominal `TNom R args`, also asks `kind_sym W R <> Some DKType`.
+  A type symbol has a receiver type only through its meaning in force.
+  Before, `assume T.m, T { ... }` read T.m's receiver as `TNom T []` while
+  T was not yet in force, so the list formed: T.m was filed at a nominal
+  no value has, beside the type T.
+- **Why.** Fidelity (criteria section 6) and D20 (a type an item mentions
+  must already be in force; `TyOf` asks it for every other item). The
+  oracle rejects the program ("type `T` is not available in the context
+  here"). The Δ2 hunt (scratch/deltas/REPORT.md) found that Audit, the
+  oracle and native all read signature types in list order, rejecting
+  `assume f, T` with f mentioning T. This fallback was the one place
+  where Audit did not.
+- **Tests** (Audit verdicts argued from the rules, not run):
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [assume-method-before-type](examples/assume-method-before-type.moss) (`assume T.m, T`) | rejects | **accepts** (E39) | accepts | rejects |
+  | [assume-method-before-type-use](examples/assume-method-before-type-use.moss) (and g calls `x.m()`) | rejects | rejects ("no matching method is available for this receiver") | rejects (no m at x's type) | rejects |
+  | [assume-method-after-type](examples/assume-method-after-type.moss) (`assume T, T.m`, control) | accepts | accepts | accepts | accepts |
+
+- **Corpus.** The oracle already rejects every such list (its method
+  item reads the receiver's meaning in force), so no oracle variant
+  applies, and Audit now rejects a subset of what the oracle rejects. A
+  scan of every `assume` list naming a method item `R.m` in `tests/`,
+  `examples/`, `bootstrap/examples/` and `lib/` (34 lines) finds R in
+  force before the item, or R a tag, in each. So no corpus verdict
+  changes.
+- **Proof.** `public_safety` unchanged. Three proofs that read `RecvTy`'s
+  fallback skip the new conjunct: `PublicCallRealize.recv_scoped`,
+  `PublicOutputSubst.recv_rel` and `PublicFormation.recv_ok`.
+- **Class A** (reject-only, mirroring the oracle). Native accepts the
+  first test, which is a native bug (E39), since native itself rejects
+  the same program once g uses the method.
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1841,6 +1878,7 @@ All of these come from `proof-plan.json`.
 | E36 | Oracle 3b checks every reading of a captured fn or method | oracle | open | [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss): oracle accepts, stuck XErr 14; native rejects | #7, #11 |
 | E37 | Oracle 3d: a linked body may not install an input of F as a kept output | oracle | open | [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): oracle stuck XErr 14; native rejects | #13 |
 | E38 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b; [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
+| E39 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | open | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 | #59 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
 changes. All are open:
@@ -1873,6 +1911,11 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   (D62); its fix is designed in #50 (E24).
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
 - ~~block-pin-rebind.moss~~: accepted since #49.
+- assumed-need-incoherent.moss (#57). The oracle rejects it too. Native
+  does not check an assumed item's needs' instantiations; g never calls f.
+- assume-method-before-type.moss (#59, E39). The oracle rejects it too.
+- result-collide-{ab,ba}{,-bindswap}.moss (#58, E38). Both
+  implementations accept them, with different outputs.
 - sameneed-ambiguous.moss and sameneed-ambiguous-other.moss (#11; tests of
   #51). Native prints 7 on both, and the oracle accepts the second.
 - Native's verdict is not recorded for stale-provision-type (#4) or

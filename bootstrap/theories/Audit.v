@@ -3019,7 +3019,10 @@ Definition AppOf (W : world) (s : nat) (tm : subst) (a : inst) : Prop :=
      (kind_sym W s <> Some DKMeth /\ requirements = w_reqs W s)).
 
 (* The receiver type of a method item `R.m`: R's meaning if R is a type
-   symbol, else R as a nominal at its requirements' meanings. *)
+   symbol, else R as a nominal at its requirements' meanings.  A type
+   symbol not in force has no meaning: it is not read as a nominal `TNom R
+   []` ([D20]: a type an item mentions must already be in force; the
+   oracle rejects `assume T.m, T`, examples/assume-method-before-type.moss). *)
 Definition RecvTy (W : world) (r : nat) (tm : list (nat * ty)) (t : ty) : Prop :=
   match nlook r tm with
   | Some t' => t = t'
@@ -3028,7 +3031,7 @@ Definition RecvTy (W : world) (r : nat) (tm : list (nat * ty)) (t : ty) : Prop :
       | Some d =>
           match d_ast d with
           | ADAlias _ body => TyOf W (d_mod d) tm None body t
-          | _ => exists args, t = TNom r args /\
+          | _ => kind_sym W r <> Some DKType /\ exists args, t = TNom r args /\
                    Forall2 (fun x xa => fst xa = x /\ nlook x tm = Some (snd xa)) (w_reqs W r) args
           end
       | None => exists args, t = TNom r args /\
