@@ -5017,11 +5017,12 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
               ret ([SBindFunA (gs_id fg) (gs_id bg) sm], e')
           | Some _ =>
               (* rule B for a closure: G's type inputs that F does not take
-                 are captured here, each read as itself, so only one in
-                 force here has a principal captured meaning *)
+                 are captured here, so each is in force here, or in force
+                 through its class in G's merges *)
+              let ginfo := FInfo eg gneeds [] (merge_edges eg) in
               let gtys := map fst (en_tn eg) in
               let ftys := map fst (en_tn ef) in
-              miter (fun t => if nmem t ftys || is_some (tn_get e t) then ret tt else
+              miter (fun t => if nmem t ftys || in_force_through e ginfo t then ret tt else
                               let! tg := sym t in
                               err mi ("binding `" ++ gs_name fg ++ "` to `" ++ gs_name bg ++ "` captures `" ++ gs_name tg ++
                                       "`, which is not in force here (assume or bind it)")) gtys ;;
