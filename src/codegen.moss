@@ -5749,6 +5749,12 @@ assume Std {
           let have = lower::env_b_of(row);
           if !coherent(s, want, fbase, have, base, genv, moved, bound_here, true) {
             incoherent.push(s);
+          } else if !ast::is_some(merged) {
+            # Where the callee's merges fail here, its types do not read
+            # as one; that is the error to report.
+            if !provision_fits(s, r, key, row, fbase, genv) {
+              incoherent.push(s);
+            }
           }
         } else {
           # D20, D16: a callee requires everything its declaration
@@ -5762,6 +5768,52 @@ assume Std {
       if incoherent.length() > 0 {
         report_incoherent(f, incoherent);
       }
+    }
+
+    # AUDIT-CHANGES #4 (E25): the provision a need selects has the type,
+    # or the signature, the callee reads it at — the callee's own row
+    # (`own`, in its declaration's terms) instantiated here — not only
+    # the same app over its dependencies. A val whose type mentions a
+    # type symbol that is not one of its requirements (`val v: T` with no
+    # `assume T`) was provided while `T` meant one type, and is read by a
+    # callee after `T` was rebound to another.
+    fn provision_fits(s: Int, r: Int, key: Int, row: Int, fbase: Int, genv: Int): Bool {
+      let own = lower::env_find(fbase, lower::need_kind(s), r, s);
+      if !ast::is_some(own) {
+        return true;
+      }
+      let ofrom = lower::env_a_of(own);
+      let hfrom = lower::env_a_of(row);
+      if !ast::is_some(ofrom) {
+        return true;
+      }
+      if !ast::is_some(hfrom) {
+        return true;
+      }
+      if prog::sym_kind.get(s) == prog::sk_val() {
+        return instantiate_in(genv, ofrom) == canon_in(genv, hfrom);
+      }
+      if prog::sym_kind.get(s) == prog::sk_functor() {
+        return true;
+      }
+      let d = prog::sym_decl.get(s);
+      let home = prog::sym_mod.get(s);
+      var i = 0;
+      while i <= ast::fn_nparams(d) {
+        var t = ast::fn_ret(d);
+        if i < ast::fn_nparams(d) {
+          t = ast::b_of(ast::kid_at(ast::fn_params(d), i));
+        }
+        if ast::is_some(t) {
+          let want = instantiate_in(genv, sig_ty(ofrom, t, home, r));
+          let have = canon_in(genv, sig_ty(hfrom, t, home, key));
+          if want != have {
+            return false;
+          }
+        }
+        i = i + 1;
+      }
+      true
     }
 
     # Every incoherent need is an error, used or not (D20), but the ones

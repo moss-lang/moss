@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# AUDIT-CHANGES #4 (E25): a selected provision has the callee's type. `v`
+# does not require `T`, so its provision is at no instantiation, but its
+# type mentions `T`: it was provided while `T` meant `Char`, and after
+# `T` is rebound to `Bool`, `f` reads it as a `Bool`. Refused, as the
+# semantics refuses it; the oracle elaborates it and gets stuck at run
+# time. The self-hosted compiler used to print `t`, reading a `Char` as
+# a `Bool`.
+
+type T;
+val v: T;
+
+assume T, v {
+  fn f(): T { v }
+}
+
+assume Std {
+  fn demo() {
+    bind T = Char;
+    bind v = char::x;
+    bind T = Bool;
+    if f() { putchar(char::t) } else { putchar(char::f) }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

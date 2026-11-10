@@ -53,6 +53,11 @@ const SELF_HOSTED_BUG_MERGE_ROUNDS: &str = "self-hosted compiler bug: an unsettl
 /// Part V's ExRecord) asks for every field once, the self-hosted compiler
 /// does not check it (Audit.v note 62).
 const SELF_HOSTED_BUG_FIELD_TWICE: &str = "self-hosted compiler bug: a record literal of a payload that names a field twice is accepted";
+/// AUDIT-CHANGES #4 (E25): the oracle does not compare a selected
+/// provision's type with the callee's reading of it; it elaborates the
+/// program and gets stuck at run time. The semantics and the self-hosted
+/// compiler reject it.
+const ORACLE_GAP_STALE_PROVISION: &str = "oracle gap: a provision read at another type than it was made at (E25)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -92,6 +97,8 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/shadowing.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/signature.moss", Reject, Unsupported, LIBRARY),
+    ("tests/wasi/stale_provision.moss", Reject, Accept, ORACLE_GAP_STALE_PROVISION),
+    ("tests/wasi/stale_provision_fn.moss", Reject, Accept, ORACLE_GAP_STALE_PROVISION),
 ];
 
 /// What the self-hosted compiler says.

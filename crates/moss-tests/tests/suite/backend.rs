@@ -1772,6 +1772,23 @@ fn a_provision_from_before_a_rebind_is_refused() {
     assert_eq!(report(&entry, PRELUDE), format!("!R {entry} seed\n"));
 }
 
+/// AUDIT-CHANGES #4 (E25): a selected provision has the type, or the
+/// signature, its callee reads it at. `v` and `g` mention `T` without
+/// requiring it, so their provisions are at no instantiation; provided
+/// while `T` meant `Char`, they are read by `f` after `T` was rebound to
+/// `Bool`. The self-hosted compiler refuses both (`e_incoherent`, `R`),
+/// as the semantics does; it used to print `t`, reading a `Char` as a
+/// `Bool`. The oracle elaborates both and gets stuck at run time.
+#[test]
+fn a_provision_read_at_another_type_is_refused() {
+    for (name, item) in [("stale_provision", "v"), ("stale_provision_fn", "g")] {
+        let entry = wasi(name);
+        assert_eq!(report(&entry, PRELUDE), format!("!R {entry} {item}\n"));
+        let out = oracle(&entry, &[]);
+        assert!(out.stderr.contains("stuck"), "the oracle on {entry}: {} {}", out.code, out.stderr);
+    }
+}
+
 /// `assume seed, T` — the type after the item — still puts `seed` at the
 /// function's `T`, so two functions of that block call each other. The
 /// Python bootstrap's first coherence check read `T` as not in force for
