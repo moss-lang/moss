@@ -18,7 +18,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy.
+  PublicMergeClass EagerCopy AuditPrune AuditFastPath AuditCapTrim.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -58,6 +58,89 @@ Goal True.
 Qed.
 Definition public_safety_is_safety : statement := PublicEntryTop.public_safety.
 End SafetyIsCorrect.
+
+(* Read-set pruning of Audit programs (AuditPrune.v) keeps behaviour:
+   with public_safety, an admissible program on a compatible interface
+   whose primitives ignore the program's code has, at every fuel, the same
+   observation as its pruned program, so the same Runs. The default
+   interface of this instance's host ignores the view entirely. *)
+Module PruneTop := AuditPrune.PruneRuns AuditExamples.Host PublicPublic.
+Definition pruned_observation_agrees : forall prelude program interface initial,
+  PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
+  PruneTop.code_blind interface -> forall fuel,
+  PublicPublic.observe (PublicPublic.Reference.run_main fuel
+    (PublicPublic.runtime (AuditPrune.prune program) initial)
+    (Audit.Semantics.program_main (AuditPrune.prune program))
+    (Audit.Semantics.program_environment (AuditPrune.prune program)) (interface, initial))
+  = PublicPublic.observe (PublicPublic.Reference.run_main fuel
+    (PublicPublic.runtime program initial) (Audit.Semantics.program_main program)
+    (Audit.Semantics.program_environment program) (interface, initial)) :=
+  fun prelude program interface initial Ha Hc Hb =>
+    @PruneTop.observe_pruned program interface initial Hb
+      (PublicEntryTop.public_safety prelude program interface initial Ha Hc).
+Definition pruned_runs_agree : forall prelude program interface initial result,
+  PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
+  PruneTop.code_blind interface ->
+  PublicPublic.Runs (AuditPrune.prune program) interface initial result
+  <-> PublicPublic.Runs program interface initial result :=
+  fun prelude program interface initial result Ha Hc Hb =>
+    @PruneTop.runs_pruned program interface initial result Hb
+      (PublicEntryTop.public_safety prelude program interface initial Ha Hc).
+Definition default_interface_code_blind : PruneTop.code_blind PublicPublic.default_interface :=
+  fun _ _ _ _ _ _ _ _ _ _ _ => eq_refl.
+
+(* The platform-family fast path for Audit programs (AuditFastPath.v):
+   each application of a primitive-only platform family becomes the
+   primitive bindings its continuation reads. The transformed run is
+   eventually equal to the original at every fuel where the original is
+   neither stuck nor out of fuel, and conversely; with public_safety (no
+   Wrong), the same Runs, for interfaces whose primitives ignore the
+   program's code. Composed with read-set pruning, as moss-ref runs them. *)
+Module FastTop := AuditFastPath.FastRuns AuditExamples.Host PublicPublic.
+Definition fastpath_runs_agree : forall prelude program interface initial result,
+  PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
+  PruneTop.code_blind interface ->
+  PublicPublic.Runs (AuditFastPath.fastpath program) interface initial result
+  <-> PublicPublic.Runs program interface initial result :=
+  fun prelude program interface initial result Ha Hc Hb =>
+    @FastTop.runs_fastpath program interface initial result Hb
+      (PublicEntryTop.public_safety prelude program interface initial Ha Hc).
+Lemma fastpath_prune_runs_agree : forall prelude program interface initial result,
+  PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
+  PruneTop.code_blind interface ->
+  PublicPublic.Runs (AuditPrune.prune (AuditFastPath.fastpath program)) interface initial result
+  <-> PublicPublic.Runs program interface initial result.
+Proof.
+  intros prelude program interface initial result Ha Hc Hb.
+  pose proof (PublicEntryTop.public_safety prelude program interface initial Ha Hc) as Hs.
+  rewrite (@PruneTop.runs_pruned (AuditFastPath.fastpath program) interface initial result Hb).
+  - exact (@FastTop.runs_fastpath program interface initial result Hb Hs).
+  - intros code final Hr. apply (Hs code final).
+    apply (proj1 (@FastTop.runs_fastpath program interface initial _ Hb Hs)). exact Hr.
+Qed.
+
+(* Capture trimming for Audit programs (AuditCapTrim.v): each fn and
+   method closure's type capture cut to what its code grounds. The trimmed
+   run is the original run at every fuel (no safety premise), for
+   interfaces whose primitives ignore the program's code. Composed after
+   the fast path and pruning, as moss-ref runs them (run/driver.ml). *)
+Module CapTrimTop := AuditCapTrim.TrimRuns AuditExamples.Host PublicPublic.
+Definition captrim_runs_agree : forall program interface initial result,
+  PruneTop.code_blind interface ->
+  PublicPublic.Runs (AuditCapTrim.captrim program) interface initial result
+  <-> PublicPublic.Runs program interface initial result :=
+  fun program interface initial result Hb => @CapTrimTop.runs_trimmed program interface initial result Hb.
+Lemma fastpath_prune_captrim_runs_agree : forall prelude program interface initial result,
+  PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
+  PruneTop.code_blind interface ->
+  PublicPublic.Runs (AuditCapTrim.captrim (AuditPrune.prune (AuditFastPath.fastpath program)))
+    interface initial result
+  <-> PublicPublic.Runs program interface initial result.
+Proof.
+  intros prelude program interface initial result Ha Hc Hb.
+  rewrite (captrim_runs_agree _ _ _ _ Hb).
+  exact (fastpath_prune_runs_agree prelude program interface initial result Ha Hc Hb).
+Qed.
 
 (* One dependency traversal computes the union for every root below. The
    roots are a list, not a tuple: a nested pair repeats the types of all
@@ -383,7 +466,30 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.LazyOracle.Certified.compiled_engine_agrees);
   root (@NM.LazyOracle.Certified.fast_path_agrees);
   root (@NM.LazyOracle.Certified.engine_agrees);
-  root (@NM.LazyOracle.Certified.fast_engine_agrees)].
+  root (@NM.LazyOracle.Certified.fast_engine_agrees);
+
+(* Read-set pruning of Audit programs. *)
+  root (@PruneTop.PS.prune_sound);
+  root (@PruneTop.runs_pruned);
+  root (@PruneTop.observe_pruned);
+  root (@pruned_observation_agrees);
+  root (@pruned_runs_agree);
+  root (@default_interface_code_blind);
+
+(* The platform-family fast path for Audit programs. *)
+  root (@FastTop.FS.run_main_forward);
+  root (@FastTop.FS.run_main_backward);
+  root (@FastTop.runs_fast_one);
+  root (@FastTop.runs_fastpath);
+  root (@fastpath_runs_agree);
+  root (@fastpath_prune_runs_agree);
+
+(* Capture trimming for Audit programs. *)
+  root (@CapTrimTop.PS.captrim_sound);
+  root (@CapTrimTop.observe_trimmed);
+  root (@CapTrimTop.runs_trimmed);
+  root (@captrim_runs_agree);
+  root (@fastpath_prune_captrim_runs_agree)].
 
 Print Assumptions certificate_roots.
 
