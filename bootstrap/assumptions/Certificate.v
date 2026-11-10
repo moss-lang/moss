@@ -177,6 +177,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMerge.ilookM_key);
   root (@NM.PublicMergePresent.mgm_structured_image_reads_shape);
   root (@NM.PublicMergePresent.mgm_has_merge);
+  root (@NM.PublicMergePresent.present_merge_of);
   root (@NM.PublicMergePresent.canon_iff_mergeeq);
   root (@NM.PublicMergePresent.merge_same_swap);
   root (@NM.PublicMergeOps.merge_read_proper);

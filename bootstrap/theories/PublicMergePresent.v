@@ -608,16 +608,49 @@ Proof.
   - intros l r E. apply (PublicMerge.merge_section_kernel Section). now apply Equations.
 Qed.
 
+(* An identity substitution already has the empty presentation as a
+   section, so it needs no scan of the telescope. *)
+Definition present_merge (s : subst) (es : list entry) : merge :=
+  match s with [] => [] | _ :: _ => present s es end.
+
+Lemma empty_merge_section : SectionOf [] [].
+Proof.
+  split.
+  - intros x. apply MERefl.
+  - apply PublicMerge.merge_eq_sound. split; intros c; contradiction.
+Qed.
+
+Lemma empty_merge_of : forall es, Unifies [] es -> MergeOf es [].
+Proof.
+  intros es U. split.
+  - split; [constructor |]. split; [intros c t [] |].
+    exists (fun _ => 0). split; intros c; contradiction.
+  - split; [intros c t [] |]. split; [intros x [] |].
+    split.
+    + eapply old_unifies_section; [apply empty_merge_section | exact U].
+    + intros s _. apply PublicMerge.merge_eq_sound. split; intros c; contradiction.
+Qed.
+
+Theorem present_merge_of : forall s es, MostGeneralMerge s es ->
+  MergeOf es (present_merge s es) /\ SectionOf (present_merge s es) s.
+Proof.
+  intros [|binding s] es MGM.
+  - split; [apply empty_merge_of; exact (proj1 MGM) | apply empty_merge_section].
+  - cbn [present_merge].
+    pose proof (present_old_section MGM) as Section.
+    destruct MGM as [Unifier [_ [Principal _]]].
+    split; [|exact Section].
+    split; [apply present_solved |]. split; [apply present_shapes_read |].
+    split; [apply present_support |]. split; [eapply old_unifies_section; eassumption |].
+    intros r U t u E. apply (PublicMerge.merge_section_kernel Section) in E.
+    rewrite <- (Principal r U t), <- (Principal r U u). now rewrite E.
+Qed.
+
 Theorem mgm_has_merge : forall s es, MostGeneralMerge s es ->
   exists M, MergeOf es M /\ (forall t u, MergeEq M t u <-> app_subst s t = app_subst s u).
 Proof.
-  intros s es MGM. pose proof (present_old_section MGM) as Section.
-  destruct MGM as [Unifier [_ [Principal _]]].
-  exists (present s es). split; [|apply PublicMerge.merge_section_kernel; exact Section].
-  split; [apply present_solved |]. split; [apply present_shapes_read |].
-  split; [apply present_support |]. split; [eapply old_unifies_section; eassumption |].
-  intros r U t u E. apply (PublicMerge.merge_section_kernel Section) in E.
-  rewrite <- (Principal r U t), <- (Principal r U u). now rewrite E.
+  intros s es MGM. destruct (present_merge_of MGM) as [Merge Section].
+  exists (present_merge s es). split; [exact Merge | apply PublicMerge.merge_section_kernel; exact Section].
 Qed.
 
 Corollary canon_iff_mergeeq : forall C M, SectionOf M (c_sub C) ->
