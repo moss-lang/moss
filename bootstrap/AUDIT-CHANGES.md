@@ -118,6 +118,7 @@ entry they belong to.
 | 75 | Every symbol's assume nesting forms, whatever its kind (`AssumesComplete`; criteria section 7) | n234 | B |
 | 76 | Every other declaration forms as written: tag payloads, alias bodies, val types and initializers, fn and method signatures, functor arguments and results (`DeclsForm`; criteria section 7) | n234 | B |
 | 77 | A functor with a body binds its whole result, by written leaf, applied or not (`FunctorTotal`; D55) | n234 | A (applied or linked; mirrors both); B for an unapplied functor |
+| 80 | **Type equations as context and assume items** (`AIEq`/`CIEq`, `IsEq`, the entry `NEq` and `Unifies`' merge conjunct; D90) | tyeq | language extension (new syntax; every existing program keeps its parse, dump and verdict) |
 | 90 | **Every tag has a finite layout** (`FiniteLayouts`, D58/D59; on definitions, with no case for `Ref`) | layout | A for used types; B for an unused cyclic tag, with the oracle and native changed to match |
 | 91 | Main's platform provisions are Platform's contract (`PlatformEntry` moves from `ElaboratesIn` to `Platform.Linked`) | layout | none (`Builds` and `Ready` are unchanged) |
 | 92 | The language items go through one table (`lang_item`, `LangItem`) | layout | none (definitional) |
@@ -125,7 +126,7 @@ entry they belong to.
 | 94 | Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6) | layout | none (Audit already rejects; the executable elaborator's gap) |
 | 95 | A linked body may pin a fixed input that G takes (`LinkBody`: protected inputs P(F) ∩ M(F), pins every fixed input the body rebinds; closes N5) | n5 | relaxation toward both implementations (closes #93's fidelity gap) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, and #95 from the n5 branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, and #95 from the n5 branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -2490,6 +2491,137 @@ executable tests unless noted.
 - **Proof.** No proof reads `DeclsForm`; the example world has no functor.
 - **Class.** A for applied and linked functors (mirrors both); B for an
   unapplied one, by criteria section 7.
+
+### 80. Type equations as context and assume items (`AIEq`, `CIEq`, `IsEq`; tyeq branch; D90, owner-approved)
+- **Rule now.**
+  - *Syntax.* An assume item is `AIHead (p, d)` (as before) or `AIEq l r`,
+    and a context item `CISpec s` (as before) or `CIEq l r`
+    (`Input.aitem`, `Input.citem`). Each side is a type reference, `p` or
+    `p[...]` (`Syntax.TypeRef`), and the `=` follows a whole reference
+    (`Syntax.Equation`), so it is outside any brackets. `AssumeItem` and
+    `CtxItem` keep the two readings apart: a head or spec is followed by
+    neither `=` nor (for an assume head) `[`. Functor argument and result
+    lists still take specs.
+  - *Requirements.* `ty_heads` lists the references a side writes (its
+    head, and its brackets' right sides, not their left sides) as
+    unbracketed specs. `SpecTypes`' context case reads a context's items
+    through `citem_specs` (a spec, or an equation's references), and
+    `AssumeTypes` an assume nesting through `aitem_specs`. So every type
+    symbol an equation writes is a requirement (rule B, #60).
+  - *Formation.* `ItemsEntries` ranges over `citem`s. `IsEq` reads an
+    equation's references as items (`ItemsEntries ... (map CISpec
+    (ty_heads l ++ ty_heads r))`, so a type symbol among them is put in
+    force as `IEType` puts one), reads both sides there (`TyOf`), and adds
+    the entry `NEq tl tr`. `NEq` has no key, signature, instantiation or
+    provision; `Unifies` gains the conjunct "an equation's sides are one
+    type under σ", and `entry_gens (NEq l r) = gens l ++ gens r`. So
+    `MostGeneralMerge` treats the equation as a direct merge constraint.
+  - *Results.* A result's context holds no equation: `OIECtx`,
+    `FamilyResult`'s and `FamilyKeyed`'s context cases ask `its = map
+    CISpec sps`.
+  - *Calls.* Nothing new: the equation's merge is in the callee's σ, so
+    `Satisfies`' merges clause (by class, #54) asks the caller to have the
+    two sides equal, and `CallTheta` and rule B treat it as any merge.
+  - *Declaration checks (#74 to #77, #90).* Nothing new is needed:
+    `DeclForms`' context case is `ItemsEntries` over the context's
+    `citem`s, so an equation in a context is checked as written, like
+    its other items (`IsEq` under `as_written L`: its references resolve
+    and its sides denote types; the merge is not asked there, as for any
+    context item). `AssumeCtx` (`AssumesComplete`) forms a nesting
+    through `assume_spec`, so an equation in an assume list is formed
+    and merged as in `CtxOf`; it adds no need, so `AssumedComplete` has
+    nothing more to check. `FunctorTotal` reads `ResultLeaf`, whose
+    context case reads `citem_specs` (an equation's references are
+    leaves; a result with an equation is refused by `OIECtx` anyway).
+    `FiniteLayouts` and D15 read tag payloads and declared types, which
+    hold no equation.
+- **Why.** The owner's decision (D90): the dummy-item workaround
+  (`same[Same=Int], same[Same=Size]`) also adds a need for `same`; the
+  equation adds only the merge. The syntax is `bind`'s `=`; the
+  equation is symmetric; structured equations are allowed, one structure
+  per class (Δ4's rule, #61); rule B applies.
+- **Criteria.** Coherence (section 2): the two spellings give one merge
+  class (`PublicEquation.eq_swap_classes`, from
+  `PublicOrientation.mgm_classes_iff`; `same_swap_classes` for telescopes
+  equal up to the order of entries and of an equation's sides, which
+  covers the different order of the two spellings' references).
+  Principality (section 3): the merge is a most general unifier with the
+  equation's constraint, as for any merge.
+- **Proof.** `public_safety` is still proved and `check.sh` is green. The
+  public proofs gain the `IsEq` case (`entries_formed`, `entries_ok`,
+  `entries_keys_decl`, `entries_read`, `entries_keys_typed'`, the
+  `PublicPlatformApply` and `PublicLinkMerges` walks) and the `NEq` case
+  of every entry function (`EntryP`, `unifies_mark`, `entry_ok_formed`,
+  ...); `PublicChainAgree.output_no_eq` shows a result's reading has no
+  equation entry.
+- **Oracle.** `Parse.v` (`parse_assume_item`, `parse_ctx_item`,
+  `parse_type_ref`), the dump (an equation is `(V l r)`, `Sx.dassume`,
+  `Sx.dcitem`) and its round trip (`DumpRoundTrip`), `FrontEnd` and
+  `FrontEndComplete` for the new items. `ExecutionModel.v` mirrors
+  Audit's formation. `Elab.v`: `add_eq_merge` (the two sides' `ety_of`,
+  then `unify`), the context walk over `citem`s (an equation's
+  references through `add_spec`, then the merge), `add_assume_item`'s
+  `AIEq`, `assume_specs := flat_map aitem_specs`, and the result walks
+  (`provide_spec` refuses a result context with an equation, families
+  are not families then, `ctx_specs` elsewhere). Proofs: `CtxWalk`
+  (`specs_walk`, `eq_walk`, `merge_step`, `ws_eq_add`, and the walk
+  invariant's new `ws_eqs`: with no new merge, an equation's sides are
+  one up to the merges), `CtxMerge.settled_unifies`, `ContextWalkClean`,
+  `ContextWalkSupport`, `WorldSound`, `ReqsTotal` and the family and
+  result walks. `ContextWalkClean.add_eq_merge_eq` unfolds the merge by
+  rewriting: unfolding it by conversion made the kernel unfold `unify 200`.
+- **Native.** `src/`: the AST node `k_eq` (sides, and the run of the
+  references they write); the parser (`parse_ctx_item`,
+  `parse_assume_item`, `parse_equation`); the dump (`V`, the letter of
+  `k_d_bad`, which no dump holds); `lower::add_eq_item` (the references
+  through `add_spec`, then `unify`) in the assume and context walks;
+  `nest_types` (requirements), `result_types` and `sig_items` read the
+  references; the family, result-key and cycle walks skip or refuse an
+  equation (`e_eq_result`).
+- **Tests.**
+
+  | program | Audit (by reading) | oracle | native |
+  |---|---|---|---|
+  | [merged_int_size](../tests/wasi/merged_int_size.moss) (`context IntIsSize = Int = Size;`, library code against the separate types, called from inside the merged context) | accepts | 21 | 21 |
+  | [merged_size_int](../tests/wasi/merged_size_int.moss) (the same, `Size = Int`, in the assume list) | accepts | 21 | 21 |
+  | [eq_caller_same](../tests/wasi/eq_caller_same.moss) (a caller with the sides equal; no need added) | accepts | exit 0 | exit 0 |
+  | [eq_link_tx](../tests/wasi/eq_link_tx.moss) (`T = X` in a linked body's merged argument context) | accepts | exit 0 | exit 0 |
+  | [eq_link_xt](../tests/wasi/eq_link_xt.moss) (the same, `X = T`) | accepts | rejects (D84 3d) | exit 0 |
+  | [eq_clash](../tests/errors/eq_clash.moss) (`Buf = P, Buf = Q`) | rejects (no unifier) | rejects ("cannot merge `P` with `Q`") | rejects (`e_merge`) |
+  | [eq_clash_structure](../tests/errors/eq_clash_structure.moss) (`Buf = Bool, Buf = Box[T=T]`) | rejects | rejects | rejects |
+  | [eq_caller_differs](../tests/errors/eq_caller_differs.moss) (the caller binds the sides to `P` and `Q`) | rejects (merges clause) | rejects | rejects |
+  | [eq_caller_unbound](../tests/errors/eq_caller_unbound.moss) (the caller has neither side in force) | rejects (rule B) | rejects | rejects |
+  | [eq_result](../tests/errors/eq_result.moss) (a result context with an equation) | rejects (`OIECtx`) | rejects | rejects |
+  | [decl_ctx_eq_unresolved](../tests/errors/decl_ctx_eq_unresolved.moss) (an unused context whose equation names `Nope`) | rejects (`DeclsForm`: no `IsEq`) | accepts (ORACLE_GAP_UNUSED_DECL) | rejects (`e_scope`) |
+  | [decl_ctx_eq_control](../tests/wasi/decl_ctx_eq_control.moss) (an unused `context A = T = U, T.m;`, read as written) | accepts | accepts | accepts |
+
+- **Orientation (both spellings).** The two spellings mean the same in
+  Audit: the merge's orientation is left open (`MostGeneralMerge`), and
+  the spellings' telescopes differ only in the order of their entries and
+  of the equation's sides, which `Unifies` does not see; so Audit's
+  verdict cannot depend on the spelling. Native merges toward the right
+  side (`lower::unify`: an edge from the first bare symbol), the oracle
+  too (`Elab.unify`), so the spelling picks the representative. On every
+  program above but one the spellings agree in all three. The exception
+  is the open item 4 of the consolidation (a linked body's checks follow
+  the representative): `X = T` makes `T` the representative of the
+  merged input class, the oracle's pins then include `T`, and it rejects
+  the body's `bind T = Bool;` (D84 3d), while it runs `T = X`; native runs
+  both. This is the oracle's behaviour on
+  [link-merge-rep-rebind-both](examples/link-merge-rep-rebind-both.moss)
+  in the two context orders, not a new divergence; it is listed in
+  `agreement.rs` (`ORACLE_GAP_ORIENTATION`) and not worked around.
+- **Corpus.** Against the oracle of the branch's base, the oracle's
+  `--dump` is identical on all 627 files of `src/`, `lib/`, `examples/`,
+  `tests/` and `bootstrap/examples/` other than the 12 new tests (which
+  the old parser refuses), and its `--elab-only` verdicts and messages
+  are identical on all 608 such programs (the corpus without the
+  compiler's own modules, and `src/main.moss`). The suite's dump
+  comparison holds the native dump to the oracle's over the corpus, the
+  new files included.
+- **Class.** A language extension: new syntax, so no existing program
+  changes; none of A–E applies.
+
 ### 90. Every tag has a finite layout (`FiniteLayouts`, `LayoutReaches`; layout branch; D58, D59)
 - **The gap.** Audit had no notion of layout. It accepted
   [tests/wasi/cyclic.moss](../tests/wasi/cyclic.moss)

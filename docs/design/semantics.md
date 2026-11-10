@@ -5077,7 +5077,9 @@ GC string provider with immutable snapshots, separate typed union lanes
 for incompatible references, with backend pooling deferred; D88 line-leading
 `> ` raw multiline string expressions; D89 a bracket application on a
 function call as the call under those binds, its arguments evaluated
-first; and D32 as amended: a call evaluates its receiver,
+first; D90 a type equation `l = r` as a context or assume item, which
+requires the equation and merges its sides as D43 merges two bindings;
+and D32 as amended: a call evaluates its receiver,
 then its arguments left to right)
 
 The MVP language is fully pinned down. Next (the plan as of revision 4):
@@ -5168,3 +5170,63 @@ expanding-cycle check (`NoExpandingCycle`) rejects it
 (`bootstrap/examples/expand-call-brackets.moss`). Standing tests:
 `tests/wasi/call_brackets.moss` and
 `tests/wasi/call_brackets_unrequired.moss`.
+
+**[D90] DECIDED by the designer and implemented (type equations as context and assume items).**
+
+A context or an `assume` list can say that two types are one only
+indirectly: the workaround is a dummy item mentioned twice,
+
+    type Same;
+    assume Same { fn same(x: Same): Same; }
+    context IntIsSize = same[Same=Int], same[Same=Size];
+
+whose two entries [D43] merges, identifying `Int` with `Size`, but which
+also adds a pointless need for `same`. Decided: a type equation is an
+item of its own,
+
+    context IntIsSize = Int = Size;
+    assume Int = Size { ... }
+
+- **Syntax.** `=`, the same equation `bind Int = Size;` establishes: an
+  `assume` or context item *requires* it, and `bind` defines it. Each side
+  is a type reference, a path with optional brackets (`Buf =
+  Array[Item=Byte]`, `Int = I32`), and the `=` follows a whole reference,
+  so it is outside any brackets: in `f[T=A] = B` the first `=` is the
+  bracket's. An item that is a spec is followed by `,` or the end of the
+  list, never by `=`, so the two readings never meet. Functor argument
+  and result lists take specs only; a context they name may hold
+  equations (below).
+- **Meaning.** The item requires the equation: the code under it works
+  only where the two types are already the same, and the equation merges
+  them, exactly as [D43] merges two bindings of one key. It is symmetric:
+  `Int = Size` and `Size = Int` mean the same (the merge classes do not
+  depend on the order, `bootstrap/theories/PublicEquation.v`).
+  Structured equations are allowed. A merge class holds at most one
+  structure, and two structures in one class must unify (Δ4's rule), so
+  `Buf = Bool` beside `Buf = Array[...]` is an error where the context
+  forms.
+- **Rule B.** Every type symbol an equation writes is a requirement (the
+  references each side writes, its head and its brackets' right sides,
+  not their left sides, are read as unbracketed items, so a type symbol
+  among them is put in force as one is when assumed). A caller must have
+  each in force, itself or through a member of its merge class, as for
+  any requirement (AUDIT-CHANGES #60), and satisfies the equation only
+  where the two sides are equal in its own context (`Satisfies`' merges
+  clause). The equation adds no need: unlike the workaround, nothing but
+  the merge.
+- **Results.** An equation is a requirement and a functor's result
+  provides, so a result naming a context that holds one is refused where
+  the functor is applied or bound.
+
+In `bootstrap/theories/Audit.v` an equation is `AIEq`/`CIEq` (`AssumeItem`,
+`CtxItem`); context formation reads it as `IsEq`, whose entry `NEq` is a
+direct merge constraint of `Unifies` (`MostGeneralMerge`); `SpecTypes` and
+`AssumeTypes` read its written references (`ty_heads`). The oracle's
+`Elab.add_eq_merge` and the self-hosted compiler's `lower::add_eq_item`
+walk the references as items, then unify the two sides. Merge orientation
+is still open for a linked body's checks (AUDIT-CHANGES consolidation,
+item 4), and the oracle merges toward an equation's right side, so a
+spelling can change its verdict there: `tests/wasi/eq_link_tx.moss` and
+`eq_link_xt.moss` (AUDIT-CHANGES #80). Standing tests:
+`tests/wasi/merged_int_size.moss`, `tests/wasi/merged_size_int.moss`,
+`tests/wasi/eq_caller_same.moss`, and `tests/errors/eq_*.moss`.
