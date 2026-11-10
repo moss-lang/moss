@@ -187,7 +187,7 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
                   let* t := pure (ty_of W fuel (d_mod d) [] None t0) in
                   let names := ex_names W fuel (d_mod d) i in
                   let F0 := Frame (d_mod d) None None false (mk_frame_vars false [] names) [] [] [] in
-                  let* (x, t') := r_ex R F0 (Cx [] [] [] []) i (Some t) in
+                  let* (x, t') := r_ex R F0 (Cx [] [] [] [] []) i (Some t) in
                   let* _ := check (fitsb t' t) (qs W s ++ " is declared " ++ qty W t ++ " but initialized with " ++ qty W t') in
                   let* _ := put_const s (x, t) in
                   ret (x, t)

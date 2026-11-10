@@ -88,7 +88,7 @@ Qed.
 Theorem ctx_fun_self : forall f C ns, A.CtxOf W f C ns -> forall u fx, In (IFun u, A.ProvidedFunctor fx) (A.c_provisions C) ->
   forall x t, In (x, t) fx -> t = app_subst (A.c_sub C) (TAbs x).
 Proof.
-  intros f C ns Ctx. destruct Ctx as (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  intros f C ns Ctx. destruct Ctx as (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT _].
   pose proof (proj2 entries_self _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as SelfE.
   assert (SelfR : Forall FunSelf er).

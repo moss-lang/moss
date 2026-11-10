@@ -158,8 +158,8 @@ Qed.
 
 Lemma functx_same : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
 Proof.
-  intros u C ns C' ns' (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & _ & _ & _ & _ & E)
-    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & σ' & implicit' & _ & _ & _ & _ & _ & _ & _ & _ & E').
+  intros u C ns C' ns' (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E)
+    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & σ' & classes' & implicit' & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E').
   rewrite E in E'. injection E' as -> ->. split; reflexivity.
 Qed.
 

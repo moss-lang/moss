@@ -12,7 +12,7 @@
   EaBind EaCall EaCtx EaDecide EaExpand EaExpr EaFamily EaFunctor EaMain
   EaPlatform EaTypes Elab ElabFrameCore ElabWorld ExecutionModel
   FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap
-  Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicWorld
+  Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicMergePresent PublicWorld
   ReifyData ReqsSolve ReqsTotal Specif String0 Sx Uint63Axioms WorldSound)
  (theories NM Stdlib))
 

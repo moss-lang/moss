@@ -59,7 +59,7 @@ Qed.
 Lemma functx_table_in : forall u C ns, A.FunCtx W u C ns -> forall x v, In (x, v) (A.c_ty C) ->
   v = app_subst (A.c_sub C) (TAbs x).
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _) x v I.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & _) x v I.
   destruct (proj2 (PublicCallRealize.entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT _].
   cbn in I |- *. apply in_map_iff in I as [[y v0] [E I]]. cbn in E. injection E as -> <-.
   apply in_app_or in I as [I|I].

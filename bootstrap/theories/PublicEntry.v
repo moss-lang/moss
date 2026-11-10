@@ -92,7 +92,7 @@ Lemma ctx_val_canonical : forall f C ns v t a, A.CtxOf W f C ns ->
   In (IVal v, A.ProvidedVal t a) (A.c_provisions C) -> A.canon C t = t.
 Proof.
   intros f C ns v t a Ctx I. pose proof (function_context_canonical W f C ns Ctx) as Idem.
-  destruct Ctx as (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & _ & _).
+  destruct Ctx as (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & _ & _).
   cbn [A.c_provisions A.entries_cx] in I. apply in_flat_map in I as [e [_ Ie]].
   destruct e as [x|v' t0 a0|f' g a0|r m g a0|u fx|eql eqr]; cbn in Ie; try (destruct Ie as [E|[]]; discriminate); try contradiction.
   destruct Ie as [E|[]]. injection E as -> <- _.
@@ -253,7 +253,7 @@ Lemma ctx_fn_canonical : forall W f C ns g sg a, A.CtxOf W f C ns ->
   forall t, In t (A.sg_ret sg :: A.sg_params sg) -> A.canon C t = t.
 Proof.
   intros W f C ns g sg a Ctx I t It. pose proof (function_context_canonical W f C ns Ctx) as Idem.
-  destruct Ctx as (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & _ & _).
+  destruct Ctx as (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & _ & _).
   cbn [A.c_provisions A.entries_cx] in I. apply in_flat_map in I as [e [_ Ie]].
   destruct e as [x|v' t0 a0|f' g0 a0|r m g0 a0|u fx|eql eqr]; cbn in Ie; try (destruct Ie as [E|[]]; discriminate); try contradiction.
   destruct Ie as [E|[]]. injection E as -> <- _. cbn [A.sg_ret A.sg_params] in It.

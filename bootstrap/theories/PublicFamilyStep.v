@@ -176,7 +176,7 @@ Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
   (forall x v, In (x, v) (A.c_ty C) ->
      PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.ScopedTy W C0 (A.canon C v)) ->
   PublicFormation.FormedCx W C0 ->
-  PublicFormation.FormedCx W (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_provisions Cr) (A.c_locals Cr)).
+  PublicFormation.FormedCx W (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_merge Cr) (A.c_provisions Cr) (A.c_locals Cr)).
 Proof.
   intros W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin [Cf0 [Ks0 Ts0]].
   pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
@@ -204,7 +204,7 @@ Proof.
   { intros t Ft. exfalso. exact (PublicFormation.family_no_outputs W u t Shape Ft). }
   destruct (PublicFormation.provide_result_ok W u Cf (fun t => TAbs t) Cr ks K PR P1 P2 P3 P4)
     as [SubR [LoR [_ PrR]]].
-  assert (ScE : PublicFormation.scope_gens (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_provisions Cr) (A.c_locals Cr))
+  assert (ScE : PublicFormation.scope_gens (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_merge Cr) (A.c_provisions Cr) (A.c_locals Cr))
     = PublicFormation.scope_gens C0) by (apply PublicFormation.scope_gens_ext; [reflexivity|cbn; rewrite SubR, Esub, Es; reflexivity]).
   split; [constructor|split].
   - cbn. exact (PublicFormation.cf_ty W C0 Cf0).

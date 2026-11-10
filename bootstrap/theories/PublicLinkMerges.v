@@ -57,7 +57,7 @@ Qed.
 
 Lemma ilook_c_apps : forall C k, ilook k (c_apps C) = option_map provision_inst (ilook k (c_provisions C)).
 Proof.
-  intros [ty sub provs locs] k. unfold c_apps. cbn. induction provs as [|[k' p] rest IH]; [reflexivity|].
+  intros [ty sub classes provs locs] k. unfold c_apps. cbn. induction provs as [|[k' p] rest IH]; [reflexivity|].
   cbn. destruct (item_eqb k k'); [|exact IH]. destruct p; reflexivity.
 Qed.
 
@@ -81,7 +81,7 @@ Qed.
 Lemma functx_keys_typed : forall u C ns, MentionsTyped W -> FunCtx W u C ns ->
   forall x, In x (map fst (c_ty C)) -> kind_sym W x = Some DKType.
 Proof.
-  intros u C ns Mt (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _) x Ix.
+  intros u C ns Mt (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & _ & _) x Ix.
   cbn in Ix. rewrite map_map in Ix. cbn in Ix. rewrite map_app, map_map in Ix. cbn in Ix.
   apply in_app_or in Ix as [Ix|Ix].
   - rewrite map_id in Ix. destruct (proj1 (Imp x) Ix) as [_ [M _]]. exact (Mt u x M).

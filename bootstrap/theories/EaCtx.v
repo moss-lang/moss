@@ -13,6 +13,7 @@
 
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap EaBase EaTypes.
+From NM Require PublicMergePresent.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -295,13 +296,27 @@ Definition unifiesb (s : subst) (es : list entry) : bool :=
     | NEq l r => ty_eqb (app_subst s l) (app_subst s r)
     | _ => true end) es.
 
-(* SOUND: merge es = Ok σ -> MostGeneralMerge σ es *)
-Definition merge (es : list entry) : er subst :=
+(* SOUND: merge es = Ok (s, M) -> MostGeneralMerge s es /\
+     MergeOf es M /\ SectionOf M s. *)
+Definition merge (es : list entry) : er (subst * merge) :=
   let gs := flat_map entry_gens es in
   let bound := S (S (List.length gs)) * 4 + fuel in
   let! s := merge_rounds (S (S (List.length gs))) bound es [] in
   let! _ := rcheck (unifiesb s es) "merging the context does not settle (D43)" in
-  Ok s.
+  Ok (s, PublicMergePresent.present_merge s es).
+
+(* The new class presentation keeps the exact section produced by the
+   unifier. Principality of the unifier is a separate obligation. *)
+Lemma merge_presentation : forall es s M,
+  merge es = Ok (s, M) -> MostGeneralMerge s es ->
+  MergeOf es M /\ SectionOf M s.
+Proof.
+  intros es s M. unfold merge, rbind.
+  destruct (merge_rounds _ _ _ _) as [computed | message]; [|discriminate].
+  destruct (unifiesb computed es); [|discriminate].
+  intros Result Principal. injection Result as <- <-.
+  now apply PublicMergePresent.present_merge_of.
+Qed.
 
 (* SOUND: Needs σ es (needs σ es) *)
 Definition needs (s : subst) (es : list entry) : list item :=
@@ -316,8 +331,8 @@ Definition assume_ctx (s : nat) : er (cx * list item) :=
   let! (es, tm) := items_entries fuel [] (d_mod d) [] [] (map assume_spec (d_assumes d)) in
   let! (er0, tmr) := root_ctx s es tm in
   let all := es ++ er0 in
-  let! sg := merge all in
-  Ok (entries_cx sg tmr all, needs sg all).
+  let! (sg, M) := merge all in
+  Ok (entries_cx sg M tmr all, needs sg all).
 
 (* SOUND: fun_ctx u = Ok (C, ns) -> FunCtx W u C ns, when the world's
    table records (C, ns) for u. *)
@@ -329,8 +344,8 @@ Definition fun_ctx (u : nat) : er (cx * list item) :=
                   | None => filter (fun t => negb (is_some (nlook t tm))) (mentions W fuel u)
                   | Some _ => [] end in
   let tm' := map (fun t => (t, TAbs t)) implicit ++ tm in
-  let! sg := merge es in
-  Ok (entries_cx sg tm' es, needs sg es).
+  let! (sg, M) := merge es in
+  Ok (entries_cx sg M tm' es, needs sg es).
 
 (* The w_context table: every fn, method and functor symbol below `bound`
    whose context forms.

@@ -210,14 +210,14 @@ Theorem ctxof_formed : forall f Cf ns, CtxOf W f Cf ns ->
   (forall k v, nlook k (c_ty Cf) = Some v -> v = app_subst (c_sub Cf) (TAbs k)) /\
   (forall g t, In (g, t) (c_sub Cf) -> In g (map fst (c_ty Cf)) /\ incl (gens t) (map fst (c_ty Cf))).
 Proof.
-  intros f Cf ns (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  intros f Cf ns (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
   { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
     - split; [exact IdT|]. split; [intros x Ix; exact Ix|]. intros g [].
     - exact (root_formed _ _ _ _ _ _ RI IdT). }
   destruct Tmr as [IdR [SubR ErR]].
-  assert (Keys : map fst (c_ty (entries_cx σ tmr (es ++ er))) = map fst tmr).
+  assert (Keys : map fst (c_ty (entries_cx σ classes tmr (es ++ er))) = map fst tmr).
   { cbn. rewrite map_map. reflexivity. }
   split.
   - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
@@ -466,7 +466,7 @@ Proof. intros σ [t|v t a|f g a|r m g a|u fx|eql eqr] k E; cbn in E; try discrim
 
 Lemma ctx_keys_match : forall f Cf ns, CtxOf W f Cf ns -> KeysMatch (c_provisions Cf).
 Proof.
-  intros f Cf ns (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & _ & _) k p I. cbn in I.
+  intros f Cf ns (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & _ & _) k p I. cbn in I.
   apply in_flat_map in I as [e [_ I]]. destruct e as [t|v t a|f' g a|r m g a|u fx|eql eqr]; cbn in I;
     try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
 Qed.
@@ -474,7 +474,7 @@ Qed.
 Lemma ctx_needs : forall f Cf ns, CtxOf W f Cf ns ->
   NoDup ns /\ (forall k p, In (k, p) (c_provisions Cf) -> In k ns) /\ (forall k, In k ns -> NeedShape k).
 Proof.
-  intros f Cf ns (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & [Nd Keys] & _).
+  intros f Cf ns (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & [Nd Keys] & _).
   split; [exact Nd|]. split.
   - intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]]. apply Keys. exists e. split; [exact Ie|].
     exact (entry_provision_key _ _ _ _ _ I).
@@ -587,14 +587,14 @@ Theorem ctx_provision_scoped : forall f Cf ns, CtxOf W f Cf ns ->
   incl (provision_sig_gens p) (map fst (c_ty Cf)) /\ incl (key_gens k) (map fst (c_ty Cf)).
 Proof.
   intros f Cf ns Ctx. pose proof (ctxof_formed W f Cf ns Ctx) as [_ Dom].
-  destruct Ctx as (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  destruct Ctx as (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
   { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
     - split; [exact IdT|]. split; [intros x Ix; exact Ix|]. intros g [].
     - exact (root_formed W _ _ _ _ _ _ RI IdT). }
   destruct Tmr as [IdR [SubR ErR]].
-  assert (Keys : map fst (c_ty (entries_cx σ tmr (es ++ er))) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
+  assert (Keys : map fst (c_ty (entries_cx σ classes tmr (es ++ er))) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
   rewrite Keys in Dom |- *.
   assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
   { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
@@ -650,7 +650,7 @@ Theorem ctx_fun_fixed : forall f Cf ns, CtxOf W f Cf ns -> forall u fx, In (IFun
   (forall x t t', In (x, t) fx -> In (x, t') fx -> t = t').
 Proof.
   intros f Cf ns Ctx. pose proof (ctxof_formed W f Cf ns Ctx) as [_ Dom].
-  destruct Ctx as (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  destruct Ctx as (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   pose proof (proj2 entries_cover _ _ _ _ _ _ IE) as CovE.
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er) /\ Forall FunCover er).
@@ -659,7 +659,7 @@ Proof.
     - destruct (root_formed W _ _ _ _ _ _ RI IdT) as [A1 [A2 A3]]. split; [exact A1|]. split; [exact A2|].
       split; [exact A3|exact (root_cover _ _ _ _ _ _ RI IdT)]. }
   destruct Tmr as [IdR [SubR [ErR CovR]]].
-  assert (Keys : map fst (c_ty (entries_cx σ tmr (es ++ er))) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
+  assert (Keys : map fst (c_ty (entries_cx σ classes tmr (es ++ er))) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
   rewrite Keys in Dom |- *.
   assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
   { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
@@ -690,14 +690,14 @@ Theorem functx_scoped : forall u C ns, FunCtx W u C ns ->
   NoDup ns /\ (forall k p, In (k, p) (c_provisions C) -> In k ns) /\ (forall k, In k ns -> NeedShape k) /\
   (forall g t, In (g, t) (c_sub C) -> In g (map fst (c_ty C)) /\ incl (gens t) (map fst (c_ty C))).
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & [Nd Keys] & _).
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & [Nd Keys] & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   set (tmr := (map (fun t => (t, TAbs t)) implicit ++ tm)%list).
   assert (IdR : IdForm tmr).
   { apply Forall_app. split; [|exact IdT]. apply Forall_forall. intros q Iq. apply in_map_iff in Iq as [t [<- _]]. reflexivity. }
   assert (All : Scoped tmr (flat_map entry_gens es)).
   { intros x Ix. unfold tmr. rewrite map_app. apply in_or_app. right. exact (EsT x Ix). }
-  assert (KeysE : map fst (c_ty (entries_cx σ tmr es)) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
+  assert (KeysE : map fst (c_ty (entries_cx σ classes tmr es)) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
   destruct MGM as [_ [_ [_ [Dom _]]]].
   assert (Range : forall g t, In (g, t) σ -> incl (gens t) (map fst tmr)).
   { intros g t I x Ix. exact (All x (proj2 (Dom g t I) x Ix)). }
@@ -731,7 +731,7 @@ Qed.
 Theorem functx_fun_cover : forall u C ns, FunCtx W u C ns -> forall u' fx, In (IFun u', ProvidedFunctor fx) (c_provisions C) ->
   forall x, Fixed W u' x -> exists t, In (x, t) fx.
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _) u' fx I.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & _ & _) u' fx I.
   pose proof (proj2 entries_cover _ _ _ _ _ _ IE) as Cov. cbn in I. apply in_flat_map in I as [e [Ie I]].
   pose proof (proj1 (Forall_forall _ _) Cov e Ie) as Ce.
   destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx0|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
@@ -740,7 +740,7 @@ Proof.
 Qed.
 Theorem functx_needs_provided : forall u C ns, FunCtx W u C ns -> forall k, In k ns -> exists p, In (k, p) (c_provisions C).
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & -> & _ & -> & [_ Keys] & _) k Ik.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & _ & _ & _ & _ & -> & _ & _ & _ & -> & [_ Keys] & _) k Ik.
   destruct (proj1 (Keys k) Ik) as [e [Ie E]]. cbn [c_provisions entries_cx].
   destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx|eql eqr] eqn:Ee; cbn in E; try discriminate; injection E as <-;
     eexists; apply in_flat_map; exists e; (split; [rewrite Ee; exact Ie|]); rewrite Ee; cbn; left; reflexivity.

@@ -2,6 +2,7 @@
    the revised contract is inhabited without any runtime-typing hypothesis. *)
 From Stdlib Require Import List String Arith Lia.
 From NM Require Import Audit AuditExamples FrontEnd.
+From NM Require PublicMergePresent.
 Import Audit.Semantics.
 Import ListNotations Input Elaboration.
 Local Open Scope string_scope.
@@ -19,7 +20,7 @@ Definition scope (p : string) (ns : nspace) (n : string) : option ent :=
 Definition world_main := World
   (fun s => if Nat.eqb s 1 then Some main_decl else None)
   scope scope (fun _ _ => None) (fun _ => []) (Some "/lib/")
-  (fun s => if Nat.eqb s 1 then Some (Cx [] [] [] [], []) else None).
+  (fun s => if Nat.eqb s 1 then Some (Cx [] [] [] [] [], []) else None).
 
 Lemma reads_decl : forall s d, w_decl world_main s = Some d -> s = 1 /\ d = main_decl.
 Proof. intros s d H. cbn in H. destruct (Nat.eqb s 1) eqn:E; [|discriminate].
@@ -127,10 +128,10 @@ Proof.
   - f_equal. induction args as [|[f t] rest Rest]; cbn; [reflexivity|]. rewrite IH, Rest. reflexivity.
   - f_equal. induction members as [|t rest Rest]; cbn; [reflexivity|]. rewrite IH, Rest. reflexivity.
 Qed.
-Definition empty_context := Cx [] [] [] [].
+Definition empty_context := Cx [] [] [] [] [].
 Lemma main_context : CtxOf world_main 1 empty_context [].
 Proof.
-  exists main_decl, [], [], [], [], []. split; [reflexivity|].
+  exists main_decl, [], [], [], [], [], []. split; [reflexivity|].
   split; [constructor|]. split.
   - apply RootNone. right. intros gc d n its Named.
     exfalso. eapply no_platform_symbols with (lib := "wasm"); [simpl;auto|exact Named].
@@ -138,7 +139,9 @@ Proof.
     + split; [split; [intros e1 e2 k H;contradiction|intros l r []]|]. split.
       * intros. repeat rewrite subst_empty. reflexivity.
       * split; [intros; rewrite subst_empty; reflexivity|split; intros g t []].
-    + split; [reflexivity|]. split; [split; [constructor|]; intros k; split; [contradiction|];
+    + split; [apply PublicMergePresent.empty_merge_of; split; [intros e e' k [] | intros l r []] |].
+      split; [apply PublicMergePresent.empty_merge_section |].
+      split; [reflexivity|]. split; [split; [constructor|]; intros k; split; [contradiction|];
         intros [e [Member _]]; contradiction|]. reflexivity.
 Qed.
 Lemma main_function : FnElab world_main AuditExamples.unit_program 1.
@@ -200,8 +203,9 @@ Proof.
   destruct (w_decl world_main s) as [d|] eqn:Read; [|discriminate].
   apply reads_decl in Read as [-> ->]. exists empty_context, [].
   split; [|intros k' s' []].
-  destruct main_context as (d & es & tm & er & tmr & σ & R & Its & Root & M & E & N & _).
-  exists d, es, tm, er, tmr, σ. exact (conj R (conj Its (conj Root (conj M (conj E N))))).
+  destruct main_context as (d & es & tm & er & tmr & σ & classes & R & Its & Root & M & Form & Section & E & N & _).
+  exists d, es, tm, er, tmr, σ, classes.
+  exact (conj R (conj Its (conj Root (conj M (conj Form (conj Section (conj E N))))))).
 Qed.
 
 (* main is the only declaration; its signature, `fn main()`, forms. *)

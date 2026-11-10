@@ -172,7 +172,7 @@ Lemma functx_mgm : forall v Cv ns, A.FunCtx W v Cv ns ->
   (forall t, app_subst (A.c_sub Cv) (app_subst (A.c_sub Cv) t) = app_subst (A.c_sub Cv) t) /\
   (forall g t, In (g, t) (A.c_sub Cv) -> lookup_subst g (A.c_sub Cv) = Some t).
 Proof.
-  intros v Cv ns (d & ps & a & r & b & es & tm & tm' & σ & imp & _ & _ & _ & _ & _ & [_ [Id [_ [_ Fn]]]] & -> & _).
+  intros v Cv ns (d & ps & a & r & b & es & tm & tm' & σ & classes & imp & _ & _ & _ & _ & _ & [_ [Id [_ [_ Fn]]]] & _ & _ & -> & _).
   cbn [A.entries_cx A.c_sub]. split; [exact Id|exact Fn].
 Qed.
 
@@ -405,7 +405,7 @@ Qed.
 Lemma ast_of_abstract : forall v Cv ns, A.FunCtx W v Cv ns -> Abstract v ->
   exists n ps a r, A.ast_of W v = Some (ADFunctor n ps a r None).
 Proof.
-  intros v Cv ns (d & ps & a & r & b & es & tm & tm' & σ & imp & D & FP & _) Ab.
+  intros v Cv ns (d & ps & a & r & b & es & tm & tm' & σ & classes & imp & D & FP & _) Ab.
   pose proof (Ab d ps a r b D FP) as ->.
   destruct (A.d_ast d) eqn:Ed; cbn in FP; try discriminate. injection FP as -> -> -> ->.
   eexists _, _, _, _. unfold A.ast_of. rewrite D. cbn. rewrite Ed. reflexivity.

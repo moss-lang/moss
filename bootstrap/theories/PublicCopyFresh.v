@@ -34,7 +34,7 @@ Qed.
 
 Lemma functx_ty_abs : forall u Cu ns, FunCtx W u Cu ns -> forall x v, In (x, v) (c_ty Cu) -> v = app_subst (c_sub Cu) (TAbs x).
 Proof.
-  intros u Cu ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _) x v I.
+  intros u Cu ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & _ & _) x v I.
   cbn [entries_cx c_ty c_sub] in *. apply in_map_iff in I as [[y w] [E I]]. cbn in E. injection E as -> <-. f_equal.
   apply in_app_or in I as [I|I].
   - apply in_map_iff in I as [z [E _]]. injection E as -> <-. reflexivity.

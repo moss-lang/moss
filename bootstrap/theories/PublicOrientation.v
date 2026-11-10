@@ -44,7 +44,7 @@ Qed.
 Lemma functx_sub_function : forall W u C ns, A.FunCtx W u C ns ->
   forall g t, In (g, t) (A.c_sub C) -> lookup_subst g (A.c_sub C) = Some t.
 Proof.
-  intros W u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & _ & MGM & -> & _).
+  intros W u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & _ & _ & _ & _ & _ & MGM & _ & _ & -> & _).
   exact (proj2 (proj2 (proj2 (proj2 MGM)))).
 Qed.
 

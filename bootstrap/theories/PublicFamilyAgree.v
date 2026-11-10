@@ -454,8 +454,8 @@ Let Dom := map fst (c_ty Cu).
 
 Lemma functx_uniq : forall C1 ns1 C2 ns2, FunCtx W u C1 ns1 -> FunCtx W u C2 ns2 -> C1 = C2 /\ ns1 = ns2.
 Proof.
-  intros C1 ns1 C2 ns2 (d & ps & a & r & b & es & tm & tm' & s & imp & _ & _ & _ & _ & _ & _ & _ & _ & E1)
-    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & s' & imp' & _ & _ & _ & _ & _ & _ & _ & _ & E2).
+  intros C1 ns1 C2 ns2 (d & ps & a & r & b & es & tm & tm' & s & classes & imp & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E1)
+    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & s' & classes' & imp' & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E2).
   rewrite E1 in E2. injection E2 as -> ->. split; reflexivity.
 Qed.
 
@@ -542,7 +542,7 @@ Qed.
 Lemma tbl_in : forall k v, In (k, v) (c_ty Cu) -> v = app_subst σ (TAbs k).
 Proof.
   intros k v I. unfold σ. clear KeysT PRf KeysM.
-  destruct FCu as (d & ps & a & r & b & es & tm & tm' & s & imp & D & FP & IE & Imp & Etm & MGM & ECu & _).
+  destruct FCu as (d & ps & a & r & b & es & tm & tm' & s & classes & imp & D & FP & IE & Imp & Etm & MGM & _ & _ & ECu & _).
   rewrite ECu in I |- *. subst tm'. cbn in I |- *.
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT _].
   apply in_map_iff in I as [[k' w] [E I]]. cbn in E. injection E as -> <-.
@@ -570,7 +570,7 @@ Proof.
   intros t Mt. pose proof Mt as (d & ps & a & r & b & sp & D & FP & _).
   pose proof (family_shape_b d ps a r b D FP) as Eb.
   unfold Dom. clear KeysT PRf KeysM.
-  destruct FCu as (d' & ps' & a' & r' & b' & es & tm & tm' & s & imp & D' & FP' & IE & Imp & Etm & MGM & ECu & _).
+  destruct FCu as (d' & ps' & a' & r' & b' & es & tm & tm' & s & classes & imp & D' & FP' & IE & Imp & Etm & MGM & _ & _ & ECu & _).
   rewrite ECu. cbn [c_ty entries_cx]. rewrite map_map. cbn. subst tm'.
   rewrite D in D'. injection D' as <-. rewrite FP in FP'. injection FP' as <- <- <- <-.
   rewrite map_app. apply in_or_app. destruct (nlook t tm) eqn:L.

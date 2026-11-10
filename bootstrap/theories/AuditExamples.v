@@ -150,5 +150,5 @@ Example fresh_output_meaning_is_exported :
 Proof. reflexivity. Qed.
 
 Example captured_interpretations_participate_in_freshness :
-  In 9 (context_gens (Cx [] [] [(IFn 1,ProvidedFn (FSig [] TUnit) [(7,Some (TAbs 9))])] [])).
+  In 9 (context_gens (Cx [] [] [] [(IFn 1,ProvidedFn (FSig [] TUnit) [(7,Some (TAbs 9))])] [])).
 Proof. cbn; auto. Qed.

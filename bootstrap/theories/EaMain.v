@@ -109,7 +109,7 @@ Definition assemble (bound : nat) (entry : string) : M program :=
       | Some d => match d_ast d with
                   | ADVal nm _ (Some _) =>
                       with_msg (d_mod d ++ ": ")
-                        (let* _ := r_ex R0 (Frame (d_mod d) None None false [] [] [] []) (Cx [] [] [] []) (AEPath [nm] None) None in ret tt)
+                        (let* _ := r_ex R0 (Frame (d_mod d) None None false [] [] [] []) (Cx [] [] [] [] []) (AEPath [nm] None) None in ret tt)
                   | _ => ret tt end
       | None => ret tt end) (seq 0 bound) in
   let* main := lift (match w_scope W entry NSName "main" with Some (ESym s) => Some s | _ => None end) "unsupported: no main" in
@@ -226,7 +226,7 @@ Definition decl_forms (bound : nat) (s : nat) : er unit :=
           let! _ := sig_of W fuel s tm (Some TUnit) in Ok tt
       | ADFunctor _ _ _ _ b =>
           let! (Cu, _) := match w_context W s with Some cn => Ok cn | None => fun_ctx E s end in
-          let! _ := provide_result E s (Cx (c_ty Cu ++ tm) (c_sub Cu) (c_provisions Cu) (c_locals Cu)) (fun t => TAbs t) in
+          let! _ := provide_result E s (Cx (c_ty Cu ++ tm) (c_sub Cu) (c_merge Cu) (c_provisions Cu) (c_locals Cu)) (fun t => TAbs t) in
           match b with
           | None => Ok tt
           | Some bodies =>

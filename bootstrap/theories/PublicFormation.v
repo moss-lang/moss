@@ -830,11 +830,11 @@ Proof.
   injection E as E1 E2 _ _. subst. exists r0, g, a. split; reflexivity.
 Qed.
 
-Lemma idform_scope : forall σ tm es x, IdForm tm -> In x (map fst tm) -> In x (scope_gens (entries_cx σ tm es)).
+Lemma idform_scope : forall σ classes tm es x, IdForm tm -> In x (map fst tm) -> In x (scope_gens (entries_cx σ classes tm es)).
 Proof.
-  intros σ tm es x Id Ix. apply in_map_iff in Ix as [[y v] [E Iq]]. cbn in E. subst y.
+  intros σ classes tm es x Id Ix. apply in_map_iff in Ix as [[y v] [E Iq]]. cbn in E. subst y.
   unfold IdForm in Id. rewrite Forall_forall in Id. pose proof (Id _ Iq) as Ev. cbn in Ev. subst v.
-  apply (table_scope (entries_cx σ tm es) x (TAbs x)); [|left; reflexivity].
+  apply (table_scope (entries_cx σ classes tm es) x (TAbs x)); [|left; reflexivity].
   cbn [entries_cx c_ty c_sub]. apply in_map_iff. exists (x, TAbs x). split; [reflexivity|exact Iq].
 Qed.
 
@@ -865,13 +865,13 @@ Proof.
   - exact (IH Kt).
 Qed.
 
-Lemma entries_cx_formed : forall σ tm es,
+Lemma entries_cx_formed : forall σ classes tm es,
   IdForm tm -> KeysAbstract tm -> KeysDecl tm -> Forall (EntryP (TyOk W)) es ->
   (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
   (forall g t, In (g, t) σ -> TyFormed W t /\ incl (gens t) (map fst tm)) ->
-  FormedCx W (entries_cx σ tm es).
+  FormedCx W (entries_cx σ classes tm es).
 Proof.
-  intros σ tm es Id Ka Kd Es Eg Sg.
+  intros σ classes tm es Id Ka Kd Es Eg Sg.
   assert (So : TmOk W σ).
   { intros g t Iq. destruct (Sg g t Iq) as [Ft Gt]. split; [exact Ft|]. intros y Iy. exact (Ka y (Gt y Iy)). }
   pose proof (idform_ok _ Id Ka) as Tm.
@@ -892,16 +892,16 @@ Proof.
     + intros n t mu [].
   - intros r m th p Iq. cbn in Iq. apply in_flat_map in Iq as [e [Ie Iq]].
     destruct (entry_provision_key _ _ _ _ _ _ _ Iq) as [r0 [g [a [-> ->]]]].
-    assert (Sc : incl (gens r0) (scope_gens (entries_cx σ tm es))).
+    assert (Sc : incl (gens r0) (scope_gens (entries_cx σ classes tm es))).
     { intros y Iy. apply idform_scope; [exact Id|]. apply (Eg _ Ie). cbn. apply in_or_app. left. exact Iy. }
-    exact (scoped_of_incl W _ _ (canon_scope (entries_cx σ tm es) r0 Sc)).
+    exact (scoped_of_incl W _ _ (canon_scope (entries_cx σ classes tm es) r0 Sc)).
   - intros x Ix. cbn in Ix. rewrite map_map in Ix. cbn in Ix. exact (Kd x Ix).
 Qed.
 
 (* The context a fn or method's assumes form is formed. *)
 Theorem ctxof_cx_formed : forall f C ns, CtxOf W f C ns -> FormedCx W C.
 Proof.
-  intros f C ns (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & _ & _).
+  intros f C ns (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   destruct (proj2 entries_ok _ _ _ _ _ _ IE (tmok_nil W) ltac:(constructor) ltac:(intros x [])) as [_ [KaT OkT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er) /\
@@ -927,7 +927,7 @@ Qed.
 (* The context a functor's argument telescope forms is formed. *)
 Theorem functx_cx_formed : forall u C ns, FunCtx W u C ns -> FormedCx W C.
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _).
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   destruct (proj2 entries_ok _ _ _ _ _ _ IE (tmok_nil W) ltac:(constructor) ltac:(intros x [])) as [_ [KaT OkT]].
   assert (Id' : IdForm (map (fun t => (t, TAbs t)) implicit ++ tm)).
@@ -1578,13 +1578,13 @@ Lemma lambda_cx_formed : forall C caps capvals, FormedCx W C ->
                     | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
                     | None => C' end)
                  (combine caps capvals)
-                 (Cx (c_ty C) (c_sub C) (c_provisions C) [])).
+                 (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) [])).
 Proof.
   intros C caps capvals Fc.
-  assert (Base : FormedCx W (Cx (c_ty C) (c_sub C) (c_provisions C) [])).
+  assert (Base : FormedCx W (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) [])).
   { destruct Fc as [[Ty Sub Pr Lo] [Ks Ts]]. split; [constructor; cbn; try assumption; intros n t mu []|split; assumption]. }
   generalize (combine caps capvals) as l. intros l. revert Base.
-  generalize (Cx (c_ty C) (c_sub C) (c_provisions C) []) as C0.
+  generalize (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []) as C0.
   induction l as [|[n v] r IH]; intros C0 F0; cbn; [exact F0|]. apply IH.
   destruct (slook n (c_locals C)) as [[t mu]|] eqn:S; [|exact F0].
   pose proof (cf_locals _ _ (proj1 Fc) n t mu (slook_in _ _ _ _ S)) as Ot.
@@ -1690,16 +1690,16 @@ Proof.
     rewrite D in D'. injection D' as <-. rewrite Ast in Ast'. injection Ast' as <- <- <- <-.
     destruct ps as [names|].
     + destruct Pm as [y [Iy Ry]]. exact (Listed names y x eq_refl Iy Ry).
-    + exfalso. destruct FC as (d0 & ps0 & a0 & r0 & b0 & es & tm & tm' & σ & implicit & D0 & FP & _ & Imp & -> & _ & -> & _).
+    + exfalso. destruct FC as (d0 & ps0 & a0 & r0 & b0 & es & tm & tm' & σ & classes & implicit & D0 & FP & _ & Imp & -> & _ & _ & _ & -> & _).
       rewrite D in D0. injection D0 as <-. rewrite Ast in FP. cbn in FP. injection FP as _ _ _ <-.
-      assert (Ix : In x (map fst (A.c_ty (A.entries_cx σ (map (fun t => (t, TAbs t)) implicit ++ tm) es)))).
+      assert (Ix : In x (map fst (A.c_ty (A.entries_cx σ classes (map (fun t => (t, TAbs t)) implicit ++ tm) es)))).
       { cbn. rewrite map_map. cbn. rewrite map_app, map_map. cbn. apply in_or_app.
         destruct (A.nlook x tm) as [w|] eqn:Lt.
         - right. apply nlook_in in Lt. change x with (fst (x, w)). apply in_map, Lt.
         - left. rewrite map_id. apply Imp. split; [reflexivity|split; [exact Pm|exact Lt]]. }
       apply in_map_iff in Ix as [[y w] [Ey Iw]]. cbn in Ey. subst y.
-      destruct (A.nlook x (A.c_ty (A.entries_cx σ (map (fun t => (t, TAbs t)) implicit ++ tm) es))) eqn:N; [discriminate|].
-      clear Nu. induction (A.c_ty (A.entries_cx σ (map (fun t => (t, TAbs t)) implicit ++ tm) es)) as [|[z u0] rest IH];
+      destruct (A.nlook x (A.c_ty (A.entries_cx σ classes (map (fun t => (t, TAbs t)) implicit ++ tm) es))) eqn:N; [discriminate|].
+      clear Nu. induction (A.c_ty (A.entries_cx σ classes (map (fun t => (t, TAbs t)) implicit ++ tm) es)) as [|[z u0] rest IH];
         [contradiction|]. cbn in N. destruct (Nat.eqb_spec x z) as [->|Ne]; [discriminate|].
       destruct Iw as [E|Iw]; [injection E as E _; congruence|exact (IH N Iw)].
   - apply Ts. change x with (fst (x, v)). apply in_map. exact L.

@@ -128,7 +128,7 @@ Definition AppMeanings (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx gm : sub
 Lemma fixed_in_functx : forall u Cu ns x, (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
   A.FunCtx W u Cu ns -> A.Fixed W u x -> In x (map fst (A.c_ty Cu)).
 Proof.
-  intros u Cu ns x [n [ps [a [r Ast]]]] (d & ps' & a' & r' & b & es & tm & tm' & σ & implicit & D & FP & _ & Imp & -> & _ & -> & _ & _)
+  intros u Cu ns x [n [ps [a [r Ast]]]] (d & ps' & a' & r' & b & es & tm & tm' & σ & classes & implicit & D & FP & _ & Imp & -> & _ & _ & _ & -> & _ & _)
     [Mn _].
   unfold A.ast_of in Ast. rewrite D in Ast. injection Ast as Ast. rewrite Ast in FP. injection FP as _ _ _ <-.
   cbn. rewrite map_map. cbn. rewrite map_app, map_map. cbn. apply in_or_app.
@@ -278,7 +278,7 @@ Definition Pre n F C d types H g st : Prop :=
 (* The context code runs in after a demand: the type table of C0, where
    the code is, and the provisions the families added. The demand itself
    may read the table differently (an attached method's receiver). *)
-Definition with_ty (C0 C : A.cx) : A.cx := A.Cx (A.c_ty C0) (A.c_sub C) (A.c_provisions C) (A.c_locals C).
+Definition with_ty (C0 C : A.cx) : A.cx := A.Cx (A.c_ty C0) (A.c_sub C) (A.c_merge C) (A.c_provisions C) (A.c_locals C).
 
 Notation Outcome := (AR.O.Outcome W P state_ok).
 
@@ -412,7 +412,7 @@ Lemma realizes_same : forall n C C' d H,
   A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_provisions C' = A.c_provisions C ->
   Realizes n C d H -> Realizes n C' d H.
 Proof.
-  intros n [ty sub provs locs] [ty' sub' provs' locs'] d H; cbn; intros -> -> -> Real; exact Real.
+  intros n [ty sub classes provs locs] [ty' sub' classes' provs' locs'] d H; cbn; intros -> -> -> Real; exact Real.
 Qed.
 
 Lemma pre_lower : forall n F C d types H g st, Pre (S n) F C d types H g st -> Pre n F C d types H g st.
@@ -1211,7 +1211,7 @@ Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
 
 Lemma ctxof_locals : forall f C ns, A.CtxOf W f C ns -> A.c_locals C = [].
 Proof.
-  intros f C ns [d [es [tm [er [tmr [σ [_ [_ [_ [_ [-> _]]]]]]]]]]]. reflexivity.
+  intros f C ns (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & _). reflexivity.
 Qed.
 
 Lemma slook_params : forall (names : list name) (ts : list ty) C n t mu,
@@ -1449,7 +1449,7 @@ Qed.
 Lemma ilook_apps_fun : forall C u fx, A.ilook (IFun u) (A.c_provisions C) = Some (A.ProvidedFunctor fx) ->
   A.ilook (IFun u) (A.c_apps C) = Some (A.fixed_app fx).
 Proof.
-  intros [ty sub provs locs] u fx. unfold A.c_apps. cbn. induction provs as [|[k p] rest IH]; intros L; [discriminate|].
+  intros [ty sub classes provs locs] u fx. unfold A.c_apps. cbn. induction provs as [|[k p] rest IH]; intros L; [discriminate|].
   destruct k as [a|a|a|r m a|a]; cbn in L |- *; try exact (IH L).
   destruct (Nat.eqb u a); [injection L as ->; reflexivity|exact (IH L)].
 Qed.
@@ -1687,7 +1687,8 @@ Qed.
    them with the families' provisions and the code's original context. *)
 Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Demand W D0 wanted used C wrap C' ->
   forall F Cc Corig t (B : Prop) x,
-  A.c_sub C = A.c_sub Cc -> A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
+  A.c_sub C = A.c_sub Cc -> A.c_merge C = A.c_merge Cc ->
+  A.c_provisions C = A.c_provisions Cc -> A.c_locals C = A.c_locals Cc ->
   incl (A.c_provisions Corig) (A.c_provisions Cc) -> A.c_sub Corig = A.c_sub Cc ->
   FamilyTableIn C Cc -> PublicFormation.TysScoped W C ->
   (forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W Cc r) ->
@@ -1697,9 +1698,9 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   Outcome F d H types t B (AR.O.I.eval n P d g st (wrap x)).
 Proof.
   intros k Bel D0 wanted used C wrap C' Dm. induction Dm as [used C|used C u matching th sm rs Cm wrap Cf Nin Step Rest IH];
-    intros F Cc Corig t B x Es Ep El Inc Eo Tin Ts Wk Cont n Ln d types H g st PreC PreO.
+    intros F Cc Corig t B x Es Emg Ep El Inc Eo Tin Ts Wk Cont n Ln d types H g st PreC PreO.
   - apply Cont; [exact Ln| |exact PreO].
-    replace (with_ty Cc C) with Cc; [exact PreC|]. destruct Cc as [a0 b0 c0 e0], C as [a1 b1 c1 e1]; cbn in *; subst; reflexivity.
+    replace (with_ty Cc C) with Cc; [exact PreC|]. destruct Cc as [a0 b0 m0 c0 e0], C as [a1 b1 m1 c1 e1]; cbn in *; subst; reflexivity.
   - inversion Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FA Ro Ik]; subst.
     cbn beta. unfold apply_expression. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
     destruct n1 as [|n2]; [cbn; exact Logic.I|].
@@ -1717,7 +1718,7 @@ Proof.
       assert (ScE : PublicFormation.scope_gens (with_ty Cc Cr) = PublicFormation.scope_gens Cc)
         by (apply PublicFormation.scope_gens_ext; [reflexivity|cbn; rewrite SubCr, Es; reflexivity]).
       eapply outcome_heap; [exact E|]. apply (outcome_meanings F d d' H' types t B _ Em).
-      apply (IH F (with_ty Cc Cr) Corig t B x eq_refl eq_refl eq_refl).
+      apply (IH F (with_ty Cc Cr) Corig t B x eq_refl eq_refl eq_refl eq_refl).
       * intros q I. apply IncCr. rewrite Ep. exact (Inc q I).
       * cbn. rewrite SubCr, Es. exact Eo.
       * intros x0 v Iq. cbn in Iq.
@@ -1733,7 +1734,8 @@ Proof.
 Qed.
 
 Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Prop) x,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
+  A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.Demand W C wanted [] C wrap C' ->
   (Formed F C0 -> FamilyTableIn C C0 /\ PublicFormation.TysScoped W C /\
      forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C0 r) ->
@@ -1741,9 +1743,9 @@ Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Pro
      Outcome F d H types t B (AR.O.I.eval j P d g st x)) ->
   StepSafe k F C0 t B (wrap x).
 Proof.
-  intros k Bel F C0 C wanted C' wrap t B x Es Ep El Dm Sco Cont d types H g st Pre0.
+  intros k Bel F C0 C wanted C' wrap t B x Es Emg Ep El Dm Sco Cont d types H g st Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [_ Fm0]]]]]. destruct (Sco Fm0) as [Tin [Ts Wk]].
-  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Ep El (fun q I => I) eq_refl Tin Ts Wk Cont (S k) (le_n _)
+  exact (demand_gen k Bel C wanted [] C wrap C' Dm F C0 C0 t B x Es Emg Ep El (fun q I => I) eq_refl Tin Ts Wk Cont (S k) (le_n _)
     d types H g st Pre0 Pre0).
 Qed.
 
@@ -1772,7 +1774,7 @@ Definition NewOk n C' d' H (k0 : item) (p0 : A.provision) : Prop :=
   end.
 
 Definition set_cx (C : A.cx) (k0 : item) (p0 : A.provision) : A.cx :=
-  A.Cx (A.c_ty C) (A.c_sub C) (set_list k0 p0 (A.c_provisions C)) (A.c_locals C).
+  A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (set_list k0 p0 (A.c_provisions C)) (A.c_locals C).
 
 Lemma ilook_map_snd : forall X (f : A.provision -> X) k l,
   A.ilook k (map (fun q => (fst q, f (snd q))) l) = option_map f (A.ilook k l).
@@ -1780,7 +1782,7 @@ Proof. intros X f k l. induction l as [|[k' p] r IH]; [reflexivity|]. cbn. destr
 
 Lemma capps_ilook : forall C k, A.ilook k (A.c_apps C) = option_map A.provision_inst (A.ilook k (A.c_provisions C)).
 Proof.
-  intros [ty sub provs locs] k. unfold A.c_apps. cbn [A.c_provisions].
+  intros [ty sub classes provs locs] k. unfold A.c_apps. cbn [A.c_provisions].
   induction provs as [|[k' p] r IH]; [reflexivity|]. cbn. destruct (item_eqb k k'); [|exact IH].
   destruct p; reflexivity.
 Qed.
@@ -2111,7 +2113,7 @@ Qed.
 
 Lemma pre_with_ty : forall n F C0 C d types H g st, A.c_ty C = A.c_ty C0 ->
   Pre n F (with_ty C0 C) d types H g st -> Pre n F C d types H g st.
-Proof. intros n F C0 [ty sub provs locs] d types H g st; cbn; intros -> Pre0. exact Pre0. Qed.
+Proof. intros n F C0 [ty sub classes provs locs] d types H g st; cbn; intros -> Pre0. exact Pre0. Qed.
 
 Lemma receiver_agree : forall att Ca ns Cd th d' r args xs (rest : list (nat * ty)),
   A.CtxOf W att Ca ns -> A.CallTheta W Cd Ca att th -> Absorbs Cd d' ->
@@ -2150,7 +2152,7 @@ Lemma realizes_ty_free : forall n C C' d H,
   A.c_sub C' = A.c_sub C -> A.c_provisions C' = A.c_provisions C ->
   Realizes n C d H -> Realizes n C' d H.
 Proof.
-  intros n [ty sub provs locs] [ty' sub' provs' locs'] d H; cbn; intros -> -> Real; exact Real.
+  intros n [ty sub classes provs locs] [ty' sub' classes' provs' locs'] d H; cbn; intros -> -> Real; exact Real.
 Qed.
 
 (* An attached method bound at a key is entered at the key's receiver. *)
@@ -2391,7 +2393,7 @@ Qed.
 (* The closure realizes the lambda's context: what it captured is what
    the context provides, at the same meanings. *)
 Lemma lambda_realizes_le : forall n0 n C qs Cl d1 H dc keys, n <= n0 ->
-  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []) ->
+  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []) ->
   Realizes n0 C d1 H -> NoDup (map snd qs) ->
   (forall q, In q qs -> exists t mu w, A.slook (fst q) (A.c_locals C) = Some (t, mu) /\
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
@@ -2407,7 +2409,7 @@ Proof.
   assert (Meq : type_meanings de = capture_meanings d1 K) by apply typed_capture_meanings.
   assert (G : forall t, incl (A.gens t) (A.context_gens C) -> ground de t = ground d1 t).
   { intros t Sc. unfold ground at 1. rewrite Meq. exact (ground_capture d1 K t (fun y I => cg_l C y (Sc y I))). }
-  destruct (cl_fields C qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) [])) as [_ Sub].
+  destruct (cl_fields C qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) [])) as [_ Sub].
   rewrite <- ClE in Sub. cbn [A.c_sub] in Sub.
   assert (Canon : forall t, A.canon Cl t = A.canon C t) by (intros t; unfold A.canon; rewrite Sub; reflexivity).
   assert (KMl : PublicCallRealize.KeysMatch (A.c_provisions Cl)) by (rewrite ClE; apply cl_keys; exact KM).
@@ -2492,7 +2494,7 @@ Proof.
 Qed.
 
 Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
-  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []) ->
+  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []) ->
   Realizes (S n) C d1 H -> NoDup (map snd qs) ->
   (forall q, In q qs -> exists t mu w, A.slook (fst q) (A.c_locals C) = Some (t, mu) /\
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
@@ -2633,7 +2635,7 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
   List.length ps = List.length (A.sg_params sg) ->
   (forall n, In n caps -> A.slook n (A.c_locals C) <> None /\ ~ In n (map fst ps)) ->
   NoDup caps -> List.length capvals = List.length caps -> NoDup capvals ->
-  Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []) ->
+  Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []) ->
   A.fr_ret Fl = Some (A.sg_ret sg) -> A.fr_this Fl = this -> A.fr_loop Fl = false ->
   A.Numbering Fl this (map fst ps) -> Forall (A.Named Fl) caps ->
   A.BlkE W Prog Fl (fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) (combine (map fst ps) (A.sg_params sg)) Cl)
@@ -2810,7 +2812,7 @@ Proof. reflexivity. Qed.
 
 (* Every key the lambda needs is found where it is bound. *)
 Lemma lambda_select : forall n C (qs : list (name * vsym)) Cl d' H keys,
-  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []) ->
+  Cl = fold_left (cl_fold C) qs (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []) ->
   Realizes n C d' H -> Installed C qs d' H -> NoDup (map snd qs) ->
   (forall q, In q qs -> A.slook (fst q) (A.c_locals C) <> None) ->
   (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
@@ -3441,8 +3443,8 @@ Qed.
 
 Lemma functx_unique : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
 Proof.
-  intros u C ns C' ns' (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & _ & _ & _ & _ & E)
-    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & σ' & implicit' & _ & _ & _ & _ & _ & _ & _ & _ & E').
+  intros u C ns C' ns' (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E)
+    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & σ' & classes' & implicit' & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E').
   rewrite E in E'. injection E' as -> ->. split; reflexivity.
 Qed.
 
@@ -3470,8 +3472,8 @@ Lemma link_body_functx : forall u gg h pins Cu nsu Cg nsg, A.LinkBody W Prog u g
 Proof.
   intros u gg h pins Cu nsu Cg nsg LB Wu Wg.
   destruct LB as [u0 gg0 h0 dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0 pins0 Dg Ast FCu FCg].
-  pose proof FCu as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Wu').
-  pose proof FCg as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Wg').
+  pose proof (PublicContextFacts.functor_context_record W _ _ _ FCu) as Wu'.
+  pose proof (PublicContextFacts.functor_context_record W _ _ _ FCg) as Wg'.
   rewrite Wu in Wu'. rewrite Wg in Wg'. injection Wu' as E1 E2. injection Wg' as E3 E4. subst. split; assumption.
 Qed.
 
@@ -3748,7 +3750,7 @@ Definition prov_types (p : A.provision) : list ty :=
 Lemma functx_canon_prov : forall u C ns, A.FunCtx W u C ns -> forall k p, In (k, p) (A.c_provisions C) ->
   (forall t, In t (prov_types p) -> A.canon C t = t) /\ (forall r m a, k = IMth r m a -> A.canon C r = r).
 Proof.
-  intros u C ns (dd & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & Etm & MGM & EC & _ & _) k p Ik.
+  intros u C ns (dd & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & Etm & MGM & _ & _ & EC & _ & _) k p Ik.
   subst C. destruct MGM as [_ [Idem _]]. unfold A.canon. cbn [A.c_sub A.entries_cx A.c_provisions] in Ik |- *.
   apply in_flat_map in Ik as [e [_ Ik]].
   destruct e as [t0|v t0 a0|f g a0|r0 m g a0|u0 fx|eql eqr]; cbn [A.entry_provision In] in Ik; try contradiction;
@@ -4120,7 +4122,7 @@ Proof.
 Qed.
 
 Lemma functx_locals : forall u C ns, A.FunCtx W u C ns -> A.c_locals C = [].
-Proof. intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & _ & _ & -> & _ & _). reflexivity. Qed.
+Proof. intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & _ & _ & _ & _ & _ & _ & _ & _ & -> & _ & _). reflexivity. Qed.
 
 Lemma apply_functor_eq : forall j d u th outs sm rs st,
   AR.O.I.apply_functor (S j) P d u th outs sm rs st =
@@ -4557,7 +4559,7 @@ Proof.
   destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
     FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
   subst sm this.
-  assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
+  assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []))
     by exact ClE.
   set (qs := combine caps capvals) in *.
   assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
@@ -4747,7 +4749,7 @@ Proof.
     intros j d types0 H g0 st Lj LJ Pre0 rest. rewrite bindings_method_eq.
     remember (AEPath pw None) as src eqn:Src. remember (@None ty) as none eqn:NoneE.
     destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R' K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R' K Abs' Fn Len' Fresh' Body'].
-    2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
+    2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
     destruct (PublicContextFacts.function_context_unique W g' Cg' ns' Cg nsg Ctx' Ctx) as [-> ->]. subst n0.
     pose proof Pre0 as [_ [_ [_ [_ [Real _]]]]].
     destruct (callee_realizes_le rr rr C' d H g' Cg nsg sm' th (le_n rr) Real Ctx Sat CT) as [dc [Sel _]].
@@ -4761,7 +4763,7 @@ Proof.
     destruct LP as [F C ps r0 body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
       FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
     subst sm this.
-    assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_provisions C) []))
+    assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []))
       by exact ClE.
     set (qs := combine caps capvals) in *.
     assert (Fq : map fst qs = caps) by (apply fst_combine; congruence).
@@ -5123,7 +5125,7 @@ Proof.
   destruct (set_tys_fields xs0 C) as [Es [Ep [El Et]]].
   assert (Nd : NoDup (map fst xs0)) by (rewrite Keys; destruct World as [bd Wo]; exact (A.wo_reqs_nodup Wo h)).
   assert (Cty : A.c_ty Cd = (rev xs0 ++ A.c_ty C)%list) by (rewrite (demand_ty _ _ _ _ _ _ Dem); exact Et).
-  refine (demand_case k Bel F C Cd0 _ Cd wrap (A.sg_ret g) B _ Es Ep El Dem _ _ d types H lg lst Pre0).
+  refine (demand_case k Bel F C Cd0 _ Cd wrap (A.sg_ret g) B _ Es (PublicContextFacts.family_context_merge xs0 C) Ep El Dem _ _ d types H lg lst Pre0).
   { intros Fm.
     assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ PublicFormation.ScopedTy W C (TNom h xs0)).
     { rewrite Ot. split.
@@ -5300,7 +5302,7 @@ Proof.
       destruct Init as [F0 [t' [Dx [Fits [Mod [Ret [This [Loop [Fresh [App [Pins Num]]]]]]]]]]].
       eapply (outcome_const F0); [exact Ret|exact Loop|].
       apply (AR.O.outcome_fits W P state_ok _ _ _ _ t'); [exact Fits|].
-      apply (ex_step F0 (A.Cx [] [] [] []) i (Some t) x t' Dx).
+      apply (ex_step F0 (A.Cx [] [] [] [] []) i (Some t) x t' Dx).
       destruct Pre0 as [_ [_ [L [S Abs]]]]. split; [|split; [|split; [exact L|split; [exact S|split]]]].
       4: { split.
            - split; [constructor; [intros x9 u9 []|intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
@@ -5324,7 +5326,7 @@ Proof.
       exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs pay w
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
-      exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl Dem
+      exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl eq_refl Dem
         (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns th r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx
            (call_theta_same C' C Cf f th (demand_ty _ _ _ _ _ _ Dem) (demand_sub _ _ _ _ _ _ Dem) CT) RB I0)))
         (fun j Lj d' types' H' g' st' Pre' PreC => call_code k Bel F C' C args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args

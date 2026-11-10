@@ -8,7 +8,7 @@ Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 (* Symbols: Saved=2, Boxed=3, F64=4, I32=5. *)
-Definition before := A.Cx [(4,TAbs 4);(5,TAbs 5)] [] [] [].
+Definition before := A.Cx [(4,TAbs 4);(5,TAbs 5)] [] [] [] [].
 Definition save_f64 := A.set_ty before 2 (A.canon before (TAbs 4)).
 Definition rebind_f64 := A.set_ty save_f64 4 (A.canon save_f64 (TAbs 5)).
 Definition read_saved :=

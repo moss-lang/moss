@@ -3,7 +3,7 @@
    assumptions are transitively everything the guarantee rests on, and
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Parse EaMain MossX.
+From NM Require Parse EaCtx EaMain MossX.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -178,6 +178,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMergePresent.mgm_structured_image_reads_shape);
   root (@NM.PublicMergePresent.mgm_has_merge);
   root (@NM.PublicMergePresent.present_merge_of);
+  root (@NM.EaCtx.merge_presentation);
   root (@NM.PublicMergePresent.canon_iff_mergeeq);
   root (@NM.PublicMergePresent.merge_same_swap);
   root (@NM.PublicMergeOps.merge_read_proper);
@@ -233,6 +234,10 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicGenerationFacts.result_environment_preserves_supported_ground);
   root (@NM.PublicGenerationFacts.result_environment_exports_one_snapshot);
   root (@NM.PublicAliasContext.public_type_bind_has_alias_context);
+  root (@NM.PublicContextFacts.function_context_merge);
+  root (@NM.PublicContextFacts.functor_context_merge);
+  root (@NM.PublicContextFacts.assumed_context_merge);
+  root (@NM.PublicContextFacts.context_canon_iff_mergeeq);
   root (@NM.PublicContextFacts.function_context_canonical);
   root (@NM.PublicContextFacts.functor_context_canonical);
   root (@NM.PublicContextFacts.formed_type_binding_preserves_alias_context);

@@ -64,7 +64,7 @@ Definition captured_cx (C : cx) (caps : list name) (capvals : list nat) : cx :=
                 match slook n (c_locals C) with
                 | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
                 | None => C' end)
-            (combine caps capvals) (Cx (c_ty C) (c_sub C) (c_provisions C) []).
+            (combine caps capvals) (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []).
 
 (* SOUND: lambda_provider F C ps rt body sg this = Ok (pid, pre, sm) ->
      LambdaProvider W P F C ps rt body sg this pid pre sm *)
