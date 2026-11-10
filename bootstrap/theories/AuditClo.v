@@ -226,7 +226,7 @@ Definition cc_bind (f : expr -> code) (b : binding) (r : bcode) : bcode :=
   | BPrimitive i p => fun m d g st =>
       match m with
       | 0 => inr (I.Evaluation OutOfFuel g st)
-      | S k => r k (finstall i (fprimitive_closure d i p) d) g st
+      | S k => r k (finstall_primitive d i p) g st
       end
   end.
 
@@ -583,7 +583,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
       | BPrimitive i p => fun m d g st =>
           match m with
           (* The singleton binding and the empty tail each need fuel. *)
-          | S (S (S _) as k) => c1 k (finstall i (fprimitive_closure d i p) d) g st
+          | S (S (S _) as k) => c1 k (finstall_primitive d i p) g st
           | _ => I.Evaluation OutOfFuel g st
           end
       | _ =>

@@ -62,7 +62,8 @@ with fenv : Type :=
 | FEnv : lsubst -> lsubst -> fstore -> fenv
 with fstore : Type :=
 | FStore : tmap fprov -> tmap fprov -> tmap fprov
-    -> tmap (list ((ty * subst) * fprov)) -> list (tsym * fprov) -> fstore.
+    -> tmap (list ((ty * subst) * fprov)) -> list (tsym * fprov) -> fstore
+| FOverlay : item -> fprov -> fstore -> fstore.
 
 Definition fmeanings (d : fenv) := match d with FEnv ts _ _ => ts end.
 Definition faliases (d : fenv) := match d with FEnv _ a _ => a end.
@@ -82,7 +83,7 @@ Fixpoint tys_get (t : tsym) (l : list (tsym * fprov)) : option fprov :=
   | (t', p) :: rest => if Nat.eqb t t' then Some p else tys_get t rest
   end.
 
-Definition fget (i : item) (s : fstore) : option fprov :=
+Fixpoint fget (i : item) (s : fstore) : option fprov :=
   match s with
   | FStore vs fs us ms ts =>
       match i with
@@ -92,9 +93,10 @@ Definition fget (i : item) (s : fstore) : option fprov :=
       | IFun u => tget us u
       | IMth r m th => match tget ms m with Some b => bucket_get r th b | None => None end
       end
+  | FOverlay j p tail => if fast_item_eqb i j then Some p else fget i tail
   end.
 
-Definition fset (i : item) (p : fprov) (s : fstore) : fstore :=
+Definition fset_tries (i : item) (p : fprov) (s : fstore) : fstore :=
   match s with
   | FStore vs fs us ms ts =>
       match i with
@@ -106,15 +108,28 @@ Definition fset (i : item) (p : fprov) (s : fstore) : fstore :=
           FStore vs fs us
             (tset ms m (((r, th), p) :: match tget ms m with Some b => b | None => [] end)) ts
       end
+  | FOverlay _ _ _ => FOverlay i p s
   end.
 
+Fixpoint compact (s : fstore) : fstore :=
+  match s with
+  | FStore _ _ _ _ _ => s
+  | FOverlay i p rest => fset_tries i p (compact rest)
+  end.
+
+Definition fset (i : item) (p : fprov) (s : fstore) : fstore :=
+  fset_tries i p (compact s).
+
 (* `a`'s entries before `b`'s, as list append. *)
-Definition funion (a b : fstore) : fstore :=
+Definition funion_tries (a b : fstore) : fstore :=
   match a, b with
   | FStore va fa ua ma ta, FStore vb fb ub mb tb =>
       FStore (tcombine (fun x _ => x) va vb) (tcombine (fun x _ => x) fa fb)
         (tcombine (fun x _ => x) ua ub) (tcombine (fun x y => x ++ y) ma mb) (ta ++ tb)
+  | _, _ => a
   end.
+
+Definition funion (a b : fstore) : fstore := funion_tries (compact a) (compact b).
 
 Lemma bucket_get_app : forall r th a b,
   bucket_get r th (a ++ b) = match bucket_get r th a with Some p => Some p | None => bucket_get r th b end.
@@ -129,10 +144,12 @@ Proof.
   cbn. destruct (Nat.eqb t t'); [reflexivity|exact IH].
 Qed.
 
-Lemma fget_fset : forall i j p s,
-  fget i (fset j p s) = if item_eqb i j then Some p else fget i s.
+Lemma fget_fset_tries : forall i j p s,
+  fget i (fset_tries j p s) = if item_eqb i j then Some p else fget i s.
 Proof.
-  intros i j p [vs fs us ms ts]. destruct i, j; cbn [fget fset item_eqb]; try reflexivity;
+  intros i j p [vs fs us ms ts|key entry tail].
+  2: { cbn [fset_tries fget]. rewrite fast_item_eqb_spec. reflexivity. }
+  destruct i, j; cbn [fget fset_tries item_eqb]; try reflexivity;
     rewrite ?tget_tset; try reflexivity.
   all: destruct (Nat.eqb m m0) eqn:E.
   all: try (rewrite andb_false_r, andb_false_l; reflexivity).
@@ -141,10 +158,29 @@ Proof.
     destruct (tget ms m); reflexivity.
 Qed.
 
-Lemma fget_funion : forall i a b,
-  fget i (funion a b) = match fget i a with Some p => Some p | None => fget i b end.
+Lemma fget_compact : forall i s, fget i (compact s) = fget i s.
 Proof.
-  intros i [va fa ua ma ta] [vb fb ub mb tb]. destruct i; cbn [fget funion].
+  intros i s. induction s; [reflexivity|].
+  cbn [compact fget]. rewrite fget_fset_tries, IHs, fast_item_eqb_spec. reflexivity.
+Qed.
+
+Lemma fget_fset : forall i j p s,
+  fget i (fset j p s) = if item_eqb i j then Some p else fget i s.
+Proof. intros. unfold fset. rewrite fget_fset_tries, fget_compact. reflexivity. Qed.
+
+Lemma compact_store : forall s, exists vs fs us ms ts, compact s = FStore vs fs us ms ts.
+Proof.
+  induction s as [vs fs us ms ts|key entry tail IH].
+  - do 5 eexists. reflexivity.
+  - destruct IH as (vs & fs & us & ms & ts & E). cbn [compact]. rewrite E.
+    destruct key; cbn [fset_tries]; do 5 eexists; reflexivity.
+Qed.
+
+Lemma fget_funion_tries : forall i va fa ua ma ta vb fb ub mb tb,
+  fget i (funion_tries (FStore va fa ua ma ta) (FStore vb fb ub mb tb)) =
+  match fget i (FStore va fa ua ma ta) with Some p => Some p | None => fget i (FStore vb fb ub mb tb) end.
+Proof.
+  intros. destruct i; cbn [fget funion_tries].
   - apply tys_get_app.
   - rewrite tget_tcombine. destruct (tget va v), (tget vb v); reflexivity.
   - rewrite tget_tcombine. destruct (tget fa f), (tget fb f); reflexivity.
@@ -152,6 +188,16 @@ Proof.
     + apply bucket_get_app.
     + destruct (bucket_get t s x); reflexivity.
   - rewrite tget_tcombine. destruct (tget ua u), (tget ub u); reflexivity.
+Qed.
+
+Lemma fget_funion : forall i a b,
+  fget i (funion a b) = match fget i a with Some p => Some p | None => fget i b end.
+Proof.
+  intros i a b. unfold funion.
+  rewrite <- (fget_compact i a), <- (fget_compact i b).
+  destruct (compact_store a) as (va & fa & ua & ma & ta & Ea).
+  destruct (compact_store b) as (vb & fb & ub & mb & tb & Eb).
+  rewrite Ea, Eb. apply fget_funion_tries.
 Qed.
 
 Lemma fget_empty : forall i, fget i fempty_store = None.
@@ -217,6 +263,12 @@ Definition fprimitive_closure (d : fenv) (i : item) (p : prim) : fprov :=
   FPrimitive p (match p, i with
     | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (lapp (fmeanings d) tau)
     | _, _ => None end).
+(* A primitive binding often introduces the very next lookup. Keep that
+   row in front of the trie and fold it back before another installation. *)
+Definition finstall_primitive (d : fenv) (i : item) (p : prim) : fenv :=
+  FEnv (fmeanings d) (faliases d)
+    (FOverlay i (fprimitive_closure d i p) (compact (fstore_of d))).
+
 (* Selecting provisions constructs only the store. The new environment
    has empty type tables, shared by all selections. *)
 Fixpoint fselect_store (s : fstore) (sm : smap) : option fstore :=
@@ -326,6 +378,15 @@ Lemma prel_primitive_closure : forall fd ld i p, ERel fd ld ->
 Proof.
   intros fd ld i p H. destruct (erel_meanings fd ld H) as [Em _].
   unfold fprimitive_closure, lprimitive_closure, lground. rewrite Em. constructor.
+Qed.
+
+Lemma erel_install_primitive : forall fd ld i p, ERel fd ld ->
+  ERel (finstall_primitive fd i p) (linstall i (lprimitive_closure ld i p) ld).
+Proof.
+  intros fd ld i p H. pose proof (prel_primitive_closure fd ld i p H) as R.
+  destruct H as [ts a s ps H]. constructor. intro j.
+  cbn [finstall_primitive fget linstall llookup_entry]. rewrite fget_compact.
+  destruct (fast_item_eqb j i); [constructor; exact R|apply H].
 Qed.
 
 Lemma erel_select : forall fd ld sm, ERel fd ld ->
@@ -591,7 +652,7 @@ with feval_bindings (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st 
           | inl (dr, st1) => feval_bindings k P (fappend dr d) g st1 r
           | inr rr => inr (I.with_g g rr)
           end
-      | BPrimitive i p :: r => feval_bindings k P (finstall i (fprimitive_closure d i p) d) g st r
+      | BPrimitive i p :: r => feval_bindings k P (finstall_primitive d i p) g st r
       end
   end
 with fapply_functor (fuel : nat) (P : program_view) (d : fenv) (u : usym) (th : subst)
@@ -756,7 +817,7 @@ Proof.
       * destruct (Acases P fd ld u s l s0 l0 st H) as [(e' & E1 & E2)|(fd' & ld' & s' & E1 & E2 & R)];
           rewrite E1, E2; [cbn; reflexivity|].
         apply IHb. apply erel_append; assumption.
-      * apply IHb. apply erel_install; [exact H|]. apply prel_primitive_closure. exact H.
+      * apply IHb. apply erel_install_primitive. exact H.
     + intros P fd ld u th outputs sm rs st H. cbn [fapply_functor L.lapply_functor].
       destruct (lookup_cases fd ld (IFun u) H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2; [cbn; reflexivity|].
       destruct R as [w|f' fd' ld' R|h a fc lc q R|p o]; try (cbn; reflexivity).
