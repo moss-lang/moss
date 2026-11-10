@@ -105,8 +105,9 @@ entry they belong to.
 | 54 | `Satisfies` checks the callee's merges by class | coherence2 | relaxation (toward native) |
 | 55 | A bracket application on a fn call is its expansion (`ExCallBr`, D89) | call-brackets | an extension made in both implementations (a relaxation toward both) |
 | 56 | A copy composes its smap and positions into the closure (eager copies) | eagercopy | D (unobservable) |
+| 57 | Assumed items bring their requirements and needs (`AssumesComplete`, D20) | deltafix | A (one test B: rejects a program native accepts) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, and #56, from the eagercopy branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 on, from the deltafix branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -1564,6 +1565,93 @@ executable tests unless noted.
 - **Class D (unobservable).** Run-time representation only. It is
   observable only on a run the old semantics leaves stuck.
 
+### 57. Assumed items bring their requirements and needs (`AssumesComplete`, deltafix branch; D20)
+- **Rule now.** `ElaboratesIn` has a new last conjunct, `AssumesComplete W`.
+  For every val, fn, method, context and functor symbol, its assume
+  nesting forms (`AssumeCtx`: `CtxOf` without the world's record, since a
+  functor's record is its inputs' context, `FunCtx`), and in that formed
+  context C every need k naming a val, fn or method s (`need_item`; a
+  functor's fixed inputs are already asked in force by `IEFun`) satisfies
+  `AssumedComplete`:
+  - **requirements:** every entry of k's recorded instantiation
+    (`ilook k (c_apps C)`, `AppOf` completed from the whole list by
+    `entries_cx`'s freeze) is `Some`: each requirement of s (for a method,
+    each its signature mentions) is bound by a bracket on the item or
+    assumed somewhere in the list;
+  - **needs:** reading C with k's instantiation in force (Cv, `set_ty` of
+    each recorded meaning), s's own needs are answered as a call of s at
+    that instantiation would answer them: `CtxOf W s Cs nss`,
+    `CallTheta W Cv Cs s th` and `Satisfies Cv Cs th nss sm` (presence,
+    coherence of instantiations, the provision's signature, and the
+    merges by class).
+
+  Before, nothing checked an assumed item's requirements or needs where
+  it was assumed: only a call of the item, or of something needing it,
+  did. An abstract fn, a val, or a fn that never calls the item was
+  accepted with the item incomplete.
+- **Why.** Fidelity (criteria section 6): both implementations reject
+  `tests/errors/assume_missing_requirement_type.moss` and
+  `assume_missing_requirement_need.moss`, and the variants below; Audit
+  accepted them. The oracle's check is `check_assumes` and
+  `check_assumed_requirements` (Elab.v), over every val, fn, method,
+  context and functor symbol's formed context (`fi_env`, `fi_needs`): each
+  requirement (for a method, its signature's) in force with the item's
+  brackets, then `require_needs` (presence, `incoherent`, `require_merges`).
+- **Form chosen.** The check is over formed contexts, not over each item
+  as it is read (`ItemEntries`), so `assume f, seed, T { ... }`
+  (`tests/wasi/assume_requirements_same_list.moss`) stays accepted: the
+  recorded instantiation is completed from the whole list. The needs half
+  reuses `CallTheta` and `Satisfies` rather than restating the oracle's
+  `require_needs`. Differences from the oracle, none seen in the corpus:
+  - `Satisfies` also compares the selected provision's signature with
+    the callee's view of it (its types clause, #4);
+  - `CallTheta`'s merge clause checks every merge of the item's context
+    at the principal θ, while `require_merges` skips a merge mentioning a
+    symbol not in force. For a val or fn every requirement is in force
+    (the first half), so the two agree; they can differ only for a
+    method's requirement its signature does not mention;
+  - every such symbol's nesting must form. The oracle forms each too
+    (`fn_info`), but Audit's formation is not run, so a program whose
+    unused abstract item's nesting forms in the oracle and not in Audit
+    would newly be rejected. None is known.
+- **Criterion: fidelity** (criteria.md section 6); the coherence half
+  serves D62/D71 (criteria section 2: an item needing a provision at one
+  instantiation is not assumed beside it at another).
+- **Tests** (Audit verdicts argued from the rules, not run):
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | `tests/errors/assume_missing_requirement_type.moss` | rejects ("assuming `f` needs `T` in force (D20)") | rejects | accepts | rejects |
+  | `tests/errors/assume_missing_requirement_need.moss` | rejects ("calling `f` needs `seed`") | rejects | accepts | rejects |
+  | `tests/errors/assume_main_without_root.moss` (`assume main`, main imported as `start`) | rejects ("needs `StructRef` in force") | rejects | accepts | rejects (start's root needs Heap, Mutable, Arrays) |
+  | [assumed-ctx-item](examples/assumed-ctx-item.moss), [assumed-main-calls](examples/assumed-main-calls.moss), [assumed-type-abstract](examples/assumed-type-abstract.moss), [assumed-type-use](examples/assumed-type-use.moss), [assumed-val-type](examples/assumed-val-type.moss) (a requirement missing) | rejects | rejects | accepts | rejects |
+  | [assumed-meth-need](examples/assumed-meth-need.moss), [assumed-need-use](examples/assumed-need-use.moss), [assumed-val-need](examples/assumed-val-need.moss) (a need missing) | rejects | rejects | accepts | rejects |
+  | [assumed-need-incoherent](examples/assumed-need-incoherent.moss) (f needs h at T = U; g has h at T = T) | rejects (D62) | accepts | accepts | rejects |
+  | `tests/wasi/assume_requirements_same_list.moss` (`assume f, seed, T`) | accepts | accepts | accepts | accepts |
+  | [assumed-bracket-ok](examples/assumed-bracket-ok.moss) (`f[T=U]` in a context) | accepts | accepts | accepts | accepts |
+  | [assumed-ctx-decl-only](examples/assumed-ctx-decl-only.moss) (an unassumed context lists f) | accepts | accepts | accepts | accepts |
+  | [assumed-functor-input](examples/assumed-functor-input.moss) (F's input f) | accepts | accepts | accepts | accepts |
+  | [assumed-need-coherent](examples/assumed-need-coherent.moss) | accepts | accepts | accepts | accepts |
+
+  The tests come from the Δ3 hunt (scratch/deltas, `d3_*`).
+- **Corpus.** The oracle has the check, so the comparison is the oracle
+  against a variant without it (`check_assumes` skipped in the extracted
+  `elab_program`; scratch/variants/noassume), `--elab-only`, over
+  `tests/`, `examples/` and `bootstrap/examples/` (with the new tests):
+  434 same / 13 diff. The 13 are the 12 rejected programs of the table
+  and [handle-rebind.moss](examples/handle-rebind.moss) (#8), which Audit
+  already rejected through `HandlesRead`; the oracle's reason for
+  rejecting it (i64_store needs Memories at another instantiation) is
+  now Audit's too. No program both implementations accept is rejected.
+  Audit's verdict changes on the 12 (accept to reject), and on no other
+  corpus program by this comparison.
+- **Proof.** `public_safety` unchanged: the conjunct is last and no proof
+  reads it. `AuditBuildExample.main_assumes` proves it of the example
+  world (main is the only symbol and its nesting is empty).
+- **Class A**, except assumed-need-incoherent.moss, which native accepts
+  (class B on that program). Native accepts it only because g never calls
+  f; it does not check an assumed item's needs' instantiations.
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1779,6 +1867,7 @@ oracle print 1. On sameneed-meaning-agree.moss, Audit and the oracle print
   still need lambda-declared-output rejected.
 - **Mirror the oracle's D20 assumed-requirement coherence (#8)** instead
   of `HandlesRead`. This is larger, and native does not check it either.
+  (#57 now adds the oracle's check beside `HandlesRead`, which stays.)
 - **Widen `w_reqs` for fns and methods, or compare signatures at family
   application (#12).** These were not chosen by the user.
 - **Tolerate extra installed keys in `family_core` (#46).** This was

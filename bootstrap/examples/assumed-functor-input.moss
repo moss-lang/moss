@@ -1,0 +1,11 @@
+# AssumesComplete (AUDIT-CHANGES #57; D20; criteria section 6, fidelity).
+# Each assumed item's requirements are in force and its own needs provided.
+# Here: F's input f requires T, which F's inputs omit; F's assume nesting is empty, and inputs are not assumed items.
+# Audit before: accepts. Audit now: accepts (argued from the rules, not run).
+# Oracle (moss_m2): accepts.
+# Native (ob-family moss, seed 1h1710x0): accepts.
+type T;
+assume T { fn f(); }
+fn h();
+functor F: f -> h;
+fn main() {}

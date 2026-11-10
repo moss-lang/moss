@@ -5057,6 +5057,41 @@ Definition TypesBounded (W : world) : Prop :=
 Definition NoExpandingCycle (W : world) (P : program) : Prop :=
   TypesBounded W /\ InstantiationsBounded W P.
 
+(* [D20]: an assumed provision brings its requirements and its needs, not
+   just a signature.  `AssumeCtx W s C ns`: the context the assume nesting
+   of symbol s forms, and its needs (CtxOf without the world's record,
+   since a functor's record is its inputs' context, FunCtx). *)
+Definition AssumeCtx (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
+  exists d es tm er tmr σ,
+    w_decl W s = Some d /\
+    ItemsEntries W (d_mod d) [] [] (map assume_spec (d_assumes d)) es tm /\
+    RootCtx W s es tm er tmr /\
+    MostGeneralMerge σ (es ++ er) /\ C = entries_cx σ tmr (es ++ er) /\ Needs σ (es ++ er) ns.
+
+(* The symbol a need names: a val, fn or method (a functor's fixed inputs
+   are asked in force where it is assumed, IEFun). *)
+Definition need_item (k : item) : option nat :=
+  match k with IVal v => Some v | IFn f => Some f | IMth _ m _ => Some m | _ => None end.
+
+(* `AssumedComplete W C ns`: in the formed context C, each assumed item
+   (a need) has its requirements in force, bound by a bracket on it or
+   assumed anywhere in the list (the instantiation it is recorded at,
+   completed from the whole list, so list order is immaterial), and its
+   own needs are provided here, read as a call of it at that
+   instantiation would read them (CallTheta, Satisfies).  This is the
+   oracle's check_assumes and check_assumed_requirements. *)
+Definition AssumedComplete (W : world) (C : cx) (ns : list item) : Prop :=
+  forall k s, In k ns -> need_item k = Some s ->
+    exists a, ilook k (c_apps C) = Some a /\ (forall t o, In (t, o) a -> o <> None) /\
+      let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
+      exists Cs nss th sm, CtxOf W s Cs nss /\ CallTheta W Cv Cs s th /\ Satisfies Cv Cs th nss sm.
+
+(* Every val, fn, method, context and functor symbol's assume nesting
+   forms, with its assumed items complete (the oracle checks each). *)
+Definition AssumesComplete (W : world) : Prop :=
+  forall s k, kind_sym W s = Some k -> In k [DKVal; DKFn; DKMeth; DKCtx; DKFunctor] ->
+    exists C ns, AssumeCtx W s C ns /\ AssumedComplete W C ns.
+
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
   WorldOf b W /\
@@ -5074,7 +5109,9 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
      LangSym W "bool" NSName "False" (program_false P)
      \/ ((forall s, ~ LangSym W "bool" NSName "Bool" s) /\ program_bool P = 0 /\ program_true P = 0 /\ program_false P = 0)) /\
     (* [D16]/[D30]: finitely many instantiations *)
-    NoExpandingCycle W P.
+    NoExpandingCycle W P /\
+    (* [D20]: assumed items bring their requirements and needs *)
+    AssumesComplete W.
 
 Definition Elaborates (b : bundle) (P : program) : Prop :=
   exists W, ElaboratesIn b W P.

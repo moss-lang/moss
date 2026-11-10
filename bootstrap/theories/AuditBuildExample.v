@@ -186,6 +186,17 @@ Proof.
     destruct Occ as [[= <- <-]|[]]. lia.
 Qed.
 
+(* main's nesting is empty; it is the only symbol. *)
+Lemma main_assumes : AssumesComplete world_main.
+Proof.
+  intros s k Kind _. unfold kind_sym in Kind.
+  destruct (w_decl world_main s) as [d|] eqn:Read; [|discriminate].
+  apply reads_decl in Read as [-> ->]. exists empty_context, [].
+  split; [|intros k' s' []].
+  destruct main_context as (d & es & tm & er & tmr & σ & R & Its & Root & M & E & N & _).
+  exists d, es, tm, er, tmr, σ. exact (conj R (conj Its (conj Root (conj M (conj E N))))).
+Qed.
+
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
 Proof.
   split; [exact world_main_valid|]. split.
@@ -195,7 +206,7 @@ Proof.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|constructor].
-      * split; [|exact main_bounded]. right. split.
+      * split; [|split; [exact main_bounded|exact main_assumes]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.

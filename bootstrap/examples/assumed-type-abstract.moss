@@ -1,0 +1,10 @@
+# AssumesComplete (AUDIT-CHANGES #57; D20; criteria section 6, fidelity).
+# Each assumed item's requirements are in force and its own needs provided.
+# Here: as tests/errors/assume_missing_requirement_type.moss, but g is abstract (no FnElab, so only the new conjunct sees g's context).
+# Audit before: accepts. Audit now: rejects (argued from the rules, not run).
+# Oracle (moss_m2): rejects ("assuming `f` needs `T` in force (D20)").
+# Native (ob-family moss, seed 1h1710x0): rejects ("not available in the current context: `T`").
+type T;
+assume T { fn f(); }
+assume f { fn g(); }
+fn main() {}

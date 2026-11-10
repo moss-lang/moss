@@ -1,0 +1,12 @@
+# AssumesComplete (AUDIT-CHANGES #57; D20; criteria section 6, fidelity).
+# Each assumed item's requirements are in force and its own needs provided.
+# Here: a bracket on the context item (`f[T=U]`) binds f's requirement T, so f's requirements are in force.
+# Audit before: accepts. Audit now: accepts (argued from the rules, not run).
+# Oracle (moss_m2): accepts.
+# Native (ob-family moss, seed 1h1710x0): accepts.
+type T;
+type U;
+assume T { fn f(); }
+context K = U, f[T=U];
+assume K { fn g() { f(); } }
+fn main() {}
