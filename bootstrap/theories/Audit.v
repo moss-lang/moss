@@ -4957,29 +4957,6 @@ Definition FnElab (W : world) (P : program) (f : nat) : Prop :=
          b (Some (sg_ret g)) x t /\
     body_of P f = Some x.
 
-(* [D79]/platform: main's initial environment.  Each need of main must be
-   something the platform provides: lib/wasm.moss's and lib/wasip1.moss's
-   fns are primitives (`prim_of_name`, Part IV), wasistd's `i32_zero`/
-   `i32_one` the I32 constants, and an abstract functor of those modules a
-   platform binding checked by Platform.Family. *)
-Definition platform_mod (W : world) (p : string) : Prop :=
-  LibraryModule W "wasm" p \/ LibraryModule W "wasip1" p \/ LibraryModule W "wasistd" p.
-
-Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> Prop :=
-| PEZero : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
-    filed_name (d_ast d) = Some (NSName, "i32_zero") -> PlatformEntry W P (IVal v) (ValueProvision (VI32 0%uint63))
-| PEOne : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
-    filed_name (d_ast d) = Some (NSName, "i32_one") -> PlatformEntry W P (IVal v) (ValueProvision (VI32 1%uint63))
-| PEPrim : forall f d n ps rt body pr, w_decl W f = Some d -> platform_mod W (d_mod d) ->
-    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = Some pr ->
-    PlatformEntry W P (IFn f) (PrimitiveClosure pr None)
-| PEUnsupported : forall f d n ps rt body i, w_decl W f = Some d -> platform_mod W (d_mod d) ->
-    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = None -> nth_error (program_unsupported P) i = Some n ->
-    PlatformEntry W P (IFn f) (PrimitiveClosure (PUnsupported i) None)
-| PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
-    d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
-    PlatformEntry W P (IFun u) (FunctorClosure h None empty_environment None).
-
 (* The runtime type prefix is a representation of the source context,
    separate from the values and code supplied by the platform. Its machine
    representations are selected from the actual library scope. *)
@@ -5335,9 +5312,10 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
        platform provides *)
     w_scope W (b_entry b) NSName "main" = Some (ESym (program_main P)) /\
     (exists d n rt body, w_decl W (program_main P) = Some d /\ d_ast d = ADFn RPlain n [] rt (Some body)) /\
+    (* main's environment provides exactly main's needs; what each one is,
+       the platform's provision, is Platform.Linked's (PlatformEntry) *)
     (exists C ns types platform, CtxOf W (program_main P) C ns /\ InitialTypes W C types /\
-       program_environment P = Environment types platform /\ map fst platform = map (rkey_of C) ns /\
-       Forall (fun ie => PlatformEntry W P (fst ie) (snd ie)) platform) /\
+       program_environment P = Environment types platform /\ map fst platform = map (rkey_of C) ns) /\
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
     (LangSym W "bool" NSName "Bool" (program_bool P) /\ LangSym W "bool" NSName "True" (program_true P) /\
      LangSym W "bool" NSName "False" (program_false P)
@@ -5545,6 +5523,30 @@ Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
     canon C t = canon C (TAbs symbol) /\ (exists z, canon C (TAbs symbol) = TAbs z) /\
     (forall y, canon C (TAbs y) = canon C (TAbs symbol) -> y = symbol).
 
+(* [D79]/platform: main's initial environment.  Each need of main must be
+   something the platform provides (ElaboratesIn keys the environment by
+   main's needs; this is what each provision is, AUDIT-CHANGES #91):
+   lib/wasm.moss's and lib/wasip1.moss's fns are primitives (`prim_of_name`, Part IV), wasistd's `i32_zero`/
+   `i32_one` the I32 constants, and an abstract functor of those modules a
+   platform binding checked by Platform.Family. *)
+Definition platform_mod (W : world) (p : string) : Prop :=
+  LibraryModule W "wasm" p \/ LibraryModule W "wasip1" p \/ LibraryModule W "wasistd" p.
+
+Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> Prop :=
+| PEZero : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
+    filed_name (d_ast d) = Some (NSName, "i32_zero") -> PlatformEntry W P (IVal v) (ValueProvision (VI32 0%uint63))
+| PEOne : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
+    filed_name (d_ast d) = Some (NSName, "i32_one") -> PlatformEntry W P (IVal v) (ValueProvision (VI32 1%uint63))
+| PEPrim : forall f d n ps rt body pr, w_decl W f = Some d -> platform_mod W (d_mod d) ->
+    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = Some pr ->
+    PlatformEntry W P (IFn f) (PrimitiveClosure pr None)
+| PEUnsupported : forall f d n ps rt body i, w_decl W f = Some d -> platform_mod W (d_mod d) ->
+    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = None -> nth_error (program_unsupported P) i = Some n ->
+    PlatformEntry W P (IFn f) (PrimitiveClosure (PUnsupported i) None)
+| PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
+    d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
+    PlatformEntry W P (IFun u) (FunctorClosure h None empty_environment None).
+
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
@@ -5619,7 +5621,8 @@ Definition Linked (W : world) (P : program) : Prop :=
   exists context needs types entries,
     CtxOf W (program_main P) context needs /\ InitialTypes W context types /\
     program_environment P = Environment types entries /\
-    Forall (fun entry => Entry W P context (fst entry) (snd entry)) entries.
+    Forall (fun entry => Entry W P context (fst entry) (snd entry)) entries /\
+    Forall (fun entry => PlatformEntry W P (fst entry) (snd entry)) entries.
 
 Definition Ready (P : program) : Prop :=
   exists bundle world, ElaboratesIn bundle world P /\ Linked world P.

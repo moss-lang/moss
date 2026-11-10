@@ -220,7 +220,7 @@ Proof.
     + exists main_decl, "main", None, main_body. split; reflexivity.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
-        split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|constructor].
+        split; [reflexivity|]. split; [reflexivity|reflexivity].
       * split; [|split; [exact main_bounded|split; [exact main_assumes|split; [exact main_decls|exact main_layouts]]]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
@@ -243,7 +243,7 @@ Proof.
       * exists None, None. split; [right;split;[exact (NoWasm NSName "Ref")|reflexivity]|].
         split; [right;split;[exact (NoWasm NSName "Array")|reflexivity]|reflexivity].
       * exists empty_context, [], [], []. split; [exact main_context|].
-        split; [reflexivity|]. split; [reflexivity|constructor].
+        split; [reflexivity|]. split; [reflexivity|]. split; constructor.
 Qed.
 
 Definition main_text := "fn main() {}".

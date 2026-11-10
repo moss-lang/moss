@@ -510,8 +510,8 @@ Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
   destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [[Mf Mt] [H0 [St Prims]]]].
   pose proof Link as (_ & Lay & _).
-  pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys & _) & _).
-  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries).
+  pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys) & _).
+  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique Wd _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
   unfold M.runtime. rewrite Env.
@@ -575,8 +575,8 @@ Theorem handles_formed : forall bundle W Prog, A.ElaboratesIn bundle W Prog -> P
     Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg).
 Proof.
   intros bundle W Prog Elab Link C ns f sg op Ctx Found _.
-  pose proof Elab as (Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys & _) & _).
-  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries).
+  pose proof Elab as (Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys) & _).
+  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
   destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
