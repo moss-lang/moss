@@ -29,25 +29,57 @@ Local Open Scope nat_scope.
 (* Union, `a` winning, and the combination of entries both hold. *)
 Fixpoint tcombine {A} (f : A -> A -> A) (a b : tmap A) : tmap A :=
   match a, b with
-  | TE, _ => b
-  | _, TE => a
+  | TE, _ | TL _ None, _ => b
+  | _, TE | _, TL _ None => a
+  | TL k (Some x), _ => tset b k (match tget b k with Some y => f x y | None => x end)
+  | _, TL k (Some y) => tset a k (match tget a k with Some x => f x y | None => y end)
   | TN l x r, TN l' y r' =>
       TN (tcombine f l l')
         (match x, y with Some x, Some y => Some (f x y) | Some x, None => Some x | None, y => y end)
         (tcombine f r r')
   end.
 
+Local Lemma tget_combine_leaf_left : forall A (f : A -> A -> A) b j x k,
+  tget (tset b j (match tget b j with Some y => f x y | None => x end)) k =
+  match tget (TL j (Some x)) k, tget b k with
+  | Some x, Some y => Some (f x y) | Some x, None => Some x | None, y => y end.
+Proof.
+  intros. rewrite tget_tset. cbn [tget]. destruct (Nat.eqb k j) eqn:E.
+  - apply Nat.eqb_eq in E. subst k. destruct (tget b j); reflexivity.
+  - destruct (tget b k); reflexivity.
+Qed.
+
+Local Lemma tget_combine_leaf_right : forall A (f : A -> A -> A) a j y k,
+  tget (tset a j (match tget a j with Some x => f x y | None => y end)) k =
+  match tget a k, tget (TL j (Some y)) k with
+  | Some x, Some y => Some (f x y) | Some x, None => Some x | None, y => y end.
+Proof.
+  intros. rewrite tget_tset. cbn [tget]. destruct (Nat.eqb k j) eqn:E.
+  - apply Nat.eqb_eq in E. subst k. destruct (tget a j); reflexivity.
+  - destruct (tget a k); reflexivity.
+Qed.
+
+Local Lemma tget_empty_leaf : forall A j k, tget (@TL A j None) k = None.
+Proof. intros. cbn [tget]. destruct (Nat.eqb k j); reflexivity. Qed.
+
 Lemma tget_tcombine : forall A (f : A -> A -> A) a b k,
   tget (tcombine f a b) k =
   match tget a k, tget b k with
   | Some x, Some y => Some (f x y) | Some x, None => Some x | None, y => y end.
 Proof.
-  intros A f a. induction a as [|l IHl v r IHr]; intros b k.
+  intros A f a. induction a as [|j [x|]|l IHl v r IHr]; intros b k.
   - reflexivity.
-  - destruct b as [|l' v' r']; cbn.
-    + destruct (Nat.eqb k 0); [destruct v; reflexivity|].
-      destruct (tleft k); destruct (tget _ _); reflexivity.
-    + destruct (Nat.eqb k 0); [destruct v, v'; reflexivity|].
+  - destruct b as [|i [y|]|l' v' r']; cbn [tcombine].
+    + destruct (tget (TL j (Some x)) k); reflexivity.
+    + apply tget_combine_leaf_left.
+    + rewrite tget_empty_leaf. destruct (tget (TL j (Some x)) k); reflexivity.
+    + apply tget_combine_leaf_left.
+  - destruct b; cbn [tcombine]; rewrite tget_empty_leaf; reflexivity.
+  - destruct b as [|j [x|]|l' v' r']; cbn [tcombine].
+    + destruct (tget (TN l v r) k); reflexivity.
+    + apply tget_combine_leaf_right.
+    + rewrite tget_empty_leaf. destruct (tget (TN l v r) k); reflexivity.
+    + cbn [tget]. destruct (Nat.eqb k 0); [destruct v, v'; reflexivity|].
       destruct (tleft k); [apply IHl|apply IHr].
 Qed.
 
