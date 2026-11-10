@@ -206,7 +206,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   - Audit: rejects.
 - **Corpus.** None.
 - **Decision.** User-approved.
-- **Class B.** The oracle accepts the program. Follow-up: E25 (open).
+- **Class B.** The oracle accepts the program. Follow-up: E25 (open for
+  the oracle; native rejects since 3f91e25, lang-all).
 
 ### 5. Bound attached methods are read at the key's receiver (465622d)
 - **Rule now.** For `bind Box.m[T=Bool] = Box.get;`, `MPAttached` reads the
@@ -1656,8 +1657,9 @@ executable tests unless noted.
   reads it. `AuditBuildExample.main_assumes` proves it of the example
   world (main is the only symbol and its nesting is empty).
 - **Class A**, except assumed-need-incoherent.moss, which native accepts
-  (class B on that program). Native accepts it only because g never calls
-  f; it does not check an assumed item's needs' instantiations.
+  (class B on that program). Native accepted it only because g never calls
+  f; it did not check an assumed item's needs' instantiations. Fixed
+  natively in f8c380c (lang-all).
 
 ### 58. Result items distinct in F stay distinct at an application, and H's at a copy (`CollidesOnlyAs`, deltafix branch; D84 rule 7)
 - **Rule now.** `CollidesOnlyAs ks ks0`: two positions that `ks` files
@@ -1763,7 +1765,8 @@ executable tests unless noted.
   `PublicOutputSubst.recv_rel` and `PublicFormation.recv_ok`.
 - **Class A** (reject-only, mirroring the oracle). Native accepts the
   first test, which is a native bug (E41), since native itself rejects
-  the same program once g uses the method.
+  the same program once g uses the method. E41 is fixed natively
+  (4071c84, lang-all).
 
 ### 60. Rule B: a use needs the item's type requirements in force (lang-b branch; owner-approved)
 - **Rule now.** To use an item (call a defined fn or attached method,
@@ -2244,15 +2247,24 @@ All of these come from `proof-plan.json`.
 | E35 | A method's θ records every signature type symbol | oracle | **done** (in 61040f2) | [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss): now 42 on both | #12 |
 | E36 | Oracle 3b checks every reading of a captured fn or method | oracle | open | [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss): oracle accepts, stuck XErr 14; native rejects | #7, #11 |
 | E37 | Oracle 3d: a linked body may not install an input of F as a kept output | oracle | open | [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): oracle stuck XErr 14; native rejects | #13 |
-| E40 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b; [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
-| E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | open | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 | #59 |
-| E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | open | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 | #60 |
-| E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | open | [merge-inst-order-ab.moss](examples/merge-inst-order-ab.moss): oracle rejects; native exit 0. [merge-inst-val.moss](examples/merge-inst-val.moss): oracle accepts; native rejects | #61 |
-| E70 | Reject a bind of a defined method (`bind Meter.describe = …` where `Meter.describe` has a body) | native | open | [bind-attached-defined.moss](examples/bind-attached-defined.moss): oracle rejects; native mm | #70 |
-| E72 | Check every call's arguments in the caller's context Γ, never with the call's family demands in force: a defined fn call and a defined attached method call (a family-demanded call already does) | native | open | [args-context-provision-wins.moss](examples/args-context-provision-wins.moss): oracle mm; native xx. [args-context-shadow-call.moss](examples/args-context-shadow-call.moss): oracle 42; native rejects (incompatible types) | #72 |
+| E40 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | native **done** (9a62948, lang-all); oracle open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b (now rejects); [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
+| E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | **done** (4071c84, lang-all) | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 (now rejects) | #59 |
+| E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | **done** (2361b25, ca92046, lang-all) | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 (now rejects); [ruleb-merge-family-demand.moss](examples/ruleb-merge-family-demand.moss): k on both | #60 |
+| E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | **done** (4934f50, lang-all) | [merge-inst-order-ab.moss](examples/merge-inst-order-ab.moss): oracle rejects; native exit 0 (now rejects). [merge-inst-val.moss](examples/merge-inst-val.moss): oracle accepts; native rejects (now accepts) | #61 |
+| E70 | Reject a bind of a defined method (`bind Meter.describe = …` where `Meter.describe` has a body) | native | **done** (7d5bcd5, lang-all) | [bind-attached-defined.moss](examples/bind-attached-defined.moss): oracle rejects; native mm (now rejects) | #70 |
+| E72 | Check every call's arguments in the caller's context Γ, never with the call's family demands in force: a defined fn call and a defined attached method call (a family-demanded call already does) | native | **done** (dff4b35, lang-all) | [args-context-provision-wins.moss](examples/args-context-provision-wins.moss): oracle mm; native xx (now mm). [args-context-shadow-call.moss](examples/args-context-shadow-call.moss): oracle 42; native rejects (incompatible types; now 42) | #72 |
+
+Native bugs fixed on lang-all that had no E-number:
+
+| Fix | Native bug | Example | Entry |
+|---|---|---|---|
+| 3f91e25, a55e060 | A selected provision's type was not compared with the callee's reading (the native half of E25) | [stale-provision-type.moss](examples/stale-provision-type.moss), `tests/wasi/stale_provision{,_fn}.moss`: native printed `t`, now rejects; the oracle still accepts and gets stuck (E25 open for the oracle) | #4 |
+| f8c380c | An assumed item's needs were not checked at their instantiation | [assumed-need-incoherent.moss](examples/assumed-need-incoherent.moss): native accepted, now rejects, as the oracle does | #57 |
+| 833d9a6 | A functor copy's captured vals were looked up under the original target's entry, so applying the copy in a frame without it failed ("no binding provides `seed`") | `tests/wasi/functor_copy_capture.moss`: native rejected, now 2454, as the oracle | D84 6 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
-changes. All are open:
+changes. All are open, except E25's native half (above) and E24, done
+for the oracle by #60:
 
 | ID | Entry | ID | Entry |
 |---|---|---|---|
@@ -2282,20 +2294,22 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   #60 (E24 done).
 - scratch/cap3b n7b (#11, not committed). The oracle rejects it too.
 - ~~block-pin-rebind.moss~~: accepted since #49.
-- assumed-need-incoherent.moss (#57). The oracle rejects it too. Native
-  does not check an assumed item's needs' instantiations; g never calls f.
-- assume-method-before-type.moss (#59, E41). The oracle rejects it too.
-- result-collide-{ab,ba}{,-bindswap}.moss (#58, E40). Both
-  implementations accept them, with different outputs.
+- ~~assumed-need-incoherent.moss (#57)~~: native rejects it since
+  f8c380c (lang-all).
+- ~~assume-method-before-type.moss (#59, E41)~~: native rejects it since
+  4071c84 (lang-all).
+- ~~result-collide-{ab,ba}{,-bindswap}.moss (#58, E40)~~: native rejects
+  them since 9a62948 (lang-all); the oracle still accepts them.
 - sameneed-ambiguous.moss and sameneed-ambiguous-other.moss (#11; tests of
   #51). Native prints 7 on both, and the oracle accepts the second.
-- bind-attached-defined.moss (#70, E70). Native prints `mm`; the bind
-  has no effect there.
-- Native's verdict is not recorded for stale-provision-type (#4) or
-  unbound-merge-representative (#3).
+- ~~bind-attached-defined.moss (#70, E70)~~: native rejects it since
+  7d5bcd5 (lang-all).
+- Native rejects stale-provision-type (#4) since 3f91e25 (lang-all).
+  Its verdict is not recorded for unbound-merge-representative (#3).
 
 **Audit accepts; native rejects.**
-- args-context-shadow-call.moss (#72, E72). The oracle accepts it too (42).
+- ~~args-context-shadow-call.moss (#72, E72)~~: native prints 42 since
+  dff4b35 (lang-all).
 - sameneed-copy.moss (#51). The oracle rejects it too, but both accept the
   same program with the merge orders agreeing.
 - tests/errors/functor_output_input_changed.moss (#14). Audit accepted it
@@ -2319,8 +2333,8 @@ describe it, matches native and not the oracle:
 
 On copy-capture, Audit matches both implementations.
 
-On args-context-provision-wins.moss (#72, E72), Audit and the oracle
-print mm and native prints xx.
+On args-context-provision-wins.moss (#72, E72), Audit, the oracle and
+native print mm (native printed xx before dff4b35, lang-all).
 
 On sameneed-meaning.moss (#51), Audit prints 2, while native and the
 oracle print 1. On sameneed-meaning-agree.moss, Audit and the oracle print
