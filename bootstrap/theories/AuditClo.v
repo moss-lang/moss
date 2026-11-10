@@ -613,7 +613,8 @@ Lemma read_remap_select : forall d de pl,
 Proof.
   intros d de pl H sm. induction sm as [|[req src] r IH]; intro C.
   - exists fempty. split; [reflexivity|]. intro i. apply fget_empty.
-  - cbn [remap_plan map checks forallb fst snd fselect_provisions] in C |- *. apply andb_prop in C as [C1 C2].
+  - rewrite fselect_provisions_cons.
+    cbn [remap_plan map checks forallb fst snd] in C |- *. apply andb_prop in C as [C1 C2].
     destruct (IH C2) as (d'' & E & Hd).
     rewrite H. destruct (read d (remapo pl src)) as [en|] eqn:R; [|discriminate C1].
     rewrite E. eexists. split; [reflexivity|]. intro i. cbn [finstall fstore_of remap fst snd].

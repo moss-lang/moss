@@ -219,15 +219,31 @@ Definition fprimitive_closure (d : fenv) (i : item) (p : prim) : fprov :=
   FPrimitive p (match p, i with
     | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (lapp (fmeanings d) tau)
     | _, _ => None end).
-Fixpoint fselect_provisions (d : fenv) (sm : smap) : option fenv :=
+(* Selecting provisions constructs only the store. The new environment
+   has empty type tables, shared by all selections. *)
+Fixpoint fselect_store (s : fstore) (sm : smap) : option fstore :=
   match sm with
-  | [] => Some fempty
-  | (req, s) :: r =>
-      match flookup_provision s d, fselect_provisions d r with
-      | Some en, Some d' => Some (finstall req en d')
-      | _, _ => None
+  | [] => Some fempty_store
+  | (req, src) :: rest =>
+      match fget src s with
+      | None => None
+      | Some en => option_map (fset req en) (fselect_store s rest)
       end
   end.
+Definition selected_environment (s : fstore) : fenv := FEnv (DS []) (DS []) s.
+Definition fselect_provisions (d : fenv) (sm : smap) : option fenv :=
+  option_map selected_environment (fselect_store (fstore_of d) sm).
+
+Lemma fselect_provisions_cons : forall d req src rest,
+  fselect_provisions d ((req, src) :: rest) =
+  match flookup_provision src d, fselect_provisions d rest with
+  | Some en, Some d' => Some (finstall req en d')
+  | _, _ => None
+  end.
+Proof.
+  intros. unfold fselect_provisions, flookup_provision. cbn [fselect_store].
+  destruct (fget src (fstore_of d)), (fselect_store (fstore_of d) rest); reflexivity.
+Qed.
 Definition fadapt_provisions (d : fenv) (a : option smap) : option fenv :=
   match a with
   | None => Some d
@@ -318,9 +334,10 @@ Qed.
 Lemma erel_select : forall fd ld sm, ERel fd ld ->
   orel ERel (fselect_provisions fd sm) (lselect_provisions ld sm).
 Proof.
-  intros fd ld sm H. induction sm as [|[req s] r IH]; cbn.
+  intros fd ld sm H. induction sm as [|[req s] r IH].
   - constructor. apply erel_empty.
-  - destruct (lookup_cases fd ld s H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2.
+  - rewrite fselect_provisions_cons. cbn [lselect_provisions].
+    destruct (lookup_cases fd ld s H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2.
     + destruct (fselect_provisions fd r), (lselect_provisions ld r); constructor.
     + destruct IH as [|d1 d2 R']; constructor. apply erel_install; assumption.
 Qed.
