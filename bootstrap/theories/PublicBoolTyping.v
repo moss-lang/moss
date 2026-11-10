@@ -31,14 +31,13 @@ Proof.
 Qed.
 
 Theorem bool_value_shape : forall H bool value,
-  Platform.Layouts W -> A.LangSym W "bool" A.NSName "Bool" bool ->
+  A.LangItemsFormed W -> A.LangSym W "bool" A.NSName "Bool" bool ->
   value_typed W P H value (TNom bool []) ->
   exists truth falsity, A.LangSym W "bool" A.NSName "True" truth /\
     A.LangSym W "bool" A.NSName "False" falsity /\
     (value = VTag bool (VTag truth VUnit) \/ value = VTag bool (VTag falsity VUnit)).
 Proof.
-  intros H bool value Layouts Bool Typed.
-  destruct Layouts as [_ [_ [_ [_ [_ BoolLayout]]]]].
+  intros H bool value BoolLayout Bool Typed.
   destruct (BoolLayout bool Bool) as [truth [falsity [True' [False' [Tag [TrueUnit [FalseUnit [_ [_ Payload]]]]]]]]].
   exists truth, falsity. split; [exact True'|]. split; [exact False'|].
   assert (Members : forall payload, A.PayloadOf W bool [] payload ->
@@ -68,17 +67,19 @@ Proof.
   subst p p'. rewrite Scope in Scope'. congruence.
 Qed.
 
-(* The program's Bool symbols, as ElaboratesIn records them. *)
+(* The program's Bool symbols, as ElaboratesIn records them, and Bool's
+   layout (A.LangItemsFormed). *)
 Definition BoolSymbols (W : A.world) (program : program) : Prop :=
+  A.LangItemsFormed W /\ (
   A.LangSym W "bool" A.NSName "Bool" (program_bool program) /\
   A.LangSym W "bool" A.NSName "True" (program_true program) /\
   A.LangSym W "bool" A.NSName "False" (program_false program) \/
   ((forall s, ~ A.LangSym W "bool" A.NSName "Bool" s) /\
-   program_bool program = 0 /\ program_true program = 0 /\ program_false program = 0).
+   program_bool program = 0 /\ program_true program = 0 /\ program_false program = 0)).
 
 Lemma elaborates_bool_symbols : forall bundle W program,
   A.ElaboratesIn bundle W program -> BoolSymbols W program.
-Proof. intros bundle W program (_ & _ & _ & _ & _ & Bool & _); exact Bool. Qed.
+Proof. intros bundle W program (_ & _ & _ & _ & _ & Bool & Formed & _); exact (conj Formed Bool). Qed.
 
 Module BoolTruthy (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module I := I0.
@@ -86,15 +87,15 @@ Module I := I0.
 (* A condition elaborated by Cond has a Bool type; any typed value of it
    is read by truthy. *)
 Theorem truthy_typed : forall W program argv read H bool value,
-  BoolSymbols W program -> Platform.Layouts W ->
+  BoolSymbols W program ->
   A.LangSym W "bool" A.NSName "Bool" bool ->
   value_typed W (program_of program argv read) H value (TNom bool []) ->
   exists bit, I.truthy (program_of program argv read) value = Some bit.
 Proof.
-  intros W program argv read H bool value Symbols Layouts Bool Typed.
-  destruct (bool_value_shape W _ H bool value Layouts Bool Typed)
+  intros W program argv read H bool value Symbols Bool Typed.
+  destruct (bool_value_shape W _ H bool value (proj1 Symbols) Bool Typed)
     as [truth [falsity [True' [False' Shape]]]].
-  destruct Symbols as [[Bool' [True'' False'']]|[None' _]];
+  destruct Symbols as [_ [[Bool' [True'' False'']]|[None' _]]];
     [|exfalso; exact (None' bool Bool)].
   pose proof (lang_sym_unique _ _ _ _ _ _ Bool Bool'); subst bool.
   pose proof (lang_sym_unique _ _ _ _ _ _ True' True''); subst truth.

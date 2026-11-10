@@ -124,6 +124,8 @@ Definition assemble (bound : nat) (entry : string) : M program :=
   let* _ := check (match sg_params gm with [] => true | _ => false end && entry_result E fuel (sg_ret gm))
              (mod_of W main ++ ": main must return a type with no runtime lanes (D39)") in
   let* _ := pure (layouts E) in
+  (* ElaboratesIn: formation of the language's Bool item. *)
+  let* _ := pure (lang_items_formed E) in
   let* _ := check (casts_ok E) "the platform's `Ref` or `Array` is declared without its held or raw type (Representations)" in
   (* [D58]/[D59] FiniteLayouts (#90) *)
   let* _ := pure (finite_layouts W fuel bound) in

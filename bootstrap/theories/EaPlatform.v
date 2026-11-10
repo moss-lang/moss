@@ -183,12 +183,15 @@ Definition layouts : er unit :=
             | None => Ok tt end in
   let! _ := tag_layout "Ref" "Boxed" "StructRef" in
   let! _ := tag_layout "Array" "Arrayed" "ArrayRef" in
-  let! _ := tag_layout "Addr" "Memory" "I32" in
-  match lang_sym W "bool" NSName "Bool" with
+  tag_layout "Addr" "Memory" "I32".
+
+(* SOUND: lang_items_formed = Ok tt <-> LangItemsFormed W *)
+Definition lang_items_formed : er unit :=
+  match lang_item_sym W LIBool with
   | None => Ok tt
   | Some b =>
       let incompatible := at_sym b "platform Bool, True and False have incompatible declarations" in
-      match lang_sym W "bool" NSName "True", lang_sym W "bool" NSName "False" with
+      match lang_item_sym W LITrue, lang_item_sym W LIFalse with
       | Some tr, Some fl =>
           let! _ := rcheck (kind_is W b DKTag && kind_is W tr DKUnit && kind_is W fl DKUnit && negb (Nat.eqb tr fl) &&
                             match w_reqs W b with [] => true | _ => false end) incompatible in

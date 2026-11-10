@@ -2835,8 +2835,11 @@ Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : na
    literal's desugaring (Syntax.string_desugar, resolved in scope).
    - Bool, True, False ([D45]): a condition's type, and its two values.
    - zero, one, and num.moss's add, mul and div ([D68]): a numeric
-     literal's arithmetic; float.moss's float: a fractional literal's. *)
-Inductive lang_item := LIBool | LITrue | LIFalse | LIZero | LIOne | LIAdd | LIMul | LIDiv | LIFloat.
+     literal's arithmetic; float.moss's float: a fractional literal's.
+   - Gc (note 54): main's root context, the context main assumes
+     implicitly. *)
+Inductive lang_item := LIBool | LITrue | LIFalse | LIZero | LIOne | LIAdd | LIMul | LIDiv | LIFloat
+  | LIRoot.
 Definition lang_item_key (i : lang_item) : string * nspace * name :=
   match i with
   | LIBool => ("bool", NSName, "Bool") | LITrue => ("bool", NSName, "True")
@@ -2845,6 +2848,7 @@ Definition lang_item_key (i : lang_item) : string * nspace * name :=
   | LIAdd => ("num", NSDetached, "add") | LIMul => ("num", NSDetached, "mul")
   | LIDiv => ("num", NSDetached, "div")
   | LIFloat => ("float", NSName, "float")
+  | LIRoot => ("wasm", NSName, "Gc")
   end.
 Definition LangItem (W : world) (i : lang_item) (s : nat) : Prop :=
   let '(short, ns, n) := lang_item_key i in LangSym W short ns n s.
@@ -3321,8 +3325,9 @@ Definition Needs (s : subst) (es : list entry) (ns : list item) : Prop :=
   NoDup ns /\ forall k, In k ns <-> exists e, In e es /\ entry_key s e = Some k.
 
 (* [D84] (8), [D37] (note 54): `main` runs in the platform's root context.
-   Beside what it assumes, any function in scope as `main` has lib/wasm.moss's
-   `Gc`: each abstract functor `Gc` lists that is not already in force,
+   Beside what it assumes, any function in scope as `main` has the root
+   context, the language item LIRoot (lib/wasm.moss's `Gc`): each abstract
+   functor it lists that is not already in force,
    after the types it is fixed in (X(F), [D84] rule 1), each in force as
    its own generation unless it is already. *)
 Definition IsMainFn (W : world) (s : nat) : Prop :=
@@ -3349,10 +3354,10 @@ Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> 
 
 Inductive RootCtx (W : world) (s : nat) (es0 : list entry) (tm : list (nat * ty)) : list entry -> list (nat * ty) -> Prop :=
 | RootNone :
-    (~ IsMainFn W s \/ forall gc d n its, LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d <> ADCtx n its) ->
+    (~ IsMainFn W s \/ forall gc d n its, LangItem W LIRoot gc -> w_decl W gc = Some d -> d_ast d <> ADCtx n its) ->
     RootCtx W s es0 tm [] tm
 | RootGc : forall gc d n its es tm',
-    IsMainFn W s -> LangSym W "wasm" NSName "Gc" gc -> w_decl W gc = Some d -> d_ast d = ADCtx n its ->
+    IsMainFn W s -> LangItem W LIRoot gc -> w_decl W gc = Some d -> d_ast d = ADCtx n its ->
     RootItems W (d_mod d) es0 tm its es tm' -> RootCtx W s es0 tm es tm'.
 
 (* `CtxOf W s C ns`: the context the assume nesting of symbol s forms (and,
@@ -5385,6 +5390,18 @@ Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
 
 Definition DeclsForm (W : world) (P : program) : Prop := forall s, DeclForms W P s.
 
+(* The language items are what the language's rules take them to be
+   ([D45]): Bool is a tag with no requirements whose payload is the union of
+   its two values, True and False, distinct units. *)
+Definition LangItemsFormed (W : world) : Prop :=
+  forall symbol, LangItem W LIBool symbol ->
+    exists truth falsity,
+      LangItem W LITrue truth /\ LangItem W LIFalse falsity /\
+      kind_sym W symbol = Some DKTag /\ kind_sym W truth = Some DKUnit /\
+      kind_sym W falsity = Some DKUnit /\ truth <> falsity /\ w_reqs W symbol = [] /\
+      (PayloadOf W symbol [] (TUnion [TNom truth []; TNom falsity []]) \/
+       PayloadOf W symbol [] (TUnion [TNom falsity []; TNom truth []])).
+
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
   WorldOf b W /\
@@ -5402,6 +5419,8 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (LangItem W LIBool (program_bool P) /\ LangItem W LITrue (program_true P) /\
      LangItem W LIFalse (program_false P)
      \/ ((forall s, ~ LangItem W LIBool s) /\ program_bool P = 0 /\ program_true P = 0 /\ program_false P = 0)) /\
+    (* the language items are formed: Bool's layout *)
+    LangItemsFormed W /\
     (* [D16]/[D30]: finitely many instantiations *)
     NoExpandingCycle W P /\
     (* [D20]: assumed items bring their requirements and needs *)
@@ -5658,14 +5677,7 @@ Definition Layouts (W : world) : Prop :=
     LangSym W "wasm" NSName left symbol -> LangSym W "wasm" NSName right symbol -> left = right) /\
   TagLayout W "Ref" "Boxed" "StructRef" /\
   TagLayout W "Array" "Arrayed" "ArrayRef" /\
-  TagLayout W "Addr" "Memory" "I32" /\
-  (forall symbol, LangItem W LIBool symbol ->
-    exists truth falsity,
-      LangItem W LITrue truth /\ LangItem W LIFalse falsity /\
-      kind_sym W symbol = Some DKTag /\ kind_sym W truth = Some DKUnit /\
-      kind_sym W falsity = Some DKUnit /\ truth <> falsity /\ w_reqs W symbol = [] /\
-      (PayloadOf W symbol [] (TUnion [TNom truth []; TNom falsity []]) \/
-       PayloadOf W symbol [] (TUnion [TNom falsity []; TNom truth []]))).
+  TagLayout W "Addr" "Memory" "I32".
 
 Definition CastEntry (W : world) (array : bool) (entry : option (nsym * cast_spec)) : Prop :=
   let tag := if array then "Array" else "Ref" in

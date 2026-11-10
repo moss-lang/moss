@@ -720,7 +720,7 @@ Proof.
   destruct sig; try (eapply outcome_pass with (t := TNom bsym []); [exact (fun x => x)|cbn; congruence|exact OutC]).
   destruct OutC as [H1 [E1 [S1 [L1 T1]]]].
   assert (Bool : value_typed W (program_of Prog argv read) H1 v (TNom bsym [])) by exact T1.
-  destruct (B.truthy_typed W Prog argv read H1 bsym v Bools Layouts Lang Bool) as [bit Bit].
+  destruct (B.truthy_typed W Prog argv read H1 bsym v Bools Lang Bool) as [bit Bit].
   replace (AR.O.I.truthy P v) with (Some bit) by (symmetry; exact Bit). destruct bit.
   - pose proof (pre_lower (pre_after _ _ _ _ _ _ _ _ H1 g1 st1 Pre0 E1 S1 L1)) as Pre1.
     pose proof (SBlkE (A.with_loop F) C b None bx bt Body d types H1 g1 st1 (pre_loop _ _ _ _ _ _ _ _ Pre1)) as OutB.
@@ -5346,7 +5346,7 @@ Proof.
       destruct (scond F C c cx' Dc d types H lg lst (pre_lower Pre0)) as [bsym [Lang Out]].
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkIfC b None B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
-      destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Layouts Lang T1) as [bit Bit].
+      destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Lang T1) as [bit Bit].
       replace (AR.O.I.truthy P w) with (Some bit) by (symmetry; exact Bit).
       destruct bit.
       * apply (AR.O.outcome_fits W P state_ok _ _ _ _ bt).
@@ -5358,7 +5358,7 @@ Proof.
       destruct (scond F C c cx' Dc d types H lg lst (pre_lower Pre0)) as [bsym [Lang Out]].
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkIfC b (Some y) B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
-      destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Layouts Lang T1) as [bit Bit].
+      destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Lang T1) as [bit Bit].
       replace (AR.O.I.truthy P w) with (Some bit) by (symmetry; exact Bit).
       destruct (blke_branch_ty _ _ _ _ _ _ Db) as [FitsA FitsBt].
       destruct (join_fits _ _ _ _ _ Join FitsA FitsBt FitsE) as [Left Right].

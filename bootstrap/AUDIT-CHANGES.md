@@ -129,6 +129,7 @@ entry they belong to.
 | 95 | A linked body may pin a fixed input that G takes (`LinkBody`: protected inputs P(F) ∩ M(F), pins every fixed input the body rebinds; closes N5) | n5 | relaxation toward both implementations (closes #93's fidelity gap) |
 | 96 | A copy reads its source as F does at every application of F (`CopyInterpretation`: H's merges, needs and result compared at the copy site's fixed readings; corrects #32) | copyfix | relaxation toward both implementations |
 | 97 | Recorded, not fixed: needs at a site-made merge are matched by syntax (BFunCopy since #96; `LinkBody` as strict as #32 was) | linkfix | a coherence gap (acceptance depends on a merge's representative) and a fidelity gap; folded into the representative-free refactor |
+| 100 | Main's root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`) | sep S0 | none (definitional regrouping) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3090,6 +3091,50 @@ executable tests unless noted.
   false). The representative-free refactor (merges as classes, compared
   up to the congruence) states exactly this matching, so the fix is
   folded into it, with these four examples among its acceptance tests.
+
+### 100. The root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`; sep branch, S0; criteria section 8)
+- **Rule now.**
+  - `lang_item` gains `LIRoot`, keyed `("wasm", NSName, "Gc")`: main's
+    root context (note 54, [D84] (8)). `RootCtx`'s two cases read
+    `LangItem W LIRoot gc` where they read `LangSym W "wasm" NSName "Gc" gc`.
+  - Bool's layout clause (Bool is a tag with no requirements whose payload
+    is the union of True and False, two distinct units) leaves
+    `Platform.Layouts` and becomes `Elaboration.LangItemsFormed W`, a
+    conjunct of `ElaboratesIn` right after the Bool symbols clause.
+    `Platform.Layouts` keeps only the wasm facts (its abstract types and
+    the handle tags `Ref`, `Array`, `Addr`).
+- **Why.** Both are facts the language's own rules need, not facts about
+  one platform (criteria section 8). The root context is the language's
+  notion of what main assumes implicitly; which item supplies it is the
+  language-items table's job, as for Bool (#92). A platform parameter here
+  would make `CtxOf`, and with it all of `Elaboration`, platform-dependent
+  (the owner's decision 3 on the separation design). Bool's layout is what
+  `Cond` and `truthy` rely on (D45), so a platform that named its library
+  differently would still have to meet it. This is step S0 of the design
+  in `scratch/SEP-DESIGN.md` (git-ignored), which moves the rest of
+  `Platform` into a separate `Base` instance in later steps.
+- **Fidelity.** `LangItem W LIRoot gc` reduces to the previous
+  `LangSym` premise. `Builds`, `Ready`, `Admissible` and `Compatible`
+  take `ElaboratesIn ∧ Platform.Linked`, with the same Bool premise
+  before and after the regrouping. Ea reads the root through the same
+  key and checks the same Bool layout at the same diagnostic position.
+
+  | Program | Native before → after | moss-ref before → after | Audit before → after |
+  |---|---|---|---|
+  | [gc_tree](../tests/wasi/gc_tree.moss), implicit Gc and Bool branches | same output | byte-identical output | equivalent build and run predicates |
+  | [gc_array](../tests/wasi/gc_array.moss), implicit Gc and arrays | same output | byte-identical output | equivalent build and run predicates |
+
+- **Proof.** `public_safety` is still proved, and `check.sh` is green.
+  `PublicBoolTyping.BoolSymbols` now carries `LangItemsFormed` beside the
+  Bool symbols (`elaborates_bool_symbols` reads both off `ElaboratesIn`),
+  so the body slice's `Bools` hypothesis supplies Bool's layout and
+  `truthy_typed` no longer takes `Platform.Layouts`. `bool_value_shape`
+  and `PublicPrimitiveSafety.bool_not_cast` take `LangItemsFormed`.
+  `AuditBuildExample.main_lang_items` proves it of the example world (it
+  loads no `lib/bool.moss`).
+- **Class.** None (definitional, and a regrouping).
+
+---
 
 ## Consolidation (branch ob-consol)
 

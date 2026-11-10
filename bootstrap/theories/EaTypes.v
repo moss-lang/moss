@@ -61,6 +61,10 @@ Definition lang_sym (short : string) (ns : nspace) (n : name) : option nat :=
   | None => None
   end.
 
+(* SOUND: lang_item_sym i = Some s -> LangItem W i s *)
+Definition lang_item_sym (i : lang_item) : option nat :=
+  let '(m, ns, n) := lang_item_key i in lang_sym m ns n.
+
 (* SOUND: method_named p r n = Some m <-> MethodNamed W p r n m *)
 Definition method_named (p : string) (r : nat) (n : name) : option nat :=
   match w_attached W r n with

@@ -31,7 +31,7 @@ Hypothesis Reps : Platform.Representations W Prog.
 Lemma handle_layout : forall name param handle, In (name, param, handle) handle_tags ->
   Platform.TagLayout W name param handle /\ In handle Platform.abstract_names.
 Proof.
-  intros name param handle Found. destruct Layouts as [_ [_ [Ref [Arr [Addr _]]]]].
+  intros name param handle Found. destruct Layouts as [_ [_ [Ref [Arr Addr]]]].
   destruct Found as [E|[E|[E|[]]]]; injection E as <- <- <-; (split; [assumption|in_list]).
 Qed.
 
@@ -101,13 +101,12 @@ Proof.
   pose proof (handle_distinct _ _ _ _ _ _ s (ref_tags array) Addr Tag Sym). destruct array; discriminate.
 Qed.
 
-Lemma bool_not_cast : forall s, A.LangSym W "bool" A.NSName "Bool" s ->
+Lemma bool_not_cast : A.LangItemsFormed W -> forall s, A.LangSym W "bool" A.NSName "Bool" s ->
   lookup_cast s (program_casts Prog) = None.
 Proof.
-  intros s Sym. destruct (lookup_cast s (program_casts Prog)) as [schema|] eqn:Found; [|reflexivity].
+  intros BoolLayout s Sym. destruct (lookup_cast s (program_casts Prog)) as [schema|] eqn:Found; [|reflexivity].
   destruct (cast_entry W Prog Reps s schema Found) as [array [_ [_ [Tag _]]]]. exfalso.
   destruct (layout_raw _ _ _ _ (ref_tags array) Tag) as [_ [_ [_ [Reqs _]]]].
-  destruct Layouts as [_ [_ [_ [_ [_ BoolLayout]]]]].
   destruct (BoolLayout s Sym) as [_ [_ [_ [_ [_ [_ [_ [_ [Empty _]]]]]]]]]. exact (Reqs Empty).
 Qed.
 
@@ -265,7 +264,7 @@ Lemma bool_syms : forall s, A.LangSym W "bool" A.NSName "Bool" s ->
     A.LangSym W "bool" A.NSName "True" truth -> A.LangSym W "bool" A.NSName "False" falsity ->
     truth = program_true Prog /\ falsity = program_false Prog.
 Proof.
-  intros s Sym. destruct Bools as [[B [T F]]|[None' _]]; [|exfalso; exact (None' s Sym)].
+  intros s Sym. destruct Bools as [_ [[B [T F]]|[None' _]]]; [|exfalso; exact (None' s Sym)].
   split; [exact (lang_sym_unique _ _ _ _ _ _ Sym B)|].
   intros truth falsity T' F'. split; eapply lang_sym_unique; eassumption.
 Qed.
@@ -277,12 +276,11 @@ Proof.
   destruct w as [|b inner| | | | | | |]; try contradiction.
   destruct inner as [|t' u| | | | | | |]; try contradiction. destruct u; try contradiction.
   destruct Shape as [Eb Et]. cbn in Eb, Et.
-  destruct Layouts as [_ [_ [_ [_ [_ BoolLayout]]]]].
-  destruct (BoolLayout s Sym) as [truth [falsity [T [F [_ [TU [FU [_ [_ Payload]]]]]]]]].
+  destruct (proj1 Bools s Sym) as [truth [falsity [T [F [_ [TU [FU [_ [_ Payload]]]]]]]]].
   destruct (bool_syms s Sym) as [-> Names]. destruct (Names _ _ T F) as [-> ->]. subst b.
   assert (Ord : ordinary_tag P (program_bool Prog) []).
   { unfold ordinary_tag. cbn [view_casts program_of].
-    rewrite (bool_not_cast W Prog Layouts Reps _ Sym). exact I. }
+    rewrite (bool_not_cast W Prog Layouts Reps (proj1 Bools) _ Sym). exact I. }
   destruct Payload as [Pay|Pay]; (eapply TypedTag; [exact Ord|exact Pay|]);
     destruct Et as [->| ->]; (eapply TypedUnion; [apply TypedUnitTag; eassumption|in_list]).
 Qed.
@@ -302,7 +300,7 @@ Proof.
     destruct (machine_value _ _ _ Typed) as [n ->]; exact I.
   - subst t. cbn in Typed. inversion Typed; exact I.
   - destruct VT as [symbol [Sym ->]]. cbn in Typed.
-    destruct (bool_value_shape W P H symbol w Layouts Sym Typed) as [truth [falsity [T [F Shape]]]].
+    destruct (bool_value_shape W P H symbol w (proj1 Bools) Sym Typed) as [truth [falsity [T [F Shape]]]].
     destruct (bool_syms symbol Sym) as [-> Names]. destruct (Names _ _ T F) as [-> ->].
     destruct Shape as [->| ->]; cbn; auto.
   - destruct (addr_input H t w VT Formed Typed) as [s [n ->]]; exact I.

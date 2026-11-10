@@ -212,6 +212,13 @@ Proof.
   split; [reflexivity|]. split; [reflexivity|]. split; [constructor|reflexivity].
 Qed.
 
+(* lib/bool.moss is not loaded, so there is no Bool to form. *)
+Lemma main_lang_items : LangItemsFormed world_main.
+Proof.
+  intros symbol Bool. exfalso.
+  eapply no_platform_symbols with (lib := "bool"); [simpl; auto|exact Bool].
+Qed.
+
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
 Proof.
   split; [exact world_main_valid|]. split.
@@ -221,7 +228,7 @@ Proof.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|reflexivity].
-      * split; [|split; [exact main_bounded|split; [exact main_assumes|split; [exact main_decls|exact main_layouts]]]]. right. split.
+      * split; [|split; [exact main_lang_items|split; [exact main_bounded|split; [exact main_assumes|split; [exact main_decls|exact main_layouts]]]]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.

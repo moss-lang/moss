@@ -144,7 +144,7 @@ Fixpoint root_items (q : string) (es0 : list entry) (tm : list (nat * ty)) (its 
 (* SOUND: root_ctx s es0 tm = Ok (er, tmr) -> RootCtx W s es0 tm er tmr *)
 Definition root_ctx (s : nat) (es0 : list entry) (tm : list (nat * ty)) : er (list entry * list (nat * ty)) :=
   if nmem s (e_mains E) then
-    match lang_sym W "wasm" NSName "Gc" with
+    match lang_item_sym W LIRoot with
     | Some gc =>
         match w_decl W gc with
         | Some d => match d_ast d with
