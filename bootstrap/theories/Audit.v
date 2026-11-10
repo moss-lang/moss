@@ -3061,6 +3061,19 @@ Definition type_children (t : ty) : list ty :=
   | _ => []
   end.
 
+Definition HeadM (M : merge) (t : ty) : Prop := head (expand M t) <> None.
+
+Definition FitsM (M : merge) (t expected : ty) : Prop :=
+  MergeEq M t expected \/ MergeEq M t never \/
+  exists ms, expand M expected = TUnion ms /\
+    forall x, In x (members (expand M t)) -> exists y, In y ms /\ MergeEq M x y.
+
+Inductive JoinM (M : merge) : ty -> ty -> option ty -> ty -> Prop :=
+| JoinMExp : forall a b t, JoinM M a b (Some t) t
+| JoinMLeftNever : forall a b, MergeEq M a never -> JoinM M a b None b
+| JoinMSame : forall a b, (MergeEq M b never \/ MergeEq M a b) ->
+    ~ MergeEq M a never -> JoinM M a b None a.
+
 Definition KeyEq (M : merge) (k k' : item) : Prop :=
   match k, k' with
   | IMth t m _, IMth u n _ => m = n /\ MergeEq M t u
