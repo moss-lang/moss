@@ -234,8 +234,8 @@ Lemma copy_step_realizes : forall rr H d (f : nat -> ty) e1 u Cu nsu h Ch nsh,
     Realizes rr Ch (S.callee_env d (thof f Ch) e1') H.
 Proof.
   intros rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl RdT NdT Sub RealU.
-  destruct (S.functx_static W _ _ _ FCh) as [[CanH DomH] [[CnH SectionH] [KMh [NdH [ProvNsH [ShapeH [ScH FixH]]]]]]].
-  destruct (S.functx_static W _ _ _ FCu) as [[CanU DomU] [[CnU SectionU] [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
+  destruct (S.functx_static W _ _ _ FCh) as [[CanH DomH] [[SectionH KMh] [NdH [ProvNsH [ShapeH [ScH FixH]]]]]].
+  destruct (S.functx_static W _ _ _ FCu) as [[CanU DomU] [[SectionU KMu] [NdU [ProvNsU [ShapeU [ScU FixU]]]]]].
   set (ce := S.callee_env d (thof f Cu) e1) in *.
   pose proof RealU as [_ [[ValsU [FnsU [MthsU FunsU]]] _]].
   pose proof (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ RealU) as AbsU.
@@ -264,7 +264,7 @@ Proof.
     rewrite (sm_find_map (A.rkey_of Ch) (fun k => A.rkey_of Cu (A.canon_item Cu k)) nsh k0 Ik).
     - exact L.
     - intros k' Ik' E. exact (rkey_of_injective Ch k' k0 (ShapeH k' Ik') (ShapeH k0 Ik) E). }
-  split; [|split; [split; [|split; [|split]]|exact (conj (conj CnH SectionH) KMh)]].
+  split; [|split; [split; [|split; [|split]]|exact (conj SectionH KMh)]].
   - (* H's merges hold: they are F's readings *)
     apply (S.absorbs_canon_iff Ch ch SectionH).
     intros t. unfold A.canon. change (ground ch (app_subst (A.c_sub Ch) t) = ground ch t).
@@ -389,7 +389,7 @@ Proof.
     { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
       apply S.linked_spec in Ik as [Ig Iu].
       destruct (functx_needs_provided W u Cu nsu FCu (A.canon_item Cu k0) Iu) as [p0 Ip].
-      destruct (S.functx_static W _ _ _ FCu) as [_ [_ [_ [_ [_ [ShU _]]]]]].
+      destruct (S.functx_static W _ _ _ FCu) as [_ [_ [_ [_ [ShU _]]]]].
       destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real Ip (ShU (A.canon_item Cu k0) Iu)) as [pv0 L0].
       change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) e1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) (S.callee_env d (thof f Cu) e1)).
       rewrite L0. discriminate. }
@@ -545,7 +545,8 @@ Proof.
     gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh Look _ _ _ _ _ _.
   pose proof AP as (R & Fx & FC & Inp & Th & Fixed & Sat & FreshG & Uniq & Outs & NdO & OutsIff & PR).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [Section KM]]].
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   destruct (Funs u fx Fx) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
   set (sms' := compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) in *.

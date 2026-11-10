@@ -28,6 +28,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd.
 From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink PublicMergeClass.
+From NM Require PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -646,7 +647,8 @@ Proof.
     code sms rms gfx Look Nn Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD i r m g0 key Ki Last Mg Ikey Si.
   pose proof FD as (FC0 & NoH & PRf & _ & _ & _ & Abst0 & _).
   pose proof AP as (_ & _ & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
-  pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [[Idem Section] KMc]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [Section KMc]]] & Fmd).
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (FL.CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).

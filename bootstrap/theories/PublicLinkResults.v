@@ -209,7 +209,7 @@ Lemma pre_after_result : forall rr F C pa u fx Cu ns sm th gensof C' ks newgens 
   PA.FS.CopyA.S.Pre W Prog argv read state_ok rr (A.with_fresh F newgens) C' d' types H3 g st3.
 Proof.
   intros rr F C pa u fx Cu ns sm th gensof C' ks newgens outs AP d types H g st d' H3 st3
-    [Frame [[Lo [Re _]] [L [_ [[Abs [_ [[Idem Section] _]]] [Fc Ff]]]]]] Ms Gr Ext St3 Al Env KM.
+    [Frame [[Lo [Re _]] [L [_ [[Abs [_ [Section _]]] [Fc Ff]]]]]] Ms Gr Ext St3 Al Env KM.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & _ & PR).
   destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo _]].
   assert (Section' : PublicContextFacts.CxSection C').
@@ -233,7 +233,7 @@ Proof.
       { apply (PA.FS.CopyA.S.absorbs_canon_iff C' d' Section').
         exact (absorbs_canon_grow C C' (map gensof outs) d d' AbsRead Esub Gr
           (fun g0 Ig => proj1 (Av g0 Ig))). }
-      split; [exact Env | exact (PA.FS.CopyA.S.static_from_section C' Section' KM)].
+      split; [exact Env | exact (conj Section' KM)].
     + split; [|split; [exact (proj1 Ff)|exact (PublicScoping.apply_abstract_cxscoped W F _ C u gensof C' ks PR eq_refl (proj2 Ff))]].
       apply (PublicFormation.apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
       intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
@@ -300,7 +300,7 @@ Lemma pre_meanings_free : forall rr F C d types H g st d',
      ground d' t = ground d t) ->
   PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C d' types H g st.
 Proof.
-  intros rr F C d types H g st d' [Frame [[Lo [Re Al]] [L [St [[Abs [Env [[Idem Section] KM]]] [Fc Ff]]]]]] Ep Ea Ek G.
+  intros rr F C d types H g st d' [Frame [[Lo [Re Al]] [L [St [[Abs [Env [Section KM]]] [Fc Ff]]]]]] Ep Ea Ek G.
   assert (Gk : forall t, incl (A.gens t) (PA.FS.CopyA.S.capture_gens C) -> ground d' t = ground d t)
     by (intros t I; apply G; intros x Ix; apply in_or_app; left; exact (I x Ix)).
   assert (Gc : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
@@ -312,7 +312,7 @@ Proof.
     assert (Ik : In x (map fst (A.c_ty C))) by (change x with (fst (x, tx)); apply in_map; exact (nlook_in _ _ _ _ Lx)).
     rewrite (Ek x Ik), Gc; [exact (Al x tx Lx)|exact (nlook_ty_context_gens C x tx Lx)].
   - split; [exact L|]. split; [exact St|]. split; [|exact (conj Fc Ff)].
-    split; [|split; [|exact (conj (conj Idem Section) KM)]].
+    split; [|split; [|exact (conj Section KM)]].
     + apply (PA.FS.CopyA.S.absorbs_canon_iff C d' Section).
       pose proof (proj1 (PA.FS.CopyA.S.absorbs_canon_iff C d Section) Abs) as AbsRead.
       intros t. unfold A.canon. unfold ground.

@@ -158,18 +158,21 @@ Proof.
   rewrite Recorded in Recorded'. injection Recorded' as <- <-. split; reflexivity.
 Qed.
 
-(* A call's instantiation cannot bind two members of one merged class
-   differently: if the callee merges g1 and g2 into z, their meanings at a
-   caller that binds both agree. *)
-Theorem call_theta_merged : forall W C Cs s th g1 g2 z,
-  canonical_context C -> A.CallTheta W C Cs s th ->
-  In (g1, TAbs z) (A.c_sub Cs) -> In (g2, TAbs z) (A.c_sub Cs) ->
+(* A call reads members of a callee class as one caller class. *)
+Theorem call_theta_merged : forall W C Cs s th g1 g2,
+  CxSection C -> CxSection Cs -> A.CallTheta W C Cs s th ->
+  A.MergeEq (A.c_merge Cs) (TAbs g1) (TAbs g2) ->
   In g1 (map fst (A.c_ty Cs)) -> In g2 (map fst (A.c_ty Cs)) ->
   A.nlook g1 (A.c_ty C) <> None -> A.nlook g2 (A.c_ty C) <> None ->
-  A.canon C (app_subst (A.c_ty C) (TAbs g1)) = A.canon C (app_subst (A.c_ty C) (TAbs g2)).
+  A.MergeEq (A.c_merge C)
+    (app_subst (A.c_ty C) (TAbs g1)) (app_subst (A.c_ty C) (TAbs g2)).
 Proof.
-  intros W C Cs s th g1 g2 z Canonical [_ [Bound Merges]] M1 M2 R1 R2 F1 F2.
-  pose proof (Merges g1 (TAbs z) M1) as E1. pose proof (Merges g2 (TAbs z) M2) as E2.
-  cbn [app_subst] in E1, E2. rewrite (Bound g1 R1 F1) in E1. rewrite (Bound g2 R2 F2) in E2.
-  rewrite Canonical in E1, E2. congruence.
+  intros W C Cs s th g1 g2 Caller Callee Theta Equal R1 R2 F1 F2.
+  pose proof (@PublicMerge.merge_eq_substitute _ _ _
+    (call_theta_respects W C Cs s th Caller Callee Theta) _ _ Equal) as Read.
+  destruct Theta as [_ [Bound _]].
+  cbn [app_subst] in Read. rewrite (Bound g1 R1 F1), (Bound g2 R2 F2) in Read.
+  apply (context_canon_iff_mergeeq C Caller).
+  apply (context_canon_iff_mergeeq C Caller) in Read.
+  now rewrite !(section_canonical C Caller) in Read.
 Qed.

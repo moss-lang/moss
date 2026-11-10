@@ -399,7 +399,8 @@ Proof.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [Section KM]]].
+  pose proof (PublicContextFacts.section_canonical C0 Section) as Idem.
   pose proof (CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
@@ -436,7 +437,7 @@ Proof.
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
     apply CopyA.S.linked_spec in Ik as [Ig Iu].
     destruct (functx_needs_provided W u Cu ns FC (A.canon_item Cu k0) Iu) as [p0 Ip].
-    destruct (CopyA.S.functx_static W _ _ _ FC) as [_ [_ [_ [_ [_ [ShU _]]]]]].
+    destruct (CopyA.S.functx_static W _ _ _ FC) as [_ [_ [_ [_ [ShU _]]]]].
     destruct (CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU (A.canon_item Cu k0) Iu)) as [pv0 L0].
     change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) d1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) (CopyA.S.callee_env d th d1)). rewrite L0. discriminate. }
   assert (Keys : map fst th = map fst (A.c_ty Cu)) by (unfold th; rewrite map_map; reflexivity).
@@ -510,7 +511,7 @@ Lemma realizes_family : forall rr C0 C u matching th sm Cr ks d dr H H',
 Proof.
   intros rr C0 C u matching th sm Cr ks d dr H H' Es Emg Ep FA Real Ext [Em [Ea [Dom New]]].
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
-  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr C0 d H H' Ext Real) as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr C0 d H H' Ext Real) as [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]].
   set (d' := append_environment dr d).
   assert (G : forall t, ground d' t = ground d t)
     by (intros t; unfold ground, d'; cbn [type_meanings append_environment]; rewrite Em; reflexivity).
@@ -532,7 +533,7 @@ Proof.
   { unfold Cw. change (A.c_merge Cr = A.c_merge C0).
     rewrite (PublicContextFacts.family_application_merge W _ _ _ _ _ _ _ FA). exact Emg. }
   split; [intros left right Eq; rewrite !G; apply Abs; now rewrite MergeW in Eq |].
-  split; [|apply CopyA.S.static_from_section; [|exact KMw]].
+  split; [|split; [|exact KMw]].
   2: { eapply PublicContextFacts.section_same_fields; eassumption. }
   split; [|split; [|split]].
   - intros v t Found. change (A.nlook v (vals_of (A.c_provisions Cw)) = Some t) in Found.
@@ -585,7 +586,7 @@ Lemma keep_family : forall rr C0 C u matching th sm Cr ks d dr H H',
 Proof.
   intros rr C0 C u matching th sm Cr ks d dr H H' Es Ep FA Ext [Em [Ea [Dom New]]] Cx Inc Esx Coh RealX.
   destruct (family_news W _ _ _ _ _ _ _ FA) as [news [Epr [Esub [_ [Meth KsI]]]]].
-  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  destruct (CopyA.S.realizes_extends W Prog argv read state_ok rr Cx d H H' Ext RealX) as [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]].
   set (d' := append_environment dr d).
   assert (G : forall t, ground d' t = ground d t)
     by (intros t; unfold ground, d'; cbn [type_meanings append_environment]; rewrite Em; reflexivity).
@@ -595,7 +596,7 @@ Proof.
     destruct (Dom K pv L) as [r [m [_ ->]]]. exfalso. exact (Nm r m _ eq_refl). }
   assert (KMn : PublicCallRealize.KeysMatch news).
   { intros k p I. destruct (Meth k p I) as (r & m & g & a & -> & ->). exact Logic.I. }
-  split; [intros left right Eq; rewrite !G; exact (Abs left right Eq)|]. split; [|exact (conj (conj Idem Section) KM)].
+  split; [intros left right Eq; rewrite !G; exact (Abs left right Eq)|]. split; [|exact (conj Section KM)].
   split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [L T]]. exists w.
     rewrite G, LookN; [exact (conj L T)|intros r m th0 E; discriminate].

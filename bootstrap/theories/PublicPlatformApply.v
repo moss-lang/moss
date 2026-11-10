@@ -517,7 +517,8 @@ Proof.
   { destruct outs as [|t0 r0]; [reflexivity|]. exfalso. exact (NoOut t0 (proj1 (OutsIff t0) (or_introl eq_refl))). }
   subst outs.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [AbsM [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [AbsM [[Vals [Fns [Mths Funs]]] [Section KM]]].
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   rewrite FS.CopyA.S.bindings_apply_eq.
   destruct j as [|j1].
@@ -597,7 +598,7 @@ Proof.
   { assert (Emerge : A.c_merge C' = A.c_merge C)
       by (eapply PublicContextFacts.provided_result_merge; exact PR).
     split; [intros left right Eq; apply AbsM; now rewrite Emerge in Eq |].
-    split; [|apply FS.CopyA.S.static_from_section; [|exact KM']].
+    split; [|split; [|exact KM']].
     2: { eapply PublicContextFacts.section_same_fields; eassumption. }
     split; [|split; [|split]].
     - intros v t Found. change (A.c_vals C') with (vals_of (A.c_provisions C')) in Found.
@@ -755,7 +756,8 @@ Proof.
     code sms rms gfx h0 gf0 Look Ok Fm Chn Fam.
   pose proof AP as (R & Lf & FC & Inp & Th & Fixed & Sat & _).
   pose proof Pre0 as (_ & _ & _ & _ & Real & _).
-  pose proof Real as [_ [_ [[Idem _] _]]].
+  pose proof Real as [_ [_ [Section _]]].
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   set (f := fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))).
   assert (Thf : th = FS.CopyA.thof f Cu) by exact Th.
@@ -880,7 +882,8 @@ Proof.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [Section KM]]].
+  pose proof (PublicContextFacts.section_canonical C0 Section) as Idem.
   pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).

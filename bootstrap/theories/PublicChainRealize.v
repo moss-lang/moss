@@ -32,6 +32,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
 From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig.
 From NM Require PublicMergeClass.
+From NM Require PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -1364,7 +1365,8 @@ Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En.
-  pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [[Idem Section] KMc]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [Section KMc]]] & Fmd).
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   pose proof AP as (_ & Fx & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
   destruct Sat as [_ [_ [_ [_ Merge0]]]].

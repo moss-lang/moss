@@ -276,11 +276,14 @@ Definition KeysMatch (C : A.cx) : Prop := PublicCallRealize.KeysMatch (A.c_provi
 
 (* Static facts of a context in force (T29). *)
 Definition StaticOk (C : A.cx) : Prop :=
-  (PublicContextFacts.canonical_context C /\ PublicContextFacts.CxSection C) /\ KeysMatch C.
+  CxSection C /\ KeysMatch C.
 
-Lemma static_from_section : forall C, PublicContextFacts.CxSection C -> KeysMatch C -> StaticOk C.
+Lemma static_ok_canonical_iff : forall C,
+  StaticOk C <-> (canonical_context C /\ CxSection C) /\ KeysMatch C.
 Proof.
-  intros C Section Keys. exact (conj (conj (PublicContextFacts.section_canonical C Section) Section) Keys).
+  intro C. split.
+  - intros [Section Keys]. exact (conj (conj (section_canonical C Section) Section) Keys).
+  - intros [[_ Section] Keys]. exact (conj Section Keys).
 Qed.
 
 Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
@@ -288,7 +291,7 @@ Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Pr
 
 Lemma realizes_absorbs_canon : forall n C d H, Realizes n C d H -> AbsorbsCanon C d.
 Proof.
-  intros n C d H [Abs [_ [[_ Section] _]]]. apply (absorbs_canon_iff C d Section). exact Abs.
+  intros n C d H [Abs [_ [Section _]]]. apply (absorbs_canon_iff C d Section). exact Abs.
 Qed.
 
 (* The context and frame are formed (T29). *)
@@ -1498,8 +1501,7 @@ Qed.
 
 (* What a call reads of the callee's context. *)
 Definition CtxStatic (Cf : A.cx) (ns : list item) : Prop :=
-  TableFormed Cf /\ (PublicContextFacts.canonical_context Cf /\ PublicContextFacts.CxSection Cf) /\
-  PublicCallRealize.KeysMatch (A.c_provisions Cf) /\
+  TableFormed Cf /\ StaticOk Cf /\
   NoDup ns /\ (forall k p, In (k, p) (A.c_provisions Cf) -> In k ns) /\ (forall k, In k ns -> NeedShape k) /\
   (forall k p, In (k, p) (A.c_provisions Cf) ->
      incl (provision_sig_gens p) (map fst (A.c_ty Cf)) /\ incl (key_gens k) (map fst (A.c_ty Cf))) /\
@@ -1509,9 +1511,9 @@ Definition CtxStatic (Cf : A.cx) (ns : list item) : Prop :=
 Lemma ctxof_static : forall f Cf ns, A.CtxOf W f Cf ns -> CtxStatic Cf ns.
 Proof.
   intros f Cf ns Ctx. destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
-  split; [exact (ctx_table_formed W f Cf ns Ctx)|]. split; [split; [exact (PublicContextFacts.function_context_canonical W f Cf ns Ctx)|
-    exact (proj2 (PublicContextFacts.function_context_merge W f Cf ns Ctx))] |].
-  split; [exact (ctx_keys_match W f Cf ns Ctx)|]. split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
+  split; [exact (ctx_table_formed W f Cf ns Ctx)|].
+  split; [split; [exact (proj2 (function_context_merge W f Cf ns Ctx)) | exact (ctx_keys_match W f Cf ns Ctx)] |].
+  split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
   split; [exact (ctx_provision_scoped W f Cf ns Ctx)|].
   intros u fx I. destruct (ctx_fun_fixed W f Cf ns Ctx u fx I) as [Cov [Sc _]]. split; assumption.
 Qed.
@@ -1519,9 +1521,9 @@ Qed.
 Lemma functx_static : forall u Cf ns, A.FunCtx W u Cf ns -> CtxStatic Cf ns.
 Proof.
   intros u Cf ns FC. destruct (functx_scoped W u Cf ns FC) as [Can [Sc [KM [Nd [ProvNs [Shape Dom]]]]]].
-  split; [split; [exact Can|exact Dom]|]. split; [split; [exact (PublicContextFacts.functor_context_canonical W u Cf ns FC)|
-    exact (proj2 (PublicContextFacts.functor_context_merge W u Cf ns FC))] |].
-  split; [exact KM|]. split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
+  split; [split; [exact Can|exact Dom]|].
+  split; [exact (conj (proj2 (functor_context_merge W u Cf ns FC)) KM)|].
+  split; [exact Nd|]. split; [exact ProvNs|]. split; [exact Shape|].
   split; [intros k p I; destruct (Sc k p I) as [S1 [S2 _]]; split; assumption|].
   intros u' fx I. split.
   - exact (functx_fun_cover W u Cf ns FC u' fx I).
@@ -1559,8 +1561,8 @@ Lemma static_realizes_le : forall n0 n C' d H f Cf ns sm th, n <= n0 ->
     Agree (type_meanings (callee_env d th dc)) (type_meanings d) (A.c_ty Cf) (A.c_ty C') /\
     Realizes n Cf (callee_env d th dc) H.
 Proof.
-  intros n0 n C d H f Cf ns sm th Le [AbsM [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] St Sat CT.
-  destruct St as [TfC [[CanC SectionC] [KMf [NdC [ProvC [ShapeC [ScC FixC]]]]]]].
+  intros n0 n C d H f Cf ns sm th Le [AbsM [[Vals [Fns [Mths Funs]]] [Section KM]]] St Sat CT.
+  destruct St as [TfC [[SectionC KMf] [NdC [ProvC [ShapeC [ScC FixC]]]]]].
   pose proof (proj1 (absorbs_canon_iff C d Section) AbsM) as Abs.
   pose proof (call_theta_respects W C Cf f th Section SectionC CT) as Respects.
   destruct Sat as [SmEq [Prov [Coh [Types _]]]].
@@ -1598,9 +1600,9 @@ Proof.
       rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. apply GroundDe.
       intros x Ix. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
     - rewrite <- Abs, Er. symmetry. apply GroundDe. intros x Ix. apply Sc. apply in_or_app. left. exact Ix. }
-  split; [exact (call_agree_tf W f Cf C th d TfC CT Abs Idem)|].
+  split; [exact (call_agree_tf W f Cf C th d TfC CT Abs)|].
   split; [exact (call_absorbs_merge C Cf th d dc TfC SectionC Keys Respects AbsM)|].
-  split; [|exact (conj (conj CanC SectionC) KMf)].
+  split; [|exact (conj SectionC KMf)].
   split; [|split; [|split]].
   - (* vals *) intros v tf Found.
     destruct (vals_ilook _ v tf KMf Found) as [a Il]. pose proof (ilook_in _ _ _ Il) as InP.
@@ -1869,11 +1871,11 @@ Lemma realizes_set : forall n C d H k0 p0 d',
   NewOk n (set_cx C k0 p0) d' H k0 p0 ->
   Realizes n (set_cx C k0 p0) d' H.
 Proof.
-  intros n C d H k0 p0 d' [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] K0 Meq Other New.
+  intros n C d H k0 p0 d' [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]] K0 Meq Other New.
   assert (G : forall t, ground d' t = ground d t) by (intros t; unfold ground; rewrite Meq; reflexivity).
   assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
   pose proof (keys_match_set k0 p0 _ KM K0) as KM'.
-  split; [intros t u E; rewrite !G; exact (Abs t u E)|]. split; [|exact (conj (conj Idem Section) KM')].
+  split; [intros t u E; rewrite !G; exact (Abs t u E)|]. split; [|exact (conj Section KM')].
   split; [|split; [|split]].
   - intros v t Found. change (A.c_vals (set_cx C k0 p0)) with (vals_of (set_list k0 p0 (A.c_provisions C))) in Found.
     rewrite vals_by_ilook in Found by exact KM'. rewrite ilook_set in Found.
@@ -2476,7 +2478,7 @@ Lemma lambda_realizes_le : forall n0 n C qs Cl d1 H dc keys, n <= n0 ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
 Proof.
   intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps Keys Sel KsC.
-  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]].
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (K := capture_gens C).
   assert (Meq : type_meanings de = capture_meanings d1 K) by apply typed_capture_meanings.
@@ -2502,7 +2504,7 @@ Proof.
   { apply (absorbs_canon_iff Cl de SectionCl).
     intros t. unfold ground. rewrite Meq, Canon.
     exact (capture_absorbs C d1 (realizes_absorbs_canon _ _ _ _ Real) t). }
-  split; [|exact (static_from_section Cl SectionCl KMl)].
+  split; [|exact (conj SectionCl KMl)].
   split; [|split; [|split]].
   - (* vals *) intros v t Found.
     assert (Ik : In (IVal v) keys) by (apply Keys; cbn; split; [congruence|auto]).
@@ -2864,8 +2866,8 @@ Qed.
 Lemma realizes_install_val : forall n C d H v pv, Realizes n C d H -> A.ilook (IVal v) (A.c_provisions C) = None ->
   Realizes n C (install_provision (IVal v) pv d) H.
 Proof.
-  intros n C d H v pv [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] Out.
-  split; [exact Abs|]. split; [|exact (conj (conj Idem Section) KM)]. split; [|split; [|split]].
+  intros n C d H v pv [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]] Out.
+  split; [exact Abs|]. split; [|exact (conj Section KM)]. split; [|split; [|split]].
   - intros v' t Found. destruct (Vals v' t Found) as [w [Look T]]. exists w. split; [|exact T].
     rewrite install_other; [exact Look|]. intros E. injection E as ->.
     change (A.c_vals C) with (vals_of (A.c_provisions C)) in Found. rewrite (vals_by_ilook _ v KM), Out in Found. discriminate.
@@ -3004,9 +3006,9 @@ Lemma realizes_transfer : forall n C d d' H, Realizes n C d H ->
   (forall k p, In (k, p) (A.c_provisions C) -> lookup_provision (A.rkey_of C k) d' = lookup_provision (A.rkey_of C k) d) ->
   Realizes n C d' H.
 Proof.
-  intros n C d d' H [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] G Same.
+  intros n C d d' H [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]] G Same.
   assert (Gm : forall ps, map (ground d) ps = map (ground d') ps) by (intros ps; apply map_ext; intros; symmetry; apply G).
-  split; [intros t u E; rewrite !G; exact (Abs t u E)|]. split; [|exact (conj (conj Idem Section) KM)]. split; [|split; [|split]].
+  split; [intros t u E; rewrite !G; exact (Abs t u E)|]. split; [|exact (conj Section KM)]. split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [Look T]]. exists w. rewrite G. split; [|exact T].
     destruct (vals_ilook _ v t KM Found) as [a Il]. rewrite <- Look. exact (Same _ _ (ilook_in _ _ _ Il)).
   - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]]. exists pv. split.
@@ -3026,7 +3028,7 @@ Lemma callee_found : forall n C d H f Cf ns sm th dc,
   select_provisions d sm = Some dc ->
   forall k, In k ns -> lookup_provision (A.rkey_of Cf k) (callee_env d th dc) <> None.
 Proof.
-  intros n C d H f Cf ns sm th dc [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]] Ctx Sat CT Sel k Ik.
+  intros n C d H f Cf ns sm th dc [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]] Ctx Sat CT Sel k Ik.
   destruct Sat as [SmEq [Prov _]].
   destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
   change (lookup_provision (A.rkey_of Cf k) (callee_env d th dc)) with (lookup_provision (A.rkey_of Cf k) dc).
@@ -3374,7 +3376,7 @@ Proof.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_copy_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]].
-  pose proof Real as [AbsM [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [AbsM [[_ [_ [_ Funs]]] [Section KM]]].
   pose proof (realizes_absorbs_canon _ _ _ _ Real) as Abs.
   destruct (A.nlook h (A.c_funs C)) as [fxh|] eqn:Lh; [|congruence].
   destruct (Funs h fxh Lh) as [pv [gfh [Look [Okh [Covh Vmh]]]]].
@@ -3577,7 +3579,7 @@ Proof.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
-  pose proof Real as [_ [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[Vals [Fns [Mths Funs]]] [Section KM]]].
   pose proof (realizes_absorbs_canon _ _ _ _ Real) as Abs.
   set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg)) in *.
   change (filter (fun k => negb (existsb (item_eqb (A.canon_item Cu k)) nsu)) nsg) with (captured Cu nsu nsg) in SatC.
@@ -3901,8 +3903,8 @@ Proof.
   destruct (link_facts _ _ _ _ LB) as (dg & n0 & ps & a & rspec & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs & gen & Cr & ks & binds0 & FCu' & FCg' & LPeq & LRd & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & FB & _).
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
-  destruct (functx_static _ _ _ FCg) as [[CanG DomG] [[CnG SectionG] [KMg [NdG [ProvNsG [ShapeG [ScG FixG]]]]]]].
-  destruct (functx_static _ _ _ FCu) as [[CanU DomU] [[CnU SectionU] [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
+  destruct (functx_static _ _ _ FCg) as [[CanG DomG] [[SectionG KMg] [NdG [ProvNsG [ShapeG [ScG FixG]]]]]].
+  destruct (functx_static _ _ _ FCu) as [[CanU DomU] [[SectionU KMu] [NdU [ProvNsU [ShapeU [ScU FixU]]]]]].
   set (ce := callee_env d th d1). set (de := application_environment P d h th (append_environment d2 dc)).
   (* each input's own meaning (B), and the body's environment over it *)
   set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
@@ -3912,7 +3914,7 @@ Proof.
     end).
   set (B := map (fun source => (source, base source)) (map fst (A.c_ty Cg))).
   set (de0 := EnvironmentWithAliases B B (provision_values (append_environment d2 dc))).
-  pose proof RealU as [_ [[ValsU [FnsU [MthsU FunsU]]] [[IdemU _] KMU']]].
+  pose proof RealU as [_ [[ValsU [FnsU [MthsU FunsU]]] [_ KMU']]].
   pose proof (realizes_absorbs_canon _ _ _ _ RealU) as AbsU.
   assert (Code : view_functor P h = A.funbody_of Prog h) by reflexivity.
   destruct (select_provisions_empty _ _ _ Sel) as [Em2 Ea2].
@@ -4074,7 +4076,7 @@ Proof.
       exists pv, gfx'. split; [pose proof (LookC (IFun u') (InCaps _ Ik Ou)) as LC; cbn [A.rkey_of] in LC; rewrite LC; exact Look|]. split; [exact Ok|].
       split; [exact CovG|]. intros x tx I. exact (Vm x tx I).
 }
-  split; [|split; [|exact (conj (conj CnG SectionG) KMg)]].
+  split; [|split; [|exact (conj SectionG KMg)]].
   - (* G's merges hold in the body's environment, by its table *)
     intros left right Equal. apply (context_canon_iff_mergeeq Cg SectionG) in Equal.
     now rewrite (GD left), (GD right), Equal.
@@ -4482,12 +4484,12 @@ Lemma realizes_narrow : forall n C C2 d H, Realizes n C2 d H -> A.c_sub C2 = A.c
   (forall k, In k (map fst (A.c_provisions C)) -> A.ilook k (A.c_provisions C2) = A.ilook k (A.c_provisions C)) ->
   Realizes n C d H.
 Proof.
-  intros n C C2 d H [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM2]]] Sub Merge KM Same.
+  intros n C C2 d H [Abs [[Vals [Fns [Mths Funs]]] [Section KM2]]] Sub Merge KM Same.
   assert (Canon : forall t, A.canon C2 t = A.canon C t) by (intros t; unfold A.canon; rewrite Sub; reflexivity).
   assert (Key : forall k p, A.ilook k (A.c_provisions C) = Some p -> A.ilook k (A.c_provisions C2) = Some p).
   { intros k p L. rewrite Same; [exact L|]. change k with (fst (k, p)). apply in_map. exact (ilook_in _ _ _ L). }
   split; [intros t u E; apply Abs; now rewrite Merge |].
-  split; [|apply static_from_section; [|exact KM]].
+  split; [|split; [|exact KM]].
   2: { eapply PublicContextFacts.section_same_fields; [symmetry; exact Sub | symmetry; exact Merge | exact Section]. }
   split; [|split; [|split]].
   - intros v t Found. change (A.c_vals C) with (vals_of (A.c_provisions C)) in Found.
@@ -5038,7 +5040,8 @@ Proof.
   intros j d types H g st Lj LJ Pre0. change (StepOut rr F (A.with_fresh F newgens) C' False (map gensof outs)
     (BApply u th (map (fun t => (t, gensof t)) outs) sm (map (A.rkey_of C') ks)) j d types H g st).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [Section KM]]].
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (realizes_absorbs_canon _ _ _ _ Real) as Abs.
   destruct (Funs u fx Fx) as [pv [gfx [Look [Ok Fm]]]].
   destruct (closure_cases _ _ _ _ _ Ok) as [CL|[CC|CP]].
@@ -5064,7 +5067,7 @@ Proof.
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
     apply linked_spec in Ik as [Ig Iu].
     destruct (functx_needs_provided W u Cu ns FC (A.canon_item Cu k0) Iu) as [p0 Ip].
-    destruct (functx_static _ _ _ FC) as [_ [_ [_ [_ [_ [ShU _]]]]]].
+    destruct (functx_static _ _ _ FC) as [_ [_ [_ [_ [ShU _]]]]].
     destruct (realized_key _ _ _ _ _ _ RealU Ip (ShU (A.canon_item Cu k0) Iu)) as [pv0 L0].
     change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) d1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) (callee_env d th d1)). rewrite L0. discriminate. }
   assert (Keys : map fst th = map fst (A.c_ty Cu)) by (unfold th; rewrite map_map; reflexivity).
@@ -5411,7 +5414,7 @@ Proof.
         split; [split; [intros v' t1 Found; discriminate|]|].
         { split; [intros f g Found; discriminate|]. split; [intros r m g Found; discriminate|].
           intros u fx Found; discriminate. }
-        apply static_from_section; [exact PublicMergePresent.empty_merge_section | intros k0 p0 []].
+        split; [exact PublicMergePresent.empty_merge_section | intros k0 p0 []].
     + (* tag *) subst args. cbn [AR.O.I.eval].
       pose proof (AR.O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits (sex F C y _ v vty Dy d types H lg lst (pre_lower Pre0))) as Out.
       apply (outcome_seq _ F C d types H lg lst pay _ (A.Breaks W (A.fr_mod F) y) _ _ _ Pre0

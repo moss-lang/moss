@@ -376,6 +376,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicCallRealize.ctxof_formed);
   root (@NM.PublicCallRealize.call_agree);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.static_ok_canonical_iff);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.call_absorbs_merge);
   root (@NM.PublicFormation.ex_ok);
   root (@NM.PublicFormation.ex_formed');

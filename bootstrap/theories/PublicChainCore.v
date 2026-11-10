@@ -428,7 +428,8 @@ Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCor
 Proof.
   intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3.
-  pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[_ [Env [[Idem Section] KM]]] [Fc _]]]]]].
+  pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[_ [Env [Section KM]]] [Fc _]]]]]].
+  pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
@@ -496,7 +497,7 @@ Lemma body_provides : forall n Cb d3 H3 Cr ks reads,
     lookup_provision (A.rkey_of Cb (A.at_site Cb k)) d3 = Some pv /\
     BodyReal n H3 d3 Cb reads k p pv.
 Proof.
-  intros n Cb d3 H3 Cr ks reads [Abs [[Vals [Fns [Mths Funs]]] [[_ Section] KM]]] RR k Ik.
+  intros n Cb d3 H3 Cr ks reads [Abs [[Vals [Fns [Mths Funs]]] [Section KM]]] RR k Ik.
   destruct (RR k Ik) as [req [act [Lr [La [Kind [Sig Inst]]]]]].
   pose proof (KM _ _ (LR.PA.FS.CopyA.S.ilook_in _ _ _ La)) as Kd.
   exists req.

@@ -293,10 +293,10 @@ Qed.
 
 Theorem call_agree_tf : forall f Cf C th d,
   TableFormed Cf -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) -> (forall t, canon C (canon C t) = canon C t) ->
+  (forall t, ground d (canon C t) = ground d t) ->
   Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
 Proof.
-  intros f Cf C th d Tf CT Abs Idem k v1 v2 L1 L2.
+  intros f Cf C th d Tf CT Abs k v1 v2 L1 L2.
   pose proof Tf as [Form _]. rewrite (Form k v1 L1).
   assert (Ik : In k (map fst (c_ty Cf))) by (apply nlook_in in L1; change k with (fst (k, v1)); apply in_map, L1).
   rewrite (merged_meaning_tf f Cf C th d k Tf CT Abs Ik).
@@ -321,7 +321,7 @@ Proof. intros f Cf ns C th d x Ctx. exact (merged_meaning_tf f Cf C th d x (ctx_
 
 Theorem call_agree : forall f Cf ns C th d,
   CtxOf W f Cf ns -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) -> (forall t, canon C (canon C t) = canon C t) ->
+  (forall t, ground d (canon C t) = ground d t) ->
   Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
 Proof. intros f Cf ns C th d Ctx. exact (call_agree_tf f Cf C th d (ctx_table_formed f Cf ns Ctx)). Qed.
 

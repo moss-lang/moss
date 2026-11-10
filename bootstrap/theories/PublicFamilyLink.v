@@ -16,7 +16,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicChainCore PublicLinkWalk PublicLinkScope.
-From NM Require PublicLinkRun PublicMergeClass PublicCopySubst.
+From NM Require PublicLinkRun PublicMergeClass PublicCopySubst PublicContextFacts.
 From NM Require PublicChainFwd PublicFormation PublicCallerKeys PublicFamilyAgree PublicFamilyStep PublicFamilyCoherent PublicFamilySig PublicScoping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -154,7 +154,8 @@ Proof.
     destruct (PublicFamilyCoherent.family_member bw W Wo u Cu _ Cr' ks' rk mk gq aq PRf Ik Lr) as (_ & _ & _ & _ & _ & _ & _ & Km).
     exists rk, mk, []. split; [reflexivity|exact Km]. }
   assert (Idem : forall t, A.canon C (A.canon C t) = A.canon C t).
-  { pose proof Pre0 as [_ [_ [_ [_ [[_ [_ [[Id0 _] _]]] _]]]]]. intros t. unfold A.canon. rewrite Es. exact (Id0 t). }
+  { pose proof Pre0 as [_ [_ [_ [_ [[_ [_ [Section0 _]]] _]]]]].
+    intros t. unfold A.canon. rewrite Es. exact (PublicContextFacts.section_canonical C0 Section0 t). }
   assert (KeysT : forall q pa x, A.resolve_sym W q pa = Some x -> A.nlook x (A.c_ty Cf) <> None -> A.nlook x (A.c_ty Cu) = None ->
     A.kind_sym W x = Some A.DKType) by (intros q pa x _ Lx Nu; exact (PublicFormation.family_keys_typed W C u matching th sm Cr ks Ts FA Cu ns FC x Lx Nu)).
   pose proof (PublicFamilyAgree.family_items_pos W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as Pos.
