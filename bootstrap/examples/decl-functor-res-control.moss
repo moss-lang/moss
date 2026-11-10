@@ -1,0 +1,15 @@
+# Control for DeclsForm (AUDIT-CHANGES #76): a functor's result is read
+# over its argument context with each other type symbol standing for
+# itself, so a body functor whose result mentions a type the body binds
+# (Num, not one of F's inputs) forms, as lib/wasistd.moss's WasiFloats
+# does with Int.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.
+type Num;
+tag N;
+assume Num { val zero: Num; }
+val x: ();
+functor F: x -> zero {
+  bind Num = N;
+  bind zero = N;
+}
+fn main() {}

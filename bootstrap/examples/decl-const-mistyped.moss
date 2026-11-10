@@ -1,0 +1,7 @@
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): a defined val's
+# initializer has its declared type (A does not fit ()).
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# reads x); now rejects (ConstElab). Class B.
+tag A;
+val x: () = A;
+fn main() {}

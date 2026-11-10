@@ -1,0 +1,7 @@
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): an abstract method's
+# signature denotes types as written; `Nope` is not in scope.
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# assumes R.m); now rejects. Class B.
+tag R;
+fn R.m(): Nope;
+fn main() {}

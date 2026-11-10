@@ -1,0 +1,6 @@
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): an abstract fn's
+# signature denotes types as written; `Nope` is not in scope.
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# assumes or binds f); now rejects. Class B.
+fn f(x: Nope);
+fn main() {}

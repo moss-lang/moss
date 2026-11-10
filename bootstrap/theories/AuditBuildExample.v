@@ -197,9 +197,13 @@ Proof.
   exists d, es, tm, er, tmr, σ. exact (conj R (conj Its (conj Root (conj M (conj E N))))).
 Qed.
 
-(* main is the only declaration, and not a context. *)
+(* main is the only declaration; its signature, `fn main()`, forms. *)
 Lemma main_decls : DeclsForm world_main AuditExamples.unit_program.
-Proof. intros s d Read. apply reads_decl in Read as [-> ->]. exact I. Qed.
+Proof.
+  intros s d Read. apply reads_decl in Read as [-> ->]. cbn.
+  exists [], (FSig [] TUnit), main_decl, RPlain, "main", [], None, (Some main_body).
+  split; [reflexivity|]. split; [reflexivity|]. split; [constructor|reflexivity].
+Qed.
 
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
 Proof.

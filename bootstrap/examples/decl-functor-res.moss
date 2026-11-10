@@ -1,0 +1,7 @@
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7): a functor's result
+# forms (ProvideResult), applied or not; `nope` is not in scope.
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# reads F's result); now rejects. Class B.
+val x: ();
+functor F: x -> nope;
+fn main() {}

@@ -116,6 +116,7 @@ entry they belong to.
 | 73 | A linked body's result keys read a pinned fixed input at its pin (`link_site`; a key the pins re-read is one the body made) | pinsite | relaxation toward both implementations (completes #71: Audit still rejected every program binding `StdBase`) |
 | 74 | Every declared context forms as written (`DeclsForm`; criteria section 7) | n234 | A for cycles; B for an unused context naming what is not in scope |
 | 75 | Every symbol's assume nesting forms, whatever its kind (`AssumesComplete`; criteria section 7) | n234 | B |
+| 76 | Every other declaration forms as written: tag payloads, alias bodies, val types and initializers, fn and method signatures, functor arguments and results (`DeclsForm`; criteria section 7) | n234 | B |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2322,6 +2323,83 @@ executable tests unless noted.
   kind hypothesis.
 - **Class.** B (both implementations accept the rejected tests), by
   criteria section 7.
+
+### 76. Every other declaration forms as written (`DeclsForm`, n234 branch; criteria section 7)
+- **The gap.** After #74 and #75, these were still checked only where
+  something read them:
+  - a tag's payload (`PayloadOf`, at a constructor or pattern) and an
+    alias's body (`TyAlias`, where the alias is named);
+  - an abstract val's type, and an abstract fn's or method's signature
+    (`IEVal`, `IEFn`, `IEMeth`, where they are assumed; `BValBind`,
+    `BFnBind`, `BMethBind`, where they are bound);
+  - a defined val's initializer (`ExConst`, inlined at each use);
+  - a functor's argument telescope (`FunCtx`) and result
+    (`ProvideResult`), where it is assumed, applied, bound or copied.
+
+  So an unused `tag Box(Nope);`, `type X = Y; type Y = X;`, `val x: () =
+  nope;` or `functor F: nope -> x;` was accepted.
+- **Rule now.** `DeclForms` covers them, each read as written (each type
+  symbol standing for itself, `as_written L`):
+  - tag, alias: the payload or body denotes a type (`TyOf`);
+  - val: its type denotes a type, and a defined val's initializer
+    elaborates as `ExConst` reads it (`ConstElab`: no assumptions, its type
+    read in an empty context, the initializer in an empty context and
+    frame);
+  - fn: its signature (`SigOf`, no `This`); method: its signature at some
+    receiver type;
+  - functor: `FunCtx` forms, and its result forms over that context with
+    each other type symbol standing for itself (`ProvideResult` at
+    `c_ty C ++ as_written L`, each output role itself).
+- **Form chosen.** Reading at the declaration's own assume nesting would
+  reject the prelude: a top-level tag over an abstract type it does not
+  assume (`decl-tag-outside-control`) is ordinary, and so is a context
+  item mentioning a type outside the context's nesting (#74). The first
+  variant also read a functor's result over `FunCtx` alone, and rejected
+  every program: `lib/wasistd.moss`'s `WasiFloats: Wasm, Branch -> Floats`
+  promises `float(n: Int)`, and `Int` is neither an input nor an output
+  (its body binds `int::Int = Num`). So other type symbols stand for
+  themselves there too. A functor with a body has no implicit inputs
+  (`FunCtx`), so this is the one place the result needs them.
+- **Not covered.** A functor body's binds are still elaborated only at an
+  application (`BApplyBody`, in the caller's context, as both
+  implementations do: the body is inlined, transparently) and at a link
+  (`LinkBody`, in G's own terms). Checking an unapplied body would need a
+  context of its own; the natural one is G's `FunCtx`, as `LinkBody`
+  uses, but a body applied directly may use what its caller provides, so
+  that check could reject programs both implementations accept and run.
+  It is left open; #77 checks the part both implementations check by
+  name, that the body binds its whole result. Also left: the
+  requirements and needs of a context's items are checked where the
+  context is assumed (#57), not where it is declared, since the items are
+  read at the user's instantiation.
+- **Criteria.** Section 7. Fidelity: the oracle and native read these only
+  where used (both accept every rejected test below), so this is class B
+  throughout, by section 7. D15 for the union test: a union's members are
+  nominal with distinct heads where the union is written.
+- **Tests.** In each "Audit before" accepts and the oracle and native
+  accept, except the controls, which everyone accepts.
+
+  | program | Audit now |
+  |---|---|
+  | [decl-tag-unresolved](examples/decl-tag-unresolved.moss) | rejects (`TyOf`: not in scope) |
+  | [decl-tag-union-head](examples/decl-tag-union-head.moss) (`A[X=Colour] \| A[X=Red]`) | rejects (`TyUnion`: one head twice) |
+  | [decl-alias-cycle](examples/decl-alias-cycle.moss) | rejects (no finite `TyAlias` derivation) |
+  | [decl-alias-unresolved](examples/decl-alias-unresolved.moss) | rejects |
+  | [decl-val-type](examples/decl-val-type.moss), [decl-fn-sig](examples/decl-fn-sig.moss), [decl-meth-sig](examples/decl-meth-sig.moss) | reject |
+  | [decl-const-bad](examples/decl-const-bad.moss), [decl-const-mistyped](examples/decl-const-mistyped.moss) | reject (`ConstElab`) |
+  | [decl-const-in-assume](examples/decl-const-in-assume.moss) (unusable: a use is rejected by all three) | rejects (`ConstElab`: assumptions) |
+  | [decl-functor-arg](examples/decl-functor-arg.moss), [decl-functor-res](examples/decl-functor-res.moss) | reject |
+  | [decl-tag-outside-control](examples/decl-tag-outside-control.moss), [decl-const-control](examples/decl-const-control.moss), [decl-functor-res-control](examples/decl-functor-res-control.moss) | accept |
+
+  Audit's verdicts are argued from the rules and run on the elaborator
+  variant of #74.
+- **Corpus.** The comparison of #74 (same variant): no corpus program's
+  verdict changes through these checks, every `lib/*.moss` module's
+  declarations form, and `src/main.moss` is accepted.
+- **Proof.** No proof reads `DeclsForm`. `AuditBuildExample.main_decls`
+  now shows main's signature forms.
+- **Class.** B, by criteria section 7 (both implementations accept every
+  rejected test).
 
 ---
 

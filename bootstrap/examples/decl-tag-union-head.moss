@@ -1,0 +1,13 @@
+# DeclsForm (AUDIT-CHANGES #76; criteria section 7; D15): an unused tag
+# whose payload is a union with two members of one head, the shape that
+# tests/errors/union_shared_head.moss rejects in a body.
+# Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
+# reads the payload); now rejects (TyUnion: two members with one head).
+# Class B.
+type X;
+assume X { tag A[X](X); }
+tag Red;
+tag Green;
+type Colour = | Red | Green;
+tag Both(A[X = Colour] | A[X = Red]);
+fn main() {}

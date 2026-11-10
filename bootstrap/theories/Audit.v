@@ -5233,14 +5233,41 @@ Definition AssumesComplete (W : world) : Prop :=
    declaration at its own meanings, checked there as before. *)
 Definition as_written (L : list nat) : list (nat * ty) := map (fun t => (t, TAbs t)) L.
 
-(* `DeclForms W P s`: s's declaration forms as written.  A context's items
-   form (ItemsEntries), so a context that nests in a cycle, or names an
-   item not in scope, is an error even when nothing assumes it (the
-   oracle's context_acyclic; native expands every context). *)
+(* A defined val's initializer elaborates as ExConst reads it at a use: no
+   assumptions, its type read in an empty context, in an empty frame. *)
+Definition ConstElab (W : world) (P : program) (d : decl) (t0 : aty) (i : aexpr) : Prop :=
+  d_assumes d = [] /\ exists t, TyOf W (d_mod d) [] None t0 t /\
+    exists F0 x t', Ex W P F0 (Cx [] [] [] []) i (Some t) x t' /\ fits t' t /\
+      fr_mod F0 = d_mod d /\ fr_ret F0 = None /\ fr_this F0 = None /\ fr_loop F0 = false /\
+      fr_fresh F0 = [] /\ fr_applying F0 = [] /\ fr_pins F0 = [] /\ Numbering F0 None [].
+
+(* `DeclForms W P s`: s's declaration forms as written.
+   - A context's items form (ItemsEntries), so a context that nests in a
+     cycle, or names an item not in scope, is an error even when nothing
+     assumes it (the oracle's context_acyclic; native expands every
+     context).
+   - A tag's payload and an alias's body denote a type (TyOf), so an
+     unbound name, an alias cycle, a repeated record field, or a union
+     member that is not nominal or shares a head is an error, used or not
+     ([D15]).
+   - A val's type, and a fn's or method's signature, denote types; a
+     defined val's initializer elaborates (ConstElab).
+   - A functor's argument telescope forms (FunCtx) and its result forms
+     over it, each other type symbol standing for itself (a body may bind
+     a type its result mentions, as lib/wasistd.moss's WasiFloats binds
+     Int). *)
 Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
   forall d, w_decl W s = Some d ->
     match d_ast d with
     | ADCtx _ its => exists L es tm, ItemsEntries W (d_mod d) [] (as_written L) its es tm
+    | ADTag _ _ t | ADAlias _ t => exists L tau, TyOf W (d_mod d) (as_written L) None t tau
+    | ADVal _ t i => (exists L tau, TyOf W (d_mod d) (as_written L) None t tau) /\
+                     (forall e, i = Some e -> ConstElab W P d t e)
+    | ADFn RPlain _ _ _ _ => exists L g, SigOf W s (as_written L) None g
+    | ADFn _ _ _ _ _ => exists L this g, SigOf W s (as_written L) (Some this) g
+    | ADFunctor _ _ _ _ _ => exists C ns L C' ks, FunCtx W s C ns /\
+        ProvideResult W s (Cx (c_ty C ++ as_written L) (c_sub C) (c_provisions C) (c_locals C))
+          (fun t => TAbs t) C' ks
     | _ => True
     end.
 
