@@ -106,6 +106,7 @@ entry they belong to.
 | 55 | A bracket application on a fn call is its expansion (`ExCallBr`, D89) | call-brackets | an extension made in both implementations (a relaxation toward both) |
 | 56 | A copy composes its smap and positions into the closure (eager copies) | eagercopy | D (unobservable) |
 | 57 | Assumed items bring their requirements and needs (`AssumesComplete`, D20) | deltafix | A (one test B: rejects a program native accepts) |
+| 58 | Result items distinct in F stay distinct at an application, and H's at a copy (`CollidesOnlyAs`) | deltafix | B (coherence) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 on, from the deltafix branch.
 
@@ -1652,6 +1653,76 @@ executable tests unless noted.
   (class B on that program). Native accepts it only because g never calls
   f; it does not check an assumed item's needs' instantiations.
 
+### 58. Result items distinct in F stay distinct at an application, and H's at a copy (`CollidesOnlyAs`, deltafix branch; D84 rule 7)
+- **Rule now.** `CollidesOnlyAs ks ks0`: two positions that `ks` files
+  under one provision id are one id in `ks0` too, position by position.
+  - `BApplyAbstract` (`bind F;`) also reads F's result in F's own input
+    context, each output role itself (`ProvideResult W u Cu (fun t => TAbs t) Cf ksf`,
+    beside the caller's `ks`), and asks `CollidesOnlyAs ks ksf`.
+  - `BFunCopy` (`bind F = H;`) reads H's result at F's inputs (`ksr`, as
+    `CopyOutputs` does) and at H's own (`ksh`), and asks
+    `CollidesOnlyAs ksr ksh`.
+
+  Before, two result items distinct in F (A.m and B.m) that the caller's
+  meanings put under one key (A = B = Int) were both installed, and the
+  application kept the last position's (`result_selection`). A copy whose
+  target merges two of H's inputs read F's one key from H's last position
+  with it (`CopyOutputs`' rm).
+- **Why.** Coherence (criteria section 2): which item a key gets was a
+  convention, and each implementation has its own. On
+  result-collide-{ab,ba}{,-bindswap}.moss Audit printed the last result
+  position's, the oracle the first's, and native the last one G binds,
+  so the four programs give three different patterns. On the copy tests
+  the oracle follows H's result order and Audit took the last position.
+  When two derivations disagree and neither is more general, the program
+  is ambiguous and is rejected. That is D84 rule 7 for families, which
+  both implementations already apply (`FamilyApplication`'s `NoDup`;
+  result-collide-family.moss).
+- **Form chosen.** A plain `NoDup` of the caller's keys would reject a key F
+  itself repeats (A.m, and a context listing A.m), which all three
+  accept and run alike (result-repeat-in-f.moss). The check compares with
+  F's own reading, so only a collision the caller makes is rejected, and
+  F's merges decide what F counts as one item (the classes, not the
+  representative: provision ids under F's σ).
+  - Families need nothing new: `FamilyApplication` already asks
+    `NoDup (map provision_id keys)`, which is stronger, and a family's
+    items are distinct (`FamilyKeys`).
+  - Copies need the check on H's side, which `BFunCopy` now asks.
+    Applying a copied F goes through `BApplyAbstract` for F, so the
+    first check covers the copy's application too.
+- **Criterion: coherence** (criteria.md section 2).
+- **Tests** (Audit verdicts argued from the rules, not run; oracle variant
+  `scratch/variants/d7`, the extracted oracle with both checks added to
+  `apply_abstract` and `copy_output_compatible`):
+
+  | program | oracle | variant | native | Audit before | Audit now |
+  |---|---|---|---|---|---|
+  | [result-collide-ab](examples/result-collide-ab.moss) | a | rejects | b | b | rejects |
+  | [result-collide-ba](examples/result-collide-ba.moss) | b | rejects | b | a | rejects |
+  | [result-collide-ab-bindswap](examples/result-collide-ab-bindswap.moss) | a | rejects | a | b | rejects |
+  | [result-collide-ba-bindswap](examples/result-collide-ba-bindswap.moss) | b | rejects | a | a | rejects |
+  | [result-repeat-in-f](examples/result-repeat-in-f.moss) (control) | a | a | a | a | a |
+  | [result-collide-family](examples/result-collide-family.moss) (control) | rejects | rejects | rejects | rejects | rejects |
+  | [copy-result-collide](examples/copy-result-collide.moss) | a | rejects | rejects ("the functor does not satisfy the required signature") | b | rejects |
+  | [copy-result-collide-hba](examples/copy-result-collide-hba.moss) | b | rejects | rejects | a | rejects |
+  | [copy-result-collide-mba](examples/copy-result-collide-mba.moss) | a | rejects | rejects | b | rejects |
+  | [copy-result-repeat](examples/copy-result-repeat.moss) (control) | a | a | a | a | a |
+
+  The application tests come from the Δ7 hunt (scratch/deltas, `d7_*`).
+- **Corpus.** The variant against the oracle, `--elab-only`, over
+  `tests/`, `examples/` and `bootstrap/examples/` (with the new tests):
+  450 same / 7 diff. The 7 are the rejected tests above. No other
+  verdict changes, so no program both implementations accept is
+  rejected: the four application tests are accepted by both, but
+  differently, so criterion 6 does not hold them (section 6: where the
+  implementations disagree, the first five criteria decide).
+- **Proof.** `public_safety` unchanged: both are new last premises,
+  which no proof reads (the patterns in PublicBodySlice, PublicFormation,
+  PublicScoping and PublicLinkScope name the earlier premises only).
+- **Class B.** The four application tests are accepted by both
+  implementations and the copy tests by the oracle. Both
+  implementations need the same check (E38 below).
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1769,6 +1840,7 @@ All of these come from `proof-plan.json`.
 | E35 | A method's θ records every signature type symbol | oracle | **done** (in 61040f2) | [sig-nonreq-shadow.moss](examples/sig-nonreq-shadow.moss): now 42 on both | #12 |
 | E36 | Oracle 3b checks every reading of a captured fn or method | oracle | open | [link-merge-captured-fn.moss](examples/link-merge-captured-fn.moss): oracle accepts, stuck XErr 14; native rejects | #7, #11 |
 | E37 | Oracle 3d: a linked body may not install an input of F as a kept output | oracle | open | [link-kept-output-pin.moss](examples/link-kept-output-pin.moss): oracle stuck XErr 14; native rejects | #13 |
+| E38 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b; [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
 changes. All are open:

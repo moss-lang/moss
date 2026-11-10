@@ -1,0 +1,29 @@
+# AUDIT-CHANGES #58 (criteria section 2, coherence; D84 rule 7).
+# Control for the copy: H's result repeats a key in H's own
+# terms (A.m, and K's A.m).
+# Audit before and now: accepts, prints a (argued).
+# Oracle (moss_m2) and oracle variant d7: print a.
+# Native (ob-family moss, seed 1h1710x0): prints a.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type A;
+assume A { fn .m(); }
+context K = A.m;
+functor H: Std, A -> A.m, K;
+functor F: Std, A -> A.m, K;
+assume Std {
+  functor G: Std, A -> A.m, K {
+    bind A.m = () => putchar(char::a);
+  }
+}
+
+assume Std, H {
+  fn use_it() { bind F = H; bind A = Int; bind F; one.m(); }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind H = G; use_it(); putchar(char::newline); }
+}

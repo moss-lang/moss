@@ -3985,6 +3985,17 @@ Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=
     w_decl W u = Some d -> d_ast d = ADFunctor n ps a r b ->
     In sp r -> ResultSpecLeaf W (d_mod d) sp k -> ResultLeaf W u k.
 
+(* `CollidesOnlyAs ks ks0`: two positions of a result that `ks` files
+   under one provision id are one item in the reading `ks0` too (the same
+   result read elsewhere, position by position).  A collision `ks0` lacks
+   would leave which item is installed to a choice ([D84] rule 7's
+   ambiguity, for a non-family functor; criteria section 2). *)
+Definition CollidesOnlyAs (ks ks0 : list item) : Prop :=
+  forall i j k k', nth_error ks i = Some k -> nth_error ks j = Some k' ->
+    provision_id k = provision_id k' ->
+    exists k0 k0', nth_error ks0 i = Some k0 /\ nth_error ks0 j = Some k0' /\
+      provision_id k0 = provision_id k0'.
+
 (* [D78]/[D84] 3e: G's result is F's, leaf by leaf. *)
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
@@ -4573,6 +4584,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
           In (gensof t) newgens)) ->
     NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
     ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
+    (* [D84] rule 7, coherence (criteria section 2): two result items
+       distinct in F's own terms (its result read at its inputs, each
+       output role itself) are not filed here under one key, where which
+       one is installed would be a choice (examples/result-collide-ab.moss);
+       a key F itself repeats may repeat (result-repeat-in-f.moss) *)
+    (exists Cf ksf, ProvideResult W u Cu (fun t => TAbs t) Cf ksf /\ CollidesOnlyAs ks ksf) ->
     (* [D78]: every output destination, fresh or not, is made here: a
        value of its type may not leave the block *)
     BindItem W P F C (Spec (Some pa) None None, None)
@@ -4612,6 +4629,11 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* H's inputs, implicit ones too, are among F's (the oracle's input
        interpretation check fails on one F lacks) *)
     (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
+    (* and two result items distinct in H's own terms are not one key in
+       F's, where CopyOutputs' rm would choose the last of them
+       (coherence, criteria section 2; examples/copy-result-collide.moss) *)
+    (exists Cr ksr Ch' ksh, ProvideResult W h Cu (fun t => TAbs t) Cr ksr /\
+       ProvideResult W h Ch (fun t => TAbs t) Ch' ksh /\ CollidesOnlyAs ksr ksh) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes (read through F's merge) are linked (supplied by each
