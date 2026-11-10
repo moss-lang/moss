@@ -6,7 +6,7 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr BodyTy
  CanonTypes EtyTyExec Merge InstantiateTr NominalSupport SourceSupport NeedMapExec MethodKeyTr CallArgs CallCacheExec
  CallDefinedCore CallThetaExec DemandEmptyExec ProviderSig ReceiverCallEnv ReceiverFnSig
- CtxWalk CtxMerge SourceSatisfiesAfter MethodSelectExec MethodCallCore MethodCallRoutes AttachedCallExec.
+ CtxWalk CtxMerge SourceSatisfiesAfter MethodSelectExec MethodCallCore MethodCallRoutes AttachedCallExec PrincipalEnvExec.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
@@ -44,7 +44,7 @@ Theorem attached_ready_sound:forall f,OK w P R Fl f->
  (forall d,sassoc n(gm_detached(get_mod w(cx_mod c)))=Some d->get_mth e(canon e r)d=None)->
  method_attached_code f c e ox r att args s=Good((x,t),s')->
  (forall info sf e2 st,fn_info att s=Good(info,sf)->receiver_types(receiver_args e r)e sf=Good(e2,st)->
-  forall k,In k(fi_needs info)->key_present e2(site_key e2 k)=true)->
+  forall k,In k(fi_needs info)->key_present(principal_env e2 info)(site_key(principal_env e2 info)k)=true)->
  A.MethCall WW P F C ox(tc e r)[n]args x(tc e t)/\WFty t/\Support WW t.
 Proof.
  intros f IH c e F C ox r n h att body args s x t s' Hc Wr Sr Hi Ii Hfi Hp Head Lookup Hw Hb Absent E Ready.
@@ -61,58 +61,57 @@ Proof.
  destruct(receiver_types_context w R Fl(receiver_args e r)c e F C sf e2 st Et Hc
   (receiver_args_properties w R Fl c e F C r Hc Wr Sr))as[Ue Hc2].
  set(C2:=fold_left(fun C p=>A.set_ty C(fst p)(tr Fl(snd p)))(receiver_args e r)C)in *.
- assert(On:ok(require_needs(cx_mod c)e2 att info))by(unfold require_needs,require_merges;okt).
+ destruct(principal_env_context w R Fl c e2 F C2 info C2 0 Hc2)as[Uep[Hcp _]].
+ pose proof(fun Cs=>proj2(proj2(principal_env_context w R Fl c e2 F C2 info Cs(gs_id att)Hc2)))as Pcx.
+ set(ep:=principal_env e2 info)in *. set(Cp:=principal_cx Fl e2 info C2)in *.
+ assert(On:ok(require_needs(cx_mod c)ep att info))by(unfold require_needs,require_merges;okt).
  destruct(On _ _ _ Ist En)as[Isn Fn].
  pose proof(info_step _ _ Iist(frl_of_fr _ _ Fn)(ni_require_needs _ _ _ _ _ _ _ En) ltac:(wrapper_cache_same))as Iisn.
- assert(Os:ok(smap_at(fi_env info)e2 pairs)).
+ assert(Os:ok(smap_at(fi_env info)ep pairs)).
  {unfold smap_at;apply ok_mmap;intros[a z];apply ok_bind;[apply ok_key_item_at_frame|intro].
   apply ok_bind;[apply ok_key_item_at_frame|intro;apply ok_ret]. }
  destruct(Os _ _ _ Isn Es)as[Iss Fs].
  pose proof(info_step _ _ Iisn(frl_of_fr _ _ Fs)(ni_smap_at _ _ _ _ _ _ Es) ltac:(wrapper_cache_same))as Iiss.
- assert(Og:ok(fn_sig att(tymap e2)e2(Some r)))by(unfold fn_sig;okt).
+ assert(Og:ok(fn_sig att(tymap ep)ep(Some r)))by(unfold fn_sig;okt).
  destruct(Og _ _ _ Iss Eg)as[Isg Fg].
  pose proof(info_step _ _ Iiss(frl_of_fr _ _ Fg)(ni_fn_sig _ _ _ _ _ _ _ Eg) ltac:(wrapper_cache_same))as Iisg.
  destruct(ok_check_args f c e(gs_name att)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
  destruct(ok_layout_ok e(sg_ret sg)_ _ _ Isa El)as[Isl Flay].
- destruct(ok_call_theta e2 att _ _ _ Isl Ec)as[Ifin Ft].
+ destruct(ok_call_theta ep att _ _ _ Isl Ec)as[Ifin Ft].
  pose proof(post_back w P R Fl _ _ F(fr_trans _ _ _ Flay Ft)Hp)as Hpa.
  pose proof(later_back w P R Fl _ _ Fa(proj1 Hpa))as Lg.
  pose proof(later_back w P R Fl _ _ Fg Lg)as Ls.
  assert(Wss:st_w ss=w)by(rewrite<-(fr_w _ _ Fg);exact(lt_w _ _ _ _ _ Lg)).
- destruct(fn_info_satisfaction_after w R Fl b Hload Finj att s info sf st(cx_mod c)e2 pairs sn sm ss c F C2
-   Hg Nm Ei Fst En Es Hi Ii Hw Ist Ls Hc2)as[Cf[Ctx Sat]].
- pose proof(fn_sig_canonical w R Fl b Hload c e2 F C2 att(Some r)ss sg sgstate(RAttached rn)n ps rt(Some body)
-   Eg Iss Wss Hc2 Hg D Wr Lg)as Sig.
- rewrite(@canonical_sig_uf Fl e e2 sg Ue)in Sig.
- change(A.SigOf WW(gs_id att)(A.c_ty C2)(Some(tc e2 r))(canonical_sig Fl e sg))in Sig.
- cbn beta in Sig;rewrite(canon_uf e e2 Ue)in Sig.
- pose proof(receiver_args_nodup w R Fl c e F C r Hc Sr ReqNd)as Nd.
- assert(Sig':A.SigOf WW(gs_id att)(recv_sem Fl(receiver_args e r)++A.c_ty C)(Some(tc e r))(canonical_sig Fl e sg)).
- {eapply(sigof_lookup_ext WW(lt_reqclosed _ _ _ _ _ Lg));[|exact Sig].
-  intro k;symmetry;exact(receiver_tymap_lookup Fl(receiver_args e r)C Nd k). }
- destruct(fn_sig_receiver_properties w R Fl b Hload c e2 F C2 att r ss sg sgstate Eg Iss Wss Hg Hc2 Wr Sr Lg)
+ destruct(fn_info_satisfaction_after w R Fl b Hload Finj att s info sf st(cx_mod c)ep pairs sn sm ss c F Cp
+   Hg Nm Ei Fst En Es Hi Ii Hw Ist Ls Hcp)as[Cf[Ctx Sat]].
+ pose proof(fn_sig_canonical w R Fl b Hload c ep F Cp att(Some r)ss sg sgstate(RAttached rn)n ps rt(Some body)
+   Eg Iss Wss Hcp Hg D Wr Lg)as Sig.
+ rewrite(@canonical_sig_uf Fl e2 ep sg Uep),(@canonical_sig_uf Fl e e2 sg Ue)in Sig.
+ change(A.SigOf WW(gs_id att)(A.c_ty Cp)(Some(tc ep r))(canonical_sig Fl e sg))in Sig.
+ cbn beta in Sig;rewrite(canon_uf e2 ep Uep),(canon_uf e e2 Ue)in Sig.
+ destruct(fn_sig_receiver_properties w R Fl b Hload c ep F Cp att r ss sg sgstate Eg Iss Wss Hg Hcp Wr Sr Lg)
  as[Clean[Sp[Sret Sthis]]];destruct Clean as[Wps[Wret Wthis]].
  assert(Both:Forall(fun p=>WFty(snd p)/\Support WW(snd p))(sg_params sg)).
  {apply Forall_forall;intros p Hin;split.
   - apply ety_ok_wf;exact(proj1(Forall_forall _ _)Wps(snd p)(in_map snd _ _ Hin)).
   - exact(proj1(Forall_forall _ _)Sp p Hin). }
  pose proof(@check_args_aa_ok w P R Fl f IH c e(gs_name att)sg args sgstate xs sa F C Both Ea Isg Iisg ltac:(fwd_inv) Hc Hpa)as Args.
- pose proof(call_theta_tr w R Fl c e2 F C2 att sl th s' Ec Isl(proj1 Hp)Hc2)as Theta.
+ pose proof(call_theta_tr w R Fl c ep F Cp att sl th s' Ec Isl(proj1 Hp)Hcp)as Theta.
  rewrite Theta;cbn[fold_stmts].
  split;[|split;[exact(ety_ok_wf _ Wret)|exact Sret]].
  assert(Ectx:fold_left(fun C p=>A.set_ty C(fst p)(snd p))(recv_sem Fl(receiver_args e r))C=C2)
  by(apply fold_receiver_sem).
- rewrite<-Ectx.
  eapply A.MCAttachedDefined with(h:=h)(att:=gs_id att)(Ca:=Cf)(ns:=map(key_tr Fl)(fi_needs info))
-  (g:=canonical_sig Fl e sg)(rargs:=recv_sem Fl(receiver_args e r)).
+  (g:=canonical_sig Fl e sg)(rargs:=recv_sem Fl(receiver_args e r))(Cp:=Cp).
  - exact(head_tr_some Fl(canon e r)h Head).
  - exact Ha.
  - exact(detached_provision_absent w R Fl b Hload c e F C r n Hc(method_receiver_clean w R Fl b Hload c e F C r Hc Wr Sr)Absent).
  - exists rn,ps,rt,body;unfold A.ast_of;rewrite(w_decl_rd w R Fl _ _ Hg);cbn;rewrite D;reflexivity.
  - exact(receiver_args_head Fl e r h Head).
  - exact Ctx.
- - rewrite Ectx;exact Sat.
- - exact Sig'.
+ - rewrite Ectx;exact(Pcx Cf).
+ - exact Sat.
+ - exact Sig.
  - exact Args.
 Qed.
 Theorem attached_empty_sound:forall f,OK w P R Fl f->
@@ -122,7 +121,7 @@ Theorem attached_empty_sound:forall f,OK w P R Fl f->
  (forall d,sassoc n(gm_detached(get_mod w(cx_mod c)))=Some d->get_mth e(canon e r)d=None)->
  method_attached_code f c e ox r att args s=Good((x,t),s')->
  (exists info sf e2 st ed sd,fn_info att s=Good(info,sf)/\receiver_types(receiver_args e r)e sf=Good(e2,st)/\
- demand_needs f c e2 info st=Good(([],ed),sd))->
+ demand_needs f c(principal_env e2 info)info st=Good(([],ed),sd))->
  A.MethCall WW P F C ox(tc e r)[n]args x(tc e t)/\WFty t/\Support WW t.
 Proof.
  intros f IH c e F C ox r n h att body args s x t s' Hc Wr Sr Hi Ii Hfi Hp Head Lookup Hw Hb Absent E Empty.
@@ -132,13 +131,13 @@ Proof.
  rewrite Ei in Ei0;injection Ei0 as <- <-.
  rewrite Et in Et0;injection Et0 as <- <-.
  pose proof(demand_needs_empty_env _ _ _ _ _ _ _ Ed0)as Env.
- assert(EE:ed=e2)by(congruence);subst ed.
+ assert(EE:ed=principal_env e2 info)by(congruence);subst ed.
  destruct(ok_fn_info_frame _ _ _ _ Hi Ei)as[Ifi Ffi].
  destruct(ok_receiver_types(receiver_args e r)e sf e2 st Ifi Et)as[Ist Fst].
- destruct(ok_demand_needs f c e2 info _ _ _ Ist Ed)as[Isd Fd].
+ destruct(ok_demand_needs f c(principal_env e2 info)info _ _ _ Ist Ed)as[Isd Fd].
  destruct(require_needs_exact _ _ _ _ _ _ _ Isd En)as[_[Present _]].
  assert(Ready:forall i is ee ts,fn_info att s=Good(i,is)->receiver_types(receiver_args e r)e is=Good(ee,ts)->
-  forall k,In k(fi_needs i)->key_present ee(site_key ee k)=true).
+  forall k,In k(fi_needs i)->key_present(principal_env ee i)(site_key(principal_env ee i)k)=true).
  {intros i is ee ts Eii Ett k Hin;rewrite Ei in Eii;injection Eii as <- <-.
   rewrite Et in Ett;injection Ett as <- <-;exact(proj1(Forall_forall _ _)Present _ Hin). }
  exact(attached_ready_sound f IH c e F C ox r n h att body args s x t s' Hc Wr Sr Hi Ii Hfi Hp Head Lookup Hw Hb Absent E Ready).
@@ -150,7 +149,7 @@ Definition AttachedDemandStep(f:nat):Prop:=
  (forall d,sassoc n(gm_detached(get_mod w(cx_mod c)))=Some d->get_mth e(canon e r)d=None)->
  method_attached_code f c e ox r att args s=Good((x,t),s')->
  (exists info sf e2 st pre ed sd,fn_info att s=Good(info,sf)/\receiver_types(receiver_args e r)e sf=Good(e2,st)/\
-  demand_needs f c e2 info st=Good((pre,ed),sd)/\pre<>[])->
+  demand_needs f c(principal_env e2 info)info st=Good((pre,ed),sd)/\pre<>[])->
  A.MethCall WW P F C ox(tc e r)[n]args x(tc e t)/\WFty t/\Support WW t.
 Theorem attached_defined_step:forall f,OK w P R Fl f->AttachedDemandStep f->AttachedDefinedStep w P R Fl f.
 Proof.

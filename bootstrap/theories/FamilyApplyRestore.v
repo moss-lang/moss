@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTr
  BodyTy NominalSupport CanonTypes FamilyMatchingCtx FamilyApplyExec ApplyAbstractExec
- ApplyThetaExec MethodKeyTr FunctorFixedExec FamilyResultExec ProvideResultExec FamilyResultFold TySupport.
+ ApplyThetaExec MethodKeyTr FunctorFixedExec FamilyResultExec ProvideResultExec FamilyResultFold TySupport RuleBKeep.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=ExecutionModel.Elaboration.
@@ -55,7 +55,8 @@ Lemma apply_family_uf:forall fuel c e g n names args res matching wanted s pre e
  Inv s->st_w s=w->en_uf e'=en_uf e.
 Proof.
  intros[|fuel]c e g n names args res matching wanted s pre e' sf Hg D Fam E Hi Hw;[discriminate E|].
- cbn[apply_family]in E;apply bind_inv in E as(ei&si&Install&E).
+ cbn[apply_family]in E;apply bind_inv in E as(u0&s0&Ck&E);
+ pose proof(family_inputs_in_force_keep _ _ _ _ _ _ _ Ck)as ->;apply bind_inv in E as(ei&si&Install&E).
  change(mfold family_install_step e matching s=Good(ei,si))in Install.
  apply bind_inv in E as([[xs er]cr]&sr&App&E).
  apply bind_inv in E as(mem&ss&Mem&E);apply bind_inv in E as([]&sf0&Flag&E);injection E as <- <- <-.
@@ -88,7 +89,8 @@ Theorem apply_family_context_entries:forall fuel c e F C g n names args res matc
 Proof.
  intros[|fuel]c e F C g n names args res matching wanted s pre e' sf Wo Hg D Fam E Hi Hw L HC Wm Sm;
  [discriminate E|].
- cbn[apply_family]in E;apply bind_inv in E as(ei&si&Install&E).
+ cbn[apply_family]in E;apply bind_inv in E as(u0&s0&Ck&E);
+ pose proof(family_inputs_in_force_keep _ _ _ _ _ _ _ Ck)as ->;apply bind_inv in E as(ei&si&Install&E).
  change(mfold family_install_step e matching s=Good(ei,si))in Install.
  apply bind_inv in E as([[xs er]cr]&sr&App&E).
  apply bind_inv in E as(mem&ss&Mem&E).

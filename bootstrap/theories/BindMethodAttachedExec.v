@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
  BodySoundCore BodyTr BodyTy CtxMerge Merge CanonTypes ProviderSig SourceSatisfiesGaps FnProviderDefinedExec
- MethodSelectExec MethodKind LoaderReceiver BindMethodTrace.
+ MethodSelectExec MethodKind LoaderReceiver BindMethodTrace RuleBKeep.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Strategy opaque [Nat.of_num_uint FUEL reqs type_requirements].
@@ -97,6 +97,7 @@ Proof using w P R Fl b Load CompleteWorld Finj.
  pose proof Run as Whole.
  destruct fuel as [|fuel]; [discriminate Run|]. cbn [match_fn_sig] in Run.
  apply bind_inv in Run as [info [si [Info Run]]].
+ apply bind_inv in Run as(rbu&rbs&RBk&Run). pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  destruct (ok_fn_info_frame _ _ _ _ Valid Info) as [Ii Fi].
  apply bind_inv in Run as [pairs [sn [Needs Run]]].
  assert (On : ok (require_needs (cx_mod c) e pv info)) by (unfold require_needs,require_merges; okt).

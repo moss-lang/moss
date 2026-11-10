@@ -57,6 +57,8 @@ Definition method_after_receiver(f:nat)(c:cx)(e:env)(ox:xexpr)(oty:ety)(p:path)(
                    | YNom _ ((_ :: _) as xs) => mfold (fun e q => let! st := fresh in ret (set_tn e (fst q) (snd q) st)) e xs
                    | _ => ret e
                    end in
+        requirements_in_force mi e2 att info "calling" ;;
+        let e2 := principal_env e2 info in
         let! (pre, e2) := demand_needs f c e2 info in
         let! pairs := require_needs mi e2 att info in
         let! sm := smap_at (fi_env info) e2 pairs in
@@ -120,6 +122,8 @@ if is_some (fn_body att) then
                    | YNom _ ((_ :: _) as xs) => mfold (fun e q => let! st := fresh in ret (set_tn e (fst q) (snd q) st)) e xs
                    | _ => ret e
                    end in
+        requirements_in_force mi e2 att info "calling" ;;
+        let e2 := principal_env e2 info in
         let! (pre, e2) := demand_needs f c e2 info in
         let! pairs := require_needs mi e2 att info in
         let! sm := smap_at (fi_env info) e2 pairs in

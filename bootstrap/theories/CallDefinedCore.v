@@ -1,6 +1,6 @@
 (* Defined calls with every need already in force have no family prefix. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame FnInfoCore NeedMapExec MethodKeyTr InstantiateTr.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabFrame FnInfoCore NeedMapExec MethodKeyTr InstantiateTr RuleBKeep.
 Import ListNotations.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
 Lemma mfold_identity_checked : forall X Y(f:X->Y->M X) l,
@@ -35,7 +35,9 @@ Qed.
 
 Definition defined_call_code f c e (fid:nat)(g:gsym)args:M(xexpr*ety):=
  let! info:=fn_info g in
- let! (pre,ed):=demand_needs f c e info in
+ requirements_in_force(cx_mod c)e g info "calling";;
+ let ep:=principal_env e info in
+ let! (pre,ed):=demand_needs f c ep info in
  let! pairs:=require_needs(cx_mod c)ed g info in
  let! sm:=smap_at(fi_env info)ed pairs in
  let! sg:=fn_sig g(tymap ed)ed None in
@@ -46,7 +48,7 @@ Definition defined_call_code f c e (fid:nat)(g:gsym)args:M(xexpr*ety):=
 Lemma defined_call_code_exec : forall f c e fid g args s x t s',
  defined_call_code f c e fid g args s=Good((x,t),s')->
  exists info si pre ed sd pairs sn sm ss sg sgstate xs sa u sl th,
- fn_info g s=Good(info,si)/\demand_needs f c e info si=Good((pre,ed),sd)/\
+ fn_info g s=Good(info,si)/\demand_needs f c(principal_env e info)info si=Good((pre,ed),sd)/\
  require_needs(cx_mod c)ed g info sd=Good(pairs,sn)/\
  smap_at(fi_env info)ed pairs sn=Good(sm,ss)/\
  fn_sig g(tymap ed)ed None ss=Good(sg,sgstate)/\
@@ -56,6 +58,7 @@ Lemma defined_call_code_exec : forall f c e fid g args s x t s',
 Proof.
  intros f c e fid g args s x t s' E. unfold defined_call_code in E.
  apply bind_inv in E as[info[si[Ei E]]].
+ apply bind_inv in E as[rbu[rbs[RBk E]]];pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  apply bind_inv in E as[[pre ed][sd[Ed E]]].
  apply bind_inv in E as[pairs[sn[En E]]].
  apply bind_inv in E as[sm[ss[Es E]]].

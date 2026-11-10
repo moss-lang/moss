@@ -5,7 +5,7 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  CtxMerge MethodKeyTr CanonTypes CanonBodyTy NominalSupport EtyTyExec CallArgs ProviderSig SourceSatisfies
  LoaderOrigin MainRoot CallAbstract CallCacheExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr
- CallDefined CallDefinedAny SourceSatisfiesAny NeedReceiverFormation FamilyDemandExec FamilyDemandFrame CallFwdReadonly.
+ CallDefined CallDefinedAny SourceSatisfiesAny NeedReceiverFormation FamilyDemandExec FamilyDemandFrame CallFwdReadonly PrincipalEnvExec.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
@@ -30,10 +30,13 @@ Proof.
  intros f IH c e g pa args exp s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Resolve Kind.
  destruct(defined_call_code_exec _ _ _ _ _ _ _ _ _ _ E)
  as(info&si&pre&ed&sd&pairs&sn&sm&ss&sg&sgstate&xs&sa&u&sl&th&Ei&Ed&En&Es&Eg&Ea&El&Et&->&->).
+ destruct(principal_env_context w R Fl c e F C info C 0 Hc)as[Uep[Hcp _]].
+ pose proof(fun Cs=>proj2(proj2(principal_env_context w R Fl c e F C info Cs(gs_id g)Hc)))as Pcx.
+ set(ep:=principal_env e info)in *. set(Cp:=principal_cx Fl e info C)in *.
  destruct(ok_fn_info_frame _ _ _ _ Hi Ei)as[Isi Fsi].
  pose proof(proj2(okI_fn_info g)_ _ _ Hi Ii Ei)as Iisi.
- destruct(ok_demand_needs f c e info _ _ _ Isi Ed)as[Isd Fd].
- pose proof(proj2(okI_demand_needs f c e info)_ _ _ Isi Iisi Ed)as Iisd.
+ destruct(ok_demand_needs f c ep info _ _ _ Isi Ed)as[Isd Fd].
+ pose proof(proj2(okI_demand_needs f c ep info)_ _ _ Isi Iisi Ed)as Iisd.
  assert(On:ok(require_needs(cx_mod c)ed g info))by(unfold require_needs,require_merges;okt).
  destruct(On _ _ _ Isd En)as[Isn Fn].
  pose proof(info_step _ _ Iisd(frl_of_fr _ _ Fn)(ni_require_needs _ _ _ _ _ _ _ En) ltac:(wrapper_cache_same))as Iisn.
@@ -59,8 +62,8 @@ Proof.
  pose proof(later_back w P R Fl _ _ Fn Ln)as Ld.
  pose proof(later_back w P R Fl _ _ Fd Ld)as Li.
  pose proof(fn_info_need_receivers w R Fl b Hload Hworld g s info si Hg Ei Hi Ii Hw Li)as NeedFormation.
- destruct(demand_needs_exec w R Fl b Hload Finj f c e F C info si pre ed sd checked
- Hworld Hcontexts Hchecked Ed Isi(fr_w' w _ _ Fsi Hw)Ld Hc NeedFormation)as(Cd&Demand&HCd).
+ destruct(demand_needs_exec w R Fl b Hload Finj f c ep F Cp info si pre ed sd checked
+ Hworld Hcontexts Hchecked Ed Isi(fr_w' w _ _ Fsi Hw)Ld Hcp NeedFormation)as(Cd&Demand&HCd).
  destruct(@fn_info_satisfaction_any_after w P R Fl b Hload Hworld Finj g s info si sd(cx_mod c)ed pairs sn sm ss c F Cd
    Hg Ei Fd En Es Hi Ii Hw Isd Ls HCd)as[Cf[Ctx Sat]].
  pose proof(fn_sig_canonical w R Fl b Hload c ed F Cd g None ss sg sgstate RPlain n ps rt(Some body)
@@ -74,17 +77,18 @@ Proof.
  pose proof(@check_args_aa_ok w P R Fl f IH c ed(gs_name g)sg args sgstate xs sa F Cd Both Ea Isg
    Iisg ltac:(fwd_inv) HCd Hpa)as Args.
  pose proof(call_theta_tr w R Fl c ed F Cd g sl th s' Et Isl(proj1 Hp)HCd)as Theta.
- assert(Types:forall raw,tr Fl(canon ed raw)=tr Fl(canon e raw)).
- {intro raw;rewrite <-!tr_canon by(first[exact(proj1(cr_uf _ _ _ _ _ _ _ HCd))|exact(proj1(cr_uf _ _ _ _ _ _ _ Hc))]).
-  rewrite <-(cr_sub _ _ _ _ _ _ _ HCd),<-(cr_sub _ _ _ _ _ _ _ Hc).
+ assert(Types:forall raw,tr Fl(canon ed raw)=tr Fl(canon ep raw)).
+ {intro raw;rewrite <-!tr_canon by(first[exact(proj1(cr_uf _ _ _ _ _ _ _ HCd))|exact(proj1(cr_uf _ _ _ _ _ _ _ Hcp))]).
+  rewrite <-(cr_sub _ _ _ _ _ _ _ HCd),<-(cr_sub _ _ _ _ _ _ _ Hcp).
   rewrite(proj2(demand_types _ _ _ _ _ _ _ Demand));reflexivity. }
  split;[|split;[exact(ety_ok_wf _ Wr)|exact Sr]].
- rewrite <-Types;rewrite Theta.
- eapply A.ExCallDDemand with(Cf:=Cf)(ns:=map(key_tr Fl)(fi_needs info))(g:=canonical_sig Fl ed sg)(C':=Cd).
+ rewrite <-(canon_uf e ep Uep(sg_ret sg)),<-Types;rewrite Theta.
+ eapply A.ExCallDDemand with(Cf:=Cf)(ns:=map(key_tr Fl)(fi_needs info))(g:=canonical_sig Fl ed sg)(C':=Cd)(Cp:=Cp).
  - exact Resolve.
  - exact Kind.
  - exists n,ps,rt,body;unfold A.ast_of;rewrite(w_decl_rd w R Fl _ _ Hg);cbn;rewrite Decl;reflexivity.
  - exact Ctx.
+ - exact(Pcx Cf).
  - exact Demand.
  - exact Sat.
  - exact Sig.

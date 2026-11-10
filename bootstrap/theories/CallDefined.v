@@ -5,7 +5,7 @@ From NM Require Import CallFwdReadonly.
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound ElabMono WorldSound ElabFrame InfoPreserve BodySoundCore BodyTy BodyTr
  CtxMerge MethodKeyTr CanonTypes CanonBodyTy NominalSupport EtyTyExec CallArgs ProviderSig SourceSatisfies
- LoaderOrigin MainRoot CallAbstract CallCacheExec DemandEmptyExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr.
+ LoaderOrigin MainRoot CallAbstract CallCacheExec DemandEmptyExec NeedMapExec CallDefinedCore CallThetaExec FnSigExec InstantiateTr PrincipalEnvExec ReceiverCallEnv.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
@@ -77,35 +77,40 @@ Theorem defined_ready_evidence : forall f,OK w P R Fl f->
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn RPlain n ps rt(Some body)->
  (forall k,gs_origin g<>OForwarder k)->~A.IsMainFn WW(gs_id g)->
  (forall s0 m s1,st_w s0=w->is_main g s0=Good(m,s1)->m=false)->
- (forall info si,fn_info g s=Good(info,si)->forall k,In k(fi_needs info)->key_present e(site_key e k)=true)->
- exists info si Cf sm sg xs,
+ (forall info si,fn_info g s=Good(info,si)->forall k,In k(fi_needs info)->
+   key_present(principal_env e info)(site_key(principal_env e info)k)=true)->
+ exists info si Cf sm sg xs Cp,
  fn_info g s=Good(info,si)/\
  CtxOfIE WW(gs_id g)Cf(map(key_tr Fl)(fi_needs info))/\
- A.Satisfies C Cf(map(key_tr Fl)(fi_needs info))sm/\
- A.SigOf WW(gs_id g)(A.c_ty C)None(canonical_sig Fl e sg)/\
- A.Args WW P F C args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
- x=XCallD(gs_id g)(A.theta_at WW C(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
+ A.PrincipalCx WW C Cf(gs_id g)Cp/\
+ A.Satisfies Cp Cf(map(key_tr Fl)(fi_needs info))sm/\
+ A.SigOf WW(gs_id g)(A.c_ty Cp)None(canonical_sig Fl e sg)/\
+ A.Args WW P F Cp args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
+ x=XCallD(gs_id g)(A.theta_at WW Cp(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nf Nm Nm' Ready.
  destruct(defined_call_code_exec _ _ _ _ _ _ _ _ _ _ E)
  as(info&si&pre&ed&sd&pairs&sn&sm&ss&sg&sgstate&xs&sa&u&sl&th&Ei&Ed&En&Es&Eg&Ea&El&Et&->&->).
+ destruct(principal_env_context w R Fl c e F C info C 0 Hc)as[Uep[Hcp _]].
+ pose proof(fun Cs=>proj2(proj2(principal_env_context w R Fl c e F C info Cs(gs_id g)Hc)))as Pcx.
+ set(ep:=principal_env e info)in *. set(Cp:=principal_cx Fl e info C)in *.
  destruct(ok_fn_info_frame _ _ _ _ Hi Ei)as[Isi Fsi].
  pose proof(proj2(okI_fn_info g)_ _ _ Hi Ii Ei)as Iisi.
  destruct(demand_needs_present _ _ _ _ _ _ _ _ Isi(Ready _ _ Ei)Ed)as[-> [-> ->]].
- assert(On:ok(require_needs(cx_mod c)e g info))by(unfold require_needs,require_merges;okt).
+ assert(On:ok(require_needs(cx_mod c)ep g info))by(unfold require_needs,require_merges;okt).
  destruct(On _ _ _ Isi En)as[Isn Fn].
  pose proof(info_step _ _ Iisi(frl_of_fr _ _ Fn)(ni_require_needs _ _ _ _ _ _ _ En) ltac:(wrapper_cache_same))as Iisn.
- assert(Os:ok(smap_at(fi_env info)e pairs)).
+ assert(Os:ok(smap_at(fi_env info)ep pairs)).
  { unfold smap_at. apply ok_mmap. intros[a z]. apply ok_bind;[apply ok_key_item_at_frame|intro].
    apply ok_bind;[apply ok_key_item_at_frame|intro;apply ok_ret]. }
  destruct(Os _ _ _ Isn Es)as[Iss Fs].
  pose proof(info_step _ _ Iisn(frl_of_fr _ _ Fs)(ni_smap_at _ _ _ _ _ _ Es) ltac:(wrapper_cache_same))as Iiss.
- assert(Og:ok(fn_sig g(tymap e)e None))by(unfold fn_sig;okt).
+ assert(Og:ok(fn_sig g(tymap ep)ep None))by(unfold fn_sig;okt).
  destruct(Og _ _ _ Iss Eg)as[Isg Fg].
  pose proof(info_step _ _ Iiss(frl_of_fr _ _ Fg)(ni_fn_sig _ _ _ _ _ _ _ Eg) ltac:(wrapper_cache_same))as Iisg.
- destruct(ok_check_args f c e(gs_name g)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
- destruct(ok_layout_ok e(sg_ret sg)_ _ _ Isa El)as[Isl Flay].
- assert(Ot:ok(call_theta e g))by apply ok_call_theta.
+ destruct(ok_check_args f c ep(gs_name g)sg(map AA args)_ _ _ Isg Ea)as[Isa Fa].
+ destruct(ok_layout_ok ep(sg_ret sg)_ _ _ Isa El)as[Isl Flay].
+ assert(Ot:ok(call_theta ep g))by apply ok_call_theta.
  destruct(Ot _ _ _ Isl Et)as[Ifin Ft].
  pose proof(post_back w P R Fl _ _ F(fr_trans _ _ _ Flay Ft)Hp)as Hpa.
  pose proof(later_back w P R Fl _ _ Fa(proj1 Hpa))as Lg.
@@ -114,19 +119,22 @@ Proof.
  assert(Hw:st_w s=w).
  { rewrite <-(fr_w _ _ (fr_trans _ _ _ Fsi(fr_trans _ _ _ Fn Fs)));exact Wss. }
  destruct(fn_info_satisfaction_nonroot w R Fl b Hload Finj _ _ _ _ _ _ _ _ _ _ _ _ _ Hg Nf Nm Nm'
-   Ei En Es Hi Ii Hw Ls Hc)as[Cf[Ctx Sat]].
- pose proof(fn_sig_canonical w R Fl b Hload c e F C g None ss sg sgstate RPlain n ps rt(Some body)
-   Eg Iss Wss Hc Hg Decl I Lg)as Sig.
- destruct(fn_sig_body_properties w R Fl b Hload c e F C g ss sg sgstate Eg Iss Wss Hg Hc Lg)
+   Ei En Es Hi Ii Hw Ls Hcp)as[Cf[Ctx Sat]].
+ pose proof(fn_sig_canonical w R Fl b Hload c ep F Cp g None ss sg sgstate RPlain n ps rt(Some body)
+   Eg Iss Wss Hcp Hg Decl I Lg)as Sig.
+ rewrite(@canonical_sig_uf Fl e ep sg Uep)in Sig.
+ destruct(fn_sig_body_properties w R Fl b Hload c ep F Cp g ss sg sgstate Eg Iss Wss Hg Hcp Lg)
    as[Clean[Sp[Sr Sthis]]]. destruct Clean as[Wps[Wr Wthis]].
  assert(Both:Forall(fun p=>WFty(snd p)/\Support WW(snd p))(sg_params sg)).
  { apply Forall_forall;intros p Hin;split.
    - apply ety_ok_wf;exact(proj1(Forall_forall _ _)Wps(snd p)(in_map snd _ _ Hin)).
    - exact(proj1(Forall_forall _ _)Sp p Hin). }
- pose proof(@check_args_aa_ok w P R Fl f IH c e(gs_name g)sg args sgstate xs sa F C Both Ea Isg
-   Iisg ltac:(fwd_inv) Hc Hpa)as Args.
- pose proof(call_theta_tr w R Fl c e F C g sl th s' Et Isl(proj1 Hp)Hc)as Theta.
- exists info,si,Cf,sm,sg,xs. split;[exact Ei|]. split;[exact Ctx|]. split;[exact Sat|].
+ pose proof(@check_args_aa_ok w P R Fl f IH c ep(gs_name g)sg args sgstate xs sa F Cp Both Ea Isg
+   Iisg ltac:(fwd_inv) Hcp Hpa)as Args.
+ replace(map(fun p=>tr Fl(canon ep(snd p)))(sg_params sg))with(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))in Args
+   by(apply map_ext;intro;rewrite(canon_uf e ep Uep);reflexivity).
+ pose proof(call_theta_tr w R Fl c ep F Cp g sl th s' Et Isl(proj1 Hp)Hcp)as Theta.
+ exists info,si,Cf,sm,sg,xs,Cp. split;[exact Ei|]. split;[exact Ctx|]. split;[exact(Pcx Cf)|]. split;[exact Sat|].
  split;[exact Sig|]. split;[exact Args|]. split;[cbn[fold_stmts];now rewrite Theta|].
  split;[reflexivity|]. split;[exact(ety_ok_wf _ Wr)|exact Sr].
 Qed.
@@ -136,14 +144,16 @@ Theorem defined_ready_loaded : forall f,OK w P R Fl f->
  Inv s->InfoInv s->FwdInv s->CxRel w R Fl c e F C->Post w P R Fl s' F->
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn RPlain n ps rt(Some body)->
  ~A.IsMainFn WW(gs_id g)->
- (forall info si,fn_info g s=Good(info,si)->forall k,In k(fi_needs info)->key_present e(site_key e k)=true)->
- exists info si Cf sm sg xs,
+ (forall info si,fn_info g s=Good(info,si)->forall k,In k(fi_needs info)->
+   key_present(principal_env e info)(site_key(principal_env e info)k)=true)->
+ exists info si Cf sm sg xs Cp,
  fn_info g s=Good(info,si)/\
  CtxOfIE WW(gs_id g)Cf(map(key_tr Fl)(fi_needs info))/\
- A.Satisfies C Cf(map(key_tr Fl)(fi_needs info))sm/\
- A.SigOf WW(gs_id g)(A.c_ty C)None(canonical_sig Fl e sg)/\
- A.Args WW P F C args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
- x=XCallD(gs_id g)(A.theta_at WW C(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
+ A.PrincipalCx WW C Cf(gs_id g)Cp/\
+ A.Satisfies Cp Cf(map(key_tr Fl)(fi_needs info))sm/\
+ A.SigOf WW(gs_id g)(A.c_ty Cp)None(canonical_sig Fl e sg)/\
+ A.Args WW P F Cp args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
+ x=XCallD(gs_id g)(A.theta_at WW Cp(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nm Ready.
  exact(defined_ready_evidence f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl
@@ -155,14 +165,15 @@ Theorem defined_empty_loaded : forall f,OK w P R Fl f->
  Inv s->InfoInv s->FwdInv s->CxRel w R Fl c e F C->Post w P R Fl s' F->
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn RPlain n ps rt(Some body)->
  ~A.IsMainFn WW(gs_id g)->
- (exists info si ed sd,fn_info g s=Good(info,si)/\demand_needs f c e info si=Good(([],ed),sd))->
- exists info si Cf sm sg xs,
+ (exists info si ed sd,fn_info g s=Good(info,si)/\demand_needs f c(principal_env e info)info si=Good(([],ed),sd))->
+ exists info si Cf sm sg xs Cp,
  fn_info g s=Good(info,si)/\
  CtxOfIE WW(gs_id g)Cf(map(key_tr Fl)(fi_needs info))/\
- A.Satisfies C Cf(map(key_tr Fl)(fi_needs info))sm/\
- A.SigOf WW(gs_id g)(A.c_ty C)None(canonical_sig Fl e sg)/\
- A.Args WW P F C args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
- x=XCallD(gs_id g)(A.theta_at WW C(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
+ A.PrincipalCx WW C Cf(gs_id g)Cp/\
+ A.Satisfies Cp Cf(map(key_tr Fl)(fi_needs info))sm/\
+ A.SigOf WW(gs_id g)(A.c_ty Cp)None(canonical_sig Fl e sg)/\
+ A.Args WW P F Cp args(map(fun p=>tr Fl(canon e(snd p)))(sg_params sg))xs/\
+ x=XCallD(gs_id g)(A.theta_at WW Cp(gs_id g))sm xs/\t=sg_ret sg/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nm Empty.
  destruct(defined_call_code_exec _ _ _ _ _ _ _ _ _ _ E)
@@ -170,11 +181,12 @@ Proof.
  destruct Empty as(info0&si0&ed0&sd0&Ei0&Ed0).
  rewrite Ei in Ei0;injection Ei0 as <- <-.
  pose proof(demand_needs_empty_env _ _ _ _ _ _ _ Ed0)as Env.
- assert(EE:ed=e)by(congruence). subst ed.
+ assert(EE:ed=principal_env e info)by(congruence). subst ed.
  destruct(ok_fn_info_frame _ _ _ _ Hi Ei)as[Isi Fsi].
- destruct(ok_demand_needs f c e info _ _ _ Isi Ed)as[Isd Fd].
+ destruct(ok_demand_needs f c(principal_env e info)info _ _ _ Isi Ed)as[Isd Fd].
  destruct(require_needs_exact _ _ _ _ _ _ _ Isd En)as[_[Present _]].
- assert(Ready:forall i is,fn_info g s=Good(i,is)->forall k,In k(fi_needs i)->key_present e(site_key e k)=true).
+ assert(Ready:forall i is,fn_info g s=Good(i,is)->forall k,In k(fi_needs i)->
+   key_present(principal_env e i)(site_key(principal_env e i)k)=true).
  { intros i is Eii k Hin. rewrite Ei in Eii;injection Eii as <- <-.
    exact(proj1(Forall_forall _ _)Present _ Hin). }
  exact(defined_ready_loaded f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg Decl Nm Ready).
@@ -186,18 +198,19 @@ Theorem defined_empty_ex:forall f,OK w P R Fl f->
  nget(w_syms w)(gs_id g)=Some g->gs_decl g=ADFn RPlain n ps rt(Some body)->
  A.resolve_sym WW(A.fr_mod F)pa=Some(gs_id g)->A.kind_sym WW(gs_id g)=Some A.DKFn->
  ~A.IsMainFn WW(gs_id g)->
- (exists info si ed sd,fn_info g s=Good(info,si)/\demand_needs f c e info si=Good(([],ed),sd))->
+ (exists info si ed sd,fn_info g s=Good(info,si)/\demand_needs f c(principal_env e info)info si=Good(([],ed),sd))->
  A.Ex WW P F C(AECall pa None args)exp x(tr Fl(canon e t))/\WFty t/\Support WW t.
 Proof.
  intros f IH c e g pa args exp s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg D Hr Hk Nm Empty.
  destruct(defined_empty_loaded f IH c e g args s x t s' F C n ps rt body E Hi Ii Hfi Hc Hp Hg D Nm Empty)
- as(info&si&Cf&sm&sg&xs&Ei&Ctx&Sat&Sig&Args&->&->&Wt&St).
+ as(info&si&Cf&sm&sg&xs&Cp&Ei&Ctx&Pcx&Sat&Sig&Args&->&->&Wt&St).
  split;[|split;assumption].
- eapply A.ExCallD with(Cf:=Cf)(ns:=map(key_tr Fl)(fi_needs info))(g:=canonical_sig Fl e sg).
+ eapply A.ExCallD with(Cf:=Cf)(ns:=map(key_tr Fl)(fi_needs info))(g:=canonical_sig Fl e sg)(Cp:=Cp).
  - exact Hr.
  - exact Hk.
  - exists n,ps,rt,body;unfold A.ast_of;rewrite(w_decl_rd w R Fl _ _ Hg);cbn;rewrite D;reflexivity.
  - apply ctx_of_ie_complete;exact Ctx.
+ - exact Pcx.
  - exact Sat.
  - exact Sig.
  - exact Args.

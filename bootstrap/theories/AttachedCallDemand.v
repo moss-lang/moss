@@ -6,7 +6,7 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve BodySoundCore BodyTr BodyTy
  CanonTypes EtyTyExec Merge InstantiateTr NominalSupport SourceSupport NeedMapExec MethodKeyTr CallArgs CallCacheExec
  CallDefinedCore CallThetaExec DemandEmptyExec ProviderSig ReceiverCallEnv ReceiverFnSig
- CtxWalk CtxMerge SourceSatisfiesAfter MethodSelectExec MethodCallCore MethodCallRoutes AttachedCallExec AttachedCallNoDemand NeedReceiverFormation FamilyDemandExec FamilyDemandFrame FamilyDemandGroup.
+ CtxWalk CtxMerge SourceSatisfiesAfter MethodSelectExec MethodCallCore MethodCallRoutes AttachedCallExec AttachedCallNoDemand NeedReceiverFormation FamilyDemandExec FamilyDemandFrame FamilyDemandGroup PrincipalEnvExec.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL canon instantiate ety_ty reqs type_requirements].
@@ -43,11 +43,14 @@ Proof.
  pose proof(proj2(okI_fn_info att)_ _ _ Hi Ii Ei)as Iifi.
  destruct(ok_receiver_types(receiver_args e r)e sf e2 st Ifi Et)as[Ist Fst].
  pose proof(info_step _ _ Iifi(frl_of_fr _ _ Fst)(ni_receiver_types _ _ _ _ _ Et) ltac:(wrapper_cache_same))as Iist.
- destruct(ok_demand_needs f c e2 info _ _ _ Ist Ed)as[Isd Fd].
- pose proof(proj2(okI_demand_needs f c e2 info)_ _ _ Ist Iist Ed)as Iisd.
+ destruct(ok_demand_needs f c(principal_env e2 info)info _ _ _ Ist Ed)as[Isd Fd].
+ pose proof(proj2(okI_demand_needs f c(principal_env e2 info)info)_ _ _ Ist Iist Ed)as Iisd.
  destruct(receiver_types_context w R Fl(receiver_args e r)c e F C sf e2 st Et Hc
   (receiver_args_properties w R Fl c e F C r Hc Wr Sr))as[Ue Hc2].
  set(C2:=fold_left(fun C p=>A.set_ty C(fst p)(tr Fl(snd p)))(receiver_args e r)C)in *.
+ destruct(principal_env_context w R Fl c e2 F C2 info C2 0 Hc2)as[Uep[Hcp _]].
+ pose proof(fun Cs=>proj2(proj2(principal_env_context w R Fl c e2 F C2 info Cs(gs_id att)Hc2)))as Pcx.
+ set(ep:=principal_env e2 info)in *. set(Cp:=principal_cx Fl e2 info C2)in *.
  assert(On:ok(require_needs(cx_mod c)ed att info))by(unfold require_needs,require_merges;okt).
  destruct(On _ _ _ Isd En)as[Isn Fn].
  pose proof(info_step _ _ Iisd(frl_of_fr _ _ Fn)(ni_require_needs _ _ _ _ _ _ _ En) ltac:(wrapper_cache_same))as Iisn.
@@ -71,15 +74,16 @@ Proof.
  pose proof(later_back w P R Fl _ _ Fd Ld)as Lt.
  pose proof(later_back w P R Fl _ _ Fst Lt)as Li.
  pose proof(fn_info_need_receivers w R Fl b Hload Hworld att s info sf Hg Ei Hi Ii Hw Li)as NeedFormation.
- destruct(demand_needs_exec w R Fl b Hload Finj f c e2 F C2 info st pre ed sd checked
- Hworld Hcontexts Hchecked Ed Ist(fr_w' w _ _ Fst(fr_w' w _ _ Ffi Hw))Ld Hc2 NeedFormation)as(Cd&Demand&HCd).
+ destruct(demand_needs_exec w R Fl b Hload Finj f c ep F Cp info st pre ed sd checked
+ Hworld Hcontexts Hchecked Ed Ist(fr_w' w _ _ Fst(fr_w' w _ _ Ffi Hw))Ld Hcp NeedFormation)as(Cd&Demand&HCd).
  destruct(fn_info_satisfaction_after w R Fl b Hload Finj att s info sf sd(cx_mod c)ed pairs sn sm ss c F Cd
    Hg Nm Ei(fr_trans _ _ _ Fst Fd)En Es Hi Ii Hw Isd Ls HCd)as[Cf[Ctx Sat]].
+ assert(Types0:forall raw,tr Fl(canon ed raw)=tr Fl(canon ep raw)).
+ {intro raw;rewrite <-!tr_canon by(first[exact(proj1(cr_uf _ _ _ _ _ _ _ HCd))|exact(proj1(cr_uf _ _ _ _ _ _ _ Hcp))]).
+ rewrite <-(cr_sub _ _ _ _ _ _ _ HCd),<-(cr_sub _ _ _ _ _ _ _ Hcp).
+ rewrite(proj2(demand_types _ _ _ _ _ _ _ Demand));reflexivity. }
  assert(Types:forall raw,tr Fl(canon ed raw)=tr Fl(canon e raw)).
- {intro raw;rewrite <-!tr_canon by(first[exact(proj1(cr_uf _ _ _ _ _ _ _ HCd))|exact(proj1(cr_uf _ _ _ _ _ _ _ Hc))]).
- rewrite <-(cr_sub _ _ _ _ _ _ _ HCd),<-(cr_sub _ _ _ _ _ _ _ Hc).
- rewrite(proj2(demand_types _ _ _ _ _ _ _ Demand)).
- unfold C2;rewrite receiver_types_sub;reflexivity. }
+ {intro raw;rewrite Types0,(canon_uf e2 ep Uep),(canon_uf e e2 Ue);reflexivity. }
  assert(Sigs:canonical_sig Fl ed sg=canonical_sig Fl e sg).
  {unfold canonical_sig;f_equal;[|apply Types].
  apply map_ext;intros[nm raw];cbn[fst snd];apply Types. }
@@ -100,15 +104,15 @@ Proof.
  split;[|split;[exact(ety_ok_wf _ Wret)|exact Sret]].
  assert(Ectx:fold_left(fun C p=>A.set_ty C(fst p)(snd p))(recv_sem Fl(receiver_args e r))C=C2)
  by(apply fold_receiver_sem).
- rewrite<-Ectx in Demand.
  eapply A.MCAttachedDefinedDemand with(h:=h)(att:=gs_id att)(Ca:=Cf)(ns:=map(key_tr Fl)(fi_needs info))
-  (g:=canonical_sig Fl e sg)(rargs:=recv_sem Fl(receiver_args e r))(Cd:=Cd).
+  (g:=canonical_sig Fl e sg)(rargs:=recv_sem Fl(receiver_args e r))(Cd:=Cd)(Cp:=Cp).
  - exact(head_tr_some Fl(canon e r)h Head).
  - exact Ha.
  - exact(detached_provision_absent w R Fl b Hload c e F C r n Hc(method_receiver_clean w R Fl b Hload c e F C r Hc Wr Sr)Absent).
  - exists rn,ps,rt,body;unfold A.ast_of;rewrite(w_decl_rd w R Fl _ _ Hg);cbn;rewrite D;reflexivity.
  - exact(receiver_args_head Fl e r h Head).
  - exact Ctx.
+ - rewrite Ectx;exact(Pcx Cf).
  - exact Demand.
  - exact Sat.
  - exact Sig.

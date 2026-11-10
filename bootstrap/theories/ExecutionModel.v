@@ -2341,6 +2341,19 @@ Definition add_local (C : cx) (n : name) (t : ty) (mu : lmut) : cx :=
   Cx (c_ty C) (c_sub C) (c_vals C) (c_fns C) (c_mths C) (c_funs C) (c_apps C) ((n, (t, mu)) :: c_locals C).
 Definition set_ty (C : cx) (t : nat) (tau : ty) : cx :=
   Cx ((t, tau) :: c_ty C) (c_sub C) (c_vals C) (c_fns C) (c_mths C) (c_funs C) (c_apps C) (c_locals C).
+(* The principal context of a call of s (assume context Cs) from C
+   (criteria, principality; Audit #50, E24): each requirement r of s not
+   in force in C, whose class in Cs's merge ([D43]) has a member y in
+   force in C, reads as y does here, for the whole call: its needs (family
+   demands included), its signature and θ.  (Elab.principal_env.)  The
+   relation states only that each such reading is a meaning in force
+   here; which member, and that it is one of r's class, is the
+   elaborator's choice (Audit's CallTheta states the class). *)
+Definition PrincipalCx (W : world) (C Cs : cx) (s : nat) (Cp : cx) : Prop :=
+  exists pargs : list (nat * ty),
+    Cp = fold_left (fun C q => set_ty C (fst q) (snd q)) pargs C /\
+    forall r t, In (r, t) pargs -> nlook r (c_ty C) = None /\
+      exists y, nlook y (c_ty C) <> None /\ t = canon C (app_subst (c_ty C) (TAbs y)).
 Definition provide (C : cx) (k : item) (a : inst) (C1 : cx) : cx :=
   Cx (c_ty C1) (c_sub C1) (c_vals C1) (c_fns C1) (c_mths C1) (c_funs C1) ((k, a) :: c_apps C1) (c_locals C1).
 Definition set_val (C : cx) (v : nat) (t : ty) : cx :=
@@ -2774,19 +2787,19 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     Ex W P F C (AECall pa a args) exp (XTag s xs v) (TNom s xs)
 (* [D20]/[D21] a defined fn: its needs answered from here (sm), its
    signature read with the meanings here *)
-| ExCallD : forall F C exp pa args f Cf ns sm g xs,
+| ExCallD : forall F C exp pa args f Cf ns sm g xs Cp,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W f Cf ns -> Satisfies C Cf ns sm ->
-    SigOf W f (c_ty C) None g ->
-    Args W P F C args (sg_params g) xs ->
-    Ex W P F C (AECall pa None args) exp (XCallD f (theta_at W C f) sm xs) (sg_ret g)
+    CtxOf W f Cf ns -> PrincipalCx W C Cf f Cp -> Satisfies Cp Cf ns sm ->
+    SigOf W f (c_ty Cp) None g ->
+    Args W P F Cp args (sg_params g) xs ->
+    Ex W P F C (AECall pa None args) exp (XCallD f (theta_at W Cp f) sm xs) (sg_ret g)
 (* Defined calls may first demand missing methods from unique families. *)
-| ExCallDDemand : forall F C exp pa args f Cf ns sm g xs wrap C',
+| ExCallDDemand : forall F C exp pa args f Cf ns sm g xs wrap C' Cp,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W f Cf ns ->
-    Demand W C (map (at_site C) ns) [] C wrap C' ->
+    CtxOf W f Cf ns -> PrincipalCx W C Cf f Cp ->
+    Demand W Cp (map (at_site Cp) ns) [] Cp wrap C' ->
     Satisfies C' Cf ns sm -> SigOf W f (c_ty C') None g ->
     Args W P F C' args (sg_params g) xs ->
     Ex W P F C (AECall pa None args) exp
@@ -2936,29 +2949,27 @@ with MethCall (W : world) (P : xprogram) : frame -> cx -> xexpr -> ty -> path ->
     MethCall W P F C ox ot [n] args x t
 (* [D61] rule 1, a defined attached method: a direct call, at the
    receiver's instantiation ([D74]) *)
-| MCAttachedDefined : forall F C ox ot n args h att Ca ns sm g xs rargs,
+| MCAttachedDefined : forall F C ox ot n args h att Ca ns sm g xs rargs Cp,
     head ot = Some h -> Attached W h n att ->
     ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
     (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
     rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
     CtxOf W att Ca ns ->
-    Satisfies (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca ns sm ->
-    SigOf W att (rargs ++ c_ty C) (Some ot) g ->
+    PrincipalCx W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca att Cp ->
+    Satisfies Cp Ca ns sm ->
+    SigOf W att (c_ty Cp) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
-    MethCall W P F C ox ot [n] args
-             (XCallD att (theta_at W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) att) sm (ox :: xs))
-             (sg_ret g)
+    MethCall W P F C ox ot [n] args (XCallD att (theta_at W Cp att) sm (ox :: xs)) (sg_ret g)
 (* Defined attached calls can demand methods after installing receiver arguments.
    Their source arguments are still checked in the original caller context. *)
-| MCAttachedDefinedDemand : forall F C ox ot n args h att Ca ns sm g xs rargs wrap Cd,
+| MCAttachedDefinedDemand : forall F C ox ot n args h att Ca ns sm g xs rargs wrap Cd Cp,
     head ot = Some h -> Attached W h n att ->
     ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
     (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
     rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
     CtxOf W att Ca ns ->
-    Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
-      (map (at_site (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)) ns) []
-      (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
+    PrincipalCx W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca att Cp ->
+    Demand W Cp (map (at_site Cp) ns) [] Cp wrap Cd ->
     Satisfies Cd Ca ns sm -> SigOf W att (c_ty Cd) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
     MethCall W P F C ox ot [n] args

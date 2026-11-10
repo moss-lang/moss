@@ -1,7 +1,7 @@
 (* Checked provider signature matching uses the actual canonical readings. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore
- BodyTy SigSound TyOfSubst CanonTypes CanonBodyTy Merge.
+ BodyTy SigSound TyOfSubst CanonTypes CanonBodyTy Merge RuleBKeep.
 From NM Require Export SigReadingSubst.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
@@ -61,6 +61,7 @@ Proof.
  intros fuel c e F C pv wanted kind s sm s' recv n ps rt body E Hi Hw Hc Hg D L.
  destruct fuel as[|fuel];[discriminate E|]. cbn[match_fn_sig]in E.
  apply bind_inv in E as(info &s1 &Einfo &E).
+ apply bind_inv in E as(rbu&rbs&RBk&E). pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  destruct(ok_fn_info_frame _ _ _ _ Hi Einfo)as[I1 F1].
  apply bind_inv in E as(pairs &s2 &Epairs &E).
  assert(On:ok(require_needs(cx_mod c)e pv info))by(unfold require_needs;okt).

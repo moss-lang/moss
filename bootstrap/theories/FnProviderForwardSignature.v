@@ -1,6 +1,6 @@
 (* A forwarder's renamed parameters retain the checked target signature. *)
 From Stdlib Require Import List String.
-From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodyTr BodySoundCore CanonTypes Merge ProviderSig FnSigParallel ForwarderTrace.
+From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodyTr BodySoundCore CanonTypes Merge ProviderSig FnSigParallel ForwarderTrace RuleBKeep.
 Import ListNotations.
 Lemma canonical_signature_parameter_names:forall Fl e sg target,
  map snd(sg_params sg)=map snd(sg_params target)->sg_ret sg=sg_ret target->
@@ -55,6 +55,7 @@ Proof.
  intros[|fuel]c e F C provider target wanted kind s sm final n ps rt Loaded Decl Copied Home Run Hi Hw Hc L;
  [discriminate|]. cbn[match_fn_sig]in Run.
  apply bind_inv in Run as[info[s1[Info Run]]].
+ apply bind_inv in Run as(rbu&rbs&RBk&Run). pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  destruct(ok_fn_info_frame _ _ _ _ Hi Info)as[I1 F1].
  apply bind_inv in Run as[pairs[s2[Needs Run]]].
  assert(On:ok(require_needs(cx_mod c)e provider info))by(unfold require_needs;okt).

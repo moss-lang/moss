@@ -81,7 +81,7 @@ Proof. exact(@attached_demand_step w P R Fl b Hload HFl Hworld). Qed.
 Lemma Hmethdefined : forall f, OK w P R Fl f -> AttachedDefinedStep w P R Fl f.
 Proof.
  intros f IH;exact(@attached_defined_step w P R Fl b Hload HFl
-  (@A.wo_reqs_nodup b WW Hworld)f IH(Hmethdemand f IH)).
+  f IH(Hmethdemand f IH)).
 Qed.
 Lemma Hmeth : forall f, OK w P R Fl f -> forall c e o pa args exp s v t s',
   synth (S f) c e (AEMeth o pa args) exp s = Good ((v, t), s') ->

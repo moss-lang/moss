@@ -2300,6 +2300,63 @@ Definition require_merges (mi : nat) (e : env) (callee : gsym) (info : fninfo) :
                           a' ++ "` and `" ++ b' ++ "`")
            else ret tt) (fi_merges info).
 
+(* Rule B (criteria: principality and coherence; Audit's
+   `RequirementsInForce`): a use of an item whose assumptions include a
+   type requirement r (a call of a defined fn or attached method, a fn or
+   method provider bind) needs r in force here: bound or assumed here, or
+   in force through r's class in the item's merges (fi_merges): a member
+   in force here, or a structured type all of whose generations are in
+   force here.  A requirement a caller could leave unbound would otherwise
+   be read as itself, a guess (a declared symbol outside the caller's
+   table, e.g. a family demand keyed at it). *)
+Definition class_members (info : fninfo) : list nat := map fst (en_tn (fi_env info)).
+Definition in_force_through (e : env) (info : fninfo) (r : nat) : bool :=
+  let m := env_with_edges [] (fi_merges info) in
+  is_some (tn_get e r) ||
+  existsb (fun y => is_some (tn_get e y) && ety_eqb (canon m (YAbs y)) (canon m (YAbs r))) (class_members info) ||
+  match canon m (YAbs r) with
+  | YAbs _ => false
+  | z => forallb (fun t => is_some (tn_get e t)) (ety_gens z)
+  end.
+(* the requirements are the types in force in the item's own context *)
+Definition requirements_in_force (mi : nat) (e : env) (g : gsym) (info : fninfo) (what : string) : M unit :=
+  miter (fun r => if in_force_through e info r then ret tt else
+                  let! tg := sym r in
+                  err mi (what ++ " `" ++ gs_name g ++ "` needs `" ++ gs_name tg ++
+                          "` in force here (assume or bind it, or a type its context merges it with)"))
+        (class_members info).
+
+(* Rule B for a family applied on demand (D84 rule 7): every generation
+   its θ mentions is in force here, or mentioned by a meaning in force
+   here; a key read at a requirement the caller leaves unbound is not
+   demanded. *)
+Definition family_inputs_in_force (mi : nat) (e : env) (fg : gsym) (th : list (nat * ety)) : M unit :=
+  let range := flat_map (fun p => ety_gens (canon e (fst (snd p)))) (en_tn e) in
+  miter (fun q => miter (fun t => if is_some (tn_get e t) || nmem t range then ret tt else
+                                   let! tg := sym t in let! ag := sym (fst q) in
+                                   err mi ("applying the family `" ++ gs_name fg ++ "` at `" ++ gs_name ag ++
+                                           "` mentions `" ++ gs_name tg ++ "`, which is not in force here (assume or bind it)"))
+                        (ety_gens (canon e (snd q)))) th.
+
+(* The principal reading of a callee's requirements (criteria, principality;
+   #50, E24): a requirement not in force here whose class in the callee's
+   merges (D43) has a member in force here reads as that member does here,
+   for the whole call (its needs, family demands included, its signature
+   and θ); any other is left as it is. *)
+Definition principal_args (e : env) (info : fninfo) : list (nat * (ety * nat)) :=
+  let m := env_with_edges [] (fi_merges info) in
+  flat_map (fun r =>
+    if is_some (tn_get e r) then [] else
+    match find (fun y => is_some (tn_get e y) && ety_eqb (canon m (YAbs y)) (canon m (YAbs r))) (class_members info) with
+    | Some y => match nassoc y (en_tn e) with
+                | Some (_, st) => [(r, (canon e (instantiate e (YAbs y)), st))]
+                | None => []
+                end
+    | None => []
+    end) (class_members info).
+Definition principal_env (e : env) (info : fninfo) : env :=
+  fold_left (fun en q => set_tn en (fst q) (fst (snd q)) (snd (snd q))) (principal_args e info) e.
+
 Definition key_present (e : env) (k : key) : bool :=
   match k with
   | KyVal v => is_some (nget (en_vals e) v)
@@ -4140,6 +4197,8 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
                else ret tt) ;;
               if is_defined_fn g then
                 let! info := fn_info g in
+                requirements_in_force mi e g info "calling" ;;
+                let e := principal_env e info in
                 let! (pre, e) := demand_needs f c e info in
                 let! pairs := require_needs mi e g info in
                 let! sm := smap_at (fi_env info) e pairs in
@@ -4284,6 +4343,8 @@ with synth_method (fuel : nat) (c : cx) (e : env) (o : aexpr) (p : path) (args :
                    | YNom _ ((_ :: _) as xs) => mfold (fun e q => let! st := fresh in ret (set_tn e (fst q) (snd q) st)) e xs
                    | _ => ret e
                    end in
+        requirements_in_force mi e2 att info "calling" ;;
+        let e2 := principal_env e2 info in
         let! (pre, e2) := demand_needs f c e2 info in
         let! pairs := require_needs mi e2 att info in
         let! sm := smap_at (fi_env info) e2 pairs in
@@ -4367,6 +4428,7 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
 with apply_family (fuel : nat) (c : cx) (e : env) (fg : gsym) (th : list (nat * ety)) (want : list item) {struct fuel}
     : M (list xstmt * env) :=
   match fuel with 0 => deep | S f =>
+  family_inputs_in_force (cx_mod c) e fg th ;;
   let! e1 := mfold (fun e q => let! s := fresh in ret (set_tn e (fst q) (snd q) s)) e th in
   let! (pre, e2, _) := apply_abstract f c e1 fg in
   let! mem := is_memories fg in
@@ -4635,6 +4697,7 @@ with match_fn_sig (fuel : nat) (c : cx) (e : env) (pv : gsym) (wanted : fsig) (k
   match fuel with 0 => deep | S f =>
   let mi := cx_mod c in
   let! info := fn_info pv in
+  requirements_in_force mi e pv info "binding to" ;;
   let! pairs := require_needs mi e pv info in
   let! got := fn_sig pv (tymap e) e None in
   if sig_eqb_in e got e wanted then
@@ -4953,6 +5016,15 @@ with bind_functor (fuel : nat) (c : cx) (e : env) (fg : gsym) (y : aexpr) {struc
               record_reify_event (REFunctor ety key (gs_id fg) (gs_id bg) gneeds (reify_arguments e) copy_view) ;;
               ret ([SBindFunA (gs_id fg) (gs_id bg) sm], e')
           | Some _ =>
+              (* rule B for a closure: G's type inputs that F does not take
+                 are captured here, each read as itself, so only one in
+                 force here has a principal captured meaning *)
+              let gtys := map fst (en_tn eg) in
+              let ftys := map fst (en_tn ef) in
+              miter (fun t => if nmem t ftys || is_some (tn_get e t) then ret tt else
+                              let! tg := sym t in
+                              err mi ("binding `" ++ gs_name fg ++ "` to `" ++ gs_name bg ++ "` captures `" ++ gs_name tg ++
+                                      "`, which is not in force here (assume or bind it)")) gtys ;;
               defined_link_inputs_compatible mi e ef eg fg bg target_fixed fneeds gneeds ;;
               functor_total 64 bg ;;
               let! h := link_body f fg bg in

@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame BodySoundCore BodyTy BodyTr
  CanonTypes CtxWalk FnSnapshot FnSnapshotAlign FnProviderForwardSignature ForwarderTrace
- InfoInvariant InfoPreserve InfoCache ForwarderPrototype NeedMapExec InstantiateTr ProviderSig TyOfSubst.
+ InfoInvariant InfoPreserve InfoCache ForwarderPrototype NeedMapExec InstantiateTr ProviderSig TyOfSubst RuleBKeep.
 Import ListNotations.
 Module A:=ExecutionModel.Elaboration.
 Local Strategy opaque[Nat.of_num_uint FUEL reqs type_requirements].
@@ -29,6 +29,7 @@ Proof.
  Loaded Decl Copied Home Whole Hi Hw Hc L)as Current.
  destruct fuel as[|fuel];[discriminate Whole|]. pose proof Whole as Run;cbn[match_fn_sig]in Run.
  apply bind_inv in Run as[info[s1[Info Run]]].
+ apply bind_inv in Run as(rbu&rbs&RBk&Run). pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  destruct(ok_fn_info_frame _ _ _ _ Hi Info)as[I1 F1].
  apply bind_inv in Run as[pairs[s2[Needs Run]]].
  assert(On:ok(require_needs(cx_mod c)e provider info))by(unfold require_needs;okt).

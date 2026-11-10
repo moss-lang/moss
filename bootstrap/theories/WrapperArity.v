@@ -1,6 +1,6 @@
 (* Successful signature checking supplies the eta adapter's real arity. *)
 From Stdlib Require Import List Bool Arith.
-From NM Require Import NMap Sx Elab ElabSound.
+From NM Require Import NMap Sx Elab ElabSound RuleBKeep.
 Lemma mmap_output_length:forall A B(f:A->M B)xs s ys sf,
  mmap f xs s=Good(ys,sf)->List.length ys=List.length xs.
 Proof.
@@ -24,6 +24,7 @@ Lemma match_fn_sig_arity:forall fuel c e pv wanted kind s sm sf,
 Proof.
  intros[|fuel]c e pv wanted kind s sm sf Run;[discriminate|];cbn[match_fn_sig]in Run.
  apply bind_inv in Run as(info&s1&Info&Run).
+ apply bind_inv in Run as(rbu&rbs&RBk&Run). pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  apply bind_inv in Run as(pairs&s2&Needs&Run).
  apply bind_inv in Run as(got&s3&Signature&Run).
  destruct(sig_eqb_in e got e wanted)eqn:Equal.

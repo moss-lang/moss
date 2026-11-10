@@ -1,7 +1,7 @@
 (* Named defined providers use actual context satisfaction and signature checks. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import ReifyData ExecutionModel NMap Sx Elab ElabSound WorldSound ElabFrame InfoPreserve
- BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig SourceSatisfiesGaps CtxMerge SignatureLeavesExec.
+ BodySoundCore BodyTr BodyTy Merge CanonTypes ProviderSig SourceSatisfiesGaps CtxMerge SignatureLeavesExec RuleBKeep.
 Import ListNotations.
 Local Open Scope list_scope.
 Module A:=ExecutionModel.Elaboration.
@@ -42,6 +42,7 @@ Proof.
  assert(Hw:st_w s=w)by(rewrite <-(fr_w _ _ AllFr);exact(lt_w _ _ _ _ _ L)).
  destruct fuel as[|fuel];[discriminate Run|]. cbn[match_fn_sig]in Run.
  apply bind_inv in Run as(info&si&Info&Run).
+ apply bind_inv in Run as(rbu&rbs&RBk&Run). pose proof(requirements_in_force_keep _ _ _ _ _ _ _ _ RBk)as ->.
  destruct(ok_fn_info_frame _ _ _ _ Hi Info)as[Ii1 Fi].
  apply bind_inv in Run as(pairs&sn&Needs&Run).
  assert(On:ok(require_needs(cx_mod c)e g info))by(unfold require_needs,require_merges;okt).

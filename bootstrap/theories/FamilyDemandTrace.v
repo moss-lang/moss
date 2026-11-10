@@ -42,6 +42,7 @@ Lemma apply_family_single:forall f c e fg th wanted s pre e' s',
 Proof.
  intros[|f]c e fg th wanted s pre e' s' E;[discriminate E|].
  cbn[apply_family]in E.
+ apply bind_inv in E as(u0&s0&Ck&E).
  apply bind_inv in E as(e1&s1&Types&E).
  apply bind_inv in E as([[xs e2]c2]&s2&App&E).
  apply bind_inv in E as(mem&s3&Mem&E).

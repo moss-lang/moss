@@ -23,6 +23,7 @@ Lemma apply_family_nonempty : forall f c e g th want pre e' s s',
  apply_family f c e g th want s=Good((pre,e'),s')->pre<>[].
 Proof.
  intros[|f]c e g th want pre e' s s' E;[discriminate E|]. cbn[apply_family]in E.
+ apply bind_inv in E as[u0[s0[E0 E]]].
  apply bind_inv in E as[e1[s1[E1 E]]].
  apply bind_inv in E as[[[ys e2]c2][s2[E2 E]]].
  pose proof(apply_abstract_nonempty _ _ _ _ _ _ _ _ _ E2)as Non.
