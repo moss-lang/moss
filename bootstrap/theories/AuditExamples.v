@@ -108,6 +108,17 @@ Example an_arbitrary_cast_entry_is_rejected :
     (Program [] [] 0 0 0 0 empty_environment [] [(7,CastSpec false 8 None)]).
 Proof. intro Valid. pose proof (no_library_casts _ Valid). discriminate. Qed.
 
+(* The oracle plan's N6 (AUDIT-CHANGES #94): a platform constant declared
+   with another type than `I32` (`val i32_one: ();` in lib/wasm.moss) does
+   not link. Platform.Entry asks the val's type in main's context to be the
+   platform's machine type I32, an abstract type symbol, which `()` is not. *)
+Example a_unit_platform_constant_is_rejected : forall W P C v w,
+  nlook v (c_vals C) = Some TUnit -> ~ Platform.Entry W P C (IVal v) (ValueProvision w).
+Proof.
+  intros W P C v w Ty E. destruct w; cbn in E; try contradiction.
+  destruct E as (t & Ty' & symbol & _ & _ & ->). rewrite Ty in Ty'. discriminate.
+Qed.
+
 (* The previous return bug is rejected by the real elaborator too. *)
 From NM Require Elab Sx Parse.
 Definition never_source :=

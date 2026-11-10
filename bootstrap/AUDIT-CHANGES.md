@@ -122,6 +122,7 @@ entry they belong to.
 | 91 | Main's platform provisions are Platform's contract (`PlatformEntry` moves from `ElaboratesIn` to `Platform.Linked`) | layout | none (`Builds` and `Ready` are unchanged) |
 | 92 | The language items go through one table (`lang_item`, `LangItem`) | layout | none (definitional) |
 | 93 | Recorded, not fixed: a body may not pin a fixed input that G takes (the oracle plan's N5) | layout | a fidelity gap of #71's (Audit rejects what both implementations run) |
+| 94 | Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6) | layout | none (Audit already rejects; the executable elaborator's gap) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2698,6 +2699,25 @@ executable tests unless noted.
   `link_site` table) would have to be revisited. That proof change was
   not made on this branch.
 - **Class.** A fidelity gap (criteria section 6), recorded with its fix.
+
+### 94. Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6; layout branch)
+- **The program.** `runtime_platform::machine_constants_have_machine_types`:
+  a `lib/wasm.moss` with `val i32_one: (); context Wasm = i32_one;`, and a
+  main that assumes `Wasm`. The oracle and native reject it ("platform I32
+  constant has an incompatible declared type"). The oracle plan found the
+  executable elaborator (branch `elab`) accepting it.
+- **Audit already rejects it.** main needs `i32_one`, so `Platform.Linked`
+  asks `Entry W P C (IVal v) (ValueProvision (VI32 _))`, which asks the
+  val's type in main's context to be `MachineType W "I32" t`: an abstract
+  type symbol in scope as `I32` in the library's `wasm.moss`. `()` is not
+  one. `AuditExamples.a_unit_platform_constant_is_rejected` proves that no
+  entry exists for a val of type `()` (a certificate root).
+- **The gap is the executable elaborator's.** `EaPlatform.platform_entry`
+  decides `PlatformEntry` (which constant) but not `Entry`'s type check
+  (its header lists "Platform.Linked's remaining checks" as a TODO). Its
+  `IVal` case should also check `machine_type "I32"` of the val's type in
+  `C`, as its `IFn` case checks `at_key`.
+- **Class.** None in Audit.
 
 ---
 

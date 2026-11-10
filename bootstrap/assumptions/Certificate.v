@@ -69,6 +69,7 @@ Definition certificate_roots : list {T : Type & T} := [
  root (@NM.AuditExamples.bare_return_requires_unit);
   root (@NM.AuditExamples.one_does_not_insert_a_multiply);
   root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
+  root (@NM.AuditExamples.a_unit_platform_constant_is_rejected);
   root (@NM.AuditBuildExample.public_build_is_inhabited);
   root (@NM.AuditBuildExample.built_program_runs);
   root (@NM.SourceSnapshot.source_read_iff);
