@@ -76,9 +76,9 @@ Lemma ref_cast : forall (array : bool) s,
   exists held raw, A.LangSym W "wasm" A.NSName (if array then "Arrayed" else "Boxed") held /\
     A.LangSym W "wasm" A.NSName (if array then "ArrayRef" else "StructRef") raw /\
     lookup_cast s (program_casts Prog) =
-      Some (CastSpec array held (Some (raw, TMachine (if array then MArrayRef else MStructRef)))).
+      Some (CastSpec array held (Some (raw, TMachine raw))).
 Proof.
-  intros array s Sym. destruct Reps as [reference [arr [Ref [Arr Casts]]]]. rewrite Casts.
+  intros array s Sym. destruct Reps as [_ [reference [arr [Ref [Arr Casts]]]]]. rewrite Casts.
   destruct array.
   - destruct Arr as [[n [t [h [Tag [Held [Raw ->]]]]]]|[None' _]]; [|exfalso; exact (None' s Sym)].
     pose proof (lang_sym_unique _ _ _ _ _ _ Sym Tag); subst n.
@@ -138,10 +138,10 @@ Hypothesis Bools : BoolSymbols W Prog.
 Variable m : subst.
 
 (* The meanings in force read each wasm machine type as its machine
-   (initial_machine_subst supplies exactly these at the entry). *)
+   (machine_subst supplies exactly these at the entry). *)
 Definition MachinesGround : Prop :=
-  forall name machine symbol, In (name, machine) A.initial_machines ->
-    A.LangSym W "wasm" A.NSName name symbol -> app_subst m (TAbs symbol) = TMachine machine.
+  forall symbol, In symbol (map fst (program_machines Prog)) ->
+    app_subst m (TAbs symbol) = TMachine symbol.
 
 (* A handle tag in a platform signature is a complete application whose
    raw-handle requirement is read as itself, as lib/wasm.moss writes it. *)
@@ -153,36 +153,48 @@ Definition HandleFormed (t : ty) : Prop :=
 
 Hypothesis Ground : MachinesGround.
 
-Lemma machine_ground : forall name machine t, In (name, machine) A.initial_machines ->
-  Platform.MachineType W name t -> app_subst m t = TMachine machine.
-Proof. intros name machine t In' [symbol [Sym [_ ->]]]. exact (Ground _ _ _ In' Sym). Qed.
+Lemma machine_ground : forall name class t, In (name, class) Platform.initial_machines ->
+  Platform.MachineType W name t ->
+  exists symbol, app_subst m t = TMachine symbol /\
+    A.nlook symbol (program_machines Prog) = Some class.
+Proof.
+  intros name class t Member [symbol [Sym [_ ->]]].
+  pose proof (represented_machine W Prog name class symbol Layouts Reps Member Sym) as Class.
+  exists symbol. split; [apply Ground; eauto using machine_lookup_in|exact Class].
+Qed.
 
-Lemma raw_ground : forall name param handle machine symbol args raw,
-  In (name, param, handle) handle_tags -> In (handle, machine) A.initial_machines ->
+Lemma raw_ground : forall name param handle class symbol args raw,
+  In (name, param, handle) handle_tags -> In (handle, class) Platform.initial_machines ->
   HandleFormed (TNom symbol args) -> A.LangSym W "wasm" A.NSName name symbol ->
   A.LangSym W "wasm" A.NSName handle raw ->
-  lookup_subst raw (PublicTypeRead.smap m args) = Some (TMachine machine).
+  lookup_subst raw (PublicTypeRead.smap m args) = Some (TMachine raw).
 Proof.
-  intros name param handle machine symbol args raw Tag Machine Formed Sym Raw.
+  intros name param handle class symbol args raw Tag Machine Formed Sym Raw.
   destruct (Formed _ _ _ _ _ Tag Sym eq_refl) as [_ Raws].
-  rewrite lookup_subst_nlook, nlook_smap, (Raws raw Raw). cbn. f_equal. exact (Ground _ _ _ Machine Raw).
+  rewrite lookup_subst_nlook, nlook_smap, (Raws raw Raw). cbn. f_equal.
+  apply Ground. eapply machine_lookup_in. eapply represented_machine; eassumption.
 Qed.
 
 Lemma keys_smap : forall (args : list (nat * ty)), map fst (PublicTypeRead.smap m args) = map fst args.
 Proof. intros args. unfold PublicTypeRead.smap. rewrite map_map. reflexivity. Qed.
 
-Lemma machine_value : forall H w mach, value_typed W P H w (TMachine mach) ->
-  match mach with
-  | MI32 => exists n, w = VI32 n | MI64 => exists n, w = VI64 n
-  | MF32 => exists n, w = VF32 n | MF64 => exists n, w = VF64 n
+Lemma machine_value : forall H w symbol class,
+  A.nlook symbol (program_machines Prog) = Some class ->
+  value_typed W P H w (TMachine symbol) ->
+  match class with
+  | MScalar 0 => exists n, w = VI32 n | MScalar 1 => exists n, w = VI64 n
+  | MScalar 2 => exists n, w = VF32 n | MScalar 3 => exists n, w = VF64 n
   | _ => True end.
 Proof.
-  intros H w mach Typed. remember (TMachine mach) as t eqn:E.
-  destruct Typed; inversion E; subst; eauto. destruct kind; exact I.
+  intros H w symbol class Class Typed. inversion Typed; subst;
+    match goal with Read : A.nlook _ (view_machines _) = Some _ |- _ =>
+      change (view_machines P) with (program_machines Prog) in Read;
+      rewrite Class in Read; injection Read as ->; cbn; eauto
+    end.
 Qed.
 
 Lemma ref_machine : forall array : bool,
-  In ((if array then "ArrayRef" else "StructRef"), (if array then MArrayRef else MStructRef)) A.initial_machines.
+  In ((if array then "ArrayRef" else "StructRef"), Platform.ref_class array) Platform.initial_machines.
 Proof. destruct array; in_list. Qed.
 
 (* A typed reference argument is a tagged handle the ghost heap types at
@@ -235,7 +247,7 @@ Proof.
   - unfold cast_enabled, type_argument. cbn [cast_handle]. rewrite Enabled. apply ty_eqb_spec; reflexivity.
   - cbn [cast_held]. rewrite lookup_subst_nlook, nlook_smap, Held. reflexivity.
   - exact Pay.
-  - destruct array; constructor.
+  - constructor. eapply represented_machine; [exact Layouts|exact Reps|apply ref_machine|exact RawSym].
   - exact Handle.
 Qed.
 
@@ -245,14 +257,15 @@ Proof.
   intros H t w [symbol [args [Sym ->]]] Formed Typed.
   assert (Tag : In ("Addr", "Memory", "I32") handle_tags) by in_list.
   destruct (layout_raw W Layouts _ _ _ symbol Tag Sym) as [raw [RawSym [Kind [_ Identity]]]].
-  pose proof (raw_ground _ _ _ MI32 symbol args raw Tag ltac:(in_list) Formed Sym RawSym) as Raw.
+  pose proof (raw_ground _ _ _ Platform.i32_class symbol args raw Tag ltac:(in_list) Formed Sym RawSym) as Raw.
+  pose proof (represented_machine W Prog "I32" Platform.i32_class raw Layouts Reps ltac:(in_list) RawSym) as Class.
   destruct (Formed _ _ _ _ _ Tag Sym eq_refl) as [Keys _].
   rewrite subst_nom in Typed. inversion Typed; subst.
   - match goal with Pay : A.PayloadOf _ _ _ ?payload, Inner : value_typed _ _ _ ?v ?payload |- _ =>
       destruct (raw_payload W symbol (PublicTypeRead.smap m args) payload raw ltac:(rewrite keys_smap; exact Keys) Identity Pay)
         as [_ Look];
       rewrite Raw in Look; injection Look as <-;
-      destruct (machine_value _ _ _ Inner) as [n ->]; eauto end.
+      destruct (machine_value _ _ _ _ Class Inner) as [n ->]; eauto end.
   - congruence.
   - match goal with Found : lookup_cast _ (view_casts _) = Some _ |- _ =>
       cbn [view_casts program_of] in Found; rewrite (addr_not_cast W Prog Layouts Reps symbol Sym) in Found;
@@ -290,14 +303,14 @@ Lemma shape_param : forall H t s w, Platform.ValueType W t s -> HandleFormed t -
   value_typed W P H w (app_subst m t) -> value_shape P w s.
 Proof.
   intros H t s w VT Formed Typed. destruct s; cbn in VT.
-  - rewrite (machine_ground "I32" MI32 t ltac:(in_list) VT) in Typed.
-    destruct (machine_value _ _ _ Typed) as [n ->]; exact I.
-  - rewrite (machine_ground "I64" MI64 t ltac:(in_list) VT) in Typed.
-    destruct (machine_value _ _ _ Typed) as [n ->]; exact I.
-  - rewrite (machine_ground "F32" MF32 t ltac:(in_list) VT) in Typed.
-    destruct (machine_value _ _ _ Typed) as [n ->]; exact I.
-  - rewrite (machine_ground "F64" MF64 t ltac:(in_list) VT) in Typed.
-    destruct (machine_value _ _ _ Typed) as [n ->]; exact I.
+  - destruct (machine_ground "I32" Platform.i32_class t ltac:(in_list) VT) as [symbol [Read Class]].
+    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+  - destruct (machine_ground "I64" Platform.i64_class t ltac:(in_list) VT) as [symbol [Read Class]].
+    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+  - destruct (machine_ground "F32" Platform.f32_class t ltac:(in_list) VT) as [symbol [Read Class]].
+    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+  - destruct (machine_ground "F64" Platform.f64_class t ltac:(in_list) VT) as [symbol [Read Class]].
+    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
   - subst t. cbn in Typed. inversion Typed; exact I.
   - destruct VT as [symbol [Sym ->]]. cbn in Typed.
     destruct (bool_value_shape W P H symbol w (proj1 Bools) Sym Typed) as [truth [falsity [T [F Shape]]]].
@@ -313,10 +326,14 @@ Lemma shape_result : forall H t s w, Platform.ValueType W t s ->
   s <> ShapeAddress -> s <> ShapeTag -> value_shape P w s -> value_typed W P H w (app_subst m t).
 Proof.
   intros H t s w VT NA NT Shape. destruct s; cbn in VT; try congruence.
-  - rewrite (machine_ground "I32" MI32 t ltac:(in_list) VT). destruct w; try contradiction; constructor.
-  - rewrite (machine_ground "I64" MI64 t ltac:(in_list) VT). destruct w; try contradiction; constructor.
-  - rewrite (machine_ground "F32" MF32 t ltac:(in_list) VT). destruct w; try contradiction; constructor.
-  - rewrite (machine_ground "F64" MF64 t ltac:(in_list) VT). destruct w; try contradiction; constructor.
+  - destruct (machine_ground "I32" Platform.i32_class t ltac:(in_list) VT) as [symbol [-> Class]].
+    destruct w; try contradiction; constructor; exact Class.
+  - destruct (machine_ground "I64" Platform.i64_class t ltac:(in_list) VT) as [symbol [-> Class]].
+    destruct w; try contradiction; constructor; exact Class.
+  - destruct (machine_ground "F32" Platform.f32_class t ltac:(in_list) VT) as [symbol [-> Class]].
+    destruct w; try contradiction; constructor; exact Class.
+  - destruct (machine_ground "F64" Platform.f64_class t ltac:(in_list) VT) as [symbol [-> Class]].
+    destruct w; try contradiction; constructor; exact Class.
   - subst t. destruct w; try contradiction; constructor.
   - destruct VT as [symbol [Sym ->]]. cbn. exact (bool_typed H symbol w Sym Shape).
   - cbn in Shape. contradiction.
@@ -495,7 +512,7 @@ Theorem gc_safe : forall W Prog argv read iface p held params ret m H s ws,
   Platform.Layouts W -> Platform.Representations W Prog ->
   M.interface_laws (program_of Prog argv read) iface -> M.supports iface p = true ->
   Platform.GCSignature W p params ret ->
-  MachinesGround W m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
+  MachinesGround Prog m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
   M.heap_ok iface (heap_predicates W (program_of Prog argv read) H) (M.external s) ->
   Forall2 (fun w t => value_typed W (program_of Prog argv read) H w (app_subst m t)) ws params ->
   prim_outcome W (program_of Prog argv read) iface H (app_subst m ret)
@@ -505,8 +522,9 @@ Proof.
   set (P := program_of Prog argv read) in *.
   assert (I32 : forall H t w, Platform.MachineType W "I32" t -> value_typed W P H w (app_subst m t) ->
     exists n, w = VI32 n).
-  { intros H0 t w MT Typed. rewrite (machine_ground W m Ground "I32" MI32 t ltac:(in_list) MT) in Typed.
-    exact (machine_value W Prog argv read _ _ _ Typed). }
+  { intros H0 t w MT Typed.
+    destruct (machine_ground W Prog Layouts Reps m Ground "I32" Platform.i32_class t ltac:(in_list) MT) as [symbol [Read Class]].
+    rewrite Read in Typed. exact (machine_value W Prog argv read _ _ _ _ Class Typed). }
   destruct p; try (exfalso; exact Sig).
   - (* PBox *) destruct params as [|heldt [|]]; try (exfalso; exact Sig). destruct Sig as [Sym RT].
     args_inv. rename x into v.
@@ -559,7 +577,8 @@ Proof.
     apply (gc_plain W P iface H s PArrLen held [x] (fun v => value_typed W P H v (app_subst m heldt))); auto.
     + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). apply href_of. exact Found.
     + intros extended w [_ [k ->]].
-      rewrite (machine_ground W m Ground "I32" MI32 ret ltac:(in_list) MT). constructor.
+      destruct (machine_ground W Prog Layouts Reps m Ground "I32" Platform.i32_class ret ltac:(in_list) MT) as [symbol [-> Class]].
+      constructor. exact Class.
   - (* PArrGet *) destruct params as [|array [|index [|]]]; try (exfalso; exact Sig). destruct Sig as [MT RT]. args_inv.
     destruct (ref_input W Prog argv read Layouts Reps m Ground H true array ret x RT ltac:(assumption) ltac:(assumption))
       as [s0 [a [Raw Found]]].
@@ -606,7 +625,7 @@ Theorem primitive_safe : forall W Prog argv read iface p held params ret m H st 
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
   M.interface_laws (program_of Prog argv read) iface -> M.supports iface p = true ->
   Platform.PrimitiveSignature W p params ret ->
-  MachinesGround W m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
+  MachinesGround Prog m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
   state_ok W (program_of Prog argv read) iface H st ->
   Forall2 (fun w t => value_typed W (program_of Prog argv read) H w (app_subst m t)) ws params ->
   prim_outcome W (program_of Prog argv read) iface H (app_subst m ret)

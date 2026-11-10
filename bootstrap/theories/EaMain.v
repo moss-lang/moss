@@ -131,11 +131,11 @@ Definition assemble (bound : nat) (entry : string) : M program :=
   let* _ := pure (finite_layouts W fuel bound) in
   let* st := get in
   let '(bl, tr, fl) := bool_syms E in
-  let* _ := check (expansion_ok W fuel (Program [] (collect (es_funs st) (es_next st) []) 0 0 0 0 env0 [] [])
+  let* _ := check (expansion_ok W fuel (Program [] (collect (es_funs st) (es_next st) []) 0 0 0 0 env0 [] [] [])
                      (es_lamcx st) (es_fns st) (es_funs st) (es_link st) bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
   ret (Program (collect (es_fns st) (es_next st) []) (collect (es_funs st) (es_next st) [])
-               bl tr fl main env0 (es_unsupported st) (casts E)).
+               bl tr fl main env0 (es_unsupported st) (casts E) (Platform.machine_table W)).
 
 End Main.
 

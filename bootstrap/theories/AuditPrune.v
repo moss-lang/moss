@@ -218,7 +218,7 @@ Definition prune_program (R : rsets) (p : program) : program :=
           (map (fun ub => (fst ub, prune_code R (snd ub))) (program_functors p))
           (program_bool p) (program_true p) (program_false p) (program_main p)
           (prune_env R (program_main p) (program_environment p))
-          (program_unsupported p) (program_casts p).
+          (program_unsupported p) (program_casts p) (program_machines p).
 
 (* The pass. *)
 Definition prune (p : program) : program :=

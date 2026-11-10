@@ -21,10 +21,9 @@ let fld_back s = match int_of_string_opt s with
 (* Audit's machine and record types have no ExecutionModel form; they cross
    the primitive boundary (a checked handle's held type) encoded, as a
    negative symbol and a nominal -1000 over interned field names. *)
-let machines = [A.MI32; A.MI64; A.MF32; A.MF64; A.MStructRef; A.MArrayRef]
 let rec ty (t : ExecutionModel.ty) : A.ty = match t with
   | TUnit -> A.TUnit
-  | TAbs s when s < 0 && s >= -6 -> A.TMachine (List.nth machines (-1 - s))
+  | TAbs s when s < 0 -> A.TMachine (-1 - s)
   | TAbs s -> A.TAbs s
   | TNom (n, th) when n = -1000 -> A.TRecord (List.map (fun (f, t) -> (fld f, ty t)) th)
   | TNom (n, th) -> A.TNom (n, List.map (fun (s, t) -> (s, ty t)) th)
@@ -33,7 +32,7 @@ let rec ty_back (t : A.ty) : ExecutionModel.ty = match t with
   | A.TUnit -> TUnit | A.TAbs s -> TAbs s
   | A.TNom (n, th) -> TNom (n, List.map (fun (s, t) -> (s, ty_back t)) th)
   | A.TUnion ts -> TUnion (List.map ty_back ts)
-  | A.TMachine m -> let rec ix i = function [] -> 0 | x :: r -> if x = m then i else ix (i + 1) r in TAbs (-1 - ix 0 machines)
+  | A.TMachine s -> TAbs (-1 - s)
   | A.TRecord fs -> TNom (-1000, List.map (fun (f, t) -> (fld_back f, ty_back t)) fs)
 
 (* The two prim types (and their operand enumerations) are declared

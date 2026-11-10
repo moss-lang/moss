@@ -140,8 +140,8 @@ Qed.
 (* A platform family's fixed machine-type inputs mean the machine types
    (the platform's provision exists only there, lib/wasm.moss). *)
 Definition PlatformFixed (u : nat) (gfx : subst) : Prop :=
-  forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-    A.Fixed W u x -> lookup_subst x gfx = Some (TMachine mach).
+  forall x, In x (map fst (program_machines Prog)) ->
+    A.Fixed W u x -> lookup_subst x gfx = Some (TMachine x).
 
 (* PlatformFixed syntactically: the context the family was provided in
    (main's) records each fixed machine-type input as itself, and gfx is
@@ -150,7 +150,7 @@ Definition PlatformRead (u : nat) (gfx : subst) : Prop :=
   exists fx gm, gfx = ground_fixed gm fx /\
     (forall x, A.Fixed W u x -> exists tx, In (x, tx) fx) /\
     (forall x t t', In (x, t) fx -> In (x, t') fx -> t = t') /\
-    (forall name mach x tx, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
+    (forall x tx, In x (map fst (program_machines Prog)) ->
        In (x, tx) fx -> tx = TAbs x).
 
 (* A copy `bind u = h;` at its site C1, syntactically (BFunCopy): fx is

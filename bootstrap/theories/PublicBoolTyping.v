@@ -6,15 +6,15 @@ Import Audit.Semantics ListNotations.
 Local Open Scope string_scope.
 Module A := Audit.Semantics.Elaboration.
 
-Lemma handle_type_not_nominal : forall kind n xs, ~ handle_type kind (TNom n xs).
-Proof. intros kind n xs H; inversion H. Qed.
+Lemma handle_type_not_nominal : forall P kind n xs, ~ handle_type P kind (TNom n xs).
+Proof. intros P kind n xs H; inversion H. Qed.
 
-Lemma handle_type_nominal_union : forall kind members,
-  Forall (fun m => exists n xs, m = TNom n xs) members -> ~ handle_type kind (TUnion members).
+Lemma handle_type_nominal_union : forall P kind members,
+  Forall (fun m => exists n xs, m = TNom n xs) members -> ~ handle_type P kind (TUnion members).
 Proof.
-  intros kind members Nominal H. inversion H as [| |? member ? Shape Member]; subst.
+  intros P kind members Nominal H. inversion H as [|? member ? Shape Member]; subst.
   rewrite Forall_forall in Nominal. destruct (Nominal member Member) as [n [xs ->]].
-  exact (handle_type_not_nominal _ _ _ Shape).
+  exact (handle_type_not_nominal _ _ _ _ Shape).
 Qed.
 
 Section Bool.
@@ -52,7 +52,7 @@ Proof.
       first [rewrite (unit_member_typed H _ _ TrueUnit MemberTyped)
             |rewrite (unit_member_typed H _ _ FalseUnit MemberTyped)]; auto end.
   - congruence.
-  - exfalso. match goal with Read : A.PayloadOf W bool [] ?payload, Shape : handle_type _ ?payload |- _ =>
+  - exfalso. match goal with Read : A.PayloadOf W bool [] ?payload, Shape : handle_type P _ ?payload |- _ =>
       destruct (Members _ Read) as [->| ->];
       (eapply handle_type_nominal_union; [|exact Shape]);
       repeat constructor; do 2 eexists; reflexivity end.

@@ -166,8 +166,8 @@ Variables (d d2 : environment) (th : subst) (M : nat -> ty).
 Let de := CRz.CSg.FL.CF.CN.CC.LR.PA.app_env Prog argv read d code th d2.
 Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list.
 Hypothesis Gr : forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground de t = ground d (app_subst th t).
-Hypothesis MachG : forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-  A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine mach.
+Hypothesis MachG : forall x, In x (map fst (program_machines Prog)) ->
+  A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x.
 
 (* Each position of the family's own result is the primitive its code
    installs for the item there, callable at the item's signature read at
@@ -436,16 +436,16 @@ Proof.
       by exact (CRz.CSg.FL.CF.CN.CC.LR.PA.app_env_ground Prog argv read d code th d2 Ch0 Cu f _ _ _ FB Thf Kin).
     (* the code reads a fixed machine input as its machine type: the root
        closure records it, and the chain keeps the root's fixed readings *)
-    assert (MachG : forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-      A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine mach).
-    { intros name mach x Inm Lang F0 Ix0.
+    assert (MachG : forall x, In x (map fst (program_machines Prog)) ->
+      A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x).
+    { intros x Inm F0 Ix0.
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
       { destruct CL as (gg & h' & Cu' & nsu' & Cg & nsg & dc & E & _). injection E; intros; discriminate. }
       { destruct CCp as (h' & Cu' & nsu' & Ch' & nsh' & code' & sms1 & dc & rms1 & rm1 & gfh1 & E & _). injection E; intros.
         destruct sms1; discriminate. }
       destruct CP as (code' & _ & _ & Mach).
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn x F0) as [Fu Egf].
-      pose proof (Mach name mach x Inm Lang F0) as Mx. rewrite Egf, (Fixd x Fu) in Mx. injection Mx as Mx.
+      pose proof (Mach x Inm F0) as Mx. rewrite Egf, (Fixd x Fu) in Mx. injection Mx as Mx.
       rewrite (Gr (TAbs x) ltac:(intros y [<-|[]]; exact Ix0)). cbn [app_subst]. rewrite (ThL x (Kin x Ix0)). exact Mx. }
     pose proof (platform_level prims_ground rr H h0 code Ch0 needs outputs keys bindings FD d d2 th (fun t => TAbs t) Gr MachG) as Root0.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H h0 Ch0 needs (map (A.rkey_of outputs) keys)

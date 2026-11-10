@@ -272,7 +272,7 @@ Definition fp_program (U : usym) (c : functor_code) (p : program) : program :=
   Program (map (fun fb => (fst fb, fp_e U c (snd fb))) (program_functions p))
           (map (fun ub => (fst ub, fp_code U c (snd ub))) (program_functors p))
           (program_bool p) (program_true p) (program_false p) (program_main p)
-          (program_environment p) (program_unsupported p) (program_casts p).
+          (program_environment p) (program_unsupported p) (program_casts p) (program_machines p).
 
 Definition fast_one (U H : usym) (p : program) : program :=
   match Elaboration.nlook H (program_functors p) with

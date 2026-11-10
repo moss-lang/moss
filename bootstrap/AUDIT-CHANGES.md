@@ -130,6 +130,7 @@ entry they belong to.
 | 96 | A copy reads its source as F does at every application of F (`CopyInterpretation`: H's merges, needs and result compared at the copy site's fixed readings; corrects #32) | copyfix | relaxation toward both implementations |
 | 97 | Recorded, not fixed: needs at a site-made merge are matched by syntax (BFunCopy since #96; `LinkBody` as strict as #32 was) | linkfix | a coherence gap (acceptance depends on a merge's representative) and a fidelity gap; folded into the representative-free refactor |
 | 100 | Main's root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`) | sep S0 | none (definitional regrouping) |
+| 101 | Machine types and their classes use a table keyed by declaration symbol | sep S1 | representation change |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3133,6 +3134,44 @@ executable tests unless noted.
   `AuditBuildExample.main_lang_items` proves it of the example world (it
   loads no `lib/bool.moss`).
 - **Class.** None (definitional, and a regrouping).
+
+### 101. Machine types carry their declaration symbols (Base separation S1)
+
+- **Rule.** `TMachine s` is an inert type identified by its declaration
+  symbol `s`. The program and its execution view carry a table from
+  machine type symbols to scalar sorts or reference kinds. `InitialTypes`
+  substitutes `TMachine s` for each table key `s`. The platform's table
+  identifies the four Wasm scalar types and the two GC reference types.
+  Each cast entry checks the machine type of its own raw handle.
+- **Why.** The language reads the table and uses declaration identities
+  (criteria section 8). The platform supplies the Wasm names and classifies
+  their symbols. The fixed-machine premises and the entry safety proof use
+  the same table as the executable elaborator. The optimized interpreters
+  retain it when transforming a program. The host adapter preserves a
+  declaration symbol in the legacy machine's checked handle header.
+- **Alternatives.** An abstract type represented as `TAbs s` would be read
+  again under later substitutions. The separate constructor preserves
+  its meaning across rebinding, including when a saved type appears in a
+  reference header. The table associates that constructor with the
+  platform's representation at the original declaration.
+- **Fidelity.** On a linked program, the selected declarations are distinct
+  by `Platform.Layouts`. Each former machine role corresponds to its own
+  declaration symbol. The role of a header's type can therefore be
+  recovered from the program table. The following checks exercise both
+  kinds of reference and all four scalar representations.
+
+  | Program | Native before → after | moss-ref before → after | Audit before → after |
+  |---|---|---|---|
+  | [float](../tests/wasi/float.moss) | same output | byte-identical output | scalar role → its declaration symbol |
+  | [gc_tree](../tests/wasi/gc_tree.moss) | same output | byte-identical output | struct role → its declaration symbol |
+  | [gc_array](../tests/wasi/gc_array.moss) | same output | byte-identical output | array role → its declaration symbol |
+
+- **Proof.** `public_safety` uses the table for value typing, cast payload
+  typing, primitive signatures, and grounding the fixed machine inputs of
+  platform families. The certificate checks the exact public statement
+  and its kernel-primitive assumptions. The unused
+  `AuditRepresentation.v` relation for the old elaborator is removed.
+- **Class.** Representation change (criterion 8, platform separation).
 
 ---
 

@@ -45,7 +45,7 @@ Theorem check_tag_preserves : forall W P H d tag arguments value payload,
   (forall schema, lookup_cast tag (view_casts P) = Some schema ->
     guard_complete schema arguments /\
     (cast_enabled schema (ground_arguments d arguments) = true ->
-      handle_type (cast_array schema) payload)) ->
+      handle_type P (cast_array schema) payload)) ->
   match R.check_tag P d tag arguments value with
   | Normal result => value_typed W P H result (TNom tag (ground_arguments d arguments))
   | Trap _ => True

@@ -3,16 +3,12 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit.
 Import Audit.Semantics ListNotations.
 
-Lemma machine_eqb_spec : forall left right,
-  machine_eqb left right = true <-> left = right.
-Proof. destruct left, right; cbn [machine_eqb]; split; congruence. Qed.
-
 Theorem ty_eqb_spec : forall left right,
   ty_eqb left right = true <-> left = right.
 Proof.
   fix IH 1. intros left right; destruct left as [m|fields| |t|n th|ms]; destruct right;
     cbn [ty_eqb]; try (split; congruence).
-  - rewrite machine_eqb_spec. split; congruence.
+  - rewrite Nat.eqb_eq. split; congruence.
   - assert (ListEqual : forall other,
       (fix go (fs gs : list (string * ty)) :=
         match fs, gs with

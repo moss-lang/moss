@@ -10,6 +10,67 @@ Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
+Lemma machine_table_lookup : forall W name mach x, Platform.Layouts W -> In (name, mach) Platform.initial_machines ->
+  A.LangSym W "wasm" A.NSName name x -> A.nlook x (Platform.machine_table W) = Some mach.
+Proof.
+  intros W name mach x [_ [Uniq _]] Inm Lang.
+  pose proof Lang as (d & p & Decl & Lib & Scope).
+  unfold A.LibraryModule in Lib. unfold Platform.machine_table.
+  destruct (A.w_library W) as [dir|] eqn:Ld; [|contradiction]. subst p.
+  change (String.append dir (String.append "wasm" ".moss")) with (String.append dir "wasm.moss") in Scope.
+  assert (Abs : forall n' m', In (n', m') Platform.initial_machines -> In n' Platform.abstract_names)
+    by (intros n' m' I; cbn in I; repeat (destruct I as [E|I]; [injection E as <- _; cbn; tauto|]); contradiction).
+  assert (Names : NoDup (map fst Platform.initial_machines)) by (cbn; repeat constructor; cbn; intuition discriminate).
+  assert (Gen : forall l, incl l Platform.initial_machines -> NoDup (map fst l) -> In (name, mach) l ->
+    A.nlook x (flat_map (fun q => match A.w_scope W (String.append dir "wasm.moss") A.NSName (fst q) with
+      | Some (A.ESym symbol) => match A.w_decl W symbol with Some _ => [(symbol, snd q)] | None => [] end
+      | _ => [] end) l) = Some mach).
+  { induction l as [|[n' m'] rest IH]; intros Sub Nd Il; [contradiction|].
+    inversion Nd as [|? ? Out Nd']; subst. cbn [flat_map fst snd].
+    destruct (A.w_scope W (String.append dir "wasm.moss") A.NSName n') as [[s'|t']|] eqn:E.
+    - destruct (A.w_decl W s') eqn:D.
+      2: { destruct Il as [Eq|Il].
+           - injection Eq as -> ->. rewrite Scope in E. injection E as <-. congruence.
+           - apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il]. }
+      cbn [app A.nlook]. destruct (Nat.eqb_spec x s') as [->|Ne].
+      + assert (L' : A.LangSym W "wasm" A.NSName n' s') by (exists d, (String.append dir "wasm.moss");
+          split; [exact Decl|split; [unfold A.LibraryModule; rewrite Ld; reflexivity|exact E]]).
+        destruct Il as [Eq|Il]; [injection Eq as -> ->; reflexivity|].
+        exfalso. apply Out. replace n' with name; [change name with (fst (name, mach)); apply in_map, Il|].
+        exact (Uniq name n' s' (Abs name mach (Sub _ (or_intror Il))) (Abs n' m' (Sub _ (or_introl eq_refl))) Lang L').
+      + destruct Il as [Eq|Il]; [injection Eq as -> ->; congruence|].
+        apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il].
+    - cbn [app]. destruct Il as [Eq|Il]; [injection Eq as -> ->; congruence|].
+      apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il].
+    - cbn [app]. destruct Il as [Eq|Il]; [injection Eq as -> ->; congruence|].
+      apply IH; [intros q Iq; apply Sub; right; exact Iq|exact Nd'|exact Il]. }
+  apply Gen; [intros q Iq; exact Iq|exact Names|exact Inm].
+Qed.
+
+Lemma machine_lookup_in : forall (machines : list (tsym * machine_class)) symbol class,
+  A.nlook symbol machines = Some class -> In symbol (map fst machines).
+Proof.
+  intros machines symbol class Lookup.
+  change symbol with (fst (symbol, class)). apply in_map, nlook_in. exact Lookup.
+Qed.
+
+Lemma lookup_machine_subst : forall machines symbol,
+  In symbol (map fst machines) -> lookup_subst symbol (A.machine_subst machines) = Some (TMachine symbol).
+Proof.
+  induction machines as [|[key class] rest IH]; intros symbol Member; [contradiction|].
+  cbn in *. destruct (Nat.eqb_spec symbol key) as [->|Different]; [reflexivity|].
+  destruct Member as [->|Member]; [contradiction|auto].
+Qed.
+
+Lemma represented_machine : forall W Prog name class symbol,
+  Platform.Layouts W -> Platform.Representations W Prog ->
+  In (name, class) Platform.initial_machines -> A.LangSym W "wasm" A.NSName name symbol ->
+  A.nlook symbol (program_machines Prog) = Some class.
+Proof.
+  intros W Prog name class symbol Layouts [Table _] Member Named.
+  rewrite Table. exact (machine_table_lookup W name class symbol Layouts Member Named).
+Qed.
+
 Section Layout.
 Variables (W : A.world) (Prog : program).
 
@@ -89,9 +150,9 @@ Lemma cast_entry : forall s schema,
   exists (array : bool) (held : tsym) (raw : tsym),
     A.LangSym W "wasm" A.NSName (if array then "Array" else "Ref") s /\
     A.LangSym W "wasm" A.NSName (if array then "ArrayRef" else "StructRef") raw /\
-    schema = CastSpec array held (Some (raw, TMachine (if array then MArrayRef else MStructRef))).
+    schema = CastSpec array held (Some (raw, TMachine raw)).
 Proof.
-  intros s schema Found. destruct Reps as [reference [array [Ref [Arr Casts]]]].
+  intros s schema Found. destruct Reps as [_ [reference [array [Ref [Arr Casts]]]]].
   rewrite Casts in Found.
   destruct Ref as [[n [t [h [Tag [_ [Raw ->]]]]]]|[_ ->]]; cbn in Found.
   - destruct (Nat.eqb_spec s n) as [->|_].
@@ -107,13 +168,14 @@ Qed.
 Lemma cast_layout : forall s schema,
   lookup_cast s (program_casts Prog) = Some schema ->
   A.kind_sym W s = Some A.DKTag /\
-  exists (array : bool) (raw : tsym), schema = CastSpec array (cast_held schema) (Some (raw, TMachine (if array then MArrayRef else MStructRef))) /\
+  exists (array : bool) (raw : tsym), schema = CastSpec array (cast_held schema) (Some (raw, TMachine raw)) /\
     cast_array schema = array /\
-    A.PayloadOf W s (identity_args (A.w_reqs W s)) (TAbs raw).
+    A.PayloadOf W s (identity_args (A.w_reqs W s)) (TAbs raw) /\
+    A.nlook raw (program_machines Prog) = Some (Platform.ref_class array).
 Proof.
   intros s schema Found.
   destruct (cast_entry s schema Found) as [array [held [raw [Tag [Raw ->]]]]].
-  destruct Layouts as [_ [_ [RefLayout [ArrLayout _]]]].
+  destruct (proj2 (proj2 Layouts)) as [RefLayout [ArrLayout _]].
   destruct (if array as b return
       A.LangSym W "wasm" A.NSName (if b then "Array" else "Ref") s ->
       exists param raw' rest, A.LangSym W "wasm" A.NSName (if b then "Arrayed" else "Boxed") param /\
@@ -123,7 +185,9 @@ Proof.
     then ArrLayout s else RefLayout s) as [param [raw' [rest [_ [Raw' [Kind [_ Pay]]]]]]];
     [destruct array; exact Tag|].
   pose proof (lang_sym_unique _ _ _ _ _ _ Raw Raw') as <-.
-  split; [exact Kind|]. exists array, raw. split; [reflexivity|]. split; [reflexivity|exact Pay].
+  split; [exact Kind|]. exists array, raw. split; [reflexivity|]. split; [reflexivity|]. split; [exact Pay|].
+  eapply represented_machine; [exact Layouts|exact Reps| |exact Raw].
+  destruct array; cbn; tauto.
 Qed.
 
 Lemma unit_not_cast : forall s, A.kind_sym W s = Some A.DKUnit ->
@@ -155,7 +219,7 @@ Proof.
     + exact (payload_subst W (type_meanings d) _ _ _ Pay).
     + exact Typed.
     + intros schema Found.
-      destruct (cast_layout W Prog Layouts Reps s schema Found) as [_ [array [raw [Schema [Array Identity]]]]].
+      destruct (cast_layout W Prog Layouts Reps s schema Found) as [_ [array [raw [Schema [Array [Identity Class]]]]]].
       destruct (raw_payload W s xs pay raw Keys Identity Pay) as [_ Raw].
       rewrite Schema. split.
       * intros symbol expected Handle. cbn in Handle. injection Handle as <- _. eauto.
@@ -163,7 +227,7 @@ Proof.
         unfold type_argument in Enabled. rewrite lookup_ground_arguments, Raw in Enabled.
         cbn in Enabled. apply ty_eqb_spec in Enabled.
         change (app_subst (type_meanings d) pay) with (ground d pay) in Enabled.
-        cbn [cast_array]. rewrite Enabled. destruct array; constructor.
+        cbn [cast_array]. rewrite Enabled. constructor. exact Class.
   - unfold R.check_tag. cbn [view_casts program_of]. rewrite (unit_not_cast W Prog Layouts Reps s Unit).
     inversion Typed; subst. apply TypedUnitTag. exact Unit.
 Qed.

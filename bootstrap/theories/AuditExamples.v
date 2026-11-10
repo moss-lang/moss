@@ -67,7 +67,7 @@ Module Host <: HOST.
 End Host.
 Module Model := Public Host.
 Module Reference := Model.Reference.
-Definition unit_program : program := Program [(1,EUnit)] [] 0 0 0 1 empty_environment [] [].
+Definition unit_program : program := Program [(1,EUnit)] [] 0 0 0 1 empty_environment [] [] [].
 Definition unit_view := program_of unit_program [] (fun _ => None).
 Definition initial : Model.state := Model.World [] (fun _ => None) tt.
 
@@ -84,7 +84,7 @@ Example records_are_structural :
   app_subst [(7,TUnit)] (TRecord [("field",TAbs 7)]) = TRecord [("field",TUnit)].
 Proof. reflexivity. Qed.
 Example machine_identities_do_not_need_nominal_names :
-  app_subst [(7,TUnit)] (TMachine MStructRef) = TMachine MStructRef.
+  app_subst [(7,TUnit)] (TMachine 7) = TMachine 7.
 Proof. reflexivity. Qed.
 
 Definition no_library : world :=
@@ -96,7 +96,7 @@ Proof. intros library ns name symbol [d [p [Impossible _]]]. discriminate. Qed.
 Lemma no_library_casts : forall P,
   Platform.Representations no_library P -> program_casts P = [].
 Proof.
-  intros P [reference [array [Ref [Arr Table]]]].
+  intros P [_ [reference [array [Ref [Arr Table]]]]].
   destruct Ref as [[n [t [h [Named _]]]]|[_ ->]];
     [exfalso; eapply no_library_symbols; exact Named|].
   destruct Arr as [[n [t [h [Named _]]]]|[_ ->]];
@@ -105,7 +105,7 @@ Proof.
 Qed.
 Example an_arbitrary_cast_entry_is_rejected :
   ~ Platform.Representations no_library
-    (Program [] [] 0 0 0 0 empty_environment [] [(7,CastSpec false 8 None)]).
+    (Program [] [] 0 0 0 0 empty_environment [] [(7,CastSpec false 8 None)] []).
 Proof. intro Valid. pose proof (no_library_casts _ Valid). discriminate. Qed.
 
 (* The oracle plan's N6 (AUDIT-CHANGES #94): a platform constant declared
@@ -138,14 +138,14 @@ Example no_return_without_a_function : forall W P F C exp code t,
 Proof. intros W P F C exp code t NoTarget Related. inversion Related; subst; congruence. Qed.
 
 Definition output_program := Program []
-  [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine MI32)] [])]
-  0 0 0 0 empty_environment [] [].
+  [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine 0)] [])]
+  0 0 0 0 empty_environment [] [] [].
 Definition output_environment :=
   Environment [] [(IFun 3,FunctorClosure 2 None empty_environment None)].
 Example fresh_output_meaning_is_exported :
   Reference.apply_functor 6 (program_of output_program [] (fun _ => None))
     output_environment 3 [] [(1,9)] [] [] (Model.default_interface,initial) =
-  inl (EnvironmentWithAliases [(9,TMachine MI32)] [(1,TMachine MI32)] [],
+  inl (EnvironmentWithAliases [(9,TMachine 0)] [(1,TMachine 0)] [],
        (Model.default_interface,initial)).
 Proof. reflexivity. Qed.
 

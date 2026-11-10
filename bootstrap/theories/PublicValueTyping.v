@@ -24,11 +24,12 @@ Definition ordinary_tag (P : program_view) (tag : nsym) (arguments : subst) : Pr
   | Some schema => cast_enabled schema arguments = false
   end.
 
-Inductive handle_type : bool -> ty -> Prop :=
-| StructHandle : handle_type false (TMachine MStructRef)
-| ArrayHandle : handle_type true (TMachine MArrayRef)
+Inductive handle_type (P : program_view) : bool -> ty -> Prop :=
+| MachineHandle : forall kind symbol,
+    A.nlook symbol (view_machines P) = Some (Platform.ref_class kind) ->
+    handle_type P kind (TMachine symbol)
 | HandleUnion : forall kind member members,
-    handle_type kind member -> In member members -> handle_type kind (TUnion members).
+    handle_type P kind member -> In member members -> handle_type P kind (TUnion members).
 
 (* Bare handles occur at the host boundary. Checked handles additionally
    retain the allocation's kind and held-type header through unpacking. *)
@@ -47,10 +48,18 @@ Variables (W : A.world) (P : program_view).
 
 Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
 | TypedUnit : value_typed H VUnit TUnit
-| TypedI32 : forall bits, value_typed H (VI32 bits) (TMachine MI32)
-| TypedI64 : forall bits, value_typed H (VI64 bits) (TMachine MI64)
-| TypedF32 : forall bits, value_typed H (VF32 bits) (TMachine MF32)
-| TypedF64 : forall bits, value_typed H (VF64 bits) (TMachine MF64)
+| TypedI32 : forall bits symbol,
+    A.nlook symbol (view_machines P) = Some Platform.i32_class ->
+    value_typed H (VI32 bits) (TMachine symbol)
+| TypedI64 : forall bits symbol,
+    A.nlook symbol (view_machines P) = Some Platform.i64_class ->
+    value_typed H (VI64 bits) (TMachine symbol)
+| TypedF32 : forall bits symbol,
+    A.nlook symbol (view_machines P) = Some Platform.f32_class ->
+    value_typed H (VF32 bits) (TMachine symbol)
+| TypedF64 : forall bits symbol,
+    A.nlook symbol (view_machines P) = Some Platform.f64_class ->
+    value_typed H (VF64 bits) (TMachine symbol)
 | TypedRecord : forall values fields,
     fields_typed H values fields -> value_typed H (VRecord values) (TRecord fields)
 | TypedTag : forall tag arguments payload value,
@@ -62,13 +71,14 @@ Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
     A.kind_sym W tag = Some A.DKUnit -> value_typed H (VTag tag VUnit) (TNom tag [])
 | TypedUnion : forall value member members,
     value_typed H value member -> In member members -> value_typed H value (TUnion members)
-| TypedRawHandle : forall kind held value,
+| TypedRawHandle : forall kind held value symbol,
+    A.nlook symbol (view_machines P) = Some (Platform.ref_class kind) ->
     handle_typed H kind held value ->
-    value_typed H value (TMachine (if kind then MArrayRef else MStructRef))
+    value_typed H value (TMachine symbol)
 | TypedHeapTag : forall tag arguments schema held payload value,
     lookup_cast tag (view_casts P) = Some schema -> cast_enabled schema arguments = true ->
     lookup_subst (cast_held schema) arguments = Some held ->
-    A.PayloadOf W tag arguments payload -> handle_type (cast_array schema) payload ->
+    A.PayloadOf W tag arguments payload -> handle_type P (cast_array schema) payload ->
     handle_typed H (cast_array schema) held value ->
     value_typed H (VTag tag value) (TNom tag arguments)
 with fields_typed (H : heap_types) : list (fld * value) -> list (fld * ty) -> Prop :=
@@ -109,11 +119,10 @@ Proof.
 Qed.
 
 Theorem handle_payload_typed : forall H kind tau held value,
-  handle_type kind tau -> handle_typed H kind held value -> value_typed H value tau.
+  handle_type P kind tau -> handle_typed H kind held value -> value_typed H value tau.
 Proof.
   intros H kind tau held value Shape; induction Shape; intro Typed.
-  - exact (TypedRawHandle H false held value Typed).
-  - exact (TypedRawHandle H true held value Typed).
+  - eapply TypedRawHandle; eassumption.
   - eapply TypedUnion; eauto.
 Qed.
 
@@ -121,25 +130,17 @@ Theorem empty_union_uninhabited : forall H value,
   ~ value_typed H value (TUnion []).
 Proof. intros H value Typed; inversion Typed; subst; contradiction. Qed.
 
-Theorem machine_handle_typed : forall H (kind : bool) value,
-  value_typed H value (TMachine (if kind then MArrayRef else MStructRef)) ->
-  exists held, handle_typed H kind held value.
-Proof.
-  intros H kind value Typed. destruct kind; inversion Typed; subst;
-    match goal with k : bool |- _ => destruct k end; try discriminate;
-    eexists; eassumption.
-Qed.
-
 Theorem checked_header_typed : forall H kind held address tau,
   value_typed H (VCheckedHandle kind held address) tau ->
-  H address = Some (kind, held) /\ handle_type kind tau.
+  H address = Some (kind, held) /\ handle_type P kind tau.
 Proof.
   intros H kind held address tau Typed.
   remember (VCheckedHandle kind held address) as value eqn:Shape.
   induction Typed; inversion Shape; subst.
   - destruct (IHTyped eq_refl) as [Cell Member].
     split; [exact Cell|eapply HandleUnion; eassumption].
-  - inversion H0; subst. split; [assumption|destruct kind; constructor].
+  - match goal with Header : handle_typed _ _ _ _ |- _ => inversion Header; subst end.
+    split; [assumption|constructor; assumption].
 Qed.
 
 Theorem tagged_payload_typed : forall H tag arguments value,

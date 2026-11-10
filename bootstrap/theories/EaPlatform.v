@@ -1,12 +1,6 @@
-(* ------------------------------------------------------------------------ *)
-(* EaPlatform.v — main's initial environment (PlatformEntry, InitialTypes),*)
-(* the platform families' functor code (Platform.Family), the casts        *)
-(* (Platform.Representations) and Bool's symbols.                          *)
-(*                                                                           *)
-(* TODO: Platform.Linked's remaining checks (EntryPoint, Layouts, AtKey,   *)
-(* HandlesRead, MachinesFixed, MethodsDistinct, FixedMachinesRead) are not *)
-(* yet decided here; see elab-STATUS.md.                                   *)
-(* ------------------------------------------------------------------------ *)
+(* EaPlatform.v builds main's initial environment, the platform families'
+   code, and the machine and cast tables. It also checks the platform's
+   linking clauses and supplies the language-item checks for main. *)
 
 From Stdlib Require Import List String Bool Arith PrimInt63 Uint63.
 From NM Require Import Audit EaBase EaTypes EaCall EaFamily.
@@ -133,9 +127,8 @@ Definition machines_fixed (u : nat) (inputs outputs : cx) (k : item) : bool :=
       match cmth outputs r m with
       | Some g =>
           let gs := flat_map gens (sg_ret g :: r :: sg_params g) in
-          forallb (fun nm => match wasm_sym (fst nm) with
-            | Some sym => negb (nmem sym gs) || (nmem sym (fixed W fuel u) && bound_in inputs sym)
-            | None => true end) initial_machines
+          forallb (fun sym => negb (nmem sym gs) || (nmem sym (fixed W fuel u) && bound_in inputs sym))
+            (map fst (Platform.machine_table W))
       | None => true end
   | _ => true end.
 Definition detached_method (m : nat) : bool :=
@@ -231,22 +224,21 @@ Definition platform_code (u : nat) : er functor_code :=
   let! _ := rcheck (methods_distinct keys) (at_sym u ("the platform functor " ++ nu ++ " provides two items with one method")) in
   Ok (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) [] [] binds (map (rkof outputs) keys)).
 
-(* SOUND: fixed_machines_read C u = true <-> Platform.FixedMachinesRead W C u *)
+(* SOUND: with the program's machine table and a formed context, this
+   checks Platform.FixedMachinesRead P C u. *)
 Definition fixed_machines_read (C : cx) (u : nat) : bool :=
   match cfun C u with
   | None => true
   | Some fx =>
-      forallb (fun nm => match wasm_sym (fst nm) with
-        | Some sym =>
-            match lookup_subst sym fx with
-            | Some t =>
-                let c := canon C (TAbs sym) in
-                ty_eqb (canon C t) c &&
-                match c with TAbs _ => true | _ => false end &&
-                forallb (Nat.eqb sym) (class_of C c)
-            | None => true
-            end
-        | None => true end) initial_machines
+      forallb (fun sym =>
+        match lookup_subst sym fx with
+        | Some t =>
+            let c := canon C (TAbs sym) in
+            ty_eqb (canon C t) c &&
+            match c with TAbs _ => true | _ => false end &&
+            forallb (Nat.eqb sym) (class_of C c)
+        | None => true
+        end) (map fst (Platform.machine_table W))
   end.
 
 (* main assumes an item no platform library provides: a construct the
@@ -315,16 +307,16 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
    program_environment (CtxOf, InitialTypes, PlatformEntry for each need) *)
 Definition main_environment (main : nat) : M environment :=
   let* (C, ns) := lift (w_context W main) "the context of `main` does not form" in
-  let types := map (fun q => (fst q, app_subst (initial_machine_subst W) (snd q))) (c_ty C) in
+  let types := map (fun q => (fst q, app_subst (machine_subst (Platform.machine_table W)) (snd q))) (c_ty C) in
   let* platform := mmap (fun k => let* v := platform_entry C (rkof C k) in ret (rkof C k, v)) ns in
   ret (Environment types platform).
 
-(* SOUND: Platform.Representations W P when program_casts P = casts *)
+(* SOUND: Platform.Representations W P when the program carries machine_table W and casts *)
 Definition cast_entry (array : bool) : list (nsym * cast_spec) :=
   match wasm_sym (if array then "Array" else "Ref"),
         wasm_sym (if array then "Arrayed" else "Boxed"),
         wasm_sym (if array then "ArrayRef" else "StructRef") with
-  | Some n, Some t, Some h => [(n, CastSpec array t (Some (h, TMachine (if array then MArrayRef else MStructRef))))]
+  | Some n, Some t, Some h => [(n, CastSpec array t (Some (h, TMachine h)))]
   | _, _, _ => []
   end.
 Definition casts : list (nsym * cast_spec) := cast_entry false ++ cast_entry true.

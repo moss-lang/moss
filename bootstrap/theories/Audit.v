@@ -1235,16 +1235,10 @@ Definition usym := nat.  (* functor symbols [D55]/[D78] *)
 
 (* Machine representations and structural records are not nominal declarations.
    Type arguments are finite rows over the declaration's parameter symbols. *)
-Inductive machine := MI32 | MI64 | MF32 | MF64 | MStructRef | MArrayRef.
-Definition machine_eqb (a b : machine) : bool :=
-  match a, b with
-  | MI32, MI32 | MI64, MI64 | MF32, MF32 | MF64, MF64
-  | MStructRef, MStructRef | MArrayRef, MArrayRef => true
-  | _, _ => false
-  end.
+Inductive machine_class := MScalar (sort : nat) | MReference (kind : nat).
 
 Inductive ty : Type :=
-| TMachine : machine -> ty
+| TMachine : tsym -> ty
 | TRecord : list (string * ty) -> ty
 | TUnit  : ty
 | TAbs   : tsym -> ty                       (* abstract type symbol (incl. This) *)
@@ -1285,7 +1279,7 @@ Fixpoint app_subst (s : subst) (tau : ty) {struct tau} : ty :=
 (* Boolean equality on types. *)
 Fixpoint ty_eqb (a b : ty) {struct a} : bool :=
   match a, b with
-  | TMachine a, TMachine b => machine_eqb a b
+  | TMachine a, TMachine b => Nat.eqb a b
   | TRecord fs, TRecord gs =>
       (fix go (fs gs : list (string * ty)) :=
         match fs, gs with
@@ -1654,7 +1648,8 @@ Record program : Type := Program {
   program_main : nat;
   program_environment : environment;
   program_unsupported : list string;
-  program_casts : list (nsym * cast_spec)
+  program_casts : list (nsym * cast_spec);
+  program_machines : list (tsym * machine_class)
 }.
 
 (* Execution view: symbol lookups, runtime inputs and representation data.
@@ -1669,7 +1664,8 @@ Record program_view : Type := ProgramView {
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
   view_read  : list int -> option (list int);
   (* selected Ref/Array tag -> (array?, held-type parameter) *)
-  view_casts : list (nsym * cast_spec)
+  view_casts : list (nsym * cast_spec);
+  view_machines : list (tsym * machine_class)
 }.
 
 Fixpoint lookup_cast (n : nsym) (cs : list (nsym * cast_spec)) : option cast_spec :=
@@ -2438,11 +2434,9 @@ End PrimNames.
 (* Part V. The declarative elaboration relation — DRAFT                      *)
 (* ######################################################################## *)
 
-(* STATUS: DRAFT, for the designer's review.  The elaborator (Elab.v) is
-   not yet proved to refine this model. ComponentContracts.v and the
-   existing source proofs concern ExecutionModel. AuditRepresentation.v names
-   the required representation/refinement boundary. AuditBuildExample.v checks
-   an inhabited public build/run derivation; it is not a soundness proof.
+(* EaMain.v implements the executable elaborator for these judgments.
+   AuditBuildExample.v checks an inhabited public build/run derivation.
+   Elaborator soundness and completeness are obligations of Public.CORRECT.
 
    WHAT IT SAYS.  `Elaborates b p` relates a bundle `b` (Part I) to an
    elaborated program `p` (Part II): `p` is *an* elaboration of `b` if
@@ -5044,20 +5038,12 @@ Definition FnElab (W : world) (P : program) (f : nat) : Prop :=
          b (Some (sg_ret g)) x t /\
     body_of P f = Some x.
 
-(* The runtime type prefix is a representation of the source context,
-   separate from the values and code supplied by the platform. Its machine
-   representations are selected from the actual library scope. *)
-Definition initial_machines : list (name * machine) :=
-  [("I32", MI32); ("I64", MI64); ("F32", MF32); ("F64", MF64);
-   ("StructRef", MStructRef); ("ArrayRef", MArrayRef)].
-Definition initial_machine_subst (W : world) : subst :=
-  flat_map (fun q => match w_library W with
-    | None => []
-    | Some dir => match w_scope W (dir ++ "wasm.moss") NSName (fst q) with
-      | Some (ESym symbol) => [(symbol, TMachine (snd q))]
-      | _ => [] end end) initial_machines.
-Definition InitialTypes (W : world) (C : cx) (types : subst) : Prop :=
-  types = map (fun q => (fst q, app_subst (initial_machine_subst W) (snd q))) (c_ty C).
+(* The runtime type prefix reads the source context with each machine
+   type represented by its declaration's symbol. *)
+Definition machine_subst (machines : list (tsym * machine_class)) : subst :=
+  map (fun q => (fst q, TMachine (fst q))) machines.
+Definition InitialTypes (machines : list (tsym * machine_class)) (C : cx) (types : subst) : Prop :=
+  types = map (fun q => (fst q, app_subst (machine_subst machines) (snd q))) (c_ty C).
 
 (* [D16]/[D30] no expanding cycle (Kennedy and Pierce's expansive
    cycles, decided generically, before monomorphization).  A specializer
@@ -5413,7 +5399,7 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (exists d n rt body, w_decl W (program_main P) = Some d /\ d_ast d = ADFn RPlain n [] rt (Some body)) /\
     (* main's environment provides exactly main's needs; what each one is,
        the platform's provision, is Platform.Linked's (PlatformEntry) *)
-    (exists C ns types platform, CtxOf W (program_main P) C ns /\ InitialTypes W C types /\
+    (exists C ns types platform, CtxOf W (program_main P) C ns /\ InitialTypes (program_machines P) C types /\
        program_environment P = Environment types platform /\ map fst platform = map (rkey_of C) ns) /\
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
     (LangItem W LIBool (program_bool P) /\ LangItem W LITrue (program_true P) /\
@@ -5443,6 +5429,24 @@ Module Platform.
 Import Input Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
+
+Definition i32_class := MScalar 0.
+Definition i64_class := MScalar 1.
+Definition f32_class := MScalar 2.
+Definition f64_class := MScalar 3.
+Definition ref_class (array : bool) := MReference (if array then 1 else 0).
+
+Definition initial_machines : list (name * machine_class) :=
+  [("I32", i32_class); ("I64", i64_class); ("F32", f32_class); ("F64", f64_class);
+   ("StructRef", ref_class false); ("ArrayRef", ref_class true)].
+Definition machine_table (W : world) : list (tsym * machine_class) :=
+  flat_map (fun q => match w_library W with
+    | None => []
+    | Some dir => match w_scope W (dir ++ "wasm.moss") NSName (fst q) with
+      | Some (ESym symbol) => match w_decl W symbol with
+        | Some _ => [(symbol, snd q)]
+        | None => [] end
+      | _ => [] end end) initial_machines.
 
 Definition MachineType (W : world) (name : string) (t : ty) : Prop :=
   exists symbol, LangSym W "wasm" NSName name symbol /\
@@ -5558,10 +5562,10 @@ Definition HandlesRead (W : world) (C : cx) (key : item) : Prop :=
    only at the machine types, so it may not be polymorphic in one
    (lib/wasm.moss: Heap, Mutable, Arrays and Memories bracket only Boxed,
    Arrayed and Memory). *)
-Definition MachinesFixed (W : world) (source : usym) (inputs outputs : cx) (key : item) : Prop :=
+Definition MachinesFixed (W : world) (P : program) (source : usym) (inputs outputs : cx) (key : item) : Prop :=
   match key with
   | IMth receiver method _ => forall signature, mlook receiver method (c_mths outputs) = Some signature ->
-      forall name machine symbol, In (name, machine) initial_machines -> LangSym W "wasm" NSName name symbol ->
+      forall symbol, In symbol (map fst (program_machines P)) ->
       In symbol (flat_map gens (sg_ret signature :: receiver :: sg_params signature)) ->
       Fixed W source symbol /\ In symbol (map fst (c_ty inputs))
   | _ => True
@@ -5595,7 +5599,7 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
       [] bindings (map (rkey_of outputs) keys)) /\
     Forall2 (fun key binding => exists operation,
       binding = BPrimitive (rkey_of outputs key) operation /\ MethodPrimitive W key operation /\
-      AtKey W outputs key operation /\ MachinesFixed W source inputs outputs key /\
+      AtKey W outputs key operation /\ MachinesFixed W P source inputs outputs key /\
       HandlesRead W outputs key) keys bindings /\
     MethodsDistinct W keys /\
     (* an abstract functor (the oracle's platform_entry: KyFun with no
@@ -5617,10 +5621,9 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
    `canon C t = TAbs symbol`, which held exactly when the machine type
    was the representative.  The classes do not depend on that choice
    (PublicOrientation.mgm_classes_iff). *)
-Definition FixedMachinesRead (W : world) (C : cx) (source : usym) : Prop :=
+Definition FixedMachinesRead (P : program) (C : cx) (source : usym) : Prop :=
   forall fixed, nlook source (c_funs C) = Some fixed ->
-  forall name machine symbol t, In (name, machine) initial_machines ->
-    LangSym W "wasm" NSName name symbol -> In (symbol, t) fixed ->
+  forall symbol t, In symbol (map fst (program_machines P)) -> In (symbol, t) fixed ->
     canon C t = canon C (TAbs symbol) /\ (exists z, canon C (TAbs symbol) = TAbs z) /\
     (forall y, canon C (TAbs y) = canon C (TAbs symbol) -> y = symbol).
 
@@ -5655,7 +5658,7 @@ Definition Entry (W : world) (P : program) (C : cx)
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
   | IFun source, FunctorClosure code None (EnvironmentWithAliases [] [] []) None =>
-      Family W P source code /\ FixedMachinesRead W C source
+      Family W P source code /\ FixedMachinesRead P C source
   | _, _ => False
   end.
 
@@ -5686,9 +5689,10 @@ Definition CastEntry (W : world) (array : bool) (entry : option (nsym * cast_spe
   (exists n t h, LangSym W "wasm" NSName tag n /\
     LangSym W "wasm" NSName held t /\ LangSym W "wasm" NSName raw h /\
     entry = Some (n, CastSpec array t
-      (Some (h, TMachine (if array then MArrayRef else MStructRef))))) \/
+      (Some (h, TMachine h)))) \/
   ((forall n, ~ LangSym W "wasm" NSName tag n) /\ entry = None).
 Definition Representations (W : world) (P : program) : Prop :=
+  program_machines P = machine_table W /\
   exists reference array, CastEntry W false reference /\ CastEntry W true array /\
     program_casts P = (match reference with Some x => [x] | None => [] end) ++
                 (match array with Some x => [x] | None => [] end).
@@ -5713,7 +5717,7 @@ Definition EntryPoint (W : world) (P : program) : Prop :=
 Definition Linked (W : world) (P : program) : Prop :=
   EntryPoint W P /\ Layouts W /\ Representations W P /\
   exists context needs types entries,
-    CtxOf W (program_main P) context needs /\ InitialTypes W context types /\
+    CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
     program_environment P = Environment types entries /\
     Forall (fun entry => Entry W P context (fst entry) (snd entry)) entries /\
     Forall (fun entry => PlatformEntry W P (fst entry) (snd entry)) entries.
@@ -5759,7 +5763,7 @@ Definition program_of (p : program) (argv : list (list int))
     (rd : list int -> option (list int)) : program_view :=
   ProgramView (fun f => Elaboration.nlook f (program_functions p))
     (fun u => Elaboration.nlook u (program_functors p))
-    (program_bool p) (program_true p) (program_false p) argv rd (program_casts p).
+    (program_bool p) (program_true p) (program_false p) argv rd (program_casts p) (program_machines p).
 
 (* Addresses are semantic identities. A concrete heap supplies its own
    representation and proves that allocation, reading and writing refine these

@@ -5,51 +5,51 @@ From Stdlib Require Import List.
 From NM Require Import Audit.
 Import Audit.Semantics ListNotations.
 
-Definition caller := Environment [(100,TMachine MI32);(101,TMachine MI64)] [].
+Definition caller := Environment [(100,TMachine 100);(101,TMachine 101)] [].
 Definition captured := EnvironmentWithAliases
-  [(10,TMachine MF32);(11,TMachine MF64)]
-  [(10,TMachine MF32);(11,TMachine MF64)] [].
+  [(10,TMachine 102);(11,TMachine 103)]
+  [(10,TMachine 102);(11,TMachine 103)] [].
 Definition called := call_environment caller [(10,TAbs 100)] captured.
 
 Example formal_input_shadows_captured_alias :
-  output_meaning called 10 = Some (TMachine MI32).
+  output_meaning called 10 = Some (TMachine 100).
 Proof. reflexivity. Qed.
 
 Example formal_input_shadows_captured_generation :
-  ground called (TAbs 10) = TMachine MI32.
+  ground called (TAbs 10) = TMachine 100.
 Proof. reflexivity. Qed.
 
 Example unrelated_capture_keeps_lexical_meaning :
-  output_meaning called 11 = Some (TMachine MF64).
+  output_meaning called 11 = Some (TMachine 103).
 Proof. reflexivity. Qed.
 
-Definition rebound := bind_type called 10 (TMachine MI64).
+Definition rebound := bind_type called 10 (TMachine 101).
 Example body_rebind_changes_only_output_reading :
-  output_meaning rebound 10 = Some (TMachine MI64) /\
-  ground rebound (TAbs 10) = TMachine MI32.
+  output_meaning rebound 10 = Some (TMachine 101) /\
+  ground rebound (TAbs 10) = TMachine 100.
 Proof. split; reflexivity. Qed.
 
 Definition provider_view := ProgramView (fun _ => None)
   (fun _ => Some (FunctorCode [10;11] [10;11] [] [ITy 10] [] []))
-  0 0 0 [] (fun _ => None) [].
+  0 0 0 [] (fun _ => None) [] [].
 Definition applied := application_environment provider_view caller 1
   [(10,TAbs 100);(12,TAbs 101)] captured.
 
 Example provider_inputs_shadow_and_private_capture_survives :
-  output_meaning applied 10 = Some (TMachine MI32) /\
-  output_meaning applied 11 = Some (TMachine MF64).
+  output_meaning applied 10 = Some (TMachine 100) /\
+  output_meaning applied 11 = Some (TMachine 103).
 Proof. split; reflexivity. Qed.
 
 Example result_reads_final_alias :
   result_environment [(10,200)] rebound [ITy 10] empty_environment =
-  Some (EnvironmentWithAliases [(200,TMachine MI64)] [(10,TMachine MI64)] []).
+  Some (EnvironmentWithAliases [(200,TMachine 101)] [(10,TMachine 101)] []).
 Proof. reflexivity. Qed.
 
-Definition two_outputs := Environment [(10,TMachine MF32);(11,TMachine MF64)] [].
+Definition two_outputs := Environment [(10,TMachine 102);(11,TMachine 103)] [].
 Example output_reads_share_one_snapshot :
   result_environment [(10,11);(11,10)] two_outputs [ITy 10;ITy 11] empty_environment =
-  Some (EnvironmentWithAliases [(11,TMachine MF32);(10,TMachine MF64)]
-    [(10,TMachine MF32);(11,TMachine MF64)] []).
+  Some (EnvironmentWithAliases [(11,TMachine 102);(10,TMachine 103)]
+    [(10,TMachine 102);(11,TMachine 103)] []).
 Proof. reflexivity. Qed.
 
 (* A destination the caller already gives a meaning is shadowed (as in
@@ -58,7 +58,7 @@ Proof. reflexivity. Qed.
    (PublicLinkResults.dest_scope; scratch/orch/results2-AUDIT.md). *)
 Example output_shadows_callers_generation :
   result_environment [(10,100)] called [ITy 10] empty_environment =
-  Some (EnvironmentWithAliases [(100,TMachine MI32)] [(10,TMachine MI32)] []).
+  Some (EnvironmentWithAliases [(100,TMachine 100)] [(10,TMachine 100)] []).
 Proof. reflexivity. Qed.
 
 Module Primitives <: PRIMITIVES.
@@ -69,7 +69,7 @@ Module R := Interpreter Primitives.
 Definition with_functor := install_provision (IFun 1) (FunctorClosure 1 None captured None) caller.
 Example actual_application_exports_unchanged_formal_not_stale_capture :
   R.apply_functor 3 provider_view with_functor 1 [(10,TAbs 100)] [(10,200)] [] [] tt =
-  inl (EnvironmentWithAliases [(200,TMachine MI32)] [(10,TMachine MI32)] [],tt).
+  inl (EnvironmentWithAliases [(200,TMachine 100)] [(10,TMachine 100)] [],tt).
 Proof. reflexivity. Qed.
 
 (* New activations receive declared inputs and lexical captures, without
@@ -84,7 +84,7 @@ Proof. reflexivity. Qed.
 Definition fresh_provider_view := ProgramView
   (fun _ => Some (EBind (BApply 1 [] [(10,10)] [] []) EUnit))
   (fun _ => Some (FunctorCode [] [] [] [ITy 10] [BType 10 (TNom 20 [])] []))
-  0 0 0 [] (fun _ => None) [].
+  0 0 0 [] (fun _ => None) [] [].
 Definition ambient_caller := install_provision (IFun 1)
   (FunctorClosure 1 None empty_environment None)
   (Environment [(10,TNom 30 [])] []).

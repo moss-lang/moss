@@ -5,7 +5,7 @@
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Parse EaMain MossX.
 
-From NM Require AuditExamples AuditBuildExample AuditRepresentation
+From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
   SnapshotLoaderBound PublicWorld PublicTypeFacts PublicValueTyping PublicCastTyping
   PublicSavedTypeExample PublicHeapTyping PublicWorldScope SnapshotLoader

@@ -460,12 +460,6 @@ Definition dname (s : nat) : string :=
 Definition bq (s : string) : string := "`" ++ s ++ "`".
 Definition qs (s : nat) : string := bq (dname s).
 
-Definition show_machine (m : machine) : string :=
-  match m with
-  | MI32 => "I32" | MI64 => "I64" | MF32 => "F32" | MF64 => "F64"
-  | MStructRef => "StructRef" | MArrayRef => "ArrayRef"
-  end.
-
 Fixpoint show_ty_go (n : nat) (t : ty) : string :=
   match n with 0 => "…" | S n' =>
   match t with
@@ -473,7 +467,7 @@ Fixpoint show_ty_go (n : nat) (t : ty) : string :=
   | TNom g [] => sym_name g
   | TNom g xs => sym_name g ++ "[" ++ String.concat ", " (map (fun q => sym_name (fst q) ++ "=" ++ show_ty_go n' (snd q)) xs) ++ "]"
   | TUnit => "()"
-  | TMachine m => show_machine m
+  | TMachine m => sym_name m
   | TRecord fs => "{" ++ String.concat ", " (map (fun q : string * ty => String.append (fst q) (String.append ": " (show_ty_go n' (snd q)))) fs) ++ "}"
   | TUnion [] => "|"
   | TUnion ms => String.concat " | " (map (show_ty_go n') ms)

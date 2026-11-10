@@ -228,7 +228,7 @@ Definition FamilyData (u code : usym) (inputs : A.cx) (needs : list item) (outpu
     [] bindings (map (A.rkey_of outputs) keys)) /\
   Forall2 (fun key binding => exists operation,
     binding = BPrimitive (A.rkey_of outputs key) operation /\ Platform.MethodPrimitive W key operation /\
-    Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W u inputs outputs key /\
+    Platform.AtKey W outputs key operation /\ Platform.MachinesFixed W Prog u inputs outputs key /\
     Platform.HandlesRead W outputs key) keys bindings /\
   Platform.MethodsDistinct W keys /\
   (forall dl ps a r b, A.w_decl W u = Some dl -> A.functor_parts (A.d_ast dl) = Some (ps, a, r, b) -> b = None) /\
@@ -443,12 +443,12 @@ Lemma chain_fixed_ground : forall F C pa u fx Cu ns sm th gensof C' ks newgens o
   forall h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
   FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code None FS.CopyA.empty_env None) ->
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
-  forall e name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
+  forall e x, In x (map fst (program_machines Prog)) ->
   A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) ->
-  ground (app_env d code th e) (TAbs x) = TMachine mach.
+  ground (app_env d code th e) (TAbs x) = TMachine x.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms rms gfx [Cov Vm]
-    h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e name mach x Inm Lang F0 Ix0.
+    h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e x Inm F0 Ix0.
   pose proof AP as (R & Lf & FC & Inp & Th & Fixed & _).
   pose proof FD as (FC0 & _ & _ & FB & _).
   pose proof Pre0 as (_ & _ & _ & _ & [Abs _] & _).
@@ -460,7 +460,7 @@ Proof.
   - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & rms' & rm' & gfh & E & _). discriminate E.
   - destruct CP as (code' & _ & _ & Mach).
     destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx.
-    rewrite <- Egf, (Mach name mach x Inm Lang F0) in Gx.
+    rewrite <- Egf, (Mach x Inm F0) in Gx.
     injection Gx as Gx. destruct (Fixed x tx Itx) as [here [Lh Eh]].
     rewrite (app_env_ground d code th e Ch0 Cu (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ _ _ FB Th Kin (TAbs x)
       ltac:(intros y [<-|[]]; exact Ix0)).
@@ -805,8 +805,8 @@ Section FamilyPlatform.
 Definition PrimsGroundOk : Prop :=
   forall rr H de code h0 Ch0 needs outputs keys bindings,
   FamilyData h0 code Ch0 needs outputs keys bindings ->
-  (forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-     A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine mach) ->
+  (forall x, In x (map fst (program_machines Prog)) ->
+     A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x) ->
   forall key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
   Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
   key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
@@ -817,9 +817,9 @@ Proof.
   intros PG F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms rms gfx Look Fm
     h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e.
   apply (PG rr H (app_env d code th e) code h0 Ch0 needs outputs keys bindings FD).
-  intros name mach x Inm Lang Fx Ix.
+  intros x Inm Fx Ix.
   exact (chain_fixed_ground F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0
-    code sms rms gfx Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e name mach x Inm Lang Fx Ix).
+    code sms rms gfx Fm h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e x Inm Fx Ix).
 Qed.
 
 (* PREMISE (formation, T29). An extra key of a family context's table
@@ -909,15 +909,15 @@ Proof.
   (* the code reads u's fixed machine-type inputs as the machine types *)
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
   assert (FxF : A.nlook u (A.c_funs Cf) = Some fx) by (unfold A.c_funs; rewrite EprF; exact Fx).
-  assert (MachG : forall name mach x, In (name, mach) A.initial_machines -> A.LangSym W "wasm" A.NSName name x ->
-     A.Fixed W u x -> In x (map fst (A.c_ty Cu)) -> ground de (TAbs x) = TMachine mach).
-  { intros name mach x Inm Lang Fx' Ix. unfold de.
+  assert (MachG : forall x, In x (map fst (program_machines Prog)) ->
+     A.Fixed W u x -> In x (map fst (A.c_ty Cu)) -> ground de (TAbs x) = TMachine x).
+  { intros x Inm Fx' Ix. unfold de.
     rewrite (app_env_ground d code th d1 Cu Cu f _ _ _ FB Thf (incl_refl _) (TAbs x)
       ltac:(intros y [<-|[]]; exact Ix)).
     change (app_subst th (TAbs x)) with (match lookup_subst x th with Some t => t | None => TAbs x end).
     assert (Lx : lookup_subst x th = Some (f x)) by (rewrite Thf; exact (FS.CopyA.S.lookup_on_keys f _ x Ix)). rewrite Lx. unfold f.
     destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. pose proof (Vm x tx Ixt) as Gx.
-    rewrite (Mach name mach x Inm Lang Fx') in Gx. injection Gx as Gx.
+    rewrite (Mach x Inm Fx') in Gx. injection Gx as Gx.
     destruct (A.nlook x (A.c_ty Cf)) as [now|] eqn:Ln; [|exfalso; exact (InF x Ix Ln)].
     replace (app_subst (A.c_ty Cf) (TAbs x)) with now by (cbn [app_subst]; rewrite lookup_subst_nlook', Ln; reflexivity).
     destruct (FS.CopyA.S.nlook_fixed_app fx x (Cov x Fx')) as [was [Nw Iw]].

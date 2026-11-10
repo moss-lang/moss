@@ -20,7 +20,7 @@ Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some maker else
     if Nat.eqb h 21 then Some no_input_provider else
     if Nat.eqb h 22 then Some private_input_provider else None)
-  0 0 0 [] (fun _ => None) [].
+  0 0 0 [] (fun _ => None) [] [].
 
 (* type T; tag Concrete;
    functor F: -> T; functor Maker: -> T { bind T=Concrete; }
@@ -78,6 +78,6 @@ Example private_input_provider_application_exports_concrete_meaning :
 Proof. reflexivity. Qed.
 
 Example supplied_formal_takes_precedence_over_capture :
-  ground (application_environment runtime empty_environment 22 [(2,TMachine MF64)] private_alias)
-    (TAbs 2) = TMachine MF64.
+  ground (application_environment runtime empty_environment 22 [(2,TMachine 1)] private_alias)
+    (TAbs 2) = TMachine 1.
 Proof. reflexivity. Qed.

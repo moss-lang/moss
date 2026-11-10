@@ -176,26 +176,26 @@ Qed.
 
 (* Saved=2, Boxed=3, F64=4, I32=5. Alias RHS expressions have already been
    read by the static source context, just as BTypeBind currently emits. *)
-Definition initial := Maps [(4,TMachine MF64);(5,TMachine MI32)] [].
+Definition initial := Maps [(4,TMachine 4);(5,TMachine 5)] [].
 Definition saved := bind_alias initial 2 (TAbs 4).
 Definition rebound := bind_alias saved 4 (TAbs 5).
 Definition boxed := bind_alias rebound 3 (TAbs 4).
 
-Example saved_retains_f64 : output_meaning boxed 2 = Some (TMachine MF64).
+Example saved_retains_f64 : output_meaning boxed 2 = Some (TMachine 4).
 Proof. reflexivity. Qed.
 
-Example rebound_source_reads_i32 : output_meaning boxed 4 = Some (TMachine MI32).
+Example rebound_source_reads_i32 : output_meaning boxed 4 = Some (TMachine 5).
 Proof. reflexivity. Qed.
 
-Example old_f64_generation_is_stable : ground boxed (TAbs 4) = TMachine MF64.
+Example old_f64_generation_is_stable : ground boxed (TAbs 4) = TMachine 4.
 Proof. reflexivity. Qed.
 
-Example boxed_uses_saved_f64 : output_meaning boxed 3 = Some (TMachine MF64).
+Example boxed_uses_saved_f64 : output_meaning boxed 3 = Some (TMachine 4).
 Proof. reflexivity. Qed.
 
 Example shadowing_output_has_fresh_destination :
   transfer_outputs rebound initial [(4,6)] =
-    Some (Maps [(6,TMachine MI32);(4,TMachine MF64);(5,TMachine MI32)] []).
+    Some (Maps [(6,TMachine 5);(4,TMachine 4);(5,TMachine 5)] []).
 Proof. reflexivity. Qed.
 
 Example old_output_destination_is_rejected : transfer_outputs rebound initial [(4,4)] = None.
@@ -206,15 +206,15 @@ Example duplicate_output_destination_is_rejected :
 Proof. reflexivity. Qed.
 
 Example unchanged_formal_is_exportable :
-  transfer_outputs initial (Maps [] []) [(4,6)] = Some (Maps [(6,TMachine MF64)] []).
+  transfer_outputs initial (Maps [] []) [(4,6)] = Some (Maps [(6,TMachine 4)] []).
 Proof. reflexivity. Qed.
 
 (* Reading role 6 uses the completed body, even though an earlier output is
    destined for caller generation 6. Its read cannot be affected by export. *)
-Definition simultaneous_body := Maps [(4,TMachine MF64);(6,TMachine MI32)] [].
+Definition simultaneous_body := Maps [(4,TMachine 4);(6,TMachine 5)] [].
 Example outputs_read_simultaneously :
   transfer_outputs simultaneous_body (Maps [] []) [(4,6);(6,7)] =
-    Some (Maps [(7,TMachine MI32);(6,TMachine MF64)] []).
+    Some (Maps [(7,TMachine 5);(6,TMachine 4)] []).
 Proof. reflexivity. Qed.
 
 End GenerationPrototype.
