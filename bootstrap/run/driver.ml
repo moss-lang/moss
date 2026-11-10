@@ -170,10 +170,12 @@ let () =
     xp_argv = argv; xp_read = read };
   (* program_of's view, its two lookups realized with Hashtbls: the first
      body for a symbol wins, as program_of's nlook. *)
-  let table l = let t = Hashtbl.create 4096 in List.iter (fun (k, v) -> Hashtbl.replace t k v) (List.rev l); t in
+  (* Symbols are OCaml ints: hash them as ints, not with caml_hash. *)
+  let module T = Hashtbl.Make (struct type t = int let equal = Int.equal let hash x = x land max_int end) in
+  let table l = let t = T.create 4096 in List.iter (fun (k, v) -> T.replace t k v) (List.rev l); t in
   let fns = table p.A.program_functions and funs = table p.A.program_functors in
   let view = { (A.program_of p argv read) with
-               A.view_function = Hashtbl.find_opt fns; A.view_functor = Hashtbl.find_opt funs } in
+               A.view_function = T.find_opt fns; A.view_functor = T.find_opt funs } in
   let t2 = now () in
   (* AuditFast.frun_main_agrees: the fast interpreter on the converted
      environment returns exactly what Interpreter.run_main returns. *)
