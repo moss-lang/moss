@@ -1,0 +1,44 @@
+# A closure whose G merges two of F's inputs that F does not merge, made
+# true by F's fixed inputs (linkfix finding, the LinkBody analogue of #96).
+# F's brackets are empty and `out` mentions T and U, so both are fixed in
+# F, and both are Int where F is bound; G's context merges them (two
+# readings of v) and its body uses the merge (`showT(b)` with `b: U`).
+# Every application of F reads T and U as Int (rule 5), so G's merge holds
+# wherever the closure runs.
+# - Oracle: rejects ("`G` cannot provide `F`: its linked input
+#   interpretation differs (D84)"). It accepts the same shape when the
+#   body does not use the merge (scratch: copyfix's cf/clo.moss).
+# - Native: prints 1006 (showT linked: the application's n + 1000).
+# - Audit and moss-ref: reject (LinkBody's linked-input clause compares G's
+#   readings with F's in F's declared context, as #32 did for copies).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type P; type T; type U;
+assume P { val v: P; }
+fn showT(x: T): Int;
+assume Std { fn out(a: T, b: U): Int; }
+context Fc = T, U, v[P=T], showT;
+context Gc = T, U, v[P=T], v[P=U], showT;
+functor F[]: Std, Fc -> out;
+functor G: Std, Gc -> out { bind out = (a, b) => showT(b); }
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind T = Int; bind U = Int; bind P = Int; bind v = 1;
+    bind showT = (n) => n + 1;
+    bind F = G;
+    bind P = Int; bind v = 2;
+    bind showT = (n) => n + 1000;
+    bind F;
+    print_int(out(5, 6));
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch { fn main() { bind WasiStd; demo(); } }

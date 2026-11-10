@@ -1,0 +1,50 @@
+# Inputs of F that are neither fixed nor polymorphic (in F's context but
+# not mentioned by its result), merged by H, copied where they agree and
+# applied where they differ (linkfix, the copyfix agent's open question).
+# A later application binds X = Bool and Y = Int, so H's body `showY(vx)`
+# would read a Bool as an Int. Each application supplies such inputs, so the
+# copy must not rely on their readings at the copy site.
+# - Oracle: rejects ("`H` cannot be copied to `F`: its input interpretation
+#   differs (D78)").
+# - Native: rejects ("the functor does not satisfy the required signature:
+#   `X`", at the copy).
+# - Audit (#96) and moss-ref: reject: copy_subst reads X and Y as distinct
+#   fresh symbols, so H's merge fails.
+# No implementation accepts it, so there is no soundness gap here.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo; type A; type X; type Y;
+fn .gimme(): Foo;
+val vx: X;
+fn showY(n: Y): Int;
+assume Std { fn go(): Int; }
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], vx, showY;
+context Apart = A, X, Y, A.gimme[Foo=X], vx, showY;
+functor H[]: Std, Merge -> go;
+functor F[]: Std, Apart -> go;
+functor G: Std, Merge -> go { bind go = () => showY(vx); }
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char; bind Foo = Char; bind X = Char; bind Y = Char;
+    bind A.gimme = () => this;
+    bind vx = char::a;
+    bind showY = (c) => c.code();
+    bind H = G;
+    bind F = H;
+    bind X = Bool; bind Y = Int;
+    bind A.gimme = () => this;
+    bind vx = true;
+    bind showY = (n) => n * 2 + 1;
+    bind F;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch { fn main() { bind WasiStd; demo(); } }
