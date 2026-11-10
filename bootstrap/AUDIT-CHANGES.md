@@ -114,8 +114,9 @@ entry they belong to.
 | 71 | A body may pin a fixed input that agrees with the bind site (`LinkBody` pins Π = P(F) ∩ M(F), `BFunClosure` agreement) | lang-q | relaxation toward both implementations (Audit used to reject every program binding `StdBase`) |
 | 72 | **Every call checks its arguments in the caller's context Γ** (`ExCallD`, as `MCAttachedDefined` and `PrFamily`; semantics.typ Q4) | lang-bq | relaxation, with the oracle (accepts a program both implementations reject; native E72) |
 | 73 | A linked body's result keys read a pinned fixed input at its pin (`link_site`; a key the pins re-read is one the body made) | pinsite | relaxation toward both implementations (completes #71: Audit still rejected every program binding `StdBase`) |
+| 74 | Every declared context forms as written (`DeclsForm`; criteria section 7) | n234 | A for cycles; B for an unused context naming what is not in scope |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -2225,6 +2226,67 @@ executable tests unless noted.
   compat)" check unconditional. Then `s_compat_pins` can be dropped.
 - **Class.** A relaxation toward both implementations, with one
   reject-only premise that mirrors both.
+
+### 74. Every declared context forms as written (`DeclsForm`, n234 branch; criteria section 7)
+- **The gap (N2).** Audit checked a context only when something formed
+  it: a body's assume nesting (`CtxOf`), another declaration's nesting
+  (`AssumesComplete`, #57, which forms each symbol's nesting but not a
+  context's own items), or a functor's signature. So
+  `tests/errors/context_cycle_unused.moss` (`context A = B; context B =
+  A;`) and `context_cycle_nominal.moss` (the cycle traversed only by a
+  tag's requirements) were accepted, while both implementations reject
+  them. The executable elaborator (branch `elab`, `scratch/elab-STATUS.md`
+  row N2) found this.
+- **Rule now.** `ElaboratesIn` has a new last conjunct, `DeclsForm W P`:
+  every symbol's declaration forms as written (`DeclForms`). For a
+  context, its items form, read in its own module with each type symbol
+  standing for itself (`as_written L`): `exists L es tm, ItemsEntries W
+  (d_mod d) [] (as_written L) its es tm`. A context that nests in a cycle
+  has no finite derivation, and an item that does not resolve, or whose
+  brackets do not, has none either. Merging is not asked: a context's
+  telescope is merged where it is formed, as before.
+- **Why "as written".** A context is formed at each use with the user's
+  type meanings (`tm`), so its own nesting is the wrong place to read it:
+  `lib/wasistd.moss`'s `context Branch = i32_bool;` lists a fn whose
+  signature mentions `I32`, which `Branch`'s empty nesting does not
+  have. With each type symbol read as itself, every item forms that forms
+  at some use, except one whose signature has a union member that is a
+  type symbol (D15; see N4 under "Known divergences" below).
+- **Criteria.** Section 7 (new): every declaration is checked as written,
+  whether or not anything uses it. Fidelity (section 6) for the cycles:
+  the oracle's `check_contexts` (`context_acyclic`, Elab.v) rejects a
+  cycle at declaration, and native expands every context ("context
+  expansion is recursive or nested too deeply"). The oracle and native
+  check nothing else about an unused context, so the unresolved-item and
+  bracket tests are class B, by section 7.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | `tests/errors/context_cycle_unused.moss` | rejects ("nests in a cycle") | rejects | accepts | rejects |
+  | `tests/errors/context_cycle_nominal.moss` | rejects | rejects | accepts | rejects |
+  | [decl-ctx-cycle-functor](examples/decl-ctx-cycle-functor.moss) (the cycle only in an unused functor's result) | rejects | rejects | accepts | rejects |
+  | [decl-ctx-unresolved](examples/decl-ctx-unresolved.moss) (`context A = nope;`) | accepts | accepts | accepts | rejects |
+  | [decl-ctx-bracket](examples/decl-ctx-bracket.moss) (`f[Nope = T]`) | accepts | accepts | accepts | rejects |
+  | [decl-ctx-outside-control](examples/decl-ctx-outside-control.moss) (items mention a type outside the nesting) | accepts | accepts | accepts | accepts |
+
+  Audit's verdicts are argued from the rules and run on an executable
+  elaborator variant: moss-elab 64b606c (`--frontend audit`, Audit at
+  #73) plus this change and #75 to #77 (scratch/elabv, `decls_form` in
+  `EaMain.v`, each failure prefixed by the check that made it).
+- **Corpus.** That variant against the plain elaborator (moss-elab
+  `scratch/bin5-audit_run.exe`), `--elab-only`, over `examples/`,
+  `bootstrap/examples/` (before this branch's tests), `tests/**` and
+  `src/main.moss`: 512 same / 4 diff (scratch/cmp-run1.tsv). The four are
+  the two context-cycle tests above and the two N3 tests of #77; all four
+  are rejected by both implementations. Every `lib/*.moss` module, as an
+  entry, reaches the same "no `main`" in both (scratch/cmp-lib.tsv), so
+  every library declaration forms as written. `src/main.moss` is accepted
+  by both.
+- **Proof.** `public_safety` unchanged: the conjunct is last and no proof
+  reads it. `AuditBuildExample.main_decls` proves it of the example world.
+- **Class.** A for the cycles (mirrors both implementations); B for an
+  unused context that names something not in scope, by section 7.
 
 ---
 

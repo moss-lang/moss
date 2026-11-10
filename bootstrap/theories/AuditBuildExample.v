@@ -197,6 +197,10 @@ Proof.
   exists d, es, tm, er, tmr, σ. exact (conj R (conj Its (conj Root (conj M (conj E N))))).
 Qed.
 
+(* main is the only declaration, and not a context. *)
+Lemma main_decls : DeclsForm world_main AuditExamples.unit_program.
+Proof. intros s d Read. apply reads_decl in Read as [-> ->]. exact I. Qed.
+
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
 Proof.
   split; [exact world_main_valid|]. split.
@@ -206,7 +210,7 @@ Proof.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|constructor].
-      * split; [|split; [exact main_bounded|exact main_assumes]]. right. split.
+      * split; [|split; [exact main_bounded|split; [exact main_assumes|exact main_decls]]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.

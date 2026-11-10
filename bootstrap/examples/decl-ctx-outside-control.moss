@@ -1,0 +1,9 @@
+# Control for DeclsForm (AUDIT-CHANGES #74): a context's items are read as
+# written, each type symbol standing for itself, so an item mentioning a
+# type that is not in the context's own nesting (here T, outside A's
+# empty nesting) still forms, as lib/wasistd.moss's `Branch = i32_bool` does.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now accepts.
+type T;
+assume T { fn T.m(); fn g(x: T); }
+context A = T.m, g;
+fn main() {}

@@ -5224,6 +5224,26 @@ Definition AssumesComplete (W : world) : Prop :=
   forall s k, kind_sym W s = Some k -> In k [DKVal; DKFn; DKMeth; DKCtx; DKFunctor] ->
     exists C ns, AssumeCtx W s C ns /\ AssumedComplete W C ns.
 
+(* Criteria section 7: every declaration is checked as written, whether
+   or not anything uses it ([D16]'s rule for defined fns, for every kind
+   of declaration).  As written means read where it is written, before
+   anything is bound: each type symbol stands for itself.  A use reads the
+   declaration at its own meanings, checked there as before. *)
+Definition as_written (L : list nat) : list (nat * ty) := map (fun t => (t, TAbs t)) L.
+
+(* `DeclForms W P s`: s's declaration forms as written.  A context's items
+   form (ItemsEntries), so a context that nests in a cycle, or names an
+   item not in scope, is an error even when nothing assumes it (the
+   oracle's context_acyclic; native expands every context). *)
+Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
+  forall d, w_decl W s = Some d ->
+    match d_ast d with
+    | ADCtx _ its => exists L es tm, ItemsEntries W (d_mod d) [] (as_written L) its es tm
+    | _ => True
+    end.
+
+Definition DeclsForm (W : world) (P : program) : Prop := forall s, DeclForms W P s.
+
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
 Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
   WorldOf b W /\
@@ -5243,7 +5263,9 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (* [D16]/[D30]: finitely many instantiations *)
     NoExpandingCycle W P /\
     (* [D20]: assumed items bring their requirements and needs *)
-    AssumesComplete W.
+    AssumesComplete W /\
+    (* criteria section 7: every declaration forms as written *)
+    DeclsForm W P.
 
 Definition Elaborates (b : bundle) (P : program) : Prop :=
   exists W, ElaboratesIn b W P.

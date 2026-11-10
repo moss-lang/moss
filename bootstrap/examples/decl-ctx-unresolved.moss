@@ -1,0 +1,7 @@
+# DeclsForm (AUDIT-CHANGES #74; criteria section 7): a context that names
+# an item not in scope is an error even when nothing assumes it.
+# Verdicts: oracle accepts; native accepts; Audit before accepts; now
+# rejects (ItemsEntries: `nope` does not resolve). Class B: the
+# implementations check only a context's cycles at declaration.
+context A = nope;
+fn main() {}

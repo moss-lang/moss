@@ -1,0 +1,12 @@
+# DeclsForm (AUDIT-CHANGES #74; criteria section 7): every declared context
+# forms as written, used or not. A and B nest in a cycle, and only an
+# abstract functor's result, which nothing applies or binds, lists A.
+# Verdicts: oracle rejects ("context `A` nests in a cycle"); native
+# rejects ("context expansion is recursive or nested too deeply: `A`");
+# Audit before accepts (nothing forms A); now rejects (A's items have no
+# finite ItemsEntries derivation).
+val x: ();
+context A = x, B;
+context B = A;
+functor F: x -> A;
+fn main() {}
