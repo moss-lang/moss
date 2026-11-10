@@ -63,6 +63,11 @@ const ORACLE_GAP_STALE_PROVISION: &str = "oracle gap: a provision read at anothe
 /// keeping the first result position's; the semantics and the
 /// self-hosted compiler reject the application.
 const ORACLE_GAP_RESULT_COLLIDE: &str = "oracle gap: two result items of a functor filed under one key (E40)";
+/// Δ4 (D43): merging two entries of one item unifies their
+/// instantiations. The self-hosted compiler does; the oracle's half is
+/// on the lang-b branch, and until it lands the oracle keeps the first
+/// entry's instantiation.
+const ORACLE_GAP_MERGE_INST: &str = "oracle gap: merging two entries of one item does not unify their instantiations (Δ4)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -99,6 +104,8 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_reset.moss", Accept, Unsupported, MEMORIES),
+    ("tests/wasi/merge_inst_order_ab.moss", Reject, Accept, ORACLE_GAP_MERGE_INST),
+    ("tests/wasi/merge_inst_val.moss", Accept, Reject, ORACLE_GAP_MERGE_INST),
     ("tests/wasi/result_collide_ab.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/result_collide_bindswap.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),

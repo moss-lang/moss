@@ -732,7 +732,8 @@ assume Std {
         let ty = elab(view, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
         let had = env_find(env, ek_val(), ast::none(), s);
         if ast::is_some(had) {
-          return unify(env, en_a.get(had), ty, m, s);
+          let merged = unify(env, en_a.get(had), ty, m, s);
+          return merge_app(merged, en_b.get(had), env, view, m, s);
         }
         return env_push(env, ek_val(), ast::none(), s, ty, assumed_app(s, view));
       }
@@ -745,7 +746,8 @@ assume Std {
         need_add(recv, sym, ast::none(), s);
         let had = env_find(env, ek_fn(), ast::none(), s);
         if ast::is_some(had) {
-          return merge_sig(env, en_a.get(had), view, m, s);
+          let merged = merge_sig(env, en_a.get(had), view, m, s);
+          return merge_app(merged, en_b.get(had), env, view, m, s);
         }
         return env_push(env, ek_fn(), ast::none(), s, view, assumed_app(s, view));
       }
@@ -846,7 +848,8 @@ assume Std {
       need_add(recv, sym, this_ty, method);
       let had = env_find(env, ek_fn(), this_ty, method);
       if ast::is_some(had) {
-        return merge_sig(env, en_a.get(had), view, m, method);
+        let merged = merge_sig(env, en_a.get(had), view, m, method);
+        return merge_app(merged, en_b.get(had), env, view, m, method);
       }
       env_push(env, ek_fn(), this_ty, method, view, assumed_app(method, view))
     }
@@ -873,6 +876,34 @@ assume Std {
         i = i + 1;
       }
       merge_decl_ty(out, old, view, ast::fn_ret(d), home, m, s)
+    }
+
+    # D43, Δ4: merging two entries of one item also unifies their
+    # instantiations, so the merged key's app does not depend on which
+    # entry came first. `old` is the first entry's app, read against
+    # `base`, the environment it was assumed in; the second's is what
+    # `view` makes of each symbol. A symbol not in force where an entry
+    # was read is read as itself.
+    fn merge_app(env: Int, old: Int, base: Int, view: Int, m: Int, s: Int): Int {
+      let deps = int_list();
+      item_deps(s, deps);
+      var out = env;
+      var i = 0;
+      while i < deps.length() {
+        let t = deps.get(i);
+        let at = types::ty_of_symbol(types::kd_abstract(), t);
+        var a = app_get(old, t, base);
+        if !ast::is_some(a) {
+          a = as_assumed(t);
+        }
+        var b = as_assumed(t);
+        if env_has(view, ek_type(), ast::none(), t) {
+          b = canon(view, at);
+        }
+        out = unify(out, a, b, m, s);
+        i = i + 1;
+      }
+      out
     }
 
     fn merge_decl_ty(env: Int, old: Int, view: Int, t: Int, home: Int, m: Int, s: Int): Int {

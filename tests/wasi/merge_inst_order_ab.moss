@@ -1,0 +1,15 @@
+# Δ4 (D43): as tests/errors/merge_inst_order_ba.moss, with `g`'s contexts
+# in the order `K1`, `K2`. Merging the two entries of `f` unifies their
+# instantiations, so `g`'s context merges `A` with `B`, and `h` cannot
+# call it. The self-hosted compiler used to keep the first entry's
+# instantiation (`T = A`), and accepted this order only.
+
+type T;
+type A;
+type B;
+assume T { fn f(); }
+context K1 = A, B, f[T=A];
+context K2 = A, B, f[T=B];
+assume K1, K2 { fn g() { f(); } }
+assume K1 { fn h() { g(); } }
+fn main() {}

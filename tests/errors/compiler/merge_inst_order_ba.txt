@@ -1,0 +1,1 @@
+!Y tests/errors/merge_inst_order_ba.moss B

@@ -1084,6 +1084,21 @@ fn result_items_distinct_in_the_functor_stay_distinct() {
     assert_eq!(run_moss(&entry, PRELUDE), "a\n");
 }
 
+/// Δ4 (D43): merging two entries of one item also unifies their
+/// instantiations, so the order of an assume list does not decide which
+/// instantiation the merged key has. `g` assumes `f` at `T = A` and at
+/// `T = B`, so its context merges `A` with `B`, and `h`, where they are
+/// distinct, cannot call it (`e_merge`, `Y`), in either order (the other
+/// is tests/errors/merge_inst_order_ba.moss); and a val's two entries
+/// make `A` and `B` one type where the val's own type does not mention
+/// `T`.
+#[test]
+fn merging_an_item_unifies_its_instantiations() {
+    let entry = wasi("merge_inst_order_ab");
+    assert!(report(&entry, PRELUDE).starts_with(&format!("!Y {entry} A\n")), "{entry}");
+    build_with(&wasi("merge_inst_val"), PRELUDE);
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a
