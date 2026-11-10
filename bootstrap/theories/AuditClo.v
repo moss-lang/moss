@@ -23,8 +23,27 @@
 From Stdlib Require Import List Bool Arith String Lia.
 From NM Require Import Audit NatTrie AuditLazy AuditFast.
 Import Audit.Semantics ListNotations.
+From NM Require AuditPrune.
 
 Local Open Scope nat_scope.
+
+(* The scalar compiler uses these outside the interpreter functor so that
+   extraction can inline them and return closures at their runtime arity. *)
+Definition scalar_nil {D S : Type} : D -> locals -> S -> option (list value * S) :=
+  fun _ _ st => Some ([], st).
+Definition scalar_cons {D S : Type}
+    (c : D -> locals -> S -> option (value * S))
+    (rest : D -> locals -> S -> option (list value * S)) :
+    D -> locals -> S -> option (list value * S) :=
+  fun d g st =>
+    match c d g st with
+    | Some (w, st1) =>
+        match rest d g st1 with
+        | Some (ws, st2) => Some (w :: ws, st2)
+        | None => None
+        end
+    | None => None
+    end.
 
 Module CloInterpreter (Import Prims : PRIMITIVES).
 Module F := FastInterpreter Prims.
@@ -322,16 +341,102 @@ Definition sevl (d : fenv) (g : locals) : list sexpr -> mstate -> option (list v
       | Some (w, st1) => match ev rest st1 with Some (ws, st2) => Some (w :: ws, st2) | None => None end
       | None => None end end.
 
+(* Gather each distinct key once per folded call, including guards for
+   entries the scalar body never reads. The compiled code then reads slots. *)
+Definition lk_eqb (a b : lk) : bool :=
+  match a, b with
+  | None, None => true
+  | Some i, Some j => fast_item_eqb i j
+  | _, _ => false
+  end.
+Fixpoint scalar_reads (s : sexpr) : list lk :=
+  match s with
+  | SVar _ | SUnit => []
+  | SVl i => [i]
+  | STag _ e => scalar_reads e
+  | SPrim i args => i :: flat_map scalar_reads args
+  | SCall guard args body => map snd guard ++ flat_map scalar_reads args ++ scalar_reads body
+  | SMatch1 e _ body => scalar_reads e ++ scalar_reads body
+  end.
+Definition scalar_keys (s : sexpr) : list lk :=
+  fold_right (fun i rest => if existsb (lk_eqb i) rest then rest else i :: rest) [] (scalar_reads s).
+Fixpoint key_pos (i : lk) (keys : list lk) : option nat :=
+  match keys with
+  | [] => None
+  | j :: rest => if lk_eqb i j then Some 0 else option_map S (key_pos i rest)
+  end.
+Definition slot_lookup (keys : list lk) (i : lk) : list fprov -> option fprov :=
+  match key_pos i keys with Some n => fun slots => nth_error slots n | None => fun _ => None end.
+Fixpoint gather (d : fenv) (keys : list lk) : option (list fprov) :=
+  match keys with
+  | [] => Some []
+  | i :: rest =>
+      match read d i with
+      | Some entry => option_map (cons entry) (gather d rest)
+      | None => None
+      end
+  end.
+
+Definition scalar_code := list fprov -> locals -> mstate -> option (value * mstate).
+
+Fixpoint scalar_compile (keys : list lk) (s : sexpr) {struct s} : scalar_code :=
+  match s with
+  | SVar x => fun _ g st => option_map (fun w => (w, st)) (lookup_local x g)
+  | SUnit => fun _ _ st => Some (VUnit, st)
+  | SVl i =>
+      let get := slot_lookup keys i in
+      fun slots _ st => match get slots with Some (FValue w) => Some (w, st) | _ => None end
+  | STag n e =>
+      let c := scalar_compile keys e in
+      fun slots g st => option_map (fun p => (VTag n (fst p), snd p)) (c slots g st)
+  | SPrim i args =>
+      let get := slot_lookup keys i in
+      let ca := fold_right (fun e cr => let c := scalar_compile keys e in scalar_cons c cr) scalar_nil args in
+      fun slots g st =>
+        match get slots with
+        | Some (FPrimitive p held) =>
+            match ca slots g st with
+            | Some (ws, st1) =>
+                match I.run_prim_at P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+            | None => None
+            end
+        | _ => None
+        end
+  | SCall _ args body =>
+      let ca := fold_right (fun e cr => let c := scalar_compile keys e in scalar_cons c cr) scalar_nil args in
+      let cb := scalar_compile keys body in
+      fun slots g st =>
+        match ca slots g st with
+        | Some (ws, st1) => cb slots (parameter_values ws) st1
+        | None => None
+        end
+  | SMatch1 e pat body =>
+      let ce := scalar_compile keys e in
+      let cb := scalar_compile keys body in
+      fun slots g st =>
+        match ce slots g st with
+        | Some (w, st1) =>
+            match I.match_pat pat w with I.PMatch bs => cb slots (bs ++ g) st1 | _ => None end
+        | None => None
+        end
+  end.
+
 (* A call's code, folded where its translation runs. *)
 Definition fold_call (e : expr) (fallback : code) : code :=
   match tos 48 6 None e with
   | None => fallback
   | Some s =>
       let depth := sdepth s in
+      let keys := scalar_keys s in
+      let fast := scalar_compile keys s in
       fun m d g st =>
         if Nat.leb depth m then
-          match sev d g st s with
-          | Some (w, st1) => I.Evaluation (Normal w) g st1
+          match gather d keys with
+          | Some slots =>
+              match fast slots g st with
+              | Some (w, st1) => I.Evaluation (Normal w) g st1
+              | None => fallback m d g st
+              end
           | None => fallback m d g st
           end
         else fallback m d g st
@@ -714,12 +819,137 @@ Proof.
       rewrite (IHl n pl r ss' T2 d de H g st1 ws' st2 E2 k ltac:(lia)). reflexivity.
 Qed.
 
+Lemma lk_eqb_true : forall i j, lk_eqb i j = true <-> i = j.
+Proof.
+  intros [i|] [j|]; cbn [lk_eqb]; try (split; congruence).
+  rewrite fast_item_eqb_spec, AuditPrune.item_eqb_true. split; congruence.
+Qed.
+
+Lemma gather_slots : forall keys d slots, gather d keys = Some slots ->
+  forall i, In i keys -> exists entry, read d i = Some entry /\ slot_lookup keys i slots = Some entry.
+Proof.
+  induction keys as [|j rest IH]; intros d slots H i Hin; [contradiction|].
+  cbn [gather] in H. destruct (read d j) as [entry|] eqn:Read; [|discriminate].
+  destruct (gather d rest) as [tail|] eqn:Tail; cbn [option_map] in H; [|discriminate].
+  injection H as <-. unfold slot_lookup. cbn [key_pos].
+  destruct (lk_eqb i j) eqn:Equal.
+  - apply lk_eqb_true in Equal. subst i. exists entry. split; [exact Read|reflexivity].
+  - destruct Hin as [Same|Hin].
+    + subst j. assert (lk_eqb i i = true) by (apply lk_eqb_true; reflexivity). congruence.
+    + destruct (IH d tail Tail i Hin) as (en & Hread & Hslot).
+      exists en. split; [exact Hread|].
+      unfold slot_lookup in Hslot. destruct (key_pos i rest); exact Hslot.
+Qed.
+
+Lemma scalar_keys_in : forall s i, In i (scalar_reads s) -> In i (scalar_keys s).
+Proof.
+  intros s i. unfold scalar_keys. induction (scalar_reads s) as [|j rest IH]; [contradiction|].
+  intro Hin. cbn [fold_right].
+  set (keys := fold_right (fun k acc => if existsb (lk_eqb k) acc then acc else k :: acc) [] rest) in *.
+  destruct (existsb (lk_eqb j) keys) eqn:Present.
+  - destruct Hin as [<-|Hin]; [|apply IH; exact Hin].
+    apply existsb_exists in Present as (k & Hk & Equal). apply lk_eqb_true in Equal. congruence.
+  - destruct Hin as [<-|Hin]; [left; reflexivity|right; apply IH; exact Hin].
+Qed.
+
+Lemma present_checks : forall d pl,
+  (forall i, In i (map snd pl) -> exists en, read d i = Some en) -> checks d pl = true.
+Proof.
+  intros d pl. induction pl as [|[req src] rest IH]; intro H; [reflexivity|].
+  destruct (H src (or_introl eq_refl)) as [en Read].
+  cbn [checks forallb snd]. rewrite Read. cbn. apply IH.
+  intros i Hin. apply H. right. exact Hin.
+Qed.
+
+Definition scalar_arguments (keys : list lk) (args : list sexpr) :=
+  fold_right (fun e cr => let c := scalar_compile P keys e in scalar_cons c cr) scalar_nil args.
+
+Lemma sev_prim : forall d g st i args,
+  sev P d g st (SPrim i args) =
+  match read d i with
+  | Some (FPrimitive p held) =>
+      match sevl P d g args st with
+      | Some (ws, st1) =>
+          match I.run_prim_at P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+      | None => None
+      end
+  | _ => None
+  end.
+Proof. reflexivity. Qed.
+
+Lemma sev_call : forall d g st guard args body,
+  sev P d g st (SCall guard args body) =
+  if checks d guard then
+    match sevl P d g args st with
+    | Some (ws, st1) => sev P d (parameter_values ws) st1 body
+    | None => None
+    end
+  else None.
+Proof. reflexivity. Qed.
+
+Lemma scalar_compile_agrees : forall bound s keys slots d g st,
+  sdepth s <= bound ->
+  (forall i, In i (scalar_reads s) -> exists entry, read d i = Some entry /\ slot_lookup keys i slots = Some entry) ->
+  scalar_compile P keys s slots g st = sev P d g st s.
+Proof.
+  induction bound as [|bound IH]; intros s keys slots d g st Depth Slots.
+  - destruct s; cbn [sdepth] in Depth; lia.
+  - assert (Args : forall args g' st', needed args <= S bound ->
+        (forall i, In i (flat_map scalar_reads args) ->
+          exists entry, read d i = Some entry /\ slot_lookup keys i slots = Some entry) ->
+        scalar_arguments keys args slots g' st' = sevl P d g' args st').
+    { induction args as [|arg rest IHr]; intros g' st' B H; [reflexivity|].
+      cbn [needed] in B.
+      change (scalar_arguments keys (arg :: rest)) with
+        (scalar_cons (scalar_compile P keys arg) (scalar_arguments keys rest)).
+      unfold scalar_cons. cbn [sevl].
+      rewrite (IH arg keys slots d g' st') by
+        (first [lia | intros i Hin; apply H; apply in_or_app; left; exact Hin]).
+      destruct (sev P d g' st' arg) as [[w st1]|]; [|reflexivity].
+      rewrite (IHr g' st1) by
+        (first [lia | intros i Hin; apply H; apply in_or_app; right; exact Hin]).
+      reflexivity. }
+    destruct s as [x| |i|tag a|i args|guard args body|a pat body];
+      cbn [scalar_reads] in Slots.
+    + reflexivity.
+    + reflexivity.
+    + destruct (Slots i (or_introl eq_refl)) as (entry & Read & Slot).
+      cbn [scalar_compile sev]. rewrite Read, Slot. reflexivity.
+    + cbn [sdepth] in Depth. cbn [scalar_compile sev].
+      rewrite (IH a keys slots d g st) by (assumption || lia). reflexivity.
+    + change (S (needed args) <= S bound) in Depth.
+      destruct (Slots i (or_introl eq_refl)) as (entry & Read & Slot).
+      cbn [scalar_compile]. fold (scalar_arguments keys args).
+      rewrite sev_prim, Read, Slot.
+      rewrite (Args args g st) by (first [lia | intros j Hj; apply Slots; right; exact Hj]).
+      reflexivity.
+    + change (S (Nat.max (needed args) (sdepth body)) <= S bound) in Depth.
+      cbn [scalar_compile]. fold (scalar_arguments keys args). rewrite sev_call.
+      rewrite (present_checks d guard).
+      2: { intros i Hin. destruct (Slots i ltac:(apply in_or_app; left; exact Hin)) as (en & Read & _).
+           exists en. exact Read. }
+      rewrite (Args args g st) by
+        (first [lia | intros i Hin; apply Slots; apply in_or_app; right; apply in_or_app; left; exact Hin]).
+      destruct (sevl P d g args st) as [[ws st1]|]; [|reflexivity].
+      apply IH; [lia|]. intros i Hin. apply Slots. apply in_or_app; right. apply in_or_app; right. exact Hin.
+    + cbn [sdepth] in Depth. cbn [scalar_compile sev].
+      rewrite (IH a keys slots d g st) by
+        (first [lia | intros i Hin; apply Slots; apply in_or_app; left; exact Hin]).
+      destruct (sev P d g st a) as [[w st1]|]; [|reflexivity].
+      destruct (I.match_pat pat w) as [bs| |]; try reflexivity.
+      apply IH; [lia|]. intros i Hin. apply Slots. apply in_or_app; right. exact Hin.
+Qed.
+
 Lemma fold_call_ok : forall e fb n d g st,
   fb n d g st = F.feval n P d g st e -> fold_call P e fb n d g st = F.feval n P d g st e.
 Proof.
   intros e fb n d g st Hfb. unfold fold_call.
   destruct (tos P 48 6 None e) as [s|] eqn:T; [|exact Hfb].
   destruct (Nat.leb (sdepth s) n) eqn:Le; [|exact Hfb].
+  destruct (gather d (scalar_keys s)) as [slots|] eqn:Gather; [|exact Hfb].
+  rewrite (scalar_compile_agrees (sdepth s) s (scalar_keys s) slots d g st).
+  2: { lia. }
+  2: { intros i Hin. eapply gather_slots; [exact Gather|apply scalar_keys_in; exact Hin]. }
   destruct (sev P d g st s) as [[w st1]|] eqn:Ev; [|exact Hfb].
   symmetry. apply Nat.leb_le in Le.
   exact (proj1 (fold_sound 48) 6 None e s T d d (fun i => eq_refl) g st w st1 Ev n Le).
