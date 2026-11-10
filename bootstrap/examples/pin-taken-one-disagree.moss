@@ -1,0 +1,21 @@
+# pin-taken-one.moss with a bind site that disagrees with the pin
+# (AUDIT-CHANGES #95): G takes T and binds it to Old, but main has
+# T = New. Every application would read `mk(): T` as `mk(): New`, while
+# the body's `mk` returns an Old.
+# Verdicts: oracle rejects (D84 3d's agreement); native rejects; Audit
+# rejects (BFunClosure: the pin (T, Old) is not T's meaning here, New).
+type T;
+tag Old;
+tag New;
+assume T { fn mk(): T; }
+functor F[]: T -> mk;
+functor G: T -> mk {
+  bind T = Old;
+  bind mk = () => Old;
+}
+fn main() {
+  bind T = New;
+  bind F = G;
+  bind F;
+  match mk() { New => () };
+}

@@ -237,10 +237,6 @@ Proof.
   injection SigE as SigP SigR.
   assert (SigE : A.sig_subst (A.c_sub Cb) (A.sig_subst pr0 gf) = A.sig_subst (A.c_sub Cb) ga).
   { destruct gf as [psf rtf], ga as [psa rta]. unfold A.sig_subst. cbn in SigP, SigR |- *. rewrite SigP, SigR. reflexivity. }
-  (* a pinned input is no input of G *)
-  assert (PinOut : forall y, In y (map fst pins) -> ~ In y DG).
-  { intros y Ip Ig. apply in_map_iff in Ip as [[y' tx] [E Ip]]. cbn in E. subst y'.
-    exact (proj1 (proj2 (proj1 (PinsI y tx) Ip)) Ig). }
   assert (R2sig : forall t y, In t (A.sg_ret gf :: A.sg_params gf) -> In y (A.gens t) -> In y DG \/ In y (map fst pins)).
   { intros t y It Iy. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [left; exact I'|].
     destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
@@ -329,11 +325,11 @@ Proof.
     change (app_subst (type_meanings d3) (match lookup_subst y pr0 with Some v => v | None => TAbs y end) =
       match lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) with Some v => v | None => TAbs y end).
     rewrite Thy.
-    destruct (Ig y Iy) as [Iyg|Ip].
-    - assert (Np : ~ In y (map fst pins)) by (intros Ip; exact (PinOut y Ip Iyg)).
+    destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np].
+    2: { destruct (Ig y Iy) as [Iyg|Ip]; [|exfalso; exact (Np Ip)].
       rewrite Err, (PublicLinkRun.lookup_pin_reads_none Cb pins y Np).
       exact (RunFact (TAbs y) (fun z I => match I with or_introl E => eq_ind y (fun z => In z DG) Iyg z E | or_intror F => match F with end end)
-                              (fun z I => match I with or_introl E => eq_ind y (fun z => In z (map fst (A.c_ty Cu))) (Sc y Iy) z E | or_intror F => match F with end end)).
+                              (fun z I => match I with or_introl E => eq_ind y (fun z => In z (map fst (A.c_ty Cu))) (Sc y Iy) z E | or_intror F => match F with end end)). }
     - destruct (PublicLinkRun.lookup_pin_reads_in Cb pins y Ip) as [v Lv].
       destruct (PublicLinkRun.lookup_pin_reads_some Cb pins y v Lv) as [tx [Itx ->]].
       rewrite Err, Lv. change (ground d3 (A.canon Cb tx) = ground d (app_subst th (TAbs y))).

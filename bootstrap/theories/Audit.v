@@ -3621,7 +3621,7 @@ Record frame := Frame {
   fr_mod : string; fr_ret : option ty; fr_this : option ty; fr_loop : bool;
   fr_var : list (name * nat); fr_fresh : list nat;
   fr_applying : list nat;   (* functors being applied by name: [D55] no cycle *)
-  fr_pins : list nat        (* in a body bound to F: P(F) ∩ M(F) and the fixed inputs G takes, which it may not rebind ([D84] 3d, Q6) *)
+  fr_pins : list nat        (* in a body bound to F: P(F) ∩ M(F), which it may not rebind ([D84] 3d) *)
 }.
 
 (* a local's number, for a name the numbering covers ([Named]) *)
@@ -4112,7 +4112,7 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : l
    binds `T = Bool` provides `mk(): T` as `mk(): Bool`. *)
 Definition role_reads (site : cx) (outs : list nat) (gen : nat -> nat) : subst :=
   map (fun t => (gen t, canon site (app_subst (c_ty site) (TAbs (gen t))))) outs.
-(* Q6: a fixed input of F that the body pins (binds, though G does not take
+(* Q6: a fixed input of F that the body pins (binds, whether or not G takes
    it) is compared at the pin, canonically: a body that pins `Tok = Char`
    provides `tok(): Tok` as `tok(): Char` (examples/pin-fixed-agree.moss).
    Every application reads Tok as the bind site did (rule 5), and the bind
@@ -4901,11 +4901,11 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     fr_this Fg = None -> fr_loop Fg = false ->
     (* its locals are numbered as a body's are *)
     Numbering Fg None [] ->
-    (* 3d, Q6: the pins Π are the polymorphic types F's result mentions,
-       P(F) ∩ M(F), and the fixed ones G takes itself; a fixed input G does
-       not take may be pinned (bound by the body), and BFunClosure checks
-       that the pin agrees with the bind site *)
-    (forall x, In x (fr_pins Fg) <-> Mentions W u x /\ (Poly W u x \/ In x (map fst (c_ty Cg)))) ->
+    (* 3d, Q6: the protected inputs Π are the polymorphic types F's result
+       mentions, P(F) ∩ M(F); a fixed input may be pinned (bound by the
+       body), whether or not G takes it, and BFunClosure checks that the
+       pin agrees with the bind site (AUDIT-CHANGES #95) *)
+    (forall x, In x (fr_pins Fg) <-> Mentions W u x /\ Poly W u x) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
     (* no generation the body makes is an input of F: each application
        supplies F's inputs, and a body write would replace one under a
@@ -4939,9 +4939,14 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
       (map ITy outs) binds0
       (map (fun k => rkey_of (link_site Cg Cb pins outs gen) (at_site (link_site Cg Cb pins outs gen) k)) ks)) ->
-    (* the pins of fixed inputs: what the body binds each to *)
+    (* the pins of fixed inputs: what the body binds each to, in G's input
+       terms (each bind reads its type where it is made, and a later bind
+       writes only its own alias; examples/pin-taken-chain.moss).  A fixed
+       input that G takes is pinned when the body leaves it at another
+       reading than G's own (examples/pin-taken-one.moss, #95) *)
     (forall x tx, In (x, tx) pins <->
-       Fixed W u x /\ ~ In x (map fst (c_ty Cg)) /\ nlook x (c_ty Cb) = Some tx) ->
+       Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
+       (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx)) ->
     (* a pin is a type over G's own inputs (each its own merge class),
        none of them an input of F that applications supply (as the oracle:
        "a type each application ... supplies") nor a generation the body

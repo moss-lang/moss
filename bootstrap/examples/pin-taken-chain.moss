@@ -5,10 +5,12 @@
 # with the bind site (T = U = V = Old there). After the chain, G's `q` is
 # `(a: U, b: V, c: Old)` in G's input terms, which every application reads
 # as `(Old, Old, Old)`, the promised `q(T, U, V)` at the bind site.
-# Verdicts: oracle exit 0; native exit 0; Audit rejects (`BTypeBind`:
-# T is in `fr_pins`, since #71 pins a fixed input that G takes, so the
-# body may not bind it). A fidelity gap of #71's, recorded in
-# AUDIT-CHANGES #93; not fixed.
+# The pins are (T, U), (U, V) and (V, Old), each in G's input terms (a
+# bind reads its type where it is made), and each agrees with main.
+# Verdicts: oracle exit 0; native exit 0; Audit accepts since #95. Before,
+# it rejected (`BTypeBind`: #71 protected a fixed input that G takes, so
+# the body could not bind it; recorded in AUDIT-CHANGES #93). The
+# disagreeing variant is pin-taken-chain-disagree.moss.
 type T;
 type U;
 type V;

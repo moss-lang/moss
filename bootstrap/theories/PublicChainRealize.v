@@ -1073,14 +1073,13 @@ Proof.
   set (OkG := fun y => (In y D0 /\ In y DG) \/ (exists t0, In t0 outs' /\ y = gen t0)).
   set (OkG2 := fun y => OkG y \/ In y (map fst pins)).
   assert (KeyX : forall x, OkG2 x -> ground d3 (app_subst rr (TAbs x)) = app_subst T0 (TAbs x)).
-  { intros x [[[I0 Ig]|[t0 [It ->]]]|Ip].
+  { intros x Okx. destruct (in_dec Nat.eq_dec x (map fst pins)) as [Ip|Np].
+    2: { destruct Okx as [[[I0 Ig]|[t0 [It ->]]]|Ip]; [| |exfalso; exact (Np Ip)].
     - cbn [app_subst]. rewrite RrE, PublicCopyFresh.lookup_subst_cat, (lookup_map_none gen _ outs' x (NR x I0)).
-      rewrite PublicLinkRun.lookup_pin_reads_none; [exact (DomG x I0 Ig)|].
-      intros Ip. apply in_map_iff in Ip as [[x' tx] [E Ip]]. cbn in E. subst x'.
-      exact (proj1 (proj2 (proj1 (PinsI x tx) Ip)) Ig).
+      rewrite PublicLinkRun.lookup_pin_reads_none by exact Np. exact (DomG x I0 Ig).
     - cbn [app_subst]. rewrite RrE, PublicCopyFresh.lookup_subst_cat, (lookup_roles gen _ outs' t0 It Inj). change (A.canon Ls) with (A.canon Cb).
       rewrite (Abs3 (app_subst (A.c_ty Ls) (TAbs (gen t0)))), Role by exact It.
-      unfold T0, Tv. rewrite PublicCopyFresh.lookup_subst_cat, (lookup_roles gen _ outs' t0 It Inj). reflexivity.
+      unfold T0, Tv. rewrite PublicCopyFresh.lookup_subst_cat, (lookup_roles gen _ outs' t0 It Inj). reflexivity. }
     - (* a pin of a fixed input: read at the pin, which the application's reading agrees with *)
       destruct (PublicLinkRun.lookup_pin_reads_in Cb pins x Ip) as [v Lv].
       destruct (PublicLinkRun.lookup_pin_reads_some Cb pins x v Lv) as [tx [Itx ->]].
@@ -1091,11 +1090,9 @@ Proof.
   assert (KeyTy : forall t, (forall x, In x (A.gens t) -> OkG2 x) -> ground d3 (app_subst rr t) = app_subst T0 t).
   { intros t Ok. unfold ground. apply PublicCopyFresh.ty_agree. intros x Ix. exact (KeyX x (Ok x Ix)). }
   assert (RecvX : forall x, OkG2 x -> ground d3 (app_subst (A.c_ty Ls) (TAbs x)) = app_subst T0 (TAbs x)).
-  { intros x [[[I0 Ig]|[t0 [It ->]]]|Ip].
-    - assert (Np : ~ In x (map fst pins)).
-      { intros Ip. apply in_map_iff in Ip as [[x' tx] [E Ip]]. cbn in E. subst x'.
-        exact (proj1 (proj2 (proj1 (PinsI x tx) Ip)) Ig). }
-      cbn [app_subst]. unfold Ls. rewrite (lookup_site_in Cg Cb pins outs' gen x (NR x I0) Np), lookup_subst_nlook'.
+  { intros x Okx. destruct (in_dec Nat.eq_dec x (map fst pins)) as [Ip|Np].
+    2: { destruct Okx as [[[I0 Ig]|[t0 [It ->]]]|Ip]; [| |exfalso; exact (Np Ip)].
+    - cbn [app_subst]. unfold Ls. rewrite (lookup_site_in Cg Cb pins outs' gen x (NR x I0) Np), lookup_subst_nlook'.
       destruct (nlook_some _ x _ Ig) as [tx Lx]. rewrite Lx.
       destruct (LRs x tx Lx (proj2 (PublicFamilyAgree.nlook_dom _ x _) I0)) as [InU Can].
       assert (Gtx : incl (A.gens tx) DG) by (intros y Iy; exact (PublicChainSigs.table_gens_dom W gg Cg nsg x tx y FCg Lx Iy)).
@@ -1105,7 +1102,7 @@ Proof.
       change (app_subst Tin (A.canon Ch0 tx) = app_subst T0 (TAbs x)). rewrite <- Can. unfold A.canon.
       rewrite (PublicChainSigs.sub_inv W h0 Ch0 nsh0 Tin FC0 Tok (TAbs x)).
       unfold T0, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]]. exact (NR x I0).
-    - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity.
+    - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity. }
     - (* #73: a pinned input, read at its pin *)
       destruct (PublicLinkRun.lookup_subst_dom x pins Ip) as [tx [_ Itx]].
       destruct (PinT x tx Itx) as [I0 _].

@@ -2,8 +2,10 @@
 # fixed in T, which its result `mk` mentions; G takes T and binds it to
 # Old, which agrees with the bind site, so `mk(): T` is `mk(): Old` at
 # every application.
-# Verdicts: oracle exit 0; native exit 0; Audit rejects (`BTypeBind`, T is
-# in fr_pins). Control: pin-fixed-agree.moss, where G does not take the
+# Verdicts: oracle exit 0; native exit 0; Audit accepts since #95 (the
+# body's `bind T = Old` is a pin, (T, Old), which BFunClosure checks
+# against main's T = Old); before #95 it rejected (`BTypeBind`, T was in
+# fr_pins). Control: pin-fixed-agree.moss, where G does not take the
 # pinned input, is accepted (#71).
 type T;
 tag Old;

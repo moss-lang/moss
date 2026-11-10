@@ -121,10 +121,11 @@ entry they belong to.
 | 90 | **Every tag has a finite layout** (`FiniteLayouts`, D58/D59; on definitions, with no case for `Ref`) | layout | A for used types; B for an unused cyclic tag, with the oracle and native changed to match |
 | 91 | Main's platform provisions are Platform's contract (`PlatformEntry` moves from `ElaboratesIn` to `Platform.Linked`) | layout | none (`Builds` and `Ready` are unchanged) |
 | 92 | The language items go through one table (`lang_item`, `LangItem`) | layout | none (definitional) |
-| 93 | Recorded, not fixed: a body may not pin a fixed input that G takes (the oracle plan's N5) | layout | a fidelity gap of #71's (Audit rejects what both implementations run) |
+| 93 | Recorded: a body may not pin a fixed input that G takes (the oracle plan's N5; fixed in #95) | layout | a fidelity gap of #71's (Audit rejects what both implementations run) |
 | 94 | Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6) | layout | none (Audit already rejects; the executable elaborator's gap) |
+| 95 | A linked body may pin a fixed input that G takes (`LinkBody`: protected inputs P(F) ∩ M(F), pins every fixed input the body rebinds; closes N5) | n5 | relaxation toward both implementations (closes #93's fidelity gap) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, and #95 from the n5 branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -2699,6 +2700,9 @@ executable tests unless noted.
   `link_site` table) would have to be revisited. That proof change was
   not made on this branch.
 - **Class.** A fidelity gap (criteria section 6), recorded with its fix.
+- **Fixed in #95**, with a smaller proof change than the one above: a
+  pin read in the body's final environment is already its reading in
+  input terms, since `bind T = U` writes only T's alias.
 
 ### 94. Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6; layout branch)
 - **The program.** `runtime_platform::machine_constants_have_machine_types`:
@@ -2718,6 +2722,108 @@ executable tests unless noted.
   `IVal` case should also check `machine_type "I32"` of the val's type in
   `C`, as its `IFn` case checks `at_key`.
 - **Class.** None in Audit.
+
+### 95. A linked body may pin a fixed input that G takes (`LinkBody`; n5 branch; closes N5, #93)
+- **Rule now.**
+  - `LinkBody`'s protected inputs are P(F) ∩ M(F):
+    `In x (fr_pins Fg) <-> Mentions W u x /\ Poly W u x`. Before (#71)
+    they also held the fixed inputs that G takes and F's result
+    mentions, so `BTypeBind` refused `bind T = …` for them.
+  - The pins are every fixed input of F that the body leaves at another
+    reading than G's own, whether or not G takes it:
+    `In (x, tx) pins <-> Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
+    (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx)`. For an
+    input G does not take this is #71's clause, since `c_ty Cg` has no
+    entry for it.
+  - Nothing else changes. A pin's type is still a type over G's own
+    unmerged inputs, none of them made by the body, and any of them
+    that is an input of F is fixed in F. `BFunClosure`'s agreement check
+    is already per pin, and `link_site`'s table already puts the pins
+    before `c_ty Cg`, so a pinned input of G reads at its pin, in the
+    keys (#73) as in the promised types (`pin_reads`).
+- **A chain is read in G's input terms.** In pin-taken-chain, G's body
+  is `bind T = U; bind U = V; bind V = Old`. Each bind reads its type
+  where it is made and writes only its own entry, so the body's final
+  table is T ↦ U, U ↦ V, V ↦ Old, each type in G's input terms. Those
+  are the pins. The body's `q` is `(U, V, Old)`, and the promised
+  `q(T, U, V)` read through the pins is the same `(U, V, Old)`. At the
+  bind site T = U = V = Old, so each pin agrees: T is Old and U reads as
+  Old, U is Old and V reads as Old, V is Old and so is Old. Every
+  application reads F's fixed inputs as the bind site did (rule 5), so
+  every caller reads `q` as `(Old, Old, Old)`, which is what the body
+  provides.
+- **Why it is safe.** As #71: each pin is a promise that the body is only
+  used where the pinned input means what the pin says, and fixed inputs
+  make "where it is used" the same as "where it was bound". Whether G
+  takes the input makes no difference to the promise.
+- **Criteria.** Fidelity (section 6): both implementations run
+  pin-taken-one and pin-taken-chain and reject the two disagreeing
+  variants. The oracle's D84 3d forbids only P(F) ∩ M(F) and checks the
+  agreement for every member of X(F) the body binds. Stability
+  (section 5): each pin is checked against the bind site's meaning.
+  Safety (section 1): `public_safety` is still proved.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [pin-taken-one](examples/pin-taken-one.moss) | exit 0 | exit 0 | rejects (`BTypeBind`) | accepts |
+  | [pin-taken-chain](examples/pin-taken-chain.moss) (`bind T=U; bind U=V; bind V=Old`) | exit 0 | exit 0 | rejects (`BTypeBind`) | accepts |
+  | [pin-taken-one-disagree](examples/pin-taken-one-disagree.moss) (main has `T = New`) | rejects ("it binds `T` to `Old`, and here `T` is `New`") | rejects ("the functor does not satisfy the required signature: `T`") | rejects (`BTypeBind`) | rejects (`BFunClosure`'s agreement) |
+  | [pin-taken-chain-disagree](examples/pin-taken-chain-disagree.moss) (main has `V = New`) | rejects ("it binds `U` to `New`, and here `U` is `Old`") | rejects ("… signature: `U`") | rejects (`BTypeBind`) | rejects (`BFunClosure`: the pin `U = V` reads as New, and U is Old) |
+  | `runtime_platform::private_checked_casts_preserve_chained_fixed_pin_meanings` (crates/moss-tests; the chain, with `Wasm`, `raw` and a `Ref[Boxed=T]` cast) | exit 0 | exit 0 | rejects | accepts |
+  | [pin-fixed-agree](examples/pin-fixed-agree.moss), [pin-fixed-disagree](examples/pin-fixed-disagree.moss) (#71) | q, rejects | q, rejects | accepts, rejects | accepts, rejects |
+
+  Audit's verdicts are argued from the rules. The executable elaborator
+  confirms them. With the change below, its faithful mode (`audit_run
+  --frontend audit`) accepts pin-taken-one and pin-taken-chain, rejects
+  both disagreeing variants with "G pins a fixed input of F to another
+  type than it has here (Q6)", and runs the crates test's program (with
+  the full prelude) on Audit's interpreter with exit 0. Without the
+  change it rejects all four examples and the crates program with
+  "bind: a pinned input of the bound functor (D84 3d)".
+- **Corpus.** The executable elaborator (branch `elab` at 5d902a6) and
+  the same elaborator with the change below, `--frontend audit
+  --elab-only`, over `src/main.moss`, `tests/`, `examples/` and
+  `bootstrap/examples/` (525 files): 521 same and 4 diff. The diffs are
+  the four pin-taken examples: pin-taken-one and pin-taken-chain are
+  now accepted, and the two disagreeing variants are still rejected,
+  now by the agreement check instead of `BTypeBind`. No file is newly
+  rejected, so no corpus program binds a fixed input that G takes at a
+  reading that disagrees with its bind site.
+- **Proof.** `public_safety` is still proved, and `check.sh` is green.
+  #93 expected a larger proof change, because `PinRun` and `PinT` read a
+  pin's type in the body's final environment d3 (`ground d3 tx`), which
+  #93 took to be wrong for a chain. It is not wrong. A run of binds writes
+  type *meanings* only at the destinations of applications
+  (`PublicChainCore.bindings_writes`), and `bind_type` writes only an
+  alias. So d3's meaning of each of G's own unmade inputs is still the
+  application's (`PublicLinkRun.link_own_meaning`), and `ground d3 tx` is
+  the pin read in input terms, which `PinsAgree` (from `BFunClosure`'s
+  check) equates with the closure's fixed reading of the pinned input.
+  `PinT`'s and `PinRun`'s proofs never used that a pin is not one of G's
+  inputs. What did use it:
+  - `PublicChainRealize.root_level`, `KeyX` and `RecvX`, sent a symbol
+    that is an input of both F and G to G's table and used #71's
+    "not taken" clause to show it is not pinned. They now case on
+    whether the symbol is pinned first. A pinned one goes by `PinT`,
+    whichever table it is also in.
+  - `PublicFamilyLink.family_link_new_ok`'s `GE` did the same for a
+    family's on-demand application (via `PinOut`, now removed). It also
+    cases on the pins first, then uses `PinRun`.
+  - `PublicBodySlice.LinkData`'s pin clause is `LinkBody`'s new one.
+  No obligation statement changes, and no new premise is needed.
+  `lookup_site_in` keeps its "not pinned" premise, which the callers now
+  have from the case split.
+- **The executable elaborator** (branch `elab`, `EaFunctor.link_body`)
+  needs the same two changes, which the corpus run used
+  (`scratch/elab-n5` on the n5 branch, not committed there): the frame's
+  pins are `filter (fun t => nmem t pl) (mentions W fuel u)`, without
+  `|| bound_in Cg t`; and `pins` takes every `x` of `fu` with
+  `nlook x (c_ty Cb) = Some v`, except when `nlook x (c_ty Cg) = Some w`
+  with `ty_eqb w v`. Its soundness argument for `link_body` follows the
+  new `LinkBody` clause.
+- **Class.** A relaxation toward both implementations (C/none), closing
+  the fidelity gap recorded in #93.
 
 ---
 

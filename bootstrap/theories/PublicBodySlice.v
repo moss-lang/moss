@@ -3426,7 +3426,8 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) /\
   (* Q6: the pins of fixed inputs, and what they mention *)
   (forall x tx, In (x, tx) pins <->
-     A.Fixed W u x /\ ~ In x (map fst (A.c_ty Cg)) /\ A.nlook x (A.c_ty Cb) = Some tx) /\
+     A.Fixed W u x /\ A.nlook x (A.c_ty Cb) = Some tx /\
+     (In x (map fst (A.c_ty Cg)) -> A.nlook x (A.c_ty Cg) <> Some tx)) /\
   (forall x tx y, In (x, tx) pins -> In y (A.gens tx) ->
      In y (map fst (A.c_ty Cg)) /\ lookup_subst y (A.c_sub Cg) = None /\ ~ In y made /\
      (In y (map fst (A.c_ty Cu)) -> A.Fixed W u y)).
