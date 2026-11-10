@@ -3,7 +3,7 @@
 (* in the sense of the DRAFT relation (ExecutionModel.v, Part V, V.1): the loader    *)
 (* half of `WorldOf`.                                                        *)
 (*                                                                           *)
-(* `W_read w R F` is the ExecutionModel world the loader's `w` (Elab.load_world)     *)
+(* `W_read w R F` is the ExecutionModel world the loader's `w` (LoadWorld.load_world)     *)
 (* denotes: its symbols, scopes, exports and attached-method table, with    *)
 (* requirements R and field numbering F supplied from outside (the          *)
 (* elaborator computes both lazily, during elaboration).  Proved here:      *)
@@ -161,7 +161,7 @@ Proof.
 Qed.
 
 (* ======================================================================== *)
-(* 2. Declaring a module's symbols (Elab.declare)                            *)
+(* 2. Declaring a module's symbols (LoadWorld.declare)                            *)
 (* ======================================================================== *)
 
 Definition is_attached (d : adecl) : Prop :=
@@ -632,7 +632,7 @@ Qed.
 End Declare.
 
 (* ======================================================================== *)
-(* 3. Linking a module's imports (Elab.link)                                 *)
+(* 3. Linking a module's imports (LoadWorld.link)                                 *)
 (* ======================================================================== *)
 
 Lemma sassoc_aset : forall V (t : list (string * V)) n s k,
@@ -976,7 +976,7 @@ Proof.
 Qed.
 
 (* ======================================================================== *)
-(* 4. Loading (Elab.load): the invariant                                     *)
+(* 4. Loading (LoadWorld.load): the invariant                                     *)
 (* ======================================================================== *)
 
 Lemma filed_not_alias : forall d n, A.filed_name d <> Some (A.NSAlias, n).
@@ -1519,17 +1519,17 @@ End Load.
 (* 5. The ExecutionModel world the loader's world denotes                             *)
 (* ======================================================================== *)
 
-Fixpoint find_mod (w : Elab.world) (p : string) (l : list nat) : option gmod :=
+Fixpoint find_mod (w : LoadWorld.world) (p : string) (l : list nat) : option gmod :=
   match l with
   | [] => None
   | i :: r => let m := get_mod w i in if String.eqb (gm_path m) p then Some m else find_mod w p r
   end.
 
 (* A table entry as an ExecutionModel entity: a symbol, or (an alias) a module path. *)
-Definition aent (w : Elab.world) (ns : A.nspace) (x : nat) : A.ent :=
+Definition aent (w : LoadWorld.world) (ns : A.nspace) (x : nat) : A.ent :=
   match ns with A.NSAlias => A.EMod (gm_path (get_mod w x)) | _ => A.ESym x end.
 
-Definition W_read (w : Elab.world) (R : nat -> list nat) (F : string -> nat) : A.world :=
+Definition W_read (w : LoadWorld.world) (R : nat -> list nat) (F : string -> nat) : A.world :=
   A.World
     (fun x => match nget (w_syms w) x with
               | Some g => Some (A.Decl (gm_path (get_mod w (gs_mod g))) (gs_decl g) (gs_assumes g))
@@ -1545,7 +1545,7 @@ Definition W_read (w : Elab.world) (R : nat -> list nat) (F : string -> nat) : A
                 | Some g => assoc attached_eqb (r, n) (gm_attached (get_mod w (gs_mod g)))
                 | None => None
                 end)
-    R F (Elab.w_library w).
+    R F (LoadWorld.w_library w).
 
 Export ComponentContracts.SourceReading.
 
@@ -1565,7 +1565,7 @@ Hypothesis He : In (b_entry b, e) (ls_loaded st).
 Hypothesis Hr : forall q j, In (q, j) (ls_loaded st) -> Reach b (b_entry b) q.
 Variables (R : nat -> list nat) (F : string -> nat).
 
-Let w := Elab.World (ls_mods st) (ls_order st) e (ls_syms st) (ls_next_sym st) (ls_files st) (Loader.library_dir (b_prelude b)).
+Let w := LoadWorld.World (ls_mods st) (ls_order st) e (ls_syms st) (ls_next_sym st) (ls_files st) (Loader.library_dir (b_prelude b)).
 Let W := W_read w R F.
 
 Lemma fin_get_mod : forall i m, nget (ls_mods st) i = Some m -> get_mod w i = m.
@@ -1934,23 +1934,23 @@ Proof.
     exact (IH j Hlt t tm amt Hj Htm Hamt true n x Hq9).
 Qed.
 
-Definition conv_ent (e0 : Elab.ent) : A.ent :=
-  match e0 with Elab.ESym s => A.ESym s | Elab.EMod j => A.EMod (gm_path (get_mod w j)) end.
+Definition conv_ent (e0 : LoadWorld.ent) : A.ent :=
+  match e0 with LoadWorld.ESym s => A.ESym s | LoadWorld.EMod j => A.EMod (gm_path (get_mod w j)) end.
 
 Definition go_res (m : gmod) :=
-  fix go (cur : Elab.ent) (hd : string) (segs : list string) : res (option Elab.ent) :=
+  fix go (cur : LoadWorld.ent) (hd : string) (segs : list string) : res (option LoadWorld.ent) :=
     match segs with
     | [] => Good (Some cur)
     | seg :: r =>
         match cur with
-        | Elab.ESym _ => err_in m ("`" ++ hd ++ "` is not a module")%string
-        | Elab.EMod ci =>
+        | LoadWorld.ESym _ => err_in m ("`" ++ hd ++ "` is not a module")%string
+        | LoadWorld.EMod ci =>
             let cm := get_mod w ci in
             match sassoc seg (gm_exp_names cm) with
-            | Some s => go (Elab.ESym s) seg r
+            | Some s => go (LoadWorld.ESym s) seg r
             | None =>
                 match sassoc seg (gm_exp_aliases cm) with
-                | Some s => go (Elab.EMod s) seg r
+                | Some s => go (LoadWorld.EMod s) seg r
                 | None => err_in m ("`" ++ gm_path cm ++ "` does not export `" ++ seg ++ "`")%string
                 end
             end
@@ -1958,7 +1958,7 @@ Definition go_res (m : gmod) :=
     end.
 
 Lemma go_res_agrees : forall m segs cur hd r,
-  (match cur with Elab.EMod j => exists q, In (q, j) (ls_loaded st) | _ => True end) ->
+  (match cur with LoadWorld.EMod j => exists q, In (q, j) (ls_loaded st) | _ => True end) ->
   go_res m cur hd segs = Good r -> A.resolve_rest W (conv_ent cur) segs = option_map conv_ent r.
 Proof.
   intros m segs. induction segs as [|seg rest IH]; intros cur hd r Hc H.
@@ -1968,10 +1968,10 @@ Proof.
     cbn [A.resolve_rest conv_ent]. rewrite Gcm in H |- *. rewrite Pcm.
     rewrite (fin_exp q j cm A.NSName seg Hq Ecm), (fin_exp q j cm A.NSAlias seg Hq Ecm). cbn [tbl aent].
     destruct (sassoc seg (gm_exp_names cm)) as [s|] eqn:En.
-    + cbn [option_map]. apply (IH (Elab.ESym s) seg r I H).
+    + cbn [option_map]. apply (IH (LoadWorld.ESym s) seg r I H).
     + destruct (sassoc seg (gm_exp_aliases cm)) as [k|] eqn:Ea; [|unfold err_in in H; discriminate].
-      cbn [option_map]. change (A.EMod (gm_path (get_mod w k))) with (conv_ent (Elab.EMod k)).
-      apply (IH (Elab.EMod k) seg r); [|exact H].
+      cbn [option_map]. change (A.EMod (gm_path (get_mod w k))) with (conv_ent (LoadWorld.EMod k)).
+      apply (IH (LoadWorld.EMod k) seg r); [|exact H].
       exact (alias_loaded j q cm amq Hq Ecm Hamq true seg k Ea).
 Qed.
 
@@ -1979,18 +1979,18 @@ Qed.
    relation's `resolve` resolves it to (and where the elaborator finds
    nothing, so does the relation). *)
 Theorem resolve_path_agrees : forall p i m pa r, In (p, i) (ls_loaded st) -> nget (ls_mods st) i = Some m ->
-  Elab.resolve_path w i pa = Good r -> A.resolve W p pa = option_map conv_ent r.
+  LoadWorld.resolve_path w i pa = Good r -> A.resolve W p pa = option_map conv_ent r.
 Proof.
   intros p i m pa r Hi Hm H. destruct (fin_path p i Hi) as (m' & am & Em & Gm & Pm & Hma).
   rewrite Hm in Em. injection Em as <-.
-  unfold Elab.resolve_path in H. rewrite Gm in H. destruct pa as [|hd rest]; [injection H as <-; reflexivity|].
+  unfold LoadWorld.resolve_path in H. rewrite Gm in H. destruct pa as [|hd rest]; [injection H as <-; reflexivity|].
   cbn [A.resolve]. rewrite (fin_scope p i m A.NSName hd Hi Hm), (fin_scope p i m A.NSAlias hd Hi Hm). cbn [tbl aent].
   destruct (sassoc hd (gm_names m)) as [s|] eqn:En.
-  - cbn [option_map]. change (A.ESym s) with (conv_ent (Elab.ESym s)).
-    exact (go_res_agrees m rest (Elab.ESym s) hd r I H).
+  - cbn [option_map]. change (A.ESym s) with (conv_ent (LoadWorld.ESym s)).
+    exact (go_res_agrees m rest (LoadWorld.ESym s) hd r I H).
   - destruct (sassoc hd (gm_aliases m)) as [k|] eqn:Ea; cbn [option_map] in H |- *.
-    + change (A.EMod (gm_path (get_mod w k))) with (conv_ent (Elab.EMod k)).
-      apply (go_res_agrees m rest (Elab.EMod k) hd r); [|exact H].
+    + change (A.EMod (gm_path (get_mod w k))) with (conv_ent (LoadWorld.EMod k)).
+      apply (go_res_agrees m rest (LoadWorld.EMod k) hd r); [|exact H].
       exact (alias_loaded i p m am Hi Hm Hma false hd k Ea).
     + injection H as <-. reflexivity.
 Qed.
@@ -2093,7 +2093,7 @@ Lemma esym_resolve : forall mi pa s r s', GS s -> In mi (ls_order st) ->
 Proof.
   intros mi pa s r s' [Gw Gk] Hmi H. unfold Elab.resolve_sym in H.
   apply bind_inv in H as (r0 & s1 & H1 & H). unfold rpath in H1. rewrite Gw in H1.
-  destruct (Elab.resolve_path w mi pa) as [r1|m] eqn:Er; [|discriminate]. injection H1 as -> E2. subst s1.
+  destruct (LoadWorld.resolve_path w mi pa) as [r1|m] eqn:Er; [|discriminate]. injection H1 as -> E2. subst s1.
   destruct (proj1 (li_order _ _ HI mi) Hmi) as (q & Hq).
   destruct (fin_path q mi Hq) as (m & am & Em & Gm & Pm & _).
   pose proof (resolve_path_agrees q mi m pa r0 Hq Em Er) as Ra.
@@ -2450,13 +2450,13 @@ Proof.
 Qed.
 
 (* The elaborator's entity, as the relation's. *)
-Definition ent_of (w : Elab.world) (e0 : Elab.ent) : A.ent :=
-  match e0 with Elab.ESym s => A.ESym s | Elab.EMod j => A.EMod (gm_path (get_mod w j)) end.
+Definition ent_of (w : LoadWorld.world) (e0 : LoadWorld.ent) : A.ent :=
+  match e0 with LoadWorld.ESym s => A.ESym s | LoadWorld.EMod j => A.EMod (gm_path (get_mod w j)) end.
 
 (* Name resolution agrees: in every module of the loader's world, what the
    elaborator resolves a path to is what Part V's `resolve` does. *)
 Theorem load_world_resolves : forall b w R F, load_world b = Good w ->
-  forall i pa r, In i (w_order w) -> Elab.resolve_path w i pa = Good r ->
+  forall i pa r, In i (w_order w) -> LoadWorld.resolve_path w i pa = Good r ->
   A.resolve (W_read w R F) (gm_path (get_mod w i)) pa = option_map (ent_of w) r.
 Proof.
   intros b w R F H i pa r Hi Hres. unfold load_world in H.

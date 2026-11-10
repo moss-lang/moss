@@ -158,7 +158,7 @@ Qed.
 Lemma resolve_sym_reader : forall mi pa s r s', Elab.resolve_sym mi pa s = Good (r, s') -> s' = s.
 Proof.
   intros mi pa s r s' H. unfold Elab.resolve_sym in H. apply bind_inv in H as (r0 & s1 & H1 & H).
-  cbv beta delta [rpath] in H1. destruct (Elab.resolve_path (st_w s) mi pa) as [r1|m]; [|discriminate].
+  cbv beta delta [rpath] in H1. destruct (LoadWorld.resolve_path (st_w s) mi pa) as [r1|m]; [|discriminate].
   injection H1 as -> <-.
   destruct r0 as [[x|j]|].
   - apply bind_inv in H as (g & s2 & H2 & H). unfold sym in H2.
@@ -268,7 +268,7 @@ Variable e : nat.
 Hypothesis HI : LInv b ls.
 Variables (R0 : nat -> list nat) (F0 : string -> nat).
 
-Let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
+Let w := LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
 Let W := W_read w R0 F0.
 
 Lemma loader_kind : forall x g, nget (ls_syms ls) x = Some g -> A.kind_sym W x = Some (kconv (gs_kind g)).
@@ -348,8 +348,8 @@ Proof.
   - assert (Hm : nget (ls_mods ls) mi = None).
     { destruct (nget (ls_mods ls) mi) as [m|] eqn:E; [|reflexivity]. exfalso. apply Hmi.
       apply (proj2 (li_order _ _ HI mi)). exact (li_mods _ _ HI mi m E). }
-    assert (E : Elab.resolve_path (st_w s) mi pa = Good None).
-    { destruct Hg as [Gw _]. rewrite Gw. unfold Elab.resolve_path, get_mod. cbn [w_mods]. rewrite Hm.
+    assert (E : LoadWorld.resolve_path (st_w s) mi pa = Good None).
+    { destruct Hg as [Gw _]. rewrite Gw. unfold LoadWorld.resolve_path, get_mod. cbn [w_mods]. rewrite Hm.
       destruct pa; reflexivity. }
     unfold Elab.resolve_sym in H. apply bind_inv in H as (r0 & s1 & H1 & H).
     cbv beta delta [rpath] in H1. rewrite E in H1. injection H1 as <- <-. injection H as <- <-.
@@ -1088,13 +1088,13 @@ End Solve.
 (* ======================================================================== *)
 
 Lemma load_world_inv : forall b w, load_world b = Good w ->
-  exists ls e, LInv b ls /\ w = Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
+  exists ls e, LInv b ls /\ w = LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
 Proof.
   intros b w H. unfold load_world in H. apply rbind_good in H as ([e ls] & Hl & H). injection H as <-.
   destruct (load_spec b _ _ _ _ _ _ Hl (linv_init b)) as (L & _). exists ls, e. split; [exact L | reflexivity].
 Qed.
 
-Definition W0r (w : Elab.world) : A.world := W_read w (fun _ => []) (fun _ => 0).
+Definition W0r (w : LoadWorld.world) : A.world := W_read w (fun _ => []) (fun _ => 0).
 
 Theorem solve_rel_w : forall b w f root s u s', load_world b = Good w -> st_w s = w ->
   (forall i g, nget (w_syms w) i = Some g -> nget (st_syms s) i = Some g) ->

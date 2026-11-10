@@ -14,7 +14,7 @@ Local Strategy opaque [Nat.of_num_uint].
 (* The cached requirement lists (st_reqs), as far as they are local facts:
    without repeats, of a symbol in force, and for a val, fn, method,
    context or functor Part V's AssumeTypes, for a type or unit none. *)
-Definition W0 (w : Elab.world) : A.world := W_read w (fun _ => []) (fun _ => 0).
+Definition W0 (w : LoadWorld.world) : A.world := W_read w (fun _ => []) (fun _ => 0).
 
 Definition kind_plain (k : kind) : bool :=
   match k with KTag | KAlias | KType | KUnit => false | _ => true end.
@@ -933,6 +933,6 @@ Proof. intros. unfold replay_reify_constant. okt. Qed.
 Lemma ok_fun_env : forall g, ok (fun_env g).
 Proof. intros;unfold fun_env;okt. all:apply ok_merged_walk_frame;intros;okt. Qed.
 
-Definition s_init (w : Elab.world) : st :=
+Definition s_init (w : LoadWorld.world) : st :=
   St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] (ReifyData.empty_reify_metadata ety key).
 

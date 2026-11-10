@@ -58,7 +58,7 @@ Proof. vm_compute. reflexivity. Qed.
 (* the rejection is check_listed's: the program loads *)
 Example unlisted_loads :
   match load_one unlisted_source with
-  | Good b => match Elab.load_world b with Good _ => true | Bad _ => false end
+  | Good b => match LoadWorld.load_world b with Good _ => true | Bad _ => false end
   | Bad _ => false
   end = true.
 Proof. vm_compute. reflexivity. Qed.

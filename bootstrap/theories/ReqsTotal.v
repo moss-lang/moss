@@ -183,7 +183,7 @@ Variable ls : load_st.
 Variable e : nat.
 Hypothesis HI : LInv b ls.
 
-Let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
+Let w := LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)).
 Let W := W0r w.
 Let N := ls_next_sym ls.
 
@@ -783,7 +783,7 @@ Proof.
 Qed.
 
 Theorem reqs_reading : forall b ls e, LInv b ls ->
-  let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)) in
+  let w := LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)) in
   forall syms c,
   (forall i g, nget (ls_syms ls) i = Some g -> nget syms i = Some g) ->
   (forall x l, nget c x = Some l -> NoDup l /\ exists g, nget syms x = Some g /\
@@ -821,7 +821,7 @@ Proof.
 Qed.
 
 Lemma check_listed_ok : forall b ls e, LInv b ls ->
-  let w := Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)) in
+  let w := LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)) in
   forall s u s', GS b ls e s -> check_listed s = Good (u, s') ->
   forall g d ps t n, A.w_decl (W0r w) g = Some d -> A.nominal_body (A.d_ast d) = Some (ps, t) -> In n ps ->
   exists x, A.resolve_sym (W0r w) (A.d_mod d) [n] = Some x /\ A.AssumeTypes (W0r w) g x.
@@ -876,6 +876,6 @@ Proof.
   - intros x l Hx. destruct (Hq x l Hx) as (Nd & g & Hg & P1 & P2). split; [exact Nd|]. exists g. split; [exact Hg|].
     rewrite Sw in P1. split; [exact P1 | exact P2].
   - unfold elab_program in He. apply bind_inv in He as (u & s1 & H1 & _).
-    apply (check_listed_ok b ls e HI (s_init (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) u s1);
+    apply (check_listed_ok b ls e HI (s_init (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) u s1);
       [split; [reflexivity | intros i g Hi; exact Hi] | exact H1].
 Qed.

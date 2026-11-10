@@ -8,7 +8,7 @@
  (prelude Extract)
  (extracted_modules
   Ascii Audit ProgramCapTrim InterpreterCompiled InterpreterFast ProgramFastPath InterpreterLazy ProgramPrune BinInt BinNat BinNums
-  BinPos Bool0 Byte Byte0 CoreFragment Datatypes Decimal DumpRoundTrip EaBase
+  LoadWorld BinPos Bool0 Byte Byte0 CoreFragment Datatypes Decimal DumpRoundTrip EaBase
   EaBind EaCall EaCtx EaDecide EaExpand EaExpr EaFamily EaFunctor EaMain
   EaPlatform EaTypes Elab ElabFrameCore ElabWorld ExecutionModel
   FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap

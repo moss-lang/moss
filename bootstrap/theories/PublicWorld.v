@@ -28,12 +28,12 @@ Definition world_of (W : M.world) : A.world :=
 
 (* Field numbering is not part of the public world. Its arbitrary dummy
    value below is ignored by world_of and imposes no injectivity premise. *)
-Definition world_read (w : Elab.world) (requirements : nat -> list nat) : A.world :=
+Definition world_read (w : LoadWorld.world) (requirements : nat -> list nat) : A.world :=
   world_of (WorldSound.W_read w requirements (fun _ => 0)).
-Definition resolved_entity (w : Elab.world) (entity : Elab.ent) : A.ent :=
+Definition resolved_entity (w : LoadWorld.world) (entity : LoadWorld.ent) : A.ent :=
   match entity with
-  | Elab.ESym symbol => A.ESym symbol
-  | Elab.EMod module => A.EMod (Elab.gm_path (Elab.get_mod w module))
+  | LoadWorld.ESym symbol => A.ESym symbol
+  | LoadWorld.EMod module => A.EMod (LoadWorld.gm_path (LoadWorld.get_mod w module))
   end.
 
 Lemma namespaces_roundtrip : forall ns,
@@ -57,10 +57,10 @@ Proof.
 Qed.
 
 Theorem declaration_lookup : forall w requirements symbol declaration,
-  NMap.nget (Elab.w_syms w) symbol = Some declaration ->
+  NMap.nget (LoadWorld.w_syms w) symbol = Some declaration ->
   A.w_decl (world_read w requirements) symbol =
-    Some (A.Decl (Elab.gm_path (Elab.get_mod w (Elab.gs_mod declaration)))
-      (Elab.gs_decl declaration) (Elab.gs_assumes declaration)).
+    Some (A.Decl (LoadWorld.gm_path (LoadWorld.get_mod w (LoadWorld.gs_mod declaration)))
+      (LoadWorld.gs_decl declaration) (LoadWorld.gs_assumes declaration)).
 Proof.
   intros w requirements symbol declaration Found.
   unfold world_read, world_of, WorldSound.W_read; cbn.
@@ -73,9 +73,9 @@ Proof. reflexivity. Qed.
 
 Theorem attached_lookup : forall w requirements receiver name,
   A.w_attached (world_read w requirements) receiver name =
-    match NMap.nget (Elab.w_syms w) receiver with
-    | Some symbol => Elab.assoc Elab.attached_eqb (receiver,name)
-        (Elab.gm_attached (Elab.get_mod w (Elab.gs_mod symbol)))
+    match NMap.nget (LoadWorld.w_syms w) receiver with
+    | Some symbol => LoadWorld.assoc LoadWorld.attached_eqb (receiver,name)
+        (LoadWorld.gm_attached (LoadWorld.get_mod w (LoadWorld.gs_mod symbol)))
     | None => None
     end.
 Proof. reflexivity. Qed.
@@ -116,12 +116,12 @@ Proof.
 Qed.
 
 Theorem load_world_resolves : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   forall module path entity,
-    In module (Elab.w_order w) ->
-    Elab.resolve_path w module path = Sx.Good entity ->
+    In module (LoadWorld.w_order w) ->
+    LoadWorld.resolve_path w module path = Sx.Good entity ->
     A.resolve (world_read w requirements)
-      (Elab.gm_path (Elab.get_mod w module)) path = option_map (resolved_entity w) entity.
+      (LoadWorld.gm_path (LoadWorld.get_mod w module)) path = option_map (resolved_entity w) entity.
 Proof.
   intros bundle w requirements Loaded module path entity Member Resolved.
   unfold world_read. rewrite resolve_of.
@@ -177,16 +177,16 @@ Proof.
 Qed.
 
 Theorem load_world_loaded : forall bundle w,
-  Elab.load_world bundle = Sx.Good w ->
-  forall module, In module (Elab.w_order w) ->
-    A.Loaded bundle (Elab.gm_path (Elab.get_mod w module)).
+  LoadWorld.load_world bundle = Sx.Good w ->
+  forall module, In module (LoadWorld.w_order w) ->
+    A.Loaded bundle (LoadWorld.gm_path (LoadWorld.get_mod w module)).
 Proof.
   intros bundle w Loaded module Member. apply loaded_of.
   exact (WorldSound.load_world_loaded bundle w Loaded module Member).
 Qed.
 
 Theorem load_world_declarations : forall bundle w requirements symbol declaration,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   A.w_decl (world_read w requirements) symbol = Some declaration ->
   symbol <> 0 /\ A.Declared bundle declaration /\ A.kind_of (A.d_ast declaration) <> None.
 Proof.
@@ -204,7 +204,7 @@ Proof.
 Qed.
 
 Theorem load_world_declaration_complete : forall bundle w requirements declaration,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   A.Declared bundle declaration -> A.kind_of (A.d_ast declaration) <> None ->
   exists symbol, A.w_decl (world_read w requirements) symbol = Some declaration /\
     forall other, A.w_decl (world_read w requirements) other = Some declaration -> other = symbol.

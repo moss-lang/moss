@@ -211,7 +211,7 @@ Proof.
 Qed.
 
 Theorem load_world_exports_exact : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   forall path ns name entity, A.Loaded bundle path ->
     (A.w_exp (world_read w requirements) path ns name = Some entity <->
       A.Exports bundle (world_read w requirements) path ns name entity).
@@ -227,7 +227,7 @@ Proof.
 Qed.
 
 Theorem load_world_scope_exact : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   forall path ns name entity, A.Loaded bundle path ->
     (A.w_scope (world_read w requirements) path ns name = Some entity <->
       A.InScope bundle (world_read w requirements) path ns name entity).
@@ -243,7 +243,7 @@ Proof.
 Qed.
 
 Theorem load_world_acyclic : forall bundle w,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   exists rank : string -> nat, forall path module target import,
     A.Loaded bundle path -> A.module_of bundle path = Some module ->
     In (target,import) (A.imports_of bundle module) ->
@@ -287,7 +287,7 @@ Proof.
 Qed.
 
 Theorem load_world_attached_exact : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   forall receiver name symbol,
     A.w_attached (world_read w requirements) receiver name = Some symbol <->
       A.AttachedDecl (world_read w requirements) receiver name symbol.
@@ -301,7 +301,7 @@ Proof.
 Qed.
 
 Theorem load_world_library : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   A.w_library (world_read w requirements) = Audit.Loader.library_dir (Audit.Input.b_prelude bundle).
 Proof.
   intros bundle w requirements Loaded.
@@ -313,7 +313,7 @@ Qed.
    table. This assembler isolates exactly the six semantic requirements
    obligations still owed by the elaborator. *)
 Theorem load_world_world_of_from_requirements : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   let W := world_read w requirements in
   (forall symbol, NoDup (requirements symbol)) ->
   (forall symbol kind, A.kind_sym W symbol = Some kind ->

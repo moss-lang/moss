@@ -2,7 +2,7 @@
 (* ElabWorld.v — the static world of a bundle, computed (elaborator E-M1).   *)
 (*                                                                           *)
 (* `world b` reads a bundle as Audit's `world`: the loader's tables          *)
-(* (Elab.load_world), every symbol's requirement list, and the check that   *)
+(* (LoadWorld.load_world), every symbol's requirement list, and the check that   *)
 (* a tag lists only types its nesting requires (Elab.check_listed).  The    *)
 (* requirement lists are the least fixed points ReqsTotal describes, run    *)
 (* with an empty cache, so they depend on nothing the elaborator does.      *)
@@ -200,7 +200,7 @@ Variable b : bundle.
 Variable ls : load_st.
 Variable e : nat.
 
-Local Notation w := (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
+Local Notation w := (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
   (Loader.library_dir (b_prelude b))).
 Local Notation W := (W0r w).
 Local Notation N := (ls_next_sym ls).
@@ -410,10 +410,10 @@ Qed.
 
 (* A loader state with the loader world's tables (the fields the
    requirement functions read). *)
-Definition ls_of (w : Elab.world) : load_st :=
+Definition ls_of (w : LoadWorld.world) : load_st :=
   LSt [] (w_mods w) (w_files w) (w_order w) (w_syms w) (w_nsyms w) 0.
 
-Definition world_requirements (b : bundle) (w : Elab.world) : option (nat -> list nat) :=
+Definition world_requirements (b : bundle) (w : LoadWorld.world) : option (nat -> list nat) :=
   match reqs_tables b (ls_of w) (w_entry w) with
   | Some (Ptab, Ltab) => Some (reqs_of b (ls_of w) (w_entry w) Ptab Ltab)
   | None => None
@@ -447,18 +447,18 @@ Proof.
   destruct (load_world_inv b w Hw) as (ls & e & HI & Ew). subst w.
   unfold world_requirements in Hr.
   change (reqs_tables b (ls_of
-    (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
+    (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
       (Loader.library_dir (b_prelude b))))
-    (w_entry (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
+    (w_entry (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
       (Loader.library_dir (b_prelude b))))) with (reqs_tables b ls e) in Hr.
   change (reqs_of b (ls_of
-    (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
+    (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
       (Loader.library_dir (b_prelude b))))
-    (w_entry (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
+    (w_entry (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls)
       (Loader.library_dir (b_prelude b))))) with (reqs_of b ls e) in Hr.
   destruct (reqs_tables b ls e) as [[Ptab Ltab]|] eqn:Ht; [|discriminate].
   injection Hr as <-.
-  change (ReqsReading (W_read (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls)
+  change (ReqsReading (W_read (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls)
     (ls_files ls) (Loader.library_dir (b_prelude b))) (reqs_of b ls e Ptab Ltab) (fun _ => 0))).
   apply (reading_same _ (Rfin b ls e NMap.NE)).
   - apply (reqs_reading b ls e HI (ls_syms ls) NMap.NE).
@@ -466,7 +466,7 @@ Proof.
     + intros x l H. rewrite nget_NE in H. discriminate.
     + apply RC_empty.
     + apply RL_empty.
-    + apply (check_listed_ok b ls e HI (s_init (Elab.World (ls_mods ls) (ls_order ls) e (ls_syms ls)
+    + apply (check_listed_ok b ls e HI (s_init (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls)
         (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) u s1);
         [split; [reflexivity|intros i g Hi; exact Hi]|exact Hc].
   - intro x. apply same_sym. exact (proj1 (reqs_tables_same b ls e HI Ptab Ltab Ht x)).

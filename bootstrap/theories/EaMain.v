@@ -257,14 +257,14 @@ End Decls.
 (* the world, or the old oracle's report of why the bundle has none (its
    loader's and D73's messages, which name the culprit) *)
 Definition bundle_world_r (b : bundle) : er (world * nat) :=
-  match Elab.load_world b with
+  match LoadWorld.load_world b with
   | Sx.Bad m => Err m
   | Sx.Good w =>
       match Elab.check_listed (ElabFrameCore.s_init w) with
       | Sx.Bad m => Err m
       | Sx.Good _ =>
           match ElabWorld.world_requirements b w with
-          | Some R => Ok (PublicWorld.world_read w R, Elab.w_nsyms w)
+          | Some R => Ok (PublicWorld.world_read w R, LoadWorld.w_nsyms w)
           | None => Err "the bundle has no static reading (WorldOf)"
           end
       end

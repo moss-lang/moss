@@ -22,13 +22,13 @@ Definition emit_subst (s : list (nat * Elab.ety)) : subst :=
   map (fun q => (fst q, emit_type (snd q))) s.
 
 Lemma emit_lookup : forall s symbol,
-  lookup_subst symbol (emit_subst s) = option_map emit_type (Elab.nassoc symbol s).
+  lookup_subst symbol (emit_subst s) = option_map emit_type (LoadWorld.nassoc symbol s).
 Proof.
   induction s as [|[head meaning] rest IH]; intro symbol.
   - reflexivity.
   - change ((if Nat.eqb symbol head then Some (emit_type meaning)
       else lookup_subst symbol (emit_subst rest)) =
-      option_map emit_type (if Nat.eqb symbol head then Some meaning else Elab.nassoc symbol rest)).
+      option_map emit_type (if Nat.eqb symbol head then Some meaning else LoadWorld.nassoc symbol rest)).
     destruct (Nat.eqb symbol head); [reflexivity|exact (IH symbol)].
 Qed.
 
@@ -40,7 +40,7 @@ Proof.
   - destruct t; cbn [Elab.ety_depth] in Enough; lia.
   - destruct t as [| |symbol|head arguments|members|fields];
       cbn [Elab.ety_subst emit_type app_subst]; try reflexivity.
-    + rewrite emit_lookup. destruct (Elab.nassoc symbol s); reflexivity.
+    + rewrite emit_lookup. destruct (LoadWorld.nassoc symbol s); reflexivity.
     + f_equal. revert Enough.
       induction arguments as [|[name child] rest Tail]; intro Enough; cbn [map]; [reflexivity|].
       f_equal.

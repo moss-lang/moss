@@ -174,7 +174,7 @@ Proof.
 Qed.
 
 Theorem load_world_world_of_from_reading : forall bundle w requirements,
-  Elab.load_world bundle = Sx.Good w ->
+  LoadWorld.load_world bundle = Sx.Good w ->
   ComponentContracts.SourceReading.ReqsReading
     (WorldSound.W_read w requirements (fun _ => 0)) ->
   A.WorldOf bundle (world_read w requirements).
@@ -222,7 +222,7 @@ Qed.
 Theorem elaborate_requirements_reading : forall bundle program,
   Elab.elaborate bundle = Sx.Good program ->
   exists w state requirements,
-    Elab.load_world bundle = Sx.Good w /\
+    LoadWorld.load_world bundle = Sx.Good w /\
     Elab.elab_program (ElabFrame.s_init w) = Sx.Good (program,state) /\
     (forall symbol parameters, NMap.nget (Elab.st_reqs state) symbol = Some parameters ->
       requirements symbol = parameters) /\
@@ -246,8 +246,8 @@ Proof.
   - unfold Elab.elab_program in Elaborated.
     apply ElabSound.bind_inv in Elaborated as (u & s1 & Checked & _).
     apply (ReqsTotal.check_listed_ok b ls e HI
-      (ElabFrame.s_init (Elab.World (Elab.ls_mods ls) (Elab.ls_order ls) e
-        (Elab.ls_syms ls) (Elab.ls_next_sym ls) (Elab.ls_files ls)
+      (ElabFrame.s_init (LoadWorld.World (LoadWorld.ls_mods ls) (LoadWorld.ls_order ls) e
+        (LoadWorld.ls_syms ls) (LoadWorld.ls_next_sym ls) (LoadWorld.ls_files ls)
         (Audit.Loader.library_dir (Audit.Input.b_prelude b)))) u s1);
       [split; [reflexivity|intros symbol declaration Found; exact Found]|exact Checked].
 Qed.
@@ -255,7 +255,7 @@ Qed.
 Theorem elaborate_public_world_of : forall bundle program,
   Elab.elaborate bundle = Sx.Good program ->
   exists w state requirements,
-    Elab.load_world bundle = Sx.Good w /\
+    LoadWorld.load_world bundle = Sx.Good w /\
     Elab.elab_program (ElabFrame.s_init w) = Sx.Good (program,state) /\
     (forall symbol parameters, NMap.nget (Elab.st_reqs state) symbol = Some parameters ->
       requirements symbol = parameters) /\
