@@ -307,22 +307,6 @@ Proof.
   rewrite <- (Abs v2). reflexivity.
 Qed.
 
-Theorem call_absorbs_tf : forall f Cf C th d,
-  TableFormed Cf -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) ->
-  forall t, app_subst (callee_meanings d th) (canon Cf t) = app_subst (callee_meanings d th) t.
-Proof.
-  intros f Cf C th d Tf CT Abs t. unfold canon. rewrite <- (app_subst_nil t) at 2.
-  apply subst2_agree. intros x Ix. rewrite app_subst_nil.
-  destruct (lookup_subst x (c_sub Cf)) as [u|] eqn:L.
-  2: { replace (app_subst (c_sub Cf) (TAbs x)) with (TAbs x) by (cbn; rewrite L; reflexivity). reflexivity. }
-  pose proof (lookup_subst_in_pair _ _ _ L) as InL.
-  pose proof Tf as [_ Dom]. destruct (Dom x u InL) as [Ix' _].
-  pose proof (merged_meaning_tf f Cf C th d x Tf CT Abs Ix') as M.
-  rewrite M. destruct CT as [Keys _].
-  rewrite callee_ground; [reflexivity|]. intros y [<-|[]]. apply lookup_subst_in. rewrite Keys. exact Ix'.
-Qed.
-
 Lemma merge_image_dom : forall f Cf ns th x,
   CtxOf W f Cf ns -> map fst th = map fst (c_ty Cf) ->
   In x (map fst (c_ty Cf)) -> forall y, In y (gens (app_subst (c_sub Cf) (TAbs x))) -> lookup_subst y th <> None.
@@ -341,11 +325,6 @@ Theorem call_agree : forall f Cf ns C th d,
   Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
 Proof. intros f Cf ns C th d Ctx. exact (call_agree_tf f Cf C th d (ctx_table_formed f Cf ns Ctx)). Qed.
 
-Theorem call_absorbs : forall f Cf ns C th d,
-  CtxOf W f Cf ns -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) ->
-  forall t, app_subst (callee_meanings d th) (canon Cf t) = app_subst (callee_meanings d th) t.
-Proof. intros f Cf ns C th d Ctx. exact (call_absorbs_tf f Cf C th d (ctx_table_formed f Cf ns Ctx)). Qed.
 End Calls.
 
 (* ---- provision tables ------------------------------------------------------ *)

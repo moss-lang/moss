@@ -262,8 +262,8 @@ Proof.
     change (In y (A.gens (A.canon Cb (app_subst (pins ++ A.c_ty Cg) rf)))) in Irb. rewrite Erb in Irb.
     exact (proj2 (InCb _ _ Iact y Ny) Irb). }
   (* 7: the transfer *)
-  pose proof Pre0 as [_ [_ [_ [_ [[Abs0 _] _]]]]].
-  pose proof Real3 as [Abs3 _].
+  pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs0.
+  pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real3) as Abs3.
   assert (CanF : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   (* Q6: u's fixed readings are θ's (the family's fixed agreement) *)
   assert (FxIn : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))).

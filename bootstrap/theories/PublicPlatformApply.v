@@ -452,7 +452,8 @@ Proof.
     h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e x Inm F0 Ix0.
   pose proof AP as (R & Lf & FC & Inp & Th & Fixed & _).
   pose proof FD as (FC0 & _ & _ & FB & _).
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs _] & _).
+  pose proof Pre0 as (_ & _ & _ & _ & [_ _] & _).
+  pose proof (FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   pose proof (chain_keys _ _ _ _ _ _ _ _ Chn _ _ _ _ FC FC0) as Kin.
   pose proof (Kin x Ix0) as Ix.
   destruct (FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn x F0) as [Fx Egf].
@@ -516,7 +517,8 @@ Proof.
   { destruct outs as [|t0 r0]; [reflexivity|]. exfalso. exact (NoOut t0 (proj1 (OutsIff t0) (or_introl eq_refl))). }
   subst outs.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [AbsM [[Vals [Fns [Mths Funs]]] [[Idem Section] KM]]].
+  pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   rewrite FS.CopyA.S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
@@ -592,10 +594,11 @@ Proof.
   assert (Old : forall k0, (forall r m, k0 <> A.mkey r m) -> A.ilook k0 (A.c_provisions C') = A.ilook k0 (A.c_provisions C)).
   { intros k0 Nk. rewrite Eprov, ilook_app, (NewNone k0 Nk). reflexivity. }
   assert (RealC' : FS.CopyA.S.Realizes W Prog argv read state_ok rr C' d' H).
-  { split; [intros t; unfold A.canon; rewrite Esub; exact (Abs t)|].
+  { assert (Emerge : A.c_merge C' = A.c_merge C)
+      by (eapply PublicContextFacts.provided_result_merge; exact PR).
+    split; [intros left right Eq; apply AbsM; now rewrite Emerge in Eq |].
     split; [|apply FS.CopyA.S.static_from_section; [|exact KM']].
-    2: { eapply PublicContextFacts.section_same_fields; [exact Esub | |exact Section].
-      eapply PublicContextFacts.provided_result_merge. exact PR. }
+    2: { eapply PublicContextFacts.section_same_fields; eassumption. }
     split; [|split; [|split]].
     - intros v t Found. change (A.c_vals C') with (vals_of (A.c_provisions C')) in Found.
       rewrite vals_by_ilook in Found by exact KM'. rewrite Old in Found by (intros r m E; discriminate).
@@ -752,7 +755,8 @@ Proof.
     code sms rms gfx h0 gf0 Look Ok Fm Chn Fam.
   pose proof AP as (R & Lf & FC & Inp & Th & Fixed & Sat & _).
   pose proof Pre0 as (_ & _ & _ & _ & Real & _).
-  pose proof Real as [Abs [_ [[Idem _] _]]].
+  pose proof Real as [_ [_ [[Idem _] _]]].
+  pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   set (f := fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))).
   assert (Thf : th = FS.CopyA.thof f Cu) by exact Th.
   assert (CT : A.CallTheta W C Cu u th) by (rewrite Th; exact (FS.CopyA.S.apply_theta W C u Cu ns sm FC Idem Inp ltac:(rewrite <- Th; exact Sat))).
@@ -876,7 +880,8 @@ Proof.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]].

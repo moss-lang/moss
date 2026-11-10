@@ -399,7 +399,8 @@ Proof.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof (CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
@@ -466,7 +467,7 @@ Proof.
          apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (CopyA.S.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply CopyA.S.alias_self; [reflexivity|exact (proj1 RealG)| |].
+    - apply CopyA.S.alias_self; [reflexivity|exact (CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ RealG)| |].
       + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
       + intros k0 v0 L0. unfold de, application_environment. change (view_functor P h) with (A.funbody_of Prog h).
         rewrite FB. cbn [type_meanings fc_inputs]. rewrite CopyA.S.lookup_map_nat; [discriminate|].
@@ -527,11 +528,12 @@ Proof.
   { intros k p I. destruct (Meth k p I) as (r & m & g & a & -> & ->). exact Logic.I. }
   assert (KMw : PublicCallRealize.KeysMatch (A.c_provisions Cw)).
   { rewrite Epw. intros k p I. apply in_app_or in I as [I|I]; [exact (KMn k p I)|exact (KM k p I)]. }
-  split; [intros t; rewrite CanonEq, !G; exact (Abs t)|].
-  split; [|apply CopyA.S.static_from_section; [|exact KMw]].
-  2: { eapply PublicContextFacts.section_same_fields; [exact Esw | |exact Section].
-    unfold Cw. change (A.c_merge Cr = A.c_merge C0).
+  assert (MergeW : A.c_merge Cw = A.c_merge C0).
+  { unfold Cw. change (A.c_merge Cr = A.c_merge C0).
     rewrite (PublicContextFacts.family_application_merge W _ _ _ _ _ _ _ FA). exact Emg. }
+  split; [intros left right Eq; rewrite !G; apply Abs; now rewrite MergeW in Eq |].
+  split; [|apply CopyA.S.static_from_section; [|exact KMw]].
+  2: { eapply PublicContextFacts.section_same_fields; eassumption. }
   split; [|split; [|split]].
   - intros v t Found. change (A.nlook v (vals_of (A.c_provisions Cw)) = Some t) in Found.
     rewrite Epw in Found. unfold vals_of in Found. rewrite flat_map_app, (flat_map_methods_nil _ _ news Meth) in Found by reflexivity.
@@ -593,7 +595,7 @@ Proof.
     destruct (Dom K pv L) as [r [m [_ ->]]]. exfalso. exact (Nm r m _ eq_refl). }
   assert (KMn : PublicCallRealize.KeysMatch news).
   { intros k p I. destruct (Meth k p I) as (r & m & g & a & -> & ->). exact Logic.I. }
-  split; [intros t; rewrite !G; exact (Abs t)|]. split; [|exact (conj (conj Idem Section) KM)].
+  split; [intros left right Eq; rewrite !G; exact (Abs left right Eq)|]. split; [|exact (conj (conj Idem Section) KM)].
   split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [L T]]. exists w.
     rewrite G, LookN; [exact (conj L T)|intros r m th0 E; discriminate].

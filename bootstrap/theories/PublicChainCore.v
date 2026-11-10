@@ -15,7 +15,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults.
-From NM Require PublicFormation PublicCallerKeys.
+From NM Require PublicFormation PublicCallerKeys PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -296,7 +296,7 @@ Qed.
 Lemma alias_after : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   PublicFormation.FormedCx W C -> LR.KeptOutputsUnmentioned W ->
-  forall d d3 dr, AliasOk C d -> LR.PA.FS.CopyA.S.Absorbs C d -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
+  forall d d3 dr, AliasOk C d -> LR.PA.FS.CopyA.S.AbsorbsCanon C d -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
   AliasOk C' (append_environment (LR.result_of d3 outs gensof dr) d).
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP Fc Ku d d3 dr Al0 Abs Idem.
@@ -428,7 +428,8 @@ Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCor
 Proof.
   intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3.
-  pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[Abs [Env [[Idem Section] KM]]] [Fc _]]]]]].
+  pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[_ [Env [[Idem Section] KM]]] [Fc _]]]]]].
+  pose proof (LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
@@ -475,15 +476,18 @@ Definition BodyReal (n : nat) (H3 : heap_types) (d3 : environment) (Cb : A.cx) (
       forall x tx, In (x, tx) fx -> lookup_subst x gfx = Some (ground d3 (app_subst rr tx))
   end.
 
-Lemma absorbs_sub : forall Cb d3 t t', LR.PA.FS.CopyA.S.Absorbs Cb d3 -> app_subst (A.c_sub Cb) t = app_subst (A.c_sub Cb) t' ->
+Lemma absorbs_sub : forall Cb d3 t t', PublicContextFacts.CxSection Cb -> LR.PA.FS.CopyA.S.Absorbs Cb d3 -> app_subst (A.c_sub Cb) t = app_subst (A.c_sub Cb) t' ->
   ground d3 t = ground d3 t'.
-Proof. intros Cb d3 t t' Abs E. rewrite <- (Abs t), <- (Abs t'). unfold A.canon. rewrite E. reflexivity. Qed.
+Proof.
+  intros Cb d3 t t' Section Abs E. apply Abs.
+  apply (PublicContextFacts.context_canon_iff_mergeeq Cb Section). exact E.
+Qed.
 
-Lemma absorbs_sub_map : forall Cb d3 ts ts', LR.PA.FS.CopyA.S.Absorbs Cb d3 -> map (app_subst (A.c_sub Cb)) ts = map (app_subst (A.c_sub Cb)) ts' ->
+Lemma absorbs_sub_map : forall Cb d3 ts ts', PublicContextFacts.CxSection Cb -> LR.PA.FS.CopyA.S.Absorbs Cb d3 -> map (app_subst (A.c_sub Cb)) ts = map (app_subst (A.c_sub Cb)) ts' ->
   map (ground d3) ts = map (ground d3) ts'.
 Proof.
-  intros Cb d3 ts. induction ts as [|t r IH]; intros [|t' r'] Abs E; cbn in E; try discriminate; [reflexivity|].
-  injection E as E1 E2. cbn. rewrite (absorbs_sub Cb d3 t t' Abs E1), (IH r' Abs E2). reflexivity.
+  intros Cb d3 ts. induction ts as [|t r IH]; intros [|t' r'] Section Abs E; cbn in E; try discriminate; [reflexivity|].
+  injection E as E1 E2. cbn. rewrite (absorbs_sub Cb d3 t t' Section Abs E1), (IH r' Section Abs E2). reflexivity.
 Qed.
 
 Lemma body_provides : forall n Cb d3 H3 Cr ks reads,
@@ -492,7 +496,7 @@ Lemma body_provides : forall n Cb d3 H3 Cr ks reads,
     lookup_provision (A.rkey_of Cb (A.at_site Cb k)) d3 = Some pv /\
     BodyReal n H3 d3 Cb reads k p pv.
 Proof.
-  intros n Cb d3 H3 Cr ks reads [Abs [[Vals [Fns [Mths Funs]]] [_ KM]]] RR k Ik.
+  intros n Cb d3 H3 Cr ks reads [Abs [[Vals [Fns [Mths Funs]]] [[_ Section] KM]]] RR k Ik.
   destruct (RR k Ik) as [req [act [Lr [La [Kind [Sig Inst]]]]]].
   pose proof (KM _ _ (LR.PA.FS.CopyA.S.ilook_in _ _ _ La)) as Kd.
   exists req.
@@ -502,13 +506,13 @@ Proof.
   - (* val *)
     pose proof (ilook_vals _ v tb ab KM La) as Lv. destruct (Vals v tb Lv) as [w [Look T]].
     exists (ValueProvision w). split; [exact Lr|]. split; [exact Look|]. exists w. split; [reflexivity|].
-    cbn in Sig. injection Sig as Sig. rewrite (absorbs_sub Cb d3 _ _ Abs Sig). exact T.
+    cbn in Sig. injection Sig as Sig. rewrite (absorbs_sub Cb d3 _ _ Section Abs Sig). exact T.
   - (* fn *)
     pose proof (ilook_fns _ f gb ab KM La) as Lf. destruct (Fns f gb Lf) as [pv [Look Ok]].
     exists pv. split; [exact Lr|]. split; [exact Look|]. cbn in Sig. injection Sig as Sp Sr.
     refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
-    + symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
-    + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
+    + symmetry. apply (absorbs_sub_map Cb d3 _ _ Section Abs). exact Sp.
+    + symmetry. exact (absorbs_sub Cb d3 _ _ Section Abs Sr).
   - (* method *)
     clear Kd.
     set (rb := A.canon Cb (app_subst (map (fun q => (fst q, snd q)) (A.c_ty Cb)) rf)) in *.
@@ -516,8 +520,8 @@ Proof.
     exists pv. split; [exact Lr|]. split; [exact Look|]. exists rb, m, i. split; [reflexivity|].
     cbn in Sig. injection Sig as Sp Sr.
     refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d3 d3 _ _ _ _ pv (le_n n) _ _ Ok).
-    + cbn [map]. f_equal. symmetry. apply (absorbs_sub_map Cb d3 _ _ Abs). exact Sp.
-    + symmetry. exact (absorbs_sub Cb d3 _ _ Abs Sr).
+    + cbn [map]. f_equal. symmetry. apply (absorbs_sub_map Cb d3 _ _ Section Abs). exact Sp.
+    + symmetry. exact (absorbs_sub Cb d3 _ _ Section Abs Sr).
   - (* functor *)
     assert (Lu : A.nlook u0 (A.c_funs Cb) = Some fxb).
     { change (A.c_funs Cb) with (funs_of (A.c_provisions Cb)). rewrite (funs_by_ilook _ u0 KM), La. reflexivity. }
@@ -528,7 +532,7 @@ Proof.
       (A.provision_inst (A.provision_subst (A.c_sub Cb) (A.provision_subst reads (A.ProvidedFunctor fx))))).
     { cbn. rewrite !map_map. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Ix]. }
     pose proof (Inst _ _ Ip) as Ia. cbn in Ia. rewrite map_map in Ia. apply in_map_iff in Ia as [[x' tb] [E Ib]].
-    injection E as -> E. rewrite (Vm x tb Ib). f_equal. symmetry. exact (absorbs_sub Cb d3 _ _ Abs (eq_sym E)).
+    injection E as -> E. rewrite (Vm x tb Ib). f_equal. symmetry. exact (absorbs_sub Cb d3 _ _ Section Abs (eq_sym E)).
 Qed.
 
 (* ---- FamilyLinkResultsOk: the selection ------------------------------------- *)

@@ -243,7 +243,8 @@ Proof.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
@@ -319,7 +320,7 @@ Proof.
            apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
       - intros n1 t mu Found. rewrite (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_locals W _ _ _ FCg) in Found. discriminate.
       - intros t E. congruence.
-      - apply CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.alias_self; [reflexivity|exact (proj1 RealG)| |].
+      - apply CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.alias_self; [reflexivity|exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ RealG)| |].
         + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
         + intros k0 v0 L0. unfold de, application_environment. change (view_functor P code) with (A.funbody_of Prog code).
           rewrite FB. cbn [type_meanings fc_inputs]. rewrite CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_nat; [discriminate|].

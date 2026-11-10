@@ -184,8 +184,8 @@ Proof. intros made d d' t Gr Av. exact (PA.FS.CopyA.S.ground_grow made d d' t Gr
 
 (* Merge absorption survives meanings for generations the merges do not
    mention. *)
-Lemma absorbs_grow : forall C C' made d d', PA.FS.CopyA.S.Absorbs C d -> A.c_sub C' = A.c_sub C ->
-  PA.FS.CopyA.S.MeaningsGrow made d d' -> (forall g, In g made -> ~ In g (A.context_gens C)) -> PA.FS.CopyA.S.Absorbs C' d'.
+Lemma absorbs_canon_grow : forall C C' made d d', PA.FS.CopyA.S.AbsorbsCanon C d -> A.c_sub C' = A.c_sub C ->
+  PA.FS.CopyA.S.MeaningsGrow made d d' -> (forall g, In g made -> ~ In g (A.context_gens C)) -> PA.FS.CopyA.S.AbsorbsCanon C' d'.
 Proof.
   intros C C' made d d' Abs Es Gr Av t. unfold A.canon. rewrite Es. unfold ground.
   rewrite <- (app_subst_nil t) at 2. apply subst2_agree. intros x _. cbn [app_subst lookup_subst].
@@ -212,6 +212,10 @@ Proof.
     [Frame [[Lo [Re _]] [L [_ [[Abs [_ [[Idem Section] _]]] [Fc Ff]]]]]] Ms Gr Ext St3 Al Env KM.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _ & _ & PR).
   destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo _]].
+  assert (Section' : PublicContextFacts.CxSection C').
+  { eapply PublicContextFacts.section_same_fields; [exact Esub | |exact Section].
+    eapply PublicContextFacts.provided_result_merge. exact PR. }
+  pose proof (proj1 (PA.FS.CopyA.S.absorbs_canon_iff C d Section) Abs) as AbsRead.
   assert (Av : forall g0, In g0 (map gensof outs) -> ~ In g0 (A.context_gens C) /\ True /\
     (forall t, A.fr_ret F = Some t -> ~ In g0 (A.gens t)) /\ (forall t, A.fr_this F = Some t -> ~ In g0 (A.gens t))).
   { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]].
@@ -225,10 +229,11 @@ Proof.
     rewrite (ground_grow_writes (map gensof outs) d d' t Gr (fun g0 Ig => proj2 (proj2 (proj2 (Av g0 Ig))) t Th)).
     exact (Re t Th).
   - split; [exact (locals_extends W P H H3 g types Ext L)|]. split; [exact St3|]. split.
-    + split; [exact (absorbs_grow C C' (map gensof outs) d d' Abs Esub Gr (fun g0 Ig => proj1 (Av g0 Ig)))|].
-      split; [exact Env|]. apply PA.FS.CopyA.S.static_from_section; [|exact KM].
-      eapply PublicContextFacts.section_same_fields; [exact Esub | |exact Section].
-      eapply PublicContextFacts.provided_result_merge. exact PR.
+    + split.
+      { apply (PA.FS.CopyA.S.absorbs_canon_iff C' d' Section').
+        exact (absorbs_canon_grow C C' (map gensof outs) d d' AbsRead Esub Gr
+          (fun g0 Ig => proj1 (Av g0 Ig))). }
+      split; [exact Env | exact (PA.FS.CopyA.S.static_from_section C' Section' KM)].
     + split; [|split; [exact (proj1 Ff)|exact (PublicScoping.apply_abstract_cxscoped W F _ C u gensof C' ks PR eq_refl (proj2 Ff))]].
       apply (PublicFormation.apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
       intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
@@ -308,12 +313,14 @@ Proof.
     rewrite (Ek x Ik), Gc; [exact (Al x tx Lx)|exact (nlook_ty_context_gens C x tx Lx)].
   - split; [exact L|]. split; [exact St|]. split; [|exact (conj Fc Ff)].
     split; [|split; [|exact (conj (conj Idem Section) KM)]].
-    + intros t. unfold A.canon. unfold ground.
+    + apply (PA.FS.CopyA.S.absorbs_canon_iff C d' Section).
+      pose proof (proj1 (PA.FS.CopyA.S.absorbs_canon_iff C d Section) Abs) as AbsRead.
+      intros t. unfold A.canon. unfold ground.
       rewrite <- (app_subst_nil t) at 2. apply subst2_agree. intros x _. cbn [app_subst lookup_subst].
       destruct (lookup_subst x (A.c_sub C)) as [u|] eqn:Ls.
       * pose proof (lookup_subst_in_pair _ _ _ Ls) as Iq. destruct (PA.FS.CopyA.S.sub_context_gens C x u Iq) as [Ix Iu].
         change (ground d' u = ground d' (TAbs x)). rewrite (Gc u Iu), (Gc (TAbs x) ltac:(intros y [<-|[]]; exact Ix)).
-        pose proof (Abs (TAbs x)) as E. unfold A.canon in E. cbn [app_subst] in E. rewrite Ls in E. exact E.
+        pose proof (AbsRead (TAbs x)) as E. unfold A.canon in E. cbn [app_subst] in E. rewrite Ls in E. exact E.
       * reflexivity.
     + exact (envok_scoped rr C d d' H KM (proj1 (proj2 Fc)) Env Ep Gk).
 Qed.

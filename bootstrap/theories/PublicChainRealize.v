@@ -874,7 +874,8 @@ Proof.
     assert (FixTh : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (app_subst Tin (TAbs x))).
     { intros x Fh. destruct (FixH x Fh) as [Fu E]. rewrite E. exact (FixT x Fu). }
     destruct (IH eq_refl eq_refl Ch nsh FCh TokH FixTh) as (gh & outsh & Crh & ksh & Oh & Frh & Injh & PRh & RealH).
-    destruct Site as (C1 & fx1 & fxh & d1 & _ & Ab1 & _ & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
+    destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
+    pose proof (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
     set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
     destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & Outs & Nd & Avoid & FrG & FrC & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
     assert (InjG : forall a b, In a outs -> In b outs -> gen a = gen b -> a = b)
@@ -1075,7 +1076,7 @@ Proof.
   pose proof (CSg.FL.LRn.link_run_fact W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCg LRs Items BO MadeOut FB th ThDom
     argv read j' d dc' [] st d3 g3 st3 ThI Run) as RunFact.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
-  pose proof Real3 as [Abs3 _].
+  pose proof (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real3) as Abs3.
   set (DG := map fst (A.c_ty Cg)).
   set (D0 := map fst (A.c_ty Ch0)).
   assert (NR : forall y, In y D0 -> ~ In y (map gen outs')).
@@ -1186,7 +1187,7 @@ Variables (F : A.frame) (C : A.cx) (pa : list string) (u : nat) (fx : subst) (Cu
   (th : subst) (gensof : nat -> nat) (C' : A.cx) (ks : list item) (newgens : list nat) (outs : list nat).
 Hypothesis AP : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs.
 Variables (d d3 dr : environment) (rms : option (list (option nat))) (srcs : list item).
-Hypothesis Absd : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Absorbs C d.
+Hypothesis Absd : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AbsorbsCanon C d.
 Hypothesis IdemC : forall t, A.canon C (A.canon C t) = A.canon C t.
 Hypothesis KMc : PublicCallRealize.KeysMatch (A.c_provisions C).
 Hypothesis FmC : PublicFormation.FormedCx W C.
@@ -1281,7 +1282,7 @@ Proof.
   assert (AvC : forall g0, In g0 (map gensof outs) -> ~ In g0 (A.context_gens C)).
   { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]]. destruct (DS t It) as [_ [Nc _]]. exact (fun I => Nc (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.cg_l C _ I)). }
   destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub _].
-  pose proof (CSg.FL.CF.CN.CC.LR.absorbs_grow C C' (map gensof outs) d d' Absd Esub Gr AvC) as Abs'.
+  pose proof (CSg.FL.CF.CN.CC.LR.absorbs_canon_grow C C' (map gensof outs) d d' Absd Esub Gr AvC) as Abs'.
   assert (Inv2 : forall t, app_subst (type_meanings d') (app_subst (A.c_sub C) t) = app_subst (type_meanings d') t).
   { intros t. pose proof (Abs' t) as E. unfold A.canon in E. rewrite Esub in E. exact E. }
   assert (InjO : forall a b, In a outs -> In b outs -> gensof a = gensof b -> a = b)
@@ -1363,7 +1364,8 @@ Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En.
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [[Idem Section] KMc]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [[Idem Section] KMc]]] & Fmd).
+  pose proof (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   pose proof AP as (_ & Fx & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).

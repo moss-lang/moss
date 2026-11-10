@@ -140,7 +140,8 @@ Lemma copy_read_at : forall u h Cu nsu Ch nsh rm gfx gfh T,
      A.ilook (A.provision_id (A.canon_item Cu k)) (A.c_provisions Cu) = Some p /\ prov_shape T Cu p' = prov_shape T Cu p).
 Proof.
   intros u h Cu nsu Ch nsh rm gfx gfh T FCu FCh Sub Site FixT.
-  destruct Site as (C1 & fx1 & fxh & d1 & _ & Ab1 & _ & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
+  destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
+  pose proof (proj1 (S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
   set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
   destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & Outs & Nd & Avoid & FrG & FrC & Ys & Inp & Nds & _).
   assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
@@ -236,7 +237,8 @@ Proof.
   destruct (S.functx_static W _ _ _ FCh) as [[CanH DomH] [[CnH SectionH] [KMh [NdH [ProvNsH [ShapeH [ScH FixH]]]]]]].
   destruct (S.functx_static W _ _ _ FCu) as [[CanU DomU] [[CnU SectionU] [KMu [NdU [ProvNsU [ShapeU [ScU FixU]]]]]]].
   set (ce := S.callee_env d (thof f Cu) e1) in *.
-  pose proof RealU as [AbsU [[ValsU [FnsU [MthsU FunsU]]] _]].
+  pose proof RealU as [_ [[ValsU [FnsU [MthsU FunsU]]] _]].
+  pose proof (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ RealU) as AbsU.
   pose proof (keys_sub _ _ Sub) as SubK.
   destruct (select_ok e1 (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh)) as [e1' Sel].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
@@ -264,6 +266,7 @@ Proof.
     - intros k' Ik' E. exact (rkey_of_injective Ch k' k0 (ShapeH k' Ik') (ShapeH k0 Ik) E). }
   split; [|split; [split; [|split; [|split]]|exact (conj (conj CnH SectionH) KMh)]].
   - (* H's merges hold: they are F's readings *)
+    apply (S.absorbs_canon_iff Ch ch SectionH).
     intros t. unfold A.canon. change (ground ch (app_subst (A.c_sub Ch) t) = ground ch t).
     unfold ground. rewrite <- (app_subst_nil t) at 2. apply subst2_agree. intros x Ix. rewrite app_subst_nil.
     destruct (lookup_subst x (A.c_sub Ch)) as [t0|] eqn:Ls.
@@ -542,7 +545,8 @@ Proof.
     gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh Look _ _ _ _ _ _.
   pose proof AP as (R & Fx & FC & Inp & Th & Fixed & Sat & FreshG & Uniq & Outs & NdO & OutsIff & PR).
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].
-  pose proof Real as [Abs [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof Real as [_ [[_ [_ [_ Funs]]] [[Idem Section] KM]]].
+  pose proof (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   destruct (Funs u fx Fx) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
   set (sms' := compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) in *.
   set (rms' := compose_positions rms rm) in *.
@@ -576,7 +580,7 @@ Proof.
          apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (S.functx_locals W _ _ _ FCg) in Found. discriminate.
     - intros t E. congruence.
-    - apply S.alias_self; [reflexivity|exact (proj1 RealG)| |].
+    - apply S.alias_self; [reflexivity|exact (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ RealG)| |].
       + destruct (functx_scoped W gg Cg nsg FCg) as [CanG _]. exact CanG.
       + intros k0 v0 L0. unfold de, application_environment. change (view_functor P code) with (A.funbody_of Prog code).
         rewrite FB. cbn [type_meanings fc_inputs]. rewrite S.lookup_map_nat; [discriminate|].

@@ -502,7 +502,8 @@ Proof.
     assert (FixTh : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (app_subst T (TAbs x))).
     { intros x Fh. destruct (FixH x Fh) as [Fu E]. rewrite E. exact (FixT x Fu). }
     destruct (IH eq_refl eq_refl Ch nsh FCh TokH FixTh) as (Crh & ksh & PRh & Inv).
-    destruct Site as (C1 & fx1 & fxh & d1 & _ & Ab1 & _ & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
+    destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
+    pose proof (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
     set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
     destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & Outs & Nd & Avoid & FrG & FrC & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
     exists Cr, ks. split; [exact (pr_noout W u Cu _ _ Cr ks PRu NoU)|].
@@ -645,7 +646,8 @@ Proof.
     code sms rms gfx Look Nn Fm h0 gf0 Chn Ch0 needs outputs keys bindings FD i r m g0 key Ki Last Mg Ikey Si.
   pose proof FD as (FC0 & NoH & PRf & _ & _ & _ & Abst0 & _).
   pose proof AP as (_ & _ & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
-  pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [[Idem Section] KMc]]] & Fmd).
+  pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [[Idem Section] KMc]]] & Fmd).
+  pose proof (FL.CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   assert (Force0 : forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None).
   { intros t It. destruct (keys_in _ t It) as [v Lv]. destruct (Inp t v Lv) as [here Lh]. rewrite Lh. discriminate. }

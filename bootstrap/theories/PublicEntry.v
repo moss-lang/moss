@@ -50,7 +50,10 @@ Qed.
 Lemma entry_absorbs : forall f C ns ms platform, A.CtxOf W f C ns ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Absorbs C (Environment (map (fun q => (fst q, app_subst ms (snd q))) (A.c_ty C)) platform).
 Proof.
-  intros f C ns ms platform Ctx t. unfold ground, A.canon. cbn [type_meanings Environment].
+  intros f C ns ms platform Ctx.
+  apply (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C _
+    (proj2 (function_context_merge W f C ns Ctx))).
+  intros t. unfold ground, A.canon. cbn [type_meanings Environment].
   destruct (ctxof_formed W f C ns Ctx) as [Form Sub].
   pose proof (function_context_canonical W f C ns Ctx) as Idem.
   set (types := map (fun q => (fst q, app_subst ms (snd q))) (A.c_ty C)).
@@ -239,7 +242,7 @@ Proof.
   3: { split; [exact Fc|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite This; apply PublicFormation.optok_none]|].
        exact (PublicScoping.fn_body_cxscoped W _ C ns F None g [] Ctx Sig This (PublicScoping.optscoped_none W C)). }
   - intros m t mu Found. rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
-  - split; [intros t E; congruence|]. apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.alias_none; [reflexivity|exact (proj1 Real)| |].
+  - split; [intros t E; congruence|]. apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.alias_none; [reflexivity|exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real)| |].
     + exact (proj1 (ctxof_formed W _ C ns Ctx)).
     + unfold A.InitialTypes in Types. subst types. exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.keys_meant_map C _ (A.c_ty C) eq_refl).
 Qed.
