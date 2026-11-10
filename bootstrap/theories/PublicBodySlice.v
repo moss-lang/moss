@@ -3382,11 +3382,11 @@ Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (ks : l
 (* The site a linked body's result keys are read at (A.link_site) has
    the body's provisions and merges, so it is realized where the body is,
    and files keys as the body does. *)
-Lemma realizes_link_site : forall n Cg Cb outs gen d H, Realizes n Cb d H -> Realizes n (A.link_site Cg Cb outs gen) d H.
-Proof. intros n Cg Cb outs gen d H R. exact R. Qed.
-Lemma rkey_of_link_site : forall Cg Cb outs gen k, A.rkey_of (A.link_site Cg Cb outs gen) k = A.rkey_of Cb k.
+Lemma realizes_link_site : forall n Cg Cb pins outs gen d H, Realizes n Cb d H -> Realizes n (A.link_site Cg Cb pins outs gen) d H.
+Proof. intros n Cg Cb pins outs gen d H R. exact R. Qed.
+Lemma rkey_of_link_site : forall Cg Cb pins outs gen k, A.rkey_of (A.link_site Cg Cb pins outs gen) k = A.rkey_of Cb k.
 Proof. reflexivity. Qed.
-Lemma canon_link_site : forall Cg Cb outs gen t, A.canon (A.link_site Cg Cb outs gen) t = A.canon Cb t.
+Lemma canon_link_site : forall Cg Cb pins outs gen t, A.canon (A.link_site Cg Cb pins outs gen) t = A.canon Cb t.
 Proof. reflexivity. Qed.
 
 (* An application's selection pairs the caller's keys with the sources. *)
@@ -3416,13 +3416,13 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
   NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
   A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
-  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr
-    (A.role_reads (A.link_site Cg Cb outs gen) outs gen ++ A.pin_reads Cb pins) ks /\
+  A.ResultRealizes (A.link_site Cg Cb pins outs gen) Cr
+    (A.role_reads (A.link_site Cg Cb pins outs gen) outs gen ++ A.pin_reads Cb pins) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
       (map ITy outs) binds0
-      (link_sources (A.link_site Cg Cb outs gen) outs gen ks)) /\
+      (link_sources (A.link_site Cg Cb pins outs gen) outs gen ks)) /\
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) /\
   (* Q6: the pins of fixed inputs, and what they mention *)
   (forall x tx, In (x, tx) pins <->
@@ -3435,7 +3435,7 @@ Lemma link_facts : forall u gg h pins, A.LinkBody W Prog u gg h pins -> exists d
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins.
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB PinsI PinG].
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR _ RR BO Fam FrH FB PinsI PinG].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   refine (conj FCu (conj FCg (conj LPeq (conj (fun x tx L1 L2 _ => proj2 (LRd x tx L1 L2)) (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
     (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO (conj FB (conj MadeU (conj PinsI PinG)))))))))))))))))))))).
@@ -4903,7 +4903,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> Pre rr Fb Cb d3 [] H3 g3 st3 ->
   exists dr result,
-    select_provisions d3 (result_selection (map (A.rkey_of C') ks) None (link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')) = Some dr /\
+    select_provisions d3 (result_selection (map (A.rkey_of C') ks) None (link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks')) = Some dr /\
     result_environment (map (fun t => (t, gensof t)) outs) d3 (map ITy outs') dr = Some result /\
     Pre rr (A.with_fresh F newgens) C' (append_environment result d) types H3 g st3 /\
     MeaningsGrow (map gensof outs) d (append_environment result d).

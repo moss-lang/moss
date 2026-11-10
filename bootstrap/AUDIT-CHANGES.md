@@ -113,6 +113,7 @@ entry they belong to.
 | 70 | A defined method is not bound (`BMethBind`) | lang-q | B (native accepts; E70) |
 | 71 | A body may pin a fixed input that agrees with the bind site (`LinkBody` pins Π = P(F) ∩ M(F), `BFunClosure` agreement) | lang-q | relaxation toward both implementations (Audit used to reject every program binding `StdBase`) |
 | 72 | **Every call checks its arguments in the caller's context Γ** (`ExCallD`, as `MCAttachedDefined` and `PrFamily`; semantics.typ Q4) | lang-bq | relaxation, with the oracle (accepts a program both implementations reject; native E72) |
+| 73 | A linked body's result keys read a pinned fixed input at its pin (`link_site`; a key the pins re-read is one the body made) | pinsite | relaxation toward both implementations (completes #71: Audit still rejected every program binding `StdBase`) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
@@ -2015,6 +2016,10 @@ executable tests unless noted.
     type the body makes.
   - A pin whose types are not in force at the bind site (the oracle's
     `ety_of` at the bind site fails there too).
+- **Gap, fixed in #73.** Result *keys* were still read at G's table, so
+  `GcArrays`'s `Array.get` (keyed through the pinned `ArrayHandle`) was
+  "not provided", and Audit still rejected every program binding
+  `StdBase`.
 - **Proof.** `public_safety` is still proved, and `check.sh` is green.
   - `ClosureOk`'s `CLink` keeps the pins, with `PinsAgree u Cu Cg dc gfx pins`:
     under any application's meanings (`AppMeanings`), each pin means what
@@ -2129,6 +2134,97 @@ executable tests unless noted.
   implementations rejected) and a run-time change on
   args-context-provision-wins, with the oracle. Native needs the same
   change (E72).
+
+### 73. A linked body's result keys read a pinned fixed input at its pin (`link_site`, `LinkBody`; pinsite branch; completes #71)
+- **The gap.** #71 let a body pin a fixed input of F that G does not
+  take, and read the promised *types* at the pin (`pin_reads`). But
+  `LinkBody` still read the promised *keys* at `link_site`, whose table
+  was the output roles and G's own table (`c_ty Cg`). A pinned input is
+  in neither, so a key's receiver read it as itself. `lib/wasistd.moss`'s
+  `GcArrays`, bound to the family `Arrays`, pins `ArrayHandle = ArrayRef`
+  and binds `Array.get` at `Array[ArrayHandle=ArrayRef, …]`. Arrays' key
+  read as `Array[ArrayHandle=ArrayHandle, …].get`, which the body does not
+  provide. So Audit still rejected every program that binds `StdBase`,
+  `examples/hello.moss` included. The executable elaborator (branch
+  `elab`, `--frontend audit`) found this: `link Arrays = GcArrays: … the
+  body does not make F's result item Array[Item=…, ArrayHandle=…].get
+  (not provided)`.
+- **Rule now.**
+  - `link_site Cg Cb pins outs gen` takes the pins. Its table is the
+    roles, then the pins (each pinned input at the body's meaning of it),
+    then `c_ty Cg`. These domains are disjoint (roles are fresh, and a pin
+    is an input G does not take), so the order does not matter. So the
+    promised key is read where the body bound it, and so are the run-time
+    result keys in `FunctorCode` (the application's sources).
+  - `LinkBody` gains one premise: a key that the pins re-read
+    (`at_site (link_site … pins …) k <> at_site (link_site … [] …) k`)
+    is none of G's own provisions (`ilook … (c_provisions Cg) = None`).
+    So it is an item the body made, as both implementations require:
+    they check a body's result by written leaf ("does not bind").
+- **Why it is safe.** The pins are exactly the inputs whose meaning a
+  body may fix and still have checked. `BFunClosure` checks that each pin
+  agrees with the bind site, and a fixed input means at every
+  application what it meant at the bind (rule 5). So the caller's key
+  for the item, `Array[ArrayHandle=<the caller's ArrayHandle>, …].get`,
+  is the one the body filed it under, with the pin's reading. Other
+  inputs still read at G's table, so #14's reason for `link_site` (a
+  rebind in the body writes only its alias) is untouched: a pin is not a
+  rebind of an input G takes.
+- **Criteria.**
+  - Fidelity (section 6): both implementations accept pin-fixed-key and
+    the whole prelude. Both reject pin-fixed-key-need, and the extra
+    premise keeps Audit rejecting it: without it, reading through the pin
+    alone would accept a result item that is only G's own captured need.
+  - Stability (section 5): the key is read at the meaning that the
+    fixed-input agreement and BFunClosure's pin check fix at the bind.
+    It is not read at a later rebind.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [pin-fixed-key](examples/pin-fixed-key.moss) (the prelude's pattern without the prelude; a family demand, then `bind Fam;`) | exit 0 | exit 0 | rejects (the key is not provided) | accepts |
+  | [pin-fixed-key-need](examples/pin-fixed-key-need.moss) (the pin re-reads the key onto G's own need) | rejects ("functor `NeedGet` does not bind `Box.get`") | rejects ("the functor does not bind every item its result promises: `get`") | rejects (not provided) | rejects (the new premise) |
+  | [pin-fixed-agree](examples/pin-fixed-agree.moss) (#71; binds `StdBase`) | q | q | rejects (GcArrays) | accepts |
+
+  The Audit verdicts are argued from the rules. They are confirmed by the
+  executable elaborator (moss-elab 41b4e3c). Its faithful mode
+  (`--frontend audit`, Audit before this change) rejects pin-fixed-key
+  and pin-fixed-agree with the error above. Its `audit-compat` mode,
+  which implements exactly this change (`s_compat_pins` in
+  `EaFunctor.link_body`: the pins ahead of `link_site`'s table, and the
+  same premise), accepts both and rejects pin-fixed-key-need
+  ("the body does not bind `Box[…].get` (pinned; compat)").
+  `examples/hello.moss` prints `Hello, world!` under compat and is
+  rejected under faithful.
+- **Corpus.** The elaborator's differential run over 460 files
+  (`examples/`, `bootstrap/examples/`, `tests/**`; moss-elab
+  `scratch/diff-run4.tsv`) is in effect this change's corpus comparison.
+  Faithful and compat differ on 154 files, and every one of those
+  faithful rejections is `link Arrays = GcArrays`. Compat rejects no file
+  that faithful accepts, and the new premise rejects no corpus file.
+- **Proof.** `public_safety` is still proved, and `check.sh` is green.
+  - `PublicBodySlice`: `realizes_link_site`, `rkey_of_link_site` and
+    `canon_link_site` take the pins. The site's merges and provisions are
+    the body's, so the proofs are unchanged.
+  - `PublicChainRealize`: `lookup_site_role` takes the pins.
+    `lookup_site_in` also needs a symbol that is not pinned. The new
+    `lookup_site_off` and `lookup_site_pin` read through the pins. `r2`'s
+    receiver clause allows a pinned input, as its signature clause
+    already did. In `root_level`, `RecvX` reads a pinned receiver symbol
+    at its pin, using `PinT`, the same fact `KeyX` uses for the types.
+  - `PublicFamilyLink.family_link_new_ok`: `R2rec` allows a pinned input,
+    and `Recv` reads the receiver per symbol. A pin goes by `PinRun`, and
+    one of G's inputs by `link_run_fact` and θ's merge, as before.
+  - `PublicLinkRun`: `lookup_subst_out` and `lookup_subst_dom`, two small
+    lemmas about substitutions. The other files (`PublicChainCore`,
+    `PublicChainNew`, `PublicLinkResults`, `PublicCopyApply`,
+    `PublicFamilyStep`, `PublicFamilyCopy`) only gain the pins argument
+    in their statements. No proof reads the new premise.
+- **The executable elaborator.** Faithful mode needs what compat already
+  does: call `link_site Cg Cb pins outs gen`, and make the "(pinned;
+  compat)" check unconditional. Then `s_compat_pins` can be dropped.
+- **Class.** A relaxation toward both implementations, with one
+  reject-only premise that mirrors both.
 
 ---
 

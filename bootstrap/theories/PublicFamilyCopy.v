@@ -331,7 +331,7 @@ Proof.
     assert (AF : forall X, (match CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs with
        | inl (d3, _, st3) => match select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) rms' (fc_sources (FunctorCode
            (map fst (A.c_ty Cg)) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
-           (map ITy outs') bs (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')))) with
+           (map ITy outs') bs (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks')))) with
            | Some dr => match result_environment [] d3 (map ITy outs') dr with
                | Some result => inl (result, st3) | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
            | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
@@ -350,13 +350,13 @@ Proof.
         Ret Loop ltac:(intros v E; discriminate) Logic.I). }
     assert (Run : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
-    set (srcs := CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks').
+    set (srcs := CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks').
     assert (LenR : forall C1 o C1' ks1, A.ProvideResult W h0 C1 o C1' ks1 -> List.length srcs = List.length ks1).
     { intros C1 o C1' ks1 P1. unfold srcs, CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite length_map.
       exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ Cr' ks' C1 o C1' ks1 PR' P1). }
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W u gfx sms' rms' h0 gf0 _ None Chn eq_refl srcs LenR) as [LenU SrcIn].
-    destruct (CRz.CSg.FL.CF.CN.CC.chain_selection W Prog argv read state_ok rr (A.link_site Cg Cb outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr' ks'
-      (map (A.rkey_of Cr) ks) rms' _ (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok rr Cg Cb outs' gen d3 H3 Real3) PR' RR SrcIn)
+    destruct (CRz.CSg.FL.CF.CN.CC.chain_selection W Prog argv read state_ok rr (A.link_site Cg Cb pins outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr' ks'
+      (map (A.rkey_of Cr) ks) rms' _ (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok rr Cg Cb pins outs' gen d3 H3 Real3) PR' RR SrcIn)
       as [dr Sdr].
     (* the root's level, carried up the chain *)
     assert (Abs0 : CRz.CSg.Abstract W h0)

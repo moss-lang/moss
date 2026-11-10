@@ -83,6 +83,21 @@ Proof.
   destruct (Nat.eqb_spec x y) as [->|Ne]; [eauto|]. destruct I as [E|I]; [cbn in E; congruence|exact (IH I)].
 Qed.
 
+(* #73: a pinned input reads at its pin in link_site's table. *)
+Lemma lookup_subst_out : forall x (s : subst), ~ In x (map fst s) -> lookup_subst x s = None.
+Proof.
+  intros x s. induction s as [|[y v] s IH]; intros N; [reflexivity|]. cbn.
+  destruct (Nat.eqb x y) eqn:E; [apply Nat.eqb_eq in E; subst y; exfalso; exact (N (or_introl eq_refl))|].
+  apply IH. intros I. exact (N (or_intror I)).
+Qed.
+Lemma lookup_subst_dom : forall x (s : subst), In x (map fst s) -> exists v, lookup_subst x s = Some v /\ In (x, v) s.
+Proof.
+  intros x s I. destruct (lookup_subst x s) as [v|] eqn:L.
+  - exists v. split; [reflexivity|exact (lookup_subst_in_pair _ _ _ L)].
+  - exfalso. induction s as [|[y v] s IH]; [contradiction|]. cbn in L, I.
+    destruct (Nat.eqb x y) eqn:E; [discriminate|]. destruct I as [<-|I]; [rewrite Nat.eqb_refl in E; discriminate|exact (IH I L)].
+Qed.
+
 Lemma existsb_eqb_in : forall y l, In y l -> existsb (Nat.eqb y) l = true.
 Proof. intros y l I. apply existsb_exists. exists y. split; [exact I|apply Nat.eqb_refl]. Qed.
 Lemma existsb_eqb_out : forall y l, ~ In y l -> existsb (Nat.eqb y) l = false.

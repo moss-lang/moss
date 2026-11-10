@@ -4109,9 +4109,14 @@ Definition pin_reads (body : cx) (pins : subst) : subst :=
    merge representative's) read at G's table, only its role at the body's
    (examples/link-output-input-rep.moss, scratch/orch/realize3-AUDIT.md).
    The roles stay in the keys and promised types, so the site's table
-   alone reads them. *)
-Definition link_site (Cg Cb : cx) (outs : list nat) (gen : nat -> nat) : cx :=
-  Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ c_ty Cg)
+   alone reads them.  A pinned fixed input (Q6, LinkBody's pins) reads at
+   its pin, the body's meaning of it: every application reads it as the
+   bind site did, which BFunClosure checks is the pin, so the body's key
+   is the caller's (lib/wasistd.moss's GcArrays binds `Array.get` at
+   `ArrayHandle = ArrayRef`; examples/pin-fixed-key.moss, AUDIT-CHANGES
+   #73). *)
+Definition link_site (Cg Cb : cx) (pins : subst) (outs : list nat) (gen : nat -> nat) : cx :=
+  Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ pins ++ c_ty Cg)
      (c_sub Cb) (c_provisions Cb) (c_locals Cb).
 (* Each promised key, read at the body's site (at_site re-reads its
    receiver), is provided there, at the promised provision with `reads`
@@ -4892,9 +4897,15 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     NoDup (map gen outs) ->
     (forall t, In t outs -> Fresh W (gen t)) ->
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
+    (* a key the pins re-read must be one the body made, not one of G's
+       own provisions (the oracle's and native's "does not bind", by
+       written leaf; examples/pin-fixed-key-need.moss, AUDIT-CHANGES #73) *)
+    (forall k, In k ks ->
+       at_site (link_site Cg Cb pins outs gen) k <> at_site (link_site Cg Cb [] outs gen) k ->
+       ilook (provision_id (at_site (link_site Cg Cb pins outs gen) k)) (c_provisions Cg) = None) ->
     (* Every output has the promised signature and known type meanings. *)
-    ResultRealizes (link_site Cg Cb outs gen) Cr
-      (role_reads (link_site Cg Cb outs gen) outs gen ++ pin_reads Cb pins) ks ->
+    ResultRealizes (link_site Cg Cb pins outs gen) Cr
+      (role_reads (link_site Cg Cb pins outs gen) outs gen ++ pin_reads Cb pins) ks ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->
@@ -4906,7 +4917,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
       (map ITy outs) binds0
-      (map (fun k => rkey_of (link_site Cg Cb outs gen) (at_site (link_site Cg Cb outs gen) k)) ks)) ->
+      (map (fun k => rkey_of (link_site Cg Cb pins outs gen) (at_site (link_site Cg Cb pins outs gen) k)) ks)) ->
     (* the pins of fixed inputs: what the body binds each to *)
     (forall x tx, In (x, tx) pins <->
        Fixed W u x /\ ~ In x (map fst (c_ty Cg)) /\ nlook x (c_ty Cb) = Some tx) ->

@@ -51,9 +51,9 @@ Lemma link_body_parts : forall u gg h pins, A.LinkBody W Prog u gg h pins ->
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds0 srcs).
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR _ RR BO Fam FrH FB].
   exists Cu, nsu, Cg, nsg, binds0, (map ITy outs),
-    (map (fun k => A.rkey_of (A.link_site Cg Cb outs gen) (A.at_site (A.link_site Cg Cb outs gen) k)) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
+    (map (fun k => A.rkey_of (A.link_site Cg Cb pins0 outs gen) (A.at_site (A.link_site Cg Cb pins0 outs gen) k)) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
 Qed.
 
 Lemma functx_table_in : forall u C ns, A.FunCtx W u C ns -> forall x v, In (x, v) (A.c_ty C) ->
@@ -89,7 +89,7 @@ Proof.
   (* 1: a family has no outputs *)
   assert (NoOut : forall t, ~ A.FunOutputs W u t) by (intros t Ft; exact (PublicFormation.family_no_outputs W u t (proj1 Fam) Ft)).
   destruct outs' as [|t0 outs0]; [|exfalso; exact (NoOut t0 (proj1 (OutsR t0) (or_introl eq_refl)))].
-  change (A.ResultRealizes (A.link_site Cg Cb [] gen) Cr' (A.pin_reads Cb pins) ks') in RR.
+  change (A.ResultRealizes (A.link_site Cg Cb pins [] gen) Cr' (A.pin_reads Cb pins) ks') in RR.
   remember (A.pin_reads Cb pins) as pr0 eqn:Err.
   (* 2: the full LinkBody, from the closure *)
   destruct (CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
@@ -159,7 +159,7 @@ Proof.
     A.kind_sym W x = Some A.DKType) by (intros q pa x _ Lx Nu; exact (PublicFormation.family_keys_typed W C u matching th sm Cr ks Ts FA Cu ns FC x Lx Nu)).
   pose proof (PublicFamilyAgree.family_items_pos W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as Pos.
   pose proof (PublicFamilyAgree.family_items_agree W C u matching th sm Cr ks Cu ns Cr' ks' FA FCu NoOut PRf KeysM Idem KeysT) as [NewSig _].
-  set (Ls := A.link_site Cg Cb [] gen) in *.
+  set (Ls := A.link_site Cg Cb pins [] gen) in *.
   set (srcs := CF.CN.CC.LR.PA.FS.CopyA.S.link_sources Ls [] gen ks') in *.
   set (rs := map (A.rkey_of Cr) ks) in *.
   assert (LenRs : List.length (closure_sources None srcs) = List.length rs)
@@ -232,7 +232,7 @@ Proof.
   rewrite Eat in Iact. cbn [A.provision_id] in Iact.
   cbn [A.at_site] in Eat. injection Eat as Erb Emb _. subst mb.
   rewrite PublicScoping.map_pair_id in Erb.
-  change (A.canon Cb (app_subst (A.c_ty Cg) rf) = rb) in Erb.
+  change (A.canon Cb (app_subst (pins ++ A.c_ty Cg) rf) = rb) in Erb.
   destruct act as [| |ga aa|]; cbn in Ref; destruct Ref as [Kind [SigE _]]; try contradiction.
   injection SigE as SigP SigR.
   assert (SigE : A.sig_subst (A.c_sub Cb) (A.sig_subst pr0 gf) = A.sig_subst (A.c_sub Cb) ga).
@@ -254,13 +254,16 @@ Proof.
     destruct (SigmaGens _ _ Iy') as [Iy''|D']; [|exact (Ny D')].
     apply (proj1 (InCb _ _ Iact y Ny)). unfold PublicCallRealize.provision_sig_gens. cbn [A.provision_signature].
     unfold A.sig_gens. apply in_flat_map. exists t'. split; [exact It'|exact Iy'']. }
-  assert (R2rec : forall y, In y (A.gens rf) -> In y DG).
-  { intros y Iy. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [exact I'|exfalso].
-    assert (Lc : lookup_subst y (A.c_ty Cg) = None).
-    { rewrite lookup_subst_nlook'. destruct (A.nlook y (A.c_ty Cg)) eqn:L; [|reflexivity].
+  (* #73: the receiver is read at the pins, then at G's table *)
+  assert (R2rec : forall y, In y (A.gens rf) -> In y DG \/ In y (map fst pins)).
+  { intros y Iy. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [left; exact I'|].
+    destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
+    assert (Lc : lookup_subst y (pins ++ A.c_ty Cg) = None).
+    { rewrite PublicCopyFresh.lookup_subst_cat, (PublicLinkRun.lookup_subst_out y pins Np), lookup_subst_nlook'.
+      destruct (A.nlook y (A.c_ty Cg)) eqn:L; [|reflexivity].
       exfalso. apply Ny. apply PublicFamilyAgree.nlook_dom. rewrite L. discriminate. }
     pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy Lc) (SubNone y Ny)) as Irb.
-    change (In y (A.gens (A.canon Cb (app_subst (A.c_ty Cg) rf)))) in Irb. rewrite Erb in Irb.
+    change (In y (A.gens (A.canon Cb (app_subst (pins ++ A.c_ty Cg) rf)))) in Irb. rewrite Erb in Irb.
     exact (proj2 (InCb _ _ Iact y Ny) Irb). }
   (* 7: the transfer *)
   pose proof Pre0 as [_ [_ [_ [_ [[Abs0 _] _]]]]].
@@ -338,22 +341,28 @@ Proof.
   destruct (forall2_cons_inv _ _ _ _ _ _ _ Agr) as [Aret Rest]. destruct (forall2_cons_inv _ _ _ _ _ _ _ Rest) as [Arec Rps].
   assert (Recv : ground d3 rb = ground d r0).
   { destruct Arec as [ScR EcR].
-    assert (ThX : app_subst th (app_subst (A.c_ty Cg) rf) = app_subst th rf).
-    { rewrite <- (PublicTypeRead.app_subst_nil rf) at 2. apply subst2_agree. intros y Iy. cbn [app_subst].
-      pose proof (R2rec y Iy) as Iyg. destruct (A.nlook y (A.c_ty Cg)) as [ty|] eqn:Ly;
-        [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ y _) Iyg Ly)].
-      rewrite lookup_subst_nlook', Ly. change (app_subst th ty = app_subst th (TAbs y)).
-      destruct (LRd' y ty Ly (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [_ Can].
-      rewrite <- (ThSig (TAbs y)), <- (ThSig ty). unfold A.canon in Can. rewrite Can. reflexivity. }
-    assert (XG : forall z, In z (A.gens (app_subst (A.c_ty Cg) rf)) -> In z DG /\ In z (map fst (A.c_ty Cu))).
-    { intros z Iz. destruct (gens_subst rf _ z Iz) as [y [Iy [[L _]|[v [L Iv]]]]].
-      - exfalso. pose proof (R2rec y Iy) as Iyg. rewrite lookup_subst_nlook' in L. exact (proj2 (PublicFamilyAgree.nlook_dom _ y _) Iyg L).
-      - rewrite lookup_subst_nlook' in L. split; [exact (GgDom y v L z Iv)|].
-        destruct (LRd' y v L (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [InU _].
-        exact (proj1 (PublicFamilyAgree.nlook_dom _ z _) (InU z Iv)). }
-    rewrite <- Erb, Abs3, (RunFact _ (fun z I => proj1 (XG z I)) (fun z I => proj2 (XG z I))), ThX.
     assert (CanF2 : forall t, A.canon (A.family_context C matching) t = A.canon C0 t) by exact CanF.
-    rewrite <- (Abs0 r0), <- CanF2, EcR, CanF2, (Abs0 (app_subst th rf)). reflexivity. }
+    rewrite <- (Abs0 r0), <- CanF2, EcR, CanF2, (Abs0 (app_subst th rf)).
+    rewrite <- Erb, Abs3, (PublicCopyFresh.ground_app_subst d th rf). unfold ground.
+    apply PublicCopyFresh.ty_agree. intros y Iy.
+    assert (Thy : lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) = Some (ground d (app_subst th (TAbs y)))).
+    { rewrite PublicCopyFresh.lookup_subst_cat, PublicLinkRun.lookup_map_snd. cbn [app_subst]. rewrite (ThL y (ScR y Iy)). reflexivity. }
+    change (app_subst (type_meanings d3) (match lookup_subst y (pins ++ A.c_ty Cg) with Some v => v | None => TAbs y end) =
+      match lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) with Some v => v | None => TAbs y end).
+    rewrite Thy, PublicCopyFresh.lookup_subst_cat.
+    destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np].
+    - (* a pinned input: the pin, which reads as θ reads the input *)
+      destruct (PublicLinkRun.lookup_subst_dom y pins Ip) as [tx [Lx Itx]]. rewrite Lx. exact (PinRun y tx Itx).
+    - (* G's own input: G's reading, which θ reads as the input *)
+      rewrite (PublicLinkRun.lookup_subst_out y pins Np).
+      destruct (R2rec y Iy) as [Iyg|Ip]; [|exfalso; exact (Np Ip)].
+      destruct (A.nlook y (A.c_ty Cg)) as [ty|] eqn:Ly;
+        [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ y _) Iyg Ly)].
+      rewrite lookup_subst_nlook', Ly.
+      destruct (LRd' y ty Ly (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [InU Can].
+      change (ground d3 ty = ground d (app_subst th (TAbs y))).
+      rewrite (RunFact ty (GgDom y ty Ly) (fun z Iz => proj1 (PublicFamilyAgree.nlook_dom _ z _) (InU z Iz))).
+      f_equal. rewrite <- (ThSig (TAbs y)), <- (ThSig ty). unfold A.canon in Can. rewrite Can. reflexivity. }
   assert (GEp : forall l1 l2, Forall2 (PublicFamilyAgree.SigAgree Cf Cu th) l1 l2 -> incl l2 (A.sg_params gf) ->
     map (fun t => ground d3 (app_subst pr0 t)) l2 = map (ground d) l1).
   { intros l1' l2' F2. induction F2 as [|tc tf l1' l2' A1 _ IH]; intros Inc; [reflexivity|]. cbn [map].

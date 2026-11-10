@@ -1,0 +1,40 @@
+# Q6's pins at a result key (AUDIT-CHANGES #73): the standard library's
+# pattern without the prelude. `Fam[Item]` is a family fixed in `Handle`,
+# which its result key `Box.get` names: the key is
+# `Box[Item=Item, Handle=Handle].get`. `RawFam` does not take `Handle`; its
+# body pins `Handle = Raw` (#71) and binds `Box.get` there, so the body's
+# provision is at `Box[Item=Item, Handle=Raw].get`. lib/wasistd.moss's
+# `GcArrays` (bound to `Arrays`) does the same with `ArrayHandle = ArrayRef`
+# and `Array.get`.
+# Under #71, LinkBody read the promised key at link_site, whose table maps
+# only the output roles and G's own inputs, so `Handle` read as itself and
+# the key `Box[Item=Item, Handle=Handle].get` was not provided: Audit
+# rejected this program, and every program that binds `StdBase`.
+# Since #73, link_site reads a pinned input at its pin, so the key is the
+# body's `Box[Item=Item, Handle=Raw].get`. Every application reads `Handle`
+# as the bind site did, which is the pin (BFunClosure), so the caller's key
+# for the item is the one the body bound.
+# main demands `Fam` at `Item = Elt` through the call `.get()` on a
+# `Box[Item=Elt, Handle=Raw]`, then applies it by hand at `Item = Raw`.
+# Verdicts: oracle accepts (exit 0); native accepts (exit 0);
+# Audit before #73 rejects, now accepts.
+type Item;
+type Handle;
+tag Raw;
+tag Elt;
+assume Handle, Item { tag Box[Item](Handle); }
+assume Handle, Item { fn Box.get(): Handle; }
+functor Fam[Item]: Handle -> Box.get;
+functor RawFam: Item -> Box.get {
+  bind Handle = Raw;
+  bind Box.get = () => match this { Box(h) => h };
+}
+fn main() {
+  bind Handle = Raw;
+  bind Fam = RawFam;
+  bind Item = Elt;
+  match Box(Raw).get() { Raw => () };
+  bind Item = Raw;
+  bind Fam;
+  match Box(Raw).get() { Raw => () };
+}

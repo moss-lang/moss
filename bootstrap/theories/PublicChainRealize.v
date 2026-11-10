@@ -607,20 +607,33 @@ Proof.
     split; [apply in_map; exact It|exact (PublicFormation.gens_keep _ _ y I N)].
 Qed.
 
-Lemma lookup_site_role : forall Cg Cb outs (gen : nat -> nat) t, In t outs ->
+Lemma lookup_site_role : forall Cg Cb pins outs (gen : nat -> nat) t, In t outs ->
   (forall a b, In a outs -> In b outs -> gen a = gen b -> a = b) ->
-  lookup_subst (gen t) (A.c_ty (A.link_site Cg Cb outs gen)) =
+  lookup_subst (gen t) (A.c_ty (A.link_site Cg Cb pins outs gen)) =
     Some (match A.nlook t (A.c_ty Cb) with Some v => v | None => TAbs t end).
 Proof.
-  intros Cg Cb outs gen t It Inj. cbn [A.link_site A.c_ty]. rewrite PublicCopyFresh.lookup_subst_cat.
+  intros Cg Cb pins outs gen t It Inj. cbn [A.link_site A.c_ty]. rewrite PublicCopyFresh.lookup_subst_cat.
   rewrite (lookup_roles gen (fun t => match A.nlook t (A.c_ty Cb) with Some v => v | None => TAbs t end) outs t It Inj). reflexivity.
 Qed.
 
-Lemma lookup_site_in : forall Cg Cb outs (gen : nat -> nat) x, ~ In x (map gen outs) ->
-  lookup_subst x (A.c_ty (A.link_site Cg Cb outs gen)) = lookup_subst x (A.c_ty Cg).
+Lemma lookup_site_off : forall Cg Cb pins outs (gen : nat -> nat) x, ~ In x (map gen outs) ->
+  lookup_subst x (A.c_ty (A.link_site Cg Cb pins outs gen)) = lookup_subst x (pins ++ A.c_ty Cg).
 Proof.
-  intros Cg Cb outs gen x N. cbn [A.link_site A.c_ty]. rewrite PublicCopyFresh.lookup_subst_cat.
+  intros Cg Cb pins outs gen x N. cbn [A.link_site A.c_ty]. rewrite PublicCopyFresh.lookup_subst_cat.
   rewrite (lookup_map_none gen (fun t => match A.nlook t (A.c_ty Cb) with Some v => v | None => TAbs t end) outs x N). reflexivity.
+Qed.
+Lemma lookup_site_in : forall Cg Cb pins outs (gen : nat -> nat) x, ~ In x (map gen outs) -> ~ In x (map fst pins) ->
+  lookup_subst x (A.c_ty (A.link_site Cg Cb pins outs gen)) = lookup_subst x (A.c_ty Cg).
+Proof.
+  intros Cg Cb pins outs gen x N Np. rewrite (lookup_site_off Cg Cb pins outs gen x N), PublicCopyFresh.lookup_subst_cat.
+  rewrite (PublicLinkRun.lookup_subst_out x pins Np). reflexivity.
+Qed.
+(* #73: a pinned input reads at its pin. *)
+Lemma lookup_site_pin : forall Cg Cb pins outs (gen : nat -> nat) x, ~ In x (map gen outs) -> In x (map fst pins) ->
+  exists tx, lookup_subst x (A.c_ty (A.link_site Cg Cb pins outs gen)) = Some tx /\ In (x, tx) pins.
+Proof.
+  intros Cg Cb pins outs gen x N Ip. rewrite (lookup_site_off Cg Cb pins outs gen x N), PublicCopyFresh.lookup_subst_cat.
+  destruct (PublicLinkRun.lookup_subst_dom x pins Ip) as [tx [L I]]. rewrite L. exists tx. split; [reflexivity|exact I].
 Qed.
 
 (* A key of a reading in a FunCtx with roles has its receiver over the
@@ -684,7 +697,7 @@ Hypothesis Items : A.BindItems W Prog Fg Cg its wrap Cb Fb made.
 Hypothesis FrGf : PublicFormation.FrameFormed W Fg.
 Hypothesis MadeOut : forall t, In t made -> A.nlook t (A.c_ty Ch0) = None.
 Hypothesis FrGen : forall t, In t outs -> A.Fresh W (gen t).
-Hypothesis RR : A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen ++ A.pin_reads Cb pins) ks.
+Hypothesis RR : A.ResultRealizes (A.link_site Cg Cb pins outs gen) Cr (A.role_reads (A.link_site Cg Cb pins outs gen) outs gen ++ A.pin_reads Cb pins) ks.
 
 Let DG := map fst (A.c_ty Cg).
 Let D0 := map fst (A.c_ty Ch0).
@@ -697,7 +710,7 @@ Qed.
 
 Lemma r2 : forall k, In k ks -> forall p, A.ilook (A.provision_id k) (A.c_provisions Cr) = Some p ->
   (forall y, In y (rel_gens p) -> In y D0 -> In y DG \/ In y (map fst pins)) /\
-  (forall r m a y, k = IMth r m a -> In y (A.gens r) -> In y D0 -> In y DG).
+  (forall r m a y, k = IMth r m a -> In y (A.gens r) -> In y D0 -> In y DG \/ In y (map fst pins)).
 Proof.
   intros k Ik p Lp.
   destruct World as [bw Wo].
@@ -739,7 +752,7 @@ Proof.
         try (apply in_or_app; left; unfold PublicCallRealize.provision_sig_gens in Iy; cbn in Iy; exact Iy).
       apply in_flat_map in Iy as [[x t] [Ixt Iy]]. apply in_flat_map. exists (x, Some t). split; [|exact Iy].
       apply in_map_iff. exists (x, t). split; [reflexivity|exact Ixt]. }
-  set (Ls := A.link_site Cg Cb outs gen) in *.
+  set (Ls := A.link_site Cg Cb pins outs gen) in *.
   set (rr := (A.role_reads Ls outs gen ++ A.pin_reads Cb pins)%list) in *.
   assert (RrNone : forall y, In y D0 -> ~ In y (map fst pins) -> lookup_subst y rr = None).
   { intros y Iy Np. unfold rr, A.role_reads. rewrite PublicCopyFresh.lookup_subst_cat.
@@ -769,12 +782,13 @@ Proof.
     injection E as -> E. change (A.c_sub Ls) with (A.c_sub Cb) in E. fold rr in E. pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy (RrNone y Iy0 Np)) (SubNone y Ny)) as Ik2.
     rewrite <- E in Ik2. destruct (Back ta y Ik2) as [Iy''|D']; [|exfalso; exact (Ny D')].
     apply in_flat_map. exists (x, ta). split; [exact Ita|exact Iy''].
-  - intros r m a y -> Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [exact I'|exfalso].
+  - intros r m a y -> Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [left; exact I'|].
+    destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
     apply (proj2 (InCb _ _ Iact y Ny Iy0)). cbn [A.at_site A.provision_id PublicCallRealize.key_gens].
     rewrite PublicScoping.map_pair_id. unfold A.canon. change (A.c_sub Ls) with (A.c_sub Cb).
     apply (PublicFormation.gens_keep _ _ y); [|exact (SubNone y Ny)].
     apply (PublicFormation.gens_keep _ _ y Iy).
-    unfold Ls. rewrite (lookup_site_in Cg Cb outs gen y (d0_not_role y Iy0)), lookup_subst_nlook'.
+    unfold Ls. rewrite (lookup_site_in Cg Cb pins outs gen y (d0_not_role y Iy0) Np), lookup_subst_nlook'.
     destruct (A.nlook y (A.c_ty Cg)) eqn:L; [|reflexivity]. exfalso. apply Ny. apply PublicFamilyAgree.nlook_dom. rewrite L. discriminate.
 Qed.
 End R2.
@@ -1027,7 +1041,7 @@ Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list
 Hypothesis PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x).
 
 Lemma root_level : PublicChainSigs.TableOk Tin Ch0 -> PublicChainSigs.TableOk th Ch0 ->
-  LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 None.
+  LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 None.
 Proof.
   intros Tok TokT.
   pose proof LD as (FC0 & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR & RR & BO & FB & MadeOut & PinsI & PinG).
@@ -1044,14 +1058,14 @@ Proof.
   assert (NR : forall y, In y D0 -> ~ In y (map gen outs')).
   { intros y Iy I. apply in_map_iff in I as [t [<- It]].
     exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed h0 Ch0 nsh0 FC0 (gen t) Iy (FrG t It)). }
-  set (Ls := A.link_site Cg Cb outs' gen).
+  set (Ls := A.link_site Cg Cb pins outs' gen).
   set (rr := (A.role_reads Ls outs' gen ++ A.pin_reads Cb pins)%list).
   set (T0 := Tv (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin gen outs').
   assert (RrE : rr = (map (fun t => (gen t, A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t))))) outs' ++ A.pin_reads Cb pins)%list)
     by reflexivity.
   (* a role reads as its output's meaning *)
   assert (Role : forall t0, In t0 outs' -> ground d3 (app_subst (A.c_ty Ls) (TAbs (gen t0))) = CSg.FL.CF.CN.CC.LR.read_meaning d3 t0).
-  { intros t0 It. destruct (OutM t0 It) as [v0 Lv]. cbn [app_subst]. unfold Ls. rewrite (lookup_site_role Cg Cb outs' gen t0 It Inj), Lv.
+  { intros t0 It. destruct (OutM t0 It) as [v0 Lv]. cbn [app_subst]. unfold Ls. rewrite (lookup_site_role Cg Cb pins outs' gen t0 It Inj), Lv.
     unfold CSg.FL.CF.CN.CC.LR.read_meaning. rewrite (Al3 t0 v0 Lv). reflexivity. }
   assert (DomG : forall x, In x D0 -> In x DG -> ground d3 (TAbs x) = app_subst T0 (TAbs x)).
   { intros x I0 Ig. rewrite (RunFact (TAbs x)) by (intros y [<-|[]]; assumption).
@@ -1076,9 +1090,12 @@ Proof.
       unfold T0, Tv. rewrite PublicCopyFresh.lookup_subst_cat, (lookup_map_none gen _ outs' x (NR x I0)). reflexivity. }
   assert (KeyTy : forall t, (forall x, In x (A.gens t) -> OkG2 x) -> ground d3 (app_subst rr t) = app_subst T0 t).
   { intros t Ok. unfold ground. apply PublicCopyFresh.ty_agree. intros x Ix. exact (KeyX x (Ok x Ix)). }
-  assert (RecvX : forall x, OkG x -> ground d3 (app_subst (A.c_ty Ls) (TAbs x)) = app_subst T0 (TAbs x)).
-  { intros x [[I0 Ig]|[t0 [It ->]]].
-    - cbn [app_subst]. unfold Ls. rewrite (lookup_site_in Cg Cb outs' gen x (NR x I0)), lookup_subst_nlook'.
+  assert (RecvX : forall x, OkG2 x -> ground d3 (app_subst (A.c_ty Ls) (TAbs x)) = app_subst T0 (TAbs x)).
+  { intros x [[[I0 Ig]|[t0 [It ->]]]|Ip].
+    - assert (Np : ~ In x (map fst pins)).
+      { intros Ip. apply in_map_iff in Ip as [[x' tx] [E Ip]]. cbn in E. subst x'.
+        exact (proj1 (proj2 (proj1 (PinsI x tx) Ip)) Ig). }
+      cbn [app_subst]. unfold Ls. rewrite (lookup_site_in Cg Cb pins outs' gen x (NR x I0) Np), lookup_subst_nlook'.
       destruct (nlook_some _ x _ Ig) as [tx Lx]. rewrite Lx.
       destruct (LRs x tx Lx (proj2 (PublicFamilyAgree.nlook_dom _ x _) I0)) as [InU Can].
       assert (Gtx : incl (A.gens tx) DG) by (intros y Iy; exact (PublicChainSigs.table_gens_dom W gg Cg nsg x tx y FCg Lx Iy)).
@@ -1088,10 +1105,17 @@ Proof.
       change (app_subst Tin (A.canon Ch0 tx) = app_subst T0 (TAbs x)). rewrite <- Can. unfold A.canon.
       rewrite (PublicChainSigs.sub_inv W h0 Ch0 nsh0 Tin FC0 Tok (TAbs x)).
       unfold T0, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]]. exact (NR x I0).
-    - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity. }
+    - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity.
+    - (* #73: a pinned input, read at its pin *)
+      destruct (PublicLinkRun.lookup_subst_dom x pins Ip) as [tx [_ Itx]].
+      destruct (PinT x tx Itx) as [I0 _].
+      destruct (lookup_site_pin Cg Cb pins outs' gen x (NR x I0) Ip) as [tx' [Lx Itx']].
+      cbn [app_subst]. unfold Ls. rewrite Lx. destruct (PinT x tx' Itx') as [_ Ag'].
+      change (ground d3 tx' = app_subst T0 (TAbs x)). rewrite Ag'.
+      unfold T0, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]]. exact (NR x I0). }
   exists gen, outs', Cr, ks'. split; [exact OutsR|]. split; [exact FrG|]. split; [exact Inj|]. split; [exact PR|].
   intros i k Ki. pose proof (nth_error_In _ _ Ki) as Ik.
-  destruct (CSg.FL.CF.CN.CC.body_provides W Prog argv read state_ok n Ls d3 H3 Cr ks' rr (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok n Cg Cb outs' gen d3 H3 Real3) RR k Ik)
+  destruct (CSg.FL.CF.CN.CC.body_provides W Prog argv read state_ok n Ls d3 H3 Cr ks' rr (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok n Cg Cb pins outs' gen d3 H3 Real3) RR k Ik)
     as [p [pv [Lp [Lpv BR]]]].
   destruct (r2 W Prog World merge_formed mentions_typed h0 gg Ch0 Cg Cb nsh0 nsg Fg Fb _ wrap made outs' gen Cr ks' pins
     FC0 FCg Items FrGf MadeOut FrG RR k Ik p Lp) as [R2s R2r].
@@ -1127,8 +1151,8 @@ Proof.
     apply RecvX.
     destruct (result_key_gens_out W h0 Ch0 nsh0 h0 gen Cr ks' FC0 PR GS rk mk ak Ik x Ix) as [(x' & tx & Lx & Ix')|[t [Ft ->]]].
     + pose proof (PublicChainSigs.table_gens_dom W h0 Ch0 nsh0 x' tx x FC0 Lx Ix') as I0.
-      left. split; [exact I0|exact (R2r rk mk ak x eq_refl Ix I0)].
-    + right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity].
+      destruct (R2r rk mk ak x eq_refl Ix I0) as [Ig|Ip]; [left; left; split; [exact I0|exact Ig]|right; exact Ip].
+    + left. right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity].
   - destruct BR as (u0 & gfx & -> & Ok & Vm). exists u0, gfx. split; [reflexivity|]. split; [exact Ok|].
     intros x tx Ixt. rewrite (Vm x tx Ixt). f_equal. apply KeyTy. intros y Iy. apply OkP. unfold rel_gens.
     apply in_flat_map. exists (x, tx). split; assumption.
@@ -1410,7 +1434,7 @@ Proof.
       2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
            apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
       unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
-  set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks').
+  set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks').
   pose proof (root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD LRs th d d3 _ j' g3 st st3 ThDom Run Pre3 PinT) as Root.
   pose proof (chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0

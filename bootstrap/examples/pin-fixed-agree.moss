@@ -3,11 +3,13 @@
 # is fixed in every type its result mentions, `Tok` included. `CharTok`'s
 # body pins `Tok` to `Char`: it relies on `Tok` meaning `Char`, and it is
 # bound where `Tok` means `Char`, so the pin agrees with the bind site.
-# Verdicts: Audit accepts (since #71; before: rejects, the pin set was
-# M(F) ∋ Tok, and the standard library's GcArrays, bound to the family
-# Arrays, pins Arrays' fixed `Size` and `ArrayHandle` the same way, so
-# every program using StdBase was rejected); oracle prints q; native
-# prints q.
+# Verdicts: Audit accepts (since #73; before #71 it rejected, since the
+# pin set was M(F) ∋ Tok, and the standard library's GcArrays, bound to
+# the family Arrays, pins Arrays' fixed `Size` and `ArrayHandle` the same
+# way, so every program using StdBase was rejected; under #71 alone
+# GcArrays' key `Array.get`, read through the pinned `ArrayHandle`, was
+# still not provided, examples/pin-fixed-key.moss); oracle prints q;
+# native prints q.
 type Tok;
 
 assume Std, Tok {
