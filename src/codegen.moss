@@ -3888,6 +3888,7 @@ assume Std {
         let tt = int_list();
         let fu = family_member(recv_ty, sym, ts, tt);
         if ast::is_some(fu) {
+          matching_in_force(tt);
           return emit_literal_on_demand(body, recv_ty, slot, sym, fu, ts, tt);
         }
         semantic_error(prog::e_method(), prog::sym_name.get(sym));
@@ -4073,6 +4074,7 @@ assume Std {
         let tt = int_list();
         let fu = family_member(recv_ty, sym, ts, tt);
         if ast::is_some(fu) {
+          matching_in_force(tt);
           return emit_on_demand(body, recv, recv_ty, sym, run, n, m, e, fu, ts, tt);
         }
         semantic_error(prog::e_method(), prog::sym_name.get(sym));
@@ -4167,7 +4169,7 @@ assume Std {
         let dfloor = pv_floor.read();
         let dsmark = es_top.read();
         demand_needs(body, meth, e);
-        check_callee(meth);
+        check_callee_at(meth, recv_ty);
         let map = int_list();
         let emark = cg_env.read();
         let gmark = cg_genv.read();
@@ -5684,7 +5686,11 @@ assume Std {
     # provision in the generic environment is not met at all (`e_absent`),
     # used or not; a direct call of a provision needs no check, as
     # it is typed by the provision's own signature.
-    fn check_callee(f: Int) {
+    fn check_callee(f: Int) { check_callee_at(f, ast::none()); }
+
+    # `recv_ty`: an attached method's receiver type, whose type arguments
+    # are in force for the call (rule B); none for anything else.
+    fn check_callee_at(f: Int, recv_ty: Int) {
       if !ast::is_some(f) {
         return ();
       }
@@ -5704,6 +5710,7 @@ assume Std {
           return ();
         }
       }
+      requirements_in_force(f, genv, fbase, recv_ty);
       if checked(lower::need_start(f), genv) {
         return ();
       }
@@ -5768,6 +5775,95 @@ assume Std {
       if incoherent.length() > 0 {
         report_incoherent(f, incoherent);
       }
+    }
+
+    # Rule B (criteria sections 2 and 3): using an item — calling a
+    # defined fn or attached method, or binding one as a provider — needs
+    # each type its assume nesting requires in force here: assumed or
+    # bound in the generic environment `genv` (for an attached method,
+    # also a type argument of its receiver), or in force through the
+    # item's merge class in its own context `fbase` (a member in force
+    # here, or a structured type all of whose symbols are). Otherwise a
+    # requirement the caller leaves unbound would be read as itself, and
+    # a family demand could key a provision at a type out of force.
+    fn requirements_in_force(f: Int, genv: Int, fbase: Int, recv_ty: Int) {
+      if is_lambda(f) {
+        return ();
+      }
+      if lower::is_root_fn(f) {
+        return ();
+      }
+      let reqs = int_list();
+      lower::nest_types(prog::sym_mod.get(f), prog::sym_asm.get(f), prog::sym_nasm.get(f), reqs, int_list());
+      let given = int_list();
+      if ast::is_some(recv_ty) {
+        if types::kind_of(recv_ty) == types::kd_nominal() {
+          if types::member_count(recv_ty) > 0 {
+            types::reqs_of(types::sym_of(recv_ty), given);
+          }
+        }
+      }
+      let members = int_list();
+      var e = fbase;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          types::push_new(members, lower::env_sym_of(e));
+        }
+        e = lower::env_next_of(e);
+      }
+      var i = 0;
+      while i < reqs.length() {
+        types::push_new(members, reqs.get(i));
+        i = i + 1;
+      }
+      i = 0;
+      while i < reqs.length() {
+        let r = reqs.get(i);
+        if !type_in_force(r, genv, given) {
+          if !in_force_through(r, genv, given, fbase, members) {
+            prog::error(prog::e_absent(), prog::sym_mod.get(cg_where.read()), prog::sym_name.get(r));
+          }
+        }
+        i = i + 1;
+      }
+    }
+
+    fn type_in_force(t: Int, genv: Int, given: IntList): Bool {
+      if lower::env_has(genv, lower::ek_type(), ast::none(), t) {
+        return true;
+      }
+      types::contains_sym(given, t)
+    }
+
+    fn in_force_through(r: Int, genv: Int, given: IntList, fbase: Int, members: IntList): Bool {
+      let z = lower::canon(fbase, types::ty_of_symbol(types::kd_abstract(), r));
+      var i = 0;
+      while i < members.length() {
+        let y = members.get(i);
+        if type_in_force(y, genv, given) {
+          if lower::canon(fbase, types::ty_of_symbol(types::kd_abstract(), y)) == z {
+            return true;
+          }
+        }
+        i = i + 1;
+      }
+      if lower::is_variable(z) {
+        return false;
+      }
+      let syms = int_list();
+      lower::abstracts_in(z, syms);
+      i = 0;
+      while i < syms.length() {
+        var t = syms.get(i);
+        if ast::is_some(prog::origin_of(t)) {
+          t = prog::origin_of(t);
+        }
+        if !type_in_force(t, genv, given) {
+          return false;
+        }
+        i = i + 1;
+      }
+      true
     }
 
     # AUDIT-CHANGES #4 (E25): the provision a need selects has the type,
@@ -7129,6 +7225,42 @@ assume Std {
       found
     }
 
+    # Rule B for a family demand (`MatchingInForce`): the matching read
+    # off the demanded key is in force here, each symbol it mentions one
+    # that a type in force here means.
+    fn matching_in_force(tt: IntList) {
+      let genv = cg_genv.read();
+      let meant = int_list();
+      var e = genv;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          let x = lower::env_sym_of(e);
+          types::push_new(meant, x);
+          lower::abstracts_in(lower::canon(genv, types::ty_of_symbol(types::kd_abstract(), x)), meant);
+        }
+        e = lower::env_next_of(e);
+      }
+      var i = 0;
+      while i < tt.length() {
+        let syms = int_list();
+        lower::abstracts_in(lower::canon(genv, tt.get(i)), syms);
+        var j = 0;
+        while j < syms.length() {
+          let a = syms.get(j);
+          if !types::contains_sym(meant, a) {
+            var named = a;
+            if ast::is_some(prog::origin_of(a)) {
+              named = prog::origin_of(a);
+            }
+            semantic_error(prog::e_absent(), prog::sym_name.get(named));
+            return ();
+          }
+          j = j + 1;
+        }
+        i = i + 1;
+      }
+    }
+
     # D84 rule 7: the family in force (in the generic environment) that
     # produces the key `(recv_ty, sym)`, with θ, or none. Two families
     # producing it is an error, as two imports of one name are (D44).
@@ -7196,6 +7328,7 @@ assume Std {
             let t1 = int_list();
             let fu = family_member(key, s, s1, t1);
             if ast::is_some(fu) {
+              matching_in_force(t1);
               if !demand_seen(fus, starts, ts, tt, fu, s1, t1) {
                 fus.push(fu);
                 starts.push(ts.length());
@@ -8315,6 +8448,11 @@ assume Std {
       let bodied = ast::is_some(ast::fu_binds(prog::sym_decl.get(g)));
       var source = ast::none();
       if bodied {
+        # Rule B for the closure: `G`'s input types that `F` does not take
+        # are captured here, each read as its meaning here, so each must
+        # be in force here (those `F` takes are linked at each
+        # application).
+        closure_types_in_force(fu, g);
         if !check_captured_values(fu, g, m) {
           return ();
         }
@@ -8381,6 +8519,47 @@ assume Std {
           }
           i = i + 1;
         }
+      }
+    }
+
+    fn closure_types_in_force(fu: Int, g: Int) {
+      let fd = prog::sym_decl.get(fu);
+      let gd = prog::sym_decl.get(g);
+      let fenv = lower::assume_items(prog::sym_mod.get(fu), ast::fu_args(fd), ast::fu_nargs(fd), int_list(), int_list());
+      let genv_g = lower::assume_items(prog::sym_mod.get(g), ast::fu_args(gd), ast::fu_nargs(gd), int_list(), int_list());
+      # And the polymorphic inputs it lists (or mentions), which each
+      # application supplies.
+      let poly = int_list();
+      family_params(fu, poly);
+      let here = cg_genv.read();
+      let members = int_list();
+      var e = genv_g;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          types::push_new(members, lower::env_sym_of(e));
+        }
+        e = lower::env_next_of(e);
+      }
+      e = genv_g;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          let t = lower::env_sym_of(e);
+          var taken = lower::env_has(fenv, lower::ek_type(), ast::none(), t);
+          if !taken {
+            taken = types::contains_sym(poly, t);
+          }
+          if !taken {
+            taken = type_in_force(t, here, int_list());
+          }
+          if !taken {
+            # Or through `G`'s merge class of it.
+            taken = in_force_through(t, here, int_list(), genv_g, members);
+          }
+          if !taken {
+            semantic_error(prog::e_absent(), prog::sym_name.get(t));
+          }
+        }
+        e = lower::env_next_of(e);
       }
     }
 

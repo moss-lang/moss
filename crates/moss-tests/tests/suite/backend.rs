@@ -1116,6 +1116,27 @@ fn a_defined_method_is_not_bound() {
     }
 }
 
+/// Rule B (AUDIT-CHANGES #60, E42): calling a defined fn, or binding it
+/// as a provider, needs each type its assume nesting requires in force
+/// where it is used, or in force through its merge class (`e_absent`,
+/// `P`, named by the type); and `bind H = P;` needs `P`'s inputs that `H`
+/// does not take in force where `P` is captured. A family demand at a
+/// requirement out of force is refused at the call that would make it.
+/// partially_bound_merge.moss is the merge-class control.
+#[test]
+fn a_use_needs_its_requirements_in_force() {
+    for (name, expected) in [
+        ("ruleb_call_unbound", "!P {} T\n"),
+        ("ruleb_provider_unbound", "!P {} T\n"),
+        ("ruleb_family_unbound", "!P {} T\n"),
+        ("ruleb_closure_unbound", "?P {} main T\n"),
+    ] {
+        let entry = wasi(name);
+        assert_eq!(report(&entry, PRELUDE), fill(expected, &entry), "{entry}");
+    }
+    build_with(&wasi("ruleb_closure_bound"), PRELUDE);
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a
@@ -2026,7 +2047,8 @@ fn a_call_under_brackets() {
 /// D89, D22: each binding of a call's brackets names a type the callee
 /// requires; `stack[Elem=Float]()` binds `Elem`, which `stack` does not
 /// require. The self-hosted compiler reports `e_irrelevant` (`Q`), named
-/// by the symbol.
+/// by the symbol. With no bracket binding `Item`, which `go` does not
+/// have either, the call also lacks it in force (rule B, `e_absent`).
 #[test]
 fn a_call_bracket_names_a_requirement() {
     let entry = wasi("call_brackets_unrequired");
@@ -2035,7 +2057,7 @@ fn a_call_bracket_names_a_requirement() {
         "a bracket application on a call of `stack` binds `Elem`, which is not a type \
          `stack` requires (D22, D89)",
     );
-    assert_eq!(report(&entry, PRELUDE), format!("!Q {entry} Elem\n"));
+    assert_eq!(report(&entry, PRELUDE), format!("!Q {entry} Elem\n!P {entry} Item\n"));
 }
 
 /// A record whose fields are typed by an abstract `T` is laid out per

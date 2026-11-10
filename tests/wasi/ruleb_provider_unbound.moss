@@ -1,0 +1,7 @@
+# Rule B: binding `g` as a provider is a use of it, so it needs `T` in
+# force too.
+
+type T;
+fn h();
+assume T { fn g() {} }
+fn main() { bind h = g; h(); }

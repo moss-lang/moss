@@ -1,0 +1,6 @@
+# Rule B: a call of `f` needs each type `f` requires in force where it is
+# made. `main` leaves `T` unbound, so the call would read `T` as itself.
+
+type T;
+assume T { fn f() {} }
+fn main() { f(); }

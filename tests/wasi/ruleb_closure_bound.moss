@@ -1,0 +1,9 @@
+# Rule B control: as ruleb_closure_unbound.moss, with `T` bound where `P`
+# is captured.
+
+type T;
+tag Concrete;
+fn run();
+functor H: -> run;
+functor P: T -> run { bind run = () => (); }
+fn main() { bind T = Concrete; bind H = P; bind H; run(); }

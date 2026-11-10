@@ -77,6 +77,11 @@ const ORACLE_GAP_PRINCIPAL_THETA: &str = "oracle gap: a call's θ is not read th
 /// The self-hosted compiler refuses it; the oracle's check is on the
 /// lang-q branch, and until it lands the oracle accepts the bind.
 const ORACLE_GAP_BIND_DEFINED: &str = "oracle gap: a defined attached method is bound (Q3)";
+/// Rule B (AUDIT-CHANGES #60, E42): using an item needs its type
+/// requirements in force. The self-hosted compiler checks it; the
+/// oracle's check is on the lang-b branch, and until it lands the oracle
+/// reads a requirement out of force as itself.
+const ORACLE_GAP_RULE_B: &str = "oracle gap: a use of an item whose requirement is not in force (rule B)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -119,6 +124,10 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/partially_bound_merge.moss", Accept, Reject, ORACLE_GAP_PRINCIPAL_THETA),
     ("tests/wasi/result_collide_ab.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/result_collide_bindswap.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
+    ("tests/wasi/ruleb_call_unbound.moss", Reject, Accept, ORACLE_GAP_RULE_B),
+    ("tests/wasi/ruleb_closure_unbound.moss", Reject, Accept, ORACLE_GAP_RULE_B),
+    ("tests/wasi/ruleb_family_unbound.moss", Reject, Accept, ORACLE_GAP_RULE_B),
+    ("tests/wasi/ruleb_provider_unbound.moss", Reject, Accept, ORACLE_GAP_RULE_B),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/shadowing.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/signature.moss", Reject, Unsupported, LIBRARY),

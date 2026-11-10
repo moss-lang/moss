@@ -1,0 +1,8 @@
+# Rule B for a closure: `P` takes `T`, which `H` does not, so `bind H = P;`
+# captures `T` where it is made, and `T` must be in force there.
+
+type T;
+fn run();
+functor H: -> run;
+functor P: T -> run { bind run = () => (); }
+fn main() { bind H = P; bind H; run(); }
