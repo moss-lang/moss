@@ -1,0 +1,27 @@
+# Q3 (semantics.typ, "binding a defined attached method"; AUDIT-CHANGES #70).
+# `Meter.describe` on the left of a bind names the attached method, which
+# is defined. A call `d.describe()` resolves to the definition (D61 rule 1,
+# MCAttachedDefined): the provision wins only for the *detached* method's
+# key (D77). So the bind could never be used, and it is rejected.
+# Verdicts: Audit rejects (BMethBind: the method item has no body);
+# oracle (this branch) rejects ("`Meter.describe` is a defined method ...
+# it cannot be bound"); oracle before: prints mm; native: prints mm (accepts; to do).
+tag Meter(Int);
+fn .describe();
+
+assume Std {
+  fn Meter.describe() { putchar(char::m); }
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    let d = Meter(3);
+    d.describe();
+    {
+      bind Meter.describe = () => putchar(char::x);
+      d.describe();
+    }
+    putchar(char::newline);
+  }
+}

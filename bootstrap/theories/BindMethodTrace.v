@@ -63,6 +63,7 @@ Proof.
  apply bind_inv in Run as [recv [resolved [Resolve Run]]].
  apply bind_inv in Run as [candidate [selected [Select Run]]].
  destruct candidate as [m|]; [|exfalso; exact (err_not_good _ _ _ _ _ _ Run)].
+ destruct (is_some (fn_body m)); cbv beta iota in Run; [exfalso; exact (err_not_good _ _ _ _ _ _ Run)|].
  apply bind_inv in Run as [this [typed [TypeRun Run]]].
  apply bind_inv in Run as [sg [signed [Signature Run]]].
  apply bind_inv in Run as [ts [shown [Show Run]]].

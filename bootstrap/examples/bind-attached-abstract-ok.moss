@@ -1,0 +1,22 @@
+# Q3 control (AUDIT-CHANGES #70). An *abstract* attached method,
+# `fn Meter.describe();`, is a key the context provides (D36,
+# MCAttachedAbstract): binding it is how it gets a meaning, so it stays
+# legal. Verdicts: Audit accepts; oracle prints x; native prints x.
+tag Meter(Int);
+
+assume Std {
+  fn Meter.describe();
+}
+
+assume Std, Meter.describe {
+  fn show(d: Meter) { d.describe(); }
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Meter.describe = () => putchar(char::x);
+    show(Meter(3));
+    putchar(char::newline);
+  }
+}

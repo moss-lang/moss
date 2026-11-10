@@ -4616,6 +4616,12 @@ with check_bind (fuel : nat) (c : cx) (e : env) (sp : spec) (y : aexpr) {struct 
       match mo with
       | None => err mi ("no method `." ++ dn ++ "` for `" ++ gs_name r ++ "` is in scope")
       | Some m =>
+          (* Q3: a defined method is called directly (D61 rule 1), so a
+             provision of its key could never be used *)
+          if is_some (fn_body m) then
+            err mi ("`" ++ gs_name r ++ "." ++ dn ++ "` is a defined method of `" ++ gs_name r ++
+                    "`, which calls always reach; it cannot be bound (bind the detached method instead)")
+          else
           let! this := symbol_type 200 mi r tm e in
           let! sg := fn_sig m tm e (Some this) in
           let! ts := show this in

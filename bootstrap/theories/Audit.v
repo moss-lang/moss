@@ -4577,6 +4577,12 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     AppOf W m (bs ++ c_ty C) ap ->
     (* [D84] rule 7: a member of a family in force is not bound directly *)
     (forall u, ~ FamilyProduces W C u (mkey (canon C rt) m)) ->
+    (* Q3: the method item is not a defined (attached) method: a call
+       resolves to the definition (MCAttachedDefined), never to the key,
+       so the provision could not be used (criteria section 6; the
+       oracle's check_bind; examples/bind-attached-defined.moss). A
+       detached method, or an abstract attached one, is bound as before. *)
+    ~ (exists rc nm ps rt0 b, ast_of W m = Some (ADFn rc nm ps rt0 (Some b))) ->
     BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
              (fun x => pre (bind_method_expression (canon C rt) m (theta_of C ap) target types sm x))
              (provide C (mkey (canon C rt) m) ap (set_mth C (canon C rt) m sg)) F []

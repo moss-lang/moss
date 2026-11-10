@@ -110,6 +110,7 @@ entry they belong to.
 | 59 | `RecvTy` reads no type symbol out of force as a nominal | deltafix | A (rejects a program native accepts: a native bug, E41) |
 | 60 | **Rule B: a use needs the item's type requirements in force; demands read needs through θ; a closure's captured inputs in force** | lang-b | **B** (with the oracle; native E42) |
 | 61 | Merging two entries of one item unifies their instantiations (Δ4, D43) | lang-b | B and C (coherence; with the oracle; native E43) |
+| 70 | A defined method is not bound (`BMethBind`) | lang-q | B (native accepts; E70) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
@@ -1897,6 +1898,47 @@ executable tests unless noted.
   which both reject; coherence decides (criteria section 6). Native needs
   the same change (E43).
 
+### 70. A defined method is not bound (`BMethBind`, lang-q branch; semantics.typ Q3)
+- **Rule now.** `BMethBind` asks that the bind's method item `m` has no
+  body: `~ (exists rc nm ps rt0 b, ast_of W m = Some (ADFn rc nm ps rt0 (Some b)))`.
+  `R.n` on the left of a bind names R's attached method when its head has
+  one (`MethodNamed`), so `bind Meter.describe = …` named the attached,
+  defined `Meter.describe`. Such a provision can never be used: a call
+  resolves to the definition (`MCAttachedDefined`), and the provision
+  wins only for the *detached* method's key (`MCProvisionWins`, D77).
+  - Method resolution is static, so the rule reads the item the bind
+    names, nothing else. `bind Q.describe = …` with Q abstract names the
+    detached `.describe` and stays legal after `bind Q = Meter`, and so
+    does binding an abstract attached method (`fn Meter.describe();`, D36).
+  - The oracle checks the same in `check_bind` (Elab.v), after
+    `find_method_decl`: "`Meter.describe` is a defined method of `Meter`,
+    which calls always reach; it cannot be bound". `BindMethodTrace` skips
+    the new error branch. ExecutionModel's `BMethBind` is unchanged (it
+    still allows the bind, so the elaborator's soundness is unaffected).
+- **Why.** The owner's decision on semantics.typ's open question
+  "binding a defined attached method" (example `06b-bind-attached`, which
+  printed `mm`): a bind that cannot have an effect is an error.
+- **Criterion: fidelity** (criteria.md section 6) in the sense that both
+  implementations always call the definition, so the bind was dead code
+  in both; and **coherence** (section 2): a provision under a key no call
+  reads gives no derivation a choice.
+- **Tests.**
+
+  | program | oracle before | oracle now | native | Audit before | Audit now |
+  |---|---|---|---|---|---|
+  | [bind-attached-defined](examples/bind-attached-defined.moss) | mm | rejects | mm | accepts | rejects |
+  | [bind-attached-detached-ok](examples/bind-attached-detached-ok.moss) (control: the detached method through an abstract Q) | mxm | mxm | mxm | accepts | accepts |
+  | [bind-attached-abstract-ok](examples/bind-attached-abstract-ok.moss) (control: an abstract attached method) | x | x | x | accepts | accepts |
+
+- **Corpus.** The oracle with the check (`scratch/lang-q/oracle-q3.exe`)
+  against the oracle at c89de1f, `--elab-only`, over `src/main.moss`,
+  `tests/`, `examples/` and `bootstrap/examples/` (with the new tests):
+  463 same / 1 diff, the diff being bind-attached-defined. So no real code
+  binds a defined method.
+- **Proof.** `public_safety` unchanged: the premise is BMethBind's last,
+  and no proof reads it.
+- **Class B** (native accepts bind-attached-defined; E70 below).
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -2018,6 +2060,7 @@ All of these come from `proof-plan.json`.
 | E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | open | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 | #59 |
 | E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | open | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 | #60 |
 | E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | open | [merge-inst-order-ab.moss](examples/merge-inst-order-ab.moss): oracle rejects; native exit 0. [merge-inst-val.moss](examples/merge-inst-val.moss): oracle accepts; native rejects | #61 |
+| E70 | Reject a bind of a defined method (`bind Meter.describe = …` where `Meter.describe` has a body) | native | open | [bind-attached-defined.moss](examples/bind-attached-defined.moss): oracle rejects; native mm | #70 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
 changes. All are open:
@@ -2057,6 +2100,8 @@ proofs, or an oracle-only workaround in Elab.v. That is a large job.
   implementations accept them, with different outputs.
 - sameneed-ambiguous.moss and sameneed-ambiguous-other.moss (#11; tests of
   #51). Native prints 7 on both, and the oracle accepts the second.
+- bind-attached-defined.moss (#70, E70). Native prints `mm`; the bind
+  has no effect there.
 - Native's verdict is not recorded for stale-provision-type (#4) or
   unbound-merge-representative (#3).
 
