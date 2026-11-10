@@ -1,0 +1,33 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Q3 control (AUDIT-CHANGES #70): an abstract attached method is a key
+# the context provides (D36), so binding it is how it gets a meaning.
+# Prints `x`.
+
+tag Meter(Int);
+
+assume Std {
+  fn Meter.describe();
+}
+
+assume Std, Meter.describe {
+  fn show(d: Meter) { d.describe(); }
+}
+
+assume Std {
+  fn demo() {
+    bind Meter.describe = () => putchar(char::x);
+    show(Meter(3));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

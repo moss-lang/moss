@@ -1099,6 +1099,23 @@ fn merging_an_item_unifies_its_instantiations() {
     build_with(&wasi("merge_inst_val"), PRELUDE);
 }
 
+/// Q3 (AUDIT-CHANGES #70): `bind Meter.describe = ...` names the
+/// attached, defined `Meter.describe`, which calls always reach (D61
+/// rule 1), so the bind could never be used: refused (`e_bind_defined`,
+/// `_`), named by the method. Binding the detached method through an
+/// abstract receiver, or an abstract attached method, is still how they
+/// get a meaning.
+#[test]
+fn a_defined_method_is_not_bound() {
+    let entry = wasi("bind_attached_defined");
+    assert_eq!(report(&entry, PRELUDE), format!("?_ {entry} demo describe\n"));
+    for (name, out) in [("bind_attached_detached", "mxm\n"), ("bind_attached_abstract", "x\n")] {
+        let entry = wasi(name);
+        assert_eq!(oracle_run(&entry, &[]), out, "{entry}");
+        assert_eq!(run_moss(&entry, PRELUDE), out, "{entry}");
+    }
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a

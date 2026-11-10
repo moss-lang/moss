@@ -6298,6 +6298,13 @@ assume Std {
         semantic_error(prog::e_method(), ast::b_of(spec));
         return ();
       }
+      # Q3 (AUDIT-CHANGES #70): `R.m` names `R`'s attached method where
+      # `R` has one, and a defined one is called directly (D61 rule 1), so
+      # a provision of it could never be used.
+      if ast::is_some(ast::fn_body(prog::sym_decl.get(detached))) {
+        semantic_error(prog::e_bind_defined(), ast::b_of(spec));
+        return ();
+      }
       # D84 rule 7 (O3 a): a member of a family in force is not bound
       # directly — except by the binds of a binding (a closure's), which
       # are how the family is provided.

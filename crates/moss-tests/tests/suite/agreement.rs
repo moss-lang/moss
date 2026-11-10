@@ -73,6 +73,10 @@ const ORACLE_GAP_MERGE_INST: &str = "oracle gap: merging two entries of one item
 /// The semantics and the self-hosted compiler do; the oracle does not yet
 /// (E24), and rejects the call as incoherent (D62).
 const ORACLE_GAP_PRINCIPAL_THETA: &str = "oracle gap: a call's θ is not read through the callee's merges (E24)";
+/// Q3 (AUDIT-CHANGES #70): binding a defined attached method is an error.
+/// The self-hosted compiler refuses it; the oracle's check is on the
+/// lang-q branch, and until it lands the oracle accepts the bind.
+const ORACLE_GAP_BIND_DEFINED: &str = "oracle gap: a defined attached method is bound (Q3)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -101,6 +105,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/app.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/arena.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/arrays_in_scratch.moss", Accept, Unsupported, MEMORIES),
+    ("tests/wasi/bind_attached_defined.moss", Reject, Accept, ORACLE_GAP_BIND_DEFINED),
     ("tests/wasi/bridge.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),

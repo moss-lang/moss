@@ -237,6 +237,11 @@ assume Std {
   # the item.
   fn e_result_collide(): Int { 16 + 13 }
 
+  # Q3 (AUDIT-CHANGES #70): `bind R.m = ...` where `R.m` is a defined
+  # attached method, which calls always reach, so the bind could never
+  # be used. Named by the method.
+  fn e_bind_defined(): Int { 16 + 14 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, mtext, sources, pinfo,
     ent_head, ent_link,

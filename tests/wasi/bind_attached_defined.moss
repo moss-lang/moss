@@ -1,0 +1,36 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Q3 (AUDIT-CHANGES #70): `Meter.describe` on the left of a bind names the
+# attached method, which is defined, and a call `d.describe()` always
+# reaches the definition (D61 rule 1); a provision wins only for the
+# detached method's key (D77). So the bind could never be used, and is
+# refused. The self-hosted compiler used to accept it and print `mm`.
+
+tag Meter(Int);
+fn .describe();
+
+assume Std {
+  fn Meter.describe() { putchar(char::m); }
+}
+
+assume Std {
+  fn demo() {
+    let d = Meter(3);
+    d.describe();
+    {
+      bind Meter.describe = () => putchar(char::x);
+      d.describe();
+    }
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

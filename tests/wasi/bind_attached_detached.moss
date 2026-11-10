@@ -1,0 +1,38 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# Q3 control (AUDIT-CHANGES #70): `Q.describe`, with `Q` abstract, names
+# the detached `.describe`, and after `bind Q = Meter` its key is
+# `Meter.describe`, which wins over the attached method (D77). Still a
+# legal bind. Prints `mxm`.
+
+tag Meter(Int);
+fn .describe();
+type Q;
+
+assume Std {
+  fn Meter.describe() { putchar(char::m); }
+}
+
+assume Std {
+  fn demo() {
+    let d = Meter(3);
+    d.describe();
+    {
+      bind Q = Meter;
+      bind Q.describe = () => putchar(char::x);
+      d.describe();
+    }
+    d.describe();
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}
