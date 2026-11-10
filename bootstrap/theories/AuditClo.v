@@ -1,0 +1,587 @@
+(* ------------------------------------------------------------------------ *)
+(* AuditClo.v: AuditFast's interpreter, compiled to closures.              *)
+(*                                                                           *)
+(* AuditFast.feval dispatches on the expression at every step. Here each   *)
+(* expression is compiled once, before the run, into an OCaml closure      *)
+(* (`code`) that runs it: the children's code is built first and captured, *)
+(* so the dispatch happens at compile time. A fn body's code is found      *)
+(* through `tbl` and a functor body's through `ftbl`, which the driver     *)
+(* fills with the compiled bodies (closures that read the very tables they *)
+(* are stored in); `tbl_ok` states what they must hold.                    *)
+(*                                                                           *)
+(* Proved, for every primitive implementation, every fuel and environment: *)
+(*  - cc_agrees: under tbl_ok, the code of e returns exactly what           *)
+(*    AuditFast.feval returns on e (likewise lists, bindings, applications);*)
+(*  - crun_main_agrees: crun_main is AuditFast.frun_main, so (by            *)
+(*    AuditFast.frun_main_agrees) Interpreter.run_main.                     *)
+(*                                                                           *)
+(* run/Extract.v extracts this file with the extraction's term             *)
+(* optimizations off, which keeps each child's code built once, where it   *)
+(* is bound, rather than at every evaluation.                              *)
+(* ------------------------------------------------------------------------ *)
+
+From Stdlib Require Import List Bool Arith String.
+From NM Require Import Audit NatTrie AuditLazy AuditFast.
+Import Audit.Semantics ListNotations.
+
+Local Open Scope nat_scope.
+
+Module CloInterpreter (Import Prims : PRIMITIVES).
+Module F := FastInterpreter Prims.
+Module L := F.L.
+Module I := F.I.
+
+Definition code := nat -> fenv -> locals -> mstate -> I.evaluation.
+Definition lcode := nat -> fenv -> locals -> mstate -> (list value * locals * mstate) + I.evaluation.
+Definition bcode := nat -> fenv -> locals -> mstate -> (fenv * locals * mstate) + I.evaluation.
+Definition acode := nat -> fenv -> mstate -> (fenv * mstate) + I.evaluation.
+
+Section CC.
+Variable P : program_view.
+Variable tbl : fsym -> option code.
+Variable ftbl : usym -> option bcode.
+
+Definition lnil : lcode := fun m d g st =>
+  match m with 0 => inr (I.Evaluation OutOfFuel g st) | S _ => inl ([], g, st) end.
+
+Definition lcons (c : code) (cr : lcode) : lcode := fun m d g st =>
+  match m with
+  | 0 => inr (I.Evaluation OutOfFuel g st)
+  | S k =>
+      match c k d g st with
+      | I.Evaluation (Normal w) g1 st1 =>
+          match cr k d g1 st1 with
+          | inl (ws, g2, st2) => inl (w :: ws, g2, st2)
+          | inr rr => inr rr
+          end
+      | rr => inr rr
+      end
+  end.
+
+Fixpoint cc_list (f : expr -> code) (l : list expr) : lcode :=
+  match l with [] => lnil | e :: r => lcons (f e) (cc_list f r) end.
+Fixpoint cc_fields (f : expr -> code) (fs : list (fld * expr)) : lcode :=
+  match fs with [] => lnil | (_, e) :: r => lcons (f e) (cc_fields f r) end.
+Fixpoint cc_arms (f : expr -> code) (arms : list (pattern * expr)) : list (pattern * code) :=
+  match arms with [] => [] | (p, e) :: r => (p, f e) :: cc_arms f r end.
+
+Fixpoint select_carm (arms : list (pattern * code)) (w : value) : option (locals * code) :=
+  match arms with
+  | [] => None
+  | (p, c) :: r =>
+      match I.match_pat p w with
+      | I.PMatch bs => Some (bs, c)
+      | I.PNo => select_carm r w
+      | I.PBad => None
+      end
+  end.
+
+Definition bnil : bcode := fun m d g st =>
+  match m with 0 => inr (I.Evaluation OutOfFuel g st) | S _ => inl (d, g, st) end.
+
+(* fapply_functor, the body's bindings run by their code in ftbl. *)
+Definition capply (u : usym) (th : subst) (outputs : list (tsym * tsym)) (sm : smap) (rs : list item) : acode :=
+  fun m d st =>
+  match m with
+  | 0 => inr (I.Evaluation OutOfFuel [] st)
+  | S k =>
+      match flookup_provision (IFun u) d with
+      | Some (FFunctor h a dc p) =>
+          match view_functor P h, ftbl h with
+          | Some code, Some cb =>
+              let Dr := fc_outputs code in
+              match fselect_provisions d sm with
+              | Some d1 =>
+                  match fadapt_provisions d1 a with
+                  | Some d2 =>
+                      match cb k (fapplication_environment P d h th (fappend d2 dc)) [] st with
+                      | inl (d3, _, st3) =>
+                          match fselect_provisions d3 (result_selection rs p (fc_sources code)) with
+                          | Some dr => match fresult_environment outputs d3 Dr dr with
+                              | Some result => inl (result, st3)
+                              | None => inr (I.Evaluation (Stuck I.e_compose) [] st3) end
+                          | None => inr (I.Evaluation (Stuck I.e_compose) [] st3)
+                          end
+                      | inr rr => inr rr
+                      end
+                  | None => inr (I.Evaluation (Stuck I.e_chain) [] st)
+                  end
+              | None => inr (I.Evaluation (Stuck I.e_compose) [] st)
+              end
+          | _, _ => inr (I.Evaluation (Stuck I.e_nobody) [] st)
+          end
+      | _ => inr (I.Evaluation (Stuck I.e_fun) [] st)
+      end
+  end.
+
+(* One binding's step, before the rest's code `r`; `f` compiles a value's
+   initializer. *)
+Definition cc_bind (f : expr -> code) (b : binding) (r : bcode) : bcode :=
+  match b with
+  | BType t tau => fun m d g st =>
+      match m with 0 => inr (I.Evaluation OutOfFuel g st) | S k => r k (fbind_type d t tau) g st end
+  | BValue v e1 => let c1 := f e1 in fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal w1) g1 st1 => r k (finstall (IVal v) (FValue w1) d) g1 st1
+          | rr => inr rr
+          end
+      end
+  | BFunction fn f' types sm => fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k =>
+          match fselect_provisions d sm with
+          | Some dc => r k (finstall (IFn fn) (FFunction f' (ftyped_capture d types dc)) d) g st
+          | None => inr (I.Evaluation (Stuck I.e_compose) g st)
+          end
+      end
+  | BMethod tauk mm th f' types sm => fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k =>
+          match fselect_provisions d sm with
+          | Some dc => r k (finstall (IMth tauk mm th) (FFunction f' (ftyped_capture d types dc)) d) g st
+          | None => inr (I.Evaluation (Stuck I.e_compose) g st)
+          end
+      end
+  | BFunctor u h types sm smc => fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k =>
+          match fselect_provisions d smc with
+          | Some dc => r k (finstall (IFun u) (FFunctor h (Some sm) (ftyped_capture d types dc) None) d) g st
+          | None => inr (I.Evaluation (Stuck I.e_compose) g st)
+          end
+      end
+  | BCopyFunctor u u' sm rm => fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k =>
+          match flookup_provision (IFun u') d with
+          | Some (FFunctor h a dc p) =>
+              r k (finstall (IFun u) (FFunctor h (compose_adaptation a sm) dc (compose_positions p rm)) d) g st
+          | _ => inr (I.Evaluation (Stuck I.e_fun) g st)
+          end
+      end
+  | BApply u th outputs sm rs => let ca := capply u th outputs sm rs in fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k =>
+          match ca k d st with
+          | inl (dr, st1) => r k (fappend dr d) g st1
+          | inr rr => inr (I.with_g g rr)
+          end
+      end
+  | BPrimitive i p => fun m d g st =>
+      match m with
+      | 0 => inr (I.Evaluation OutOfFuel g st)
+      | S k => r k (finstall i (fprimitive_closure d i p) d) g st
+      end
+  end.
+
+Fixpoint cc (e : expr) {struct e} : code :=
+  match e with
+  | EVar x => fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S _ => match lookup_local x g with
+               | Some w => I.Evaluation (Normal w) g st
+               | None => I.Evaluation (Stuck I.e_var) g st
+               end
+      end
+  | EUnit => fun m d g st =>
+      match m with 0 => I.Evaluation OutOfFuel g st | S _ => I.Evaluation (Normal VUnit) g st end
+  | EVal v => fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S _ => match flookup_provision (IVal v) d with
+               | Some (FValue w) => I.Evaluation (Normal w) g st
+               | _ => I.Evaluation (Stuck I.e_val) g st
+               end
+      end
+  | ETag n th e1 => let c1 := cc e1 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
+          | r => r
+          end
+      end
+  | ECall f th sm args => let ca := cc_list cc args in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match tbl f with
+          | Some cf =>
+              match ca k d g st with
+              | inl (ws, g1, st1) =>
+                  match fselect_provisions d sm with
+                  | Some d' => I.ret_call g1 (cf k (fcall_environment d th d') (parameter_values ws) st1)
+                  | None => I.Evaluation (Stuck I.e_compose) g1 st1
+                  end
+              | inr r => r
+              end
+          | None => I.Evaluation (Stuck I.e_nobody) g st
+          end
+      end
+  | EInvoke f args => let ca := cc_list cc args in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match flookup_provision (IFn f) d with
+          | Some (FFunction f' df) =>
+              match tbl f' with
+              | Some cf =>
+                  match ca k d g st with
+                  | inl (ws, g1, st1) => I.ret_call g1 (cf k df (parameter_values ws) st1)
+                  | inr r => r
+                  end
+              | None => I.Evaluation (Stuck I.e_nobody) g st
+              end
+          | Some (FPrimitive p held) =>
+              match ca k d g st with
+              | inl (ws, g1, st1) =>
+                  let (o, st2) := I.run_prim_at P p held ws st1 in I.Evaluation o g1 st2
+              | inr r => r
+              end
+          | _ => I.Evaluation (Stuck I.e_entry) g st
+          end
+      end
+  | EMethod e0 mm prov args => let c0 := cc e0 in let ca := cc_list cc args in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match flookup_provision prov d with
+          | Some (FFunction f' d') =>
+              match tbl f' with
+              | Some cf =>
+                  match c0 k d g st with
+                  | I.Evaluation (Normal w0) g0 st0 =>
+                      match ca k d g0 st0 with
+                      | inl (ws, g1, st1) =>
+                          I.ret_call g1 (cf k d' (parameter_values (w0 :: ws)) st1)
+                      | inr r => r
+                      end
+                  | r => r
+                  end
+              | None => I.Evaluation (Stuck I.e_nobody) g st
+              end
+          | Some (FPrimitive p held) =>
+              match c0 k d g st with
+              | I.Evaluation (Normal w0) g0 st0 =>
+                  match ca k d g0 st0 with
+                  | inl (ws, g1, st1) =>
+                      let (o, st2) := I.run_prim_at P p held (w0 :: ws) st1 in I.Evaluation o g1 st2
+                  | inr r => r
+                  end
+              | r => r
+              end
+          | _ => I.Evaluation (Stuck I.e_entry) g st
+          end
+      end
+  | ELet x e1 e2 => let c1 := cc e1 in let c2 := cc e2 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal w1) g1 st1 => I.pop1 (c2 k d ((x, w1) :: g1) st1)
+          | r => r
+          end
+      end
+  | EBind b e1 => let cb := cc_bind cc b bnil in let c1 := cc e1 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match cb k d g st with
+          | inl (d1, g1, st1) => c1 k d1 g1 st1
+          | inr result => result
+          end
+      end
+  | ESeq e1 e2 => let c1 := cc e1 in let c2 := cc e2 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal _) g1 st1 => c2 k d g1 st1
+          | r => r
+          end
+      end
+  | EAssign x e1 => let c1 := cc e1 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal w) g1 st1 =>
+              match assign_local x w g1 with
+              | Some g2 => I.Evaluation (Normal VUnit) g2 st1
+              | None => I.Evaluation (Stuck I.e_assign) g1 st1
+              end
+          | r => r
+          end
+      end
+  | EIf c e1 e2 => let cc0 := cc c in let c1 := cc e1 in let c2 := cc e2 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match cc0 k d g st with
+          | I.Evaluation (Normal w) g1 st1 =>
+              match I.truthy P w with
+              | Some true => c1 k d g1 st1
+              | Some false => c2 k d g1 st1
+              | None => I.Evaluation (Stuck I.e_bool) g1 st1
+              end
+          | r => r
+          end
+      end
+  | EWhile c b => let cc0 := cc c in let cb := cc b in
+      fix loop (m : nat) (d : fenv) (g : locals) (st : mstate) {struct m} : I.evaluation :=
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match cc0 k d g st with
+          | I.Evaluation (Normal w) g1 st1 =>
+              match I.truthy P w with
+              | Some true =>
+                  match cb k d g1 st1 with
+                  | I.Evaluation (Normal _) g2 st2 => loop k d g2 st2
+                  | I.Evaluation Breaking g2 st2 => I.Evaluation (Normal VUnit) g2 st2
+                  | r => r
+                  end
+              | Some false => I.Evaluation (Normal VUnit) g1 st1
+              | None => I.Evaluation (Stuck I.e_bool) g1 st1
+              end
+          | r => r
+          end
+      end
+  | ELoop b => let cb := cc b in
+      fix loop (m : nat) (d : fenv) (g : locals) (st : mstate) {struct m} : I.evaluation :=
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match cb k d g st with
+          | I.Evaluation (Normal _) g2 st2 => loop k d g2 st2
+          | I.Evaluation Breaking g2 st2 => I.Evaluation (Normal VUnit) g2 st2
+          | r => r
+          end
+      end
+  | EReturn e1 => let c1 := cc e1 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (Returning w) g1 st1
+          | r => r
+          end
+      end
+  | EBreak => fun m d g st =>
+      match m with 0 => I.Evaluation OutOfFuel g st | S _ => I.Evaluation Breaking g st end
+  | ERecord fs => let ca := cc_fields cc fs in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match ca k d g st with
+          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (combine (map fst fs) ws))) g1 st1
+          | inr r => r
+          end
+      end
+  | EField e1 f => let c1 := cc e1 in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c1 k d g st with
+          | I.Evaluation (Normal w) g1 st1 =>
+              match I.get_field f w with
+              | Some v => I.Evaluation (Normal v) g1 st1
+              | None => I.Evaluation (Stuck I.e_field) g1 st1
+              end
+          | r => r
+          end
+      end
+  | EMatch e0 arms => let c0 := cc e0 in let carms := cc_arms cc arms in fun m d g st =>
+      match m with
+      | 0 => I.Evaluation OutOfFuel g st
+      | S k =>
+          match c0 k d g st with
+          | I.Evaluation (Normal w) g1 st1 =>
+              match select_carm carms w with
+              | Some (bs, cb) => I.popn (List.length bs) (cb k d (bs ++ g1) st1)
+              | None => I.Evaluation (Stuck I.e_pat) g1 st1
+              end
+          | r => r
+          end
+      end
+  end.
+
+Definition ccl (l : list expr) : lcode := cc_list cc l.
+Definition ccbs (bs : list binding) : bcode := fold_right (cc_bind cc) bnil bs.
+
+End CC.
+
+Definition crun_main (P : program_view) (tbl : fsym -> option code) (fuel : nat) (main : fsym)
+    (d0 : fenv) (st0 : mstate) : I.evaluation :=
+  match tbl main with
+  | Some c => I.ret_call [] (c fuel d0 [] st0)
+  | None => I.Evaluation (Stuck I.e_nobody) [] st0
+  end.
+
+(* ===================== Agreement ========================================= *)
+
+(* What the driver's tables hold: the code of the view's bodies. *)
+Definition tbl_ok (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode) : Prop :=
+  (forall f, tbl f = option_map (cc P tbl ftbl) (view_function P f)) /\
+  (forall h, ftbl h = option_map (fun code => ccbs P tbl ftbl (fc_bindings code)) (view_functor P h)).
+
+Section Agreement.
+Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).
+Hypothesis Tables : tbl_ok P tbl ftbl.
+
+Lemma cc_fields_list : forall fs, cc_fields (cc P tbl ftbl) fs = cc_list (cc P tbl ftbl) (map snd fs).
+Proof. induction fs as [|[f e] r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
+
+Lemma select_carm_cc : forall arms w,
+  select_carm (cc_arms (cc P tbl ftbl) arms) w =
+  option_map (fun q => (fst q, cc P tbl ftbl (snd q))) (I.select_arm arms w).
+Proof.
+  induction arms as [|[p e] r IH]; intro w; [reflexivity|]. cbn.
+  destruct (I.match_pat p w); [reflexivity|apply IH|reflexivity].
+Qed.
+
+Definition agree (n : nat) : Prop :=
+  (forall e d g st, cc P tbl ftbl e n d g st = F.feval n P d g st e) /\
+  (forall l d g st, cc_list (cc P tbl ftbl) l n d g st = F.feval_arguments n P d g st l) /\
+  (forall bs d g st, ccbs P tbl ftbl bs n d g st = F.feval_bindings n P d g st bs) /\
+  (forall u th outputs sm rs d st,
+     capply P ftbl u th outputs sm rs n d st = F.fapply_functor n P d u th outputs sm rs st).
+
+Lemma agree_zero : agree 0.
+Proof.
+  repeat split.
+  - intros e d g st. destruct e; reflexivity.
+  - intros l d g st. destruct l; reflexivity.
+  - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
+Qed.
+
+Lemma agree_step : forall k, agree k -> agree (S k).
+Proof.
+  intros k [IHe [IHl [IHb IHa]]]. destruct Tables as [Ht Hf].
+  repeat split.
+  - intros e. destruct e; intros d g st; cbn [cc F.feval].
+    + reflexivity.
+    + reflexivity.
+    + reflexivity.
+    + rewrite IHe. reflexivity.
+    + rewrite Ht. destruct (view_function P f) as [body|]; cbn [option_map]; [|reflexivity].
+      rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].
+      destruct (fselect_provisions d s0); [|reflexivity]. rewrite IHe. reflexivity.
+    + destruct (flookup_provision (IFn f) d) as [[w|f' df|u a dc q|p o]|]; try reflexivity.
+      * rewrite Ht. destruct (view_function P f') as [body|]; cbn [option_map]; [|reflexivity].
+        rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].
+        rewrite IHe. reflexivity.
+      * rewrite IHl. reflexivity.
+    + destruct (flookup_provision i d) as [[w|f' df|u a dc q|p o]|]; try reflexivity.
+      * rewrite Ht. destruct (view_function P f') as [body|]; cbn [option_map]; [|reflexivity].
+        rewrite IHe. destruct (F.feval k P d g st e) as [[] g0 st0]; try reflexivity.
+        rewrite IHl. destruct (F.feval_arguments k P d g0 st0 l) as [[[ws g1] st1]|r]; [|reflexivity].
+        rewrite IHe. reflexivity.
+      * rewrite IHe. destruct (F.feval k P d g st e) as [[] g0 st0]; try reflexivity.
+        rewrite IHl. reflexivity.
+    + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
+      rewrite IHe. reflexivity.
+    + change (cc_bind P ftbl (cc P tbl ftbl) b bnil) with (ccbs P tbl ftbl [b]).
+      rewrite IHb. destruct (F.feval_bindings k P d g st [b]) as [[[d1 g1] st1]|r]; [|reflexivity].
+      apply IHe.
+    + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity. apply IHe.
+    + rewrite IHe. reflexivity.
+    + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
+      destruct (I.truthy P v) as [[]|]; try reflexivity; apply IHe.
+    + (* while: the loop is the code of the same expression *)
+      change ((fix loop (m : nat) (d0 : fenv) (g0 : locals) (st0 : mstate) {struct m} : I.evaluation :=
+        match m with
+        | 0 => I.Evaluation OutOfFuel g0 st0
+        | S k0 =>
+            match cc P tbl ftbl e1 k0 d0 g0 st0 with
+            | I.Evaluation (Normal w) g1 st1 =>
+                match I.truthy P w with
+                | Some true =>
+                    match cc P tbl ftbl e2 k0 d0 g1 st1 with
+                    | I.Evaluation (Normal _) g2 st2 => loop k0 d0 g2 st2
+                    | I.Evaluation Breaking g2 st2 => I.Evaluation (Normal VUnit) g2 st2
+                    | r => r
+                    end
+                | Some false => I.Evaluation (Normal VUnit) g1 st1
+                | None => I.Evaluation (Stuck I.e_bool) g1 st1
+                end
+            | r => r
+            end
+        end) k) with (cc P tbl ftbl (EWhile e1 e2) k).
+      rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
+      destruct (I.truthy P v) as [[]|]; try reflexivity.
+      rewrite IHe. destruct (F.feval k P d g1 st1 e2) as [[] g2 st2]; try reflexivity.
+      apply IHe.
+    + change ((fix loop (m : nat) (d0 : fenv) (g0 : locals) (st0 : mstate) {struct m} : I.evaluation :=
+        match m with
+        | 0 => I.Evaluation OutOfFuel g0 st0
+        | S k0 =>
+            match cc P tbl ftbl e k0 d0 g0 st0 with
+            | I.Evaluation (Normal _) g2 st2 => loop k0 d0 g2 st2
+            | I.Evaluation Breaking g2 st2 => I.Evaluation (Normal VUnit) g2 st2
+            | r => r
+            end
+        end) k) with (cc P tbl ftbl (ELoop e) k).
+      rewrite IHe. destruct (F.feval k P d g st e) as [[] g2 st2]; try reflexivity. apply IHe.
+    + rewrite IHe. reflexivity.
+    + reflexivity.
+    + rewrite cc_fields_list, IHl. reflexivity.
+    + rewrite IHe. reflexivity.
+    + rewrite IHe. destruct (F.feval k P d g st e) as [[] g1 st1]; try reflexivity.
+      rewrite select_carm_cc. destruct (I.select_arm l v) as [[bs eb]|]; cbn [option_map fst snd]; [|reflexivity].
+      rewrite IHe. reflexivity.
+  - intros l d g st. destruct l as [|e1 r]; cbn [cc_list F.feval_arguments]; [reflexivity|].
+    unfold lcons. rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
+    rewrite IHl. reflexivity.
+  - intros bs d g st. destruct bs as [|b bs]; [reflexivity|].
+    change (ccbs P tbl ftbl (b :: bs)) with (cc_bind P ftbl (cc P tbl ftbl) b (ccbs P tbl ftbl bs)).
+    destruct b; cbn [cc_bind F.feval_bindings]; try (rewrite IHb; reflexivity).
+    + rewrite IHe. destruct (F.feval k P d g st e) as [[] g1 st1]; try reflexivity. apply IHb.
+    + destruct (fselect_provisions d s); [apply IHb|reflexivity].
+    + destruct (fselect_provisions d s0); [apply IHb|reflexivity].
+    + destruct (fselect_provisions d s0); [apply IHb|reflexivity].
+    + destruct (flookup_provision (IFun u0) d) as [[w|f' df|h a dc q|p o]|]; try reflexivity. apply IHb.
+    + rewrite IHa. destruct (F.fapply_functor k P d u s l s0 l0 st) as [[dr st1]|r]; [apply IHb|reflexivity].
+  - intros u th outputs sm rs d st. cbn [capply F.fapply_functor].
+    destruct (flookup_provision (IFun u) d) as [[w|f' df|h a dc q|p o]|]; try reflexivity.
+    rewrite Hf. destruct (view_functor P h) as [code|]; cbn [option_map]; [|reflexivity]. cbv zeta.
+    destruct (fselect_provisions d sm) as [d1|]; [|reflexivity].
+    destruct (fadapt_provisions d1 a) as [d2|]; [|reflexivity].
+    rewrite IHb. reflexivity.
+Qed.
+
+Theorem cc_agrees : forall n e d g st, cc P tbl ftbl e n d g st = F.feval n P d g st e.
+Proof.
+  intros n. assert (H : agree n) by (induction n; [apply agree_zero|apply agree_step; assumption]).
+  apply H.
+Qed.
+
+Theorem crun_main_agrees : forall fuel main d0 st0,
+  crun_main P tbl fuel main d0 st0 = F.frun_main fuel P main d0 st0.
+Proof.
+  intros. unfold crun_main, F.frun_main. rewrite (proj1 Tables).
+  destruct (view_function P main); cbn [option_map]; [|reflexivity]. rewrite cc_agrees. reflexivity.
+Qed.
+
+End Agreement.
+
+(* The whole stack: under tbl_ok, the compiled run on main's converted
+   environment is Audit's reference run. *)
+Theorem crun_main_reference : forall P tbl ftbl fuel main d0 st0,
+  tbl_ok P tbl ftbl ->
+  crun_main P tbl fuel main (fast_env (lift_env d0)) st0 = I.run_main fuel P main d0 st0.
+Proof.
+  intros P tbl ftbl fuel main d0 st0 T. rewrite (crun_main_agrees P tbl ftbl T). apply F.frun_main_agrees.
+Qed.
+
+End CloInterpreter.

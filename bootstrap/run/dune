@@ -7,7 +7,7 @@
 (rocq.extraction
  (prelude Extract)
  (extracted_modules
-  Ascii Audit AuditCapTrim AuditFast AuditFastPath AuditLazy AuditPrune BinInt BinNat BinNums
+  Ascii Audit AuditCapTrim AuditClo AuditFast AuditFastPath AuditLazy AuditPrune BinInt BinNat BinNums
   BinPos Bool0 Byte Byte0 CoreFragment Datatypes Decimal DumpRoundTrip EaBase
   EaBind EaCall EaCtx EaDecide EaExpand EaExpr EaFamily EaFunctor EaMain
   EaPlatform EaTypes Elab ElabFrameCore ElabWorld ExecutionModel

@@ -17,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast.
+  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -149,6 +149,9 @@ Module LazyTop := AuditLazy.LazyInterpreter PublicPublic.ReferenceHost.
 (* Trie-keyed provisions on top (AuditFast.v): equal to the lazy
    interpreter on related environments, so to the reference. *)
 Module FastTopI := AuditFast.FastInterpreter PublicPublic.ReferenceHost.
+(* Compiled to closures on top (AuditClo.v): under tbl_ok, equal to the
+   fast interpreter, so to the reference. *)
+Module CloTop := AuditClo.CloInterpreter PublicPublic.ReferenceHost.
 
 (* One dependency traversal computes the union for every root below. The
    roots are a list, not a tuple: a nested pair repeats the types of all
@@ -408,7 +411,10 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@LazyTop.leval_agrees);
   root (@LazyTop.lrun_main_agrees);
   root (@FastTopI.feval_agrees);
-  root (@FastTopI.frun_main_agrees)].
+  root (@FastTopI.frun_main_agrees);
+  root (@CloTop.cc_agrees);
+  root (@CloTop.crun_main_agrees);
+  root (@CloTop.crun_main_reference)].
 
 Print Assumptions certificate_roots.
 

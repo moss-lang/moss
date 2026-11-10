@@ -30,8 +30,8 @@
    proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of fuel; 2
    a usage error. *)
 module A = Audit.Semantics
-module F = AuditFast.FastInterpreter(Prims.P)
-module I = F.I
+module C = AuditClo.CloInterpreter(Prims.P)
+module I = C.I
 
 let read_file f = try Some (In_channel.with_open_bin f In_channel.input_all) with Sys_error _ -> None
 let timing = ref false
@@ -177,9 +177,20 @@ let () =
   let view = { (A.program_of p argv read) with
                A.view_function = T.find_opt fns; A.view_functor = T.find_opt funs } in
   let t2 = now () in
-  (* AuditFast.frun_main_agrees: the fast interpreter on the converted
-     environment returns exactly what Interpreter.run_main returns. *)
-  let r = F.frun_main max_int view p.A.program_main
+  (* AuditClo.crun_main_reference: under tbl_ok, the compiled run on the
+     converted environment returns exactly what Interpreter.run_main
+     returns. The arrays are trusted driver code, as the Hashtbls realizing
+     the view are: tbl and ftbl hold the code of the view's bodies (the
+     first body for a symbol wins, as there), closures that read the very
+     arrays they are stored in, filled before the run starts. *)
+  let nf = 1 + List.fold_left (fun n (f, _) -> max n f) 0 p.A.program_functions in
+  let nu = 1 + List.fold_left (fun n (u, _) -> max n u) 0 p.A.program_functors in
+  let a = Array.make nf None and b = Array.make nu None in
+  let tbl f = if f >= 0 && f < nf then a.(f) else None in
+  let ftbl u = if u >= 0 && u < nu then b.(u) else None in
+  List.iter (fun (f, e) -> a.(f) <- Some (C.cc view tbl ftbl e)) (List.rev p.A.program_functions);
+  List.iter (fun (u, code) -> b.(u) <- Some (C.ccbs view tbl ftbl code.A.fc_bindings)) (List.rev p.A.program_functors);
+  let r = C.crun_main view tbl max_int p.A.program_main
     (AuditFast.fast_env (AuditLazy.lift_env p.A.program_environment)) (MossX.init_state (Uint63.of_int !pages)) in
   let st = r.I.evaluation_state in
   print_string (output st.MossX.ms_out); flush stdout;

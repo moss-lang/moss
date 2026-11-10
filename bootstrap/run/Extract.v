@@ -4,15 +4,16 @@
    passes on Audit programs (AuditFastPath.fastpath, AuditPrune.prune,
    AuditCapTrim.captrim) and Audit.v's reference interpreter
    (Audit.Semantics.Interpreter, with program_of), run through
-   AuditFast.FastInterpreter (the same interpreter with deferred type
-   substitution, AuditLazy, and trie-keyed provisions, proved equal to it:
-   AuditLazy.lrun_main_agrees, AuditFast.frun_main_agrees), plus the primitives the
+   AuditClo.CloInterpreter (the same interpreter with deferred type
+   substitution, AuditLazy, trie-keyed provisions, AuditFast, and compiled
+   to closures, AuditClo; proved equal to it: AuditClo.crun_main_reference),
+   plus the primitives the
    driver runs it with (MossX.run_prim, MossX.init_state).
    assumptions/Certificate.v audits these roots. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require EaMain AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast.
+From NM Require EaMain AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast AuditClo.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -52,4 +53,14 @@ Separate Extraction init_state run_prim
   AuditFastPath.fastpath AuditPrune.prune AuditCapTrim.captrim
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program
   AuditLazy.LazyInterpreter AuditLazy.lift_env
-  AuditFast.FastInterpreter AuditFast.fast_env.
+  AuditFast.FastInterpreter AuditFast.fast_env AuditClo.CloInterpreter.
+(* AuditClo again, alone, with the extraction's term optimizations off
+   (flag 0): this rewrites the AuditClo.ml written above, and must follow
+   Separate Extraction. The closure compiler's speed depends on where its
+   closures are built, and the optimizations may move them: inline
+   `let c1 := cc e1 in fun m d g st => ..` (the child's code would then be
+   rebuilt at every evaluation), or lift `fun m d g st` out of a match on
+   the expression (a function matching on it at every call). Unchanged in
+   meaning: the same terms, extracted literally. *)
+Set Extraction Flag 0.
+Extraction Library AuditClo.
