@@ -30,8 +30,8 @@
    proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of fuel; 2
    a usage error. *)
 module A = Audit.Semantics
-module L = AuditLazy.LazyInterpreter(Prims.P)
-module I = L.I
+module F = AuditFast.FastInterpreter(Prims.P)
+module I = F.I
 
 let read_file f = try Some (In_channel.with_open_bin f In_channel.input_all) with Sys_error _ -> None
 let timing = ref false
@@ -175,9 +175,10 @@ let () =
   let view = { (A.program_of p argv read) with
                A.view_function = Hashtbl.find_opt fns; A.view_functor = Hashtbl.find_opt funs } in
   let t2 = now () in
-  (* AuditLazy.lrun_main_agrees: the lazy interpreter on the lifted
+  (* AuditFast.frun_main_agrees: the fast interpreter on the converted
      environment returns exactly what Interpreter.run_main returns. *)
-  let r = L.lrun_main max_int view p.A.program_main (AuditLazy.lift_env p.A.program_environment) (MossX.init_state (Uint63.of_int !pages)) in
+  let r = F.frun_main max_int view p.A.program_main
+    (AuditFast.fast_env (AuditLazy.lift_env p.A.program_environment)) (MossX.init_state (Uint63.of_int !pages)) in
   let st = r.I.evaluation_state in
   print_string (output st.MossX.ms_out); flush stdout;
   prerr_string (output st.MossX.ms_err);

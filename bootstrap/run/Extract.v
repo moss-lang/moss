@@ -4,14 +4,15 @@
    passes on Audit programs (AuditFastPath.fastpath, AuditPrune.prune,
    AuditCapTrim.captrim) and Audit.v's reference interpreter
    (Audit.Semantics.Interpreter, with program_of), run through
-   AuditLazy.LazyInterpreter (the same interpreter with deferred type
-   substitution, proved equal to it: AuditLazy.lrun_main_agrees), plus the primitives the
+   AuditFast.FastInterpreter (the same interpreter with deferred type
+   substitution, AuditLazy, and trie-keyed provisions, proved equal to it:
+   AuditLazy.lrun_main_agrees, AuditFast.frun_main_agrees), plus the primitives the
    driver runs it with (MossX.run_prim, MossX.init_state).
    assumptions/Certificate.v audits these roots. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require EaMain AuditPrune AuditFastPath AuditCapTrim AuditLazy.
+From NM Require EaMain AuditPrune AuditFastPath AuditCapTrim AuditLazy AuditFast.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -50,4 +51,5 @@ Separate Extraction init_state run_prim
   EaMain.elaborate
   AuditFastPath.fastpath AuditPrune.prune AuditCapTrim.captrim
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program
-  AuditLazy.LazyInterpreter AuditLazy.lift_env.
+  AuditLazy.LazyInterpreter AuditLazy.lift_env
+  AuditFast.FastInterpreter AuditFast.fast_env.
