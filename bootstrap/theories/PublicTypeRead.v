@@ -414,6 +414,31 @@ Proof.
   apply subst2_agree. intros x Ix. cbn [app_subst lookup_subst]. exact (Agree x Ix).
 Qed.
 
+(* Three substitutions in a row agree with two when they agree on each
+   generation the type mentions. *)
+Theorem subst3_agree : forall t s1 s2 s3 s4 s5,
+  (forall x, In x (A.gens t) ->
+     app_subst s1 (app_subst s2 (app_subst s3 (TAbs x))) = app_subst s4 (app_subst s5 (TAbs x))) ->
+  app_subst s1 (app_subst s2 (app_subst s3 t)) = app_subst s4 (app_subst s5 t).
+Proof.
+  fix IH 1. intros [m|fields| |g|n th|ms] s1 s2 s3 s4 s5 Agree; cbn [A.gens] in Agree.
+  - reflexivity.
+  - rewrite !subst_record. rewrite !map_map. f_equal.
+    induction fields as [|[f t] rest Tail]; [reflexivity|]. cbn in Agree |- *. f_equal.
+    + f_equal. apply IH. intros x Ix. apply Agree. apply in_or_app. left. exact Ix.
+    + apply Tail. intros x Ix. apply Agree. apply in_or_app. right. exact Ix.
+  - reflexivity.
+  - apply Agree. left. reflexivity.
+  - rewrite !subst_nom. unfold smap. rewrite !map_map. f_equal.
+    induction th as [|[x t] rest Tail]; [reflexivity|]. cbn in Agree |- *. f_equal.
+    + f_equal. apply IH. intros y Iy. apply Agree. apply in_or_app. left. exact Iy.
+    + apply Tail. intros y Iy. apply Agree. apply in_or_app. right. exact Iy.
+  - rewrite !subst_union. rewrite !map_map. f_equal.
+    induction ms as [|t rest Tail]; [reflexivity|]. cbn in Agree |- *. f_equal.
+    + apply IH. intros y Iy. apply Agree. apply in_or_app. left. exact Iy.
+    + apply Tail. intros y Iy. apply Agree. apply in_or_app. right. exact Iy.
+Qed.
+
 (* Grounding through an instantiation map composes. *)
 Corollary subst_through : forall t s th,
   (forall x, In x (A.gens t) -> lookup_subst x th <> None) ->

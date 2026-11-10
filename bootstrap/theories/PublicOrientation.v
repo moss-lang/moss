@@ -3,9 +3,9 @@
    most general merges of one telescope differ only in that choice. The
    merge classes themselves do not depend on it: two types one most
    general merge reads as one type, every other one does too. A clause
-   stated by class (as `CallTheta`'s principal clause states which
-   requirements form a wholly unbound class) is therefore the same under
-   every orientation. *)
+   stated by class (as `InForceThrough`, rule B, states which requirements
+   are in force through their class) is therefore the same under every
+   orientation. *)
 From Stdlib Require Import List Arith.
 From NM Require Import Audit.
 Import Audit.Input Audit.Semantics ListNotations.

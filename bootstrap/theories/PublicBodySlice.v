@@ -514,19 +514,18 @@ Definition FamilyCoherentOk : Prop := forall F C, Formed F C ->
 Hypothesis family_coherent : FamilyCoherentOk.
 
 (* HYPOTHESES (T29). A demanded family key's receiver is in the code's
-   scope, up to declared type symbols (PublicFormation.ScopedTy): an
+   scope (PublicFormation.ScopedTy): an
    elaborated expression's or literal's type is scoped, and so is a
-   callee's need read at the call site (at a table X with the code's
-   merge). A callee need's symbol the caller leaves unbound reads as
-   itself (theta_at), a declared symbol outside the table, so the
-   statements are up to declared symbols (examples/family-unbound-need.moss).
-   Proved: PublicScoping (ex_scoped, literal_scoped, demand_at_site_scoped). *)
+   callee's need read through θ at the call site (at a table X with the
+   code's merge; rule B puts the callee's requirements in force there).
+   Proved: PublicScoping (ex_scoped, literal_scoped, demand_at_th_scoped). *)
 Definition ExScopedOk : Prop := forall F C a x t, A.Ex W Prog F C a None x t -> Formed F C ->
   PublicFormation.ScopedTy W C t.
 Definition LitScopedOk : Prop := forall F C tree x t, A.Literal W C tree x t -> Formed F C ->
   PublicFormation.ScopedTy W C t.
-Definition DemandScopedOk : Prop := forall F C X f Cf ns r m, Formed F C -> FamilyTableIn X C ->
-  A.c_sub X = A.c_sub C -> A.CtxOf W f Cf ns -> In (A.mkey r m) (map (A.at_site X) ns) ->
+Definition DemandScopedOk : Prop := forall F C X f Cf ns th r m, Formed F C -> FamilyTableIn X C ->
+  A.c_sub X = A.c_sub C -> A.CtxOf W f Cf ns -> A.CallTheta W X Cf f th -> A.RequirementsInForce X Cf ->
+  In (A.mkey r m) (map (A.at_th X th) ns) ->
   PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C r.
 Hypothesis ex_scoped : ExScopedOk.
 Hypothesis lit_scoped : LitScopedOk.
@@ -536,7 +535,7 @@ Lemma table_in_self : forall F C, Formed F C -> FamilyTableIn C C.
 Proof.
   intros F C [Fc _] x v Iq. split.
   - exact (PublicFormation.canon_ok W C v (proj1 Fc) (PublicFormation.cf_ty W C (proj1 Fc) x v Iq)).
-  - intros y Iy. left. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
+  - intros y Iy. exact (PublicFormation.scope_ty_canon C x v y Iq Iy).
 Qed.
 
 (* Code after a family application runs with the families' provisions
@@ -2083,6 +2082,20 @@ Proof.
     [reflexivity|]. rewrite IH. destruct Step. reflexivity.
 Qed.
 
+Lemma demand_sub : forall C0 wanted used C wrap C', A.Demand W C0 wanted used C wrap C' -> A.c_sub C' = A.c_sub C.
+Proof.
+  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th sm rs Cm wrap Cf NotUsed Step Rest IH];
+    [reflexivity|]. rewrite IH. destruct Step as [C ot m u matching th sm Cr ks _ _ _ FA _ _ _]. cbn.
+  exact (PublicFormation.family_application_sub W C u matching th sm Cr ks FA).
+Qed.
+
+(* CallTheta reads the caller only through its table and merge. *)
+Lemma call_theta_same : forall C1 C2 Cs s th, A.c_ty C1 = A.c_ty C2 -> A.c_sub C1 = A.c_sub C2 ->
+  A.CallTheta W C1 Cs s th -> A.CallTheta W C2 Cs s th.
+Proof.
+  intros C1 C2 Cs s th Et Es CT. unfold A.CallTheta, A.canon in *. rewrite <- Et, <- Es. exact CT.
+Qed.
+
 Lemma pre_with_ty : forall n F C0 C d types H g st, A.c_ty C = A.c_ty C0 ->
   Pre n F (with_ty C0 C) d types H g st -> Pre n F C d types H g st.
 Proof. intros n F C0 [ty sub provs locs] d types H g st; cbn; intros -> Pre0. exact Pre0. Qed.
@@ -2211,17 +2224,21 @@ Proof.
   cbn [app_subst]. rewrite (lookup_capture d K x (Sc x Ix)). reflexivity.
 Qed.
 
-(* What a lambda captures the meanings of: its context's generations and
-   its method keys' receivers' (Audit's lexical_capture). *)
-Definition capture_gens (C : A.cx) : list nat := A.context_gens C ++ A.key_receiver_gens C.
+(* What a lambda captures the meanings of: its context's generations
+   (Audit's lexical_capture). *)
+Definition capture_gens (C : A.cx) : list nat := A.context_gens C.
 
 Lemma cg_l : forall C, incl (A.context_gens C) (capture_gens C).
-Proof. intros C x I. apply in_or_app. left. exact I. Qed.
+Proof. intros C x I. exact I. Qed.
 
-Lemma cg_key : forall C r m th p, In (IMth r m th, p) (A.c_provisions C) -> incl (A.gens r) (capture_gens C).
+(* A method key's receiver is among them in a formed context (rule B:
+   PublicFormation.KeysScoped). *)
+Lemma cg_key : forall C r m th p, PublicFormation.KeysScoped W C -> In (IMth r m th, p) (A.c_provisions C) ->
+  incl (A.gens r) (capture_gens C).
 Proof.
-  intros C r m th p I x Ix. apply in_or_app. right. unfold A.key_receiver_gens. apply in_flat_map.
-  exists (IMth r m th, p). split; [exact I|exact Ix].
+  intros C r m th p Ks I x Ix. pose proof (Ks r m th p I x Ix) as Sc. unfold capture_gens, A.context_gens.
+  unfold PublicFormation.GenScoped, PublicFormation.scope_gens in Sc.
+  apply in_app_or in Sc as [Sc|Sc]; apply in_or_app; [left; exact Sc|right; apply in_or_app; left; exact Sc].
 Qed.
 
 Lemma typed_capture_meanings : forall d C dc,
@@ -2367,9 +2384,10 @@ Lemma lambda_realizes_le : forall n0 n C qs Cl d1 H dc keys, n <= n0 ->
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
   (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
   select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
+  PublicFormation.KeysScoped W C ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
 Proof.
-  intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps Keys Sel.
+  intros n0 n C qs Cl d1 H dc keys Le ClE Real Nd Caps Keys Sel KsC.
   pose proof Real as [Abs [[Vals [Fns [Mths Funs]]] [Idem KM]]].
   set (de := typed_capture d1 (A.lexical_capture C) dc).
   set (K := capture_gens C).
@@ -2438,7 +2456,7 @@ Proof.
     pose proof (Find _ Ik) as F'. cbn [A.rkey_of A.mkey] in F'. rewrite F'. split; [exact Look|].
     destruct (sig_provision_gens (A.ProvidedMethod g a) g eq_refl) as [Sr Sp].
     pose proof (prov_context_gens C _ _ (ilook_in _ _ _ Il)) as Sc.
-    pose proof (cg_key C r m [] _ (ilook_in _ _ _ Il)) as Kr.
+    pose proof (cg_key C r m [] _ KsC (ilook_in _ _ _ Il)) as Kr.
     apply (callable_transfer n0 n H d1 de (r :: A.sg_params g) (r :: A.sg_params g) (A.sg_ret g) (A.sg_ret g) pv
       Le); [| |exact Ok].
     + apply map_ext_in. intros t [<-|It]; symmetry;
@@ -2467,6 +2485,7 @@ Lemma lambda_realizes : forall n C qs Cl d1 H dc keys,
      lookup_provision (IVal (snd q)) d1 = Some (ValueProvision w) /\ value_typed W P H w (ground d1 t)) ->
   (forall k, In k keys <-> (A.provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = A.provision_id k)) ->
   select_provisions d1 (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys) = Some dc ->
+  PublicFormation.KeysScoped W C ->
   Realizes n Cl (typed_capture d1 (A.lexical_capture C) dc) H.
 Proof. intros n C qs Cl d1 H dc keys. exact (lambda_realizes_le (S n) n C qs Cl d1 H dc keys (le_S _ _ (le_n n))). Qed.
 
@@ -2637,7 +2656,7 @@ Proof.
     destruct (A.slook (fst q) (A.c_locals C)) as [[t mu]|] eqn:Lq; [|congruence].
     destruct (Caps q Iq) as [w [Look T]]. unfold capty in T. rewrite Lq in T. exists t, mu, w. split; [reflexivity|split; [exact Look|exact T]]. }
   assert (Ndq : NoDup (map snd qs)) by (rewrite Sq; exact NdV).
-  pose proof (lambda_realizes_le jn jn C qs Cl d1 H dc keys (le_n jn) ClE Real Ndq Capsr Keys Sel) as RealCl.
+  pose proof (lambda_realizes_le jn jn C qs Cl d1 H dc keys (le_n jn) ClE Real Ndq Capsr Keys Sel (proj1 (proj2 FcC))) as RealCl.
   fold de in RealCl.
   cbn [CallableOk]. eexists. split; [change (view_function P pid) with (A.body_of Prog pid); exact BodyOf|].
   intros j Lj H' st ws E Sok Args.
@@ -3303,18 +3322,15 @@ Proof.
 Qed.
 
 (* BFunClosure *)
-(* HYPOTHESIS (T29). What a closure captures from where it is bound
-   mentions, among G's own inputs that F does not take, only types in
-   force there or symbols the context mentions (which the closure's
-   `lexical_capture` keeps the meanings of). A captured need can be keyed
-   at a declared symbol not in force (examples/functor-captured-unbound.moss).
+(* HYPOTHESIS (T29), now immediate. What a closure captures from where
+   it is bound is read at G's inputs there, and each of G's inputs that F
+   does not take is in force there (rule B for the closure, BFunClosure),
+   so the closure's `lexical_capture` has its meaning. Before rule B, a
+   captured need could be keyed at a declared symbol out of force
+   (examples/functor-captured-unbound.moss, now rejected).
    Proved in PublicLinkMerges (`captured_in_force_ok`). *)
-Definition CapturedInForceOk : Prop := forall C gg Cu nsu Cg nsg smc,
-  A.FunCtx W gg Cg nsg ->
-  A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
-    (captured Cu nsu nsg) smc ->
-  forall k p x, In k (captured Cu nsu nsg) -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
-  In x (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
+#[using="W"] Definition CapturedInForceOk : Prop := forall C Cu Cg x,
+  (forall y, In y (map fst (A.c_ty Cg)) -> ~ In y (map fst (A.c_ty Cu)) -> A.nlook y (A.c_ty C) <> None) ->
   In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
   A.nlook x (A.c_ty C) <> None \/ In x (capture_gens C).
 Hypothesis captured_in_force : CapturedInForceOk.
@@ -3447,9 +3463,10 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (filter (fun k => negb (existsb (item_eqb (A.canon_item Cu k)) nsu)) nsg) smc ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+      (forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h (A.lexical_capture C) sm smc).
 Proof.
-  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J rr _.
+  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx CapF J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
@@ -3501,7 +3518,7 @@ Proof.
     rewrite (Lth x (Sc x Ix)). cbn [option_map].
     destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
     2: { rewrite (Am2 x (Sc x Ix) Ou). unfold dc.
-         rewrite (cmeaning_capture d C dsel x Abs (captured_in_force C gg Cu nsu Cg nsg smc FCg SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix) Ou)).
+         rewrite (cmeaning_capture d C dsel x Abs (captured_in_force C Cu Cg x CapF (Sc x Ix) Ou)).
          reflexivity. }
     assert (Fu : A.Fixed W u x).
     { apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
@@ -3958,7 +3975,7 @@ Proof.
       rewrite lookup_subst_nlook', Lh. reflexivity.
     - intros x Ix. destruct (keys_in _ x (Sc x Ix)) as [v Lv]. destruct (Inp x v Lv) as [here Lh].
       rewrite lookup_subst_nlook', Lh. discriminate. }
-  split; [unfold th; rewrite map_map; reflexivity|]. split; [|split].
+  split; [unfold th; rewrite map_map; reflexivity|]. split.
   - intros r Ir _. exact (Lth r Ir).
   - intros g t Ig. destruct (Dom g t Ig) as [Gg Gt].
     rewrite (Through (TAbs g)) by (intros y [<-|[]]; exact Gg). rewrite (Through t Gt).
@@ -3968,9 +3985,6 @@ Proof.
              (PublicOrientation.functx_sub_function W u Cu ns FC) Force Merg); [exact Ig|]. intros x Ix.
     assert (Kx : In x (map fst (A.c_ty Cu))) by (destruct Ix as [<-|Ix]; [exact Gg|exact (Gt x Ix)]).
     destruct (keys_in _ x Kx) as [v Lv]. destruct (Inp x v Lv) as [here Lh]. rewrite Lh. discriminate.
-  - (* every input is in force here, so no class is wholly unbound *)
-    intros r z Ir Cr Unb. destruct (keys_in _ r Ir) as [v Lv]. destruct (Inp r v Lv) as [here Lh].
-    rewrite (Unb r Cr) in Lh. discriminate.
 Qed.
 
 Lemma bindings_apply_eq : forall j d g st u th outs sm rs r,
@@ -4651,7 +4665,7 @@ Proof.
   set (Cres := A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg)).
   assert (Single : forall b, (forall rr, rr <= S k -> BindStep J rr F C F Cres Bi [] b) -> Chain k F C F Cres Bi [] [b]).
   { intros b Step. apply (ChainCons k F C F Cres F Cres Bi False Bi [] [] b []); [exact Step|constructor; apply frame_same_refl|tauto]. }
-  destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA
+  destruct Prov as [F C rp n0 rg att rt sg Ca ns sm th rargs Cd Rp Att Def Canon -> Ctx Sat CT SigA RB
     |F C pw sg rt g sm w n0 Cg nsg types FP Ctx Len Fresh Body|F C ps r0 body sg rt pid pre sm LP].
   - (* attached *)
     exists [BMethod (A.canon C rt) m (A.theta_of C ap) att (TypeCapture th th) sm]. split; [reflexivity|].
@@ -4772,7 +4786,7 @@ Proof.
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx]; intros FD.
+                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx CapF]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep. exact FD.
     + exists [BValue v x]. split; [reflexivity|].
@@ -4799,7 +4813,7 @@ Proof.
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       destruct (link_body_functx u gg h Cu nsu Cg nsg LB FCu FCg) as [FCu' FCg'].
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx J).
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx CapF J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
@@ -5036,13 +5050,14 @@ Lemma attached_step : forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs
   rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
   A.CtxOf W att Ca ns ->
   A.Demand W (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)
-    (map (A.at_site (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C)) ns) []
+    (map (A.at_th (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) th) ns) []
     (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
   A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
   A.Args W Prog F C args (A.sg_params g) xs ->
+  A.RequirementsInForce (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) Ca ->
   StepSafe k F C (A.sg_ret g) B (wrap (ECall att th sm (ox :: xs))).
 Proof.
-  intros F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA Ot Head Att Def Rargs Ctx Dem Sat CT Sig Args
+  intros F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA Ot Head Att Def Rargs Ctx Dem Sat CT Sig Args RB
     d types H lg lst Pre0.
   destruct Def as [rn [ps [rt [b Def]]]]. unfold A.ast_of in Def.
   destruct (A.w_decl W att) as [dcl|] eqn:Decl; [|discriminate]. injection Def as Ast.
@@ -5080,7 +5095,9 @@ Proof.
         destruct World as [bd Wo]. apply (PublicWorldFormation.reqs_typed bd W Wo h xq); [|exact Ir].
         intros E. unfold A.kind_sym in Kind. rewrite E in Kind. destruct Kind; discriminate.
       - exact (proj2 (proj2 (proj1 Fm)) xq Ix). }
-    intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns r0 m0 Fm Tin Es Ctx I0). }
+    assert (CT0 : A.CallTheta W Cd0 Ca att th).
+    { apply (call_theta_same Cd); [rewrite (demand_ty _ _ _ _ _ _ Dem); reflexivity|exact (demand_sub _ _ _ _ _ _ Dem)|exact CT]. }
+    intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns th r0 m0 Fm Tin Es Ctx CT0 RB I0). }
   intros j Lj d' types' H' g' st' PreD PreC.
   destruct j as [|j]; [exact Logic.I|].
   cbn [AR.O.I.eval]. change (view_function P att) with (A.body_of Prog att). rewrite View.
@@ -5165,12 +5182,12 @@ Proof.
   remember (A.canon C ot0) as ot eqn:Ot.
   destruct Meth as [F C ox ot pa args m x t Long Det Prov
                    |F C ox ot n args h att m x t Head Att Scope Mth Prov
-                   |F C ox ot n args h att Ca ns sm th g xs rargs wrap Cd Head Att NotWin Def Rargs Ctx Dem Sat CT Sig Args
+                   |F C ox ot n args h att Ca ns sm th g xs rargs wrap Cd Head Att NotWin Def Rargs Ctx Dem Sat CT Sig Args RB
                    |F C ox ot n args h att x t Head Att NotWin Abs Prov
                    |F C ox ot n args m x t NoAtt Scope Prov]; subst ot;
     try exact (provided_step F C o ox ot0 _ args x t B Do BrkO BrkA Prov).
   exact (attached_step F C o ox ot0 _ n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA
-    eq_refl Head Att Def Rargs Ctx Dem Sat CT Sig Args).
+    eq_refl Head Att Def Rargs Ctx Dem Sat CT Sig Args RB).
 Qed.
 
 Fixpoint ex_step F C a exp x t (D : A.Ex W Prog F C a exp x t) {struct D} :
@@ -5199,7 +5216,7 @@ Proof.
       |F C exp pa s dcl n t0 t NotLocal R Decl Ast Val
       |F C exp pa s dcl n t0 i t x NotLocal R Decl Ast NoAssume TyOf0 Init
       |F C exp pa a args s bs xs pay y v vty R K Br F2 Pay Args1 Dy Fits
-      |F C exp pa args f Cf ns sm th sg xs wrap C' R K Def Ctx Dem Sat CT Sig Args
+      |F C exp pa args f Cf ns sm th sg xs wrap C' R K Def Ctx Dem Sat CT Sig Args RB
       |F C exp pa args f sg xs R K Abs Fn Args
       |F C exp pa bs args f x t R K Br Dx
       |F C exp o pa args ox ot x t Do Dm
@@ -5259,7 +5276,8 @@ Proof.
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl Dem
-        (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx I0)))
+        (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns th r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx
+           (call_theta_same C' C Cf f th (demand_ty _ _ _ _ _ _ Dem) (demand_sub _ _ _ _ _ _ Dem) CT) RB I0)))
         (fun j Lj d' types' H' g' st' Pre' _ => call_code k Bel F C' args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
           (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre')) d types H lg lst Pre0).

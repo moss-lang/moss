@@ -44,10 +44,14 @@ a program is accepted or how it runs.
 When a rule solves for something, it takes the most general solution and
 never a guessed instance.
 
-- Example: a requirement a caller leaves unbound is instantiated as the
-  requirement itself, read through a bound member of its merge class if one
-  exists, else through the merge's representative. It is not instantiated
-  as some other type that merely makes a later check succeed.
+- Example: a use of an item (a call, a provider bind, a family demand)
+  needs each of the item's type requirements in force: bound or assumed
+  where it is used, or in force through the item's merge class (a member
+  in force, or a structured type whose symbols are in force). So the
+  instantiation is determined by the use: each requirement is read as its
+  meaning there, or through its class, never as some other type that
+  merely makes a later check succeed, and never as an unbound symbol
+  (rule B, [`AUDIT-CHANGES.md`](../../bootstrap/AUDIT-CHANGES.md) #60).
 - Example: context merges are most-general unifiers (`MostGeneralMerge`).
 - Principality usually also secures coherence, since a most general
   solution is unique up to renaming.

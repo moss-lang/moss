@@ -614,18 +614,15 @@ Proof. intros W F C tr x t L [_ [_ Cs]]. exact (PublicScoping.literal_scoped W C
 
 Lemma demand_scoped_ok : forall W b, A.WorldOf b W -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.DemandScopedOk W.
 Proof.
-  intros W b Wo F C X f Cf ns r m [Fc _] Tin Es Ctx I.
-  exact (PublicScoping.demand_at_site_scoped W C X f Cf ns r m (PublicWorldFormation.merge_formed_of W)
-    (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es Tin Ctx I).
+  intros W b Wo F C X f Cf ns th r m [Fc _] Tin Es Ctx CT RB I.
+  exact (PublicScoping.demand_at_th_scoped W C X f Cf ns th r m (PublicWorldFormation.merge_formed_of W)
+    (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es Tin Ctx CT RB I).
 Qed.
 
 (* ---- what a functor closure captures (PublicLinkMerges) ---------------------- *)
 
 Lemma captured_in_force_ok : forall W, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CapturedInForceOk W.
-Proof.
-  intros W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou.
-  exact (PublicLinkMerges.captured_mentioned W C gg Cu nsu Cg nsg smc FCg Sat k p x Ik Il Ix Ig Ou).
-Qed.
+Proof. intros W C Cu Cg x Cap Ig Ou. left. exact (Cap x Ig Ou). Qed.
 
 (* ---- table keys a path names are types (PublicFormation) --------------------- *)
 

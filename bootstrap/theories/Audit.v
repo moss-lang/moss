@@ -3342,21 +3342,32 @@ Definition theta_ctx (C : cx) : subst :=
    leaves unbound: merged types are one type, so a merged class bound
    here gives its unbound members that meaning too, and a caller cannot
    bind two members of one class differently.
-   θ is principal (criteria, principality): a requirement C leaves unbound
-   whose merge class in Cs (the generations Cs reads as one generation z)
-   has no member C binds is instantiated as itself, read through the
-   class's representative z, canonically; no other instance is allowed.
-   With a member C binds, the merge clause reads it through that member;
-   a requirement Cs merges with a structured type reads through its
-   structure. *)
+   θ is principal (criteria, principality): every use of s also asks its
+   requirements in force here (`RequirementsInForce`, rule B), so each
+   requirement is bound here, or merged in Cs with a member bound here, or
+   merged with a structured type whose symbols are bound here, and these
+   clauses determine θ up to the merges here. *)
 Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
   map fst th = map fst (c_ty Cs) /\
   (forall r, In r (map fst (c_ty Cs)) -> nlook r (c_ty C) <> None ->
      lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
-  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)) /\
-  (forall r z, In r (map fst (c_ty Cs)) -> canon Cs (TAbs r) = TAbs z ->
-     (forall y, canon Cs (TAbs y) = TAbs z -> nlook y (c_ty C) = None) ->
-     lookup_subst r th = Some (canon C (TAbs z))).
+  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
+
+(* Rule B (criteria section 3, principality, and section 2, coherence):
+   using an item s whose assume context Cs has a type requirement r (a
+   call of a defined fn or attached method, a bind of it as a provider)
+   needs r in force at the use: assumed or bound in C, or in force
+   through s's merge class of r, a member of the class in force in C or
+   a structured type all of whose symbols are in force in C.  Before, a
+   requirement the caller left unbound was read as itself, so a family
+   demand could key a provision at a declared symbol out of force
+   (examples/family-unbound-need.moss), and a closure could capture one. *)
+Definition InForceThrough (C Cs : cx) (r : nat) : Prop :=
+  (exists y, canon Cs (TAbs y) = canon Cs (TAbs r) /\ nlook y (c_ty C) <> None) \/
+  ((forall z, canon Cs (TAbs r) <> TAbs z) /\
+   forall y, In y (gens (canon Cs (TAbs r))) -> nlook y (c_ty C) <> None).
+Definition RequirementsInForce (C Cs : cx) : Prop :=
+  forall r, In r (map fst (c_ty Cs)) -> InForceThrough C Cs r.
 
 (* A signature in Cs's terms, read here at instantiation th. *)
 (* A need of the callee, read here at instantiation th. *)
@@ -3657,16 +3668,17 @@ Definition context_gens (C : cx) : list nat :=
   flat_map (fun q => provision_gens (snd q) ++
     provision_gens (provision_subst (c_sub C) (snd q))) (c_provisions C) ++
   flat_map (fun q => gens (fst (snd q)) ++ gens (canon C (fst (snd q)))) (c_locals C).
-(* The generations a method key's receiver mentions. A callee requirement
-   the caller leaves unbound is read at the call site as itself, so a family
-   demand can key a method at a declared symbol that nothing else in the
-   context mentions (examples/family-unbound-need.moss); a lambda keeps
-   its meaning too (family2-AUDIT.md). *)
+(* The generations a method key's receiver mentions (the fresh-output
+   clause of BApplyAbstract, #10, names them). *)
 Definition key_receiver_gens (C : cx) : list nat :=
   flat_map (fun q => match fst q with IMth r _ _ => gens r | _ => [] end) (c_provisions C).
+(* A lambda or closure keeps the meanings of the generations its context
+   mentions.  A method key's receiver mentions only those: rule B puts a
+   callee's requirements in force at every use, so a family demand keys
+   its methods at types in force (PublicFormation.KeysScoped). *)
 Definition lexical_capture (C : cx) : type_capture :=
   TypeCapture
-    (map (fun generation => (generation, TAbs generation)) (context_gens C ++ key_receiver_gens C))
+    (map (fun generation => (generation, TAbs generation)) (context_gens C))
     (map (fun q => (fst q, canon C (snd q))) (c_ty C)).
 Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
   NoDup gs /\ Forall (fun g => Fresh W g /\
@@ -3776,6 +3788,15 @@ Definition FamilyApplication (W : world) (C : cx) (u : usym)
     ProvideResult W u (family_context C matching) (fun t => TAbs t) result keys /\
     NoDup (map provision_id keys).
 
+(* Rule B for a family demand (criteria sections 2 and 3): the matching
+   read off the demanded key is in force here, each generation it
+   mentions one that a type in force here means.  A key whose receiver
+   mentions a symbol out of force (a callee requirement left unbound,
+   before rule B) is not demanded. *)
+Definition MatchingInForce (C : cx) (matching : subst) : Prop :=
+  forall q y, In q matching -> In y (gens (canon C (snd q))) ->
+    exists x u, In (x, u) (c_ty C) /\ In y (gens (canon C u)).
+
 (* [D84] rule 7: θ is read off the demanded key.  The result is formed once
    with each P(F) symbol standing for itself (the oracle's markers), and the
    demanded method's formal receiver there is matched against the key's
@@ -3811,7 +3832,7 @@ Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr ->
     mlook t m (c_mths C) = None ->
     FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u t m matching ->
     In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
-    mlook t m (c_mths C') = Some (FSig [t] t) ->
+    mlook t m (c_mths C') = Some (FSig [t] t) -> MatchingInForce C matching ->
     LitOp W C t m ox oy (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' t m) [oy])).
 
 (* Interpret exactly the prescribed tree through contextual arithmetic.
@@ -4177,7 +4198,7 @@ Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
     In (mkey ot m) wanted -> mlook ot m (c_mths C0) = None ->
     OnlyFamily W C0 u (mkey ot m) ->
     FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
-    In (mkey ot m) ks ->
+    In (mkey ot m) ks -> MatchingInForce C matching ->
     FamilyStep W C0 wanted C u matching th sm (map (rkey_of Cr) ks) (family_restore C Cr).
 
 (* Group identity is the inferred matching substitution.  Distinct groups
@@ -4244,9 +4265,12 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns ->
-    Demand W C (map (at_site C) ns) [] C wrap C' ->
+    (* family demands read f's needs through θ (rule B's companion) *)
+    Demand W C (map (at_th C th) ns) [] C wrap C' ->
     Satisfies C' Cf th ns sm -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
     Args W P F C' args (sg_params g) xs ->
+    (* rule B *)
+    RequirementsInForce C Cf ->
     Ex W P F C (AECall pa None args) exp
        (wrap (ECall f th sm xs)) (sg_ret g)
 (* an abstract fn: whatever provides it here *)
@@ -4397,10 +4421,11 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
     CtxOf W att Ca ns ->
     Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
-      (map (at_site (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)) ns) []
+      (map (at_th (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) th) ns) []
       (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
     Satisfies Cd Ca th ns sm -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
+    RequirementsInForce (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca ->
     MethCall W P F C ox ot [n] args
       (wrap (ECall att th sm (ox :: xs))) (sg_ret g)
 (* an abstract attached method: a key the context provides ([D36]) *)
@@ -4434,6 +4459,7 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
     FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks -> OnlyFamily W C u (mkey ot m) ->
     mlook ot m (c_mths C') = Some g -> Args W P F C args (sg_params g) xs ->
+    MatchingInForce C matching ->
     Provided W P F C ox ot m args (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
 
 (* a block whose type is checked against `exp` and may not let a value of
@@ -4682,6 +4708,10 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
       (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
+    (* rule B for the closure: G's inputs that F does not take are
+       captured here, each read as its meaning here, so each is in force
+       here (inputs F takes are linked at each application) *)
+    (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> nlook x (c_ty C) <> None) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
 
 (* [D66] a fn provider: a defined fn (its needs answered here), or an
@@ -4693,6 +4723,7 @@ with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> opti
     (exists n ps rt b, ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W g Cg ns -> Satisfies C Cg th ns sm -> CallTheta W C Cg g th ->
     SigOf W g (c_ty C) None (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
+    RequirementsInForce C Cg ->
     FnProvider W P F C (AEPath pa None) sg None g (TypeCapture th th) sm
 | FPForward : forall F C pa g sg w n,
     resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
@@ -4713,6 +4744,7 @@ with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty
     CtxOf W att Ca ns -> Satisfies Cd Ca th ns sm -> CallTheta W Cd Ca att th ->
     SigOf W att (c_ty Cd) (Some (canon C rt))
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
+    RequirementsInForce Cd Ca ->
     MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (TypeCapture th th) (fun x => x) sm
 | MPWrapped : forall F C pa sg rt g sm w n Cg nsg types,
     FnProvider W P F C (AEPath pa None) sg None g types sm ->
@@ -5124,7 +5156,13 @@ Definition AssumedComplete (W : world) (C : cx) (ns : list item) : Prop :=
   forall k s, In k ns -> need_item k = Some s ->
     exists a, ilook k (c_apps C) = Some a /\ (forall t o, In (t, o) a -> o <> None) /\
       let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
-      exists Cs nss th sm, CtxOf W s Cs nss /\ CallTheta W Cv Cs s th /\ Satisfies Cv Cs th nss sm.
+      exists Cs nss th sm, CtxOf W s Cs nss /\ CallTheta W Cv Cs s th /\ Satisfies Cv Cs th nss sm /\
+        (* assuming is not a use (rule B does not apply): a requirement
+           whose merge class in Cs has no member in force in Cv is read as
+           itself, through the class's representative *)
+        (forall r z, In r (map fst (c_ty Cs)) -> canon Cs (TAbs r) = TAbs z ->
+           (forall y, canon Cs (TAbs y) = TAbs z -> nlook y (c_ty Cv) = None) ->
+           lookup_subst r th = Some (canon Cv (TAbs z))).
 
 (* Every val, fn, method, context and functor symbol's assume nesting
    forms, with its assumed items complete (the oracle checks each). *)

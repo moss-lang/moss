@@ -1,8 +1,8 @@
-(* Scoping of elaborated types (T29), up to declared type symbols.
+(* Scoping of elaborated types (T29).
 
    PublicFormation's [FormedCx] says that a context's tables are ok and
    that its method keys and type-table keys are in scope ([ScopedTy]: in
-   [scope_gens], or a declared type symbol). This file adds the matching
+   [scope_gens]). This file adds the matching
    facts for the rest of a context, [CxScoped]: its locals' types, its
    provisions' types and instantiations, and the frame's receiver type.
 
@@ -11,10 +11,9 @@
      [CxScoped]. A block may not let a type it made escape ([D78]), so a
      block's type is scoped in the context around it.
    - [literal_scoped]: a literal's type is scoped.
-   - [demand_at_site_scoped]: a callee need read at the call site is ok
-     and scoped. A requirement the caller leaves unbound is read as itself
-     (`at_site`), a declared type symbol, which is why scoping admits
-     declared symbols (examples/family-unbound-need*.moss).
+   - [demand_at_th_scoped]: a callee need read through θ at the call
+     site is ok and scoped (rule B puts every requirement in force there,
+     through the callee's merge class).
    - Formation of the initial contexts: [ctxof_scoped], [functx_scoped],
      and the steps the slice takes. *)
 From Stdlib Require Import List String Arith Bool.
@@ -302,7 +301,7 @@ Lemma gensin_mono : forall (K K' : nat -> Prop) l, (forall y, K y -> K' y) -> Ge
 Proof. intros K K' l Imp G y Iy. exact (Imp y (G y Iy)). Qed.
 
 Lemma tm_scoped : forall C y, In y (tm_gens (c_ty C)) -> GenScoped W C y.
-Proof. intros C y Iy. left. exact (ty_scope C y Iy). Qed.
+Proof. intros C y Iy. exact (ty_scope C y Iy). Qed.
 
 Lemma gens_canon : forall C t y, In y (gens (canon C t)) -> In y (gens t) \/ In y (scope_gens C).
 Proof.
@@ -614,10 +613,10 @@ Proof.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   intros k p Iq. rewrite <- Epr.
   apply (provide_result_gens _ _ _ _ _ (GenScoped W C) PR); [| | |exact Iq].
-  - intros g v Iq' y Iy. rewrite Esub in Iq'. left. exact (scope_sub C g v y Iq' Iy).
+  - intros g v Iq' y Iy. rewrite Esub in Iq'. exact (scope_sub C g v y Iq' Iy).
   - intros x v Iq' y Iy. rewrite Ety in Iq'. unfold canon in Iy. rewrite Esub in Iy. apply in_app_or in Iq' as [Iq'|Iq'].
     + apply (proj2 (in_rev _ _)) in Iq'. exact (Mt x v Iq' y Iy).
-    + left. exact (scope_ty_canon C x v y Iq' Iy).
+    + exact (scope_ty_canon C x v y Iq' Iy).
   - intros t Ft. exfalso. exact (family_no_outputs W u t (proj1 Fam) Ft).
 Qed.
 
@@ -647,7 +646,7 @@ Proof.
   - intros n t mu Iq. cbn in Iq. rewrite LoR, Elo, El in Iq. exact (scoped_ext W _ _ _ (eq_sym ScE) (Ls n t mu Iq)).
   - intros k p Iq y Iy. unfold GenScoped. rewrite ScE. fold (GenScoped W C0 y). cbn in Iq.
     destruct (provide_result_gens _ _ _ _ _ K PR) with (k := k) (p := p) as [Iq'|G]; [| | |exact Iq| |exact (G y Iy)].
-    + intros g v Iv z Iz. left. rewrite Esub, Es in Iv. exact (scope_sub C0 g v z Iv Iz).
+    + intros g v Iv z Iz. rewrite Esub, Es in Iv. exact (scope_sub C0 g v z Iv Iz).
     + intros x v Iv z Iz. unfold canon in Iz. rewrite Esub in Iz. fold (canon C v) in Iz.
       rewrite Ety in Iv. apply in_app_or in Iv as [Iv|Iv]; [apply (proj2 (in_rev _ _)) in Iv; exact (Mt x v Iv z Iz)|exact (Tin x v Iv z Iz)].
     + intros t Ft. exfalso. exact (family_no_outputs W u t Shape Ft).
@@ -816,10 +815,10 @@ Proof.
   - intros n t mu Iq. rewrite Elo in Iq. exact (scoped_mono _ _ _ Inc (Ls n t mu Iq)).
   - intros k p Iq.
     destruct (provide_result_gens _ _ _ _ _ (GenScoped W C') PR) with (k := k) (p := p) as [Iq'|G]; [| | |exact Iq| |exact G].
-    + intros g v Iv y Iy. left. rewrite <- Esub in Iv. exact (scope_sub C' g v y Iv Iy).
-    + intros x v Iv y Iy. left. apply (table_scope C' x (canon C v)); [|exact Iy]. apply InTy.
+    + intros g v Iv y Iy. rewrite <- Esub in Iv. exact (scope_sub C' g v y Iv Iy).
+    + intros x v Iv y Iy. apply (table_scope C' x (canon C v)); [|exact Iy]. apply InTy.
       unfold output_type_map. apply in_map_iff. exists (x, v). split; [reflexivity|apply in_or_app; right; exact Iv].
-    + intros t Ft y Iy. left. apply (table_scope C' t (canon C (TAbs (gensof t)))); [|exact Iy]. apply InTy.
+    + intros t Ft y Iy. apply (table_scope C' t (canon C (TAbs (gensof t)))); [|exact Iy]. apply InTy.
       unfold output_type_map. apply in_map_iff. exists (t, TAbs (gensof t)). split; [reflexivity|].
       apply in_or_app; left. apply in_map_iff. exists t. split; [reflexivity|exact (proj2 (OutsI' t) Ft)].
     + intros y Iy. exact (inscope_mono W _ _ y Inc (Ps k p Iq' y Iy)).
@@ -859,7 +858,7 @@ Proof.
   assert (Key : forall x, In x (map fst tm) -> K x) by (intros x Ix; exact (idform_scope σ tm es x Id Ix)).
   assert (Range : forall g u, In (g, u) σ -> GensIn K (gens u)) by (intros g u Iq y Iy; exact (Key y (Sg g u Iq y Iy))).
   split; [intros n t mu []|split; [|exact (conj Th (methsread_entries W σ tm es Idem Rd))]].
-  intros k p Iq y Iy. left. cbn in Iq. apply in_flat_map in Iq as [e [Ie Iq]].
+  intros k p Iq y Iy. cbn in Iq. apply in_flat_map in Iq as [e [Ie Iq]].
   refine (entry_provision_gens_f K σ _ e k p Range _ (entry_gens_entryp K e (fun y Iy => Key y (Eg e Ie y Iy))) Iq y Iy).
   intros a Ia x w Iq' z Iz. apply in_map_iff in Iq' as [[x0 o] [E Iq']]. cbn in E. injection E as E0 E. subst x.
   destruct o as [t0|]; cbn in E.
@@ -958,35 +957,90 @@ Qed.
 Lemma map_pair_id : forall (l : subst), map (fun q => (fst q, snd q)) l = l.
 Proof. induction l as [|[x v] r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
 
-(* A callee's method need read at the site X (the caller's table, with
-   its merge): ok, and scoped where X's table is. A requirement X leaves
-   unbound reads as itself, a declared type symbol. *)
-Theorem demand_at_site_scoped : forall C X f Cf ns r m, MergeFormed W -> MentionsTyped W -> FormedCx W C ->
+Lemma lookup_keys_app : forall (f : nat -> ty) l (s : subst) z, In z l ->
+  lookup_subst z (map (fun z => (z, f z)) l ++ s) = Some (f z).
+Proof.
+  intros f l s z. induction l as [|a l IH]; intros Iz; [contradiction|].
+  cbn. destruct (Nat.eqb_spec z a) as [->|Ne]; [reflexivity|].
+  destruct Iz as [E|Iz]; [congruence|exact (IH Iz)].
+Qed.
+
+(* A call's θ read through the callee's merge: by its merge clause, a
+   type the callee's merge rewrites reads here as the type itself. *)
+Lemma theta_canon_lift : forall C Cs th,
+  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)) ->
+  forall t, canon C (app_subst th (canon Cs t)) = canon C (app_subst th t).
+Proof.
+  intros C Cs th M t. unfold canon at 1 2 3. apply subst3_agree.
+  intros x _. cbn [app_subst lookup_subst]. destruct (lookup_subst x (c_sub Cs)) as [u|] eqn:L; [|reflexivity].
+  symmetry. exact (M x u (lookup_subst_in_pair _ _ _ L)).
+Qed.
+
+(* A callee's method need read through θ at the site X (the caller's
+   table, with its merge; rule B's companion): ok, and scoped where X's
+   table is.  Rule B puts each requirement in force at X through the
+   callee's merge class, so θ reads it as a type X's table means. *)
+Theorem demand_at_th_scoped : forall C X f Cf ns th r m, MergeFormed W -> MentionsTyped W -> FormedCx W C ->
   c_sub X = c_sub C ->
   (forall x v, In (x, v) (c_ty X) -> TyOk W (canon X v) /\ ScopedTy W C (canon X v)) ->
-  CtxOf W f Cf ns -> In (mkey r m) (map (at_site X) ns) -> TyOk W r /\ ScopedTy W C r.
+  CtxOf W f Cf ns -> CallTheta W X Cf f th -> RequirementsInForce X Cf ->
+  In (mkey r m) (map (at_th X th) ns) -> TyOk W r /\ ScopedTy W C r.
 Proof.
-  intros C X f Cf ns r m Mf Mt Fc Es Tin Ctx Ir. apply in_map_iff in Ir as [k [E Ik]].
+  intros C X f Cf ns th r m Mf Mt Fc Es Tin Ctx [Keys [Bound Merges]] RB Ir.
+  pose proof (ctxof_cx_formed W Mf Mt f Cf ns Ctx) as [CfF _].
+  destruct (ctx_table_formed W f Cf ns Ctx) as [_ Dom].
+  assert (CX : forall t, canon X t = canon C t) by (intros t; unfold canon; rewrite Es; reflexivity).
+  set (P := fun t => TyOk W t /\ ScopedTy W C t).
+  assert (Canon : forall t, P t -> P (canon X t)).
+  { intros t [Ok Sc]. rewrite CX. split; [exact (canon_ok W C t (proj1 Fc) Ok)|exact (canon_scoped W C t Sc)]. }
+  (* a requirement in force at X *)
+  assert (InF : forall y, In y (map fst (c_ty Cf)) -> nlook y (c_ty X) <> None -> P (canon X (app_subst th (TAbs y)))).
+  { intros y Iy Ny. pose proof (Bound y Iy Ny) as By. destruct (nlook y (c_ty X)) as [v|] eqn:Lv; [|congruence].
+    cbn [app_subst]. rewrite By. cbn [app_subst]. rewrite lookup_subst_nlook', Lv.
+    apply Canon. exact (Tin y v (nlook_in _ _ _ _ Lv)). }
+  (* a type over Cf's keys, each read as P *)
+  assert (Over : forall t, TyOk W t -> incl (gens t) (map fst (c_ty Cf)) ->
+            (forall z, In z (gens t) -> P (canon X (app_subst th (TAbs z)))) -> P (canon X (app_subst th t))).
+  { intros t Ok Sc Pz. set (rd := fun z => canon X (app_subst th (TAbs z))).
+    set (comp := map (fun z => (z, rd z)) (gens t) ++ c_sub X).
+    assert (Lk : forall z, In z (gens t) -> lookup_subst z comp = Some (rd z)).
+    { intros z Iz. unfold comp. exact (lookup_keys_app rd (gens t) (c_sub X) z Iz). }
+    assert (Ec : canon X (app_subst th t) = app_subst comp t).
+    { unfold canon at 1. rewrite <- (app_subst_nil (app_subst comp t)). apply subst2_agree.
+      intros z Iz. rewrite app_subst_nil. cbn [app_subst]. rewrite (Lk z Iz). reflexivity. }
+    rewrite Ec. split.
+    - apply (tyok_subst W comp t); [|exact Ok]. apply tmok_app.
+      + intros x w Iq. apply in_map_iff in Iq as [z [E Iz]]. injection E as <- <-. exact (proj1 (Pz z Iz)).
+      + rewrite Es. exact (cf_sub W C (proj1 Fc)).
+    - intros y Iy. destruct (gens_subst t comp y Iy) as [z [Iz [[Nz _]|[w [L Iw]]]]].
+      + rewrite (Lk z Iz) in Nz. discriminate.
+      + rewrite (Lk z Iz) in L. injection L as <-. exact (proj2 (Pz z Iz) y Iw). }
+  (* each requirement, through rule B *)
+  assert (Req : forall x, In x (map fst (c_ty Cf)) -> P (canon X (app_subst th (TAbs x)))).
+  { intros x Ix. destruct (RB x Ix) as [[y [Ey Ny]]|[NA AllF]].
+    - assert (Iy : In y (map fst (c_ty Cf))).
+      { destruct (lookup_subst y (c_sub Cf)) as [u|] eqn:Ly; [exact (proj1 (Dom y u (lookup_subst_in_pair _ _ _ Ly)))|].
+        unfold canon in Ey. cbn [app_subst] in Ey. rewrite Ly in Ey.
+        destruct (lookup_subst x (c_sub Cf)) as [u'|] eqn:Lx.
+        + subst u'. exact (proj2 (Dom x (TAbs y) (lookup_subst_in_pair _ _ _ Lx)) y (or_introl eq_refl)).
+        + injection Ey as ->. exact Ix. }
+      rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)), <- Ey, (theta_canon_lift X Cf th Merges (TAbs y)).
+      exact (InF y Iy Ny).
+    - rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)).
+      destruct (lookup_subst x (c_sub Cf)) as [u|] eqn:Lx.
+      2: { exfalso. apply (NA x). unfold canon. cbn [app_subst]. rewrite Lx. reflexivity. }
+      assert (Eu : canon Cf (TAbs x) = u) by (unfold canon; cbn [app_subst]; rewrite Lx; reflexivity).
+      rewrite Eu in AllF |- *. pose proof (lookup_subst_in_pair _ _ _ Lx) as Iq.
+      apply Over.
+      + exact (cf_sub W Cf CfF x u Iq).
+      + exact (proj2 (Dom x u Iq)).
+      + intros z Iz. apply InF; [exact (proj2 (Dom x u Iq) z Iz)|exact (AllF z Iz)]. }
+  apply in_map_iff in Ir as [k [E Ik]].
   destruct k as [t0|v0|f0|r0 m0 a0|u0]; cbn in E; try discriminate. injection E as Er -> ->.
   destruct (need_provision f Cf ns _ Ctx Ik) as [p Ip].
-  pose proof (ctxof_cx_formed W Mf Mt f Cf ns Ctx) as [CfF _].
   destruct (cf_prov W Cf CfF _ _ Ip) as [Or _]. cbn in Or.
-  assert (Kr : forall y, In y (gens r0) -> kind_sym W y = Some DKType).
-  { intros y Iy. apply (ctxof_keys_typed Mt f Cf ns Ctx). exact (proj2 (ctx_provision_scoped W f Cf ns Ctx _ _ Ip) y Iy). }
-  set (comp := map (fun q => (fst q, canon X (snd q))) (c_ty X) ++ c_sub X).
-  assert (Ec : r = app_subst comp r0).
-  { rewrite <- Er. rewrite map_pair_id. unfold canon. rewrite <- (app_subst_nil (app_subst comp r0)). apply subst2_agree.
-    intros x _. cbn [app_subst]. unfold comp. rewrite lookup_comp.
-    destruct (lookup_subst x (c_ty X)) as [v|]; [rewrite app_subst_nil; reflexivity|].
-    cbn [app_subst]. destruct (lookup_subst x (c_sub X)); [rewrite app_subst_nil; reflexivity|reflexivity]. }
-  rewrite Ec. split.
-  - apply (tyok_subst W comp r0); [|exact Or]. apply tmok_app.
-    + intros x w Iq. apply in_map_iff in Iq as [[x' v] [E Iq]]. cbn in E. injection E as -> <-. exact (proj1 (Tin _ _ Iq)).
-    + rewrite Es. exact (cf_sub W C (proj1 Fc)).
-  - apply (subst_within (GenScoped W C) comp r0); [|intros y Iy; right; exact (Kr y Iy)].
-    intros g u Iq. apply in_app_or in Iq as [Iq|Iq].
-    + apply in_map_iff in Iq as [[x' v] [E Iq]]. cbn in E. injection E as -> <-. exact (proj2 (Tin _ _ Iq)).
-    + intros y Iy. left. rewrite Es in Iq. exact (scope_sub C g u y Iq Iy).
+  pose proof (proj2 (ctx_provision_scoped W f Cf ns Ctx _ _ Ip)) as Kg. cbn in Kg.
+  rewrite <- Er. apply Over; [exact Or|exact Kg|]. intros z Iz. exact (Req z (Kg z Iz)).
 Qed.
 
 (* A fn or method body's context: the assumes' context with the
@@ -1240,9 +1294,8 @@ Proof.
     + destruct (binditems_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' Ff'].
       destruct (binditems_scoped _ _ _ _ _ _ _ Bi Fc Ff Cs) as [Cs' [Inc [Back _]]].
       intros y' Iy. destruct (blk_scoped _ _ _ _ _ _ _ _ Rest Fc' Ff' Cs' (fun e E => scoped_mono W _ _ _ Inc (Se e E)) y' Iy)
-        as [[G|K]|Im].
-      * destruct (Back y' G) as [I|I]; [left; left; exact I|right; apply in_or_app; left; exact I].
-      * left. right. exact K.
+        as [G|Im].
+      * destruct (Back y' G) as [I|I]; [left; exact I|right; apply in_or_app; left; exact I].
       * right. apply in_or_app. right. exact Im.
   (* ---- BindItems ---- *)
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 B1 B2]; intros Fc Ff Cs.

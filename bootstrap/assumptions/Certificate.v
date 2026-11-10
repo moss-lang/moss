@@ -142,7 +142,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicWorldFormation.mentions_typed_of);
   root (@NM.PublicFamilySig.family_sig_ok_readoff);
   root (@NM.PublicScoping.ex_scoped);
-  root (@NM.PublicScoping.demand_at_site_scoped);
+  root (@NM.PublicScoping.demand_at_th_scoped);
   root (@PublicEntryTop.ex_scoped_ok);
   root (@PublicEntryTop.demand_scoped_ok);
   root (@PublicEntryTop.entry_primitive);
@@ -231,7 +231,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicOutputSubst.output_entries_rel);
   root (@NM.PublicOutputSubst.provide_result_rel);
   root (@PublicLinkMergesI.captured_in_force_ok);
-  root (@NM.PublicLinkMerges.captured_mentioned);
   root (@NM.PublicFormation.family_keys_typed);
   root (@NM.PublicCallRealize.ctxof_formed);
   root (@NM.PublicCallRealize.call_agree);

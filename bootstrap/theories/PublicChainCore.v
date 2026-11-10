@@ -405,7 +405,7 @@ Proof.
     refine (LR.PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H3 d d' _ _ _ _ pv (le_n n) _ _
       (LR.PA.FS.CopyA.S.callable_extends W Prog argv read state_ok n H H3 d _ _ pv Ext Ok)).
     + rewrite (map_ext_in (ground d) (ground d') (r :: A.sg_params g0)); [reflexivity|].
-      intros t [<-|It]; symmetry; [apply Gk; exact (LR.PA.FS.CopyA.S.cg_key C r m [] _ Il)|].
+      intros t [<-|It]; symmetry; [apply Gk; exact (LR.PA.FS.CopyA.S.cg_key W C r m [] _ (proj1 (proj2 Fc)) Il)|].
       apply Gc. intros x Ix. exact (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
     + symmetry. apply Gc. intros x Ix. exact (LR.PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gr x Ix)).
   - intros u0 fx0 Nk L. change (A.c_funs C') with (funs_of (A.c_provisions C')) in L.

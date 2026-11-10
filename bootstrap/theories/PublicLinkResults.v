@@ -89,7 +89,7 @@ Lemma kept_outputs_unmentioned : KeptOutputsUnmentioned.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP _ t Ft _ E.
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & FreshG & _ & Outs & _).
-  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[_ Ig]]; [exact Nm|].
+  destruct (Outs t Ft) as [[_ [_ [_ Nm]]]|[_ Ig]]; [intros I; apply Nm; apply in_or_app; left; exact I|].
   rewrite E in Ig. exfalso. exact (funoutputs_declared W u t Ft (PublicFormation.freshfor_fresh W _ _ _ _ FreshG Ig)).
 Qed.
 
@@ -115,11 +115,7 @@ Proof.
   - pose proof (PublicFormation.freshfor_fresh W _ _ _ _ FreshG Ig) as Fresh.
     destruct FreshG as [Nd Fr]. rewrite Forall_forall in Fr. destruct (Fr _ Ig) as [_ Out].
     split; [exact (fresh_not_key W F C newgens _ Fc (conj Nd (proj2 (Forall_forall _ _) Fr)) Ig)|].
-    split; [intros I; apply in_app_or in I as [I|I]; [apply Out; apply in_or_app; right; apply in_or_app; left; exact I|]|].
-    { unfold A.key_receiver_gens in I. apply in_flat_map in I as [[k p] [Iq I]]. destruct k as [| | |r m a|]; try contradiction.
-      destruct (proj1 (proj2 Fc) r m a p Iq _ I) as [Sc|K].
-      - apply Out. apply in_or_app; right; apply in_or_app; left. exact (scope_context_gens C _ Sc).
-      - unfold A.Fresh in Fresh. unfold A.kind_sym in K. rewrite Fresh in K. discriminate. }
+    split; [intros I; apply Out; apply in_or_app; right; apply in_or_app; left; exact I|].
     split; [intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; left; rewrite Er; exact I|].
     intros r Er I; apply Out; apply in_or_app; right; apply in_or_app; right; apply in_or_app; right; rewrite Er; exact I.
 Qed.
@@ -240,12 +236,12 @@ Qed.
 
 (* The realization only reads the meanings at types the context mentions
    (or its method keys' receivers mention). *)
-Lemma envok_scoped : forall n C d d' H, PA.FS.CopyA.S.KeysMatch C ->
+Lemma envok_scoped : forall n C d d' H, PA.FS.CopyA.S.KeysMatch C -> PublicFormation.KeysScoped W C ->
   PA.FS.CopyA.S.EnvOk W Prog argv read state_ok n C d H -> provision_values d' = provision_values d ->
   (forall t, incl (A.gens t) (PA.FS.CopyA.S.capture_gens C) -> ground d' t = ground d t) ->
   PA.FS.CopyA.S.EnvOk W Prog argv read state_ok n C d' H.
 Proof.
-  intros n C d d' H KM [Vals [Fns [Mths Funs]]] Ep G0.
+  intros n C d d' H KM Ks [Vals [Fns [Mths Funs]]] Ep G0.
   assert (G : forall t, incl (A.gens t) (A.context_gens C) -> ground d' t = ground d t)
     by (intros t I; apply G0; intros x Ix; exact (PA.FS.CopyA.S.cg_l C x (I x Ix))).
   assert (Lk : forall k, lookup_provision k d' = lookup_provision k d) by (intros k; unfold lookup_provision; rewrite Ep; reflexivity).
@@ -266,7 +262,7 @@ Proof.
     destruct (PA.FS.CopyA.S.sig_provision_gens (A.ProvidedMethod g0 a) g0 eq_refl) as [Gr Gp].
     refine (PA.FS.CopyA.S.callable_transfer W Prog argv read state_ok n n H d d' _ _ _ _ pv (le_n n) _ _ Ok).
     + rewrite (map_ext_in (ground d) (ground d') (r :: A.sg_params g0)); [reflexivity|].
-      intros t [<-|It]; symmetry; [apply G0; exact (PA.FS.CopyA.S.cg_key C r m [] _ Il)|].
+      intros t [<-|It]; symmetry; [apply G0; exact (PA.FS.CopyA.S.cg_key W C r m [] _ Ks Il)|].
       apply G. intros x Ix. exact (PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gp t It x Ix)).
     + symmetry. apply G. intros x Ix. exact (PA.FS.CopyA.S.prov_context_gens C _ _ Il x (Gr x Ix)).
   - intros u fx Found. destruct (Funs u fx Found) as [pv [gfx [Look [Ok [Cov Vm]]]]].
@@ -316,7 +312,7 @@ Proof.
         change (ground d' u = ground d' (TAbs x)). rewrite (Gc u Iu), (Gc (TAbs x) ltac:(intros y [<-|[]]; exact Ix)).
         pose proof (Abs (TAbs x)) as E. unfold A.canon in E. cbn [app_subst] in E. rewrite Ls in E. exact E.
       * reflexivity.
-    + exact (envok_scoped rr C d d' H KM Env Ep Gk).
+    + exact (envok_scoped rr C d d' H KM (proj1 (proj2 Fc)) Env Ep Gk).
 Qed.
 
 (* In particular, a meaning appended for a generation outside the context's

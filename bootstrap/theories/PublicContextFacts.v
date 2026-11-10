@@ -73,7 +73,7 @@ Theorem call_theta_merged : forall W C Cs s th g1 g2 z,
   A.nlook g1 (A.c_ty C) <> None -> A.nlook g2 (A.c_ty C) <> None ->
   A.canon C (app_subst (A.c_ty C) (TAbs g1)) = A.canon C (app_subst (A.c_ty C) (TAbs g2)).
 Proof.
-  intros W C Cs s th g1 g2 z Canonical [_ [Bound [Merges _]]] M1 M2 R1 R2 F1 F2.
+  intros W C Cs s th g1 g2 z Canonical [_ [Bound Merges]] M1 M2 R1 R2 F1 F2.
   pose proof (Merges g1 (TAbs z) M1) as E1. pose proof (Merges g2 (TAbs z) M2) as E2.
   cbn [app_subst] in E1, E2. rewrite (Bound g1 R1 F1) in E1. rewrite (Bound g2 R2 F2) in E2.
   rewrite Canonical in E1, E2. congruence.

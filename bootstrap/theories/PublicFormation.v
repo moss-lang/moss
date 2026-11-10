@@ -422,19 +422,17 @@ Record CxFormed (C : cx) : Prop := {
   cf_locals : forall n t mu, In (n, (t, mu)) (c_locals C) -> TyOk W t
 }.
 
-(* A generation is in scope up to declared symbols: in [scope_gens], or a
-   declared type symbol. A callee requirement the caller leaves unbound is
-   read at the call site as itself (`theta_at`, `at_site`), so a family
-   demand can install keys and signatures that mention a declared type
-   symbol outside the caller's table (examples/family-unbound-need*.moss,
-   accepted by the oracle and native). Lambda capture keeps the meanings of
-   method-key receivers' generations (`lexical_capture`), so no run-time
-   fact about such symbols is needed. *)
-Definition GenScoped (C : cx) (y : nat) : Prop := In y (scope_gens C) \/ kind_sym W y = Some DKType.
+(* A generation is in scope: in [scope_gens].  (Before rule B a callee
+   requirement the caller left unbound was read at the call site as
+   itself, so a family demand could key a method at a declared type symbol
+   outside the caller's table, and scoping admitted every declared type
+   symbol; rule B puts the callee's requirements in force at every use, and
+   a demand reads its needs through θ, so no such weakening is needed.)
+   W stays a parameter so that the statements over it keep their shape. *)
+#[using="W"] Definition GenScoped (C : cx) (y : nat) : Prop := In y (scope_gens C).
 Definition ScopedTy (C : cx) (t : ty) : Prop := forall y, In y (gens t) -> GenScoped C y.
 
-(* (b) scoping: a method key's receiver mentions only generations in scope
-   (up to declared symbols) *)
+(* (b) scoping: a method key's receiver mentions only generations in scope *)
 Definition KeysScoped (C : cx) : Prop :=
   forall r m th p, In (IMth r m th, p) (c_provisions C) -> ScopedTy C r.
 
@@ -495,10 +493,10 @@ Lemma ty_scope : forall C g, In g (tm_gens (c_ty C)) -> In g (scope_gens C).
 Proof. intros C g Ig. destruct (tm_gens_in _ g Ig) as [x [u [Iq Iu]]]. exact (scope_ty C x u g Iq Iu). Qed.
 
 Lemma inscope_mono : forall C C' y, incl (scope_gens C) (scope_gens C') -> GenScoped C y -> GenScoped C' y.
-Proof. intros C C' y Sc [I|K]; [left; exact (Sc y I)|right; exact K]. Qed.
+Proof. intros C C' y Sc I. exact (Sc y I). Qed.
 
 Lemma scoped_of_incl : forall C t, incl (gens t) (scope_gens C) -> ScopedTy C t.
-Proof. intros C t Sc y Iy. left. exact (Sc y Iy). Qed.
+Proof. intros C t Sc y Iy. exact (Sc y Iy). Qed.
 
 Lemma scoped_ext : forall C1 C2 t, scope_gens C1 = scope_gens C2 -> ScopedTy C1 t -> ScopedTy C2 t.
 Proof. intros C1 C2 t E Sc y Iy. unfold GenScoped. rewrite <- E. exact (Sc y Iy). Qed.
@@ -506,7 +504,7 @@ Proof. intros C1 C2 t E Sc y Iy. unfold GenScoped. rewrite <- E. exact (Sc y Iy)
 Lemma canon_scoped : forall C t, ScopedTy C t -> ScopedTy C (canon C t).
 Proof.
   intros C t Sc y Iy. unfold canon in Iy. destruct (gens_subst t (c_sub C) y Iy) as [z [Iz [[_ ->]|[u [L Iu]]]]];
-    [exact (Sc z Iz)|left; exact (scope_sub C z u y (lookup_subst_in_pair _ _ _ L) Iu)].
+    [exact (Sc z Iz)|exact (scope_sub C z u y (lookup_subst_in_pair _ _ _ L) Iu)].
 Qed.
 
 Lemma canon_ok : forall C t, CxFormed C -> TyOk W t -> TyOk W (canon C t).
@@ -1114,12 +1112,12 @@ Proof.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   assert (P1 : TmOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_sub _ _ Cf)).
   assert (P2 : forall g v, In (g, v) (c_sub (family_context C matching)) -> GensIn (GenScoped W C) (gens v)).
-  { intros g v Iq y Iy. rewrite Esub in Iq. left. exact (scope_sub C g v y Iq Iy). }
+  { intros g v Iq y Iy. rewrite Esub in Iq. exact (scope_sub C g v y Iq Iy). }
   assert (P3 : forall x v, In (x, v) (c_ty (family_context C matching)) ->
      TyOk W (canon (family_context C matching) v) /\ GensIn (GenScoped W C) (gens (canon (family_context C matching) v))).
   { intros x v Iq. rewrite Ety in Iq. unfold canon. rewrite Esub. apply in_app_or in Iq as [Iq|Iq].
     - apply (proj2 (in_rev _ _)) in Iq. exact (Mt x v Iq).
-    - split; [exact (canon_ok W C v Cf (cf_ty _ _ Cf _ _ Iq))|]. intros y Iy. left. exact (scope_ty_canon C x v y Iq Iy). }
+    - split; [exact (canon_ok W C v Cf (cf_ty _ _ Cf _ _ Iq))|]. intros y Iy. exact (scope_ty_canon C x v y Iq Iy). }
   assert (P4 : forall t, FunOutputs W u t -> TyOk W (canon (family_context C matching) (TAbs t)) /\
      GensIn (GenScoped W C) (gens (canon (family_context C matching) (TAbs t)))).
   { intros t Ft. exfalso. exact (family_no_outputs u t (proj1 Fam) Ft). }
@@ -1323,7 +1321,7 @@ Proof.
     + change (TmOk W (c_sub C')). rewrite Esub. exact (cf_sub _ _ Cf).
     + intros k p Iq. destruct (Pr k p Iq) as [Iq'|[Kk [Pk _]]]; [exact (cf_prov _ _ Cf k p Iq')|split; assumption].
     + change (forall n t mu, In (n, (t, mu)) (c_locals C') -> TyOk W t). rewrite Elo. exact (cf_locals _ _ Cf).
-  - intros r m th p Iq. destruct (Pr _ _ Iq) as [Iq'|[_ [_ S]]]; [|intros y Iy; left; exact (S r m th eq_refl y Iy)].
+  - intros r m th p Iq. destruct (Pr _ _ Iq) as [Iq'|[_ [_ S]]]; [|intros y Iy; exact (S r m th eq_refl y Iy)].
     intros y Iy. exact (inscope_mono W _ _ y Scope (Ks r m th p Iq' y Iy)).
   - intros x Ix. apply in_map_iff in Ix as [[x' w] [E Iq]]. cbn in E. subst x'.
     rewrite Ety in Iq. apply in_map_iff in Iq as [[y v] [E Iq]]. cbn in E. injection E as -> _.
@@ -1627,13 +1625,13 @@ End Corollaries.
 
 (* Corollary 3: a method key's receiver mentions only the context's generations. *)
 Theorem keys_scoped : forall W C r m th p, FormedCx W C -> In (IMth r m th, p) (A.c_provisions C) ->
-  forall y, In y (A.gens r) -> In y (scope_gens C) \/ A.kind_sym W y = Some A.DKType.
+  forall y, In y (A.gens r) -> In y (scope_gens C).
 Proof. intros W C r m th p [_ [Ks _]] Iq y Iy. exact (Ks r m th p Iq y Iy). Qed.
 
 Theorem keys_scoped_context : forall W C r m th p, FormedCx W C -> In (IMth r m th, p) (A.c_provisions C) ->
-  forall y, In y (A.gens r) -> In y (A.context_gens C) \/ A.kind_sym W y = Some A.DKType.
+  forall y, In y (A.gens r) -> In y (A.context_gens C).
 Proof.
-  intros W C r m th p [_ [Ks _]] Iq y Iy. destruct (Ks r m th p Iq y Iy) as [Sc|K]; [left|right; exact K].
+  intros W C r m th p [_ [Ks _]] Iq y Iy. pose proof (Ks r m th p Iq y Iy) as Sc.
   unfold scope_gens in Sc. unfold A.context_gens.
   apply in_app_or in Sc as [Sc|Sc]; apply in_or_app; [left; exact Sc|right; apply in_or_app; left; exact Sc].
 Qed.
