@@ -68,6 +68,11 @@ const ORACLE_GAP_RESULT_COLLIDE: &str = "oracle gap: two result items of a funct
 /// on the lang-b branch, and until it lands the oracle keeps the first
 /// entry's instantiation.
 const ORACLE_GAP_MERGE_INST: &str = "oracle gap: merging two entries of one item does not unify their instantiations (Δ4)";
+/// AUDIT-CHANGES #50: a call's θ reads a requirement the caller leaves
+/// unbound through a member of its merge class that the caller binds.
+/// The semantics and the self-hosted compiler do; the oracle does not yet
+/// (E24), and rejects the call as incoherent (D62).
+const ORACLE_GAP_PRINCIPAL_THETA: &str = "oracle gap: a call's θ is not read through the callee's merges (E24)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -106,6 +111,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/memory_reset.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/merge_inst_order_ab.moss", Reject, Accept, ORACLE_GAP_MERGE_INST),
     ("tests/wasi/merge_inst_val.moss", Accept, Reject, ORACLE_GAP_MERGE_INST),
+    ("tests/wasi/partially_bound_merge.moss", Accept, Reject, ORACLE_GAP_PRINCIPAL_THETA),
     ("tests/wasi/result_collide_ab.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/result_collide_bindswap.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),

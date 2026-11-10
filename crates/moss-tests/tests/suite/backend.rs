@@ -1834,6 +1834,14 @@ fn a_provision_read_at_another_type_is_refused() {
     }
 }
 
+/// The same check reads the callee's types through the call's principal
+/// θ (#50): `f`'s `Y`, which `demo` leaves unbound, is the `X` it merges
+/// with, so `C.w`'s provision at `Foo = Char` has the type `f` reads.
+#[test]
+fn a_provision_is_read_through_the_principal_instantiation() {
+    assert_eq!(run_moss(&wasi("partially_bound_merge"), PRELUDE), "k\n");
+}
+
 /// `assume seed, T` — the type after the item — still puts `seed` at the
 /// function's `T`, so two functions of that block call each other. The
 /// Python bootstrap's first coherence check read `T` as not in force for

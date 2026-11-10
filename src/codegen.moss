@@ -5791,7 +5791,7 @@ assume Std {
         return true;
       }
       if prog::sym_kind.get(s) == prog::sk_val() {
-        return instantiate_in(genv, ofrom) == canon_in(genv, hfrom);
+        return callee_read(genv, fbase, ofrom) == canon_in(genv, hfrom);
       }
       if prog::sym_kind.get(s) == prog::sk_functor() {
         return true;
@@ -5805,7 +5805,7 @@ assume Std {
           t = ast::b_of(ast::kid_at(ast::fn_params(d), i));
         }
         if ast::is_some(t) {
-          let want = instantiate_in(genv, sig_ty(ofrom, t, home, r));
+          let want = callee_read(genv, fbase, sig_ty(ofrom, t, home, r));
           let have = canon_in(genv, sig_ty(hfrom, t, home, key));
           if want != have {
             return false;
@@ -5814,6 +5814,50 @@ assume Std {
         i = i + 1;
       }
       true
+    }
+
+    # A type in the callee's terms (its declaration's parameters), read
+    # at a call here through the call's principal instantiation (#50): a
+    # parameter whose symbol is in force here means what it means here;
+    # one that is not means what a member of its merge class in the
+    # callee's context `fbase` that is in force here means; any other is
+    # read as itself.
+    fn callee_read(genv: Int, fbase: Int, t: Int): Int {
+      let c = lower::canon(fbase, t);
+      let from = int_list();
+      lower::params_in(c, from);
+      let to = int_list();
+      var i = 0;
+      while i < from.length() {
+        let p = from.get(i);
+        let o = prog::origin_of(p);
+        var v = ast::none();
+        if lower::env_has(genv, lower::ek_type(), ast::none(), o) {
+          v = lower::canon(genv, types::ty_of_symbol(types::kd_abstract(), o));
+        } else {
+          let pt = types::ty_of_symbol(types::kd_abstract(), p);
+          var e = fbase;
+          while ast::is_some(e) {
+            if lower::env_kind_of(e) == lower::ek_type() {
+              let y = lower::env_sym_of(e);
+              if !ast::is_some(v) {
+                if lower::env_has(genv, lower::ek_type(), ast::none(), y) {
+                  if lower::canon(fbase, types::ty_of_symbol(types::kd_abstract(), y)) == pt {
+                    v = lower::canon(genv, types::ty_of_symbol(types::kd_abstract(), y));
+                  }
+                }
+              }
+            }
+            e = lower::env_next_of(e);
+          }
+          if !ast::is_some(v) {
+            v = lower::canon(genv, types::ty_of_symbol(types::kd_abstract(), o));
+          }
+        }
+        to.push(v);
+        i = i + 1;
+      }
+      lower::canon(genv, types::subst(c, from, to))
     }
 
     # Every incoherent need is an error, used or not (D20), but the ones
