@@ -1054,6 +1054,18 @@ fn a_functor_provision_captures_the_one_it_shadows() {
     assert_eq!(oracle_run(&entry, &[]), "5\n1105\n");
 }
 
+/// D84 6: a copy keeps its source's capture. `bind Get2 = Get;` copies
+/// `Get`'s binding to `Sum`, which captured `seed = 3`, and applying
+/// `Get2` in another frame still reads that `seed`. The self-hosted
+/// compiler used to look the captured vals up under `Get`'s entry, which
+/// that frame does not have, and refused the application.
+#[test]
+fn a_functor_copy_keeps_its_capture() {
+    let entry = wasi("functor_copy_capture");
+    assert_eq!(oracle_run(&entry, &[]), "2454\n");
+    assert_eq!(run_moss(&entry, PRELUDE), "2454\n");
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a

@@ -1,0 +1,72 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# A copy keeps its source's capture (D84 6): `bind Get2 = Get;` makes
+# `Get2` whatever `Get` is bound to, here `Sum` with `seed = 3` captured,
+# so `show2`'s application of `Get2` sees `seed = 3`, not the `7` in force
+# where it is called. The self-hosted compiler used to look the captured
+# vals up under the original target's entry, which `show2` does not have,
+# and refused the application ("no binding provides `seed`").
+# Output: `2454`.
+
+assume Std {
+  val seed: Int;
+  fn pick(): Int;
+  fn get(): Int;
+  fn one_fn(): Int { 1 }
+  fn two_fn(): Int { 2 }
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+functor Plain: Std, pick -> get {
+  bind get = () => pick() + pick();
+}
+
+functor Get[]: Std, pick -> get;
+functor Get2[]: Std, pick -> get;
+
+functor Sum: Std, pick, seed -> get {
+  bind get = () => pick() + seed;
+}
+
+assume Std, pick, Get {
+  fn show() {
+    bind Get;
+    digit(get());
+  }
+}
+
+assume Std, pick, Get2 {
+  fn show2() {
+    bind Get2;
+    digit(get());
+  }
+}
+
+assume Std {
+  fn demo() {
+    bind pick = one_fn;
+    bind Plain;
+    digit(get());               # 2: 1 + 1
+    bind seed = 3;
+    bind Get = Sum;             # captures seed = 3
+    bind seed = 7;
+    show();                     # 4: pick() = 1, seed = 3
+    {
+      bind pick = two_fn;
+      show();                   # 5: pick() = 2, seed = 3
+    }
+    bind Get2 = Get;
+    show2();                    # 4
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

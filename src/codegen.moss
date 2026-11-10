@@ -7451,8 +7451,10 @@ assume Std {
       }
       # D84 6: the vals the binding captured, under their own keys again,
       # from the entry `F` is bound by here, which carried them (from the
-      # frame that bound it, or across frames as parameters).
-      let own = lower::env_find(real, lower::ek_fn(), ast::none(), fu);
+      # frame that bound it, or across frames as parameters). For a copy
+      # (`bind F2 = F;`) that is `F2`'s entry, the one applied, though the
+      # closure is still read at its original target's inputs (`fu`).
+      let own = lower::env_find(real, lower::ek_fn(), ast::none(), target);
       if ast::is_some(own) {
         let slots = int_list();
         functor_slots(own, slots, 0);
