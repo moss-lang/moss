@@ -2558,7 +2558,12 @@ executable tests unless noted.
     levels) as a cycle, as `slots_go`'s depth limit does.
   - Native: `lower::check_layouts` (after `check_listed`), with
     `types::layout_reaches`, reporting `e_shape` ("this type has no finite
-    runtime layout") at the tag.
+    runtime layout") at the tag. A payload that names an alias expanding
+    to itself (`type Broken = Broken; tag Bad(Broken);`, the suite's
+    `opaque_nominal_arguments_do_not_force_their_unused_payloads`) is not
+    elaborated (`types::payload_expands`, a syntactic check), since
+    elaborating it never stops; Audit has no `PayloadOf` for such a tag
+    either.
   - One corpus program relied on the old reading:
     [tests/wasi/relevance_applied.moss](../tests/wasi/relevance_applied.moss)
     declared `tag A { b: B, t: T }` and `tag B { a: A }` only to name them

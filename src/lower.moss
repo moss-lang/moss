@@ -1340,6 +1340,15 @@ assume Std {
       }
     }
 
+    # D58 on definitions: every tag has a finite layout (types.check_layout).
+    fn check_layouts() {
+      var s = 0;
+      while s < prog::sym_count() {
+        types::check_layout(s);
+        s = s + 1;
+      }
+    }
+
     # Depth first, entering each context once (`seen`), so contexts nest
     # to any depth and a cycle of them is the union of their items; the
     # types come out in order of first reaching, as the bootstrap's

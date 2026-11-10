@@ -817,6 +817,148 @@ assume Std {
       w
     }
 
+    # D58 on definitions (AUDIT-CHANGES #90): whether computing `t`'s
+    # layout computes the tag `target`'s. A tag's layout is its payload's
+    # at its arguments, a record's its fields', a union's its members';
+    # an abstract type, machine types included, is a leaf, so a `Ref`
+    # (whose payload is `StructRef`) never reaches what it holds. Running
+    # out of depth counts as reaching, as the oracle's does.
+    fn layout_reaches(t: Int, target: Int, depth: Int): Bool {
+      if depth == 0 {
+        return true;
+      }
+      let k = kind_of(t);
+      if k == kd_nominal() {
+        if sym_of(t) == target {
+          return true;
+        }
+        if is_unit_decl(t) {
+          return false;
+        }
+        if !payload_expands(sym_of(t)) {
+          return false;
+        }
+        return layout_reaches(payload_of(t), target, depth - 1);
+      }
+      if k == kd_record() {
+        var i = 0;
+        while i < field_count(t) {
+          if layout_reaches(field_type_at(t, i), target, depth - 1) {
+            return true;
+          }
+          i = i + 1;
+        }
+        return false;
+      }
+      if k == kd_union() {
+        var j = 0;
+        while j < member_count(t) {
+          if layout_reaches(member_at(t, j), target, depth - 1) {
+            return true;
+          }
+          j = j + 1;
+        }
+      }
+      false
+    }
+
+    # A tag whose payload, read at its own requirements, reaches the tag
+    # has no finite layout, whether or not anything uses it (Audit's
+    # FiniteLayouts). A payload that cannot be elaborated, because an alias
+    # it names expands to itself, is not a cycle here: nothing laid out
+    # before this check forced it either.
+    fn check_layout(sym: Int) {
+      if prog::sym_kind.get(sym) == prog::sk_tag() {
+        if payload_expands(sym) {
+          let t = ty_of_decl(sym);
+          if layout_reaches(payload_of(t), sym, 300) {
+            prog::error(prog::e_shape(), prog::sym_mod.get(sym), prog::sym_name.get(sym));
+          }
+        }
+      }
+    }
+
+    # Whether elaborating a tag's payload terminates: no alias it names,
+    # through aliases and bracket arguments, expands to itself (`type
+    # Broken = Broken` means nothing, and expanding it never stops). Other
+    # tags' payloads are not forced by naming them.
+    fn payload_expands(sym: Int): Bool {
+      expands(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym), int_list())
+    }
+
+    fn expands(t: Int, m: Int, seen: IntList): Bool {
+      if !ast::is_some(t) {
+        return true;
+      }
+      let k = ast::kind_of(t);
+      if k == ast::k_ty_union() {
+        var i = 0;
+        while i < ast::b_of(t) {
+          if !expands(ast::kid_at(ast::a_of(t), i), m, seen) {
+            return false;
+          }
+          i = i + 1;
+        }
+        return true;
+      }
+      if k == ast::k_ty_record() {
+        var j = 0;
+        while j < ast::b_of(t) {
+          if !expands(ast::b_of(ast::kid_at(ast::a_of(t), j)), m, seen) {
+            return false;
+          }
+          j = j + 1;
+        }
+        return true;
+      }
+      if k != ast::k_ty_ref() {
+        return true;
+      }
+      if ast::d_of(t) == 1 {
+        if !brackets_expand(ast::b_of(t), ast::c_of(t), m, seen) {
+          return false;
+        }
+      }
+      name_expands(prog::resolve_path(m, ast::a_of(t)), seen)
+    }
+
+    fn brackets_expand(run: Int, len: Int, m: Int, seen: IntList): Bool {
+      var i = 0;
+      while i < len {
+        let spec = ast::b_of(ast::kid_at(run, i));
+        if ast::d_of(spec) > 0 {
+          if !brackets_expand(ast::c_of(spec), ast::d_of(spec), m, seen) {
+            return false;
+          }
+        }
+        if !name_expands(prog::resolve_path(m, ast::a_of(spec)), seen) {
+          return false;
+        }
+        i = i + 1;
+      }
+      true
+    }
+
+    fn name_expands(sym: Int, seen: IntList): Bool {
+      if !ast::is_some(sym) {
+        return true;
+      }
+      if prog::sym_kind.get(sym) != prog::sk_alias() {
+        return true;
+      }
+      if contains_sym(seen, sym) {
+        return false;
+      }
+      let inner = int_list();
+      var i = 0;
+      while i < seen.length() {
+        inner.push(seen.get(i));
+        i = i + 1;
+      }
+      inner.push(sym);
+      expands(ast::b_of(prog::sym_decl.get(sym)), prog::sym_mod.get(sym), inner)
+    }
+
     # A record's fields.
     fn field_count(t: Int): Int { member_count(t) / 2 }
     fn field_name_at(t: Int, i: Int): Int { member_at(t, i + i) }

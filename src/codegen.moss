@@ -9943,6 +9943,7 @@ assume Std {
       # calling convention below is built from.
       lower::lower_all();
       lower::check_listed();
+      lower::check_layouts();
       cg_real.write(1);
       check_runtime_library();
       cg_real.write(0);
