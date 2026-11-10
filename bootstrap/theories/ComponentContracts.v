@@ -1,5 +1,6 @@
 (* Component obligations and milestones, separate from the five public
-   build/run obligations in Audit.v. These contracts concern ExecutionModel. Existing bindings remain in Certified.v. *)
+   build/run obligations in Audit.v. These contracts concern ExecutionModel. The old oracle bound them in
+   Certified.v, deleted when Audit.v's implementation became the reference. *)
 From Stdlib Require Import List String PrimInt63.
 From NM Require Export ExecutionModel CoreFragment.
 From NM Require Sx.
@@ -26,7 +27,7 @@ Fixpoint choice_of (x : xexpr) : option choice :=
   | _ => None
   end.
 
-(* What Certified.v binds today.  Read the comment on each. *)
+(* What the old oracle's Certified.v bound.  Read the comment on each. *)
 (* The lexer agrees with Lexes on the bytes it receives. The parser
    agrees with Derives, which includes source normalization before lexing. *)
 Module Type FRONT_END.
@@ -390,7 +391,7 @@ Module Type ORACLE_AGREEMENT (C : PROVED_NOW) (Engine : ORACLE_PIPELINE C).
 End ORACLE_AGREEMENT.
 
 (* Pending end-to-end source obligations. The checked component contracts
-   above are bound in Certified.v. *)
+   above were bound in the old oracle's Certified.v. *)
 Module Type COMPLETE.
   Include PROVED_NOW.
 

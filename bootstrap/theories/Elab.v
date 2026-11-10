@@ -4556,8 +4556,9 @@ with provided_call (fuel : nat) (c : cx) (e : env) (ox : xexpr) (oty : ety) (m :
 
 (* m4, D84 rule 7: `bind F;` at θ (P(F) read as θ for the application only).
    `want` is the members the site uses; the elaborator no longer reads it
-   (the application is narrowed to the members used after elaboration, by
-   FastPath.fast_program). *)
+   (the old oracle narrowed the application to the members used after
+   elaboration, by FastPath.fast_program; AuditFastPath does so on Audit
+   programs). *)
 with apply_family (fuel : nat) (c : cx) (e : env) (fg : gsym) (th : list (nat * ety)) (want : list item) {struct fuel}
     : M (list xstmt * env) :=
   match fuel with 0 => deep | S f =>

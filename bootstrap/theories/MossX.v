@@ -62,7 +62,7 @@ Local Open Scope nat_scope.
 (* The GC heap's objects.  A GC array is its elements as a trie over its
    indices (HTrie.v) with a default for the indices never set: no primitive
    array, so the heap's laws hold without the kernel's array axioms
-   (XHeapC.v). *)
+   (proved in XHeapC.v, deleted with the old oracle). *)
 Definition garr : Type := (xvalue * trie xvalue)%type.
 Definition garr_get (xs : garr) (i : int) : xvalue :=
   match tget (snd xs) i with Some v => v | None => fst xs end.
@@ -1067,7 +1067,8 @@ Definition mem_args (p : prim) (ws : list xvalue) : list xvalue :=
   end.
 
 (* Only the GC primitives touch the GC heap: every other one runs with the
-   heap it was given handed back, which XHeapC.v's laws read off directly. *)
+   heap it was given handed back (the old oracle's XHeapC.v read its laws
+   off this directly). *)
 Definition is_gc_prim (p : prim) : bool :=
   match p with
   | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet

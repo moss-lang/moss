@@ -1269,6 +1269,6 @@ Qed.
 
 (* DumpRoundTrip.dump_reads proves that a name-safe AST whose dump reads
    successfully reads back as that very AST. Parse.walk checks the small
-   wf_names predicate at the serialization boundary. FrontEndLoader.load_sound
-   therefore proves Bundled with the exact parsed AST, not merely an AST
-   obtained by reading its dump. `_` is a wildcard token, never a name. *)
+   wf_names predicate at the serialization boundary. The old oracle's
+   FrontEndLoader.load_sound therefore proved Bundled with the exact parsed
+   AST, not merely an AST obtained by reading its dump. `_` is a wildcard token, never a name. *)

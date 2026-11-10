@@ -1,10 +1,9 @@
 (* The checked component contracts, supporting proof milestones, and
-   the executable roots Extract2.v extracts. Their assumptions are
-   transitively everything the guarantee rests on, and check.sh requires
-   them to be only the kernel's `Primitive` declarations (Rocq's primitive
-   integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Certified Parse FastPath Prune SlotX FoldX
-  CachedClo CachedCloFacts LazyX LazyClo LazyInterpFacts LazyCloFacts LazyOracle XHeapC MainProgramBool BindMethodLambdaExec BindMethodDispatch BindMethodAllDispatch BindMethodExec BodyPending.
+   the executable roots run/Extract.v extracts. Their
+   assumptions are transitively everything the guarantee rests on, and
+   check.sh requires them to be only the kernel's `Primitive` declarations
+   (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
+From NM Require Parse EaMain MossX.
 
 From NM Require AuditExamples AuditBuildExample AuditRepresentation
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -18,7 +17,7 @@ From NM Require AuditExamples AuditBuildExample AuditRepresentation
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
-  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim EaMain MossX.
+  PublicMergeClass EagerCopy ElabWorld ElabWorldExample AuditPrune AuditFastPath AuditCapTrim.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
@@ -359,119 +358,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicCaptureFacts.substitution_agrees_on_generations);
   root (@NM.PublicCaptureFacts.capture_ground_stable);
   root (@NM.PublicCaptureFacts.capture_provision_stable);
-  root (@NM.BindMethodExec.check_bind_method);
-  root (@NM.BindMethodAllDispatch.residual_after_method_bindings);
-  root (@NM.BindMethodLambdaExec.check_bind_method_lambda);
-  root (@NM.BindMethodDispatch.residual_after_method_lambda);
-  root (@NM.BodyPending.pending);
-  root (@NM.MainProgramBool.main_program_bool);
-  root (@NM.MainProgramBool.elaborate_bool);
-  root (@NM.Certified.Certified.elaborate);
-  root (@NM.Certified.elaborate_sx_reads);
-  root (@NM.Certified.default_interface_laws);
-  root (@NM.Certified.default_compatible);
-  root (@NM.Certified.Certified.eval_deterministic);
-  root (@NM.Certified.Certified.interp_sound);
-  root (@NM.Certified.Certified.interp_complete);
-  root (@NM.Certified.Certified.spec_eval);
-  root (@NM.Certified.Certified.xinterp_conservative);
-  root (@NM.Certified.Certified.prim_law);
-  root (@NM.Certified.Certified.prim_mlaw);
-  root (@NM.Certified.Certified.prim_ulaw);
-  root (@NM.Certified.Certified.Typed);
-  root (@NM.Certified.Certified.typed_safe);
-  root (@NM.Certified.Certified.typed_inhabited);
-  root (@NM.Certified.Certified.method_choice_unique);
-  root (@NM.Certified.RuntimeCertified.expression_safe);
-  root (@NM.Certified.RuntimeCertified.main_safe);
-  root (@NM.Certified.RuntimeCertified.main_typing_inhabited);
-  root (@NM.Certified.RuntimeCertified.heap_example);
-  root (@NM.XHeapC.ConcreteHeap.heap_mono);
-  root (@NM.XHeapC.ConcreteHeap.heap_empty);
-  root (@NM.XHeapC.ConcreteHeap.heap_other);
-  root (@NM.XHeapC.ConcreteHeap.heap_gc);
-  root (@NM.Certified.FrontEndCertified.lexer_sound);
-  root (@NM.Certified.FrontEndCertified.lexer_complete);
-  root (@NM.Certified.FrontEndCertified.parse);
-  root (@NM.Certified.FrontEndCertified.parser_sound);
-  root (@NM.Certified.FrontEndCertified.parser_complete);
-  root (@NM.Certified.LoaderCertified.load);
-  root (@NM.Certified.LoaderCertified.load_sound);
-  root (@NM.Certified.elaborate_sx);
-  root (@NM.Certified.run_main);
-  root (@NM.Certified.OracleCertified.interpreter_correct);
-(* Supporting lemmas for the source soundness proof. *)
-  root (@NM.Certified.world_reads);
-  root (@NM.Certified.elaborate_world_reads);
-  root (@NM.Certified.world_of_reading);
-  root (@NM.Certified.world_resolves);
-  root (@NM.Certified.context_method_named);
-  root (@NM.Certified.context_type_meanings);
-  root (@NM.Certified.dump_reads);
-  root (@NM.Certified.elaboration_frame);
-  root (@NM.Certified.assume_types_exact);
-
-(* Partial verification milestone: actual function-frame coverage and
-   runtime safety given an explicit typing certificate. These do not assert
-   that every accepted source program supplies that certificate. *)
-  root (@NM.Certified.SourceCertified.elaborate_metadata_projects);
-  root (@NM.Certified.SourceCertified.loader_reads);
-  root (@NM.Certified.SourceCertified.world_of_reading);
-  root (@NM.Certified.SourceCertified.world_resolves);
-  root (@NM.Certified.SourceCertified.elaborate_world_of);
-  root (@NM.Certified.SourceCertified.context_type_meanings);
-  root (@NM.Certified.SourceCertified.function_frames_total);
-  root (@NM.Certified.RuntimeCertified.typed_runtime_never_err);
-  root (@NM.Certified.RuntimeCertified.certified_reification_never_err);
-
-(* The front end moss_m2.ml runs on a source file: the Gallina lexer,
-   parser and bundler (the driver only reads files), whose output the
-   elaborator above reads. *)
-  root (@NM.Parse.load_bundle);
-  root (@NM.Parse.bundle_sx);
-
-(* The legacy slot/fold engine (MOSS_ENGINE=fold), as moss_m2.ml runs it: the family
-   fast path, pruning, pre-resolution, folding and closure compilation,
-   then the run; and the theorem that makes it ExecutionModel's semantics, given the tables the driver
-   builds. *)
-  root (@NM.FastPath.fast_program);
-  root (@NM.Prune.oracle_program);
-  root (@NM.SlotX.shapes);
-  root (@NM.SlotX.compile_fns);
-  root (@NM.SlotX.compile_funs);
-  root (@NM.FoldX.fold_e);
-  root (@NM.FoldX.fold_b);
-  root (@NM.CachedClo.cc);
-  root (@NM.CachedClo.ccbs);
-  root (@NM.CloScalar.prepare_scalar);
-  root (@NM.CloScalar.prepared_scalar_execution);
-  root (@NM.CachedClo.crun_main);
-  root (@NM.CachedCloFacts.engine_agrees);
-  root (@NM.CachedCloFacts.fast_engine_agrees);
-
-(* The default deferred-type engine (MOSS_ENGINE=lazy) and its AST reference,
-   with exact environment/compiler agreement and
-   the same fast-path and pruning exceptions as the original pipeline. *)
-  root (@NM.LazyX.frun_main);
-  root (@NM.LazyClo.cc);
-  root (@NM.LazyClo.ccbs);
-  root (@NM.LazyClo.crun_main);
-  root (@NM.LazyInterpFacts.frun_main_eq);
-  root (@NM.LazyCloFacts.crun_main_eq);
-  root (@NM.LazyCloFacts.engine_agrees);
-  root (@NM.LazyCloFacts.fast_engine_agrees);
-
-(* Scalar folding preserves checked composition, runtime types and fuel. *)
-  root (@NM.LazyFold.fold_call);
-  root (@NM.LazyFoldFacts.fold_call_agrees);
-
-(* The direct engine bound to its explicit pipeline/table contract. *)
-  root (@NM.LazyOracle.Certified.mapped_engine_agrees);
-  root (@NM.LazyOracle.Certified.compiled_engine_agrees);
-  root (@NM.LazyOracle.Certified.fast_path_agrees);
-  root (@NM.LazyOracle.Certified.engine_agrees);
-  root (@NM.LazyOracle.Certified.fast_engine_agrees);
-
 (* What the reference implementation, moss-ref, runs on a source file
    (run/Extract.v): the Gallina front end (and the AST dump of --dump),
    the Audit-side elaborator, and the primitives. Audit's interpreter and

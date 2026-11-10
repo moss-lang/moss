@@ -25,7 +25,9 @@ entry they belong to.
 
 **Reading notes.**
 - "Oracle" means the bootstrap elaborator plus its reference interpreter
-  (`moss_m2.exe`, `moss_ref`). "Native" means `moss run`.
+  (`moss_m2.exe`, `moss_ref`), the old oracle, since deleted (`moss-ref`,
+  Audit's own implementation in `bootstrap/run/`, replaced it). "Native" means
+  `moss run`. Proof files these entries name may have been deleted with it.
 - Audit is a relation, not a program. Its verdicts below are the ones the
   records state. They come from reading the rules or from an oracle
   *variant* that adds the new check. When a record says a verdict was
