@@ -18,7 +18,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean ResultMentionsCover ResultMentionsExact MethodRows.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsStable ElabFrameCore BodySoundCore BodyTy Merge CanonTypes SourceClean ContextClean ContextWalkClean ResultMentionsCover ResultMentionsExact MethodRows NestingTypesExec.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -54,7 +54,8 @@ Inductive lent :=
 | LVal (v : nat) (y : ety) (a : Elab.inst)
 | LFn (f : nat) (g : Elab.fsig) (a : Elab.inst)
 | LMth (r : ety) (m : nat) (g : Elab.fsig) (a : Elab.inst)
-| LFun (u : nat) (fx : list (nat * ety)).
+| LFun (u : nat) (fx : list (nat * ety))
+| LEq (l r : ety).
 
 (* ety_ok (BodySoundCore.v): a type tr reads apart from every other such type. *)
 
@@ -81,6 +82,7 @@ Definition tr_ent (l : lent) : A.entry :=
   | LFn f g a => A.NFn f (tr_sig g) (tr_inst a)
   | LMth r m g a => A.NMth (trF r) m (tr_sig g) (tr_inst a)
   | LFun u fx => A.NFun u (tr_fixed fx)
+  | LEq l r => A.NEq (trF l) (trF r)
   end.
 
 (* the key an entry is filed under in the environment e *)
@@ -91,6 +93,7 @@ Definition lkey (e : env) (l : lent) : option key :=
   | LFn f _ _ => Some (KyFn f)
   | LMth r m _ _ => Some (KyMth (canon e r) m)
   | LFun u _ => Some (KyFun u)
+  | LEq _ _ => None
   end.
 
 (* the instantiation an entry records, under the key it is filed under *)
@@ -173,14 +176,20 @@ Record WS (U : list (nat * ety)) (e : env) (tm : list (nat * ty)) (les : list le
      one under its key up to the merges *)
   ws_insts : en_uf e = U -> forall l k a, In l les -> lkey e l = Some k -> linst l = Some a ->
     exists a0, lfirst e k les = Some a0 /\ InstCanon e a0 a;
-  ws_apps_in : forall k a0, option_map fst (get_app e k) = Some a0 -> AppIn e k a0 les
+  ws_apps_in : forall k a0, option_map fst (get_app e k) = Some a0 -> AppIn e k a0 les;
+  (* D90: with no new merge, each equation's sides are one type up to the
+     merges *)
+  ws_eqs : en_uf e = U -> forall l r, In (LEq l r) les -> canon e l = canon e r
 }.
 
 
 (* ---- small facts ---- *)
 
 Lemma unifies_app : forall sb l1 l2, A.Unifies sb (l1 ++ l2) -> A.Unifies sb l1.
-Proof. intros sb l1 l2 H e1 e2 k H1 H2. apply H; apply in_or_app; left; assumption. Qed.
+Proof.
+  intros sb l1 l2 [H He]. split; [intros e1 e2 k H1 H2; apply H; apply in_or_app; left; assumption|].
+  intros l r I. apply He, in_or_app. left. exact I.
+Qed.
 
 Lemma tn_get_set_tn : forall e t y st k, tn_get (set_tn e t y st) k = if Nat.eqb k t then Some y else tn_get e k.
 Proof.
@@ -354,7 +363,7 @@ Lemma ws_env : forall U e e' tm les needs, WS U e tm les needs ->
   en_tn e' = en_tn e -> en_uf e' = en_uf e -> en_vals e' = en_vals e -> en_fns e' = en_fns e ->
   en_mths e' = en_mths e -> en_funs e' = en_funs e -> en_apps e' = en_apps e -> WS U e' tm les needs.
 Proof.
-  intros U e e' tm les needs [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19] E1 E2 E3 E4 E5 E6 E7.
+  intros U e e' tm les needs [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20] E1 E2 E3 E4 E5 E6 E7.
   assert (Etn : forall k, tn_get e' k = tn_get e k) by (intro k; unfold tn_get; rewrite E1; reflexivity).
   constructor.
   - intro k. rewrite Etn. apply T1.
@@ -386,14 +395,16 @@ Proof.
     rewrite (lfirst_same e e' k les E2). split; [exact F | exact (instcanon_same e e' _ _ E2 C)].
   - intros k a0 G. unfold get_app in G. rewrite E7 in G. fold (get_app e k) in G.
     rewrite <- (app_nil_r les). apply (appin_mono e e' k a0 les []); [exists []; rewrite app_nil_r; exact E2 | exact (mths_same_mono e e' E5) | exact (T19 k a0 G)].
+  - intros E l r H. rewrite E2 in E. rewrite !(canon_same e e' _ E2). exact (T20 E l r H).
 Qed.
 
 (* adding entries without keys or table changes *)
 Lemma ws_les_nokey : forall U e tm les needs l, WS U e tm les needs -> lkey e l = None ->
   (forall v y a, l <> LVal v y a) -> (forall f g a, l <> LFn f g a) -> (forall r m g a, l <> LMth r m g a) ->
+  (forall yl yr, l = LEq yl yr -> en_uf e = U -> canon e yl = canon e yr) ->
   WS U e tm (les ++ [l]) needs.
 Proof.
-  intros U e tm les needs l [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19] Hk Hv Hf Hm.
+  intros U e tm les needs l [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20] Hk Hv Hf Hm Heq.
   assert (I19 : forall k a0, option_map fst (get_app e k) = Some a0 -> AppIn e k a0 (les ++ [l])).
   { intros k a0 G. apply (appin_mono e e k a0 les [l]); [exists []; rewrite app_nil_r; reflexivity | exact (fun _ _ H => H) | exact (T19 k a0 G)]. }
   assert (I18 : en_uf e = U -> forall l' k a, In l' (les ++ [l]) -> lkey e l' = Some k -> linst l' = Some a ->
@@ -424,7 +435,9 @@ Proof.
   - intros r m g a Hin. apply in_app_iff in Hin as [Hin|[Eq|[]]].
     + exact (T14 _ _ _ _ Hin).
     + exfalso. exact (Hm _ _ _ _ Eq).
-
+  - intros E yl yr Hin. apply in_app_iff in Hin as [Hin|[Eq|[]]].
+    + exact (T20 E yl yr Hin).
+    + exact (Heq yl yr Eq E).
 Qed.
 
 
@@ -479,7 +492,7 @@ Proof.
   destruct (key_eqb k0 k) eqn:Ek.
   - apply key_eqb_true in Ek. subst k0. destruct (option_map fst (get_app e k)) as [a1|] eqn:G1.
     + injection G as <-. exact (appin_mono e e2 k a1 les [l] Ex2 M2 (Old k a1 G1)).
-    + injection G as <-. destruct l as [t|v y a'|f g a'|r m g a'|u fx]; cbn [lapp] in La; try discriminate;
+    + injection G as <-. destruct l as [t|v y a'|f g a'|r m g a'|u fx|eql eqr]; cbn [lapp] in La; try discriminate;
         injection La as <- <-; unfold AppIn.
       * exists y. apply in_or_app. right. left. reflexivity.
       * exists g. apply in_or_app. right. left. reflexivity.
@@ -624,6 +637,10 @@ Proof.
   - intros m rows At. rewrite Tm in At. exact(ws_method_unique _ _ _ _ _ Hws _ _ At).
   - intro E. destruct(uf_squeeze U e e1 (ws_ext _ _ _ _ _ Hws)(ex_intro _ n2 Ex)E)as[E0 E01].
     exact(proj2(method_rows_same e e1 Tm E01(ws_method_unique _ _ _ _ _ Hws)(ws_method_canonical _ _ _ _ _ Hws E0))).
+  - intros E yl yr Hin. destruct (uf_squeeze U e e1 (ws_ext _ _ _ _ _ Hws) (ex_intro _ n2 Ex) E) as [E0 E01].
+    apply in_app_iff in Hin as [Hin|[Eq|[]]].
+    + rewrite !(canon_same e e1 _ E01). exact (ws_eqs _ _ _ _ _ Hws E0 yl yr Hin).
+    + subst l. discriminate Hk.
 Qed.
 
 (* a merge of a with b, then of the instantiations recorded under k with a *)
@@ -697,7 +714,7 @@ Proof.
   destruct Ea0 as (Ea0 & Tr0 & Ex0).
   pose proof (compose_val U e e0 e1 tm les needs x y a mi nm s0 s0' Hws C0 Hua) as C.
   destruct (setdefault_env _ _ _ _ _ _ Hsd) as (D1 & D2 & D3 & D4 & D5 & D6).
-  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19] eqn:Hws0.
+  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20] eqn:Hws0.
   assert (Ts : TabStep e e1 /\ en_fns e1 = en_fns e /\
                (nget (en_vals e1) x = Some (match nget (en_vals e) x with Some old => old | None => y end)) /\
                (forall v, v <> x -> nget (en_vals e1) v = nget (en_vals e) v) /\
@@ -719,7 +736,7 @@ Proof.
     { apply T5; [exact Hr|]. rewrite map_app in Hun. exact (unifies_app _ _ _ Hun). }
     assert (Hi : forall a0 st, get_app e (KyVal x) = Some (a0, st) -> InstResp Fl sb a0 a).
     { intros a0 st G. destruct (appin_of_get e _ a0 st les T19 G) as (y0 & Hin).
-      assert (E := Hun (tr_ent (LVal x y0 a0)) (tr_ent (LVal x y a)) (IVal x)).
+      assert (E := proj1 Hun (tr_ent (LVal x y0 a0)) (tr_ent (LVal x y a)) (IVal x)).
       rewrite map_app in E. cbn [tr_ent A.entry_key A.entry_inst] in E.
       assert (Ei : Some (A.inst_read sb (tr_inst a0)) = Some (A.inst_read sb (tr_inst a))).
       { apply E; [| |reflexivity|reflexivity]; apply in_or_app; [left | right].
@@ -730,7 +747,7 @@ Proof.
     { exact R0. }
     apply (R1 sb R0); [|exact Hi].
     destruct (T7 x old O) as (a0 & Ho).
-    assert (E := Hun (tr_ent (LVal x old a0)) (tr_ent (LVal x y a)) (IVal x)).
+    assert (E := proj1 Hun (tr_ent (LVal x old a0)) (tr_ent (LVal x y a)) (IVal x)).
     cbn [tr_ent A.entry_key A.entry_sig] in E. rewrite map_app in E.
     assert (Sg : Some (A.FSig [] (asub sb (trF old))) = Some (A.FSig [] (asub sb (trF y)))).
     { apply E; [| |reflexivity|reflexivity]; apply in_or_app; [left | right].
@@ -785,7 +802,7 @@ Lemma ws_fn : forall U e e0 e1 e2 tm les needs x g a mi0 nm0 s1 s1' s0 s0',
 Proof.
   intros U e e0 e1 e2 tm les needs x g a mi0 nm0 s1 s1' s0 s0' Hws Hthis C Hua Hsd Cclean.
   destruct (setdefault_env _ _ _ _ _ _ Hsd) as (D1 & D2 & D3 & D4 & D5 & D6).
-  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19] eqn:Hws0.
+  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20] eqn:Hws0.
   assert (C' : (nget (en_fns e) x = None /\ e0 = set_fn e x g) \/
                (exists old, nget (en_fns e) x = Some old /\ UStep e e0 /\
                   List.length (sg_params old) = List.length (sg_params g) /\
@@ -837,7 +854,7 @@ Proof.
     { apply T5; [exact Hr|]. rewrite map_app in Hun. exact (unifies_app _ _ _ Hun). }
     assert (Hi : forall a0 st, get_app e (KyFn x) = Some (a0, st) -> InstResp Fl sb a0 a).
     { intros a0 st G. destruct (appin_of_get e _ a0 st les T19 G) as (g0 & Hin).
-      assert (E := Hun (tr_ent (LFn x g0 a0)) (tr_ent (LFn x g a)) (IFn x)).
+      assert (E := proj1 Hun (tr_ent (LFn x g0 a0)) (tr_ent (LFn x g a)) (IFn x)).
       rewrite map_app in E. cbn [tr_ent A.entry_key A.entry_inst] in E.
       assert (Ei : Some (A.inst_read sb (tr_inst a0)) = Some (A.inst_read sb (tr_inst a))).
       { apply E; [| |reflexivity|reflexivity]; apply in_or_app; [left | right].
@@ -846,7 +863,7 @@ Proof.
       injection Ei as Ei. exact (instresp_of_read sb a0 a Ei). }
     destruct C as [[N ->]|(old & O & U1 & L1 & R1 & _)]; [exact R0|]. apply (R1 sb R0); [|exact Hi].
     destruct (T9 x old O) as (a0 & Ho). destruct (T8 x old a0 Ho) as (Hto & _).
-    assert (E := Hun (tr_ent (LFn x old a0)) (tr_ent (LFn x g a)) (IFn x)).
+    assert (E := proj1 Hun (tr_ent (LFn x old a0)) (tr_ent (LFn x g a)) (IFn x)).
     cbn [tr_ent A.entry_key A.entry_sig] in E. rewrite map_app in E.
     assert (Sg : Some (A.sig_subst sb (tr_sig old)) = Some (A.sig_subst sb (tr_sig g))).
     { apply E; [| |reflexivity|reflexivity]; apply in_or_app; [left | right].
@@ -960,6 +977,104 @@ Proof. unfold memory_sym. okt. Qed.
 Lemma ok_functor_fixed : forall g, ok (functor_fixed g).
 Proof. intro g. unfold functor_fixed. okt. Qed.
 
+(* ---- equation items (D90) ---- *)
+
+(* an equation's entry, after the merge of its sides: the tables stay, the
+   merges grow by what the sides' merge made *)
+Lemma ws_eq_add : forall U e e1 tm les needs yl yr, WS U e tm les needs -> UOK Fl e yl yr e1 ->
+  ContextClean e1 -> WS U e1 tm (les ++ [LEq yl yr]) needs.
+Proof.
+  intros U e e1 tm les needs yl yr Hws [Us [Rs Cn]] Cl.
+  assert (Mg : forall sb, RespE Fl sb U -> A.Unifies sb (map tr_ent (les ++ [LEq yl yr])) -> RespE Fl sb (en_uf e1)).
+  { intros sb Hr Hun. apply (Rs sb).
+    - apply (ws_mg _ _ _ _ _ Hws sb Hr). rewrite map_app in Hun. exact (unifies_app _ _ _ Hun).
+    - apply (proj2 Hun). rewrite map_app. apply in_or_app. right. left. reflexivity. }
+  destruct Us as [(n2 & Ex) Tr Sm].
+  assert (Hu : en_uf e1 = U -> en_uf e = U /\ en_uf e1 = en_uf e)
+    by (intro E; exact (uf_squeeze U e e1 (ws_ext _ _ _ _ _ Hws) (ex_intro _ n2 Ex) E)).
+  assert (Ceq : en_uf e1 = U -> canon e1 yl = canon e1 yr).
+  { intro E. destruct (Hu E) as [E0 E01]. rewrite !(canon_same e e1 _ E01). exact (Cn E01). }
+  remember (en_uf e1) as u eqn:Eu. subst e1. cbn [en_uf with_uf] in *.
+  destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20].
+  set (e1 := with_uf e u) in *.
+  assert (Hl : forall l, In l (les ++ [LEq yl yr]) -> In l les \/ l = LEq yl yr)
+    by (intros l Hin; apply in_app_iff in Hin as [Hin|[<-|[]]]; [left; exact Hin|right; reflexivity]).
+  assert (Il : forall l, In l les -> In l (les ++ [LEq yl yr])) by (intros l Hin; apply in_or_app; left; exact Hin).
+  constructor.
+  - intro k. exact (T1 k).
+  - exact T2.
+  - exact Tr.
+  - destruct T4 as (n1 & E1). exists (n1 ++ n2). unfold e1. cbn [en_uf with_uf]. rewrite Ex, E1, app_assoc. reflexivity.
+  - exact Mg.
+  - intros v y a H. destruct (Hl _ H) as [H0|H0]; [|discriminate H0]; clear H; rename H0 into H.
+    destruct (T6 v y a H) as (y0 & a0 & H1 & H2 & H3). exists y0, a0. split; [exact H1|]. split; [exact (Il _ H2)|].
+    intro E. destruct (Hu E) as [E0 E01]. rewrite !(canon_same e e1 _ E01). exact (H3 E0).
+  - intros v y0 H. destruct (T7 v y0 H) as (a0 & H1). exists a0. exact (Il _ H1).
+  - intros f g a H. destruct (Hl _ H) as [H0|H0]; [|discriminate H0]; clear H; rename H0 into H.
+    destruct (T8 f g a H) as (Ht & g0 & a0 & H1 & H2 & H3). split; [exact Ht|]. exists g0, a0.
+    split; [exact H1|]. split; [exact (Il _ H2)|]. intro E. destruct (Hu E) as [E0 E01].
+    exact (sigcanon_same e e1 g g0 E01 (H3 E0)).
+  - intros f g0 H. destruct (T9 f g0 H) as (a0 & H1). exists a0. exact (Il _ H1).
+  - intros E r m g a H. destruct (Hl _ H) as [H0|H0]; [|discriminate H0]; clear H; rename H0 into H. destruct (Hu E) as [E0 E01].
+    destruct (Q1 E0 r m g a H) as (Ok & g0 & G & C).
+    rewrite (canon_same e e1 _ E01). split; [exact Ok|]. exists g0.
+    split; [exact G | exact (sigcanon_same e e1 g g0 E01 C)].
+  - intros r m g0 G. destruct (Q2 r m g0 G) as (r0 & a0 & H1 & H2). exists r0, a0. split; [exact (Il _ H1)|].
+    intros sb Hr. apply H2. unfold e1 in Hr. cbn [en_uf with_uf] in Hr. rewrite Ex in Hr. exact (resp_app Fl _ _ _ Hr).
+  - intros E k. destruct (Hu E) as [E0 E01]. rewrite (T10 E0 k).
+    split; intros (l & Hin & Hk).
+    + exists l. split; [exact (Il _ Hin)|]. rewrite (lkey_same e e1 l E01). exact Hk.
+    + destruct (Hl _ Hin) as [Hin' | ->]; [|discriminate Hk]. exists l. split; [exact Hin'|].
+      rewrite <- (lkey_same e e1 l E01). exact Hk.
+  - exact T11.
+  - intro u0. unfold e1; cbn [en_funs with_uf]. rewrite T12. split; [intros [fx H]; exists fx; exact (Il _ H)|].
+    intros [fx H]. destruct (Hl _ H) as [H'|H']; [exists fx; exact H'|discriminate H'].
+  - intros E k Hk. destruct (Hu E) as [E0 E01].
+    rewrite (lfirst_nokey e1 k les (LEq yl yr) eq_refl), (lfirst_same e e1 k les E01). exact (T13 E0 k Hk).
+  - intros r m g a H. destruct (Hl _ H) as [H0|H0]; [exact (T14 _ _ _ _ H0)|discriminate H0].
+  - exact Cl.
+  - intros m rows At. exact (T16 _ _ At).
+  - intro E. destruct (Hu E) as [E0 E01].
+    exact (proj2 (method_rows_same e e1 eq_refl E01 T16 (T17 E0))).
+  - intros E l k a Hin Hk Hi. destruct (Hu E) as [E0 E01]. destruct (Hl _ Hin) as [Hin' | ->]; [|discriminate Hk].
+    rewrite (lkey_same e e1 l E01) in Hk.
+    destruct (T18 E0 l k a Hin' Hk Hi) as (a0 & F & C). exists a0.
+    rewrite (lfirst_same e e1 k _ E01). split; [exact (lfirst_keep e k les _ a0 F) | exact (instcanon_same e e1 _ _ E01 C)].
+  - intros k a0 G.
+    apply (appin_mono e e1 k a0 les [LEq yl yr]); [exists n2; exact Ex | exact (mths_same_mono e _ eq_refl) | exact (T19 k a0 G)].
+  - intros E l r Hin. destruct (Hl _ Hin) as [Hin'|Eq].
+    + destruct (Hu E) as [E0 E01]. rewrite !(canon_same e e1 _ E01). exact (T20 E0 l r Hin').
+    + injection Eq as -> ->. exact (Ceq E).
+Qed.
+
+(* an equation's merge, after its references are walked as items *)
+Lemma merge_step : forall e mi l r outer needs s e' needs' s' U tm les ob,
+  add_eq_merge e mi l r outer needs s = Good ((e', needs'), s') ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' ->
+  WS U e tm les needs -> map (trp Fl) outer = ob -> Forall (fun q => ety_ok (snd q) = true) outer ->
+  exists yl yr, A.TyOf WW (path_of mi) (ob ++ tm) None l (trF yl) /\
+    A.TyOf WW (path_of mi) (ob ++ tm) None r (trF yr) /\
+    WS U e' tm (les ++ [LEq yl yr]) needs'.
+Proof.
+  intros e mi l r outer needs s e' needs' s' U tm les ob H Hi Hw Hmi L Hws Hob Hvalid.
+  assert (Hwf : Forall (fun q => WFty (snd q)) outer)
+    by (eapply Forall_impl; [|exact Hvalid]; intros q Hq; apply ety_ok_wf; exact Hq).
+  destruct (eq_merge_clean w R Fl b Hload e mi l r outer needs s e' needs' s' H Hi Hw Hmi
+    (tmclean_of_forall outer Hvalid) (ws_clean _ _ _ _ _ Hws) (ws_tri _ _ _ _ _ Hws) L) as [Cout Tout].
+  rewrite add_eq_merge_eq in H.
+  destruct (bstep _ _ _ _ _ _ _ (ok_ety_of _ _ _ _ _) Hi H) as (yl & s3 & Hyl & H3 & Hi3 & F3). clear H.
+  destruct (bstep _ _ _ _ _ _ _ (ok_ety_of _ _ _ _ _) Hi3 H3) as (yr & s4 & Hyr & H4 & Hi4 & F4). clear H3.
+  apply bind_inv in H4 as (eu & s5 & Heu & H5). injection H5 as <- <- <-.
+  destruct (unify_spec Fl _ _ _ _ _ _ _ _ _ (ws_tri _ _ _ _ _ Hws) Heu) as (-> & Uk).
+  pose proof (later_from w R Fl _ _ F4 L) as L3.
+  pose proof (tmrel_walk _ _ _ _ _ outer ob Hws Hob Hwf) as TR.
+  pose proof (fr_w' w _ _ F3 Hw) as Hw3.
+  destruct (ety_of_rel _ _ _ _ _ _ _ _ Hyl Hi Hw Hmi TR L3) as [Tl _].
+  destruct (ety_of_rel _ _ _ _ _ _ _ _ Hyr Hi3 Hw3 Hmi TR L) as [Tr _].
+  exists yl, yr. split; [exact Tl|]. split; [exact Tr|].
+  exact (ws_eq_add U e eu tm les needs yl yr Hws Uk Cout).
+Qed.
+
 (* ======================================================================== *)
 (* 3. The walk's steps                                                       *)
 (* ======================================================================== *)
@@ -1018,6 +1133,53 @@ Proof. intros until 1. discriminate. Qed.
 Lemma ws_nil_les : forall U e tm les needs, WS U e tm les needs -> WS U e tm (les ++ []) needs.
 Proof. intros. rewrite app_nil_r. assumption. Qed.
 
+(* a run of spec items, each walked by add_spec *)
+Lemma specs_walk : forall f, SpecOK' f -> forall mi outer ob, map (trp Fl) outer = ob ->
+  Forall (fun q => ety_ok (snd q) = true) outer -> In mi (w_order w) -> forall its0 acc s0 res s3,
+  mfold (fun acc sp => add_spec f (fst acc) mi sp outer (snd acc)) acc its0 s0 = Good (res, s3) ->
+  Inv s0 -> st_w s0 = w -> Later w P R Fl s3 -> forall U tm0 les0, WS U (fst acc) tm0 les0 (snd acc) ->
+  exists les' es tm', IEs WW (path_of mi) ob tm0 (map CISpec its0) es tm' /\ map tr_ent les' = es /\
+    WS U (fst res) tm' (les0 ++ les') (snd res).
+Proof.
+  intros f IHs mi outer ob Hob Hvalid Hmi. induction its0 as [|sp r IH];
+    intros acc s0 res s3 Hm Hi0 Hw0 L0 U tm0 les0 W0; cbn [mfold] in Hm.
+  - injection Hm as <- <-. exists [], [], tm0. split; [constructor|]. split; [reflexivity|]. rewrite app_nil_r. exact W0.
+  - destruct (bstep _ _ _ _ _ _ _ (ok_add_spec _ _ _ _ _ _) Hi0 Hm) as ([e1 n1] & s4 & H1 & H2 & Hi4 & F4).
+    pose proof (fr_w' w _ _ F4 Hw0) as Hw4.
+    destruct (ok_mfold _ _ _ r (e1, n1) (fun acc sp => ok_add_spec _ _ _ _ _ _) s4 res s3 Hi4 H2) as [_ F5].
+    destruct (IHs _ _ _ _ _ _ _ _ _ U tm0 les0 ob H1 Hi0 Hw0 Hmi (later_from w R Fl _ _ F5 L0) W0 Hob Hvalid)
+      as (l1 & es1 & tm1 & I1 & M1 & W1).
+    destruct (IH (e1, n1) s4 res s3 H2 Hi4 Hw4 L0 U tm1 (les0 ++ l1) W1) as (l2 & es2 & tm2 & I2 & M2 & W2).
+    exists (l1 ++ l2), (es1 ++ es2), tm2. split; [exact (IsCons _ _ _ _ _ _ _ _ _ _ I1 I2)|].
+    split; [rewrite map_app, M1, M2; reflexivity | rewrite app_assoc; exact W2].
+Qed.
+
+(* an equation item: its references walked as items, then its merge *)
+Lemma eq_walk : forall f, SpecOK' f -> forall e mi l r outer needs s e' needs' s' U tm les ob,
+  (let! acc := mfold (fun acc sp => add_spec f (fst acc) mi sp outer (snd acc)) (e, needs) (ty_heads l ++ ty_heads r) in
+   add_eq_merge (fst acc) mi l r outer (snd acc)) s = Good ((e', needs'), s') ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' ->
+  WS U e tm les needs -> map (trp Fl) outer = ob -> Forall (fun q => ety_ok (snd q) = true) outer ->
+  exists les' es tm', (forall rest es2 tm2, IEs WW (path_of mi) ob tm' rest es2 tm2 ->
+      IEs WW (path_of mi) ob tm (CIEq l r :: rest) (es ++ es2) tm2) /\ map tr_ent les' = es /\
+    WS U e' tm' (les ++ les') needs'.
+Proof.
+  intros f IHs e mi l r outer needs s e' needs' s' U tm les ob H Hi Hw Hmi L Hws Hob Hvalid.
+  apply bind_inv in H as (h & sh & Eh & Em).
+  assert (Oh : ok (mfold (fun acc sp => add_spec f (fst acc) mi sp outer (snd acc)) (e, needs) (ty_heads l ++ ty_heads r)))
+    by (apply ok_mfold; intros; apply ok_add_spec).
+  destruct (Oh _ _ _ Hi Eh) as [Ih Fh]. pose proof (fr_w' w _ _ Fh Hw) as Wh.
+  destruct (ok_add_eq_merge _ _ _ _ _ _ _ _ _ Ih Em) as [_ Fm].
+  destruct (specs_walk f IHs mi outer ob Hob Hvalid Hmi _ (e, needs) s h sh Eh Hi Hw (later_from w R Fl _ _ Fm L) U tm les Hws)
+    as (l1 & es1 & tm1 & I1 & M1 & W1).
+  destruct h as [eh nh]. cbn [fst snd] in Em, W1.
+  destruct (merge_step eh mi l r outer nh sh e' needs' s' U tm1 (les ++ l1) ob Em Ih Wh Hmi L W1 Hob Hvalid)
+    as (yl & yr & Tl & Tr & W2).
+  exists (l1 ++ [LEq yl yr]), (es1 ++ [A.NEq (trF yl) (trF yr)]), tm1.
+  split; [|split; [rewrite map_app, M1; reflexivity|rewrite app_assoc; exact W2]].
+  intros rest es2 tm2 I2. rewrite <- app_assoc. eapply A.IsEq; [exact I1|exact Tl|exact Tr|exact I2].
+Qed.
+
 Lemma sym_step : forall f, SpecOK' f -> SymOK' (S f).
 Proof.
   intros f IHs e mi g subst needs s e' needs' s' U tm les ob H Hi Hw Hmi Hg L Hws Hob Hvalid.
@@ -1039,12 +1201,12 @@ Proof.
     destruct (tn_get e (gs_id g)) as [y|] eqn:Et.
     + injection H as <- <- <-. exists tm. split; [left; split; [exact Ks|split; [reflexivity|]]|].
       * rewrite (ws_tn _ _ _ _ _ Hws), Et. reflexivity.
-      * split; [reflexivity|]. apply ws_les_nokey; [exact Hws | reflexivity | discriminate | discriminate | discriminate].
+      * split; [reflexivity|]. apply ws_les_nokey; [exact Hws | reflexivity | discriminate | discriminate | discriminate | intros ? ? Eq; discriminate Eq].
     + apply bind_inv in H as (st0 & s2 & _ & H). injection H as <- <- <-.
       exists ((gs_id g, TAbs (gs_id g)) :: tm). split; [left; split; [exact Ks|split; [reflexivity|]]|].
       * rewrite (ws_tn _ _ _ _ _ Hws), Et. reflexivity.
-      * split; [reflexivity|]. apply ws_les_nokey; [|reflexivity | discriminate | discriminate | discriminate].
-        destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19].
+      * split; [reflexivity|]. apply ws_les_nokey; [|reflexivity | discriminate | discriminate | discriminate | intros ? ? Eq; discriminate Eq].
+        destruct Hws as [T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20].
         assert (Ee : forall k, tn_get (set_tn e (gs_id g) (YAbs (gs_id g)) st0) k =
                                if Nat.eqb k (gs_id g) then Some (YAbs (gs_id g)) else tn_get e k) by apply tn_get_set_tn.
         constructor; cbn [set_tn en_uf en_vals en_fns].
@@ -1073,6 +1235,7 @@ Proof.
            split; [exact F | exact (instcanon_same e (set_tn e (gs_id g) (YAbs (gs_id g)) st0) _ _ eq_refl C)].
         -- intros k a0 G. rewrite <- (app_nil_r les).
            apply (appin_mono e (set_tn e (gs_id g) (YAbs (gs_id g)) st0) k a0 les []); [exists []; rewrite app_nil_r; reflexivity | exact (mths_same_mono e _ eq_refl) | exact (T19 k a0 G)].
+        -- exact T20.
   - (* unit *)
     injection H as <- <- <-. exists [], [], tm. split; [right; left; exists A.DKUnit; auto|].
     split; [reflexivity | exact (ws_nil_les _ _ _ _ _ Hws)].
@@ -1146,19 +1309,42 @@ Proof.
   - (* context *)
     destruct (gs_decl g) as [| | | | | |rcv0 ? ? ? ?|n its|] eqn:D; cbn in KO; try discriminate KO;
       try (destruct rcv0; discriminate KO). try rewrite D in Wd.
-    assert (Gen : forall its0 acc s0 res s3, mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)) acc its0 s0 = Good (res, s3) ->
+    assert (OkS : forall acc it, ok (match it with
+                     | CISpec sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)
+                     | CIEq l r =>
+                         let! acc := mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc))
+                                           acc (ty_heads l ++ ty_heads r) in
+                         add_eq_merge (fst acc) (gs_mod g) l r subst (snd acc) end))
+      by (intros acc [sp|l r]; [apply ok_add_spec | apply ok_bind; [apply ok_mfold; intros; apply ok_add_spec|intro; apply ok_add_eq_merge]]).
+    assert (Gen : forall its0 acc s0 res s3, mfold (fun acc it => match it with
+                     | CISpec sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)
+                     | CIEq l r =>
+                         let! acc := mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc))
+                                           acc (ty_heads l ++ ty_heads r) in
+                         add_eq_merge (fst acc) (gs_mod g) l r subst (snd acc) end) acc its0 s0 = Good (res, s3) ->
               Inv s0 -> st_w s0 = w -> Later w P R Fl s3 -> forall tm0 les0, WS U (fst acc) tm0 les0 (snd acc) ->
               exists les' es tm', IEs WW (path_of (gs_mod g)) ob tm0 its0 es tm' /\ map tr_ent les' = es /\
                 WS U (fst res) tm' (les0 ++ les') (snd res)).
-    { induction its0 as [|sp r IH]; intros acc s0 res s3 Hm Hi0 Hw0 L0 tm0 les0 W0; cbn [mfold] in Hm.
+    { induction its0 as [|[sp|l0 r0] r IH]; intros acc s0 res s3 Hm Hi0 Hw0 L0 tm0 les0 W0; cbn [mfold] in Hm.
       - injection Hm as <- <-. exists [], [], tm0. split; [constructor|]. split; [reflexivity|]. rewrite app_nil_r. exact W0.
-      - destruct (bstep _ _ _ _ _ _ _ (ok_add_spec _ _ _ _ _ _) Hi0 Hm) as ([e1 n1] & s4 & H1 & H2 & Hi4 & F4).
+      - cbn beta iota in Hm.
+        destruct (bstep _ _ _ _ _ _ _ (ok_add_spec _ _ _ _ _ _) Hi0 Hm) as ([e1 n1] & s4 & H1 & H2 & Hi4 & F4).
         pose proof (fr_w' w _ _ F4 Hw0) as Hw4.
-        destruct (ok_mfold _ _ _ r (e1, n1) (fun acc sp => ok_add_spec _ _ _ _ _ _) s4 res s3 Hi4 H2) as [_ F5].
+        destruct (ok_mfold _ _ _ r (e1, n1) OkS s4 res s3 Hi4 H2) as [_ F5].
         destruct (IHs _ _ _ _ _ _ _ _ _ U tm0 les0 ob H1 Hi0 Hw0 Hgm (later_from w R Fl _ _ F5 L0) W0 Hob Hvalid)
           as (l1 & es1 & tm1 & I1 & M1 & W1).
         destruct (IH (e1, n1) s4 res s3 H2 Hi4 Hw4 L0 tm1 (les0 ++ l1) W1) as (l2 & es2 & tm2 & I2 & M2 & W2).
         exists (l1 ++ l2), (es1 ++ es2), tm2. split; [exact (IsCons _ _ _ _ _ _ _ _ _ _ I1 I2)|].
+        split; [rewrite map_app, M1, M2; reflexivity | rewrite app_assoc; exact W2].
+      - cbn beta iota in Hm.
+        destruct (bstep _ _ _ _ _ _ _ (OkS acc (CIEq l0 r0)) Hi0 Hm) as ([e1 n1] & s4 & H1 & H2 & Hi4 & F4).
+        pose proof (fr_w' w _ _ F4 Hw0) as Hw4.
+        destruct (ok_mfold _ _ _ r (e1, n1) OkS s4 res s3 Hi4 H2) as [_ F5].
+        destruct acc as [ea na].
+        destruct (eq_walk f IHs ea (gs_mod g) l0 r0 subst na s0 e1 n1 s4 U tm0 les0 ob H1 Hi0 Hw0 Hgm
+                    (later_from w R Fl _ _ F5 L0) W0 Hob Hvalid) as (l1 & es1 & tm1 & I1 & M1 & W1).
+        destruct (IH (e1, n1) s4 res s3 H2 Hi4 Hw4 L0 tm1 (les0 ++ l1) W1) as (l2 & es2 & tm2 & I2 & M2 & W2).
+        exists (l1 ++ l2), (es1 ++ es2), tm2. split; [exact (I1 _ _ _ I2)|].
         split; [rewrite map_app, M1, M2; reflexivity | rewrite app_assoc; exact W2]. }
     destruct (Gen its (e, needs) s1 (e', needs') s' H Hi1 Hw1 L tm les Hws) as (les' & es & tm' & I & M & W').
     exists les', es, tm'. split; [|split; [exact M | exact W']]. right; right; right; right; right.
@@ -1362,16 +1548,24 @@ Proof. unfold ctx_fuel, walk_fuel. okt. Qed.
 Lemma assume_step : forall e mi it needs s e' needs' s' U tm les,
   add_assume_item e mi it needs s = Good ((e', needs'), s') ->
   Inv s -> st_w s = w -> In mi (w_order w) -> Later w P R Fl s' -> WS U e tm les needs ->
-  exists les' es tm', IE WW (path_of mi) [] tm (A.assume_spec it) es tm' /\ map tr_ent les' = es /\
+  exists les' es tm', (forall rest es2 tm2, IEs WW (path_of mi) [] tm' rest es2 tm2 ->
+      IEs WW (path_of mi) [] tm (A.assume_spec it :: rest) (es ++ es2) tm2) /\ map tr_ent les' = es /\
     WS U e' tm' (les ++ les') needs'.
 Proof.
-  intros e mi [pp [dn|]] needs s e' needs' s' U tm les H Hi Hw Hmi L Hws; cbn [add_assume_item A.assume_spec fst snd] in *.
+  intros e mi [[pp [dn|]]|l r] needs s e' needs' s' U tm les H Hi Hw Hmi L Hws; cbn [add_assume_item A.assume_spec fst snd] in *.
+  3: { destruct (bstep _ _ _ _ _ _ _ ok_ctx_fuel Hi H) as (cf & s4 & _ & H7 & Hi4 & F4). clear H.
+       pose proof (fr_w' w _ _ F4 Hw) as Hw4. cbn beta in H7.
+       destruct (eq_walk cf (proj2 (walk_all cf)) e mi l r [] needs s4 e' needs' s' U tm les [] H7 Hi4 Hw4 Hmi L Hws
+                   eq_refl (Forall_nil _)) as (l1 & es1 & tm1 & I1 & M1 & W1).
+       exists l1, es1, tm1. split; [|split; [exact M1|exact W1]].
+       intros rest es2 tm2 I2. exact (I1 _ _ _ I2). }
   - apply bind_inv in H as (r & s2 & H3 & H4).
     destruct (rts_spec w R Fl b Hload mi pp s r s2 Hi Hw Hmi H3) as (-> & Rs & Hr & _).
     destruct (MS e mi r dn [] needs s e' needs' s' U tm les [] H4 Hi Hw Hmi Hr L Hws eq_refl (Forall_nil _))
       as (m & rt & g & ap & les' & Mn & Km & Rt & Sg & Ap & Me & W').
     exists les', [A.NMth rt m g ap], tm. split; [|split; [exact Me | exact W']].
-    exact (IEMeth _ _ _ _ _ _ _ _ _ _ _ [] ap Rs Mn (A.BrNone _ _ _ _) Rt Sg Ap).
+    intros rest es2 tm2 I2.
+    exact (IsCons _ _ _ _ _ _ _ _ _ _ (IEMeth _ _ _ _ _ _ _ _ _ _ _ [] ap Rs Mn (A.BrNone _ _ _ _) Rt Sg Ap) I2).
   - apply bind_inv in H as (tg & s2 & H3 & H4).
     destruct (rpath_rel w R Fl b Hload mi pp s tg s2 Hw Hmi H3) as (-> & Hres).
     destruct tg as [[x|j]|]; try noerr H4.
@@ -1385,12 +1579,13 @@ Proof.
     destruct (proj1 (walk_all cf) e mi g [] needs s4 e' needs' s' U tm les [] H7 Hi4 Hw4 Hmi Hg L Hws eq_refl (Forall_nil _))
       as (les' & es & tm' & Is & Me & W').
     exists les', es, tm'. split; [|split; [exact Me | exact W']].
-    exact (isym_ie mi pp g None [] [] tm es tm' Rs Hg (fun _ => eq_refl) (A.BrNone _ _ _ _) Is).
+    intros rest es2 tm2 I2.
+    exact (IsCons _ _ _ _ _ _ _ _ _ _ (isym_ie mi pp g None [] [] tm es tm' Rs Hg (fun _ => eq_refl) (A.BrNone _ _ _ _) Is) I2).
 Qed.
 
-#[local] Hint Resolve ok_add_method_item ok_ctx_fuel ok_add_symbol_item : okdb.
+#[local] Hint Resolve ok_add_method_item ok_ctx_fuel ok_add_symbol_item ok_add_eq_merge : okdb.
 Lemma ok_add_assume_item : forall e mi it needs, ok (add_assume_item e mi it needs).
-Proof. intros e mi [p0 [d0|]] needs; unfold add_assume_item; okt. Qed.
+Proof. intros e mi [[p0 [d0|]]|l r] needs; unfold add_assume_item; okt. Qed.
 
 Lemma assumes_walk : forall mi its e needs s e' needs' s' U tm les,
   mfold (fun acc it => add_assume_item (fst acc) mi it (snd acc)) (e, needs) its s = Good ((e', needs'), s') ->
@@ -1407,7 +1602,7 @@ Proof.
     destruct (assume_step e mi it needs s e1 n1 s1 U tm les H1 Hi Hw Hmi (later_from w R Fl _ _ F2 L) Hws)
       as (l1 & es1 & tm1 & I1 & M1 & W1).
     destruct (IH e1 n1 s1 e' needs' s' U tm1 (les ++ l1) H2 Hi1 Hw1 Hmi L W1) as (l2 & es2 & tm2 & I2 & M2 & W2).
-    exists (l1 ++ l2), (es1 ++ es2), tm2. split; [exact (IsCons _ _ _ _ _ _ _ _ _ _ I1 I2)|].
+    exists (l1 ++ l2), (es1 ++ es2), tm2. split; [exact (I1 _ _ _ I2)|].
     split; [rewrite map_app, M1, M2; reflexivity | rewrite app_assoc; exact W2].
 Qed.
 
@@ -1436,5 +1631,6 @@ Proof.
   - intros E m rows At;discriminate At.
   - intros _ l k a [].
   - intros k a0 G. discriminate G.
+  - intros _ l r [].
 Qed.
 End Walk.

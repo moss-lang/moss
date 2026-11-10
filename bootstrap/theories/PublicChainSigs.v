@@ -356,7 +356,7 @@ Proof.
   pose proof (proj2 (PublicScoping.output_entries_gens W K) _ _ _ _ _ _ OIE ltac:(intros g []) Sc0) as Es.
   rewrite Forall_forall in Es. unfold A.ResultKeys in RK. subst ks.
   apply in_flat_map in Ik as [e [Ie Ik]]. pose proof (Es e Ie) as Pe.
-  destruct e as [t|v0 t a1|f g a1|r1 m1 g1 a1|u1 fx]; cbn in Ik; try contradiction; destruct Ik as [E|[]]; try discriminate.
+  destruct e as [t|v0 t a1|f g a1|r1 m1 g1 a1|u1 fx|eql eqr]; cbn in Ik; try contradiction; destruct Ik as [E|[]]; try discriminate.
   unfold A.mkey in E. injection E as <- <- <-. cbn in Pe. destruct Pe as [Pr _].
   exact (PublicFormation.subst_within K _ r1 SubK Pr).
 Qed.
@@ -443,7 +443,7 @@ Definition SigInv (v : nat) (Cv : A.cx) (rmsv : option (list (option nat))) : Pr
 
 Lemma entry_mth : forall s e r m a, A.entry_key s e = Some (IMth r m a) ->
   exists r0 g0 a0, e = A.NMth r0 m g0 a0 /\ r = app_subst s r0 /\ a = [].
-Proof. intros s e r m a E; destruct e as [t|v t a1|f g a1|r1 m1 g1 a1|u fx]; cbn in E; try discriminate. unfold A.mkey in E. injection E as <- <- <-. exists r1, g1, a1. split; [reflexivity|split; reflexivity]. Qed.
+Proof. intros s e r m a E; destruct e as [t|v t a1|f g a1|r1 m1 g1 a1|u fx|eql eqr]; cbn in E; try discriminate. unfold A.mkey in E. injection E as <- <- <-. exists r1, g1, a1. split; [reflexivity|split; reflexivity]. Qed.
 
 (* The step's transfer condition for pos_last: two pairs with one first-side
    method key have one second-side key, when θ_1 ∘ σ_1 = θ_1. *)
@@ -456,11 +456,11 @@ Proof.
   intros s1 s2 th K L FL ThS p p' r m a Ip Ip' K2 E1. rewrite Forall_forall in FL.
   destruct (entry_mth s2 (snd p) r m a K2) as (r2 & g2 & a2 & Ep2 & -> & ->).
   destruct (FL p Ip) as [R Sk]. rewrite Ep2 in R, Sk.
-  destruct (fst p) as [?|?|?|r1 m1 g1 a1|?] eqn:Ep1; try contradiction. destruct R as (<- & Rr & _).
-  cbn in E1. destruct (fst p') as [?|?|?|r1' m1' g1' a1'|?] eqn:Ep1'; cbn in E1; try discriminate.
+  destruct (fst p) as [?|?|?|r1 m1 g1 a1|?|? ?] eqn:Ep1; try contradiction. destruct R as (<- & Rr & _).
+  cbn in E1. destruct (fst p') as [?|?|?|r1' m1' g1' a1'|?|? ?] eqn:Ep1'; cbn in E1; try discriminate.
   unfold A.mkey in E1. injection E1 as Er Em. subst m1'.
   destruct (FL p' Ip') as [R' Sk']. rewrite Ep1' in R', Sk'.
-  destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?] eqn:Ep2'; try contradiction. destruct R' as (<- & Rr' & _).
+  destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?|? ?] eqn:Ep2'; try contradiction. destruct R' as (<- & Rr' & _).
   rewrite K2. cbn. unfold PublicOutputSubst.TyRel in Rr, Rr'. rewrite <- Rr, <- Rr', <- (ThS r1), <- (ThS r1'), Er. reflexivity.
 Qed.
 
@@ -570,7 +570,7 @@ Proof.
       as (pp & k1 & q1 & q2 & Ipp & K1 & K2 & N1 & L1 & P1 & P2 & I1 & I2).
     rewrite Forall_forall in FL. destruct (FL pp Ipp) as [R Sk].
     destruct (entry_mth _ _ r m [] K2) as (r2 & g2 & a2 & E2 & -> & _). rewrite E2 in R, Sk, P2.
-    destruct (fst pp) as [?|?|?|r1 m1 g1 a1|?] eqn:E1; try contradiction. destruct R as (-> & Rr & Sg & _).
+    destruct (fst pp) as [?|?|?|r1 m1 g1 a1|?|? ?] eqn:E1; try contradiction. destruct R as (-> & Rr & Sg & _).
     cbn in P2, K1, P1. injection P2 as <-. injection K1 as <-. injection P1 as <-.
     assert (Eg' : A.ProvidedMethod g' a0' = A.ProvidedMethod (A.sig_subst (A.c_sub Cu) g2) a2).
     { pose proof (I2 (A.c_provisions Cu)) as I2'. rewrite ECr' in Lp'. cbn [A.output_cx A.c_provisions] in Lp'. congruence. }
@@ -648,7 +648,7 @@ Proof.
     as (pp & k1 & q1 & q2 & Ipp & K1 & K2 & N1 & L1 & P1 & P2 & I1 & I2).
   rewrite Forall_forall in FL. destruct (FL pp Ipp) as [R Sk].
   destruct (entry_mth _ _ r m [] K2) as (r2 & g2 & a2 & E2 & -> & _). rewrite E2 in R, Sk, P2.
-  destruct (fst pp) as [?|?|?|r1 m1 g1 a1|?] eqn:E1; try contradiction. destruct R as (-> & Rr & Sg & _).
+  destruct (fst pp) as [?|?|?|r1 m1 g1 a1|?|? ?] eqn:E1; try contradiction. destruct R as (-> & Rr & Sg & _).
   cbn in P2, K1, P1. injection P2 as <-. injection K1 as <-. injection P1 as <-.
   (* the caller's method is entry i's *)
   assert (KM' : PublicCallRealize.KeysMatch (A.c_provisions C')) by exact (pr_keys_match W u C _ C' ks PR KMc).

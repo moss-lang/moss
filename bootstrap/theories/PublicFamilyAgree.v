@@ -240,20 +240,21 @@ Proof.
            intros x E g1 Ig1. injection E as <-. exact (recv_scoped W _ _ _ _ Rv Sc g1 Ig1).
         -- exact (Sc gq (appof_scoped W _ _ _ App gq Ig)).
   - (* context *)
-    intros p ob tm a pa c d n its bs es tm' R Dd Ast B Inner IH ob2 tm2 es2 tm2' D2 Ob Ag Dm Mt Kg.
+    intros p ob tm a pa c d n its sps bs es tm' R Dd Ast Esps B Inner IH ob2 tm2 es2 tm2' D2 Ob Ag Dm Mt Kg.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' c); assert (s' = c) by congruence; subst s' end.
     match goal with H : w_decl W c = Some ?d' |- _ => assert_fails (constr_eq d' d); assert (d' = d) by congruence; subst d' end.
-    rewrite Ast in *. match goal with H : ADCtx _ _ = ADCtx _ _ |- _ => injection H as <- <- end.
+    rewrite Ast in *. match goal with H : ADCtx _ _ = ADCtx _ _ |- _ => injection H as <- Ei end.
+    apply map_CISpec_inj in Ei. subst.
     pose proof (agree_app s1 s2 _ _ _ _ Ob Ag) as Ag1.
     match goal with H : OutputBrackets W p (ob2 ++ _) a ?bs2 |- _ => pose proof (PublicOutputSubst.obr_rel W s1 s2 _ _ _ _ _ _ B H Ag1) as Bs end.
-    match goal with H : OutputItemsEntries W _ _ _ its ?es2 _ |- _ => apply (IH _ _ _ _ H (Forall2_app Bs Ob) Ag Dm) end.
+    match goal with H : OutputItemsEntries W _ (_ ++ ob2) _ _ ?es2 _ |- _ => apply (IH _ _ _ _ H (Forall2_app Bs Ob) Ag Dm) end.
     + intros sp t Isp Rm. rewrite <- app_assoc, nlook_app'.
       destruct (classic_bound a p t) as [Bd|NB].
       * destruct Bd as [b [Ib Rb]]. pose proof (obr_keys _ _ _ _ B b t Ib Rb) as Nb.
         destruct (nlook t bs); [discriminate|exfalso; exact (Nb eq_refl)].
       * destruct (nlook t bs); [discriminate|].
-        exact (Mt t (@RMCtx W u p pa a c d n its sp t R Dd Ast Isp Rm NB)).
+        exact (Mt t (@RMCtx W u p pa a c d n _ sp t R Dd Ast (in_map CISpec _ _ Isp) Rm NB)).
     + intros g0 Ig. rewrite <- app_assoc in Ig. apply tm_gens_app in Ig as [Ib|Io]; [exact (Kg g0 (obr_gens _ _ _ _ B g0 Ib))|exact (Kg g0 Io)].
   - (* nil *)
     intros p ob tm ob2 tm2 es2 tm2' D2 Ob Ag Dm Mt Kg. inversion D2; subst. constructor.
@@ -368,10 +369,10 @@ Qed.
 
 Lemma entry_provision_of : forall s (f : A.inst -> A.inst) e k, A.entry_key s e = Some k ->
   exists p, A.entry_provision s f e = [(k, p)].
-Proof. intros s f [t|v t a|g0 sg a|r m g a|u fx] k E; cbn in E |- *; try discriminate; injection E as <-; eexists; reflexivity. Qed.
+Proof. intros s f [t|v t a|g0 sg a|r m g a|u fx|eql eqr] k E; cbn in E |- *; try discriminate; injection E as <-; eexists; reflexivity. Qed.
 
 Lemma entry_provision_none : forall s (f : A.inst -> A.inst) e, A.entry_key s e = None -> A.entry_provision s f e = [].
-Proof. intros s f [t|v t a|g0 sg a|r m g a|u fx] E; cbn in E |- *; try discriminate; reflexivity. Qed.
+Proof. intros s f [t|v t a|g0 sg a|r m g a|u fx|eql eqr] E; cbn in E |- *; try discriminate; reflexivity. Qed.
 
 (* The provision a key unique among the entries' keys gets. *)
 Lemma ilook_entries : forall s es e k, In e es -> A.entry_key s e = Some k ->
@@ -393,7 +394,7 @@ Qed.
 Lemma keys_match_entries : forall s es, KeysMatch (flat_map (A.entry_provision s (fun a => a)) es).
 Proof.
   intros s es k p I. apply in_flat_map in I as [e [_ I]].
-  destruct e as [t|v t a|f g a|r m g a|u fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
+  destruct e as [t|v t a|f g a|r m g a|u fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
 Qed.
 
 Lemma lookup_keys : forall (f : nat -> ty) (l : list (nat * ty)) x, In x (map fst l) ->
@@ -662,11 +663,11 @@ Proof.
      app_subst th r1 = app_subst cS r2 /\ PublicOutputSubst.SigRel th cS g1 g2 /\
      (kind_sym W m = Some DKMeth -> InstSome th cS a1 a2) /\ incl (gens r1 ++ sig_gens g1 ++ inst_gens a1) Dom).
   { intros p r1 m g1 a1 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
-    destruct (snd p) as [?|?|?|r2 m2 g2 a2|?]; try contradiction. destruct R as (<- & Rr & Sg & Is & Sc).
+    destruct (snd p) as [?|?|?|r2 m2 g2 a2|?|? ?]; try contradiction. destruct R as (<- & Rr & Sg & Is & Sc).
     exists r2, g2, a2. split; [reflexivity|exact (conj Rr (conj Sg (conj Is Sc)))]. }
   assert (Pm2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 -> exists r1 g1 a1, fst p = NMth r1 m g1 a1).
   { intros p r2 m g2 a2 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
-    destruct (fst p) as [?|?|?|r1 m1 g1 a1|?]; try contradiction. destruct R as (-> & _). eauto. }
+    destruct (fst p) as [?|?|?|r1 m1 g1 a1|?|? ?]; try contradiction. destruct R as (-> & _). eauto. }
   (* the pairs are determined by their caller method keys: the caller's
      keys are distinct, or a caller key's method names one family key *)
   assert (Upair : forall p p' r m, In p L -> In p' L -> entry_key cS (snd p) = Some (mkey r m) ->
@@ -674,8 +675,8 @@ Proof.
   { intros p p' r m Ip Ip' E E'. destruct Uniq as [Nd|[Nd1 MD]].
     - rewrite EK2, prov_id_keys, keys_of_map in Nd. exact (keys_unique _ _ L Nd p p' _ Ip Ip' E E').
     - rewrite EK1, prov_id_keys, keys_of_map in Nd1.
-      destruct (snd p) as [?|?|?|r2 m2 g2 a2|?] eqn:S2; cbn in E; try discriminate. injection E as _ Em. subst m2.
-      destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?] eqn:S2'; cbn in E'; try discriminate. injection E' as _ Em'. subst m2'.
+      destruct (snd p) as [?|?|?|r2 m2 g2 a2|?|? ?] eqn:S2; cbn in E; try discriminate. injection E as _ Em. subst m2.
+      destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?|? ?] eqn:S2'; cbn in E'; try discriminate. injection E' as _ Em'. subst m2'.
       destruct (Pm2 p r2 m g2 a2 Ip S2) as (r1 & g1 & a1 & F1).
       destruct (Pm2 p' r2' m g2' a2' Ip' S2') as (r1' & g1' & a1' & F1').
       assert (I1 : In (mkey (app_subst σ r1) m) (keys_of (entry_key σ) (map fst L))).
@@ -695,7 +696,7 @@ Proof.
   assert (Un1 : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 ->
      forall e', In e' (map fst L) -> entry_key σ e' = Some (mkey (app_subst σ r1) m) -> e' = NMth r1 m g1 a1).
   { intros p r1 m g1 a1 Ip E e' Ie' Ek. apply in_map_iff in Ie' as [p' [<- Ip']].
-    destruct (fst p') as [?|?|?|r1' m' g1' a1'|?] eqn:E'; cbn in Ek; try discriminate.
+    destruct (fst p') as [?|?|?|r1' m' g1' a1'|?|? ?] eqn:E'; cbn in Ek; try discriminate.
     injection Ek as Er ->. pose proof (Key2 p' r1' m g1' a1' Ip' E') as K'. rewrite Er in K'.
     rewrite (Upair p' p _ _ Ip' Ip K' (Key2 p r1 m g1 a1 Ip E)) in E'. congruence. }
   assert (Un2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 ->
@@ -726,7 +727,7 @@ Proof.
   split.
   - intros r m g [Ik Mg]. rewrite EK2 in Ik. apply keys_of_in in Ik as [e2 [Ie2 Ek2]].
     apply in_map_iff in Ie2 as [p [Ep Ip]].
-    destruct e2 as [?|?|?|r2 m2 g2 a2|?]; cbn in Ek2; try discriminate. injection Ek2 as Er ->.
+    destruct e2 as [?|?|?|r2 m2 g2 a2|?|? ?]; cbn in Ek2; try discriminate. injection Ek2 as Er ->.
     destruct (Pm2 p r2 m g2 a2 Ip Ep) as (r1 & g1 & a1 & E1).
     assert (Ik1 : In (mkey (app_subst σ r1) m) keys).
     { rewrite EK1. apply keys_of_in. exists (NMth r1 m g1 a1). split; [rewrite <- E1; exact (in_map fst _ _ Ip)|reflexivity]. }
@@ -735,7 +736,7 @@ Proof.
     split; [exists (mkey (app_subst σ r1) m); split; [exact Ik1|exact Kr]|].
     intros key rf a gf Ik Ekey Mgf Kq.
     rewrite EK1 in Ik. apply keys_of_in in Ik as [e1 [Ie1 Ek1]]. apply in_map_iff in Ie1 as [p' [Ep' Ip']].
-    rewrite Ekey in Ek1. destruct e1 as [?|?|?|r1' m1 g1' a1'|?]; cbn in Ek1; try discriminate.
+    rewrite Ekey in Ek1. destruct e1 as [?|?|?|r1' m1 g1' a1'|?|? ?]; cbn in Ek1; try discriminate.
     unfold mkey in Ek1. injection Ek1 as Erf Em <-. subst m1.
     assert (Ik1' : In (mkey (app_subst σ r1') m) keys).
     { rewrite EK1. apply keys_of_in. exists (NMth r1' m g1' a1'). split; [rewrite <- Ep'; exact (in_map fst _ _ Ip')|reflexivity]. }
@@ -761,7 +762,7 @@ Proof.
   - intros key Ik. pose proof Ik as Ik0. rewrite EK1 in Ik. apply keys_of_in in Ik as [e1 [Ie1 Ek1]].
     apply in_map_iff in Ie1 as [p [Ep Ip]].
     destruct (KeysM key Ik0) as (r0 & m0 & a0 & -> & _).
-    destruct e1 as [?|?|?|r1 m g1 a1|?]; cbn in Ek1; try discriminate. injection Ek1 as Erf <- Ea. subst a0 r0.
+    destruct e1 as [?|?|?|r1 m g1 a1|?|? ?]; cbn in Ek1; try discriminate. injection Ek1 as Erf <- Ea. subst a0 r0.
     destruct (Core p r1 m g1 a1 Ip Ep Ik0) as (r2 & g2 & a2 & _ & Ik2 & M2 & _ & Kr).
     exists (app_subst cS r2), m, (sig_subst cS g2). split; [split; assumption|exact Kr].
 Qed.
@@ -792,11 +793,11 @@ Proof.
      app_subst th r1 = app_subst cS r2 /\ PublicOutputSubst.SigRel th cS g1 g2 /\
      (kind_sym W m = Some DKMeth -> InstSome th cS a1 a2) /\ incl (gens r1 ++ sig_gens g1 ++ inst_gens a1) Dom).
   { intros p r1 m g1 a1 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
-    destruct (snd p) as [?|?|?|r2 m2 g2 a2|?]; try contradiction. destruct R as (<- & Rr & Sg & Is & Sc).
+    destruct (snd p) as [?|?|?|r2 m2 g2 a2|?|? ?]; try contradiction. destruct R as (<- & Rr & Sg & Is & Sc).
     exists r2, g2, a2. split; [reflexivity|exact (conj Rr (conj Sg (conj Is Sc)))]. }
   assert (Pm2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 -> exists r1 g1 a1, fst p = NMth r1 m g1 a1).
   { intros p r2 m g2 a2 Ip E. pose proof (FL p Ip) as R. rewrite E in R.
-    destruct (fst p) as [?|?|?|r1 m1 g1 a1|?]; try contradiction. destruct R as (-> & _). eauto. }
+    destruct (fst p) as [?|?|?|r1 m1 g1 a1|?|? ?]; try contradiction. destruct R as (-> & _). eauto. }
   (* the pairs are determined by their caller method keys: the caller's
      keys are distinct, or a caller key's method names one family key *)
   assert (Upair : forall p p' r m, In p L -> In p' L -> entry_key cS (snd p) = Some (mkey r m) ->
@@ -804,8 +805,8 @@ Proof.
   { intros p p' r m Ip Ip' E E'. destruct Uniq as [Nd|[Nd1 MD]].
     - rewrite EK2, prov_id_keys, keys_of_map in Nd. exact (keys_unique _ _ L Nd p p' _ Ip Ip' E E').
     - rewrite EK1, prov_id_keys, keys_of_map in Nd1.
-      destruct (snd p) as [?|?|?|r2 m2 g2 a2|?] eqn:S2; cbn in E; try discriminate. injection E as _ Em. subst m2.
-      destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?] eqn:S2'; cbn in E'; try discriminate. injection E' as _ Em'. subst m2'.
+      destruct (snd p) as [?|?|?|r2 m2 g2 a2|?|? ?] eqn:S2; cbn in E; try discriminate. injection E as _ Em. subst m2.
+      destruct (snd p') as [?|?|?|r2' m2' g2' a2'|?|? ?] eqn:S2'; cbn in E'; try discriminate. injection E' as _ Em'. subst m2'.
       destruct (Pm2 p r2 m g2 a2 Ip S2) as (r1 & g1 & a1 & F1).
       destruct (Pm2 p' r2' m g2' a2' Ip' S2') as (r1' & g1' & a1' & F1').
       assert (I1 : In (mkey (app_subst σ r1) m) (keys_of (entry_key σ) (map fst L))).
@@ -825,7 +826,7 @@ Proof.
   assert (Un1 : forall p r1 m g1 a1, In p L -> fst p = NMth r1 m g1 a1 ->
      forall e', In e' (map fst L) -> entry_key σ e' = Some (mkey (app_subst σ r1) m) -> e' = NMth r1 m g1 a1).
   { intros p r1 m g1 a1 Ip E e' Ie' Ek. apply in_map_iff in Ie' as [p' [<- Ip']].
-    destruct (fst p') as [?|?|?|r1' m' g1' a1'|?] eqn:E'; cbn in Ek; try discriminate.
+    destruct (fst p') as [?|?|?|r1' m' g1' a1'|?|? ?] eqn:E'; cbn in Ek; try discriminate.
     injection Ek as Er ->. pose proof (Key2 p' r1' m g1' a1' Ip' E') as K'. rewrite Er in K'.
     rewrite (Upair p' p _ _ Ip' Ip K' (Key2 p r1 m g1 a1 Ip E)) in E'. congruence. }
   assert (Un2 : forall p r2 m g2 a2, In p L -> snd p = NMth r2 m g2 a2 ->
@@ -854,7 +855,7 @@ Proof.
       rewrite th_sigma, Rr. f_equal. unfold map_snd. rewrite map_map. cbn.
       erewrite map_ext; [exact (known_rel a1 a2 (Is Km))|]. intros [y t]. cbn. rewrite th_sigma. reflexivity. }
   rewrite EK1, EK2. apply keys_of_pairs. intros p Ip.
-  destruct (fst p) as [t1|v1 t1 a1|f1 g1 a1|r1 m g1 a1|u1 fx1] eqn:E1.
+  destruct (fst p) as [t1|v1 t1 a1|f1 g1 a1|r1 m g1 a1|u1 fx1|eql eqr] eqn:E1.
   4: { destruct (Pm p r1 m g1 a1 Ip E1) as (r2 & g2 & a2 & E2 & _). rewrite E2. cbn [entry_key].
        split; [split; discriminate|]. intros k1 k2 K1 K2. injection K1 as <-. injection K2 as <-.
        assert (Ik1 : In (mkey (app_subst σ r1) m) keys).

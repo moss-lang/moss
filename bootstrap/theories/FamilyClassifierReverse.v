@@ -132,7 +132,7 @@ Proof.
    + intros[pa dn a]si ans ss Run Ii Wi Li[FK One].
      destruct pa as[pa|],dn as[dn|];try solve[inversion FK].
      * eapply family_method_classifies;[exact Run|exact Ii|exact Wi|exact Hmi|exact Li|exact Poly|exact FK].
-     * inversion FK as[|p0 pa0 a0 ctx d name its Resolve0 Decl Ast Key];subst p0 pa0 a0.
+     * inversion FK as[|p0 pa0 a0 ctx d name its sps Resolve0 Decl Ast Esps Key];subst p0 pa0 a0.
        unfold family_leaf_step in Run;apply bind_inv in Run as(go&sr&Resolve&Run).
        destruct(esym_rel w R Fl b Hload mi pa si go sr Ii Wi Hmi Resolve)as[-> Rel].
        destruct go as[h|];[|cbn in Rel;congruence].
@@ -145,10 +145,12 @@ Proof.
        unfold A.kind_sym in Kind;rewrite(w_decl_read w R Fl _ _ Hg)in Kind;cbn[A.d_ast]in Kind.
        rewrite Ast in Kind;cbn[A.kind_of]in Kind;injection Kind as Kind.
        assert(K:gs_kind h=KCtx)by(apply kconv_ctx;symmetry;exact Kind).
-       rewrite K,Ast in Run.
+       rewrite K,Ast in Run. cbv beta iota in Run.
+       rewrite Esps,ctx_specs_map,length_map,Nat.eqb_refl in Run.
        destruct(context_resolve_path mi pa si h si Ii Resolve)as[_ Path];rewrite Wi in Path.
        pose proof(One pa a h eq_refl Path Hg K)as Checked.
        pose proof(context_acyclic_specs fuel w stack h name its Checked K Ast)as Children.
+       rewrite Esps,ctx_specs_map in Children.
        eapply IH with(stack:=gs_id h::stack)(u:=u);[exact Run|exact Ii|exact Wi|
         exact(loader_mod_in w R Fl b Hload _ _ Hg)|exact Li|exact Poly|exact Key| | | |].
        -- intros pp aa child Hin Path0 Hg0 K0;eapply context_check_specs_member;eauto.

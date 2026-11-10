@@ -80,10 +80,10 @@ Proof.
    + rewrite map_app,M1,M2;reflexivity.
    + rewrite app_assoc;exact W2.
 Qed.
-Definition root_item_step(mi gi:nat)(acc:env*list key)(sp:spec):M(env*list key):=
+Definition root_item_step(mi gi:nat)(acc:env*list key)(sp:citem):M(env*list key):=
  let '(e,needs):=acc in
  match sp with
- |Spec(Some p)None _=>
+ |CISpec(Spec(Some p)None _)=>
    let! fo:=Elab.resolve_sym gi p in
    match fo with
    |Some fg=>if negb(kind_eqb(gs_kind fg)KFunctor)||is_some(nget(en_funs e)(gs_id fg))then ret acc else
@@ -95,16 +95,16 @@ Definition root_item_step(mi gi:nat)(acc:env*list key)(sp:spec):M(env*list key):
  |_=>ret acc end.
 #[local] Hint Resolve ok_functor_fixed ok_ctx_fuel : okdb.
 Lemma ok_root_item_step:forall mi gi acc sp,ok(root_item_step mi gi acc sp).
-Proof. intros mi gi[e needs][pa d a];unfold root_item_step;destruct pa,d;okt. Qed.
+Proof. intros mi gi[e needs][[pa d a]|l r];unfold root_item_step;[destruct pa,d|];okt. Qed.
 Inductive RootItemView(q:string)(es0:list A.entry)(tm:list(nat*ty)):
- spec->list A.entry->list(nat*ty)->Prop:=
+ citem->list A.entry->list(nat*ty)->Prop:=
  | RootFunView:forall p a u du n names args res xs fx,
    A.resolve_sym WW q p=Some u->A.w_decl WW u=Some du->A.d_ast du=ADFunctor n names args res None->
    ~(exists fx0,In(A.NFun u fx0)es0)->NoDup xs->(forall x,In x xs<->A.Fixed WW u x)->
    A.FixedReadings WW u(A.add_tys xs tm)fx->
-   RootItemView q es0 tm(Spec(Some p)None a)(map A.NTy xs++[A.NFun u fx])(A.add_tys xs tm)
+   RootItemView q es0 tm(CISpec(Spec(Some p)None a))(map A.NTy xs++[A.NFun u fx])(A.add_tys xs tm)
  | RootSkipView:forall sp,
-   (match sp with Spec(Some p)None _=>forall u,A.resolve_sym WW q p=Some u->
+   (match sp with CISpec(Spec(Some p)None _)=>forall u,A.resolve_sym WW q p=Some u->
      A.kind_sym WW u=Some A.DKFunctor->exists fx,In(A.NFun u fx)es0|_=>True end)->
    RootItemView q es0 tm sp[]tm.
 Lemma fun_in_entries:forall u les,
@@ -133,8 +133,9 @@ Theorem root_item_exec:forall mi gi e needs sp s e' needs' s' U tm les,
  exists l1 es tm1,RootItemView(gm_path(get_mod w gi))(map(tr_ent Fl)les)tm sp es tm1/\
  map(tr_ent Fl)l1=es/\WS Fl U e' tm1(les++l1)needs'.
 Proof.
- intros mi gi e needs[pa d a]s e' needs' s' U tm les H Hi Hw Hmi Hgi L W.
+ intros mi gi e needs[[pa d a]|l r]s e' needs' s' U tm les H Hi Hw Hmi Hgi L W;
  unfold root_item_step in H;cbn beta iota zeta in H.
+ 2:{injection H as <- <- <-;exists[],[],tm;split;[constructor;exact I|split;[reflexivity|rewrite app_nil_r;exact W]]. }
  destruct pa as[p|],d as[dn|];try solve[
   injection H as <- <- <-;exists[],[],tm;split;[constructor;exact I|split;[reflexivity|rewrite app_nil_r;exact W]]].
  apply bind_inv in H as(fo&s0&Er&H).

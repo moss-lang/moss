@@ -41,7 +41,7 @@ Proof.
   intros W.
   assert (CtxKind : forall p pa a s k, A.resolve_sym W p pa = Some s -> A.kind_sym W s = Some k ->
     A.FamilyResult W p (Spec (Some pa) None a) -> k = A.DKCtx).
-  { intros p pa a s k R K Fr. inversion Fr as [|p0 pa0 a0 u d n its Ru Du Au Sub]; subst.
+  { intros p pa a s k R K Fr. inversion Fr as [|p0 pa0 a0 u d n its sps Ru Du Au Es Sub]; subst.
     assert (s = u) by congruence. subst u. unfold A.kind_sym in K. rewrite Du, Au in K. injection K as <-. reflexivity. }
   apply (PublicFormation.oies_mut W
     (fun p ob tm sp es tm' _ => A.FamilyResult W p sp -> Forall MethodEntry es)
@@ -50,19 +50,19 @@ Proof.
   - intros p ob tm pa a bs s k R K Br Kk Fr. pose proof (CtxKind p pa a s k R K Fr) as ->.
     destruct Kk as [E|[E|[E|[[E _]|[E _]]]]]; discriminate E.
   - intros p ob tm a pa s d n t ty0 bs ap R D Ast Br Ty Ap Fr.
-    inversion Fr as [|p0 pa0 a0 u d0 n0 its Ru Du Au Sub]; subst.
+    inversion Fr as [|p0 pa0 a0 u d0 n0 its sps Ru Du Au Es Sub]; subst.
     assert (s = u) by congruence. subst u. rewrite D in Du. injection Du as <-. congruence.
   - intros p ob tm a pa s g bs ap d rcv n ps rt R K D Ast Br Sig Ap Fr.
     pose proof (CtxKind p pa a s _ R K Fr). discriminate.
   - intros p ob tm a bs pa u d n ps args res fx R D Ast Br Av Fx Fr.
-    inversion Fr as [|p0 pa0 a0 u0 d0 n0 its Ru Du Au Sub]; subst.
+    inversion Fr as [|p0 pa0 a0 u0 d0 n0 its sps Ru Du Au Es Sub]; subst.
     assert (u = u0) by congruence. subst u0. rewrite D in Du. injection Du as <-. congruence.
   - intros p ob tm a pa dn r m rt g bs ap R Mn Br Rt Sig Ap Fr.
     constructor; [exists rt, m, g, ap; reflexivity|constructor].
-  - intros p ob tm a pa c d n its bs es tm' R D Ast Br Its IH Fr.
-    inversion Fr as [|p0 pa0 a0 u d0 n0 its0 Ru Du Au Sub]; subst.
+  - intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps Br Its IH Fr.
+    inversion Fr as [|p0 pa0 a0 u d0 n0 its0 sps0 Ru Du Au Es0 Sub]; subst.
     assert (c = u) by congruence. subst u. rewrite D in Du. injection Du as <-. rewrite Ast in Au.
-    injection Au as <- <-. exact (IH Sub).
+    injection Au as <- Ei. apply map_CISpec_inj in Ei. subst sps0. exact (IH Sub).
   - intros p ob tm _. constructor.
   - intros p ob tm sp rest es1 tm1 es2 tm2 One IH1 Rest IH2 Fr.
     apply Forall_cons_iff in Fr as [F1 F2]. apply Forall_app. split; [exact (IH1 F1)|exact (IH2 F2)].

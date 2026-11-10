@@ -423,13 +423,13 @@ Qed.
 
 Lemma key_mark : forall s e, EntryP (TyFormed W) e -> entry_key (msubst s) e = option_map mark_item (entry_key s e).
 Proof.
-  intros s [x|v t a|f g a|r m g a|u fx] Fe; try reflexivity.
+  intros s [x|v t a|f g a|r m g a|u fx|eql eqr] Fe; try reflexivity.
   cbn. unfold mkey. rewrite (mark_subst r s (proj1 Fe)). reflexivity.
 Qed.
 
 Lemma sig_entry_mark : forall s e, EntryP (TyFormed W) e -> entry_sig (msubst s) e = option_map mark_sig (entry_sig s e).
 Proof.
-  intros s [x|v t a|f g a|r m g a|u fx] Fe; try reflexivity; cbn.
+  intros s [x|v t a|f g a|r m g a|u fx|eql eqr] Fe; try reflexivity; cbn.
   - unfold mark_sig. cbn. rewrite (mark_subst t s (proj1 Fe)). reflexivity.
   - rewrite (sig_mark s g (proj1 Fe)). reflexivity.
   - rewrite (sig_mark s g (proj1 (proj2 Fe))). reflexivity.
@@ -446,7 +446,7 @@ Qed.
 
 Lemma inst_entry_mark : forall s e, EntryP (TyFormed W) e -> entry_inst (msubst s) e = option_map mark_inst (entry_inst s e).
 Proof.
-  intros s [x|v t a|f g a|r m g a|u fx] Fe; try reflexivity; cbn; f_equal; apply inst_read_mark.
+  intros s [x|v t a|f g a|r m g a|u fx|eql eqr] Fe; try reflexivity; cbn; f_equal; apply inst_read_mark.
   - exact (proj2 Fe).
   - exact (proj2 Fe).
   - exact (proj2 (proj2 Fe)).
@@ -454,7 +454,9 @@ Qed.
 
 Theorem unifies_mark : forall s es, Forall (EntryP (TyFormed W)) es -> Unifies s es -> Unifies (msubst s) es.
 Proof.
-  intros s es Fe U e1 e2 k I1 I2 K1 K2. rewrite Forall_forall in Fe.
+  intros s es Fe [U Ueq]. rewrite Forall_forall in Fe. split;
+    [|intros l r I; destruct (Fe _ I) as [Fl Fr]; rewrite <- (mark_subst l s Fl), <- (mark_subst r s Fr), (Ueq l r I); reflexivity].
+  intros e1 e2 k I1 I2 K1 K2.
   rewrite (key_mark s e1 (Fe e1 I1)) in K1. rewrite (key_mark s e2 (Fe e2 I2)) in K2.
   destruct (entry_key s e1) as [k1|] eqn:E1; [|discriminate]. destruct (entry_key s e2) as [k2|] eqn:E2; [|discriminate].
   cbn in K1, K2. injection K1 as K1. injection K2 as K2. rewrite <- K2 in K1. apply mark_item_inj in K1. subst k2.

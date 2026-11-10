@@ -58,21 +58,25 @@ Proof.
        eapply(result_function_leaf w R Fl b Hload);[exact Sub|exact Run|exact Res|exact Hg|exact D|exact K|exact Hi|exact Hw|exact Hmi|exact L|exact HC|exact Stable|exact Wo|exact So|exact O].
    + destruct(result_ctx_shape g Kind K)as(n&its&D).
      rewrite ?K,?D in Run;cbn beta iota zeta in Run.
-     assert(Otail:ok(mfold(fun acc it=>provide_spec f(fst acc)fg(gs_mod g)it sub(snd acc))(e,out)its))by okt.
+     destruct(Nat.eqb(List.length(ctx_specs its))(List.length its))eqn:Len;cbn[negb]in Run;
+       [|exfalso;eapply err_not_good;exact Run].
+     apply Nat.eqb_eq,ctx_specs_all in Len.
+     set(sps:=ctx_specs its) in *.
+     assert(Otail:ok(mfold(fun acc it=>provide_spec f(fst acc)fg(gs_mod g)it sub(snd acc))(e,out)sps))by okt.
      destruct(Otail _ _ _ Ix Run)as[_ Ft].
      destruct(output_scope_execution w R Fl b Hload c e F C mi a outer ob s sub sx
       Sub Hi Hw Hmi(later_back w P R Fl _ _ Ft L)HC Wo So O)
       as(bs&Br&Bmap&Wsub&Ssub&TR&St&M).
-     assert(Child:forall sp,In sp its->forall t,A.ResultMentions W self(gm_path(get_mod w(gs_mod g)))sp t->A.nlook t((bs++ob)++A.c_ty C)<>None).
+     assert(Child:forall sp,In sp sps->forall t,A.ResultMentions W self(gm_path(get_mod w(gs_mod g)))sp t->A.nlook t((bs++ob)++A.c_ty C)<>None).
      {intros sp Insp t Mention;rewrite <-app_assoc.
       eapply(output_context_domain W self(gm_path(get_mod w mi))pa a(gs_id g)
        (A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g))n its(ob++A.c_ty C)bs);
-      [exact Res|exact(w_decl_rd w R Fl _ _ Hg)|exact D|exact Br|exact Dom|exact Insp|exact Mention]. }
-     destruct(Items c e F C fg(gs_mod g)its sub(bs++ob)out sx e' keys sf Run Child Self Ix Wx
+      [exact Res|exact(w_decl_rd w R Fl _ _ Hg)|exact D|exact Br|exact Dom|exact(proj1(in_ctx_specs sp its)Insp)|exact Mention]. }
+     destruct(Items c e F C fg(gs_mod g)sps sub(bs++ob)out sx e' keys sf Run Child Self Ix Wx
       (loader_mod_in w R Fl b Hload _ _ Hg)L HC Stable Wsub Ssub Bmap)as(es&fresh&Sem&Keys&RK&Ctx).
      exists es,fresh;split.
-     * eapply A.OIECtx with(c:=gs_id g)(d:=A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g))(n:=n)(its:=its)(bs:=bs);
-       [exact Res|exact(w_decl_rd w R Fl _ _ Hg)|exact D|exact Br|exact Sem].
+     * eapply A.OIECtx with(c:=gs_id g)(d:=A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g))(n:=n)(its:=its)(sps:=sps)(bs:=bs);
+       [exact Res|exact(w_decl_rd w R Fl _ _ Hg)|exact D|exact Len|exact Br|exact Sem].
      * split;[exact Keys|];split;assumption.
    + unfold already_provided in Run;rewrite ?K in Run;cbn beta iota zeta in Run.
      exfalso;eapply err_not_good;exact Run.

@@ -181,12 +181,18 @@ Proof. intros sb [];reflexivity. Qed.
 Lemma unifies_entry_shapes:forall sb es,A.Unifies sb es<->A.Unifies sb(map entry_shape es).
 Proof.
  intros sb es;split.
- - intros H a b k Ha Hb Ka Kb.
-   apply in_map_iff in Ha as[x[<- Hx]];apply in_map_iff in Hb as[y[<- Hy]].
-   rewrite !entry_shape_key in Ka,Kb;rewrite !entry_shape_sig,!entry_shape_inst;exact(H x y k Hx Hy Ka Kb).
- - intros H a b k Ha Hb Ka Kb.
-   pose proof(H(entry_shape a)(entry_shape b)k(in_map entry_shape es a Ha)(in_map entry_shape es b Hb))as E.
-   rewrite !entry_shape_key,!entry_shape_sig,!entry_shape_inst in E;exact(E Ka Kb).
+ - intros[H He];split.
+   + intros a b k Ha Hb Ka Kb.
+     apply in_map_iff in Ha as[x[<- Hx]];apply in_map_iff in Hb as[y[<- Hy]].
+     rewrite !entry_shape_key in Ka,Kb;rewrite !entry_shape_sig,!entry_shape_inst;exact(H x y k Hx Hy Ka Kb).
+   + intros l r I;apply in_map_iff in I as[x[Ex Hx]].
+     destruct x as[| | | | |l' r'];cbn in Ex;try discriminate.
+     injection Ex as <- <-;exact(He _ _ Hx).
+ - intros[H He];split.
+   + intros a b k Ha Hb Ka Kb.
+     pose proof(H(entry_shape a)(entry_shape b)k(in_map entry_shape es a Ha)(in_map entry_shape es b Hb))as E.
+     rewrite !entry_shape_key,!entry_shape_sig,!entry_shape_inst in E;exact(E Ka Kb).
+   + intros l r I;exact(He l r(in_map entry_shape es _ I)).
 Qed.
 Lemma unifies_shape_equal:forall es es',map entry_shape es=map entry_shape es'->
  forall sb,A.Unifies sb es<->A.Unifies sb es'.
@@ -252,7 +258,7 @@ Proof.
     (fun p ob tm sp es tm' => forall es2 tm2, IE W p ob tm sp es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2)
     (fun p ob tm its es tm' => forall es2 tm2, IEs W p ob tm its es2 tm2 -> map entry_shape es = map entry_shape es2 /\ tm' = tm2))];
   intros; unfold IE,IEs in *; lazymatch goal with H : _ |- _ => inversion H; subst; clear H end;
-  try solve [kmis']; fin; repeat split;cbn[map entry_shape];rewrite ?map_app;congruence.
+  try solve [kmis']; fin; repeat split;cbn[map entry_shape];rewrite ?map_app;cbn[map entry_shape];congruence.
 Qed.
 
 End DetIE.
@@ -292,7 +298,7 @@ Proof. intros U e t E T. rewrite (tr_res Fl U (tri_rk U T)), canon_res, E. refle
 Lemma entry_key_tr : forall U e l, en_uf e = U -> Tri U ->
   A.entry_key (suf Fl U) (tr_ent Fl l) = option_map key_tr (lkey e l).
 Proof.
-  intros U e [t|v y a|f g a|r m g a|u] E T; try reflexivity.
+  intros U e [t|v y a|f g a|r m g a|u|eql eqr] E T; try reflexivity.
   cbn [tr_ent A.entry_key lkey option_map key_tr]. unfold A.mkey. rewrite (sigma_tr U e r E T). reflexivity.
 Qed.
 
@@ -337,12 +343,16 @@ Lemma settled_unifies : forall U e tm les needs, WS Fl U e tm les needs -> en_uf
   A.Unifies (suf Fl U) (map (tr_ent Fl) les).
 Proof.
   intros U e tm les needs Hws E. pose proof (ws_tri _ _ _ _ _ _ Hws) as T. rewrite E in T.
+  split.
+  2: { intros l r I. apply in_map_iff in I as (le & El & Hle).
+       destruct le as [| | | | |yl yr]; cbn [tr_ent] in El; try discriminate. injection El as <- <-.
+       rewrite !(sigma_tr U e _ E T). f_equal. exact (ws_eqs _ _ _ _ _ _ Hws E yl yr Hle). }
   intros e1 e2 k H1 H2 K1 K2. apply in_map_iff in H1 as (l1 & <- & Hl1). apply in_map_iff in H2 as (l2 & <- & Hl2).
   assert (Kl : exists k', lkey e l1 = Some k' /\ lkey e l2 = Some k').
   { rewrite (entry_key_tr U e _ E T) in K1. rewrite (entry_key_tr U e _ E T) in K2.
     destruct (lkey e l1) as [k1|] eqn:Ek1; [|discriminate]. destruct (lkey e l2) as [k2|] eqn:Ek2; [|discriminate].
     exists k1. split; [reflexivity|]. f_equal. cbn [option_map] in K1, K2. rewrite <- K2 in K1. injection K1 as K1.
-    destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2];
+    destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1|eql eqr], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2|eql2 eqr2];
       cbn [lkey] in Ek1, Ek2; try discriminate; injection Ek1 as <-; injection Ek2 as <-; cbn [key_tr] in K1;
       try discriminate; try (injection K1 as ->; reflexivity).
     injection K1 as Er <-.
@@ -352,7 +362,7 @@ Proof.
   split; [|exact (settled_insts U e tm les needs Hws E l1 l2 k' Hl1 Hl2 Kl1 Kl2)].
   clear Kl1 Kl2 k'.
   rewrite (entry_key_tr U e _ E T) in K1. rewrite (entry_key_tr U e _ E T) in K2.
-  destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2];
+  destruct l1 as [t1|v1 y1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1|eql eqr], l2 as [t2|v2 y2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2|eql2 eqr2];
     cbn [lkey option_map key_tr] in K1, K2; try discriminate; try (rewrite <- K2 in K1; discriminate K1);
     cbn [tr_ent A.entry_sig]; try reflexivity.
   - rewrite <- K2 in K1. injection K1 as <-.
@@ -386,7 +396,7 @@ Proof.
   intros U e tm les needs Hws E. pose proof (ws_tri _ _ _ _ _ _ Hws) as T. rewrite E in T.
   assert (Ok : forall k, In k needs -> match k with KyMth r _ => ety_ok r = true | _ => True end).
   { intros k Hk. apply (ws_needs _ _ _ _ _ _ Hws E k) in Hk as (l & Hl & Hk).
-    destruct l as [|v y a|f g a|r m g a|u fx]; cbn in Hk; try discriminate; injection Hk as <-; try exact I.
+    destruct l as [|v y a|f g a|r m g a|u fx|eql eqr]; cbn in Hk; try discriminate; injection Hk as <-; try exact I.
     exact (proj1 (ws_mths _ _ _ _ _ _ Hws E r m g a Hl)). }
   split.
   - apply nodup_map_on; [exact (ws_nodup _ _ _ _ _ _ Hws)|]. intros x y Hx Hy Exy.
@@ -604,7 +614,7 @@ Definition cmths (s : tsubst) (es : list A.entry) : list ((ty * nat) * A.fsig) :
 Lemma cvals_some : forall s es v t, A.nlook v (cvals s es) = Some t -> exists ty a, In (A.NVal v ty a) es /\ t = asub s ty.
 Proof.
   intros s es v t. induction es as [|e0 r IH]; [discriminate|]. unfold cvals in *. cbn [flat_map].
-  destruct e0 as [|v' ty a|f g a|r0 m g a|u fx]; cbn [List.app]; try (intro H; destruct (IH H) as (ty1 & a1 & Hi & E1); exists ty1, a1; split; [right; exact Hi | exact E1]).
+  destruct e0 as [|v' ty a|f g a|r0 m g a|u fx|eql eqr]; cbn [List.app]; try (intro H; destruct (IH H) as (ty1 & a1 & Hi & E1); exists ty1, a1; split; [right; exact Hi | exact E1]).
   cbn [A.nlook]. destruct (Nat.eqb_spec v v') as [->|Ne].
   - intro H. injection H as <-. exists ty, a. split; [left; reflexivity | reflexivity].
   - intro H. destruct (IH H) as (ty' & a' & Hi & E). exists ty', a'. split; [right; exact Hi | exact E].
@@ -613,7 +623,7 @@ Qed.
 Lemma cvals_none : forall s es v ty a, A.nlook v (cvals s es) = None -> ~ In (A.NVal v ty a) es.
 Proof.
   intros s es v ty a. induction es as [|e0 r IH]; [intros _ []|]. unfold cvals in *. cbn [flat_map].
-  destruct e0 as [|v' ty' a'|f g a'|r0 m g a'|u fx]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
+  destruct e0 as [|v' ty' a'|f g a'|r0 m g a'|u fx|eql eqr]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
   cbn [A.nlook]. destruct (Nat.eqb_spec v v') as [->|Ne]; [discriminate|].
   intros H [E|Hi]; [injection E as <- _ _; exact (Ne eq_refl) | exact (IH H Hi)].
 Qed.
@@ -621,7 +631,7 @@ Qed.
 Lemma cfns_some : forall s es f g, A.nlook f (cfns s es) = Some g -> exists g0 a, In (A.NFn f g0 a) es /\ g = A.sig_subst s g0.
 Proof.
   intros s es f g. induction es as [|e0 r IH]; [discriminate|]. unfold cfns in *. cbn [flat_map].
-  destruct e0 as [|v ty a|f' g' a|r0 m g' a|u fx]; cbn [List.app]; try (intro H; destruct (IH H) as (g1 & a1 & Hi & E1); exists g1, a1; split; [right; exact Hi | exact E1]).
+  destruct e0 as [|v ty a|f' g' a|r0 m g' a|u fx|eql eqr]; cbn [List.app]; try (intro H; destruct (IH H) as (g1 & a1 & Hi & E1); exists g1, a1; split; [right; exact Hi | exact E1]).
   cbn [A.nlook]. destruct (Nat.eqb_spec f f') as [->|Ne].
   - intro H. injection H as <-. exists g', a. split; [left; reflexivity | reflexivity].
   - intro H. destruct (IH H) as (g0 & a0 & Hi & E). exists g0, a0. split; [right; exact Hi | exact E].
@@ -630,7 +640,7 @@ Qed.
 Lemma cfns_none : forall s es f g a, A.nlook f (cfns s es) = None -> ~ In (A.NFn f g a) es.
 Proof.
   intros s es f g a. induction es as [|e0 r IH]; [intros _ []|]. unfold cfns in *. cbn [flat_map].
-  destruct e0 as [|v ty a'|f' g' a'|r0 m g' a'|u fx]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
+  destruct e0 as [|v ty a'|f' g' a'|r0 m g' a'|u fx|eql eqr]; cbn [List.app]; try (intros H [E|Hi]; [discriminate | exact (IH H Hi)]).
   cbn [A.nlook]. destruct (Nat.eqb_spec f f') as [->|Ne]; [discriminate|].
   intros H [E|Hi]; [injection E as <- _ _; exact (Ne eq_refl) | exact (IH H Hi)].
 Qed.
@@ -639,7 +649,7 @@ Lemma cmths_some : forall s es r m g, A.mlook r m (cmths s es) = Some g ->
   exists r0 g0 a, In (A.NMth r0 m g0 a) es /\ asub s r0 = r /\ g = A.sig_subst s g0.
 Proof.
   intros s es r m g. induction es as [|e0 rest IH]; [discriminate|]. unfold cmths in *. cbn [flat_map].
-  destruct e0 as [|v ty a|f g' a|r0 m0 g' a|u fx]; cbn [List.app];
+  destruct e0 as [|v ty a|f g' a|r0 m0 g' a|u fx|eql eqr]; cbn [List.app];
     try (intro H; destruct (IH H) as (r9 & g9 & a9 & Hi & E1 & E2); exists r9, g9, a9; split; [right; exact Hi | split; assumption]).
   cbn [A.mlook]. destruct (ty_eqb r (asub s r0) && Nat.eqb m m0) eqn:E.
   - apply andb_true_iff in E as [E1 E2]. apply CoreMoss.ty_eqb_eq in E1. apply Nat.eqb_eq in E2. subst.
@@ -650,7 +660,7 @@ Qed.
 Lemma cmths_none : forall s es r m r0 g a, A.mlook r m (cmths s es) = None -> In (A.NMth r0 m g a) es -> asub s r0 <> r.
 Proof.
   intros s es r m r0 g a. induction es as [|e0 rest IH]; [intros _ []|]. unfold cmths in *. cbn [flat_map].
-  destruct e0 as [|v ty a'|f g' a'|r1 m1 g' a'|u fx]; cbn [List.app]; try (intros H [Eq|Hi]; [discriminate | exact (IH H Hi)]).
+  destruct e0 as [|v ty a'|f g' a'|r1 m1 g' a'|u fx|eql eqr]; cbn [List.app]; try (intros H [Eq|Hi]; [discriminate | exact (IH H Hi)]).
   cbn [A.mlook]. destruct (ty_eqb r (asub s r1) && Nat.eqb m m1) eqn:E; [discriminate|].
   intros H [Eq|Hi]; [|exact (IH H Hi)]. injection Eq as -> -> _ _. intro Er. subst r.
   rewrite (proj2 (CoreMoss.ty_eqb_eq _ _) eq_refl), Nat.eqb_refl in E. discriminate.
@@ -789,7 +799,7 @@ Proof.
   assert (IH' : A.ilook (key_tr Fl k) (capps σ tm (map (tr_ent Fl) r)) = option_map (fun a => capp_fz (tr_inst Fl a)) (lfirst e k r))
     by (apply IH; intros r0 m g a H; exact (Hm r0 m g a (or_intror H))).
   unfold capps in *. cbn [map flat_map lfirst].
-  destruct l as [t|v y a|f g a|r0 m g a|u fx]; cbn [tr_ent A.entry_key lapp List.app].
+  destruct l as [t|v y a|f g a|r0 m g a|u fx|eql eqr]; cbn [tr_ent A.entry_key lapp List.app].
   - exact IH'.
   - cbn [A.ilook]. change (IVal v) with (key_tr Fl (KyVal v)). rewrite (key_tr_eqb k (KyVal v) Ok eq_refl).
     destruct (key_eqb k (KyVal v)); [reflexivity | exact IH'].
@@ -805,7 +815,7 @@ Proof.
     cbn [option_map]. f_equal.
     unfold A.fixed_app,A.fixed_subst,capp_fz,tr_inst,tr_fixed,raw_fixed_app.
     rewrite !map_map. apply map_ext. intros [x y]. cbn[fst snd]. reflexivity.
-
+  - exact IH'.
 Qed.
 
 (* c_apps against fi_env's (frozen) instantiations, at a key tr reads apart *)
@@ -826,7 +836,7 @@ Lemma cfuns_capps:forall xs u,
 Proof.
  intros xs;induction xs as[|ent xs IH];intro u;[reflexivity|].
  unfold cfuns,capps in *;cbn[flat_map].
- destruct ent as[t|v y a|f g a|r m g a|v fx];cbn[A.entry_key List.app A.ilook item_eqb A.nlook];try exact(IH u).
+ destruct ent as[t|v y a|f g a|r m g a|v fx|eql eqr];cbn[A.entry_key List.app A.ilook item_eqb A.nlook];try exact(IH u).
  destruct(Nat.eqb u v);[cbn[option_map];symmetry;f_equal;apply known_fixed_app|exact(IH u)].
 Qed.
 Lemma ctx_funs:forall u,A.nlook u(cfuns es)=

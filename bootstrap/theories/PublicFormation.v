@@ -168,6 +168,7 @@ Definition EntryP (P : ty -> Prop) (e : entry) : Prop :=
   | NFn _ g a => SigP P g /\ InstP P a
   | NMth r _ g a => P r /\ SigP P g /\ InstP P a
   | NFun _ fx => forall x u, In (x, u) fx -> P u
+  | NEq l r => P l /\ P r
   end.
 
 (* ---- small facts ---------------------------------------------------------- *)
@@ -717,11 +718,24 @@ Proof.
   assert (Sig : forall g, SigP (TyOk W) g -> SigP (TyFormed W) g).
   { intros g [Ps R]. split; [exact (Forall_impl _ (fun t H => proj1 H) Ps)|exact (proj1 R)]. }
   assert (Ins : forall a, InstP (TyOk W) a -> InstP (TyFormed W) a) by (intros a H x t Iq; exact (proj1 (H x t Iq))).
-  intros [t|v t a|f g a|r m g a|u fx]; cbn; try tauto.
+  intros [t|v t a|f g a|r m g a|u fx|eql eqr]; cbn; try tauto.
   - intros [H1 H2]. exact (conj (proj1 H1) (Ins a H2)).
   - intros [H1 H2]. exact (conj (Sig g H1) (Ins a H2)).
   - intros [H1 [H2 H3]]. exact (conj (proj1 H1) (conj (Sig g H2) (Ins a H3))).
   - intros H x u0 Iq. exact (proj1 (H x u0 Iq)).
+  - intros [H1 H2]. exact (conj (proj1 H1) (proj1 H2)).
+Qed.
+
+Lemma spec_types_kind : forall p sp t, SpecTypes W p sp t -> kind_sym W t = Some DKType.
+Proof. intros p sp t H. induction H; assumption. Qed.
+
+
+Lemma add_tys_keys : forall xs tm x, In x (map fst (add_tys xs tm)) -> In x xs \/ In x (map fst tm).
+Proof.
+  unfold add_tys. induction xs as [|y rest IH]; intros tm x Ix; cbn in Ix; [right; exact Ix|].
+  destruct (nlook y tm) eqn:F.
+  - destruct (IH tm x Ix) as [H|H]; [left; right; exact H|right; exact H].
+  - destruct (IH _ x Ix) as [H|[<-|H]]; [left; right; exact H|left; left; reflexivity|right; exact H].
 Qed.
 
 Lemma entries_ok :
@@ -764,14 +778,13 @@ Proof.
   - intros p ob tm sp r es1 tm1 es2 tm2 H1 IH1 H2 IH2 Ob Id Ka.
     destruct (IH1 Ob Id Ka) as [Id1 [Ka1 E1]]. destruct (IH2 Ob Id1 Ka1) as [Id2 [Ka2 E2]].
     split; [exact Id2|split; [exact Ka2|apply Forall_app; split; assumption]].
-Qed.
-
-Lemma add_tys_keys : forall xs tm x, In x (map fst (add_tys xs tm)) -> In x xs \/ In x (map fst tm).
-Proof.
-  unfold add_tys. induction xs as [|y rest IH]; intros tm x Ix; cbn in Ix; [right; exact Ix|].
-  destruct (nlook y tm) eqn:F.
-  - destruct (IH tm x Ix) as [H|H]; [left; right; exact H|right; exact H].
-  - destruct (IH _ x Ix) as [H|[<-|H]]; [left; right; exact H|left; left; reflexivity|right; exact H].
+  - (* equation *) intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2 Ob Id Ka.
+    destruct (IH1 Ob Id Ka) as [IdA [KaA E1]].
+    pose proof (tmok_app W _ _ Ob (idform_ok _ IdA KaA)) as Full.
+    destruct (IH2 Ob IdA KaA) as [Id2 [Ka2 E2]]. split; [exact Id2|split; [exact Ka2|]].
+    apply Forall_app. split; [exact E1|].
+    constructor; [|exact E2]. cbn.
+    split; [exact (tyof_ok W _ _ _ _ _ Tl Full (optok_none W))|exact (tyof_ok W _ _ _ _ _ Tr Full (optok_none W))].
 Qed.
 
 Lemma root_ok : forall q es0 tm its es tm', RootItems W q es0 tm its es tm' ->
@@ -795,7 +808,7 @@ Qed.
 Lemma entry_provision_ok : forall s freeze e k p, TmOk W s -> (forall a, InstOk W a -> InstOk W (freeze a)) ->
   EntryP (TyOk W) e -> In (k, p) (entry_provision s freeze e) -> KeyOk W k /\ ProvOk W p.
 Proof.
-  intros s freeze [t|v t a|f g a|r m g a|u fx] k p Ss Fr Ok Iq; cbn in Iq; try contradiction;
+  intros s freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p Ss Fr Ok Iq; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; injection E as <- <-; cbn in Ok.
   - destruct Ok as [Ot Oa]. split; [exact Logic.I|]. split; [|exact (Fr a Oa)].
     intros g E; injection E as <-; split; [constructor|exact (tyok_subst W _ _ Ss Ot)].
@@ -811,7 +824,7 @@ Qed.
 Lemma entry_provision_key : forall s freeze e r m th p, In (IMth r m th, p) (entry_provision s freeze e) ->
   exists r0 g a, e = NMth r0 m g a /\ r = app_subst s r0.
 Proof.
-  intros s freeze [t|v t a|f g a|r0 m0 g a|u fx] r m th p Iq; cbn in Iq; try contradiction;
+  intros s freeze [t|v t a|f g a|r0 m0 g a|u fx|eql eqr] r m th p Iq; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; try discriminate.
   injection E as E1 E2 _ _. subst. exists r0, g, a. split; reflexivity.
 Qed.
@@ -835,6 +848,7 @@ Proof.
                    (fun p ob tm sps es tm' _ => KeysDecl tm -> KeysDecl tm'));
     intros; try assumption.
   - destruct (nlook t tm); [assumption|]. intros x [<-|Ix]; [assumption|auto].
+  - auto.
   - auto.
   - auto.
 Qed.
@@ -1007,7 +1021,7 @@ Proof.
       pose proof (recv_gens W _ _ _ Recv y Iy) as Iy'. apply tm_gens_app in Iy' as [Iy'|Iy'].
       * apply SBs in Iy'. apply tm_gens_app in Iy' as [Iy'|Iy']; [exact (SOb y Iy')|exact (STm y Iy')].
       * apply tm_gens_app in Iy' as [Iy'|Iy']; [exact (SOb y Iy')|exact (STm y Iy')].
-  - (* context *) intros p ob tm a pa c d n its bs es tm' R D Ast B Rest IH Ob Tm SOb STm.
+  - (* context *) intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps B Rest IH Ob Tm SOb STm.
     pose proof (tmok_app W _ _ Ob Tm) as Tbl. destruct (obr_ok _ _ _ _ B Tbl) as [Bs SBs].
     apply IH; [exact (tmok_app W _ _ Bs Ob)|exact Tm| |exact STm].
     intros y Iy. apply tm_gens_app in Iy as [Iy|Iy]; [|exact (SOb y Iy)].
@@ -1080,11 +1094,11 @@ Proof. intros u t (d & ps & a & r & b & sp & D & FP & Isp & ST). exact (spec_typ
 Lemma family_result_spec : forall mi sp t, FamilyResult W mi sp -> SpecTypes W mi sp t -> False.
 Proof.
   intros mi sp t FR ST. revert FR. induction ST as [p pa a t R K|p pa a c d n its sp t R D Ast Isp ST IH]; intros FR.
-  - inversion FR as [|mi' pa' br' u d' n' its' R' D' Ast' Fa]; subst.
+  - inversion FR as [|mi' pa' br' u d' n' its' sps' R' D' Ast' Esps' Fa]; subst.
     rewrite R in R'. injection R' as <-. unfold kind_sym in K. rewrite D', Ast' in K. discriminate.
-  - inversion FR as [|mi' pa' br' u d' n' its' R' D' Ast' Fa]; subst.
+  - inversion FR as [|mi' pa' br' u d' n' its' sps' R' D' Ast' Esps' Fa]; subst.
     rewrite R in R'. injection R' as <-. rewrite D in D'. injection D' as <-. rewrite Ast in Ast'.
-    injection Ast' as <- <-. rewrite Forall_forall in Fa. exact (IH (Fa sp Isp)).
+    injection Ast' as _ Ei. rewrite Ei, citem_specs_map in Isp. rewrite Forall_forall in Fa. exact (IH (Fa sp Isp)).
 Qed.
 
 Lemma family_no_outputs : forall u t, FamilyShape W u -> FunOutputs W u t -> False.

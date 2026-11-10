@@ -23,7 +23,7 @@ Lemma ctx_need_method:forall W f C ns r m,
 Proof.
  intros W f C ns r m[d[es[tm[er[tmr[sigma[Decl[Items[Root[MG[-> Needs]]]]]]]]]]]Hin.
  destruct Needs as[Nd Keys];apply Keys in Hin as(entry&InE&Key).
- destruct entry as[t|v ty ap|fn sg ap|raw mid sg ap|u fx];cbn[A.entry_key]in Key;try discriminate Key.
+ destruct entry as[t|v ty ap|fn sg ap|raw mid sg ap|u fx|eql eqr];cbn[A.entry_key]in Key;try discriminate Key.
  injection Key as Eq Mid;subst r mid;split.
  - apply need_mlook_member with(sg:=A.sig_subst sigma sg).
    cbn[A.entries_cx A.c_mths];apply in_flat_map;exists(A.NMth raw m sg ap);split;[exact InE|left;reflexivity].

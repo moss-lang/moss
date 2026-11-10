@@ -31,6 +31,9 @@ Proof.
  - intros p ob tm u fx[].
  - intros p ob tm sp rest es1 tm1 es2 tm2 Entry IH1 Entries IH2.
    apply entries_functor_append;assumption.
+ - intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2.
+   apply entries_functor_append;[exact IH1|].
+   intros u fx[Bad|H];[discriminate Bad|exact(IH2 u fx H)].
 Qed.
 Lemma root_items_functor_decls:forall W p es0 tm specs es tm',
  A.RootItems W p es0 tm specs es tm'->EntriesFunctorDecl W es.
@@ -53,7 +56,7 @@ Lemma entries_functor_row:forall sigma tm es u fx,
  A.nlook u(A.c_funs(A.entries_cx sigma tm es))=Some fx->exists raw,In(A.NFun u raw)es.
 Proof.
  intros sigma tm es;induction es as[|entry rest IH];intros u fx H;[discriminate H|].
- destruct entry as[|v ty app|f sg app|r m sg app|u0 raw];cbn[A.entries_cx A.c_funs flat_map List.app]in H;
+ destruct entry as[|v ty app|f sg app|r m sg app|u0 raw|el er];cbn[A.entries_cx A.c_funs flat_map List.app]in H;
  try(destruct(IH _ _ H)as(a&Hin);exists a;right;exact Hin).
  cbn[A.nlook]in H;destruct(Nat.eqb u u0)eqn:Eq.
  - apply Nat.eqb_eq in Eq;subst u0;exists raw;left;reflexivity.

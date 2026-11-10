@@ -9,9 +9,9 @@ Lemma ws_add_type:forall Fl U e tm les needs n stamp,
  WS Fl U(set_tn e n(YAbs n)stamp)((n,TAbs n)::tm)(les++[LTy n])needs.
 Proof.
  intros Fl U e tm les needs n stamp Hws.
- apply ws_les_nokey;[|reflexivity|discriminate|discriminate|discriminate].
+ apply ws_les_nokey;[|reflexivity|discriminate|discriminate|discriminate|intros ? ? Eq;discriminate Eq].
  pose proof(context_clean_type e n stamp(ws_clean _ _ _ _ _ _ Hws))as Cout.
- destruct Hws as[T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 Urows Crows T18 T19].
+ destruct Hws as[T1 T2 T3 T4 T5 T6 T7 T8 T9 Q1 Q2 T10 T11 T12 T13 T14 T15 Urows Crows T18 T19 T20].
  assert(Ee:forall k,tn_get(set_tn e n(YAbs n)stamp)k=if Nat.eqb k n then Some(YAbs n)else tn_get e k)
   by apply tn_get_set_tn.
  constructor;cbn[set_tn en_uf en_vals en_fns].
@@ -40,6 +40,7 @@ Proof.
    split;[exact F|exact(instcanon_same e(set_tn e n(YAbs n)stamp)_ _ eq_refl C)].
  - intros k a0 G. rewrite <-(app_nil_r les).
    apply(appin_mono Fl e(set_tn e n(YAbs n)stamp)k a0 les []);[exists [];rewrite app_nil_r;reflexivity|exact(mths_same_mono e _ eq_refl)|exact(T19 k a0 G)].
+ - exact T20.
 Qed.
 
 Definition implicit_type_step(f mi:nat)(outs:list nat)(acc:env*list key)(t:nat):M(env*list key):=

@@ -230,14 +230,15 @@ Proof.
       match goal with H : SigOf W m1 _ (Some ?rt2) ?g2 |- _ =>
         exact (sig_rel W s1 s2 _ _ _ _ _ _ _ Sig H Ag2 (fun x1 x2 E1 E2 => ltac:(injection E1 as <-; injection E2 as <-; exact Rr))) end.
   - (* context *)
-    intros p ob tm a pa c d n its bs es tm' R Dd Ast B Inner IH ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm a pa c d n its sps bs es tm' R Dd Ast Esps B Inner IH ob2 tm2 es2 tm2' D2 Ob Ag.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' c); assert (s' = c) by congruence; subst s' end.
     match goal with H : w_decl W c = Some ?d' |- _ => assert_fails (constr_eq d' d); assert (d' = d) by congruence; subst d' end.
-    rewrite Ast in *. match goal with H : ADCtx _ _ = ADCtx _ _ |- _ => injection H as <- <- end.
+    rewrite Ast in *. match goal with H : ADCtx _ _ = ADCtx _ _ |- _ => injection H as <- Ei end.
+    apply map_CISpec_inj in Ei. subst.
     pose proof (agree_app s1 s2 _ _ _ _ Ob Ag) as Ag1.
     match goal with H : OutputBrackets W p (ob2 ++ _) a ?bs2 |- _ => pose proof (obr_rel _ _ _ _ _ _ B H Ag1) as Bs end.
-    match goal with H : OutputItemsEntries W _ _ _ its ?es2 _ |- _ => exact (IH _ _ _ _ H (Forall2_app Bs Ob) Ag) end.
+    match goal with H : OutputItemsEntries W _ (_ ++ ob2) _ _ ?es2 _ |- _ => exact (IH _ _ _ _ H (Forall2_app Bs Ob) Ag) end.
   - (* nil *)
     intros p ob tm ob2 tm2 es2 tm2' D2 Ob Ag. inversion D2; subst. constructor.
   - (* cons *)

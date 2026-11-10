@@ -88,7 +88,7 @@ Proof.
  intros c e F C fg mi [pa dn a] outer ob out s e' keys s' E Family Hi Hw Hmi L HC Stable Wo So O.
  destruct pa as[pa|];destruct dn as[dn|].
  - eapply family_method_walk;eassumption.
- - inversion Family as[|mi0 pa0 br0 u d n its Res Decl Ast Leafs];try subst mi0;try subst pa0;try subst br0.
+ - inversion Family as[|mi0 pa0 br0 u d n its sps Res Decl Ast Esps Leafs];try subst mi0;try subst pa0;try subst br0.
    cbn[provide_spec]in E;apply bind_inv in E as(sub&sx&Sub&E).
    assert(Os:ok(match a with Some bs=>let!xs:=app_subst 200 e mi bs outer in ret(xs++outer)|None=>ret outer end))by okt.
    destruct(Os _ _ _ Hi Sub)as[Ix Fx].
@@ -106,18 +106,20 @@ Proof.
    {pose proof(load_world_kind b w Hload _ _ Hg)as K;unfold KindOK in K;rewrite Ast in K.
     destruct(gs_kind g);cbn[A.kind_of kconv]in K;try discriminate K;reflexivity. }
    rewrite Kg,Ast in E;cbn beta iota zeta in E.
-   assert(Otail:ok(mfold(fun acc it=>provide_spec f(fst acc)fg(gs_mod g)it sub(snd acc))(e,out)its))by okt.
+   subst its. rewrite ctx_specs_map,length_map,Nat.eqb_refl in E. cbn[negb] in E.
+   assert(Otail:ok(mfold(fun acc it=>provide_spec f(fst acc)fg(gs_mod g)it sub(snd acc))(e,out)sps))by okt.
    destruct(Otail _ _ _ Ix E)as[_ Ft].
    destruct(family_result_subst w R Fl b Hload c e F C mi a outer ob s sub sx Sub Hi Hw Hmi
     (later_back w P R Fl _ _ Ft L)HC Wo So O)as(bs&Br&Bmap&Wsub&Ssub).
-   destruct(Items c e F C fg(gs_mod g)its sub(bs++ob)out sx e' keys s' E Leafs Ix Wx
+   destruct(Items c e F C fg(gs_mod g)sps sub(bs++ob)out sx e' keys s' E Leafs Ix Wx
     (loader_mod_in w R Fl b Hload _ _ Hg)L HC Stable Wsub Ssub Bmap)
     as(es&fresh&Sem&Keys&RK&Support&Ctx).
    exists es,fresh;split.
-   + eapply A.OIECtx with(c:=gs_id g)(d:=A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g))(n:=n)(its:=its)(bs:=bs).
+   + eapply A.OIECtx with(c:=gs_id g)(d:=A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g))(n:=n)(its:=map CISpec sps)(sps:=sps)(bs:=bs).
      * exact Rg.
      * exact(w_decl_read w R Fl _ _ Hg).
      * exact Ast.
+     * reflexivity.
      * exact Br.
      * exact Sem.
    + split;[exact Keys|split;[exact RK|split;assumption]].

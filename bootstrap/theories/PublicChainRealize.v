@@ -181,7 +181,7 @@ Proof.
     pose proof (Av x Fxx) as N. destruct (A.nlook x (bs ++ ob ++ tm)) as [tx|] eqn:L; [|exfalso; exact (N eq_refl)].
     exists tx. apply (proj2 (Fx x tx)). split; [exact Fxx|exact L].
   - intros p ob tm a pa dn r m rt g bs ap R Mn Br Rt Sig Ap u fx [E|[]]. discriminate.
-  - intros p ob tm a pa c d n its bs es tm' R D Ast Br Its IH. exact IH.
+  - intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps Br Its IH. exact IH.
   - intros p ob tm u fx [].
   - intros p ob tm sp rest es1 tm1 es2 tm2 One IH1 Rest IH2 u fx I. apply in_app_or in I as [I|I]; [exact (IH1 u fx I)|exact (IH2 u fx I)].
 Qed.
@@ -472,7 +472,7 @@ Lemma entry_peq : forall e1 e2 k1 q1 k2 q2,
   (forall u fx1 fx2, e1 = A.NFun u fx1 -> e2 = A.NFun u fx2 -> forall x t2, In (x, t2) fx2 -> exists t1, In (x, t1) fx1) ->
   PEq T1 q1 T2 q2 /\ KeyRel T1 T2 k1 k2.
 Proof.
-  intros [t|v1 t1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1] [t'|v2 t2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2] k1 q1 k2 q2 Rel RelM Ep P1 P2 Cov;
+  intros [t|v1 t1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1|eql eqr] [t'|v2 t2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2|eql2 eqr2] k1 q1 k2 q2 Rel RelM Ep P1 P2 Cov;
     cbn in Rel, RelM, P1, P2; try contradiction; try discriminate;
     injection P1 as <- <-; injection P2 as <- <-.
   - destruct Rel as (<- & Rt & _). destruct Ep as [Et _]. split; [cbn; exact (one_ty t1 t2 Rt (fun y Iy => Et y Iy))|].
@@ -562,8 +562,8 @@ Proof.
   intros W s1 s2 sg1 K tm1 tm2 L FL Inv p p' k Ip Ip' K2 E1.
   destruct (FL p Ip) as (R & RM & Sk). destruct (FL p' Ip') as (R' & RM' & Sk').
   destruct p as [e1 e2], p' as [e1' e2']. cbn [fst snd] in *.
-  destruct e1 as [?|?|?|r1 m1 g1 a1|?], e2 as [?|?|?|r2 m2 g2 a2|?]; cbn in Sk; try contradiction;
-    destruct e1' as [?|?|?|r1' m1' g1' a1'|?], e2' as [?|?|?|r2' m2' g2' a2'|?]; cbn in Sk'; try contradiction;
+  destruct e1 as [?|?|?|r1 m1 g1 a1|?|? ?], e2 as [?|?|?|r2 m2 g2 a2|?|? ?]; cbn in Sk; try contradiction;
+    destruct e1' as [?|?|?|r1' m1' g1' a1'|?|? ?], e2' as [?|?|?|r2' m2' g2' a2'|?|? ?]; cbn in Sk'; try contradiction;
     cbn in K2, E1, R, R', RM, RM' |- *; try discriminate.
   - injection K2 as <-. injection E1 as <-. destruct R as (<- & _). destruct R' as (<- & _). reflexivity.
   - injection K2 as <-. injection E1 as <-. destruct R as (<- & _). destruct R' as (<- & _). reflexivity.
@@ -580,7 +580,7 @@ Proof.
   intros W v C o C' ks (d & ps & a & r & b & outs & es & tm' & _ & _ & _ & OIE & _ & ->) news En u fx I x Fx.
   cbn [A.output_cx A.c_provisions] in En. apply app_inv_tail in En. subst news.
   apply in_flat_map in I as [e [Ie I]]. apply (proj2 (in_rev _ _)) in Ie.
-  destruct e as [?|?|?|?|u0 fx0]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
+  destruct e as [?|?|?|?|u0 fx0|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
   injection E as -> <-.
   destruct (proj1 (proj2 (fun_entries_fixed W) _ _ _ _ _ _ OIE u fx0 Ie x) Fx) as [tx Itx].
   exists (app_subst (A.c_sub C) tx). unfold A.fixed_subst. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Itx].
@@ -671,7 +671,7 @@ Proof.
   pose proof (proj2 (PublicScoping.output_entries_gens W K) _ _ _ _ _ _ OIE ltac:(intros g []) Sc0) as Es.
   rewrite Forall_forall in Es. unfold A.ResultKeys in RK. subst ks.
   apply in_flat_map in Ik as [e [Ie Ik]]. pose proof (Es e Ie) as Pe.
-  destruct e as [t|v0 t a1|f g a1|r1 m1 g1 a1|u1 fx]; cbn in Ik; try contradiction; destruct Ik as [E|[]]; try discriminate.
+  destruct e as [t|v0 t a1|f g a1|r1 m1 g1 a1|u1 fx|eql eqr]; cbn in Ik; try contradiction; destruct Ik as [E|[]]; try discriminate.
   unfold A.mkey in E. injection E as <- <- <-. cbn in Pe. destruct Pe as [Pr _].
   exact (PublicFormation.subst_within K _ r1 SubK Pr).
 Qed.

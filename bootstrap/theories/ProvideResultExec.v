@@ -42,6 +42,8 @@ Proof.
        try discriminate E.
      all: try first[
        eapply provide_fold_prefix in E;[exact E|intros; eapply IH;eassumption]
+       | destruct(negb _);[exfalso;exact(err_not_good _ _ _ _ _ _ E)|];
+         eapply provide_fold_prefix in E;[exact E|intros; eapply IH;eassumption]
        | repeat apply bind_inv in E as(? &? &? &E);
          injection E as <- <- <-;eexists;reflexivity
        | injection E as <- <- <-;exists[];now rewrite app_nil_r].
@@ -102,6 +104,8 @@ Proof.
        try discriminate E.
      all: try first[
        eapply provide_fold_frame in E;[exact E|intros;eapply IH;eassumption]
+       | destruct(negb _);[exfalso;exact(err_not_good _ _ _ _ _ _ E)|];
+         eapply provide_fold_frame in E;[exact E|intros;eapply IH;eassumption]
        | apply bind_inv in E as(y&sy&Et&E);
          apply bind_inv in E as(ep&se&Ep&E);injection E as <- <- <-;
          apply provided_at_frame in Ep;exact Ep

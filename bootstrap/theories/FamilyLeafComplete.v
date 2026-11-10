@@ -7,7 +7,7 @@ Module A:=ExecutionModel.Elaboration.
 Lemma family_output_context_inv:forall W p ob tm pa a c d n its es tm',
  A.resolve_sym W p pa=Some c->A.w_decl W c=Some d->A.d_ast d=ADCtx n its->
  A.OutputItemEntries W p ob tm(Spec(Some pa)None a)es tm'->
- exists bs,A.OutputBrackets W p(ob++tm)a bs/\A.OutputItemsEntries W(A.d_mod d)(bs++ob)tm its es tm'.
+ exists bs,A.OutputBrackets W p(ob++tm)a bs/\A.OutputItemsEntries W(A.d_mod d)(bs++ob)tm(ctx_specs its)es tm'.
 Proof.
  intros W p ob tm pa a c d n its es tm' Res Decl Ast Read.
  inversion Read as[p0 ob0 tm0 pa0 a0 bs t R K B|
@@ -15,7 +15,7 @@ Proof.
   p0 ob0 tm0 a0 pa0 u du vn vt ty bs ap R D V B Ty App|
   p0 ob0 tm0 a0 pa0 u sg bs ap du rcv fn ps rt R K D F B Sig App|
   p0 ob0 tm0 a0 bs pa0 u du fn ps args rs fx R D F B Available Fixed|
-  |p0 ob0 tm0 a0 pa0 u du cn specs bs entries tm1 R D F B Child];subst.
+  |p0 ob0 tm0 a0 pa0 u du cn specs sps bs entries tm1 R D F Es B Child];subst.
  - assert(t=c)by congruence;subst t;unfold A.kind_sym in K;rewrite Decl,Ast in K;discriminate K.
  - assert(u=c)by congruence;subst u;unfold A.kind_sym in K;rewrite Decl,Ast in K;injection K as <-.
    destruct Cases as[Bad|[Bad|[Bad|[[Bad Rest]|[Bad Rest]]]]];discriminate Bad.
@@ -23,7 +23,7 @@ Proof.
  - assert(u=c)by congruence;subst u;unfold A.kind_sym in K;rewrite Decl,Ast in K;discriminate K.
  - assert(u=c)by congruence;subst u;assert(du=d)by congruence;subst du;congruence.
  - assert(u=c)by congruence;subst u;assert(du=d)by congruence;subst du.
-   assert(specs=its)by congruence;subst specs;exists bs;split;assumption.
+   assert(Ei:map CISpec sps=its)by congruence;subst its;rewrite ctx_specs_map;exists bs;split;assumption.
 Qed.
 Lemma family_output_method_inv:forall W p ob tm pa dn a es tm',
  A.OutputItemEntries W p ob tm(Spec(Some pa)(Some dn)a)es tm'->
@@ -104,9 +104,10 @@ Proof.
       (A.Decl(gm_path(get_mod w(gs_mod cg)))(gs_decl cg)(gs_assumes cg))n l es tm'
       Rg(w_decl_read w R Fl _ _ Hg)D Reading)as(bs&Br&Children).
     assert(Hcm:In(gs_mod cg)(w_order w))by exact(loader_mod_in w R Fl b Hload _ _ Hg).
-    destruct(IH e(gs_mod cg)l sub sx chunk ss E Ix Wx Hcm Li(bs++ob)tm es tm' Children leaf Hin)
+    destruct(IH e(gs_mod cg)(ctx_specs l)sub sx chunk ss E Ix Wx Hcm Li(bs++ob)tm es tm' Children leaf Hin)
     as(child&rt&mid&sg&ap&Hchild&Member&Route).
-    destruct(ok_family_leaves fuel e(gs_mod cg)l sub _ _ _ Ix E)as[_ Ft].
+    apply in_ctx_specs in Hchild.
+    destruct(ok_family_leaves fuel e(gs_mod cg)(ctx_specs l)sub _ _ _ Ix E)as[_ Ft].
     exists rt,mid,sg,ap;split;[exact Member|].
     eapply FSRContext with(d:=A.Decl(gm_path(get_mod w(gs_mod cg)))(gs_decl cg)(gs_assumes cg))(n:=n);
     try eassumption;try reflexivity.

@@ -299,10 +299,38 @@ with parse_binding (n : nat) (ts : list token) : pr (path * spec) :=
       POk (p, s) ts
   end.
 
-Definition parse_assume_item (n : nat) (ts : list token) : pr (path * option name) :=
+(* An equation's side (D90): a type reference, `p` or `p[...]`. *)
+Definition parse_type_ref (n : nat) (ts : list token) : pr aty :=
   let@ p & ts := parse_path n ts in
-  if at_ DOT ts then let@ d & ts := expect_name (advance ts) in POk (p, Some d) ts
-  else POk (p, None) ts.
+  let@ a & ts := parse_app_opt n ts in
+  POk (ATRef p a) ts.
+
+Definition eq_side_err {A} (ts : list token) : pr A :=
+  err "each side of a type equation is a type, `p` or `p[...]` (D90)" ts.
+
+(* An assume item: `p`, `R.m`, or an equation `p[...] = p[...]` (D90). *)
+Definition parse_assume_item (n : nat) (ts : list token) : pr aitem :=
+  let@ p & ts := parse_path n ts in
+  if at_ DOT ts then
+    let@ d & ts := expect_name (advance ts) in
+    if at_ EQUAL ts || at_ LBRACKET ts then eq_side_err ts else POk (AIHead (p, Some d)) ts
+  else if at_ EQUAL ts || at_ LBRACKET ts then
+    let@ a & ts := parse_app_opt n ts in
+    let@ _ & ts := expect EQUAL ts in
+    let@ r & ts := parse_type_ref n ts in
+    POk (AIEq (ATRef p a) r) ts
+  else POk (AIHead (p, None)) ts.
+
+(* A context item: a spec, or an equation (D90). *)
+Definition parse_ctx_item (n : nat) (ts : list token) : pr citem :=
+  let@ s & ts := parse_spec n ts in
+  if at_ EQUAL ts then
+    match s with
+    | Spec (Some p) None a =>
+        let@ r & ts := parse_type_ref n (advance ts) in POk (CIEq (ATRef p a) r) ts
+    | _ => eq_side_err ts
+    end
+  else POk (CISpec s) ts.
 
 (* ===================== Types ============================================== *)
 
@@ -809,7 +837,7 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
       else if at_ CONTEXT ts then
         let@ x & ts := expect_name (advance ts) in
         let@ _ & ts := expect EQUAL ts in
-        let@ its & ts := comma_list n (parse_spec n) [SEMI] ts in
+        let@ its & ts := comma_list n (parse_ctx_item n) [SEMI] ts in
         let@ _ & ts := expect SEMI ts in
         POk (ADCtx x its) ts
       else if at_ FUNCTOR ts then

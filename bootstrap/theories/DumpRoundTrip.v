@@ -80,13 +80,23 @@ Definition bind_ok (its : list (spec * option aexpr)) : bool :=
   forallb (fun p => spec_ok (fst p) && optional expr_ok (snd p)) its.
 Definition recv_ok (r : fnrecv) : bool :=
   match r with RAttached n => negb (String.eqb n "_") && negb (String.eqb n ".") | _ => true end.
+Definition aitem_ok (it : aitem) : bool :=
+  match it with
+  | AIHead p => path_ok (fst p) && opt_name_ok (snd p)
+  | AIEq l r => ty_ok l && ty_ok r
+  end.
+Definition citem_ok (it : citem) : bool :=
+  match it with
+  | CISpec s => spec_ok s
+  | CIEq l r => ty_ok l && ty_ok r
+  end.
 Fixpoint decl_ok (d : adecl) : bool :=
   match d with
-  | ADAssume its ds => forallb (fun p => path_ok (fst p) && opt_name_ok (snd p)) its && forallb decl_ok ds
+  | ADAssume its ds => forallb aitem_ok its && forallb decl_ok ds
   | ADAlias _ t | ADTag _ _ t => ty_ok t
   | ADVal _ t e => ty_ok t && optional expr_ok e
   | ADFn r _ ps ret b => recv_ok r && forallb (fun p => ty_ok (snd p)) ps && optional ty_ok ret && optional block_ok b
-  | ADCtx _ its => forallb spec_ok its
+  | ADCtx _ its => forallb citem_ok its
   | ADFunctor _ _ args res body => forallb spec_ok args && forallb spec_ok res && optional (forallb bind_ok) body
   | _ => true
   end.
@@ -511,18 +521,27 @@ Proof.
   destruct d as [its ds|n|n t|n ps t|n|n t init|rcv n ps ret body|n ss|n ps args res body].
   - apply andb_true_iff in Hok as [Hits Hds].
     change (rbind (rmap (fun it => match it with
-      | SL false [SA "I"; SA p; d; SA "_"] => rbind (opt_atom d) (fun d' => Good (split_path p,d'))
+      | SL false [SA "I"; SA p; d; SA "_"] => rbind (opt_atom d) (fun d' => Good (AIHead (split_path p,d')))
+      | SL false [SA "V"; l; r] =>
+          rbind (read_ty fuel l) (fun l' => rbind (read_ty fuel r) (fun r' => Good (AIEq l' r')))
       | _ => bad "assume item" end)
-      (map (fun '(p,d) => nd "I" [dpath p; dopt SA d; SA "_"]) its)) (fun its' =>
+      (map dassume its)) (fun its' =>
       rbind (rmap (read_decl fuel) (map ddecl ds)) (fun ds' => Good (ADAssume its' ds'))) = Good y) in H.
     apply dump_bind_inv in H as (its' & Hitr & H).
     apply dump_bind_inv in H as (ds' & Hdr & E).
     assert (Ei : its' = its).
     { eapply rmap_inverse; [|exact Hits|exact Hitr].
-      intros [p d] [p' d'] Hk Hi. apply andb_true_iff in Hk as [Hp Hd].
-      change (rbind (opt_atom (dopt SA d)) (fun d0 => Good (split_path (join_path p),d0)) = Good (p',d')) in Hi.
-      rewrite (opt_atom_dump d Hd), (path_ok_read p Hp) in Hi. cbn [rbind] in Hi.
-      injection Hi as <- <-. reflexivity. }
+      intros [[p d]|l r] it' Hk Hi.
+      - apply andb_true_iff in Hk as [Hp Hd].
+        change (rbind (opt_atom (dopt SA d)) (fun d0 => Good (AIHead (split_path (join_path p),d0))) = Good it') in Hi.
+        rewrite (opt_atom_dump d Hd), (path_ok_read p Hp) in Hi. cbn [rbind] in Hi.
+        injection Hi as <-. reflexivity.
+      - apply andb_true_iff in Hk as [Hl Hr].
+        change (rbind (read_ty fuel (dty l)) (fun l' =>
+          rbind (read_ty fuel (dty r)) (fun r' => Good (AIEq l' r'))) = Good it') in Hi.
+        apply dump_bind_inv in Hi as (l' & Hl' & Hi). apply dump_bind_inv in Hi as (r' & Hr' & Hi).
+        rewrite (ty_inverse fuel l l' Hl Hl'), (ty_inverse fuel r r' Hr Hr') in Hi.
+        injection Hi as <-. reflexivity. }
     rewrite Ei, (rmap_inverse _ _ _ IH ds ds' Hds Hdr) in E. injection E as <-. reflexivity.
   - injection H as <-. reflexivity.
   - change (rbind (read_ty fuel (dty t)) (fun t' => Good (ADAlias n t')) = Good y) in H.
@@ -566,10 +585,25 @@ Proof.
     rewrite Ep, (opt_ty_inverse fuel ret ret' Hr Hr'),
       (optional_inverse _ _ _ block_dumps_list (block_inverse fuel) body body' Hb Hb') in E.
     injection E as <-. reflexivity.
-  - change (rbind (rmap (read_spec fuel) (map dspec ss)) (fun ss' => Good (ADCtx n ss')) = Good y) in H.
+  - change (rbind (rmap (fun it => match it with
+        | SL false [SA "V"; l; r] =>
+            rbind (read_ty fuel l) (fun l' => rbind (read_ty fuel r) (fun r' => Good (CIEq l' r')))
+        | _ => rbind (read_spec fuel it) (fun s' => Good (CISpec s')) end)
+        (map dcitem ss)) (fun ss' => Good (ADCtx n ss')) = Good y) in H.
     apply dump_bind_inv in H as (ss' & Hs & E).
-    rewrite (rmap_inverse _ _ _ (spec_inverse fuel) ss ss' Hok Hs) in E.
-    injection E as <-. reflexivity.
+    assert (Es : ss' = ss).
+    { eapply rmap_inverse; [|exact Hok|exact Hs].
+      intros [[p d a]|l r] it' Hk Hi.
+      - change (rbind (read_spec fuel (dspec (Spec p d a))) (fun s' => Good (CISpec s')) = Good it') in Hi.
+        apply dump_bind_inv in Hi as (s' & Hs' & Hi).
+        rewrite (spec_inverse fuel _ s' Hk Hs') in Hi. injection Hi as <-. reflexivity.
+      - apply andb_true_iff in Hk as [Hl Hr].
+        change (rbind (read_ty fuel (dty l)) (fun l' =>
+          rbind (read_ty fuel (dty r)) (fun r' => Good (CIEq l' r'))) = Good it') in Hi.
+        apply dump_bind_inv in Hi as (l' & Hl' & Hi). apply dump_bind_inv in Hi as (r' & Hr' & Hi).
+        rewrite (ty_inverse fuel l l' Hl Hl'), (ty_inverse fuel r r' Hr Hr') in Hi.
+        injection Hi as <-. reflexivity. }
+    rewrite Es in E. injection E as <-. reflexivity.
   - apply andb_true_iff in Hok as [Har Hb]. apply andb_true_iff in Har as [Ha Hr].
     assert (Hps : (match dopt (fun l => sl (map SA l)) ps with
                       | SA "_" => Good None

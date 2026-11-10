@@ -776,6 +776,7 @@ Definition entry_ok (e : entry) : Prop :=
   | NFn f _ _ => kind_sym W f = Some DKFn
   | NMth _ m _ _ => kind_sym W m = Some DKMeth
   | NFun u _ => exists d n ps a r, w_decl W u = Some d /\ d_ast d = ADFunctor n ps a r None
+  | NEq _ _ => True
   end.
 
 Fixpoint entries_ok p ob tm sp es tm' (H : ItemEntries W p ob tm sp es tm') {struct H} :
@@ -797,8 +798,11 @@ Proof.
     + constructor; [exists d, n, ps, args, res; auto | constructor].
     + constructor; [exact (named_meth _ _ _ _ Hl Hm) | constructor].
     + apply (entries_ok_l _ _ _ _ _ _ Hits). exact (decl_loaded c d Hd).
-  - destruct H as [p ob tm | p ob tm sp r es1 tm1 es2 tm2 H1 H2]; intros Hl; [constructor |].
-    apply Forall_app. split; [exact (entries_ok _ _ _ _ _ _ H1 Hl) | exact (entries_ok_l _ _ _ _ _ _ H2 Hl)].
+  - destruct H as [p ob tm | p ob tm sp r es1 tm1 es2 tm2 H1 H2
+                  | p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 _ _ H2]; intros Hl; [constructor | |].
+    + apply Forall_app. split; [exact (entries_ok _ _ _ _ _ _ H1 Hl) | exact (entries_ok_l _ _ _ _ _ _ H2 Hl)].
+    + apply Forall_app. split; [exact (entries_ok_l _ _ _ _ _ _ H1 Hl)|].
+      constructor; [exact I | exact (entries_ok_l _ _ _ _ _ _ H2 Hl)].
 Qed.
 
 (* ---- Vals, fns and methods: wf_gsig's other clauses, against (A2'). -- *)

@@ -1384,9 +1384,9 @@ Inductive Loaded (b : bundle) : string -> Prop :=
 
 (* A declaration together with where it is: its module and the assume
    items enclosing it, outermost first ([D20]: requirements nest by union). *)
-Record decl := Decl { d_mod : string; d_ast : adecl; d_assumes : list (path * option name) }.
+Record decl := Decl { d_mod : string; d_ast : adecl; d_assumes : list aitem }.
 
-Inductive OccursIn : list adecl -> list (path * option name) -> adecl -> Prop :=
+Inductive OccursIn : list adecl -> list aitem -> adecl -> Prop :=
 | OccHere : forall ds d,
     In d ds -> (forall its inner, d <> ADAssume its inner) -> OccursIn ds [] d
 | OccNested : forall ds its inner asm d,
@@ -1550,20 +1550,6 @@ Definition AttachedDecl (W : world) (r : nat) (n : name) (s : nat) : Prop :=
 (* The attached method of receiver r named n, as the world files it. *)
 Definition Attached (W : world) (r : nat) (n : name) (s : nat) : Prop := w_attached W r n = Some s.
 
-(* [D20]/[D21]: the type symbols an assume nesting requires, through the
-   contexts it names.  For a val, fn, method, context or functor these are
-   its requirements. *)
-Inductive SpecTypes (W : world) : string -> spec -> nat -> Prop :=
-| STType : forall p pa a t,
-    resolve_sym W p pa = Some t -> kind_sym W t = Some DKType -> SpecTypes W p (Spec (Some pa) None a) t
-| STCtx : forall p pa a c d n its sp t,
-    resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
-    In sp its -> SpecTypes W (d_mod d) sp t -> SpecTypes W p (Spec (Some pa) None a) t.
-
-Definition AssumeTypes (W : world) (s : nat) (t : nat) : Prop :=
-  exists d pa, w_decl W s = Some d /\ In (pa, None) (d_assumes d) /\
-               SpecTypes W (d_mod d) (Spec (Some pa) None None) t.
-
 (* [D71]/[D73]: a nominal's requirements are its *relevant* parameters: the
    ones it lists, and the type symbols its payload mentions, closed through
    the nominals it mentions (less what brackets bind there).  `FreeIn R`
@@ -1584,6 +1570,20 @@ Inductive FreeIn (W : world) (R : nat -> list nat) (p : string) : aty -> nat -> 
     resolve_sym W p pa <> None ->
     In (bpath, Spec (Some sp) d sa) (match a with Some bs => bs | None => [] end) ->
     FreeIn W R p (ATRef sp sa) x -> FreeIn W R p (ATRef pa a) x.
+
+(* [D20]/[D21]: the type symbols an assume nesting requires, through the
+   contexts it names, with those its equations write ([D90]).  For a val,
+   fn, method, context or functor these are its requirements. *)
+Inductive SpecTypes (W : world) : string -> spec -> nat -> Prop :=
+| STType : forall p pa a t,
+    resolve_sym W p pa = Some t -> kind_sym W t = Some DKType -> SpecTypes W p (Spec (Some pa) None a) t
+| STCtx : forall p pa a c d n its sp t,
+    resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
+    In sp (flat_map citem_specs its) -> SpecTypes W (d_mod d) sp t -> SpecTypes W p (Spec (Some pa) None a) t.
+
+Definition AssumeTypes (W : world) (s : nat) (t : nat) : Prop :=
+  exists d sp, w_decl W s = Some d /\ In sp (flat_map aitem_specs (d_assumes d)) /\
+               SpecTypes W (d_mod d) sp t.
 
 Definition nominal_body (d : adecl) : option (list name * aty) :=
   match d with ADTag _ ps t => Some (ps, t) | ADAlias _ t => Some ([], t) | _ => None end.
@@ -1768,7 +1768,9 @@ Inductive entry :=
 | NVal (v : nat) (t : ty) (a : inst)
 | NFn  (f : nat) (g : fsig) (a : inst)
 | NMth (r : ty) (m : nat) (g : fsig) (a : inst)
-| NFun (u : nat) (fx : subst).
+| NFun (u : nat) (fx : subst)
+(* an equation item's two sides, read ([D90]): no key, only a merge *)
+| NEq  (l r : ty).
 
 (* `SigOf W s tm this g`: the declared signature of fn/method s read with
    the type meanings tm (and receiver type `this`). *)
@@ -1901,7 +1903,7 @@ Inductive ResultMentions (W : world) : nat -> string -> spec -> nat -> Prop :=
     ResultMentions W self p (Spec (Some pa) d a) t
 | RMCtx : forall self p pa a c dc n its sp t,
     resolve_sym W p pa = Some c -> w_decl W c = Some dc -> d_ast dc = ADCtx n its ->
-    In sp its -> ResultMentions W self (d_mod dc) sp t ->
+    In (CISpec sp) its -> ResultMentions W self (d_mod dc) sp t ->
     ~ (exists b, In b (match a with Some bs => bs | None => [] end) /\ resolve_sym W p (fst b) = Some t) ->
     ResultMentions W self p (Spec (Some pa) None a) t
 | RMFunctor : forall self p pa a u du n names args res sp t,
@@ -1935,6 +1937,10 @@ Definition fixed_subst (sigma : subst) (fx : subst) : subst :=
   map (fun q => (fst q, app_subst sigma (snd q))) fx.
 Definition fixed_app (fx : subst) : inst :=
   map (fun q => (fst q, Some (snd q))) fx.
+
+(* Each of xs in force as its own generation, unless it is already. *)
+Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
+  fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
 
 (* `ItemEntries W p ob tm sp es tm'`: the context item `sp`, written in
    module p, under the enclosing items' bracket bindings `ob`, introduces
@@ -1983,14 +1989,27 @@ Inductive ItemEntries (W : world) : string -> list (nat * ty) -> list (nat * ty)
     (* [D61]: the items of a context are read in the module that wrote them *)
     ItemsEntries W (d_mod d) (bs ++ ob) tm its es tm' ->
     ItemEntries W p ob tm (Spec (Some pa) None a) es tm'
-with ItemsEntries (W : world) : string -> list (nat * ty) -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
+with ItemsEntries (W : world) : string -> list (nat * ty) -> list (nat * ty) -> list citem -> list entry -> list (nat * ty) -> Prop :=
 | IsNil : forall p ob tm, ItemsEntries W p ob tm [] [] tm
 | IsCons : forall p ob tm sp r es1 tm1 es2 tm2,
     ItemEntries W p ob tm sp es1 tm1 -> ItemsEntries W p ob tm1 r es2 tm2 ->
-    ItemsEntries W p ob tm (sp :: r) (es1 ++ es2) tm2.
+    ItemsEntries W p ob tm (CISpec sp :: r) (es1 ++ es2) tm2
+(* [D90]: an equation names the references its sides write, each read as
+   an unbracketed item (a type symbol among them is put in force), and
+   merges its two sides *)
+| IsEq : forall p ob tm l r es1 tm1 tl tr rest es2 tm2,
+    ItemsEntries W p ob tm (map CISpec (ty_heads l ++ ty_heads r)) es1 tm1 ->
+    TyOf W p (ob ++ tm1) None l tl -> TyOf W p (ob ++ tm1) None r tr ->
+    ItemsEntries W p ob tm1 rest es2 tm2 ->
+    ItemsEntries W p ob tm (CIEq l r :: rest) (es1 ++ NEq tl tr :: es2) tm2.
 
-(* An assume item `p` or `R.m` is the context item `p` or `R.m` unbracketed. *)
-Definition assume_spec (it : path * option name) : spec := Spec (Some (fst it)) (snd it) None.
+(* An assume item `p` or `R.m` is the context item `p` or `R.m` unbracketed;
+   an equation is itself. *)
+Definition assume_spec (it : aitem) : citem :=
+  match it with
+  | AIHead h => CISpec (Spec (Some (fst h)) (snd h) None)
+  | AIEq l r => CIEq l r
+  end.
 
 (* The key an entry is filed under, read under σ. *)
 Definition entry_key (s : subst) (e : entry) : option item :=
@@ -2000,6 +2019,7 @@ Definition entry_key (s : subst) (e : entry) : option item :=
   | NFn f _ _ => Some (IFn f)
   | NMth r m _ _ => Some (mkey (app_subst s r) m)
   | NFun u _ => Some (IFun u)
+  | NEq _ _ => None
   end.
 
 Definition entry_sig (s : subst) (e : entry) : option fsig :=
@@ -2029,8 +2049,10 @@ Definition entry_inst (s : subst) (e : entry) : option (list (nat * ty)) :=
    generations of the telescope.  A merge identifying two distinct
    concrete heads has no unifier, so the telescope does not form. *)
 Definition Unifies (s : subst) (es : list entry) : Prop :=
-  forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
-    entry_sig s e1 = entry_sig s e2 /\ entry_inst s e1 = entry_inst s e2.
+  (forall e1 e2 k, In e1 es -> In e2 es -> entry_key s e1 = Some k -> entry_key s e2 = Some k ->
+    entry_sig s e1 = entry_sig s e2 /\ entry_inst s e1 = entry_inst s e2) /\
+  (* [D90]: an equation's sides are one type under σ *)
+  (forall l r, In (NEq l r) es -> app_subst s l = app_subst s r).
 
 Definition MostGeneralMerge (s : subst) (es : list entry) : Prop :=
   Unifies s es /\
@@ -2069,22 +2091,20 @@ Definition IsMainFn (W : world) (s : nat) : Prop :=
   exists d n ps rt body p, w_decl W s = Some d /\ d_ast d = ADFn RPlain n ps rt body /\
     w_scope W p NSName "main" = Some (ESym s).
 
-Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
-  fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
 
 (* `RootItems W q es0 tm its es tm'`: Gc's items `its` (written in module
    q), after the entries es0 and with meanings tm, add the entries es. *)
-Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
+Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list citem -> list entry -> list (nat * ty) -> Prop :=
 | RINil : forall es0 tm, RootItems W q es0 tm [] [] tm
 | RIFun : forall es0 tm p a rest u du n ps args res xs fx es tm',
     resolve_sym W q p = Some u -> w_decl W u = Some du -> d_ast du = ADFunctor n ps args res None ->
     ~ (exists fx0, In (NFun u fx0) es0) -> NoDup xs -> (forall x, In x xs <-> Fixed W u x) ->
     FixedReadings W u (add_tys xs tm) fx ->
     RootItems W q (es0 ++ map NTy xs ++ [NFun u fx]) (add_tys xs tm) rest es tm' ->
-    RootItems W q es0 tm (Spec (Some p) None a :: rest) (map NTy xs ++ [NFun u fx] ++ es) tm'
+    RootItems W q es0 tm (CISpec (Spec (Some p) None a) :: rest) (map NTy xs ++ [NFun u fx] ++ es) tm'
 | RISkip : forall es0 tm sp rest es tm',
     match sp with
-    | Spec (Some p) None _ => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> exists fx, In (NFun u fx) es0
+    | CISpec (Spec (Some p) None _) => forall u, resolve_sym W q p = Some u -> kind_sym W u = Some DKFunctor -> exists fx, In (NFun u fx) es0
     | _ => True
     end ->
     RootItems W q es0 tm rest es tm' -> RootItems W q es0 tm (sp :: rest) es tm'.
@@ -2159,7 +2179,7 @@ Definition Satisfies (C : cx) (Cs : cx) (ns : list item) (sm : smap) : Prop :=
 Definition FunCtx (W : world) (u : nat) (C : cx) (ns : list item) : Prop :=
   exists d ps a r b es tm tm' σ implicit,
     w_decl W u = Some d /\ functor_parts (d_ast d) = Some (ps, a, r, b) /\
-    ItemsEntries W (d_mod d) [] [] a es tm /\
+    ItemsEntries W (d_mod d) [] [] (map CISpec a) es tm /\
     (* implicit inputs: only an abstract functor has them *)
     (forall t, In t implicit <-> (b = None /\ Mentions W u t /\ nlook t tm = None)) /\
     tm' = map (fun t => (t, TAbs t)) implicit ++ tm /\
@@ -2224,10 +2244,12 @@ Inductive OutputItemEntries (W : world) : string -> list (nat * ty) ->
     OutputBrackets W p (ob ++ tm) a bs -> RecvTy W r (bs ++ ob ++ tm) rt ->
     SigOf W m (bs ++ ob ++ tm) (Some rt) g -> AppOf W m (bs ++ ob ++ tm) ap ->
     OutputItemEntries W p ob tm (Spec (Some pa) (Some dn) a) [NMth rt m g ap] tm
-| OIECtx : forall p ob tm a pa c d n its bs es tm',
+(* a result's context holds no equation ([D90]) *)
+| OIECtx : forall p ob tm a pa c d n its sps bs es tm',
     resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
+    its = map CISpec sps ->
     OutputBrackets W p (ob ++ tm) a bs ->
-    OutputItemsEntries W (d_mod d) (bs ++ ob) tm its es tm' ->
+    OutputItemsEntries W (d_mod d) (bs ++ ob) tm sps es tm' ->
     OutputItemEntries W p ob tm (Spec (Some pa) None a) es tm'
 with OutputItemsEntries (W : world) : string -> list (nat * ty) ->
     list (nat * ty) -> list spec -> list entry -> list (nat * ty) -> Prop :=
@@ -2275,10 +2297,10 @@ Definition ProvideResult (W : world) (u : nat) (C : cx) (out : nat -> ty) (C' : 
 Inductive FamilyResult (W : world) : string -> spec -> Prop :=
 | FRMethod : forall mi pa dn br,
     FamilyResult W mi (Spec (Some pa) (Some dn) br)
-| FRContext : forall mi pa br u d n its,
+| FRContext : forall mi pa br u d n its sps,
     resolve_sym W mi pa = Some u -> w_decl W u = Some d ->
-    d_ast d = ADCtx n its ->
-    Forall (FamilyResult W (d_mod d)) its ->
+    d_ast d = ADCtx n its -> its = map CISpec sps ->
+    Forall (FamilyResult W (d_mod d)) sps ->
     FamilyResult W mi (Spec (Some pa) None br).
 
 Definition FamilyShape (W : world) (u : nat) : Prop :=
@@ -2306,9 +2328,10 @@ Inductive FamilyKeyed (W : world) (u : nat) : string -> spec -> Prop :=
        ~ FamilyBracketBound W p a t ->
        FreeIn W (w_reqs W) p (ATRef pa None) t) ->
     FamilyKeyed W u p (Spec (Some pa) (Some dn) a)
-| FKContext : forall p pa a c d n its,
+| FKContext : forall p pa a c d n its sps,
     resolve_sym W p pa = Some c -> w_decl W c = Some d -> d_ast d = ADCtx n its ->
-    Forall (FamilyKeyed W u (d_mod d)) its ->
+    its = map CISpec sps ->
+    Forall (FamilyKeyed W u (d_mod d)) sps ->
     FamilyKeyed W u p (Spec (Some pa) None a).
 
 Definition FamilyKeys (W : world) (u : nat) : Prop :=
@@ -2641,7 +2664,7 @@ Inductive ResultSpecLeaf (W : world) : string -> spec -> (nat * option name) -> 
     ResultSpecLeaf W p (Spec (Some pa) None br) (s,None)
 | RSLContext : forall p pa br c d n its sp k,
     resolve_sym W p pa = Some c -> w_decl W c = Some d ->
-    d_ast d = ADCtx n its -> In sp its ->
+    d_ast d = ADCtx n its -> In sp (flat_map citem_specs its) ->
     ResultSpecLeaf W (d_mod d) sp k ->
     ResultSpecLeaf W p (Spec (Some pa) None br) k.
 Inductive ResultLeaf (W : world) : nat -> (nat * option name) -> Prop :=

@@ -97,6 +97,21 @@ Proof.
   - destruct Recv as [args [-> F]]. exact (Nom args F Ig).
 Qed.
 
+Lemma add_tys_formed : forall xs tm, IdForm tm ->
+  IdForm (add_tys xs tm) /\ incl (map fst tm) (map fst (add_tys xs tm)) /\ incl xs (map fst (add_tys xs tm)).
+Proof.
+  induction xs as [|x rest IH]; intros tm Id; cbn.
+  { split; [exact Id|]. split; [intros y Iy; exact Iy|intros y []]. }
+  destruct (nlook x tm) as [v|] eqn:Found.
+  - destruct (IH tm Id) as [Id' [Sub Xs]]. split; [exact Id'|]. split; [exact Sub|].
+    intros y [E|Iy]; [subst y|exact (Xs y Iy)]. apply Sub. apply nlook_in in Found.
+    change x with (fst (x, v)). apply in_map, Found.
+  - assert (Id1 : IdForm ((x, TAbs x) :: tm)) by (constructor; [reflexivity|exact Id]).
+    destruct (IH _ Id1) as [Id' [Sub Xs]]. split; [exact Id'|]. split.
+    + intros y Iy. apply Sub. right. exact Iy.
+    + intros y [<-|Iy]; [apply Sub; left; reflexivity|exact (Xs y Iy)].
+Qed.
+
 Lemma entries_formed :
   (forall p ob tm sp es tm', ItemEntries W p ob tm sp es tm' ->
      IdForm tm -> Scoped tm (tm_gens ob) ->
@@ -154,27 +169,22 @@ Proof.
     destruct (IH2 Id1 (fun g Ig => Sub1 g (Ob g Ig))) as [Id2 [Sub2 Es2]].
     split; [exact Id2|]. split; [intros x Ix; exact (Sub2 x (Sub1 x Ix))|].
     intros g Ig. rewrite flat_map_app in Ig. apply in_app_or in Ig as [Ig|Ig]; [exact (Sub2 g (Es1 g Ig))|exact (Es2 g Ig)].
+  - (* equation *) intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2 Id Ob.
+    destruct (IH1 Id Ob) as [Id1 [Sub1 Es1]].
+    assert (Ob1 : Scoped tm1 (tm_gens ob)) by (intros g Ig; exact (Sub1 g (Ob g Ig))).
+    destruct (IH2 Id1 Ob1) as [Id2 [Sub2 Es2]].
+    split; [exact Id2|]. split; [intros x Ix; exact (Sub2 x (Sub1 x Ix))|].
+    intros g Ig. rewrite flat_map_app in Ig. apply in_app_or in Ig as [Ig|Ig]; [exact (Sub2 g (Es1 g Ig))|].
+    cbn [flat_map entry_gens] in Ig. apply in_app_or in Ig as [Ig|Ig]; [|exact (Es2 g Ig)].
+    apply in_app_or in Ig as [Ig|Ig]; apply Sub2.
+    + exact (tyof_scoped _ _ _ _ _ _ Tl (fun g' I' => reading_scoped ob _ g' Id1 Ob1 I') Ig).
+    + exact (tyof_scoped _ _ _ _ _ _ Tr (fun g' I' => reading_scoped ob _ g' Id1 Ob1 I') Ig).
 Qed.
 End Formation.
 
 Section Contexts.
 Variable W : A.world.
 Import A.
-
-Lemma add_tys_formed : forall xs tm, IdForm tm ->
-  IdForm (add_tys xs tm) /\ incl (map fst tm) (map fst (add_tys xs tm)) /\ incl xs (map fst (add_tys xs tm)).
-Proof.
-  induction xs as [|x rest IH]; intros tm Id; cbn.
-  { split; [exact Id|]. split; [intros y Iy; exact Iy|intros y []]. }
-  destruct (nlook x tm) as [v|] eqn:Found.
-  - destruct (IH tm Id) as [Id' [Sub Xs]]. split; [exact Id'|]. split; [exact Sub|].
-    intros y [E|Iy]; [subst y|exact (Xs y Iy)]. apply Sub. apply nlook_in in Found.
-    change x with (fst (x, v)). apply in_map, Found.
-  - assert (Id1 : IdForm ((x, TAbs x) :: tm)) by (constructor; [reflexivity|exact Id]).
-    destruct (IH _ Id1) as [Id' [Sub Xs]]. split; [exact Id'|]. split.
-    + intros y Iy. apply Sub. right. exact Iy.
-    + intros y [<-|Iy]; [apply Sub; left; reflexivity|exact (Xs y Iy)].
-Qed.
 
 Lemma root_formed : forall q es0 tm its es tm', RootItems W q es0 tm its es tm' ->
   IdForm tm -> IdForm tm' /\ incl (map fst tm) (map fst tm') /\ Scoped tm' (flat_map entry_gens es).
@@ -449,15 +459,15 @@ Definition NeedShape (k : item) : Prop :=
 
 Lemma entry_provision_key : forall σ freeze e k p,
   In (k, p) (entry_provision σ freeze e) -> entry_key σ e = Some k.
-Proof. intros σ freeze [t|v t a|f g a|r m g a|u fx] k p I; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- _; reflexivity. Qed.
+Proof. intros σ freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p I; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- _; reflexivity. Qed.
 
 Lemma entry_key_shape : forall σ e k, entry_key σ e = Some k -> NeedShape k.
-Proof. intros σ [t|v t a|f g a|r m g a|u fx] k E; cbn in E; try discriminate; injection E as <-; cbn; auto. Qed.
+Proof. intros σ [t|v t a|f g a|r m g a|u fx|eql eqr] k E; cbn in E; try discriminate; injection E as <-; cbn; auto. Qed.
 
 Lemma ctx_keys_match : forall f Cf ns, CtxOf W f Cf ns -> KeysMatch (c_provisions Cf).
 Proof.
   intros f Cf ns (d & es & tm & er & tmr & σ & _ & _ & _ & _ & -> & _ & _) k p I. cbn in I.
-  apply in_flat_map in I as [e [_ I]]. destruct e as [t|v t a|f' g a|r m g a|u fx]; cbn in I;
+  apply in_flat_map in I as [e [_ I]]. destruct e as [t|v t a|f' g a|r m g a|u fx|eql eqr]; cbn in I;
     try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
 Qed.
 
@@ -592,7 +602,7 @@ Proof.
   intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]].
   assert (Eg : incl (entry_gens e) (map fst tmr)).
   { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
-  destruct e as [t|v t a|f' g a|r m g a|u fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
+  destruct e as [t|v t a|f' g a|r m g a|u fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
     unfold provision_sig_gens, key_gens; cbn [provision_signature]; split; try (intros x []).
   - apply (sig_subst_scoped _ σ (FSig [] t) Range). intros x Ix. apply Eg. cbn. unfold sig_gens in Ix. cbn in Ix.
     rewrite app_nil_r in Ix. apply in_or_app. left. exact Ix.
@@ -617,6 +627,7 @@ Lemma entries_cover :
 Proof.
   apply (ies_mut W (fun p ob tm sp es tm' _ => Forall FunCover es) (fun p ob tm sps es tm' _ => Forall FunCover es));
     intros; repeat constructor; try assumption; try (apply Forall_app; split; assumption).
+  all: try solve [apply Forall_app; split; [assumption|constructor; [exact Logic.I|assumption]]].
   all: cbn; first
     [ intros x Fx; destruct (nlook x tm) as [t|] eqn:L; [exists t; apply f; split; [exact Fx|exact L]|exfalso; exact (n0 x Fx L)]
     | intros x t t' I I'; destruct (proj1 (f x t) I) as [_ L]; destruct (proj1 (f x t') I') as [_ L']; congruence ].
@@ -658,7 +669,7 @@ Proof.
   { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
   assert (Cov : FunCover e).
   { apply in_app_or in Ie as [Ie|Ie]; [exact (proj1 (Forall_forall _ _) CovE e Ie)|exact (proj1 (Forall_forall _ _) CovR e Ie)]. }
-  destruct e as [t|v t a|f' g a|r m g a|u' fx']; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
+  destruct e as [t|v t a|f' g a|r m g a|u' fx'|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
   injection E as <- <-. cbn in Cov. destruct Cov as [Cov Fun]. split; [|split].
   - intros x Fx. destruct (Cov x Fx) as [t It]. exists (app_subst σ t). unfold fixed_subst.
     apply in_map_iff. exists (x, t). split; [reflexivity|exact It].
@@ -697,7 +708,7 @@ Proof.
   - rewrite KeysE. intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]].
     assert (Eg : incl (entry_gens e) (map fst tmr)).
     { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
-    destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
+    destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
       unfold provision_sig_gens, key_gens; cbn [provision_signature].
     + split; [|split; [intros x []|exact Logic.I]]. apply (sig_subst_scoped _ σ (FSig [] t) Range). intros x Ix. apply Eg. cbn.
       unfold sig_gens in Ix. cbn in Ix. rewrite app_nil_r in Ix. apply in_or_app. left. exact Ix.
@@ -710,7 +721,7 @@ Proof.
       intros x t It. unfold fixed_subst in It. apply in_map_iff in It as [[y t0] [E It]]. cbn in E. injection E as -> <-.
       apply (subst_scoped _ σ t0 Range). intros z Iz. apply Eg. cbn. apply in_flat_map. exists (x, t0). split; assumption.
   - intros k p I. cbn in I. apply in_flat_map in I as [e [_ I]].
-    destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
+    destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
   - intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]]. apply Keys. exists e. split; [exact Ie|].
     exact (entry_provision_key _ _ _ _ _ I).
   - intros k Ik. destruct (proj1 (Keys k) Ik) as [e [_ E]]. exact (entry_key_shape _ _ _ E).
@@ -723,7 +734,7 @@ Proof.
   intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & -> & MGM & -> & _ & _) u' fx I.
   pose proof (proj2 entries_cover _ _ _ _ _ _ IE) as Cov. cbn in I. apply in_flat_map in I as [e [Ie I]].
   pose proof (proj1 (Forall_forall _ _) Cov e Ie) as Ce.
-  destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx0]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
+  destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx0|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
   injection E as <- <-. cbn in Ce. destruct Ce as [Cv _]. intros x Fx. destruct (Cv x Fx) as [t It].
   exists (app_subst σ t). unfold fixed_subst. apply in_map_iff. exists (x, t). split; [reflexivity|exact It].
 Qed.
@@ -731,7 +742,7 @@ Theorem functx_needs_provided : forall u C ns, FunCtx W u C ns -> forall k, In k
 Proof.
   intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & implicit & _ & _ & _ & _ & -> & _ & -> & [_ Keys] & _) k Ik.
   destruct (proj1 (Keys k) Ik) as [e [Ie E]]. cbn [c_provisions entries_cx].
-  destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx] eqn:Ee; cbn in E; try discriminate; injection E as <-;
+  destruct e as [t|v t a0|f' g a0|r0 m g a0|u0 fx|eql eqr] eqn:Ee; cbn in E; try discriminate; injection E as <-;
     eexists; apply in_flat_map; exists e; (split; [rewrite Ee; exact Ie|]); rewrite Ee; cbn; left; reflexivity.
 Qed.
 End Support2.

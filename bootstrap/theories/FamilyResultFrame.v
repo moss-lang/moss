@@ -18,7 +18,7 @@ Proof.
    A.resolve_sym W p pa=Some s->A.kind_sym W s=Some k->
    A.FamilyResult W p(Spec(Some pa)None a)->k=A.DKCtx).
  {intros W p pa a s k Res Kind Family;
-  inversion Family as[|p0 pa0 a0 u d n its ResU DeclU AstU Sub];subst p0 pa0 a0.
+  inversion Family as[|p0 pa0 a0 u d n its sps ResU DeclU AstU Esps Sub];subst p0 pa0 a0.
   assert(s=u)by congruence;subst u;unfold A.kind_sym in Kind;rewrite DeclU,AstU in Kind;injection Kind;auto. }
  assert(All:forall W,
   (forall p ob tm sp es tm',A.OutputItemEntries W p ob tm sp es tm'->
@@ -43,9 +43,10 @@ Proof.
      assert(d=d0)by congruence;subst d0;congruence.
    + intros p ob tm a pa dn r m rt sg bs ap Res Named Br Recv Sig App HF.
      split;[constructor;[exists rt,m,sg,ap;reflexivity|constructor]|reflexivity].
-   + intros p ob tm a pa ctx d n its bs es tm' Res Decl Ast Br Read IH HF.
+   + intros p ob tm a pa ctx d n its sps bs es tm' Res Decl Ast Esps Br Read IH HF.
      inversion HF;subst;assert(ctx=u)by congruence;subst u.
-     assert(d=d0)by congruence;subst d0;assert(its=its0)by congruence;subst its0.
+     assert(d=d0)by congruence;subst d0.
+     assert(Ei:map CISpec sps=map CISpec sps0)by congruence;apply map_CISpec_inj in Ei;subst sps0.
      apply IH;assumption.
    + intros p ob tm H;split;[constructor|reflexivity].
    + intros p ob tm sp rest es1 tm1 es2 tm2 Read1 IH1 Read2 IH2 HF.
@@ -118,7 +119,7 @@ Proof.
  unfold A.output_cx in Found;cbn[A.c_mths]in Found.
  destruct(family_new_method_lookup _ _ _ _ _ Miss Found)as(g&New).
  apply in_flat_map in New as(e&He&New).
- destruct e as[t|v ty app|f sig app|rt mid sig app|u fx];cbn in New;try contradiction.
+ destruct e as[t|v ty app|f sig app|rt mid sig app|u fx|eql eqr];cbn in New;try contradiction.
  destruct New as[Eq|[]];injection Eq as <- <- <-.
  unfold A.ResultKeys in Keys;rewrite Keys;apply in_flat_map.
  exists(A.NMth rt mid sig app);split.

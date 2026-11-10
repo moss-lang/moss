@@ -7,7 +7,7 @@ Lemma lfirst_fun_present:forall e u les,
 Proof.
  intros e u les;induction les as[|l les IH].
  - split;[intro H;exfalso;exact(H eq_refl)|intros[fx[]]].
- - destruct l as[t|v y a|f g a|r m sg a|v fx];cbn[lfirst lapp key_eqb];
+ - destruct l as[t|v y a|f g a|r m sg a|v fx|eql eqr];cbn[lfirst lapp key_eqb];
    try solve[rewrite IH;split;
     [intros[fx H];exists fx;right;exact H|intros[fx[H|H]];[discriminate H|exists fx;exact H]]].
    destruct(Nat.eqb_spec u v)as[->|Ne].

@@ -120,7 +120,7 @@ Record gsym : Type := GSym {
   gs_kind : kind;
   gs_decl : adecl;
   gs_recv : option nat;
-  gs_assumes : list (path * option name);
+  gs_assumes : list aitem;
   gs_origin : origin
 }.
 
@@ -176,11 +176,11 @@ Record decl_st : Type := DSt {
   ds_mod : gmod;
   ds_syms : nmap gsym;
   ds_next : nat;
-  ds_pending : list (adecl * list (path * option name))
+  ds_pending : list (adecl * list aitem)
 }.
 
 Definition fresh_sym (st : decl_st) (mi : nat) (n : string) (k : kind) (d : adecl)
-    (rcv : option nat) (asm : list (path * option name)) : nat * decl_st :=
+    (rcv : option nat) (asm : list aitem) : nat * decl_st :=
   let id := ds_next st in
   (id, DSt (ds_mod st) (nset (ds_syms st) id (GSym id mi n k d rcv asm OSource))
            (S id) (ds_pending st)).
@@ -195,7 +195,7 @@ Definition define_name (st : decl_st) (n : name) (id : nat) : res decl_st :=
                 (ds_syms st) (ds_next st) (ds_pending st))
   end.
 
-Fixpoint declare_walk (fuel : nat) (mi : nat) (st : decl_st) (asm : list (path * option name))
+Fixpoint declare_walk (fuel : nat) (mi : nat) (st : decl_st) (asm : list aitem)
     (ds : list adecl) : res decl_st :=
   match fuel with 0 => Bad "declarations nest too deeply" | S fuel =>
   match ds with
@@ -236,7 +236,7 @@ Fixpoint declare_walk (fuel : nat) (mi : nat) (st : decl_st) (asm : list (path *
       declare_walk fuel mi st' asm rest
   end end.
 
-Fixpoint declare_attached (mi : nat) (st : decl_st) (ps : list (adecl * list (path * option name)))
+Fixpoint declare_attached (mi : nat) (st : decl_st) (ps : list (adecl * list aitem))
     : res decl_st :=
   match ps with
   | [] => Good st
@@ -1004,7 +1004,7 @@ Fixpoint walk_specs (fuel : nat) (mi : nat) (specs : list spec) (acc : list nat 
                        else if kind_eqb (gs_kind g) KCtx then
                          if nmem (gs_id g) (fst acc) then ret acc
                          else match gs_decl g with
-                              | ADCtx _ its => walk_specs f (gs_mod g) its (gs_id g :: fst acc, snd acc)
+                              | ADCtx _ its => walk_specs f (gs_mod g) (flat_map citem_specs its) (gs_id g :: fst acc, snd acc)
                               | _ => ret acc
                               end
                        else ret acc
@@ -1022,9 +1022,9 @@ Definition nesting_types (mi : nat) (specs : list spec) : M (list nat) :=
   let! r := walk_specs n mi specs ([], []) in
   ret (snd r).
 
-(* an assume item `p` (not `R.m`) is the context item `p` *)
-Definition assume_specs (its : list (path * option name)) : list spec :=
-  flat_map (fun it => match it with (p, None) => [Spec (Some p) None None] | _ => [] end) its.
+(* an assume item `p` (not `R.m`) is the context item `p`; an equation
+   names its sides' references (D90) *)
+Definition assume_specs (its : list aitem) : list spec := flat_map aitem_specs its.
 
 Definition assume_type_syms (g : gsym) : M (list nat) :=
   nesting_types (gs_mod g) (assume_specs (gs_assumes g)).
@@ -1778,7 +1778,7 @@ Fixpoint result_mentions_go (fuel : nat) (self : nat) (mi : nat) (specs : list s
                       ret (rr +++ ms)
                   | None =>
                       match gs_kind g, gs_decl g with
-                      | KCtx, ADCtx _ its => result_mentions_go f self (gs_mod g) its []
+                      | KCtx, ADCtx _ its => result_mentions_go f self (gs_mod g) (ctx_specs its) []
                       | KVal, _ => reqs (gs_id g)
                       (* #12b: a fn's requirements and every type symbol
                          its signature mentions, as for a method *)
@@ -1881,6 +1881,18 @@ Definition add_method_item (e : env) (mi : nat) (recv : gsym) (n : name) (subst 
    `walk_fuel` runs out only on a cycle (ExecutionModel note 30). *)
 Definition ctx_fuel : M nat := let! n := walk_fuel in ret (2 * n).
 
+(* D90: the merge an equation `l = r` makes, read in module mi under the
+   enclosing items' brackets `outer`, after the references its sides write
+   are walked as items (so the type symbols among them are in force): its
+   two sides are merged, as D43 merges two bindings of one key. *)
+Definition add_eq_merge (e : env) (mi : nat) (l r : aty) (outer : list (nat * ety)) (needs : list key)
+    : M (env * list key) :=
+  let tm := outer +++ tymap e in
+  let! tl := ety_of l mi tm e None in
+  let! tr := ety_of r mi tm e None in
+  let! e := unify 200 e mi tl tr " in a type equation (D90)" in
+  ret (e, needs).
+
 Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : list (nat * ety))
     (needs : list key) {struct fuel} : M (env * list key) :=
   match fuel with
@@ -1928,7 +1940,13 @@ Fixpoint add_symbol_item (fuel : nat) (e : env) (mi : nat) (g : gsym) (subst : l
       | KCtx =>
           match gs_decl g with
           | ADCtx _ its =>
-              mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)) (e, needs) its
+              mfold (fun acc it => match it with
+                                   | CISpec sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)
+                                   | CIEq l r =>
+                                       let! acc := mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc))
+                                                         acc (ty_heads l ++ ty_heads r) in
+                                       add_eq_merge (fst acc) (gs_mod g) l r subst (snd acc)
+                                   end) (e, needs) its
           | _ => fail "internal: context"
           end
       | KUnit | KTag | KAlias => ret (e, needs)
@@ -1998,12 +2016,16 @@ with add_spec (fuel : nat) (e : env) (mi : nat) (sp : spec) (outer : list (nat *
       end
   end.
 
-Definition add_assume_item (e : env) (mi : nat) (it : path * option name) (needs : list key)
+Definition add_assume_item (e : env) (mi : nat) (it : aitem) (needs : list key)
     : M (env * list key) :=
   match it with
-  | (p, Some d) =>
+  | AIEq l r =>
+      let! cf := ctx_fuel in
+      let! acc := mfold (fun acc sp => add_spec cf (fst acc) mi sp [] (snd acc)) (e, needs) (ty_heads l ++ ty_heads r) in
+      add_eq_merge (fst acc) mi l r [] (snd acc)
+  | AIHead (p, Some d) =>
       let! r := resolve_type_symbol mi p in add_method_item e mi r d [] needs
-  | (p, None) =>
+  | AIHead (p, None) =>
       let! tg := rpath mi p in
       match tg with
       | None => err mi ("`" ++ show_path p ++ "` is not in scope")
@@ -2097,7 +2119,7 @@ Definition add_root_context (e : env) (mi : nat) (needs : list key) : M (env * l
               mfold (fun acc sp =>
                   let '(e, needs) := acc in
                   match sp with
-                  | Spec (Some p) None _ =>
+                  | CISpec (Spec (Some p) None _) =>
                       let! fo := resolve_sym (gs_mod gc) p in
                       match fo with
                       | Some fg =>
@@ -2467,11 +2489,17 @@ Fixpoint list_same {A} (eqb : A -> A -> bool) (xs ys : list A) : bool :=
   | _, _ => false
   end.
 
-Definition same_assume (a b : path * option name) : bool :=
-  list_same String.eqb (fst a) (fst b) &&
-  match snd a, snd b with
-  | None, None => true
-  | Some x, Some y => String.eqb x y
+(* Equations (D90) are never counted the same: their contexts are then
+   checked again, which is only slower. *)
+Definition same_assume (a b : aitem) : bool :=
+  match a, b with
+  | AIHead a, AIHead b =>
+      list_same String.eqb (fst a) (fst b) &&
+      match snd a, snd b with
+      | None, None => true
+      | Some x, Some y => String.eqb x y
+      | _, _ => false
+      end
   | _, _ => false
   end.
 
@@ -2718,7 +2746,7 @@ Fixpoint expand_spec (fuel : nat) (mi : nat) (sp : spec) (out : list (leaf * str
           | Some (ESym s) =>
               let! g := sym s in
               match d, gs_decl g with
-              | None, ADCtx _ its => mfold (fun o it => expand_spec f (gs_mod g) it o) out its
+              | None, ADCtx _ its => mfold (fun o it => expand_spec f (gs_mod g) it o) out (flat_map citem_specs its)
               | None, _ =>
                   if already_provided g then ret out
                   else ret (aset leaf_eqb (s, None) ("`" ++ gs_name g ++ "`") out)
@@ -2844,7 +2872,10 @@ Fixpoint provide_spec (fuel : nat) (e : env) (fg : gsym) (mi : nat) (sp : spec)
               | Some g =>
                   match gs_kind g, gs_decl g with
                   | KCtx, ADCtx _ its =>
-                      mfold (fun acc it => provide_spec f (fst acc) fg (gs_mod g) it subst (snd acc)) (e, out) its
+                      (* D90: an equation is a requirement; a result provides *)
+                      if negb (Nat.eqb (List.length (ctx_specs its)) (List.length its))
+                      then err mi ("a functor's result cannot hold the type equations of `" ++ gs_name g ++ "` (D90)")
+                      else mfold (fun acc it => provide_spec f (fst acc) fg (gs_mod g) it subst (snd acc)) (e, out) (ctx_specs its)
                   | KType, _ => ret (e, out)
                   | _, _ =>
                       if already_provided g then ret (e, out) else
@@ -3155,7 +3186,9 @@ Fixpoint family_leaves_ok (fuel : nat) (mi : nat) (ps : list nat) (specs : list 
             let! go := resolve_sym mi p in
             match go with
             | Some g => match gs_kind g, gs_decl g with
-                        | KCtx, ADCtx _ its => family_leaves_ok f (gs_mod g) ps its
+                        | KCtx, ADCtx _ its =>
+                            if Nat.eqb (List.length (ctx_specs its)) (List.length its)
+                            then family_leaves_ok f (gs_mod g) ps (ctx_specs its) else ret false
                         | _, _ => ret false
                         end
             | None => ret false
@@ -3200,7 +3233,7 @@ Fixpoint family_leaves (fuel : nat) (e : env) (mi : nat) (specs : list spec) (ou
                 let! tg := resolve_sym mi pp in
                 match tg with
                 | Some g => match gs_kind g, gs_decl g with
-                            | KCtx, ADCtx _ its => family_leaves f e (gs_mod g) its subst
+                            | KCtx, ADCtx _ its => family_leaves f e (gs_mod g) (ctx_specs its) subst
                             | _, _ => ret []
                             end
                 | None => ret []
@@ -5498,7 +5531,7 @@ Fixpoint context_acyclic (fuel : nat) (w : world) (stack : list nat) (g : gsym) 
                           | _ => Good tt
                           end in go rest
             | _ :: rest => go rest
-            end in go its
+            end in go (ctx_specs its)
       | _, _ => Good tt
       end
   end.

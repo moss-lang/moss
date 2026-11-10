@@ -24,22 +24,26 @@ Lemma unifies_append_root:forall sb es er,Forall root_entry er->
  A.Unifies sb(es++er)<->A.Unifies sb es.
 Proof.
  intros sb es er Neutral;split.
- - intros H e1 e2 k H1 H2;apply H;apply in_or_app;left;assumption.
- - intros H e1 e2 k H1 H2 K1 K2.
-   apply in_app_or in H1 as[H1|H1];apply in_app_or in H2 as[H2|H2].
-   + exact(H e1 e2 k H1 H2 K1 K2).
-   + pose proof(proj1(Forall_forall _ _)Neutral e2 H2)as R2.
-     destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|].
-     cbn[A.entry_key]in K2;injection K2 as <-.
-     destruct e1;cbn[A.entry_key]in K1;try discriminate K1;split;reflexivity.
-   + pose proof(proj1(Forall_forall _ _)Neutral e1 H1)as R1.
-     destruct e1;cbn[root_entry]in R1;try contradiction;[discriminate K1|].
-     cbn[A.entry_key]in K1;injection K1 as <-.
-     destruct e2;cbn[A.entry_key]in K2;try discriminate K2;split;reflexivity.
-   + pose proof(proj1(Forall_forall _ _)Neutral e1 H1)as R1.
-     pose proof(proj1(Forall_forall _ _)Neutral e2 H2)as R2.
-     destruct e1;cbn[root_entry]in R1;try contradiction;[discriminate K1|].
-     destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|split;reflexivity].
+ - intros[H He];split;[intros e1 e2 k H1 H2;apply H;apply in_or_app;left;assumption|].
+   intros l r I;apply He;apply in_or_app;left;exact I.
+ - intros[H He];split.
+   + intros e1 e2 k H1 H2 K1 K2.
+     apply in_app_or in H1 as[H1|H1];apply in_app_or in H2 as[H2|H2].
+     * exact(H e1 e2 k H1 H2 K1 K2).
+     * pose proof(proj1(Forall_forall _ _)Neutral e2 H2)as R2.
+       destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|].
+       cbn[A.entry_key]in K2;injection K2 as <-.
+       destruct e1;cbn[A.entry_key]in K1;try discriminate K1;split;reflexivity.
+     * pose proof(proj1(Forall_forall _ _)Neutral e1 H1)as R1.
+       destruct e1;cbn[root_entry]in R1;try contradiction;[discriminate K1|].
+       cbn[A.entry_key]in K1;injection K1 as <-.
+       destruct e2;cbn[A.entry_key]in K2;try discriminate K2;split;reflexivity.
+     * pose proof(proj1(Forall_forall _ _)Neutral e1 H1)as R1.
+       pose proof(proj1(Forall_forall _ _)Neutral e2 H2)as R2.
+       destruct e1;cbn[root_entry]in R1;try contradiction;[discriminate K1|].
+       destruct e2;cbn[root_entry]in R2;try contradiction;[discriminate K2|split;reflexivity].
+   + intros l r I;apply in_app_or in I as[I|I];[exact(He l r I)|].
+     pose proof(proj1(Forall_forall _ _)Neutral _ I)as R;cbn[root_entry]in R;contradiction.
 Qed.
 Section Main.
 Variable w:Elab.world. Context{P:xprogram}.

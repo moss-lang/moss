@@ -66,12 +66,13 @@ Proof.
     inversion D2; subst; try (flat; kmis). repeat constructor.
   - intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sig App ob2 tm2 es2 tm2' D2.
     inversion D2; subst; try (flat; kmis). repeat constructor.
-  - intros p ob tm a pa c d n its bs es tm' R Dd Ast B Inner IH ob2 tm2 es2 tm2' D2.
+  - intros p ob tm a pa c d n its sps bs es tm' R Dd Ast Esps B Inner IH ob2 tm2 es2 tm2' D2.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' c); assert (s' = c) by congruence; subst s' end.
     match goal with H : w_decl W c = Some ?d' |- _ => assert_fails (constr_eq d' d); assert (d' = d) by congruence; subst d' end.
-    rewrite Ast in *. match goal with H : ADCtx _ _ = ADCtx _ _ |- _ => injection H as <- <- end.
-    match goal with H : OutputItemsEntries W _ _ _ its ?es2 _ |- _ => exact (IH _ _ _ _ H) end.
+    rewrite Ast in *. match goal with H : ADCtx _ _ = ADCtx _ _ |- _ => injection H as <- Ei end.
+    apply map_CISpec_inj in Ei. subst.
+    match goal with H : OutputItemsEntries _ _ _ _ _ _ _ |- _ => exact (IH _ _ _ _ H) end.
   - intros p ob tm ob2 tm2 es2 tm2' D2. inversion D2; subst. constructor.
   - intros p ob tm sp rest es1 tm1 es2 tm2 D1 IH1 Ds IHs ob2 tm2x es2x tm2x' D2.
     inversion D2; subst.

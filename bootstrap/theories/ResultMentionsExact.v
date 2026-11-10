@@ -117,12 +117,12 @@ Proof.
    try solve[injection H as <- <-;destruct Hin];
    try solve[eapply A.RMValFn;[exact Resolve|rewrite(kind_sym_rd w R Fl b Hload _ _ Hg),K;cbn;tauto|left;change(In t(R(gs_id g)));rewrite(reqs_R w R Fl _ _ _ _ Hi H L);exact Hin|exact N]];
    try solve[eapply A.RMValFn;[exact Resolve|rewrite(kind_sym_rd w R Fl b Hload _ _ Hg),K;cbn;tauto|exact(here_fn_sound g s found s' t Hg K H Hi Hw L Hin)|exact N]].
-   + destruct(IH self(gs_mod g)its[]s found s' H Hi Hw(loader_mod_in w R Fl b Hload _ _ Hg)L t Hin)as[[]|(sp&Hsp&HM)].
+   + destruct(IH self(gs_mod g)(ctx_specs its)[]s found s' H Hi Hw(loader_mod_in w R Fl b Hload _ _ Hg)L t Hin)as[[]|(sp&Hsp&HM)].
      eapply A.RMCtx with(dc:=A.Decl(gm_path(get_mod w(gs_mod g)))(gs_decl g)(gs_assumes g)).
      * exact Resolve.
      * exact(w_decl_rd w R Fl _ _ Hg).
      * cbn[A.d_ast];exact D.
-     * exact Hsp.
+     * exact(proj1(in_ctx_specs sp its)Hsp).
      * exact HM.
      * exact N.
    + destruct body as[body|];[injection H as <- <-;destruct Hin|].

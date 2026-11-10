@@ -119,13 +119,45 @@ Proof. intros H He n Hn. apply (spec_group n); auto. Qed.
 Lemma app_complete ts v rest : App ts v rest -> Ends ts -> forall n, 5 + 32 * length ts <= n -> Ok (parse_app_opt n ts) v ts rest.
 Proof. intros H He n Hn. apply (spec_group n); auto. Qed.
 
-Lemma assume_item_complete ts v rest : AssumeItem ts v rest -> Ends ts -> forall n, length ts <= n ->
+Lemma app_first ts a rest : App ts a rest -> kind rest = EQUAL -> kind ts <> DOT.
+Proof. destruct 1 as [? Hk | ? ? ? ? ? [Hk _] _ _]; intro He; [rewrite He|rewrite Hk]; discriminate. Qed.
+
+Lemma type_ref_complete ts t rest : TypeRef ts t rest -> Ends ts -> forall n, 6 + 32 * length ts <= n ->
+  Ok1 (parse_type_ref n ts) t ts rest.
+Proof.
+  intros (p & a & t1 & Hp & Ha & ->) He n Hn. unfold parse_type_ref.
+  ext path_complete Hp n. ext app_complete Ha n. fin.
+Qed.
+
+Lemma assume_item_complete ts v rest : AssumeItem ts v rest -> Ends ts -> forall n, 6 + 32 * length ts <= n ->
   Ok1 (parse_assume_item n ts) v ts rest.
 Proof.
-  unfold AssumeItem. destruct v as [p d]. simpl. intros H He n Hn. unfold parse_assume_item.
-  inversion H as [? ? ? Hp Hk | ? ? ? ? ? ? Hp Ht Hx | ]; subst.
-  - ext path_complete Hp n. step. fin.
-  - ext path_complete Hp n. step. fin.
+  intros H He n Hn. unfold parse_assume_item.
+  destruct H as [ts it rest Hh Hk Hb | ts l r rest (ts1 & ts2 & Hl & Heq & Hr)].
+  - destruct it as [p d]. simpl in Hh. inversion Hh as [? ? ? Hp Hk' | ? ? ? ? ? ? Hp Ht Hx | ]; subst.
+    + ext path_complete Hp n. step. fin.
+    + ext path_complete Hp n. step. fin.
+  - simpl in Hl, Hr. destruct Hl as (p & a & t1 & Hp & Ha & ->).
+    ext path_complete Hp n.
+    assert (Kt : kind t1 = EQUAL \/ kind t1 = LBRACKET)
+      by (destruct Ha as [? Hk | ? ? ? ? ? [Hk _] _ _]; [left; destruct Heq; auto | right; auto]).
+    rewrite (at_neq DOT t1) by (destruct Kt as [K|K]; rewrite K; discriminate).
+    replace (at_ EQUAL t1 || at_ LBRACKET t1)%bool with true
+      by (unfold at_; destruct Kt as [K|K]; rewrite K; reflexivity).
+    cbv beta iota zeta delta [pbind].
+    ext app_complete Ha n. step. ext type_ref_complete Hr n. fin.
+Qed.
+
+Lemma ctx_item_complete ts v rest : CtxItem ts v rest -> Ends ts -> forall n, 7 + 32 * length ts <= n ->
+  Ok1 (parse_ctx_item n ts) v ts rest.
+Proof.
+  intros H He n Hn. unfold parse_ctx_item.
+  destruct H as [ts s rest Hs Hk | ts l r rest (ts1 & ts2 & Hl & Heq & Hr)].
+  - ext spec_complete Hs n. step. fin.
+  - simpl in Hl, Hr. destruct Hl as (p & a & t1 & Hp & Ha & ->).
+    assert (Hs : Spec_ ts (Spec (Some p) None a) ts1)
+      by (eapply SpecG; [apply HeadPath; [exact Hp|exact (app_first _ _ _ Ha (proj1 Heq))]|exact Ha]).
+    ext spec_complete Hs n. step. ext type_ref_complete Hr n. fin.
 Qed.
 
 (* ===================== Types ============================================== *)
@@ -681,7 +713,7 @@ Proof.
       destruct H0; step; clistx n ltac:(param_tac n); step; exp opt_type_complete OptType n; step;
         exp block_complete Block n; fin.
     (* context *)
-    + step. clistx n ltac:(apply Ok1_Ok; eapply spec_complete; eauto; lia). step. fin.
+    + step. clistx n ltac:(apply Ok1_Ok; eapply ctx_item_complete; eauto; lia). step. fin.
     (* functors *)
     + destruct H1 as [(Hk & -> & ->) | (l & -> & Hnl)].
       * step. clistx n ltac:(apply Ok1_Ok; eapply spec_complete; eauto; lia). step.

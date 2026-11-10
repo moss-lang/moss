@@ -36,7 +36,7 @@ Definition mention_item(f self mi:nat)(out:list nat)(sp:spec):M(list nat):=
                       ret (rr ++ ms)
                   | None =>
                       match gs_kind g, gs_decl g with
-                      | KCtx, ADCtx _ its => result_mentions_go f self (gs_mod g) its []
+                      | KCtx, ADCtx _ its => result_mentions_go f self (gs_mod g) (ctx_specs its) []
                       | KVal, _ => reqs (gs_id g)
                       | KFn, _ => let! rs := reqs (gs_id g) in
                                   let! ms := signature_type_syms g rs in ret (rs ++ ms)

@@ -267,7 +267,10 @@ Fixpoint read_decl (fuel : nat) (x : sx) : res adecl :=
       | SL false [SA "M"; SL true its; SL true ds] =>
           let* its' := rmap (fun it => match it with
                                        | SL false [SA "I"; SA p; d; SA "_"] =>
-                                           let* d' := opt_atom d in Good (split_path p, d')
+                                           let* d' := opt_atom d in Good (AIHead (split_path p, d'))
+                                       | SL false [SA "V"; l; r] =>
+                                           let* l' := read_ty k l in
+                                           let* r' := read_ty k r in Good (AIEq l' r')
                                        | _ => bad "assume item"
                                        end) its in
           let* ds' := rmap (read_decl k) ds in
@@ -298,7 +301,12 @@ Fixpoint read_decl (fuel : nat) (x : sx) : res adecl :=
                          end) in
           Good (ADFn rcv n ps' ret' body')
       | SL false [SA "T"; SA n; SL true ss] =>
-          let* ss' := rmap (read_spec k) ss in Good (ADCtx n ss')
+          let* ss' := rmap (fun it => match it with
+                                      | SL false [SA "V"; l; r] =>
+                                          let* l' := read_ty k l in
+                                          let* r' := read_ty k r in Good (CIEq l' r')
+                                      | _ => let* s' := read_spec k it in Good (CISpec s')
+                                      end) ss in Good (ADCtx n ss')
       | SL false (SA "U" :: SA n :: rest) =>
           (* 61b7b76: name args result body; the d84 branch adds the
              brackets after the name *)
@@ -462,10 +470,21 @@ with dstmt (s : astmt) : sx :=
 Definition dbind (its : list (spec * option aexpr)) : sx :=
   nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) its)].
 
+(* An equation ([D90]) is `(V l r)`, in an assume's or a context's items. *)
+Definition dassume (it : aitem) : sx :=
+  match it with
+  | AIHead (p, o) => nd "I" [dpath p; dopt SA o; SA "_"]
+  | AIEq l r => nd "V" [dty l; dty r]
+  end.
+Definition dcitem (it : citem) : sx :=
+  match it with
+  | CISpec s => dspec s
+  | CIEq l r => nd "V" [dty l; dty r]
+  end.
+
 Fixpoint ddecl (d : adecl) : sx :=
   match d with
-  | ADAssume its ds => nd "M" [sl (map (fun '(p, o) => nd "I" [dpath p; dopt SA o; SA "_"]) its);
-                               sl (map ddecl ds)]
+  | ADAssume its ds => nd "M" [sl (map dassume its); sl (map ddecl ds)]
   | ADType x => nd "N" [SA x]
   | ADAlias x t => nd "O" [SA x; dty t]
   | ADTag x ps t => nd "P" [SA x; sl (map SA ps); dty t]
@@ -474,7 +493,7 @@ Fixpoint ddecl (d : adecl) : sx :=
   | ADFn r x ps ret body =>
       nd "S" [SA (match r with RDetached => "." | RPlain => "_" | RAttached q => q end); SA x;
               sl (map (fun '(p, t) => nd "K" [SA p; dty t]) ps); dopt dty ret; dopt dblock body]
-  | ADCtx x its => nd "T" [SA x; sl (map dspec its)]
+  | ADCtx x its => nd "T" [SA x; sl (map dcitem its)]
   | ADFunctor x ps args res body =>
       nd "U" [SA x; dopt (fun l => sl (map SA l)) ps; sl (map dspec args); sl (map dspec res);
               dopt (fun bs => sl (map dbind bs)) body]

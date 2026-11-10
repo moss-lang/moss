@@ -181,11 +181,6 @@ Proof.
   - inversion Hp; subst; eexists; split; [reflexivity| | reflexivity|]; discriminate.
 Qed.
 
-Lemma parse_assume_item_sound n ts it rest : parse_assume_item n ts = POk it rest -> AssumeItem ts it rest.
-Proof.
-  unfold parse_assume_item, AssumeItem. intro H. crush; apply parse_path_sound in H0; simpl; eauto with fe.
-Qed.
-
 Lemma spec_sound : forall n,
   (forall ts v rest, parse_spec n ts = POk v rest -> Spec_ ts v rest) /\
   (forall ts v rest, parse_app_opt n ts = POk v rest -> App ts v rest) /\
@@ -205,12 +200,43 @@ Proof. apply spec_sound. Qed.
 Lemma spec1_sound n ts v rest : parse_spec n ts = POk v rest -> Spec_ ts v rest.
 Proof. apply spec_sound. Qed.
 
+Lemma parse_type_ref_sound n ts t rest : parse_type_ref n ts = POk t rest -> TypeRef ts t rest.
+Proof.
+  unfold parse_type_ref, TypeRef. intro H. crush.
+  apply parse_path_sound in H0. apply app_sound in H1. exists a, a0, ts0. auto.
+Qed.
+
+Lemma parse_assume_item_sound n ts it rest : parse_assume_item n ts = POk it rest -> AssumeItem ts it rest.
+Proof.
+  unfold parse_assume_item, eq_side_err. intro H. crush; apply parse_path_sound in H0.
+  all: try solve [eapply (AssumeHead _ (_, Some _)); simpl; eauto with fe].
+  all: try solve [eapply (AssumeHead _ (_, None)); simpl; eauto with fe].
+  all: match goal with Ha : parse_app_opt _ ?t0 = POk ?ap ?t1, Hr : parse_type_ref _ ?t2 = POk _ _,
+                       Hk : Tk EQUAL ?t1 ?t2, Hp : Path _ ?pp ?t0 |- _ =>
+         apply parse_type_ref_sound in Hr; apply app_sound in Ha; apply AssumeEq;
+         exists t1, t2; simpl; split; [exists pp, ap, t0; auto|]; split; [exact Hk|exact Hr] end.
+Qed.
+
+Lemma parse_ctx_item_sound n ts it rest : parse_ctx_item n ts = POk it rest -> CtxItem ts it rest.
+Proof.
+  unfold parse_ctx_item, eq_side_err. intro H. crush.
+  all: try solve [apply CtxSpec; [eapply spec1_sound; eassumption|auto]].
+  destruct a as [[p|] [d|] a]; crush.
+  match goal with Hr : parse_type_ref _ _ = POk _ _ |- _ => apply parse_type_ref_sound in Hr; rename Hr into Hr0 end.
+  apply spec1_sound in H0.
+  inversion H0 as [? ? ? ? ? ? Hh Ha]; subst.
+  inversion Hh as [? ? ? Hp Hk| |]; subst.
+  apply CtxEq. exists ts0, (advance ts0). split; [eexists _, a, _; split; [exact Hp|split; [exact Ha|reflexivity]]|].
+  split; [split; auto|exact Hr0].
+Qed.
+
 Ltac use_sound :=
   repeat match goal with
   | H : parse_path _ _ = POk _ _ |- _ => apply parse_path_sound in H
   | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
   | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
   | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
+  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
   end.
 
 (* Apply the induction hypotheses (named IH1, IH2, ...) to every parser run. *)
@@ -279,6 +305,7 @@ Ltac use_sound ::=
   | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
   | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
   | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
+  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
   | H : parse_type _ _ = POk _ _ |- _ => apply type1_sound in H
   | H : parse_record_type _ _ = POk _ _ |- _ => apply record_type_sound in H
   end.
@@ -316,6 +343,7 @@ Ltac use_sound ::=
   | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
   | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
   | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
+  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
   | H : parse_type _ _ = POk _ _ |- _ => apply type1_sound in H
   | H : parse_record_type _ _ = POk _ _ |- _ => apply record_type_sound in H
   | H : parse_opt_type _ _ = POk _ _ |- _ => apply opt_type_sound in H
@@ -540,6 +568,7 @@ Ltac use_sound ::=
   | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
   | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
   | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
+  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
   | H : parse_type _ _ = POk _ _ |- _ => apply type1_sound in H
   | H : parse_record_type _ _ = POk _ _ |- _ => apply record_type_sound in H
   | H : parse_opt_type _ _ = POk _ _ |- _ => apply opt_type_sound in H
@@ -564,7 +593,7 @@ Lemma decl_sound : forall n,
   (forall ts v rest, decls_until n ts = POk v rest -> Decls ts v rest).
 Proof.
   induction n as [|n (IH1 & IH2)]; [split; intros; discriminate|].
-  split; intros ts v rest H; simpl in H; crush; try list_with AssumeItem; try list_with Param;
+  split; intros ts v rest H; simpl in H; crush; try list_with AssumeItem; try list_with CtxItem; try list_with Param;
     try list_with Spec_; try list_with Spec_; grind;
     repeat match goal with
     | H : name_list _ _ = POk _ _ |- _ => apply name_list_sound in H

@@ -48,8 +48,9 @@ Lemma root_item_support:forall mi gi e needs sp s e' needs' s' U tm les,
  Inv s->st_w s=w->In mi(w_order w)->In gi(w_order w)->Later w P R Fl s'->
  WS Fl U e tm les needs->EnvSupport WW e->AppsSupport w R Fl e->EnvSupport WW e'/\AppsSupport w R Fl e'.
 Proof.
- intros mi gi e needs[pa dn brackets]s e' needs' s' U tm les Run Inv Hw Mi Gi Late W Support Apps.
+ intros mi gi e needs[[pa dn brackets]|l r]s e' needs' s' U tm les Run Inv Hw Mi Gi Late W Support Apps;
  unfold root_item_step in Run;cbn beta iota zeta in Run.
+ 2:{injection Run as <- <- <-;exact(conj Support Apps). }
  destruct pa as[path|],dn as[name|];try(injection Run as <- <- <-;exact(conj Support Apps)).
  apply bind_inv in Run as[found[mid[Resolve Run]]].
  destruct(esym_rel w R Fl b Hload gi path s found mid Inv Hw Gi Resolve)as[-> Resolved].

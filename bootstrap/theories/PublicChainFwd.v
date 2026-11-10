@@ -40,7 +40,7 @@ Proof.
   destruct Ex as [q [Iq [a0 Eq]]].
   apply in_flat_map in Iq as [e [Ie Iq]]. apply in_rev in Ie.
   apply in_flat_map. exists e. split; [exact Ie|].
-  destruct e as [t|v t a1|f g1 a1|r1 m1 g1 a1|u1 fx]; cbn in Iq; try contradiction;
+  destruct e as [t|v t a1|f g1 a1|r1 m1 g1 a1|u1 fx|eql eqr]; cbn in Iq; try contradiction;
     destruct Iq as [Eq'|[]]; subst q; destruct Eq as [Eq|[th Eq]]; try discriminate.
   all: injection Eq; intros; subst; cbn; left; reflexivity.
 Qed.

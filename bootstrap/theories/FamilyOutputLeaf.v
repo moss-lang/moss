@@ -10,7 +10,7 @@ Inductive FamilyOutputLeaf(W:A.world):string->list(nat*ty)->list(nat*ty)->spec->
  FamilyOutputLeaf W p ob tm(Spec(Some pa)(Some dn)a)rt m
 |FOLContext:forall p ob tm pa a c d n its bs sp rt m,
  A.resolve_sym W p pa=Some c->A.w_decl W c=Some d->A.d_ast d=ADCtx n its->
- A.OutputBrackets W p(ob++tm)a bs->In sp its->
+ A.OutputBrackets W p(ob++tm)a bs->In(CISpec sp)its->
  FamilyOutputLeaf W(A.d_mod d)(bs++ob)tm sp rt m->
  FamilyOutputLeaf W p ob tm(Spec(Some pa)None a)rt m.
 Lemma family_output_leaf_origin:
@@ -33,8 +33,9 @@ Proof.
  - intros;split;[reflexivity|intros rt0 m0 sg0 ap0[Bad|[]];discriminate Bad].
  - intros p ob tm a pa dn r m rt sg bs ap Res Named Br Rec Sig App.
    split;[reflexivity|intros rt0 m0 sg0 ap0[Eq|[]];injection Eq as <- <- <- <-;econstructor;eassumption].
- - intros p ob tm a pa c d n its bs es tm' Res Decl Ast Br Read[Same IH].
-   split;[exact Same|intros rt m sg ap Hin;destruct(IH rt m sg ap Hin)as(sp&Hsp&Leaf);econstructor;eassumption].
+ - intros p ob tm a pa c d n its sps bs es tm' Res Decl Ast Esps Br Read[Same IH].
+   split;[exact Same|intros rt m sg ap Hin;destruct(IH rt m sg ap Hin)as(sp&Hsp&Leaf);econstructor;try eassumption].
+   subst its;apply in_map;exact Hsp.
  - intros;split;[reflexivity|intros rt0 m0 sg0 ap0[]].
  - intros p ob tm sp rest es1 tm1 es2 tm2 Read1[Same1 IH1]Read2[Same2 IH2].
    subst tm1 tm2;split;[reflexivity|intros rt m sg ap Hin;apply in_app_iff in Hin as[Left|Right]].
@@ -53,7 +54,7 @@ Proof.
  intros W u C out C' keys rt m Provide Key.
  destruct Provide as(d&ps&args&results&body&outs&es&tm&Decl&Parts&Outputs&Read&Keys&Final).
  unfold A.ResultKeys in Keys;rewrite Keys in Key;apply in_flat_map in Key as(e&Hin&Key).
- destruct e as[t|v ty ap|f sg ap|raw mid sg ap|h fx];cbn[A.entry_key]in Key;
+ destruct e as[t|v ty ap|f sg ap|raw mid sg ap|h fx|eql eqr];cbn[A.entry_key]in Key;
  try contradiction;try(destruct Key as[Bad|[]];discriminate Bad).
  destruct Key as[Eq|[]];injection Eq as Same Mid;subst mid.
  destruct(proj2 family_output_leaf_origin W(A.d_mod d)[](A.output_type_map C outs out)results es tm Read)

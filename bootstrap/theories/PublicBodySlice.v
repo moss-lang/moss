@@ -3754,7 +3754,7 @@ Proof.
   intros u C ns (dd & ps & a & r & b & es & tm & tm' & σ & implicit & D & FP & IE & Imp & Etm & MGM & EC & _ & _) k p Ik.
   subst C. destruct MGM as [_ [Idem _]]. unfold A.canon. cbn [A.c_sub A.entries_cx A.c_provisions] in Ik |- *.
   apply in_flat_map in Ik as [e [_ Ik]].
-  destruct e as [t0|v t0 a0|f g a0|r0 m g a0|u0 fx]; cbn [A.entry_provision In] in Ik; [contradiction|..];
+  destruct e as [t0|v t0 a0|f g a0|r0 m g a0|u0 fx|eql eqr]; cbn [A.entry_provision In] in Ik; try contradiction;
     destruct Ik as [E|[]]; injection E as <- <-; split.
   - intros tq [<-|[]]. apply Idem.
   - intros r1 m1 a1 E. discriminate.

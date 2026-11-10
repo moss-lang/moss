@@ -267,13 +267,13 @@ Proof.
   set (nw := flat_map (entry_provision (c_sub C) (fun a => a)) (rev es)) in L.
   assert (Nw : ilook (mkey r m) nw <> None).
   { rewrite RK in Ik. apply in_flat_map in Ik as [e [Ie Ik]].
-    destruct e as [t|v t a1|f g1 a1|rt m1 g1 a1|u1 fx]; cbn in Ik; try contradiction;
+    destruct e as [t|v t a1|f g1 a1|rt m1 g1 a1|u1 fx|eql eqr]; cbn in Ik; try contradiction;
       destruct Ik as [E|[]]; try discriminate.
     apply (ilook_some _ _ _ (ProvidedMethod (sig_subst (c_sub C) g1) a1)). unfold nw. apply in_flat_map.
     exists (NMth rt m1 g1 a1). split; [apply (proj1 (in_rev _ _)); exact Ie|]. cbn. left. rewrite E. reflexivity. }
   rewrite (ilook_app_l _ _ _ _ Nw) in L. apply PublicFormation.ilook_in_key in L.
   unfold nw in L. apply in_flat_map in L as [e [Ie Iq]]. apply (proj2 (in_rev _ _)) in Ie.
-  destruct e as [t|v t a1|f g1 a1|rt m1 g1 a1|u1 fx]; cbn in Iq; try contradiction;
+  destruct e as [t|v t a1|f g1 a1|rt m1 g1 a1|u1 fx|eql eqr]; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; try discriminate.
   try unfold mkey in E. injection E as Er Em Eg Ea. subst r m1 g a1.
   destruct (Rd rt m g1 a Ie) as [tmx [Sg [App (s0 & ds & r1 & dn & Ds & Mn)]]].

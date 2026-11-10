@@ -62,15 +62,15 @@ Proof.
 Qed.
 Theorem context_acyclic_child:forall fuel w stack g name specs p a h,
  context_acyclic(S fuel)w stack g=Good tt->gs_kind g=KCtx->gs_decl g=ADCtx name specs->
- In(Spec(Some p)None a)specs->resolve_path w(gs_mod g)p=Good(Some(ESym(gs_id h)))->
+ In(CISpec(Spec(Some p)None a))specs->resolve_path w(gs_mod g)p=Good(Some(ESym(gs_id h)))->
  nget(w_syms w)(gs_id h)=Some h->gs_kind h=KCtx->
  context_acyclic fuel w(gs_id g::stack)h=Good tt.
 Proof.
  intros fuel w stack g name specs p a h E K D Hin Rp Hg Kh.
  cbn[context_acyclic]in E;destruct(nmem(gs_id g)stack);[discriminate E|].
  rewrite K,D in E.
- change(context_check_specs fuel w(gs_id g::stack)(gs_mod g)specs=Good tt)in E.
- eapply context_check_specs_member;eauto.
+ change(context_check_specs fuel w(gs_id g::stack)(gs_mod g)(ctx_specs specs)=Good tt)in E.
+ eapply context_check_specs_member;eauto;apply in_ctx_specs;exact Hin.
 Qed.
 Lemma context_acyclic_notin:forall fuel w stack g,
  context_acyclic fuel w stack g=Good tt->~In(gs_id g)stack.
@@ -80,7 +80,7 @@ Proof.
 Qed.
 Lemma context_acyclic_specs:forall fuel w stack g name specs,
  context_acyclic(S fuel)w stack g=Good tt->gs_kind g=KCtx->gs_decl g=ADCtx name specs->
- context_check_specs fuel w(gs_id g::stack)(gs_mod g)specs=Good tt.
+ context_check_specs fuel w(gs_id g::stack)(gs_mod g)(ctx_specs specs)=Good tt.
 Proof.
  intros fuel w stack g name specs E K D.
  cbn[context_acyclic]in E;destruct(nmem(gs_id g)stack);[discriminate E|].

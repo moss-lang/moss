@@ -11,7 +11,7 @@ Definition family_spec_scan(f:nat)(e:env)(mi:nat)(outer:list(nat*ety))(sp:spec):
  |Some dn,Some pp=>let!r:=resolve_type_symbol mi pp in let!mo:=find_method_decl mi r dn in
    match mo with Some m=>ret[(mi,r,m,sub)]|None=>ret[]end
  |None,Some pp=>let!go:=resolve_sym mi pp in
-   match go with Some g=>match gs_kind g,gs_decl g with KCtx,ADCtx _ its=>family_leaves f e(gs_mod g)its sub|_,_=>ret[]end
+   match go with Some g=>match gs_kind g,gs_decl g with KCtx,ADCtx _ its=>family_leaves f e(gs_mod g)(ctx_specs its)sub|_,_=>ret[]end
    |None=>ret[]end
  |_,_=>ret[]end end.
 Lemma family_spec_scan_ok:forall f e mi outer sp,ok(family_spec_scan f e mi outer sp).
@@ -35,7 +35,7 @@ Inductive FamilyScanRoute(e:env):nat->list(nat*ety)->list(nat*ty)->list(nat*ty)-
 |FSRContext:forall mi outer ob tm pa a c d n its bs sp rt mid sub cg leaf,
  FamilyBracketReceipt e mi a outer sub->
  A.resolve_sym W(gm_path(get_mod w mi))pa=Some c->A.w_decl W c=Some d->A.d_ast d=ADCtx n its->
- A.OutputBrackets W(gm_path(get_mod w mi))(ob++tm)a bs->In sp its->
+ A.OutputBrackets W(gm_path(get_mod w mi))(ob++tm)a bs->In(CISpec sp)its->
  nget(w_syms w)(gs_id cg)=Some cg->gs_id cg=c->A.d_mod d=gm_path(get_mod w(gs_mod cg))->
  FamilyScanRoute e(gs_mod cg)sub(bs++ob)tm sp rt mid leaf->
  FamilyScanRoute e mi outer ob tm(Spec(Some pa)None a)rt mid leaf.
@@ -97,9 +97,10 @@ Proof.
     assert(K:gs_kind cg=KCtx)by(apply kconv_ctx;symmetry;exact Kind).
     rewrite K,Ast in E.
     assert(Hcm:In(gs_mod cg)(w_order w))by exact(loader_mod_in w R Fl b Hload _ _ Hg).
-    destruct(IH e(gs_mod cg)its sub sx chunk ss E Ix Wx Hcm Li(bs++ob)tm child rt mid Hchild Child)
+    destruct(IH e(gs_mod cg)(ctx_specs its)sub sx chunk ss E Ix Wx Hcm Li(bs++ob)tm child rt mid
+      (proj2(in_ctx_specs child its)Hchild)Child)
     as(leaf&Hin&Route).
-    destruct(ok_family_leaves fuel e(gs_mod cg)its sub _ _ _ Ix E)as[_ Ft].
+    destruct(ok_family_leaves fuel e(gs_mod cg)(ctx_specs its)sub _ _ _ Ix E)as[_ Ft].
     exists leaf;split;[exact Hin|].
     eapply FSRContext with(d:=A.Decl(gm_path(get_mod w(gs_mod cg)))(gs_decl cg)(gs_assumes cg))(n:=n);try eassumption;try reflexivity.
     exists si,sx;split;[exact Ii|];split;[exact Wi|];split;[exact(later_back w P R Fl _ _ Ft Li)|exact Sub].

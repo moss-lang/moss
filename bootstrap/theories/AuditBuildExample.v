@@ -135,7 +135,7 @@ Proof.
   - apply RootNone. right. intros gc d n its Named.
     exfalso. eapply no_platform_symbols with (lib := "wasm"); [simpl;auto|exact Named].
   - split.
-    + split; [intros e1 e2 k H;contradiction|]. split.
+    + split; [split; [intros e1 e2 k H;contradiction|intros l r []]|]. split.
       * intros. repeat rewrite subst_empty. reflexivity.
       * split; [intros; rewrite subst_empty; reflexivity|split; intros g t []].
     + split; [reflexivity|]. split; [split; [constructor|]; intros k; split; [contradiction|];

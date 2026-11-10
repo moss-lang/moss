@@ -53,7 +53,9 @@ match sp with
             let! go := resolve_sym mi p in
             match go with
             | Some g => match gs_kind g, gs_decl g with
-                        | KCtx, ADCtx _ its => family_leaves_ok f (gs_mod g) ps its
+                        | KCtx, ADCtx _ its =>
+                            if Nat.eqb (List.length (ctx_specs its)) (List.length its)
+                            then family_leaves_ok f (gs_mod g) ps (ctx_specs its) else ret false
                         | _, _ => ret false
                         end
             | None => ret false
@@ -67,13 +69,13 @@ Lemma family_result_no_types:forall W p sp t,
  A.SpecTypes W p sp t->A.FamilyResult W p sp->False.
 Proof.
  intros W p sp t H;induction H as[p pa a t Hr Hk|p pa a c d n its sp t Hr Hd Da Hin Hs IH];intro HF.
- - inversion HF as[|mi' pa' br' u d' n' its' Ru Du Au Fu];subst.
+ - inversion HF as[|mi' pa' br' u d' n' its' sps' Ru Du Au Es Fu];subst.
    assert(u=t)by congruence;subst u.
    unfold A.kind_sym in Hk;rewrite Du,Au in Hk;discriminate Hk.
- - inversion HF as[|mi' pa' br' u d' n' its' Ru Du Au Fu];subst.
+ - inversion HF as[|mi' pa' br' u d' n' its' sps' Ru Du Au Es Fu];subst.
    assert(u=c)by congruence;subst u.
    assert(d'=d)by congruence;subst d'.
-   assert(its'=its)by congruence;subst its'.
+   assert(Ei:its=map CISpec sps')by congruence;rewrite Ei,citem_specs_map in Hin.
    apply IH;rewrite Forall_forall in Fu;apply Fu;exact Hin.
 Qed.
 Lemma family_shape_no_outputs:forall W u,A.FamilyShape W u->forall t,~A.FunOutputs W u t.
@@ -107,10 +109,13 @@ Proof.
    destruct go as[g|];[|discriminate H]. destruct Rel as[Rel Hg].
    destruct(gs_kind g);try discriminate H.
    destruct(gs_decl g)eqn:D;try discriminate H.
-   eapply A.FRContext with(u:=gs_id g)(d:=A.Decl(path_of(gs_mod g))(gs_decl g)(gs_assumes g)).
+   destruct(Nat.eqb(List.length(ctx_specs l))(List.length l))eqn:Len;[|discriminate H].
+   apply Nat.eqb_eq,ctx_specs_all in Len.
+   eapply A.FRContext with(u:=gs_id g)(d:=A.Decl(path_of(gs_mod g))(gs_decl g)(gs_assumes g))(sps:=ctx_specs l).
    + exact Rel.
    + exact(w_decl_read w R Fl _ _ Hg).
    + cbn[A.d_ast];exact D.
+   + exact Len.
    + eapply IH;[exact H|exact Iv|exact Wv|exact(loader_mod_in w R Fl b Hload _ _ Hg)].
 Qed.
 Theorem is_family_shape:forall g n names args res s s',

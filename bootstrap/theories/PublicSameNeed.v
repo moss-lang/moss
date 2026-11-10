@@ -35,7 +35,7 @@ Lemma entry_key_read : forall s e k, A.entry_key s e = Some (app_subst_item s k)
   (exists r m g a, e = A.NMth r m g a /\ (exists r' a', k = IMth r' m a' /\ a' = [] /\ app_subst s r = app_subst s r')) \/
   (A.entry_key [] e = Some k /\ match k with IMth _ _ _ => False | _ => True end).
 Proof.
-  intros s [t|v t a|f g a|r m g a|u fx] k E; cbn in E; try discriminate.
+  intros s [t|v t a|f g a|r m g a|u fx|eql eqr] k E; cbn in E; try discriminate.
   - injection E as E. destruct k; cbn in E; try discriminate. injection E as ->. right. split; [reflexivity|exact I].
   - injection E as E. destruct k; cbn in E; try discriminate. injection E as ->. right. split; [reflexivity|exact I].
   - injection E as E. destruct k as [| | |r' m' a'|]; cbn in E; try discriminate.
@@ -50,7 +50,7 @@ Lemma entry_key_of : forall s e k, (exists r m g a, e = A.NMth r m g a /\ (exist
 Proof.
   intros s e k [(r & m & g & a & -> & r' & a' & -> & -> & E)|[E K]].
   - cbn. rewrite E. reflexivity.
-  - destruct e as [t|v t a|f g a|r m g a|u fx]; cbn in E; try discriminate; injection E as <-; try reflexivity.
+  - destruct e as [t|v t a|f g a|r m g a|u fx|eql eqr]; cbn in E; try discriminate; injection E as <-; try reflexivity.
     contradiction.
 Qed.
 

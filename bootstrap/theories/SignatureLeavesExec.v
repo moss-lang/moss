@@ -79,7 +79,7 @@ Qed.
 Lemma result_context_leaf : forall W p pa br c d n its k,
  A.resolve_sym W p pa=Some c ->A.w_decl W c=Some d ->A.d_ast d=ADCtx n its ->
  (A.ResultSpecLeaf W p(Spec(Some pa)None br)k <->
-   exists sp,In sp its/\A.ResultSpecLeaf W(A.d_mod d)sp k).
+   exists sp,In sp(flat_map citem_specs its)/\A.ResultSpecLeaf W(A.d_mod d)sp k).
 Proof.
  intros W p pa br c d n its k R D Ast;split.
  - intros H;inversion H;subst.
@@ -139,7 +139,7 @@ Proof.
  - destruct(gs_decl g)eqn:D.
    8:{destruct(leaf_fold_exact
        (fun o it=>expand_spec fuel(gs_mod g)it o)
-       (A.ResultSpecLeaf WW(path_of(gs_mod g))) l out s found s')as[End Fold].
+       (A.ResultSpecLeaf WW(path_of(gs_mod g))) (flat_map citem_specs l) out s found s')as[End Fold].
       - intros sp InSp old found0 s0' Run.
         exact(IH (gs_mod g)sp old s found0 s0' Run Hi Hw
                     (loader_mod_in w R Fl b Hload x g Hg)).

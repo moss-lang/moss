@@ -77,5 +77,7 @@ Proof.
   - intros rq mq gq aq Hin. apply in_app_iff in Hin as [Hin|[Hin|[]]].
     + exact (ws_mthis _ _ _ _ _ _ W _ _ _ _ Hin).
     + injection Hin as <- <- <- <-. exact Th.
+  - intros E yl yr Hin. destruct (Hu E) as [E0 E01]. apply in_app_iff in Hin as [Hin|[Hin|[]]]; [|discriminate].
+    rewrite !(canon_same e e1 _ E01). exact (ws_eqs _ _ _ _ _ _ W E0 yl yr Hin).
 Qed.
 End TableStep.

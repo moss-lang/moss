@@ -188,7 +188,7 @@ Variable syms0 : nmap gsym.
 Variable next0 : nat.
 Hypothesis Hold : forall s, next0 <= s -> nget syms0 s = None.
 
-Definition Leaf (asm : list (Input.path * option name)) (d : adecl) : Prop := A.OccursIn (f_decls f) asm d.
+Definition Leaf (asm : list aitem) (d : adecl) : Prop := A.OccursIn (f_decls f) asm d.
 
 Definition ReceiverAt(names:list(name*nat))(g:gsym):Prop:=
  match gs_decl g with
@@ -238,7 +238,7 @@ Record DInv (st : decl_st) : Prop := {
   di_receiver : forall s g,nget(ds_syms st)s=Some g->next0<=s->ReceiverAt(gm_names(ds_mod st))g
 }.
 
-Definition HasSym (st : decl_st) (d : adecl) (asm : list (Input.path * option name)) : Prop :=
+Definition HasSym (st : decl_st) (d : adecl) (asm : list aitem) : Prop :=
   exists s g, next0 <= s /\ nget (ds_syms st) s = Some g /\ gs_decl g = d /\ gs_assumes g = asm.
 
 Definition Has (st : decl_st) d asm : Prop := HasSym st d asm \/ In (d, asm) (ds_pending st).
@@ -2140,7 +2140,7 @@ Definition wstep (wk : nat -> list spec -> list nat -> Elab.M (list nat)) (mi : 
       if kind_eqb (gs_kind g) KType then ret (if nmem (gs_id g) out then out else out ++ [gs_id g])
       else if kind_eqb (gs_kind g) KCtx then
         match gs_decl g with
-        | ADCtx _ its => wk (gs_mod g) its out
+        | ADCtx _ its => wk (gs_mod g) (flat_map citem_specs its) out
         | _ => ret out
         end
       else ret out
@@ -2185,7 +2185,7 @@ Proof.
     + destruct (kind_eqb (gs_kind g) KCtx) eqn:Kc.
       * apply kind_eqb_spec in Kc. pose proof (li_kind _ _ HI _ g Hg) as Kd. unfold KindOK in Kd. rewrite Kc in Kd.
         destruct (gs_decl g) as [| | | | | | [| |] ? ? ? ? | n its |] eqn:Ed; cbn in Kd; try discriminate.
-        destruct (Hwk (gs_mod g) its out s l s' Hgs Og Hnd H) as (E1 & E2 & E3 & E4 & E5).
+        destruct (Hwk (gs_mod g) (flat_map citem_specs its) out s l s' Hgs Og Hnd H) as (E1 & E2 & E3 & E4 & E5).
         split; [exact E1|]. split; [exact E2|]. split; [exact E3|]. split.
         -- intros t Ht. destruct (E4 t Ht) as [Ho|(sp & Hsp & Hst)]; [left; exact Ho|]. right. intro a.
            eapply A.STCtx; [exact Er | exact Dg | reflexivity | exact Hsp | exact Hst].
@@ -2241,7 +2241,7 @@ Definition DirCtx (q : string) (sp : spec) (c : nat) : Prop :=
 
 (* every item of context c has its type in out and its context in V *)
 Definition Finished (V out : list nat) (c : nat) : Prop :=
-  forall d n its, A.w_decl W c = Some d -> A.d_ast d = ADCtx n its -> forall sp, In sp its ->
+  forall d n its, A.w_decl W c = Some d -> A.d_ast d = ADCtx n its -> forall sp, In sp (flat_map citem_specs its) ->
     (forall t, Direct (A.d_mod d) sp t -> In t out) /\ (forall c', DirCtx (A.d_mod d) sp c' -> In c' V).
 
 Lemma finished_mono : forall V out V' out' c, incl V V' -> incl out out' -> Finished V out c -> Finished V' out' c.
@@ -2366,7 +2366,7 @@ Proof.
       intros c Hc' Hn. contradiction.
     + pose proof (li_kind _ _ HI _ g Hgl) as Kd. unfold KindOK in Kd. rewrite Kc in Kd.
       destruct (gs_decl g) as [| | | | | | [| |] ? ? ? ? | n0 its0 |] eqn:Ed; cbn in Kd; try discriminate.
-      destruct (IH (gs_mod g) its0 (gs_id g :: V0) o0 s0 V1 o1 s1 Hg0 Og Hnd0 H0)
+      destruct (IH (gs_mod g) (flat_map citem_specs its0) (gs_id g :: V0) o0 s0 V1 o1 s1 Hg0 Og Hnd0 H0)
         as (-> & N1 & Io1 & Iv1 & S1 & D1 & K1 & F1).
       split; [reflexivity|]. split; [exact N1|]. split; [exact Io1|].
       split; [intros y Hy; apply Iv1; right; exact Hy|]. split.
@@ -2407,13 +2407,10 @@ Proof.
     as (-> & N & _ & _ & S & D & K & Fn).
   split; [reflexivity|]. split; [exact N|]. intro t. split.
   - intro Ht. destruct (S t Ht) as [[]|(sp & Hsp & Hst)].
-    unfold assume_specs in Hsp. apply in_flat_map in Hsp as ([p [o|]] & Hin & Hsp); [destruct Hsp|].
-    destruct Hsp as [<-|[]].
-    exists (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)), p.
-    split; [exact Dg|]. split; [exact Hin|]. exact Hst.
-  - intros (d & pa & Dd & Hin & Hst). rewrite Dg in Dd. injection Dd as <-. cbn in Hin, Hst.
-    assert (Hsp : In (Spec (Some pa) None None) (assume_specs (gs_assumes g)))
-      by (apply in_flat_map; exists (pa, None); split; [exact Hin | left; reflexivity]).
+    exists (A.Decl (pathi (gs_mod g)) (gs_decl g) (gs_assumes g)), sp.
+    split; [exact Dg|]. split; [exact Hsp|]. exact Hst.
+  - intros (d & sp & Dd & Hsp & Hst). rewrite Dg in Dd. injection Dd as <-. cbn in Hsp, Hst.
+    change (In sp (assume_specs (gs_assumes g))) in Hsp.
     exact (spec_complete V' o' (fun c Hc => Fn c Hc (fun E => E)) _ _ t Hst (fun t0 => D _ t0 Hsp) (fun c0 => K _ c0 Hsp)).
 Qed.
 

@@ -7,13 +7,17 @@ Lemma unifies_append_types:forall sb es ts,
  A.Unifies sb(es++map A.NTy ts)<->A.Unifies sb es.
 Proof.
  intros sb es ts;split.
- - intros H e1 e2 k H1 H2;apply H;apply in_or_app;left;assumption.
- - intros H e1 e2 k H1 H2 K1 K2.
-   apply in_app_or in H1 as[H1|H1];apply in_app_or in H2 as[H2|H2].
-   + exact(H e1 e2 k H1 H2 K1 K2).
-   + apply in_map_iff in H2 as(t&<-&_);discriminate K2.
-   + apply in_map_iff in H1 as(t&<-&_);discriminate K1.
-   + apply in_map_iff in H1 as(t&<-&_);discriminate K1.
+ - intros[H He];split;[intros e1 e2 k H1 H2;apply H;apply in_or_app;left;assumption|].
+   intros l r I;apply He;apply in_or_app;left;exact I.
+ - intros[H He];split.
+   + intros e1 e2 k H1 H2 K1 K2.
+     apply in_app_or in H1 as[H1|H1];apply in_app_or in H2 as[H2|H2].
+     * exact(H e1 e2 k H1 H2 K1 K2).
+     * apply in_map_iff in H2 as(t&<-&_);discriminate K2.
+     * apply in_map_iff in H1 as(t&<-&_);discriminate K1.
+     * apply in_map_iff in H1 as(t&<-&_);discriminate K1.
+   + intros l r I;apply in_app_or in I as[I|I];[exact(He l r I)|].
+     apply in_map_iff in I as(t&E&_);discriminate E.
 Qed.
 Lemma mgm_append_types:forall sb es ts,
  A.MostGeneralMerge sb(es++map A.NTy ts)<->A.MostGeneralMerge sb es.

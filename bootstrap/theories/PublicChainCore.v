@@ -27,7 +27,7 @@ Variable W : A.world.
 Lemma entry_provision_kinds : forall s es, PublicCallRealize.KeysMatch (flat_map (A.entry_provision s (fun a => a)) es).
 Proof.
   intros s es k p I. apply in_flat_map in I as [e [_ I]].
-  destruct e as [t|v t a|f g a|r m g a|u fx]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; exact Logic.I.
+  destruct e as [t|v t a|f g a|r m g a|u fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; exact Logic.I.
 Qed.
 
 Lemma keys_match_app : forall l1 l2, PublicCallRealize.KeysMatch l1 -> PublicCallRealize.KeysMatch l2 ->
@@ -85,7 +85,7 @@ Lemma rkey_of_provision_id : forall C k, A.rkey_of C (A.provision_id k) = A.rkey
 Proof. intros C [t|v|f|r m i|u]; reflexivity. Qed.
 
 Lemma entry_key_not_ty : forall s e t, A.entry_key s e <> Some (ITy t).
-Proof. intros s [x|v x a|f g a|r m g a|u fx] t; cbn; discriminate. Qed.
+Proof. intros s [x|v x a|f g a|r m g a|u fx|eql eqr] t; cbn; discriminate. Qed.
 
 Lemma result_keys_not_ty : forall s es ks t, A.ResultKeys s es ks -> ~ In (ITy t) ks.
 Proof.

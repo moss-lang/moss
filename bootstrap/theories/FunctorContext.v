@@ -14,7 +14,7 @@ Let MS:@MethStep w P R Fl:=meth_step_holds w R Fl b Hload.
 Lemma specs_walk:forall f mi specs e needs s e' needs' s' U tm les,
  mfold(fun acc sp=>add_spec f(fst acc)mi sp[](snd acc))(e,needs)specs s=Good((e',needs'),s')->
  Inv s->st_w s=w->In mi(w_order w)->Later w P R Fl s'->WS Fl U e tm les needs->
- exists added es tm',A.ItemsEntries WW(gm_path(get_mod w mi))[]tm specs es tm'/\
+ exists added es tm',A.ItemsEntries WW(gm_path(get_mod w mi))[]tm(map CISpec specs)es tm'/\
  map(tr_ent Fl)added=es/\WS Fl U e' tm'(les++added)needs'.
 Proof.
  intros f mi specs;induction specs as[|sp rest IH];intros e needs s e' needs' s' U tm les H Hi Hw Hmi L WS0.
@@ -43,7 +43,7 @@ Proof.
  - intros[e0 n0];apply ok_mfold;intros;apply ok_implicit_type_step.
 Qed.
 Definition OwnRd(mi:nat)(args:list spec)(outs ms:list nat)(es:list A.entry)(tm:list(nat*ty)):Prop:=
- exists aes atm added,A.ItemsEntries WW(gm_path(get_mod w mi))[][]args aes atm/\
+ exists aes atm added,A.ItemsEntries WW(gm_path(get_mod w mi))[][](map CISpec args)aes atm/\
  (forall t,In t added<->In t ms/\~In t outs/\A.nlook t atm=None)/\
  es=aes++map A.NTy added/\tm=map(fun t=>(t,TAbs t))(rev added)++atm.
 Lemma own_rd_unifies:forall mi args outs ms es tm es' tm' sb,

@@ -193,10 +193,13 @@ Proof.
    destruct(esym_rel w R Fl b Hload mi pa si go sr Ii Wi Hmi Resolve)as[-> Rel].
    destruct go as[g|];[|discriminate H];destruct Rel as[Res Hg].
    destruct(gs_kind g);try discriminate H;destruct(gs_decl g)eqn:D;try discriminate H.
-   eapply A.FKContext with(c:=gs_id g)(d:=A.Decl(path_of(gs_mod g))(gs_decl g)(gs_assumes g)).
+   destruct(Nat.eqb(List.length(ctx_specs l))(List.length l))eqn:Len;[|discriminate H].
+   apply Nat.eqb_eq,ctx_specs_all in Len.
+   eapply A.FKContext with(c:=gs_id g)(d:=A.Decl(path_of(gs_mod g))(gs_decl g)(gs_assumes g))(sps:=ctx_specs l).
    + exact Res.
    + exact(w_decl_read w R Fl _ _ Hg).
    + exact D.
+   + exact Len.
    + eapply IH;[exact H|exact Ii|exact Wi|exact(loader_mod_in w R Fl b Hload _ _ Hg)|exact Li|exact Cover].
  - discriminate H.
  - discriminate H.

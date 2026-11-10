@@ -172,7 +172,7 @@ Proof.
   intros σ tm es Id Es. split; [exact Id|split].
   - intros x v Iq. cbn in Iq. apply in_map_iff in Iq as [[x0 v0] [E _]]. injection E as _ <-. exact (Id v0).
   - intros r m g a Iq. cbn [c_provisions entries_cx] in Iq. apply in_flat_map in Iq as [e [Ie Iq]].
-    destruct e as [t|v t a0|f g0 a0|rt m0 g0 a0|u fx]; cbn in Iq; try contradiction;
+    destruct e as [t|v t a0|f g0 a0|rt m0 g0 a0|u fx|eql eqr]; cbn in Iq; try contradiction;
       destruct Iq as [E|[]]; try discriminate.
     try unfold mkey in E. injection E as Er Em Eg Ea. subst r m0 g a.
     destruct (Es rt m g0 a0 Ie) as [tmx [Sg App]]. exists tmx, rt, g0.
@@ -196,6 +196,8 @@ Proof.
   - intros p ob tm a pa c d n its bs es tm' R D Ast B Inner IH. exact IH.
   - intros p ob tm sp r es1 tm1 es2 tm2 H1 IH1 H2 IH2 rt0 m0 g0 a0 I0.
     apply in_app_or in I0 as [I0|I0]; [exact (IH1 _ _ _ _ I0)|exact (IH2 _ _ _ _ I0)].
+  - intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2 rt0 m0 g0 a0 I0.
+    apply in_app_or in I0 as [I0|[I0|I0]]; [exact (IH1 _ _ _ _ I0)|discriminate I0|exact (IH2 _ _ _ _ I0)].
 Qed.
 
 Lemma root_read : forall q es0 tm its es tm', RootItems W q es0 tm its es tm' -> forall rt m g a, ~ In (NMth rt m g a) es.
@@ -223,7 +225,7 @@ Proof.
   - intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sg App [s [ds [Ds Ep]]] rt0 m0 g0 a0 [E|[]].
     injection E as <- <- <- <-. exists (bs ++ ob ++ tm). split; [exact Sg|split; [exact App|]].
     exists s, ds, r, dn. split; [exact Ds|rewrite Ep; exact Mn].
-  - intros p ob tm a pa c d n its bs es tm' R D Ast B Inner IH _. apply IH. exists c, d. split; [exact D|reflexivity].
+  - intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps B Inner IH _. apply IH. exists c, d. split; [exact D|reflexivity].
   - intros p ob tm sp r es1 tm1 es2 tm2 H1 IH1 H2 IH2 Dp rt0 m0 g0 a0 I0.
     apply in_app_or in I0 as [I0|I0]; [exact (IH1 Dp _ _ _ _ I0)|exact (IH2 Dp _ _ _ _ I0)].
 Qed.
@@ -240,7 +242,7 @@ Proof.
   pose proof (proj2 output_read _ _ _ _ _ _ OIE (ex_intro _ u (ex_intro _ d (conj D eq_refl)))) as Rd.
   cbn [output_cx c_provisions] in Iq. apply in_app_or in Iq as [Iq|Iq]; [right|left; exact Iq].
   apply in_flat_map in Iq as [e [Ie Iq]]. apply (proj2 (in_rev _ _)) in Ie.
-  destruct e as [t|v t a1|f g1 a1|rt m1 g1 a1|u1 fx]; cbn in Iq; try contradiction;
+  destruct e as [t|v t a1|f g1 a1|rt m1 g1 a1|u1 fx|eql eqr]; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; try discriminate.
   try unfold mkey in E. injection E as Er Em Eg Ea. subst r m1 g a1.
   split.
@@ -541,7 +543,7 @@ Proof.
     assert (Rt : TyIn K rt) by (intros y Iy; exact (Fl y (recv_gens W _ _ _ Recv y Iy))).
     constructor; [|constructor]. cbn.
     split; [exact Rt|split; [exact (Sig _ _ _ _ Sg Fl (fun x E => ltac:(injection E as <-; exact Rt)))|exact (Inst _ _ _ App Fl)]].
-  - (* context *) intros p ob tm a pa c d n its bs es tm' R D Ast B Rest IH SOb STm.
+  - (* context *) intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps B Rest IH SOb STm.
     apply IH; [|exact STm]. intros y Iy. apply tm_gens_app in Iy as [Iy|Iy]; [|exact (SOb y Iy)].
     apply (obr_gens' _ _ _ _ B) in Iy. apply tm_gens_app in Iy as [Iy|Iy]; [exact (SOb y Iy)|exact (STm y Iy)].
   - intros. constructor.
@@ -554,7 +556,7 @@ Lemma entry_provision_gens_f : forall (K : nat -> Prop) s freeze e k p,
   (forall g u, In (g, u) s -> GensIn K (gens u)) -> (forall a, InstP (TyIn K) a -> InstP (TyIn K) (freeze a)) ->
   EntryP (TyIn K) e -> In (k, p) (entry_provision s freeze e) -> GensIn K (provision_gens p).
 Proof.
-  intros K s freeze [t|v t a|f g a|r m g a|u fx] k p Range Fz Ok Iq; cbn in Iq; try contradiction;
+  intros K s freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p Range Fz Ok Iq; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; injection E as <- <-; cbn in Ok.
   - destruct Ok as [Ot Oa]. intros y Iy. unfold provision_gens in Iy. cbn in Iy. rewrite app_nil_r in Iy.
     apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s t Range Ot y Iy)|].
@@ -836,7 +838,7 @@ Import A.
 
 Lemma entry_gens_entryp : forall (K : nat -> Prop) e, GensIn K (entry_gens e) -> EntryP (TyIn K) e.
 Proof.
-  intros K [t|v t a|f g a|r m g a|u fx] G; cbn; try exact Logic.I.
+  intros K [t|v t a|f g a|r m g a|u fx|eql eqr] G; cbn; try exact Logic.I.
   - split; [intros y Iy; apply G; cbn; apply in_or_app; left; exact Iy|].
     intros x w Iq y Iy. apply G. cbn. apply in_or_app. right. exact (inst_in_gens a x w y Iq Iy).
   - split; [|intros x w Iq y Iy; apply G; cbn; apply in_or_app; right; exact (inst_in_gens a x w y Iq Iy)].
@@ -847,6 +849,7 @@ Proof.
     split; [apply Forall_forall; intros t It y Iy; apply G; cbn; apply in_or_app; right; apply in_or_app; left; exact (sig_param_in g t y It Iy)|].
     intros y Iy. apply G. cbn. apply in_or_app. right. apply in_or_app. left. exact (sig_ret_in g y Iy).
   - intros x w Iq y Iy. apply G. cbn. apply in_flat_map. exists (x, w). split; assumption.
+  - split; intros y Iy; apply G; cbn; apply in_or_app; [left|right]; exact Iy.
 Qed.
 
 Lemma entries_cx_scoped : forall F σ tm es, IdForm tm -> (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
@@ -915,6 +918,7 @@ Proof.
   - destruct (nlook t tm); [assumption|]. intros x [<-|Ix]; [assumption|auto].
   - auto.
   - auto.
+  - auto.
 Qed.
 
 Lemma root_keys_typed : MentionsTyped W -> forall q es0 tm its es tm', RootItems W q es0 tm its es tm' ->
@@ -943,7 +947,7 @@ Lemma need_provision : forall f Cf ns k, CtxOf W f Cf ns -> In k ns -> exists p,
 Proof.
   intros f Cf ns k (d & es & tm & er & tmr & σ & D & IE & Root & MGM & -> & [Nd Keys] & _) Ik.
   destruct (proj1 (Keys k) Ik) as [e [Ie Ek]]. cbn [c_provisions entries_cx].
-  destruct e as [t|v t a|f' g a|r m g a|u fx]; cbn in Ek; try discriminate; injection Ek as <-;
+  destruct e as [t|v t a|f' g a|r m g a|u fx|eql eqr]; cbn in Ek; try discriminate; injection Ek as <-;
     eexists; apply in_flat_map; eexists; (split; [exact Ie|cbn; left; reflexivity]).
 Qed.
 

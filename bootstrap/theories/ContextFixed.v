@@ -30,6 +30,9 @@ Proof.
  - intros p ob tm u fx[].
  - intros p ob tm sp rest es1 tm1 es2 tm2 Entry IH1 Entries IH2.
    apply entries_fixed_append;assumption.
+ - intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2.
+   apply entries_fixed_append;[exact IH1|].
+   intros u fx[Bad|H];[discriminate Bad|exact(IH2 u fx H)].
 Qed.
 Lemma root_items_fixed_readings:forall W p es0 tm specs es tm',
  A.RootItems W p es0 tm specs es tm'->entries_fixed_readings W es.
@@ -71,7 +74,7 @@ Lemma entries_fixed_row:forall sigma tm es u fx,
  exists raw,In(A.NFun u raw)es/\fx=A.fixed_subst sigma raw.
 Proof.
  intros sigma tm es;induction es as[|entry rest IH];intros u fx H;[discriminate|].
- destruct entry as[t|v ty app|f sg app|r m sg app|u0 raw];cbn[A.entries_cx A.c_funs flat_map List.app]in H;
+ destruct entry as[t|v ty app|f sg app|r m sg app|u0 raw|el er];cbn[A.entries_cx A.c_funs flat_map List.app]in H;
  try(destruct(IH _ _ H)as[a[Hin Eq]];exists a;split;[right;exact Hin|exact Eq]).
  cbn[A.nlook]in H;destruct(Nat.eqb u u0)eqn:E.
  - apply Nat.eqb_eq in E;subst u0;injection H as <-;exists raw;split;[left;reflexivity|reflexivity].
@@ -96,7 +99,7 @@ Lemma entries_functor_app_exact:forall sigma tm es u fx,
  A.ilook(IFun u)(A.c_apps(A.entries_cx sigma tm es))=Some(A.fixed_app fx).
 Proof.
  intros sigma tm es;induction es as[|entry rest IH];intros u fx Lookup;[discriminate|].
- destruct entry as[t|v ty app|f sg app|r m sg app|u0 raw];
+ destruct entry as[t|v ty app|f sg app|r m sg app|u0 raw|el er];
  cbn[A.entries_cx A.c_funs A.c_apps flat_map List.app A.entry_key A.ilook A.nlook item_eqb]in *;
  try exact(IH _ _ Lookup).
  destruct(Nat.eqb u u0);[injection Lookup as <-;reflexivity|exact(IH _ _ Lookup)].

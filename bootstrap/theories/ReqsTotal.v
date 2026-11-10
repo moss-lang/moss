@@ -263,7 +263,7 @@ Qed.
 
 Definition Fctx (R : nat -> list nat) (c : nat) : list nat :=
   match A.w_decl W c with
-  | Some d => match A.d_ast d with ADCtx _ its => clean (walkset R (A.d_mod d) its) | _ => [] end
+  | Some d => match A.d_ast d with ADCtx _ its => clean (walkset R (A.d_mod d) (flat_map citem_specs its)) | _ => [] end
   | None => []
   end.
 
@@ -293,7 +293,7 @@ Proof. intros q sp t H. induction H; [exact (rsym_lt _ _ _ H) | exact IHSpecType
 
 Lemma walkset_sound : forall R q its t,
   (forall c t, In t (R c) -> exists d n its', A.w_decl W c = Some d /\ A.d_ast d = ADCtx n its' /\
-                               exists sp, In sp its' /\ A.SpecTypes W (A.d_mod d) sp t) ->
+                               exists sp, In sp (flat_map citem_specs its') /\ A.SpecTypes W (A.d_mod d) sp t) ->
   In t (walkset R q its) -> exists sp, In sp its /\ A.SpecTypes W q sp t.
 Proof.
   intros R q its t HR H. unfold walkset in H. apply in_flat_map in H as (sp & Hsp & H). exists sp. split; [exact Hsp|].
@@ -308,7 +308,7 @@ Proof.
 Qed.
 
 Lemma CT_sound : forall c t, In t (CT c) -> exists d n its, A.w_decl W c = Some d /\ A.d_ast d = ADCtx n its /\
-  exists sp, In sp its /\ A.SpecTypes W (A.d_mod d) sp t.
+  exists sp, In sp (flat_map citem_specs its) /\ A.SpecTypes W (A.d_mod d) sp t.
 Proof.
   apply (lfp_least N Fctx). intros R HR c t H. unfold Fctx in H. destruct (A.w_decl W c) as [d|] eqn:Ed; [|destruct H].
   destruct (A.d_ast d) eqn:Ea; try destruct H. apply in_clean in H as [H _].
@@ -338,12 +338,10 @@ Proof.
   intros s t. unfold Passume. split.
   - destruct (A.w_decl W s) as [d|] eqn:Ed; [|intros []]. intro H. apply in_clean in H as [H _].
     destruct (walkset_sound CT _ _ t CT_sound H) as (sp & Hsp & Hst).
-    unfold assume_specs in Hsp. apply in_flat_map in Hsp as ([pa [o|]] & Hin & Hsp); [destruct Hsp|].
-    destruct Hsp as [<-|[]]. exists d, pa. split; [exact Ed|]. split; [exact Hin | exact Hst].
-  - intros (d & pa & Ed & Hin & Hst). rewrite Ed. apply in_clean. split; [|exact (spec_lt _ _ _ Hst)].
+    exists d, sp. split; [exact Ed|]. split; [exact Hsp | exact Hst].
+  - intros (d & sp & Ed & Hin & Hst). rewrite Ed. apply in_clean. split; [|exact (spec_lt _ _ _ Hst)].
     pose proof (CT_complete _ _ _ Hst) as H. unfold walkset in *. cbn [flat_map] in H. rewrite app_nil_r in H.
-    apply in_flat_map. exists (Spec (Some pa) None None). split; [|exact H].
-    unfold assume_specs. apply in_flat_map. exists (pa, None). split; [exact Hin | left; reflexivity].
+    apply in_flat_map. exists sp. split; [exact Hin|exact H].
 Qed.
 
 Lemma Passume_nodup : forall s, NoDup (Passume s).

@@ -75,6 +75,7 @@ Proof.
   - (* type *) destruct (nlook t tm); [assumption|]. intros x [<-|Ix]; [assumption|auto].
   - (* context *) auto.
   - auto.
+  - (* equation *) auto.
 Qed.
 
 Lemma functx_keys_typed : forall u C ns, MentionsTyped W -> FunCtx W u C ns ->

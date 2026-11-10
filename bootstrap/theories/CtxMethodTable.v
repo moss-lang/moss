@@ -91,7 +91,7 @@ Proof.
      assert(Er:asub sb(tr Fl r0)=asub sb(tr Fl r)).
      { rewrite(Eq sb R0). unfold R,canon. apply(resp_canon_go Fl);exact R0. }
      assert(Ei:Some(A.inst_read sb(tr_inst Fl a0))=Some(A.inst_read sb(tr_inst Fl a))).
-     { refine(proj2(Hun(tr_ent Fl(LMth r0 m g0 a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _)).
+     { refine(proj2(proj1 Hun(tr_ent Fl(LMth r0 m g0 a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _)).
        - apply in_or_app;left;apply in_map;exact Hin.
        - apply in_or_app;right;left;reflexivity.
        - cbn[tr_ent A.entry_key]. rewrite Er;reflexivity.
@@ -103,7 +103,7 @@ Proof.
    assert(Er:asub sb(tr Fl r0)=asub sb(tr Fl r)).
    { rewrite(Equiv sb R0). unfold R,canon. apply(resp_canon_go Fl);exact R0. }
    assert(Sg:Some(A.sig_subst sb(tr_sig Fl old))=Some(A.sig_subst sb(tr_sig Fl sg))).
-   { refine(proj1(Hun(tr_ent Fl(LMth r0 m old a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _)).
+   { refine(proj1(proj1 Hun(tr_ent Fl(LMth r0 m old a0))(tr_ent Fl(LMth r m sg a))(A.mkey(asub sb(tr Fl r))m)_ _ _ _)).
      - apply in_or_app;left;apply in_map;exact Ho.
      - apply in_or_app;right;left;reflexivity.
      - cbn[tr_ent A.entry_key]. rewrite Er;reflexivity.

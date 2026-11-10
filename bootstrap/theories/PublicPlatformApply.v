@@ -67,6 +67,9 @@ Proof.
   - intros p ob tm sp r es1 tm1 es2 tm2 H1 IH1 H2 IH2 Id Ob.
     destruct (proj1 (entries_formed W) _ _ _ _ _ _ H1 Id Ob) as [Id1 [Sub1 _]].
     apply Forall_app. split; [exact (IH1 Id Ob)|exact (IH2 Id1 (fun g Ig => Sub1 g (Ob g Ig)))].
+  - intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2 Id Ob.
+    destruct (proj2 (entries_formed W) _ _ _ _ _ _ H1 Id Ob) as [Id1 [Sub1 _]].
+    apply Forall_app. split; [exact (IH1 Id Ob)|constructor; [exact Logic.I|exact (IH2 Id1 (fun g Ig => Sub1 g (Ob g Ig)))]].
 Qed.
 
 Lemma root_self : forall q es0 tm its es tm', A.RootItems W q es0 tm its es tm' -> IdForm tm -> Forall FunSelf es.
@@ -93,7 +96,7 @@ Proof.
   intros u fx I x t It. cbn in I. apply in_flat_map in I as [e [Ie I]].
   assert (Se : FunSelf e).
   { apply in_app_or in Ie as [Ie|Ie]; [exact (proj1 (Forall_forall _ _) SelfE e Ie)|exact (proj1 (Forall_forall _ _) SelfR e Ie)]. }
-  destruct e as [t0|v t0 a|f' g a|r m g a|u' fx']; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
+  destruct e as [t0|v t0 a|f' g a|r m g a|u' fx'|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; try discriminate.
   injection E as <- <-. unfold A.fixed_subst in It. apply in_map_iff in It as [[y t0] [E It]]. cbn in E.
   injection E as -> <-. cbn in Se. rewrite (Se x t0 It). reflexivity.
 Qed.

@@ -26,6 +26,8 @@ Proof.
  - intros p ob tm a pa c d n its bs es tm' Res Decl Ast Br Entries IH;exact IH.
  - intros p ob tm f sg app[].
  - intros p ob tm sp rest es1 tm1 es2 tm2 Entry IH1 Entries IH2;apply entries_fn_append;assumption.
+ - intros p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 IH1 Tl Tr H2 IH2;apply entries_fn_append;[exact IH1|].
+   intros f sg app[Bad|H];[discriminate Bad|exact(IH2 f sg app H)].
 Qed.
 Lemma root_items_fn_readings:forall W p es0 tm specs es tm',
  A.RootItems W p es0 tm specs es tm'->entries_fn_readings W es.
@@ -65,7 +67,7 @@ Lemma entries_fn_row:forall sigma tm es f sg,
  A.ilook(IFn f)(A.c_apps(A.entries_cx sigma tm es))=Some(snapshot_inst sigma tm app).
 Proof.
  intros sigma tm es;induction es as[|entry rest IH];intros f sg Lookup;[discriminate|].
- destruct entry as[t|v ty app|f0 raw app|r m sg0 app|u fx];
+ destruct entry as[t|v ty app|f0 raw app|r m sg0 app|u fx|eql eqr];
  cbn[A.entries_cx A.c_fns A.c_apps flat_map List.app A.entry_key A.ilook A.nlook item_eqb]in *;
  try(destruct(IH _ _ Lookup)as[raw[a[Row[Sig App]]]];exists raw,a;split;[right;exact Row|];split;assumption).
  destruct(Nat.eqb f f0)eqn:Eq.

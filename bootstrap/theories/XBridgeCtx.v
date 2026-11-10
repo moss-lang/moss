@@ -21,6 +21,13 @@ Proof.
   - exact (H k x E).
 Qed.
 
+Lemma add_tys_self_meanings : forall xs tm, self_meanings tm ->
+  self_meanings (add_tys xs tm).
+Proof.
+  induction xs as [|x xs IH]; intros tm H; [exact H|].
+  apply IH. apply self_meanings_add. exact H.
+Qed.
+
 Fixpoint item_self_meanings W p ob tm sp es tm'
   (H : ItemEntries W p ob tm sp es tm') {struct H} :
   self_meanings tm -> self_meanings tm'
@@ -31,16 +38,11 @@ Proof.
   - destruct H; intro Hs; try exact Hs.
     + apply self_meanings_add. exact Hs.
     + eapply items_self_meanings; eassumption.
-  - destruct H; intro Hs; [exact Hs|].
-    eapply items_self_meanings; [eassumption|].
-    eapply item_self_meanings; eassumption.
-Qed.
-
-Lemma add_tys_self_meanings : forall xs tm, self_meanings tm ->
-  self_meanings (add_tys xs tm).
-Proof.
-  induction xs as [|x xs IH]; intros tm H; [exact H|].
-  apply IH. apply self_meanings_add. exact H.
+  - destruct H; intro Hs; [exact Hs| |].
+    + eapply items_self_meanings; [eassumption|].
+      eapply item_self_meanings; eassumption.
+    + eapply items_self_meanings; [eassumption|].
+      eapply items_self_meanings; eassumption.
 Qed.
 
 Lemma root_items_self_meanings : forall W q es0 tm its es tm',
@@ -102,6 +104,16 @@ Proof.
   - exact (Ht k x E).
 Qed.
 
+Lemma add_tys_type_meanings : forall W xs tm,
+  (forall t, In t xs -> kind_sym W t = Some DKType) ->
+  type_meanings W tm -> type_meanings W (add_tys xs tm).
+Proof.
+  intros W xs. induction xs as [|x xs IH]; intros tm Hxs Ht; [exact Ht|].
+  apply IH.
+  - intros t H. apply Hxs. right. exact H.
+  - apply type_meanings_add; [exact Ht|]. apply Hxs. left. reflexivity.
+Qed.
+
 Fixpoint item_type_meanings W p ob tm sp es tm'
   (H : ItemEntries W p ob tm sp es tm') {struct H} :
   type_meanings W tm -> type_meanings W tm'
@@ -112,20 +124,13 @@ Proof.
   - destruct H; intro Hs; try exact Hs.
     + apply type_meanings_add; assumption.
     + eapply items_type_meanings; eassumption.
-  - destruct H; intro Hs; [exact Hs|].
-    eapply items_type_meanings; [eassumption|].
-    eapply item_type_meanings; eassumption.
+  - destruct H; intro Hs; [exact Hs| |].
+    + eapply items_type_meanings; [eassumption|].
+      eapply item_type_meanings; eassumption.
+    + eapply items_type_meanings; [eassumption|].
+      eapply items_type_meanings; eassumption.
 Qed.
 
-Lemma add_tys_type_meanings : forall W xs tm,
-  (forall t, In t xs -> kind_sym W t = Some DKType) ->
-  type_meanings W tm -> type_meanings W (add_tys xs tm).
-Proof.
-  intros W xs. induction xs as [|x xs IH]; intros tm Hxs Ht; [exact Ht|].
-  apply IH.
-  - intros t H. apply Hxs. right. exact H.
-  - apply type_meanings_add; [exact Ht|]. apply Hxs. left. reflexivity.
-Qed.
 
 Lemma root_items_type_meanings : forall W,
   (forall u t, Fixed W u t -> kind_sym W t = Some DKType) ->
@@ -187,6 +192,12 @@ Proof.
   intros k Hk. cbn. destruct (Nat.eqb k t); [discriminate|exact Hk].
 Qed.
 
+Lemma add_tys_domain : forall xs tm, type_domain_incl tm (add_tys xs tm).
+Proof.
+  induction xs as [|x xs IH]; intro tm; [apply type_domain_refl|].
+  eapply type_domain_trans; [apply type_domain_add|apply IH].
+Qed.
+
 Fixpoint item_type_domain W p ob tm sp es tm'
   (H : ItemEntries W p ob tm sp es tm') {struct H} : type_domain_incl tm tm'
 with items_type_domain W p ob tm ss es tm'
@@ -195,17 +206,13 @@ Proof.
   - destruct H; try apply type_domain_refl.
     + apply type_domain_add.
     + eapply items_type_domain; eassumption.
-  - destruct H; [apply type_domain_refl|].
-    eapply type_domain_trans.
-    + eapply item_type_domain; eassumption.
-    + eapply items_type_domain; eassumption.
+  - destruct H; [apply type_domain_refl| |].
+    + eapply type_domain_trans.
+      * eapply item_type_domain; eassumption.
+      * eapply items_type_domain; eassumption.
+    + eapply type_domain_trans; eapply items_type_domain; eassumption.
 Qed.
 
-Lemma add_tys_domain : forall xs tm, type_domain_incl tm (add_tys xs tm).
-Proof.
-  induction xs as [|x xs IH]; intro tm; [apply type_domain_refl|].
-  eapply type_domain_trans; [apply type_domain_add|apply IH].
-Qed.
 
 Lemma add_tys_contains : forall xs tm t, In t xs -> nlook t (add_tys xs tm) <> None.
 Proof.
@@ -242,11 +249,16 @@ Proof.
       try solve [destruct Hin].
     + destruct Hin as [E|[]]. injection E as -> ->. apply H2. exact Hfix.
     + eapply items_fun_fixed; eassumption.
-  - destruct H; intros u fx Hin t Hfix; [destruct Hin|].
-    apply in_app_or in Hin as [Hin|Hin].
-    + eapply items_type_domain; [eassumption|].
-      eapply item_fun_fixed; eassumption.
-    + eapply items_fun_fixed; eassumption.
+  - destruct H as [|p ob tm sp r es1 tm1 es2 tm2 H1 Hr|p ob tm l r es1 tm1 tl tr rest es2 tm2 H1 _ _ Hr];
+      intros u fx Hin t Hfix; [destruct Hin| |].
+    + apply in_app_or in Hin as [Hin|Hin].
+      * eapply items_type_domain; [exact Hr|].
+        eapply item_fun_fixed; [exact H1|exact Hin|exact Hfix].
+      * eapply items_fun_fixed; [exact Hr|exact Hin|exact Hfix].
+    + apply in_app_or in Hin as [Hin|[Hin|Hin]].
+      * eapply items_type_domain; [exact Hr|]. eapply items_fun_fixed; [exact H1|exact Hin|exact Hfix].
+      * discriminate Hin.
+      * eapply items_fun_fixed; [exact Hr|exact Hin|exact Hfix].
 Qed.
 
 Lemma root_items_fun_fixed : forall W q es0 tm its es tm',

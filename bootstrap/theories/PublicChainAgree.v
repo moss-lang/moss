@@ -92,8 +92,9 @@ Proof.
   - intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sig App rt' m' g' a' [E|[]].
     injection E as <- <- <- <-. exists r, dn, p. split; [eapply RSLMethod; exact R|].
     split; [exact Mn|exact (fun L => L)].
-  - intros p ob tm a pa c d n its bs es tm' R D Ast B Its IH rt m g a' I.
+  - intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps B Its IH rt m g a' I.
     destruct (IH rt m g a' I) as (sp & s & dn & p' & Isp & Lf & Mn & Ld).
+    rewrite <- citem_specs_map, <- Esps in Isp.
     exists s, dn, p'. split; [eapply RSLContext; eassumption|].
     split; [exact Mn|]. intros _. exact (Ld (decl_loaded c d D)).
   - intros; contradiction.
@@ -131,7 +132,8 @@ Proof.
   - subst k. inversion OIE; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?c' |- _ => assert (c' = c) by congruence; subst c' end.
     match goal with H : w_decl W c = Some ?d' |- _ => assert (d' = d) by congruence; subst d' end.
-    match goal with H : d_ast d = ADCtx _ _ |- _ => rewrite H in Ast; injection Ast as -> -> end.
+    match goal with H : d_ast d = ADCtx _ (map CISpec _) |- _ => rewrite H in Ast; injection Ast as -> Ei; subst its end.
+    rewrite citem_specs_map in Isp.
     match goal with H : OutputItemsEntries W _ _ _ _ _ _ |- _ => rename H into HI end.
     destruct (items_member _ _ _ _ _ _ HI sp Isp) as (t1 & e1 & t2 & Hm & Inc).
     destruct (IH s dn eq_refl _ _ _ _ Hm) as (rt & m & g & a & p' & I & Mn & Ld).
@@ -188,7 +190,7 @@ Proof.
   destruct PRf as (d0 & ps0 & a0 & r0 & b0 & outs0 & es0 & tm0 & D0 & FP0 & _ & OIE0 & RK0 & EO).
   pose proof Ik as Ik'. rewrite RK0 in Ik'. apply in_flat_map in Ik' as [e [Ie Ke]].
   destruct (KeysM key Ik) as (rk & mk & ak & Ek).
-  destruct e as [t0|v t0 a'|f g0 a'|rt0 m0 g0 a'|u' fx]; cbn in Ke; try contradiction; destruct Ke as [Ke|[]]; subst key; try discriminate.
+  destruct e as [t0|v t0 a'|f g0 a'|rt0 m0 g0 a'|u' fx|eql eqr]; cbn in Ke; try contradiction; destruct Ke as [Ke|[]]; subst key; try discriminate.
   destruct (proj2 entry_leaf _ _ _ _ _ _ OIE0 rt0 m0 g0 a' Ie) as (sp0 & s & dn & p0 & Isp0 & Lf0 & Mn0 & Ld0).
   destruct (functor_decl d0 _ _ _ _ FP0) as [n0 Ast0].
   assert (Lh : ResultLeaf W h0 (s, Some dn)) by (eapply RL; eassumption). pose proof (Lv _ Lh) as Lu.
@@ -218,9 +220,23 @@ Qed.
 
 (* ---- a copy of a method-only result has method entries only ------------- *)
 
+(* A result holds no equation ([D90]), so its reading has no equation entry. *)
+Lemma output_no_eq :
+  (forall p ob tm sp es tm', OutputItemEntries W p ob tm sp es tm' -> forall l r, ~ In (NEq l r) es) /\
+  (forall p ob tm sps es tm', OutputItemsEntries W p ob tm sps es tm' -> forall l r, ~ In (NEq l r) es).
+Proof.
+  apply (PublicFormation.oies_mut W (fun p ob tm sp es tm' _ => forall l r, ~ In (NEq l r) es)
+                                   (fun p ob tm sps es tm' _ => forall l r, ~ In (NEq l r) es));
+    intros; intro I;
+    first [ solve [cbn in I; intuition discriminate]
+          | solve [match goal with H : forall l r, ~ In (NEq l r) ?es, I : In (NEq _ _) ?es |- _ => exact (H _ _ I) end]
+          | (apply in_app_or in I; destruct I as [I|I];
+             match goal with H : forall l r, ~ In (NEq l r) _ |- _ => exact (H _ _ I) end) ].
+Qed.
+
 Definition Plain (e : entry) : Prop := match e with NMth _ _ _ _ => False | _ => True end.
 Definition esym (e : entry) : nat :=
-  match e with NTy t => t | NVal v _ _ => v | NFn f _ _ => f | NFun u _ => u | NMth _ m _ _ => m end.
+  match e with NTy t => t | NVal v _ _ => v | NFn f _ _ => f | NFun u _ => u | NMth _ m _ _ => m | NEq _ _ => 0 end.
 
 (* A plain entry of a reading is a type its items name, or comes from a
    plain leaf of its items. *)
@@ -245,8 +261,9 @@ Proof.
   - intros p ob tm a bs pa u' d n ps args res fx R D Ast B Fx Rd e [<-|[]] _. cbn.
     eapply RSLPlain; [exact R|exact D| |]; rewrite Ast; [intros n' its E; discriminate|reflexivity].
   - intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sig App e [<-|[]] Pl. contradiction.
-  - intros p ob tm a pa c d n its bs es tm' R D Ast B Its IH e I Pl.
+  - intros p ob tm a pa c d n its sps bs es tm' R D Ast Esps B Its IH e I Pl.
     destruct (IH e I Pl) as (sp & Isp & X).
+    rewrite <- citem_specs_map, <- Esps in Isp.
     destruct e; cbn in X |- *; try contradiction; [eapply STCtx; eassumption|..]; eapply RSLContext; eassumption.
   - intros; contradiction.
   - intros p ob tm sp rest es1 tm1 es2 tm2 H1 IH1 H2 IH2 e I Pl.
@@ -285,7 +302,8 @@ Proof.
   - subst k. inversion OIE; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?c' |- _ => assert (c' = c) by congruence; subst c' end.
     match goal with H : w_decl W c = Some ?d' |- _ => assert (d' = d) by congruence; subst d' end.
-    match goal with H : d_ast d = ADCtx _ _ |- _ => rewrite H in Ast; injection Ast as -> -> end.
+    match goal with H : d_ast d = ADCtx _ (map CISpec _) |- _ => rewrite H in Ast; injection Ast as -> Ei; subst its end.
+    rewrite citem_specs_map in Isp.
     match goal with H : OutputItemsEntries W _ _ _ _ _ _ |- _ => rename H into HI end.
     destruct (items_member _ _ _ _ _ _ HI sp Isp) as (t1 & e1 & t2 & Hm & Inc).
     destruct (IH s eq_refl _ _ _ _ Hm) as (e & I & Pl). exists e. split; [exact (Inc _ I)|exact Pl].
@@ -305,8 +323,8 @@ Proof.
   destruct PR as (d & ps & a & r & bb & outs & es & tm' & D & FP & _ & OIE & _ & EC).
   exists (flat_map (entry_provision (c_sub C) (fun a => a)) (rev es)). split; [subst C'; reflexivity|].
   intros k pr I. apply in_flat_map in I as [e [Ie Ip]]. apply (proj2 (in_rev _ _)) in Ie.
-  destruct e as [t0|v t0 a'|f g0 a'|rt m g a'|u' fx]; cbn in Ip;
-    [contradiction| | | destruct Ip as [E|[]]; injection E as <- <-; do 4 eexists; split; reflexivity|]; exfalso.
+  destruct e as [t0|v t0 a'|f g0 a'|rt m g a'|u' fx|eql eqr]; cbn in Ip;
+    [contradiction| | | destruct Ip as [E|[]]; injection E as <- <-; do 4 eexists; split; reflexivity| |contradiction]; exfalso.
   all: destruct (proj2 entry_plain_leaf _ _ _ _ _ _ OIE _ Ie Logic.I) as (sp & Isp & Lf); cbn in Lf.
   all: destruct (functor_decl d _ _ _ _ FP) as [n Ast].
   all: match goal with Lf : ResultSpecLeaf W _ _ ?l |- _ => assert (Lh : ResultLeaf W h0 l) by (apply Lv; eapply RL; eassumption) end.
@@ -316,7 +334,8 @@ Proof.
   all: destruct (items_member _ _ _ _ _ _ OIE0 sp1 Isp1) as (t1 & e1 & t2 & Hm & Inc).
   all: destruct (leaf_plain_entry _ _ _ Lf1 _ eq_refl _ _ _ _ Hm) as (e0 & I0 & Pl0).
   all: pose proof (Inc _ I0) as I0'.
-  all: destruct e0 as [y0|v0 y1 a0'|f0 g0' a0'|rt0 m0 g0' a0'|u0 fx0]; try contradiction.
+  all: destruct e0 as [y0|v0 y1 a0'|f0 g0' a0'|rt0 m0 g0' a0'|u0 fx0|eql eqr]; try contradiction.
+  all: try solve [exact (proj2 output_no_eq _ _ _ _ _ _ OIE0 _ _ I0')].
   all: try (destruct (proj2 entry_plain_leaf _ _ _ _ _ _ OIE0 _ I0' Logic.I) as (sp2 & Isp2 & St); cbn in St;
     apply (NoH y0); exists d0, ps1, a1, r1, b1, sp2;
     split; [exact D0|split; [rewrite Ast1; reflexivity|split; [exact Isp2|exact St]]]).

@@ -13,7 +13,7 @@ Definition mention_here(f self mi:nat)(d:option string)(g:gsym):M(list nat):=
    let! ms:=match mo with Some m=>let! rs:=reqs(gs_id m)in signature_type_syms m rs|None=>ret[]end in
    ret(rr++ms)
  | None=>match gs_kind g,gs_decl g with
-   | KCtx,ADCtx _ its=>result_mentions_go f self(gs_mod g)its[]
+   | KCtx,ADCtx _ its=>result_mentions_go f self(gs_mod g)(ctx_specs its)[]
    | KVal,_=>reqs(gs_id g)
    | KFn,_=>let! rs:=reqs(gs_id g)in let! ms:=signature_type_syms g rs in ret(rs++ms)
    | KFunctor,ADFunctor _ _ _ _ None=>if Nat.eqb(gs_id g)self then ret[]else functor_fixed_go f g
@@ -94,7 +94,7 @@ Lemma here_context:forall f self mi g n its dc s found s' t sp,
  MentionCovers w (P:=P) R Fl f->nget(w_syms w)(gs_id g)=Some g->
  A.w_decl WW(gs_id g)=Some dc->A.d_ast dc=ADCtx n its->
  mention_here f self mi None g s=Good(found,s')->Inv s->st_w s=w->Later w P R Fl s'->
- In sp its->A.ResultMentions WW self(A.d_mod dc)sp t->In t found.
+ In(CISpec sp)its->A.ResultMentions WW self(A.d_mod dc)sp t->In t found.
 Proof.
  intros f self mi g n its dc s found s' t sp IH Hg Hd D H Hi Hw L Hin Hm.
  rewrite(w_decl_rd w R Fl _ _ Hg)in Hd;injection Hd as <-.
@@ -103,7 +103,8 @@ Proof.
  { pose proof(load_world_kind b w Hload _ _ Hg)as K. unfold KindOK in K.
    rewrite D in K. destruct(gs_kind g);simpl in K;congruence. }
  unfold mention_here in H;rewrite K,D in H.
- exact(IH self(gs_mod g)its[] s found s' H Hi Hw(loader_mod_in w R Fl b Hload _ _ Hg)L sp t Hin Hm).
+ exact(IH self(gs_mod g)(ctx_specs its)[] s found s' H Hi Hw(loader_mod_in w R Fl b Hload _ _ Hg)L sp t
+   (proj2(in_ctx_specs sp its)Hin) Hm).
 Qed.
 Lemma here_functor:forall f self mi g dc n names args res sp s found s' t,
  FixedCovers f->nget(w_syms w)(gs_id g)=Some g->A.w_decl WW(gs_id g)=Some dc->

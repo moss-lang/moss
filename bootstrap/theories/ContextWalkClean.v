@@ -46,6 +46,22 @@ Proof.
   - exact (us_tri _ _ (proj1 (proj2 (unify_app_spec (fun _ => 0) e mi k a nm s e' s' T H)))).
 Qed.
 
+(* D90: the merge an equation makes, unfolded by rewriting rather than by
+   conversion (the kernel would otherwise unfold `unify 200` comparing
+   the two). *)
+Lemma add_eq_merge_eq : forall e mi l r outer needs, add_eq_merge e mi l r outer needs =
+  mbind (ety_of l mi (outer ++ tymap e) e None) (fun tl =>
+  mbind (ety_of r mi (outer ++ tymap e) e None) (fun tr =>
+  mbind (unify 200 e mi tl tr " in a type equation (D90)"%string) (fun e => ret (e, needs)))).
+Proof. reflexivity. Qed.
+
+Lemma ok_add_eq_merge : forall e mi l r outer needs, ok (add_eq_merge e mi l r outer needs).
+Proof.
+  intros. rewrite add_eq_merge_eq.
+  apply ok_bind; [apply ok_ety_of|intro; apply ok_bind; [apply ok_ety_of|intro; apply ok_bind; [apply ok_unify|intro; apply ok_ret]]].
+Qed.
+#[export] Hint Resolve ok_add_eq_merge : okdb.
+
 Section Walk.
 Variable w : Elab.world. Context {P : xprogram}.
 Variables (R : nat -> list nat) (Fl : string -> nat) (b : bundle).
@@ -103,6 +119,28 @@ Proof.
   destruct (unify_app_clean_tri _ _ _ _ _ _ _ _ (proj1 Cc) (proj2 Cc) Eeu) as [Cu Tu].
   exact (setdefault_clean_tri eu k a s6 ee s7 Cu Tu Eee).
 Qed.
+Lemma eq_merge_clean : forall e mi l r subst needs s e' needs' s',
+  add_eq_merge e mi l r subst needs s = Good ((e',needs'),s') ->
+  Inv s -> st_w s = w -> In mi (w_order w) -> TmClean subst ->
+  ContextClean e -> Tri (en_uf e) -> Later w P R Fl s' ->
+  ContextClean e' /\ Tri (en_uf e').
+Proof.
+  intros e mi l r subst needs s e' needs' s' H Hi Hw Hmi Ts C T L.
+  rewrite add_eq_merge_eq in H.
+  assert (Tm : TmClean (subst ++ tymap e)) by (apply tmclean_app; [exact Ts|exact (context_clean_tymap _ C)]).
+  apply bind_inv in H as (yl & s4 & Etl & H).
+  destruct (ok_ety_of l mi _ e None s yl s4 Hi Etl) as [I4 F4].
+  apply bind_inv in H as (yr & s5 & Etr & H).
+  destruct (ok_ety_of r mi _ e None s4 yr s5 I4 Etr) as [I5 F5].
+  apply bind_inv in H as (eu & s6 & Eeu & H). injection H as <- <- <-.
+  destruct (unify_spec (fun _ => 0) 200 e mi yl yr _ s5 eu s6 T Eeu) as [-> _].
+  pose proof (fr_w' w _ _ F4 Hw) as W4.
+  pose proof (later_back w P R Fl _ _ F5 L) as L4.
+  pose proof (ety_of_clean w R Fl b Hload l mi (subst ++ tymap e) e None s yl s4 Etl Hi Hw Hmi Tm (cc_types _ C) I L4) as Ol.
+  pose proof (ety_of_clean w R Fl b Hload r mi (subst ++ tymap e) e None s4 yr s5 Etr I4 W4 Hmi Tm (cc_types _ C) I L) as Or.
+  exact (unify_clean_tri _ _ _ _ _ _ _ _ C T Ol Or Eeu).
+Qed.
+
 Definition SymWalkClean f : Prop := forall e mi g subst needs s e' needs' s',
   add_symbol_item f e mi g subst needs s = Good ((e',needs'),s') ->
   Inv s -> st_w s = w -> In mi (w_order w) ->
@@ -158,7 +196,7 @@ Proof.
     destruct (unify_app_clean_tri _ _ _ _ _ _ _ _ (proj1 Cc) (proj2 Cc) Eeu) as [Cu Tu].
     eapply setdefault_clean_tri; [exact Cu|exact Tu|exact Eee].
   - destruct (gs_decl g) as [| | | | | | |n its|]; try impossible H.
-    assert (Gen : forall its0 acc s0 res s3,
+    assert (Gen0 : forall its0 acc s0 res s3,
       mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)) acc its0 s0 = Good (res,s3) ->
       Inv s0 -> st_w s0 = w -> ContextClean (fst acc) -> Tri (en_uf (fst acc)) ->
       Later w P R Fl s3 -> ContextClean (fst res) /\ Tri (en_uf (fst res))).
@@ -166,8 +204,38 @@ Proof.
       - injection Hf as <- <- <-. split; assumption.
       - cbn [mfold] in Hf.
         cstep Hf Ii Wi Li a si Ea Ia Wa La.
-        destruct a as [ae an]. cbn in *.
+        destruct a as [ae an]. cbn [fst snd] in *.
         destruct (IH ce (gs_mod g) sp subst ns s0 ae an si Ea Ii Wi Hgm Ts Ci Ti La) as [Ca Ta].
+        exact (IR (ae,an) si (re,nr) s3 Hf Ia Wa Ca Ta Li). }
+    assert (Gen : forall its0 acc s0 res s3,
+      mfold (fun acc it => match it with
+                           | CISpec sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)
+                           | CIEq l r =>
+                               let! acc := mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc))
+                                                 acc (ty_heads l ++ ty_heads r) in
+                               add_eq_merge (fst acc) (gs_mod g) l r subst (snd acc)
+                           end) acc its0 s0 = Good (res,s3) ->
+      Inv s0 -> st_w s0 = w -> ContextClean (fst acc) -> Tri (en_uf (fst acc)) ->
+      Later w P R Fl s3 -> ContextClean (fst res) /\ Tri (en_uf (fst res))).
+    { induction its0 as [|[sp|l r] rest IR]; intros [ce ns] s0 [re nr] s3 Hf Ii Wi Ci Ti Li.
+      - injection Hf as <- <- <-. split; assumption.
+      - cbn [mfold] in Hf. cbn beta iota zeta in Hf.
+        cstep Hf Ii Wi Li a si Ea Ia Wa La.
+        destruct a as [ae an]. cbn [fst snd] in *.
+        destruct (IH ce (gs_mod g) sp subst ns s0 ae an si Ea Ii Wi Hgm Ts Ci Ti La) as [Ca Ta].
+        exact (IR (ae,an) si (re,nr) s3 Hf Ia Wa Ca Ta Li).
+      - cbn [mfold] in Hf. cbn beta iota zeta in Hf.
+        cstep Hf Ii Wi Li a si Ea Ia Wa La.
+        destruct a as [ae an].
+        apply bind_inv in Ea as (h & sh & Eh & Em).
+        assert (Oh : ok (mfold (fun acc sp => add_spec f (fst acc) (gs_mod g) sp subst (snd acc)) (ce, ns)
+                           (ty_heads l ++ ty_heads r))) by (apply ok_mfold; intros; apply ok_add_spec).
+        destruct (Oh _ _ _ Ii Eh) as [Ih Fh].
+        pose proof (fr_w' w _ _ Fh Wi) as Wh.
+        assert (Om : ok (add_eq_merge (fst h) (gs_mod g) l r subst (snd h))) by apply ok_add_eq_merge.
+        destruct (Om _ _ _ Ih Em) as [_ Fm].
+        destruct (Gen0 _ (ce, ns) s0 h sh Eh Ii Wi Ci Ti (later_back w P R Fl _ _ Fm La)) as [Ch Th].
+        destruct (eq_merge_clean (fst h) (gs_mod g) l r subst (snd h) sh ae an si Em Ih Wh Hgm Ts Ch Th La) as [Ca Ta].
         exact (IR (ae,an) si (re,nr) s3 Hf Ia Wa Ca Ta Li). }
     exact (Gen its (e,needs) s1 (e',needs') s' H I1 W1 C T L).
   - impossible H.

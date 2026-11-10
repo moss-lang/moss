@@ -48,7 +48,7 @@ Lemma output_context_domain:forall W self p pa a c dc n its tm bs,
  A.resolve_sym W p pa=Some c->A.w_decl W c=Some dc->A.d_ast dc=ADCtx n its->
  A.OutputBrackets W p tm a bs->
  (forall t,A.ResultMentions W self p(Spec(Some pa)None a)t->A.nlook t tm<>None)->
- forall sp,In sp its->forall t,A.ResultMentions W self(A.d_mod dc)sp t->
+ forall sp,In(CISpec sp)its->forall t,A.ResultMentions W self(A.d_mod dc)sp t->
  A.nlook t(bs++tm)<>None.
 Proof.
  intros W self p pa a c dc n its tm bs Res Decl Ast Br Dom sp Insp t Ment.
