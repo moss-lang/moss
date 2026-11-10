@@ -276,9 +276,9 @@ Corollary elaborate_frame : forall b p, elaborate b = Good p ->
   (forall a c, fld_ext (st_flds s) (List.length (st_flds s)) a = fld_ext (st_flds s) (List.length (st_flds s)) c -> a = c) /\
   ReqOK s /\ RC (W0r w) (st_reqs s) /\ RL (W0r w) (st_reqs s).
 Proof.
-  intros b p H. unfold elaborate in H. destruct (load_world b) as [w|m] eqn:Hw; [|discriminate].
-  cbn [rbind] in H. change (match elab_program (s_init w) with Good (p, _) => Good p | Bad m => Bad m end = Good p) in H.
-  destruct (elab_program (s_init w)) as [[p' s]|m] eqn:He; [|discriminate].
-  injection H as <-. exists w, s. split; [reflexivity|]. split; [exact He|].
-  exact (elab_frame b w p' s Hw He).
+  intros b p H. destruct (elaborate_run b p H) as (s & H').
+  destruct (elaborate_with_metadata_run b p s H') as (w & Hw & He).
+  change (elab_program (s_init w) = Good (p, s)) in He.
+  exists w, s. split; [exact Hw|]. split; [exact He|].
+  exact (elab_frame b w p s Hw He).
 Qed.

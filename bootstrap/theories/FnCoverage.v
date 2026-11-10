@@ -256,11 +256,10 @@ Theorem accepted_defined_functions_completed:forall b p,
  nget(w_syms w)id=Some g->gs_decl g=ADFn receiver name parameters result(Some source_body)->
  exists lowered,nassoc id(ExecutionModel.xo_fns p)=Some lowered/\completed_source_fn w final id lowered.
 Proof.
- intros b p Accepted;unfold elaborate in Accepted.
- destruct(load_world b)as[w|message]eqn:Load;cbn[rbind]in Accepted;[|discriminate].
- change(match elab_program(s_init w)with Good(program,_)=>Good program|Bad message=>Bad message end=Good p)in Accepted.
- destruct(elab_program(s_init w))as[[program final]|message]eqn:Run;[|discriminate].
- injection Accepted as <-;exists w,final;split;[reflexivity|];split;[exact Run|].
+ intros b p Accepted;destruct(elaborate_run b p Accepted)as(final&Meta).
+ destruct(elaborate_with_metadata_run b p final Meta)as(w&Load&Run).
+ change(elab_program(s_init w)=Good(p,final))in Run.
+ set(program:=p);exists w,final;split;[exact Load|];split;[exact Run|].
  intros id g receiver name parameters result source_body Loaded Decl.
  pose proof(fn_loaded_initial_inv b w Load)as Inv.
  destruct(elab_program_defined_bodies_present b(s_init w)program final id g receiver name parameters result source_body

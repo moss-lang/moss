@@ -5519,11 +5519,51 @@ Definition lang_modules (w : world) : list (string * nat) :=
            (w_order w).
 
 (* The elaborator: a total function from a bundle to a program or an error. *)
+(* D58 on definitions (Audit's FiniteLayouts): a tag whose payload, read at
+   its own requirements, reaches the tag is rejected, used or not.  The
+   layout follows a tag's payload at its arguments, a record's fields and a
+   union's members; an abstract type (a machine type included) is a leaf,
+   so `Ref[Boxed=X]`, whose payload is `StructRef`, never reaches X.  This
+   runs after elaboration has accepted, so it adds rejections and changes
+   no other diagnostic; a payload that does not read is not a cycle here.
+   Running out of fuel is a cycle, as `slots_go`'s depth limit is. *)
+Definition attempt_bool (m : M bool) : M bool :=
+  fun s => match m s with Good r => Good r | Bad _ => Good (false, s) end.
+Fixpoint layout_reaches (fuel : nat) (target : nat) (t : ety) : M bool :=
+  match fuel with
+  | 0 => ret true
+  | S f =>
+      match t with
+      | YRec fs => mfold (fun (b : bool) (p : string * ety) => if b then ret true else layout_reaches f target (snd p)) false fs
+      | YUnion ms => mfold (fun (b : bool) (u : ety) => if b then ret true else layout_reaches f target u) false ms
+      | YNom n _ =>
+          if Nat.eqb n target then ret true else
+          attempt_bool (let! g := sym n in
+                        if kind_eqb (gs_kind g) KTag
+                        then let! p := payload_type t empty_env in layout_reaches f target p
+                        else ret false)
+      | _ => ret false
+      end
+  end.
+Definition check_layouts : M unit :=
+  let! s := get in
+  miter (fun i => match nget (st_syms s) i with
+                  | Some g =>
+                      if kind_eqb (gs_kind g) KTag then
+                        let! found := attempt_bool (let! rs := reqs i in
+                                       let! p := payload_type (YNom i (map (fun r => (r, YAbs r)) rs)) empty_env in
+                                       layout_reaches 300 i p) in
+                        if found then err (gs_mod g) ("`" ++ gs_name g ++ "` contains itself, so it has no finite layout (D58)")
+                        else ret tt
+                      else ret tt
+                  | None => ret tt
+                  end) (seq 0 (w_nsyms (st_w s))).
+
 Definition elaborate (b : bundle) : res xprogram :=
   let* w := load_world b in
   let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0 false false [] (lang_modules w) [] (empty_reify_metadata ety key) in
   match elab_program s0 with
-  | Good (p, _) => Good p
+  | Good (p, s) => match check_layouts s with Good _ => Good p | Bad m => Bad m end
   | Bad m => Bad m
   end.
 
@@ -5533,7 +5573,10 @@ Definition elaborate_with_metadata (b : bundle) : res (xprogram * st) :=
   let* w := load_world b in
   let s0 := St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0
     false false [] (lang_modules w) [] (empty_reify_metadata ety key) in
-  elab_program s0.
+  match elab_program s0 with
+  | Good (p, s) => match check_layouts s with Good _ => Good (p, s) | Bad m => Bad m end
+  | Bad m => Bad m
+  end.
 
 Lemma elaborate_with_metadata_project : forall b,
     elaborate b =
@@ -5543,7 +5586,31 @@ Lemma elaborate_with_metadata_project : forall b,
     end.
 Proof.
   intro b. unfold elaborate, elaborate_with_metadata, rbind.
-  destruct (load_world b); reflexivity.
+  destruct (load_world b); [|reflexivity].
+  match goal with |- context [elab_program ?s0] => destruct (elab_program s0) as [[p s]|m] end; [|reflexivity].
+  destruct (check_layouts s) as [[]|]; reflexivity.
+Qed.
+
+(* An accepted bundle was accepted by elab_program, and then by
+   check_layouts, which leaves the program and its metadata as they were. *)
+Lemma elaborate_with_metadata_run : forall b p s,
+    elaborate_with_metadata b = Good (p, s) ->
+    exists w, load_world b = Good w /\
+      elab_program (St w (w_syms w) (w_nsyms w) NE NE NE [] [] NE [] [] NE NE [] 0
+        false false [] (lang_modules w) [] (empty_reify_metadata ety key)) = Good (p, s).
+Proof.
+  intros b p s H. unfold elaborate_with_metadata, rbind in H.
+  destruct (load_world b) as [w|m]; [|discriminate]. exists w. split; [reflexivity|].
+  match type of H with context [elab_program ?s0] => destruct (elab_program s0) as [[p' s']|m] end; [|discriminate].
+  destruct (check_layouts s') as [[]|]; [|discriminate]. exact H.
+Qed.
+
+Lemma elaborate_run : forall b p, elaborate b = Good p ->
+    exists s, elaborate_with_metadata b = Good (p, s).
+Proof.
+  intros b p H. rewrite elaborate_with_metadata_project in H.
+  destruct (elaborate_with_metadata b) as [[p' s]|m]; [|discriminate].
+  injection H as <-. exists s. reflexivity.
 Qed.
 
 (* From the CLI's tokens. *)

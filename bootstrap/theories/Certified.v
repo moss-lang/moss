@@ -146,17 +146,19 @@ Module SourceCertified <: SOURCE_PROGRESS Certified.
   Proof.
     intros b p H.
     destruct (ReqsTotal.elaborate_world_of _ _ H) as (w & s & R & Load & Run & Reqs & World).
-    exists w, s, R. split; [exact Load|]. split; [|exact (conj Reqs World)].
-    unfold elaborate_with_metadata, Elab.elaborate_with_metadata, Sx.rbind.
-    now rewrite Load.
+    destruct (Elab.elaborate_run b p H) as (s' & Meta).
+    destruct (Elab.elaborate_with_metadata_run b p s' Meta) as (w' & Load' & Run').
+    rewrite Load in Load'. injection Load' as <-.
+    change (Elab.elab_program (ElabFrameCore.s_init w) = Sx.Good (p, s')) in Run'.
+    rewrite Run in Run'. injection Run' as <-.
+    exists w, s, R. split; [exact Load|]. split; [exact Meta|exact (conj Reqs World)].
   Qed.
 
   Lemma function_frames_total : forall b p source,
     elaborate_with_metadata b = Sx.Good (p, source) ->
     exists specs, function_frame_specifications source p = Some specs.
   Proof.
-    intros b p source H. unfold elaborate_with_metadata, Elab.elaborate_with_metadata, Sx.rbind in H.
-    destruct (Elab.load_world b) as [w|msg] eqn:E; [|discriminate].
+    intros b p source H0. destruct (Elab.elaborate_with_metadata_run b p source H0) as (w & E & H).
     exact (@FunctionFrameProgram.actual_function_frame_specifications_total b w p source E H).
   Qed.
 End SourceCertified.

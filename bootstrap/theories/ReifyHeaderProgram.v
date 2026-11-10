@@ -82,10 +82,9 @@ Theorem accepted_defined_source_headers:forall b p final,
  nget(w_syms w)id=Some g->gs_decl g=ADFn receiver name parameters result(Some source_body)->
  exists lowered,nassoc id(ExecutionModel.xo_fns p)=Some lowered/\completed_source_header w final id lowered.
 Proof.
- intros b p final Accepted;unfold elaborate_with_metadata in Accepted.
- destruct(load_world b)as[w|message]eqn:Load;cbn[rbind]in Accepted;[|discriminate].
+ intros b p final Accepted0;destruct(elaborate_with_metadata_run b p final Accepted0)as(w&Load&Accepted).
  change(elab_program(s_init w)=Good(p,final))in Accepted.
- exists w;split;[reflexivity|];split;[exact Accepted|].
+ exists w;split;[exact Load|];split;[exact Accepted|].
  intros id g receiver name parameters result source_body Loaded Decl.
  pose proof(fn_loaded_initial_inv b w Load)as I.
  destruct(elab_program_defined_bodies_present b(s_init w)p final id g receiver name parameters result source_body
