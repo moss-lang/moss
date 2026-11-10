@@ -257,6 +257,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicRuntimeKeys.keys_match_with_normalized_iff);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.envok_runtime_iff);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.envok_runtime_method);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_runtime_iff);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_with_method_keyeq);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.pre_method_provision);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.envok_with_of_on);
   root (@NM.PublicCaptureScopeFacts.typed_capture_generation_lookup);
   root (@NM.PublicCaptureScopeFacts.typed_capture_alias_lookup);

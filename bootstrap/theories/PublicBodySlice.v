@@ -364,8 +364,42 @@ Proof.
     n d H r m g k Env Found Equal).
 Qed.
 
+(* A realization exposes its runtime key function. The current rules still
+   observe concrete keys, while formed contexts admit the proper key interface. *)
+Definition RealizesWith (rk : item -> item) (n : nat) (C : A.cx)
+    (d : environment) (H : heap_types) : Prop :=
+  Absorbs C d /\ EnvOkWith rk n C d H /\ StaticOk C.
+
 Definition Realizes (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop :=
-  Absorbs C d /\ EnvOk n C d H /\ StaticOk C.
+  RealizesWith (fun k => match k with
+    | IMth r m _ => A.rkey C r m
+    | _ => k
+    end) n C d H.
+
+Lemma realizes_runtime_iff : forall C (Section : CxSection C) n d H,
+  PublicScoping.MethsRead W C ->
+  Realizes n C d H <->
+  RealizesWith (runtime_key C (canonical_runtime_keys C Section)) n C d H.
+Proof.
+  intros C Section n d H Methods. split.
+  - intros [Abs [Env Static]]. pose proof Static as [_ Keys].
+    split; [exact Abs|]. split; [|exact Static].
+    apply (envok_runtime_iff C Section n d H Methods Keys). exact Env.
+  - intros [Abs [Env Static]]. pose proof Static as [_ Keys].
+    split; [exact Abs|]. split; [|exact Static].
+    apply (envok_runtime_iff C Section n d H Methods Keys) in Env. exact Env.
+Qed.
+
+Lemma realizes_with_method_keyeq : forall C (keys : RuntimeKeys C) n d H r m g k,
+  RealizesWith (runtime_key C keys) n C d H ->
+  A.mlook r m (A.c_mths C) = Some g ->
+  A.KeyEq (A.c_merge C) (A.mkey r m) k ->
+  exists pv, runtime_lookup C keys k d = Some pv /\
+    CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv.
+Proof.
+  intros C keys n d H r m g k [_ [Env _]] Found Equal.
+  exact (envok_with_method_keyeq C keys n d H r m g k Env Found Equal).
+Qed.
 
 Lemma realizes_absorbs_canon : forall n C d H, Realizes n C d H -> AbsorbsCanon C d.
 Proof.
@@ -382,6 +416,28 @@ Definition Pre n F C d types H g st : Prop :=
 Lemma pre_absorbs_canon : forall n F C d types H g st,
   Pre n F C d types H g st -> AbsorbsCanon C d.
 Proof. intros n F C d types H g st (_ & _ & _ & _ & Real & _). eapply realizes_absorbs_canon; eassumption. Qed.
+
+Lemma pre_method_provision : forall n F C d types H locals state r m g,
+  Pre n F C d types H locals state ->
+  A.mlook r m (A.c_mths C) = Some g ->
+  exists pv, lookup_provision (A.rkey C r m) d = Some pv /\
+    CallableOk n H d (r :: A.sg_params g) (A.sg_ret g) pv.
+Proof.
+  intros n F C d types H locals state r m g
+    (_ & _ & _ & _ & Real & _ & _ & Scoped) Found.
+  pose proof Real as [_ [_ [Section Keys]]].
+  pose proof Scoped as [_ [_ [_ Methods]]].
+  apply (realizes_runtime_iff C Section n d H Methods) in Real.
+  destruct (realizes_with_method_keyeq C (canonical_runtime_keys C Section)
+    n d H r m g (A.mkey r m) Real Found (conj eq_refl (A.MERefl _ _)))
+    as [pv [Lookup Callable]].
+  exists pv. split; [|exact Callable].
+  pose proof (PublicScoping.methsread_mlook_canonical W C r m g Methods Keys Found) as Stored.
+  change (lookup_provision (normalized_rkey C (A.mkey r m)) d = Some pv) in Lookup.
+  rewrite (normalized_rkey_stored C (A.mkey r m)) in Lookup.
+  - exact Lookup.
+  - change (A.mkey (A.canon C r) m = A.mkey r m). now rewrite Stored.
+Qed.
 
 (* The context code runs in after a demand: the type table of C0, where
    the code is, and the provisions the families added. The demand itself
@@ -490,9 +546,10 @@ Proof.
   - intros gm dc u fx pv gfx rest Look _ IH1 Fx _ IH2. exact (CFCons m H1 gm dc u fx pv gfx rest Look IH1 Fx IH2).
 Qed.
 
-Lemma realizes_lower : forall n m C d H, m <= n -> Realizes n C d H -> Realizes m C d H.
+Lemma realizes_with_lower : forall rk n m C d H,
+  m <= n -> RealizesWith rk n C d H -> RealizesWith rk m C d H.
 Proof.
-  intros n m C d H Le [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|]. split; [|exact St].
+  intros rk n m C d H Le [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|]. split; [|exact St].
   split; [exact Vals|]. split; [|split; [|intros u fx Found; destruct (Funs u fx Found) as [pv [gfx [Look [Ok Fm]]]];
     exists pv, gfx; split; [exact Look|split; [exact (proj1 (closure_lower n m H H Le (fun a c L => L)) _ _ _ Ok)|exact Fm]]]].
   - intros f g Found. destruct (Fns f g Found) as [pv [Look Ok]].
@@ -502,9 +559,13 @@ Proof.
 Qed.
 
 
-Lemma realizes_extends : forall n C d H H', heap_extends H H' -> Realizes n C d H -> Realizes n C d H'.
+Lemma realizes_lower : forall n m C d H, m <= n -> Realizes n C d H -> Realizes m C d H.
+Proof. intros n m C d H. exact (realizes_with_lower (A.rkey_of C) n m C d H). Qed.
+
+Lemma realizes_with_extends : forall rk n C d H H',
+  heap_extends H H' -> RealizesWith rk n C d H -> RealizesWith rk n C d H'.
 Proof.
-  intros n C d H H' Ext [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|].
+  intros rk n C d H H' Ext [Abs [[Vals [Fns [Mths Funs]]] St]]. split; [exact Abs|].
   split; [|exact St]. split; [|split; [|split]].
   - intros v t Found. destruct (Vals v t Found) as [w [Look T]].
     exists w; split; [exact Look|eapply value_typed_extends; eassumption].
@@ -515,6 +576,10 @@ Proof.
   - intros u fx Found. destruct (Funs u fx Found) as [pv [gfx [Look [Ok Fm]]]].
     exists pv, gfx; split; [exact Look|split; [exact (proj1 (closure_lower n n H H' (le_n n) Ext) _ _ _ Ok)|exact Fm]].
 Qed.
+
+Lemma realizes_extends : forall n C d H H',
+  heap_extends H H' -> Realizes n C d H -> Realizes n C d H'.
+Proof. intros n C d H H'. exact (realizes_with_extends (A.rkey_of C) n C d H H'). Qed.
 
 Lemma realizes_same : forall n C C' d H,
   A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_merge C' = A.c_merge C ->
@@ -1187,8 +1252,7 @@ Lemma method_code : forall n F C (B : Prop) ot m g ox xs d types H lg lst,
   Outcome F d H types (A.sg_ret g) B (AR.O.I.eval (S n) P d lg lst (EMethod ox m (A.rkey C ot m) xs)).
 Proof.
   intros n F C B ot m g ox xs d types H lg lst Found Recv Args Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [[_ [[_ [_ [Mths _]]] _]] _]]]]].
-  destruct (Mths ot m g Found) as [pv [Look Ok]].
+  destruct (pre_method_provision _ _ _ _ _ _ _ _ _ _ _ Pre0 Found) as [pv [Look Ok]].
   exact (method_code_at n F C B ot m g ox xs d types H lg lst _ pv Look Ok Recv Args Pre0).
 Qed.
 
@@ -5367,9 +5431,8 @@ Proof.
             (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o ox ot0 Do Fm)))
           InK Only Found Args). }
   intros d types H lg lst Pre0.
-  pose proof Pre0 as [_ [_ [_ [_ [[_ [[_ [_ [Mths _]]] _]] _]]]]].
   pose proof (pre_absorbs_canon _ _ _ _ _ _ _ _ Pre0) as Abs.
-  destruct (Mths ot m g Found) as [pv [Look Ok]].
+  destruct (pre_method_provision _ _ _ _ _ _ _ _ _ _ _ Pre0 Found) as [pv [Look Ok]].
   pose proof (AR.O.outcome_breaks W P state_ok _ _ _ _ _ _ _ _ BrkO (sex F C o None ox ot0 Do d types H lg lst (pre_lower Pre0))) as ROut.
   cbn [AR.O.I.eval]. rewrite Look.
   destruct pv as [w|f' df|u sms dc|p held]; [destruct Ok| |destruct Ok|].
