@@ -1,0 +1,9 @@
+# A control for AssumedComplete: f brings a merged type requirement
+# with no member in force. D20 rejects before class fallback.
+type X;
+type Y;
+
+assume X = Y { fn f(); }
+assume f { fn unused() {} }
+
+fn main() {}

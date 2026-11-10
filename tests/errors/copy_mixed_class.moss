@@ -1,0 +1,24 @@
+# F merges fixed X with polymorphic Y. At this copy site X is Old,
+# so H's output at Old should agree with F's at both parameters.
+# Default moss-ref rejects D78. Flipping the merge orientation and
+# the self-hosted compiler both accept this program.
+type X;
+type Y;
+tag Old;
+assume X, Y { fn out(a: X, b: Y); }
+context M = X = Y;
+functor F[Y]: M -> out;
+functor H[Y]: M -> out[X=Old,Y=Old];
+functor G: M -> out[X=Old,Y=Old] {
+  bind X = Old;
+  bind Y = Old;
+  bind out = (a, b) => ();
+}
+fn main() {
+  bind X = Old;
+  bind Y = Old;
+  bind H = G;
+  bind F = H;
+  bind F;
+  out(Old, Old);
+}

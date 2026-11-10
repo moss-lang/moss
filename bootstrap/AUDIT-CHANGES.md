@@ -129,6 +129,8 @@ entry they belong to.
 | 95 | A linked body may pin a fixed input that G takes (`LinkBody`: protected inputs P(F) ∩ M(F), pins every fixed input the body rebinds; closes N5) | n5 | relaxation toward both implementations (closes #93's fidelity gap) |
 | 96 | A copy reads its source as F does at every application of F (`CopyInterpretation`: H's merges, needs and result compared at the copy site's fixed readings; corrects #32) | copyfix | relaxation toward both implementations |
 | 97 | Recorded, not fixed: needs at a site-made merge are matched by syntax (BFunCopy since #96; `LinkBody` as strict as #32 was) | linkfix | a coherence gap (acceptance depends on a merge's representative) and a fidelity gap; folded into the representative-free refactor |
+| 98 | Recorded: a mixed fixed/polymorphic copy and pins into a merged input class | merge baseline | a coherence gap and a fidelity control |
+| 99 | Recorded: unbound assumption requirements and a main context's symbol-only class | merge baseline | an open representative reading and a fidelity control |
 | 100 | Main's root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`) | sep S0 | none (definitional regrouping) |
 | 101 | Machine types and their classes use a table keyed by declaration symbol | sep S1 | representation change |
 
@@ -3092,6 +3094,63 @@ executable tests unless noted.
   false). The representative-free refactor (merges as classes, compared
   up to the congruence) states exactly this matching, so the fix is
   folded into it, with these four examples among its acceptance tests.
+
+### 98. Recorded: copy interpretation and pins in a merged class
+
+These are baselines for the representative-free refactor. The flipped
+reference differs from the default only in the result of the `s_orient`
+callback in `EaBase.default_strategy`. The Audit rules are unchanged.
+
+| program | native | default moss-ref | flipped moss-ref |
+|---|---|---|---|
+| [copy-mixed-class](../tests/errors/copy_mixed_class.moss) | runs | rejects D78 | runs |
+| [pin-merged-class-yz](../tests/wasi/pin_merged_class_yz.moss) | runs | runs | runs |
+| [pin-merged-class-zy](../tests/wasi/pin_merged_class_zy.moss) | runs | runs | runs |
+
+In the copy, F merges fixed X with polymorphic Y. H promises `out` at Old
+for both inputs and the copy site fixes X to Old. `CopyInterpretation`
+first canonicalizes F's types and then applies `copy_subst`. With Y as
+the representative, the reading can use Y's fresh type and miss the
+fixed X. The two reference verdicts demonstrate the coherence failure
+(criteria section 2). The class reading should use the fixed meaning of
+X at this site.
+
+In the pin cases G pins T to Y from its captured Y = Z class.
+`LinkBody` tests whether the pin's symbol has no outgoing substitution
+row. The class representative meets that test even for a class of two.
+The two orderings record a fidelity requirement (criteria section 6)
+for the replacement rule. A rule requiring a singleton would reject
+both examples.
+
+For #97, flipping the reference swaps the verdicts of both copy-site
+orders, both `closure_partial_class` orders and both
+`closure_partial_unbound` orders. The other existing tests whose verdict
+changes are `bind_merge_unbound`, `functor_capture_merged_fixed` and
+`linked_merge_captured`. In the survey of 528 repository source files
+under `tests` and `examples`, these are the nine exit-code differences.
+Both orientations reject `link_site_merge` and `copy_unmentioned_apart`
+today. The refactor's baseline is to accept both closure and copy
+orders, run `link_site_merge` with output 1006, and keep rejecting
+`copy_unmentioned_apart`.
+
+### 99. Recorded: unbound assumption requirements and main's abstract merges
+
+| program | native | default moss-ref | flipped moss-ref |
+|---|---|---|---|
+| [assumed-unbound-class](../tests/errors/assumed_unbound_class.moss) | rejects | rejects D20 | rejects D20 |
+| [main-symbol-merge](../tests/wasi/main_symbol_merge.moss) | runs | runs | runs |
+
+`AssumedComplete` specifies a reading through the representative when no
+member of the class is in force. The assumption control is rejected at
+D20 before it reaches that reading. It is evidence for the earlier
+requirement check. A source witness that reaches the fallback is still
+open. The planned class reading uses one fresh atom per class for that
+case.
+
+The main probe boxes a value at `Phantom[X=X]` and dereferences it at
+`Phantom[X=Y]` under `assume X = Y`. All three runs succeed. A realization
+using one fresh atom per abstract class must preserve that behaviour
+(criteria sections 2 and 6).
 
 ### 100. The root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`; sep branch, S0; criteria section 8)
 - **Rule now.**

@@ -1,0 +1,18 @@
+# A main context identifies two abstract symbols. A box made at one
+# member must dereference at the other.
+import "../../lib/wasm.moss" as w use Wasm, Gc, Boxed, .boxed;
+type X;
+type Y;
+assume Wasm, X { tag Phantom[X](w::I32); }
+assume Wasm, Gc, X = Y {
+  fn main() {
+    bind Boxed = Phantom[X=X];
+    bind w::Heap;
+    let box = Phantom[X=X](w::i32_one).boxed();
+    let raw = match box { w::Ref(raw) => raw };
+    bind Boxed = Phantom[X=Y];
+    bind w::Heap;
+    let got = w::Ref(raw);
+    match got.deref() { Phantom(payload) => () };
+  }
+}

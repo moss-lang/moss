@@ -1,0 +1,24 @@
+# G pins T to Y in its captured Y = Z class. Both compilers run it.
+type T;
+type Y;
+type Z;
+tag Old;
+assume T { fn mk(): T; }
+assume Y { val captured: Y; }
+
+functor F[]: T -> mk;
+context M = Y = Z;
+functor G: M, captured -> mk {
+  bind T = Y;
+  bind mk = () => captured;
+}
+
+fn main() {
+  bind T = Old;
+  bind Y = Old;
+  bind Z = Old;
+  bind captured = Old;
+  bind F = G;
+  bind F;
+  match mk() { Old => () };
+}

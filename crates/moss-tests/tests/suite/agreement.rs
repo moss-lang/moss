@@ -88,6 +88,7 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/closure_partial_unbound_xyz.moss", Accept, Reject, RECORDED),
     ("tests/errors/context_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_CONTEXT_BRACKETS),
     ("tests/errors/context_item_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_ITEM_BRACKETS),
+    ("tests/errors/copy_mixed_class.moss", Accept, Reject, RECORDED),
     ("tests/errors/copy_site_method.moss", Accept, Reject, RECORDED),
     ("tests/errors/duplicate_field_binder.moss", Accept, Reject, RECORDED),
     ("tests/errors/expand_attached.moss", Crash, Reject, NO_EXPANDING_CHECK),

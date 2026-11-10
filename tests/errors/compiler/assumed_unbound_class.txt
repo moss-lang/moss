@@ -1,0 +1,2 @@
+!P tests/errors/assumed_unbound_class.moss Y
+!P tests/errors/assumed_unbound_class.moss X

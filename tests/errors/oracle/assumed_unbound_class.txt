@@ -1,0 +1,1 @@
+[elab: tests/errors/assumed_unbound_class.moss: assuming `f` needs `X` in force (D20)]

@@ -36,6 +36,11 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          (tests/wasi/closure_partial_unbound_zyx.moss is accepted)",
     ),
     (
+        "tests/errors/copy_mixed_class.moss",
+        "AUDIT-CHANGES #98: the reference uses the polymorphic representative's \
+         fresh type for the whole class instead of the fixed member's meaning",
+    ),
+    (
         "tests/errors/copy_site_method.moss",
         "AUDIT-CHANGES #97: BFunCopy matches a need at a site-made merge by \
          syntax, so the reference's orientation rejects this order \
