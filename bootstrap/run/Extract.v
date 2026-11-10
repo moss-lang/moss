@@ -48,7 +48,7 @@ Extract Inlined Constant tleft => "(fun k -> k = 0 || k land 1 = 1)".
 Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
 Extraction Inline InterpreterCompiled.scalar_nil InterpreterCompiled.scalar_cons InterpreterCompiled.push_arg.
 Extraction Blacklist String List Char Bool.
-Separate Extraction init_state run_prim
+Separate Extraction init_state run_prim_fast
   parse_moss Dump.dump_file print_sx Parse.load
   EaMain.elaborate
   ProgramFastPath.fastpath ProgramPrune.prune ProgramCapTrim.captrim

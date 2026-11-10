@@ -1094,6 +1094,44 @@ Definition run_prim (P : xprog) (p : prim) (ws : list xvalue) (st : mstate)
   if is_gc_prim p then run_prim0 P p (mem_args p ws) st
   else let (o, s) := run_prim0 P p (mem_args p ws) st in (o, keep_heap st s).
 
+(* Numeric operations return the incoming state. The executable can
+   share that record rather than reconstructing it to preserve its heap. *)
+Definition numeric_prim (p : prim) : bool :=
+  match p with
+  | PI32Bin _ | PI32Cmp _ | PI32Un _ | PI32Bool
+  | PF64Bin _ | PF64Cmp _ | PF64Un _
+  | PF32Bin _ | PF32Cmp _ | PF32Un _
+  | PI64Bin _ | PI64Cmp _ | PI64Un _ => true
+  | _ => false
+  end.
+
+Lemma numeric_prim_state : forall P p ws st,
+  numeric_prim p = true -> snd (run_prim0 P p ws st) = st.
+Proof.
+  intros P p ws st Numeric. destruct p; cbn [numeric_prim] in Numeric; try discriminate.
+  all: destruct ws as [|a [|b [|c rest]]]; cbn [run_prim0 ext_prim gc_prim]; try reflexivity.
+  all: try destruct a; cbn [run_prim0 ext_prim gc_prim]; try reflexivity.
+  all: try destruct b; cbn [run_prim0 ext_prim gc_prim]; try reflexivity.
+  all: match goal with
+    | |- context [i32_bin ?op ?a ?b] => destruct (i32_bin op a b)
+    | |- context [i64_bin ?op ?a ?b] => destruct (i64_bin op a b)
+    end; reflexivity.
+Qed.
+
+Definition run_prim_fast (P : xprog) (p : prim) (ws : list xvalue) (st : mstate) : xout * mstate :=
+  if numeric_prim p then run_prim0 P p ws st else run_prim P p ws st.
+
+Lemma run_prim_fast_spec : forall P p ws st, run_prim_fast P p ws st = run_prim P p ws st.
+Proof.
+  intros P p ws st. unfold run_prim_fast. destruct (numeric_prim p) eqn:Numeric; [|reflexivity].
+  assert (Hargs : mem_args p ws = ws) by (destruct p; cbn [numeric_prim] in Numeric; try discriminate; reflexivity).
+  assert (Hgc : is_gc_prim p = false) by (destruct p; cbn [numeric_prim] in Numeric; try discriminate; reflexivity).
+  pose proof (@numeric_prim_state P p ws st Numeric) as Hstate.
+  unfold run_prim. rewrite Hargs, Hgc.
+  destruct (run_prim0 P p ws st) as [o st'].
+  cbn in Hstate. subst st'. destruct st. reflexivity.
+Qed.
+
 Module ConcretePrims <: PRIM_SEMANTICS.
   Definition mstate := mstate.
   Definition run_prim := run_prim.

@@ -434,6 +434,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaMain.elaborate);
   root (@NM.EaMain.elaborate_with);
   root (@NM.EaBase.default_strategy);
+  root (@NM.MossX.run_prim_fast_spec);
+  root (@NM.MossX.run_prim_fast);
   root (@NM.MossX.run_prim);
   root (@NM.MossX.init_state);
 
