@@ -161,6 +161,7 @@ Import Stdlib.Lists.List.ListNotations.
 Definition root {T : Type} (x : T) : {T : Type & T} := existT (fun T => T) T x.
 Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMerge.merge_eq_substitute);
+  root (@NM.PublicMerge.respects_section);
   root (@NM.PublicMerge.merge_eq_sound);
   root (@NM.PublicMerge.merge_section_kernel);
   root (@NM.PublicMerge.merge_semantic_reading_with_section);
@@ -238,6 +239,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicContextFacts.functor_context_merge);
   root (@NM.PublicContextFacts.assumed_context_merge);
   root (@NM.PublicContextFacts.context_canon_iff_mergeeq);
+  root (@NM.PublicContextFacts.call_theta_respects);
   root (@NM.PublicContextFacts.function_context_canonical);
   root (@NM.PublicContextFacts.functor_context_canonical);
   root (@NM.PublicContextFacts.formed_type_binding_preserves_alias_context);

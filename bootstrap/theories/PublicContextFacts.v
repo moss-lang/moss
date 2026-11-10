@@ -63,6 +63,16 @@ Proof.
   intros C Section t u. symmetry. apply PublicMerge.merge_section_kernel. exact Section.
 Qed.
 
+Theorem call_theta_respects : forall W C Cs symbol th,
+  CxSection C -> CxSection Cs -> A.CallTheta W C Cs symbol th ->
+  A.Respects (A.c_merge Cs) th (A.c_merge C).
+Proof.
+  intros W C Cs symbol th Caller Callee [_ [_ Equations]].
+  eapply PublicMerge.respects_section; [exact Callee |].
+  intros x t I. apply (context_canon_iff_mergeeq C Caller).
+  exact (Equations x t I).
+Qed.
+
 Lemma section_same_fields : forall C C',
   A.c_sub C' = A.c_sub C -> A.c_merge C' = A.c_merge C ->
   CxSection C -> CxSection C'.

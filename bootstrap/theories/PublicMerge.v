@@ -84,6 +84,30 @@ Proof.
   rewrite Equal. apply MESym, merge_eq_read. exact Read.
 Qed.
 
+(* A substitution respects a presentation when it respects the equations
+   of any one of its sections. *)
+Theorem respects_section : forall M N s section,
+  SectionOf M section ->
+  (forall x t, In (x, t) section ->
+    MergeEq N (app_subst s (TAbs x)) (app_subst s t)) ->
+  Respects M s N.
+Proof.
+  intros M N s section Section Rows.
+  assert (Read : forall t, MergeEq N (app_subst s t) (app_subst s (app_subst section t))).
+  { intro t. rewrite <- compose_read. apply MECong. intros x _.
+    rewrite compose_abs.
+    change (MergeEq N (app_subst s (TAbs x))
+      (app_subst s (match lookup_subst x section with Some u => u | None => TAbs x end))).
+    destruct (lookup_subst x section) as [u |] eqn:L; [|apply MERefl].
+    apply Rows, PublicOrientation.lookup_subst_pair. exact L. }
+  assert (Respect : forall t u, MergeEq M t u -> MergeEq N (app_subst s t) (app_subst s u)).
+  { intros t u Equal. apply (merge_section_kernel Section) in Equal.
+    eapply METrans; [apply Read |]. rewrite Equal. apply MESym, Read. }
+  split.
+  - intros c x y C X Y. apply Respect. eapply MEClass; eassumption.
+  - intros c x t C X Shape. apply Respect. eapply MEShape; eassumption.
+Qed.
+
 Lemma mapped_list_eq : forall A B (f : A -> B) xs ys,
   Forall2 (fun x y => f x = f y) xs ys <-> map f xs = map f ys.
 Proof.
