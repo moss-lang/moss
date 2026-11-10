@@ -104,8 +104,9 @@ entry they belong to.
 | 53 | Main's fixed machine types read by class (`FixedMachinesRead`) | coherence2 | A |
 | 54 | `Satisfies` checks the callee's merges by class | coherence2 | relaxation (toward native) |
 | 55 | A bracket application on a fn call is its expansion (`ExCallBr`, D89) | call-brackets | an extension made in both implementations (a relaxation toward both) |
+| 56 | A copy composes its smap and positions into the closure (eager copies) | eagercopy | D (unobservable) |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, and #55, from the call-brackets branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, and #56, from the eagercopy branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -660,7 +661,8 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   - The value is read from the root body's key for that position
     (`fc_sources : list item`), through each copy's position map
     (`BCopyFunctor`'s new field, `FunctorClosure`'s `rms`,
-    `chain_sources`).
+    `chain_sources`; since #55, composed into one map at the copy,
+    `closure_sources`).
   - The selection is `result_selection`. A later position wins, matching
     the caller's static last setter.
   - `CopyOutputs` records, for each of F's positions, the last position of
@@ -1493,6 +1495,74 @@ executable tests unless noted.
   both implementations make in the same branch, so a relaxation toward
   both, like #49. Audit rejects two things native accepts (arity, and a
   binding to a type not in force), as it does for plain calls and binds.
+### 56. A copy composes its smap and positions into the closure (eagercopy branch)
+- **Rule now.** `bind F = H;` (`BCopyFunctor`) composes its smap and its
+  result positions into H's closure when it is evaluated, so a closure
+  carries one of each however many copies made it:
+  - `FunctorClosure : usym -> option smap -> environment -> option (list (option nat)) -> provision_value`.
+    `None` is the root's own: a platform family reads the application's
+    needs as they are, and a root reads its sources (`fc_sources`) in
+    order.
+  - A copy installs `FunctorClosure h (compose_adaptation a sm) dc (compose_positions p rm)`.
+    `compose_adaptation` reads each requirement of H's adaptation from
+    sm's source for H's key (`smap_source`). `compose_positions` reads
+    position j of F's result at entry `rm_j` of H's map; an entry out of
+    range is a stray (`None`).
+  - An application selects through one map each: `adapt_provisions`
+    (now a `Definition` on `option smap`) and `closure_sources` (which
+    replaces `chain_sources`) in `result_selection`.
+
+  Before, the closure carried `list smap` and `list (list nat)`, a copy
+  appended `sms ++ [sm]` and `rms ++ [rm]`, and an application chained
+  through every entry (`adapt_provisions` as a fold, `chain_sources`).
+  Elaboration is unchanged; this is run time only.
+- **Why.** Simplicity of the run-time representation (owner's request):
+  a closure value no longer records the history of the copies that
+  made it.
+- **Equivalence** ([EagerCopy.v](theories/EagerCopy.v), certificate
+  roots). The file restates the old chained forms (`adapt_chain`,
+  `chain_sources`) and the composed form of a chain (`smap_of`,
+  `positions_of`, the copies composed one at a time from the root's).
+  - Positions agree exactly, for every list of sources:
+    `sources_compose` (the composition lemma: reading through
+    `compose_positions p rm` is reading through p, then rm),
+    `positions_chain` (`closure_sources (positions_of rms) s = chain_sources rms s`),
+    and `selection_chain` (the application's selection is the chained
+    one).
+  - Needs agree whenever the chained selection succeeds: `adapt_compose`
+    (the composition lemma: selecting through sm, then H's adaptation, is
+    selecting through the composition) and `adapt_chain_sound`
+    (`adapt_chain d sms = Some e -> adapt_provisions d (smap_of sms) = Some e`).
+  - The converse fails only where the chain is stuck
+    (`adapt_chain_strict`): a copy's smap entry that no later step reads
+    still had to be found by the chain, and the composition does not
+    look for it. No single smap can express that check without changing
+    the selected environment. An accepted program is never stuck
+    (`public_safety`), so the two semantics agree on every accepted
+    program.
+- **Tests and corpus.** The oracle does not extract Audit's interpreter:
+  every extracted `.ml` file is byte-identical to `origin/main`'s.
+  The oracle built at this change against `origin/main`'s (2926b06),
+  over tests/, examples/ and bootstrap/examples/ (431 programs):
+  elaboration (`--elab-only`, timing line removed) 431 same / 0 diff,
+  full runs 431 same / 0 diff (scratch/tools/corpus.sh, elab1.sh).
+- **Proof.** `public_safety` unchanged. The proofs follow the new shape:
+  `ClosureOk`'s `CCopy` and `CopyChain`'s `CCStep` conclude at
+  `compose_adaptation sms ...` and `compose_positions rms rm`; the root
+  cases at `Some sm`/`None` and `None`/`None`. `PublicCopyApply.adapt_snoc`
+  and `PublicCallerKeys.chain_sources_snoc` are replaced by
+  `EagerCopy.adapt_compose` and `EagerCopy.sources_compose`, and the
+  dead `PublicBodySlice.chain_sources_in` is deleted. Across the 13
+  proof files touched, 12,501 lines become 12,479 (22 fewer), plus the
+  120 lines of EagerCopy.v. The chain inductions (`CCopy`, `CopyChain`,
+  `chain_sigs`, `chain_real`, `chain_sources_range`) stay. They go over
+  the static facts each copy has at its own site (`CopyOutputs` at that
+  site's fixed readings and fresh symbols, `SameResult`, `CopySite`'s
+  context and environment), not over the run-time lists. Those facts do
+  not compose into one copy from the root, since two copies' sites are
+  different contexts.
+- **Class D (unobservable).** Run-time representation only. It is
+  observable only on a run the old semantics leaves stuck.
 
 ---
 
