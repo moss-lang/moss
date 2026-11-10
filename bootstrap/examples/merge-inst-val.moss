@@ -1,0 +1,15 @@
+# Δ4 (AUDIT-CHANGES #61, D43): two entries of v, at T=A and at T=B; v's
+# type does not mention T. Merging them unifies A with B, so take(b) with
+# b: B fits A.
+# Audit: accepts (by reading). Oracle: accepts (before: rejects, `b` is
+# `B`, expected `A`). Native: rejects (exit 1; needs the same change).
+type T;
+type U;
+type A;
+type B;
+assume T, U { val v: U; }
+context K1 = U, A, v[T=A];
+context K2 = U, B, v[T=B];
+assume A { fn take(a: A); }
+assume K1, K2, take { fn g(b: B) { take(b); } }
+fn main() {}

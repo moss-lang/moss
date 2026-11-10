@@ -1,0 +1,14 @@
+# Δ4 (AUDIT-CHANGES #61, D43): merge-inst-order-ab.moss with the assume
+# list reversed (K2, K1). Rejected for the same reason, so the order of
+# the list no longer matters.
+# Audit: rejects (by reading). Oracle: rejects (before: rejects, D62).
+# Native: rejects (exit 1).
+type T;
+type A;
+type B;
+assume T { fn f(); }
+context K1 = A, B, f[T=A];
+context K2 = A, B, f[T=B];
+assume K2, K1 { fn g() { f(); } }
+assume K1 { fn h() { g(); } }
+fn main() {}

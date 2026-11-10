@@ -109,6 +109,7 @@ entry they belong to.
 | 58 | Result items distinct in F stay distinct at an application, and H's at a copy (`CollidesOnlyAs`) | deltafix | B (coherence) |
 | 59 | `RecvTy` reads no type symbol out of force as a nominal | deltafix | A (rejects a program native accepts: a native bug, E41) |
 | 60 | **Rule B: a use needs the item's type requirements in force; demands read needs through θ; a closure's captured inputs in force** | lang-b | **B** (with the oracle; native E42) |
+| 61 | Merging two entries of one item unifies their instantiations (Δ4, D43) | lang-b | B and C (coherence; with the oracle; native E43) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
@@ -1852,6 +1853,50 @@ executable tests unless noted.
 - **Class B**: it rejects programs both implementations accept (the
   edge-case tests); owner-approved. Native needs rule B (E42).
 
+### 61. Merging two entries of one item unifies their instantiations (lang-b branch; Δ4, D43)
+- **Rule now.** `Unifies σ es` also asks two entries filed under one key
+  to have one instantiation under σ (`entry_inst`, `inst_read`: a
+  requirement not in force where the item was read, None, is read as
+  itself, as the context's freeze completes it). Before, it compared only
+  signatures, and the merged key kept the first entry's instantiation.
+- **Why.** D43 says merging two entries unifies their instantiations. The
+  Δ4 hunt (scratch/deltas) found the verdict depended on the order of the
+  assume list: merge-inst-order-ab.moss was accepted and
+  merge-inst-order-ba.moss rejected, by Audit, the oracle and native.
+- **Criterion: coherence** (criteria section 2: an order in the rules must
+  not change acceptance), and fidelity to D43.
+- **Oracle.** Elab.v's assume walk (`unify_app`, before `setdefault_app`,
+  for vals, fns and methods) unifies the recorded and the new
+  instantiation pairwise, a None read as the requirement itself; the first
+  recorded one is still kept. `ExecutionModel.Unifies` is strengthened the
+  same way. Proofs: Merge.unify_app_spec; CtxWalk's `WS` gains `ws_insts`
+  and `ws_apps_in`; CtxMethod*, CtxMerge.settled_unifies, ContextClean,
+  ContextWalkClean, and the walk-support files (`AppsSupport`).
+- **Proof (Audit).** `public_safety` unchanged.
+  `PublicWorldFormation.unifies_mark` marks instantiations too
+  (`inst_read_mark`); `PublicOrientation.mgm_unifies` and
+  `mgm_classes_iff` hold as stated.
+- **Tests** (Audit verdicts by reading):
+
+  | program | Audit before | Audit now | oracle before | oracle now | native |
+  |---|---|---|---|---|---|
+  | [merge-inst-order-ab](examples/merge-inst-order-ab.moss) | accepts | rejects | accepts | rejects (A and B merged) | accepts (E43) |
+  | [merge-inst-order-ba](examples/merge-inst-order-ba.moss) | rejects | rejects | rejects (D62) | rejects (A and B merged) | rejects |
+  | [merge-inst-val](examples/merge-inst-val.moss) (v's type does not mention T) | rejects | accepts | rejects | accepts | rejects (E43) |
+  | [merge-inst-fn](examples/merge-inst-fn.moss) | rejects | accepts | rejects | accepts | rejects (E43) |
+  | [merge-inst-sig](examples/merge-inst-sig.moss) (control) | accepts | accepts | accepts | accepts | accepts |
+  | [merge-inst-nomerge](examples/merge-inst-nomerge.moss) (control) | accepts | accepts | accepts | accepts | accepts |
+
+- **Corpus.** The oracle at c89de1f against the oracle with #60 and #61,
+  `--elab-only`, over `tests/`, `examples/`, `bootstrap/examples/` and
+  `src/main.moss`: 451 same / 10 diff, all from #60 (the six edge-case
+  tests, partially-bound-merge, and three changed messages); #61 changes
+  no corpus verdict (besides its own tests above).
+- **Class B and C.** It rejects merge-inst-order-ab.moss, which both
+  implementations accept, and accepts merge-inst-val and merge-inst-fn,
+  which both reject; coherence decides (criteria section 6). Native needs
+  the same change (E43).
+
 ---
 
 ## Consolidation (branch ob-consol)
@@ -1972,6 +2017,7 @@ All of these come from `proof-plan.json`.
 | E40 | Reject result items distinct in F that an application files under one key, and H's items distinct in H that a copy reads as one key of F | oracle and native (copies: oracle) | open | [result-collide-ab.moss](examples/result-collide-ab.moss): oracle a, native b; [copy-result-collide.moss](examples/copy-result-collide.moss): oracle a, native rejects | #58 |
 | E41 | Read an assume list in order for a method item's receiver: `assume T.m, T` needs T in force before T.m | native | open | [assume-method-before-type.moss](examples/assume-method-before-type.moss): oracle rejects; native exit 0 | #59 |
 | E42 | Rule B: a use (call, provider bind, family demand) needs the item's type requirements in force, through its merge class; a closure's captured inputs F does not take likewise; demands read needs through θ | native | open | [ruleb-call-unbound.moss](examples/ruleb-call-unbound.moss): oracle rejects; native exit 0 | #60 |
+| E43 | Merging two entries of one item unifies their instantiations (D43): `assume K1, K2` with `f[T=A]` and `f[T=B]` merges A with B, in either order | native | open | [merge-inst-order-ab.moss](examples/merge-inst-order-ab.moss): oracle rejects; native exit 0. [merge-inst-val.moss](examples/merge-inst-val.moss): oracle accepts; native rejects | #61 |
 
 The earlier follow-ups E21–E30 ask the implementations to match Audit
 changes. All are open:
