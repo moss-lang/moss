@@ -2475,9 +2475,74 @@ Definition same_assume (a b : path * option name) : bool :=
   | _, _ => false
   end.
 
+(* D15 at every declaration, as written (criteria section 7): a union
+   member that names a type symbol (`T | U`, T abstract) is refused where
+   the declaration writes it, whether or not anything reads it. A body's
+   unions are checked by `elab_type` at the body's meanings; this covers
+   the declarations elab_type never reads as such, such as a signature
+   read only for a functor's result or for a copy (AUDIT-CHANGES N4).
+   Anything else about the declaration is checked where it is read. *)
+Fixpoint union_written (fuel : nat) (w : world) (mi : nat) (t : aty) : res unit :=
+  match fuel with
+  | 0 => Good tt
+  | S f =>
+      match t with
+      | ATUnion ms =>
+          let fix go (l : list aty) : res unit :=
+            match l with
+            | [] => Good tt
+            | ATRef p None :: rest =>
+                let* _ := match resolve_path w mi p with
+                          | Good (Some (ESym x)) =>
+                              match nget (w_syms w) x with
+                              | Some g =>
+                                  if kind_eqb (gs_kind g) KType then
+                                    err_in (get_mod w mi) ("union member `" ++ gs_name g ++
+                                      "` is abstract and not constrained to a nominal type (D15)")
+                                  else Good tt
+                              | None => Good tt
+                              end
+                          | _ => Good tt
+                          end in go rest
+            | m :: rest => let* _ := union_written f w mi m in go rest
+            end in go ms
+      | ATRec fs =>
+          let fix go (l : list (name * aty)) : res unit :=
+            match l with
+            | [] => Good tt
+            | (_, t') :: rest => let* _ := union_written f w mi t' in go rest
+            end in go fs
+      | _ => Good tt
+      end
+  end.
+
+Definition unions_written (w : world) : res unit :=
+  let fix go (ids : list nat) : res unit :=
+    match ids with
+    | [] => Good tt
+    | x :: rest =>
+        let* _ := match nget (w_syms w) x with
+                  | Some g =>
+                      let one := union_written 64 w (gs_mod g) in
+                      match gs_decl g with
+                      | ADTag _ _ t | ADAlias _ t | ADVal _ t _ => one t
+                      | ADFn _ _ ps r _ =>
+                          let* _ := (fix each (l : list (name * aty)) : res unit :=
+                                       match l with
+                                       | [] => Good tt
+                                       | (_, t) :: l' => let* _ := one t in each l'
+                                       end) ps in
+                          match r with Some t => one t | None => Good tt end
+                      | _ => Good tt
+                      end
+                  | None => Good tt
+                  end in go rest
+    end in go (seq 0 (w_nsyms w)).
+
 Definition check_assumes : M unit :=
   let! s := get in
   let w := st_w s in
+  lift (unions_written w) ;;
   (* Declarations sharing a module, nesting and root context have exactly
      the same ambient requirements. Validate that context once. *)
   let! _ := mfold (fun seen id => match nget (w_syms w) id with

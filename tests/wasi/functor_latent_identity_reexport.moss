@@ -1,4 +1,5 @@
-# As functor_latent_identity_copy.moss, with G re-exporting Inner.
+# As functor_latent_identity_copy.moss, with G re-exporting Inner
+# (tests/errors/union_latent_reexport.moss is the bare `T | U`).
 type T;tag U;
 assume T {tag Wrap[T](T); fn offered():Wrap|U;}
 functor Inner[T]: T -> offered;

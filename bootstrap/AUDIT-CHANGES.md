@@ -3095,6 +3095,15 @@ so it rejects `tests/wasi/functor_latent_identity_copy.moss` and
   with a wrapper (tests/errors/union_latent_overlap.moss,
   union_abstract_member_let.moss, union_bound_member_clash.moss,
   tests/wasi/union_bound_member.moss).
+- **Oracle, done (impl-d15 branch).** `check_assumes` (Elab.v) first runs
+  `unions_written`: at every declaration as written (tag payload, alias
+  body, val type, fn/method signature), a union member that names a type
+  symbol directly is refused, with elab_type's D15 message. So a
+  signature read only for a functor's result or a copy is checked too.
+  The originals are now tests/errors/union_latent_copy.moss and
+  union_latent_reexport.moss, rejected by both. A type symbol reached
+  through an alias as written (`type A = T; ... A | U`) is not caught
+  there; elab_type still catches it in a body.
 
 **Audit rejects; both implementations accept (criteria section 7, #74 to
 #77).** decl-ctx-unresolved, decl-ctx-bracket (#74); decl-nest-type,

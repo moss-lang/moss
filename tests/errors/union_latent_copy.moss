@@ -1,0 +1,12 @@
+# D15: `offered`'s result `T | U` has a bare type symbol member, so it is
+# refused where it is written, though the signature is read only for
+# Inner's result and its copy, never in a body. The oracle used to check
+# D15 only where it read a type for a body, and accepted this.
+# (tests/wasi/functor_latent_identity_copy.moss is it with a wrapper.)
+type T;tag U;
+assume T {fn offered():T|U;}
+functor Inner[T]: T -> offered;
+val x:();
+functor Outer[]: Inner -> x;
+functor G: Inner -> x {bind Inner=Inner;bind x=();}
+fn main(){bind Outer=G;}

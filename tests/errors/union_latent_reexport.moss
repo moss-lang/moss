@@ -1,0 +1,8 @@
+# As union_latent_copy.moss, with G re-exporting Inner.
+# (tests/wasi/functor_latent_identity_reexport.moss is it with a wrapper.)
+type T;tag U;
+assume T {fn offered():T|U;}
+functor Inner[T]: T -> offered;
+functor Outer[]: Inner -> Inner;
+functor G: Inner -> Inner {bind Inner=Inner;}
+fn main(){bind Outer=G;}

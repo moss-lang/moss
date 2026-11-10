@@ -1,7 +1,7 @@
 # An identity copy of Inner preserves an interface nothing inhabits.
 # `offered` returns a union with a nominal wrapper for the abstract T
 # (`Wrap | U`, Wrap[T](T)), as D15 asks: a bare `T | U` is refused where
-# it is written.
+# it is written (tests/errors/union_latent_copy.moss).
 type T;tag U;
 assume T {tag Wrap[T](T); fn offered():Wrap|U;}
 functor Inner[T]: T -> offered;
