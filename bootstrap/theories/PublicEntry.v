@@ -677,8 +677,7 @@ Proof.
 
   assert (RAc : FCp.CRz.CSg.FL.CF.ChainForwardCopySigs W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
-    by exact (FCp.CRz.CSg.chain_forward_copy_sigs W (PublicWorldFormation.merge_formed_of W)
-      (PublicWorldFormation.mentions_typed_of bundle W (proj1 Elab)) Prog _ _ _).
+    by exact (FCp.CRz.CSg.chain_forward_copy_sigs W Prog _ _ _).
   pose proof (family_coherent_ok W bundle (proj1 Elab)) as FCo.
   pose proof (FCp.CRz.CSg.FL.CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.

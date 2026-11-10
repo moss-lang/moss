@@ -1,0 +1,71 @@
+# A merge of H's that F lacks, made true by F's fixed inputs
+# (AUDIT-CHANGES.md #96). H's context merges X with Y (two readings of
+# A.gimme) and F's does not. But F's result `run` mentions X and Y and F's
+# brackets are empty, so X and Y are fixed in F, and where F is bound both
+# are Char. Every application of F reads them as Char (rule 5), so H's
+# merge holds wherever F's binding runs, and the copy is accepted.
+# copy-merge.moss is the same copy with X and Y polymorphic in F, which
+# a later application could separate; it is rejected. copy-site-apart.moss
+# copies where X and Y are not one type; it is rejected.
+# - Oracle: prints 7.
+# - Native: prints 7.
+# - Audit before: rejects (BFunCopy's input reading, #32, compared H's
+#   readings in F's context). Now: accepts (CopyInterpretation compares
+#   them at copy_subst, F's fixed inputs read as the copy site reads them).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+val vx: X;
+
+assume Std {
+  fn run(a: X, b: Y): Int;
+}
+
+# H's context merges X with Y (two readings of A.gimme); F's does not.
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], vx;
+context Apart = A, X, Y, A.gimme[Foo=X], vx;
+
+functor H[]: Std, Merge -> run;
+functor F[]: Std, Apart -> run;
+
+functor G: Std, Merge -> run {
+  bind run = (a, b) => {
+    let y: Y = vx;
+    7
+  };
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind Foo = Char;
+    bind X = Char;
+    bind Y = Char;
+    bind A.gimme = () => this;
+    bind vx = char::a;
+    bind H = G;
+    bind F = H;
+    bind F;
+    print_int(run(char::a, char::b));
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

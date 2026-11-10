@@ -125,8 +125,9 @@ entry they belong to.
 | 93 | Recorded: a body may not pin a fixed input that G takes (the oracle plan's N5; fixed in #95) | layout | a fidelity gap of #71's (Audit rejects what both implementations run) |
 | 94 | Recorded: a platform constant of another type than `I32` is rejected (the oracle plan's N6) | layout | none (Audit already rejects; the executable elaborator's gap) |
 | 95 | A linked body may pin a fixed input that G takes (`LinkBody`: protected inputs P(F) ∩ M(F), pins every fixed input the body rebinds; closes N5) | n5 | relaxation toward both implementations (closes #93's fidelity gap) |
+| 96 | A copy reads its source as F does at every application of F (`CopyInterpretation`: H's merges, needs and result compared at the copy site's fixed readings; corrects #32) | copyfix | relaxation toward both implementations |
 
-Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, and #95 from the n5 branch.
+Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, and #96 from the copyfix branch.
 
 **Points that most need a decision.**
 - #10 rejected two programs that both implementations accept and run
@@ -852,7 +853,11 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
   - [copy-merge.moss](examples/copy-merge.moss).
 - **Corpus.** A variant with these checks gives the oracle's verdict on all
   353 programs. The record does not name the output file.
-- **Class A.**
+- **Class A** for `LinkBody`. **Corrected by #96 for `BFunCopy`:** the copy
+  clause compared H's readings in F's declared context, which is stricter
+  than both implementations. It rejected a copy whose merge F's fixed
+  inputs make true (copy-site-merge.moss), which the oracle and native
+  accept and run.
 
 ### 33. A family member is not bound directly (1cd1ce5)
 - **Rule now.** `BMethBind` requires that no family in force produces the
@@ -873,6 +878,7 @@ Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). En
 - **Class A.** Nothing is rejected.
 
 ### 35. `CopyOutputs`: a copy's result reads as its source's (0a96d3f, ad3417e, a8ef896)
+- **Superseded by #96**, which folds `CopyOutputs` into `CopyInterpretation` and reads H's result in H's own context.
 - **Rule now.** For `bind F = H;`, `CopyOutputs` reads H's result in F's
   context with the same fresh output roles. For each of F's keys, it
   matches the last position of H's result with the same provision id
@@ -2956,6 +2962,87 @@ executable tests unless noted.
   new `LinkBody` clause.
 - **Class.** A relaxation toward both implementations (C/none), closing
   the fidelity gap recorded in #93.
+
+### 96. A copy reads its source as F does at every application of F (`CopyInterpretation`; copyfix branch; corrects #32)
+- **Rule now.** `bind F = H;` (`BFunCopy`) checks one definition,
+  `CopyInterpretation W sigma u h Cu nsh Ch rm`, which replaces
+  `CopyOutputs` (#35) and the two input-reading clauses of #32.
+  - `sigma` is F's fixed inputs read at the copy site, as before. Every
+    other generation of F's table readings reads as a fresh symbol `cg y`.
+    `copy_subst sigma ys cg` is that reading: what every application of F
+    has in common, since each keeps F's fixed inputs (rule 5) and supplies
+    the rest afresh.
+  - H's terms are read through F's merge (`canon Cu`, H's inputs being
+    among F's) and then at `copy_subst`. There, each of H's merges holds,
+    each of H's needs has F's provision, and H's result gives each of F's
+    keys F's provision.
+  - H's result is read in its own context `Ch`, where its merges hold, and
+    no longer in F's (`ProvideResult W h Cu`, which reads H's result as if
+    F's merge were H's). A position j of H's serves F's key k when H's key
+    there is k at `copy_subst`. Every position of H's with that key must be
+    one key in H's own terms, and j is the last (the oracle's
+    `find ... (rev gkeys)`). This replaces the `CollidesOnlyAs` clause on
+    H's result read at `Cu`.
+- **Why.** #32 compared H's readings with F's in F's declared context:
+  `canon Cu (TAbs x) = canon Cu tx`. That asks H's merges to hold for every
+  instantiation of F's inputs, but an application of F never changes F's
+  fixed inputs. In `copied_input_merge_must_hold_for_every_target_application`
+  (crates/moss-tests), H merges T with U and F does not. F's brackets are
+  empty, so T and U are fixed, and where F is bound both are `Old`. Every
+  application of F reads them as `Old`, so H's merge holds wherever F's
+  binding runs. Both implementations accept the program, and #32 rejected it.
+  The same over-strictness made the needs clause depend on H's merge
+  orientation: with the merge {T, U} represented by U, H's need `v[P=U]`
+  read through F's merge is not F's `v[P=T]`.
+- **Criteria.** Fidelity (section 6): the oracle's `copy_output_compatible`
+  compares inputs, needs and outputs under one `generic` substitution
+  that solves F's fixed inputs at the copy site and reads every other
+  generation as a fresh `@copy` symbol. That is `copy_subst`. Stability
+  (section 5): a fixed input means what it meant at the copy site, which
+  is what the comparison uses. Coherence (section 2): reading H's result
+  in `Ch` takes H's merges as H takes them, and the comparison does not
+  depend on either context's representatives. Safety (section 1):
+  `public_safety` is still proved.
+- **What still holds, and how it is proved.**
+  - The safety argument used #32's syntactic clauses: a valuation T that
+    satisfies F's table satisfies H's (`tableok_down`), and H's needs are
+    F's needs read through F's merge. Both now hold only at an
+    application's meanings, which read F's fixed inputs as the copy site
+    did. `PublicCopyApply.copy_read_at` transfers the copy's comparison
+    from `copy_subst` to any such T: every generation the compared terms
+    mention is a generation of F's table readings (`canon_gens_read`), so it
+    is a fixed one that `sigma` reads (meaning, at T, what the copy site's
+    meaning gives it) or one of `ys`. `copy_step_realizes` then takes
+    H's merges and needs at T (`prov_shape`).
+  - The chain proofs (PublicChainSigs, PublicChainRealize) relate H's
+    result at `Ch` with the copy's roles to H's result at `Ch` with its own
+    roles, entry by entry (as they did for `Cu` and `Ch` before), and F's
+    result to H's by the copy's equation at T. `PublicLinkRun.link_run_fact`
+    now asks the root's merges only of the application's ground meanings,
+    which `TableOk Tin` gives, so `chain_real` no longer needs θ to satisfy
+    each level's table syntactically.
+  - `PublicSameNeed.copy_need_unambiguous` is deleted. It is false now (a
+    need class of H may meet two of F's needs that F's fixed inputs make
+    one key), and nothing used it. Such a copy is still coherent in what it
+    runs: the two needs are answered under one key at every application.
+  - The substitution lemmas moved from PublicCopyFresh to the new
+    PublicCopySubst, which PublicCopyApply can import.
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [copy-site-merge](examples/copy-site-merge.moss) (F fixes X, Y; both Char where F is bound) | prints 7 | prints 7 | rejects (#32) | accepts |
+  | [copy-site-apart](examples/copy-site-apart.moss) (X, Y two types where F is bound) | rejects ("input interpretation differs") | rejects (`?X … copy X`) | rejects (#32) | rejects (the input reading at `copy_subst`) |
+  | [copy-merge](examples/copy-merge.moss) (X, Y polymorphic in F) | rejects ("input interpretation differs") | rejects (`!P … F`) | rejects (#32) | rejects (X, Y read as distinct fresh symbols) |
+  | `runtime_platform::copied_input_merge_must_hold_for_every_target_application`, `F[]` | exit 0 | exit 0 | rejects | accepts |
+  | the same, `F[T,U]` | rejects ("input interpretation") | rejects | rejects | rejects |
+
+  The executable elaborator confirms Audit's verdicts: a prototype of the
+  change in `EaFunctor` (`copy_interpretation`, on sw-driver at 982db5f)
+  accepts and runs copy-site-merge (prints 7), rejects copy-site-apart
+  and copy-merge, and passes the whole suite (362 passed, 0 failed, 1
+  ignored), including the test above, which failed before.
+- **Class.** A relaxation toward both implementations.
 
 ---
 

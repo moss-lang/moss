@@ -12,11 +12,13 @@
      merge, is one of F's needs does not depend on F's orientation;
    - `need_reading_orientation_free_G`: G's spelling of a key, read
      through F's merge, does not depend on G's orientation, among the
-     orientations whose readings of F's inputs hold in F (LinkBody's and
-     BFunCopy's input-reading clauses);
-   - `link_need_unambiguous`, `copy_need_unambiguous`: no need class of G
-     (or H) meets two need classes of F. The input-reading clauses rule
-     the ambiguous case out (examples/sameneed-ambiguous.moss). *)
+     orientations whose readings of F's inputs hold in F (LinkBody's
+     input-reading clause);
+   - `link_need_unambiguous`: no need class of G meets two need classes of
+     F. The input-reading clause rules the ambiguous case out
+     (examples/sameneed-ambiguous.moss). A copy compares H's readings with
+     F's only at F's applications (CopyInterpretation, AUDIT-CHANGES #96),
+     where two of F's needs that one class of H meets are one key. *)
 From Stdlib Require Import List.
 From NM Require Import Audit PublicTypeRead PublicTagCheck PublicCallRealize PublicOrientation.
 From NM Require PublicFormation.
@@ -174,18 +176,6 @@ Proof.
   destruct (functx_same _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_same _ _ _ _ _ FCg FCg') as [<- <-].
   apply (need_unambiguous Cu nsu Cg (functx_formed _ _ _ FCu) (functx_formed _ _ _ FCg)).
   - intros x tx L1 L2. exact (proj2 (LRd x tx L1 L2)).
-  - exact (functx_needs_scoped _ _ _ FCu).
-Qed.
-
-(* `bind F = H;`: BFunCopy's input-reading clause does the same. *)
-Corollary copy_need_unambiguous : forall u Cu nsu h Ch nsh, A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh ->
-  (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu (TAbs x) = A.canon Cu tx) ->
-  forall k1 k2, A.canon_item Ch k1 = A.canon_item Ch k2 ->
-  In (A.canon_item Cu k1) nsu -> In (A.canon_item Cu k2) nsu -> A.canon_item Cu k1 = A.canon_item Cu k2.
-Proof.
-  intros u Cu nsu h Ch nsh FCu FCh Rd.
-  apply (need_unambiguous Cu nsu Ch (functx_formed _ _ _ FCu) (functx_formed _ _ _ FCh)).
-  - intros x tx L1 _. exact (Rd x tx L1).
   - exact (functx_needs_scoped _ _ _ FCu).
 Qed.
 

@@ -27,7 +27,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd
   PublicLinkResults PublicChainCore PublicLinkScope.
-From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicScoping PublicFamilyStep PublicFamilyLink
+From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig PublicChainRealize.
 From NM Require PublicMergeClass.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -130,12 +130,12 @@ Proof.
   subst p.
   (* the level's valuation, and the state's *)
   assert (TokU : PublicChainSigs.TableOk Tin Cu).
-  { intros x tx Lx. unfold Tin. rewrite <- !PublicCopyFresh.ground_app_subst, (TyA x tx Lx), ThS. reflexivity. }
+  { intros x tx Lx. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst, (TyA x tx Lx), ThS. reflexivity. }
   assert (Inv2 : forall t, app_subst (type_meanings d) (app_subst (A.c_sub Cf) t) = app_subst (type_meanings d) t).
   { intros t. pose proof (Absd t) as E. unfold A.canon in E. rewrite EsubF. exact E. }
   assert (OnK : forall x, In x K -> app_subst (type_meanings d) (app_subst th (TAbs x)) = app_subst Tin (TAbs x)).
   { intros x _. change (ground d (app_subst th (TAbs x)) = app_subst Tin (TAbs x)).
-    exact (PublicCopyFresh.ground_app_subst d th (TAbs x)). }
+    exact (PublicCopySubst.ground_app_subst d th (TAbs x)). }
   rewrite Forall_forall in FL. destruct (FL pp Ipp) as (R1 & R2 & _ & R4 & R5).
   destruct (PublicChainRealize.entry_peq W th (A.c_sub Cf) (A.c_sub Cu) Tin (type_meanings d) tm1 tm2 K
     (PublicChainSigs.sub_inv W u Cu ns Tin FC TokU) Inv2 OnK (fst pp) (snd pp) k1 q1 _ q2 R1 R2 R4 P1 P2 R5) as [PE KR].
@@ -179,7 +179,7 @@ Proof.
   destruct (functx_scoped W h0 Ch0 needs FC0) as (_ & _ & KM0 & _).
   pose proof (PublicChainSigs.pr_keys_match W h0 Ch0 _ outputs keys PRf KM0) as KMo.
   assert (GT : forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground de t = app_subst Tin t)
-    by (intros t Sc; rewrite (Gr t Sc); exact (PublicCopyFresh.ground_app_subst d th t)).
+    by (intros t Sc; rewrite (Gr t Sc); exact (PublicCopySubst.ground_app_subst d th t)).
   exists (fun t => t), [], outputs, keys.
   split; [intros t; split; [intros []|intros Ft; exact (NoH t Ft)]|].
   split; [intros t []|]. split; [intros a b []|]. split; [exact PRf|].
@@ -238,7 +238,7 @@ Hypothesis prims_ground : CRz.CSg.FL.CF.CN.CC.LR.PA.PrimsGroundOk W Prog argv re
 Theorem family_copy_realize_ok : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.FamilyCopyRealizeOk W Prog argv read state_ok.
 Proof.
   intros k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-    fx0 gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh _ Look _ _ _ _ _ _ _ _.
+    fx0 gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh _ Look _ _ _ _ _ _.
   pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
@@ -288,12 +288,12 @@ Proof.
   pose proof (PublicFamilyAgree.th_sigma W C u th Cf (fun t => TAbs t) Cr ks Cu ns EsubF Parts FC) as ThS.
   destruct (functx_scoped W u Cu ns FC) as (TyA & _ & _ & _ & _ & _ & _).
   assert (TokIn : PublicChainSigs.TableOk Tin Cu).
-  { intros x tx Lx. unfold Tin. rewrite <- !PublicCopyFresh.ground_app_subst, (TyA x tx Lx), ThS. reflexivity. }
+  { intros x tx Lx. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst, (TyA x tx Lx), ThS. reflexivity. }
   assert (TokTh : PublicChainSigs.TableOk th Cu) by (intros x tx Lx; rewrite (TyA x tx Lx), ThS; reflexivity).
   assert (ThL : forall x, In x (map fst (A.c_ty Cu)) -> lookup_subst x th = Some (f x))
     by (intros x Ix; rewrite Thf; exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_on_keys f _ x Ix)).
   assert (FixT : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst Tin (TAbs x))).
-  { intros x Fx'. rewrite (Fixd x Fx'). f_equal. unfold Tin. rewrite <- PublicCopyFresh.ground_app_subst.
+  { intros x Fx'. rewrite (Fixd x Fx'). f_equal. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst.
     cbn [app_subst]. rewrite (ThL x (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W u Cu ns x (CRz.CSg.ast_of_abstract W u Cu ns FC AbU) FC Fx')). reflexivity. }
   assert (Absd : forall t, ground d (A.canon C t) = ground d t) by (intros t; unfold A.canon; rewrite Es; exact (Abs t)).
   assert (IdemC : forall t, A.canon C (A.canon C t) = A.canon C t) by (intros t; unfold A.canon; rewrite Es; exact (Idem t)).
@@ -409,7 +409,7 @@ Proof.
       - rewrite (PublicLinkRun.existsb_eqb_in y (map fst (A.c_ty Ch0)) Iu).
         rewrite PublicLinkRun.existsb_eqb_in by (apply filter_In; split; [exact Ig|exact (PublicLinkRun.existsb_eqb_in y _ Iu)]).
         destruct (lookup_subst y th) as [m|] eqn:Lm; [|exfalso; exact (ThDom y Iu Lm)].
-        unfold Tin. cbn [app_subst]. rewrite PublicCopyFresh.lookup_subst_cat, PublicLinkRun.lookup_map_snd, Lm. reflexivity.
+        unfold Tin. cbn [app_subst]. rewrite PublicCopySubst.lookup_subst_cat, PublicLinkRun.lookup_map_snd, Lm. reflexivity.
       - rewrite (PublicLinkRun.existsb_eqb_out y (map fst (A.c_ty Ch0)) Ou).
         rewrite PublicLinkRun.existsb_eqb_out.
         2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
@@ -418,7 +418,7 @@ Proof.
     pose proof (CRz.root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
       Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
-      FC0 Abs0 th Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn TokTh FixT) as LvU.
+      FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Absd IdemC KMc Cu ns FC LvU Sdr
       (LenU _ _ _ _ PR)) as New.
     left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.
@@ -430,7 +430,7 @@ Proof.
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.family_data W Prog h0 code Fam0) as (Ch0 & needs & outputs & keys & bindings & FD).
     pose proof FD as (FC0 & NoH & PRf & FB & Binds & _ & AbsH & _).
     pose proof (CRz.CSg.FL.CF.CN.CC.LR.PA.chain_keys W _ _ _ _ _ _ _ _ Chn _ _ _ _ FC FC0) as Kin.
-    destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.chain_adapt W Prog argv read state_ok _ _ _ _ _ _ Chn rr H d f Cu ns d1 FC RealU') as [d2 A2].
+    destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.chain_adapt W Prog argv read state_ok _ _ _ _ _ _ Chn rr H d f Cu ns d1 FC RealU' Fixd) as [d2 A2].
     set (de := CRz.CSg.FL.CF.CN.CC.LR.PA.app_env Prog argv read d code th d2).
     assert (Gr : forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground de t = ground d (app_subst th t))
       by exact (CRz.CSg.FL.CF.CN.CC.LR.PA.app_env_ground Prog argv read d code th d2 Ch0 Cu f _ _ _ FB Thf Kin).
@@ -449,8 +449,8 @@ Proof.
       rewrite (Gr (TAbs x) ltac:(intros y [<-|[]]; exact Ix0)). cbn [app_subst]. rewrite (ThL x (Kin x Ix0)). exact Mx. }
     pose proof (platform_level prims_ground rr H h0 code Ch0 needs outputs keys bindings FD d d2 th (fun t => TAbs t) Gr MachG) as Root0.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H h0 Ch0 needs (map (A.rkey_of outputs) keys)
-      (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) (fun t => TAbs t) Tin FC0 AbsH th (fun _ _ => Root0) u gfx sms' rms' h0 gf0 None None Chn eq_refl eq_refl
-      Cu ns FC TokIn TokTh FixT) as LvU.
+      (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) (fun t => TAbs t) Tin FC0 AbsH (fun _ => Root0) u gfx sms' rms' h0 gf0 None None Chn eq_refl eq_refl
+      Cu ns FC TokIn FixT) as LvU.
     set (Dr := map (A.rkey_of outputs) keys) in *.
     assert (LenR : forall C1 o C1' ks1, A.ProvideResult W h0 C1 o C1' ks1 -> List.length Dr = List.length ks1).
     { intros C1 o C1' ks1 P1. unfold Dr. rewrite length_map.

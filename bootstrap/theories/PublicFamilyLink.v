@@ -16,7 +16,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicChainCore PublicLinkWalk PublicLinkScope.
-From NM Require PublicLinkRun PublicMergeClass.
+From NM Require PublicLinkRun PublicMergeClass PublicCopySubst.
 From NM Require PublicChainFwd PublicFormation PublicCallerKeys PublicFamilyAgree PublicFamilyStep PublicFamilyCoherent PublicFamilySig PublicScoping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -131,7 +131,7 @@ Proof.
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
     ground d3 t = ground d (app_subst th t)).
   { exact (LRn.link_run_fact W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg LRd' Items BO MadeOut FB th
-      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) ThSig argv read j' d _ [] st d3 g3 st3 Run). }
+      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d _ [] st d3 g3 st3 (fun t => f_equal (ground d) (ThSig t)) Run). }
   (* 4: positions *)
   assert (PRf : A.ProvideResult W u Cu (fun t => TAbs t) Cr' ks').
   { destruct PR' as (dd & pss & aa & rr0 & bb & outsI & es & tm' & D & FP & OutsI & OIE & RK & ECr).
@@ -255,7 +255,7 @@ Proof.
   { intros y Iy. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [left; exact I'|].
     destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
     assert (Lc : lookup_subst y (pins ++ A.c_ty Cg) = None).
-    { rewrite PublicCopyFresh.lookup_subst_cat, (PublicLinkRun.lookup_subst_out y pins Np), lookup_subst_nlook'.
+    { rewrite PublicCopySubst.lookup_subst_cat, (PublicLinkRun.lookup_subst_out y pins Np), lookup_subst_nlook'.
       destruct (A.nlook y (A.c_ty Cg)) eqn:L; [|reflexivity].
       exfalso. apply Ny. apply PublicFamilyAgree.nlook_dom. rewrite L. discriminate. }
     pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy Lc) (SubNone y Ny)) as Irb.
@@ -318,10 +318,10 @@ Proof.
   assert (GE : forall tc tf, PublicFamilyAgree.SigAgree Cf Cu th tc tf ->
     (forall y, In y (A.gens tf) -> In y DG \/ In y (map fst pins)) -> ground d3 (app_subst pr0 tf) = ground d tc).
   { intros tc tf [Sc Ec] Ig. rewrite <- (Abs0 tc), <- CanF, Ec, CanF, (Abs0 (app_subst th tf)).
-    rewrite (PublicCopyFresh.ground_app_subst d th tf). unfold ground.
-    apply PublicCopyFresh.ty_agree. intros y Iy.
+    rewrite (PublicCopySubst.ground_app_subst d th tf). unfold ground.
+    apply PublicCopySubst.ty_agree. intros y Iy.
     assert (Thy : lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) = Some (ground d (app_subst th (TAbs y)))).
-    { rewrite PublicCopyFresh.lookup_subst_cat, PublicLinkRun.lookup_map_snd. cbn [app_subst]. rewrite (ThL y (Sc y Iy)). reflexivity. }
+    { rewrite PublicCopySubst.lookup_subst_cat, PublicLinkRun.lookup_map_snd. cbn [app_subst]. rewrite (ThL y (Sc y Iy)). reflexivity. }
     change (app_subst (type_meanings d3) (match lookup_subst y pr0 with Some v => v | None => TAbs y end) =
       match lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) with Some v => v | None => TAbs y end).
     rewrite Thy.
@@ -339,13 +339,13 @@ Proof.
   { destruct Arec as [ScR EcR].
     assert (CanF2 : forall t, A.canon (A.family_context C matching) t = A.canon C0 t) by exact CanF.
     rewrite <- (Abs0 r0), <- CanF2, EcR, CanF2, (Abs0 (app_subst th rf)).
-    rewrite <- Erb, Abs3, (PublicCopyFresh.ground_app_subst d th rf). unfold ground.
-    apply PublicCopyFresh.ty_agree. intros y Iy.
+    rewrite <- Erb, Abs3, (PublicCopySubst.ground_app_subst d th rf). unfold ground.
+    apply PublicCopySubst.ty_agree. intros y Iy.
     assert (Thy : lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) = Some (ground d (app_subst th (TAbs y)))).
-    { rewrite PublicCopyFresh.lookup_subst_cat, PublicLinkRun.lookup_map_snd. cbn [app_subst]. rewrite (ThL y (ScR y Iy)). reflexivity. }
+    { rewrite PublicCopySubst.lookup_subst_cat, PublicLinkRun.lookup_map_snd. cbn [app_subst]. rewrite (ThL y (ScR y Iy)). reflexivity. }
     change (app_subst (type_meanings d3) (match lookup_subst y (pins ++ A.c_ty Cg) with Some v => v | None => TAbs y end) =
       match lookup_subst y (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d) with Some v => v | None => TAbs y end).
-    rewrite Thy, PublicCopyFresh.lookup_subst_cat.
+    rewrite Thy, PublicCopySubst.lookup_subst_cat.
     destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np].
     - (* a pinned input: the pin, which reads as θ reads the input *)
       destruct (PublicLinkRun.lookup_subst_dom y pins Ip) as [tx [Lx Itx]]. rewrite Lx. exact (PinRun y tx Itx).

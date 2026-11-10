@@ -179,7 +179,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.body_provides);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.bindings_writes);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.chain_new_ok);
-  root (@NM.PublicCopyFresh.copy_outputs_at);
+  root (@NM.PublicCopySubst.copy_outputs_at);
   root (@NM.PublicLinkWalk.family_binds_no_dests);
   root (@NM.PublicLinkScope.items_scope);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.family_link_new_ok);
@@ -197,9 +197,10 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicChainSigs.pos_last);
   root (@NM.PublicChainSigs.result_gens_vals);
   root (@NM.PublicChainSigs.entries_rel_kinds);
-  root (@NM.PublicCopyFresh.ground_app_subst);
+  root (@NM.PublicCopySubst.ground_app_subst);
+  root (@NM.PublicCopySubst.provision_gens_subst);
   root (@NM.PublicCopyFresh.result_gens);
-  root (@NM.PublicCopyFresh.copy_outputs_read);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at);
   root (@NM.PublicLinkPins.items_dests_made);
   root (@NM.PublicConsol.link_body_has_body);
   root (@NM.PublicConsol.result_realizes_restated);
@@ -213,7 +214,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicSameNeed.need_reading_orientation_free_F);
   root (@NM.PublicSameNeed.need_reading_orientation_free_G);
   root (@NM.PublicSameNeed.link_need_unambiguous);
-  root (@NM.PublicSameNeed.copy_need_unambiguous);
   root (@NM.EagerCopy.sources_compose);
   root (@NM.EagerCopy.positions_chain);
   root (@NM.EagerCopy.selection_chain);

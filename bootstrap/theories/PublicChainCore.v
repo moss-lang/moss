@@ -196,7 +196,7 @@ Qed.
    the new provisions are realized after the application. It is the
    caller's reading of F's result (ProvideResult at θ and the destinations)
    against the root's formal one (Cr, through the copy chain's
-   CopyOutputs and positions), with the body's provisions typed at the
+   CopyInterpretation and positions), with the body's provisions typed at the
    body's meanings (ResultRealizes, role_reads). That every key dr fills
    is the run-time key of a new provision of C' is true by construction
    (Audit.result_selection files position i under the caller's key for

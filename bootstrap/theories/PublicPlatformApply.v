@@ -249,7 +249,7 @@ Notation ItemsAgree := PublicFamilyAgree.ItemsAgree.
 
 (* The chain's agreement is read at the ground meanings of the state d
    the application runs from: a copy step relates its two results only up
-   to the copy site's readings of the fixed inputs (CopyOutputs), which the
+   to the copy site's readings of the fixed inputs (CopyInterpretation), which the
    state grounds as the application's (FixedMeans), not syntactically. *)
 Definition SigAgreeG (d : environment) (Ch0 : A.cx) (th : subst) (tc tf : ty) : Prop :=
   incl (A.gens tf) (map fst (A.c_ty Ch0)) /\ ground d tc = ground d (app_subst th tf).
@@ -401,7 +401,7 @@ Lemma chain_keys : forall u gfx sms rms h0 gf0 sms0 rms0, FS.CopyA.CopyChain W u
   incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)).
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh _ _ _ _ _ Sub _ _];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh _ _ _ Sub _ _];
     intros Cu' nsu' Ch0 nsh0 FCu' FC0.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu' FC0) as [-> _]. intros x I. exact I.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu') as [<- _].
@@ -412,16 +412,20 @@ Qed.
 Lemma chain_adapt : forall u gfx sms rms h0 gf0, FS.CopyA.CopyChain W u gfx sms rms h0 gf0 None None ->
   forall rr H d f Cu nsu e1, A.FunCtx W u Cu nsu ->
   FS.CopyA.S.Realizes W Prog argv read state_ok rr Cu (FS.CopyA.S.callee_env d (FS.CopyA.thof f Cu) e1) H ->
+  (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (f x))) ->
   exists e2, adapt_provisions e1 sms = Some e2.
 Proof.
   intros u gfx sms rms h0 gf0 Ch. remember None as sms0 eqn:E0. remember (@None (list (option nat))) as rms0 eqn:E1.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh Incl _ SN ST _ Sub _ _];
-    intros rr H d f Cu' nsu' e1 FCu' Real.
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh Incl Fx _ Sub _ Site];
+    intros rr H d f Cu' nsu' e1 FCu' Real Fixd.
   - subst sms. exists e1. reflexivity.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu') as [<- <-].
-    destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl SN ST Sub Real)
+    destruct (FS.CopyA.copy_step_reads W d f e1 u Cu nsu h Ch nsh rm gfx gfh FCu FCh Sub Site Fixd) as [RdT NdT].
+    destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl RdT NdT Sub Real)
       as [e1' [Sel RealH]].
-    destruct (IH E0 E1 rr H d f Ch nsh e1' FCh RealH) as [e2 A2].
+    assert (FixH : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (ground d (f x))).
+    { intros x Fh. destruct (Fx x Fh) as [Fu E]. rewrite E. exact (Fixd x Fu). }
+    destruct (IH E0 E1 rr H d f Ch nsh e1' FCh RealH FixH) as [e2 A2].
     exists e2. exact (EagerCopy.adapt_compose _ _ _ _ _ Sel A2).
 Qed.
 
@@ -677,7 +681,7 @@ Lemma chain_leaves_back : forall u gfx sms rms h0 gf0 sms0 rms0, FS.CopyA.CopyCh
   forall l, A.ResultLeaf W u l -> A.ResultLeaf W h0 l.
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ _ _ Same _];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ Same _];
     intros l L; [exact L|]. exact (IH l (proj1 (Same l) L)).
 Qed.
 
@@ -685,7 +689,7 @@ Lemma chain_no_outputs : forall u gfx sms rms h0 gf0 sms0 rms0, FS.CopyA.CopyCha
   (forall t, ~ A.FunOutputs W h0 t) -> forall t, ~ A.FunOutputs W u t.
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ _ _ Same _];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ Same _];
     intros N t Ft; [exact (N t Ft)|]. exact (IH N t (proj1 (FS.CopyA.S.same_result_outputs W u h Same t) Ft)).
 Qed.
 
@@ -782,7 +786,7 @@ Proof.
     apply (family_core k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
       code sms rms h0' Ch0 needs outputs keys bindings Look FD Kin NoOut News SrcIn SrcLen Sigs).
     intros d1' Sel' RealU'. rewrite Thf in RealU'.
-    destruct (chain_adapt _ _ _ _ _ _ Chn' rr H d f Cu ns d1' FC RealU') as [d2 A2].
+    destruct (chain_adapt _ _ _ _ _ _ Chn' rr H d f Cu ns d1' FC RealU' Fixd) as [d2 A2].
     exists d2. split; [exact A2|].
     intros key op rf m a gf Ik Ib MP AK Ek Mgf.
     exact (chain_prims F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0

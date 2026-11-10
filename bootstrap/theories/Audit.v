@@ -1718,7 +1718,7 @@ Definition application_environment (P : program_view) (d : environment) (h : usy
 (* A closure's result positions: position i reads the root's source at
    the i-th entry (None, the root's own sources in order). Each position of
    a copy names a position of its source's declared result; a stray one
-   (None) is unreachable for a checked program (CopyOutputs), and no
+   (None) is unreachable for a checked program (CopyInterpretation), and no
    provision is keyed by a type item, so it makes the selection stuck. *)
 Definition closure_sources (p : option (list (option nat))) (sources : list item) : list item :=
   match p with
@@ -4097,33 +4097,49 @@ Definition CollidesOnlyAs (ks ks0 : list item) : Prop :=
 Definition SameResult (W : world) (u g : nat) : Prop :=
   forall k, ResultLeaf W u k <-> ResultLeaf W g k.
 
-(* [D78] (the oracle's copy_outputs_match): read at F's inputs with the
-   same fresh output roles, H's result gives each key of F's result the
-   provision F's result gives it (each key's last setter), F's fixed
-   inputs read as sigma says (as they are in force where F is bound).
-   rm records, for each position i of F's result, the position j of H's
-   whose item F's i-th is: a position with the same provision id (the
-   keys are read at Cu, so this is the same key there), whose provision
-   agrees with F's after the copy site's substitution sigma (the clause
-   above, at each key's last setter), and the last such position (the
-   oracle's `find ... (rev gkeys)`), so repeated positions of F read one
-   source. An application of F installs exactly F's result, position by
-   position under the caller's keys (Rule A, result_selection), so a key
-   H has and F lacks is never installed (examples/copy-extra-key.moss;
-   results4's converse conjunct, which rejected that copy, is reverted).
-   Every other generation of F's input readings (one sigma does not read:
-   F's non-fixed inputs, which each application supplies afresh) reads as
-   its own fresh symbol cg y, as the oracle's copy_output_compatible
-   replaces each unsolved generation by a fresh `@copy` symbol: sigma's
-   readings are the copy site's and may name a symbol that is also one of
-   F's inputs, which must not be identified with it
+(* [D78] (the oracle's copy_output_compatible): `bind F = H;` is
+   checked at every application of F at once. F's fixed inputs read as
+   sigma says (what they mean where F is bound, which every application
+   keeps, BApplyAbstract's rule 5), and every other generation of F's
+   input readings (one sigma does not read: F's non-fixed inputs, which
+   each application supplies afresh) reads as its own fresh symbol cg y,
+   as the oracle replaces each unsolved generation by a fresh `@copy`
+   symbol. copy_subst is that reading. H's terms are read in F's through
+   F's merge (H's inputs are among F's), then at copy_subst, and there:
+   - H's inputs read as F's: each of H's merges holds. A merge of H that
+     F lacks is accepted when F's fixed readings make it hold, as they do
+     at every application (copy-site-merge.moss); one a later application
+     could break is not (copy-poly-merge.moss, copy-merge.moss).
+   - H's needs read as F's: each provision H takes is F's (its signature
+     and instantiation), read the same way.
+   - H's result gives each key of F's result the provision F's result
+     gives it (each key's last setter), both read with the same fresh
+     output roles. H's result is read in its own context Ch, where its
+     merges hold. rm records, for each position i of F's result, the
+     position j of H's whose item F's i-th is: H's key there is F's key
+     at copy_subst, H's provision there agrees with F's, and every
+     position of H's with that key at copy_subst has one key in H's own
+     terms, of which j is the last (the oracle's `find ... (rev gkeys)`).
+     So two result items distinct in H's own terms are never one key of
+     F's, where choosing either would be a choice (coherence, criteria
+     section 2; examples/copy-result-collide.moss), and repeated
+     positions of F read one source. An application of F installs
+     exactly F's result, position by position under the caller's keys
+     (Rule A, result_selection), so a key H has and F lacks is never
+     installed (examples/copy-extra-key.moss).
+   sigma's readings are the copy site's and may name a symbol that is also
+   one of F's inputs, which must not be identified with it
    (examples/copy-bracket-nonfixed.moss, copy-fixed-reads-poly.moss;
    scratch/orch/copyfresh-AUDIT.md). Fresh means fresh for sigma's image
    too, as the oracle's @copy symbols are: a copy site can read a fixed
    input as a fresh application generation, and a cg y or output role
    equal to it would identify it with F's input or output again
    (examples/copy-fresh-collide.moss, scratch/orch/realizepf-AUDIT.md). *)
-Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : list nat) : Prop :=
+Definition copy_subst (sigma : subst) (ys : list nat) (cg : nat -> nat) : subst :=
+  sigma ++ map (fun y => (y, TAbs (cg y))) ys.
+
+Definition CopyInterpretation (W : world) (sigma : subst) (u h : nat) (Cu : cx) (nsh : list item) (Ch : cx)
+    (rm : list nat) : Prop :=
   exists outs gen ys cg Cr ks Cr' ks',
     (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs ++ map cg ys) /\
     (forall z, In z (flat_map (fun q => gens (snd q)) sigma) -> ~ In z (map gen outs ++ map cg ys)) /\
@@ -4131,17 +4147,30 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : l
     (forall y, In y ys -> Fresh W (cg y)) /\
     (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
                           lookup_subst y sigma = None) /\
+    (* inputs *)
+    (forall x tx, nlook x (c_ty Ch) = Some tx ->
+       app_subst (copy_subst sigma ys cg) (canon Cu (TAbs x)) = app_subst (copy_subst sigma ys cg) (canon Cu tx)) /\
+    (* needs *)
+    (forall k, In k nsh -> exists p' p,
+       ilook (provision_id k) (c_provisions Ch) = Some p' /\
+       ilook (provision_id (canon_item Cu k)) (c_provisions Cu) = Some p /\
+       provision_subst (copy_subst sigma ys cg) (canon_provision Cu p') =
+         provision_subst (copy_subst sigma ys cg) (canon_provision Cu p)) /\
+    (* the result *)
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
-    ProvideResult W h Cu (fun t => TAbs (gen t)) Cr' ks' /\
-    (forall k, In k ks -> exists p p',
-       ilook (provision_id k) (c_provisions Cr) = Some p /\
-       ilook (provision_id k) (c_provisions Cr') = Some p' /\
-       provision_subst (sigma ++ map (fun y => (y, TAbs (cg y))) ys) p =
-       provision_subst (sigma ++ map (fun y => (y, TAbs (cg y))) ys) p') /\
+    ProvideResult W h Ch (fun t => TAbs (gen t)) Cr' ks' /\
     length rm = length ks /\
-    (forall i k, nth_error ks i = Some k -> exists j k',
-       nth_error rm i = Some j /\ nth_error ks' j = Some k' /\ provision_id k' = provision_id k /\
-       (forall j' k'', j < j' -> nth_error ks' j' = Some k'' -> provision_id k'' <> provision_id k)).
+    (forall i k, nth_error ks i = Some k -> exists j k' p p',
+       nth_error rm i = Some j /\ nth_error ks' j = Some k' /\
+       app_subst_item (copy_subst sigma ys cg) (canon_item Cu (provision_id k')) =
+         app_subst_item (copy_subst sigma ys cg) (provision_id k) /\
+       (forall j' k'', nth_error ks' j' = Some k'' ->
+          app_subst_item (copy_subst sigma ys cg) (canon_item Cu (provision_id k'')) =
+            app_subst_item (copy_subst sigma ys cg) (provision_id k) ->
+          provision_id k'' = provision_id k' /\ j' <= j) /\
+       ilook (provision_id k) (c_provisions Cr) = Some p /\
+       ilook (provision_id k') (c_provisions Cr') = Some p' /\
+       provision_subst (copy_subst sigma ys cg) p = provision_subst (copy_subst sigma ys cg) (canon_provision Cu p')).
 
 (* A promised item is compared with the body's at the body's meanings of
    the output roles (each role at what the site's table makes of it,
@@ -4735,9 +4764,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* each need of H is one of F's, read through F's merge (F's
        congruence decides "same need": H may spell it through another
        representative of the class; criteria.md section 2,
-       examples/sameneed-copy.moss). The input-reading clause below rules
-       out a need class of H meeting two of F's
-       (`PublicSameNeed.copy_need_unambiguous`) *)
+       examples/sameneed-copy.moss) *)
     (forall k, In k nsh -> In (canon_item Cu k) nsu) ->
     (* Copying requires the target fixed inputs now and preserves every
        known fixed interpretation carried by the existing source binding. *)
@@ -4745,23 +4772,15 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (forall x, Fixed W h x -> Fixed W u x) ->
     FixedAgreement W C h ->
     SameResult W u h ->
-    (* H reads its needs and inputs as F does, up to F's merge (the
-       oracle: input interpretation, D78) *)
-    (forall k, In k nsh -> option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Ch)) =
-                          ilook (provision_id (canon_item Cu k)) (c_provisions Cu)) ->
-    (forall x tx, nlook x (c_ty Ch) = Some tx -> canon Cu (TAbs x) = canon Cu tx) ->
     sm = map (fun k => (rkey_of Ch k, rkey_of Cu (canon_item Cu k))) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
-    (* and H's result reads as F's (the oracle: output interpretation, D78) *)
-    CopyOutputs W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu rm ->
     (* H's inputs, implicit ones too, are among F's (the oracle's input
        interpretation check fails on one F lacks) *)
     (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
-    (* and two result items distinct in H's own terms are not one key in
-       F's, where CopyOutputs' rm would choose the last of them
-       (coherence, criteria section 2; examples/copy-result-collide.moss) *)
-    (exists Cr ksr Ch' ksh, ProvideResult W h Cu (fun t => TAbs t) Cr ksr /\
-       ProvideResult W h Ch (fun t => TAbs t) Ch' ksh /\ CollidesOnlyAs ksr ksh) ->
+    (* and H reads its inputs, needs and result as F does at every
+       application of F (the oracle: input and output interpretation,
+       D78) *)
+    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu nsh Ch rm ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes (read through F's merge) are linked (supplied by each
@@ -5533,7 +5552,7 @@ Definition MachinesFixed (W : world) (source : usym) (inputs outputs : cx) (key 
    one of them is a detached method (lib/wasm.moss: Heap's `.boxed`,
    Arrays' `.arrayed`; every other item is an attached method of its own).
    A copy of the family (`bind F = H;`, BFunCopy) is checked one way only
-   (CopyOutputs: each of F's items is one of H's); with this, H's items
+   (CopyInterpretation: each of F's items is one of H's); with this, H's items
    are each one of F's too, since F has an item on each of H's leaves
    (SameResult), resolving to H's method there (an attached method is the
    receiver's, and the one detached method is the only one left). *)

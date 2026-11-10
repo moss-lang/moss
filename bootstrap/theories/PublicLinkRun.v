@@ -10,7 +10,7 @@
      F, by LinkBody's made clause), the body's final meanings of F's
      inputs are the application's. *)
 From Stdlib Require Import List Arith Bool.
-From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicCallRealize PublicCopyFresh.
+From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicCallRealize PublicCopyFresh PublicCopySubst.
 From NM Require PublicChainCore PublicLinkPins PublicFamilyAgree.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -181,15 +181,15 @@ Lemma link_input_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb 
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
-  (forall t, app_subst th (A.canon Cu t) = app_subst th t) ->
   forall argv read j d dc g st d3 g3 st3,
+  (forall t, ground d (app_subst th (A.canon Cu t)) = ground d (app_subst th t)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
   lookup_subst x (type_meanings d3) = Some (ground d (app_subst th (TAbs x))).
 Proof.
-  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD ThSig
-    argv read j d dc g st d3 g3 st3 Run x Ig Iu.
+  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD
+    argv read j d dc g st d3 g3 st3 ThSig Run x Ig Iu.
   pose proof (proj2 (PublicFamilyAgree.nlook_dom _ x _) Iu) as Nu.
   rewrite (body_meaning_input W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B j _ _ g st d3 g3 st3 Run x Nu).
   destruct (A.nlook x (A.c_ty Cg)) as [tx|] eqn:Lx; [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ x _) Ig Lx)].
@@ -205,7 +205,7 @@ Proof.
     by (unfold table_reading; cbn [fc_table]; rewrite lookup_subst_nlook', Lx; reflexivity).
   assert (V : view_functor (program_of Prog argv read) h = A.funbody_of Prog h) by reflexivity. rewrite FB in V.
   rewrite (app_env_meaning _ d h _ th dc x V Ig).
-  - rewrite Tr. f_equal. f_equal. rewrite <- (ThSig tx), <- (ThSig (TAbs x)), Can. reflexivity.
+  - rewrite Tr. f_equal. rewrite <- (ThSig tx), <- (ThSig (TAbs x)), Can. reflexivity.
   - rewrite Tr. intros y Iy. cbn [fc_inputs fc_linked].
     pose proof (proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy)) as IyU.
     split; [exact (GgDom y Iy)|]. split; [|exact (ThD y IyU)].
@@ -223,20 +223,20 @@ Corollary link_run_fact : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb F
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
-  (forall t, app_subst th (A.canon Cu t) = app_subst th t) ->
   forall argv read j d dc g st d3 g3 st3,
+  (forall t, ground d (app_subst th (A.canon Cu t)) = ground d (app_subst th t)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
   ground d3 t = ground d (app_subst th t).
 Proof.
-  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD ThSig
-    argv read j d dc g st d3 g3 st3 Run t Ig Iu.
+  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD
+    argv read j d dc g st d3 g3 st3 ThSig Run t Ig Iu.
   unfold ground. rewrite <- (PublicTypeRead.app_subst_nil (app_subst (type_meanings d3) t)).
   apply subst2_agree. intros z Iz. rewrite PublicTypeRead.app_subst_nil.
   change (app_subst (type_meanings d3) (TAbs z)) with (match lookup_subst z (type_meanings d3) with Some t => t | None => TAbs z end).
-  rewrite (link_input_meaning W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD ThSig
-    argv read j d dc g st d3 g3 st3 Run z (Ig z Iz) (Iu z Iz)).
+  rewrite (link_input_meaning W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD
+    argv read j d dc g st d3 g3 st3 ThSig Run z (Ig z Iz) (Iu z Iz)).
   reflexivity.
 Qed.
 

@@ -305,8 +305,6 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
   A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
-  (forall k, In k nsh -> option_map (A.canon_provision Cu0) (A.ilook (A.provision_id k) (A.c_provisions Ch)) = A.ilook (A.provision_id (A.canon_item Cu0 k)) (A.c_provisions Cu0)) ->
-  (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 (* HYPOTHESIS (T15): FamilyCopyApplyOk's realization half. Applying a copy
@@ -329,8 +327,6 @@ Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matc
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
   A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
-  (forall k, In k nsh -> option_map (A.canon_provision Cu0) (A.ilook (A.provision_id k) (A.c_provisions Ch)) = A.ilook (A.provision_id (A.canon_item Cu0 k)) (A.c_provisions Cu0)) ->
-  (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.canon Cu0 (TAbs x) = A.canon Cu0 tx) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ type_meanings dr = [] /\ type_aliases dr = [] /\
      (forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr) = Some g -> exists pv,
@@ -358,9 +354,9 @@ Qed.
 Lemma family_copy_apply_of_realize : FamilyCopyRealizeOk -> FamilyCopyApplyOk.
 Proof.
   intros Rz k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC SN ST Fm.
+    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm.
   destruct (Rz k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC SN ST Fm)
+    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm)
     as [(dr & st' & H' & Ext & St' & Tm & Ta & New & Ap)|Stop]; intros rest; [left|right; exact (Stop rest)].
   exists dr, st', H'. split; [exact Ext|]. split; [exact St'|]. split.
   - split; [exact Tm|]. split; [exact Ta|]. split; [|exact New].
@@ -404,9 +400,9 @@ Proof.
   assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
   destruct (CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
-  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC & SN & ST).
+  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC).
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-         fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC SN ST Fm). }
+         fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC Fm). }
   2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }

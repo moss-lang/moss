@@ -1,0 +1,44 @@
+# copy-site-merge.moss's copy where X and Y are not one type
+# (AUDIT-CHANGES.md #96). H is in force from the assume, so where F is
+# bound X and Y are themselves, two types. F fixes them, so every
+# application of F reads them apart, and H's merge of X with Y would
+# not hold where F's binding runs. The copy is rejected.
+# - Oracle: rejects ("`H` cannot be copied to `F`: its input
+#   interpretation differs (D78)").
+# - Native: rejects ("?X ... copy X").
+# - Audit before and now: rejects (now CopyInterpretation's input
+#   reading: at copy_subst, X reads as X and Y as Y).
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+val vx: X;
+
+assume Std {
+  fn run(a: X, b: Y): Int;
+}
+
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], vx;
+context Apart = A, X, Y, A.gimme[Foo=X], vx;
+
+functor H[]: Std, Merge -> run;
+functor F[]: Std, Apart -> run;
+
+assume Std, Apart, H {
+  fn copy() {
+    bind F = H;
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+  }
+}
