@@ -1578,11 +1578,47 @@ assume Std {
         if ast::is_some(dr) {
           here = instantiate(view, dr);
         }
-        if !env_has(view, need_kind(ds), here, ds) {
+        let have = env_find(view, need_kind(ds), here, ds);
+        if !ast::is_some(have) {
           prog::error(prog::e_absent(), m, prog::sym_name.get(ds));
+        } else if !assumed_coherent(ds, need_app_at(s, i), env_of(s), en_b.get(have), env, view) {
+          # AUDIT-CHANGES #57 (D62): and at the instantiation `s` needs
+          # it, as a call of `s` here would ask (the oracle's
+          # `require_needs`).
+          prog::error(prog::e_incoherent(), m, prog::sym_name.get(ds));
         }
         i = i + 1;
       }
+    }
+
+    # One need of an assumed item, as codegen's `coherent` compares a
+    # call's: `want`, the item's app for `ds` against its declaration's
+    # environment `wbase`, read in `view` (where the item's own
+    # instantiation is in force), against `have`, the app the assumed
+    # provision of `ds` is at, against `hbase`.
+    fn assumed_coherent(ds: Int, want: Int, wbase: Int, have: Int, hbase: Int, view: Int): Bool {
+      let deps = int_list();
+      item_deps(ds, deps);
+      var i = 0;
+      while i < deps.length() {
+        let t = deps.get(i);
+        let wv = app_get(want, t, wbase);
+        var need = ast::none();
+        if ast::is_some(wv) {
+          need = instantiate(view, wv);
+        } else if env_has(view, ek_type(), ast::none(), t) {
+          need = canon(view, types::ty_of_symbol(types::kd_abstract(), t));
+        }
+        var got = app_get(have, t, hbase);
+        if ast::is_some(got) {
+          got = canon(view, got);
+        }
+        if need != got {
+          return false;
+        }
+        i = i + 1;
+      }
+      true
     }
 
     # Defined functions do not become run-time provisions in the native

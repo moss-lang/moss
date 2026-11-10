@@ -1,0 +1,9 @@
+type T;
+type U;
+assume T { fn h(); }
+context H = U, h[T = U];
+assume H { fn f(); }
+# AUDIT-CHANGES #57 (D62): `f` needs `h` at `T = U`, and the `h` assumed
+# beside it is at `T = T`, though `g` never calls `f`.
+assume T, U, h, f { fn g() {} }
+fn main() {}
