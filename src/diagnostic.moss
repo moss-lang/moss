@@ -57,6 +57,7 @@ assume Std {
     if code == prog::e_family() { return "conflicting method bindings from a family"; }
     if code == prog::e_self_apply() { return "a functor cannot apply itself through its own inputs"; }
     if code == prog::e_union() { return "union members must be nominal types with distinct heads"; }
+    if code == prog::e_result_collide() { return "two distinct result items of the functor are one item here"; }
     return "compilation failed";
   }
 

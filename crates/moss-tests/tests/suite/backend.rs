@@ -1066,6 +1066,24 @@ fn a_functor_copy_keeps_its_capture() {
     assert_eq!(run_moss(&entry, PRELUDE), "2454\n");
 }
 
+/// AUDIT-CHANGES #58 (E40, D84 rule 7): two result items distinct in
+/// `F`'s own reading stay distinct where it is applied. Binding `A` and
+/// `B` both to `Int` would file `A.m` and `B.m` under one key; the
+/// self-hosted compiler refuses it (`e_result_collide`, `^`) in `use_it`, named by the
+/// method, as the semantics does. The oracle still runs both, each by its
+/// own convention. A key `F` itself repeats is one item, and runs.
+#[test]
+fn result_items_distinct_in_the_functor_stay_distinct() {
+    for name in ["result_collide_ab", "result_collide_bindswap"] {
+        let entry = wasi(name);
+        assert_eq!(report(&entry, PRELUDE), format!("?^ {entry} use_it m\n"));
+        assert_eq!(oracle_run(&entry, &[]), "a\n", "{entry}");
+    }
+    let entry = wasi("result_repeat");
+    assert_eq!(oracle_run(&entry, &[]), "a\n");
+    assert_eq!(run_moss(&entry, PRELUDE), "a\n");
+}
+
 /// D73's listed parameters must be types the declaration requires, and
 /// D74's attached method is at its receiver's instantiation: a
 /// `Box[T=Int]`'s `.get()` is an `Int` wherever `T` has been rebound, and a

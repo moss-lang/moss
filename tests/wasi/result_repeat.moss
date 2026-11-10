@@ -1,0 +1,26 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# The control for result_collide_ab.moss: `F`'s result repeats a key in
+# `F`'s own terms (`A.m`, and `K`'s `A.m`), so the two positions are one
+# item, and the application files them under one key. Prints `a`.
+
+type A;
+assume A { fn .m(); }
+context K = A.m;
+functor F: Std, A -> A.m, K;
+assume Std {
+  functor G: Std, A -> A.m, K {
+    bind A.m = () => putchar(char::a);
+  }
+}
+
+assume Std, F {
+  fn use_it() { bind A = Int; bind F; one.m(); }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind F = G; use_it(); putchar(char::newline); }
+}

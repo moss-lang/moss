@@ -7547,6 +7547,41 @@ assume Std {
       }
     }
 
+    # Whether `F`'s result keys `recvs`/`syms`, as an application files
+    # them, collide only where `F`'s own reading of its result, in its
+    # input context with its merges, does (`CollidesOnlyAs`).
+    fn results_distinct(fu: Int, recvs: IntList, syms: IntList): Bool {
+      let d = prog::sym_decl.get(fu);
+      let home = prog::sym_mod.get(fu);
+      let nrecv = int_list();
+      let nsym = int_list();
+      let own = lower::assume_items(home, ast::fu_args(d), ast::fu_nargs(d), nrecv, nsym);
+      let okinds = int_list();
+      let orecvs = int_list();
+      let osyms = int_list();
+      result_keys(home, ast::fu_res(d), ast::fu_nres(d), own, okinds, orecvs, osyms, 0);
+      if osyms.length() != syms.length() {
+        return true;
+      }
+      var j = 0;
+      while j < syms.length() {
+        var k = j + 1;
+        while k < syms.length() {
+          if syms.get(j) == syms.get(k) {
+            if recvs.get(j) == recvs.get(k) {
+              if orecvs.get(j) != orecvs.get(k) {
+                semantic_error(prog::e_result_collide(), prog::sym_name.get(syms.get(j)));
+                return false;
+              }
+            }
+          }
+          k = k + 1;
+        }
+        j = j + 1;
+      }
+      true
+    }
+
     # `bind F;` where `F` is bound to `provider`.
     fn apply_bound(body: IntList, spec: Int, fu: Int, provider: Int, depth: Int, mode: Int) {
       let d = prog::sym_decl.get(fu);
@@ -7646,6 +7681,13 @@ assume Std {
       let recvs = int_list();
       let syms = int_list();
       result_keys(home, ast::fu_res(d), ast::fu_nres(d), gsite, gkinds, recvs, syms, 0);
+      # AUDIT-CHANGES #58 (E40, D84 rule 7): two result items distinct in
+      # `F`'s own reading are distinct here too. Where the caller's
+      # meanings file them under one key (`A.m` and `B.m` with `A` and
+      # `B` both `Int`), which one the key gets would be a convention.
+      # Reported, and the application goes on, so that what follows it
+      # is not reported as unprovided too.
+      results_distinct(fu, recvs, syms);
       # What the binds made for each item: an environment row, and for a
       # val, the local holding it.
       let rows = int_list();

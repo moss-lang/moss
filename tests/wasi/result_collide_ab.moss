@@ -1,0 +1,31 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Gc, Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+# AUDIT-CHANGES #58 (E40, D84 rule 7): `F`'s result is `A.m` and `B.m`,
+# two items in `F`'s own reading. `use_it` binds `A` and `B` both to
+# `Int`, so the application would file both under `Int.m`, and which of
+# `G`'s binds the key gets would be a convention: the oracle prints `a`
+# (the first result position), the self-hosted compiler printed `b` (the
+# last bind in `G`). Refused, as the semantics refuses it.
+# result_collide_bindswap.moss makes `G`'s binds the other way round.
+
+type A;
+type B;
+assume A { fn .m(); }
+functor F: Std, A, B -> A.m, B.m;
+assume Std {
+  functor G: Std, A, B -> A.m, B.m {
+    bind A.m = () => putchar(char::a);
+    bind B.m = () => putchar(char::b);
+  }
+}
+
+assume Std, F {
+  fn use_it() { bind A = Int; bind B = Int; bind F; one.m(); }
+}
+
+assume Wasm, Gc, Wasi, Branch {
+  fn main() { bind WasiStd; bind F = G; use_it(); putchar(char::newline); }
+}

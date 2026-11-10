@@ -231,6 +231,12 @@ assume Std {
   # head: a match arm names a member by its head alone.
   fn e_union(): Int { 16 + 12 }
 
+  # D84 rule 7 (AUDIT-CHANGES #58): two result items of a functor that
+  # are distinct in its own reading, filed under one key where it is
+  # applied (`A.m` and `B.m`, with `A` and `B` both `Int` there). Named by
+  # the item.
+  fn e_result_collide(): Int { 16 + 13 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, mtext, sources, pinfo,
     ent_head, ent_link,

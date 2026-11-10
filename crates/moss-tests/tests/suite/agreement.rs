@@ -58,6 +58,11 @@ const SELF_HOSTED_BUG_FIELD_TWICE: &str = "self-hosted compiler bug: a record li
 /// program and gets stuck at run time. The semantics and the self-hosted
 /// compiler reject it.
 const ORACLE_GAP_STALE_PROVISION: &str = "oracle gap: a provision read at another type than it was made at (E25)";
+/// AUDIT-CHANGES #58 (E40): the oracle installs two result items that F
+/// keeps distinct under the one key the application files them under,
+/// keeping the first result position's; the semantics and the
+/// self-hosted compiler reject the application.
+const ORACLE_GAP_RESULT_COLLIDE: &str = "oracle gap: two result items of a functor filed under one key (E40)";
 /// `main` assumes an item no platform provides. The oracle runs `main` in
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
@@ -94,6 +99,8 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/memory_reset.moss", Accept, Unsupported, MEMORIES),
+    ("tests/wasi/result_collide_ab.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
+    ("tests/wasi/result_collide_bindswap.moss", Reject, Accept, ORACLE_GAP_RESULT_COLLIDE),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/shadowing.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/signature.moss", Reject, Unsupported, LIBRARY),
