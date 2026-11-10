@@ -44,24 +44,28 @@ Variable ftbl : usym -> option bcode.
 Definition lnil : lcode := fun m d g st =>
   match m with 0 => inr (I.Evaluation OutOfFuel g st) | S _ => inl ([], g, st) end.
 
-Definition lcons (c : code) (cr : lcode) : lcode := fun m d g st =>
-  match m with
-  | 0 => inr (I.Evaluation OutOfFuel g st)
-  | S k =>
-      match c k d g st with
-      | I.Evaluation (Normal w) g1 st1 =>
-          match cr k d g1 st1 with
-          | inl (ws, g2, st2) => inl (w :: ws, g2, st2)
-          | inr rr => inr rr
-          end
-      | rr => inr rr
-      end
-  end.
-
+(* Build both child closures before building the cons step. Returning the
+   step here gives the extracted closure only the four runtime arguments. *)
 Fixpoint cc_list (f : expr -> code) (l : list expr) : lcode :=
-  match l with [] => lnil | e :: r => lcons (f e) (cc_list f r) end.
-Fixpoint cc_fields (f : expr -> code) (fs : list (fld * expr)) : lcode :=
-  match fs with [] => lnil | (_, e) :: r => lcons (f e) (cc_fields f r) end.
+  match l with
+  | [] => lnil
+  | e :: rest =>
+      let c := f e in
+      let cr := cc_list f rest in
+      fun m d g st =>
+        match m with
+        | 0 => inr (I.Evaluation OutOfFuel g st)
+        | S k =>
+            match c k d g st with
+            | I.Evaluation (Normal w) g1 st1 =>
+                match cr k d g1 st1 with
+                | inl (ws, g2, st2) => inl (w :: ws, g2, st2)
+                | inr rr => inr rr
+                end
+            | rr => inr rr
+            end
+        end
+  end.
 Fixpoint cc_arms (f : expr -> code) (arms : list (pattern * expr)) : list (pattern * code) :=
   match arms with [] => [] | (p, e) :: r => (p, f e) :: cc_arms f r end.
 
@@ -530,7 +534,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
       end
   | EBreak => fun m d g st =>
       match m with 0 => I.Evaluation OutOfFuel g st | S _ => I.Evaluation Breaking g st end
-  | ERecord fs => let ca := cc_fields cc fs in fun m d g st =>
+  | ERecord fs => let ca := cc_list cc (map snd fs) in fun m d g st =>
       match m with
       | 0 => I.Evaluation OutOfFuel g st
       | S k =>
@@ -589,9 +593,6 @@ Definition tbl_ok (P : program_view) (tbl : fsym -> option code) (ftbl : usym ->
 Section Agreement.
 Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).
 Hypothesis Tables : tbl_ok P tbl ftbl.
-
-Lemma cc_fields_list : forall fs, cc_fields (cc P tbl ftbl) fs = cc_list (cc P tbl ftbl) (map snd fs).
-Proof. induction fs as [|[f e] r IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
 
 Lemma select_carm_cc : forall arms w,
   select_carm (cc_arms (cc P tbl ftbl) arms) w =
@@ -812,13 +813,13 @@ Proof.
       rewrite IHe. destruct (F.feval k P d g st e) as [[] g2 st2]; try reflexivity. apply IHe.
     + rewrite IHe. reflexivity.
     + reflexivity.
-    + rewrite cc_fields_list, IHl. reflexivity.
+    + rewrite IHl. reflexivity.
     + rewrite IHe. reflexivity.
     + rewrite IHe. destruct (F.feval k P d g st e) as [[] g1 st1]; try reflexivity.
       rewrite select_carm_cc. destruct (I.select_arm l v) as [[bs eb]|]; cbn [option_map fst snd]; [|reflexivity].
       rewrite IHe. reflexivity.
   - intros l d g st. destruct l as [|e1 r]; cbn [cc_list F.feval_arguments]; [reflexivity|].
-    unfold lcons. rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
+    rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
     rewrite IHl. reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|].
     change (ccbs P tbl ftbl (b :: bs)) with (cc_bind P ftbl (cc P tbl ftbl) b (ccbs P tbl ftbl bs)).
