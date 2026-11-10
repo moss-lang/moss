@@ -1,0 +1,21 @@
+# A pin of one fixed input that G takes itself (AUDIT-CHANGES #93): F[] is
+# fixed in T, which its result `mk` mentions; G takes T and binds it to
+# Old, which agrees with the bind site, so `mk(): T` is `mk(): Old` at
+# every application.
+# Verdicts: oracle exit 0; native exit 0; Audit rejects (`BTypeBind`, T is
+# in fr_pins). Control: pin-fixed-agree.moss, where G does not take the
+# pinned input, is accepted (#71).
+type T;
+tag Old;
+assume T { fn mk(): T; }
+functor F[]: T -> mk;
+functor G: T -> mk {
+  bind T = Old;
+  bind mk = () => Old;
+}
+fn main() {
+  bind T = Old;
+  bind F = G;
+  bind F;
+  match mk() { Old => () };
+}

@@ -121,6 +121,7 @@ entry they belong to.
 | 90 | **Every tag has a finite layout** (`FiniteLayouts`, D58/D59; on definitions, with no case for `Ref`) | layout | A for used types; B for an unused cyclic tag, with the oracle and native changed to match |
 | 91 | Main's platform provisions are Platform's contract (`PlatformEntry` moves from `ElaboratesIn` to `Platform.Linked`) | layout | none (`Builds` and `Ready` are unchanged) |
 | 92 | The language items go through one table (`lang_item`, `LangItem`) | layout | none (definitional) |
+| 93 | Recorded, not fixed: a body may not pin a fixed input that G takes (the oracle plan's N5) | layout | a fidelity gap of #71's (Audit rejects what both implementations run) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch.
 
@@ -2651,6 +2652,52 @@ executable tests unless noted.
   replaced. The proofs go through unchanged; `AuditBuildExample.main_linked`
   unfolds `LangItem` once.
 - **Class.** None (definitional).
+
+### 93. Recorded, not fixed: a linked body may not pin a fixed input that G takes (the oracle plan's N5; layout branch)
+- **The program.** `runtime_platform::private_checked_casts_preserve_chained_fixed_pin_meanings`
+  (crates/moss-tests), and without its casts
+  [pin-taken-chain](examples/pin-taken-chain.moss) and
+  [pin-taken-one](examples/pin-taken-one.moss): `F[]` is fixed in `T`
+  (and `U`, `V`), which its result mentions, and G *takes* T and binds it
+  in its body, agreeing with the bind site.
+
+  | program | oracle | native | Audit |
+  |---|---|---|---|
+  | pin-taken-one | exit 0 | exit 0 | rejects |
+  | pin-taken-chain (`bind T=U; bind U=V; bind V=Old`) | exit 0 | exit 0 | rejects |
+  | the crates test (the chain, with `Ref` casts) | exit 0 | exit 0 | rejects (the executable elaborator: "a pinned input of the bound functor (D84 3d)") |
+
+- **Diagnosis.** Audit is stricter than intended; the executable
+  elaborator reads it correctly. #71 set `fr_pins Fg` to
+  `Mentions W u x /\ (Poly W u x \/ In x (map fst (c_ty Cg)))`: a fixed
+  input that G takes and F's result mentions is still pinned, so
+  `BTypeBind` (`~ In t (fr_pins F)`) refuses `bind T = …` in the body.
+  #71 lists this under "what is still rejected". But the oracle's D84 3d
+  forbids only P(F) ∩ M(F) and lets the body bind any member of X(F),
+  whether or not G takes it, with the agreement check at the bind
+  (Elab.v, "m4, D84 3d"); native accepts too. So this is the same family
+  as #71 and #73 (pins of fixed inputs; Audit rejects what both
+  implementations run), at the one case #71 left out.
+- **The fix, and why it is not made here.** The rule would let `LinkBody`'s
+  pins include a fixed input G takes: `fr_pins` becomes
+  `Mentions /\ Poly`, and `(x, tx) ∈ pins` for every fixed x the body
+  binds. `link_site`'s table already puts the pins before `c_ty Cg`, so a
+  pinned input of G reads at its pin, and `BFunClosure`'s agreement is
+  already per pin. The chain is sound: each pin agrees with the bind
+  site, and fixed inputs mean at every application what they meant
+  there. But the proofs assume that a pin is not one of G's inputs, and
+  that a pin's type, read in the body's *final* environment, is its
+  reading in input terms (`PublicFamilyLink.PinRun` and
+  `PublicChainRealize.PinT` read it as `ground d3 tx`, d3 the body's final
+  environment). Neither holds for a chain: `bind T = U; bind U = V` leaves T's pin
+  `U` (input U), while U's final runtime meaning is input V's. The
+  proofs would read a pin in the input meanings instead (θ, with the
+  agreement giving the equalities), in `PublicChainRealize.root_level`,
+  `PublicFamilyLink.family_link_new_ok` and `PublicLinkRun`, and the facts
+  that a pinned input is not one of G's (`lookup_site_in`, the disjoint
+  `link_site` table) would have to be revisited. That proof change was
+  not made on this branch.
+- **Class.** A fidelity gap (criteria section 6), recorded with its fix.
 
 ---
 

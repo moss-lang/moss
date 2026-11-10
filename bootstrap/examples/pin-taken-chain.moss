@@ -1,0 +1,31 @@
+# Pins of fixed inputs that G takes itself (the oracle plan's N5;
+# crates/moss-tests runtime_platform::private_checked_casts_preserve_chained_fixed_pin_meanings
+# without the casts). F[] is fixed in T, U and V, which its result `q`
+# mentions; G takes all three and binds them in a chain, each agreeing
+# with the bind site (T = U = V = Old there). After the chain, G's `q` is
+# `(a: U, b: V, c: Old)` in G's input terms, which every application reads
+# as `(Old, Old, Old)`, the promised `q(T, U, V)` at the bind site.
+# Verdicts: oracle exit 0; native exit 0; Audit rejects (`BTypeBind`:
+# T is in `fr_pins`, since #71 pins a fixed input that G takes, so the
+# body may not bind it). A fidelity gap of #71's, recorded in
+# AUDIT-CHANGES #93; not fixed.
+type T;
+type U;
+type V;
+tag Old;
+assume T, U, V { fn q(a: T, b: U, c: V); }
+functor F[]: T, U, V -> q;
+functor G: T, U, V -> q {
+  bind T = U;
+  bind U = V;
+  bind V = Old;
+  bind q = (a, b, c) => ();
+}
+fn main() {
+  bind T = Old;
+  bind U = Old;
+  bind V = Old;
+  bind F = G;
+  bind F;
+  q(Old, Old, Old);
+}
