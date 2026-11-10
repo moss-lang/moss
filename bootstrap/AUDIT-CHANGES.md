@@ -2695,6 +2695,69 @@ On sameneed-meaning.moss (#51), Audit prints 2, while native and the
 oracle print 1. On sameneed-meaning-agree.moss, Audit and the oracle print
 2 and native prints 1.
 
+**N4: a union with a type-symbol member ("latent identity"; n234 branch, no
+Audit change).** The executable elaborator found that Audit has no reading
+of `fn offered(): T | U` with T abstract (`TyUnion` asks nominal members),
+so it rejects `tests/wasi/functor_latent_identity_copy.moss` and
+`functor_latent_identity_reexport.moss`, which both implementations accept
+(`scratch/elab-STATUS.md`, row N4).
+- **The design.** [D15] (docs/design/semantics.md): union members "must be
+  *nominal* types (units, tags) with distinct heads"; "an abstract type
+  symbol may appear as a member *only if* the context the union is
+  written in already constrains that symbol to a specific nominal type";
+  a bare abstract member is illegal and gets a nominal wrapper instead.
+  [D16] keeps it so: no post-monomorphization distinctness check. Audit's
+  `TyUnion` is exactly this rule (a type symbol is read at its meaning
+  where the union is written, and passes only if that is a nominal). The
+  design log has no other entry on latent identity or disjointness.
+- **The implementations.** The oracle enforces D15 wherever it reads a
+  type for a body ("union member `T` is abstract and not constrained to a
+  nominal type (D15)"), but not where it reads an abstract fn's signature
+  for a functor's result or a copy, so it accepts the two latent tests.
+  Native does not enforce D15 at all, and is unsound on it:
+  [union-latent-overlap](examples/union-latent-overlap.moss) writes
+  `T | A[X=Colour]`, binds T = A[X=I32] and passes a T holding 7; native
+  matches it by head into the `A(y)` arm, reads the I32 as a Colour and
+  exits 3. When T turns out to be U itself
+  ([union-latent-identity](examples/union-latent-identity.moss)) native's
+  head match is consistent (the value is a U) and exits 2. A scalar
+  instantiation (T = I32) falls to the catch-all arm.
+- **The narrowest safe rule.** Head matching goes wrong only when an
+  instantiation of T shares a head with another member at another
+  payload. A requirement-free nominal (`TNom n []`) is determined by its
+  head, so one candidate is: a type-symbol member is allowed when every
+  other member is a nominal without requirements (as U in both latent
+  tests), and a match on such a union needs a catch-all arm for the
+  type-symbol member. It is not small for the proof: `PublicArms` assumes
+  `UnionFormed` (nominal members, distinct heads) of every scrutinee type,
+  `tyof_subst` (PublicTypeRead) shows a union stays formed under
+  substitution, which fails once T may become a member or a union, and
+  `Arms`' exhaustiveness ignores headless members ("every member's head
+  covered"), so a T value could fall through every arm. It would also
+  reverse [D15], an owner decision.
+- **Recommendation.** Keep `TyUnion` as it is (D15). Fix the
+  implementations: the oracle should apply D15 in every type reading
+  (functor results, copies, assumed signatures), and native should
+  enforce D15 (its acceptance of union-latent-overlap is a miscompile).
+  Rewrite the two latent tests with a nominal wrapper, which keeps what
+  they test (an identity copy preserving an interface nothing inhabits):
+  [union-latent-wrapped-copy](examples/union-latent-wrapped-copy.moss) and
+  [union-latent-wrapped-reexport](examples/union-latent-wrapped-reexport.moss)
+  are accepted by the oracle, native and Audit. Since #76 Audit rejects
+  the latent tests at `offered`'s declaration rather than at the copy.
+
+**Audit rejects; both implementations accept (criteria section 7, #74 to
+#77).** decl-ctx-unresolved, decl-ctx-bracket (#74); decl-nest-type,
+decl-nest-tag, decl-nest-incomplete (#75); decl-tag-unresolved,
+decl-tag-union-head, decl-alias-cycle, decl-alias-unresolved,
+decl-val-type, decl-fn-sig, decl-meth-sig, decl-const-bad,
+decl-const-mistyped, decl-const-in-assume, decl-functor-arg,
+decl-functor-res (#76); functor-partial-unused (#77). Each is an unused
+declaration that does not form. Both implementations check a declaration
+where it is used (the oracle also checks context cycles, D73's listed
+parameters and every defined fn at declaration; native expands every
+context). By section 7 they are the ones to change.
+
 **Stale documentation.**
 - The header of kept-output-escape.moss says MadeFor (dropped).
 - The header of output-merge-key.moss describes `fc_roles` (superseded by
