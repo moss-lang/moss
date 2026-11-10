@@ -36,13 +36,19 @@ Local Open Scope nat_scope.
 CoInductive dty : Type := Hold : ty -> dty.
 Definition force (v : dty) : ty := match v with Hold t => t end.
 
-Definition lsubst := list (tsym * dty).
+(* A table of meanings is suspended as a whole too: building one (a
+   call's θ, a capture, an append onto the callee's captured meanings)
+   costs nothing until a type lookup first forces it. *)
+CoInductive lsubst : Type := DS : list (tsym * dty) -> lsubst.
+Definition dforce (s : lsubst) : list (tsym * dty) := match s with DS l => l end.
+Definition dappend (a b : lsubst) : lsubst := DS (dforce a ++ dforce b).
 
-Fixpoint llookup (t : tsym) (s : lsubst) : option dty :=
+Fixpoint llookup_rows (t : tsym) (s : list (tsym * dty)) : option dty :=
   match s with
   | [] => None
-  | (t', v) :: r => if Nat.eqb t t' then Some v else llookup t r
+  | (t', v) :: r => if Nat.eqb t t' then Some v else llookup_rows t r
   end.
+Definition llookup (t : tsym) (s : lsubst) : option dty := llookup_rows t (dforce s).
 
 Definition lget (s : lsubst) (t : tsym) : option ty :=
   match llookup t s with Some v => Some (force v) | None => None end.
@@ -74,16 +80,17 @@ Definition lapp (s : lsubst) (tau : ty) : ty := gapp (lget s) tau.
 (* The suspension of `lapp s tau`: it holds s and tau only. *)
 CoFixpoint ldefer (s : lsubst) (tau : ty) : dty := Hold (lapp s tau).
 
-Definition to_subst (s : lsubst) : subst := map (fun q => (fst q, force (snd q))) s.
-Definition lift_subst (s : subst) : lsubst := map (fun q => (fst q, Hold (snd q))) s.
+Definition to_subst (s : lsubst) : subst := map (fun q => (fst q, force (snd q))) (dforce s).
+Definition lift_subst (s : subst) : lsubst := DS (map (fun q => (fst q, Hold (snd q))) s).
 
 Lemma force_ldefer : forall s tau, force (ldefer s tau) = lapp s tau.
 Proof. reflexivity. Qed.
 
 Lemma lookup_to_subst : forall t s, lookup_subst t (to_subst s) = lget s t.
 Proof.
-  intros t s. induction s as [|[t' v] r IH]; [reflexivity|].
-  cbn. unfold lget. cbn. destruct (Nat.eqb t t'); [reflexivity|exact IH].
+  intros t [l]. unfold to_subst, lget, llookup. cbn [dforce].
+  induction l as [|[t' v] r IH]; [reflexivity|].
+  cbn. destruct (Nat.eqb t t'); [reflexivity|exact IH].
 Qed.
 
 Lemma gapp_spec : forall s get, (forall t, lookup_subst t s = get t) ->
@@ -103,7 +110,8 @@ Proof. intros s tau. apply gapp_spec. intro t. apply lookup_to_subst. Qed.
 
 Lemma to_lift_subst : forall s, to_subst (lift_subst s) = s.
 Proof.
-  intro s. induction s as [|[t tau] r IH]; [reflexivity|]. cbn. f_equal. exact IH.
+  intro s. unfold to_subst, lift_subst. cbn [dforce].
+  induction s as [|[t tau] r IH]; [reflexivity|]. cbn. f_equal. exact IH.
 Qed.
 
 (* ===================== Runtime environments ============================= *)
@@ -166,14 +174,14 @@ Proof.
     induction ps as [|[i p] r IH]; [reflexivity|]. cbn. rewrite to_lift_prov. f_equal. exact IH.
 Qed.
 
-Definition lempty := LEnv [] [] [].
+Definition lempty := LEnv (DS []) (DS []) [].
 Definition lground (d : lenv) (tau : ty) : ty := lapp (lmeanings d) tau.
 Definition lappend (a b : lenv) :=
-  LEnv (lmeanings a ++ lmeanings b) (laliases a ++ laliases b) (lprovs a ++ lprovs b).
+  LEnv (dappend (lmeanings a) (lmeanings b)) (dappend (laliases a) (laliases b)) (lprovs a ++ lprovs b).
 Definition linstall (key : item) (entry : lprov) (d : lenv) :=
   LEnv (lmeanings d) (laliases d) ((key, entry) :: lprovs d).
 Definition ldefer_all (s : lsubst) (th : subst) : lsubst :=
-  map (fun q => (fst q, ldefer s (snd q))) th.
+  DS (map (fun q => (fst q, ldefer s (snd q))) th).
 Definition linstantiate (d : lenv) (th : subst) : lenv :=
   let meanings := ldefer_all (lmeanings d) th in LEnv meanings meanings [].
 Definition ltyped_capture (d : lenv) (types : type_capture) (dc : lenv) : lenv :=
@@ -183,10 +191,23 @@ Definition lprimitive_closure (d : lenv) (i : item) (p : prim) : lprov :=
   LPrimitive p (match p, i with
     | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (lground d tau)
     | _, _ => None end).
+(* item_eqb with a method key's symbols compared before its receiver and
+   θ, so a lookup passes over other methods' entries without comparing
+   types. The same boolean (fast_item_eqb_spec). *)
+Definition fast_item_eqb (a b : item) : bool :=
+  match a, b with
+  | IMth r1 m1 th1, IMth r2 m2 th2 => Nat.eqb m1 m2 && (ty_eqb r1 r2 && subst_eqb th1 th2)
+  | _, _ => item_eqb a b
+  end.
+Lemma fast_item_eqb_spec : forall a b, fast_item_eqb a b = item_eqb a b.
+Proof.
+  intros [] []; try reflexivity. cbn.
+  destruct (Nat.eqb _ _), (ty_eqb _ _), (subst_eqb _ _); reflexivity.
+Qed.
 Fixpoint llookup_entry (i : item) (entries : list (item * lprov)) : option lprov :=
   match entries with
   | [] => None
-  | (key, value) :: rest => if item_eqb i key then Some value else llookup_entry i rest
+  | (key, value) :: rest => if fast_item_eqb i key then Some value else llookup_entry i rest
   end.
 Definition llookup_provision (i : item) (d : lenv) := llookup_entry i (lprovs d).
 Fixpoint lselect_provisions (d : lenv) (sm : smap) : option lenv :=
@@ -204,7 +225,7 @@ Definition ladapt_provisions (d : lenv) (a : option smap) : option lenv :=
   | Some sm => lselect_provisions d sm
   end.
 Definition lbind_type (d : lenv) (t : tsym) (tau : ty) : lenv :=
-  LEnv (lmeanings d) ((t, ldefer (lmeanings d) tau) :: laliases d) (lprovs d).
+  LEnv (lmeanings d) (DS ((t, ldefer (lmeanings d) tau) :: dforce (laliases d))) (lprovs d).
 Definition lcall_environment (d : lenv) (th : subst) (dc : lenv) : lenv :=
   lappend (linstantiate d th) dc.
 Definition loutput_meaning (d : lenv) (source : tsym) : option dty :=
@@ -222,15 +243,15 @@ Definition lapplication_environment (P : program_view) (d : lenv) (h : usym) (th
   let linked := match view_functor P h with Some code => fc_linked code | None => [] end in
   let inputs := match view_functor P h with Some code => fc_inputs code | None => [] end in
   let table := match view_functor P h with Some code => fc_table code | None => [] end in
-  let bases := map (fun source => (source, lbase d linked th dc source)) inputs in
-  let meanings := map (fun source => (source,
+  let bases := DS (map (fun source => (source, lbase d linked th dc source)) inputs) in
+  let meanings := DS (map (fun source => (source,
     match lookup_subst source table with
     | Some t => ldefer bases t
     | None => lbase d linked th dc source
-    end)) inputs in
+    end)) inputs) in
   LEnv meanings meanings (lprovs dc).
 Fixpoint lread_result_types (d : lenv) (Dr : tele) (outputs : list (tsym * tsym))
-    : option (lsubst * lsubst) :=
+    : option (list (tsym * dty) * list (tsym * dty)) :=
   match outputs with
   | [] => Some ([], [])
   | (source, destination) :: rest =>
@@ -244,7 +265,7 @@ Fixpoint lread_result_types (d : lenv) (Dr : tele) (outputs : list (tsym * tsym)
 Definition lresult_environment (outputs : list (tsym * tsym))
     (d3 : lenv) (Dr : tele) (dr : lenv) : option lenv :=
   match lread_result_types d3 Dr outputs with
-  | Some (writes, aliases) => Some (LEnv writes aliases (lprovs dr))
+  | Some (writes, aliases) => Some (LEnv (DS writes) (DS aliases) (lprovs dr))
   | None => None
   end.
 
@@ -263,7 +284,7 @@ Proof. intros [ts a ps]. apply to_env_eq. Qed.
 Lemma ground_to : forall d tau, ground (to_env d) tau = lground d tau.
 Proof. intros d tau. unfold ground, lground. rewrite meanings_to. apply lapp_spec. Qed.
 
-Lemma to_subst_app : forall a b, to_subst (a ++ b) = to_subst a ++ to_subst b.
+Lemma to_subst_app : forall a b, to_subst (dappend a b) = to_subst a ++ to_subst b.
 Proof. intros. apply map_app. Qed.
 Lemma to_provs_app : forall a b, to_provs (a ++ b) = to_provs a ++ to_provs b.
 Proof. intros. apply map_app. Qed.
@@ -271,8 +292,8 @@ Proof. intros. apply map_app. Qed.
 Lemma ldefer_all_to : forall s th,
   to_subst (ldefer_all s th) = map (fun q => (fst q, app_subst (to_subst s) (snd q))) th.
 Proof.
-  intros s th. unfold to_subst, ldefer_all. rewrite map_map. apply map_ext.
-  intros [t tau]. cbn. rewrite lapp_spec. reflexivity.
+  intros s th. unfold ldefer_all. unfold to_subst at 1. cbn [dforce]. rewrite map_map. apply map_ext.
+  intros [t tau]. cbn [fst snd]. rewrite force_ldefer, lapp_spec. reflexivity.
 Qed.
 
 Lemma append_to : forall a b, append_environment (to_env a) (to_env b) = to_env (lappend a b).
@@ -324,7 +345,7 @@ Lemma lookup_entry_to : forall i ps,
   lookup_entry i (to_provs ps) = option_map to_prov (llookup_entry i ps).
 Proof.
   intros i ps. induction ps as [|[j p] r IH]; [reflexivity|].
-  cbn. destruct (item_eqb i j); [reflexivity|exact IH].
+  cbn. rewrite fast_item_eqb_spec. destruct (item_eqb i j); [reflexivity|exact IH].
 Qed.
 
 Lemma lookup_provision_to : forall i d,
@@ -347,7 +368,8 @@ Proof. intros d [sm|]; [apply select_to|reflexivity]. Qed.
 
 Lemma llookup_to : forall t s, lookup_subst t (to_subst s) = option_map force (llookup t s).
 Proof.
-  intros t s. induction s as [|[t' v] r IH]; [reflexivity|].
+  intros t [l]. unfold to_subst, llookup. cbn [dforce].
+  induction l as [|[t' v] r IH]; [reflexivity|].
   cbn. destruct (Nat.eqb t t'); [reflexivity|exact IH].
 Qed.
 
@@ -387,8 +409,8 @@ Proof.
       | None => match output_meaning (to_env dc) source with
         | Some meaning => meaning | None => TAbs source end
       end)) inputs
-    = to_subst (map (fun source => (source, lbase d linked th dc source)) inputs)).
-  { intro l. unfold to_subst. rewrite map_map. apply map_ext. intro source. cbn [fst snd].
+    = to_subst (DS (map (fun source => (source, lbase d linked th dc source)) inputs))).
+  { intro l. unfold to_subst. cbn [dforce]. rewrite map_map. apply map_ext. intro source. cbn [fst snd].
     rewrite lbase_to. reflexivity. }
   assert (Hm : forall l, map (fun source => (source,
       match lookup_subst source table with
@@ -404,12 +426,12 @@ Proof.
             | Some meaning => meaning | None => TAbs source end
           end
       end)) l
-    = to_subst (map (fun source => (source,
+    = to_subst (DS (map (fun source => (source,
       match lookup_subst source table with
-      | Some t => ldefer (map (fun source => (source, lbase d linked th dc source)) inputs) t
+      | Some t => ldefer (DS (map (fun source => (source, lbase d linked th dc source)) inputs)) t
       | None => lbase d linked th dc source
-      end)) l)).
-  { intro l. unfold to_subst at 1. rewrite map_map. apply map_ext. intro source. cbn [fst snd]. f_equal.
+      end)) l))).
+  { intro l. unfold to_subst at 1. cbn [dforce]. rewrite map_map. apply map_ext. intro source. cbn [fst snd]. f_equal.
     destruct (lookup_subst source table).
     - rewrite force_ldefer, <- lapp_spec, <- Hbases. reflexivity.
     - apply lbase_to. }
@@ -418,7 +440,7 @@ Qed.
 
 Lemma read_result_types_to : forall d Dr outputs,
   read_result_types (to_env d) Dr outputs =
-  option_map (fun q => (to_subst (fst q), to_subst (snd q))) (lread_result_types d Dr outputs).
+  option_map (fun q => (to_subst (DS (fst q)), to_subst (DS (snd q)))) (lread_result_types d Dr outputs).
 Proof.
   intros d Dr outputs. induction outputs as [|[source destination] rest IH]; [reflexivity|].
   cbn. destruct (existsb (item_eqb (ITy source)) Dr); [|reflexivity].
