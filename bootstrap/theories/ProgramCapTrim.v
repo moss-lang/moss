@@ -756,7 +756,7 @@ Proof.
 Qed.
 
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
-Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
+Proof. intros. unfold run_prim_at, BaseCall.call. rewrite Hprim by assumption. reflexivity. Qed.
 
 Lemma prim_closure_eq : forall S Dm x d d' i p, envrel T S Dm x d d' ->
   match i with IMth tau _ _ => gok S tau | _ => true end = true ->

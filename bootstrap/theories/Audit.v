@@ -1802,6 +1802,36 @@ Inductive signal : Type :=
    F's result (tests/wasi/copy_extra_key.moss), and no key of the body's is
    read in the caller's terms (tests/wasi/linked_copy_bracket.moss). *)
 
+(* Base's raw host calling convention. Source wrappers are unwrapped on
+   input, and fresh references receive the allocation site's type header. *)
+Module BaseCall.
+Definition raw_receiver (w : value) : value :=
+  match w with
+  | VTag n (VCheckedHandle _ _ a) => VTag n (VHandle a)
+  | _ => w
+  end.
+Definition primitive_arguments (p : prim) (ws : list value) : list value :=
+  match p, ws with
+  | PArrCopy, [r; i; s; j; count] => [raw_receiver r; i; raw_receiver s; j; count]
+  | PDeref, r :: args | PRefSet, r :: args | PArrLen, r :: args
+  | PArrGet, r :: args | PArrSet, r :: args | PArrFill, r :: args => raw_receiver r :: args
+  | _, _ => ws
+  end.
+Definition allocation_result (p : prim) (tau : ty) (o : signal) : signal :=
+  match p, o with
+  | PBox _, Normal (VTag n (VHandle a)) => Normal (VTag n (VCheckedHandle false tau a))
+  | PArrNew _, Normal (VTag n (VHandle a)) => Normal (VTag n (VCheckedHandle true tau a))
+  | _, _ => o
+  end.
+Definition call {S : Type}
+    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    (P : program_view) (p : prim) (ot : option ty)
+    (ws : list value) (st : S) : signal * S :=
+  let '(o, st') := primitive P p (primitive_arguments p ws) st in
+  (match ot with Some tau => allocation_result p tau o | None => o end, st').
+
+End BaseCall.
+
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
    A concrete implementation must prove that its representation refines this
@@ -1857,28 +1887,8 @@ Definition check_tag (P : program_view) (d : environment) (n : nsym) (th : subst
         end
       else Normal (VTag n w)
   end.
-Definition raw_receiver (w : value) : value :=
-  match w with
-  | VTag n (VCheckedHandle _ _ a) => VTag n (VHandle a)
-  | _ => w
-  end.
-Definition primitive_arguments (p : prim) (ws : list value) : list value :=
-  match p, ws with
-  | PArrCopy, [r; i; s; j; count] => [raw_receiver r; i; raw_receiver s; j; count]
-  | PDeref, r :: args | PRefSet, r :: args | PArrLen, r :: args
-  | PArrGet, r :: args | PArrSet, r :: args | PArrFill, r :: args => raw_receiver r :: args
-  | _, _ => ws
-  end.
-Definition allocation_result (p : prim) (tau : ty) (o : signal) : signal :=
-  match p, o with
-  | PBox _, Normal (VTag n (VHandle a)) => Normal (VTag n (VCheckedHandle false tau a))
-  | PArrNew _, Normal (VTag n (VHandle a)) => Normal (VTag n (VCheckedHandle true tau a))
-  | _, _ => o
-  end.
-Definition run_prim_at (P : program_view) (p : prim) (ot : option ty)
-    (ws : list value) (st : mstate) : signal * mstate :=
-  let '(o, st') := run_prim P p (primitive_arguments p ws) st in
-  (match ot with Some tau => allocation_result p tau o | None => o end, st').
+(* Transparent call entry for the interpreter-agreement proofs. *)
+Definition run_prim_at := @BaseCall.call mstate run_prim.
 
 Definition truthy (P : program_view) (w : value) : option bool :=
   match w with

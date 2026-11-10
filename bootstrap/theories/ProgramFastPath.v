@@ -872,7 +872,7 @@ Lemma check_tag_eq : forall S d d' n th w, agree S d d' ->
   check_tag P' d' n th w = check_tag P d n th w.
 Proof. intros S d d' n th w Hd. unfold check_tag, ground. rewrite Hcasts, (ag_tm Hd). reflexivity. Qed.
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
-Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
+Proof. intros. unfold run_prim_at, BaseCall.call. rewrite Hprim by assumption. reflexivity. Qed.
 
 Lemma app_env_rel : forall S d d' h th dc dc', agree S d d' -> lrel dc dc' ->
   lrel (application_environment P d h th dc) (application_environment P' d' h th dc').

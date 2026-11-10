@@ -417,15 +417,15 @@ Proof.
     + split; [exact Raw|apply heap_add_here].
 Qed.
 
-Lemma args_plain : forall p ws, Heap.is_gc p = false -> M.Reference.primitive_arguments p ws = ws.
+Lemma args_plain : forall p ws, Heap.is_gc p = false -> BaseCall.primitive_arguments p ws = ws.
 Proof. intros p ws GC; destruct p; try discriminate; reflexivity. Qed.
 
-Lemma alloc_plain : forall p tau o, Heap.is_gc p = false -> M.Reference.allocation_result p tau o = o.
+Lemma alloc_plain : forall p tau o, Heap.is_gc p = false -> BaseCall.allocation_result p tau o = o.
 Proof. intros p tau o GC; destruct p; try discriminate; reflexivity. Qed.
 
 Lemma raw_receiver_of : forall w s a k h,
   w = VTag s (VHandle a) \/ w = VTag s (VCheckedHandle k h a) ->
-  M.Reference.raw_receiver w = VTag s (VHandle a).
+  BaseCall.raw_receiver w = VTag s (VHandle a).
 Proof. intros w s a k h [-> | ->]; reflexivity. Qed.
 
 
@@ -460,28 +460,28 @@ Proof. intros H a c F; exact F. Qed.
 Lemma run_supported : forall P iface p held ws s,
   M.supports iface p = true ->
   M.Reference.run_prim_at P p held ws (iface, s) =
-    (let '(out, next) := M.primitive iface P p (M.Reference.primitive_arguments p ws) (M.external s) in
-     (match held with Some tau => M.Reference.allocation_result p tau out | None => out end,
+    (let '(out, next) := M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s) in
+     (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
       (iface, M.World (M.arguments s) (M.read_file s) next))).
 Proof.
-  intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim.
-  rewrite Supp. destruct (M.primitive iface P p (M.Reference.primitive_arguments p ws) (M.external s)); reflexivity.
+  intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, BaseCall.call, M.ReferenceHost.run_prim.
+  rewrite Supp. destruct (M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s)); reflexivity.
 Qed.
 
 (* A non-allocating GC operation whose precondition holds at the ghost heap. *)
 Lemma gc_plain : forall W P iface H s p held ws Q t,
   M.interface_laws P iface -> M.supports iface p = true ->
   M.heap_ok iface (heap_predicates W P H) (M.external s) ->
-  Heap.gc_pre (heap_predicates W P H) p (M.Reference.primitive_arguments p ws) Q ->
+  Heap.gc_pre (heap_predicates W P H) p (BaseCall.primitive_arguments p ws) Q ->
   (forall extended w, Heap.gc_post (heap_predicates W P H) extended p Q w -> value_typed W P H w t) ->
-  (forall tau o, M.Reference.allocation_result p tau o = o) ->
+  (forall tau o, BaseCall.allocation_result p tau o = o) ->
   prim_outcome W P iface H t (M.Reference.run_prim_at P p held ws (iface, s)).
 Proof.
   intros W P iface H s p held ws Q t Laws Supp Valid Pre Post Plain.
   rewrite run_supported by exact Supp.
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
-  specialize (GC p (M.Reference.primitive_arguments p ws) (M.external s) _ Q Supp Valid Pre).
-  destruct (M.primitive iface P p (M.Reference.primitive_arguments p ws) (M.external s)) as [out next].
+  specialize (GC p (BaseCall.primitive_arguments p ws) (M.external s) _ Q Supp Valid Pre).
+  destruct (M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s)) as [out next].
   assert (Out : match out with Normal w => exists H', heap_extends H H' /\
       state_ok W P iface H' (iface, M.World (M.arguments s) (M.read_file s) next) /\ value_typed W P H' w t
     | Trap _ | Exit _ | UnsupportedOperation _ | OutOfFuel => True | _ => False end).
@@ -528,7 +528,7 @@ Proof.
   destruct p; try (exfalso; exact Sig).
   - (* PBox *) destruct params as [|heldt [|]]; try (exfalso; exact Sig). destruct Sig as [Sym RT].
     args_inv. rename x into v.
-    rewrite run_supported by exact Supp. cbn [M.Reference.primitive_arguments].
+    rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PBox n) [v] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (PBox n) [v] (M.external s)) as [out next] eqn:Run.
@@ -557,7 +557,7 @@ Proof.
   - (* PArrNew *) destruct params as [|heldt [|count [|]]]; try (exfalso; exact Sig). destruct Sig as [Sym [Count RT]].
     args_inv. rename x into v.
     destruct (I32 H count y Count ltac:(assumption)) as [c ->].
-    rewrite run_supported by exact Supp. cbn [M.Reference.primitive_arguments].
+    rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PArrNew n) [v; VI32 c] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (PArrNew n) [v; VI32 c] (M.external s)) as [out next] eqn:Run.
@@ -638,7 +638,7 @@ Proof.
     [| | |exact (gc_safe W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp
                     GCSig Ground Formed Held Valid Args)].
   - rewrite run_supported by exact Supp. destruct Laws as [_ [_ [Unsupported _]]].
-    specialize (Unsupported c (M.Reference.primitive_arguments (PUnsupported c) ws) (M.external s) Supp).
+    specialize (Unsupported c (BaseCall.primitive_arguments (PUnsupported c) ws) (M.external s) Supp).
     destruct (M.primitive iface _ (PUnsupported c) _ (M.external s)) as [out next].
     cbn in Unsupported. subst out. destruct held; exact I.
   - assert (GC : Heap.is_gc p = false) by exact (signature_plain W params ret p _ (or_introl eq_refl) Plain).
