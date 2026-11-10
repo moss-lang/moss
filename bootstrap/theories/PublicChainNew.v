@@ -32,14 +32,15 @@ Notation ClosureOk := (CC.LR.PA.FS.CopyA.S.ClosureOk W Prog argv read state_ok).
 Definition ChainRealizeOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
-    d1 d2 d3 g3 st3 H3 j',
+    pins d1 d2 d3 g3 st3 H3 j',
   CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C d types H g st ->
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   CC.LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (CC.LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (CC.LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
-  CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
+  CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
+  CC.LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->

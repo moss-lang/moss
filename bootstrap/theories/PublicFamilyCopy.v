@@ -301,10 +301,10 @@ Proof.
   destruct j as [|j1].
   { right. intros rest. rewrite CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.bindings_apply_eq. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_entry W Prog argv read state_ok rr H u gfx _ Ok code sms' dc rms' eq_refl d f Cu ns d1 FC RealU' Fixd) as
-    [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & d2 & Chn & Ok0 & LB & FC0 & FCg & Keys & A2 & RealG)
+    [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & d2 & Chn & Ok0 & [pins [LB PinsOk]] & FC0 & FCg & Keys & A2 & RealG)
     |(h0 & gf0 & Chn & Edc & Fam0 & Ok0)].
   - (* a linked root: run its body *)
-    destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_facts W Prog _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Ch0' & nsh0' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+    destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_facts W Prog _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Ch0' & nsh0' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
       & outs' & gen & Cr' & ks' & binds0 & LD).
     pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
@@ -356,7 +356,7 @@ Proof.
       exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ Cr' ks' C1 o C1' ks1 PR' P1). }
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W u gfx sms' rms' h0 gf0 _ None Chn eq_refl srcs LenR) as [LenU SrcIn].
     destruct (CRz.CSg.FL.CF.CN.CC.chain_selection W Prog argv read state_ok rr (A.link_site Cg Cb outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr' ks'
-      (map (A.rkey_of Cr) ks) rms' (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok rr Cg Cb outs' gen d3 H3 Real3) PR' RR SrcIn)
+      (map (A.rkey_of Cr) ks) rms' _ (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok rr Cg Cb outs' gen d3 H3 Real3) PR' RR SrcIn)
       as [dr Sdr].
     (* the root's level, carried up the chain *)
     assert (Abs0 : CRz.CSg.Abstract W h0)
@@ -367,16 +367,56 @@ Proof.
       2: { destruct CCp as (h' & Cu1 & nsu1 & Ch1 & nsh1 & code' & sms1 & dc' & rms1 & rm1 & gfh1 & E & _).
            injection E as _ _ _ E. destruct rms1; discriminate. }
       2: { destruct CP as (code' & E & _). discriminate. }
-      destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & LB2 & _).
+      destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB2 _]] & _).
       injection E as E1h _ E3h. subst h2 dc2.
-      destruct (CRz.CSg.FL.link_body_parts W Prog _ _ _ LB2) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
+      destruct (CRz.CSg.FL.link_body_parts W Prog _ _ _ _ LB2) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FCu3) as [<- <-].
       rewrite FB in FB3. injection FB3 as _ _ ETy _ _ _.
       intros x tx L1 L2. rewrite ETy in L1. exact (LRd3 x tx L1 L2). }
     assert (ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None)
       by (intros z Iz; rewrite (ThL z (Keys z Iz)); discriminate).
+    (* Q6: the root's pins read as the application's fixed inputs *)
+    assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
+    { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
+      assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
+      { intros y Fy. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
+        rewrite E. exact (FixT y Fu). }
+      (* the closure's environment d2 carries no type meanings *)
+      assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
+      { destruct sms' as [sm'|]; cbn in A2.
+        - exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ A2).
+        - injection A2 as <-. exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
+      destruct E2 as [Em2 Ea2].
+      set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Ch0)) then app_subst Tin (TAbs y)
+                                    else cmeaning dc y)) (map fst (A.c_ty Cg))).
+      assert (Am : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm0).
+      { split.
+        - intros y Fy Ig. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
+          rewrite PublicLinkRun.existsb_eqb_in by exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 y (CRz.CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fy).
+          symmetry. exact (Fix0 y Fy).
+        - intros y Ig Ou. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
+          rewrite PublicLinkRun.existsb_eqb_out by exact Ou. reflexivity. }
+      intros x tx Ip. destruct (proj1 (PinsI x tx) Ip) as [Fx0 _].
+      split; [exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 x (CRz.CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fx0)|].
+      pose proof (PinsOk gm0 Am x tx Ip) as Pa. rewrite (Fix0 x Fx0) in Pa. injection Pa as Pa.
+      transitivity (app_subst gm0 tx); [|exact (eq_sym Pa)].
+      unfold ground. apply subst_agree_on. intros y Iy. cbn [app_subst].
+      destruct (PinG x tx y Ip Iy) as [Ig [Sy [Nm Fy]]].
+      rewrite (CRz.CSg.FL.LRn.link_own_meaning W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made bs _ _ FCgL ItemsL BOL FBL th
+        argv read j1 d (append_environment d2 dc) [] st d3 g3 st3 Run y Ig Sy Nm).
+      unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
+      destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Ch0))) as [Iu|Ou].
+      - rewrite (PublicLinkRun.existsb_eqb_in y (map fst (A.c_ty Ch0)) Iu).
+        rewrite PublicLinkRun.existsb_eqb_in by (apply filter_In; split; [exact Ig|exact (PublicLinkRun.existsb_eqb_in y _ Iu)]).
+        destruct (lookup_subst y th) as [m|] eqn:Lm; [|exfalso; exact (ThDom y Iu Lm)].
+        unfold Tin. cbn [app_subst]. rewrite PublicCopyFresh.lookup_subst_cat, PublicLinkRun.lookup_map_snd, Lm. reflexivity.
+      - rewrite (PublicLinkRun.existsb_eqb_out y (map fst (A.c_ty Ch0)) Ou).
+        rewrite PublicLinkRun.existsb_eqb_out.
+        2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
+             apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
+        unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
     pose proof (CRz.root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
-      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3) as Root.
+      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 th Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn TokTh FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Absd IdemC KMc Cu ns FC LvU Sdr

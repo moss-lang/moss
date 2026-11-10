@@ -204,14 +204,15 @@ Qed.
 Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
   forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
-    d1 d2 d3 g3 st3 H3 j',
+    pins d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C d types H g st ->
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
-  LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
+  LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
+  LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
   LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
@@ -239,14 +240,14 @@ Qed.
 
 (* Every position's source is a body key the body's context provides
    (ResultRealizes), so the selection succeeds. *)
-Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms,
+Lemma chain_selection : forall n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms rds,
   LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n Cb d3 H3 ->
   A.ProvideResult W h0 Ch0 out Cr ks' ->
-  A.ResultRealizes Cb Cr (A.role_reads Cb outs' gen) ks' ->
+  A.ResultRealizes Cb Cr rds ks' ->
   (forall s, In s (closure_sources rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) -> In s (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) ->
   exists dr, select_provisions d3 (result_selection rs rms (LR.PA.FS.CopyA.S.link_sources Cb outs' gen ks')) = Some dr.
 Proof.
-  intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms Real PR RR Rg. apply select_ok. intros [a b] Iq.
+  intros n Cb d3 H3 h0 Ch0 out outs' gen Cr ks' rs rms rds Real PR RR Rg. apply select_ok. intros [a b] Iq.
   destruct (PublicCallerKeys.selection_in _ _ _ _ _ Iq) as [_ Ib]. cbn [snd].
   pose proof (Rg b Ib) as Ib'. unfold LR.PA.FS.CopyA.S.link_sources in Ib'. apply in_map_iff in Ib' as [k' [<- Ik']].
   destruct (RR k' Ik') as [req [act [_ [La _]]]].
@@ -426,7 +427,7 @@ Qed.
 Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCoreOk W Prog argv read state_ok.
 Proof.
   intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3.
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3.
   pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[Abs [Env [Idem KM]]] [Fc _]]]]]].
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
@@ -434,12 +435,12 @@ Proof.
   destruct (LR.PA.FS.CopyA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks')
     ltac:(intros C0 o C0' ks0 P0; unfold LR.PA.FS.CopyA.S.link_sources; rewrite length_map;
           exact (PublicCallerKeys.provide_result_length W h0 _ _ _ _ _ _ _ _ PR' P0))) as [_ Rg].
-  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr ks' (map (A.rkey_of C') ks) rms
+  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 h0 Ch0 _ outs' gen Cr ks' (map (A.rkey_of C') ks) rms _
     Real3 PR' RR Rg) as [dr Sdr].
   destruct (provide_result_news W _ _ _ _ _ PR) as [news [En KMn]].
   pose proof (selection_news u C _ C' ks rms _ d3 dr PR Sdr news En) as Cov.
   pose proof (New F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Sel Sel2 Run Ext Pre3
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En) as EnvN.
   exists dr. split; [exact Sdr|]. split.
   { intros t It. pose proof (proj1 (OutsI t) It) as Ft.
@@ -544,12 +545,13 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
-    d1 d2 d3 g3 st3 H3 j',
+    pins d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
   lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
+  LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
+  LR.PA.FS.CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
   LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
@@ -561,10 +563,10 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
 Theorem family_link_results_ok : FamilyLinkNewOk -> LR.PA.FS.FamilyLinkResultsOk W Prog argv read state_ok.
 Proof.
   intros New C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
-    Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3.
+    Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
-  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) None
+  destruct (chain_selection rr (A.link_site Cg Cb outs' gen) d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) None _
     Real3 PR' RR
     ltac:(intros s0 I0; exact I0)) as [dr Sdr].
   exists dr. split; [exact Sdr|]. split.
@@ -574,7 +576,7 @@ Proof.
     apply in_map_iff in Ik as [k1 [<- Ik1]]. destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
     destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
   - exact (New C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
-      Cb Fb made outs' gen Cr' ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Sel Sel2 Run Ext Pre3 dr Sdr).
+      Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3 dr Sdr).
 Qed.
 
 (* ---- what a run of bindings writes ------------------------------------------- *)

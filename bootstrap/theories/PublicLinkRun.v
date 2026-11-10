@@ -60,6 +60,37 @@ Proof.
   - destruct (Lk x (or_introl eq_refl)) as [_ [Il Th]]. exact (Base x Il Th).
 Qed.
 
+(* Q6: reading a pinned fixed input through the pins. *)
+Lemma lookup_pin_reads_none : forall Cb pins x, ~ In x (map fst pins) -> lookup_subst x (A.pin_reads Cb pins) = None.
+Proof.
+  intros Cb pins x. induction pins as [|[y t] rest IH]; intros N; [reflexivity|]. cbn.
+  destruct (Nat.eqb_spec x y) as [->|Ne]; [exfalso; apply N; left; reflexivity|].
+  apply IH. intros I. apply N. right. exact I.
+Qed.
+Lemma lookup_pin_reads_some : forall Cb pins x v, lookup_subst x (A.pin_reads Cb pins) = Some v ->
+  exists tx, In (x, tx) pins /\ v = A.canon Cb tx.
+Proof.
+  intros Cb pins x v. induction pins as [|[y t] rest IH]; intros L; [discriminate|]. cbn in L.
+  destruct (Nat.eqb_spec x y) as [->|Ne].
+  - injection L as <-. exists t. split; [left; reflexivity|reflexivity].
+  - destruct (IH L) as [tx [I E]]. exists tx. split; [right; exact I|exact E].
+Qed.
+Lemma pin_key_in : forall (pins : subst) x tx, In (x, tx) pins -> In x (map fst pins).
+Proof. intros pins x tx I. change x with (fst (x, tx)). apply in_map. exact I. Qed.
+Lemma lookup_pin_reads_in : forall Cb pins x, In x (map fst pins) -> exists v, lookup_subst x (A.pin_reads Cb pins) = Some v.
+Proof.
+  intros Cb pins x. induction pins as [|[y t] rest IH]; intros I; [contradiction|]. cbn.
+  destruct (Nat.eqb_spec x y) as [->|Ne]; [eauto|]. destruct I as [E|I]; [cbn in E; congruence|exact (IH I)].
+Qed.
+
+Lemma existsb_eqb_in : forall y l, In y l -> existsb (Nat.eqb y) l = true.
+Proof. intros y l I. apply existsb_exists. exists y. split; [exact I|apply Nat.eqb_refl]. Qed.
+Lemma existsb_eqb_out : forall y l, ~ In y l -> existsb (Nat.eqb y) l = false.
+Proof.
+  intros y l N. destruct (existsb (Nat.eqb y) l) eqn:E; [|reflexivity]. exfalso.
+  apply existsb_exists in E as [z [Iz E]]. apply Nat.eqb_eq in E. subst z. exact (N Iz).
+Qed.
+
 Module LinkRun (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CC := PublicChainCore.ChainCore Prims I0.
 
@@ -85,6 +116,38 @@ Proof.
   intros W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B j Pv d g st d' g' st' E x Nx.
   apply (body_meaning_kept j Pv d g st binds d' g' st' E). intros Ix.
   exact (Nx (PublicLinkPins.link_dests_out W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B x Ix)).
+Qed.
+
+(* Q6: an input y of G that is its own merge class and that the body's
+   binds do not make keeps, through the body, the meaning the application
+   environment gives it: θ's reading when F links it, else the closure's. *)
+Lemma link_own_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
+  A.FunCtx W gg Cg nsg ->
+  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
+      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
+  forall (th : subst) argv read j d dc g st d3 g3 st3,
+  CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
+    = inl (d3, g3, st3) ->
+  forall y, In y (map fst (A.c_ty Cg)) -> lookup_subst y (A.c_sub Cg) = None -> ~ In y made ->
+  lookup_subst y (type_meanings d3) = Some
+    (match (if existsb (Nat.eqb y) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg)))
+            then lookup_subst y th else None) with
+     | Some meaning => ground d meaning
+     | None => match output_meaning dc y with Some meaning => meaning | None => TAbs y end
+     end).
+Proof.
+  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg D B FB th argv read j d dc g st d3 g3 st3 Run y Ig Sy Nm.
+  rewrite (body_meaning_kept j _ _ g st binds d3 g3 st3 Run y).
+  2: { intros Iy. exact (Nm (PublicLinkPins.items_dests_made W Prog _ _ _ _ _ _ _ binds D B y Iy)). }
+  assert (V : view_functor (program_of Prog argv read) h = A.funbody_of Prog h) by reflexivity. rewrite FB in V.
+  unfold application_environment. rewrite V. cbn [type_meanings fc_inputs fc_linked fc_table].
+  rewrite lookup_map_key_nat by exact Ig.
+  destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG _].
+  destruct (A.nlook y (A.c_ty Cg)) as [ty|] eqn:Ly; [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ y _) Ig Ly)].
+  rewrite lookup_subst_nlook', Ly. f_equal.
+  rewrite (TblG y ty Ly). cbn [app_subst]. rewrite Sy. cbn [app_subst].
+  rewrite lookup_map_key_nat by exact Ig. reflexivity.
 Qed.
 
 (* The run fact (realize3, extracted from linknewpf's family_link_new_ok):

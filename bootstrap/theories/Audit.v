@@ -3600,7 +3600,7 @@ Record frame := Frame {
   fr_mod : string; fr_ret : option ty; fr_this : option ty; fr_loop : bool;
   fr_var : list (name * nat); fr_fresh : list nat;
   fr_applying : list nat;   (* functors being applied by name: [D55] no cycle *)
-  fr_pins : list nat        (* in a body bound to F: M(F), which it may not rebind ([D84] 3d) *)
+  fr_pins : list nat        (* in a body bound to F: P(F) ∩ M(F) and the fixed inputs G takes, which it may not rebind ([D84] 3d, Q6) *)
 }.
 
 (* a local's number, for a name the numbering covers ([Named]) *)
@@ -4091,6 +4091,13 @@ Definition CopyOutputs (W : world) (sigma : subst) (u h : nat) (Cu : cx) (rm : l
    binds `T = Bool` provides `mk(): T` as `mk(): Bool`. *)
 Definition role_reads (site : cx) (outs : list nat) (gen : nat -> nat) : subst :=
   map (fun t => (gen t, canon site (app_subst (c_ty site) (TAbs (gen t))))) outs.
+(* Q6: a fixed input of F that the body pins (binds, though G does not take
+   it) is compared at the pin, canonically: a body that pins `Tok = Char`
+   provides `tok(): Tok` as `tok(): Char` (examples/pin-fixed-agree.moss).
+   Every application reads Tok as the bind site did (rule 5), and the bind
+   site's reading is the pin's (BFunClosure), so the two agree. *)
+Definition pin_reads (body : cx) (pins : subst) : subst :=
+  map (fun q => (fst q, canon body (snd q))) pins.
 (* Where a linked body's result key is read (LinkBody): an output role
    (gen t) at the body's final table (a body that binds T = Bool provides
    T.m as Bool.m), every symbol at G's own readings. An input's meaning at
@@ -4696,7 +4703,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
    keys' receivers included, so a captured need keyed at a declared symbol
    not in force reads as it was provided (examples/functor-captured-unbound.moss,
    family4-AUDIT.md). *)
-| BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
+| BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     (* F's and G's contexts, as the world records them (LinkBody states
@@ -4705,7 +4712,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
-    LinkBody W P u gg h ->
+    LinkBody W P u gg h pins ->
     (* the linked needs: those of G that are F's, read through F's merge *)
     sm = map (fun k => (rkey_of Cg k, rkey_of Cu (canon_item Cu k))) (filter (fun k => existsb (item_eqb (canon_item Cu k)) nsu) nsg) ->
     (* 3b: the captured needs are answered here as a call would answer
@@ -4718,6 +4725,13 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
        captured here, so each is in force here, through G's merge class
        (inputs F takes are linked at each application) *)
     (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> InForceThrough C Cg x) ->
+    (* Q6: each pin of a fixed input agrees with the bind site: the
+       input's meaning here is the pin's, read with G's types as they are
+       here (the oracle's link check, "it binds `Tok` to ..., and here
+       `Tok` is ..."; examples/pin-fixed-disagree.moss) *)
+    (forall x tx, In (x, tx) pins -> exists here, nlook x (c_ty C) = Some here /\
+       (forall y, In y (gens tx) -> nlook y (c_ty C) <> None) /\
+       canon C here = canon C (app_subst (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg)) tx)) ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
 
 (* [D66] a fn provider: a defined fn (its needs answered here), or an
@@ -4819,10 +4833,10 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
    formed from its own inputs, each output of F as itself — producing the
    core functor body h: its result telescope (F's output types, then F's
    result items), and its binds.  3b: no captured item mentions a type
-   that applications supply; 3d: pins may not rebind M(F); 3e: every item
+   that applications supply; 3d: pins may not rebind P(F) ∩ M(F) (Q6); 3e: every item
    of F's result is made by the binds, at the types F promises. *)
-with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
+with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
+| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
     (* 3b: a captured item (value, fn, method or functor) may mention fixed
@@ -4853,7 +4867,11 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     fr_this Fg = None -> fr_loop Fg = false ->
     (* its locals are numbered as a body's are *)
     Numbering Fg None [] ->
-    (forall x, In x (fr_pins Fg) <-> Mentions W u x) ->
+    (* 3d, Q6: the pins Π are the polymorphic types F's result mentions,
+       P(F) ∩ M(F), and the fixed ones G takes itself; a fixed input G does
+       not take may be pinned (bound by the body), and BFunClosure checks
+       that the pin agrees with the bind site *)
+    (forall x, In x (fr_pins Fg) <-> Mentions W u x /\ (Poly W u x \/ In x (map fst (c_ty Cg)))) ->
     BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
     (* no generation the body makes is an input of F: each application
        supplies F's inputs, and a body write would replace one under a
@@ -4867,7 +4885,8 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
     (forall t, In t outs -> Fresh W (gen t)) ->
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
     (* Every output has the promised signature and known type meanings. *)
-    ResultRealizes (link_site Cg Cb outs gen) Cr (role_reads (link_site Cg Cb outs gen) outs gen) ks ->
+    ResultRealizes (link_site Cg Cb outs gen) Cr
+      (role_reads (link_site Cg Cb outs gen) outs gen ++ pin_reads Cb pins) ks ->
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->
@@ -4880,7 +4899,17 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> Prop :=
       (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
       (map ITy outs) binds0
       (map (fun k => rkey_of (link_site Cg Cb outs gen) (at_site (link_site Cg Cb outs gen) k)) ks)) ->
-    LinkBody W P u gg h.
+    (* the pins of fixed inputs: what the body binds each to *)
+    (forall x tx, In (x, tx) pins <->
+       Fixed W u x /\ ~ In x (map fst (c_ty Cg)) /\ nlook x (c_ty Cb) = Some tx) ->
+    (* a pin is a type over G's own inputs (each its own merge class),
+       none of them an input of F that applications supply (as the oracle:
+       "a type each application ... supplies") nor a generation the body
+       makes *)
+    (forall x tx y, In (x, tx) pins -> In y (gens tx) ->
+       In y (map fst (c_ty Cg)) /\ lookup_subst y (c_sub Cg) = None /\ ~ In y made /\
+       (In y (map fst (c_ty Cu)) -> Fixed W u y)) ->
+    LinkBody W P u gg h pins.
 
 (* ======================================================================== *)
 (* V.7 Programs                                                              *)
@@ -5089,7 +5118,7 @@ Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
 | NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
 | NCLambda : forall F C ps rt body sg this pid pre sm,
     LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
-| NCBody : forall u gg h Cg nsg, LinkBody W P u gg h -> w_context W gg = Some (Cg, nsg) ->
+| NCBody : forall u gg h pins Cg nsg, LinkBody W P u gg h pins -> w_context W gg = Some (Cg, nsg) ->
     NodeCx W P (CodeFunctor h) Cg.
 
 (* Merges are edges too (criteria section 2, coherence).  Within a node,

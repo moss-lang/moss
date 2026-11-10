@@ -121,7 +121,7 @@ Proof.
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC In' Th Fix Sat FF Inj Outs Nd OutsI PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx]; intros Fc Ff.
+                  |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff.
     + (* bind T = tau *)
       assert (Sv : forall y, In y (gens (canon C tau)) -> In y (scope_gens C)).
       { intros y Iy. destruct (gens_canon C tau y Iy) as [I|I]; [exact (ty_scope C y (tyof_none_gens W _ _ _ _ T y I))|exact I]. }

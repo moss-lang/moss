@@ -171,14 +171,22 @@ Definition CopySite (u h : nat) (Cu : A.cx) (rm : list nat) (gfx gfh : subst) : 
     (* u is abstract (only an abstract functor is bound) *)
     (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)).
 
+(* Q6: a linked body's pins of fixed inputs (each a type over G's inputs:
+   fixed inputs of u, read as gfx says, and captured ones, LinkBody) mean,
+   at any application's meanings, what the closure's fixed readings give
+   the pinned input. *)
+Definition PinsAgree (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx pins : subst) : Prop :=
+  forall gm, AppMeanings u Cu Cg dc gfx gm ->
+  forall x tx, In (x, tx) pins -> lookup_subst x gfx = Some (app_subst gm tx).
+
 (* A functor closure is applicable (structurally: its captured functors
    are subterms). ClosureOk n H0 u gfx pv: pv, provided for u with its
    fixed inputs meaning what gfx says, is a body linked for u whose
    captures are realized at n and H0 under any application's meanings, a
    copy of an applicable closure, or a platform family. *)
 Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_value -> Prop :=
-| CLink : forall u gg h Cu nsu Cg nsg dc gfx,
-    A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+| CLink : forall u gg h Cu nsu Cg nsg dc gfx pins,
+    A.LinkBody W Prog u gg h pins -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
     (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
     (* u is abstract (BFunClosure binds only an abstract functor) *)
     (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
@@ -191,6 +199,8 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
          lookup_provision (A.rkey Cg r m) dc = Some pv /\ CallableOk n H0 (denv gm) (r :: A.sg_params g) (A.sg_ret g) pv)) ->
     (forall gm, AppMeanings u Cu Cg dc gfx gm ->
       CapturedFuns n H0 gm dc (captured_funs Cg (captured Cu nsu nsg))) ->
+    (* Q6: each pin of a fixed input means what u's fixed reading says *)
+    PinsAgree u Cu Cg dc gfx pins ->
     ClosureOk n H0 u gfx (FunctorClosure h
       (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg))) dc None)
 | CCopy : forall u h Cu nsu Ch nsh code sms dc rms rm gfx gfh,
@@ -357,8 +367,8 @@ Lemma closure_lower : forall n m H0 H1, m <= n -> heap_extends H0 H1 ->
 Proof.
   intros n m H0 H1 Le Ext.
   apply (closure_ok_mut n H0 (fun u gfx pv _ => ClosureOk m H1 u gfx pv) (fun gm dc l _ => CapturedFuns m H1 gm dc l)).
-  - intros u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn AbU Caps _ IH.
-    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn AbU); [|exact IH].
+  - intros u gg h Cu nsu Cg nsg dc gfx pins LB FCu FCg FxIn AbU Caps _ IH PinsOk.
+    apply (CLink m H1 u gg h Cu nsu Cg nsg dc gfx pins LB FCu FCg FxIn AbU); [|exact IH|exact PinsOk].
     intros gm Am. destruct (Caps gm Am) as [Vals [Fns Mths]]. split; [|split].
     + intros v t I L. destruct (Vals v t I L) as [w [Look T]]. exists w. split; [exact Look|].
       eapply value_typed_extends; eassumption.
@@ -3348,14 +3358,14 @@ Lemma bindings_functor_eq : forall j d g st u h types sm smc r,
   end.
 Proof. reflexivity. Qed.
 
-Lemma link_3b : forall u gg h, A.LinkBody W Prog u gg h -> exists Cu nsu Cg nsg,
+Lemma link_3b : forall u gg h pins, A.LinkBody W Prog u gg h pins -> exists Cu nsu Cg nsg,
   A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
   (forall k p t, In k nsg -> ~ In (A.canon_item Cu k) nsu -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
      In t (A.provision_gens p ++ match k with IMth r _ _ => A.gens r | _ => [] end)%list ->
      A.nlook t (A.c_ty Cu) <> None -> A.Fixed W u t).
 Proof.
-  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
+  intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins
+    Dg Ast FCu FCg B3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _].
   exists Cu, nsu, Cg, nsg. split; [exact FCu|]. split; [exact FCg|exact B3].
 Qed.
 
@@ -3387,7 +3397,7 @@ Proof.
   destruct I as [E|I]; [injection E as _ <-; left; reflexivity|right; exact (IH ss a b I)].
 Qed.
 
-Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 : Prop :=
+Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins : Prop :=
   A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
   (forall k, In k nsg -> In (A.canon_item Cu k) nsu ->
      option_map (A.canon_provision Cu) (A.ilook (A.provision_id k) (A.c_provisions Cg)) =
@@ -3402,22 +3412,29 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
   NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
   A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
-  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen) ks /\
+  A.ResultRealizes (A.link_site Cg Cb outs gen) Cr
+    (A.role_reads (A.link_site Cg Cb outs gen) outs gen ++ A.pin_reads Cb pins) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
       (map ITy outs) binds0
       (link_sources (A.link_site Cg Cb outs gen) outs gen ks)) /\
-  (forall t, In t made -> A.nlook t (A.c_ty Cu) = None).
+  (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) /\
+  (* Q6: the pins of fixed inputs, and what they mention *)
+  (forall x tx, In (x, tx) pins <->
+     A.Fixed W u x /\ ~ In x (map fst (A.c_ty Cg)) /\ A.nlook x (A.c_ty Cb) = Some tx) /\
+  (forall x tx y, In (x, tx) pins -> In y (A.gens tx) ->
+     In y (map fst (A.c_ty Cg)) /\ lookup_subst y (A.c_sub Cg) = None /\ ~ In y made /\
+     (In y (map fst (A.c_ty Cu)) -> A.Fixed W u y)).
 
-Lemma link_facts : forall u gg h, A.LinkBody W Prog u gg h -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
-  LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0.
+Lemma link_facts : forall u gg h pins, A.LinkBody W Prog u gg h pins -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
+  LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins.
 Proof.
-  intros u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB].
+  intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins
+    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR RR BO Fam FrH FB PinsI PinG].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   refine (conj FCu (conj FCg (conj LPeq (conj (fun x tx L1 L2 _ => proj2 (LRd x tx L1 L2)) (conj Dg (conj Ast (conj Mod (conj Ret (conj This (conj Loop
-    (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO (conj FB MadeU)))))))))))))))))))).
+    (conj Num (conj Items (conj Outs (conj OutM (conj NdG (conj FrG (conj PR (conj RR (conj BO (conj FB (conj MadeU (conj PinsI PinG)))))))))))))))))))))).
 Qed.
 
 Lemma functx_unique : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
@@ -3445,32 +3462,35 @@ Qed.
 
 (* BFunClosure reads F's and G's contexts from the world; LinkBody states
    that they are their FunCtx. *)
-Lemma link_body_functx : forall u gg h Cu nsu Cg nsg, A.LinkBody W Prog u gg h ->
+Lemma link_body_functx : forall u gg h pins Cu nsu Cg nsg, A.LinkBody W Prog u gg h pins ->
   A.w_context W u = Some (Cu, nsu) -> A.w_context W gg = Some (Cg, nsg) ->
   A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg.
 Proof.
-  intros u gg h Cu nsu Cg nsg LB Wu Wg.
-  destruct LB as [u0 gg0 h0 dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0 Dg Ast FCu FCg].
+  intros u gg h pins Cu nsu Cg nsg LB Wu Wg.
+  destruct LB as [u0 gg0 h0 dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0 pins0 Dg Ast FCu FCg].
   pose proof FCu as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Wu').
   pose proof FCg as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Wg').
   rewrite Wu in Wu'. rewrite Wg in Wg'. injection Wu' as E1 E2. injection Wg' as E3 E4. subst. split; assumption.
 Qed.
 
-Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h sm smc fx,
+Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx,
   A.resolve_sym W (A.fr_mod F) pa = Some u -> A.resolve_sym W (A.fr_mod F) pg = Some gg ->
       (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
       A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
       A.SameResult W u gg ->
-      A.LinkBody W Prog u gg h ->
+      A.LinkBody W Prog u gg h pins ->
       sm = map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (filter (fun k => existsb (item_eqb (A.canon_item Cu k)) nsu) nsg) ->
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (filter (fun k => negb (existsb (item_eqb (A.canon_item Cu k)) nsu)) nsg) smc ->
       (forall x tx, In (x, tx) fx <-> A.Fixed W u x /\ A.nlook x (A.c_ty C) = Some tx) ->
+      (forall x tx, In (x, tx) pins -> exists here, A.nlook x (A.c_ty C) = Some here /\
+         (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty C) <> None) /\
+         A.canon C here = A.canon C (app_subst (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg)) tx)) ->
   forall J rr, rr <= S k -> BindStep J rr F C F (A.set_fun C u fx) False [] (BFunctor u h (A.lexical_capture C) sm smc).
 Proof.
-  intros k _ F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx J rr _.
+  intros k _ F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx PinA J rr _.
   split; [repeat split|]. split; [split; intros t0 _ g0 []|].
   intros j d types H g st Lj LJ Pre0 rest. rewrite bindings_functor_eq.
   pose proof Pre0 as [Frame [Ctx [L [St [Real Fmd]]]]]. pose proof Ctx as [_ [_ Al]].
@@ -3483,7 +3503,7 @@ Proof.
   assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ ~ In (A.canon_item Cu k0) nsu).
   { intros k0 I. exact (proj1 (captured_spec Cu nsu nsg k0) I). }
   (* 3b, read at our contexts *)
-  destruct (link_3b _ _ _ LB) as [Cu' [nsu' [Cg' [nsg' [FCu' [FCg' B3]]]]]].
+  destruct (link_3b _ _ _ _ LB) as [Cu' [nsu' [Cg' [nsg' [FCu' [FCg' B3]]]]]].
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
   (* the caller provides every captured need *)
   assert (Caller : forall k0, In k0 caps -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k0)) d = Some pv).
@@ -3532,6 +3552,32 @@ Proof.
     change (app_subst (type_meanings d) (A.canon C tx)) with (ground d (A.canon C tx)). rewrite (Abs tx).
     rewrite (Am1 x Fu (Sc x Ix)). unfold gfx. rewrite (lookup_ground_fixed _ fx x tx FunFx (proj2 (Fx x tx) (conj Fu Lx))).
     reflexivity. }
+  (* Q6: a pin of a fixed input means, under the fixed readings, what the
+     bind site's reading of the input does *)
+  assert (PinsOk : PinsAgree u Cu Cg dc gfx pins).
+  { destruct (link_facts _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+      & outs & gen & Cr & ks & binds0 & LD).
+    pose proof LD as (FCu2 & FCg2 & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PinsI & PinG).
+    destruct (functx_unique _ _ _ _ _ FCu FCu2) as [E1 E2]. destruct (functx_unique _ _ _ _ _ FCg FCg2) as [E3 E4]. subst Cu' nsu' Cg' nsg'.
+    intros gm [Am1 Am2] x tx Ip.
+    destruct (proj1 (PinsI x tx) Ip) as [Fx0 _].
+    destruct (PinA x tx Ip) as [here [Lh [InF Eh]]].
+    unfold gfx. rewrite (lookup_ground_fixed _ fx x here FunFx (proj2 (Fx x here) (conj Fx0 Lh))). f_equal.
+    fold gfx. change (ground d here = app_subst gm tx). symmetry.
+    rewrite <- (Abs here), Eh, (Abs _). unfold ground.
+    rewrite <- (subst_through tx (type_meanings d) th).
+    2: { intros y Iy. rewrite (Lth y (proj1 (PinG x tx y Ip Iy))). discriminate. }
+    apply subst_agree_on. intros y Iy. cbn [app_subst].
+    rewrite (lookup_map_snd (app_subst (type_meanings d))), (Lth y (proj1 (PinG x tx y Ip Iy))). cbn [option_map].
+    destruct (PinG x tx y Ip Iy) as [Ig [_ [_ Fy]]].
+    destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Cu))) as [Iu|Ou].
+    - pose proof (Fy Iu) as Fyy. rewrite (Am1 y Fyy Ig).
+      destruct (A.nlook y (A.c_ty C)) as [ty|] eqn:Ly; [|exfalso; exact (FixU y Fyy Ly)].
+      replace (app_subst (A.c_ty C) (TAbs y)) with ty by (cbn [app_subst]; rewrite (lookup_subst_nlook' y (A.c_ty C)), Ly; reflexivity).
+      change (app_subst (type_meanings d) (A.canon C ty)) with (ground d (A.canon C ty)). rewrite (Abs ty).
+      unfold gfx. rewrite (lookup_ground_fixed _ fx y ty FunFx (proj2 (Fx y ty) (conj Fyy Ly))). reflexivity.
+    - rewrite (Am2 y Ig Ou). unfold dc.
+      rewrite (cmeaning_capture d C dsel y Abs (or_introl (InF y Iy))). reflexivity. }
   set (d' := install_provision (IFun u) (FunctorClosure h (Some sm) dc None) d).
   exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
   change (A.set_fun C u fx) with (set_cx C (IFun u) (A.ProvidedFunctor fx)).
@@ -3544,7 +3590,7 @@ Proof.
   - reflexivity.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure h (Some sm) dc None), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
-    + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx LB FCu FCg).
+    + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx pins LB FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
       { exact U. }
       * intros gm Am. split; [|split].
@@ -3632,6 +3678,7 @@ Proof.
             + intros y Iy. cbn. rewrite app_nil_r. apply in_flat_map. exists (x, Some tx). split; [exact (fixed_app_in _ _ _ Ixt)|exact Iy].
             + destruct (ScG _ _ InP) as [_ [_ Sf]]. exact (Sf x tx Ixt). }
         apply Gen. intros x Ix. exact Ix.
+      * exact PinsOk.
     + split.
       * intros x Fu. destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
         exists tx. exact (proj2 (Fx x tx) (conj Fu Lx)).
@@ -3749,8 +3796,8 @@ Qed.
    links come from F's realized context, the captured ones from the
    closure. The body reads each input through G's table (fc_table), so
    G's merges hold by construction. *)
-Lemma link_entry : forall rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2,
-  A.LinkBody W Prog u gg h -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+Lemma link_entry : forall rr H d th d1 u gg h pins Cu nsu Cg nsg dc gfx d2,
+  A.LinkBody W Prog u gg h pins -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   map fst th = map fst (A.c_ty Cu) ->
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
   Realizes rr Cu (callee_env d th d1) H ->
@@ -3766,8 +3813,8 @@ Lemma link_entry : forall rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2,
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg)) = Some d2 ->
   Realizes rr Cg (application_environment P d h th (append_environment d2 dc)) H.
 Proof.
-  intros rr H d th d1 u gg h Cu nsu Cg nsg dc gfx d2 LB FCu FCg Keys FxIn RealU Gfx Caps CF Sel.
-  destruct (link_facts _ _ _ LB) as (dg & n0 & ps & a & rspec & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+  intros rr H d th d1 u gg h pins Cu nsu Cg nsg dc gfx d2 LB FCu FCg Keys FxIn RealU Gfx Caps CF Sel.
+  destruct (link_facts _ _ _ _ LB) as (dg & n0 & ps & a & rspec & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs & gen & Cr & ks & binds0 & FCu' & FCg' & LPeq & LRd & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & FB & _).
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
   destruct (functx_static _ _ _ FCg) as [[CanG DomG] [CnG [KMg [NdG [ProvNsG [ShapeG [ScG FixG]]]]]]].
@@ -4003,7 +4050,7 @@ Proof. reflexivity. Qed.
 Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists gg h Cu nsu Cg nsg dc,
      pv = FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg))) dc None /\
-     A.LinkBody W Prog u gg h /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
+     (exists pins, A.LinkBody W Prog u gg h pins /\ PinsAgree u Cu Cg dc gfx pins) /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
      (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) /\
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
         (forall v t, In (IVal v) (captured Cu nsu nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
@@ -4024,10 +4071,10 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists code, pv = FunctorClosure code None (EnvironmentWithAliases [] [] []) None /\ Platform.Family W Prog u code /\
      PlatformFixed u gfx).
 Proof.
-  intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx LB FCu FCg FxIn _ Caps CF
+  intros n H0 u gfx pv Ok. destruct Ok as [u gg h Cu nsu Cg nsg dc gfx pins LB FCu FCg FxIn _ Caps CF PinsOk
     |u h Cu nsu Ch nsh code sms dc rms rm gfx gfh Okh FCu FCh Incl Fx SN ST _ _|u code gfx Fam Mach].
   - left. exists gg, h, Cu, nsu, Cg, nsg, dc. split; [reflexivity|].
-    exact (conj LB (conj FCu (conj FCg (conj FxIn (conj Caps CF))))).
+    exact (conj (ex_intro _ pins (conj LB PinsOk)) (conj FCu (conj FCg (conj FxIn (conj Caps CF))))).
   - right; left. exists h, Cu, nsu, Ch, nsh, code, sms, dc, rms, rm, gfh. split; [reflexivity|].
     exact (conj Okh (conj FCu (conj FCh (conj Incl (conj Fx (conj SN ST)))))).
   - right; right. exists code. split; [reflexivity|exact (conj Fam Mach)].
@@ -4037,7 +4084,7 @@ Qed.
 Lemma closure_link_abstract : forall n H0 u gfx h sm dc, ClosureOk n H0 u gfx (FunctorClosure h (Some sm) dc None) ->
   exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None).
 Proof.
-  intros n H0 u gfx h sm dc Ok. inversion Ok as [u' gg h' Cu nsu Cg nsg dc' gfx' LB FCu FCg FxIn AbU Caps CF
+  intros n H0 u gfx h sm dc Ok. inversion Ok as [u' gg h' Cu nsu Cg nsg dc' gfx' pins LB FCu FCg FxIn AbU Caps CF PinsOk
     |u' h' Cu nsu Ch nsh code sms dc' rms rm gfx' gfh Okh FCu FCh Incl Fx SN ST CO InCu Same Site|u' code gfx' Fam Mach PR]; subst.
   exact AbU.
 Qed.
@@ -4790,7 +4837,7 @@ Proof.
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx CapF]; intros FD.
+                  |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx CapF PinA]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
       apply (chain_weaken k F C F _ False); [|tauto]. apply single_chain. intros r _. apply type_bstep. exact FD.
     + exists [BValue v x]. split; [reflexivity|].
@@ -4816,8 +4863,8 @@ Proof.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same SameN SameT Sm Fx CO Sub J).
     + exists [BFunctor u h (A.lexical_capture C) sm smc]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
-      destruct (link_body_functx u gg h Cu nsu Cg nsg LB FCu FCg) as [FCu' FCg'].
-      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx J).
+      destruct (link_body_functx u gg h pins Cu nsu Cg nsg LB FCu FCg) as [FCu' FCg'].
+      exact (case_BFunClosure k Bel F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx R1 R2 U FCu' FCg' FixU Same LB Sm SatC Fx PinA J).
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 Rest].
     + exists []. split; [reflexivity|]. constructor. apply frame_same_refl.
     + destruct (item_chain k Bel Ap _ _ _ _ _ _ _ D1) as [bs1 [E1 Ch1]].
@@ -4841,12 +4888,12 @@ End Cap.
    realized. *)
 Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   AppPremises F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st h dc gfx gg dg n ps a r bodies nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j',
+  forall rr d types H g st h dc gfx gg dg n ps a r bodies nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j',
   Pre rr F C d types H g st ->
   lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg))) dc None) ->
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg))) dc None) ->
   FixedMeans u d fx gfx ->
-  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 ->
+  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins -> PinsAgree u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg)) = Some d2 ->
   AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
@@ -4909,7 +4956,7 @@ Proof.
          gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Look Okh FCu0 FCh Incl FxC SN ST Fm). }
   2: { destruct CP as (code & -> & Fam & _).
        exact (platform_apply k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0 code Look Fam). }
-  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
+  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & [pins [LB PinsOk]] & FCu0 & FCg & FxIn & Caps & CF).
   destruct (functx_unique _ _ _ _ _ FC FCu0) as [<- <-].
   intros rest. rewrite bindings_apply_eq.
   destruct j as [|j1].
@@ -4917,7 +4964,7 @@ Proof.
   subst th. set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) in *.
   destruct (static_realizes_le rr rr C d H u Cu ns sm th (le_n _) Real (functx_static _ _ _ FC) Sat
     (apply_theta C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
-  destruct (link_facts _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+  destruct (link_facts _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr & ks' & binds0 & LD).
   pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (functx_unique _ _ _ _ _ FC FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
@@ -4938,7 +4985,7 @@ Proof.
     rewrite Lx. cbn [option_map].
     replace (app_subst (A.c_ty C) (TAbs x)) with here by (cbn [app_subst]; rewrite lookup_subst_nlook', Lh; reflexivity).
     f_equal. rewrite <- (Abs tx), <- Ceq. reflexivity. }
-  pose proof (link_entry rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2 LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
+  pose proof (link_entry rr H d th d1 u gg h pins Cu ns Cg nsg dc gfx d2 LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
   set (de := application_environment P d h th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
@@ -4967,7 +5014,7 @@ Proof.
     assert (Run : AR.O.I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
     destruct (link_results F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st h dc gfx gg dg n0 ps0 a0 rs bodies
-      nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
+      nsg Cg Fg wrap Cb Fb made outs' gen Cr ks' bs pins d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm LD PinsOk Sel Sel2 Run E3 Pre3)
       as [dr [result [Sdr [Rres [PreC GrowC]]]]].
     rewrite Sdr, Rres. left. exists (append_environment result d), g, st3, H3.
     split; [exact E3|]. split; [exact GrowC|]. split; [exact PreC|reflexivity].

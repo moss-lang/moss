@@ -161,7 +161,7 @@ Qed.
 (* The only node with a context is main, whose context merges nothing. *)
 Lemma node_cx_unmerged : forall n C, NodeCx world_main AuditExamples.unit_program n C -> c_sub C = [].
 Proof.
-  intros n C H. destruct H as [f C ns Ctx|F C ps rt body sg this pid pre sm Lam|u gg h Cg nsg Link Ctx].
+  intros n C H. destruct H as [f C ns Ctx|F C ps rt body sg this pid pre sm Lam|u gg h pins Cg nsg Link Ctx].
   - cbn in Ctx. destruct (Nat.eqb f 1); [injection Ctx as <- _; reflexivity|discriminate].
   - exfalso. inversion Lam; subst.
     match goal with

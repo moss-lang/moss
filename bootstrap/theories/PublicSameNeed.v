@@ -163,13 +163,13 @@ Qed.
 
 (* `bind F = G;`: LinkBody's input-reading clause rules the ambiguous case
    out. *)
-Corollary link_need_unambiguous : forall P u gg h, A.LinkBody W P u gg h ->
+Corollary link_need_unambiguous : forall P u gg h pins, A.LinkBody W P u gg h pins ->
   forall Cu nsu Cg nsg, A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   forall k1 k2, A.canon_item Cg k1 = A.canon_item Cg k2 ->
   In (A.canon_item Cu k1) nsu -> In (A.canon_item Cu k2) nsu -> A.canon_item Cu k1 = A.canon_item Cu k2.
 Proof.
-  intros P u gg h LB Cu nsu Cg nsg FCu FCg.
-  destruct LB as [u gg h dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0
+  intros P u gg h pins LB Cu nsu Cg nsg FCu FCg.
+  destruct LB as [u gg h dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0 pins0
     Dg Ast FCu' FCg' _ _ LRd].
   destruct (functx_same _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_same _ _ _ _ _ FCg FCg') as [<- <-].
   apply (need_unambiguous Cu nsu Cg (functx_formed _ _ _ FCu) (functx_formed _ _ _ FCg)).

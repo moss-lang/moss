@@ -111,6 +111,7 @@ entry they belong to.
 | 60 | **Rule B: a use needs the item's type requirements in force; demands read needs through θ; a closure's captured inputs in force** | lang-b | **B** (with the oracle; native E42) |
 | 61 | Merging two entries of one item unifies their instantiations (Δ4, D43) | lang-b | B and C (coherence; with the oracle; native E43) |
 | 70 | A defined method is not bound (`BMethBind`) | lang-q | B (native accepts; E70) |
+| 71 | A body may pin a fixed input that agrees with the bind site (`LinkBody` pins Π = P(F) ∩ M(F), `BFunClosure` agreement) | lang-q | relaxation toward both implementations (Audit used to reject every program binding `StdBase`) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch.
 
@@ -1938,6 +1939,102 @@ executable tests unless noted.
 - **Proof.** `public_safety` unchanged: the premise is BMethBind's last,
   and no proof reads it.
 - **Class B** (native accepts bind-attached-defined; E70 below).
+
+### 71. A body may pin a fixed input that agrees with the bind site (`LinkBody`, `BFunClosure`; lang-q branch; semantics.typ Q6)
+- **Rule now.**
+  - `LinkBody`'s pins are Π = P(F) ∩ M(F), plus the fixed inputs G takes
+    itself: `In x (fr_pins Fg) <-> Mentions W u x /\ (Poly W u x \/ In x (map fst (c_ty Cg)))`.
+    Before, Π was all of M(F).
+  - So a body may now bind a fixed input of F that G does not take. Such
+    a bind is a *pin*. `LinkBody` records the pins as a new index:
+    `LinkBody W P u gg h pins`, where `(x, tx) ∈ pins` iff x is fixed
+    in F, G does not take x, and the body leaves x meaning tx. A pin's type
+    may mention only G's own inputs, each its own merge class and none made
+    by the body, and any of them that is an input of F must be fixed in F.
+  - `ResultRealizes` reads a pinned input at its pin: the reads are
+    `role_reads … ++ pin_reads Cb pins`. A body that pins `Tok = Char`
+    provides `tok(): Tok` as `tok(): Char`.
+  - `BFunClosure` checks each pin against the bind site: the pinned
+    input's meaning here equals the pin read with G's types as they are
+    here, and every type the pin mentions is in force here. This is the
+    oracle's check (`bind_functor`, "it binds `Tok` to …, and here `Tok`
+    is …").
+- **Why the agreeing pin is safe, and the disagreeing one is not.**
+  `MakeTok[]` is fixed in `Tok`. Binding `MakeTok = CharTok` records
+  what `Tok` means at the bind site. Every later application of
+  `MakeTok` must see the same meaning (rule 5), or it is rejected
+  (08c-fixed-stale). So everywhere `tok()` can be called through
+  `MakeTok`, its type `Tok` means what it meant at the bind.
+  - CharTok's body says `bind Tok = Char`, and its `tok` returns a
+    character. In pin-fixed-agree, the bind site has `Tok = Char`, so the
+    callers read `tok(): Char`, which is what the body provides.
+  - In pin-fixed-disagree, the bind site has `Tok = Bool`. The callers
+    then read `tok(): Bool`, but the body still returns a character.
+    That would read a `Char` as a `Bool`, so the bind is rejected.
+  - The pin is a promise that the body is only used where `Tok` means
+    `Char`. Fixed inputs make "where it is used" the same as "where it
+    was bound", so checking the promise once, at the bind, is enough.
+  - A polymorphic input has no such guarantee: each application supplies
+    its own meaning. So a pin of one is still rejected (pin-poly).
+- **Criteria:** safety (section 1; proved, below), stability (section 5:
+  a fixed input keeps its bind-site meaning, and the pin is checked
+  against it), and fidelity (section 6: both implementations accept the
+  agreeing pin and reject the other two tests).
+- **Tests.**
+
+  | program | oracle | native | Audit before | Audit now |
+  |---|---|---|---|---|
+  | [pin-fixed-agree](examples/pin-fixed-agree.moss) (thesis 08b-fixed) | q | q | rejects | accepts (q) |
+  | [pin-fixed-disagree](examples/pin-fixed-disagree.moss) (main binds `Tok = Bool` first) | rejects ("it binds `Tok` to `Chr[I32=I32]`, and here `Tok` is `Bool`") | rejects ("the functor does not satisfy the required signature: `Tok`") | rejects | rejects |
+  | [pin-poly](examples/pin-poly.moss) (`MakeTok[Tok]`) | rejects ("the fixed set is not widened per binding") | rejects ("compilation failed: `Tok`") | rejects | rejects |
+
+  Audit verdicts are argued from the rules, not run.
+- **Corpus.** The oracle already has this rule (pins P(F) ∩ M(F) less
+  X(F), and the agreement check), so no oracle verdict changes. To see
+  which programs the change affects, an oracle variant that fails at
+  every pin of a fixed input (`scratch/lang-q/oracle-pinfix.exe`) was
+  compared with the oracle over `src/main.moss`, `tests/`, `examples/`
+  and `bootstrap/examples/`. The result was 268 same and 203 diff:
+  - 201 of the diffs are the standard library. `lib/wasistd.moss`'s
+    `GcArrays`, bound to the family `Arrays` in `WasiRawStd`, pins
+    `size::Size = Num` and `array::ArrayHandle = ArrayRef`, both fixed
+    inputs of `Arrays`. So **before this change Audit rejected every
+    program that binds `StdBase`**, including 08b-fixed. With this change
+    those pins are allowed: they mention only types `GcArrays` takes
+    (`Num`'s and `ArrayRef`'s Wasm types), and they agree with the bind
+    site.
+  - The other 2 diffs are tests/wasi/functor_in_result_pin.moss and
+    functor_pin_through_input.moss.
+- **What is still rejected.**
+  - A pin of a fixed input that G takes itself.
+  - A pin whose type mentions a type G does not take, a merged type, or a
+    type the body makes.
+  - A pin whose types are not in force at the bind site (the oracle's
+    `ety_of` at the bind site fails there too).
+- **Proof.** `public_safety` is still proved, and `check.sh` is green.
+  - `ClosureOk`'s `CLink` keeps the pins, with `PinsAgree u Cu Cg dc gfx pins`:
+    under any application's meanings (`AppMeanings`), each pin means what
+    the closure's fixed reading gives the pinned input.
+    `case_BFunClosure` proves this from the new agreement check.
+    `cmeaning_capture` covers the captured types the pin mentions, and
+    `FixedMeans` covers the fixed ones.
+  - At an application, `PublicLinkRun.link_own_meaning` reads a pin's
+    types in the body's final environment. A linked type gets θ's reading,
+    and a captured one gets the closure's. With the chain's fixed
+    readings (`chain_fixed`, `FixT`), this gives each pin the caller's
+    reading of the pinned input.
+  - `root_level` (PublicChainRealize) reads a pinned input through its
+    pin (`OkG2`). `r2` allows a pinned input in the promise.
+    `family_link_new_ok` (PublicFamilyLink) does the same for a family's
+    on-demand application (`R2sig`, `GE`, `PinRun`).
+  - The obligation statements that carry a root's `LinkData`
+    (`ChainRealizeOk`, `ChainNewOk`, `ChainCoreOk`, `ChainResultsOk`,
+    `LinkResultsOk`, `FamilyLinkResultsOk`, `FamilyLinkNewOk`) gain its
+    `pins` and that closure's `PinsAgree`. `PlatformNotLinked` takes the
+    new index. All of them are still proved, in the same files.
+- **Class.** A relaxation toward both implementations (C/none), and the
+  agreement check mirrors the oracle. Native needs no change on these
+  tests.
 
 ### Q4 (open, not applied): which context a call's arguments are checked in
 The owner decided that the arguments of every kind of call are checked in

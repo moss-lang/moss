@@ -676,14 +676,15 @@ Hypothesis World : exists b, A.WorldOf b W.
 Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Variables (h0 gg : nat) (Ch0 Cg Cb : A.cx) (nsh0 nsg : list item) (Fg Fb : A.frame)
-  (its : list (spec * option aexpr)) (wrap : expr -> expr) (made outs : list nat) (gen : nat -> nat) (Cr : A.cx) (ks : list item).
+  (its : list (spec * option aexpr)) (wrap : expr -> expr) (made outs : list nat) (gen : nat -> nat) (Cr : A.cx) (ks : list item)
+  (pins : subst).
 Hypothesis FCh0 : A.FunCtx W h0 Ch0 nsh0.
 Hypothesis FCg : A.FunCtx W gg Cg nsg.
 Hypothesis Items : A.BindItems W Prog Fg Cg its wrap Cb Fb made.
 Hypothesis FrGf : PublicFormation.FrameFormed W Fg.
 Hypothesis MadeOut : forall t, In t made -> A.nlook t (A.c_ty Ch0) = None.
 Hypothesis FrGen : forall t, In t outs -> A.Fresh W (gen t).
-Hypothesis RR : A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen) ks.
+Hypothesis RR : A.ResultRealizes (A.link_site Cg Cb outs gen) Cr (A.role_reads (A.link_site Cg Cb outs gen) outs gen ++ A.pin_reads Cb pins) ks.
 
 Let DG := map fst (A.c_ty Cg).
 Let D0 := map fst (A.c_ty Ch0).
@@ -695,7 +696,7 @@ Proof.
 Qed.
 
 Lemma r2 : forall k, In k ks -> forall p, A.ilook (A.provision_id k) (A.c_provisions Cr) = Some p ->
-  (forall y, In y (rel_gens p) -> In y D0 -> In y DG) /\
+  (forall y, In y (rel_gens p) -> In y D0 -> In y DG \/ In y (map fst pins)) /\
   (forall r m a y, k = IMth r m a -> In y (A.gens r) -> In y D0 -> In y DG).
 Proof.
   intros k Ik p Lp.
@@ -739,22 +740,24 @@ Proof.
       apply in_flat_map in Iy as [[x t] [Ixt Iy]]. apply in_flat_map. exists (x, Some t). split; [|exact Iy].
       apply in_map_iff. exists (x, t). split; [reflexivity|exact Ixt]. }
   set (Ls := A.link_site Cg Cb outs gen) in *.
-  set (rr := A.role_reads Ls outs gen) in *.
-  assert (RrNone : forall y, In y D0 -> lookup_subst y rr = None).
-  { intros y Iy. unfold rr, A.role_reads.
-    apply (lookup_map_none gen (fun t => A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t)))) outs y (d0_not_role y Iy)). }
+  set (rr := (A.role_reads Ls outs gen ++ A.pin_reads Cb pins)%list) in *.
+  assert (RrNone : forall y, In y D0 -> ~ In y (map fst pins) -> lookup_subst y rr = None).
+  { intros y Iy Np. unfold rr, A.role_reads. rewrite PublicCopyFresh.lookup_subst_cat.
+    rewrite (lookup_map_none gen (fun t => A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t)))) outs y (d0_not_role y Iy)).
+    exact (PublicLinkRun.lookup_pin_reads_none Cb pins y Np). }
   destruct (RR k Ik) as [req [act [Lr [La Ref]]]].
   rewrite Lp in Lr. injection Lr as <-.
   pose proof (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ La) as Iact. change (A.c_provisions Ls) with (A.c_provisions Cb) in Iact.
   destruct Ref as [Kind [Sig Inst]]. rewrite !psig_subst in Sig.
   split.
-  - intros y Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [exact I'|exfalso].
+  - intros y Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [left; exact I'|].
+    destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
     apply (proj1 (InCb _ _ Iact y Ny Iy0)).
     destruct p as [t a|g a|g a|fx].
     1-3: destruct act as [ta aa|ga aa|ga aa|fxa]; cbn in Kind; try contradiction; cbn [A.provision_signature option_map] in Sig;
       pose proof (f_equal (fun o => match o with Some g0 => g0 | None => A.FSig [] TUnit end) Sig) as Sg; cbv beta iota in Sg; change (A.c_sub Ls) with (A.c_sub Cb) in Sg; fold rr in Sg;
       unfold rel_gens, PublicCallRealize.provision_sig_gens in Iy |- *; cbn [A.provision_signature] in Iy |- *;
-      pose proof (sig_keep _ _ y (sig_keep _ _ y Iy (RrNone y Iy0)) (SubNone y Ny)) as Ik2; rewrite Sg in Ik2;
+      pose proof (sig_keep _ _ y (sig_keep _ _ y Iy (RrNone y Iy0 Np)) (SubNone y Ny)) as Ik2; rewrite Sg in Ik2;
       destruct (CSg.FL.sig_subst_gens _ _ _ Ik2) as [t' [It' Iy']]; destruct (Back t' y Iy') as [Iy''|D']; [|exfalso; exact (Ny D')];
       unfold A.sig_gens; apply in_flat_map; exists t'; split; assumption.
     destruct act as [| | |fxa]; cbn in Kind; try contradiction.
@@ -763,7 +766,7 @@ Proof.
       (A.provision_inst (A.provision_subst (A.c_sub Cb) (A.provision_subst rr (A.ProvidedFunctor fx))))).
     { cbn. rewrite !map_map. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Ixt]. }
     pose proof (Inst _ _ Ip) as Ia. cbn in Ia. rewrite map_map in Ia. apply in_map_iff in Ia as [[x' ta] [E Ita]].
-    injection E as -> E. change (A.c_sub Ls) with (A.c_sub Cb) in E. fold rr in E. pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy (RrNone y Iy0)) (SubNone y Ny)) as Ik2.
+    injection E as -> E. change (A.c_sub Ls) with (A.c_sub Cb) in E. fold rr in E. pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy (RrNone y Iy0 Np)) (SubNone y Ny)) as Ik2.
     rewrite <- E in Ik2. destruct (Back ta y Ik2) as [Iy''|D']; [|exfalso; exact (Ny D')].
     apply in_flat_map. exists (x, ta). split; [exact Ita|exact Iy''].
   - intros r m a y -> Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [exact I'|exfalso].
@@ -1009,8 +1012,8 @@ Hypothesis World : exists b, A.WorldOf b W.
 Variables (h0 gg code : nat) (dg : A.decl) (nn : name) (ps : option (list name)) (a r : list spec)
   (bodies : list (list (spec * option aexpr))) (Ch0 : A.cx) (nsh0 : list item) (Cg : A.cx) (nsg : list item)
   (Fg : A.frame) (wrap : expr -> expr) (Cb : A.cx) (Fb : A.frame) (made outs' : list nat) (gen : nat -> nat)
-  (Cr : A.cx) (ks' : list item) (binds0 : list binding).
-Hypothesis LD : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg nn ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0.
+  (Cr : A.cx) (ks' : list item) (binds0 : list binding) (pins : subst).
+Hypothesis LD : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg nn ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins.
 Hypothesis LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
   (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.canon Ch0 (TAbs x) = A.canon Ch0 tx.
 Variables (th : subst) (d d3 dc' : environment) (j' : nat) (g3 : locals) (st st3 : Prims.mstate).
@@ -1018,12 +1021,16 @@ Hypothesis ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <>
 Hypothesis Run : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th dc') [] st binds0 = inl (d3, g3, st3).
 Hypothesis Pre3 : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok n Fb Cb d3 [] H3 g3 st3.
 Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list.
+(* Q6: a pinned fixed input is an input of h0, and reads at the
+   application as its pin does (the closure's fixed readings, which the
+   application's agree with) *)
+Hypothesis PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x).
 
 Lemma root_level : PublicChainSigs.TableOk Tin Ch0 -> PublicChainSigs.TableOk th Ch0 ->
   LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 None.
 Proof.
   intros Tok TokT.
-  pose proof LD as (FC0 & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR & RR & BO & FB & MadeOut).
+  pose proof LD as (FC0 & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR & RR & BO & FB & MadeOut & PinsI & PinG).
   assert (Inj : forall a b, In a outs' -> In b outs' -> gen a = gen b -> a = b)
     by (intros a0 b0 Ia Ib; exact (nodup_map_inj gen outs' a0 b0 NdG Ia Ib)).
   assert (FrGf : PublicFormation.FrameFormed W Fg) by (split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W)).
@@ -1038,9 +1045,9 @@ Proof.
   { intros y Iy I. apply in_map_iff in I as [t [<- It]].
     exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed h0 Ch0 nsh0 FC0 (gen t) Iy (FrG t It)). }
   set (Ls := A.link_site Cg Cb outs' gen).
-  set (rr := A.role_reads Ls outs' gen).
+  set (rr := (A.role_reads Ls outs' gen ++ A.pin_reads Cb pins)%list).
   set (T0 := Tv (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin gen outs').
-  assert (RrE : rr = map (fun t => (gen t, A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t))))) outs')
+  assert (RrE : rr = (map (fun t => (gen t, A.canon Ls (app_subst (A.c_ty Ls) (TAbs (gen t))))) outs' ++ A.pin_reads Cb pins)%list)
     by reflexivity.
   (* a role reads as its output's meaning *)
   assert (Role : forall t0, In t0 outs' -> ground d3 (app_subst (A.c_ty Ls) (TAbs (gen t0))) = CSg.FL.CF.CN.CC.LR.read_meaning d3 t0).
@@ -1050,13 +1057,24 @@ Proof.
   { intros x I0 Ig. rewrite (RunFact (TAbs x)) by (intros y [<-|[]]; assumption).
     unfold T0, Tv. rewrite tv_off by (intros z [<-|[]]; exact (NR x I0)). exact (PublicCopyFresh.ground_app_subst d th (TAbs x)). }
   set (OkG := fun y => (In y D0 /\ In y DG) \/ (exists t0, In t0 outs' /\ y = gen t0)).
-  assert (KeyX : forall x, OkG x -> ground d3 (app_subst rr (TAbs x)) = app_subst T0 (TAbs x)).
-  { intros x [[I0 Ig]|[t0 [It ->]]].
-    - cbn [app_subst]. rewrite RrE, (lookup_map_none gen _ outs' x (NR x I0)). exact (DomG x I0 Ig).
-    - cbn [app_subst]. rewrite RrE, (lookup_roles gen _ outs' t0 It Inj). change (A.canon Ls) with (A.canon Cb).
+  set (OkG2 := fun y => OkG y \/ In y (map fst pins)).
+  assert (KeyX : forall x, OkG2 x -> ground d3 (app_subst rr (TAbs x)) = app_subst T0 (TAbs x)).
+  { intros x [[[I0 Ig]|[t0 [It ->]]]|Ip].
+    - cbn [app_subst]. rewrite RrE, PublicCopyFresh.lookup_subst_cat, (lookup_map_none gen _ outs' x (NR x I0)).
+      rewrite PublicLinkRun.lookup_pin_reads_none; [exact (DomG x I0 Ig)|].
+      intros Ip. apply in_map_iff in Ip as [[x' tx] [E Ip]]. cbn in E. subst x'.
+      exact (proj1 (proj2 (proj1 (PinsI x tx) Ip)) Ig).
+    - cbn [app_subst]. rewrite RrE, PublicCopyFresh.lookup_subst_cat, (lookup_roles gen _ outs' t0 It Inj). change (A.canon Ls) with (A.canon Cb).
       rewrite (Abs3 (app_subst (A.c_ty Ls) (TAbs (gen t0)))), Role by exact It.
-      unfold T0, Tv. rewrite PublicCopyFresh.lookup_subst_cat, (lookup_roles gen _ outs' t0 It Inj). reflexivity. }
-  assert (KeyTy : forall t, (forall x, In x (A.gens t) -> OkG x) -> ground d3 (app_subst rr t) = app_subst T0 t).
+      unfold T0, Tv. rewrite PublicCopyFresh.lookup_subst_cat, (lookup_roles gen _ outs' t0 It Inj). reflexivity.
+    - (* a pin of a fixed input: read at the pin, which the application's reading agrees with *)
+      destruct (PublicLinkRun.lookup_pin_reads_in Cb pins x Ip) as [v Lv].
+      destruct (PublicLinkRun.lookup_pin_reads_some Cb pins x v Lv) as [tx [Itx ->]].
+      destruct (PinT x tx Itx) as [I0 Ag].
+      cbn [app_subst]. rewrite RrE, PublicCopyFresh.lookup_subst_cat, (lookup_map_none gen _ outs' x (NR x I0)), Lv.
+      rewrite (Abs3 tx), Ag.
+      unfold T0, Tv. rewrite PublicCopyFresh.lookup_subst_cat, (lookup_map_none gen _ outs' x (NR x I0)). reflexivity. }
+  assert (KeyTy : forall t, (forall x, In x (A.gens t) -> OkG2 x) -> ground d3 (app_subst rr t) = app_subst T0 t).
   { intros t Ok. unfold ground. apply PublicCopyFresh.ty_agree. intros x Ix. exact (KeyX x (Ok x Ix)). }
   assert (RecvX : forall x, OkG x -> ground d3 (app_subst (A.c_ty Ls) (TAbs x)) = app_subst T0 (TAbs x)).
   { intros x [[I0 Ig]|[t0 [It ->]]].
@@ -1075,15 +1093,15 @@ Proof.
   intros i k Ki. pose proof (nth_error_In _ _ Ki) as Ik.
   destruct (CSg.FL.CF.CN.CC.body_provides W Prog argv read state_ok n Ls d3 H3 Cr ks' rr (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok n Cg Cb outs' gen d3 H3 Real3) RR k Ik)
     as [p [pv [Lp [Lpv BR]]]].
-  destruct (r2 W Prog World merge_formed mentions_typed h0 gg Ch0 Cg Cb nsh0 nsg Fg Fb _ wrap made outs' gen Cr ks'
+  destruct (r2 W Prog World merge_formed mentions_typed h0 gg Ch0 Cg Cb nsh0 nsg Fg Fb _ wrap made outs' gen Cr ks' pins
     FC0 FCg Items FrGf MadeOut FrG RR k Ik p Lp) as [R2s R2r].
   assert (GS : forall t, A.FunOutputs W h0 t -> lookup_subst (gen t) (A.c_sub Ch0) = None)
     by (intros t Ft; exact (fresh_not_sub W merge_formed mentions_typed h0 Ch0 nsh0 (gen t) FC0 (FrG t (proj2 (OutsR t) Ft)))).
-  assert (OkP : forall y, In y (rel_gens p) -> OkG y).
+  assert (OkP : forall y, In y (rel_gens p) -> OkG2 y).
   { intros y Iy. destruct (PublicCopyFresh.result_gens W merge_formed mentions_typed h0 Ch0 nsh0 h0 gen Cr ks' FC0 PR
       (fun t Ft => FrG t (proj2 (OutsR t) Ft)) k p Ik Lp y (rel_gens_sub p y Iy)) as [I0|[t [Ft ->]]].
-    - left. split; [exact I0|exact (R2s y Iy I0)].
-    - right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity]. }
+    - destruct (R2s y Iy I0) as [Ig|Ip]; [left; left; split; [exact I0|exact Ig]|right; exact Ip].
+    - left. right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity]. }
   exists p, pv. split; [exact Lp|]. split.
   { cbn [closure_sources]. unfold CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite (nth_map_error _ _ _ ks' i k _ Ki). exact Lpv. }
   destruct p as [t a0|g a0|g a0|fx]; unfold CSg.FL.CF.CN.CC.BodyReal in BR; unfold RealAt; lazy beta iota in BR |- *; fold T0.
@@ -1091,7 +1109,7 @@ Proof.
     rewrite <- (KeyTy t); [exact Tw|]. intros x Ix. apply OkP. unfold rel_gens, PublicCallRealize.provision_sig_gens, A.sig_gens. cbn.
     rewrite app_nil_r. exact Ix.
   - exists d3, (map (app_subst rr) (A.sg_params g)), (app_subst rr (A.sg_ret g)). split; [exact BR|].
-    assert (OkS : forall t, In t (A.sg_ret g :: A.sg_params g) -> forall x, In x (A.gens t) -> OkG x).
+    assert (OkS : forall t, In t (A.sg_ret g :: A.sg_params g) -> forall x, In x (A.gens t) -> OkG2 x).
     { intros t It x Ix. apply OkP. unfold rel_gens, PublicCallRealize.provision_sig_gens, A.sig_gens. cbn [A.provision_signature].
       apply in_flat_map. exists t. split; assumption. }
     split; [rewrite map_map; apply map_ext_in; intros t It; exact (KeyTy t (OkS t (or_intror It)))|exact (KeyTy _ (OkS _ (or_introl eq_refl)))].
@@ -1099,7 +1117,7 @@ Proof.
     destruct k as [?|?|?|rk mk ak|?]; cbn in Eat; try discriminate. injection Eat as Erb Em _. subst m.
     exists rk, mk, ak. split; [reflexivity|].
     exists d3, (rb :: map (app_subst rr) (A.sg_params g)), (app_subst rr (A.sg_ret g)). split; [exact Ok|].
-    assert (OkS : forall t, In t (A.sg_ret g :: A.sg_params g) -> forall x, In x (A.gens t) -> OkG x).
+    assert (OkS : forall t, In t (A.sg_ret g :: A.sg_params g) -> forall x, In x (A.gens t) -> OkG2 x).
     { intros t It x Ix. apply OkP. unfold rel_gens, PublicCallRealize.provision_sig_gens, A.sig_gens. cbn [A.provision_signature].
       apply in_flat_map. exists t. split; assumption. }
     split; [|exact (KeyTy _ (OkS _ (or_introl eq_refl)))].
@@ -1299,7 +1317,7 @@ Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Theorem chain_realize_ok : CSg.FL.CF.CN.ChainRealizeOk W Prog argv read state_ok.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg nn ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD Sel Sel2 Run Ext Pre3
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En.
   pose proof Pre0 as (_ & _ & _ & _ & [Abs [_ [Idem KMc]]] & Fmd).
   pose proof AP as (_ & Fx & FC & Inp & Th & FixC & Sat & _ & _ & _ & _ & _ & PR).
@@ -1318,9 +1336,9 @@ Proof.
     2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & code' & sms' & dc' & rms' & rm & gfh & E & _).
          injection E as _ _ _ E. destruct rms'; discriminate. }
     2: { destruct CP as (code' & E & _). discriminate. }
-    destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & LB & _).
+    destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB _]] & _).
     injection E as E1h _ E3h. subst h2 dc2.
-    destruct (CSg.FL.link_body_parts W Prog _ _ _ LB) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
+    destruct (CSg.FL.link_body_parts W Prog _ _ _ _ LB) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
     destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FCu3) as [<- <-].
     rewrite FB in FB3. injection FB3 as _ _ ETy _ _ _.
     intros x tx L1 L2. rewrite ETy in L1. exact (LRd3 x tx L1 L2). }
@@ -1352,9 +1370,49 @@ Proof.
     pose proof (PublicFamilyAgree.lookup_keys (fun y => A.canon C (app_subst (A.c_ty C) (TAbs y))) (A.c_ty Cu) z Iu) as L.
     assert (L' : lookup_subst z th = Some (A.canon C (app_subst (A.c_ty C) (TAbs z)))) by (rewrite Th; exact L).
     rewrite L'. discriminate. }
+  (* Q6: the root's pins read as the application's fixed inputs *)
+  assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
+  { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
+    assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
+    { intros y Fy. destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
+      rewrite E. exact (FixT y Fu). }
+    (* the closure's environment d2 carries no type meanings *)
+    assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
+    { destruct sms as [sm'|]; cbn in Sel2.
+      - exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
+      - injection Sel2 as <-. exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
+    destruct E2 as [Em2 Ea2].
+    set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Ch0)) then app_subst Tin (TAbs y)
+                                  else cmeaning dc y)) (map fst (A.c_ty Cg))).
+    assert (Am : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm0).
+    { split.
+      - intros y Fy Ig. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
+        rewrite PublicLinkRun.existsb_eqb_in by exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 y (CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fy).
+        symmetry. exact (Fix0 y Fy).
+      - intros y Ig Ou. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
+        rewrite PublicLinkRun.existsb_eqb_out by exact Ou. reflexivity. }
+    intros x tx Ip. destruct (proj1 (PinsI x tx) Ip) as [Fx0 _].
+    split; [exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 x (CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fx0)|].
+    pose proof (PinsOk gm0 Am x tx Ip) as Pa. rewrite (Fix0 x Fx0) in Pa. injection Pa as Pa.
+    transitivity (app_subst gm0 tx); [|exact (eq_sym Pa)].
+    unfold ground. apply subst_agree_on. intros y Iy. cbn [app_subst].
+    destruct (PinG x tx y Ip Iy) as [Ig [Sy [Nm Fy]]].
+    rewrite (CSg.FL.LRn.link_own_meaning W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCgL ItemsL BOL FBL th
+      argv read j' d (append_environment d2 dc) [] st d3 g3 st3 Run y Ig Sy Nm).
+    unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
+    destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Ch0))) as [Iu|Ou].
+    - rewrite (PublicLinkRun.existsb_eqb_in y (map fst (A.c_ty Ch0)) Iu).
+      rewrite PublicLinkRun.existsb_eqb_in by (apply filter_In; split; [exact Ig|exact (PublicLinkRun.existsb_eqb_in y _ Iu)]).
+      destruct (lookup_subst y th) as [m|] eqn:Lm; [|exfalso; exact (ThDom y Iu Lm)].
+      unfold Tin. cbn [app_subst]. rewrite PublicCopyFresh.lookup_subst_cat, PublicLinkRun.lookup_map_snd, Lm. reflexivity.
+    - rewrite (PublicLinkRun.existsb_eqb_out y (map fst (A.c_ty Ch0)) Ou).
+      rewrite PublicLinkRun.existsb_eqb_out.
+      2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
+           apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
+      unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
   set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb outs' gen) outs' gen ks').
   pose proof (root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 LD LRs th d d3 _ j' g3 st st3 ThDom Run Pre3) as Root.
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD LRs th d d3 _ j' g3 st st3 ThDom Run Pre3 PinT) as Root.
   pose proof (chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
     th Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn TokTh FixT) as LvU.
   assert (LenS : List.length (closure_sources rms srcs) = List.length ks).

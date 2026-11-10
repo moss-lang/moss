@@ -275,12 +275,13 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
-    d1 d2 d3 g3 st3 H3 j',
+    pins d1 d2 d3 g3 st3 H3 j',
   Pre rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
   lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   CopyA.S.FixedMeans W u d fx gfx ->
-  CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 ->
+  CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
+  CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
   CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
@@ -408,7 +409,7 @@ Proof.
   2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
-  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & LB & FCu0 & FCg & FxIn & Caps & CF).
+  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & [pins [LB PinsOk]] & FCu0 & FCg & FxIn & Caps & CF).
   destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu0) as [<- <-].
   intros rest. rewrite CopyA.S.bindings_apply_eq.
   destruct j as [|j1].
@@ -423,7 +424,7 @@ Proof.
     exfalso. exact (InF t (in_map fst _ _ L) Lh). }
   destruct (CopyA.S.static_realizes_le W Prog argv read state_ok rr rr Cf d H u Cu ns sm th (le_n _) RealF
     (CopyA.S.functx_static W _ _ _ FC) Sat (CopyA.S.apply_theta W Cf u Cu ns sm FC IdemF Inp Sat)) as [d1 [Sel [_ RealU]]].
-  destruct (CopyA.S.link_facts W Prog _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
+  destruct (CopyA.S.link_facts W Prog _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr' & ks' & binds0 & LD).
   pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu') as [<- <-]. destruct (CopyA.S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
@@ -452,7 +453,7 @@ Proof.
     rewrite (CopyA.S.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (E1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
     injection E1 as E1. rewrite E1, <- Ag, CanonEq. symmetry. exact (Abs was). }
-  pose proof (CopyA.S.link_entry W Prog argv read state_ok rr H d th d1 u gg h Cu ns Cg nsg dc gfx d2
+  pose proof (CopyA.S.link_entry W Prog argv read state_ok rr H d th d1 u gg h pins Cu ns Cg nsg dc gfx d2
     LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
   set (de := application_environment P d h th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
@@ -485,7 +486,7 @@ Proof.
     assert (Run : CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
     destruct (family_link_results C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n0 ps0 a0 rs bodies
-      Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD Sel Sel2 Run E3 Pre3)
+      Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD PinsOk Sel Sel2 Run E3 Pre3)
       as [dr [Sdr New]].
     rewrite Sdr. left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.
     split; [exact E3|]. split; [exact (proj1 (proj2 (proj2 (proj2 Pre3))))|].

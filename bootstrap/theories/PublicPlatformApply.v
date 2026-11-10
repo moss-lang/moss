@@ -301,7 +301,7 @@ Definition ChainPrimsOk : Prop :=
    linked body's binds come from source items, none a primitive
    (platform_not_linked). Needed only to tell a closure's root apart. *)
 Definition PlatformNotLinked : Prop :=
-  forall h0 code u gg fc, Platform.Family W Prog h0 code -> A.LinkBody W Prog u gg code ->
+  forall h0 code u gg pins fc, Platform.Family W Prog h0 code -> A.LinkBody W Prog u gg code pins ->
   A.funbody_of Prog code = Some fc -> fc_bindings fc = [].
 
 (* ---- no source item binds a primitive ---------------------------------------- *)
@@ -356,7 +356,7 @@ Qed.
    a linked body's binds come from source items, none a primitive. *)
 Lemma platform_not_linked : PlatformNotLinked.
 Proof.
-  intros h0 code u gg fc Fam LB FB.
+  intros h0 code u gg pins fc Fam LB FB.
   destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & (_ & _ & _ & FBf & Binds & _)).
   rewrite FBf in FB. injection FB as <-. cbn [fc_bindings].
   destruct LB. match goal with
@@ -763,7 +763,8 @@ Proof.
   - (* a linked root: the family's code has no bindings *)
     destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
     pose proof FD as (FC0 & _ & _ & FB & Binds & _).
-    pose proof (platform_not_linked h0 code h0' gg _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
+    destruct LB as [pins [LB _]].
+    pose proof (platform_not_linked h0 code h0' gg pins _ Fam LB FB) as Nb. cbn [fc_bindings] in Nb. subst bindings.
     inversion Binds; subst keys.
     destruct (chain_core_premises F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms rms gfx
       Look Fm h0 gf0 Chn Ch0 needs outputs [] [] FD) as (Kin & NoOut & News & SrcIn & SrcLen & Sigs).

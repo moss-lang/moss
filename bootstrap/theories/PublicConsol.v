@@ -16,10 +16,10 @@ From NM Require PublicTypeRead.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
-Lemma link_body_has_body : forall W P u gg h, A.LinkBody W P u gg h ->
+Lemma link_body_has_body : forall W P u gg h pins, A.LinkBody W P u gg h pins ->
   exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b)).
 Proof.
-  intros W P u gg h LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 Dg Ast].
+  intros W P u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins0 Dg Ast].
   exists n, ps, a, r, bodies. unfold A.ast_of. rewrite Dg. cbn. rewrite Ast. reflexivity.
 Qed.
 

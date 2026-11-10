@@ -1515,7 +1515,7 @@ Proof.
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
                   |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC In' Th Fix Sat FF Inj Outs Nd OutsI PR
                   |F C pa u pg h Cu nsu Ch nsh sm fx
-                  |F C pa u pg gg Cu nsu Cg nsg h sm smc fx]; intros Fc Ff.
+                  |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff.
     + pose proof (tyof_ok W _ _ _ _ _ T (cf_ty _ _ (proj1 Fc)) (optok_none W)) as Htau.
       exact (conj (set_ty_formed W C t (canon C tau) Fc (canon_ok W C tau (proj1 Fc) Htau) K) Ff).
     + pose proof (tyof_ok W _ _ _ _ _ T (cf_ty _ _ (proj1 Fc)) (optok_none W)) as Hd.

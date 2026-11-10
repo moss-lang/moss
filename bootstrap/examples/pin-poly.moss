@@ -1,0 +1,30 @@
+# Q6 (AUDIT-CHANGES #71): a pin of a *polymorphic* input stays forbidden.
+# `MakeTok[Tok]` is polymorphic in Tok: each application supplies Tok as
+# it is there, so a body that rebinds it would give `tok` a type other
+# than the one each application reads. The pin set is P(F) ∩ M(F) = {Tok}.
+# Verdicts: Audit rejects (BTypeBind, D84 3d; before #71 too);
+# oracle rejects ("`bind Tok` in a functor bound to an abstract one
+# changes a type its result mentions; the fixed set is not widened per
+# binding (D84 3d)"); native rejects ("compilation failed: `Tok`").
+type Tok;
+
+assume Std, Tok {
+  fn tok(): Tok;
+}
+
+functor MakeTok[Tok]: Std, Tok -> tok;
+functor CharTok: Std, Tok -> tok {
+  bind Tok = Char;
+  bind tok = () => char::q;
+}
+
+assume Base {
+  fn main() {
+    bind StdBase;
+    bind Tok = Char;
+    bind MakeTok = CharTok;
+    bind MakeTok;
+    putchar(tok());
+    putchar(char::newline);
+  }
+}
