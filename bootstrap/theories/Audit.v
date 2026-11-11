@@ -1871,9 +1871,9 @@ Definition capture_environment (d dc : environment) : environment :=
   EnvironmentWithAliases (type_meanings dc ++ type_meanings d)
     (type_aliases dc ++ type_aliases d) (provision_values dc).
 Definition primitive_closure (d : environment) (i : item) (p : op) : provision_value :=
-  PrimitiveClosure p (match decode p, i with
-    | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (ground d tau)
-    | _, _ => None end).
+  PrimitiveClosure p (match i with
+    | IMth tau _ _ => Some (ground d tau)
+    | _ => None end).
 Fixpoint lookup_entry (i : item) (entries : list (item * provision_value)) : option provision_value :=
   match entries with
   | [] => None

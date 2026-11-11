@@ -7,12 +7,12 @@
 (* reads one or two members: for the platform's `Memories` (27 members),   *)
 (* at every memory access.  For a functor F whose entry in main's initial  *)
 (* environment is the platform's closure of a body H made of primitives    *)
-(* only (no Box/ArrNew, so no entry depends on a type), every application  *)
+(* only (no Box/ArrNew, so Base ignores their sites), every application   *)
 (* of F installs, under each caller key r of the selection                 *)
 (* Q = rev (combine rs (fc_sources H)) (Audit's result_selection: the last *)
-(* position wins), `PrimitiveClosure p None` for the primitive p the body  *)
-(* binds at the matching source.  That is exactly what a run of            *)
-(* `BPrimitive r p` bindings installs, so the pass needs no new form:      *)
+(* position wins), `PrimitiveClosure p site` for the primitive p the body  *)
+(* binds at the matching source. Base ignores the nonallocating sites,     *)
+(* so replacing the application by BPrimitive bindings keeps behavior:     *)
 (*   - `EBind (BApply F θ [] [] rs) e` becomes a chain of EBind/BPrimitive *)
 (*     for the pairs of Q whose requirement `e` may look up (`uses e`; if  *)
 (*     none, the first pair, so that the chain is never empty);            *)
@@ -40,7 +40,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
-From NM Require Import AuditFacts.
+From NM Require Import AuditFacts PublicPrimitiveSites.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require ProgramPrune.
 From Stdlib Require PrimInt63.
@@ -91,7 +91,7 @@ Definition prim_ok (p : op) : bool := match decode p with Some (PBox _) | Some (
 Definition body_prim (b : binding) : bool := match b with BPrimitive _ p => prim_ok p | _ => false end.
 Definition binds (s : item) (b : binding) : bool :=
   match b with BPrimitive j _ => item_eqb j s | _ => false end.
-(* The entry a primitive binding installs (for prim_ok primitives). *)
+(* Canonical entry used to select an operation; runtime_bent records its site. *)
 Definition bent (b : binding) : item * provision_value :=
   match b with BPrimitive i p => (i, PrimitiveClosure p None) | _ => (ITy 0, ValueProvision VUnit) end.
 
@@ -292,7 +292,16 @@ Definition candidates (p : program) : list (usym * usym) :=
 Definition fastpath (p : program) : program :=
   fold_left (fun p uh => fast_one (fst uh) (snd uh) p) (candidates p) p.
 
+Definition site_qent (cH : functor_code) (d : environment) (source : bool) (q : item * item) :=
+  (fst q, primitive_closure d (if source then snd q else fst q) (pick cH (snd q))).
+
 (* ===================== 3. Agreement ===================================== *)
+
+Inductive site_variant : provision_value -> provision_value -> Prop :=
+| VariantSame : forall entry, site_variant entry entry
+| VariantPrimitive : forall operation first second,
+    BaseSites.retained_site operation first = BaseSites.retained_site operation second ->
+    site_variant (PrimitiveClosure operation first) (PrimitiveClosure operation second).
 
 Section Rel.
 Variables U H : usym.
@@ -301,15 +310,17 @@ Variables U H : usym.
 Definition kgood (i : item) (a : provision_value) : Prop :=
   isU U i = true -> exists dc, a = FunctorClosure H None dc None.
 
-(* Entries agree when equal up to their captured environments, which agree
-   entry for entry (closures are never narrowed: their environments are
+(* Entries agree up to captured environments and Base-ignored primitive
+   sites. Allocation sites still agree exactly. Captures agree entry for
+   entry (closures are never narrowed: their environments are
    selected by satisfaction maps, whose sources the code looks up). *)
 Inductive prel : provision_value -> provision_value -> Prop :=
 | PVal : forall w, prel (ValueProvision w) (ValueProvision w)
 | PClo : forall f d d', lrel d d' -> prel (FunctionClosure f d) (FunctionClosure f d')
 | PFun : forall h sms d d' rms, osm_ok (sm_ok U) sms = true -> lrel d d' ->
     prel (FunctorClosure h sms d rms) (FunctorClosure h sms d' rms)
-| PPrim : forall p ot, prel (PrimitiveClosure p ot) (PrimitiveClosure p ot)
+| PPrim : forall p ot ot', BaseSites.retained_site p ot = BaseSites.retained_site p ot' ->
+    prel (PrimitiveClosure p ot) (PrimitiveClosure p ot')
 with lrel : environment -> environment -> Prop :=
 | LRel : forall d d', type_meanings d = type_meanings d' -> type_aliases d = type_aliases d' ->
     lrel2 (provision_values d) (provision_values d') -> lrel d d'
@@ -473,7 +484,7 @@ Lemma prim_closure_eq : forall S d d' i p, agree S d d' ->
 Proof. intros S d d' i p Hd. unfold primitive_closure, ground. rewrite (ag_tm Hd). reflexivity. Qed.
 
 Lemma prel_prim_closure : forall d i p, prel (primitive_closure d i p) (primitive_closure d i p).
-Proof. intros. unfold primitive_closure. constructor. Qed.
+Proof. intros. unfold primitive_closure. constructor. reflexivity. Qed.
 Lemma kgood_nonU : forall i a, isU U i = false -> kgood i a.
 Proof. intros i a Hi Hu. congruence. Qed.
 
@@ -506,7 +517,7 @@ Proof.
     induction ps as [|[j x] r IR]; [constructor|].
     apply andb_true_iff in Hok as [Hok Hr]. apply andb_true_iff in Hok as [Hk Hx].
     constructor; [apply IH, Hx|apply kok_good, Hk|apply IR, Hr].
-  - constructor.
+  - constructor. reflexivity.
 Qed.
 
 Lemma env_ok_refl : forall d, env_ok U H d = true -> lrel d d.
@@ -515,6 +526,53 @@ Proof.
   induction ps as [|[j x] r IR]; simpl in Hok; [constructor|].
   apply andb_true_iff in Hok as [Hok Hr]. apply andb_true_iff in Hok as [Hk Hx].
   constructor; [apply pv_ok_refl, Hx|apply kok_good, Hk|apply IR, Hr].
+Qed.
+
+Lemma prel_site_variants : forall a a' b b',
+  site_variant a a' -> site_variant b b' -> prel a b -> prel a' b'.
+Proof.
+  intros a a' b b' Left Right Related. inversion Left; subst.
+  - inversion Right; subst; [exact Related|]. inversion Related; subst. constructor. congruence.
+  - inversion Related; subst. inversion Right; subst; constructor; congruence.
+Qed.
+Lemma kgood_site_variant : forall key a a', site_variant a a' -> kgood key a -> kgood key a'.
+Proof.
+  intros key a a' Variant Good. inversion Variant; subst; [exact Good|].
+  intros IsU. destruct (Good IsU) as [captured Impossible]. discriminate.
+Qed.
+Record environment_variants (first second : environment) : Prop := EnvironmentVariants {
+  variants_meanings : type_meanings first = type_meanings second;
+  variants_aliases : type_aliases first = type_aliases second;
+  variants_lookup : forall key, oprel site_variant (lookup_provision key first) (lookup_provision key second)
+}.
+Lemma agree_site_variants : forall S d d' other other',
+  environment_variants d other -> environment_variants d' other' ->
+  agree S d d' -> agree S other other'.
+Proof.
+  intros S d d' other other' First Second Related. constructor.
+  - rewrite <- (variants_meanings First), <- (variants_meanings Second). exact (ag_tm Related).
+  - rewrite <- (variants_aliases First), <- (variants_aliases Second). exact (ag_ta Related).
+  - intros key Used. pose proof (variants_lookup First key) as Left.
+    pose proof (variants_lookup Second key) as Right.
+    pose proof (ag_look Related key Used) as Entries.
+    destruct (lookup_provision key d), (lookup_provision key d'),
+      (lookup_provision key other), (lookup_provision key other'); cbn in Left, Right, Entries |- *;
+      try contradiction; [|exact I].
+    destruct Entries as [Agree Good]. split.
+    + eapply prel_site_variants; eassumption.
+    + eapply kgood_site_variant; eassumption.
+Qed.
+Lemma prefix_site_variants : forall d entries other,
+  (forall key, oprel site_variant (lookup_entry key entries) (lookup_entry key other)) ->
+  environment_variants
+    (EnvironmentWithAliases (type_meanings d) (type_aliases d) (entries ++ provision_values d))
+    (EnvironmentWithAliases (type_meanings d) (type_aliases d) (other ++ provision_values d)).
+Proof.
+  intros d entries other Related. constructor; try reflexivity.
+  intros key. unfold lookup_provision. cbn [provision_values]. rewrite !lookup_entry_app.
+  specialize (Related key). destruct (lookup_entry key entries), (lookup_entry key other);
+    cbn in Related |- *; try contradiction; [exact Related|].
+  destruct (lookup_entry key (provision_values d)); [constructor|exact I].
 Qed.
 
 End Rel.
@@ -648,7 +706,7 @@ Lemma lrel_qents : forall H Q, (forall q, In q Q -> isU U (fst q) = false) ->
   lrel U H (EnvironmentWithAliases [] [] (map (qent cH) Q)) (EnvironmentWithAliases [] [] (map (qent cH) Q)).
 Proof.
   intros H Q HQ. constructor; auto. simpl. induction Q as [|q r IH]; simpl; constructor.
-  - constructor.
+  - constructor. reflexivity.
   - apply kgood_nonU, HQ. simpl; auto.
   - apply IH. intros; apply HQ; simpl; auto.
 Qed.
@@ -669,7 +727,7 @@ Proof.
     destruct (lookup_entry i (map (qent cH) Q)) as [a|] eqn:El.
     + simpl. split.
       * apply lookup_entry_in in El as [k Hk]. apply in_map_iff in Hk as [q [Eq _]].
-        unfold qent in Eq. injection Eq as _ <-. constructor.
+        unfold qent in Eq. injection Eq as _ <-. constructor. reflexivity.
       * apply kgood_nonU. apply existsb_exists in E as [j [Hj Ej]]. apply item_eqb_true in Ej.
         subst j. apply in_map_iff in Hj as [q [Eq Hq]].
         rewrite <- Eq. apply HQ, Hq.
@@ -681,6 +739,56 @@ Proof.
   - assert (En : lookup_entry i (map (qent cH) Q) = None).
     { apply lookup_entry_none. rewrite map_map. exact E. }
     rewrite En, (lookup_entry_filter_none _ _ _ En). exact (ag_look Hd i Hi).
+Qed.
+
+Lemma prim_ok_retained : forall operation site,
+  prim_ok operation = true -> BaseSites.retained_site operation site = None.
+Proof.
+  intros operation site Good. unfold prim_ok in Good. unfold BaseSites.retained_site.
+  destruct (decode operation) as [decoded|]; [destruct decoded|]; try discriminate; reflexivity.
+Qed.
+Lemma qents_site_variants : forall Q d source key,
+  forallb body_prim bsH = true ->
+  oprel site_variant (lookup_entry key (map (qent cH) Q))
+    (lookup_entry key (map (site_qent cH d source) Q)).
+Proof.
+  induction Q as [|[requested provided] tail IH]; intros d source key Primitives; [exact I|].
+  cbn [map qent site_qent fst snd lookup_entry]. destruct (item_eqb key requested); [|apply IH; exact Primitives].
+  constructor. rewrite !prim_ok_retained by (apply pick_ok; exact Primitives). reflexivity.
+Qed.
+Lemma map_site_qent_filter : forall d source (kp : item -> bool) Q,
+  map (site_qent cH d source) (filter (fun q => kp (fst q)) Q) =
+  filter (fun entry => kp (fst entry)) (map (site_qent cH d source) Q).
+Proof. intros d source kp. induction Q as [|q tail IH]; cbn; [reflexivity|]. destruct (kp (fst q)); cbn; congruence. Qed.
+Lemma agree_narrow_sites : forall H S d d' Q kp first second,
+  agree U H S d d' -> (forall q, In q Q -> isU U (fst q) = false) ->
+  forallb body_prim bsH = true ->
+  agree U H (fun i => if existsb (item_eqb i) (map fst Q) then kp i = true else S i)
+    (append_environment (EnvironmentWithAliases [] [] (map (site_qent cH first true) Q)) d)
+    (EnvironmentWithAliases (type_meanings d') (type_aliases d')
+       (filter (fun entry => kp (fst entry)) (map (site_qent cH second false) Q) ++ provision_values d')).
+Proof.
+  intros H S d d' Q kp first second Related NonU Primitives.
+  eapply agree_site_variants.
+  - apply prefix_site_variants. intros key. apply qents_site_variants. exact Primitives.
+  - rewrite <- map_site_qent_filter. apply prefix_site_variants.
+    intros key. apply qents_site_variants. exact Primitives.
+  - rewrite map_qent_filter. apply agree_narrow; assumption.
+Qed.
+
+Lemma lrel_site_qents : forall H Q first second,
+  (forall q, In q Q -> isU U (fst q) = false) ->
+  forallb body_prim bsH = true ->
+  lrel U H (EnvironmentWithAliases [] [] (map (site_qent cH first true) Q))
+    (EnvironmentWithAliases [] [] (map (site_qent cH second false) Q)).
+Proof.
+  intros H Q first second NonU Primitives. constructor; try reflexivity.
+  induction Q as [|[requested provided] tail IH]; cbn [map site_qent fst snd]; [constructor|].
+  constructor.
+  - unfold primitive_closure. constructor.
+    rewrite !prim_ok_retained by (apply pick_ok; exact Primitives). reflexivity.
+  - apply kgood_nonU, (NonU (requested, provided)). left. reflexivity.
+  - apply IH. intros q Member. apply NonU. right. exact Member.
 Qed.
 
 End Body.
@@ -701,17 +809,49 @@ Definition stuckl {A} (x : A + evaluation) : Prop := match x with inr r => stuck
 (* "eventually": at every large enough fuel *)
 Definition evf (Q : nat -> Prop) : Prop := exists k0, forall j, k0 <= j -> Q j.
 
-Definition installs (d : environment) (bs : list binding) : environment :=
-  EnvironmentWithAliases (type_meanings d) (type_aliases d) (rev (map bent bs) ++ provision_values d).
-
-Lemma prim_closure_ok : forall d i p, prim_ok p = true -> primitive_closure d i p = PrimitiveClosure p None.
+Definition recorded_site (d : environment) (key : item) : option ty :=
+  match key with IMth receiver _ _ => Some (ground d receiver) | _ => None end.
+Definition record_value (d : environment) (key : item) (entry : provision_value) : provision_value :=
+  match entry with PrimitiveClosure operation _ => primitive_closure d key operation | _ => entry end.
+Definition record_entry (d : environment) (entry : item * provision_value) :=
+  (fst entry, record_value d (fst entry) (snd entry)).
+Lemma lookup_recorded_entries : forall d entries key,
+  lookup_entry key (map (record_entry d) entries) = option_map (record_value d key) (lookup_entry key entries).
 Proof.
-  intros d i p Hp. unfold prim_ok in Hp. unfold primitive_closure.
-  destruct (decode p) as [decoded|]; [destruct decoded|]; try discriminate; destruct i; reflexivity.
+  intros d entries key. induction entries as [|[source entry] tail IH]; cbn [map record_entry fst snd lookup_entry]; [reflexivity|].
+  destruct (item_eqb key source) eqn:Equal; [apply item_eqb_true in Equal; subst; reflexivity|exact IH].
 Qed.
 
+Definition runtime_bent (d : environment) (binding : binding) : item * provision_value :=
+  match binding with
+  | BPrimitive key operation => (key, primitive_closure d key operation)
+  | _ => (ITy 0, ValueProvision VUnit)
+  end.
+Definition installs (d : environment) (bs : list binding) : environment :=
+  EnvironmentWithAliases (type_meanings d) (type_aliases d)
+    (rev (map (runtime_bent d) bs) ++ provision_values d).
+
+Lemma installs_step : forall d key operation bindings,
+  installs (install_provision key (primitive_closure d key operation) d) bindings =
+  installs d (BPrimitive key operation :: bindings).
+Proof.
+  intros [meanings aliases entries] key operation bindings.
+  unfold installs, install_provision. cbn [type_meanings type_aliases provision_values map rev runtime_bent].
+  rewrite <- app_assoc. reflexivity.
+Qed.
+
+Lemma runtime_entries : forall d bindings,
+  rev (map (runtime_bent d) bindings) = map (record_entry d) (rev (map bent bindings)).
+Proof.
+  intros d bindings. rewrite map_rev, map_map. f_equal.
+  apply map_ext. intros binding. destruct binding; reflexivity.
+Qed.
+Lemma runtime_lookup : forall d bindings key,
+  lookup_entry key (rev (map (runtime_bent d) bindings)) =
+  option_map (record_value d key) (lookup_entry key (rev (map bent bindings))).
+Proof. intros. rewrite runtime_entries. apply lookup_recorded_entries. Qed.
 Lemma lookup_installs : forall s d bs, lookup_provision s (installs d bs) =
-  match lookup_entry s (rev (map bent bs)) with Some a => Some a | None => lookup_provision s d end.
+  match lookup_entry s (rev (map (runtime_bent d) bs)) with Some a => Some a | None => lookup_provision s d end.
 Proof. intros. unfold lookup_provision, installs. simpl. apply lookup_entry_app. Qed.
 
 Lemma binds_prims : forall P0 bs j d g st, forallb body_prim bs = true ->
@@ -721,8 +861,7 @@ Proof.
   intros P0. induction bs as [|b r IH]; intros [|j] d g st Hp; simpl; auto.
   - destruct d; reflexivity.
   - destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hp1 Hp].
-    rewrite prim_closure_ok by exact Hp1. rewrite IH by exact Hp.
-    unfold installs. simpl. rewrite <- app_assoc. reflexivity.
+    rewrite IH by exact Hp. rewrite installs_step. reflexivity.
 Qed.
 
 Lemma prims_app : forall P0 bs x d g st rest, forallb body_prim bs = true ->
@@ -731,8 +870,7 @@ Proof.
   intros P0. induction bs as [|b r IH]; intros x d g st rest Hp; simpl.
   - unfold installs. destruct d; reflexivity.
   - destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hp1 Hp].
-    rewrite prim_closure_ok by exact Hp1. rewrite IH by exact Hp.
-    unfold installs. simpl. rewrite <- app_assoc. reflexivity.
+    rewrite IH by exact Hp. rewrite installs_step. reflexivity.
 Qed.
 
 Lemma prims_app_le : forall P0 bs z d g st rest, forallb body_prim bs = true -> z <= length bs ->
@@ -756,8 +894,7 @@ Proof.
     change (length (BPrimitive i p :: r) + x) with (S (length r + x)).
     change (chain (BPrimitive i p :: r) e) with (EBind (BPrimitive i p) (chain r e)).
     rewrite ebind_prim by lia.
-    rewrite prim_closure_ok by exact Hp1.
-    rewrite IH by auto. unfold installs. simpl. rewrite <- app_assoc. reflexivity.
+    rewrite IH by auto. rewrite installs_step. reflexivity.
 Qed.
 
 Lemma chain_short : forall P0 bs z d g st e, forallb body_prim bs = true -> z < length bs + 2 ->
@@ -831,6 +968,9 @@ Hypothesis Hfn : forall f, view_function P' f = option_map (fp_e U cH) (view_fun
 Hypothesis Hfun : forall h, view_functor P' h = option_map (fp_code U cH) (view_functor P h).
 Hypothesis Hprim : forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st.
 Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
+Hypothesis Hsites : forall operation site ws st,
+  run_prim P operation site ws st =
+  run_prim P operation (BaseSites.retained_site operation site) ws st.
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
@@ -876,8 +1016,13 @@ Proof. intros. unfold truthy. rewrite Hbool, Htrue, Hfalse. reflexivity. Qed.
 Lemma check_tag_eq : forall S d d' n th w, agree S d d' ->
   check_tag P' d' n th w = check_tag P d n th w.
 Proof. intros S d d' n th w Hd. unfold check_tag, ground. rewrite Hcasts, (ag_tm Hd). reflexivity. Qed.
-Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
-Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
+Lemma prim_at_eq : forall p first second ws st,
+  BaseSites.retained_site p first = BaseSites.retained_site p second -> ok st ->
+  run_prim_at P' p second ws st = run_prim_at P p first ws st.
+Proof.
+  intros p first second ws st Sites Valid. unfold run_prim_at.
+  rewrite Hprim by exact Valid. rewrite (Hsites p first), (Hsites p second), Sites. reflexivity.
+Qed.
 
 Lemma app_env_rel : forall S d d' h th dc dc', agree S d d' -> lrel dc dc' ->
   lrel (application_environment P d h th dc) (application_environment P' d' h th dc').
@@ -933,7 +1078,7 @@ Ltac lks := repeat match goal with
 Lemma uapp : forall j d th rs st dc,
   lookup_provision (IFun U) d = Some (FunctorClosure H None dc None) ->
   apply_functor (S j) P d U th [] [] rs st =
-  if Nat.ltb (length bsH) j then inl (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs)), st)
+  if Nat.ltb (length bsH) j then inl (EnvironmentWithAliases [] [] (map (site_qent cH (application_environment P d H th (append_environment empty_environment dc)) true) (sel cH rs)), st)
   else inr (Evaluation OutOfFuel [] st).
 Proof.
   intros j d th rs st dc Hl. cbn [apply_functor]. rewrite Hl, HH. cbn [select_provisions adapt_provisions].
@@ -942,10 +1087,10 @@ Proof.
   unfold result_selection. cbn [closure_sources]. fold (sel cH rs).
   assert (Hs : forall Q, (forall q, In q Q -> In (snd q) (fc_sources cH)) ->
     select_provisions (installs (application_environment P d H th (append_environment empty_environment dc)) bsH) Q
-    = Some (EnvironmentWithAliases [] [] (map (qent cH) Q))).
+    = Some (EnvironmentWithAliases [] [] (map (site_qent cH (application_environment P d H th (append_environment empty_environment dc)) true) Q))).
   { induction Q as [|[rq sq] r IH]; intros HQ; [reflexivity|]. cbn [select_provisions].
     rewrite lookup_installs.
-    rewrite (hent_bound _ sq Hprims (Hcover _ (HQ (rq, sq) (or_introl eq_refl)))).
+    rewrite runtime_lookup. rewrite (hent_bound _ sq Hprims (Hcover _ (HQ (rq, sq) (or_introl eq_refl)))).
     rewrite IH by (intros; apply HQ; simpl; auto). reflexivity. }
   rewrite Hs by (intros q Hq; exact (proj2 (@sel_in cH _ q Hq))). reflexivity.
 Qed.
@@ -954,7 +1099,7 @@ Lemma orig_app_fun : forall k d g st th rs e1 dc,
   lookup_provision (IFun U) d = Some (FunctorClosure H None dc None) ->
   eval (S (S (S k))) P d g st (EBind (BApply U th [] [] rs) e1) =
   if Nat.ltb (length bsH) k
-  then eval (S (S k)) P (append_environment (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs))) d) g st e1
+  then eval (S (S k)) P (append_environment (EnvironmentWithAliases [] [] (map (site_qent cH (application_environment P d H th (append_environment empty_environment dc)) true) (sel cH rs))) d) g st e1
   else Evaluation OutOfFuel g st.
 Proof.
   intros k d g st th rs e1 dc Hl. cbn [eval eval_bindings]. rewrite (@uapp k d th rs st dc Hl).
@@ -974,7 +1119,7 @@ Lemma orig_bapp_fun : forall k d g st th rs r dc,
   lookup_provision (IFun U) d = Some (FunctorClosure H None dc None) ->
   eval_bindings (S (S k)) P d g st (BApply U th [] [] rs :: r) =
   if Nat.ltb (length bsH) k
-  then eval_bindings (S k) P (append_environment (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs))) d) g st r
+  then eval_bindings (S k) P (append_environment (EnvironmentWithAliases [] [] (map (site_qent cH (application_environment P d H th (append_environment empty_environment dc)) true) (sel cH rs))) d) g st r
   else inr (Evaluation OutOfFuel g st).
 Proof.
   intros k d g st th rs r dc Hl. cbn [eval_bindings]. rewrite (@uapp k d th rs st dc Hl).
@@ -987,8 +1132,8 @@ Lemma orig_bapp_none : forall k d g st th rs r,
 Proof. intros k d g st th rs r Hl. cbn [eval_bindings apply_functor]. rewrite Hl. reflexivity. Qed.
 
 Lemma installs_qents : forall d Q,
-  installs d (prims_of cH Q) = EnvironmentWithAliases (type_meanings d) (type_aliases d) (map (qent cH) Q ++ provision_values d).
-Proof. intros d Q. unfold installs. rewrite prims_of_ents. reflexivity. Qed.
+  installs d (prims_of cH Q) = EnvironmentWithAliases (type_meanings d) (type_aliases d) (map (site_qent cH d false) Q ++ provision_values d).
+Proof. intros d Q. unfold installs, prims_of. rewrite map_rev, rev_involutive, map_map. reflexivity. Qed.
 
 Lemma sel_nonU : forall rs, rs_ok U rs = true -> forall q, In q (sel cH rs) -> isU U (fst q) = false.
 Proof. intros rs Hr q Hq. exact (@rs_ok_in U rs _ Hr (proj1 (@sel_in cH rs q Hq))). Qed.
@@ -1122,7 +1267,7 @@ Proof.
       pose proof (ag_look Hd (IFn f) ltac:(assumption)) as Ho. red1.
       destruct (lookup_provision (IFn f) d) as [a|] eqn:El,
                (lookup_provision (IFn f) d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|err].
-      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot]; subst; try err.
+      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot ot' Hsite]; subst; try err.
       * destruct (view_function P f') as [body|] eqn:Ef.
         2:{ assert (Ef' : view_function P' f' = None) by (rewrite Hfn, Ef; reflexivity). err. }
         assert (Ef' : view_function P' f' = Some (T body)) by (rewrite Hfn, Ef; reflexivity).
@@ -1136,12 +1281,12 @@ Proof.
       * destruct (IHl W d d' g st args ltac:(eassumption) ltac:(eassumption) Hd Hst) as [Hs|[ka Hka]]; [bk|].
         pose proof (inv_l P Hok k d g st args Hst) as Hn.
         destruct (eval_arguments k P d g st args) as [[[ws g1] st1]|r1]; simpl in Hn; [|err].
-        right. evgo. rewrite prim_at_eq by exact Hn. reflexivity.
+        right. evgo. rewrite (prim_at_eq p ot ot' ws st1 Hsite Hn). reflexivity.
     + (* EMethod *)
       pose proof (ag_look Hd it ltac:(assumption)) as Ho. red1.
       destruct (lookup_provision it d) as [a|] eqn:El,
                (lookup_provision it d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|err].
-      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot]; subst; try err.
+      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot ot' Hsite]; subst; try err.
       * destruct (view_function P f') as [body|] eqn:Ef.
         2:{ assert (Ef' : view_function P' f' = None) by (rewrite Hfn, Ef; reflexivity). err. }
         assert (Ef' : view_function P' f' = Some (T body)) by (rewrite Hfn, Ef; reflexivity).
@@ -1161,7 +1306,7 @@ Proof.
         destruct (IHl W d d' g0 st0 args ltac:(eassumption) ltac:(eassumption) Hd Hn0) as [Hs|[ka Hka]]; [bk|].
         pose proof (inv_l P Hok k d g0 st0 args Hn0) as Hn.
         destruct (eval_arguments k P d g0 st0 args) as [[[ws g1] st1]|r1]; simpl in Hn; [|err].
-        right. evgo. rewrite prim_at_eq by exact Hn. reflexivity.
+        right. evgo. rewrite (prim_at_eq p ot ot' (w0 :: ws) st1 Hsite Hn). reflexivity.
     + (* ELet *)
       red1.
       destruct (IHe W d d' g st e1 ltac:(eassumption) ltac:(eassumption) Hd Hst) as [Hs|[k1 Hk1]]; [bk|].
@@ -1185,7 +1330,9 @@ Proof.
         destruct (Nat.ltb (length bsH) k) eqn:Elt; [|left; right; reflexivity].
         set (Q := sel cH rs) in *.
         set (kp := keepf (uses e1) Q).
-        pose proof (agree_narrow cH Q kp Hd (sel_nonU rs ltac:(assumption))) as Hd1.
+        pose proof (@agree_narrow_sites U cH H W d d' Q kp
+          (application_environment P d H th (append_environment empty_environment dc)) d'
+          Hd (sel_nonU rs ltac:(assumption)) Hprims) as Hd1.
         assert (Hlk1 : lk (fun i => if existsb (item_eqb i) (map fst Q) then kp i = true else W i) (uses e1)).
         { intros i Hi. destruct (existsb (item_eqb i) (map fst Q)) eqn:E.
           - apply keepf_sound; assumption.
@@ -1195,7 +1342,7 @@ Proof.
         exists (S (S (k1 + length bs1))). intros j Hj.
         replace j with (length bs1 + (j - length bs1)) by lia.
         rewrite chain_eval; [|unfold bs1; apply prims_of_prim, Hprims|clear - Hj; lia].
-        unfold bs1 in *. rewrite installs_qents, map_qent_filter. apply Hk1. clear - Hj; lia.
+        unfold bs1 in *. rewrite installs_qents, map_site_qent_filter. apply Hk1. clear - Hj; lia.
       * (* any other binding *)
         cbn [fp_e]. rewrite Efa. red1.
         destruct (IHb W d d' g st [bd] ltac:(cbn; rewrite andb_true_r; assumption)
@@ -1302,9 +1449,11 @@ Proof.
       destruct Ho as [_ Hg]. destruct (Hg isU_U) as [dc ->].
       rewrite (orig_bapp_fun k d g st th rs r dc El).
       destruct (Nat.ltb (length bsH) k) eqn:Elt; [|left; cbn; right; reflexivity].
-      assert (Hd1 : agree W (append_environment (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs))) d)
-                            (append_environment (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs))) d')).
-      { apply agree_append; [|exact Hd]. apply lrel_qents. apply sel_nonU. assumption. }
+      assert (Hd1 : agree W
+        (append_environment (EnvironmentWithAliases [] []
+          (map (site_qent cH (application_environment P d H th (append_environment empty_environment dc)) true) (sel cH rs))) d)
+        (append_environment (EnvironmentWithAliases [] [] (map (site_qent cH d' false) (sel cH rs))) d')).
+      { apply agree_append; [|exact Hd]. apply lrel_site_qents; [apply sel_nonU; assumption|exact Hprims]. }
       destruct (IHb W _ _ g st r ltac:(assumption) ltac:(assumption) Hd1 Hst) as [Hs|[x [Hx [kr Hkr]]]];
         [left; exact Hs|].
       right. exists x. split; [exact Hx|].
@@ -1360,7 +1509,7 @@ Proof.
         destruct (lookup_provision (IFun u') d) as [a|] eqn:El,
                  (lookup_provision (IFun u') d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|stuck_here].
         destruct Ho as [Ha _].
-        inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot]; subst; try stuck_here.
+        inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot ot' Hsite]; subst; try stuck_here.
         assert (Hu : isU U (IFun u) = false) by (apply isU_fun, negb_true_iff; assumption).
         destruct (IHb W _ _ g st r ltac:(assumption) ltac:(assumption)
                     (agree_install (@PFun U H h (compose_adaptation sms sm) _ _ (compose_positions rms rm)
@@ -1394,7 +1543,7 @@ Proof.
     pose proof (ag_look Hd (IFun u) Hu) as Ho.
     destruct (lookup_provision (IFun u) d) as [a|] eqn:El,
              (lookup_provision (IFun u) d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|errq].
-    destruct Ho as [Ha _]. inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsms Hdc|p ot]; subst; try errq.
+    destruct Ho as [Ha _]. inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsms Hdc|p ot ot' Hsite]; subst; try errq.
     destruct (view_functor P h) as [code|] eqn:Eh.
     2:{ assert (Eh' : view_functor P' h = None) by (rewrite Hfun, Eh; reflexivity). errq. }
     assert (Eh' : view_functor P' h = Some (fp_code U cH code)) by (rewrite Hfun, Eh; reflexivity).
@@ -1529,7 +1678,7 @@ Proof.
       pose proof (ag_look Hd (IFn f) ltac:(assumption)) as Ho. red1.
       destruct (lookup_provision (IFn f) d) as [a|] eqn:El,
                (lookup_provision (IFn f) d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|errB].
-      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot]; subst; try errB.
+      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot ot' Hsite]; subst; try errB.
       * rewrite Hfn. destruct (view_function P f') as [body|] eqn:Ef; cbn [option_map]; [|errB].
         destruct (IHl W d d' g st args ltac:(eassumption) ltac:(eassumption) Hd Hst)
           as [Hs|[[ks Hs]|[ka Hka]]]; [ofB|skB|].
@@ -1541,12 +1690,12 @@ Proof.
           as [Hs|[[ks Hs]|[ka Hka]]]; [ofB|skB|].
         pose proof (inv_l P' Hok' k d' g st (map T args) Hst) as Hn.
         destruct (eval_arguments k P' d' g st (map T args)) as [[[ws g1] st1]|r1]; simpl in Hn; [|errB].
-        right. right. evgo. rewrite prim_at_eq by exact Hn. reflexivity.
+        right. right. evgo. rewrite (prim_at_eq p ot ot' ws st1 Hsite Hn). reflexivity.
     + (* EMethod *)
       pose proof (ag_look Hd it ltac:(assumption)) as Ho. red1.
       destruct (lookup_provision it d) as [a|] eqn:El,
                (lookup_provision it d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|errB].
-      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot]; subst; try errB.
+      destruct Ho as [Ha _]. inversion Ha as [w|f' df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot ot' Hsite]; subst; try errB.
       * rewrite Hfn. destruct (view_function P f') as [body|] eqn:Ef; cbn [option_map]; [|errB].
         destruct (IHe W d d' g st e0 ltac:(eassumption) ltac:(eassumption) Hd Hst)
           as [Hs|[[ks Hs]|[k0 Hk0]]]; [ofB|skB|].
@@ -1566,7 +1715,7 @@ Proof.
           as [Hs|[[ks Hs]|[ka Hka]]]; [ofB|skB|].
         pose proof (inv_l P' Hok' k d' g0 st0 (map T args) Hn0) as Hn.
         destruct (eval_arguments k P' d' g0 st0 (map T args)) as [[[ws g1] st1]|r1]; simpl in Hn; [|errB].
-        right. right. evgo. rewrite prim_at_eq by exact Hn. reflexivity.
+        right. right. evgo. rewrite (prim_at_eq p ot ot' (w0 :: ws) st1 Hsite Hn). reflexivity.
     + (* ELet *)
       red1.
       destruct (IHe W d d' g st e1 ltac:(eassumption) ltac:(eassumption) Hd Hst)
@@ -1594,8 +1743,7 @@ Proof.
         apply Nat.ltb_ge in Eshort.
         replace (S k) with (length bs1 + (S k - length bs1)) by lia.
         rewrite chain_eval by (auto; lia).
-        unfold bs1. rewrite installs_qents, map_qent_filter. fold bs1.
-        pose proof (agree_narrow cH Q kp Hd (sel_nonU rs ltac:(assumption))) as Hd1.
+        unfold bs1. rewrite installs_qents, map_site_qent_filter. fold bs1.
         assert (Hlk1 : lk (fun i => if existsb (item_eqb i) (map fst Q) then kp i = true else W i) (uses e1)).
         { intros i Hi. destruct (existsb (item_eqb i) (map fst Q)) eqn:E.
           - apply keepf_sound; assumption.
@@ -1607,6 +1755,9 @@ Proof.
             rewrite (orig_app_none j d g st th rs e1 El). eexists; reflexivity. }
         destruct (lookup_provision (IFun U) d') as [a'|]; simpl in Ho; try contradiction.
         destruct Ho as [_ Hg]. destruct (Hg isU_U) as [dc ->].
+        pose proof (@agree_narrow_sites U cH H W d d' Q kp
+          (application_environment P d H th (append_environment empty_environment dc)) d'
+          Hd (sel_nonU rs ltac:(assumption)) Hprims) as Hd1.
         destruct (IHe' _ _ _ g st e1 ltac:(assumption) Hlk1 Hd1 Hst) as [Hs|[[ks Hs]|[k1 Hk1]]].
         -- left. exact Hs.
         -- right. left. exists (S (S (S (S (ks + length bsH))))). intros j Hj.
@@ -1744,9 +1895,6 @@ Proof.
       apply Nat.leb_gt in Eshort.
       replace (S k) with (length bs1 + (S k - length bs1)) by lia.
       rewrite prims_app by auto. unfold bs1. rewrite installs_qents. fold bs1.
-      assert (Hd1 : agree W (append_environment (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs))) d)
-                            (append_environment (EnvironmentWithAliases [] [] (map (qent cH) (sel cH rs))) d')).
-      { apply agree_append; [|exact Hd]. apply lrel_qents. apply sel_nonU. assumption. }
       destruct (IHall (S k - length bs1) ltac:(lia)) as [_ [_ [IHb' _]]].
       pose proof (ag_look Hd (IFun U) ltac:(assumption)) as Ho.
       destruct (lookup_provision (IFun U) d) as [a|] eqn:El.
@@ -1754,6 +1902,11 @@ Proof.
           rewrite (orig_bapp_none j d g st th rs r El). eexists; reflexivity. }
       destruct (lookup_provision (IFun U) d') as [a'|]; simpl in Ho; try contradiction.
       destruct Ho as [_ Hg]. destruct (Hg isU_U) as [dc ->].
+      assert (Hd1 : agree W
+        (append_environment (EnvironmentWithAliases [] []
+          (map (site_qent cH (application_environment P d H th (append_environment empty_environment dc)) true) (sel cH rs))) d)
+        (append_environment (EnvironmentWithAliases [] [] (map (site_qent cH d' false) (sel cH rs))) d')).
+      { apply agree_append; [|exact Hd]. apply lrel_site_qents; [apply sel_nonU; assumption|exact Hprims]. }
       destruct (IHb' W _ _ g st r ltac:(assumption) ltac:(assumption) Hd1 Hst)
         as [Hs|[[ks Hs]|[x [Hx [kr Hkr]]]]].
       * left. exact Hs.
@@ -1821,7 +1974,7 @@ Proof.
         destruct (lookup_provision (IFun u') d) as [a|] eqn:El,
                  (lookup_provision (IFun u') d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|stuckB].
         destruct Ho as [Ha _].
-        inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot]; subst; try stuckB.
+        inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsm Hdc|p ot ot' Hsite]; subst; try stuckB.
         assert (Hu : isU U (IFun u) = false) by (apply isU_fun, negb_true_iff; assumption).
         destruct (IHb W _ _ g st r ltac:(assumption) ltac:(assumption)
                     (agree_install (@PFun U H h (compose_adaptation sms sm) _ _ (compose_positions rms rm)
@@ -1857,7 +2010,7 @@ Proof.
     pose proof (ag_look Hd (IFun u) Hu) as Ho.
     destruct (lookup_provision (IFun u) d) as [a|] eqn:El,
              (lookup_provision (IFun u) d') as [a'|] eqn:El'; simpl in Ho; try contradiction; [|errBq].
-    destruct Ho as [Ha _]. inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsms Hdc|p ot]; subst; try errBq.
+    destruct Ho as [Ha _]. inversion Ha as [w|f0 df df' Hdf|h sms dc dc' rms Hsms Hdc|p ot ot' Hsite]; subst; try errBq.
     rewrite Hfun. destruct (view_functor P h) as [code|] eqn:Eh; cbn [option_map]; [|errBq].
     pose proof (all_select _ Hd Hs Hsm) as Hs1.
     destruct (select_provisions d sm) as [d1|] eqn:E1, (select_provisions d' sm) as [d1'|] eqn:E1';
@@ -1917,6 +2070,9 @@ Let P' := program_of (fp_program U cH p) argv rd.
 Variable ok : mstate -> Prop.
 Hypothesis Hprim : forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st.
 Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
+Hypothesis Hsites : forall operation site ws st,
+  run_prim P operation site ws st =
+  run_prim P operation (BaseSites.retained_site operation site) ws st.
 
 Lemma chk_parts : body_ok cH = true
   /\ (forall f b, view_function P f = Some b -> ok_e U b = true)
@@ -1944,7 +2100,7 @@ Theorem run_main_forward : forall fuel st0, ok st0 ->
                    = run_main fuel P (program_main p) (program_environment p) st0).
 Proof.
   intros fuel st0 Hst. destruct chk_parts as [Hb [Hf [Hu He]]]. destruct views as [Hfn Hfun].
-  destruct (@fwd_all U H cH P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
+  destruct (@fwd_all U H cH P P' ok Hfn Hfun Hprim Hok Hsites eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
     as [Hsim _].
   unfold run_main. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl.
@@ -1966,7 +2122,7 @@ Proof.
   intros fuel st0 Hst. destruct chk_parts as [Hb [Hf [Hu He]]]. destruct views as [Hfn Hfun].
   assert (Hok' : forall q site ws st, ok st -> ok (snd (run_prim P' q site ws st)))
     by (intros; rewrite Hprim by assumption; auto).
-  destruct (@bwd_all U H cH P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
+  destruct (@bwd_all U H cH P P' ok Hfn Hfun Hprim Hok Hsites eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
     as [Hsim _].
   unfold run_main. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl.
@@ -2019,10 +2175,15 @@ Proof.
     intros operation arguments [i s] Valid. unfold M.ReferenceHost.raw_primitive.
     destruct (M.supports i operation); [|exact Valid].
     destruct (M.primitive i _ operation arguments (M.external s)); exact Valid. }
+  assert (Hsites : forall operation site ws st,
+    M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) operation site ws st =
+    M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) operation
+      (BaseSites.retained_site operation site) ws st).
+  { intros. unfold M.ReferenceHost.run_prim. apply BaseSites.erased_primitive_call. }
   unfold M.Runs, M.runtime. simpl. split.
   - intros [fuel E].
     destruct (FS.run_main_backward U H program cH (M.arguments initial) (M.read_file initial) Ec Eok ok
-                Hprim Hok fuel (interface, initial) eq_refl) as [Hs|[[ks Hs]|[k1 Hk1]]].
+                Hprim Hok Hsites fuel (interface, initial) eq_refl) as [Hs|[[ks Hs]|[k1 Hk1]]].
     + rewrite (observe_none _ Hs) in E. discriminate.
     + exfalso. destruct (observe_stuck _ (Hs ks (le_n ks))) as [c Ec'].
       apply (Hsafe c (snd (M.Reference.evaluation_state (M.Reference.run_main ks
@@ -2032,7 +2193,7 @@ Proof.
     + exists k1. rewrite (Hk1 k1 (le_n k1)). exact E.
   - intros [fuel E].
     destruct (FS.run_main_forward U H program cH (M.arguments initial) (M.read_file initial) Ec Eok ok
-                Hprim Hok fuel (interface, initial) eq_refl) as [[Hs|Hs]|[k1 Hk1]].
+                Hprim Hok Hsites fuel (interface, initial) eq_refl) as [[Hs|Hs]|[k1 Hk1]].
     + exfalso. destruct (observe_stuck _ Hs) as [c Ec'].
       apply (Hsafe c (snd (M.Reference.evaluation_state (M.Reference.run_main fuel
         (program_of program (M.arguments initial) (M.read_file initial))

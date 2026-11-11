@@ -193,9 +193,9 @@ Definition ltyped_capture (d : lenv) (types : type_capture) (dc : lenv) : lenv :
   LEnv (ldefer_all (lmeanings d) (capture_generations types))
     (ldefer_all (lmeanings d) (capture_aliases types)) (lprovs dc).
 Definition lprimitive_closure (d : lenv) (i : item) (p : op) : lprov :=
-  LPrimitive p (match decode p, i with
-    | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (lground d tau)
-    | _, _ => None end).
+  LPrimitive p (match i with
+    | IMth tau _ _ => Some (lapp (lmeanings d) tau)
+    | _ => None end).
 (* item_eqb with a method key's symbols compared before its receiver and
    θ, so a lookup passes over other methods' entries without comparing
    types. The same boolean (fast_item_eqb_spec). *)

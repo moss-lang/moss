@@ -139,6 +139,7 @@ entry they belong to.
 | 105 | Base's host laws are independent of the public interface record | BaseLaws | none (definitional refactoring) |
 | 106 | Base owns primitive argument and allocation-result adaptation | sep S4a | none (definitional) |
 | 107 | Primitive execution receives its site through the host boundary | sep S4b | none for public execution (ABI relocation) |
+| 108 | Primitive method bindings record their receiver independently of the operation | sep S4c | representation change; public observations preserved |
 | 109 | Integrate scalar/reference carriers with the checked host ABI and merge semantics | sep S2 integration | representation change |
 | 110 | Integrate named operations with the checked host laws and site-erasure proofs | sep S3 integration | representation change |
 
@@ -3474,6 +3475,28 @@ using one fresh atom per abstract class must preserve that behaviour
   host keeps the interpreter's operational rules generic while retaining the
   existing external interface and its heap laws.
 - **Class.** Calling-convention relocation (criterion 8, platform separation).
+
+### 108. Primitive method bindings record their receiver independently of the operation (S4c)
+
+- **Rule.** `primitive_closure` and its lazy/fast representations record
+  `Some (ground receiver)` for every method key. Other keys record None.
+  The interpreter no longer decodes or classifies a platform operation to
+  construct its closure. Uniform recording includes unknown operations.
+- **Fidelity.** Base's call adapter observes sites only for allocation. The
+  checked same-fuel erasure theorem preserves every public interface's
+  observations when other stored sites differ. Ground type meanings, aliases,
+  saved generations, result reading and primitive availability are retained.
+- **Fast path.** Its relation permits precisely equality after Base site
+  erasure; allocation sites must still agree exactly. Primitive-body helpers
+  track the actual emitted sites, with unchanged fuel cutoffs. The callback
+  site law is explicit in the generic proof and is proved by BaseCall for
+  every allowed raw interface, including missing/unsupported operations.
+- **Safety.** HeldAt records the ground receiver for every method binding.
+  Preserve the exact public safety statement, all-fuel interpreter agreement
+  and public pass roots, with kernel primitives only. Scalar compilation and
+  slot dispatch retain Some sites and remain eligible.
+- **Class.** Runtime representation change; no static rule relaxed and no
+  intended Moss-observable difference. No additional public interface premise.
 
 ### 109. Integrate scalar/reference carriers with the current language (S2)
 

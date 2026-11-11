@@ -307,9 +307,9 @@ Definition ftyped_capture (d : fenv) (types : type_capture) (dc : fenv) : fenv :
   FEnv (ldefer_all (fmeanings d) (capture_generations types))
     (ldefer_all (fmeanings d) (capture_aliases types)) (fstore_of dc).
 Definition fprimitive_closure (d : fenv) (i : item) (p : op) : fprov :=
-  FPrimitive p (match decode p, i with
-    | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (lapp (fmeanings d) tau)
-    | _, _ => None end).
+  FPrimitive p (match i with
+    | IMth tau _ _ => Some (lapp (fmeanings d) tau)
+    | _ => None end).
 (* A primitive binding often introduces the very next lookup. Keep that
    row in front of the trie and fold it back before another installation. *)
 Definition finstall_primitive (d : fenv) (i : item) (p : op) : fenv :=

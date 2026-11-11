@@ -368,8 +368,7 @@ Proof.
   destruct Which as [->| ->]; destruct p; cbn in E; try discriminate; reflexivity.
 Qed.
 
-(* The closure's held header, as primitive_closure records it: the ground
-   receiver type of the `boxed`/`arrayed` method. *)
+(* A primitive method binding records its ground receiver type. *)
 Definition HeldAt (m : subst) (params : list ty) (held : option ty) : Prop :=
   match held with
   | None => True
