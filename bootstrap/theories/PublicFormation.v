@@ -810,6 +810,25 @@ Proof.
   exists g. reflexivity.
 Qed.
 
+(* A section's output is already expanded: every variable it retains is
+   fixed by that section, so cannot be a member of a structured class. *)
+Lemma section_output_expanded : forall M s, Solved M -> SectionOf M s ->
+  forall t, expand M (app_subst s t) = app_subst s t.
+Proof.
+  intros M s S Section t.
+  assert (Idem : app_subst s (app_subst s t) = app_subst s t).
+  { symmetry. apply (proj2 Section), PublicMerge.merge_eq_read. exact (proj1 Section). }
+  unfold expand. rewrite <- (PublicTypeRead.app_subst_nil (app_subst s t)) at 2.
+  apply PublicTypeRead.subst_agree_on. intros x Ix. cbn [app_subst lookup_subst].
+  rewrite PublicMerge.shape_lookup_none; [reflexivity|].
+  intros c Ic Member. destruct (mc_shape c) as [u|] eqn:Shape; [|reflexivity].
+  exfalso.
+  pose proof (proj2 Section _ _ (@MEShape M c x u Ic Member Shape)) as Read.
+  rewrite (subst_fixed_gens (app_subst s t) s Idem x Ix) in Read.
+  destruct (subst_abs_source s u x (eq_sym Read)) as [y E].
+  exact (proj1 (proj2 S) c u Ic Shape y E).
+Qed.
+
 Definition RenamesOn (s : subst) (t : ty) : Prop :=
   forall x, In x (gens t) -> exists y, app_subst s (TAbs x) = TAbs y.
 

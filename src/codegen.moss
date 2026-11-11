@@ -5858,8 +5858,7 @@ assume Std {
       types::contains_sym(given, t)
     }
 
-    fn in_force_through(r: Int, genv: Int, given: IntList, fbase: Int, members: IntList): Bool {
-      let z = lower::canon(fbase, types::ty_of_symbol(types::kd_abstract(), r));
+    fn reading_in_force(z: Int, genv: Int, given: IntList, fbase: Int, members: IntList): Bool {
       var i = 0;
       while i < members.length() {
         let y = members.get(i);
@@ -5870,19 +5869,31 @@ assume Std {
         }
         i = i + 1;
       }
+      false
+    }
+
+    fn in_force_through(r: Int, genv: Int, given: IntList, fbase: Int, members: IntList): Bool {
+      let z = lower::canon(fbase, types::ty_of_symbol(types::kd_abstract(), r));
+      if reading_in_force(z, genv, given, fbase, members) {
+        return true;
+      }
       if lower::is_variable(z) {
         return false;
       }
       let syms = int_list();
       lower::abstracts_in(z, syms);
-      i = 0;
+      var i = 0;
       while i < syms.length() {
-        var t = syms.get(i);
-        if ast::is_some(prog::origin_of(t)) {
-          t = prog::origin_of(t);
+        let generation = syms.get(i);
+        var symbol = generation;
+        if ast::is_some(prog::origin_of(generation)) {
+          symbol = prog::origin_of(generation);
         }
-        if !type_in_force(t, genv, given) {
-          return false;
+        if !type_in_force(symbol, genv, given) {
+          let leaf = types::ty_of_symbol(types::kd_abstract(), generation);
+          if !reading_in_force(lower::canon(fbase, leaf), genv, given, fbase, members) {
+            return false;
+          }
         }
         i = i + 1;
       }

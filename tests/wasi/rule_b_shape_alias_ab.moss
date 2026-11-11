@@ -1,0 +1,8 @@
+type A;
+type B;
+type R;
+tag Leaf;
+assume A { tag Box(A); }
+context Need = A, B, A = B, R = Box;
+assume Need { fn f() {} }
+fn main() { bind A = Leaf; f(); }

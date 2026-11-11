@@ -3371,19 +3371,16 @@ Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
      lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
   (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
 
-(* Rule B (criteria section 3, principality, and section 2, coherence):
-   using an item s whose assume context Cs has a type requirement r (a
-   call of a defined fn or attached method, a bind of it as a provider)
-   needs r in force at the use: assumed or bound in C, or in force
-   through s's merge class of r, a member of the class in force in C or
-   a structured type all of whose symbols are in force in C.  Before, a
-   requirement the caller left unbound was read as itself, so a family
-   demand could key a provision at a declared symbol out of force
-   (tests/errors/family_unbound_need.moss), and a closure could capture one. *)
+(* Rule B: a requirement may be supplied through any member of its merge
+   class. For a structured meaning, the same rule applies to each abstract
+   generation remaining after the structured classes have been expanded. *)
+Definition InForceClass (C : cx) (M : merge) (r : nat) : Prop :=
+  exists y, MergeEq M (TAbs y) (TAbs r) /\ nlook y (c_ty C) <> None.
+
 Definition InForceThrough (C Cs : cx) (r : nat) : Prop :=
-  (exists y, canon Cs (TAbs y) = canon Cs (TAbs r) /\ nlook y (c_ty C) <> None) \/
-  ((forall z, canon Cs (TAbs r) <> TAbs z) /\
-   forall y, In y (gens (canon Cs (TAbs r))) -> nlook y (c_ty C) <> None).
+  InForceClass C (c_merge Cs) r \/
+  let t := expand (c_merge Cs) (TAbs r) in
+  (forall z, t <> TAbs z) /\ forall y, In y (gens t) -> InForceClass C (c_merge Cs) y.
 Definition RequirementsInForce (C Cs : cx) : Prop :=
   forall r, In r (map fst (c_ty Cs)) -> InForceThrough C Cs r.
 

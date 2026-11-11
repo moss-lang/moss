@@ -145,6 +145,7 @@ entry they belong to.
 | 111 | Static linking consumes Tables, Provides, and EntryABI | sep S5a | none (equivalent regrouping) |
 | 112 | Public contracts consume one platform at build and run time | sep S5b | none for the Base specialization |
 | 113 | Separate concrete Base definitions into AuditBase.v | sep S5c | none (relocation) |
+| 114 | Rule B reads each structured dependency through its merge class | M4a | C |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3573,6 +3574,25 @@ using one fresh atom per abstract class must preserve that behaviour
   Base proof facts are in `BaseFacts.v`; generic proof helpers stay in
   `AuditFacts.v`. The safety proof still certifies the concrete Base instance.
 - **Class.** File and namespace relocation; no acceptance or runtime change.
+
+
+### 114. Rule B reads each structured dependency through its merge class (M4a)
+
+- **Rule.** A requirement is in force if a member of its merge class is
+  bound. For a structured type, expand its structure and apply that same
+  test to each abstract generation it mentions.
+- **Example.** [A = B](../tests/wasi/rule_b_shape_alias_ab.moss) and
+  [B = A](../tests/wasi/rule_b_shape_alias_ba.moss) differ only in the
+  direction of one equation. The function needs `R = Box` and `Box`
+  needs `A`. The caller binds `A`. Both old frontends rejected `A = B`
+  and accepted `B = A`. Both now compile and run either spelling. Removing
+  the binding or binding the aliases to distinct types still fails.
+- **Proof.** In a solved merge, the reference's section makes equal canonical
+  readings equivalent to class equality. The checked decision theorem uses
+  this equivalence. The safety proof uses the caller's substitution to
+  transfer the bound member's meaning to the required leaf.
+- **Class C** (criterion 2, coherence). Both executable frontends use the
+  same class check. The public safety certificate checks the revised rule.
 
 ---
 

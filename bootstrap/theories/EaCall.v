@@ -56,14 +56,18 @@ Definition call_theta (W : world) (who : string) (C Cs : cx) : er subst :=
   | None => Ok th
   end.
 
-(* Rule B (Audit's InForceThrough / RequirementsInForce).
-   SOUND: in_force_through C Cs r = true <-> InForceThrough C Cs r
-   (the witness y of the first disjunct is bound in C, so it ranges over
-   C's table) *)
+(* An effective section lets the executable compare canonical readings.
+   The structured case first tries the generation itself, then looks for
+   any caller binding in its class. *)
+Definition has_bound_reading (C Cs : cx) (t : ty) : bool :=
+  existsb (fun q => ty_eqb (canon Cs (TAbs (fst q))) t) (c_ty C).
+
+(* SOUND: for a solved merge and section, this decides InForceThrough. *)
 Definition in_force_through (C Cs : cx) (r : nat) : bool :=
   let cr := canon Cs (TAbs r) in
-  existsb (fun q => ty_eqb (canon Cs (TAbs (fst q))) cr) (c_ty C) ||
-  (match cr with TAbs _ => false | _ => true end && forallb (bound_in C) (gens cr)).
+  has_bound_reading C Cs cr ||
+  (match cr with TAbs _ => false | _ => true end &&
+    forallb (fun y => bound_in C y || has_bound_reading C Cs (canon Cs (TAbs y))) (gens cr)).
 (* SOUND: requirements_in_force C Cs = true -> RequirementsInForce C Cs *)
 Definition requirements_in_force (C Cs : cx) : bool :=
   forallb (fun q => in_force_through C Cs (fst q)) (c_ty Cs).

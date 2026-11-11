@@ -1104,6 +1104,7 @@ Theorem demand_at_th_scoped : forall C X f Cf ns th r m, MentionsTyped W -> Form
 Proof.
   intros C X f Cf ns th r m Mt Fc Es Tin Ctx [Keys [Bound Merges]] RB Ir.
   pose proof (ctxof_cx_formed W Mt f Cf ns Ctx) as [CfF _].
+  destruct (function_context_merge W f Cf ns Ctx) as [SolvedCf Section].
   destruct (ctx_table_formed W f Cf ns Ctx) as [_ Dom].
   assert (CX : forall t, canon X t = canon C t) by (intros t; unfold canon; rewrite Es; reflexivity).
   set (P := fun t => TyOk W t /\ ScopedTy W C t).
@@ -1131,27 +1132,40 @@ Proof.
     - intros y Iy. destruct (gens_subst t comp y Iy) as [z [Iz [[Nz _]|[w [L Iw]]]]].
       + rewrite (Lk z Iz) in Nz. discriminate.
       + rewrite (Lk z Iz) in L. injection L as <-. exact (proj2 (Pz z Iz) y Iw). }
-  (* each requirement, through rule B *)
+  (* A bound member determines the reading of its whole class. *)
+  assert (Through : forall x, In x (map fst (c_ty Cf)) -> InForceClass X (c_merge Cf) x ->
+    P (canon X (app_subst th (TAbs x)))).
+  { intros x Ix [y [Equal Ny]].
+    apply (proj2 (context_canon_iff_mergeeq Cf Section _ _)) in Equal.
+    assert (Iy : In y (map fst (c_ty Cf))).
+    { destruct (lookup_subst y (c_sub Cf)) as [u|] eqn:Ly; [exact (proj1 (Dom y u (lookup_subst_in_pair _ _ _ Ly)))|].
+      unfold canon in Equal. cbn [app_subst] in Equal. rewrite Ly in Equal.
+      destruct (lookup_subst x (c_sub Cf)) as [u'|] eqn:Lx.
+      - subst u'. exact (proj2 (Dom x (TAbs y) (lookup_subst_in_pair _ _ _ Lx)) y (or_introl eq_refl)).
+      - injection Equal as ->. exact Ix. }
+    rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)), <- Equal, (theta_canon_lift X Cf th Merges (TAbs y)).
+    exact (InF y Iy Ny). }
+  (* The structured case reads each leaf through a bound class member. *)
   assert (Req : forall x, In x (map fst (c_ty Cf)) -> P (canon X (app_subst th (TAbs x)))).
-  { intros x Ix. destruct (RB x Ix) as [[y [Ey Ny]]|[NA AllF]].
-    - assert (Iy : In y (map fst (c_ty Cf))).
-      { destruct (lookup_subst y (c_sub Cf)) as [u|] eqn:Ly; [exact (proj1 (Dom y u (lookup_subst_in_pair _ _ _ Ly)))|].
-        unfold canon in Ey. cbn [app_subst] in Ey. rewrite Ly in Ey.
-        destruct (lookup_subst x (c_sub Cf)) as [u'|] eqn:Lx.
-        + subst u'. exact (proj2 (Dom x (TAbs y) (lookup_subst_in_pair _ _ _ Lx)) y (or_introl eq_refl)).
-        + injection Ey as ->. exact Ix. }
-      rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)), <- Ey, (theta_canon_lift X Cf th Merges (TAbs y)).
-      exact (InF y Iy Ny).
-    - rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)).
-      destruct (lookup_subst x (c_sub Cf)) as [u|] eqn:Lx.
-      2: { exfalso. apply (NA x). unfold canon. cbn [app_subst]. rewrite Lx. reflexivity. }
-      assert (Eu : canon Cf (TAbs x) = u) by (unfold canon; cbn [app_subst]; rewrite Lx; reflexivity).
-      rewrite Eu in AllF |- *. pose proof (lookup_subst_in_pair _ _ _ Lx) as Iq.
-      apply Over.
-      + rewrite <- Eu. apply (cf_read W Cf CfF).
-        apply tyok_abs, typed_abstract. exact (ctxof_keys_typed Mt f Cf ns Ctx x Ix).
-      + exact (proj2 (Dom x u Iq)).
-      + intros z Iz. apply InF; [exact (proj2 (Dom x u Iq) z Iz)|exact (AllF z Iz)]. }
+  { intros x Ix. destruct (RB x Ix) as [Class|[NA AllF]]; [exact (Through x Ix Class)|].
+    assert (Read : MergeEq (c_merge Cf) (TAbs x) (canon Cf (TAbs x))).
+    { apply PublicMerge.merge_eq_read. exact (proj1 Section). }
+    assert (Expanded : expand (c_merge Cf) (canon Cf (TAbs x)) = canon Cf (TAbs x)).
+    { apply section_output_expanded; [exact SolvedCf|exact Section]. }
+    pose proof (PublicMerge.expand_outer SolvedCf Read) as Outer. rewrite Expanded in Outer.
+    pose proof (proj1 (@PublicMerge.type_outer_nonabs _ _ Outer) NA) as NonAbs.
+    pose proof (proj1 (@PublicMerge.expanded_in_force X _ _ _ SolvedCf Read) AllF) as Leaves.
+    rewrite Expanded in Leaves.
+    rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)).
+    destruct (lookup_subst x (c_sub Cf)) as [u|] eqn:Lx.
+    2: { exfalso. apply (NonAbs x). unfold canon. cbn [app_subst]. rewrite Lx. reflexivity. }
+    assert (Eu : canon Cf (TAbs x) = u) by (unfold canon; cbn [app_subst]; rewrite Lx; reflexivity).
+    rewrite Eu in Leaves |- *. pose proof (lookup_subst_in_pair _ _ _ Lx) as Iq.
+    apply Over.
+    - rewrite <- Eu. apply (cf_read W Cf CfF).
+      apply tyok_abs, typed_abstract. exact (ctxof_keys_typed Mt f Cf ns Ctx x Ix).
+    - exact (proj2 (Dom x u Iq)).
+    - intros z Iz. exact (Through z (proj2 (Dom x u Iq) z Iz) (Leaves z Iz)). }
   apply in_map_iff in Ir as [k [E Ik]].
   destruct k as [t0|v0|f0|r0 m0 a0|u0]; cbn in E; try discriminate. injection E as Er -> ->.
   destruct (need_provision f Cf ns _ Ctx Ik) as [p Ip].

@@ -750,6 +750,53 @@ Proof.
   eapply METrans; [apply symbol_read |]. rewrite Eq. apply MESym, symbol_read.
 Qed.
 
+(* Corresponding leaves of equal expanded types belong to the same class. *)
+Theorem expanded_generations_by_class : forall M, Solved M -> forall t u, MergeEq M t u ->
+  forall x, In x (gens (expand M t)) ->
+  exists y, In y (gens (expand M u)) /\ MergeEq M (TAbs x) (TAbs y).
+Proof.
+  intros M S t u Equal x Ix.
+  apply (merge_section_kernel (section_table_is_section S)) in Equal.
+  rewrite !section_table_read in Equal.
+  set (s := symbol_table M) in *.
+  assert (Rep : In (symbol_at M x) (gens (app_subst s (expand M t)))).
+  { eapply PublicSubstFacts.gens_subst_hit; [exact Ix|].
+    unfold s. rewrite symbol_at_read. cbn. left. reflexivity. }
+  rewrite Equal in Rep. apply PublicSubstFacts.gens_subst_iff in Rep as [y [Iy Rep]].
+  exists y. split; [exact Iy|].
+  unfold s in Rep. rewrite symbol_at_read in Rep. cbn in Rep. destruct Rep as [Rep|[]].
+  pose proof (symbol_read M (TAbs x)) as Ex.
+  pose proof (symbol_read M (TAbs y)) as Ey.
+  rewrite symbol_at_read in Ex, Ey. rewrite Rep in Ey.
+  eapply METrans; [exact Ex|apply MESym; exact Ey].
+Qed.
+
+Lemma type_outer_nonabs : forall t u, type_outer t = type_outer u ->
+  ((forall z, t <> TAbs z) <-> (forall z, u <> TAbs z)).
+Proof.
+  intros [] [] Eq; cbn [type_outer] in Eq; try discriminate;
+    split; intros H y E; try discriminate E; exact (H _ eq_refl).
+Qed.
+
+Lemma in_force_class_equiv : forall C M r r', MergeEq M (TAbs r) (TAbs r') ->
+  (InForceClass C M r <-> InForceClass C M r').
+Proof.
+  intros C M r r' Equal. split; intros [y [Eq InForce]]; exists y; split; try exact InForce.
+  - eapply METrans; eassumption.
+  - eapply METrans; [exact Eq|apply MESym; exact Equal].
+Qed.
+
+Lemma expanded_in_force : forall C M t u, Solved M -> MergeEq M t u ->
+  ((forall x, In x (gens (expand M t)) -> InForceClass C M x) <->
+   (forall x, In x (gens (expand M u)) -> InForceClass C M x)).
+Proof.
+  intros C M t u S Equal. split; intros Force x Ix.
+  - destruct (@expanded_generations_by_class M S u t (MESym Equal) x Ix) as [y [Iy E]].
+    apply (proj2 (@in_force_class_equiv C M x y E)). exact (Force y Iy).
+  - destruct (@expanded_generations_by_class M S t u Equal x Ix) as [y [Iy E]].
+    apply (proj2 (@in_force_class_equiv C M x y E)). exact (Force y Iy).
+Qed.
+
 Theorem item_eqbM_spec : forall M, Solved M -> forall k k',
   item_eqbM M k k' = true <-> KeyEq M k k'.
 Proof.
