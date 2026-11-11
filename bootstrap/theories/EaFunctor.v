@@ -286,6 +286,18 @@ Definition link_output_roles (u : nat) (Cu Cb : cx) (bound_to : string)
   let* promised := pure (provide_result E u Cu (fun t => TAbs (gen_of gtab t))) in
   ret ((outs, gtab), promised).
 
+Definition linked_pins (Cg Cb : cx) (fixed : list nat) : subst :=
+  flat_map (fun x => match nlook x (c_ty Cb) with
+                    | Some v => match nlook x (c_ty Cg) with
+                                | Some w => if ty_eqb w v then [] else [(x, v)]
+                                | None => [(x, v)]
+                                end
+                    | None => [] end) fixed.
+
+Definition valid_link_pin (Cu Cg : cx) (made fixed : list nat) (y : nat) : bool :=
+  bound_in Cg y && negb (is_some (lookup_subst y (c_sub Cg))) && negb (nmem y made) &&
+  (negb (bound_in Cu y) || nmem y fixed).
+
 Definition emit_linked_body (u gg : nat) (pins : subst) (code : functor_code)
     : M (code_slot FunctorTable) :=
   let* h := emit_fun_code code in
@@ -319,13 +331,8 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
       let gen := gen_of gtab in
       (* Q6, N5 (#95): the pins of fixed inputs: what the body binds each
          to, unless it is G's own reading of a fixed input G takes *)
-      let pins := flat_map (fun x => match nlook x (c_ty Cb) with
-                              | Some v => match nlook x (c_ty Cg) with
-                                          | Some w => if ty_eqb w v then [] else [(x, v)]
-                                          | None => [(x, v)] end
-                              | None => [] end) fu in
-      let pin_ok y := bound_in Cg y && negb (is_some (lookup_subst y (c_sub Cg))) && negb (nmem y made) &&
-                      (negb (bound_in Cu y) || nmem y fu) in
+      let pins := linked_pins Cg Cb fu in
+      let pin_ok := valid_link_pin Cu Cg made fu in
       let* _ := match find (fun q => negb (forallb pin_ok (gens (snd q)))) pins with
                 | Some (x, v) =>
                     match find (fun y => bound_in Cu y && negb (nmem y fu)) (gens v) with

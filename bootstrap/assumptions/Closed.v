@@ -189,6 +189,9 @@ Print Assumptions NM.EaBindCodeEffects.emit_linked_body_records_origin.
 From NM Require EaAssemblyCodeEffects.
 Print Assumptions NM.EaBindCodeEffects.cached_link_records_origin.
 Print Assumptions NM.EaAssemblyCodeEffects.assembly_link_records.
+From NM Require EaLinkBodySound.
+Print Assumptions NM.EaLinkBodySound.link_body_at_checked_decls.
+Print Assumptions NM.EaLinkBodySound.assembled_linked_code_in_program.
 
 From NM Require EaApplicationSound.
 Print Assumptions NM.EaApplicationSound.allocate_application_outputs_range.
