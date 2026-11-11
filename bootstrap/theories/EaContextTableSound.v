@@ -65,9 +65,24 @@ Definition ContextTelescope (W : world) (symbol : nat) (entries : list entry) : 
     w_decl W symbol = Some d /\ functor_parts (d_ast d) = Some (parameters, arguments, results, body) /\
     ItemsEntries W (d_mod d) [] [] (map CISpec arguments) entries meanings).
 
-Definition ContextMergeSound (E : env) : Prop :=
+Definition ContextMergeRemainder (E : env) : Prop :=
   forall symbol entries sigma classes, ContextTelescope (e_W E) symbol entries ->
-    EaCtx.merge E entries = Ok (sigma, classes) -> MostGeneralMerge sigma entries.
+    EaCtx.merge E entries = Ok (sigma, classes) ->
+    (forall t, app_subst sigma (app_subst sigma t) = app_subst sigma t) /\
+    (forall other, Unifies other entries -> forall t,
+      app_subst other (app_subst sigma t) = app_subst other t) /\
+    (forall g t, In (g, t) sigma -> lookup_subst g sigma = Some t).
+
+Lemma context_merge_most_general : forall E,
+  ContextMergeRemainder E -> forall symbol entries sigma classes,
+  ContextTelescope (e_W E) symbol entries ->
+  EaCtx.merge E entries = Ok (sigma, classes) -> MostGeneralMerge sigma entries.
+Proof.
+  intros E Remaining symbol entries sigma classes Telescope Run.
+  destruct (merge_checked _ _ _ _ Run) as [Unifier Scoped].
+  destruct (Remaining _ _ _ _ Telescope Run) as (Idempotent & Principal & Function).
+  repeat first [assumption | split].
+Qed.
 
 Section Formation.
 Variable E : env.
@@ -78,7 +93,7 @@ Hypothesis Enough : metadata_budget W bound < e_metadata_fuel E.
 Hypothesis Main : forall s, In s (e_mains E) <-> IsMainFn W s.
 (* This is the remaining unifier algorithm obligation, not an assumption
    supplied by the public safety theorem or the host interface. *)
-Hypothesis Principal : ContextMergeSound E.
+Hypothesis Remaining : ContextMergeRemainder E.
 
 Theorem assume_ctx_sound : forall symbol C ns,
   assume_ctx E symbol = Ok (C, ns) -> AssumeCtx W symbol C ns.
@@ -94,7 +109,7 @@ Proof.
   { exact (root_ctx_sound_at_budget E bound Bounded Enough Main _ _ _ _ _ Root). }
   assert (Telescope : ContextTelescope W symbol (entries ++ roots)).
   { left. exists d, entries, meanings, roots, root_meanings. repeat first [assumption | split | reflexivity]. }
-  pose proof (Principal _ _ _ _ Telescope Merge) as MostGeneral.
+  pose proof (context_merge_most_general E Remaining _ _ _ _ Telescope Merge) as MostGeneral.
   destruct (merge_presentation E _ _ _ Merge MostGeneral) as [Classes Section].
   exists d, entries, meanings, roots, root_meanings, sigma, classes.
   repeat first [assumption | split | reflexivity | apply needs_exact].
@@ -128,7 +143,7 @@ Proof.
   { exact (proj2 (entries_sound_at_budget E bound Bounded Enough (e_fuel E)) _ _ _ _ _ _ _ Inputs). }
   assert (Telescope : ContextTelescope W symbol entries).
   { right. exists d, parameters, arguments, results, body, meanings. auto. }
-  pose proof (Principal _ _ _ _ Telescope Merge) as MostGeneral.
+  pose proof (context_merge_most_general E Remaining _ _ _ _ Telescope Merge) as MostGeneral.
   destruct (merge_presentation E _ _ _ Merge MostGeneral) as [Classes Section].
   exists d, parameters, arguments, results, body, entries, meanings,
     (map (fun t => (t, TAbs t))

@@ -89,6 +89,8 @@ Print Assumptions NM.EaEntriesSound.bundle_world_r_entries_sound.
 Print Assumptions NM.EaRootSound.bundle_world_r_root_ctx_sound.
 From NM Require EaMergeSound.
 Print Assumptions NM.EaMergeSound.unifiesb_spec.
+Print Assumptions NM.EaMergeSound.merge_scopeb_spec.
+Print Assumptions NM.EaMergeSound.merge_checked.
 Print Assumptions NM.EaMergeSound.merge_unifies.
 Print Assumptions NM.EaMergeSound.needs_exact.
 

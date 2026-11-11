@@ -7,8 +7,8 @@
 (* instantiations unified; keys are                                         *)
 (* re-read and the round repeats until nothing changes (at most one round  *)
 (* per generation, plus one).  The orientation of a merge of two           *)
-(* generations is the strategy's (s_orient). Validation checks Unifies;     *)
-(* principality, idempotence and storage bounds need algorithm proofs.      *)
+(* generations is the strategy's (s_orient). Validation checks unification *)
+(* and generation scope. Other merge properties need algorithm proofs.     *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
@@ -297,6 +297,13 @@ Definition unifiesb (s : subst) (es : list entry) : bool :=
     | NEq l r => ty_eqb (app_subst s l) (app_subst s r)
     | _ => true end) es.
 
+(* An unfilled instantiation is read as its own symbol when checking equal
+   needs. This can introduce an equation on a type not in the telescope.
+   Only telescope generations may occur in the final substitution. *)
+Definition merge_scopeb (generations : list nat) (s : subst) : bool :=
+  forallb (fun q => nmem (fst q) generations &&
+    forallb (fun g => nmem g generations) (gens (snd q))) s.
+
 (* SOUND: merge es = Ok (s, M) -> MostGeneralMerge s es /\
      MergeOf es M /\ SectionOf M s. *)
 Definition merge (es : list entry) : er (subst * merge) :=
@@ -304,6 +311,7 @@ Definition merge (es : list entry) : er (subst * merge) :=
   let bound := S (S (List.length gs)) * 4 + fuel in
   let! s := merge_rounds (S (S (List.length gs))) bound es [] in
   let! _ := rcheck (unifiesb s es) "merging the context does not settle (D43)" in
+  let! _ := rcheck (merge_scopeb gs s) "merging the context would use a type that is not in force (D43)" in
   Ok (s, PublicMergePresent.present_merge s es).
 
 (* The new class presentation keeps the exact section produced by the
@@ -315,6 +323,7 @@ Proof.
   intros es s M. unfold merge, rbind.
   destruct (merge_rounds _ _ _ _) as [computed | message]; [|discriminate].
   destruct (unifiesb computed es); [|discriminate].
+  destruct (merge_scopeb (flat_map entry_gens es) computed); [|discriminate].
   intros Result Principal. injection Result as <- <-.
   now apply PublicMergePresent.present_merge_of.
 Qed.

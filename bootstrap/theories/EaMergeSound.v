@@ -1,6 +1,6 @@
-(* Checked parts of context construction: the final validation really
-   unifies its entries, and its needs enumerate exactly their keys.
-   Unifier principality, idempotence and storage bounds remain separate. *)
+(* Merge validation proves unification and generation scope. Needs
+   enumerate exactly the entry keys. Principality, idempotence and the
+   functional substitution invariant remain separate. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaCtx EaTypesSound PublicTypeFacts PublicCallRealize.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
@@ -78,14 +78,38 @@ Proof.
       apply ty_eqb_spec, Equations. exact Member.
 Qed.
 
-Theorem merge_unifies : forall E entries substitution classes,
-  EaCtx.merge E entries = Ok (substitution, classes) -> Unifies substitution entries.
+Theorem merge_scopeb_spec : forall generations substitution,
+  merge_scopeb generations substitution = true <->
+  forall g t, In (g, t) substitution -> In g generations /\ incl (gens t) generations.
+Proof.
+  intros generations substitution. unfold merge_scopeb. rewrite forallb_forall. split.
+  - intros Checked g t Member. specialize (Checked (g,t) Member). cbn in Checked.
+    apply andb_true_iff in Checked as [Domain Image]. split.
+    + apply nmem_spec. exact Domain.
+    + intros x Present. apply nmem_spec. exact (proj1 (forallb_forall _ _) Image x Present).
+  - intros Scoped [g t] Member. cbn. destruct (Scoped _ _ Member) as [Domain Image].
+    apply andb_true_iff. split; [apply nmem_spec; exact Domain|].
+    apply forallb_forall. intros x Present. apply nmem_spec, Image. exact Present.
+Qed.
+
+Theorem merge_checked : forall E entries substitution classes,
+  EaCtx.merge E entries = Ok (substitution, classes) ->
+  Unifies substitution entries /\
+  (forall g t, In (g, t) substitution ->
+    In g (flat_map entry_gens entries) /\ incl (gens t) (flat_map entry_gens entries)).
 Proof.
   intros E entries substitution classes Run. unfold EaCtx.merge, rbind in Run.
   destruct (merge_rounds E _ _ _ _) as [computed|message]; [|discriminate].
   destruct (unifiesb computed entries) eqn:Checked; [|discriminate].
-  injection Run as <- <-. apply unifiesb_spec. exact Checked.
+  destruct (merge_scopeb (flat_map entry_gens entries) computed) eqn:Scoped; [|discriminate].
+  injection Run as <- <-. split.
+  - apply unifiesb_spec. exact Checked.
+  - apply merge_scopeb_spec. exact Scoped.
 Qed.
+
+Corollary merge_unifies : forall E entries substitution classes,
+  EaCtx.merge E entries = Ok (substitution, classes) -> Unifies substitution entries.
+Proof. intros E entries substitution classes Run. exact (proj1 (merge_checked _ _ _ _ Run)). Qed.
 
 Lemma imem_spec : forall key entries, imem key entries = true <-> In key entries.
 Proof.
