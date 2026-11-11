@@ -922,18 +922,19 @@ Definition LevelReal (v : nat) (Cv : A.cx) (rmsv : option (list (option nat))) :
       A.ilook (A.provision_id k) (A.c_provisions Crv) = Some p /\
       lookup_provision (nth i (closure_sources rmsv srcs) (ITy 0)) d3 = Some pv /\ RealAt (Tv g outs) k p pv.
 
-Hypothesis Root : PublicChainSigs.TableOk Tin Ch0 -> LevelReal h0 Ch0 None.
+Hypothesis Root : PublicContextFacts.ReadsMerge Ch0 (app_subst Tin) -> LevelReal h0 Ch0 None.
 
 Lemma chain_real : forall v gfv sms rmsv h0' gf0 sms0 rms0, CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.CopyChain W v gfv sms rmsv h0' gf0 sms0 rms0 ->
-  h0' = h0 -> rms0 = None -> forall Cv nsv, A.FunCtx W v Cv nsv -> PublicChainSigs.TableOk Tin Cv ->
+  h0' = h0 -> rms0 = None -> forall Cv nsv, A.FunCtx W v Cv nsv -> PublicContextFacts.ReadsMerge Cv (app_subst Tin) ->
   (forall x, A.Fixed W v x -> lookup_subst x gfv = Some (app_subst Tin (TAbs x))) -> LevelReal v Cv rmsv.
 Proof.
   intros v gfv sms rmsv h0' gf0 sms0 rms0 Ch.
   induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0' gf0 sms0 rms0 Sub IH FCu FCh Incl FixH _ InCu Same Site];
-    intros E0 Er Cv nsv FCv Tok FixT.
-  - subst u rms. destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FC0) as [-> _]. exact (Root Tok).
+    intros E0 Er Cv nsv FCv Valuation FixT.
+  - subst u rms. destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FC0) as [-> _]. exact (Root Valuation).
   - subst h0' rms0.
     destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FCu) as [Ecv _]. subst Cv.
+    pose proof (PublicChainSigs.table_rows_of_merge W u Cu nsu Tin FCu Valuation) as Tok.
     pose proof (PublicChainSigs.sub_inv W u Cu nsu Tin FCu Tok) as InvU.
     (* H's merges hold at Tin: the copy's input comparison, read at Tin *)
     destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm gfx gfh Tin FCu FCh InCu Site FixT) as [RdT _].
@@ -941,7 +942,7 @@ Proof.
     { intros x tx Lx. pose proof (RdT x tx Lx) as E. unfold A.canon in E. rewrite <- (InvU tx), <- E, InvU. reflexivity. }
     assert (FixTh : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (app_subst Tin (TAbs x))).
     { intros x Fh. destruct (FixH x Fh) as [Fu E]. rewrite E. exact (FixT x Fu). }
-    destruct (IH eq_refl eq_refl Ch nsh FCh TokH FixTh) as (gh & outsh & Crh & ksh & Oh & Frh & Injh & PRh & RealH).
+    destruct (IH eq_refl eq_refl Ch nsh FCh (PublicChainSigs.table_reads_merge W h Ch nsh Tin FCh TokH) FixTh) as (gh & outsh & Crh & ksh & Oh & Frh & Injh & PRh & RealH).
     destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
     pose proof (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
     set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
@@ -1132,10 +1133,10 @@ Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list
    application's agree with) *)
 Hypothesis PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x).
 
-Lemma root_level : PublicChainSigs.TableOk Tin Ch0 ->
+Lemma root_level : PublicContextFacts.ReadsMerge Ch0 (app_subst Tin) ->
   LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 None.
 Proof.
-  intros Tok.
+  intros Valuation.
   pose proof LD as (FC0 & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR & RR & BO & FB & MadeOut & PinsI & PinG).
   assert (Inj : forall a b, In a outs' -> In b outs' -> gen a = gen b -> a = b)
     by (intros a0 b0 Ia Ib; exact (nodup_map_inj gen outs' a0 b0 NdG Ia Ib)).
@@ -1143,7 +1144,7 @@ Proof.
   (* h0's merges hold of the application's meanings *)
   assert (ThI : PublicContextFacts.ReadsMerge Ch0 (fun t => ground d (app_subst th t))).
   { intros t u Equal. rewrite !PublicCopySubst.ground_app_subst.
-    exact (PublicChainSigs.table_reads_merge W h0 Ch0 nsh0 Tin FC0 Tok t u Equal). }
+    exact (Valuation t u Equal). }
   pose proof (CSg.FL.LRn.link_run_fact W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCg LRs Items BO MadeOut FB th ThDom
     argv read j' d dc' [] st d3 g3 st3 ThI Run) as RunFact.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
@@ -1193,7 +1194,7 @@ Proof.
       assert (Gtx : incl (A.gens tx) DG) by (intros y Iy; exact (PublicChainSigs.table_gens_dom W gg Cg nsg x tx y FCg Lx Iy)).
       rewrite (RunFact tx Gtx (fun y Iy => proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy))).
       rewrite (PublicCopySubst.ground_app_subst d th tx).
-      fold Tin. rewrite <- (PublicChainSigs.table_reads_merge W h0 Ch0 nsh0 Tin FC0 Tok (TAbs x) tx Can).
+      fold Tin. rewrite <- (Valuation (TAbs x) tx Can).
       change (app_subst Tin (TAbs x) = app_subst T0 (TAbs x)).
       unfold T0, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]]. exact (NR x I0).
     - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity. }
@@ -1534,7 +1535,7 @@ Proof.
   pose proof (root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD LRs th d d3 _ j' g3 st st3 ThDom Run Pre3 PinT) as Root.
   pose proof (chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
-    Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn FixT) as LvU.
+    Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
   assert (LenS : List.length (closure_sources rms srcs) = List.length ks).
   { refine (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W u gfx sms rms h0 gf0 _ None Chn eq_refl srcs _) _ _ _ _ PR).
     intros C0 o C0' ks0 P0. unfold srcs, CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite length_map.

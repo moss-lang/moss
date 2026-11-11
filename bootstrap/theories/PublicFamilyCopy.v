@@ -423,7 +423,7 @@ Proof.
     pose proof (CRz.root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
       Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
-      FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn FixT) as LvU.
+      FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr
       (LenU _ _ _ _ PR)) as New.
     left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.
@@ -455,7 +455,7 @@ Proof.
     pose proof (platform_level prims_ground rr H h0 code Ch0 needs outputs keys bindings FD d d2 th (fun t => TAbs t) Gr MachG) as Root0.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H h0 Ch0 needs (map (A.rkey_of outputs) keys)
       (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) (fun t => TAbs t) Tin FC0 AbsH (fun _ => Root0) u gfx sms' rms' h0 gf0 None None Chn eq_refl eq_refl
-      Cu ns FC TokIn FixT) as LvU.
+      Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     set (Dr := map (A.rkey_of outputs) keys) in *.
     assert (LenR : forall C1 o C1' ks1, A.ProvideResult W h0 C1 o C1' ks1 -> List.length Dr = List.length ks1).
     { intros C1 o C1' ks1 P1. unfold Dr. rewrite length_map.

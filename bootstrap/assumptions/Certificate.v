@@ -380,6 +380,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.freshfor_fresh);
   root (@NM.PublicLinkRun.app_env_meaning);
   root (@NM.PublicChainSigs.table_reads_merge);
+  root (@NM.PublicChainSigs.table_reads_merge_iff);
+  root (@PublicEntryTop.FCp.CRz.chain_real);
+  root (@PublicEntryTop.FCp.CRz.root_level);
   root (@NM.PublicChainRealize.entry_reading_of_rel);
   root (@NM.PublicChainRealize.entry_peq);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.link_run_fact);

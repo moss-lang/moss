@@ -212,6 +212,24 @@ Proof.
   exact (sub_inv v Cv ns T Context Table).
 Qed.
 
+Lemma table_rows_of_merge : forall v Cv ns T, A.FunCtx W v Cv ns ->
+  PublicContextFacts.ReadsMerge Cv (app_subst T) -> TableOk T Cv.
+Proof.
+  intros v Cv ns T Context Reading x tx Found.
+  destruct (functx_scoped W v Cv ns Context) as [Types _].
+  apply Reading, A.MESym. rewrite (Types x tx Found).
+  apply PublicMerge.merge_eq_read.
+  exact (proj1 (proj2 (PublicContextFacts.functor_context_merge W v Cv ns Context))).
+Qed.
+
+Lemma table_reads_merge_iff : forall v Cv ns T, A.FunCtx W v Cv ns ->
+  TableOk T Cv <-> PublicContextFacts.ReadsMerge Cv (app_subst T).
+Proof.
+  intros v Cv ns T Context. split.
+  - exact (table_reads_merge v Cv ns T Context).
+  - exact (table_rows_of_merge v Cv ns T Context).
+Qed.
+
 (* A FunCtx's readings θ_h of h's inputs in u's context Cu (canon Cu after
    Cu's table) read at T as T does. *)
 Lemma th_inv : forall u Cu nsu T (l : list (nat * ty)), A.FunCtx W u Cu nsu -> TableOk T Cu ->
