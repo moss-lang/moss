@@ -3,7 +3,7 @@ From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaCall EaAssumptionAtoms EaCtx EaMain EaTypesSound EaContextTableSound.
 From NM Require AllocationFacts PublicMerge PublicFormation PublicContextFacts PublicSubstFacts
   PublicTypeFacts PublicTypeRead PublicCallRealize EaMentionsSound EaRootSound EaDependencyFuel EaCallSound.
-From NM Require EaWorldSound EaMainSymbols EaMetadataSound ElabWorld NMap.
+From NM Require EaWorldSound EaMainSymbols EaMetadataSound EaSatisfiesSound ElabWorld NMap.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -239,17 +239,15 @@ Definition AssumedCallee (W : world) (s : nat) : Prop :=
   kind_sym W s = Some DKFn \/ kind_sym W s = Some DKMeth \/ kind_sym W s = Some DKVal.
 
 (* An installed table supplies the context of each callable declaration.
-   Satisfies checks and the kinds of the named needs are explicit inputs. *)
+   The merge in that context makes its provision checks sound. *)
 Theorem assumed_complete_sound : forall E bound C ns,
   (forall g d, w_decl (e_W E) g = Some d -> g < bound) ->
   PublicContextFacts.CxSection C ->
   ContextTableSound (e_W E) ->
   (forall k s, In k ns -> need_item k = Some s -> AssumedCallee (e_W E) s) ->
-  (forall who whot Cv Cs th needs sm,
-    satisfies (e_W E) who whot Cv Cs th needs = Ok sm -> Satisfies Cv Cs th needs sm) ->
   assumed_complete E bound C ns = Ok tt -> AssumedComplete (e_W E) C ns.
 Proof.
-  intros E bound C ns WorldBound Caller Context Kinds Provides Run k s Member Need. unfold assumed_complete in Run.
+  intros E bound C ns WorldBound Caller Context Kinds Run k s Member Need. unfold assumed_complete in Run.
   apply rbind_ok in Run as [results [Mapped _]].
   destruct (rmap_each _ _ _ _ _ Mapped k Member) as [u Step].
   rewrite Need in Step.
@@ -279,7 +277,9 @@ Proof.
   destruct (assumption_theta_sound (e_W E) ("assuming " ++ qs (e_W E) s) Cv ReadCs bound s th
     (known_types_preserve_section (known found) C Caller) Solved Callee WorldBound Theta) as [Call Reads].
   exists ReadCs, ReadNeeds, th, selected. split; [exact Formed|].
-  split; [exact Call|]. split; [eapply Provides; exact Sat|exact Reads].
+  split; [exact Call|]. split; [|exact Reads].
+  eapply EaSatisfiesSound.satisfies_sound; [|exact Sat].
+  eapply EaSatisfiesSound.ctxof_subst_functional. exact Formed.
 Qed.
 
 Definition EntryCallee (W : world) (e : entry) : Prop :=
@@ -352,11 +352,9 @@ Theorem assumes_complete_sound : forall E bound,
   (forall s d, w_decl (e_W E) s = Some d -> s < bound) ->
   ContextTableSound (e_W E) ->
   (forall s C ns, assume_ctx E s = Ok (C, ns) -> AssumeCtx (e_W E) s C ns) ->
-  (forall who whot Cv Cs th needs sm,
-    satisfies (e_W E) who whot Cv Cs th needs = Ok sm -> Satisfies Cv Cs th needs sm) ->
   assumes_complete E bound = Ok tt -> AssumesComplete (e_W E).
 Proof.
-  intros E bound Bounded Context Assumes Provides Run s kind Kind.
+  intros E bound Bounded Context Assumes Run s kind Kind.
   assert (Member : In s (seq 0 bound)).
   { unfold kind_sym in Kind. destruct (w_decl (e_W E) s) eqn:Decl; [|discriminate].
     apply in_seq. cbn [Nat.add]. split; [apply Nat.le_0_l|eapply Bounded; exact Decl]. }
@@ -365,17 +363,15 @@ Proof.
   destruct (assume_ctx E s) as [[C ns]|msg] eqn:Read; [|discriminate].
   destruct (assumed_complete E bound C ns) as [[]|msg] eqn:Checked; [|discriminate].
   pose proof (Assumes _ _ _ Read) as Formed. exists C, ns. split; [exact Formed|].
-  eapply assumed_complete_sound; [exact Bounded| |exact Context|eapply assume_ctx_callees; exact Formed|exact Provides|exact Checked].
+  eapply assumed_complete_sound; [exact Bounded| |exact Context|eapply assume_ctx_callees; exact Formed|exact Checked].
   destruct Formed as (d & es & tm & er & tmr & sigma & classes & _ & _ & _ & _ & _ & Section & -> & _).
   exact Section.
 Qed.
 
 Theorem elaborate_with_assumes_complete : forall strategy b W program,
-  (forall who whot Cv Cs th needs sm,
-    satisfies W who whot Cv Cs th needs = Ok sm -> Satisfies Cv Cs th needs sm) ->
   elaborate_with strategy b = Ok (W, program) -> AssumesComplete W.
 Proof.
-  intros strategy b W program Provides Run.
+  intros strategy b W program Run.
   unfold elaborate_with, elaborate_with_metadata in Run.
   destruct (bundle_world_r b) as [[W0 bound]|message] eqn:Loaded; [|discriminate].
   cbn zeta in Run.
@@ -397,6 +393,5 @@ Proof.
     + exact (EaWorldSound.bundle_world_r_bound _ _ _ Loaded).
     + exact (EaMetadataSound.metadata_fuel_sufficient W0 bound).
     + exact (EaMainSymbols.bundle_world_r_main_symbols_exact _ _ _ Loaded).
-  - exact Provides.
   - exact Checked.
 Qed.

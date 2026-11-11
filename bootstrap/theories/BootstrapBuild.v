@@ -1,6 +1,6 @@
 From Stdlib Require Import List String.
-From NM Require Audit AuditBase EaBase EaContextTableSound EaMain EaPlatform EaWorldSound
-  PublicContextFacts SnapshotLoader Sx.
+From NM Require Audit AuditBase EaBase EaContextTableSound EaMain EaPlatform EaSatisfiesSound EaWorldSound
+  SnapshotLoader Sx.
 From NM Require Import EaControlSound.
 
 Module L := Audit.Loader.
@@ -65,13 +65,6 @@ Proof.
   split; [reflexivity|]. exists after_arity, after_environment. exact Env.
 Qed.
 
-Lemma rkof_exact : forall C k, rkof C k = rkey_of C k.
-Proof.
-  intros C k. destruct k; try reflexivity.
-  unfold rkof, rkey_of, rk, rkey, capp.
-  rewrite PublicContextFacts.capps_ilook. reflexivity.
-Qed.
-
 Lemma platform_entries_keys : forall env C needs before entries after,
   mmap (fun k => let* value := EaPlatform.platform_entry env C (rkof C k) in
                    ret (rkof C k, value)) needs before = Ok (entries, after) ->
@@ -84,7 +77,7 @@ Proof.
     apply mbind_ok in Head as (value & finish & _ & Head).
     injection Head as <- <-.
     apply mbind_ok in Run as (tail & last & Tail & Run).
-    injection Run as <- _. cbn. rewrite rkof_exact, (IH _ _ _ Tail). reflexivity.
+    injection Run as <- _. cbn. rewrite EaSatisfiesSound.rkof_exact, (IH _ _ _ Tail). reflexivity.
 Qed.
 
 Theorem main_environment_typed : forall env main before initial after,

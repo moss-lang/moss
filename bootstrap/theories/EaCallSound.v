@@ -81,7 +81,7 @@ Proof.
     (c_ty Cs) Found q Iq).
 Qed.
 
-Local Lemma min_first_none : forall A (l : list (nat * A)),
+Lemma min_first_none : forall A (l : list (nat * A)),
   EaCall.min_first l = None -> l = [].
 Proof.
   intros A l. assert (SomeKept : forall r (p : nat * A),
