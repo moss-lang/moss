@@ -168,24 +168,22 @@ Proof.
   intros [body_code body_type]. apply source_write_preserves_bound. exact Declared.
 Qed.
 
-Theorem assemble_preserves_code_bound : forall E bound entry, PreservesCodeBound bound (EaMain.assemble E bound entry).
+Theorem constant_code_effect : forall E symbol, PreservesOldCode (EaMain.elaborate_constant E symbol).
 Proof.
-  intros E bound entry. unfold EaMain.assemble.
-  apply code_bound_bind.
-  { apply code_bound_miter. intros f Present. apply in_seq in Present.
-    destruct (EaMain.defined_fn E f).
-    - apply code_bound_with_msg, source_function_preserves_bound. lia.
-    - apply code_effect_preserves_bound, code_effect_return. }
-  intros []. apply code_effect_preserves_bound.
-  apply code_effect_bind.
-  { apply code_effect_miter. intro symbol.
-    destruct (w_decl (e_W E) symbol) as [declaration|]; [|apply code_effect_return].
-    destruct (d_ast declaration) as [| | | | |name type initial| | |]; try apply code_effect_return.
-    destruct initial as [expression|]; [|apply code_effect_return].
-    apply code_effect_with_msg.
-    apply code_effect_bind; [|intro ignored; apply code_effect_return].
-    destruct (mkrec_code_effect _ (run_code_effect E (e_fuel E))) as [Expr _]. apply Expr. }
-  intros []. apply code_effect_bind; [apply code_effect_lift|]. intro main.
+  intros E symbol. unfold EaMain.elaborate_constant.
+  destruct (w_decl (e_W E) symbol) as [declaration|]; [|apply code_effect_return].
+  destruct (d_ast declaration) as [| | | | |name type initial| | |]; try apply code_effect_return.
+  destruct initial as [expression|]; [|apply code_effect_return].
+  apply code_effect_with_msg.
+  apply code_effect_bind; [|intro ignored; apply code_effect_return].
+  destruct (mkrec_code_effect _ (run_code_effect E (e_fuel E))) as [Expr _]. apply Expr.
+Qed.
+
+Theorem finish_assembly_code_effect : forall E bound entry,
+  PreservesOldCode (EaMain.finish_assembly E bound entry).
+Proof.
+  intros E bound entry. unfold EaMain.finish_assembly.
+  apply code_effect_bind; [apply code_effect_lift|]. intro main.
   do 2 (apply code_effect_bind; [apply code_effect_check|intros []]).
   apply code_effect_bind; [apply main_environment_code_effect|]. intro environment.
   apply code_effect_bind; [apply code_effect_lift|]. intros [context needs].
@@ -198,6 +196,27 @@ Proof.
   destruct (EaPlatform.bool_syms E) as [[boolean true_symbol] false_symbol].
   apply code_effect_bind; [apply code_effect_check|intros []].
   apply code_effect_return.
+Qed.
+
+Theorem function_pass_preserves_code_bound : forall E bound symbols,
+  (forall f, In f symbols -> f < bound) ->
+  PreservesCodeBound bound (miter (EaMain.elaborate_function E) symbols).
+Proof.
+  intros E bound symbols Bounded. apply code_bound_miter. intros f Present.
+  unfold EaMain.elaborate_function. destruct (EaMain.defined_fn E f).
+  - apply code_bound_with_msg, source_function_preserves_bound. now apply Bounded.
+  - apply code_effect_preserves_bound, code_effect_return.
+Qed.
+
+Theorem assemble_preserves_code_bound : forall E bound entry, PreservesCodeBound bound (EaMain.assemble E bound entry).
+Proof.
+  intros E bound entry. unfold EaMain.assemble.
+  apply code_bound_bind.
+  { apply function_pass_preserves_code_bound. intros f Present. apply in_seq in Present. lia. }
+  intros []. apply code_effect_preserves_bound.
+  apply code_effect_bind.
+  - apply code_effect_miter. apply constant_code_effect.
+  - intros []. apply finish_assembly_code_effect.
 Qed.
 
 Theorem assembly_code_tables_bound : forall E bound entry P final,

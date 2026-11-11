@@ -592,7 +592,7 @@ Lemma assemble_platform_resources : forall bound entry before program after,
   program_unsupported program = es_unsupported after /\
   exists start, main_environment E (program_main program) start = Ok (program_environment program, after).
 Proof.
-  intros bound entry before program after Run. unfold EaMain.assemble in Run.
+  intros bound entry before program after Run. unfold EaMain.assemble, EaMain.finish_assembly in Run.
   do 2 (apply EaControlSound.mbind_ok in Run as (_ & ?state & _ & Run)).
   apply EaControlSound.mbind_ok in Run as (main & looked_up & _ & Run).
   apply EaControlSound.mbind_ok in Run as (kind_result & checked_kind & Kind & Run).

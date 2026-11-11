@@ -108,17 +108,24 @@ Definition assembled_origins (s : est) : code_origins :=
     (map (fun q => (fst q, c_sub (snd q))) (collect (es_lamcx s) (es_next s) []))
     (map (fun q => (slot_index (snd q), fst q)) (es_link s)).
 
-(* SOUND: assemble bound entry = Ok P -> ElaboratesIn b W P /\ Linked W P
-   (modulo the pending checks) *)
-Definition assemble (bound : nat) (entry : string) : M program :=
-  let* _ := miter (fun s => if defined_fn s then with_msg (fn_label s) (elab_fn s) else ret tt) (seq 0 bound) in
-  let* _ := miter (fun s => match w_decl W s with
-      | Some d => match d_ast d with
-                  | ADVal nm _ (Some _) =>
-                      with_msg (d_mod d ++ ": ")
-                        (let* _ := r_ex R0 (Frame (d_mod d) None None false [] [] [] []) (Cx [] [] [] [] []) (AEPath [nm] None) None in ret tt)
-                  | _ => ret tt end
-      | None => ret tt end) (seq 0 bound) in
+Definition elaborate_function (f : nat) : M unit :=
+  if defined_fn f then with_msg (fn_label f) (elab_fn f) else ret tt.
+
+Definition elaborate_constant (s : nat) : M unit :=
+  match w_decl W s with
+  | Some d =>
+      match d_ast d with
+      | ADVal nm _ (Some _) =>
+          with_msg (d_mod d ++ ": ")
+            (let* _ := r_ex R0 (Frame (d_mod d) None None false [] [] [] [])
+              (Cx [] [] [] [] []) (AEPath [nm] None) None in
+             ret tt)
+      | _ => ret tt
+      end
+  | None => ret tt
+  end.
+
+Definition finish_assembly (bound : nat) (entry : string) : M program :=
   let* main := lift (match w_scope W entry NSName "main" with Some (ESym s) => Some s | _ => None end) "unsupported: no main" in
   let* _ := check (match ast_of W main with Some (ADFn RPlain _ _ _ (Some _)) => true | _ => false end)
              "unsupported: no main" in
@@ -143,6 +150,11 @@ Definition assemble (bound : nat) (entry : string) : M program :=
   let* _ := check (expansion_ok W fuel program (es_fns st) (es_funs st) bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
   ret program.
+
+Definition assemble (bound : nat) (entry : string) : M program :=
+  let* _ := miter elaborate_function (seq 0 bound) in
+  let* _ := miter elaborate_constant (seq 0 bound) in
+  finish_assembly bound entry.
 
 End Main.
 

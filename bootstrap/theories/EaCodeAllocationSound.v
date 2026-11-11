@@ -233,7 +233,7 @@ Theorem assemble_collects_code : forall E bound entry before P after,
   program_functors P = EaMain.collect (es_funs after) (es_next after) [] /\
   program_origins P = EaMain.assembled_origins after.
 Proof.
-  intros E bound entry before P after Run. unfold EaMain.assemble in Run.
+  intros E bound entry before P after Run. unfold EaMain.assemble, EaMain.finish_assembly in Run.
   destruct (EaPlatform.bool_syms E) as [[boolean truth] falsity].
   do 6 (apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run)).
   apply EaControlSound.mbind_ok in Run as ([context needs] & ?state & ?step & Run).

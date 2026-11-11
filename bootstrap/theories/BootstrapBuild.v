@@ -47,7 +47,7 @@ Theorem assemble_entry : forall env bound entry before program after,
     bound (es_next after) = true.
 Proof.
   intros env bound entry before program after Contexts Run.
-  unfold EaMain.assemble in Run.
+  unfold EaMain.assemble, EaMain.finish_assembly in Run.
   apply mbind_ok in Run as (_ & after_functions & _ & Run).
   apply mbind_ok in Run as (_ & after_constants & _ & Run).
   apply mbind_ok in Run as (main & after_lookup & Lookup & Run).

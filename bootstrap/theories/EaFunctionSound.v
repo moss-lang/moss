@@ -40,6 +40,7 @@ Theorem elab_fn_read : forall E f d rcv n ps rt b before after,
     fr_mod F = d_mod d /\ fr_ret F = Some (sg_ret g) /\ fr_this F = this /\
     fr_loop F = false /\ fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [] /\
     Numbering F this (map fst ps) /\
+    started = before /\
     r_blke (EaMain.R0 E) F
       (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
         (combine (map fst ps) (sg_params g)) C)
@@ -55,9 +56,9 @@ Proof.
   destruct (w_context (e_W E) f) as [[C ns]|] eqn:Context; [|discriminate ReadContext].
   injection ReadContext as <- <- <-.
   apply mbind_ok in Run as (this & started & Receiver & Run).
-  assert (Reading : FunctionReceiver (e_W E) f rcv n C this).
+  assert (Reading : FunctionReceiver (e_W E) f rcv n C this /\ started = before).
   {
-    destruct rcv as [ | | rn ]; try (injection Receiver as <- _; reflexivity).
+    destruct rcv as [ | | rn ]; try (injection Receiver as <- <-; split; reflexivity).
     cbn [FunctionReceiver] in *.
     destruct (w_scope (e_W E) (d_mod d) NSName rn) as [[r|module_path]|] eqn:ReceiverName;
       try discriminate Receiver.
@@ -69,11 +70,12 @@ Proof.
       [|discriminate Receiver].
     destruct (find (fun x => negb (is_some (nlook x (c_ty C)))) (w_reqs (e_W E) r))
       eqn:Args; [discriminate Receiver|].
-    injection Receiver as <- _.
+    injection Receiver as <- <-. split; [|reflexivity].
     exists r. eexists. split; [exact AttachedMethod|].
     split; [|split; [reflexivity|now apply read_receiver_arguments]].
     apply orb_true_iff in Kind. now rewrite !kind_is_spec in Kind.
   }
+  destruct Reading as [Reading ->].
   assert (ReadCtx : CtxOf (e_W E) f C ns).
   {
     specialize (Contexts f C ns Context).
@@ -103,7 +105,7 @@ Proof.
   repeat (split; [reflexivity|]).
   split.
   - eapply EaNumbering.mk_frame_vars_numbering; [reflexivity|exact Parameters].
-  - split; [exact Body|exact Write].
+  - split; [reflexivity|split; [exact Body|exact Write]].
 Qed.
 
 Lemma miter_member_run : forall A (action : A -> M unit) xs before after,
@@ -128,7 +130,7 @@ Proof.
   apply mbind_ok in Run as ([] & stage & Functions & _).
   assert (Present : In f (seq 0 bound)) by (apply in_seq; lia).
   destruct (miter_member_run _ _ _ _ _ Functions _ Present) as (started & emitted & Checked).
-  exists started, emitted. unfold EaMain.defined_fn in Checked. rewrite Declared, Ast in Checked.
+  exists started, emitted. unfold EaMain.elaborate_function, EaMain.defined_fn in Checked. rewrite Declared, Ast in Checked.
   unfold with_msg in Checked.
   destruct (EaMain.elab_fn E f started) as [[value state]|message] eqn:Body; [|discriminate].
   injection Checked as <- <-. reflexivity.
