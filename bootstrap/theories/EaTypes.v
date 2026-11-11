@@ -191,7 +191,8 @@ Fixpoint free_in (fuel : nat) (R : nat -> list nat) (p : string) (a : aty) {stru
       end
   end.
 
-(* SOUND: In t (sig_mentions fuel s) <-> SigMentions W s t *)
+(* Exact membership when signature_depth W s <= fuel (EaDependencyFuel).
+   Successful sig_of at the same fuel supplies this depth bound. *)
 Definition sig_mentions (fuel : nat) (s : nat) : list nat :=
   match w_decl W s with
   | Some d =>
@@ -204,9 +205,9 @@ Definition sig_mentions (fuel : nat) (s : nat) : list nat :=
   | None => []
   end.
 
-(* SOUND: app_of fuel s tm = a -> AppOf W s tm a.  The requirement list:
-   for a method, Select SigMentions of w_reqs, then SigOutside (ascending);
-   otherwise w_reqs. *)
+(* AppOf soundness has the same signature-depth condition as sig_mentions.
+   The requirement list is Select SigMentions of w_reqs, then SigOutside
+   (ascending), for a method; otherwise it is w_reqs. *)
 Definition app_requirements (fuel : nat) (s : nat) : list nat :=
   if kind_is s DKMeth then
     let sm := sig_mentions fuel s in
@@ -247,9 +248,9 @@ Definition payload_of (fuel : nat) (s : nat) (xs : list (nat * ty)) : er ty :=
 
 (* ---- SpecTypes, FunOutputs, ResultMentions, Mentions, Poly, Fixed ---- *)
 
-(* SOUND: In t (spec_types fuel [] p sp) <-> SpecTypes W p sp t.  A context
-   already on the path (stk) adds nothing: SpecTypes is a union over
-   paths, and a path through a context twice has a shorter one. *)
+(* Exact membership for spec_types when all declaration symbols are below
+   N and N < fuel (EaContextFuel). A context already on the path adds
+   nothing: a path through a context twice has a shorter one. *)
 Fixpoint spec_types_go (fuel : nat) (stk : list nat) (p : string) (sp : spec) {struct fuel} : list nat :=
   match fuel with
   | 0 => []
@@ -281,17 +282,18 @@ Definition functor_decl (u : nat) : option (decl * (option (list name) * list sp
   | None => None
   end.
 
-(* SOUND: In t (fun_outputs fuel u) <-> FunOutputs W u t; sorted, no repeats *)
+(* Exact FunOutputs membership under the same declaration/fuel bound as
+   spec_types. The result is sorted and has no repeats. *)
 Definition fun_outputs (fuel : nat) (u : nat) : list nat :=
   match functor_decl u with
   | Some (d, (_, _, r, _)) => sort_uniq (flat_map (spec_types fuel (d_mod d)) r)
   | None => []
   end.
 
-(* SOUND: In t (result_mentions fuel self p sp) <-> ResultMentions W self p sp t
-   A (self, context or functor) node already on the path adds nothing: the
-   relation at a node is a union of its children's (filtered) sets, and a
-   derivation through a node twice has a shorter one. *)
+(* Membership implies ResultMentions when declaration symbols are below
+   N and N + (N+1)*N < fuel (EaResultSound). The visited (self, symbol)
+   pairs bound recursion; the remaining N levels cover output filtering.
+   General membership completeness remains open. *)
 Fixpoint pmem (x : nat * nat) (l : list (nat * nat)) : bool :=
   match l with [] => false | y :: r => (Nat.eqb (fst x) (fst y) && Nat.eqb (snd x) (snd y)) || pmem x r end.
 Fixpoint result_mentions_go (fuel : nat) (stk : list (nat * nat)) (self : nat) (p : string) (sp : spec) {struct fuel} : list nat :=
@@ -341,7 +343,8 @@ Fixpoint result_mentions_go (fuel : nat) (stk : list (nat * nat)) (self : nat) (
 Definition result_mentions (fuel : nat) (self : nat) (p : string) (sp : spec) : list nat :=
   result_mentions_go fuel [] self p sp.
 
-(* SOUND: In t (mentions fuel u) <-> Mentions W u t; sorted *)
+(* Membership implies Mentions under the result_mentions budget.
+   General membership completeness remains open; the result is sorted. *)
 Definition mentions (fuel : nat) (u : nat) : list nat :=
   match functor_decl u with
   | Some (d, (_, _, r, _)) =>
@@ -350,7 +353,8 @@ Definition mentions (fuel : nat) (u : nat) : list nat :=
   | None => []
   end.
 
-(* SOUND: In t (poly fuel u) <-> Poly W u t (an abstract functor's P(F)) *)
+(* Membership implies Poly under the same budget (EaFixedSound).
+   Explicitly bracketed abstract functors have exact membership at any fuel. *)
 Definition poly (fuel : nat) (u : nat) : list nat :=
   match functor_decl u with
   | Some (d, (ps, _, _, None)) =>
@@ -361,11 +365,14 @@ Definition poly (fuel : nat) (u : nat) : list nat :=
   | _ => []
   end.
 
-(* SOUND: In t (fixed fuel u) <-> Fixed W u t; sorted *)
+(* Membership implies Fixed under the same budget; the result is sorted.
+   Abstract unbracketed functors have no fixed inputs at any fuel. *)
 Definition fixed (fuel : nat) (u : nat) : list nat :=
   let pl := poly fuel u in filter (fun t => negb (nmem t pl)) (mentions fuel u).
 
-(* SOUND: fixed_readings fuel u tm = fx -> FixedReadings W u tm fx *)
+(* Emitted pairs satisfy Fixed and the type-map lookup under the budget.
+   Full FixedReadings is proved for abstract unbracketed functors;
+   general coverage remains open. *)
 Definition fixed_readings (fuel : nat) (u : nat) (tm : list (nat * ty)) : subst :=
   flat_map (fun x => match nlook x tm with Some t => [(x, t)] | None => [] end) (fixed fuel u).
 
