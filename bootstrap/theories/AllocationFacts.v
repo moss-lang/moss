@@ -1,6 +1,7 @@
 (* Laws for the explicit allocation scope used by abstract applications. *)
 From Stdlib Require Import List Arith Lia.
 From NM Require Import Audit.
+From NM Require PublicTypeRead.
 Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
 
 Lemma allocation_member : forall A (before after : allocation_scope A) batch g,
@@ -200,4 +201,62 @@ Proof.
   - eapply incl_tran; eassumption.
   - assumption.
   - intros g Earlier. apply in_or_app. left. exact Earlier.
+Qed.
+
+Lemma generated_output_in_batch : forall choices role generation,
+  In (role, GeneratedOutput generation) choices ->
+  In generation (allocated_output_generations choices).
+Proof.
+  intros choices role generation Member.
+  unfold allocated_output_generations. apply in_flat_map.
+  exists (role, GeneratedOutput generation). split; [exact Member|now left].
+Qed.
+
+Lemma generated_output_allocated : forall choices role generation,
+  output_choice_at choices role = GeneratedOutput generation ->
+  In generation (allocated_output_generations choices).
+Proof.
+  intros choices role generation Choice. unfold output_choice_at in Choice.
+  destruct (nlook role choices) as [chosen|] eqn:Found; [|discriminate].
+  subst chosen. apply PublicTypeRead.nlook_in in Found.
+  eapply generated_output_in_batch; exact Found.
+Qed.
+
+(* The encoded identities satisfy the former output conditions used by
+   the runtime safety argument. *)
+Theorem output_identity_conditions : forall W F C a,
+  OutputIdentityAt W F C a ->
+  forall t, FunOutputs W (app_functor a) t ->
+    (nlook t (c_ty C) = None /\ app_identity a t = t /\
+      ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+              (match fr_this F with Some r => gens r | None => [] end)) /\
+      ~ In t (context_gens C ++ key_receiver_gens C)) \/
+    ((nlook t (c_ty C) <> None \/ In t (context_gens C ++ key_receiver_gens C)) /\
+      In (app_identity a t) (app_allocated a)).
+Proof.
+  intros W F C a Typed t Output. unfold OutputIdentityAt in Typed. specialize (Typed t Output).
+  unfold app_identity, output_generation_at.
+  destruct (output_choice_at (app_output_choices a) t) as [|generation] eqn:Choice.
+  - left. cbn [encode_output_identity]. destruct Typed as (Absent & Protected & Unmentioned).
+    repeat split; assumption.
+  - right. cbn [encode_output_identity]. split; [exact Typed|].
+    unfold app_allocated. eapply generated_output_allocated; exact Choice.
+Qed.
+
+(* Returning through nested concrete applications preserves the identities
+   already allocated by an abstract application. *)
+Corollary generated_outputs_stay_reserved : forall W P F C a C1 items wrap C2 F2 made t generation,
+  output_choice_at (app_output_choices a) t = GeneratedOutput generation ->
+  BindItems W P
+    (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) (app_allocated a)))
+    C1 items wrap C2 F2 made ->
+  forall batch, FreshFor W F2 C2 batch -> ~ In generation batch.
+Proof.
+  intros W P F C a C1 items wrap C2 F2 made t generation Choice Binds batch [_ Fresh] Reused.
+  apply generated_output_allocated in Choice.
+  apply (proj1 (bind_allocation_history W P)) in Binds.
+  rewrite Forall_forall in Fresh. apply (proj2 (Fresh generation Reused)).
+  apply in_or_app. left. apply Binds. cbn [frame_after_allocation extend_allocation_scope
+    body_allocation_scope fr_fresh scope_allocated].
+  apply in_or_app. right. exact Choice.
 Qed.

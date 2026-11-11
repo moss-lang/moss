@@ -1479,7 +1479,10 @@ Proof.
     + destruct (binditems_scoped _ _ _ _ _ _ _ Bi Fc Ff Cs) as [[Ls' [Ps' [Ts' Mr']]] [Inc [Back Th]]].
       split; [split; [exact Ls'|split; [exact Ps'|split; [|exact Mr']]]|split; [exact Inc|split; [exact Back|reflexivity]]].
       intros t E. cbn in E. apply Ts'. rewrite Th. exact E.
-    + destruct a as [u Cu ns th outs gensof newgens C' ks].
+    + destruct a as [u Cu ns th choices C' ks].
+      pose (a := Application u Cu ns th choices C' ks).
+      pose (gensof := app_identity a).
+      pose (newgens := app_allocated a).
       destruct Typed as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR & _).
       destruct (apply_abstract_scope W _ _ _ _ _ PR) as [Inc Back].
       destruct (provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo [outs' [OutsI' Ety]]]].

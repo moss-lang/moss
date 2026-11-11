@@ -5127,14 +5127,18 @@ Proof.
       apply (chain_reframe_tgt k _ C F'); [|split; [|split; [|split]]; cbn; congruence].
       apply (chain_weaken k _ C F' C' (ItemsBreak (A.with_mod F (A.d_mod dcl) u) (List.concat bodies))); [exact Ch|].
       intros [it [Iit Bi]]. eapply A.IBApply; [exact R|exact Dcl|exact Ast|exact Iit|exact Bi].
-    + destruct a as [u Cu ns th outs gensof newgens C' ks].
+    + destruct a as [u Cu ns th choices C' ks].
+      pose (a := A.Application u Cu ns th choices C' ks).
+      pose (gensof := A.app_identity a).
+      pose (newgens := A.app_allocated a).
+      pose (outs := A.app_outputs a).
       destruct Typed as (R & (fx & Fx & Fixed) & FC & Inp & Th & Needs & FreshG & Uniq & Outs & NdO & OutsIff & PR & _).
       pose (sm := A.satisfaction_map C Cu th ns).
       assert (Sat : A.Satisfies C Cu th ns sm) by (split; [reflexivity|exact Needs]).
       exists [BApply u th (map (fun t => (t, gensof t)) outs) sm (map (A.rkey_of C') ks)]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (Ap F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG
-        Uniq Outs NdO OutsIff PR).
+        Uniq (AllocationFacts.output_identity_conditions _ _ _ _ Outs) NdO OutsIff PR).
     + exists [BCopyFunctor u h sm rm]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (case_BFunCopy k Bel F C pa u pg h Cu nsu Ch nsh target sm fx rm R1 R2 Abst Hf FCu FCh FixU FixH Agr Same Sm Fx Sub CO J).

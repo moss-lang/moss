@@ -92,24 +92,21 @@ Definition result_mismatch (u g : nat) : string :=
 (* ---- BApplyAbstract ---- *)
 
 Definition allocate_output (C : cx) (u : nat) (mentioned retg : list nat)
-    (t : nat) : M (nat * nat * bool) :=
+    (t : nat) : M (nat * output_identity) :=
   if bound_in C t || nmem t mentioned then
     let* g := fresh in let* _ := put_name g (sym_name W t ++ "@" ++ sym_name W u) in
-    ret (t, g, true)
+    ret (t, GeneratedOutput g)
   else if nmem t retg then
     fail ("applying " ++ qs W u ++ " makes " ++ qs W t ++
           ", which the enclosing function's types mention (D78)")
-  else ret (t, t, false).
+  else ret (t, DeclaredOutput).
 
 Definition allocate_application_outputs (F : frame) (C : cx) (u : nat)
-    (outs : list nat) : M (list (nat * nat * bool)) :=
+    (outs : list nat) : M (list (nat * output_identity)) :=
   let retg := match fr_ret F with Some r => gens r | None => [] end ++
               match fr_this F with Some r => gens r | None => [] end in
   let mentioned := context_gens C ++ key_receiver_gens C in
   mmap (allocate_output C u mentioned retg) outs.
-
-Definition allocated_output_generations (rows : list (nat * nat * bool)) : list nat :=
-  flat_map (fun row : nat * nat * bool => if snd row then [snd (fst row)] else []) rows.
 
 (* SOUND: apply_abstract F C pa u = Ok (wrap, C', F', made) ->
      BindItem W P F C (Spec (Some pa) None None, None) wrap C' F' made
@@ -134,9 +131,8 @@ Definition apply_abstract (F : frame) (C : cx) (u : nat) : M (wrapper * cx * fra
   let* sm := pure (satisfies W ("applying " ++ fu) ("applying " ++ fu) C Cu th ns) in
   let outs := fun_outputs W metadata_fuel u in
   let* tbl := allocate_application_outputs F C u outs in
-  let gtab := map fst tbl in
   let newgens := allocated_output_generations tbl in
-  let gensof := gen_of gtab in
+  let gensof := output_generation_at tbl in
   let* (C', ks) := pure (provide_result E u C (fun t => TAbs (gensof t))) in
   let* (_, ksf) := pure (provide_result E u Cu (fun t => TAbs t)) in
   let* _ := check (collides_only_as ks ksf) ("applying " ++ fu ++ " provides two of its result items under one key here (D84 rule 7)") in

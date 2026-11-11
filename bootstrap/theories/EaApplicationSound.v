@@ -6,33 +6,36 @@ Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Local Definition OutputChoice (C : cx) (mentioned protected : list nat)
-    (role : nat) (row : nat * nat * bool) : Prop :=
-  fst (fst row) = role /\
-  if snd row then
-    nlook role (c_ty C) <> None \/ In role mentioned
-  else
-    snd (fst row) = role /\ nlook role (c_ty C) = None /\
-    ~ In role protected /\ ~ In role mentioned.
+    (role : nat) (row : nat * output_identity) : Prop :=
+  fst row = role /\
+  match snd row with
+  | DeclaredOutput =>
+      nlook role (c_ty C) = None /\ ~ In role protected /\ ~ In role mentioned
+  | GeneratedOutput _ =>
+      nlook role (c_ty C) <> None \/ In role mentioned
+  end.
 
 Local Lemma allocate_output_sound : forall E C u mentioned protected role before row after,
   EaFunctor.allocate_output E C u mentioned protected role before = Ok (row, after) ->
   OutputChoice C mentioned protected role row /\
-  if snd row then snd (fst row) = es_next before /\ es_next after = S (es_next before)
-  else es_next after = es_next before.
+  match snd row with
+  | DeclaredOutput => es_next after = es_next before
+  | GeneratedOutput g => g = es_next before /\ es_next after = S (es_next before)
+  end.
 Proof.
-  intros E C u mentioned protected role before [[key generation] allocated] after Run.
+  intros E C u mentioned protected role before [key choice] after Run.
   unfold EaFunctor.allocate_output in Run.
   destruct (bound_in C role || nmem role mentioned) eqn:Allocate.
-  - cbn [mbind fresh put_name ret] in Run. injection Run as <- <- <- <-.
+  - cbn [mbind fresh put_name ret] in Run. injection Run as <- <- <-.
     split; [|split; reflexivity]. split; [reflexivity|].
     apply orb_true_iff in Allocate as [InForce|Mentioned].
     + left. unfold bound_in in InForce. destruct (nlook role (c_ty C));
         [discriminate|discriminate InForce].
     + right. now apply nmem_spec.
   - destruct (nmem role protected) eqn:Protected; [discriminate Run|].
-    injection Run as <- <- <- <-. split; [|reflexivity].
+    injection Run as <- <- <-. split; [|reflexivity].
     apply orb_false_iff in Allocate as [Unbound Unmentioned].
-    split; [reflexivity|]. split; [reflexivity|]. split.
+    split; [reflexivity|]. split.
     + unfold bound_in in Unbound. destruct (nlook role (c_ty C));
         [discriminate Unbound|reflexivity].
     + split; now apply EaDependencyFuel.nmem_false_spec.
@@ -41,32 +44,31 @@ Qed.
 Local Lemma output_batch_sound : forall E C u mentioned protected outs before rows after,
   mmap (EaFunctor.allocate_output E C u mentioned protected) outs before = Ok (rows, after) ->
   Forall2 (OutputChoice C mentioned protected) outs rows /\
-  EaFunctor.allocated_output_generations rows =
-    seq (es_next before) (length (EaFunctor.allocated_output_generations rows)) /\
-  es_next after = es_next before + length (EaFunctor.allocated_output_generations rows).
+  allocated_output_generations rows =
+    seq (es_next before) (length (allocated_output_generations rows)) /\
+  es_next after = es_next before + length (allocated_output_generations rows).
 Proof.
   intros E C u mentioned protected outs. induction outs as [|role rest IH];
     intros before rows after Run.
   - injection Run as <- <-. cbn. split; [constructor|]. split; [reflexivity|lia].
   - cbn [mmap] in Run.
-    apply mbind_ok in Run as ([[key generation] allocated] & middle & Head & Run).
+    apply mbind_ok in Run as ([key choice] & middle & Head & Run).
     apply mbind_ok in Run as (tail & finish & Rest & Run).
     injection Run as <- <-.
     destruct (allocate_output_sound _ _ _ _ _ _ _ _ _ Head) as [Choice Next].
     destruct (IH _ _ _ Rest) as (Choices & Range & End).
     split; [now constructor|].
-    cbn [EaFunctor.allocated_output_generations flat_map snd fst] in *.
-    destruct allocated.
+    destruct choice as [|generation]; cbn [allocated_output_generations flat_map snd fst] in *.
+    + cbn [app length seq]. split; [now rewrite <- Next|].
+      now rewrite End, Next.
     + destruct Next as [<- Next]. cbn [app length seq].
       split; [f_equal; now rewrite <- Next|].
       rewrite End, Next. now rewrite Nat.add_succ_r.
-    + cbn [app length seq]. split; [now rewrite <- Next|].
-      now rewrite End, Next.
 Qed.
 
 Theorem allocate_application_outputs_range : forall E F C u outs before rows after,
   EaFunctor.allocate_application_outputs E F C u outs before = Ok (rows, after) ->
-  let allocated := EaFunctor.allocated_output_generations rows in
+  let allocated := allocated_output_generations rows in
   allocated = seq (es_next before) (length allocated) /\
   es_next after = es_next before + length allocated.
 Proof.
@@ -76,7 +78,7 @@ Qed.
 
 Local Lemma output_roles : forall C mentioned protected outs rows,
   Forall2 (OutputChoice C mentioned protected) outs rows ->
-  map fst (map fst rows) = outs.
+  map fst rows = outs.
 Proof.
   intros C mentioned protected outs rows Choices. induction Choices as [|role row outs rows Choice _ IH];
     [reflexivity|].
@@ -86,17 +88,15 @@ Qed.
 Local Lemma output_choice_for : forall C mentioned protected outs rows role,
   Forall2 (OutputChoice C mentioned protected) outs rows ->
   In role outs ->
-  exists generation allocated,
-    In (role, generation, allocated) rows /\
-    OutputChoice C mentioned protected role (role, generation, allocated).
+  exists choice, In (role, choice) rows /\ OutputChoice C mentioned protected role (role, choice).
 Proof.
   intros C mentioned protected outs rows role Choices.
-  induction Choices as [|head [[key generation] allocated] outs rows Choice _ IH]; [contradiction|].
+  induction Choices as [|head [key choice] outs rows Chosen _ IH]; [contradiction|].
   intros [<-|Member].
-  - pose proof (proj1 Choice) as Key. cbn in Key. subst key.
-    exists generation, allocated. split; [now left|exact Choice].
-  - destruct (IH Member) as (g & a & InRow & Chosen).
-    exists g, a. split; [now right|exact Chosen].
+  - pose proof (proj1 Chosen) as Key. cbn in Key. subst key.
+    exists choice. split; [now left|exact Chosen].
+  - destruct (IH Member) as (other & InRow & Evidence).
+    exists other. split; [now right|exact Evidence].
 Qed.
 
 Local Lemma nlook_unique_row : forall A key (value : A) entries,
@@ -111,54 +111,27 @@ Proof.
   - apply IH; [exact Tail|]. destruct Member as [Equal|Rest]; [congruence|exact Rest].
 Qed.
 
-Local Lemma row_generation : forall outs rows C mentioned protected role generation allocated,
-  Forall2 (OutputChoice C mentioned protected) outs rows ->
-  NoDup outs ->
-  In (role, generation, allocated) rows ->
-  EaFunctor.gen_of (map fst rows) role = generation.
-Proof.
-  intros outs rows C mentioned protected role generation allocated Choices Unique Member.
-  unfold EaFunctor.gen_of.
-  assert (Found : nlook role (map fst rows) = Some generation).
-  { apply nlook_unique_row.
-    - rewrite (output_roles _ _ _ _ _ Choices). exact Unique.
-    - exact (in_map fst _ _ Member). }
-  now rewrite Found.
-Qed.
-
-Local Lemma allocated_row_member : forall rows role generation,
-  In (role, generation, true) rows ->
-  In generation (EaFunctor.allocated_output_generations rows).
-Proof.
-  intros rows role generation Member.
-  unfold EaFunctor.allocated_output_generations. apply in_flat_map.
-  exists (role, generation, true). split; [exact Member|now left].
-Qed.
-
 Local Lemma allocated_roles_distinct : forall rows r r' g,
-  NoDup (EaFunctor.allocated_output_generations rows) ->
-  In (r, g, true) rows -> In (r', g, true) rows -> r = r'.
+  NoDup (allocated_output_generations rows) ->
+  In (r, GeneratedOutput g) rows -> In (r', GeneratedOutput g) rows -> r = r'.
 Proof.
-  induction rows as [|[[role generation] allocated] rows IH];
-    intros r r' g Unique First Second; [contradiction|].
-  destruct allocated.
-  - change (NoDup (generation :: EaFunctor.allocated_output_generations rows)) in Unique.
-    inversion Unique as [|? ? Absent Tail]; subst.
-    destruct First as [Equal|First], Second as [Equal'|Second].
-    + congruence.
-    + inversion Equal; subst. exfalso. apply Absent. eapply allocated_row_member; exact Second.
-    + inversion Equal'; subst. exfalso. apply Absent. eapply allocated_row_member; exact First.
-    + exact (IH _ _ _ Tail First Second).
+  induction rows as [|[role [|generation]] rows IH];
+    intros r r' g Unique First Second; [contradiction| |].
   - destruct First as [Equal|First]; [discriminate Equal|].
     destruct Second as [Equal|Second]; [discriminate Equal|].
     exact (IH _ _ _ Unique First Second).
+  - change (NoDup (generation :: allocated_output_generations rows)) in Unique.
+    inversion Unique as [|? ? Absent Tail]; subst.
+    destruct First as [Equal|First], Second as [Equal'|Second].
+    + congruence.
+    + inversion Equal; subst. exfalso. apply Absent. eapply AllocationFacts.generated_output_in_batch; exact Second.
+    + inversion Equal'; subst. exfalso. apply Absent. eapply AllocationFacts.generated_output_in_batch; exact First.
+    + exact (IH _ _ _ Tail First Second).
 Qed.
 
-Theorem application_output_identities : forall E F C a before rows after,
-  EaFunctor.allocate_application_outputs E F C (app_functor a)
-    (app_outputs a) before = Ok (rows, after) ->
-  app_allocated a = EaFunctor.allocated_output_generations rows ->
-  app_identity a = EaFunctor.gen_of (map fst rows) ->
+Theorem application_output_identities : forall E F C a before after,
+  EaFunctor.allocate_application_outputs E F C (app_functor a) (app_outputs a) before =
+    Ok (app_output_choices a, after) ->
   NoDup (app_outputs a) ->
   (forall t, In t (app_outputs a) <-> FunOutputs (e_W E) (app_functor a) t) ->
   (forall g, es_next before <= g -> Fresh (e_W E) g) ->
@@ -170,48 +143,39 @@ Theorem application_output_identities : forall E F C a before rows after,
     FunOutputs (e_W E) (app_functor a) y -> app_identity a x = app_identity a y -> x = y) /\
   OutputIdentityAt (e_W E) F C a.
 Proof.
-  intros E F C a before rows after Run Allocated Id Unique Roles Fresh Below RolesBelow.
+  intros E F C a before after Run Unique Roles Fresh Below RolesBelow.
   unfold EaFunctor.allocate_application_outputs in Run. cbn zeta in Run.
   apply output_batch_sound in Run as (Choices & Range & _).
   assert (Read : forall role, In role (app_outputs a) ->
-    exists g fresh, In (role, g, fresh) rows /\
+    exists choice, In (role, choice) (app_output_choices a) /\
       OutputChoice C (context_gens C ++ key_receiver_gens C)
         ((match fr_ret F with Some r => gens r | None => [] end) ++
-         (match fr_this F with Some r => gens r | None => [] end)) role (role, g, fresh) /\
-      app_identity a role = g).
+         (match fr_this F with Some r => gens r | None => [] end)) role (role, choice) /\
+      output_choice_at (app_output_choices a) role = choice).
   {
     intros role Present.
-    destruct (output_choice_for _ _ _ _ _ _ Choices Present) as (g & fresh & Row & Choice).
-    exists g, fresh. split; [exact Row|]. split; [exact Choice|].
-    rewrite Id. eapply row_generation; eassumption.
+    destruct (output_choice_for _ _ _ _ _ _ Choices Present) as (choice & Row & Evidence).
+    exists choice. split; [exact Row|]. split; [exact Evidence|].
+    unfold output_choice_at. rewrite (nlook_unique_row _ _ _ _ Unique Row). reflexivity.
   }
   split.
-  { unfold FreshFor. rewrite Allocated, Range.
+  { unfold FreshFor, app_allocated. rewrite Range.
     exact (proj1 (AllocationFacts.allocate_range (body_allocation_scope (e_W E) F C) _ _ Fresh Below)). }
   split.
   - intros x y X Y Equal. apply Roles in X, Y.
-    destruct (Read x X) as (gx & ax & Rx & Cx & Ex).
-    destruct (Read y Y) as (gy & ay & Ry & Cy & Ey).
-    rewrite Ex, Ey in Equal. revert Ry Cy. rewrite <- Equal. intros Ry Cy. clear Equal Ey gy.
-    destruct ax, ay.
-    + eapply allocated_roles_distinct; [rewrite Range; apply seq_NoDup|exact Rx|exact Ry].
-    + pose proof (allocated_row_member _ _ _ Rx) as Member.
-      rewrite Range in Member. apply in_seq in Member.
-      cbn [OutputChoice fst snd] in Cy. destruct Cy as [_ [Retained _]].
-      change (gx = y) in Retained. rewrite Retained in Member. exfalso. exact (proj1 (Nat.lt_nge _ _) (RolesBelow y Y) (proj1 Member)).
-    + pose proof (allocated_row_member _ _ _ Ry) as Member.
-      rewrite Range in Member. apply in_seq in Member.
-      cbn [OutputChoice fst snd] in Cx. destruct Cx as [_ [Retained _]].
-      change (gx = x) in Retained. rewrite Retained in Member. exfalso. exact (proj1 (Nat.lt_nge _ _) (RolesBelow x X) (proj1 Member)).
-    + destruct Cx as [_ [KeepX _]]. destruct Cy as [_ [KeepY _]].
-      change (gx = x) in KeepX. rewrite <- KeepX. exact KeepY.
+    destruct (Read x X) as (choice_x & Rx & _ & Ex).
+    destruct (Read y Y) as (choice_y & Ry & _ & Ey).
+    unfold app_identity, output_generation_at in Equal. rewrite Ex, Ey in Equal.
+    destruct choice_x as [|gx], choice_y as [|gy]; cbn [encode_output_identity] in Equal.
+    + exact Equal.
+    + subst gy. pose proof (AllocationFacts.generated_output_in_batch _ _ _ Ry) as Member.
+      rewrite Range in Member. apply in_seq in Member. specialize (RolesBelow x X). lia.
+    + subst gx. pose proof (AllocationFacts.generated_output_in_batch _ _ _ Rx) as Member.
+      rewrite Range in Member. apply in_seq in Member. specialize (RolesBelow y Y). lia.
+    + subst gy. eapply allocated_roles_distinct; [rewrite Range; apply seq_NoDup|exact Rx|exact Ry].
   - intros role Role. apply Roles in Role.
-    destruct (Read role Role) as (g & fresh & Row & Choice & Reads).
-    destruct fresh; cbn [OutputChoice fst snd] in Choice.
-    + right. split; [exact (proj2 Choice)|].
-      rewrite Reads, Allocated. eapply allocated_row_member; exact Row.
-    + left. destruct Choice as (_ & Retained & Unbound & Protected & Unmentioned).
-      repeat split; try assumption. now rewrite Reads.
+    destruct (Read role Role) as (choice & Row & Evidence & Reads).
+    rewrite Reads. exact (proj2 Evidence).
 Qed.
 
 Local Lemma indexed_member : forall A start (xs : list A) i x,
@@ -287,7 +251,7 @@ Proof.
   destruct Satisfied as [-> Satisfied].
   set (outs := EaTypes.fun_outputs (e_W E) (e_metadata_fuel E) u) in *.
   apply mbind_ok in Run as (rows & s6 & Allocated & Run).
-  set (generation := EaFunctor.gen_of (map fst rows)) in *.
+  set (generation := output_generation_at rows) in *.
   apply mbind_ok in Run as ([C' ks] & s7 & Read & Run).
   apply pure_read in Read as [Provided ->].
   apply mbind_ok in Run as ([Cf ksf] & s8 & Read & Run).
@@ -313,8 +277,11 @@ Proof.
   assert (Unused : forall g, es_next before <= g -> Fresh (e_W E) g).
   { intros g Above. unfold Fresh. destruct (w_decl (e_W E) g) as [d|] eqn:Declaration;
       [pose proof (Bounded g d Declaration); lia|reflexivity]. }
-  pose (a := Application u formal needs th outs generation (EaFunctor.allocated_output_generations rows) C' ks).
-  destruct (application_output_identities E F C a _ _ _ Allocated eq_refl eq_refl
+  assert (RowRoles : map fst rows = outs).
+  { apply output_batch_sound in Allocated as (Choices & _). eapply output_roles; exact Choices. }
+  rewrite <- RowRoles in Allocated, Unique, Roles, Below |- *.
+  pose (a := Application u formal needs th rows C' ks).
+  destruct (application_output_identities E F C a _ _ Allocated
     Unique Roles Unused Scope Below) as (Fresh & Injective & Identities).
   assert (KeysRead : map (rkof C') ks = map (rkey_of C') ks).
   { apply map_ext. apply EaSatisfiesSound.rkof_exact. }

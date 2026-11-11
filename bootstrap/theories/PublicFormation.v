@@ -5,7 +5,7 @@
    TyOf, Brackets and SigOf over formed type tables. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms.
-From NM Require PublicMerge PublicContextFacts.
+From NM Require AllocationFacts PublicMerge PublicContextFacts.
 From NM Require Import AuditFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -1902,11 +1902,13 @@ Proof.
       split; [|exact Ff]. apply provide_formed; [|exact (appof_ok W _ _ _ App Full)].
       exact (set_mth_formed W C (canon C rt) m sg Fc (canon_ok W C rt (proj1 Fc) Hrt) (canon_scope C rt Sc) Hsg).
     + destruct (binditems_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' _]. exact (conj Fc' Ff).
-    + destruct a as [u Cu ns th outs gensof newgens C' ks].
+    + destruct a as [u Cu ns th choices C' ks].
+      pose (a := Application u Cu ns th choices C' ks).
+      pose (gensof := app_identity a).
       destruct Typed as (_ & _ & _ & _ & _ & _ & FF & _ & Outs & _ & _ & PR & _).
       split; [|exact Ff].
       apply (apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
-      intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
+      intros t Ft. destruct (AllocationFacts.output_identity_conditions _ _ _ _ Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
       exact (freshfor_fresh W _ _ _ _ FF Ig).
     + match goal with Fx : forall x tx, In (x, tx) fx <-> _ |- _ =>
         split; [|exact Ff]; apply set_fun_formed; [exact Fc|intros x tx Iq; exact (proj2 (proj1 (Fx x tx) Iq))] end.

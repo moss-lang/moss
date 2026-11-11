@@ -4460,6 +4460,27 @@ Definition CallBrackets (W : world) (p : string) (f : nat) (bs : list (path * sp
                               In x (w_reqs W f)) /\
                    exists rp ra, snd b = Spec (Some rp) None ra) bs.
 
+(* A declared output can use its own name. A shadowing output instead
+   receives a generated identity, encoded as a runtime number. *)
+Inductive output_identity :=
+| DeclaredOutput
+| GeneratedOutput (generation : nat).
+
+Definition output_choice_at (choices : list (nat * output_identity)) (t : nat) : output_identity :=
+  match nlook t choices with Some choice => choice | None => DeclaredOutput end.
+
+Definition encode_output_identity (t : nat) (choice : output_identity) : nat :=
+  match choice with DeclaredOutput => t | GeneratedOutput generation => generation end.
+
+Definition output_generation_at (choices : list (nat * output_identity)) (t : nat) : nat :=
+  encode_output_identity t (output_choice_at choices t).
+
+Definition allocated_output_generations (choices : list (nat * output_identity)) : list nat :=
+  flat_map (fun q => match snd q with
+    | DeclaredOutput => []
+    | GeneratedOutput generation => [generation]
+    end) choices.
+
 (* [D78]/[D84] rule 5, `bind F;` for F abstract and in force.
    Typing resolves the functor and determines the meanings at its use,
    the new identities and the provisions available afterward. *)
@@ -4468,12 +4489,14 @@ Record application := Application {
   app_input : cx;
   app_needs : list item;
   app_arguments : subst;
-  app_outputs : list nat;
-  app_identity : nat -> nat;
-  app_allocated : list nat;
+  app_output_choices : list (nat * output_identity);
   app_result : cx;
   app_provisions : list item
 }.
+
+Definition app_outputs (a : application) : list nat := map fst (app_output_choices a).
+Definition app_identity (a : application) : nat -> nat := output_generation_at (app_output_choices a).
+Definition app_allocated (a : application) : list nat := allocated_output_generations (app_output_choices a).
 
 (* A fresh generation preserves an existing meaning of the same source
    name. A provision key can mention a type even when it has no binding
@@ -4483,12 +4506,15 @@ Record application := Application {
 Definition OutputIdentityAt (W : world) (F : frame) (C : cx)
     (a : application) : Prop :=
   forall t, FunOutputs W (app_functor a) t ->
-    (nlook t (c_ty C) = None /\ app_identity a t = t /\
-      ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
-              (match fr_this F with Some r => gens r | None => [] end)) /\
-      ~ In t (context_gens C ++ key_receiver_gens C)) \/
-    ((nlook t (c_ty C) <> None \/ In t (context_gens C ++ key_receiver_gens C)) /\
-      In (app_identity a t) (app_allocated a)).
+    match output_choice_at (app_output_choices a) t with
+    | DeclaredOutput =>
+        nlook t (c_ty C) = None /\
+        ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+                (match fr_this F with Some r => gens r | None => [] end)) /\
+        ~ In t (context_gens C ++ key_receiver_gens C)
+    | GeneratedOutput _ =>
+        nlook t (c_ty C) <> None \/ In t (context_gens C ++ key_receiver_gens C)
+    end.
 
 Definition TypesApplication (W : world) (F : frame) (C : cx)
     (pa : path) (a : application) : Prop :=

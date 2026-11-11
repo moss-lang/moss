@@ -70,11 +70,14 @@ Proof.
     + (* an abstract application *)
       match goal with
       | Typed : A.TypesApplication _ _ _ _ ?a |- _ =>
-          destruct a as [u Cu ns th outs gensof newgens C' ks];
+          destruct a as [u Cu ns th choices C' ks];
           destruct Typed as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OI & _)
       end.
+      pose (a := A.Application u Cu ns th choices C' ks).
+      pose (outs := A.app_outputs a).
+      pose (gensof := A.app_identity a).
       intros x. unfold A.translate_application, apply_output_expression.
-      cbn [A.app_functor A.app_identity A.app_outputs applies binding_apply app].
+      cbn [A.app_functor applies binding_apply app].
       split; [intros p I; right; exact I|split].
       * intros p [<-|I]; [right|left; exact I].
         intros q Iq. cbn in Iq. apply in_map_iff in Iq as [t [<- It]]. exact (proj1 (OI t) It).

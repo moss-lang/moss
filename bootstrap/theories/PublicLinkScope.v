@@ -8,7 +8,7 @@
    provisions by the context it starts from. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicScoping.
-From NM Require PublicContextFacts PublicMerge PublicOrientation.
+From NM Require AllocationFacts PublicContextFacts PublicMerge PublicOrientation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -305,10 +305,11 @@ Proof.
     + (* bind F; F with a body *)
       exact (items_scope _ _ _ _ _ _ _ Bi Fc Ff).
     + (* bind F; F abstract *)
-      destruct a as [u Cu ns th outs gensof newgens C' ks].
+      destruct a as [u Cu ns th choices C' ks].
+      pose (a := Application u Cu ns th choices C' ks).
+      pose (gensof := app_identity a).
       destruct Typed as (_ & _ & _ & _ & _ & _ & FF & _ & Outs & _ & OutsI & PR & _).
       change (ProvideResult W u C (fun t => TAbs (gensof t)) C' ks) in PR.
-      cbv beta iota zeta delta [OutputIdentityAt app_functor app_identity app_allocated] in Outs.
       destruct (apply_abstract_scope W _ _ _ _ _ PR) as [Inc Back].
       destruct (provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo [outs' [OutsI' Ety]]]].
       pose proof Fc as [Cf [Ks Ts]].
@@ -321,9 +322,9 @@ Proof.
       { intros t It. unfold output_type_map. apply in_map_iff. exists (t, TAbs (gensof t)). split; [reflexivity|].
         apply in_or_app; left. apply in_map_iff. exists t. split; [reflexivity|exact It]. }
       assert (OutAbs : forall t, FunOutputs W u t -> Abstract W (gensof t)).
-      { intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]];
-          [rewrite E; exact (typed_abstract W _ (outputs_typed W _ _ Ft))|].
-        apply (fresh_abstract W). match goal with FF : A.FreshFor _ _ _ ?gs |- _ => exact (freshfor_fresh W _ _ _ _ FF Ig) end. }
+      { intros t Ft. destruct (AllocationFacts.output_identity_conditions _ _ _ _ Outs t Ft) as [[_ [E _]]|[_ Ig]].
+        - change (gensof t = t) in E. rewrite E. exact (typed_abstract W _ (outputs_typed W _ _ Ft)).
+        - apply (fresh_abstract W). exact (freshfor_fresh W _ _ _ _ FF Ig). }
       set (K := fun y => In y (scope_gens C')).
       assert (ReadK : ReadWithin K (c_sub C)).
       { rewrite <- Esub. apply canon_within. intros y Iy. exact Iy. }
