@@ -133,29 +133,28 @@ Proof.
   - unfold unit_or_trap. destruct (store_op _ _ _ _); [reflexivity|now rewrite keep_heap_same].
 Qed.
 
-Definition primitive_decoded_fast (P : xprog) (p : wasm_prim) (concrete : prim)
-    (values : list value) (state : mstate) : signal * mstate :=
-  match direct_i32 p values state with
-  | Some result => result
-  | None => primitive_decoded P p concrete values state
-  end.
-
-Lemma primitive_decoded_fast_agrees : forall P p values state,
-  primitive_decoded_fast P p (base_primitive p) values state =
-  primitive_decoded P p (base_primitive p) values state.
+(* A successful direct step is one of the numeric or memory operations
+   whose arguments and result already use the host calling convention. *)
+Lemma direct_i32_no_adaptation : forall p values state out next,
+  direct_i32 p values state = Some (out, next) ->
+  BaseCall.primitive_arguments p values = values /\
+  forall site, BaseCall.allocation_result p site out = out.
 Proof.
-  intros. unfold primitive_decoded_fast.
-  destruct (direct_i32 p values state) eqn:Direct; [symmetry; eapply direct_i32_agrees; exact Direct|reflexivity].
+  intros p values state out next Direct.
+  destruct p; destruct values as [|a [|b [|extra rest]]];
+    cbn [direct_i32] in Direct; try discriminate; split; reflexivity.
 Qed.
 
-(* The default host already dispatches on the decoded operation. Use that
-   result for its input and output adaptation as well. *)
 Definition call_in (P : xprog) (operation : op) (site : option ty)
     (values : list value) (state : mstate) : signal * mstate :=
   match decode_host operation with
   | Some (p, concrete) =>
-      let '(out, next) := primitive_decoded_fast P p concrete (BaseCall.primitive_arguments p values) state in
-      (match site with Some ty => BaseCall.allocation_result p ty out | None => out end, next)
+      match direct_i32 p values state with
+      | Some result => result
+      | None =>
+          let '(out, next) := primitive_decoded P p concrete (BaseCall.primitive_arguments p values) state in
+          (match site with Some ty => BaseCall.allocation_result p ty out | None => out end, next)
+      end
   | None => (UnsupportedOperation (unsupported_code operation), state)
   end.
 
@@ -165,8 +164,11 @@ Theorem call_in_agrees : forall P operation site values state,
 Proof.
   intros. unfold call_in, BaseCall.call, primitive, primitive_in, decode_host, decode_host_operation.
   destruct (decode operation) as [p|]; [|destruct site; reflexivity].
-  cbn [option_map]. rewrite primitive_decoded_fast_agrees.
-  destruct (primitive_decoded _ _ _ _ _) as [out next]. destruct site; reflexivity.
+  cbn [option_map]. destruct (direct_i32 p values state) as [[out next]|] eqn:Direct.
+  - destruct (direct_i32_no_adaptation _ _ _ _ _ Direct) as [Arguments Result].
+    rewrite Arguments, (direct_i32_agrees (legacy_view P) _ _ _ _ Direct).
+    destruct site; [now rewrite Result|reflexivity].
+  - destruct (primitive_decoded _ _ _ _ _) as [out next]. destruct site; reflexivity.
 Qed.
 
 Definition stored_ok (Q : value -> Prop) (w : xvalue) : Prop :=
