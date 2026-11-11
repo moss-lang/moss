@@ -5,6 +5,7 @@
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
 From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
+From NM Require RuntimeRenaming.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -147,6 +148,7 @@ Qed.
 Module CapTrimTop := ProgramCapTrim.TrimRuns BaseHost.Concrete PublicPublic.
 Module NativeRunTop := BootstrapRun.Native BaseHost.Concrete PublicPublic.
 Module FuelTop := InterpreterFuel.PublicFuel BaseHost.Concrete PublicPublic.
+Module NominalTop := RuntimeRenaming.PublicRenaming BaseHost.Concrete PublicPublic.
 Definition captrim_runs_agree : forall program interface initial result,
   PruneTop.code_blind interface ->
   PublicPublic.Runs (ProgramCapTrim.captrim program) interface initial result
@@ -586,7 +588,11 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BaseHost.default_compatible);
   root (@BaseHost.primitive_ignores_code);
   root (@concrete_run_sound);
-  root (@FuelTop.runs_deterministic)].
+  root (@FuelTop.runs_deterministic);
+  root (@RuntimeRenaming.program_view_equivariant);
+  root (@NominalTop.E.eval_tag_equivariant);
+  root (@NominalTop.E.eval_primitive_equivariant);
+  root (@NominalTop.runs_transport)].
 
 Print Assumptions certificate_roots.
 
