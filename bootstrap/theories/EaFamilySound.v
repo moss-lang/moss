@@ -1,5 +1,6 @@
 (* The executable family classifier implies Audit's family conditions. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditFacts.
 From NM Require Import Audit EaBase EaTypes EaFamily EaTypesSound EaMentionsSound
   EaDependencyFuel EaResultBudget EaOutputSound EaMetadataSound EaMain EaWorldSound ElabWorld.
 From NM Require EaCall EaContextTableSound EaMergeSound EaSatisfiesSound PublicContextFacts PublicFormation PublicTypeFacts.
@@ -211,7 +212,7 @@ Theorem family_application_sound : forall E bound C u matching arguments inputs 
   EaContextTableSound.ContextTableSound (e_W E) ->
   PublicContextFacts.CxSection C ->
   family_application E C u matching = Ok (arguments, inputs, result, keys) ->
-  FamilyApplication (e_W E) C u matching arguments inputs result keys.
+  AuditFacts.FamilyApplication (e_W E) C u matching arguments inputs result keys.
 Proof.
   intros E bound C u matching arguments inputs result keys
     Bounded Budget Contexts Section Run.

@@ -73,7 +73,7 @@ Qed.
 
 (* The result of a family application: C's provisions, after new method
    provisions keyed exactly by ks. *)
-Lemma family_news : forall W C u matching th sm Cr ks, A.FamilyApplication W C u matching th sm Cr ks ->
+Lemma family_news : forall W C u matching th sm Cr ks, AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   exists news, A.c_provisions Cr = (news ++ A.c_provisions C)%list /\ A.c_sub Cr = A.c_sub C /\
     A.c_locals Cr = A.c_locals C /\
     (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a) /\
@@ -173,7 +173,7 @@ Qed.
    scope). *)
 Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
   PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot ->
   (forall x v, In (x, v) (A.c_ty C) ->
      PublicFormation.TyOk W (A.canon C v) /\ PublicFormation.ScopedTy W C0 (A.canon C v)) ->
@@ -277,7 +277,7 @@ Definition FamilyStepOut (rr : nat) F (Cr : A.cx) (ks : list item) u th sm j d t
 Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     pins d1 d2 d3 g3 st3 H3 j',
   Pre rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
@@ -302,7 +302,7 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
   A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
@@ -325,7 +325,7 @@ Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matc
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
   A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
@@ -378,7 +378,7 @@ Definition FamilyPlatformApplyOk : Prop := forall k, Below k -> forall C0 C u ma
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
   A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   forall code, lookup_provision (IFun u) d = Some (FunctorClosure code None (EnvironmentWithAliases [] [] []) None) ->
   Platform.Family W Prog u code ->
@@ -394,7 +394,7 @@ Hypothesis family_platform_apply : FamilyPlatformApplyOk.
 Lemma family_run : forall k, Below k -> forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
   A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
-  PublicFormation.TysScoped W C -> A.FamilyApplication W C u matching th sm Cr ks ->
+  PublicFormation.TysScoped W C -> AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 Proof.
@@ -510,7 +510,7 @@ Qed.
 Lemma realizes_family : forall rr C0 C u matching th sm Cr ks d dr H H',
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
   A.c_provisions C = A.c_provisions C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   Realizes rr C0 d H -> heap_extends H H' -> FamilyResultOk rr Cr ks d dr H' ->
   Realizes rr (CopyA.S.with_ty C0 Cr) (append_environment dr d) H'.
 Proof.
@@ -584,7 +584,7 @@ Qed.
    provision shadowing one of C0's at its run-time key has its signature. *)
 Lemma keep_family : forall rr C0 C u matching th sm Cr ks d dr H H',
   A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   heap_extends H H' -> FamilyResultOk rr Cr ks d dr H' ->
   forall Cx, incl (A.c_provisions Cx) (A.c_provisions C0) -> A.c_sub Cx = A.c_sub C0 ->
   CopyA.S.FamilyCoherent Cx Cr ks -> Realizes rr Cx d H -> Realizes rr Cx (append_environment dr d) H'.

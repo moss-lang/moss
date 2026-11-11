@@ -635,7 +635,7 @@ Definition FamilyCoherent (Cx Cr : A.cx) (ks : list item) : Prop :=
 Definition FamilyStepOk : Prop := forall k, Below k -> forall C0 C u matching th sm Cr ks ot m,
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 ->
   A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
-  A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
   PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot -> FamilyTableIn C C0 -> PublicFormation.TysScoped W C ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st -> forall rest,
   (exists d' st' H', heap_extends H H' /\ type_meanings d' = type_meanings d /\ type_aliases d' = type_aliases d /\
@@ -654,7 +654,7 @@ Hypothesis family_step : FamilyStepOk.
    Proved: PublicFamilyCoherent.family_coherent. *)
 Definition FamilyCoherentOk : Prop := forall F C, Formed F C ->
   forall C1 u matching th sm Cr ks, A.c_sub C1 = A.c_sub C -> incl (A.c_provisions C) (A.c_provisions C1) ->
-  A.FamilyApplication W C1 u matching th sm Cr ks -> FamilyCoherent C Cr ks.
+  AuditFacts.FamilyApplication W C1 u matching th sm Cr ks -> FamilyCoherent C Cr ks.
 Hypothesis family_coherent : FamilyCoherentOk.
 
 (* HYPOTHESES (T29). A demanded family key's receiver is in the code's
@@ -685,7 +685,7 @@ Qed.
 (* Code after a family application runs with the families' provisions
    and the code's own context both realized. *)
 Lemma family_then : forall k, Below k -> forall C u matching th sm Cr ks ot m F t (B : Prop) x,
-  A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
   (Formed F C -> PublicFormation.TyOk W ot /\ PublicFormation.ScopedTy W C ot) ->
   (forall j, j <= k -> forall d types H g st, Pre j F (with_ty C Cr) d types H g st -> Pre j F C d types H g st ->
      Outcome F d H types t B (AR.O.I.eval j P d g st x)) ->
@@ -1261,7 +1261,7 @@ Qed.
 Lemma family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
   A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
-  A.FamilyApplication W C u matching th sm C' ks -> A.FamilyReadOff W C u (A.canon C ot0) m matching ->
+  AuditFacts.FamilyApplication W C u matching th sm C' ks -> A.FamilyReadOff W C u (A.canon C ot0) m matching ->
   (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ PublicFormation.ScopedTy W C (A.canon C ot0)) ->
   In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
   A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
@@ -1282,7 +1282,7 @@ Qed.
 
 Lemma literal_family_case : forall n, Below n -> forall F C t m ox oy u matching th sm C' ks,
   CodeSafe n F C t False ox -> CodeSafe n F C t False oy ->
-  A.mlook t m (A.c_mths C) = None -> A.FamilyApplication W C u matching th sm C' ks ->
+  A.mlook t m (A.c_mths C) = None -> AuditFacts.FamilyApplication W C u matching th sm C' ks ->
   A.FamilyReadOff W C u t m matching ->
   (Formed F C -> PublicFormation.TyOk W t /\ PublicFormation.ScopedTy W C t) ->
   In (A.mkey t m) ks -> A.OnlyFamily W C u (A.mkey t m) -> A.mlook t m (A.c_mths C') = Some (A.FSig [t] t) ->
@@ -1307,11 +1307,13 @@ Proof.
   assert (Op : forall a b x y result m,
     A.Literal W C a x t -> A.Literal W C b y t -> A.LitOp W C t m x y result ->
     Outcome F d H types t False (AR.O.I.eval (S n) P d lg lst result)).
-  { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th sm C' ks None' Fam Ro InK Only Found].
+  { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th formal needs C' ks None' Typed Ro InK Only Found].
     - refine (method_code n F C False t m (A.FSig [t] t) x' [y] d types H lg lst Found
         (IHc F C a x' t Da) _ Pre0).
       constructor; [exact (IHc F C b y t Db)|constructor].
-    - exact (literal_family_case n Bel F C t m x' y u matching th sm C' ks
+    - pose (sm := A.satisfaction_map (A.family_context C matching) formal th needs).
+      pose proof (AuditFacts.family_application_with_map Typed) as Fam.
+      exact (literal_family_case n Bel F C t m x' y u matching th sm C' ks
         (IHc F C a x' t Da) (IHc F C b y t Db) None' Fam Ro
         (fun Fm => conj (PublicFormation.literal_ok W _ _ _ _ Da (proj1 (proj1 Fm))) (lit_scoped F C a x' t Da Fm))
         InK Only Found d types H lg lst Pre0). }
@@ -1839,7 +1841,7 @@ Qed.
    the identity, so the inner code runs at the same fuel. *)
 
 (* A family application keeps the context's provisions and merge. *)
-Lemma family_cr : forall C u matching th sm Cr ks, A.FamilyApplication W C u matching th sm Cr ks ->
+Lemma family_cr : forall C u matching th sm Cr ks, AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   incl (A.c_provisions C) (A.c_provisions Cr) /\ A.c_sub Cr = A.c_sub C.
 Proof.
   intros C u matching th sm Cr ks (formal & needs & (fixed & _ & _ & _ & _ & _ & _ & _ & _ & PR & _) & _).
@@ -1871,9 +1873,10 @@ Proof.
   - inversion Step as [C1 ot m u1 matching1 th1 formal1 needs1 Cr1 ks1 Iw Ml Of Typed Ro Ik Matched]; subst.
     pose (sm := A.satisfaction_map (A.family_context C matching) formal th needs).
     pose proof (AuditFacts.family_application_with_map Typed) as FA.
-    cbn [A.translate_demands A.demand_functor A.demand_matching A.demand_arguments
-      A.demand_formal A.demand_needs A.demand_result A.demand_keys].
-    unfold apply_expression. fold sm. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
+    change (Outcome F d H types t B (AR.O.I.eval n P d g st
+      (EBind (BApply u th [] sm (map (A.rkey_of Cr) ks))
+        (A.translate_demands (A.family_restore C Cr) rest x)))).
+    destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
     destruct n1 as [|n2]; [cbn; exact Logic.I|].
     destruct (Wk ot m Iw) as [Ok Sc].
     destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin Ts F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
@@ -5416,8 +5419,11 @@ Lemma provided_step : forall F C o ox ot0 m args x t (B : Prop),
 Proof.
   intros F C o ox ot0 m args x t B Do BrkO BrkA Prov.
   remember (A.canon C ot0) as ot eqn:Ot.
-  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th sm C' ks g xs None' Fam Ro InK Only Found Args].
-  2: { subst ot. exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
+  destruct Prov as [F C ox ot m args g xs Found Args|F C ox ot m args u matching th formal needs C' ks g xs None' Typed Ro InK Only Found Args].
+  2: { subst ot.
+       pose (sm := A.satisfaction_map (A.family_context C matching) formal th needs).
+       pose proof (AuditFacts.family_application_with_map Typed) as Fam.
+       exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
           None' Fam Ro
           (fun Fm => conj (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
               (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W)))

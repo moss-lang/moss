@@ -24,6 +24,7 @@
      application runs from: θ x is grounded by d as the level's input
      valuation reads x. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd
   PublicLinkResults PublicChainCore PublicLinkScope.
@@ -53,7 +54,7 @@ Section Top.
 Variables (n : nat) (H3 : heap_types).
 Variables (C : A.cx) (u : nat) (matching th : subst) (sm : smap) (Cr : A.cx) (ks : list item).
 Hypothesis Ts : PublicFormation.TysScoped W C.
-Hypothesis FA : A.FamilyApplication W C u matching th sm Cr ks.
+Hypothesis FA : AuditFacts.FamilyApplication W C u matching th sm Cr ks.
 Variables (d d3 dr : environment) (rms : option (list (option nat))) (srcs : list item) (M : nat -> ty).
 Hypothesis IdemC : forall t, A.canon C (A.canon C t) = A.canon C t.
 Hypothesis KMc : PublicCallRealize.KeysMatch (A.c_provisions C).

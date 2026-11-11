@@ -18,7 +18,7 @@
 (*               the w_context table                                        *)
 (*   EaCall      at_site/at_th, CallTheta, Satisfies                         *)
 (*   EaFamily    OutputItemEntries, ProvideResult, Family, FamilyProduces,  *)
-(*               OnlyFamily, FamilyReadOff, FamilyApplication, Demand, LitOp*)
+(*               OnlyFamily, FamilyReadOff, TypesFamilyApplication, Demand, LitOp*)
 (*   EaExpr      Ex, Args, Cond, Branch, Arms, MethCall, Provided, BlkE,    *)
 (*               Blk, PatOf, Literal                                        *)
 (*   EaBind      BindItems, BindItem (BTypeBind .. BApplyBody), FnProvider, *)

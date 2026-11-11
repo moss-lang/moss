@@ -1,6 +1,6 @@
 (* Family signatures (PublicFormation.FamilySigOk).
 
-   FamilySigOk as stated quantifies over every FamilyApplication, whose
+   FamilySigOk as stated quantifies over every AuditFacts.FamilyApplication, whose
    matching is constrained only to P(F) symbols, not to the values a
    demanded key determines. It is false for accepted programs: a family
    whose result is a bracketed context, e.g.
@@ -24,6 +24,7 @@
    family Provided case has the FamilyReadOff premise in hand), is the
    same statement under FamilyReadOff: [family_sig_ok_readoff]. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditFacts.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms PublicFormation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.

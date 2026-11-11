@@ -12,6 +12,7 @@
    This file proves ChainCoreOk from ChainNewOk; ChainNewOk is the
    remaining premise. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults.
@@ -568,7 +569,7 @@ Qed.
 Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     pins d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->

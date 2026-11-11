@@ -1458,7 +1458,7 @@ Proof. intros m C. exact (fold_set_ty_shape m C). Qed.
 (* A family applied in C, with every matching value ok and in C's scope,
    adds only ok provisions keyed in C's scope. *)
 Lemma family_application_ok : forall C u matching th sm Cr ks,
-  FamilyApplication W C u matching th sm Cr ks -> CxFormed W C -> KeysScoped W C ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> CxFormed W C -> KeysScoped W C ->
   (forall x v, In (x, v) matching -> TyOk W (canon C v) /\ ScopedTy W C (canon C v)) ->
   c_sub Cr = c_sub C /\ c_locals Cr = c_locals C /\
   (forall k p, In (k, p) (c_provisions Cr) -> KeyOk W k /\ ProvOk W p /\
@@ -1485,7 +1485,7 @@ Proof.
 Qed.
 
 Lemma family_application_sub : forall C u matching th sm Cr ks,
-  FamilyApplication W C u matching th sm Cr ks -> c_sub Cr = c_sub C.
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> c_sub Cr = c_sub C.
 Proof.
   intros C u matching th sm Cr ks (formal & needs & (fixed & Fx & Fam & Poly & FC & Args & InF & FA & _ & PR & Nd) & _).
   destruct PR as (d & ps & a & r & b & outs & es & tm' & D & FP & Outs & OIE & RK & ->). cbn.
@@ -1713,10 +1713,10 @@ Definition UnitsBare : Prop := forall s, kind_sym W s = Some DKUnit -> w_reqs W 
    at an ok receiver supplies it at an ok signature. False as stated (see
    below); kept for reference, unused. *)
 Definition FamilySigOk : Prop := forall C u matching th sm Cr ks ot m g,
-  FamilyApplication W C u matching th sm Cr ks -> FormedCx W C -> TyOk W ot ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> FormedCx W C -> TyOk W ot ->
   In (mkey ot m) ks -> mlook ot m (c_mths Cr) = Some g -> SigOk W g.
 
-(* [FamilySigOk] is false as stated: FamilyApplication constrains the
+(* [FamilySigOk] is false as stated: AuditFacts.FamilyApplication constrains the
    matching only to P(F) symbols, and a family whose result is a bracketed
    context leaf can carry a matching value into a signature its key does
    not determine (PublicFamilySig.v has the accepted program). The family
@@ -1724,7 +1724,7 @@ Definition FamilySigOk : Prop := forall C u matching th sm Cr ks ot m g,
    (FamilyReadOff) in hand, and under it the signature is ok
    (PublicFamilySig.family_sig_ok_readoff), so that is what is assumed. *)
 Definition FamilySigReadOffOk : Prop := forall C u matching th sm Cr ks ot m g,
-  FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
   FormedCx W C -> TyOk W ot ->
   In (mkey ot m) ks -> mlook ot m (c_mths Cr) = Some g -> SigOk W g.
 
@@ -1835,10 +1835,11 @@ Proof.
     + exact (provided_ok _ _ _ _ _ _ _ _ Pv Fc Ff Ot).
     + exact (provided_ok _ _ _ _ _ _ _ _ Pv Fc Ff Ot).
   (* ---- Provided ---- *)
-  - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th sm C' ks g xs Ml FAp Ro Ik Of Ml' As];
+  - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th formal needs C' ks g xs Ml Typed Ro Ik Of Ml' As];
       intros Fc Ff Ot.
     + exact (proj2 (mths_ok W _ _ _ _ (proj1 Fc) Ml)).
-    + exact (proj2 (family_sig_ok _ _ _ _ _ _ _ ot m g FAp Ro Fc Ot Ik Ml')).
+    + pose proof (AuditFacts.family_application_with_map Typed) as FAp.
+      exact (proj2 (family_sig_ok _ _ _ _ _ _ _ ot m g FAp Ro Fc Ot Ik Ml')).
   (* ---- BlkE ---- *)
   - destruct D as [F C ss tl exp x t made Bk Esc Of]; intros Fc Ff Oe.
     exact (blk_ok _ _ _ _ _ _ _ _ Bk Fc Ff Oe).
@@ -2027,7 +2028,7 @@ Qed.
    symbol, which F's inputs list unless F lists its polymorphic inputs,
    which are types (FamilyShape). *)
 Theorem family_keys_typed : forall W C u matching th sm Cr ks, TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
   forall x, A.nlook x (A.c_ty (A.family_context C matching)) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
 Proof.

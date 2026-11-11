@@ -4,7 +4,7 @@
 
 From Stdlib Require Import String List Bool Arith.
 From NM Require Import Audit.
-Import ListNotations Audit.Input Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 (* Context items. *)
 
@@ -111,6 +111,13 @@ Proof.
   intros W s e1 e2 [A1 M1] [A2 M2]. apply ascending_det; [exact A1 | exact A2|].
   intro t. rewrite M1, M2. reflexivity.
 Qed.
+
+(* Safety lemmas can relate the static family check to its emitted map. *)
+Definition FamilyApplication (W : world) (C : cx) (u : usym)
+    (matching arguments : subst) (inputs : smap) (result : cx) (keys : list item) : Prop :=
+  exists formal needs,
+    TypesFamilyApplication W C u matching arguments formal needs result keys /\
+    inputs = satisfaction_map (family_context C matching) formal arguments needs.
 
 Lemma family_application_with_map : forall W C u matching th formal needs Cr ks,
   TypesFamilyApplication W C u matching th formal needs Cr ks ->

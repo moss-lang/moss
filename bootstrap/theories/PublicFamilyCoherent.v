@@ -284,7 +284,7 @@ Qed.
 
 Theorem family_coherent : forall F C, FormedCx W C /\ FrameFormed W F /\ CxScoped W F C ->
   forall C1 u matching th sm Cr ks, c_sub C1 = c_sub C -> incl (c_provisions C) (c_provisions C1) ->
-  FamilyApplication W C1 u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C1 u matching th sm Cr ks ->
   forall r m g a g' a', In (mkey r m) ks ->
   In (mkey r m, ProvidedMethod g a) (c_provisions C) ->
   ilook (mkey r m) (c_provisions Cr) = Some (ProvidedMethod g' a') ->

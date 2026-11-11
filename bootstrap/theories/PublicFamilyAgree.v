@@ -879,7 +879,7 @@ Qed.
 
 End FamilyAgree.
 
-(* A family application (FamilyApplication), as PlatformApply's
+(* A family application (AuditFacts.FamilyApplication), as PlatformApply's
    family_result_agrees uses it. *)
 Section FamilyAgreeFA.
 Variable W : A.world.
@@ -887,7 +887,7 @@ Variables (C : A.cx) (u : nat) (matching th : subst) (sm : smap) (Cr : A.cx) (ks
 Variables (Cu : A.cx) (needs : list item) (outputs : A.cx) (keys : list item).
 Import A.
 
-Hypothesis FA : FamilyApplication W C u matching th sm Cr ks.
+Hypothesis FA : AuditFacts.FamilyApplication W C u matching th sm Cr ks.
 Hypothesis FCu : FunCtx W u Cu needs.
 Hypothesis NoOut : forall t, ~ FunOutputs W u t.
 Hypothesis PRf : ProvideResult W u Cu (fun t => TAbs t) outputs keys.

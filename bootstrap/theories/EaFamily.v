@@ -1,7 +1,7 @@
 (* ------------------------------------------------------------------------ *)
 (* EaFamily.v — functor results and families (Audit V.5, D84 rule 7):     *)
 (* OutputItemEntries, ProvideResult, Family, FamilyProduces, OnlyFamily,   *)
-(* FamilyReadOff, FamilyApplication, FamilyStep/Demand.                    *)
+(* FamilyReadOff, TypesFamilyApplication, FamilyStep/Demand.                    *)
 (*                                                                           *)
 (* FamilyProduces quantifies over θ; it is decided by reading off: the     *)
 (* family's result is formed once with each P(F) symbol as itself, and a   *)
@@ -304,8 +304,8 @@ Definition fixed_agreement (C : cx) (u : nat) : bool :=
     | _, _ => true
     end) (fixed W metadata_fuel u).
 
-(* SOUND: family_application C u mt = Ok (th, sm, C', ks) ->
-     FamilyApplication W C u mt th sm C' ks *)
+(* EaFamilySound proves that success supplies the typed family application
+   and its emitted satisfaction map. *)
 Definition family_application (C : cx) (u : nat) (mt : subst) : er (subst * smap * cx * list item) :=
   let fname := bq (sym_name W u) in
   let! _ := ropt (cfun C u) (fname ++ " is not available in the context here") in
@@ -329,7 +329,7 @@ Definition family_application (C : cx) (u : nat) (mt : subst) : er (subst * smap
 (* The one family in force producing mkey ot m (OnlyFamily read in C0),
    applied in C at the matching read off ot.
    SOUND: family_for C0 C ot m = Ok (u, mt, th, sm, C', ks) ->
-     OnlyFamily W C0 u (mkey ot m) /\ FamilyApplication W C u mt th sm C' ks /\
+     OnlyFamily W C0 u (mkey ot m), a typed family application with its map,
      FamilyReadOff W C u ot m mt /\ In (mkey ot m) ks *)
 (* Rule B for a family demand (Audit's MatchingInForce, lang-all 2d7e8fe).
    SOUND: matching_in_force C mt = true <-> MatchingInForce C mt *)

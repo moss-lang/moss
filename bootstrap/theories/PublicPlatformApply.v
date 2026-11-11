@@ -28,6 +28,7 @@
    by item: family_items_agree) and PrimsGroundOk (the primitives callable
    wherever the fixed machine inputs read as the machine types). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditFacts.
 From NM Require Import AuditBase PublicPrimitiveFamily.
 From NM Require PublicContextFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
@@ -802,7 +803,7 @@ Qed.
    (PublicFamilyAgree.family_items_agree): a receiver is a table key on
    both sides or on neither. *)
 Definition FamilyKeysTyped : Prop := forall C u matching th sm Cr ks, PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> forall Cu needs, A.FunCtx W u Cu needs ->
   forall q pa x, A.resolve_sym W q pa = Some x -> A.nlook x (A.c_ty (A.family_context C matching)) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
 
@@ -810,7 +811,7 @@ Definition FamilyKeysTyped : Prop := forall C u matching th sm Cr ks, PublicForm
    premise), from FamilyKeysTyped and the family context's idempotent
    merge. *)
 Lemma family_result_agrees : FamilyKeysTyped -> forall C u matching th sm Cr ks, PublicFormation.TysScoped W C ->
-  A.FamilyApplication W C u matching th sm Cr ks -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
   forall code Cu needs outputs keys bindings, FamilyData u code Cu needs outputs keys bindings ->
   ItemsAgree (A.family_context C matching) Cr Cu outputs th
     (fun r m g => In (A.mkey r m) ks /\ A.mlook r m (A.c_mths Cr) = Some g) keys.
@@ -832,7 +833,7 @@ Hypothesis family_keys : FamilyKeysTyped.
    platform family selects u's inputs at θ, runs the code's installs, and
    files them under the run-time keys of Cr's new methods, each callable at
    its signature. The machine types are grounded as in chain_fixed_ground,
-   the fixed reading agreement coming from FamilyApplication's
+   the fixed reading agreement coming from AuditFacts.FamilyApplication's
    FixedAgreement at the family context. *)
 Theorem family_platform_ok : FS.FamilyPlatformApplyOk W Prog argv read state_ok.
 Proof.

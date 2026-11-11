@@ -17,6 +17,7 @@
    - Formation of the initial contexts: [ctxof_scoped], [functx_scoped],
      and the steps the slice takes. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditFacts.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicContextFacts.
 From NM Require PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -711,7 +712,7 @@ Qed.
 (* A family applied in C at a matching scoped in C adds only provisions
    scoped in C. *)
 Lemma family_application_gens : forall C u matching th sm Cr ks,
-  FamilyApplication W C u matching th sm Cr ks ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
   (forall x v, In (x, v) matching -> ScopedTy W C (canon C v)) ->
   forall k p, In (k, p) (c_provisions Cr) -> In (k, p) (c_provisions C) \/ GensIn (GenScoped W C) (provision_gens p).
 Proof.
@@ -731,7 +732,7 @@ Qed.
    table with the family's provisions keeps CxScoped. *)
 Lemma family_result_cxscoped : forall F C0 C u matching th sm Cr ks ot m,
   c_sub C = c_sub C0 -> c_merge C = c_merge C0 -> c_provisions C = c_provisions C0 -> c_locals C = c_locals C0 ->
-  FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
   TyOk W ot -> ScopedTy W C0 ot -> (forall x v, In (x, v) (c_ty C) -> ScopedTy W C0 (canon C v)) ->
   CxScoped F C0 -> CxScoped F (Cx (c_ty C0) (c_sub Cr) (c_merge Cr) (c_provisions Cr) (c_locals Cr)).
 Proof.
@@ -1374,10 +1375,11 @@ Proof.
     + exact (provided_scoped _ _ _ _ _ _ _ _ Pv Fc Ff Cs Ot So).
     + exact (provided_scoped _ _ _ _ _ _ _ _ Pv Fc Ff Cs Ot So).
   (* ---- Provided ---- *)
-  - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th sm C' ks g xs Ml FAp Ro Ik Of Ml' As];
+  - destruct D as [F C ox ot m args g xs Ml As|F C ox ot m args u matching th formal needs C' ks g xs Ml Typed Ro Ik Of Ml' As];
       intros Fc Ff Cs Ot So; pose proof Cs as [Ls [Ps [Ts Mr]]].
     + exact (mth_ret_scoped W C _ _ _ Ps Ml).
-    + destruct (mths_in C' _ _ _ Ml') as [k [a Iq]].
+    + pose proof (AuditFacts.family_application_with_map Typed) as FAp.
+      destruct (mths_in C' _ _ _ Ml') as [k [a Iq]].
       assert (Mt : forall x v, In (x, v) matching -> ScopedTy W C (canon C v))
         by (intros x v Iv; exact (proj2 (family_matching_scoped W _ _ _ _ _ Ro Ot So x v Iv))).
       intros y Iy. pose proof (sig_ret_gens (ProvidedMethod g a) g a eq_refl eq_refl y Iy) as Ip.

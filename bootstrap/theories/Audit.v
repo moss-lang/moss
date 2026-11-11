@@ -3855,11 +3855,21 @@ Definition TypesFamilyApplication (W : world) (C : cx) (u : usym)
     ProvideResult W u caller (fun t => TAbs t) result keys /\
     NoDup (map provision_id keys).
 
-Definition FamilyApplication (W : world) (C : cx) (u : usym)
-    (matching arguments : subst) (inputs : smap) (result : cx) (keys : list item) : Prop :=
-  exists formal needs,
-    TypesFamilyApplication W C u matching arguments formal needs result keys /\
-    inputs = satisfaction_map (family_context C matching) formal arguments needs.
+Record family_use := FamilyUse {
+  demand_functor : nat;
+  demand_matching : subst;
+  demand_arguments : subst;
+  demand_formal : cx;
+  demand_needs : list item;
+  demand_result : cx;
+  demand_keys : list item
+}.
+
+Definition translate_family_use (C : cx) (d : family_use) : expr -> expr :=
+  let caller := family_context C (demand_matching d) in
+  apply_expression (demand_functor d) (demand_arguments d)
+    (satisfaction_map caller (demand_formal d) (demand_arguments d) (demand_needs d))
+    (map (rkey_of (demand_result d)) (demand_keys d)).
 
 (* Rule B for a family demand (criteria sections 2 and 3): the matching
    read off the demanded key is in force here, each generation it
@@ -3901,12 +3911,12 @@ Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr ->
 | LitOpIn :
     mlook t m (c_mths C) = Some (FSig [t] t) ->
     LitOp W C t m ox oy (EMethod ox m (rkey C t m) [oy])
-| LitOpFamily : forall u matching th sm C' ks,
+| LitOpFamily : forall u matching th formal needs C' ks,
     mlook t m (c_mths C) = None ->
-    FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u t m matching ->
+    TypesFamilyApplication W C u matching th formal needs C' ks -> FamilyReadOff W C u t m matching ->
     In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
     mlook t m (c_mths C') = Some (FSig [t] t) -> MatchingInForce C matching ->
-    LitOp W C t m ox oy (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' t m) [oy])).
+    LitOp W C t m ox oy (translate_family_use C (FamilyUse u matching th formal needs C' ks) (EMethod ox m (rkey C' t m) [oy])).
 
 (* Interpret exactly the prescribed tree through contextual arithmetic.
    A family may supply an operation, using the same rule as an explicit call. *)
@@ -4383,16 +4393,6 @@ Definition translate_lambda_body (F : frame) (captures : list (name * nat)) (bod
 Definition family_restore (C Cr : cx) : cx :=
   Cx (c_ty C) (c_sub Cr) (c_merge Cr) (c_provisions Cr) (c_locals Cr).
 
-Record family_use := FamilyUse {
-  demand_functor : nat;
-  demand_matching : subst;
-  demand_arguments : subst;
-  demand_formal : cx;
-  demand_needs : list item;
-  demand_result : cx;
-  demand_keys : list item
-}.
-
 Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
     : cx -> nat -> subst -> subst -> cx -> list item -> cx -> list item -> Prop :=
 | FamilyStepApply : forall C ot m u matching th formal needs Cr ks,
@@ -4418,12 +4418,8 @@ Fixpoint translate_demands (C : cx) (demands : list family_use) (body : expr) : 
   match demands with
   | [] => body
   | d :: rest =>
-      let caller := family_context C (demand_matching d) in
-      let result := demand_result d in
-      apply_expression (demand_functor d) (demand_arguments d)
-        (satisfaction_map caller (demand_formal d) (demand_arguments d) (demand_needs d))
-        (map (rkey_of result) (demand_keys d))
-        (translate_demands (family_restore C result) rest body)
+      translate_family_use C d
+        (translate_demands (family_restore C (demand_result d)) rest body)
   end.
 
 (* D89: the bracket application on a call of the fn f: each binding names
@@ -4757,13 +4753,13 @@ with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> li
    receiver becomes ot); the call is elaborated as if preceded by `bind F;`
    at θ, in a scope of its own: `apply_expression F θ sm` around the call.  No search:
    at most one family in a context produces a key (DECISIONS.md, rule 7). *)
-| PrFamily : forall F C ox ot m args u matching th sm C' ks g xs,
+| PrFamily : forall F C ox ot m args u matching th formal needs C' ks g xs,
     mlook ot m (c_mths C) = None ->
-    FamilyApplication W C u matching th sm C' ks -> FamilyReadOff W C u ot m matching ->
+    TypesFamilyApplication W C u matching th formal needs C' ks -> FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks -> OnlyFamily W C u (mkey ot m) ->
     mlook ot m (c_mths C') = Some g -> Args W P F C args (sg_params g) xs ->
     MatchingInForce C matching ->
-    Provided W P F C ox ot m args (apply_expression u th sm (map (rkey_of C') ks) (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
+    Provided W P F C ox ot m args (translate_family_use C (FamilyUse u matching th formal needs C' ks) (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
 
 (* a block whose type is checked against `exp` and may not let a value of
    a generation it made escape ([D78]) *)

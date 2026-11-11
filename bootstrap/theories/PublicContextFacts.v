@@ -1,5 +1,6 @@
 (* Canonicalization facts supplied by actual public context formation. *)
 From Stdlib Require Import List.
+From NM Require AuditFacts.
 From NM Require Import Audit PublicAliasContext.
 From NM Require PublicMerge.
 Import Audit.Semantics ListNotations.
@@ -176,7 +177,7 @@ Proof.
 Qed.
 
 Lemma family_application_merge : forall W C u matching th sm Cr ks,
-  A.FamilyApplication W C u matching th sm Cr ks -> A.c_merge Cr = A.c_merge C.
+  AuditFacts.FamilyApplication W C u matching th sm Cr ks -> A.c_merge Cr = A.c_merge C.
 Proof.
   intros W C u matching th sm Cr ks
     (formal & needs & (fixed & _ & _ & _ & _ & _ & _ & _ & _ & Result & _) & _).
