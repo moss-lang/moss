@@ -39,25 +39,32 @@ Record ExpressionCodeEffects (E : env) (R : rec) (fuel : nat) : Prop := {
 }.
 
 Local Ltac expression_effect :=
-  first
-    [ solve [eauto 1 using code_effect_return, code_effect_fail, code_effect_pure,
-        code_effect_check, code_effect_lift, code_effect_get_const, code_effect_put_const,
-        code_effect_need_named, code_effect_join]
-    | lazymatch goal with
-      | |- PreservesOldCode (EaExpr.read_global_value _ _ _ _ _) =>
-        unfold EaExpr.read_global_value; expression_effect
-      | |- PreservesOldCode (EaExpr.read_constant _ _ _ _ _ _) =>
-        unfold EaExpr.read_constant; expression_effect
-      | |- PreservesOldCode (mbind _ _) =>
-        apply code_effect_bind; [expression_effect|intro; cbn beta iota zeta; expression_effect]
-      | |- PreservesOldCode (miter _ _) =>
-        apply code_effect_miter; intro; expression_effect
-      | |- PreservesOldCode ?action =>
-        lazymatch action with
+  lazymatch goal with
+  | |- PreservesOldCode (ret _) => apply code_effect_return
+  | |- PreservesOldCode (fail _) => apply code_effect_fail
+  | |- PreservesOldCode (pure _) => apply code_effect_pure
+  | |- PreservesOldCode (check _ _) => apply code_effect_check
+  | |- PreservesOldCode (lift _ _) => apply code_effect_lift
+  | |- PreservesOldCode (get_const _) => apply code_effect_get_const
+  | |- PreservesOldCode (put_const _ _) => apply code_effect_put_const
+  | |- PreservesOldCode (EaExpr.need_named _ _) => apply code_effect_need_named
+  | |- PreservesOldCode (EaExpr.join_m _ _ _ _) => apply code_effect_join
+  | |- PreservesOldCode (EaExpr.read_global_value _ _ _ _ _) =>
+    unfold EaExpr.read_global_value; expression_effect
+  | |- PreservesOldCode (EaExpr.read_constant _ _ _ _ _ _) =>
+    unfold EaExpr.read_constant; expression_effect
+  | |- PreservesOldCode (mbind _ _) =>
+    apply code_effect_bind; [expression_effect|intro; cbn beta iota zeta; expression_effect]
+  | |- PreservesOldCode (miter _ _) =>
+    apply code_effect_miter; intro; expression_effect
+  | |- PreservesOldCode ?action =>
+    first
+      [ solve [eauto 1]
+      | lazymatch action with
         | context [match ?decision with _ => _ end] =>
           destruct decision; cbn beta iota zeta; expression_effect
-        end
-      end ].
+        end ]
+  end.
 
 Theorem expression_code_effects : forall E R fuel,
   (forall F C e expected, PreservesOldCode (r_ex R F C e expected)) ->
