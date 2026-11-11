@@ -212,3 +212,9 @@ From NM Require EaBindCodeEffects.
 Print Assumptions NM.EaBindCodeEffects.copy_interpretation_code_effect.
 Print Assumptions NM.EaBindCodeEffects.link_body_code_effect.
 Print Assumptions NM.EaBindCodeEffects.bind_items_preserve_code.
+
+From NM Require EaExpressionCodeEffects EaAssemblyCodeEffects.
+Print Assumptions NM.EaExpressionCodeEffects.expression_code_effects.
+Print Assumptions NM.EaExpressionCodeEffects.run_code_effect.
+Print Assumptions NM.EaAssemblyCodeEffects.assemble_preserves_code_bound.
+Print Assumptions NM.EaAssemblyCodeEffects.assembled_code_lookup_exact.

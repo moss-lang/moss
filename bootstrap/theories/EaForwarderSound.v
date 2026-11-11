@@ -1,7 +1,7 @@
 (* Typing an abstract provider and assigning its forwarder a runtime slot. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaBind EaCodeAllocationSound NMap.
-From NM Require AllocationFacts EaTypesSound EaMergeSound WorldSound EaMain EaControlSound.
+From NM Require AllocationFacts EaTypesSound EaMergeSound WorldSound EaMain EaControlSound EaAssemblyCodeEffects.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 
 Lemma cfn_exact : forall C g, cfn C g = nlook g (c_fns C).
@@ -105,15 +105,15 @@ Proof.
   rewrite Kind. unfold mbind at 1. cbn [ret]. now rewrite Abstract.
 Qed.
 
-Theorem placed_forwarder_translates : forall E bound entry before P after s handle sg slot,
-  EaMain.assemble E bound entry before = Ok (P, after) ->
-  CodeTablesBound after -> CodeTablesExtend s after ->
+Theorem placed_forwarder_translates : forall E bound entry P after s handle sg slot,
+  EaMain.assemble E bound entry (init_state bound) = Ok (P, after) ->
+  CodeTablesExtend s after ->
   ForwarderSlotSound (e_W E) s handle sg slot ->
   TranslatesForwarder (e_W E) P handle sg (slot_index slot).
 Proof.
-  intros E bound entry before P after s handle sg slot Run Bound Extended [FreshSlot Stored].
+  intros E bound entry P after s handle sg slot Run Extended [FreshSlot Stored].
   split; [exact FreshSlot|].
-  rewrite (proj1 (assembled_code_lookup E bound entry before P after Run Bound)).
+  rewrite (proj1 (EaAssemblyCodeEffects.assembled_code_lookup_exact E bound entry P after Run)).
   exact (Extended FunctionTable _ _ Stored).
 Qed.
 
@@ -128,11 +128,11 @@ Theorem abstract_provider_sound : forall E kind F C pa g nm ps rt sg start s w t
     ForwarderSlotSound (e_W E) s (ForwarderOf g) sg slot) ->
   fn_provider E kind F C pa sg s = Ok ((w, types, sm), s') ->
   EaMain.assemble E start entry (init_state start) = Ok (P, final) ->
-  CodeTablesBound final -> CodeTablesExtend s' final ->
+  CodeTablesExtend s' final ->
   FnProvider (e_W E) P F C (AEPath pa None) sg None w types sm.
 Proof.
   intros E kind F C pa g nm ps rt sg start s w types sm s' entry P final
-    Resolved Kind Abstract Start WorldBound Tables Cache Run Assembled FinalBound Extended.
+    Resolved Kind Abstract Start WorldBound Tables Cache Run Assembled Extended.
   rewrite (abstract_provider_path E kind F C pa g nm ps rt sg Resolved Kind Abstract) in Run.
   apply EaControlSound.mbind_ok in Run as (handle & initial & Read & Run).
   unfold pure in Read.
