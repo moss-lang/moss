@@ -120,18 +120,17 @@ Proof.
 Qed.
 
 (* The previous return bug is rejected by the real elaborator too. *)
-From NM Require Elab Sx Parse.
+From NM Require EaBase EaMain Sx Parse.
 Definition never_source :=
   "type Never = |; fn stop(): Never { return; } fn main() { match stop() {}; }".
 Definition never_read (p : string) :=
   if String.eqb p "/lib/main.moss" then Some never_source else None.
 Example actual_elaborator_rejects_bare_never_return :
-  exists message,
   match Parse.load never_read "/" "/lib/prelude.moss" "/lib/main.moss" with
-  | Sx.Good bundle => Elab.elaborate bundle
-  | Sx.Bad message => Sx.Bad message
-  end = Sx.Bad message.
-Proof. vm_compute. eexists. reflexivity. Qed.
+  | Sx.Good bundle => EaMain.elaborate bundle
+  | Sx.Bad message => EaBase.Err message
+  end = EaBase.Err "/lib/main.moss: `return` with no value, but the function returns `|`".
+Proof. vm_compute. reflexivity. Qed.
 
 Example no_return_without_a_function : forall W P F C exp code t,
   fr_ret F = None -> ~ Ex W P F C (AEReturn (Some AEUnit)) exp code t.
