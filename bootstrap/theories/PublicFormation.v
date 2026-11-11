@@ -5,7 +5,7 @@
    TyOf, Brackets and SigOf over formed type tables. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms.
-From NM Require PublicMerge.
+From NM Require PublicMerge PublicContextFacts.
 From NM Require Import AuditFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -423,10 +423,14 @@ Definition scope_gens (C : cx) : list nat :=
   flat_map (fun q => fst q :: gens (snd q)) (c_sub C) ++
   flat_map (fun q => gens (snd q) ++ gens (canon C (snd q))) (c_ty C).
 
+Definition ShapesFormed (M : merge) : Prop :=
+  forall c t, In c M -> mc_shape c = Some t -> TyFormed W t.
+
 (* (a) formation *)
 Record CxFormed (C : cx) : Prop := {
   cf_ty : TmOk W (c_ty C);
   cf_read : ReadOk W (c_sub C);
+  cf_shapes : ShapesFormed (c_merge C);
   cf_prov : forall k p, In (k, p) (c_provisions C) -> KeyOk W k /\ ProvOk W p;
   cf_locals : forall n t mu, In (n, (t, mu)) (c_locals C) -> TyOk W t
 }.
@@ -547,7 +551,7 @@ Proof. intros C t Cf Ok. exact (cf_read _ Cf t Ok). Qed.
 
 Lemma add_local_formed : forall C n t mu, FormedCx C -> TyOk W t -> FormedCx (add_local C n t mu).
 Proof.
-  intros C n t mu [[Ty Sub Pr Lo] [Ks Ts]] Ok. split; [|split; [exact Ks|exact Ts]].
+  intros C n t mu [[Ty Sub Sh Pr Lo] [Ks Ts]] Ok. split; [|split; [exact Ks|exact Ts]].
   constructor; cbn; try assumption.
   intros n' t' mu' [E|Iq]; [injection E as -> -> ->; exact Ok|exact (Lo _ _ _ Iq)].
 Qed.
@@ -587,7 +591,7 @@ Qed.
 
 Lemma set_ty_cxformed : forall C t v, CxFormed C -> TyOk W v -> CxFormed (set_ty C t v).
 Proof.
-  intros C t v [Ty Sub Pr Lo] Ok. constructor; cbn; try assumption.
+  intros C t v [Ty Sub Sh Pr Lo] Ok. constructor; cbn; try assumption.
   intros x u [E|Iq]; [injection E as -> <-; exact Ok|exact (Ty x u Iq)].
 Qed.
 
@@ -623,7 +627,7 @@ Qed.
 Lemma set_provision_formed : forall C k p, FormedCx C -> KeyOk W k -> ProvOk W p ->
   (forall r m th, k = IMth r m th -> ScopedTy C r) -> FormedCx (set_provision C k p).
 Proof.
-  intros C k p [[Ty Sub Pr Lo] [Ks Ts]] Kk Pk Sk. split; [|split; [|exact Ts]].
+  intros C k p [[Ty Sub Sh Pr Lo] [Ks Ts]] Kk Pk Sk. split; [|split; [|exact Ts]].
   - constructor; cbn; try assumption. intros k' p' [E|Iq]; [injection E as <- <-; split; assumption|].
     apply filter_In in Iq as [Iq _]. exact (Pr _ _ Iq).
   - intros r m th p' [E|Iq].
@@ -880,18 +884,16 @@ Proof.
   - constructor; [exact (proj1 Ok)|constructor; [exact (proj2 Ok)|constructor]].
 Qed.
 
-Definition ShapesFormed (M : merge) : Prop :=
-  forall c t, In c M -> mc_shape c = Some t -> TyFormed W t.
 
 Lemma merge_shapes_formed : forall es M, ShapesRead es M ->
-  Forall (EntryP (TyFormed W)) es -> ShapesFormed M.
+  Forall (EntryP (TyFormed W)) es -> ShapesFormed W M.
 Proof.
   intros es M Read Entries c t Ic Shape. destruct (Read c t Ic Shape) as (e & u & Ie & Iu & Sub).
   apply (subterm_formed t u Sub). rewrite Forall_forall in Entries.
   pose proof (entry_types_formed e (Entries e Ie)) as Ts. rewrite Forall_forall in Ts. exact (Ts u Iu).
 Qed.
 
-Lemma shape_table_formed : forall M, ShapesFormed M -> forall n, TmFormed W (shape_table M n).
+Lemma shape_table_formed : forall M, ShapesFormed W M -> forall n, TmFormed W (shape_table M n).
 Proof.
   intros M Shapes n. induction n as [|n IH]; intros x t It; [contradiction|].
   apply PublicMerge.shape_pair in It as (c & u & Ic & Ix & Shape & ->).
@@ -899,7 +901,7 @@ Proof.
   intros y v L. exact (IH y v (PublicOrientation.lookup_subst_pair _ _ _ L)).
 Qed.
 
-Lemma class_section_formed : forall M s, Solved M -> ShapesFormed M -> SectionOf M s ->
+Lemma class_section_formed : forall M s, Solved M -> ShapesFormed W M -> SectionOf M s ->
   forall t, TyFormed W t -> TyFormed W (app_subst s t).
 Proof.
   intros M s Solved Shapes Section.
@@ -1082,10 +1084,10 @@ Qed.
 Lemma entries_cx_formed : forall σ classes tm es,
   IdForm tm -> KeysAbstract tm -> KeysDecl tm -> Forall (EntryP (TyOk W)) es ->
   (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
-  ReadOk W σ ->
+  ReadOk W σ -> ShapesFormed W classes ->
   FormedCx W (entries_cx σ classes tm es).
 Proof.
-  intros σ classes tm es Id Ka Kd Es Eg So.
+  intros σ classes tm es Id Ka Kd Es Eg So Shapes.
   pose proof (idform_ok _ Id Ka) as Tm.
   assert (Fr : forall a, InstOk W a -> InstOk W (map (fun q => (fst q, option_map (app_subst σ)
                  (match snd q with Some t => Some t | None => nlook (fst q) tm end))) a)).
@@ -1099,6 +1101,7 @@ Proof.
     + intros x u Iq. apply in_map_iff in Iq as [[y v] [E Iq]]. cbn in E. injection E as -> <-.
       exact (So _ (Tm _ _ Iq)).
     + exact So.
+    + exact Shapes.
     + intros k p Iq. apply in_flat_map in Iq as [e [Ie Iq]].
       exact (entry_provision_ok _ _ e k p So Fr (Es e Ie) Iq).
     + intros n t mu [].
@@ -1129,10 +1132,11 @@ Proof.
   assert (KdR : KeysDecl tmr).
   { pose proof (proj2 entries_keys_decl _ _ _ _ _ _ IE (fun y (Iy : In y []) => match Iy with end)) as Kt.
     destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI]; [exact Kt|exact (root_keys_decl _ _ _ _ _ _ RI Kt)]. }
-  apply entries_cx_formed; [exact IdR|exact KaR|exact KdR|exact Ok| |].
+  apply entries_cx_formed; [exact IdR|exact KaR|exact KdR|exact Ok| | |].
   - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
   - apply (merge_section_ok (es ++ er) classes σ Merge Section (Forall_impl _ entry_ok_formed Ok)).
     intros y Iy. apply KaR, All. exact (proj1 (proj2 (proj2 Merge)) y Iy).
+  - exact (merge_shapes_formed (es ++ er) classes (proj1 (proj2 Merge)) (Forall_impl _ entry_ok_formed Ok)).
 Qed.
 
 (* The context a functor's argument telescope forms is formed. *)
@@ -1152,10 +1156,11 @@ Proof.
   { intros x Ix. rewrite map_app, map_map in Ix. cbn in Ix. rewrite map_id in Ix. apply in_app_or in Ix as [Ix|Ix].
     - exact (mentions_typed u x (proj1 (proj2 (proj1 (Imp x) Ix)))).
     - exact (proj2 entries_keys_decl _ _ _ _ _ _ IE (fun y (Iy : In y []) => match Iy with end) x Ix). }
-  apply entries_cx_formed; [exact Id'|exact Ka'|exact Kd'|exact OkT| |].
+  apply entries_cx_formed; [exact Id'|exact Ka'|exact Kd'|exact OkT| | |].
   - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
   - apply (merge_section_ok es classes σ Merge Section (Forall_impl _ entry_ok_formed OkT)).
     intros y Iy. apply Ka', Sub, EsT. exact (proj1 (proj2 (proj2 Merge)) y Iy).
+  - exact (merge_shapes_formed es classes (proj1 (proj2 Merge)) (Forall_impl _ entry_ok_formed OkT)).
 Qed.
 
 
@@ -1529,6 +1534,9 @@ Proof.
   - constructor.
     + exact (cf_ty _ _ Cf0).
     + change (ReadOk W (c_sub Cr)). rewrite Sub. exact (cf_read _ _ Cf0).
+    + change (ShapesFormed W (c_merge Cr)).
+      rewrite (PublicContextFacts.family_application_merge W C1 u1 matching1 th1 sm1 Cr ks FAp).
+      exact (cf_shapes _ _ Cf0).
     + intros k p Iq. destruct (Pr k p Iq) as [Kk [Pk _]]. split; assumption.
     + change (forall n t mu, In (n, (t, mu)) (c_locals Cr) -> TyOk W t). rewrite Lo. exact (cf_locals _ _ Cf0).
   - intros r m' th' p Iq. apply (scoped_ext W _ _ _ (eq_sym Sc)). exact (proj2 (proj2 (Pr _ _ Iq)) r m' th' eq_refl).
@@ -1587,6 +1595,7 @@ Proof.
       * apply in_map_iff in Iq as [t [E It]]. injection E as <- <-. exact (tyok_abs W _ (OutAbs t (proj1 (OutsI t) It))).
       * exact (cf_ty _ _ Cf _ _ Iq).
     + change (ReadOk W (c_sub C')). rewrite Esub. exact (cf_read _ _ Cf).
+    + rewrite (PublicContextFacts.provided_result_merge W u C _ C' ks PR). exact (cf_shapes _ _ Cf).
     + intros k p Iq. destruct (Pr k p Iq) as [Iq'|[Kk [Pk _]]]; [exact (cf_prov _ _ Cf k p Iq')|split; assumption].
     + change (forall n t mu, In (n, (t, mu)) (c_locals C') -> TyOk W t). rewrite Elo. exact (cf_locals _ _ Cf).
   - intros r m th p Iq. destruct (Pr _ _ Iq) as [Iq'|[_ [_ S]]]; [|intros y Iy; exact (S r m th eq_refl y Iy)].
@@ -1835,7 +1844,7 @@ Lemma lambda_cx_formed : forall C caps capvals, FormedCx W C ->
 Proof.
   intros C caps capvals Fc.
   assert (Base : FormedCx W (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) [])).
-  { destruct Fc as [[Ty Sub Pr Lo] [Ks Ts]]. split; [constructor; cbn; try assumption; intros n t mu []|split; assumption]. }
+  { destruct Fc as [[Ty Sub Sh Pr Lo] [Ks Ts]]. split; [constructor; cbn; try assumption; intros n t mu []|split; assumption]. }
   generalize (combine caps capvals) as l. intros l. revert Base.
   generalize (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []) as C0.
   induction l as [|[n v] r IH]; intros C0 F0; cbn; [exact F0|]. apply IH.

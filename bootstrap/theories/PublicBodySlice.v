@@ -2264,13 +2264,14 @@ Qed.
 Lemma formed_narrow : forall F C C', A.c_ty C' = A.c_ty C -> A.c_sub C' = A.c_sub C -> A.c_merge C' = A.c_merge C -> A.c_locals C' = A.c_locals C ->
   incl (A.c_provisions C') (A.c_provisions C) -> Formed F C -> Formed F C'.
 Proof.
-  intros F C C' Ety Esub Merge Eloc Inc [[[Ty Sub Pr Lo] [Ks Ts]] [Ff Cs]].
+  intros F C C' Ety Esub Merge Eloc Inc [[[Ty Sub Sh Pr Lo] [Ks Ts]] [Ff Cs]].
   split; [|split; [exact Ff|exact (PublicScoping.cxscoped_narrow W F C C' Ety Esub Merge Eloc Inc Cs)]].
   assert (Sc : PublicFormation.scope_gens C' = PublicFormation.scope_gens C)
     by (unfold PublicFormation.scope_gens, A.canon; rewrite Ety, Esub; reflexivity).
   split; [constructor|split].
   - rewrite Ety. exact Ty.
   - rewrite Esub. exact Sub.
+  - rewrite Merge. exact Sh.
   - intros k p I. exact (Pr k p (Inc _ I)).
   - rewrite Eloc. exact Lo.
   - intros r m th p I. exact (PublicFormation.scoped_ext W _ _ _ (eq_sym Sc) (Ks r m th p (Inc _ I))).
@@ -5551,7 +5552,7 @@ Proof.
       apply (ex_step F0 (A.Cx [] [] [] [] []) i (Some t) x t' Dx).
       destruct Pre0 as [_ [_ [L [S Abs]]]]. split; [|split; [|split; [exact L|split; [exact S|split]]]].
       4: { split.
-           - split; [constructor; [intros x9 u9 []|apply PublicFormation.tmok_read; intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
+           - split; [constructor; [intros x9 u9 []|apply PublicFormation.tmok_read; intros x9 u9 []|intros c9 t9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
              split; [intros r9 m9 th9 p9 []|intros x9 []].
            - split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
              split; [intros n9 t9 mu9 []|split; [intros k9 p9 []|split; [intros t9 E9; rewrite This in E9; discriminate|]]].

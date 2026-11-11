@@ -170,7 +170,7 @@ Qed.
    provisions is formed (PublicFormation.family_application_ok, at C0's
    scope). *)
 Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
-  A.c_sub C = A.c_sub C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
+  A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   A.FamilyApplication W C u matching th sm Cr ks -> A.FamilyReadOff W C u ot m matching ->
   PublicFormation.TyOk W ot -> PublicFormation.ScopedTy W C0 ot ->
   (forall x v, In (x, v) (A.c_ty C) ->
@@ -178,7 +178,7 @@ Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
   PublicFormation.FormedCx W C0 ->
   PublicFormation.FormedCx W (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_merge Cr) (A.c_provisions Cr) (A.c_locals Cr)).
 Proof.
-  intros W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin [Cf0 [Ks0 Ts0]].
+  intros W C0 C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin [Cf0 [Ks0 Ts0]].
   pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   set (K := PublicFormation.GenScoped W C0).
@@ -209,6 +209,8 @@ Proof.
   split; [constructor|split].
   - cbn. exact (PublicFormation.cf_ty W C0 Cf0).
   - cbn. rewrite SubR, Esub, Es. exact (PublicFormation.cf_read W C0 Cf0).
+  - cbn. rewrite (PublicContextFacts.family_application_merge W C u matching th sm Cr ks FA), Emg.
+    exact (PublicFormation.cf_shapes W C0 Cf0).
   - cbn. intros k p Iq. destruct (PrR k p Iq) as [Iq'|[Kk [Pk _]]];
       [rewrite Epr, Ep in Iq'; exact (PublicFormation.cf_prov W C0 Cf0 k p Iq')|exact (conj Kk Pk)].
   - cbn. intros n t mu Iq. rewrite LoR, Elo, El in Iq. exact (PublicFormation.cf_locals W C0 Cf0 n t mu Iq).
@@ -664,7 +666,7 @@ Proof.
   apply (pre_same_table rr F C0 (CopyA.S.with_ty C0 Cr) d (append_environment dr d) types H H' g st st' Pre0 Em' Ea'
     eq_refl); [cbn; rewrite Elo; exact El|exact (realizes_family rr C0 C u matching th sm Cr ks d dr H H' Es Emg Ep FA Real0 E Res)
     |exact E|exact St'| |].
-  - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Ep El FA Ro Ok Sc Tin Fc0).
+  - exact (family_formed W C0 C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin Fc0).
   - exact (PublicScoping.family_result_cxscoped W F C0 C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc
       (fun x v I => proj2 (Tin x v I)) Cs0).
 Qed.
