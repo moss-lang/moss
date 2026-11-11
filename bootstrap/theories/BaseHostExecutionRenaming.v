@@ -197,6 +197,31 @@ Proof.
   apply base_call_equivariant, default_raw_calls_related; assumption.
 Qed.
 
+Lemma initial_worlds_related : forall rename argv read pages,
+  let initial := Public.World argv read (init_state pages) in
+  Execution.R.worlds_related (host_states_related rename) initial initial.
+Proof.
+  intros rename argv read pages. split; [reflexivity|split; [reflexivity|]].
+  change (init_state pages = rename_state rename (init_state pages)).
+  unfold init_state. rewrite <- store_le_renamed.
+  match goal with |- context [mem_grow ?state pages] => set (empty := state) end.
+  assert (Empty : rename_state rename empty = empty) by reflexivity.
+  pose proof (@mem_grow_renamed rename empty pages) as Grow. rewrite Empty in Grow.
+  destruct (mem_grow empty pages) as [count state].
+  cbn [rename_count_state] in Grow. injection Grow as State.
+  cbn [snd]. now rewrite <- State.
+Qed.
+
+Lemma related_final_streams : forall rename left right,
+  Execution.R.executions_related (base_renaming rename) (host_states_related rename) left right ->
+  let left_state := Public.external (Public.final_state left) in
+  let right_state := Public.external (Public.final_state right) in
+  ms_out right_state = ms_out left_state /\ ms_err right_state = ms_err left_state.
+Proof.
+  intros rename left right [_ [_ [_ Related]]].
+  unfold host_states_related in Related. rewrite Related. split; reflexivity.
+Qed.
+
 Lemma declared_bool_labels_fixed : forall rename bundle W program initial,
   fixes_declarations rename W ->
   rename 0%nat = 0%nat ->
