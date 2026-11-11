@@ -12,7 +12,7 @@ From NM Require AuditExamples AuditBuildExample
   PublicLocalsTyping PublicWorldRequirements SnapshotLoaderWitness
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
-  PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
+  PublicTypeRead PublicBoolTyping PublicBodySafety PublicCallable PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
   PublicEntry PublicPrimitiveSafety PublicPrimitiveSites PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
@@ -445,6 +445,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.units_bare_of);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.arms_select);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_check);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_extends);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower_extends);
   root (@PublicEntryTop.PS.primitive_safe);
   root (@PublicEntryTop.PS.state_ok_initial);
   root (@NM.PublicTypeRead.tyof_abs);

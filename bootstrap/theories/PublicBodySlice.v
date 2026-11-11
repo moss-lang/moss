@@ -10,7 +10,7 @@
    remaining obligation, not an assumption about accepted programs. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
-  PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
+  PublicBoolTyping PublicBodySafety PublicCallable PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicRuntimeKeys.
 From NM Require PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -21,6 +21,7 @@ Module BodySlice (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module AR := Arms Prims I0.
 Module B := BoolTruthy Prims I0.
 Module TC := Checks Prims I0.
+Module PC := PublicCallable.Callable Prims I0.
 
 Section Slice.
 Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
@@ -50,41 +51,11 @@ Proof.
     rewrite <- (Abs t), <- (Abs u), Equal. reflexivity.
 Qed.
 
-(* What a call of a closure may produce, read at the caller's types. *)
-Definition CallOutcome (H : heap_types) (t : ty) (r : AR.O.I.evaluation) : Prop :=
-  match r with
-  | AR.O.I.Evaluation signal _ st =>
-      match signal with
-      | Normal w | Returning w => exists H', heap_extends H H' /\ state_ok H' st /\ value_typed W P H' w t
-      | Stuck _ | Breaking => False
-      | _ => True
-      end
-  end.
-Definition PrimOutcome (H : heap_types) (t : ty) (r : signal * Prims.mstate) : Prop :=
-  match r with
-  | (signal, st) =>
-      match signal with
-      | Normal w => exists H', heap_extends H H' /\ state_ok H' st /\ value_typed W P H' w t
-      | Trap _ | Exit _ | UnsupportedOperation _ | OutOfFuel => True
-      | _ => False
-      end
-  end.
-
-(* A closure is callable below fuel n: fuel only decreases, so a closure
-   available at fuel n is only ever invoked at a smaller fuel. The ghost
-   heap only grows, so it is invoked at an extension of the heap H0 it was
-   available at, where its captured values are typed. *)
-Definition CallableOk (n : nat) (H0 : heap_types) (d : environment) (params : list ty) (ret : ty) (pv : provision_value) : Prop :=
-  match pv with
-  | FunctionClosure f df => exists body, view_function P f = Some body /\
-      forall j, j < n -> forall H st ws, heap_extends H0 H -> state_ok H st ->
-        Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
-        CallOutcome H (ground d ret) (AR.O.I.eval j P df (parameter_values ws) st body)
-  | PrimitiveClosure p held => forall H st ws, heap_extends H0 H -> state_ok H st ->
-        Forall2 (fun w t => value_typed W P H w (ground d t)) ws params ->
-        PrimOutcome H (ground d ret) (AR.O.I.run_prim_at P p held ws st)
-  | _ => False
-  end.
+(* Compatibility names keep the existing proof chain at its original
+   module paths; the contracts themselves live in the small generic module. *)
+Definition CallOutcome := PC.CallOutcome W P state_ok.
+Definition PrimOutcome := PC.PrimOutcome W P state_ok.
+Definition CallableOk := PC.CallableOk W P state_ok.
 
 (* ---- functor closures (T15) ---------------------------------------------- *)
 
@@ -500,28 +471,15 @@ Qed.
 
 Lemma callable_lower : forall n m H0 d params ret pv, m <= n ->
   CallableOk n H0 d params ret pv -> CallableOk m H0 d params ret pv.
-Proof.
-  intros n m H0 d params ret [| f df | |] Le Ok; cbn in *; auto.
-  destruct Ok as [body [View Run]]. exists body; split; [exact View|].
-  intros j Lt; apply Run; lia.
-Qed.
-
+Proof. apply PC.callable_lower. Qed.
 
 Lemma callable_extends : forall n H H' d params ret pv, heap_extends H H' ->
   CallableOk n H d params ret pv -> CallableOk n H' d params ret pv.
-Proof.
-  intros n H H' d params ret [| f df | |] Ext Ok; cbn in *; auto.
-  - destruct Ok as [body [View Run]]. exists body; split; [exact View|].
-    intros j Lt Hc st ws E; apply Run; [exact Lt|exact (extends_trans _ _ _ Ext E)].
-  - intros Hc st ws E; apply Ok; exact (extends_trans _ _ _ Ext E).
-Qed.
+Proof. apply PC.callable_extends. Qed.
 
 Lemma callable_lower_extends : forall n m H0 H1 d params ret pv, m <= n -> heap_extends H0 H1 ->
   CallableOk n H0 d params ret pv -> CallableOk m H1 d params ret pv.
-Proof.
-  intros n m H0 H1 d params ret pv Le Ext Ok.
-  exact (callable_extends _ _ _ _ _ _ _ Ext (callable_lower _ _ _ _ _ _ _ Le Ok)).
-Qed.
+Proof. apply PC.callable_lower_extends. Qed.
 
 (* Applicable closures stay applicable below their index, on a larger heap. *)
 Lemma closure_lower : forall n m H0 H1, m <= n -> heap_extends H0 H1 ->
