@@ -5918,6 +5918,105 @@ Inductive TypesLambdaProvider (W : world) (F : frame) (C : cx)
 
 End LambdaSource.
 
+(* Method and literal typing *)
+
+Inductive TypesMethodProvision (W : world) (C : cx) (receiver : ty) (method : nat)
+    : option family_use -> fsig -> Prop :=
+| TypesMethodIn : forall g,
+    mlook receiver method (c_mths C) = Some g ->
+    TypesMethodProvision W C receiver method None g
+| TypesMethodFamily : forall u matching arguments formal needs result keys g,
+    mlook receiver method (c_mths C) = None ->
+    TypesFamilyApplication W C u matching arguments formal needs result keys ->
+    FamilyReadOff W C u receiver method matching ->
+    In (mkey receiver method) keys -> OnlyFamily W C u (mkey receiver method) ->
+    mlook receiver method (c_mths result) = Some g -> MatchingInForce C matching ->
+    TypesMethodProvision W C receiver method
+      (Some (FamilyUse u matching arguments formal needs result keys)) g.
+
+Inductive method_call_plan : Type :=
+| SelectedProvision (method : nat) (family : option family_use)
+| SelectedDefinition (method : nat) (formal : cx) (needs : list item)
+    (types : subst) (demands : list family_use) (result : cx).
+
+Inductive TypesMethodSelection (W : world) (F : frame) (C : cx) (receiver : ty)
+    : path -> method_call_plan -> fsig -> Prop :=
+| TypesMethodQualified : forall path m choice g,
+    List.length path > 1 -> resolve_detached W (fr_mod F) path = Some m ->
+    TypesMethodProvision W C receiver m choice g ->
+    TypesMethodSelection W F C receiver path (SelectedProvision m choice) g
+| TypesMethodProvisionWins : forall name h attached m choice g,
+    head receiver = Some h -> Attached W h name attached ->
+    w_scope W (fr_mod F) NSDetached name = Some (ESym m) ->
+    mlook receiver m (c_mths C) <> None ->
+    TypesMethodProvision W C receiver m choice g ->
+    TypesMethodSelection W F C receiver [name] (SelectedProvision m choice) g
+| TypesMethodAttachedDefined : forall name h attached formal needs types g demands result,
+    head receiver = Some h -> Attached W h name attached ->
+    ~ (exists m, w_scope W (fr_mod F) NSDetached name = Some (ESym m) /\
+      mlook receiver m (c_mths C) <> None) ->
+    (exists rn ps rt b, ast_of W attached = Some (ADFn (RAttached rn) name ps rt (Some b))) ->
+    let receiver_types := match receiver with TNom _ rows => rows | _ => [] end in
+    let caller := family_context C receiver_types in
+    CtxOf W attached formal needs ->
+    Demand W caller (map (at_th caller types) needs) [] caller demands result ->
+    NeedsSatisfied result formal types needs -> CallTheta W result formal attached types ->
+    SigOf W attached (c_ty result) (Some receiver) g ->
+    RequirementsInForce caller formal ->
+    TypesMethodSelection W F C receiver [name]
+      (SelectedDefinition attached formal needs types demands result) g
+| TypesMethodAttachedAbstract : forall name h attached choice g,
+    head receiver = Some h -> Attached W h name attached ->
+    ~ (exists m, w_scope W (fr_mod F) NSDetached name = Some (ESym m) /\
+      mlook receiver m (c_mths C) <> None) ->
+    (exists rn ps rt, ast_of W attached = Some (ADFn (RAttached rn) name ps rt None)) ->
+    TypesMethodProvision W C receiver attached choice g ->
+    TypesMethodSelection W F C receiver [name] (SelectedProvision attached choice) g
+| TypesMethodDetached : forall name m choice g,
+    (forall h attached, head receiver = Some h -> ~ Attached W h name attached) ->
+    w_scope W (fr_mod F) NSDetached name = Some (ESym m) ->
+    TypesMethodProvision W C receiver m choice g ->
+    TypesMethodSelection W F C receiver [name] (SelectedProvision m choice) g.
+
+Inductive literal_plan : Type :=
+| PlanLiteralValue (value : nat)
+| PlanLiteralArithmetic (operand_type : ty) (method : nat) (family : option family_use)
+    (left right : literal_plan)
+| PlanLiteralFloat (function : nat) (operand : literal_plan).
+
+Inductive literal_arithmetic : Type := LiteralAddition | LiteralMultiplication | LiteralDivision.
+
+Definition arithmetic_tree (operation : literal_arithmetic) : literal_tree -> literal_tree -> literal_tree :=
+  match operation with
+  | LiteralAddition => LAdd
+  | LiteralMultiplication => LMul
+  | LiteralDivision => LDiv
+  end.
+
+Definition arithmetic_item (operation : literal_arithmetic) : lang_item :=
+  match operation with
+  | LiteralAddition => LIAdd
+  | LiteralMultiplication => LIMul
+  | LiteralDivision => LIDiv
+  end.
+
+Inductive TypesLiteral (W : world) (C : cx) : literal_tree -> literal_plan -> ty -> Prop :=
+| TypesLiteralZero : forall z t,
+    LangItem W LIZero z -> nlook z (c_vals C) = Some t ->
+    TypesLiteral W C LZero (PlanLiteralValue z) t
+| TypesLiteralOne : forall o t,
+    LangItem W LIOne o -> nlook o (c_vals C) = Some t ->
+    TypesLiteral W C LOne (PlanLiteralValue o) t
+| TypesLiteralArithmetic : forall operation left right x y t method family,
+    TypesLiteral W C left x t -> TypesLiteral W C right y t ->
+    LangItem W (arithmetic_item operation) method ->
+    TypesMethodProvision W C t method family (FSig [t] t) ->
+    TypesLiteral W C (arithmetic_tree operation left right) (PlanLiteralArithmetic t method family x y) t
+| TypesLiteralFloat : forall tree operand actual expected t f,
+    TypesLiteral W C tree operand actual -> LangItem W LIFloat f ->
+    nlook f (c_fns C) = Some (FSig [expected] t) -> fits actual expected ->
+    TypesLiteral W C (LFloat tree) (PlanLiteralFloat f operand) t.
+
 End Typing.
 
 Module Export Translation.
@@ -6021,6 +6120,34 @@ Definition LambdaBodyPlacement (W : world) (P : program) (C : cx) (Fl : frame)
   nlook slot (lambda_sections (program_origins P)) = Some (c_sub C).
 
 End LambdaTranslation.
+
+(* Method and literal emission *)
+
+Definition emit_provided_method (C : cx) (receiver : ty) (method : nat)
+    (choice : option family_use) (object : expr) (arguments : list expr) : expr :=
+  match choice with
+  | None => EMethod object method (rkey C receiver method) arguments
+  | Some selected => translate_family_use C selected
+      (EMethod object method (rkey (demand_result selected) receiver method) arguments)
+  end.
+
+Definition emit_method_call (C : cx) (receiver : ty) (selected : method_call_plan)
+    (object : expr) (arguments : list expr) : expr :=
+  match selected with
+  | SelectedProvision method choice => emit_provided_method C receiver method choice object arguments
+  | SelectedDefinition method formal needs types demands result =>
+      let receiver_types := match receiver with TNom _ rows => rows | _ => [] end in
+      translate_demands (family_context C receiver_types) demands
+        (translate_call result formal method types needs (object :: arguments))
+  end.
+
+Fixpoint emit_literal (C : cx) (plan : literal_plan) : expr :=
+  match plan with
+  | PlanLiteralValue value => EVal value
+  | PlanLiteralArithmetic t method family lhs rhs =>
+      emit_provided_method C t method family (emit_literal C lhs) [emit_literal C rhs]
+  | PlanLiteralFloat f operand => EInvoke f [emit_literal C operand]
+  end.
 
 End Translation.
 
