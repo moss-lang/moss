@@ -13,17 +13,22 @@ From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require AuditBase.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require SnapshotLoader EaMain BootstrapRun InterpreterLazy InterpreterFast InterpreterCompiled.
+From NM Require SnapshotLoader EaMain BootstrapRun BaseHost BaseHostScalars InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
 (* Audit's field names are strings: compare them natively. *)
 Extract Inlined Constant String.eqb => "String.equal".
 Extraction NoInline PrimArray.array.
-(* Scalar payloads are Z in the model. In particular, an I32 at the
-   primitive boundary should fit in one native integer. *)
-Extract Inlined Constant Uint63.to_Z => "(fun x -> Big_int_Z.big_int_of_int64 (Uint63.to_int64 x))".
-Extract Inlined Constant Uint63.of_Z => "(fun z -> Uint63.of_int64 (Big_int_Z.int64_of_big_int (Big_int_Z.extract_big_int z 0 63)))".
+(* Preserve the exact unsigned conversion and use native integers for
+   the common case of scalar payloads that fit. *)
+Extract Inlined Constant Uint63.to_Z => "(fun x ->
+  let high, low = Uint63.to_int2 x in
+  if high = 0 && low >= 0 then Big_int_Z.big_int_of_int low
+  else Big_int_Z.big_int_of_int64 (Uint63.to_int64 x))".
+Extract Inlined Constant Uint63.of_Z => "(fun z ->
+  if Big_int_Z.is_int_big_int z then Uint63.of_int (Big_int_Z.int_of_big_int z)
+  else Uint63.of_int64 (Big_int_Z.int64_of_big_int (Big_int_Z.extract_big_int z 0 63)))".
 (* ExtrOcamlNatInt's nat_case, with its two branches inlined.  Unchanged in
    meaning; it only changes what the native code keeps alive.  Without the
    attributes, the successor branch `fun k -> ...` is a closure, and its
@@ -60,11 +65,14 @@ Extract Inlined Constant Audit.Semantics.op_name => "PrimCache.name".
 Extract Inlined Constant Audit.Semantics.op_syms => "PrimCache.symbols".
 Extraction NoInline AuditBase.WasmOps.decode.
 Extract Constant AuditBase.WasmOps.decode => "PrimCache.memoize decode_operation".
+Extraction NoInline BaseHost.decode_host_operation.
+Extract Constant BaseHost.decode_host => "PrimCache.memoize_host decode_host_operation".
 Extraction Blacklist String List Char Bool.
 Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
   BootstrapRun.passes BootstrapRun.indexed_program_of
+  BaseHost.primitive_in BaseHostScalars.legacy_view BaseHost.decode_host_operation
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program

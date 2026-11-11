@@ -160,13 +160,8 @@ let () =
   let argv0 = match !argv0 with Some a -> a | None -> Filename.remove_extension (Filename.basename file) ^ ".wasm" in
   let argv = List.map bytes_of_string (argv0 :: args) in
   let read name = Option.map bytes_of_string (read_file (string_of_bytes name)) in
-  Prims.host := Some {
-    ExecutionModel.xp_fn = (fun _ -> None); xp_fun = (fun _ -> None); xp_inputs = (fun _ -> []);
-    xp_cast = []; xp_exports = (fun _ -> []); xp_immutable = false;
-    xp_fixed_inst = (fun _ -> []); xp_fixed_keys = (fun _ -> []);
-    xp_bool = p.A.program_bool; xp_true = p.A.program_true; xp_false = p.A.program_false;
-    xp_argv = argv; xp_read = read };
   let view = BootstrapRun.indexed_program_of p argv read in
+  Prims.initialize view;
   let t2 = now () in
   (* InterpreterCompiled.crun_main_reference: under tbl_ok, the compiled run on the
      converted environment returns exactly what Interpreter.run_main

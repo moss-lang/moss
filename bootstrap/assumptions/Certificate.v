@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun.
+From NM Require Parse EaCallSound EaCopyNeedSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -20,7 +20,7 @@ From NM Require AuditExamples AuditBuildExample
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
   PublicMergeClass PublicMerge PublicMergePresent PublicMergeOps EagerCopy ElabWorld ElabWorldExample ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
 
-Module PublicPublic := AuditBase.Public AuditExamples.Host.
+Module PublicPublic := BaseHost.Public.
 (* Check the Base specialization by reduction, using the given public
    instance rather than instantiating another interpreter. *)
 Module BasePublicEquations (Host : AuditBase.HOST) (M : BaseFacts.PUBLIC Host).
@@ -38,8 +38,8 @@ Lemma call_exact : forall P operation site values state,
   BaseCall.call M.ReferenceHost.raw_primitive P operation site values state.
 Proof. reflexivity. Qed.
 End BasePublicEquations.
-Module BasePublicBoundary := BasePublicEquations AuditExamples.Host PublicPublic.
-Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
+Module BasePublicBoundary := BasePublicEquations BaseHost.Concrete PublicPublic.
+Module PublicHeaps := PublicHeapTyping.HeapSafety BaseHost.Concrete PublicPublic.
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Prims PublicInterp.
 (* public_safety's instance. Every functor of the body-safety chain is
@@ -56,8 +56,8 @@ Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Pri
    PublicCopyApply, S PublicBodySlice (AR PublicArms, B PublicBoolTyping,
    TC PublicTagCheck, TC.CT PublicCastTyping); SR PublicSafety, PS
    PublicPrimitiveSafety. *)
-Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
-Module PublicSiteErasure := PublicPrimitiveSites.ReferenceSites AuditExamples.Host PublicPublic.
+Module PublicEntryTop := PublicEntry.EntrySafety BaseHost.Concrete PublicPublic.
+Module PublicSiteErasure := PublicPrimitiveSites.ReferenceSites BaseHost.Concrete PublicPublic.
 
 (* public_safety is CORRECT.safety, the statement Audit.v gives, for the
    same Public instance: the statement below is read off CORRECT's
@@ -83,7 +83,7 @@ End SafetyIsCorrect.
    whose primitives ignore the program's code has, at every fuel, the same
    observation as its pruned program, so the same Runs. The default
    interface of this instance's host ignores the view entirely. *)
-Module PruneTop := ProgramPrune.PruneRuns AuditExamples.Host PublicPublic.
+Module PruneTop := ProgramPrune.PruneRuns BaseHost.Concrete PublicPublic.
 Definition pruned_observation_agrees : forall prelude program interface initial,
   PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
   PruneTop.code_blind interface -> forall fuel,
@@ -106,7 +106,8 @@ Definition pruned_runs_agree : forall prelude program interface initial result,
     @PruneTop.runs_pruned program interface initial result Hb
       (PublicEntryTop.public_safety prelude program interface initial Ha Hc).
 Definition default_interface_code_blind : PruneTop.code_blind PublicPublic.default_interface :=
-  fun _ _ _ _ _ _ _ _ _ _ _ => eq_refl.
+  fun P P' Bool True False Args Read _ =>
+    BaseHost.primitive_ignores_code P P' Bool True False Args Read.
 
 (* The platform-family fast path for Audit programs (ProgramFastPath.v):
    each application of a primitive-only platform family becomes the
@@ -115,7 +116,7 @@ Definition default_interface_code_blind : PruneTop.code_blind PublicPublic.defau
    neither stuck nor out of fuel, and conversely; with public_safety (no
    Wrong), the same Runs, for interfaces whose primitives ignore the
    program's code. Composed with read-set pruning, as moss-ref runs them. *)
-Module FastTop := ProgramFastPath.FastRuns AuditExamples.Host PublicPublic.
+Module FastTop := ProgramFastPath.FastRuns BaseHost.Concrete PublicPublic.
 Definition fastpath_runs_agree : forall prelude program interface initial result,
   PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
   PruneTop.code_blind interface ->
@@ -143,8 +144,8 @@ Qed.
    run is the original run at every fuel (no safety premise), for
    interfaces whose primitives ignore the program's code. Composed after
    the fast path and pruning, as moss-ref runs them (run/driver.ml). *)
-Module CapTrimTop := ProgramCapTrim.TrimRuns AuditExamples.Host PublicPublic.
-Module NativeRunTop := BootstrapRun.Native AuditExamples.Host PublicPublic.
+Module CapTrimTop := ProgramCapTrim.TrimRuns BaseHost.Concrete PublicPublic.
+Module NativeRunTop := BootstrapRun.Native BaseHost.Concrete PublicPublic.
 Definition captrim_runs_agree : forall program interface initial result,
   PruneTop.code_blind interface ->
   PublicPublic.Runs (ProgramCapTrim.captrim program) interface initial result
@@ -159,6 +160,23 @@ Proof.
   intros prelude program interface initial result Ha Hc Hb.
   exact (NativeRunTop.Model.runs_optimized program interface initial result Hb
     (PublicEntryTop.public_safety prelude program interface initial Ha Hc)).
+Qed.
+
+(* The concrete optimized runner needs the same table equations as the
+   compiled engine. The checked host and public safety supply its other
+   premises on an admitted program. *)
+Theorem concrete_run_sound : forall prelude program initial tbl ftbl fuel result,
+  PublicPublic.Admissible prelude program ->
+  NativeRunTop.C.tbl_ok (NativeRunTop.native_view (BootstrapRun.optimize program) initial) tbl ftbl ->
+  NativeRunTop.run (BootstrapRun.optimize program) initial tbl fuel = Some result ->
+  PublicPublic.Runs program PublicPublic.default_interface initial result.
+Proof.
+  intros prelude program initial tbl ftbl fuel result AdmittedProgram Tables Run.
+  eapply NativeRunTop.run_optimized_sound; [exact default_interface_code_blind| |exact Tables|exact Run].
+  apply (PublicEntryTop.public_safety prelude program PublicPublic.default_interface initial AdmittedProgram).
+  apply BaseHost.default_compatible.
+  destruct AdmittedProgram as (source & entry & bundle & world & Loaded & Typed & Linked).
+  exists bundle, world. auto.
 Qed.
 
 (* One dependency traversal computes the union for every root below. The
@@ -557,7 +575,11 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NativeRunTop.Model.C.crun_main_reference);
   root (@NativeRunTop.Model.run_compiled_sound);
   root (@NativeRunTop.Model.run_optimized_sound);
-  root (@NativeRunTop.run_optimized_sound)].
+  root (@NativeRunTop.run_optimized_sound);
+  root (@BaseHost.primitive_laws);
+  root (@BaseHost.default_compatible);
+  root (@BaseHost.primitive_ignores_code);
+  root (@concrete_run_sound)].
 
 Print Assumptions certificate_roots.
 

@@ -6,6 +6,7 @@
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat ZArith.
 From Stdlib Require Import String Ascii List Bool Arith.
 From NM Require Export Audit.
+From NM Require AuditBase.
 Import ListNotations.
 Module Input := Audit.Input.
 Module Syntax := Audit.Syntax.
@@ -159,29 +160,15 @@ Inductive xvalue : Type :=
 | XVRec  : list (fld * xvalue) -> xvalue
 | XVF32  : float -> xvalue              (* a binary64 holding a binary32 value *)
 | XVI64  : Z -> xvalue                  (* invariant kept by every op: [0, 2^64) *)
-| XVRef  : int -> xvalue                (* legacy primitive heap address *)
-| XVRefAt : bool -> ty -> int -> xvalue. (* allocation kind and ground held type *)
+| XVRef  : nat -> xvalue                (* a heap address *)
+| XVRefAt : bool -> ty -> nat -> xvalue  (* allocation kind and ground held type *)
+| XVStored : Audit.Semantics.value -> xvalue. (* an opaque Audit heap payload *)
 
 (* ===================== Primitives ======================================== *)
 
-Inductive i32bin := IAdd | ISub | IMul | IDivS | IDivU | IRemS | IRemU
-                  | IAnd | IOr | IXor | IShl | IShrS | IShrU | IRotl | IRotr.
-Inductive i32cmp := CEq | CNe | CLtS | CLtU | CGtS | CGtU | CLeS | CLeU
-                  | CGeS | CGeU.
-Inductive i32un  := UEqz | UClz | UCtz | UPopcnt | UExt8 | UExt16.
-Inductive f64bin := FAdd | FSub | FMul | FDiv | FMin | FMax | FCopysign.
-Inductive f64un  := FAbs | FNeg | FCeil | FFloor | FTrunc | FNearest | FSqrt.
-Inductive f64cmp := FEq | FNe | FLt | FGt | FLe | FGe.
-Inductive conv   := CTruncS | CTruncU | CTruncSatS | CTruncSatU
-                  | CConvS | CConvU.     (* i32 <-> f64 *)
-Inductive loadk  := L32 | L8S | L8U | L16S | L16U.
-Inductive storek := S32 | S8 | S16.
-Inductive i64un  := U64Eqz | U64Clz | U64Ctz | U64Popcnt | U64Ext8 | U64Ext16 | U64Ext32.
-Inductive load64k := L64 | L64_8S | L64_8U | L64_16S | L64_16U | L64_32S | L64_32U.
-Inductive store64k := S64 | S64_8 | S64_16 | S64_32.
-(* i64 <-> floats: trunc (s/u, sat or not) from f64/f32, convert to f64/f32 *)
-Inductive conv64 := C64Trunc (from32 : bool) (signed : bool) (sat : bool)
-                  | C64Conv (to32 : bool) (signed : bool).
+(* The Base and legacy evaluators use the same operation operands. *)
+Export AuditBase.WasmOps (i32bin(..), i32cmp(..), i32un(..), f64bin(..), f64un(..),
+  f64cmp(..), conv(..), loadk(..), storek(..), i64un(..), load64k(..), store64k(..), conv64(..)).
 
 Inductive prim : Type :=
 | PI32Bin  : i32bin -> prim
@@ -220,6 +207,65 @@ Inductive prim : Type :=
 (* declared by the library but not modelled: running one stops the
    program with XUns, which the oracle reports as "unsupported" *)
 | PUnsupported : nat -> prim.
+
+
+Definition base_primitive (p : AuditBase.WasmOps.wasm_prim) : prim :=
+  match p with
+  | AuditBase.WasmOps.PI32Bin operand => PI32Bin operand
+  | AuditBase.WasmOps.PI32Cmp operand => PI32Cmp operand
+  | AuditBase.WasmOps.PI32Un operand => PI32Un operand
+  | AuditBase.WasmOps.PF64Bin operand => PF64Bin operand
+  | AuditBase.WasmOps.PF64Cmp operand => PF64Cmp operand
+  | AuditBase.WasmOps.PF64Un operand => PF64Un operand
+  | AuditBase.WasmOps.PConv operand => PConv operand
+  | AuditBase.WasmOps.PLoad operand => PLoad operand
+  | AuditBase.WasmOps.PStore operand => PStore operand
+  | AuditBase.WasmOps.PF64Load => PF64Load
+  | AuditBase.WasmOps.PF64Store => PF64Store
+  | AuditBase.WasmOps.PMemSize => PMemSize
+  | AuditBase.WasmOps.PMemGrow => PMemGrow
+  | AuditBase.WasmOps.PMemCopy => PMemCopy
+  | AuditBase.WasmOps.PMemFill => PMemFill
+  | AuditBase.WasmOps.PUnreachable => PUnreachable
+  | AuditBase.WasmOps.PFdWrite => PFdWrite
+  | AuditBase.WasmOps.PProcExit => PProcExit
+  | AuditBase.WasmOps.PArgsSizesGet => PArgsSizesGet
+  | AuditBase.WasmOps.PArgsGet => PArgsGet
+  | AuditBase.WasmOps.PPathOpen => PPathOpen
+  | AuditBase.WasmOps.PFdRead => PFdRead
+  | AuditBase.WasmOps.PFdClose => PFdClose
+  | AuditBase.WasmOps.PI32Bool => PI32Bool
+  | AuditBase.WasmOps.PF32Bin operand => PF32Bin operand
+  | AuditBase.WasmOps.PF32Cmp operand => PF32Cmp operand
+  | AuditBase.WasmOps.PF32Un operand => PF32Un operand
+  | AuditBase.WasmOps.PConv32 operand => PConv32 operand
+  | AuditBase.WasmOps.PF32Load => PF32Load
+  | AuditBase.WasmOps.PF32Store => PF32Store
+  | AuditBase.WasmOps.PDemote => PDemote
+  | AuditBase.WasmOps.PPromote => PPromote
+  | AuditBase.WasmOps.PI32ReinterpF32 => PI32ReinterpF32
+  | AuditBase.WasmOps.PF32ReinterpI32 => PF32ReinterpI32
+  | AuditBase.WasmOps.PI64Bin operand => PI64Bin operand
+  | AuditBase.WasmOps.PI64Cmp operand => PI64Cmp operand
+  | AuditBase.WasmOps.PI64Un operand => PI64Un operand
+  | AuditBase.WasmOps.PWrap => PWrap
+  | AuditBase.WasmOps.PExtendS => PExtendS
+  | AuditBase.WasmOps.PExtendU => PExtendU
+  | AuditBase.WasmOps.PI64Load operand => PI64Load operand
+  | AuditBase.WasmOps.PI64Store operand => PI64Store operand
+  | AuditBase.WasmOps.PConv64 operand => PConv64 operand
+  | AuditBase.WasmOps.PI64ReinterpF64 => PI64ReinterpF64
+  | AuditBase.WasmOps.PF64ReinterpI64 => PF64ReinterpI64
+  | AuditBase.WasmOps.PBox operand => PBox operand
+  | AuditBase.WasmOps.PDeref => PDeref
+  | AuditBase.WasmOps.PRefSet => PRefSet
+  | AuditBase.WasmOps.PArrNew operand => PArrNew operand
+  | AuditBase.WasmOps.PArrLen => PArrLen
+  | AuditBase.WasmOps.PArrGet => PArrGet
+  | AuditBase.WasmOps.PArrSet => PArrSet
+  | AuditBase.WasmOps.PArrFill => PArrFill
+  | AuditBase.WasmOps.PArrCopy => PArrCopy
+  end.
 
 (* ===================== Expressions and bindings ========================== *)
 
@@ -3662,12 +3708,9 @@ End HeapAddress.
 
 Module Heap.
 Local Unset Implicit Arguments.
-Import HeapAddress.
 (* A store typing: an address's kind (true: an array) and what its
-   contents (a box's value, an array's elements) satisfy.  It is keyed by
-   an address's bits (HeapAddress.key), so that no law needs a fact about
-   machine-integer equality. *)
-Definition hty : Type := list bool -> option (bool * (xvalue -> Prop)).
+   contents (a box's value, an array's elements) satisfy. *)
+Definition hty : Type := nat -> option (bool * (xvalue -> Prop)).
 
 (* Ψ' extends Ψ: every address Ψ types, Ψ' types the same way. *)
 Definition hext (Psi Psi' : hty) : Prop :=
@@ -3676,7 +3719,7 @@ Definition hext (Psi Psi' : hty) : Prop :=
 (* w is a reference (a tag over a heap address) of kind k whose contents
    satisfy Q. *)
 Definition href (Psi : hty) (k : bool) (w : xvalue) (Q : xvalue -> Prop) : Prop :=
-  exists n a, w = XVTag n (XVRef a) /\ Psi (key a) = Some (k, Q).
+  exists n a, w = XVTag n (XVRef a) /\ Psi a = Some (k, Q).
 
 (* What a GC primitive needs of its arguments, for contents satisfying Q. *)
 Definition gc_pre (Psi : hty) (p : prim) (ws : list xvalue) (Q : xvalue -> Prop) : Prop :=
@@ -3698,8 +3741,8 @@ Definition gc_pre (Psi : hty) (p : prim) (ws : list xvalue) (Q : xvalue -> Prop)
 Definition gc_post (Psi Psi' : hty) (p : prim) (Q : xvalue -> Prop) (w : xvalue) : Prop :=
   hext Psi Psi' /\
   match p with
-  | PBox rf => exists a, w = XVTag rf (XVRef a) /\ Psi (key a) = None /\ Psi' (key a) = Some (false, Q)
-  | PArrNew ar => exists a, w = XVTag ar (XVRef a) /\ Psi (key a) = None /\ Psi' (key a) = Some (true, Q)
+  | PBox rf => exists a, w = XVTag rf (XVRef a) /\ Psi a = None /\ Psi' a = Some (false, Q)
+  | PArrNew ar => exists a, w = XVTag ar (XVRef a) /\ Psi a = None /\ Psi' a = Some (true, Q)
   | PDeref | PArrGet => Q w
   | PArrLen => exists n, w = XVI32 n
   | _ => w = XVUnit

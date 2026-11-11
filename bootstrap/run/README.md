@@ -35,17 +35,18 @@ and is absent from executable extraction.
 Audit.v defines the generic language semantics, and AuditBase.v supplies
 the concrete Base platform. Both files contain definitions without proofs.
 Steps 3 and 4 use the interpreter and passes proved against these definitions.
+`BaseHost.primitive_laws` verifies the extracted host's scalar, WASI and
+heap operations against the Base contract, and `BaseHost.default_compatible`
+supplies the interface laws once the program is ready to link.
 **Whole elaborator soundness remains open.**
 The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
 and `EaWorldSound` proofs cover readers, their fuel conditions and the
 world builder. Ea's `SOUND:` comments state the intended per-function
-contracts. The executable also trusts the OCaml driver's table construction,
-value and primitive conversions in `prims.ml`, and the decoder memo in
-`primCache.ml`. The memo stores a pure
-result alongside immutable operation names and operands. The supported Wasm
-operation conversion uses `Obj.magic` and relies on WasmOps and ExecutionModel
-constructor ordering. Float conversion uses the legacy canonical NaN patterns
-and preserves other Wasm float bit patterns. `check.sh` audits the extracted roots' assumptions.
+contracts. The executable trusts the OCaml driver's table construction,
+setup of the fixed host context, I/O and extraction directives. The
+decoder memo in `primCache.ml` stores pure results alongside immutable
+operation names and operands. `check.sh` audits the extracted roots'
+assumptions.
 
 ## Files
 
@@ -53,7 +54,7 @@ and preserves other Wasm float bit patterns. `check.sh` audits the extracted roo
   `Dump.dump_file` and `print_sx` for `--dump`, and `MossX.run_prim_fast` and
   `init_state`.
 - `driver.ml`: the command line. Its header documents the options.
-- `prims.ml`: MossX's primitives at Audit's value type.
+- `prims.ml`: setup and dispatch for the extracted Base host.
 - `primCache.ml`: the native operation carrier and shared decoder memo.
 - `dune`: the extraction, and the executable. The executable needs flambda:
   without it the interpreter keeps every version of linear memory alive.

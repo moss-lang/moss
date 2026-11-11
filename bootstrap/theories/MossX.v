@@ -2,6 +2,7 @@
 From Stdlib Require Import List Bool Arith Lia.
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat FloatClass PArray ZArith.
 From NM Require Import ExecutionModel HTrie.
+From NM Require NatTrie.
 Import ListNotations.
 
 Lemma xinst_map : forall d th,
@@ -22,10 +23,9 @@ Local Open Scope nat_scope.
 
 (* The machine: a linear memory of 64 KiB pages, each a persistent array of
    its bytes packed four to an element (get_byte), and the output written so far (most recent byte first). *)
-(* The GC heap's objects.  A GC array is its elements as a trie over its
-   indices (HTrie.v) with a default for the indices never set: no primitive
-   array, so the heap's laws hold without the kernel's array axioms
-   (proved in XHeapC.v, deleted with the old oracle). *)
+(* A GC array stores its elements in a trie over indices (HTrie.v), with a
+   default for indices never set. BaseHost proves the heap laws from the
+   trie laws. *)
 Definition garr : Type := (xvalue * trie xvalue)%type.
 Definition garr_get (xs : garr) (i : int) : xvalue :=
   match tget (snd xs) i with Some v => v | None => fst xs end.
@@ -41,8 +41,8 @@ Record mstate : Type := MS {
   ms_pages : int;
   ms_out   : list int;
   ms_err   : list int;
-  ms_heap  : trie hobj;           (* the GC heap, by address *)
-  ms_hnext : int;
+  ms_heap  : NatTrie.tmap hobj;           (* the GC heap, by address *)
+  ms_hnext : nat;
   ms_fds   : list (int * list int);   (* open files: descriptor, bytes left *)
   ms_nextfd : int
 }.
@@ -749,25 +749,26 @@ Definition i64_store (s : store64k) (st : mstate) (a : int) (z : Z) : option mst
   else None.
 
 (* The heap: a trie of objects by address; ms_hnext is the next address. *)
-Definition heap_max : int := 4194303%uint63.
+Definition heap_max : nat := 4194303.
+Definition array_max : int := 4194303%uint63.
 
-Definition heap_alloc (st : mstate) (o : hobj) : option (int * mstate) :=
+Definition heap_alloc (st : mstate) (o : hobj) : option (nat * mstate) :=
   let n := ms_hnext st in
-  if (heap_max <=? n)%uint63 then None
-  else match tget (ms_heap st) n with
+  if Nat.leb heap_max n then None
+  else match NatTrie.tget (ms_heap st) n with
        | Some _ => None   (* never: no address at or above ms_hnext is in use *)
        | None => Some (n, MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
-                             (tset (ms_heap st) n o) (n + 1)%uint63 (ms_fds st) (ms_nextfd st))
+                             (NatTrie.tset (ms_heap st) n o) (S n) (ms_fds st) (ms_nextfd st))
        end.
 
-Definition heap_get (st : mstate) (a : int) : hobj :=
-  match tget (ms_heap st) a with Some o => o | None => HNone end.
+Definition heap_get (st : mstate) (a : nat) : hobj :=
+  match NatTrie.tget (ms_heap st) a with Some o => o | None => HNone end.
 
-Definition heap_set (st : mstate) (a : int) (o : hobj) : mstate :=
+Definition heap_set (st : mstate) (a : nat) (o : hobj) : mstate :=
   MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
-     (tset (ms_heap st) a o) (ms_hnext st) (ms_fds st) (ms_nextfd st).
+     (NatTrie.tset (ms_heap st) a o) (ms_hnext st) (ms_fds st) (ms_nextfd st).
 
-Definition ref_of (w : xvalue) : option int :=
+Definition ref_of (w : xvalue) : option nat :=
   match w with
   | XVRef a | XVTag _ (XVRef a) => Some a
   | _ => None
@@ -777,7 +778,7 @@ Notation trap_null := 6%nat (only parsing).
 Notation trap_array_oob := 7%nat (only parsing).
 Notation trap_oom := 8%nat (only parsing).
 
-Definition arr_of (st : mstate) (w : xvalue) : option (int * garr * int) :=
+Definition arr_of (st : mstate) (w : xvalue) : option (nat * garr * int) :=
   match ref_of w with
   | Some a => match heap_get st a with HArr xs n => Some (a, xs, n) | _ => None end
   | None => None
@@ -807,7 +808,7 @@ Definition gc_prim (p : prim) (ws : list xvalue) (st : mstate) : xout * mstate :
       | None => (XErr 0, st)
       end
   | PArrNew ar, [v; XVI32 n] =>
-      if (heap_max <? n)%uint63 then (XTrap trap_oom, st)
+      if (array_max <? n)%uint63 then (XTrap trap_oom, st)
       else match heap_alloc st (HArr (v, TE) n) with
            | Some (a, s) => (XOk (XVTag ar (XVRef a)), s)
            | None => (XTrap trap_oom, st)
@@ -1109,7 +1110,7 @@ Local Open Scope uint63_scope.
    holding 1024 (both compilers' `_start`, and the bootstrap interpreter). *)
 Definition init_state (pages : int) : mstate :=
   let st := MS (PArray.make max_pages (PArray.make 1 0)) 0 [] []
-                TE 0 [] 4 in
+                NatTrie.TE 0%nat [] 4 in
   let st1 := snd (mem_grow st pages) in
   store_le st1 16 1024 4.
 Local Close Scope uint63_scope.
@@ -1166,7 +1167,7 @@ Ltac margs_shape :=
   | H : Forall2 _ _ (_ :: _) |- _ => inversion H; subst; clear H
   | H : Forall2 _ _ [] |- _ => inversion H; subst; clear H
   | H : xvty _ ?w XTAddr |- _ =>
-      destruct w as [| ? w | | | | | | |]; simpl in H; try contradiction;
+      destruct w as [| ? w | | | | | | | |]; simpl in H; try contradiction;
       destruct w; simpl in H; try contradiction; clear H
   | H : xvty _ ?w _ |- _ => destruct w; simpl in H; try contradiction; clear H
   end.
