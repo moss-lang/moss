@@ -472,6 +472,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaCopyNeedSound.combined_merge_extends);
   root (@NM.EaCopyNeedSound.copy_need_choice_unique);
   root (@NM.EaLinkBindingSound.check_link_binding_sound);
+  root (@NM.EaLinkBindingSound.translate_link_targets_sound);
   root (@NM.EaFamilySound.fixed_agreement_spec);
   root (@NM.PublicMerge.expanded_generations_by_class);
   root (@NM.PublicFormation.section_output_expanded);

@@ -306,7 +306,7 @@ Proof.
   destruct j as [|j1].
   { right. intros rest. rewrite CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.bindings_apply_eq. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_entry W Prog argv read state_ok rr H u gfx _ Ok code sms' dc rms' eq_refl d f Cu ns d1 FC RealU' Fixd) as
-    [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & d2 & Chn & Ok0 & [pins [LB [PinsOk Binding]]] & FC0 & FCg & Keys & A2 & RealG)
+    [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & linktarget & d2 & Chn & Ok0 & [pins [LB [PinsOk Binding]]] & FC0 & FCg & Keys & A2 & RealG)
     |(h0 & gf0 & Chn & Edc & Fam0 & Ok0)].
   - (* a linked root: run its body *)
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_facts W Prog _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Ch0' & nsh0' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
@@ -409,7 +409,7 @@ Proof.
              apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
         unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
     pose proof (CRz.root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
-      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD gf0 Binding th d d3 _ j1 g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
+      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD linktarget gf0 Binding th d d3 _ j1 g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr
@@ -433,7 +433,7 @@ Proof.
       A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x).
     { intros x Inm F0 Ix0.
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
-      { destruct CL as (gg & h' & Cu' & nsu' & Cg & nsg & dc & E & _). injection E; intros; discriminate. }
+      { destruct CL as (gg & h' & Cu' & nsu' & Cg & nsg & linktarget & dc & E & _). injection E; intros; discriminate. }
       { destruct CCp as (h' & Cu' & nsu' & Ch' & nsh' & target0 & code' & sms1 & dc & rms1 & rm1 & gfh1 & E & _). injection E; intros.
         destruct sms1; discriminate. }
       destruct CP as (code' & _ & _ & Mach).

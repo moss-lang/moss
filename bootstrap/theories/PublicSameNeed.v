@@ -157,15 +157,15 @@ Proof.
 Qed.
 
 (* The binding's input reading rules out an ambiguous declared need. *)
-Corollary link_need_unambiguous : forall u gg Cu nsu Cg nsg,
-  A.LinkBinding W u Cu nsu Cg nsg ->
+Corollary link_need_unambiguous : forall u gg Cu nsu Cg nsg target,
+  A.LinkBinding W u Cu nsu Cg nsg target ->
   A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   forall k1 k2, A.canon_item Cg k1 = A.canon_item Cg k2 ->
   In (A.canon_item Cu k1) nsu -> In (A.canon_item Cu k2) nsu -> A.canon_item Cu k1 = A.canon_item Cu k2.
 Proof.
-  intros u gg Cu nsu Cg nsg Binding FCu FCg.
+  intros u gg Cu nsu Cg nsg target Binding FCu FCg.
   apply (need_unambiguous Cu nsu Cg (functx_formed _ _ _ FCu) (functx_formed _ _ _ FCg)).
-  - intros x tx L1 L2. exact (proj2 (@A.link_bind_inputs W u Cu nsu Cg nsg Binding x tx L1 L2)).
+  - intros x tx L1 L2. exact (proj2 (@A.link_bind_inputs W u Cu nsu Cg nsg target Binding x tx L1 L2)).
   - exact (functx_needs_scoped _ _ _ FCu).
 Qed.
 

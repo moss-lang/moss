@@ -4492,10 +4492,30 @@ Definition translate_application (C : cx) (a : application) : expr -> expr :=
     (satisfaction_map C (app_input a) th (app_needs a))
     (map (rkey_of (app_result a)) (app_provisions a)).
 
+Definition declared_link_target (Cu : cx) (nsu : list item) (k : item) : option item :=
+  let key := canon_item Cu k in
+  if existsb (item_eqb key) nsu then Some key else None.
+
+Definition linked_target (target : item -> option item) (k : item) : item :=
+  match target k with Some key => key | None => k end.
+
+Definition is_linked (target : item -> option item) (k : item) : bool :=
+  match target k with Some _ => true | None => false end.
+
+Definition linked_needs (target : item -> option item) (needs : list item) : list item :=
+  filter (is_linked target) needs.
+
+Definition captured_needs (target : item -> option item) (needs : list item) : list item :=
+  filter (fun k => negb (is_linked target k)) needs.
+
+Definition link_map (Cu Cg : cx) (target : item -> option item) (needs : list item) : smap :=
+  map (fun k => (rkey_of Cg k, rkey_of Cu (linked_target target k))) (linked_needs target needs).
+
 (* The checks made where a closure binds a body to its target functor.
    The body's code and result checks are independent of this binding. *)
 Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
-    (Cg : cx) (nsg : list item) : Prop := {
+    (Cg : cx) (nsg : list item) (target : item -> option item) : Prop := {
+  link_bind_target : target = declared_link_target Cu nsu;
   (* A captured provision can mention fixed or privately captured types. *)
   link_bind_scope : forall k p t, In k nsg -> ~ In (canon_item Cu k) nsu ->
     ilook (provision_id k) (c_provisions Cg) = Some p ->
@@ -4936,7 +4956,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
    keys' receivers included, so a captured need keyed at a declared symbol
    not in force reads as it was provided (tests/errors/functor_captured_unbound.moss,
    family4-AUDIT.md). *)
-| BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx,
+| BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h pins target sm smc fx,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     (* F's and G's contexts, as the world records them (LinkBody states
@@ -4945,14 +4965,14 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
-    LinkBinding W u Cu nsu Cg nsg -> LinkBody W P u gg h pins ->
+    LinkBinding W u Cu nsu Cg nsg target -> LinkBody W P u gg h pins ->
     (* the linked needs: those of G that are F's, read through F's merge *)
-    sm = map (fun k => (rkey_of Cg k, rkey_of Cu (canon_item Cu k))) (filter (fun k => existsb (item_eqb (canon_item Cu k)) nsu) nsg) ->
+    sm = link_map Cu Cg target nsg ->
     (* 3b: the captured needs are answered here as a call would answer
        them, at G's inputs read here: provided, coherent, at G's view of
        their types, and G's merges holding of the meanings here *)
     Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
-      (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) smc ->
+      (captured_needs target nsg) smc ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     (* rule B for the closure: G's inputs that F does not take are
        captured here, so each is in force here, through G's merge class
@@ -5297,9 +5317,9 @@ Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
 | NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
 | NCLambda : forall F C ps rt body sg this pid pre sm,
     LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
-| NCBody : forall u gg h pins Cu nsu Cg nsg, LinkBody W P u gg h pins ->
+| NCBody : forall u gg h pins Cu nsu Cg nsg target, LinkBody W P u gg h pins ->
     w_context W u = Some (Cu, nsu) -> w_context W gg = Some (Cg, nsg) ->
-    LinkBinding W u Cu nsu Cg nsg ->
+    LinkBinding W u Cu nsu Cg nsg target ->
     NodeCx W P (CodeFunctor h) Cg.
 
 (* Merges are edges too (criteria section 2, coherence).  Within a node,

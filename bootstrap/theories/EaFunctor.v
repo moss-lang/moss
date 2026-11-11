@@ -246,7 +246,7 @@ Definition linked_type_agrees (Cu Cg : cx) (x : nat) : bool :=
   end.
 
 (* Check the source binding separately from lookup or generation of body code. *)
-Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item) : M unit :=
+Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item) : M (item -> option item) :=
   let nu := qs W u in let ng := qs W gg in
   let bound_to := (ng ++ ", bound to " ++ nu ++ ",")%string in
   let fu := fixed W metadata_fuel u in
@@ -257,7 +257,7 @@ Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx)
          (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)") in
   let* _ := check (forallb (fun q => linked_type_agrees Cu Cg (fst q)) (c_ty Cg))
          (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
-  ret tt.
+  ret (declared_link_target Cu nsu).
 
 (* SOUND: link_body u gg = Ok h -> LinkBody W P u gg (slot_index h) pins, pins the
    ones it records (get_pins h) (P final, I2) *)
@@ -356,6 +356,9 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
   end
   end.
 
+Definition translate_link_targets (Cu Cg : cx) (target : item -> option item) (needs : list item) : smap :=
+  map (fun k => (rkof Cg k, rkof Cu (linked_target target k))) (linked_needs target needs).
+
 (* SOUND: fun_closure F C u gg = Ok (wrap, C') -> BindItem ... by BFunClosure *)
 Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
   let nu := qs W u in let ng := qs W gg in
@@ -366,12 +369,11 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
             | Some x => fail ("binding " ++ nu ++ " needs " ++ qs W x ++ " in force: it is a fixed input (D84)")
             | None => ret tt end in
   let* _ := check (same_result W fuel u gg) (result_mismatch u gg) in
-  let* _ := check_link_binding u gg Cu nsu Cg nsg in
+  let* target := check_link_binding u gg Cu nsu Cg nsg in
   let* h := link_body u gg in
-  let linked k := existsb (item_eqb (canon_item Cu k)) nsu in
-  let sm := map (fun k => (rkof Cg k, rkof Cu (canon_item Cu k))) (filter linked nsg) in
+  let sm := translate_link_targets Cu Cg target nsg in
   let thg := map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg) in
-  let* smc := pure (satisfies_gen true W (ng ++ ", bound to " ++ nu ++ ",") ("binding " ++ nu ++ " to " ++ ng) C Cg thg (filter (fun k => negb (linked k)) nsg)) in
+  let* smc := pure (satisfies_gen true W (ng ++ ", bound to " ++ nu ++ ",") ("binding " ++ nu ++ " to " ++ ng) C Cg thg (captured_needs target nsg)) in
   (* rule B for the closure: G's inputs F does not take are in force here,
      through G's merge class *)
   let* _ := match find (fun q => negb (bound_in Cu (fst q) || in_force_through C Cg (fst q))) (c_ty Cg) with

@@ -422,7 +422,7 @@ Proof.
   pose proof (Kin x Ix0) as Ix.
   destruct (FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn x F0) as [Fx Egf].
   destruct (FS.CopyA.S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok0) as [CL|[CC|CP]].
-  - destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E; intros; discriminate.
+  - destruct CL as (gg & h & Cu' & nsu & Cg & nsg & linktarget & dc & E & _). injection E; intros; discriminate.
   - destruct CC as (h & Cu' & nsu & Ch & nsh & target0 & code' & sms' & dc & rms' & rm' & gfh & E & _). discriminate E.
   - destruct CP as (code' & _ & _ & Mach).
     destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx.
@@ -737,7 +737,7 @@ Proof.
     by (rewrite <- Thf; exact RealU).
   destruct (FS.CopyA.chain_entry W Prog argv read state_ok rr H u gfx _ Ok code sms FS.CopyA.empty_env rms eq_refl
     d f Cu ns d1 FC RealF Fixd)
-    as [(h0' & gf0' & gg & Ch0' & nsh0 & Cg & nsg & e2 & Chn' & Ok0 & LB & FC0' & FCg & Keys & A2 & RealG)
+    as [(h0' & gf0' & gg & Ch0' & nsh0 & Cg & nsg & linktarget & e2 & Chn' & Ok0 & LB & FC0' & FCg & Keys & A2 & RealG)
        |(h0' & gf0' & Chn' & _ & Fam' & Ok0)].
   - (* a linked root: the family's code has no bindings *)
     destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
@@ -854,7 +854,7 @@ Proof.
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]].
   rewrite Look in Look'. injection Look' as <-.
   destruct (FS.CopyA.S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok) as [CL|[CC|CP]].
-  { destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E; intros; discriminate. }
+  { destruct CL as (gg & h & Cu' & nsu & Cg & nsg & linktarget & dc & E & _). injection E; intros; discriminate. }
   { destruct CC as (h & Cu' & nsu & Ch & nsh & target0 & code' & sms' & dc & rms' & rm' & gfh & E & _). injection E; intros.
     destruct sms'; discriminate. }
   destruct CP as (code' & _ & _ & Mach).

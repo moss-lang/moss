@@ -122,16 +122,16 @@ Qed.
    that F does not take, is in force here or mentioned by the context
    (its merge, provisions, or a method key's receiver). The closure's
    `lexical_capture` keeps both. *)
-Theorem captured_mentioned : forall C gg Cu nsu Cg nsg smc,
-  FunCtx W gg Cg nsg -> KeysScoped W C ->
+Theorem captured_mentioned : forall C gg Cg nsg caps smc,
+  FunCtx W gg Cg nsg -> KeysScoped W C -> incl caps nsg ->
   Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
-    (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) smc ->
-  forall k p x, In k (filter (fun k => negb (existsb (item_eqb (canon_item Cu k)) nsu)) nsg) -> ilook (provision_id k) (c_provisions Cg) = Some p ->
+    caps smc ->
+  forall k p x, In k caps -> ilook (provision_id k) (c_provisions Cg) = Some p ->
   In x (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end)%list ->
-  In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) ->
+  In x (map fst (c_ty Cg)) ->
   nlook x (c_ty C) <> None \/ In x (context_gens C).
 Proof.
-  intros C gg Cu nsu Cg nsg smc FCg Ks [_ [Prov [Coh [Types _]]]] k p x Ik Il Ix Ig _.
+  intros C gg Cg nsg caps smc FCg Ks Sub [_ [Prov [Coh [Types _]]]] k p x Ik Il Ix Ig.
   destruct (nlook x (c_ty C)) as [tx|] eqn:Lx; [left; discriminate|right].
   set (th := map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg)) in *.
   (* a merged-away x is mentioned by the merge *)
@@ -144,7 +144,7 @@ Proof.
     unfold canon. cbn. rewrite Ns. reflexivity. }
   assert (Keep : forall t, In x (gens t) -> In x (gens (canon C (app_subst th t)))).
   { intros t It. unfold canon. apply gens_keep; [|exact Ns]. exact (gens_hit t th x (TAbs x) It Th x (or_introl eq_refl)). }
-  assert (Nk : In k nsg) by (apply filter_In in Ik as [I _]; exact I).
+  assert (Nk : In k nsg) by exact (Sub k Ik).
   destruct (functx_scoped W gg Cg nsg FCg) as [_ [_ [_ [_ [_ [ShapeG _]]]]]].
   assert (Pid : provision_id k = k) by (pose proof (ShapeG k Nk) as Sh; destruct k; cbn in Sh |- *; congruence).
   rewrite Pid in Il.
@@ -193,7 +193,7 @@ Module S := PublicBodySlice.BodySlice Prims I0.
 
 Theorem captured_in_force_ok : forall W, S.CapturedInForceOk W.
 Proof.
-  intros W C gg Cu nsu Cg nsg smc FCg Ks Sat k p x Ik Il Ix Ig Ou.
-  exact (captured_mentioned W C gg Cu nsu Cg nsg smc FCg Ks Sat k p x Ik Il Ix Ig Ou).
+  intros W C gg Cg nsg caps smc FCg Ks Sub Sat k p x Ik Il Ix Ig.
+  exact (captured_mentioned W C gg Cg nsg caps smc FCg Ks Sub Sat k p x Ik Il Ix Ig).
 Qed.
 End LinkMerges.

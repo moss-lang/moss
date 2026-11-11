@@ -154,6 +154,7 @@ entry they belong to.
 | 121 | A copy reads an atomic class through its fixed members | M4c | C |
 | 122 | Type forwarding providers before assigning runtime code | typing/translation | none (equivalent factoring) |
 | 124 | Check a closure binding separately from the linked body | M4c | none (equivalent factoring) |
+| 125 | Translate the checked provision choices of a closure binding | M4c | none (equivalent factoring) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3789,6 +3790,22 @@ using one fresh atom per abstract class must preserve that behaviour
   follows from the existing declared input condition.
 - **Class.** Equivalent factoring. Binding conditions and runtime
   translation stay the same.
+
+### 125. Closure translation takes the checked provision choices (M4c)
+
+- **Rule.** `LinkBinding` records the source-to-target choices. The
+  binding rule builds its linked runtime map and the list of captured
+  needs from that one choice function. It still selects by the declared
+  context and checks the same scope and provision conditions.
+- **Executable.** `check_link_binding` returns the choice function.
+  `translate_link_targets` reads it to emit the map using the existing
+  provision lookup.
+- **Proof.** The checker gives the declared target choices and the
+  translator emits their audited map. The chosen keys are carried through
+  closure typing and copy chains. The capture proof takes the checked
+  subset of the source needs.
+- **Class.** Equivalent factoring. The selected provisions and generated
+  closure code stay the same.
 
 ---
 

@@ -223,16 +223,16 @@ Qed.
    it), so it is no longer part of this premise (chain_core_ok). *)
 Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
+  forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0
     pins d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C d types H g st ->
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   ClosureOk rr H u gfx (FunctorClosure code sms dc rms) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
-  ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
+  LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (A.link_map Ch0 Cg linktarget nsg)) None ->
+  ClosureOk rr H h0 gf0 (FunctorClosure code (Some (A.link_map Ch0 Cg linktarget nsg)) dc None) ->
   LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
-  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg gf0 ->
+  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0 ->
   LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -448,7 +448,7 @@ Qed.
 Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCoreOk W Prog argv read state_ok.
 Proof.
   intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3.
+    Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3.
   pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[_ [Env [Section KM]]] [Fc _]]]]]].
   pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
@@ -463,7 +463,7 @@ Proof.
   destruct (provide_result_news W _ _ _ _ _ PR) as [news [En KMn]].
   pose proof (selection_news u C _ C' ks rms _ d3 dr PR Sdr news En) as Cov.
   pose proof (New F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3
+    Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En) as EnvN.
   exists dr. split; [exact Sdr|]. split.
   { intros t It. pose proof (proj1 (OutsI t) It) as Ft.
@@ -570,17 +570,17 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   A.c_sub C = A.c_sub C0 -> A.c_merge C = A.c_merge C0 -> A.c_provisions C = A.c_provisions C0 -> A.c_locals C = A.c_locals C0 ->
   PublicFormation.TysScoped W C ->
   AuditFacts.FamilyApplication W C u matching th sm Cr ks ->
-  forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0
+  forall rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr' ks' binds0
     pins d1 d2 d3 g3 st3 H3 j',
   LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C0 d types H g st -> A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
-  ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None) ->
+  ClosureOk rr H u gfx (FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
-  PublicContextFacts.ClosureBinding W u Cu ns Cg nsg gfx ->
+  PublicContextFacts.ClosureBinding W u Cu ns Cg nsg linktarget gfx ->
   LR.PA.FS.CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
-  select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
+  select_provisions d1 (A.link_map Cu Cg linktarget nsg) = Some d2 ->
   LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
   heap_extends H H3 -> LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr Fb Cb d3 [] H3 g3 st3 ->
   forall dr, select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) None (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks')) = Some dr ->
@@ -589,7 +589,7 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
 
 Theorem family_link_results_ok : FamilyLinkNewOk -> LR.PA.FS.FamilyLinkResultsOk W Prog argv read state_ok.
 Proof.
-  intros New C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+  intros New C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg linktarget Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Binding PinsOk Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
   pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
@@ -602,7 +602,7 @@ Proof.
     destruct (PublicCallerKeys.selection_in _ _ _ _ _ (PublicCallerKeys.sm_find_some_in _ _ _ Fs)) as [Ik _].
     apply in_map_iff in Ik as [k1 [<- Ik1]]. destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
     destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
-  - exact (New C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+  - exact (New C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg linktarget Fg wrap
       Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Binding PinsOk Sel Sel2 Run Ext Pre3 dr Sdr).
 Qed.
 

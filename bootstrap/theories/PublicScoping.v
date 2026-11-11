@@ -1439,7 +1439,7 @@ Proof.
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
                   |F C pa a Typed
                   |F C pa u pg h Cu nsu Ch nsh target sm fx
-                  |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff Cs.
+                  |F C pa u pg gg Cu nsu Cg nsg h pins linktarget sm smc fx]; intros Fc Ff Cs.
     + assert (Sv : forall y, In y (gens (canon C tau)) -> In y (scope_gens C)).
       { intros y Iy. destruct (gens_canon C tau y Iy) as [I|I]; [exact (ty_scope C y (tyof_none_gens W _ _ _ _ T y I))|exact I]. }
       split; [exact (set_ty_scoped W F C t _ Cs)|split; [exact (scope_set_ty C t _)|split; [|reflexivity]]].

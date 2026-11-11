@@ -22,8 +22,8 @@ Definition LinkedInputsRead (Cu Cg : A.cx) (read : ty -> ty) : Prop :=
     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
     read (TAbs x) = read tx.
 
-Definition ClosureBinding W u Cu nsu Cg nsg gfx : Prop :=
-  A.LinkBinding W u Cu nsu Cg nsg /\
+Definition ClosureBinding W u Cu nsu Cg nsg target gfx : Prop :=
+  A.LinkBinding W u Cu nsu Cg nsg target /\
   forall T, ReadsMerge Cu (app_subst T) ->
     (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
     LinkedInputsRead Cu Cg (app_subst T).

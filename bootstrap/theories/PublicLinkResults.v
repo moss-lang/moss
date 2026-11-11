@@ -370,16 +370,16 @@ Qed.
    renaming (PublicOutputSubst) is what proves it. *)
 Definition ChainCoreOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
   PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs ->
-  forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0
+  forall rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0
     pins d1 d2 d3 g3 st3 H3 j',
   PA.FS.CopyA.S.Pre W Prog argv read state_ok rr F C d types H g st ->
   lookup_provision (IFun u) d = Some (FunctorClosure code sms dc rms) ->
   PA.FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H u gfx (FunctorClosure code sms dc rms) ->
   PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
-  PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
-  PA.FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
+  PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (A.link_map Ch0 Cg linktarget nsg)) None ->
+  PA.FS.CopyA.S.ClosureOk W Prog argv read state_ok rr H h0 gf0 (FunctorClosure code (Some (A.link_map Ch0 Cg linktarget nsg)) dc None) ->
   PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
-  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg gf0 ->
+  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0 ->
   PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -397,9 +397,9 @@ Theorem chain_results_scoped : ChainCoreOk ->
   KeptOutputsUnmentioned W -> PA.FS.CopyA.ChainResultsOk W Prog argv read state_ok.
 Proof.
   intros Core DS F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3.
+    Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3.
   destruct (Core F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3)
+    Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3)
     as [dr [Sdr [Read [Al [Env KM]]]]].
   pose proof Pre0 as [_ [_ [_ [_ [_ [Fc _]]]]]].
   pose proof DS as Sc.

@@ -1177,8 +1177,8 @@ Variables (h0 gg code : nat) (dg : A.decl) (nn : name) (ps : option (list name))
   (Fg : A.frame) (wrap : expr -> expr) (Cb : A.cx) (Fb : A.frame) (made outs' : list nat) (gen : nat -> nat)
   (Cr : A.cx) (ks' : list item) (binds0 : list binding) (pins : subst).
 Hypothesis LD : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg nn ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins.
-Variable gf0 : subst.
-Hypothesis Binding : PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg gf0.
+Variables (linktarget : item -> option item) (gf0 : subst).
+Hypothesis Binding : PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0.
 Variables (th : subst) (d d3 dc' : environment) (j' : nat) (g3 : locals) (st st3 : Prims.mstate).
 Hypothesis ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None.
 Hypothesis Run : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th dc') [] st binds0 = inl (d3, g3, st3).
@@ -1491,7 +1491,7 @@ Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Theorem chain_realize_ok : CSg.FL.CF.CN.ChainRealizeOk W Prog argv read state_ok.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg nn ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3
+    Ch0 nsh0 Cg nsg linktarget Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chn Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En.
   pose proof Pre0 as (_ & _ & _ & _ & [_ [_ [Section KMc]]] & Fmd).
   pose proof (PublicContextFacts.section_canonical C Section) as Idem.
@@ -1575,7 +1575,7 @@ Proof.
       unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
   set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks').
   pose proof (root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD gf0 Binding th d d3 _ j' g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD linktarget gf0 Binding th d d3 _ j' g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
   pose proof (chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
     Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
   assert (LenS : List.length (closure_sources rms srcs) = List.length ks).

@@ -73,7 +73,7 @@ Qed.
 
 Theorem family_link_new_ok : CF.CN.CC.FamilyLinkNewOk W Prog argv read state_ok.
 Proof.
-  intros C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+  intros C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg linktarget Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Binding PinsOk Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
   pose proof FA as (Cu1 & ns1 & (fx' & Fx' & Fam & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
   pose proof (conj EmittedNeeds TypedNeeds) as Sat.
@@ -91,7 +91,7 @@ Proof.
   2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code & sms & dc' & rms & rm & gfh & E & _).
        injection E as _ _ _ E. destruct rms; discriminate. }
   2: { destruct CP as (code & E & _). discriminate. }
-  destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB _]] & _).
+  destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & linktarget2 & dc2 & E & [pins2 [LB _]] & _).
   injection E as E1h _ E3h. subst h2 dc2.
   pose proof (link_body_family_bindings _ _ _ _ LB _ FB Fam) as FBs.
   (* 3: the body writes no input of F, so it keeps the caller's θ readings *)
@@ -127,7 +127,7 @@ Proof.
     2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code & sms & dc' & rms & rm & gfh & E & _).
          injection E as _ _ _ E. destruct rms; discriminate. }
     2: { destruct CP as (code & E & _). discriminate. }
-    destruct CL as (gg5 & h5 & Cu5 & nsu5 & Cg5 & nsg5 & dc5 & _ & _ & FCu5 & _ & FxIn5 & _).
+    destruct CL as (gg5 & h5 & Cu5 & nsu5 & Cg5 & nsg5 & linktarget5 & dc5 & _ & _ & FCu5 & _ & FxIn5 & _).
     destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu5) as [<- <-]. exact FxIn5. }
   assert (GfxA : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (app_subst th (TAbs x)))).
   { pose proof Pre0 as [_ [_ [_ [_ [[_ [_ [_ KM]]] _]]]]].
