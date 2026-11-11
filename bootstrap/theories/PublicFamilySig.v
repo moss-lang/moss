@@ -52,8 +52,8 @@ Proof.
   set (K := scope_gens C ++ gens ot).
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   assert (P1 : ReadOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_read _ _ Cf)).
-  assert (P2 : forall g v, In (g, v) (c_sub (family_context C matching)) -> incl (gens v) K).
-  { intros g0 v Iq y Iy. rewrite Esub in Iq. apply in_or_app. left. exact (scope_sub C g0 v y Iq Iy). }
+  assert (P2 : ReadWithin (fun y => In y K) (c_sub (family_context C matching))).
+  { rewrite Esub. apply canon_within. intros y Iy. apply in_or_app. left. exact Iy. }
   assert (P3 : forall x v, In (x, v) (c_ty (family_context C matching)) ->
      TyOk W (canon (family_context C matching) v) /\ incl (gens (canon (family_context C matching) v)) K).
   { intros x v Iq. rewrite Ety in Iq. unfold canon. rewrite Esub. apply in_app_or in Iq as [Iq|Iq].

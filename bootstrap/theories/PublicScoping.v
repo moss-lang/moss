@@ -648,7 +648,7 @@ Proof.
 Qed.
 
 Lemma entry_provision_gens_read_f : forall (K : nat -> Prop) s freeze e k p,
-  (forall t, TyIn K t -> TyIn K (app_subst s t)) -> (forall a, InstP (TyIn K) a -> InstP (TyIn K) (freeze a)) ->
+  ReadWithin K s -> (forall a, InstP (TyIn K) a -> InstP (TyIn K) (freeze a)) ->
   EntryP (TyIn K) e -> In (k, p) (entry_provision s freeze e) -> GensIn K (provision_gens p).
 Proof.
   intros K s freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p Read Fz Ok Iq; cbn in Iq; try contradiction;
@@ -690,12 +690,12 @@ Proof. intros K s e k p Range Ok Iq. exact (entry_provision_gens_f K s (fun a =>
 (* A functor's result read in C0: each new provision mentions only K. *)
 Lemma provide_result_gens : forall u C0 out C' ks (K : nat -> Prop),
   ProvideResult W u C0 out C' ks ->
-  (forall g v, In (g, v) (c_sub C0) -> GensIn K (gens v)) ->
+  ReadWithin K (c_sub C0) ->
   (forall x v, In (x, v) (c_ty C0) -> GensIn K (gens (canon C0 v))) ->
   (forall t, FunOutputs W u t -> GensIn K (gens (canon C0 (out t)))) ->
   forall k p, In (k, p) (c_provisions C') -> In (k, p) (c_provisions C0) \/ GensIn K (provision_gens p).
 Proof.
-  intros u C0 out C' ks K (d & ps & a & r & b & outs & es & tm' & D & FP & Outs & OIE & RK & ->) SubK Ty Out.
+  intros u C0 out C' ks K (d & ps & a & r & b & outs & es & tm' & D & FP & Outs & OIE & RK & ->) Read Ty Out.
   assert (Sc0 : GensIn K (tm_gens (output_type_map C0 outs out))).
   { intros g Ig. destruct (tm_gens_in _ g Ig) as [x [v [Iq Iv]]].
     unfold output_type_map in Iq. apply in_map_iff in Iq as [[y w] [E Iq]]. cbn in E. injection E as -> <-.
@@ -705,7 +705,7 @@ Proof.
   pose proof (proj2 (output_entries_gens K) _ _ _ _ _ _ OIE ltac:(intros g []) Sc0) as Es.
   intros k p Iq. cbn in Iq. apply in_app_or in Iq as [Iq|Iq]; [right|left; exact Iq].
   apply in_flat_map in Iq as [e [Ie Iq]]. apply (proj2 (in_rev _ _)) in Ie. rewrite Forall_forall in Es.
-  exact (entry_provision_gens K _ e k p SubK (Es e Ie) Iq).
+  exact (entry_provision_gens_read_f K _ (fun a => a) e k p Read (fun a H => H) (Es e Ie) Iq).
 Qed.
 
 (* A family applied in C at a matching scoped in C adds only provisions
@@ -719,7 +719,7 @@ Proof.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   intros k p Iq. rewrite <- Epr.
   apply (provide_result_gens _ _ _ _ _ (GenScoped W C) PR); [| | |exact Iq].
-  - intros g v Iq' y Iy. rewrite Esub in Iq'. exact (scope_sub C g v y Iq' Iy).
+  - rewrite Esub. apply canon_within. intros y Iy. exact Iy.
   - intros x v Iq' y Iy. rewrite Ety in Iq'. unfold canon in Iy. rewrite Esub in Iy. apply in_app_or in Iq' as [Iq'|Iq'].
     + apply (proj2 (in_rev _ _)) in Iq'. exact (Mt x v Iq' y Iy).
     + exact (scope_ty_canon C x v y Iq' Iy).
@@ -752,7 +752,7 @@ Proof.
   - intros n t mu Iq. cbn in Iq. rewrite LoR, Elo, El in Iq. exact (scoped_ext W _ _ _ (eq_sym ScE) (Ls n t mu Iq)).
   - intros k p Iq y Iy. unfold GenScoped. rewrite ScE. fold (GenScoped W C0 y). cbn in Iq.
     destruct (provide_result_gens _ _ _ _ _ K PR) with (k := k) (p := p) as [Iq'|G]; [| | |exact Iq| |exact (G y Iy)].
-    + intros g v Iv z Iz. rewrite Esub, Es in Iv. exact (scope_sub C0 g v z Iv Iz).
+    + rewrite Esub, Es. apply canon_within. intros z Iz. exact Iz.
     + intros x v Iv z Iz. unfold canon in Iz. rewrite Esub in Iz. fold (canon C v) in Iz.
       rewrite Ety in Iv. apply in_app_or in Iv as [Iv|Iv]; [apply (proj2 (in_rev _ _)) in Iv; exact (Mt x v Iv z Iz)|exact (Tin x v Iv z Iz)].
     + intros t Ft. exfalso. exact (family_no_outputs W u t Shape Ft).
@@ -927,7 +927,7 @@ Proof.
   - intros n t mu Iq. rewrite Elo in Iq. exact (scoped_mono _ _ _ Inc (Ls n t mu Iq)).
   - intros k p Iq.
     destruct (provide_result_gens _ _ _ _ _ (GenScoped W C') PR) with (k := k) (p := p) as [Iq'|G]; [| | |exact Iq| |exact G].
-    + intros g v Iv y Iy. rewrite <- Esub in Iv. exact (scope_sub C' g v y Iv Iy).
+    + rewrite <- Esub. apply canon_within. intros y Iy. exact Iy.
     + intros x v Iv y Iy. apply (table_scope C' x (canon C v)); [|exact Iy]. apply InTy.
       unfold output_type_map. apply in_map_iff. exists (x, v). split; [reflexivity|apply in_or_app; right; exact Iv].
     + intros t Ft y Iy. apply (table_scope C' t (canon C (TAbs (gensof t)))); [|exact Iy]. apply InTy.

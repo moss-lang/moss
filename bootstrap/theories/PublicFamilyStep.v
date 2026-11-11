@@ -193,8 +193,8 @@ Proof.
   set (Cf := A.family_context C matching) in *.
   assert (CanF : forall t, A.canon Cf t = A.canon C t) by (intros t; unfold A.canon; rewrite Esub; reflexivity).
   assert (P1 : PublicFormation.ReadOk W (A.c_sub Cf)) by (rewrite Esub, Es; exact (PublicFormation.cf_read W C0 Cf0)).
-  assert (P2 : forall g v, In (g, v) (A.c_sub Cf) -> PublicFormation.GensIn K (A.gens v)).
-  { intros g v Iq y Iy. rewrite Esub, Es in Iq. exact (PublicFormation.scope_sub C0 g v y Iq Iy). }
+  assert (P2 : PublicFormation.ReadWithin K (A.c_sub Cf)).
+  { rewrite Esub, Es. apply PublicFormation.canon_within. intros y Iy. exact Iy. }
   assert (P3 : forall x v, In (x, v) (A.c_ty Cf) ->
     PublicFormation.TyOk W (A.canon Cf v) /\ PublicFormation.GensIn K (A.gens (A.canon Cf v))).
   { intros x v Iq. rewrite CanF. rewrite Ety in Iq. apply in_app_or in Iq as [Iq|Iq];

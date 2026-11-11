@@ -234,8 +234,8 @@ Proof.
           [rewrite E; exact (typed_abstract W _ (outputs_typed W _ _ Ft))|].
         apply (fresh_abstract W). match goal with FF : A.FreshFor _ _ _ ?gs |- _ => exact (freshfor_fresh W _ _ _ _ FF Ig) end. }
       set (K := fun y => In y (scope_gens C')).
-      assert (SubK : forall g v, In (g, v) (c_sub C) -> GensIn K (gens v)).
-      { intros g v Iq y Iy. rewrite <- Esub in Iq. exact (scope_sub C' g v y Iq Iy). }
+      assert (ReadK : ReadWithin K (c_sub C)).
+      { rewrite <- Esub. apply canon_within. intros y Iy. exact Iy. }
       assert (TyK : forall x v, In (x, v) (c_ty C) -> TyOk W (canon C v) /\ GensIn K (gens (canon C v))).
       { intros x v Iq. split; [exact (canon_ok W C v Cf (cf_ty _ _ Cf _ _ Iq))|].
         exact (table_scope C' x (canon C v) (InTy _ _ (OldIn _ _ Iq))). }
@@ -243,12 +243,12 @@ Proof.
          TyOk W (canon C (TAbs (gensof t))) /\ GensIn K (gens (canon C (TAbs (gensof t))))).
       { intros t Ft. split; [exact (canon_ok W C _ Cf (tyok_abs W _ (OutAbs t Ft)))|].
         exact (table_scope C' t _ (InTy _ _ (OutIn t (proj2 (OutsI' t) Ft)))). }
-      destruct (provide_result_ok W _ _ _ _ _ K PR (cf_read _ _ Cf) SubK TyK OutK) as [_ [_ [_ Pr]]].
+      destruct (provide_result_ok W _ _ _ _ _ K PR (cf_read _ _ Cf) ReadK TyK OutK) as [_ [_ [_ Pr]]].
       split; [exact Inc|split; [|split; [|split; [exact Esub|exact (PublicContextFacts.provided_result_merge W u C _ C' _ PR)]]]].
       * intros y I. destruct (Back y I) as [I'|[t [Ft ->]]]; [left; exact I'|right].
         apply in_map. exact (proj2 (OutsI t) Ft).
       * intros k p Iq. destruct (Pr k p Iq) as [Iq'|[_ [_ Kr]]]; [left; exact Iq'|].
-        destruct (provide_result_gens W _ _ _ _ _ K PR SubK (fun x v I => proj2 (TyK x v I)) (fun t F => proj2 (OutK t F)) k p Iq)
+        destruct (provide_result_gens W _ _ _ _ _ K PR ReadK (fun x v I => proj2 (TyK x v I)) (fun t F => proj2 (OutK t F)) k p Iq)
           as [Iq'|G]; [left; exact Iq'|right].
         split; [exact G|]. destruct k as [| | |r0 m0 th0|]; cbn [PublicCallRealize.key_gens]; try (intros y []).
         exact (Kr r0 m0 th0 eq_refl).
