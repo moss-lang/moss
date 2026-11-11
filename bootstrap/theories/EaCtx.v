@@ -7,8 +7,8 @@
 (* instantiations unified; keys are                                         *)
 (* re-read and the round repeats until nothing changes (at most one round  *)
 (* per generation, plus one).  The orientation of a merge of two           *)
-(* generations is the strategy's (s_orient).  The result is validated:     *)
-(* idempotent, a function, and Unifies.                                    *)
+(* generations is the strategy's (s_orient). Validation checks Unifies;     *)
+(* principality, idempotence and storage bounds need algorithm proofs.      *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
