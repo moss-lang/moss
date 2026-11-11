@@ -26,8 +26,7 @@
    directory.  Exit status: 63 the front end rejected the program (a lex,
    parse or load error), 64 the elaborator rejected it, 65 a construct not
    modelled (a message "unsupported: ...": no `main`, a `main` that
-   assumes what no platform library provides, or more than one memory,
-   D79); otherwise 0 normal, the code for
+   assumes what no platform library provides); otherwise 0 normal, the code for
    proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of fuel; 2
    a usage error. *)
 module A = Audit.Semantics
@@ -58,33 +57,6 @@ let relative msg =
    Ea gives it only for a bundle without a defined `main` (a library), and
    for a `main` that assumes an item no platform library provides. *)
 let unsupported msg = starts_with "unsupported: " msg
-
-(* D79: the host (MossX) has one linear memory, so a program that gives
-   `Memory` another meaning, by a bind or as a functor application's output,
-   would run its memories on one address space, and could print a wrong
-   answer.  Such a program is refused as not modelled, as the old oracle
-   refused it. *)
-let rebinds_memory (w : A.Elaboration.world) (p : A.program) =
-  match EaTypes.lang_sym w "wasm" A.Elaboration.NSName "Memory" with
-  | None -> false
-  | Some m ->
-      let rec e (x : A.expr) = match x with
-        | A.EVar _ | A.EUnit | A.EVal _ | A.EBreak -> false
-        | A.ETag (_, _, a) | A.EAssign (_, a) | A.ELoop a | A.EReturn a | A.EField (a, _) -> e a
-        | A.ECall (_, _, _, args) | A.EInvoke (_, args) -> List.exists e args
-        | A.EMethod (a, _, _, args) -> e a || List.exists e args
-        | A.ELet (_, a, c) | A.ESeq (a, c) | A.EWhile (a, c) -> e a || e c
-        | A.EBind (bd, a) -> b bd || e a
-        | A.EIf (a, c, d) -> e a || e c || e d
-        | A.ERecord fs -> List.exists (fun (_, a) -> e a) fs
-        | A.EMatch (a, arms) -> e a || List.exists (fun (_, a) -> e a) arms
-      and b (x : A.binding) = match x with
-        | A.BType (t, _) -> t = m
-        | A.BValue (_, a) -> e a
-        | A.BApply (_, _, outs, _, _) -> List.exists (fun (s, t) -> s = m || t = m) outs
-        | _ -> false in
-      List.exists (fun (_, x) -> e x) p.A.program_functions
-      || List.exists (fun (_, c) -> List.exists b c.A.fc_bindings) p.A.program_functors
 
 let mangle f =
   let p = if Filename.is_relative f then Filename.concat (Sys.getcwd ()) f else f in
@@ -139,16 +111,11 @@ let () =
     | Sx.Good b -> b in
   time "loaded in %.3fs" (now () -. t0);
   let t1 = now () in
-  let p = match EaMain.elaborate b with
+  let w, p = match EaMain.elaborate b with
     | EaBase.Err m ->
         let m = relative m in
-        Printf.eprintf "[elab: %s]\n" m; exit (if unsupported m then 65 else 64)
-    | EaBase.Ok (w, p) ->
-        if rebinds_memory w p then begin
-          prerr_endline "[elab: unsupported: D79: more than one memory (`Memory` rebound); the host has one linear memory]";
-          exit 65
-        end;
-        p in
+        prerr_endline ("[elab: " ^ m ^ "]"); exit (if unsupported m then 65 else 64)
+    | EaBase.Ok result -> result in
   time "elaborated in %.3fs: %d fns, %d functor bodies" (now () -. t1)
     (List.length p.A.program_functions) (List.length p.A.program_functors);
   if !elab_only then exit 0;
@@ -173,7 +140,9 @@ let () =
   and functors = lazy (C.compile_functors view tbl ftbl p) in
   ignore (Lazy.force functions);
   ignore (Lazy.force functors);
-  let r = C.crun_program view tbl max_int p (MossX.init_state (Uint63.of_int !pages)) in
+  let memory = EaTypes.lang_sym w "wasm" A.Elaboration.NSName "Memory" in
+  let initial = MossX.init_memories (Uint63.of_int !pages) memory in
+  let r = C.crun_program view tbl max_int p initial in
   let st = r.I.evaluation_state in
   print_string (output st.MossX.ms_out); flush stdout;
   prerr_string (output st.MossX.ms_err);

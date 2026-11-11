@@ -110,6 +110,73 @@ Proof.
     | |- context [i64_load ?kind ?state ?address] => destruct (i64_load kind state address); reflexivity
     end.
 Qed.
+Lemma split_memory_arguments_renamed : forall primitive values,
+  BaseCall.split_memory_arguments primitive (map (rename_value action) values) =
+  let '(site, arguments) := BaseCall.split_memory_arguments primitive values in
+  (rename_site action site, map (rename_value action) arguments).
+Proof.
+  intros primitive values. unfold BaseCall.split_memory_arguments.
+  destruct (BaseCall.memory_operation primitive); [|reflexivity].
+  destruct values as [|[|tag payload|fields|sort bits|address [[kind tau]|]] rest]; reflexivity.
+Qed.
+
+Hypothesis injective : forall left right, rename left = rename right -> left = right.
+
+Lemma scratch_memory_key_renamed : forall state site,
+  scratch_memory_key (move state) (rename_site action site) =
+  rename_site action (scratch_memory_key state site).
+Proof.
+  intros state [tau|]; [destruct tau|]; try reflexivity.
+  unfold scratch_memory_key. cbn [rename_site option_map rename_ty rename_state ms_memory_parameter].
+  destruct (ms_memory_parameter state) as [parameter|]; [|reflexivity].
+  cbn [option_map]. fold (rename_subst action l).
+  pose proof (rename_lookup_subst action injective parameter l) as Lookup.
+  cbn [base_renaming rename_symbol] in Lookup.
+  rewrite Lookup.
+  destruct (lookup_subst parameter l) as [key|]; [|reflexivity].
+  cbn [option_map]. change (TAbs (rename parameter)) with (rename_ty action (TAbs parameter)).
+  rewrite rename_ty_eqb by exact injective.
+  destruct (ty_eqb key (TAbs parameter)); reflexivity.
+Qed.
+
+Lemma find_scratch_memory_renamed : forall key memories,
+  find_scratch_memory (rename_ty action key) (map (rename_memory_row rename) memories) =
+  find_scratch_memory key memories.
+Proof.
+  intros key memories. induction memories as [|[other memory] rest IH]; [reflexivity|].
+  cbn [map rename_memory_row fst snd find_scratch_memory]. rewrite rename_ty_eqb by exact injective.
+  now destruct (ty_eqb key other).
+Qed.
+
+Lemma set_scratch_memory_renamed : forall key memory memories,
+  set_scratch_memory (rename_ty action key) memory (map (rename_memory_row rename) memories) =
+  map (rename_memory_row rename) (set_scratch_memory key memory memories).
+Proof.
+  intros key memory memories. induction memories as [|[other old] rest IH]; [reflexivity|].
+  cbn [map rename_memory_row fst snd set_scratch_memory]. rewrite rename_ty_eqb by exact injective.
+  now destruct (ty_eqb key other); cbn; try rewrite IH.
+Qed.
+
+Lemma in_memory_renamed : forall site left right state,
+  (forall state,
+    right (move state) = let '(out, next) := left state in (rename_signal action out, move next)) ->
+  in_memory (scratch_memory_key (move state) (rename_site action site)) right (move state) =
+  let '(out, next) := in_memory (scratch_memory_key state site) left state in (rename_signal action out, move next).
+Proof.
+  intros site left right state Steps.
+  rewrite scratch_memory_key_renamed. unfold in_memory.
+  destruct (scratch_memory_key state site) as [key|]; [|apply Steps].
+  cbn [rename_site option_map]. change (ms_scratch_memories (move state)) with
+    (map (rename_memory_row rename) (ms_scratch_memories state)).
+  rewrite find_scratch_memory_renamed.
+  change (with_linear_memory (move state) _ _) with
+    (move (with_linear_memory state (find_scratch_memory key (ms_scratch_memories state))
+      (ms_scratch_memories state))).
+  rewrite Steps. destruct (left _) as [out next].
+  change (linear_memory_of (move next)) with (linear_memory_of next).
+  rewrite set_scratch_memory_renamed. reflexivity.
+Qed.
+
 Theorem raw_primitive_renamed : forall P P' operation values state,
   views_related action P P' ->
   rename (view_bool P) = view_bool P ->
@@ -126,10 +193,13 @@ Proof.
   - apply PublicOperationFacts.decode_canonical in Decode. subst operation.
     destruct (Heap.is_gc primitive) eqn:IsGC; [now apply raw_gc_renamed|].
     pose proof (rename_plain_primitive primitive IsGC) as Fixed.
-    pose proof (gc_arguments_renamed rename primitive values) as Arguments.
+    unfold BaseHost.primitive, BaseHost.primitive_in, BaseHost.primitive_decoded, BaseHost.with_memory_arguments.
+    rewrite rename_base_encoding, Fixed, !BaseHost.decode_host_encode, split_memory_arguments_renamed.
+    destruct (BaseCall.split_memory_arguments primitive values) as [site arguments].
+    apply in_memory_renamed. intros current.
+    pose proof (gc_arguments_renamed rename primitive arguments) as Arguments.
     rewrite Fixed in Arguments.
-    unfold BaseHost.primitive, BaseHost.primitive_in, BaseHost.primitive_decoded.
-    rewrite rename_base_encoding, Fixed, !BaseHost.decode_host_encode, !run_prim_fast_spec.
+    unfold BaseHost.primitive_step. rewrite !run_prim_fast_spec.
     unfold run_prim. rewrite BaseHost.concrete_is_gc, IsGC.
     rewrite Arguments, mem_args_renamed.
     rewrite plain_step_renamed; try assumption.
@@ -164,6 +234,7 @@ Definition default_interfaces (left right : Public.interface) : Prop :=
   left = Public.default_interface /\ right = Public.default_interface.
 
 Lemma default_raw_calls_related : forall rename P P',
+  (forall left right, rename left = rename right -> left = right) ->
   views_related (base_renaming rename) P P' ->
   rename (view_bool P) = view_bool P ->
   rename (view_true P) = view_true P ->
@@ -172,7 +243,7 @@ Lemma default_raw_calls_related : forall rename P P',
     (Execution.R.machine_states_related default_interfaces (host_states_related rename))
     Public.ReferenceHost.raw_primitive P P'.
 Proof.
-  intros rename P P' Views Bool True False operation values
+  intros rename P P' Injective Views Bool True False operation values
     [interface [argv read state]] [interface' [argv' read' state']] Related.
   destruct Related as [[Left Right] [Args [Read External]]].
   cbn [Public.arguments Public.read_file Public.external fst snd] in Left, Right, Args, Read, External.
@@ -180,11 +251,12 @@ Proof.
   cbn [Public.ReferenceHost.raw_primitive Public.default_interface Public.supports
     Public.primitive Public.external Public.arguments Public.read_file].
   unfold BaseHost.Concrete.primitive.
-  rewrite (raw_primitive_renamed rename P P' operation values state Views Bool True False).
+  rewrite (raw_primitive_renamed rename Injective P P' operation values state Views Bool True False).
   destruct (BaseHost.primitive P operation values state); repeat split; reflexivity.
 Qed.
 
 Theorem default_primitive_calls_related : forall rename P P',
+  (forall left right, rename left = rename right -> left = right) ->
   views_related (base_renaming rename) P P' ->
   rename (view_bool P) = view_bool P ->
   rename (view_true P) = view_true P ->
@@ -192,24 +264,35 @@ Theorem default_primitive_calls_related : forall rename P P',
   Execution.N.E.primitives_related (base_renaming rename)
     (Execution.R.machine_states_related default_interfaces (host_states_related rename)) P P'.
 Proof.
-  intros rename P P' Views Bool True False.
+  intros rename P P' Injective Views Bool True False.
   unfold Execution.N.E.primitives_related, Public.ReferenceHost.run_prim, Base.call.
   apply base_call_equivariant, default_raw_calls_related; assumption.
 Qed.
 
-Lemma initial_worlds_related : forall rename argv read pages,
-  let initial := Public.World argv read (init_state pages) in
-  Execution.R.worlds_related (host_states_related rename) initial initial.
+Lemma init_state_renamed : forall rename pages,
+  init_state pages = rename_state rename (init_state pages).
 Proof.
-  intros rename argv read pages. split; [reflexivity|split; [reflexivity|]].
-  change (init_state pages = rename_state rename (init_state pages)).
-  unfold init_state. rewrite <- store_le_renamed.
+  intros rename pages. unfold init_state. rewrite <- store_le_renamed.
   match goal with |- context [mem_grow ?state pages] => set (empty := state) end.
   assert (Empty : rename_state rename empty = empty) by reflexivity.
   pose proof (@mem_grow_renamed rename empty pages) as Grow. rewrite Empty in Grow.
   destruct (mem_grow empty pages) as [count state].
   cbn [rename_count_state] in Grow. injection Grow as State.
   cbn [snd]. now rewrite <- State.
+Qed.
+
+Lemma initial_worlds_related : forall rename argv read pages parameter,
+  Execution.R.worlds_related (host_states_related rename)
+    (Public.World argv read (init_memories pages parameter))
+    (Public.World argv read (init_memories pages (option_map rename parameter))).
+Proof.
+  intros rename argv read pages parameter. split; [reflexivity|split; [reflexivity|]].
+  unfold host_states_related. cbn [Public.external]. unfold init_memories.
+  pose proof (f_equal ms_heap (init_state_renamed rename pages)) as Heap.
+  cbn [rename_state ms_heap] in Heap.
+  unfold rename_state. cbn [ms_mem ms_pages ms_out ms_err ms_heap ms_hnext
+    ms_fds ms_nextfd ms_memory_parameter ms_scratch_memories map].
+  now rewrite <- Heap.
 Qed.
 
 Lemma related_final_streams : forall rename left right,

@@ -624,6 +624,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.MossX.run_prim_fast);
   root (@NM.MossX.run_prim);
   root (@NM.MossX.init_state);
+  root (@NM.MossX.init_memories);
+  root (@NM.MossX.in_memory_isolated);
 
 (* Read-set pruning of Audit programs. *)
   root (@PruneTop.PS.prune_sound);
@@ -648,7 +650,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@captrim_runs_agree);
   root (@fastpath_prune_captrim_runs_agree);
 
-(* Ignored nonallocating primitive sites preserve exact public execution. *)
+(* Ignored primitive sites preserve exact public execution. *)
   root (@PublicSiteErasure.reference_site_erasure);
   root (@PublicSiteErasure.Simulation.primitive_bindings_normalized);
   root (@PublicSiteErasure.Simulation.primitive_chain_normalized);

@@ -46,6 +46,9 @@ Extract Constant loop_fuel => "(1 lsl 34)".
    generalize, and caml_equal is then a large share of the run time. *)
 Extract Inlined Constant Nat.eqb => "Int.equal".
 Extract Inlined Constant PeanoNat.Nat.eqb => "Int.equal".
+(* ExtrOcamlNatInt maps Init.Nat.add to native addition. Use the same
+   implementation for the PeanoNat copy used in elaboration budgets. *)
+Extract Inlined Constant PeanoNat.Nat.add => "(+)".
 Extract Inlined Constant Nat.leb => "(<=)".
 Extract Inlined Constant Nat.ltb => "(<)".
 Extract Constant Nat.div => "fun n m -> if m = 0 then 0 else n / m".
@@ -75,7 +78,7 @@ Extraction NoInline BaseHost.decode_host_operation.
 Extract Constant BaseHost.decode_host => "PrimCache.memoize_host decode_host_operation".
 Extraction Inline BaseFacts.DeferredBaseCall.result_at_site.
 Extraction Blacklist String List Char Bool.
-Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
+Separate Extraction AuditBase.BaseCall.call init_memories run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
   BootstrapRun.passes BootstrapRun.indexed_program_of CodeTable.get

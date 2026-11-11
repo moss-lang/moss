@@ -2,7 +2,7 @@
    those values keeps their addresses and the external byte state. *)
 From Stdlib Require Import List Bool Arith PrimInt63 Uint63.
 From NM Require Import Audit AuditBase RuntimeRenaming BaseRenaming.
-From NM Require BaseHost BaseHostScalars MossX ExecutionModel HTrie NatTrie.
+From NM Require BaseFacts BaseHost BaseHostScalars MossX ExecutionModel HTrie NatTrie.
 Import Audit.Semantics ListNotations.
 Import MossX.
 Import ExecutionModel (xvalue(..), xout(..), prim, xprog, base_primitive).
@@ -50,9 +50,14 @@ Fixpoint rename_heap (heap : NatTrie.tmap hobj) : NatTrie.tmap hobj :=
   | NatTrie.TN lower cell upper => NatTrie.TN (rename_heap lower) (option_map rename_cell cell) (rename_heap upper)
   end.
 
+Definition rename_memory_row (row : ty * linear_memory) : ty * linear_memory :=
+  (rename_ty action (fst row), snd row).
+
 Definition rename_state (state : mstate) : mstate :=
   MS (ms_mem state) (ms_pages state) (ms_out state) (ms_err state)
-    (rename_heap (ms_heap state)) (ms_hnext state) (ms_fds state) (ms_nextfd state).
+    (rename_heap (ms_heap state)) (ms_hnext state) (ms_fds state) (ms_nextfd state)
+    (option_map rename (ms_memory_parameter state))
+    (map rename_memory_row (ms_scratch_memories state)).
 
 Definition rename_step (result : xout * mstate) : xout * mstate :=
   (rename_machine_out (fst result), rename_state (snd result)).
@@ -293,7 +298,11 @@ Proof.
   assert (RenamedGC : Heap.is_gc (rename_base_primitive rename primitive) = true).
   { destruct primitive; exact IsGC. }
   unfold BaseHost.primitive, BaseHost.primitive_in, BaseHost.primitive_decoded.
-  rewrite rename_base_encoding, !BaseHost.decode_host_encode, !BaseHost.gc_run by assumption.
+  rewrite rename_base_encoding, !BaseHost.decode_host_encode.
+  unfold BaseHost.with_memory_arguments, BaseCall.split_memory_arguments.
+  rewrite (BaseFacts.memory_operation_gc _ IsGC), (BaseFacts.memory_operation_gc _ RenamedGC).
+  cbn [scratch_memory_key in_memory]. unfold BaseHost.primitive_step.
+  rewrite !BaseHost.gc_run by assumption.
   rewrite gc_arguments_renamed, gc_step_renamed by assumption.
   destruct (gc_prim _ _ _) as [out next].
   cbn [rename_step fst snd]. now rewrite from_signal_renamed.

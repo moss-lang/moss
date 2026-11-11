@@ -32,10 +32,19 @@ Definition decode_host_operation (operation : op) : option (wasm_prim * prim) :=
   option_map (fun p => (p, base_primitive p)) (decode operation).
 Definition decode_host := decode_host_operation.
 
-Definition primitive_decoded (P : xprog) (p : wasm_prim) (concrete : prim)
+Definition primitive_step (P : xprog) (p : wasm_prim) (concrete : prim)
     (values : list value) (state : mstate) : signal * mstate :=
   let '(out, next) := run_prim_fast P concrete (gc_arguments p values) state in
   (from_signal out, next).
+
+Definition with_memory_arguments (p : wasm_prim) (values : list value)
+    (step : list value -> mstate -> signal * mstate) (state : mstate) : signal * mstate :=
+  let '(site, arguments) := BaseCall.split_memory_arguments p values in
+  in_memory (scratch_memory_key state site) (step arguments) state.
+
+Definition primitive_decoded (P : xprog) (p : wasm_prim) (concrete : prim)
+    (values : list value) (state : mstate) : signal * mstate :=
+  with_memory_arguments p values (primitive_step P p concrete) state.
 
 Definition primitive_in (P : xprog) (operation : op) (values : list value)
     (state : mstate) : signal * mstate :=
@@ -106,12 +115,12 @@ Proof. destruct state; reflexivity. Qed.
 
 Lemma direct_i32_agrees : forall P p values state result,
   direct_i32 p values state = Some result ->
-  primitive_decoded P p (base_primitive p) values state = result.
+  primitive_step P p (base_primitive p) values state = result.
 Proof.
   intros P p values state result Direct.
   destruct p; destruct values as [|a [|b [|extra rest]]];
     cbn [direct_i32] in Direct; try discriminate Direct;
-    unfold primitive_decoded; cbn [base_primitive gc_arguments map run_prim_fast numeric_prim].
+    unfold primitive_step; cbn [base_primitive gc_arguments map run_prim_fast numeric_prim].
   all: repeat match type of Direct with
     | context [scalar_i32 ?w] =>
         let bits := fresh "bits" in let read := fresh "Read" in
@@ -133,28 +142,29 @@ Proof.
   - unfold unit_or_trap. destruct (store_op _ _ _ _); [reflexivity|now rewrite keep_heap_same].
 Qed.
 
-(* A successful direct step is one of the numeric or memory operations
-   whose arguments and result already use the host calling convention. *)
-Lemma direct_i32_no_adaptation : forall p values state out next,
-  direct_i32 p values state = Some (out, next) ->
-  BaseCall.primitive_arguments p values = values /\
-  forall site, BaseCall.allocation_result p site out = out.
+Definition direct_step (P : xprog) (p : wasm_prim) (concrete : prim)
+    (values : list value) (state : mstate) : signal * mstate :=
+  match direct_i32 p values state with
+  | Some result => result
+  | None => primitive_step P p concrete values state
+  end.
+
+Lemma direct_step_agrees : forall P p values state,
+  direct_step P p (base_primitive p) values state =
+  primitive_step P p (base_primitive p) values state.
 Proof.
-  intros p values state out next Direct.
-  destruct p; destruct values as [|a [|b [|extra rest]]];
-    cbn [direct_i32] in Direct; try discriminate; split; reflexivity.
+  intros. unfold direct_step. destruct (direct_i32 p values state) eqn:Direct; [|reflexivity].
+  symmetry. now apply direct_i32_agrees.
 Qed.
 
 Definition call_in_deferred (P : xprog) (operation : op) (site : unit -> option ty)
     (values : list value) (state : mstate) : signal * mstate :=
   match decode_host operation with
   | Some (p, concrete) =>
-      match direct_i32 p values state with
-      | Some result => result
-      | None =>
-          let '(out, next) := primitive_decoded P p concrete (BaseCall.primitive_arguments p values) state in
-          (DeferredBaseCall.result_at_site p site out, next)
-      end
+      let arguments := BaseCall.primitive_arguments p values in
+      let memory := if BaseCall.memory_operation p then scratch_memory_key state (site tt) else None in
+      let '(out, next) := in_memory memory (direct_step P p concrete arguments) state in
+      (DeferredBaseCall.result_at_site p site out, next)
   | None => (UnsupportedOperation (unsupported_code operation), state)
   end.
 
@@ -164,12 +174,16 @@ Theorem call_in_deferred_agrees : forall P operation site values state,
 Proof.
   intros. unfold call_in_deferred, BaseCall.call, primitive, primitive_in, decode_host, decode_host_operation.
   destruct (decode operation) as [p|]; [|destruct (site tt); reflexivity].
-  cbn [option_map]. destruct (direct_i32 p values state) as [[out next]|] eqn:Direct.
-  - destruct (direct_i32_no_adaptation _ _ _ _ _ Direct) as [Arguments Result].
-    rewrite Arguments, (direct_i32_agrees (legacy_view P) _ _ _ _ Direct).
-    destruct (site tt); [now rewrite Result|reflexivity].
-  - destruct (primitive_decoded _ _ _ _ _) as [out next].
-    rewrite DeferredBaseCall.result_at_site_agrees. now destruct (site tt).
+  cbn [option_map]. unfold primitive_decoded, with_memory_arguments, BaseCall.arguments_at_site.
+  rewrite split_memory_arguments_at_site.
+  assert (Memory : scratch_memory_key state (if BaseCall.memory_operation p then site tt else None) =
+      (if BaseCall.memory_operation p then scratch_memory_key state (site tt) else None)).
+  { destruct (BaseCall.memory_operation p); reflexivity. }
+  rewrite Memory. unfold in_memory.
+  destruct (if BaseCall.memory_operation p then scratch_memory_key state (site tt) else None);
+    rewrite direct_step_agrees;
+    destruct (primitive_step _ _ _ _ _) as [out next];
+    now rewrite DeferredBaseCall.result_at_site_agrees.
 Qed.
 
 Definition call_in (P : xprog) (operation : op) (site : option ty)
@@ -294,16 +308,32 @@ Proof. destruct p; reflexivity. Qed.
 Lemma decode_host_encode : forall p, decode_host (encode p) = Some (p, base_primitive p).
 Proof. intros. unfold decode_host, decode_host_operation. now rewrite PublicOperationFacts.decode_encode. Qed.
 
+Lemma primitive_step_keeps_heap : forall P p values state typing,
+  Heap.is_gc p = false ->
+  heap_ok typing state ->
+  heap_ok typing (snd (primitive_step P p (base_primitive p) values state)).
+Proof.
+  intros P p values state typing NotGC Valid.
+  unfold primitive_step. rewrite run_prim_fast_spec. unfold run_prim.
+  rewrite concrete_is_gc, NotGC.
+  destruct (run_prim0 _ _ _ _) as [out next]. exact Valid.
+Qed.
+
 Lemma primitive_keeps_heap : forall P operation ws state typing,
   (match decode operation with Some p => Heap.is_gc p = false | None => True end) ->
   heap_ok typing state ->
   heap_ok typing (snd (primitive P operation ws state)).
 Proof.
-  intros P operation ws state typing NotGC Valid. unfold primitive, primitive_in, primitive_decoded, decode_host, decode_host_operation.
-  destruct (decode operation) eqn:Decode; [|exact Valid].
-  cbn [option_map]. rewrite run_prim_fast_spec. unfold run_prim.
-  rewrite concrete_is_gc, NotGC.
-  destruct (run_prim0 _ _ _ _) as [out next]. exact Valid.
+  intros P operation ws state typing NotGC Valid.
+  unfold primitive, primitive_in, primitive_decoded, decode_host, decode_host_operation, with_memory_arguments.
+  destruct (decode operation) as [p|]; [|exact Valid].
+  cbn [option_map]. destruct (BaseCall.split_memory_arguments p ws) as [site args].
+  unfold in_memory. destruct (scratch_memory_key state site).
+  - specialize (primitive_step_keeps_heap (legacy_view P) p args
+        (with_linear_memory state (find_scratch_memory t (ms_scratch_memories state))
+          (ms_scratch_memories state)) typing NotGC Valid) as Keep.
+    destruct (primitive_step _ _ _ _ _) as [out next]. exact Keep.
+  - now apply primitive_step_keeps_heap.
 Qed.
 
 Lemma gc_run : forall P p ws state, Heap.is_gc p = true ->
@@ -330,7 +360,9 @@ Lemma primitive_gc : forall P p ws state typing Q,
 Proof.
   intros P p ws state typing Q Valid Pre.
   assert (IsGC : Heap.is_gc p = true) by (destruct p; cbn in Pre; try contradiction; reflexivity).
-  unfold primitive, primitive_in, primitive_decoded. rewrite decode_host_encode, gc_run by exact IsGC.
+  unfold primitive, primitive_in, primitive_decoded, with_memory_arguments, BaseCall.split_memory_arguments.
+  rewrite decode_host_encode, (memory_operation_gc _ IsGC).
+  cbn [scratch_memory_key in_memory]. unfold primitive_step. rewrite gc_run by exact IsGC.
   destruct p; cbn [Heap.gc_pre] in Pre; try contradiction.
   - destruct ws as [|v [|extra rest]]; try contradiction.
     cbn [gc_arguments base_primitive gc_prim].
@@ -445,15 +477,33 @@ Lemma method_arguments : forall p params result values,
   prim_msig p = Some (params, result) -> gc_arguments p values = map to_scalar values.
 Proof. destruct p; intros; try reflexivity; discriminate. Qed.
 
+Lemma memory_result : forall P p site values state shape,
+  (forall st, AuditBase.BaseLaws.primitive_result P shape
+    (fst (primitive_step (legacy_view P) p (base_primitive p) values st))) ->
+  AuditBase.BaseLaws.primitive_result P shape
+    (fst (primitive_decoded (legacy_view P) p (base_primitive p)
+      (BaseCall.memory_arguments p site values) state)).
+Proof.
+  intros P p site values state shape Result.
+  unfold primitive_decoded, with_memory_arguments.
+  rewrite split_memory_arguments_at_site. unfold in_memory.
+  destruct (scratch_memory_key _ _); [|apply Result].
+  specialize (Result (with_linear_memory state
+    (find_scratch_memory t (ms_scratch_memories state)) (ms_scratch_memories state))).
+  destruct (primitive_step _ _ _ _ _); exact Result.
+Qed.
+
 Theorem primitive_laws : forall P,
   AuditBase.BaseLaws.laws mstate P (fun _ => true) primitive heap_ok.
 Proof.
   intros P. repeat split.
-  - intros p params result values state _ Sig Args.
-    unfold primitive, primitive_in, primitive_decoded. rewrite decode_host_encode, (plain_arguments _ _ _ _ Sig).
+  - intros p params result site values state _ Sig Args.
+    unfold primitive, primitive_in. rewrite decode_host_encode.
+    apply memory_result. intros st. unfold primitive_step. rewrite (plain_arguments _ _ _ _ Sig).
     exact (scalar_sound P _ _ _ _ _ Sig Args).
-  - intros p params result values state _ Sig Args.
-    unfold primitive, primitive_in, primitive_decoded. rewrite decode_host_encode, (method_arguments _ _ _ _ Sig).
+  - intros p params result site values state _ Sig Args.
+    unfold primitive, primitive_in. rewrite decode_host_encode.
+    apply memory_result. intros st. unfold primitive_step. rewrite (method_arguments _ _ _ _ Sig).
     exact (scalar_method_sound P _ _ _ _ _ Sig Args).
   - intros operation values state Decode _. unfold primitive, primitive_in, primitive_decoded, decode_host, decode_host_operation.
     now rewrite Decode.

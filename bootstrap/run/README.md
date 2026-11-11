@@ -110,17 +110,15 @@ primitive NAME]`, `[out of fuel]`. Rejections are `[front end: MSG]` and
 | 0, or proc_exit's code | normal |
 | 63 | the front end rejected the program (lex, parse or load error) |
 | 64 | the elaborator rejected it |
-| 65 | a construct not modelled, which is an elaborator message starting `unsupported: `: no `main` (a library), a `main` that assumes an item no platform library provides, or more than one memory (D79, below) |
+| 65 | a construct not modelled, which is an elaborator message starting `unsupported: `: no `main` (a library), a `main` that assumes an item no platform library provides |
 | 134 / 3 / 4 / 5 | trap / stuck / unsupported primitive / out of fuel |
 | 2 | usage |
 
-**One memory (D79).** MossX's machine has one linear memory, and a memory
-primitive is not told which memory it is a method of. An `Addr` is
-unboxed, so a load or store receives only an I32, and `run_prim` does not
-receive the method key's site type. The driver therefore refuses a program
-that rebinds `Memory`, by a bind or as a functor application's output, with
-`unsupported: D79` (exit 65), as the old oracle did. Otherwise its memories
-would share one address space, and it could print a wrong answer.
+**Linear memories (D79).** Base selects the memory from the resolved
+`Memory` argument of each `Addr` method. Each distinct type names its own
+pages and allocator. Additional memories start at one page with the heap
+pointer at address 16 set to 1024. The `--pages` option sets the main
+memory's initial size. The WASI operations use main memory.
 
 The interpreter recurses as deeply as the program it runs. Run it with
 `ulimit -s unlimited`. The full x86 Linux self-compile at `9af8a75`

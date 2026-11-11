@@ -409,6 +409,37 @@ Definition primitive_arguments (p : wasm_prim) (ws : list value) : list value :=
   | PArrGet, r :: args | PArrSet, r :: args | PArrFill, r :: args => raw_receiver r :: args
   | _, _ => ws
   end.
+Definition memory_operation (p : wasm_prim) : bool :=
+  match p with
+  | PLoad _ | PStore _ | PF64Load | PF64Store | PF32Load | PF32Store
+  | PI64Load _ | PI64Store _ | PMemSize | PMemGrow | PMemCopy | PMemFill => true
+  | _ => false
+  end.
+
+Definition uses_site (p : wasm_prim) : bool :=
+  match p with PBox _ | PArrNew _ => true | _ => memory_operation p end.
+
+(* The Base raw host ABI prefixes memory calls with the resolved receiver
+   type. A reference header carries the type through the existing value
+   interface. This argument is consumed by the host and never dereferenced. *)
+Definition memory_arguments (p : wasm_prim) (site : unit -> option ty)
+    (values : list value) : list value :=
+  if memory_operation p
+  then VRef 0 (option_map (fun t => (0, t)) (site tt)) :: values
+  else values.
+
+Definition split_memory_arguments (p : wasm_prim) (values : list value) : option ty * list value :=
+  if memory_operation p then
+    match values with
+    | VRef _ header :: rest => (option_map snd header, rest)
+    | _ => (None, values)
+    end
+  else (None, values).
+
+Definition arguments_at_site (p : wasm_prim) (site : unit -> option ty)
+    (values : list value) : list value :=
+  memory_arguments p site (primitive_arguments p values).
+
 Definition allocation_result (p : wasm_prim) (tau : ty) (o : signal) : signal :=
   match p, o with
   | PBox _, Normal (VTag n (VRef a None)) => Normal (VTag n (VRef a (Some (0, tau))))
@@ -420,7 +451,7 @@ Definition call {S : Type}
     (P : program_view) (operation : op) (ot : option ty)
     (ws : list value) (st : S) : signal * S :=
   let decoded := decode operation in
-  let arguments := match decoded with Some p => primitive_arguments p ws | None => ws end in
+  let arguments := match decoded with Some p => arguments_at_site p (fun _ => ot) ws | None => ws end in
   let '(o, st') := primitive P operation arguments st in
   (match ot, decoded with Some tau, Some p => allocation_result p tau o | _, _ => o end, st').
 
@@ -913,14 +944,14 @@ Local Unset Implicit Arguments.
       (heap_valid : Heap.hty -> S -> Prop) : Prop :=
     let step := primitive P in
     let valid_heap := heap_valid in
-    (forall p params result values state,
+    (forall p params result site values state,
       supported (encode p) = true -> prim_sig p = Some (params, result) ->
       Forall2 (value_shape P) values params ->
-      primitive_result P result (fst (step (encode p) values state))) /\
-    (forall p params result values state,
+      primitive_result P result (fst (step (encode p) (BaseCall.memory_arguments p site values) state))) /\
+    (forall p params result site values state,
       supported (encode p) = true -> prim_msig p = Some (params, result) ->
       Forall2 (value_shape P) values params ->
-      primitive_result P result (fst (step (encode p) values state))) /\
+      primitive_result P result (fst (step (encode p) (BaseCall.memory_arguments p site values) state))) /\
     (forall operation values state, decode operation = None -> supported operation = true ->
       fst (step operation values state) = UnsupportedOperation (unsupported_code operation)) /\
     (forall typing weaker state,

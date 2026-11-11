@@ -18,7 +18,7 @@
 use moss_tests::{
     build_with, compile, oracle, oracle_rejects, oracle_run, rejects_with,
     run_module, run_module_code, starts_with_rec_group, wasm_file, wasm_text, wasmtime, Out,
-    ORACLE_REJECTED, ORACLE_UNSUPPORTED, TRAP,
+    ORACLE_REJECTED, TRAP,
 };
 
 const PRELUDE: &str = "lib/prelude.moss";
@@ -72,14 +72,6 @@ fn oracle_says(entry: &str, message: &str) {
     let said = oracle_rejects(entry);
     assert!(said.contains(message), "{entry}: the oracle said {said:?}, not {message:?}");
 }
-
-/// The oracle reports a construct of `entry` it does not model.
-fn oracle_unsupported(entry: &str) {
-    let out = oracle(entry, &[]);
-    assert_eq!(out.code, ORACLE_UNSUPPORTED, "{entry}: {}", out.stderr);
-    assert!(out.stderr.contains("unsupported: D79"), "{entry}: {}", out.stderr);
-}
-
 
 /// The oracle traps on `entry`, after printing `stdout`, naming the trap.
 fn oracle_traps(entry: &str, stdout: &str, trap: &str) {
@@ -564,13 +556,7 @@ fn matches_the_bootstrap_on_behaviour() {
     let checked = super::parallel::map(cases, |(name, expected, prelude)| {
         let entry = wasi(name);
         assert_eq!(run_moss(&entry, prelude), *expected, "{entry}");
-        if *name == "gc_array_memory" {
-            // Reference gap (D79): one linear memory, so the oracle
-            // refuses a `Memory` bind as not modelled.
-            oracle_unsupported(&entry);
-        } else {
-            assert_eq!(oracle_run(&entry, &[]), *expected, "{entry}");
-        }
+        assert_eq!(oracle_run(&entry, &[]), *expected, "{entry}");
     });
     assert_eq!(checked.len(), cases.len());
     eprintln!("behaviour agreement over {} programs", checked.len());
@@ -614,13 +600,7 @@ fn gc_arrays() {
         ("gc_array_memory", "6\n6\n"),
     ] {
         let entry = wasi(name);
-        if name == "gc_array_memory" {
-            // Reference gap (D79): one linear memory, so the oracle
-            // refuses a `Memory` bind as not modelled.
-            oracle_unsupported(&entry);
-        } else {
-            assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
-        }
+        assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
         let module = build_with(&entry, PRELUDE);
         assert!(starts_with_rec_group(&module), "{entry}");
         let text = wasm_text(&module);
@@ -773,13 +753,7 @@ fn d84_functors_run() {
         ("functor_polyfill", "7\n"),
     ] {
         let entry = wasi(name);
-        if matches!(name, "functor_capture_memory" | "arrays_in_scratch") {
-            // Reference gap (D79): one linear memory, so the oracle
-            // refuses a `Memory` bind as not modelled.
-            oracle_unsupported(&entry);
-        } else {
-            assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
-        }
+        assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
         assert_eq!(run_moss(&entry, PRELUDE), expected, "{entry}");
     }
 }
@@ -1252,18 +1226,16 @@ fn phantoms_and_receivers_are_checked() {
 /// and leaves the other's data alone; and text made in `Scratch` copied
 /// into the main memory to be printed, and back. Compiled, each module has
 /// two memories, exports the first, and puts the second's index on the
-/// instructions specialized at it. The oracle has one memory.
+/// instructions specialized at it. Both runtimes produce the same output.
 #[test]
 fn multiple_memories() {
     for (name, expected) in [
         ("memories", "5050\n51225\n56275\n"),
-        ("memory_reset", "51225\n55\n1024\n1\n5050\n"),
+        ("memory_reset", "51225\n55\n1024\n1\n5050\n3\n1\n"),
         ("memory_copy", "hi\nih\n"),
     ] {
         let entry = wasi(name);
-        // Reference gap (D79): one linear memory, so the oracle refuses
-        // a `Memory` bind as not modelled.
-        oracle_unsupported(&entry);
+        assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
         let module = build_with(&entry, PRELUDE);
         let text = wasm_text(&module);
         assert!(text.contains("(memory $0 "), "{entry}");
@@ -1283,14 +1255,14 @@ fn multiple_memories() {
 #[test]
 fn any_type_names_a_memory() {
     let entry = wasi("memory_any_type");
-    // Reference gap (D79): one linear memory.
-    oracle_unsupported(&entry);
+    let expected = "5050\n51225\n1275\n5050\n";
+    assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
     let module = build_with(&entry, PRELUDE);
     let text = wasm_text(&module);
     assert!(text.contains("(memory $2 "));
     assert!(!text.contains("(memory $3 "));
     assert!(text.contains("i32.store $2"));
-    assert_eq!(run_module(&module, &[]), "5050\n51225\n1275\n5050\n");
+    assert_eq!(run_module(&module, &[]), expected, "{entry}");
 }
 
 /// D78 and D79: an abstract functor whose result holds `Memory` and the
@@ -1305,15 +1277,15 @@ fn any_type_names_a_memory() {
 #[test]
 fn an_arena_whose_data_cannot_outlive_it() {
     let entry = wasi("arena");
-    // Reference gap (D79): one linear memory.
-    oracle_unsupported(&entry);
+    let expected = "6 8 16\n7 16 52\n27 111 9232\n97 118 9232\n";
+    assert_eq!(oracle_run(&entry, &[]), expected, "{entry}");
     let module = build_with(&entry, PRELUDE);
     let text = wasm_text(&module);
     assert!(text.contains("(memory $1 "));
     assert!(!text.contains("(memory $2 "));
     assert!(text.contains("i32.load $1"));
     assert!(text.contains("i32.store $1"));
-    assert_eq!(run_module(&module, &[]), "6 8 16\n7 16 52\n27 111 9232\n97 118 9232\n");
+    assert_eq!(run_module(&module, &[]), expected, "{entry}");
 
     refused(
         &[

@@ -1,6 +1,6 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers,
-  heap_mark, heap_reset, ints_addr, Num, i32_bool;
+  heap_mark, heap_reset, ints_addr, Num, i32_bool, raw;
 import "../../lib/wasm.moss" as w use Wasm, Memory;
 import "../../lib/wasip1.moss" use Wasi;
 
@@ -13,7 +13,7 @@ import "../../lib/wasip1.moss" use Wasi;
 
 tag Scratch;
 
-tag Report { first: Int, second: Int, at: Int, reused: Bool };
+tag Report { first: Int, second: Int, at: Int, reused: Bool, pages: Int };
 
 assume Std {
   fn print_int(n: Int) {
@@ -65,11 +65,16 @@ assume Wasm, Wasi, Branch {
       heap_reset(start);
       let zs = int_list();
       fill(zs, 1, 10);
+      # Grow Scratch alone, then store and load just past its old end.
+      let old_pages = w::memory_grow(w::i32_one);
+      let extra = w::i32_mul(old_pages, raw(65536));
+      w::i32_store(extra, w::i32_one);
       Report {
         first = first,
         second = sum(zs),
         at = Num(at),
         reused = i32_bool(w::i32_eq(at, ints_addr(zs))),
+        pages = Num(w::i32_add(w::memory_size(), w::i32_load(extra))),
       }
     };
     line(report.first);
@@ -77,5 +82,7 @@ assume Wasm, Wasi, Branch {
     line(report.at);
     if report.reused { line(1); } else { line(0); }
     line(sum(xs));
+    line(report.pages);
+    line(Num(w::memory_size()));
   }
 }

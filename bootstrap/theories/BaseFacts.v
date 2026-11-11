@@ -24,7 +24,7 @@ Definition call {S : Type}
     (P : program_view) (operation : op) (site : unit -> option ty)
     (values : list value) (state : S) : signal * S :=
   let decoded := decode operation in
-  let arguments := match decoded with Some p => BaseCall.primitive_arguments p values | None => values end in
+  let arguments := match decoded with Some p => BaseCall.arguments_at_site p site values | None => values end in
   let '(out, next) := primitive P operation arguments state in
   (match decoded with Some p => result_at_site p site out | None => out end, next).
 
@@ -36,11 +36,37 @@ Theorem call_agrees : forall S
 Proof.
   intros. unfold call, BaseCall.call.
   destruct (decode operation) as [p|].
-  - destruct (primitive P operation (BaseCall.primitive_arguments p values) state) as [out next].
+  - assert (Arguments : BaseCall.arguments_at_site p site values =
+      BaseCall.arguments_at_site p (fun _ => site tt) values).
+    { unfold BaseCall.arguments_at_site, BaseCall.memory_arguments.
+      destruct (BaseCall.memory_operation p); reflexivity. }
+    rewrite Arguments.
+    destruct (primitive P operation (BaseCall.arguments_at_site p (fun _ => site tt) values) state) as [out next].
     rewrite result_at_site_agrees. now destruct (site tt).
   - destruct (primitive P operation values state) as [out next]. now destruct (site tt).
 Qed.
 End DeferredBaseCall.
+
+Lemma split_memory_arguments_at_site : forall p site values,
+  BaseCall.split_memory_arguments p (BaseCall.memory_arguments p site values) =
+  (if BaseCall.memory_operation p then site tt else None, values).
+Proof.
+  intros. unfold BaseCall.split_memory_arguments, BaseCall.memory_arguments.
+  destruct (BaseCall.memory_operation p), (site tt); reflexivity.
+Qed.
+
+Lemma memory_operation_gc : forall p,
+  Heap.is_gc p = true -> BaseCall.memory_operation p = false.
+Proof. intros []; cbn; congruence. Qed.
+
+Lemma arguments_at_site_gc : forall p site values,
+  Heap.is_gc p = true ->
+  BaseCall.arguments_at_site p site values = BaseCall.primitive_arguments p values.
+Proof.
+  intros. unfold BaseCall.arguments_at_site, BaseCall.memory_arguments.
+  now rewrite memory_operation_gc.
+Qed.
+
 
 (* A Public instance, kept transparent, for the same reason: CORRECT's
    obligations are stated inside one particular instance. *)
@@ -59,14 +85,14 @@ Lemma base_call_state : forall S
   snd (BaseCall.call primitive P operation held ws st) =
   snd (primitive P operation
     (match decode operation with
-     | Some p => BaseCall.primitive_arguments p ws
+     | Some p => BaseCall.arguments_at_site p (fun _ => held) ws
      | None => ws
      end) st).
 Proof.
   intros S primitive P operation held ws st. unfold BaseCall.call.
   destruct (primitive P operation
     (match decode operation with
-     | Some p => BaseCall.primitive_arguments p ws
+     | Some p => BaseCall.arguments_at_site p (fun _ => held) ws
      | None => ws end) st) as [out next].
   destruct held, (decode operation); reflexivity.
 Qed.

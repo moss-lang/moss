@@ -140,6 +140,30 @@ Proof.
     now rewrite !rename_raw_receiver.
 Qed.
 
+Lemma rename_memory_arguments : forall rename primitive site values,
+  BaseCall.memory_arguments (rename_base_primitive rename primitive)
+    (fun _ => rename_site (base_renaming rename) (site tt))
+    (map (rename_value (base_renaming rename)) values) =
+  map (rename_value (base_renaming rename)) (BaseCall.memory_arguments primitive site values).
+Proof.
+  intros rename primitive site values.
+  unfold BaseCall.memory_arguments.
+  destruct primitive; try reflexivity; destruct (site tt); reflexivity.
+Qed.
+
+Lemma rename_arguments_at_site : forall rename primitive site values,
+  BaseCall.arguments_at_site (rename_base_primitive rename primitive)
+    (fun _ => rename_site (base_renaming rename) site)
+    (map (rename_value (base_renaming rename)) values) =
+  map (rename_value (base_renaming rename))
+    (BaseCall.arguments_at_site primitive (fun _ => site) values).
+Proof.
+  intros rename primitive site values. unfold BaseCall.arguments_at_site.
+  rewrite rename_base_arguments.
+  exact (rename_memory_arguments rename primitive (fun _ => site)
+    (BaseCall.primitive_arguments primitive values)).
+Qed.
+
 Lemma rename_allocation_result : forall rename primitive site outcome,
   BaseCall.allocation_result (rename_base_primitive rename primitive) (rename_ty (base_renaming rename) site)
     (rename_signal (base_renaming rename) outcome) =
@@ -171,11 +195,11 @@ Proof.
   intros S rename related raw P P' Raw operation site values left right Related.
   unfold BaseCall.call. rewrite decode_renamed_base_operation.
   destruct (decode operation) as [primitive|].
-  - cbn [option_map]. rewrite rename_base_arguments.
-    specialize (Raw operation (BaseCall.primitive_arguments primitive values) left right Related).
-    destruct (raw P operation (BaseCall.primitive_arguments primitive values) left) as [out next].
+  - cbn [option_map]. rewrite rename_arguments_at_site.
+    specialize (Raw operation (BaseCall.arguments_at_site primitive (fun _ => site) values) left right Related).
+    destruct (raw P operation (BaseCall.arguments_at_site primitive (fun _ => site) values) left) as [out next].
     destruct (raw P' (rename_base_operation rename operation)
-      (map (rename_value (base_renaming rename)) (BaseCall.primitive_arguments primitive values)) right)
+      (map (rename_value (base_renaming rename)) (BaseCall.arguments_at_site primitive (fun _ => site) values)) right)
       as [out' next'].
     destruct Raw as [-> State].
     destruct site; cbn [rename_site option_map]; split; try assumption; try reflexivity.

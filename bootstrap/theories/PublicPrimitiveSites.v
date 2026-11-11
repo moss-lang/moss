@@ -1,4 +1,4 @@
-(* Base's nonallocating primitive calls ignore the recorded method site.
+(* Only allocations and linear-memory calls use the recorded method site.
    The normalization below is proof-side. It exposes exactly the fields
    that FastPath may erase while retaining type meanings and source aliases. *)
 From Stdlib Require Import List Lia.
@@ -8,7 +8,10 @@ Import ListNotations Audit.Semantics.
 
 Module BaseSites.
 Definition retained_site (p : op) (site : option ty) : option ty :=
-  match decode p with Some (PBox _) | Some (PArrNew _) => site | _ => None end.
+  match decode p with
+  | Some primitive => if BaseCall.uses_site primitive then site else None
+  | None => None
+  end.
 
 Fixpoint erase_entry (entry : provision_value) : provision_value :=
   match entry with
@@ -169,14 +172,19 @@ Lemma base_call_site_irrelevant : forall S
     (primitive : program_view -> op -> list value -> S -> signal * S)
     P operation first second ws st,
   (forall decoded, decode operation = Some decoded ->
+    BaseCall.memory_operation decoded = false /\
     forall tau out, BaseCall.allocation_result decoded tau out = out) ->
   BaseCall.call primitive P operation first ws st =
   BaseCall.call primitive P operation second ws st.
 Proof.
   intros S primitive P operation first second ws st Plain. unfold BaseCall.call.
-  destruct (decode operation) as [decoded|] eqn:Decoded;
-    destruct (primitive P operation _ st) as [out next];
-    destruct first, second; try reflexivity; repeat rewrite (Plain _ eq_refl); reflexivity.
+  destruct (decode operation) as [decoded|] eqn:Decoded.
+  - destruct (Plain _ eq_refl) as [NoMemory Allocation].
+    unfold BaseCall.arguments_at_site, BaseCall.memory_arguments. rewrite NoMemory.
+    destruct (primitive P operation _ st) as [out next].
+    destruct first, second; now rewrite ?Allocation.
+  - destruct (primitive P operation _ st) as [out next].
+    destruct first, second; reflexivity.
 Qed.
 
 Lemma erased_primitive_call : forall S
@@ -188,7 +196,7 @@ Proof.
   intros S primitive P operation site ws st.
   unfold retained_site. destruct (decode operation) as [decoded|] eqn:Decoded.
   - destruct decoded; try reflexivity; apply base_call_site_irrelevant;
-      intros decoded Decode tau out; rewrite Decoded in Decode; injection Decode as <-; reflexivity.
+      intros decoded Decode; rewrite Decoded in Decode; injection Decode as <-; split; reflexivity.
   - apply base_call_site_irrelevant. intros decoded Decode. congruence.
 Qed.
 
@@ -321,10 +329,13 @@ Proof.
     cbn in *; try discriminate; [injection Eq as Eq; exact Eq|exact I].
 Qed.
 (* Canonical entries used by the primitive-only platform-family fast path. *)
-Definition nonallocating (operation : op) : bool :=
-  match decode operation with Some (PBox _) | Some (PArrNew _) => false | _ => true end.
+Definition site_independent (operation : op) : bool :=
+  match decode operation with
+  | Some primitive => negb (BaseCall.uses_site primitive)
+  | None => true
+  end.
 Definition primitive_binding (binding : binding) : bool :=
-  match binding with BPrimitive _ operation => nonallocating operation | _ => false end.
+  match binding with BPrimitive _ operation => site_independent operation | _ => false end.
 Definition canonical_binding (binding : binding) : item * provision_value :=
   match binding with
   | BPrimitive key operation => (key, PrimitiveClosure operation None)
@@ -334,17 +345,17 @@ Definition canonical_installs (d : environment) (bindings : list binding) : envi
   EnvironmentWithAliases (type_meanings d) (type_aliases d)
     (rev (map canonical_binding bindings) ++ provision_values d).
 
-Lemma erase_nonallocating_closure : forall d key operation,
-  nonallocating operation = true ->
+Lemma erase_site_independent_closure : forall d key operation,
+  site_independent operation = true ->
   erase_entry (primitive_closure d key operation) = PrimitiveClosure operation None.
 Proof.
-  intros d key operation Plain. unfold nonallocating in Plain.
+  intros d key operation Plain. unfold site_independent in Plain.
   unfold primitive_closure. destruct (decode operation) as [decoded|] eqn:Decoded;
     [destruct decoded|]; cbn in Plain; try discriminate;
     destruct key; cbn [erase_entry]; unfold retained_site; rewrite ?Decoded; reflexivity.
 Qed.
 Lemma canonical_installs_erased_step : forall d key operation bindings,
-  nonallocating operation = true ->
+  site_independent operation = true ->
   environments_agree
     (canonical_installs (install_provision key (primitive_closure d key operation) d) bindings)
     (canonical_installs d (BPrimitive key operation :: bindings)).
@@ -353,7 +364,7 @@ Proof.
   unfold environments_agree, canonical_installs, install_provision.
   rewrite !erase_environment_eq. cbn [type_meanings type_aliases provision_values map rev canonical_binding].
   rewrite <- app_assoc. unfold erase_entries. rewrite !map_app.
-  cbn [map fst snd]. rewrite erase_nonallocating_closure by exact Plain.
+  cbn [map fst snd]. rewrite erase_site_independent_closure by exact Plain.
   cbn [erase_entry]. unfold retained_site. destruct (decode operation) as [decoded|]; [destruct decoded|]; reflexivity.
 Qed.
 End BaseSites.
@@ -686,7 +697,7 @@ End SiteSimulation.
 Module ReferenceSites (Host : HOST) (M : PUBLIC Host).
 Module Simulation := SiteSimulation M.ReferenceHost M.Reference.
 
-Lemma calls_ignore_nonallocating_sites : forall P operation site ws st,
+Lemma calls_ignore_unused_sites : forall P operation site ws st,
   M.ReferenceHost.run_prim P operation site ws st =
   M.ReferenceHost.run_prim P operation (BaseSites.retained_site operation site) ws st.
 Proof.
@@ -699,6 +710,6 @@ Theorem reference_site_erasure : forall fuel P main d st,
   M.Reference.run_main fuel P main (BaseSites.erase_environment d) st.
 Proof.
   intros fuel P main d st. apply Simulation.run_main_erased.
-  apply calls_ignore_nonallocating_sites.
+  apply calls_ignore_unused_sites.
 Qed.
 End ReferenceSites.

@@ -2,7 +2,8 @@
 From Stdlib Require Import List Bool Arith Lia.
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat FloatClass PArray ZArith.
 From NM Require Import ExecutionModel HTrie.
-From NM Require NatTrie.
+From NM Require Audit NatTrie PublicTypeFacts.
+Import Audit.Semantics (ty, ty_eqb).
 Import ListNotations.
 
 Lemma xinst_map : forall d th,
@@ -36,6 +37,8 @@ Inductive hobj : Type :=
 | HBox  : xvalue -> hobj
 | HArr  : garr -> int -> hobj.   (* elements, length *)
 
+Definition linear_memory := (array (array int) * int)%type.
+
 Record mstate : Type := MS {
   ms_mem   : array (array int);
   ms_pages : int;
@@ -44,7 +47,9 @@ Record mstate : Type := MS {
   ms_heap  : NatTrie.tmap hobj;           (* the GC heap, by address *)
   ms_hnext : nat;
   ms_fds   : list (int * list int);   (* open files: descriptor, bytes left *)
-  ms_nextfd : int
+  ms_nextfd : int;
+  ms_memory_parameter : option nat;
+  ms_scratch_memories : list (ty * linear_memory)
 }.
 
 (* [M4b_xprog] moved to ExecutionModel.v *)
@@ -315,7 +320,8 @@ Definition set_byte (st : mstate) (a b : int) : mstate :=
   let w := PArray.get pg i in
   let w' := (w land (4294967295 lxor (255 << sh))) lor ((b land 255) << sh) in
   MS (PArray.set (ms_mem st) p (PArray.set pg i w'))
-     (ms_pages st) (ms_out st) (ms_err st) (ms_heap st) (ms_hnext st) (ms_fds st) (ms_nextfd st).
+     (ms_pages st) (ms_out st) (ms_err st) (ms_heap st) (ms_hnext st) (ms_fds st) (ms_nextfd st)
+     (ms_memory_parameter st) (ms_scratch_memories st).
 
 (* little-endian, n bytes, no bounds check *)
 Fixpoint load_le (st : mstate) (a : int) (n : nat) : int :=
@@ -359,7 +365,8 @@ Definition mem_grow (st : mstate) (delta : int) : int * mstate :=
   else
     match int_loop loop_fuel old (old + delta)
             (fun p m => Some (PArray.set m p (fresh_page tt))) (ms_mem st) with
-    | Some mem => (old, MS mem (old + delta) (ms_out st) (ms_err st) (ms_heap st) (ms_hnext st) (ms_fds st) (ms_nextfd st))
+    | Some mem => (old, MS mem (old + delta) (ms_out st) (ms_err st) (ms_heap st) (ms_hnext st) (ms_fds st) (ms_nextfd st)
+                         (ms_memory_parameter st) (ms_scratch_memories st))
     | None => (mask32, st)
     end.
 
@@ -392,8 +399,12 @@ Definition emit_bytes (fd : int) (st : mstate) (base len : int) : option mstate 
       (fun i s =>
          let b := get_byte s (base + i) in
          Some (if (fd =? 2)%uint63
-               then MS (ms_mem s) (ms_pages s) (ms_out s) (b :: ms_err s) (ms_heap s) (ms_hnext s) (ms_fds s) (ms_nextfd s)
-               else MS (ms_mem s) (ms_pages s) (b :: ms_out s) (ms_err s) (ms_heap s) (ms_hnext s) (ms_fds s) (ms_nextfd s)))
+               then MS (ms_mem s) (ms_pages s) (ms_out s) (b :: ms_err s)
+                       (ms_heap s) (ms_hnext s) (ms_fds s) (ms_nextfd s)
+                       (ms_memory_parameter s) (ms_scratch_memories s)
+               else MS (ms_mem s) (ms_pages s) (b :: ms_out s) (ms_err s)
+                       (ms_heap s) (ms_hnext s) (ms_fds s) (ms_nextfd s)
+                       (ms_memory_parameter s) (ms_scratch_memories s)))
       st
   else None.
 
@@ -469,7 +480,8 @@ Definition read_bytes (st : mstate) (a n : int) : option (list int) :=
   else None.
 
 Definition set_fds (st : mstate) (fds : list (int * list int)) (next : int) : mstate :=
-  MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st) (ms_heap st) (ms_hnext st) fds next.
+  MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
+    (ms_heap st) (ms_hnext st) fds next (ms_memory_parameter st) (ms_scratch_memories st).
 
 Fixpoint lookup_fd (fd : int) (fds : list (int * list int)) : option (list int) :=
   match fds with
@@ -758,7 +770,8 @@ Definition heap_alloc (st : mstate) (o : hobj) : option (nat * mstate) :=
   else match NatTrie.tget (ms_heap st) n with
        | Some _ => None   (* never: no address at or above ms_hnext is in use *)
        | None => Some (n, MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
-                             (NatTrie.tset (ms_heap st) n o) (S n) (ms_fds st) (ms_nextfd st))
+                             (NatTrie.tset (ms_heap st) n o) (S n) (ms_fds st) (ms_nextfd st)
+                         (ms_memory_parameter st) (ms_scratch_memories st))
        end.
 
 Definition heap_get (st : mstate) (a : nat) : hobj :=
@@ -766,7 +779,8 @@ Definition heap_get (st : mstate) (a : nat) : hobj :=
 
 Definition heap_set (st : mstate) (a : nat) (o : hobj) : mstate :=
   MS (ms_mem st) (ms_pages st) (ms_out st) (ms_err st)
-     (NatTrie.tset (ms_heap st) a o) (ms_hnext st) (ms_fds st) (ms_nextfd st).
+     (NatTrie.tset (ms_heap st) a o) (ms_hnext st) (ms_fds st) (ms_nextfd st)
+     (ms_memory_parameter st) (ms_scratch_memories st).
 
 Definition ref_of (w : xvalue) : option nat :=
   match w with
@@ -1024,9 +1038,8 @@ Definition run_prim0 (P : xprog) (p : prim) (ws : list xvalue) (st : mstate)
 (* m4, D79 as amended: the memory instructions are `Addr`'s methods (the
    family `Memories`), so the platform's provision of one receives its
    address as an `Addr` (a tag over the I32), and `memory.copy`'s source
-   too; `memory.size` and `memory.grow` receive the receiver only to name
-   the memory, which is the one this model has.  The primitive reads the
-   bare address. *)
+   too. BaseHost selects the memory before these operations unwrap
+   addresses. Size and grow need only the selected memory. *)
 Definition unaddr (w : xvalue) : xvalue :=
   match w with XVTag _ (XVI32 a) => XVI32 a | _ => w end.
 
@@ -1051,7 +1064,7 @@ Definition is_gc_prim (p : prim) : bool :=
 
 Definition keep_heap (st s : mstate) : mstate :=
   MS (ms_mem s) (ms_pages s) (ms_out s) (ms_err s) (ms_heap st) (ms_hnext st)
-     (ms_fds s) (ms_nextfd s).
+     (ms_fds s) (ms_nextfd s) (ms_memory_parameter s) (ms_scratch_memories s).
 
 Definition run_prim (P : xprog) (p : prim) (ws : list xvalue) (st : mstate)
   : xout * mstate :=
@@ -1110,10 +1123,99 @@ Local Open Scope uint63_scope.
    holding 1024 (both compilers' `_start`, and the bootstrap interpreter). *)
 Definition init_state (pages : int) : mstate :=
   let st := MS (PArray.make max_pages (PArray.make 1 0)) 0 [] []
-                NatTrie.TE 0%nat [] 4 in
+                NatTrie.TE 0%nat [] 4 None [] in
   let st1 := snd (mem_grow st pages) in
   store_le st1 16 1024 4.
 Local Close Scope uint63_scope.
+
+Definition linear_memory_of (state : mstate) : linear_memory :=
+  (ms_mem state, ms_pages state).
+
+Definition with_linear_memory (state : mstate) (memory : linear_memory)
+    (scratch : list (ty * linear_memory)) : mstate :=
+  MS (fst memory) (snd memory) (ms_out state) (ms_err state)
+    (ms_heap state) (ms_hnext state) (ms_fds state) (ms_nextfd state)
+    (ms_memory_parameter state) scratch.
+
+Definition init_memories (pages : int) (parameter : option nat) : mstate :=
+  let state := init_state pages in
+  MS (ms_mem state) (ms_pages state) (ms_out state) (ms_err state)
+    (ms_heap state) (ms_hnext state) (ms_fds state) (ms_nextfd state) parameter [].
+
+(* Additional memories start as a one-page Wasm memory with their own
+   bump allocator. Allocate that state on the first access. *)
+Definition initial_scratch_memory := linear_memory_of (init_state 1%uint63).
+
+Fixpoint find_scratch_memory (key : ty) (memories : list (ty * linear_memory)) : linear_memory :=
+  match memories with
+  | [] => initial_scratch_memory
+  | (other, memory) :: rest =>
+      if ty_eqb key other then memory else find_scratch_memory key rest
+  end.
+
+Fixpoint set_scratch_memory (key : ty) (memory : linear_memory)
+    (memories : list (ty * linear_memory)) : list (ty * linear_memory) :=
+  match memories with
+  | [] => [(key, memory)]
+  | (other, old) :: rest =>
+      if ty_eqb key other then (key, memory) :: rest
+      else (other, old) :: set_scratch_memory key memory rest
+  end.
+
+Definition scratch_memory_key (state : mstate) (site : option ty) : option ty :=
+  match site, ms_memory_parameter state with
+  | Some (Audit.Semantics.TNom _ arguments), Some parameter =>
+      match Audit.Semantics.lookup_subst parameter arguments with
+      | Some key =>
+          if ty_eqb key (Audit.Semantics.TAbs parameter) then None else Some key
+      | None => None
+      end
+  | _, _ => None
+  end.
+
+Definition in_memory {A : Type} (key : option ty) (step : mstate -> A * mstate)
+    (state : mstate) : A * mstate :=
+  match key with
+  | None => step state
+  | Some key =>
+      let scratch := ms_scratch_memories state in
+      let memory := find_scratch_memory key scratch in
+      let '(out, next) := step (with_linear_memory state memory scratch) in
+      (out, with_linear_memory next (linear_memory_of state)
+        (set_scratch_memory key (linear_memory_of next) scratch))
+  end.
+
+Lemma find_scratch_memory_set : forall key selected memory memories,
+  find_scratch_memory key (set_scratch_memory selected memory memories) =
+  if ty_eqb key selected then memory else find_scratch_memory key memories.
+Proof.
+  intros key selected memory memories. induction memories as [|[other old] rest IH].
+  - reflexivity.
+  - cbn [set_scratch_memory]. destruct (ty_eqb selected other) eqn:Same.
+    + apply PublicTypeFacts.ty_eqb_spec in Same. subst other.
+      cbn [find_scratch_memory]. now destruct (ty_eqb key selected).
+    + cbn [find_scratch_memory]. rewrite IH.
+      destruct (ty_eqb key other) eqn:Found; [|reflexivity].
+      apply PublicTypeFacts.ty_eqb_spec in Found. subst other.
+      destruct (ty_eqb key selected) eqn:Equal; [|reflexivity].
+      apply PublicTypeFacts.ty_eqb_spec in Equal. subst key.
+      now rewrite PublicTypeFacts.ty_eqb_refl in Same.
+Qed.
+
+(* A step on a scratch memory commits that memory alone. Main memory
+   remains available to plain loads and WASI, and each other scratch
+   memory retains its previous contents and size. *)
+Lemma in_memory_isolated : forall A selected (step : mstate -> A * mstate) state,
+  let scratch := ms_scratch_memories state in
+  let '(_, updated) := step (with_linear_memory state (find_scratch_memory selected scratch) scratch) in
+  let '(_, next) := in_memory (Some selected) step state in
+  linear_memory_of next = linear_memory_of state /\
+  forall key, find_scratch_memory key (ms_scratch_memories next) =
+    if ty_eqb key selected then linear_memory_of updated else find_scratch_memory key scratch.
+Proof.
+  intros. cbn [in_memory]. destruct (step _).
+  split; [reflexivity|]. intros key. apply find_scratch_memory_set.
+Qed.
 
 (* [M6_primsig] moved to ExecutionModel.v *)
 

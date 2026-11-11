@@ -60,10 +60,6 @@ const AUDIT_ACCEPTS_14: &str = "Audit.v accepts what the self-hosted compiler re
 /// the platform's root context and reports anything beyond it unsupported
 /// rather than judging it.
 const BEYOND: &str = "oracle gap: `main` assumes more than the platform provides";
-/// D79: the host (MossX) has one linear memory, so the oracle reports a
-/// program that binds `Memory` unsupported rather than run its memories on
-/// one address space.
-const MEMORIES: &str = "reference gap: more than one memory (D79)";
 /// A library module that other tests import, with no `main`: the
 /// self-hosted compiler reports the missing `main`, and the oracle, which
 /// only runs whole programs, reports it unsupported.
@@ -114,19 +110,11 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/while_condition_break.moss", Accept, Reject, RECORDED),
     ("tests/wasi/acrosslib.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/app.moss", Reject, Unsupported, LIBRARY),
-    ("tests/wasi/arena.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/arrays_in_scratch.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/bridge.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/const_kept_output.moss", Reject, Accept, RECORDED),
     ("tests/wasi/copy_site_distinct_needs.moss", Reject, Accept, RECORDED),
     ("tests/wasi/copy_site_distinct_needs_flip.moss", Reject, Accept, RECORDED),
     ("tests/wasi/doubledouble.moss", Reject, Unsupported, LIBRARY),
-    ("tests/wasi/functor_capture_memory.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/gc_array_memory.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/memories.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/memory_any_type.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/memory_copy.moss", Accept, Unsupported, MEMORIES),
-    ("tests/wasi/memory_reset.moss", Accept, Unsupported, MEMORIES),
     ("tests/wasi/sameneed_copy.moss", Reject, Accept, RECORDED),
     ("tests/wasi/saturating.moss", Reject, Unsupported, LIBRARY),
     ("tests/wasi/saved_type_rebinding.moss", Reject, Accept, RECORDED),

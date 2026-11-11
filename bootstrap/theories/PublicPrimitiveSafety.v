@@ -452,12 +452,12 @@ Proof. intros H a c F; exact F. Qed.
 Lemma run_supported : forall P iface p held ws s,
   M.supports iface (encode p) = true ->
   M.Reference.run_prim_at P (encode p) held ws (iface, s) =
-    (let '(out, next) := M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s) in
+    (let '(out, next) := M.primitive iface P (encode p) (BaseCall.arguments_at_site p (fun _ => held) ws) (M.external s) in
      (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
       (iface, M.World (M.arguments s) (M.read_file s) next))).
 Proof.
   intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
-  rewrite decode_encode, Supp. destruct (M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s)); reflexivity.
+  rewrite decode_encode, Supp. destruct (M.primitive iface P (encode p) (BaseCall.arguments_at_site p (fun _ => held) ws) (M.external s)); reflexivity.
 Qed.
 
 (* A non-allocating GC operation whose precondition holds at the ghost heap. *)
@@ -471,6 +471,7 @@ Lemma gc_plain : forall W P iface H s p held ws Q t,
 Proof.
   intros W P iface H s p held ws Q t Laws Supp Valid Pre Post Plain.
   rewrite run_supported by exact Supp.
+  rewrite arguments_at_site_gc by (destruct p; cbn in Pre; try contradiction; reflexivity).
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
   specialize (GC p (BaseCall.primitive_arguments p ws) (M.external s) _ Q Supp Valid Pre).
   destruct (M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s)) as [out next].
@@ -520,7 +521,7 @@ Proof.
   destruct p; try (exfalso; exact Sig).
   - (* PBox *) destruct params as [|heldt [|]]; try (exfalso; exact Sig). destruct Sig as [Sym RT].
     args_inv. rename x into v.
-    rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
+    rewrite run_supported by exact Supp. cbn [BaseCall.arguments_at_site BaseCall.memory_arguments BaseCall.memory_operation BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PBox n) [v] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (encode (PBox n)) [v] (M.external s)) as [out next] eqn:Run.
@@ -549,7 +550,7 @@ Proof.
   - (* PArrNew *) destruct params as [|heldt [|count [|]]]; try (exfalso; exact Sig). destruct Sig as [Sym [Count RT]].
     args_inv. rename x into v.
     destruct (I32 H count y Count ltac:(assumption)) as [c ->].
-    rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
+    rewrite run_supported by exact Supp. cbn [BaseCall.arguments_at_site BaseCall.memory_arguments BaseCall.memory_operation BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PArrNew n) [v; VScalar 0 c] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (encode (PArrNew n)) [v; VScalar 0 c] (M.external s)) as [out next] eqn:Run.
@@ -632,13 +633,15 @@ Proof.
   - assert (GC : Heap.is_gc p = false) by exact (signature_plain W params ret p _ (or_introl eq_refl) Plain).
     destruct Plain as [ins [out [Sig' [VTs VT]]]].
     destruct Laws as [Law [_ [_ [_ [_ [Keep _]]]]]].
-    pose proof (Law p ins out ws (M.external s) Supp Sig'
+    pose proof (Law p ins out (fun _ => held) ws (M.external s) Supp Sig'
       (shapes_params W Prog argv read Layouts Reps Bools m Ground H params ins ws VTs
         (Forall_inv_tail Formed) Args)) as Result.
-    pose proof (Keep (encode p) ws (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
+    set (raw := BaseCall.memory_arguments p (fun _ => held) ws) in *.
+    pose proof (Keep (encode p) raw (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
     destruct (output_shape p ins out (or_introl Sig')) as [NA NT].
-    rewrite run_supported by exact Supp. rewrite args_plain by exact GC.
-    destruct (M.primitive iface _ (encode p) ws (M.external s)) as [o next].
+    rewrite run_supported by exact Supp.
+    unfold BaseCall.arguments_at_site. rewrite args_plain by exact GC. fold raw.
+    destruct (M.primitive iface _ (encode p) raw (M.external s)) as [o next].
     cbn in Result, KeepH. destruct held; [rewrite alloc_plain by exact GC|];
       destruct o; try contradiction; try exact I;
       (exists H; split; [apply heap_extends_refl|]; split; [split; [reflexivity|exact KeepH]|];
@@ -646,13 +649,15 @@ Proof.
   - assert (GC : Heap.is_gc p = false) by exact (signature_plain W params ret p _ (or_intror eq_refl) Plain).
     destruct Plain as [ins [out [Sig' [VTs VT]]]].
     destruct Laws as [_ [Law [_ [_ [_ [Keep _]]]]]].
-    pose proof (Law p ins out ws (M.external s) Supp Sig'
+    pose proof (Law p ins out (fun _ => held) ws (M.external s) Supp Sig'
       (shapes_params W Prog argv read Layouts Reps Bools m Ground H params ins ws VTs
         (Forall_inv_tail Formed) Args)) as Result.
-    pose proof (Keep (encode p) ws (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
+    set (raw := BaseCall.memory_arguments p (fun _ => held) ws) in *.
+    pose proof (Keep (encode p) raw (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
     destruct (output_shape p ins out (or_intror Sig')) as [NA NT].
-    rewrite run_supported by exact Supp. rewrite args_plain by exact GC.
-    destruct (M.primitive iface _ (encode p) ws (M.external s)) as [o next].
+    rewrite run_supported by exact Supp.
+    unfold BaseCall.arguments_at_site. rewrite args_plain by exact GC. fold raw.
+    destruct (M.primitive iface _ (encode p) raw (M.external s)) as [o next].
     cbn in Result, KeepH. destruct held; [rewrite alloc_plain by exact GC|];
       destruct o; try contradiction; try exact I;
       (exists H; split; [apply heap_extends_refl|]; split; [split; [reflexivity|exact KeepH]|];
