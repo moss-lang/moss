@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
+From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
 From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming.
 
 From NM Require AuditExamples AuditBuildExample

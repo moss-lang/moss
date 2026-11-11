@@ -222,7 +222,7 @@ Proof.
   apply code_effect_bind; [apply code_effect_lift|]. intros [definition definition_needs].
   apply code_effect_bind; [apply code_effect_optional_failure|intros []].
   apply code_effect_bind; [apply code_effect_check|intros []].
-  apply code_effect_bind; [apply check_link_binding_code_effect|intros []].
+  apply code_effect_bind; [apply check_link_binding_code_effect|intro target].
   apply code_effect_bind; [apply link_body_code_effect; exact Binds|]. intro slot.
   apply code_effect_bind; [apply code_effect_pure|]. intro captured.
   apply code_effect_bind; [apply code_effect_pair_failure|intros []].
