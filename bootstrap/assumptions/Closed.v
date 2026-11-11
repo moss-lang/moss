@@ -146,3 +146,13 @@ Print Assumptions NM.EaPatternSound.pat_of_sound.
 
 From NM Require EaControlSound.
 Print Assumptions NM.EaControlSound.fitsb_exact.
+
+From NM Require AllocationFacts.
+Print Assumptions NM.AllocationFacts.allocation_grows.
+Print Assumptions NM.AllocationFacts.allocations_disjoint.
+Print Assumptions NM.AllocationFacts.allocation_rename.
+Print Assumptions NM.AllocationFacts.allocate_range.
+Print Assumptions NM.AllocationFacts.frame_allocation_transition.
+Print Assumptions NM.AllocationFacts.fresh_outputs_disjoint.
+Print Assumptions NM.AllocationFacts.frame_allocation_compatible.
+Print Assumptions NM.AllocationFacts.copy_allocation_contract.

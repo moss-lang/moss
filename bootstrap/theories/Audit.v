@@ -3703,11 +3703,41 @@ Definition lexical_capture (C : cx) : type_capture :=
   TypeCapture
     (map (fun generation => (generation, TAbs generation)) (context_gens C))
     (map (fun q => (fst q, canon C (snd q))) (c_ty C)).
+(* An allocation scope reserves identities from the surrounding namespace
+   and its live support. Its allocation history grows by whole batches. *)
+Record allocation_scope (identity : Type) := AllocationScope {
+  scope_permits : identity -> Prop;
+  scope_allocated : list identity;
+  scope_support : list identity
+}.
+
+Definition AllocationFresh {identity} (before : allocation_scope identity)
+    (batch : list identity) : Prop :=
+  NoDup batch /\ Forall (fun g => scope_permits before g /\
+    ~ In g (scope_allocated before ++ scope_support before)) batch.
+
+Definition extend_allocation_scope {identity} (before : allocation_scope identity)
+    (batch : list identity) : allocation_scope identity :=
+  AllocationScope (scope_permits before) (scope_allocated before ++ batch) (scope_support before).
+
+Definition Allocates {identity} (before : allocation_scope identity)
+    (batch : list identity) (after : allocation_scope identity) : Prop :=
+  AllocationFresh before batch /\ after = extend_allocation_scope before batch.
+
+(* The existing frame and context supply the initial scope. The history is
+   also the frame's record of generations that may not escape its block. *)
+Definition body_allocation_scope (W : world) (F : frame) (C : cx) : allocation_scope nat :=
+  AllocationScope (Fresh W) (fr_fresh F)
+    (context_gens C ++
+     (match fr_ret F with Some t => gens t | None => [] end) ++
+     match fr_this F with Some t => gens t | None => [] end).
+
 Definition FreshFor (W : world) (F : frame) (C : cx) (gs : list nat) : Prop :=
-  NoDup gs /\ Forall (fun g => Fresh W g /\
-    ~ In g (fr_fresh F ++ context_gens C ++
-       (match fr_ret F with Some t => gens t | None => [] end) ++
-       match fr_this F with Some t => gens t | None => [] end)) gs.
+  AllocationFresh (body_allocation_scope W F C) gs.
+
+Definition frame_after_allocation (F : frame) (after : allocation_scope nat) : frame :=
+  Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F)
+    (scope_allocated after) (fr_applying F) (fr_pins F).
 
 (* The meaning of a decimal literal ([D68]): digits, an optional fraction
    and an optional exponent, as numerator / denominator. *)
@@ -4716,7 +4746,8 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
        value of its type may not leave the block *)
     BindItem W P F C (Spec (Some pa) None None, None)
       (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm (map (rkey_of C') ks))
-      C' (with_fresh F newgens) (map gensof outs)
+      C' (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) newgens))
+      (map gensof outs)
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
