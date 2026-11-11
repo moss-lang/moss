@@ -3,6 +3,7 @@
    merge substitution and entries mention only those symbols. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts.
+From NM Require PublicSubstFacts PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -210,7 +211,7 @@ Theorem ctxof_formed : forall f Cf ns, CtxOf W f Cf ns ->
   (forall k v, nlook k (c_ty Cf) = Some v -> v = app_subst (c_sub Cf) (TAbs k)) /\
   (forall g t, In (g, t) (c_sub Cf) -> In g (map fst (c_ty Cf)) /\ incl (gens t) (map fst (c_ty Cf))).
 Proof.
-  intros f Cf ns (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
+  intros f Cf ns (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & Merge & Section & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
   { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
@@ -219,15 +220,24 @@ Proof.
   destruct Tmr as [IdR [SubR ErR]].
   assert (Keys : map fst (c_ty (entries_cx σ classes tmr (es ++ er))) = map fst tmr).
   { cbn. rewrite map_map. reflexivity. }
+  assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
+  { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
+  assert (Classes : incl (merge_symbols classes) (map fst tmr)).
+  { intros x Ix. apply All. exact (proj1 (proj2 (proj2 Merge)) x Ix). }
   split.
   - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
     rewrite nlook_smap in Found. destruct (nlook k tmr) as [u|] eqn:L; [|discriminate].
     injection Found as <-. rewrite (idform_nlook _ _ _ IdR L). reflexivity.
-  - intros g t Ig. rewrite Keys. cbn in Ig. destruct MGM as [_ [_ [_ [Dom _]]]]. destruct (Dom g t Ig) as [Gg Gt].
-    assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
-    { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
-    split; [exact (All g Gg)|intros x Ix; exact (All x (Gt x Ix))].
+  - intros g t Ig. rewrite Keys. cbn in Ig.
+    pose proof (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t Ig)) as Gg.
+    assert (Inside : In g (map fst tmr)) by exact (All g Gg).
+    split; [exact Inside|].
+    assert (Read : app_subst σ (TAbs g) = t).
+    { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Ig). reflexivity. }
+    rewrite <- Read. apply (PublicMerge.section_gens_bound Section Classes).
+    intros x [<-|[]]. exact Inside.
 Qed.
+
 End Contexts.
 
 Section Calls.
@@ -248,10 +258,7 @@ Definition callee_meanings (d : environment) (th : subst) : subst :=
   map (fun q => (fst q, ground d (snd q))) th.
 
 Lemma lookup_subst_in : forall x (th : subst), In x (map fst th) -> lookup_subst x th <> None.
-Proof.
-  intros x th. induction th as [|[y u] rest IH]; intros In'; [contradiction|].
-  cbn in *. destruct (Nat.eqb_spec x y); [discriminate|]. destruct In' as [E|In']; [congruence|exact (IH In')].
-Qed.
+Proof. exact PublicSubstFacts.lookup_subst_in. Qed.
 
 Lemma lookup_subst_nlook' : forall k (s : subst), lookup_subst k s = nlook k s.
 Proof. intros k s; induction s as [|[a t] r IH]; cbn; [reflexivity|rewrite IH; reflexivity]. Qed.
@@ -514,54 +521,17 @@ Qed.
 Lemma gens_subst : forall t s x, In x (A.gens (app_subst s t)) ->
   exists y, In y (A.gens t) /\
     ((lookup_subst y s = None /\ x = y) \/ (exists u, lookup_subst y s = Some u /\ In x (A.gens u))).
-Proof.
-  fix IH 1. intros [m|fields| |g|n th|ms] s x Ix.
-  - contradiction.
-  - rewrite subst_record in Ix. cbn in Ix |- *. induction fields as [|[f t] rest Tail]; [contradiction|].
-    cbn in Ix. apply in_app_or in Ix as [Ix|Ix].
-    + destruct (IH t s x Ix) as [y [Iy R]]. exists y. split; [apply in_or_app; left; exact Iy|exact R].
-    + destruct (Tail Ix) as [y [Iy R]]. exists y. split; [apply in_or_app; right; exact Iy|exact R].
-  - contradiction.
-  - exists g. split; [left; reflexivity|]. cbn in Ix.
-    destruct (lookup_subst g s) as [u|]; [right; eauto|left; destruct Ix as [<-|[]]; auto].
-  - rewrite subst_nom in Ix. unfold smap in Ix. cbn in Ix |- *. induction th as [|[y t] rest Tail]; [contradiction|].
-    cbn in Ix. apply in_app_or in Ix as [Ix|Ix].
-    + destruct (IH t s x Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; left; exact Iz|exact R].
-    + destruct (Tail Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; right; exact Iz|exact R].
-  - rewrite subst_union in Ix. cbn in Ix |- *. induction ms as [|t rest Tail]; [contradiction|].
-    cbn in Ix. apply in_app_or in Ix as [Ix|Ix].
-    + destruct (IH t s x Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; left; exact Iz|exact R].
-    + destruct (Tail Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; right; exact Iz|exact R].
-Qed.
+Proof. exact PublicSubstFacts.gens_subst. Qed.
 
 (* Every generation a substituted variable mentions occurs at each use of
    that variable in the template. Together with gens_subst this is exact. *)
 Lemma gens_subst_hit : forall t s x y, In x (A.gens t) ->
   In y (A.gens (app_subst s (TAbs x))) -> In y (A.gens (app_subst s t)).
-Proof.
-  fix IH 1. intros [m|fields| |g|n th|ms] s x y Ix Iy.
-  - contradiction.
-  - rewrite subst_record. cbn in Ix |- *. induction fields as [|[f t] rest Tail]; [contradiction|].
-    cbn in Ix |- *. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app;
-      [left; exact (IH t s x y Ix Iy)|right; exact (Tail Ix)].
-  - contradiction.
-  - cbn in Ix. destruct Ix as [<-|[]]. exact Iy.
-  - rewrite subst_nom. unfold smap. cbn in Ix |- *. induction th as [|[z t] rest Tail]; [contradiction|].
-    cbn in Ix |- *. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app;
-      [left; exact (IH t s x y Ix Iy)|right; exact (Tail Ix)].
-  - rewrite subst_union. cbn in Ix |- *. induction ms as [|t rest Tail]; [contradiction|].
-    cbn in Ix |- *. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app;
-      [left; exact (IH t s x y Ix Iy)|right; exact (Tail Ix)].
-Qed.
+Proof. exact PublicSubstFacts.gens_subst_hit. Qed.
 
 Lemma gens_subst_iff : forall t s y, In y (A.gens (app_subst s t)) <->
   exists x, In x (A.gens t) /\ In y (A.gens (app_subst s (TAbs x))).
-Proof.
-  intros t s y. split.
-  - intro InTy. destruct (gens_subst t s y InTy) as [x [Ix [[None ->]|[v [Some InV]]]]];
-      exists x; split; try exact Ix; cbn [app_subst]; [rewrite None; left; reflexivity|rewrite Some; exact InV].
-  - intros [x [Ix Iy]]. exact (gens_subst_hit t s x y Ix Iy).
-Qed.
+Proof. exact PublicSubstFacts.gens_subst_iff. Qed.
 
 Section Support2.
 Variable W : A.world.
@@ -569,33 +539,38 @@ Import A.
 
 Lemma subst_scoped : forall (K : list nat) s t,
   (forall g u, In (g, u) s -> incl (gens u) K) -> incl (gens t) K -> incl (gens (app_subst s t)) K.
-Proof.
-  intros K s t Range Sc x Ix. destruct (gens_subst t s x Ix) as [y [Iy [[_ ->]|[u [L Iu]]]]]; [exact (Sc y Iy)|].
-  exact (Range y u (lookup_subst_in_pair _ _ _ L) x Iu).
-Qed.
+Proof. exact PublicSubstFacts.subst_scoped. Qed.
 
 Definition provision_sig_gens (p : provision) : list nat :=
   match provision_signature p with Some g => sig_gens g | None => [] end.
 Definition key_gens (k : item) : list nat := match k with IMth r _ _ => gens r | _ => [] end.
 
+Lemma sig_read_scoped : forall (K : list nat) s g,
+  (forall t, incl (gens t) K -> incl (gens (app_subst s t)) K) ->
+  incl (sig_gens g) K -> incl (sig_gens (sig_subst s g)) K.
+Proof.
+  intros K s [ps r] Read Sc x Ix. unfold sig_gens in *. cbn in Ix |- *. cbn in Sc.
+  apply in_app_or in Ix as [Ix|Ix].
+  - exact (Read r (fun y Iy => Sc y (in_or_app _ _ _ (or_introl Iy))) x Ix).
+  - rewrite flat_map_concat_map, map_map in Ix. apply in_concat in Ix as [l [Il Ix]].
+    apply in_map_iff in Il as [t [<- It]].
+    apply (Read t); [|exact Ix].
+    intros y Iy. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
+Qed.
+
 Lemma sig_subst_scoped : forall (K : list nat) s g,
   (forall x u, In (x, u) s -> incl (gens u) K) -> incl (sig_gens g) K -> incl (sig_gens (sig_subst s g)) K.
 Proof.
-  intros K s [ps r] Range Sc x Ix. unfold sig_gens in *. cbn in Ix |- *. cbn in Sc.
-  apply in_app_or in Ix as [Ix|Ix].
-  - exact (subst_scoped K s r Range (fun y Iy => Sc y (in_or_app _ _ _ (or_introl Iy))) x Ix).
-  - rewrite flat_map_concat_map, map_map in Ix. apply in_concat in Ix as [l [Il Ix]].
-    apply in_map_iff in Il as [t [<- It]].
-    apply (subst_scoped K s t Range); [|exact Ix].
-    intros y Iy. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
+  intros K s g Rows Source. apply (sig_read_scoped K s g); [|exact Source].
+  intros t InT. exact (subst_scoped K s t Rows InT).
 Qed.
 
 Theorem ctx_provision_scoped : forall f Cf ns, CtxOf W f Cf ns ->
   forall k p, In (k, p) (c_provisions Cf) ->
   incl (provision_sig_gens p) (map fst (c_ty Cf)) /\ incl (key_gens k) (map fst (c_ty Cf)).
 Proof.
-  intros f Cf ns Ctx. pose proof (ctxof_formed W f Cf ns Ctx) as [_ Dom].
-  destruct Ctx as (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
+  intros f Cf ns Ctx.
+  destruct Ctx as (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & Merge & Section & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
   { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
@@ -603,20 +578,23 @@ Proof.
     - exact (root_formed W _ _ _ _ _ _ RI IdT). }
   destruct Tmr as [IdR [SubR ErR]].
   assert (Keys : map fst (c_ty (entries_cx σ classes tmr (es ++ er))) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
-  rewrite Keys in Dom |- *.
+  rewrite Keys.
   assert (All : Scoped tmr (flat_map entry_gens (es ++ er))).
   { intros x Ix. rewrite flat_map_app in Ix. apply in_app_or in Ix as [Ix|Ix]; [exact (SubR x (EsT x Ix))|exact (ErR x Ix)]. }
-  assert (Range : forall g u, In (g, u) σ -> incl (gens u) (map fst tmr)) by (intros g u I; exact (proj2 (Dom g u I))).
+  assert (Classes : incl (merge_symbols classes) (map fst tmr)).
+  { intros x Ix. apply All. exact (proj1 (proj2 (proj2 Merge)) x Ix). }
+  assert (Read : forall t, incl (gens t) (map fst tmr) -> incl (gens (app_subst σ t)) (map fst tmr))
+    by exact (PublicMerge.section_gens_bound Section Classes).
   intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]].
   assert (Eg : incl (entry_gens e) (map fst tmr)).
   { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
   destruct e as [t|v t a|f' g a|r m g a|u fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
     unfold provision_sig_gens, key_gens; cbn [provision_signature]; split; try (intros x []).
-  - apply (sig_subst_scoped _ σ (FSig [] t) Range). intros x Ix. apply Eg. cbn. unfold sig_gens in Ix. cbn in Ix.
+  - apply (sig_read_scoped _ σ (FSig [] t) Read). intros x Ix. apply Eg. cbn. unfold sig_gens in Ix. cbn in Ix.
     rewrite app_nil_r in Ix. apply in_or_app. left. exact Ix.
-  - apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
-  - apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn. apply in_or_app. right. apply in_or_app. left. exact Ix.
-  - apply (subst_scoped _ σ r Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
+  - apply (sig_read_scoped _ σ g Read). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
+  - apply (sig_read_scoped _ σ g Read). intros x Ix. apply Eg. cbn. apply in_or_app. right. apply in_or_app. left. exact Ix.
+  - apply (Read r). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
 Qed.
 (* A functor need records every fixed input of its functor. *)
 Definition FunCover (e : entry) : Prop :=
@@ -710,7 +688,7 @@ Theorem functx_scoped : forall u C ns, FunCtx W u C ns ->
   NoDup ns /\ (forall k p, In (k, p) (c_provisions C) -> In k ns) /\ (forall k, In k ns -> NeedShape k) /\
   (forall g t, In (g, t) (c_sub C) -> In g (map fst (c_ty C)) /\ incl (gens t) (map fst (c_ty C))).
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & [Nd Keys] & _).
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & Merge & Section & -> & [Nd Keys] & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   set (tmr := (map (fun t => (t, TAbs t)) implicit ++ tm)%list).
   assert (IdR : IdForm tmr).
@@ -718,9 +696,10 @@ Proof.
   assert (All : Scoped tmr (flat_map entry_gens es)).
   { intros x Ix. unfold tmr. rewrite map_app. apply in_or_app. right. exact (EsT x Ix). }
   assert (KeysE : map fst (c_ty (entries_cx σ classes tmr es)) = map fst tmr) by (cbn; rewrite map_map; reflexivity).
-  destruct MGM as [_ [_ [_ [Dom _]]]].
-  assert (Range : forall g t, In (g, t) σ -> incl (gens t) (map fst tmr)).
-  { intros g t I x Ix. exact (All x (proj2 (Dom g t I) x Ix)). }
+  assert (Classes : incl (merge_symbols classes) (map fst tmr)).
+  { intros x Ix. apply All. exact (proj1 (proj2 (proj2 Merge)) x Ix). }
+  assert (Read : forall t, incl (gens t) (map fst tmr) -> incl (gens (app_subst σ t)) (map fst tmr))
+    by exact (PublicMerge.section_gens_bound Section Classes).
   split; [|split; [|split; [|split; [exact Nd|split; [|split]]]]].
   - intros k v Found. cbn in Found. change (map _ tmr) with (PublicTypeRead.smap σ tmr) in Found.
     rewrite nlook_smap in Found. destruct (nlook k tmr) as [v0|] eqn:L; [|discriminate].
@@ -730,23 +709,28 @@ Proof.
     { intros x Ix. apply All. apply in_flat_map. exists e. split; assumption. }
     destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-;
       unfold provision_sig_gens, key_gens; cbn [provision_signature].
-    + split; [|split; [intros x []|exact Logic.I]]. apply (sig_subst_scoped _ σ (FSig [] t) Range). intros x Ix. apply Eg. cbn.
+    + split; [|split; [intros x []|exact Logic.I]]. apply (sig_read_scoped _ σ (FSig [] t) Read). intros x Ix. apply Eg. cbn.
       unfold sig_gens in Ix. cbn in Ix. rewrite app_nil_r in Ix. apply in_or_app. left. exact Ix.
-    + split; [|split; [intros x []|exact Logic.I]]. apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn.
+    + split; [|split; [intros x []|exact Logic.I]]. apply (sig_read_scoped _ σ g Read). intros x Ix. apply Eg. cbn.
       apply in_or_app. left. exact Ix.
     + split; [|split; [|exact Logic.I]].
-      * apply (sig_subst_scoped _ σ g Range). intros x Ix. apply Eg. cbn. apply in_or_app. right. apply in_or_app. left. exact Ix.
-      * apply (subst_scoped _ σ r0 Range). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
+      * apply (sig_read_scoped _ σ g Read). intros x Ix. apply Eg. cbn. apply in_or_app. right. apply in_or_app. left. exact Ix.
+      * apply (Read r0). intros x Ix. apply Eg. cbn. apply in_or_app. left. exact Ix.
     + split; [intros x []|split; [intros x []|]].
       intros x t It. unfold fixed_subst in It. apply in_map_iff in It as [[y t0] [E It]]. cbn in E. injection E as -> <-.
-      apply (subst_scoped _ σ t0 Range). intros z Iz. apply Eg. cbn. apply in_flat_map. exists (x, t0). split; assumption.
+      apply (Read t0). intros z Iz. apply Eg. cbn. apply in_flat_map. exists (x, t0). split; assumption.
   - intros k p I. cbn in I. apply in_flat_map in I as [e [_ I]].
     destruct e as [t|v t a0|f' g a0|r0 m g a0|u' fx|eql eqr]; cbn in I; try contradiction; destruct I as [E|[]]; injection E as <- <-; cbn; auto.
   - intros k p I. cbn in I. apply in_flat_map in I as [e [Ie I]]. apply Keys. exists e. split; [exact Ie|].
     exact (entry_provision_key _ _ _ _ _ I).
   - intros k Ik. destruct (proj1 (Keys k) Ik) as [e [_ E]]. exact (entry_key_shape _ _ _ E).
-  - rewrite KeysE. intros g t I. cbn in I. destruct (Dom g t I) as [Gg Gt].
-    split; [exact (All g Gg)|intros x Ix; exact (All x (Gt x Ix))].
+  - rewrite KeysE. intros g t I. cbn in I.
+    pose proof (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t I)) as Gg.
+    assert (Inside : In g (map fst tmr)) by exact (All g Gg).
+    split; [exact Inside|].
+    assert (Equal : app_subst σ (TAbs g) = t).
+    { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t I). reflexivity. }
+    rewrite <- Equal. apply (Read (TAbs g)). intros x [<-|[]]. exact Inside.
 Qed.
 Theorem functx_fun_cover : forall u C ns, FunCtx W u C ns -> forall u' fx, In (IFun u', ProvidedFunctor fx) (c_provisions C) ->
   forall x, Fixed W u' x -> exists t, In (x, t) fx.
