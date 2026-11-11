@@ -32,7 +32,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
 From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig.
 From NM Require PublicMergeClass.
-From NM Require PublicContextFacts.
+From NM Require AllocationFacts PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -990,7 +990,9 @@ Proof.
     destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
     pose proof (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
     set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
-    destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & Outs & Nd & Avoid & FrG & FrC & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
+    destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & scope_after & Outs & Allocation & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
+    destruct (proj1 (AllocationFacts.copy_allocation_contract W sigma outs gen ys cg) (proj1 Allocation))
+      as (Nd & Avoid & FrG & FrC).
     assert (InjG : forall a b, In a outs -> In b outs -> gen a = gen b -> a = b)
       by (intros a b Ia Ib; exact (nodup_map_inj gen outs a b (NoDup_app_remove_r _ _ Nd) Ia Ib)).
     assert (HU : forall t, A.FunOutputs W h t -> In t outs) by (intros t Ft; apply Outs; exact (proj2 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.same_result_outputs W u h Same t) Ft)).

@@ -28,7 +28,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd.
 From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink PublicMergeClass.
-From NM Require PublicContextFacts.
+From NM Require AllocationFacts PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -533,7 +533,9 @@ Proof.
     destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
     pose proof (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
     set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
-    destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & Outs & Nd & Avoid & FrG & FrC & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
+    destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & scope_after & Outs & Allocation & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
+    destruct (proj1 (AllocationFacts.copy_allocation_contract W sigma outs gen ys cg) (proj1 Allocation))
+      as (Nd & Avoid & FrG & FrC).
     exists Cr, ks. split; [exact (pr_noout W u Cu _ _ Cr ks PRu NoU)|].
     intros i r m a g a0 Ki Lk key Ik Si.
     assert (Ea : a = []).

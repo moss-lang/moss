@@ -4133,13 +4133,14 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
 Definition copy_subst (sigma : subst) (ys : list nat) (cg : nat -> nat) : subst :=
   sigma ++ map (fun y => (y, TAbs (cg y))) ys.
 
+Definition copy_allocation_scope (W : world) (sigma : subst) : allocation_scope nat :=
+  AllocationScope (Fresh W) [] (flat_map (fun q => gens (snd q)) sigma).
+
 Definition CopyInterpretation (W : world) (sigma : subst) (u h : nat) (Cu : cx) (nsh : list item) (Ch : cx)
     (rm : list nat) : Prop :=
-  exists outs gen ys cg Cr ks Cr' ks',
-    (forall t, In t outs <-> FunOutputs W u t) /\ NoDup (map gen outs ++ map cg ys) /\
-    (forall z, In z (flat_map (fun q => gens (snd q)) sigma) -> ~ In z (map gen outs ++ map cg ys)) /\
-    (forall t, In t outs -> Fresh W (gen t)) /\
-    (forall y, In y ys -> Fresh W (cg y)) /\
+  exists outs gen ys cg Cr ks Cr' ks' scope_after,
+    (forall t, In t outs <-> FunOutputs W u t) /\
+    Allocates (copy_allocation_scope W sigma) (map gen outs ++ map cg ys) scope_after /\
     (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
                           lookup_subst y sigma = None) /\
     (* inputs *)

@@ -12,7 +12,7 @@ From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.
-From NM Require PublicFormation PublicCallerKeys EagerCopy PublicCopySubst.
+From NM Require AllocationFacts PublicFormation PublicCallerKeys EagerCopy PublicCopySubst.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -68,7 +68,7 @@ Proof.
     intros E0 srcs Len.
   - subst rms. cbn [closure_sources]. split; [exact Len|intros s I; exact I].
   - destruct (IH E0 srcs Len) as [LenH InH].
-    destruct CO as (sg & m & (outs & gen & ys & cg & Cr & ks & Cr' & ks' & _ & _ & _ & _ & _ & _ & _ & _ & PRu & PRh & Lrm & Pos) & _).
+    destruct CO as (sg & m & (outs & gen & ys & cg & Cr & ks & Cr' & ks' & _ & _ & _ & _ & _ & _ & PRu & PRh & Lrm & Pos) & _).
     assert (Rg : forall j, In j rm -> j < List.length (closure_sources rms srcs)).
     { intros j Ij. apply In_nth_error in Ij as [i Ei].
       assert (Li : i < List.length ks) by (rewrite <- Lrm; apply nth_error_Some; rewrite Ei; discriminate).
@@ -144,7 +144,9 @@ Proof.
   destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
   pose proof (proj1 (S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
   set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
-  destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & Outs & Nd & Avoid & FrG & FrC & Ys & Inp & Nds & _).
+  destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & scope_after & Outs & Allocation & Ys & Inp & Nds & _).
+  destruct (proj1 (AllocationFacts.copy_allocation_contract W sigma outs gen ys cg) (proj1 Allocation))
+    as (Nd & Avoid & _ & _).
   assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
   assert (FunFx : forall x t t', In (x, t) fx1 -> In (x, t') fx1 -> t = t').
   { intros x t t' I I'. destruct (proj1 (Fx1 x t) I) as [_ E]. destruct (proj1 (Fx1 x t') I') as [_ E']. congruence. }

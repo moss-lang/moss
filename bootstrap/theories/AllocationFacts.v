@@ -112,9 +112,6 @@ Proof. reflexivity. Qed.
 
 (* CopyInterpretation allocates its hypothetical output and input readings
    in one batch. The site’s fixed meanings provide the reserved support. *)
-Definition copy_allocation_scope (W : world) (sigma : Audit.Semantics.subst) : allocation_scope nat :=
-  AllocationScope (Fresh W) [] (flat_map (fun q => gens (snd q)) sigma).
-
 Theorem copy_allocation_contract : forall W sigma (outs : list nat) (gen : nat -> nat)
   (ys : list nat) (cg : nat -> nat),
   AllocationFresh (copy_allocation_scope W sigma) (map gen outs ++ map cg ys) <->

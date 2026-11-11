@@ -3610,6 +3610,23 @@ using one fresh atom per abstract class must preserve that behaviour
   application now computes that map directly. The safety proof consumes
   the split rule, and the executable elaborator is unchanged.
 
+### 116. Scope fresh identities in abstract applications and functor copies
+
+- **Rule.** `BApplyAbstract` extends its allocation scope with one batch of
+  output generations. `CopyInterpretation` allocates one local batch for
+  its hypothetical outputs and unknown inputs, reserving the generations
+  of the copy site's fixed meanings.
+- **Fidelity.** The application produces the same frame as `with_fresh` by
+  reduction. `copy_allocation_contract` recovers exactly the previous
+  copy conditions, including the collision check in
+  [copy_fresh_collide.moss](../tests/errors/copy_fresh_collide.moss).
+- **Proof.** The allocation laws preserve earlier allocations, keep
+  successive batches disjoint and transport allocation along injective
+  renamings. `fresh_tables_allocate` relates the executable counter's two
+  table allocations to the copy's batch, given that the starting counter
+  lies above its reserved identities.
+- **Class.** Equivalent factoring of the fresh identity conditions.
+
 ---
 
 ## Consolidation (branch ob-consol)
