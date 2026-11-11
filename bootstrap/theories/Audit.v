@@ -4112,8 +4112,11 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
      F lacks is accepted when F's fixed readings make it hold, as they do
      at every application (tests/wasi/copy_site_merge.moss); one a later application
      could break is not (copy-poly-merge.moss, tests/errors/copy_merge.moss).
-   - H's needs read as F's: each provision H takes is F's (its signature
-     and instantiation), read the same way.
+   - H's needs read as F's. A candidate must give the same key,
+     signature and instantiation at the copy site. If several candidates
+     agree there, the unique one already equal in the declared merges
+     supplies the provision. An unresolved choice would be observable
+     when an application has separate provisions for the target keys.
    - H's result gives each key of F's result the provision F's result
      gives it (each key's last setter), both read with the same fresh
      output roles. H's result is read in its own context Ch, where its
@@ -4143,8 +4146,36 @@ Definition copy_subst (sigma : subst) (ys : list nat) (cg : nat -> nat) : subst 
 Definition copy_allocation_scope (W : world) (sigma : subst) : allocation_scope nat :=
   AllocationScope (Fresh W) [] (flat_map (fun q => gens (snd q)) sigma).
 
-Definition CopyInterpretation (W : world) (sigma : subst) (u h : nat) (Cu : cx) (nsh : list item) (Ch : cx)
-    (rm : list nat) : Prop :=
+Definition copy_need_key (C : cx) (s : subst) (k : item) : item :=
+  app_subst_item s (canon_item C (provision_id k)).
+
+Definition merge_equations (M : merge) : list entry :=
+  flat_map (fun c =>
+    match mc_members c with
+    | [] => []
+    | x :: rest =>
+        let members := map (fun y => NEq (TAbs x) (TAbs y)) rest in
+        match mc_shape c with
+        | Some t => NEq (TAbs x) t :: members
+        | None => members
+        end
+    end) M.
+
+Definition CopyNeedAt (C : cx) (s : subst) (k : item) (p : provision) (k' : item) : Prop :=
+  copy_need_key C s k = copy_need_key C s k' /\
+  exists p', ilook (provision_id k') (c_provisions C) = Some p' /\
+    provision_subst s (canon_provision C p) = provision_subst s (canon_provision C p').
+
+Definition CopyNeedChoice (Cu Ch : cx) (s : subst) (needs : list item)
+    (k : item) (p : provision) (target : item) : Prop :=
+  In target needs /\ CopyNeedAt Cu s k p target /\
+  ((forall other, In other needs -> CopyNeedAt Cu s k p other -> other = target) \/
+   exists M, MergeOf (merge_equations (c_merge Cu) ++ merge_equations (c_merge Ch)) M /\
+     KeyEq M k target /\
+     (forall other, In other needs -> CopyNeedAt Cu s k p other -> KeyEq M k other -> other = target)).
+
+Definition CopyInterpretation (W : world) (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : list item) (Ch : cx)
+    (rm : list nat) (target : item -> item) : Prop :=
   exists outs gen ys cg Cr ks Cr' ks' scope_after,
     (forall t, In t outs <-> FunOutputs W u t) /\
     Allocates (copy_allocation_scope W sigma) (map gen outs ++ map cg ys) scope_after /\
@@ -4154,11 +4185,9 @@ Definition CopyInterpretation (W : world) (sigma : subst) (u h : nat) (Cu : cx) 
     (forall x tx, nlook x (c_ty Ch) = Some tx ->
        app_subst (copy_subst sigma ys cg) (canon Cu (TAbs x)) = app_subst (copy_subst sigma ys cg) (canon Cu tx)) /\
     (* needs *)
-    (forall k, In k nsh -> exists p' p,
-       ilook (provision_id k) (c_provisions Ch) = Some p' /\
-       ilook (provision_id (canon_item Cu k)) (c_provisions Cu) = Some p /\
-       provision_subst (copy_subst sigma ys cg) (canon_provision Cu p') =
-         provision_subst (copy_subst sigma ys cg) (canon_provision Cu p)) /\
+    (forall k, In k nsh -> exists p,
+       ilook (provision_id k) (c_provisions Ch) = Some p /\
+       CopyNeedChoice Cu Ch (copy_subst sigma ys cg) nsu k p (target k)) /\
     (* the result *)
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
     ProvideResult W h Ch (fun t => TAbs (gen t)) Cr' ks' /\
@@ -4776,25 +4805,20 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
       (map (app_identity a) (app_outputs a))
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
-| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,
+| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh target sm fx rm,
     resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
     (* only an abstract functor is bound (D78; the oracle's bind_functor,
        tests/errors/copy_into_body.moss) *)
     (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
     nlook h (c_funs C) <> None ->
     FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
-    (* each need of H is one of F's, read through F's merge (F's
-       congruence decides "same need": H may spell it through another
-       representative of the class; criteria.md section 2,
-       tests/wasi/sameneed_copy.moss) *)
-    (forall k, In k nsh -> In (canon_item Cu k) nsu) ->
     (* Copying requires the target fixed inputs now and preserves every
        known fixed interpretation carried by the existing source binding. *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     (forall x, Fixed W h x -> Fixed W u x) ->
     FixedAgreement W C h ->
     SameResult W u h ->
-    sm = map (fun k => (rkey_of Ch k, rkey_of Cu (canon_item Cu k))) nsh ->
+    sm = map (fun k => (rkey_of Ch k, rkey_of Cu (target k))) nsh ->
     (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
     (* H's inputs, implicit ones too, are among F's (the oracle's input
        interpretation check fails on one F lacks) *)
@@ -4802,7 +4826,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* and H reads its inputs, needs and result as F does at every
        application of F (the oracle: input and output interpretation,
        D78) *)
-    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu nsh Ch rm ->
+    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu nsu nsh Ch rm target ->
     BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
 (* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
    that F takes (read through F's merge) are linked (supplied by each

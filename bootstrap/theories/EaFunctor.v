@@ -10,11 +10,43 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit EaBase EaTypes EaCall EaFamily EaDecide.
+From NM Require Import Audit EaBase EaTypes EaCall EaFamily EaDecide EaCtx.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
+
+Definition copy_need_candidates (C : cx) (rho : subst) (needs : list item)
+    (k : item) (p : provision) : list item :=
+  let key := copy_need_key C rho k in
+  let required := provision_subst rho (canon_provision C p) in
+  filter (fun k' => item_eqb key (copy_need_key C rho k') &&
+    match ilook (provision_id k') (c_provisions C) with
+    | Some p' => provision_eqb required (provision_subst rho (canon_provision C p'))
+    | None => false
+    end) needs.
+
+Definition choose_copy_need (E : env) (source target : string) (Cu Ch : cx)
+    (rho : subst) (needs : list item) (k : item) (p : provision) : er item :=
+  match copy_need_candidates Cu rho needs k p with
+  | [k'] => Ok k'
+  | [] =>
+      if existsb (fun k' => item_eqb (copy_need_key Cu rho k) (copy_need_key Cu rho k')) needs then
+        Err (source ++ " cannot be copied to " ++ target ++ ": its input interpretation differs (D78)")
+      else Err (source ++ " cannot be bound to " ++ target ++ ": it needs " ++ qkey (e_W E) k ++
+                ", which " ++ target ++ " does not take (D78)")
+  | candidates =>
+      let ambiguous := (source ++ " cannot be copied to " ++ target ++ ": its need " ++ qkey (e_W E) k ++
+                        " matches more than one target provision at the copy site (D78)")%string in
+      match EaCtx.merge E (merge_equations (c_merge Cu) ++ merge_equations (c_merge Ch)) with
+      | Ok (_, M) =>
+          match filter (item_eqbM M k) candidates with
+          | [k'] => Ok k'
+          | _ => Err ambiguous
+          end
+      | Err _ => Err ambiguous
+      end
+  end.
 
 Section Functor.
 Variable E : env.
@@ -113,8 +145,10 @@ Definition apply_abstract (F : frame) (C : cx) (u : nat) : M (wrapper * cx * fra
 
 (* ---- BFunCopy and CopyInterpretation ---- *)
 
-(* SOUND: copy_interpretation sigma u h Cu nsh Ch = Ok rm -> CopyInterpretation W sigma u h Cu nsh Ch rm *)
-Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsh : list item) (Ch : cx) : M (list nat) :=
+(* SOUND: copy_interpretation sigma u h Cu nsu nsh Ch = Ok (sm, rm)
+   yields the chosen target keys and CopyInterpretation. *)
+Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : list item) (Ch : cx)
+    : M (smap * list nat) :=
   let nu := qs W u in let nh := qs W h in
   let outs := fun_outputs W metadata_fuel u in
   let ys := uniq (filter (fun y => negb (is_some (lookup_subst y sigma)))
@@ -126,17 +160,17 @@ Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsh : list
   let* _ := check (forallb (fun q => match nlook (fst q) (c_ty Ch) with
                      | Some tx => ty_eqb (app_subst rho (canon Cu (TAbs (fst q)))) (app_subst rho (canon Cu tx)) | None => true end) (c_ty Ch))
              (nh ++ " cannot be copied to " ++ nu ++ ": its input interpretation differs (D78)") in
-  let* _ := check (forallb (fun k =>
-              match ilook (provision_id k) (c_provisions Ch), ilook (provision_id (canon_item Cu k)) (c_provisions Cu) with
-              | Some p', Some p => provision_eqb (provision_subst rho (canon_provision Cu p')) (provision_subst rho (canon_provision Cu p))
-              | _, _ => false end) nsh)
-             (nh ++ " cannot be copied to " ++ nu ++ ": its input interpretation differs (D78)") in
+  let input_error := (nh ++ " cannot be copied to " ++ nu ++ ": its input interpretation differs (D78)")%string in
+  let* needs := mmap (fun k =>
+    let* p := lift (ilook (provision_id k) (c_provisions Ch)) input_error in
+    let* k' := pure (choose_copy_need E nh nu Cu Ch rho nsu k p) in
+    ret (k, k')) nsh in
   let* (Cr, ks) := pure (provide_result E u Cu (fun t => TAbs (gen t))) in
   let* (Cr', ks') := pure (provide_result E h Ch (fun t => TAbs (gen t))) in
   let at_rho := fun k => app_subst_item rho (provision_id k) in
   let at_rho_h := fun k => app_subst_item rho (canon_item Cu (provision_id k)) in
   let ix' := combine (seq 0 (List.length ks')) ks' in
-  mmap (fun k =>
+  let* rm := mmap (fun k =>
     match rev (filter (fun q => item_eqb (at_rho_h (snd q)) (at_rho k)) ix') with
     | (j, k') :: _ =>
         let* _ := check (forallb (fun q => item_eqb (provision_id (snd q)) (provision_id k')) (filter (fun q => item_eqb (at_rho_h (snd q)) (at_rho k)) ix'))
@@ -149,7 +183,8 @@ Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsh : list
         | _, _ => fail (nh ++ " cannot be copied to " ++ nu ++ ": its effective output interpretation differs (D78)")
         end
     | [] => fail (nh ++ " cannot be bound to " ++ nu ++ ": it does not provide " ++ qkey W k ++ ", which " ++ nu ++ " promises (D78)")
-    end) ks.
+    end) ks in
+  ret (map (fun q => (rkof Ch (fst q), rkof Cu (snd q))) needs, rm).
 
 (* SOUND: fun_copy F C u h = Ok (wrap, C') -> BindItem ... by BFunCopy *)
 Definition fun_copy (F : frame) (C : cx) (u h : nat) : M (wrapper * cx) :=
@@ -158,9 +193,6 @@ Definition fun_copy (F : frame) (C : cx) (u h : nat) : M (wrapper * cx) :=
   let* _ := lift (cfun C h) (nh ++ " is not available in the context here, so it cannot provide a bind (assume or bind it)") in
   let* (Cu, nsu) := lift (w_context W u) ("the context of " ++ nu ++ " does not form") in
   let* (Ch, nsh) := lift (w_context W h) ("the context of " ++ nh ++ " does not form") in
-  let* _ := match find (fun k => negb (imem (canon_item Cu k) nsu)) nsh with
-            | Some k => fail (nh ++ " cannot be bound to " ++ nu ++ ": it needs " ++ qkey W k ++ ", which " ++ nu ++ " does not take (D78)")
-            | None => ret tt end in
   let fu := fixed W metadata_fuel u in
   let* _ := match find (fun x => negb (bound_in C x)) fu with
             | Some x => fail ("binding " ++ nu ++ " needs " ++ qs W x ++ " in force: it is a fixed input (D84)")
@@ -170,10 +202,9 @@ Definition fun_copy (F : frame) (C : cx) (u h : nat) : M (wrapper * cx) :=
             | None => ret tt end in
   let* _ := check (fixed_agreement E C h) ("copying " ++ nh ++ " after rebinding its fixed input changes its interpretation (D84)") in
   let* _ := check (same_result W fuel u h) (result_mismatch u h) in
-  let sm := map (fun k => (rkof Ch k, rkof Cu (canon_item Cu k))) nsh in
   let fx := fixed_here u C in
   let* _ := check (forallb (fun q => bound_in Cu (fst q)) (c_ty Ch)) (nh ++ " cannot be copied to " ++ nu ++ ": it takes an input " ++ nu ++ " does not (D78)") in
-  let* rm := copy_interpretation (map (fun q => (fst q, canon C (snd q))) fx) u h Cu nsh Ch in
+  let* (sm, rm) := copy_interpretation (map (fun q => (fst q, canon C (snd q))) fx) u h Cu nsu nsh Ch in
   ret ((fun x => copy_functor_expression u h sm rm x), set_fun C u fx).
 
 (* ---- LinkBody and BFunClosure ---- *)

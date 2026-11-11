@@ -364,7 +364,7 @@ Lemma chain_keys : forall u gfx sms rms h0 gf0 sms0 rms0, FS.CopyA.CopyChain W u
   incl (map fst (A.c_ty Ch0)) (map fst (A.c_ty Cu)).
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh _ _ _ Sub _ _];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh _ _ _ Sub _ _];
     intros Cu' nsu' Ch0 nsh0 FCu' FC0.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu' FC0) as [-> _]. intros x I. exact I.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu') as [<- _].
@@ -379,17 +379,14 @@ Lemma chain_adapt : forall u gfx sms rms h0 gf0, FS.CopyA.CopyChain W u gfx sms 
   exists e2, adapt_provisions e1 sms = Some e2.
 Proof.
   intros u gfx sms rms h0 gf0 Ch. remember None as sms0 eqn:E0. remember (@None (list (option nat))) as rms0 eqn:E1.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh Incl Fx _ Sub _ Site];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH FCu FCh Incl Fx _ Sub _ Site];
     intros rr H d f Cu' nsu' e1 FCu' Real Fixd.
   - subst sms. exists e1. reflexivity.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu') as [<- <-].
-    destruct (FS.CopyA.copy_step_reads W d f e1 u Cu nsu h Ch nsh rm gfx gfh FCu FCh Sub Site Fixd) as [RdT NdT].
-    destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh (A.canon_item Cu)
-      FCu FCh Incl RdT NdT
-      (fun k _ => FS.CopyA.canon_copy_key_reads _ _ k
-        (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real))
-      Sub Real)
-      as [e1' [Sel RealH]].
+    pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Reads.
+    destruct (FS.CopyA.copy_step_reads W d f e1 u Cu nsu h Ch nsh rm target gfx gfh FCu FCh Sub Site Fixd Reads) as [RdT NdT].
+    destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh target
+      FCu FCh Incl RdT NdT Sub Real) as [e1' [Sel RealH]].
     assert (FixH : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (ground d (f x))).
     { intros x Fh. destruct (Fx x Fh) as [Fu E]. rewrite E. exact (Fixd x Fu). }
     destruct (IH E0 E1 rr H d f Ch nsh e1' FCh RealH FixH) as [e2 A2].
@@ -425,7 +422,7 @@ Proof.
   destruct (FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn x F0) as [Fx Egf].
   destruct (FS.CopyA.S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok0) as [CL|[CC|CP]].
   - destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E; intros; discriminate.
-  - destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & rms' & rm' & gfh & E & _). discriminate E.
+  - destruct CC as (h & Cu' & nsu & Ch & nsh & target0 & code' & sms' & dc & rms' & rm' & gfh & E & _). discriminate E.
   - destruct CP as (code' & _ & _ & Mach).
     destruct (Cov x Fx) as [tx Itx]. pose proof (Vm x tx Itx) as Gx.
     rewrite <- Egf, (Mach x Inm F0) in Gx.
@@ -653,7 +650,7 @@ Lemma chain_leaves_back : forall u gfx sms rms h0 gf0 sms0 rms0, FS.CopyA.CopyCh
   forall l, A.ResultLeaf W u l -> A.ResultLeaf W h0 l.
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ Same _];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ Same _];
     intros l L; [exact L|]. exact (IH l (proj1 (Same l) L)).
 Qed.
 
@@ -661,7 +658,7 @@ Lemma chain_no_outputs : forall u gfx sms rms h0 gf0 sms0 rms0, FS.CopyA.CopyCha
   (forall t, ~ A.FunOutputs W h0 t) -> forall t, ~ A.FunOutputs W u t.
 Proof.
   intros u gfx sms rms h0 gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ Same _];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ Same _];
     intros N t Ft; [exact (N t Ft)|]. exact (IH N t (proj1 (FS.CopyA.S.same_result_outputs W u h Same t) Ft)).
 Qed.
 
@@ -856,7 +853,7 @@ Proof.
   rewrite Look in Look'. injection Look' as <-.
   destruct (FS.CopyA.S.closure_cases _ _ _ _ _ _ _ _ _ _ Ok) as [CL|[CC|CP]].
   { destruct CL as (gg & h & Cu' & nsu & Cg & nsg & dc & E & _). injection E; intros; discriminate. }
-  { destruct CC as (h & Cu' & nsu & Ch & nsh & code' & sms' & dc & rms' & rm' & gfh & E & _). injection E; intros.
+  { destruct CC as (h & Cu' & nsu & Ch & nsh & target0 & code' & sms' & dc & rms' & rm' & gfh & E & _). injection E; intros.
     destruct sms'; discriminate. }
   destruct CP as (code' & _ & _ & Mach).
   pose proof (family_result_agrees family_keys C u matching th sm Cr ks Ts FA

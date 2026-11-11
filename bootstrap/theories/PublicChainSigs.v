@@ -442,7 +442,7 @@ Qed.
 Lemma chain_abs : forall v gfv sms rms h0 gf0 sms0 rms0, FL.CF.CN.CC.LR.PA.FS.CopyA.CopyChain W v gfv sms rms h0 gf0 sms0 rms0 ->
   Abstract h0 -> Abstract v.
 Proof.
-  intros v gfv sms rms h0 gf0 sms0 rms0 Ch. destruct Ch as [|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ _ _ _ _ _ _ _ Site];
+  intros v gfv sms rms h0 gf0 sms0 rms0 Ch. destruct Ch as [|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 sms0 rms0 _ _ _ _ _ _ _ _ Site];
     intros A0; [exact A0|].
   destruct Site as (C1 & fx1 & fxh & d1 & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Ab). exact (abstract_of_ast u Ab).
 Qed.
@@ -505,7 +505,7 @@ Lemma chain_sigs : forall v gfv sms rmsv h0' gf0 sms0 rms0, FL.CF.CN.CC.LR.PA.FS
   SigInv v Cv rmsv.
 Proof.
   intros v gfv sms rmsv h0' gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0' gf0 sms0 rms0 Sub IH FCu FCh Incl FixH _ InCu Same Site];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0' gf0 sms0 rms0 Sub IH FCu FCh Incl FixH _ InCu Same Site];
     intros E0 Er Cv nsv FCv Tok FixT.
   - subst u rms. destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FC0) as [Ecv _]. subst Cv.
     exists outputs, keys. split; [exact PR0|].
@@ -521,7 +521,7 @@ Proof.
     destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FCu) as [Ecv _]. subst Cv.
     pose proof (sub_inv W u Cu nsu T FCu Tok) as InvU.
     (* H's merges hold at T: the copy's input comparison, read at T *)
-    destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm gfx gfh T FCu FCh InCu Site FixT)
+    destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm target gfx gfh T FCu FCh InCu Site FixT)
       as [RdT _].
     assert (TokH : TableOk T Ch).
     { intros x tx Lx. pose proof (RdT x tx Lx) as E. unfold A.canon in E.

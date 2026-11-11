@@ -238,7 +238,7 @@ Hypothesis prims_ground : CRz.CSg.FL.CF.CN.CC.LR.PA.PrimsGroundOk W Prog argv re
 Theorem family_copy_realize_ok : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.FamilyCopyRealizeOk W Prog argv read state_ok.
 Proof.
   intros k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-    fx0 gfx0 h Cu0 nsu Ch nsh code sms dc rms rm gfh _ Look _ _ _ _ _ _.
+    fx0 gfx0 h Cu0 nsu Ch nsh target code sms dc rms rm gfh _ Look _ _ _ _ _ _.
   pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
@@ -248,7 +248,7 @@ Proof.
   pose proof (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
-  set (sms' := compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) in *.
+  set (sms' := compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (target k))) nsh)) in *.
   set (rms' := compose_positions rms rm) in *.
   set (f := fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))).
   assert (Thf : th = CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.thof f Cu) by exact Th.
@@ -366,7 +366,7 @@ Proof.
     assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
       (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx).
     { destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
-      2: { destruct CCp as (h' & Cu1 & nsu1 & Ch1 & nsh1 & code' & sms1 & dc' & rms1 & rm1 & gfh1 & E & _).
+      2: { destruct CCp as (h' & Cu1 & nsu1 & Ch1 & nsh1 & target0 & code' & sms1 & dc' & rms1 & rm1 & gfh1 & E & _).
            injection E as _ _ _ E. destruct rms1; discriminate. }
       2: { destruct CP as (code' & E & _). discriminate. }
       destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB2 _]] & _).
@@ -446,7 +446,7 @@ Proof.
     { intros x Inm F0 Ix0.
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
       { destruct CL as (gg & h' & Cu' & nsu' & Cg & nsg & dc & E & _). injection E; intros; discriminate. }
-      { destruct CCp as (h' & Cu' & nsu' & Ch' & nsh' & code' & sms1 & dc & rms1 & rm1 & gfh1 & E & _). injection E; intros.
+      { destruct CCp as (h' & Cu' & nsu' & Ch' & nsh' & target0 & code' & sms1 & dc & rms1 & rm1 & gfh1 & E & _). injection E; intros.
         destruct sms1; discriminate. }
       destruct CP as (code' & _ & _ & Mach).
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn x F0) as [Fu Egf].

@@ -1,0 +1,36 @@
+# H equates T and U in its declaration, so both target needs agree at the copy site.
+# They can denote different method provisions when an application sees T and U separately.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T; type U;
+fn .m(): Int;
+assume Std, T, U { fn out(a: T, b: U): Int; }
+functor F[]: Std, T, U, U.m, T.m -> out;
+context HInputs = T, U, U = T, T.m;
+functor H[]: Std, HInputs -> out;
+functor G: Std, HInputs -> out {
+  bind out = (a, b) => a.m();
+}
+
+assume Std, T, U, F {
+  fn demo(a: T, b: U) {
+    bind T.m = () => 1;
+    bind U.m = () => 2;
+    bind F;
+    putchar((out(a, b) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = Int;
+    bind U = Int;
+    bind H = G;
+    bind F = H;
+    demo(0, 0);
+  }
+}

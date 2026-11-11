@@ -973,7 +973,7 @@ Lemma chain_real : forall v gfv sms rmsv h0' gf0 sms0 rms0, CSg.FL.CF.CN.CC.LR.P
   (forall x, A.Fixed W v x -> lookup_subst x gfv = Some (app_subst Tin (TAbs x))) -> LevelReal v Cv rmsv.
 Proof.
   intros v gfv sms rmsv h0' gf0 sms0 rms0 Ch.
-  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh gfx gfh sms rms rm h0' gf0 sms0 rms0 Sub IH FCu FCh Incl FixH _ InCu Same Site];
+  induction Ch as [u gfx sms rms|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0' gf0 sms0 rms0 Sub IH FCu FCh Incl FixH _ InCu Same Site];
     intros E0 Er Cv nsv FCv Valuation FixT.
   - subst u rms. destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FC0) as [-> _]. exact (Root Valuation).
   - subst h0' rms0.
@@ -981,7 +981,7 @@ Proof.
     pose proof (PublicChainSigs.table_rows_of_merge W u Cu nsu Tin FCu Valuation) as Tok.
     pose proof (PublicChainSigs.sub_inv W u Cu nsu Tin FCu Tok) as InvU.
     (* H's merges hold at Tin: the copy's input comparison, read at Tin *)
-    destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm gfx gfh Tin FCu FCh InCu Site FixT) as [RdT _].
+    destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm target gfx gfh Tin FCu FCh InCu Site FixT) as [RdT _].
     assert (TokH : PublicChainSigs.TableOk Tin Ch).
     { intros x tx Lx. pose proof (RdT x tx Lx) as E. unfold A.canon in E. rewrite <- (InvU tx), <- E, InvU. reflexivity. }
     assert (FixTh : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (app_subst Tin (TAbs x))).
@@ -1502,7 +1502,7 @@ Proof.
   assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx).
   { destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
-    2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & code' & sms' & dc' & rms' & rm & gfh & E & _).
+    2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code' & sms' & dc' & rms' & rm & gfh & E & _).
          injection E as _ _ _ E. destruct rms'; discriminate. }
     2: { destruct CP as (code' & E & _). discriminate. }
     destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB _]] & _).

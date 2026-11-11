@@ -21,6 +21,8 @@ const TRAPS: &[(&str, &str)] = &[
 /// (`agreement::GAPS` lists each).
 const NATIVE_REJECTS: &[(&str, &str)] = &[
     ("const_kept_output", "AUDIT-CHANGES #20: the self-hosted compiler rejects every use of a defined val"),
+    ("copy_site_distinct_needs", "AUDIT-CHANGES #119: the self-hosted compiler cannot resolve m in out"),
+    ("copy_site_distinct_needs_flip", "AUDIT-CHANGES #119: as copy_site_distinct_needs"),
     ("sameneed_copy", "AUDIT-CHANGES #51: the self-hosted compiler rejects the copy"),
     ("saved_type_rebinding", "the self-hosted compiler rejects `main`"),
 ];

@@ -358,7 +358,7 @@ Let P := program_of Prog argv read.
 Lemma chain_outputs : forall u gfx sms rms h0 gf0 sms0 rms0, PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 sms0 rms0 ->
   forall t, A.FunOutputs W u t <-> A.FunOutputs W h0 t.
 Proof.
-  intros u gfx sms rms h0 gf0 sms0 rms0 Ch. induction Ch as [|u h Cu nsu Ch nsh gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ SO];
+  intros u gfx sms rms h0 gf0 sms0 rms0 Ch. induction Ch as [|u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 sms0 rms0 _ IH _ _ _ _ _ _ SO];
     intros t; [reflexivity|]. rewrite (PA.FS.CopyA.S.same_result_outputs W u h SO t). exact (IH t).
 Qed.
 

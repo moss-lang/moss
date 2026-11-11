@@ -41,12 +41,6 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          fresh type for the whole class instead of the fixed member's meaning",
     ),
     (
-        "tests/errors/copy_site_method.moss",
-        "AUDIT-CHANGES #97: BFunCopy matches a need at a site-made merge by \
-         syntax, so the reference's orientation rejects this order \
-         (tests/wasi/copy_site_method_flip.moss is accepted)",
-    ),
-    (
         "tests/errors/duplicate_field_binder.moss",
         "AUDIT-CHANGES #1 (E21): the self-hosted compiler lets a pattern \
          bind a name twice",

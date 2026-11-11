@@ -1436,7 +1436,7 @@ Proof.
                   |F C pa dn a yp r m bs rt sg target pre sm ap types R MN B T Sig MP App NoFam
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
                   |F C pa a Typed
-                  |F C pa u pg h Cu nsu Ch nsh sm fx
+                  |F C pa u pg h Cu nsu Ch nsh target sm fx
                   |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff Cs.
     + assert (Sv : forall y, In y (gens (canon C tau)) -> In y (scope_gens C)).
       { intros y Iy. destruct (gens_canon C tau y Iy) as [I|I]; [exact (ty_scope C y (tyof_none_gens W _ _ _ _ T y I))|exact I]. }

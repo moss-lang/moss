@@ -1,1 +1,0 @@
-[elab: tests/errors/copy_site_method.moss: `H` cannot be bound to `F`: it needs `U.m`, which `F` does not take (D78)]

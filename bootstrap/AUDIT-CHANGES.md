@@ -150,6 +150,7 @@ entry they belong to.
 | 116 | Scope fresh identities in applications and functor copies | names | none (equivalent factoring) |
 | 117 | Call instantiation respects merge classes | M4a | none (equivalent on formed contexts) |
 | 118 | Fixed inputs and lambda annotations compare by merge class | M4b | none (equivalent on formed contexts) |
+| 119 | Copy needs match at the binding site with an explicit ambiguity check | M4c | B and C |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3070,13 +3071,16 @@ executable tests unless noted.
 
 ---
 
-### 97. Recorded, not fixed: needs at a site-made merge are matched by syntax (linkfix branch)
+### 97. Needs at a site-made merge were matched by syntax (linkfix branch)
+
+This records the original verdicts. #119 fixes the copy pair. The linked
+body case still needs site-aware matching.
 - **The programs.** Four examples, each with a header giving every
   implementation's verdict:
 
   | program | oracle | native | Audit | moss-ref |
   |---|---|---|---|---|
-  | [copy-site-method](../tests/errors/copy_site_method.moss) (H's merge of T and U represented by U) | rejects | accepts | accepts | rejects |
+  | [copy-site-method](../tests/wasi/copy_site_method.moss) (H's merge of T and U represented by U) | rejects | accepts | accepts | rejects |
   | [copy-site-method-flip](../tests/wasi/copy_site_method_flip.moss) (the same, H's entries swapped) | accepts | accepts | accepts | accepts |
   | [link-site-merge](../tests/errors/link_site_merge.moss) (the closure analogue: G merges F's fixed T and U, and its body uses the merge) | rejects | prints 1006 | rejects | rejects |
   | [copy-unmentioned-apart](../tests/errors/copy_unmentioned_apart.moss) (inputs neither fixed nor mentioned, applied apart) | rejects | rejects | rejects | rejects |
@@ -3658,6 +3662,43 @@ using one fresh atom per abstract class must preserve that behaviour
   equality on merge classes to transport each fixed reading.
 - **Class.** Equivalent comparison on formed contexts (criterion 2).
 
+### 119. Copy needs match at the binding site (M4c)
+
+- **Rule.** The selected target need must give the same key, signature
+  and instantiation as the source at the copy site. If several candidates
+  agree there, select the unique one already equal in the declared merges
+  of the two functors. Reject if this comparison leaves a choice. The
+  executable emits the validated target's runtime key.
+- **Acceptance.** [Default order](../tests/wasi/copy_site_method.moss) and
+  [flipped order](../tests/wasi/copy_site_method_flip.moss) bind two fixed
+  inputs to Old. H merges those inputs, and F has just one need for the
+  method. The old reference rejected the default order. Both now apply
+  the copy and call the method. The self-hosted compiler accepts both.
+- **Ambiguity.** Two keys can coincide where the copy is bound and still
+  denote distinct methods in a function that assumes the inputs
+  separately. [Distinct keys](../tests/wasi/copy_site_distinct_needs.moss)
+  and [swapped needs](../tests/wasi/copy_site_distinct_needs_flip.moss)
+  both print 1, preserving the method H declares. If H's own context
+  equates those inputs, neither target is preferred. The old reference
+  printed 2 or 1 depending on the orientation of H's equation.
+  Both orientations now reject.
+  [T = U](../tests/errors/copy_site_ambiguous_needs.moss),
+  [U = T](../tests/errors/copy_site_ambiguous_needs_flip.moss).
+  The self-hosted compiler rejects all four with a method lookup error.
+- **Controls.** A copy whose extra input merge could fail at application
+  still rejects, as does one that merges distinct output keys.
+  [Unmentioned inputs](../tests/errors/copy_unmentioned_apart.moss),
+  [polymorphic inputs](../tests/errors/copy_merge.moss),
+  [output collision](../tests/errors/copy_result_collide.moss).
+- **Proof.** The checked choice is unique. The combined merge preserves
+  the equations of each declared context, independently of its
+  presentation. The copy substitution transfers the matching receiver
+  and provision agreement to every application, where the safety proof
+  realizes the selected target key.
+- **Classes B and C** (criterion 2). #98's mixed fixed and polymorphic
+  class still uses the old site reading. Linked bodies still use #97's
+  rule.
+
 ### 120. Assumptions give an absent atomic class a fresh reading (M4d)
 
 - **Rule.** `AssumedComplete` assigns one local atom to each atomic class
@@ -3673,6 +3714,7 @@ using one fresh atom per abstract class must preserve that behaviour
   reading in both. An omitted method need is still
   rejected and names the same source class member in both orientations.
 - **Class.** Scoped assumption readings (criterion 2).
+
 
 ---
 

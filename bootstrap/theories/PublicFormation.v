@@ -1874,7 +1874,7 @@ Proof.
                   |F C pa dn a y r m bs rt sg target pre sm ap types R MN B T Sig MP App NoFam
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
                   |F C pa a Typed
-                  |F C pa u pg h Cu nsu Ch nsh sm fx
+                  |F C pa u pg h Cu nsu Ch nsh target sm fx
                   |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff.
     + pose proof (tyof_ok W _ _ _ _ _ T (cf_ty _ _ (proj1 Fc)) (optok_none W)) as Htau.
       exact (conj (set_ty_formed W C t (canon C tau) Fc (canon_ok W C tau (proj1 Fc) Htau) K) Ff).

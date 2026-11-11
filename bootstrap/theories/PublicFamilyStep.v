@@ -303,11 +303,11 @@ Definition FamilyCopyApplyOk : Prop := forall k, Below k -> forall C0 C u matchi
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
-  forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
+  forall fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) dc (compose_positions rms rm)) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (target k))) nsh)) dc (compose_positions rms rm)) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
-  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
+  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> CopyA.S.NeedsAmong target nsh nsu ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
@@ -326,11 +326,11 @@ Definition FamilyCopyRealizeOk : Prop := forall k, Below k -> forall C0 C u matc
   PublicFormation.TysScoped W C ->
   A.FamilyApplication W C u matching th sm Cr ks ->
   forall F rr j d types H g st, rr <= S k -> S j <= rr -> Pre rr F C0 d types H g st ->
-  forall fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh,
+  forall fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh,
   A.nlook u (A.c_funs C0) = Some fx ->
-  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) dc (compose_positions rms rm)) ->
+  lookup_provision (IFun u) d = Some (FunctorClosure code (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (target k))) nsh)) dc (compose_positions rms rm)) ->
   ClosureOk rr H h gfh (FunctorClosure code sms dc rms) ->
-  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu0 k) nsu) ->
+  A.FunCtx W u Cu0 nsu -> A.FunCtx W h Ch nsh -> CopyA.S.NeedsAmong target nsh nsu ->
   (forall x, A.Fixed W h x -> A.Fixed W u x /\ lookup_subst x gfh = lookup_subst x gfx) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   (exists dr st' H', heap_extends H H' /\ state_ok H' st' /\ type_meanings dr = [] /\ type_aliases dr = [] /\
@@ -359,9 +359,9 @@ Qed.
 Lemma family_copy_apply_of_realize : FamilyCopyRealizeOk -> FamilyCopyApplyOk.
 Proof.
   intros Rz k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm.
+    fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm.
   destruct (Rz k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-    fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm)
+    fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh Fx Look Okh FCu0 FCh Incl FxC Fm)
     as [(dr & st' & H' & Ext & St' & Tm & Ta & New & Ap)|Stop]; intros rest; [left|right; exact (Stop rest)].
   exists dr, st', H'. split; [exact Ext|]. split; [exact St'|]. split.
   - split; [exact Tm|]. split; [exact Ta|]. split; [|exact New].
@@ -408,9 +408,9 @@ Proof.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
   destruct (Funs u fx FxC0) as [pv [gfx [Look [Ok Fm]]]].
   destruct (CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CC|CP]].
-  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC).
+  2: { destruct CC as (h & Cu0 & nsu & Ch & nsh & target & code & sms & dc & rms & rm & gfh & -> & Okh & FCu0 & FCh & Incl & FxC).
        exact (family_copy_apply k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
-         fx gfx h Cu0 nsu Ch nsh code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC Fm). }
+         fx gfx h Cu0 nsu Ch nsh target code sms dc rms rm gfh FxC0 Look Okh FCu0 FCh Incl FxC Fm). }
   2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }

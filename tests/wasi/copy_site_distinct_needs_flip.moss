@@ -1,0 +1,35 @@
+# The fixed types coincide at the copy site, while demo can supply T.m and U.m separately.
+# The source need is T.m before the fixed types are read, so the copy must print 1.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T; type U;
+fn .m(): Int;
+assume Std, T, U { fn out(a: T, b: U): Int; }
+functor F[]: Std, T, U, T.m, U.m -> out;
+functor H[]: Std, T, U, T.m -> out;
+functor G: Std, T, U, T.m -> out {
+  bind out = (a, b) => a.m();
+}
+
+assume Std, T, U, F {
+  fn demo(a: T, b: U) {
+    bind T.m = () => 1;
+    bind U.m = () => 2;
+    bind F;
+    putchar((out(a, b) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = Int;
+    bind U = Int;
+    bind H = G;
+    bind F = H;
+    demo(0, 0);
+  }
+}

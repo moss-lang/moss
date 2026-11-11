@@ -92,7 +92,7 @@ Proof.
   remember (A.pin_reads Cb pins) as pr0 eqn:Err.
   (* 2: the full LinkBody, from the closure *)
   destruct (CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
-  2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & code & sms & dc' & rms & rm & gfh & E & _).
+  2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code & sms & dc' & rms & rm & gfh & E & _).
        injection E as _ _ _ E. destruct rms; discriminate. }
   2: { destruct CP as (code & E & _). discriminate. }
   destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB _]] & _).
@@ -262,7 +262,7 @@ Proof.
   (* Q6: u's fixed readings are θ's (the family's fixed agreement) *)
   assert (FxIn : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))).
   { destruct (CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
-    2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & code & sms & dc' & rms & rm & gfh & E & _).
+    2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code & sms & dc' & rms & rm & gfh & E & _).
          injection E as _ _ _ E. destruct rms; discriminate. }
     2: { destruct CP as (code & E & _). discriminate. }
     destruct CL as (gg5 & h5 & Cu5 & nsu5 & Cg5 & nsg5 & dc5 & _ & _ & FCu5 & _ & FxIn5 & _).
