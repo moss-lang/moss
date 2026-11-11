@@ -65,6 +65,27 @@ fn unsupported_operations_preserve_raw_handle_types() {
 }
 
 #[test]
+fn platform_array_copy_uses_one_held_type() {
+    refused(
+        &[
+            (
+                "lib/wasm.moss",
+                "type I32; type ArrayRef; type Arrayed; type Other;
+                 assume ArrayRef, Arrayed { tag Array[Arrayed](ArrayRef); }
+                 assume I32, ArrayRef, Arrayed, Other {
+                   fn Array.copy(at: I32, from: Array[Arrayed = Other], start: I32, count: I32);
+                 }
+                 functor Arrays[Arrayed, Other]: I32, ArrayRef, Arrayed, Other -> Array.copy;
+                 context Probe = I32, ArrayRef, Arrays;",
+            ),
+            ("lib/prelude.moss", "import \"./wasm.moss\" use Probe;"),
+            ("main.moss", "assume Probe { fn main() {} }"),
+        ],
+        "platform primitive has an incompatible declared signature",
+    );
+}
+
+#[test]
 fn machine_constants_have_machine_types() {
     refused(
         &[

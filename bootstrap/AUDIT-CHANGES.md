@@ -157,6 +157,8 @@ entry they belong to.
 | 125 | Translate the checked provision choices of a closure binding | M4c | none (equivalent factoring) |
 | 126 | Compare a closure’s shared inputs and needs at the binding site | M4c | C |
 | 127 | Read directly bound private inputs from the closure’s capture | M4c | C |
+| 128 | Rank generated code at its recorded origin | expansion soundness | C |
+| 129 | Check raw handles and the common array-copy held type in executable platform linking | platform soundness | A for the executable |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3879,6 +3881,20 @@ using one fresh atom per abstract class must preserve that behaviour
   both type and code expansion bounds.
 - **Class C.** The contract now ranks the contexts of the emitted
   program. The original lambda example runs with its empty section.
+
+### 129. Check the platform provision types during executable linking
+
+- The unsupported-function branch checks `HandlesRead`. A custom prelude
+  declaring `unrecognized(x: Ref[StructRef = I32, Boxed = Boxed])` used to
+  elaborate. Its `StructRef` argument violates the platform handle rule.
+  An unsupported function with a valid signature still traps with its
+  own name when called.
+- Array copy requires one held type shared by the source and destination.
+  A custom `Array.copy` whose source holds `Other` and whose receiver
+  holds `Arrayed` used to elaborate. The executable now rejects it.
+- Both checks implement existing clauses of the platform contract. The
+  [custom prelude regressions](../crates/moss-tests/tests/suite/runtime_platform.rs)
+  exercise the formerly accepted declarations.
 
 ---
 

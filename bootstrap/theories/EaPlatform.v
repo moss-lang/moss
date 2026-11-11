@@ -100,7 +100,8 @@ Definition gc_signature (op : wasm_prim) (ps : list ty) (r : ty) : bool :=
   | PArrGet, [a; i] => i32 i && held_is true a r
   | PArrSet, [a; i; h] => i32 i && held_is true a h && ty_eqb r TUnit
   | PArrFill, [a; i; h; n] => i32 i && i32 n && held_is true a h && ty_eqb r TUnit
-  | PArrCopy, [dst; di; src; si; n] => i32 di && i32 si && i32 n && ty_eqb r TUnit && is_ref true dst && is_ref true src
+  | PArrCopy, [dst; di; src; si; n] => i32 di && i32 si && i32 n && ty_eqb r TUnit &&
+      match reference_held true dst with Some held => held_is true src held | None => false end
   | _, _ => false
   end.
 Definition primitive_signature (op : wasm_prim) (ps : list ty) (r : ty) : bool :=
