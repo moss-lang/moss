@@ -112,10 +112,12 @@ Definition bind_scope_valid F C (result : wrapper * cx * frame * list nat) (afte
   let '(_, C', F', _) := result in
   valid F' C' after /\ forall final, valid F' C' final -> valid F C final.
 
+Definition BindItemAt (R : rec) F C item : Prop :=
+  Checked post (valid F C) (bind_scope_valid F C) (bind_item E R F C item)
+    (fun '(wrap, C', F', made) _ => BindItem W P F C item wrap C' F' made).
+
 Definition BindItemSound (R : rec) : Prop :=
-  forall F C item,
-    Checked post (valid F C) (bind_scope_valid F C) (bind_item E R F C item)
-      (fun '(wrap, C', F', made) _ => BindItem W P F C item wrap C' F' made).
+  forall F C item, BindItemAt R F C item.
 
 Definition BindItemsSound
     (read : frame -> cx -> list (spec * option aexpr) -> M (wrapper * cx * frame * list nat)) : Prop :=
