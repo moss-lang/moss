@@ -1,7 +1,8 @@
 (* The query driver threads validity forwards and final-program evidence
    backwards. A judgment can use the evidence at the action's end. *)
-From Stdlib Require Import List Arith.
-From NM Require Import Audit EaBase EaExpr EaBind EaMain EaControlSound.
+From Stdlib Require Import List Arith Lia.
+From NM Require Import Audit EaBase EaExpr EaBind EaMain EaControlSound
+  EaCodeAllocationSound EaCodeEffects EaAssemblyCodeEffects.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 Definition Checked {A} (post valid_before : est -> Prop) (valid_after : A -> est -> Prop)
@@ -51,6 +52,103 @@ Proof.
   split.
   - apply Back. eapply Effects; exact Run.
   - intros Valid Post. exact (Prove _ _ _ Valid Run Post).
+Qed.
+
+(* Only populated generated slots need to survive into the final state.
+   An enclosing action can still fill a slot reserved around a child. *)
+Record GeneratedPost (source_bound : nat) (final state : est) : Prop := {
+  generated_counter : es_next state <= es_next final;
+  generated_code : forall table number code,
+    source_bound <= number < es_next state ->
+    read_code state table number = Some code ->
+    read_code final table number = Some code;
+  generated_origin : forall table number origin,
+    source_bound <= number < es_next state ->
+    read_origin state table number = Some origin ->
+    read_origin final table number = Some origin
+}.
+
+Lemma generated_post_refl : forall source_bound state,
+  GeneratedPost source_bound state state.
+Proof. constructor; auto. Qed.
+
+Lemma generated_post_compose : forall source_bound before middle final,
+  GeneratedPost source_bound middle before ->
+  GeneratedPost source_bound final middle ->
+  GeneratedPost source_bound final before.
+Proof.
+  intros source_bound before middle final [Counter Code Origin] [Counter' Code' Origin'].
+  constructor; [lia| |].
+  - intros table number value Issued Read. apply Code'; [lia|now apply Code].
+  - intros table number value Issued Read. apply Origin'; [lia|now apply Origin].
+Qed.
+
+Theorem code_transition_preserves_post : forall source_bound before after final,
+  CodeTransition before after ->
+  GeneratedPost source_bound final after ->
+  GeneratedPost source_bound final before.
+Proof.
+  intros source_bound before after final [Counter Code Bound Origin Links] Post.
+  eapply generated_post_compose; [|exact Post]. constructor; [exact Counter| |].
+  - intros table number value [_ Issued] Read. now rewrite Code by exact Issued.
+  - intros table number value [_ Issued] Read. now rewrite Origin by exact Issued.
+Qed.
+
+Theorem source_action_establishes_post : forall A source_bound (action : M A) before result after,
+  PreservesCodeBound source_bound action ->
+  source_bound <= es_next before ->
+  CodeTablesBound before ->
+  action before = Ok (result, after) ->
+  GeneratedPost source_bound after before.
+Proof.
+  intros A source_bound action before result after Preserves Lower Bound Run.
+  destruct (Preserves _ _ _ Lower Bound Run) as (Counter & Bound' & Code & Origin & Links).
+  constructor; [exact Counter| |].
+  - intros table number value [Generated Issued] Read. now rewrite Code by assumption.
+  - intros table number value [_ Issued] Read. now rewrite Origin by assumption.
+Qed.
+
+Theorem generated_code_in_assembly : forall E source_bound entry P final state,
+  assemble E source_bound entry (init_state source_bound) = Ok (P, final) ->
+  GeneratedPost source_bound final state ->
+  forall table number code, source_bound <= number < es_next state ->
+    read_code state table number = Some code ->
+    (match table as t return option (code_in t) with
+     | FunctionTable => body_of P number | FunctorTable => funbody_of P number end) = Some code.
+Proof.
+  intros E source_bound entry P final state Assembled Post table number code Issued Read.
+  destruct (assembled_code_lookup_exact _ _ _ _ _ Assembled) as [Functions Functors].
+  pose proof (generated_code _ _ _ Post table number code Issued Read) as Kept.
+  destruct table; [now rewrite Functions|now rewrite Functors].
+Qed.
+
+Theorem generated_lambda_origin_in_assembly : forall E source_bound entry P final state number origin,
+  assemble E source_bound entry (init_state source_bound) = Ok (P, final) ->
+  GeneratedPost source_bound final state ->
+  source_bound <= number < es_next state ->
+  read_origin state FunctionTable number = Some origin ->
+  nlook number (lambda_sections (program_origins P)) = Some origin.
+Proof.
+  intros E source_bound entry P final state number origin Assembled Post Issued Read.
+  pose proof (generated_counter _ _ _ Post) as Counter.
+  rewrite (assembled_lambda_section _ _ _ _ _ _ _ Assembled) by lia.
+  exact (generated_origin _ _ _ Post FunctionTable _ _ Issued Read).
+Qed.
+
+Theorem generated_link_origin_in_assembly : forall E source_bound entry P final state number target pins,
+  assemble E source_bound entry (init_state source_bound) = Ok (P, final) ->
+  GeneratedPost source_bound final state ->
+  source_bound <= number < es_next state ->
+  read_origin state FunctorTable number = Some (target, pins) ->
+  nlook number (linked_origins (program_origins P)) = Some target /\ link_pins_at final number = pins.
+Proof.
+  intros E source_bound entry P final state number target pins Assembled Post Issued Read.
+  pose proof (generated_origin _ _ _ Post FunctorTable _ _ Issued Read) as Kept.
+  cbn [read_origin] in Kept.
+  rewrite (assembled_link_origin _ _ _ _ _ _ _ Assembled).
+  fold (read_link_target final number).
+  destruct (read_link_target final number) as [found|]; [|discriminate].
+  injection Kept as <- <-. split; reflexivity.
 Qed.
 
 Section Callbacks.
