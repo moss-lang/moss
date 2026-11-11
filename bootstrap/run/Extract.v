@@ -51,11 +51,22 @@ Extract Inlined Constant Nat.div2 => "(fun k -> k asr 1)".
 Extract Inlined Constant tleft => "(fun k -> k = 0 || k land 1 = 1)".
 Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
 Extraction Inline InterpreterCompiled.scalar_nil InterpreterCompiled.scalar_cons InterpreterCompiled.push_arg.
+(* The native operation has the same immutable name and operands.
+   Its private memo is shared between the interpreter adapter and host. *)
+Extract Inductive Audit.Semantics.op => "PrimCache.operation"
+  ["PrimCache.operation"]
+  "(fun f operation -> f (PrimCache.name operation) (PrimCache.symbols operation))".
+Extract Inlined Constant Audit.Semantics.op_name => "PrimCache.name".
+Extract Inlined Constant Audit.Semantics.op_syms => "PrimCache.symbols".
+Extraction NoInline Audit.Semantics.WasmOps.decode.
+Extract Constant Audit.Semantics.WasmOps.decode => "PrimCache.memoize decode_operation".
 Extraction Blacklist String List Char Bool.
 Separate Extraction Audit.Semantics.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx Parse.load
   EaMain.elaborate
   ProgramFastPath.fastpath ProgramPrune.prune ProgramCapTrim.captrim
+  Audit.Semantics.WasmOps.decode_operation Audit.Semantics.WasmOps.unsupported_code
+  Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program
   InterpreterLazy.LazyInterpreter InterpreterLazy.lift_env
   InterpreterFast.FastInterpreter InterpreterFast.fast_env InterpreterCompiled.CloInterpreter.

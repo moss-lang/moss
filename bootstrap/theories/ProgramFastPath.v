@@ -87,7 +87,7 @@ Definition inW (W : list item) (i : item) : bool := existsb (item_eqb i) W.
 
 (* ===================== 2. The pass, for one functor ====================== *)
 
-Definition prim_ok (p : prim) : bool := match p with PBox _ | PArrNew _ => false | _ => true end.
+Definition prim_ok (p : op) : bool := match decode p with Some (PBox _) | Some (PArrNew _) => false | _ => true end.
 Definition body_prim (b : binding) : bool := match b with BPrimitive _ p => prim_ok p | _ => false end.
 Definition binds (s : item) (b : binding) : bool :=
   match b with BPrimitive j _ => item_eqb j s | _ => false end.
@@ -189,8 +189,8 @@ Definition body_ok : bool :=
 Definition hent (s : item) : provision_value :=
   match lookup_entry s (rev (map bent (fc_bindings cH))) with
   | Some a => a | None => ValueProvision VUnit end.
-Definition pick (s : item) : prim :=
-  match hent s with PrimitiveClosure p _ => p | _ => PUnreachable end.
+Definition pick (s : item) : op :=
+  match hent s with PrimitiveClosure p _ => p | _ => encode PUnreachable end.
 (* What an application installs for the pair q. *)
 Definition qent (q : item * item) : item * provision_value :=
   (fst q, PrimitiveClosure (pick (snd q)) None).
@@ -571,7 +571,8 @@ Lemma hent_bound : forall s, forallb body_prim bsH = true -> existsb (binds s) b
   lookup_entry s (rev (map bent bsH)) = Some (PrimitiveClosure (pick cH s) None).
 Proof.
   intros s Hp He. apply existsb_exists in He as [b [Hb Hbs]].
-  destruct b; simpl in Hbs; try discriminate. apply item_eqb_true in Hbs. subst.
+  destruct b as [| | | | | | |k p]; simpl in Hbs; try discriminate.
+  apply item_eqb_true in Hbs. subst.
   assert (Hin : In (s, PrimitiveClosure p None) (rev (map bent bsH))).
   { rewrite <- in_rev. apply in_map_iff. exists (BPrimitive s p). auto. }
   destruct (lookup_entry_some _ _ _ Hin) as [a Ha].
@@ -704,7 +705,10 @@ Definition installs (d : environment) (bs : list binding) : environment :=
   EnvironmentWithAliases (type_meanings d) (type_aliases d) (rev (map bent bs) ++ provision_values d).
 
 Lemma prim_closure_ok : forall d i p, prim_ok p = true -> primitive_closure d i p = PrimitiveClosure p None.
-Proof. intros d i p Hp. destruct p; try discriminate; destruct i; reflexivity. Qed.
+Proof.
+  intros d i p Hp. unfold prim_ok in Hp. unfold primitive_closure.
+  destruct (decode p) as [decoded|]; [destruct decoded|]; try discriminate; destruct i; reflexivity.
+Qed.
 
 Lemma lookup_installs : forall s d bs, lookup_provision s (installs d bs) =
   match lookup_entry s (rev (map bent bs)) with Some a => Some a | None => lookup_provision s d end.
@@ -748,7 +752,7 @@ Lemma chain_eval : forall P0 bs x d g st e, forallb body_prim bs = true -> 2 <= 
 Proof.
   intros P0. induction bs as [|b r IH]; intros x d g st e Hp Hx.
   - simpl. unfold installs. destruct d; reflexivity.
-  - destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hp1 Hp].
+  - destruct b as [| | | | | | |i p]; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hp1 Hp].
     change (length (BPrimitive i p :: r) + x) with (S (length r + x)).
     change (chain (BPrimitive i p :: r) e) with (EBind (BPrimitive i p) (chain r e)).
     rewrite ebind_prim by lia.
@@ -760,7 +764,7 @@ Lemma chain_short : forall P0 bs z d g st e, forallb body_prim bs = true -> z < 
   bs <> [] -> oof (eval z P0 d g st (chain bs e)).
 Proof.
   intros P0. induction bs as [|b r IH]; intros z d g st e Hp Hz Hne; [contradiction|].
-  destruct b; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hp1 Hp].
+  destruct b as [| | | | | | |i p]; simpl in Hp; try discriminate. apply andb_true_iff in Hp as [Hp1 Hp].
   destruct z as [|[|[|z]]]; try reflexivity.
   change (chain (BPrimitive i p :: r) e) with (EBind (BPrimitive i p) (chain r e)).
   rewrite ebind_prim by lia.

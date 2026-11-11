@@ -62,7 +62,7 @@ Proof. intros. eapply ScPrelude; eassumption. Qed.
 
 Module Host <: HOST.
   Definition state := unit.
-  Definition primitive (_ : program_view) (_ : prim) (_ : list value) (s : unit) := (Trap 0, s).
+  Definition primitive (_ : program_view) (_ : op) (_ : list value) (s : unit) := (Trap 0, s).
   Definition heap_ok (_ : Heap.hty) (_ : unit) := True.
 End Host.
 Module Model := Public Host.

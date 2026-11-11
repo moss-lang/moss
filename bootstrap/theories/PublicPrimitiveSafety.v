@@ -12,7 +12,7 @@
    has, so the result law forbids it to return normally. *)
 From Stdlib Require Import List String Arith Bool PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
-  PublicHeapTyping PublicBoolTyping PublicTagCheck.
+  PublicHeapTyping PublicBoolTyping PublicTagCheck PublicOperationFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -368,15 +368,6 @@ Proof.
   destruct Which as [->| ->]; destruct p; cbn in E; try discriminate; reflexivity.
 Qed.
 
-Lemma signature_cases : forall W p params ret, Platform.PrimitiveSignature W p params ret ->
-  (exists c, p = PUnsupported c) \/
-  Platform.Signature W params ret (prim_sig p) \/ Platform.Signature W params ret (prim_msig p) \/
-  Platform.GCSignature W p params ret.
-Proof.
-  intros W p params ret Sig. destruct p;
-    first [left; eexists; reflexivity | right; exact Sig].
-Qed.
-
 (* The closure's held header, as primitive_closure records it: the ground
    receiver type of the `boxed`/`arrayed` method. *)
 Definition HeldAt (m : subst) (params : list ty) (held : option ty) : Prop :=
@@ -391,12 +382,12 @@ Module M := M0.
 (* HeapTyping.HeapSafety's allocation lemmas, at this instance of Public
    (functor instances have distinct interface records). *)
 Lemma allocation_preserves_heap : forall W P iface H state p args held raw next tag (kind : nat),
-  M.interface_laws P iface -> M.supports iface p = true ->
+  M.interface_laws P iface -> M.supports iface (encode p) = true ->
   M.heap_ok iface (heap_predicates W P H) state ->
   Heap.gc_pre (heap_predicates W P H) p args (fun value => value_typed W P H value held) ->
   (forall Psi Psi' Q w, Heap.gc_post Psi Psi' p Q w ->
      Heap.hext Psi Psi' /\ exists a, w = VTag tag (VRef a None) /\ Psi a = None /\ Psi' a = Some (kind, Q)) ->
-  M.primitive iface P p args state = (Normal raw, next) ->
+  M.primitive iface P (encode p) args state = (Normal raw, next) ->
   exists H' address,
     heap_extends H H' /\ M.heap_ok iface (heap_predicates W P H') next /\
     raw = VTag tag (VRef address None) /\ H' address = Some (kind, held).
@@ -459,30 +450,30 @@ Lemma heap_extends_refl : forall H, heap_extends H H.
 Proof. intros H a c F; exact F. Qed.
 
 Lemma run_supported : forall P iface p held ws s,
-  M.supports iface p = true ->
-  M.Reference.run_prim_at P p held ws (iface, s) =
-    (let '(out, next) := M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s) in
+  M.supports iface (encode p) = true ->
+  M.Reference.run_prim_at P (encode p) held ws (iface, s) =
+    (let '(out, next) := M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s) in
      (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
       (iface, M.World (M.arguments s) (M.read_file s) next))).
 Proof.
   intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
-  rewrite Supp. destruct (M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s)); reflexivity.
+  rewrite decode_encode, Supp. destruct (M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s)); reflexivity.
 Qed.
 
 (* A non-allocating GC operation whose precondition holds at the ghost heap. *)
 Lemma gc_plain : forall W P iface H s p held ws Q t,
-  M.interface_laws P iface -> M.supports iface p = true ->
+  M.interface_laws P iface -> M.supports iface (encode p) = true ->
   M.heap_ok iface (heap_predicates W P H) (M.external s) ->
   Heap.gc_pre (heap_predicates W P H) p (BaseCall.primitive_arguments p ws) Q ->
   (forall extended w, Heap.gc_post (heap_predicates W P H) extended p Q w -> value_typed W P H w t) ->
   (forall tau o, BaseCall.allocation_result p tau o = o) ->
-  prim_outcome W P iface H t (M.Reference.run_prim_at P p held ws (iface, s)).
+  prim_outcome W P iface H t (M.Reference.run_prim_at P (encode p) held ws (iface, s)).
 Proof.
   intros W P iface H s p held ws Q t Laws Supp Valid Pre Post Plain.
   rewrite run_supported by exact Supp.
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
   specialize (GC p (BaseCall.primitive_arguments p ws) (M.external s) _ Q Supp Valid Pre).
-  destruct (M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s)) as [out next].
+  destruct (M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s)) as [out next].
   assert (Out : match out with Normal w => exists H', heap_extends H H' /\
       state_ok W P iface H' (iface, M.World (M.arguments s) (M.read_file s) next) /\ value_typed W P H' w t
     | Trap _ | Exit _ | UnsupportedOperation _ | OutOfFuel => True | _ => False end).
@@ -511,13 +502,13 @@ Proof. intros W P H k s a held Found. exists s, a. split; [reflexivity|]. unfold
 
 Theorem gc_safe : forall W Prog argv read iface p held params ret m H s ws,
   Platform.Layouts W -> Platform.Representations W Prog ->
-  M.interface_laws (program_of Prog argv read) iface -> M.supports iface p = true ->
+  M.interface_laws (program_of Prog argv read) iface -> M.supports iface (encode p) = true ->
   Platform.GCSignature W p params ret ->
   MachinesGround Prog m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
   M.heap_ok iface (heap_predicates W (program_of Prog argv read) H) (M.external s) ->
   Forall2 (fun w t => value_typed W (program_of Prog argv read) H w (app_subst m t)) ws params ->
   prim_outcome W (program_of Prog argv read) iface H (app_subst m ret)
-    (M.Reference.run_prim_at (program_of Prog argv read) p held ws (iface, s)).
+    (M.Reference.run_prim_at (program_of Prog argv read) (encode p) held ws (iface, s)).
 Proof.
   intros W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp Sig Ground Formed Held Valid Args.
   set (P := program_of Prog argv read) in *.
@@ -532,7 +523,7 @@ Proof.
     rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PBox n) [v] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
-    destruct (M.primitive iface P (PBox n) [v] (M.external s)) as [out next] eqn:Run.
+    destruct (M.primitive iface P (encode (PBox n)) [v] (M.external s)) as [out next] eqn:Run.
     destruct out; try contradiction; [|destruct held; exact I].
     destruct (allocation_preserves_heap W P iface H (M.external s) (PBox n) [v] (app_subst m heldt) v0 next n 0
       Laws Supp Valid ltac:(assumption) ltac:(intros ? ? ? ? [E X]; exact (conj E X)) Run) as [H' [a [Ext [Ok' [-> Cell]]]]].
@@ -561,7 +552,7 @@ Proof.
     rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PArrNew n) [v; VScalar 0 c] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
-    destruct (M.primitive iface P (PArrNew n) [v; VScalar 0 c] (M.external s)) as [out next] eqn:Run.
+    destruct (M.primitive iface P (encode (PArrNew n)) [v; VScalar 0 c] (M.external s)) as [out next] eqn:Run.
     destruct out; try contradiction; [|destruct held; exact I].
     destruct (allocation_preserves_heap W P iface H (M.external s) (PArrNew n) [v; VScalar 0 c] (app_subst m heldt) v0 next n 1
       Laws Supp Valid ltac:(assumption) ltac:(intros ? ? ? ? [E X]; exact (conj E X)) Run) as [H' [a [Ext [Ok' [-> Cell]]]]].
@@ -622,36 +613,32 @@ Proof.
 Qed.
 
 (* T11/T17: a primitive closure is a typed call. *)
-Theorem primitive_safe : forall W Prog argv read iface p held params ret m H st ws,
+Lemma primitive_safe_known : forall W Prog argv read iface p held params ret m H st ws,
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
-  M.interface_laws (program_of Prog argv read) iface -> M.supports iface p = true ->
-  Platform.PrimitiveSignature W p params ret ->
+  M.interface_laws (program_of Prog argv read) iface -> M.supports iface (encode p) = true ->
+  Platform.WasmSignature W p params ret ->
   MachinesGround Prog m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
   state_ok W (program_of Prog argv read) iface H st ->
   Forall2 (fun w t => value_typed W (program_of Prog argv read) H w (app_subst m t)) ws params ->
   prim_outcome W (program_of Prog argv read) iface H (app_subst m ret)
-    (M.Reference.run_prim_at (program_of Prog argv read) p held ws st).
+    (M.Reference.run_prim_at (program_of Prog argv read) (encode p) held ws st).
 Proof.
   intros W Prog argv read iface p held params ret m H [i s] ws Layouts Reps Bools Laws Supp
     Sig Ground Formed Held [Ei Valid] Args.
   cbn in Ei, Valid. subst i.
-  destruct (signature_cases W p params ret Sig) as [[c ->]|[Plain|[Plain|GCSig]]];
-    [| | |exact (gc_safe W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp
-                    GCSig Ground Formed Held Valid Args)].
-  - rewrite run_supported by exact Supp. destruct Laws as [_ [_ [Unsupported _]]].
-    specialize (Unsupported c (BaseCall.primitive_arguments (PUnsupported c) ws) (M.external s) Supp).
-    destruct (M.primitive iface _ (PUnsupported c) _ (M.external s)) as [out next].
-    cbn in Unsupported. subst out. destruct held; exact I.
+  destruct Sig as [Plain|[Plain|GCSig]];
+    [| |exact (gc_safe W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp
+                 GCSig Ground Formed Held Valid Args)].
   - assert (GC : Heap.is_gc p = false) by exact (signature_plain W params ret p _ (or_introl eq_refl) Plain).
     destruct Plain as [ins [out [Sig' [VTs VT]]]].
     destruct Laws as [Law [_ [_ [_ [_ [Keep _]]]]]].
     pose proof (Law p ins out ws (M.external s) Supp Sig'
       (shapes_params W Prog argv read Layouts Reps Bools m Ground H params ins ws VTs
         (Forall_inv_tail Formed) Args)) as Result.
-    pose proof (Keep p ws (M.external s) _ Supp GC Valid) as KeepH.
+    pose proof (Keep (encode p) ws (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
     destruct (output_shape p ins out (or_introl Sig')) as [NA NT].
     rewrite run_supported by exact Supp. rewrite args_plain by exact GC.
-    destruct (M.primitive iface _ p ws (M.external s)) as [o next].
+    destruct (M.primitive iface _ (encode p) ws (M.external s)) as [o next].
     cbn in Result, KeepH. destruct held; [rewrite alloc_plain by exact GC|];
       destruct o; try contradiction; try exact I;
       (exists H; split; [apply heap_extends_refl|]; split; [split; [reflexivity|exact KeepH]|];
@@ -662,13 +649,37 @@ Proof.
     pose proof (Law p ins out ws (M.external s) Supp Sig'
       (shapes_params W Prog argv read Layouts Reps Bools m Ground H params ins ws VTs
         (Forall_inv_tail Formed) Args)) as Result.
-    pose proof (Keep p ws (M.external s) _ Supp GC Valid) as KeepH.
+    pose proof (Keep (encode p) ws (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
     destruct (output_shape p ins out (or_intror Sig')) as [NA NT].
     rewrite run_supported by exact Supp. rewrite args_plain by exact GC.
-    destruct (M.primitive iface _ p ws (M.external s)) as [o next].
+    destruct (M.primitive iface _ (encode p) ws (M.external s)) as [o next].
     cbn in Result, KeepH. destruct held; [rewrite alloc_plain by exact GC|];
       destruct o; try contradiction; try exact I;
       (exists H; split; [apply heap_extends_refl|]; split; [split; [reflexivity|exact KeepH]|];
        eapply shape_result; eassumption).
+Qed.
+
+Theorem primitive_safe : forall W Prog argv read iface p held params ret m H st ws,
+  Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
+  M.interface_laws (program_of Prog argv read) iface -> M.supports iface p = true ->
+  Platform.PrimitiveSignature W p params ret ->
+  MachinesGround Prog m -> Forall (HandleFormed W) (ret :: params) -> HeldAt m params held ->
+  state_ok W (program_of Prog argv read) iface H st ->
+  Forall2 (fun w t => value_typed W (program_of Prog argv read) H w (app_subst m t)) ws params ->
+  prim_outcome W (program_of Prog argv read) iface H (app_subst m ret)
+    (M.Reference.run_prim_at (program_of Prog argv read) p held ws st).
+Proof.
+  intros W Prog argv read iface operation held params ret m H st ws
+    Layouts Reps Bools Laws Supp Sig Ground Formed Held Valid Args.
+  destruct (decode operation) as [p|] eqn:Decoded.
+  - unfold Platform.PrimitiveSignature in Sig. rewrite Decoded in Sig.
+    pose proof (decode_canonical _ _ Decoded) as ->.
+    eapply primitive_safe_known; eassumption.
+  - destruct st as [i s]. destruct Valid as [Ei _]. cbn in Ei. subst i.
+    unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive. rewrite Decoded, Supp.
+    destruct Laws as [_ [_ [Unsupported _]]].
+    specialize (Unsupported operation ws (M.external s) Decoded Supp).
+    destruct (M.primitive iface _ operation ws (M.external s)) as [out next].
+    cbn in Unsupported. subst out. destruct held; exact I.
 Qed.
 End PrimitiveSafety.

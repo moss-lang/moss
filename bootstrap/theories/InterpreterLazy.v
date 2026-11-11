@@ -120,7 +120,7 @@ Inductive lprov : Type :=
 | LValue : value -> lprov
 | LFunction : fsym -> lenv -> lprov
 | LFunctor : usym -> option smap -> lenv -> option (list (option nat)) -> lprov
-| LPrimitive : prim -> option ty -> lprov
+| LPrimitive : op -> option ty -> lprov
 with lenv : Type :=
 | LEnv : lsubst -> lsubst -> list (item * lprov) -> lenv.
 
@@ -192,9 +192,9 @@ Definition linstantiate (d : lenv) (th : subst) : lenv :=
 Definition ltyped_capture (d : lenv) (types : type_capture) (dc : lenv) : lenv :=
   LEnv (ldefer_all (lmeanings d) (capture_generations types))
     (ldefer_all (lmeanings d) (capture_aliases types)) (lprovs dc).
-Definition lprimitive_closure (d : lenv) (i : item) (p : prim) : lprov :=
-  LPrimitive p (match p, i with
-    | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (lground d tau)
+Definition lprimitive_closure (d : lenv) (i : item) (p : op) : lprov :=
+  LPrimitive p (match decode p, i with
+    | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (lground d tau)
     | _, _ => None end).
 (* item_eqb with a method key's symbols compared before its receiver and
    θ, so a lookup passes over other methods' entries without comparing
@@ -346,7 +346,7 @@ Lemma primitive_closure_to : forall d i p,
   primitive_closure (to_env d) i p = to_prov (lprimitive_closure d i p).
 Proof.
   intros d i p. unfold primitive_closure, lprimitive_closure. cbn [to_prov].
-  destruct p, i; rewrite ?ground_to; reflexivity.
+  destruct (decode p) as [decoded|]; [destruct decoded|]; destruct i; rewrite ?ground_to; reflexivity.
 Qed.
 
 Lemma lookup_entry_to : forall i ps,

@@ -112,23 +112,31 @@ Proof.
   intro t. rewrite M1, M2. reflexivity.
 Qed.
 
-(* Base's result adaptation retains the state returned by the raw host. *)
+(* The Base adapter changes a host result's wrapper, while retaining exactly
+   the state returned by the raw primitive. *)
 Section BaseCallFacts.
 Import Audit.Semantics.
 
 Lemma base_call_state : forall S
-    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    (primitive : program_view -> op -> list value -> S -> signal * S)
     P operation held ws st,
   snd (BaseCall.call primitive P operation held ws st) =
-  snd (primitive P operation (BaseCall.primitive_arguments operation ws) st).
+  snd (primitive P operation
+    (match decode operation with
+     | Some p => BaseCall.primitive_arguments p ws
+     | None => ws
+     end) st).
 Proof.
   intros S primitive P operation held ws st. unfold BaseCall.call.
-  destruct (primitive P operation (BaseCall.primitive_arguments operation ws) st)
-    as [out next]. destruct held; reflexivity.
+  destruct (primitive P operation
+    (match decode operation with
+     | Some p => BaseCall.primitive_arguments p ws
+     | None => ws end) st) as [out next].
+  destruct held, (decode operation); reflexivity.
 Qed.
 
 Lemma base_call_preserves : forall S
-    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    (primitive : program_view -> op -> list value -> S -> signal * S)
     P (ok : S -> Prop),
   (forall operation ws st, ok st -> ok (snd (primitive P operation ws st))) ->
   forall operation held ws st, ok st ->

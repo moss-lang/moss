@@ -1377,6 +1377,13 @@ Inductive value : Type :=
 | VScalar : nat -> Z -> value
 | VRef : address -> option (nat * ty) -> value.
 
+(* An operation's platform name and operands. *)
+Record op := Op { op_name : string; op_syms : list nat }.
+
+Module WasmOps.
+Local Open Scope string_scope.
+Local Open Scope list_scope.
+
 (* ===================== Primitives ======================================== *)
 
 Inductive i32bin := IAdd | ISub | IMul | IDivS | IDivU | IRemS | IRemU
@@ -1398,43 +1405,367 @@ Inductive store64k := S64 | S64_8 | S64_16 | S64_32.
 Inductive conv64 := C64Trunc (from32 : bool) (signed : bool) (sat : bool)
                   | C64Conv (to32 : bool) (signed : bool).
 
-Inductive prim : Type :=
-| PI32Bin  : i32bin -> prim
-| PI32Cmp  : i32cmp -> prim
-| PI32Un   : i32un -> prim
-| PF64Bin  : f64bin -> prim
-| PF64Cmp  : f64cmp -> prim
-| PF64Un   : f64un -> prim
-| PConv    : conv -> prim
-| PLoad    : loadk -> prim
-| PStore   : storek -> prim
+Inductive wasm_prim : Type :=
+| PI32Bin  : i32bin -> wasm_prim
+| PI32Cmp  : i32cmp -> wasm_prim
+| PI32Un   : i32un -> wasm_prim
+| PF64Bin  : f64bin -> wasm_prim
+| PF64Cmp  : f64cmp -> wasm_prim
+| PF64Un   : f64un -> wasm_prim
+| PConv    : conv -> wasm_prim
+| PLoad    : loadk -> wasm_prim
+| PStore   : storek -> wasm_prim
 | PF64Load | PF64Store
 | PMemSize | PMemGrow | PMemCopy | PMemFill
 | PUnreachable
 | PFdWrite | PProcExit | PArgsSizesGet | PArgsGet | PPathOpen | PFdRead | PFdClose
 | PI32Bool
 (* f32: every result rounded to binary32 *)
-| PF32Bin  : f64bin -> prim
-| PF32Cmp  : f64cmp -> prim
-| PF32Un   : f64un -> prim
-| PConv32  : conv -> prim               (* i32 <-> f32 *)
+| PF32Bin  : f64bin -> wasm_prim
+| PF32Cmp  : f64cmp -> wasm_prim
+| PF32Un   : f64un -> wasm_prim
+| PConv32  : conv -> wasm_prim               (* i32 <-> f32 *)
 | PF32Load | PF32Store | PDemote | PPromote | PI32ReinterpF32 | PF32ReinterpI32
 (* i64 *)
-| PI64Bin  : i32bin -> prim
-| PI64Cmp  : i32cmp -> prim
-| PI64Un   : i64un -> prim
+| PI64Bin  : i32bin -> wasm_prim
+| PI64Cmp  : i32cmp -> wasm_prim
+| PI64Un   : i64un -> wasm_prim
 | PWrap | PExtendS | PExtendU
-| PI64Load : load64k -> prim
-| PI64Store : store64k -> prim
-| PConv64  : conv64 -> prim
+| PI64Load : load64k -> wasm_prim
+| PI64Store : store64k -> wasm_prim
+| PConv64  : conv64 -> wasm_prim
 | PI64ReinterpF64 | PF64ReinterpI64
 (* D75/D81: what `bind Heap;`, `bind Mutable;`, `bind Arrays;` provide;
    PBox and PArrNew carry the `Ref` and `Array` tags *)
-| PBox : nsym -> prim | PDeref | PRefSet
-| PArrNew : nsym -> prim | PArrLen | PArrGet | PArrSet | PArrFill | PArrCopy
-(* declared by the library but not modelled: running one stops the
-   program with UnsupportedOperation, which the oracle reports as "unsupported" *)
-| PUnsupported : nat -> prim.
+| PBox : nsym -> wasm_prim | PDeref | PRefSet
+| PArrNew : nsym -> wasm_prim | PArrLen | PArrGet | PArrSet | PArrFill | PArrCopy.
+
+(* Which library fn is which primitive: the elaborator gives `main`'s need of
+   a lib/wasm.moss or lib/wasip1.moss fn named n the primitive
+   `prim_of_name n`.  An auditor checks this table
+   against lib/wasm.moss's and lib/wasip1.moss's names. *)
+Section PrimNames.
+Local Open Scope string_scope.
+Definition strip_prefix (pre s : string) : option string :=
+  if String.prefix pre s then Some (substring (String.length pre) (String.length s - String.length pre) s) else None.
+
+Definition i32bin_of (s : string) : option i32bin :=
+  match s with
+  | "add" => Some IAdd | "sub" => Some ISub | "mul" => Some IMul | "div_s" => Some IDivS
+  | "div_u" => Some IDivU | "rem_s" => Some IRemS | "rem_u" => Some IRemU | "and" => Some IAnd
+  | "or" => Some IOr | "xor" => Some IXor | "shl" => Some IShl | "shr_s" => Some IShrS
+  | "shr_u" => Some IShrU | "rotl" => Some IRotl | "rotr" => Some IRotr | _ => None
+  end.
+Definition i32cmp_of (s : string) : option i32cmp :=
+  match s with
+  | "eq" => Some CEq | "ne" => Some CNe | "lt_s" => Some CLtS | "lt_u" => Some CLtU
+  | "gt_s" => Some CGtS | "gt_u" => Some CGtU | "le_s" => Some CLeS | "le_u" => Some CLeU
+  | "ge_s" => Some CGeS | "ge_u" => Some CGeU | _ => None
+  end.
+Definition i32un_of (s : string) : option i32un :=
+  match s with
+  | "eqz" => Some UEqz | "clz" => Some UClz | "ctz" => Some UCtz | "popcnt" => Some UPopcnt
+  | "extend8_s" => Some UExt8 | "extend16_s" => Some UExt16 | _ => None
+  end.
+Definition f64bin_of (s : string) : option f64bin :=
+  match s with
+  | "add" => Some FAdd | "sub" => Some FSub | "mul" => Some FMul | "div" => Some FDiv
+  | "min" => Some FMin | "max" => Some FMax | "copysign" => Some FCopysign | _ => None
+  end.
+Definition f64un_of (s : string) : option f64un :=
+  match s with
+  | "abs" => Some FAbs | "neg" => Some FNeg | "ceil" => Some FCeil | "floor" => Some FFloor
+  | "trunc" => Some FTrunc | "nearest" => Some FNearest | "sqrt" => Some FSqrt | _ => None
+  end.
+Definition f64cmp_of (s : string) : option f64cmp :=
+  match s with
+  | "eq" => Some FEq | "ne" => Some FNe | "lt" => Some FLt | "gt" => Some FGt
+  | "le" => Some FLe | "ge" => Some FGe | _ => None
+  end.
+
+Definition prim_other (s : string) : option wasm_prim :=
+  match s with
+  | "i32_load" => Some (PLoad L32) | "i32_load8_s" => Some (PLoad L8S) | "i32_load8_u" => Some (PLoad L8U)
+  | "i32_load16_s" => Some (PLoad L16S) | "i32_load16_u" => Some (PLoad L16U)
+  | "i32_store" => Some (PStore S32) | "i32_store8" => Some (PStore S8) | "i32_store16" => Some (PStore S16)
+  | "f64_load" => Some PF64Load | "f64_store" => Some PF64Store
+  | "memory_size" => Some PMemSize | "memory_grow" => Some PMemGrow
+  | "memory_copy" => Some PMemCopy | "memory_fill" => Some PMemFill
+  | "unreachable" => Some PUnreachable | "fd_write" => Some PFdWrite | "proc_exit" => Some PProcExit
+  | "args_sizes_get" => Some PArgsSizesGet | "args_get" => Some PArgsGet
+  | "path_open" => Some PPathOpen | "fd_read" => Some PFdRead | "fd_close" => Some PFdClose
+  | "i32_bool" => Some PI32Bool
+  | "i32_trunc_f64_s" => Some (PConv CTruncS) | "i32_trunc_f64_u" => Some (PConv CTruncU)
+  | "i32_trunc_sat_f64_s" => Some (PConv CTruncSatS) | "i32_trunc_sat_f64_u" => Some (PConv CTruncSatU)
+  | "f64_convert_i32_s" => Some (PConv CConvS) | "f64_convert_i32_u" => Some (PConv CConvU)
+  | "i32_trunc_f32_s" => Some (PConv32 CTruncS) | "i32_trunc_f32_u" => Some (PConv32 CTruncU)
+  | "i32_trunc_sat_f32_s" => Some (PConv32 CTruncSatS) | "i32_trunc_sat_f32_u" => Some (PConv32 CTruncSatU)
+  | "f32_convert_i32_s" => Some (PConv32 CConvS) | "f32_convert_i32_u" => Some (PConv32 CConvU)
+  | "f32_load" => Some PF32Load | "f32_store" => Some PF32Store | "f32_demote_f64" => Some PDemote
+  | "f64_promote_f32" => Some PPromote | "i32_reinterpret_f32" => Some PI32ReinterpF32
+  | "f32_reinterpret_i32" => Some PF32ReinterpI32
+  | "i64_eqz" => Some (PI64Un U64Eqz) | "i64_clz" => Some (PI64Un U64Clz) | "i64_ctz" => Some (PI64Un U64Ctz)
+  | "i64_popcnt" => Some (PI64Un U64Popcnt) | "i64_extend8_s" => Some (PI64Un U64Ext8)
+  | "i64_extend16_s" => Some (PI64Un U64Ext16) | "i64_extend32_s" => Some (PI64Un U64Ext32)
+  | "i32_wrap_i64" => Some PWrap | "i64_extend_i32_s" => Some PExtendS | "i64_extend_i32_u" => Some PExtendU
+  | "i64_load" => Some (PI64Load L64) | "i64_load8_s" => Some (PI64Load L64_8S) | "i64_load8_u" => Some (PI64Load L64_8U)
+  | "i64_load16_s" => Some (PI64Load L64_16S) | "i64_load16_u" => Some (PI64Load L64_16U)
+  | "i64_load32_s" => Some (PI64Load L64_32S) | "i64_load32_u" => Some (PI64Load L64_32U)
+  | "i64_store" => Some (PI64Store S64) | "i64_store8" => Some (PI64Store S64_8)
+  | "i64_store16" => Some (PI64Store S64_16) | "i64_store32" => Some (PI64Store S64_32)
+  | "i64_reinterpret_f64" => Some PI64ReinterpF64 | "f64_reinterpret_i64" => Some PF64ReinterpI64
+  | "i64_trunc_f64_s" => Some (PConv64 (C64Trunc false true false))
+  | "i64_trunc_f64_u" => Some (PConv64 (C64Trunc false false false))
+  | "i64_trunc_f32_s" => Some (PConv64 (C64Trunc true true false))
+  | "i64_trunc_f32_u" => Some (PConv64 (C64Trunc true false false))
+  | "i64_trunc_sat_f64_s" => Some (PConv64 (C64Trunc false true true))
+  | "i64_trunc_sat_f64_u" => Some (PConv64 (C64Trunc false false true))
+  | "i64_trunc_sat_f32_s" => Some (PConv64 (C64Trunc true true true))
+  | "i64_trunc_sat_f32_u" => Some (PConv64 (C64Trunc true false true))
+  | "f64_convert_i64_s" => Some (PConv64 (C64Conv false true))
+  | "f64_convert_i64_u" => Some (PConv64 (C64Conv false false))
+  | "f32_convert_i64_s" => Some (PConv64 (C64Conv true true))
+  | "f32_convert_i64_u" => Some (PConv64 (C64Conv true false))
+  | _ => None
+  end.
+
+Definition prim_of_name (s : string) : option wasm_prim :=
+  match prim_other s with
+  | Some p => Some p
+  | None =>
+      let try_ {A} (pre : string) (f : string -> option A) (k : A -> wasm_prim) : option wasm_prim :=
+        match strip_prefix pre s with
+        | Some r => option_map k (f r)
+        | None => None
+        end in
+      let first (l : list (option wasm_prim)) := fold_right (fun o acc => match o with Some _ => o | None => acc end) None l in
+      first [try_ "i32_" i32bin_of PI32Bin; try_ "i32_" i32cmp_of PI32Cmp; try_ "i32_" i32un_of PI32Un;
+             try_ "f64_" f64bin_of PF64Bin; try_ "f64_" f64cmp_of PF64Cmp; try_ "f64_" f64un_of PF64Un;
+             try_ "f32_" f64bin_of PF32Bin; try_ "f32_" f64cmp_of PF32Cmp; try_ "f32_" f64un_of PF32Un;
+             try_ "i64_" i32bin_of PI64Bin; try_ "i64_" i32cmp_of PI64Cmp]
+  end.
+
+End PrimNames.
+
+Definition i32bin_name (p : i32bin) : string :=
+  match p with
+  | IAdd => "add"
+  | ISub => "sub"
+  | IMul => "mul"
+  | IDivS => "div_s"
+  | IDivU => "div_u"
+  | IRemS => "rem_s"
+  | IRemU => "rem_u"
+  | IAnd => "and"
+  | IOr => "or"
+  | IXor => "xor"
+  | IShl => "shl"
+  | IShrS => "shr_s"
+  | IShrU => "shr_u"
+  | IRotl => "rotl"
+  | IRotr => "rotr"
+  end.
+
+Definition i32cmp_name (p : i32cmp) : string :=
+  match p with
+  | CEq => "eq"
+  | CNe => "ne"
+  | CLtS => "lt_s"
+  | CLtU => "lt_u"
+  | CGtS => "gt_s"
+  | CGtU => "gt_u"
+  | CLeS => "le_s"
+  | CLeU => "le_u"
+  | CGeS => "ge_s"
+  | CGeU => "ge_u"
+  end.
+
+Definition i32un_name (p : i32un) : string :=
+  match p with
+  | UEqz => "eqz"
+  | UClz => "clz"
+  | UCtz => "ctz"
+  | UPopcnt => "popcnt"
+  | UExt8 => "extend8_s"
+  | UExt16 => "extend16_s"
+  end.
+
+Definition f64bin_name (p : f64bin) : string :=
+  match p with
+  | FAdd => "add"
+  | FSub => "sub"
+  | FMul => "mul"
+  | FDiv => "div"
+  | FMin => "min"
+  | FMax => "max"
+  | FCopysign => "copysign"
+  end.
+
+Definition f64cmp_name (p : f64cmp) : string :=
+  match p with
+  | FEq => "eq"
+  | FNe => "ne"
+  | FLt => "lt"
+  | FGt => "gt"
+  | FLe => "le"
+  | FGe => "ge"
+  end.
+
+Definition f64un_name (p : f64un) : string :=
+  match p with
+  | FAbs => "abs"
+  | FNeg => "neg"
+  | FCeil => "ceil"
+  | FFloor => "floor"
+  | FTrunc => "trunc"
+  | FNearest => "nearest"
+  | FSqrt => "sqrt"
+  end.
+
+Definition primitive_name (p : wasm_prim) : string :=
+  match p with
+  | PI32Bin op => "i32_" ++ i32bin_name op
+  | PI32Cmp op => "i32_" ++ i32cmp_name op
+  | PI32Un op => "i32_" ++ i32un_name op
+  | PI64Bin op => "i64_" ++ i32bin_name op
+  | PI64Cmp op => "i64_" ++ i32cmp_name op
+  | PF32Bin op => "f32_" ++ f64bin_name op
+  | PF32Cmp op => "f32_" ++ f64cmp_name op
+  | PF32Un op => "f32_" ++ f64un_name op
+  | PF64Bin op => "f64_" ++ f64bin_name op
+  | PF64Cmp op => "f64_" ++ f64cmp_name op
+  | PF64Un op => "f64_" ++ f64un_name op
+  | PLoad L32 => "i32_load"
+  | PLoad L8S => "i32_load8_s"
+  | PLoad L8U => "i32_load8_u"
+  | PLoad L16S => "i32_load16_s"
+  | PLoad L16U => "i32_load16_u"
+  | PStore S32 => "i32_store"
+  | PStore S8 => "i32_store8"
+  | PStore S16 => "i32_store16"
+  | PF64Load => "f64_load"
+  | PF64Store => "f64_store"
+  | PMemSize => "memory_size"
+  | PMemGrow => "memory_grow"
+  | PMemCopy => "memory_copy"
+  | PMemFill => "memory_fill"
+  | PUnreachable => "unreachable"
+  | PFdWrite => "fd_write"
+  | PProcExit => "proc_exit"
+  | PArgsSizesGet => "args_sizes_get"
+  | PArgsGet => "args_get"
+  | PPathOpen => "path_open"
+  | PFdRead => "fd_read"
+  | PFdClose => "fd_close"
+  | PI32Bool => "i32_bool"
+  | PConv CTruncS => "i32_trunc_f64_s"
+  | PConv CTruncU => "i32_trunc_f64_u"
+  | PConv CTruncSatS => "i32_trunc_sat_f64_s"
+  | PConv CTruncSatU => "i32_trunc_sat_f64_u"
+  | PConv CConvS => "f64_convert_i32_s"
+  | PConv CConvU => "f64_convert_i32_u"
+  | PConv32 CTruncS => "i32_trunc_f32_s"
+  | PConv32 CTruncU => "i32_trunc_f32_u"
+  | PConv32 CTruncSatS => "i32_trunc_sat_f32_s"
+  | PConv32 CTruncSatU => "i32_trunc_sat_f32_u"
+  | PConv32 CConvS => "f32_convert_i32_s"
+  | PConv32 CConvU => "f32_convert_i32_u"
+  | PF32Load => "f32_load"
+  | PF32Store => "f32_store"
+  | PDemote => "f32_demote_f64"
+  | PPromote => "f64_promote_f32"
+  | PI32ReinterpF32 => "i32_reinterpret_f32"
+  | PF32ReinterpI32 => "f32_reinterpret_i32"
+  | PI64Un U64Eqz => "i64_eqz"
+  | PI64Un U64Clz => "i64_clz"
+  | PI64Un U64Ctz => "i64_ctz"
+  | PI64Un U64Popcnt => "i64_popcnt"
+  | PI64Un U64Ext8 => "i64_extend8_s"
+  | PI64Un U64Ext16 => "i64_extend16_s"
+  | PI64Un U64Ext32 => "i64_extend32_s"
+  | PWrap => "i32_wrap_i64"
+  | PExtendS => "i64_extend_i32_s"
+  | PExtendU => "i64_extend_i32_u"
+  | PI64Load L64 => "i64_load"
+  | PI64Load L64_8S => "i64_load8_s"
+  | PI64Load L64_8U => "i64_load8_u"
+  | PI64Load L64_16S => "i64_load16_s"
+  | PI64Load L64_16U => "i64_load16_u"
+  | PI64Load L64_32S => "i64_load32_s"
+  | PI64Load L64_32U => "i64_load32_u"
+  | PI64Store S64 => "i64_store"
+  | PI64Store S64_8 => "i64_store8"
+  | PI64Store S64_16 => "i64_store16"
+  | PI64Store S64_32 => "i64_store32"
+  | PI64ReinterpF64 => "i64_reinterpret_f64"
+  | PF64ReinterpI64 => "f64_reinterpret_i64"
+  | PConv64 (C64Trunc false true false) => "i64_trunc_f64_s"
+  | PConv64 (C64Trunc false false false) => "i64_trunc_f64_u"
+  | PConv64 (C64Trunc true true false) => "i64_trunc_f32_s"
+  | PConv64 (C64Trunc true false false) => "i64_trunc_f32_u"
+  | PConv64 (C64Trunc false true true) => "i64_trunc_sat_f64_s"
+  | PConv64 (C64Trunc false false true) => "i64_trunc_sat_f64_u"
+  | PConv64 (C64Trunc true true true) => "i64_trunc_sat_f32_s"
+  | PConv64 (C64Trunc true false true) => "i64_trunc_sat_f32_u"
+  | PConv64 (C64Conv false true) => "f64_convert_i64_s"
+  | PConv64 (C64Conv false false) => "f64_convert_i64_u"
+  | PConv64 (C64Conv true true) => "f32_convert_i64_s"
+  | PConv64 (C64Conv true false) => "f32_convert_i64_u"
+  | PBox _ => "Ref.boxed" | PDeref => "Ref.deref" | PRefSet => "Ref.set"
+  | PArrNew _ => "Array.arrayed" | PArrLen => "Array.length" | PArrGet => "Array.get"
+  | PArrSet => "Array.set" | PArrFill => "Array.fill" | PArrCopy => "Array.copy"
+  end.
+
+Definition encode (p : wasm_prim) : op :=
+  Op (primitive_name p) (match p with PBox n | PArrNew n => [n] | _ => [] end).
+
+Definition gc_names : list (string * wasm_prim) :=
+  [("Ref.deref", PDeref); ("Ref.set", PRefSet); ("Array.length", PArrLen);
+   ("Array.get", PArrGet); ("Array.set", PArrSet); ("Array.fill", PArrFill);
+   ("Array.copy", PArrCopy)].
+
+Definition decode_candidate (operation : op) : option wasm_prim :=
+  let name := op_name operation in
+  match op_syms operation with
+  | [tag] =>
+      if String.eqb name "Ref.boxed" then Some (PBox tag)
+      else if String.eqb name "Array.arrayed" then Some (PArrNew tag)
+      else None
+  | [] =>
+      match find (fun entry => String.eqb name (fst entry)) gc_names with
+      | Some (_, p) => Some p
+      | None => prim_of_name name
+      end
+  | _ => None
+  end.
+
+Fixpoint operation_symbols_eqb (a b : list nat) : bool :=
+  match a, b with
+  | [], [] => true
+  | x :: xs, y :: ys => Nat.eqb x y && operation_symbols_eqb xs ys
+  | _, _ => false
+  end.
+
+Definition operation_eqb (a b : op) : bool :=
+  String.eqb (op_name a) (op_name b) && operation_symbols_eqb (op_syms a) (op_syms b).
+
+Definition decode_operation (operation : op) : option wasm_prim :=
+  match decode_candidate operation with
+  | Some p => if operation_eqb operation (encode p) then Some p else None
+  | None => None
+  end.
+
+Definition decode := decode_operation.
+
+(* Two operands reserve the Base encoding for an unsupported operation.
+   Its first operand is the exact index in the program's diagnostic table. *)
+Definition unsupported_operation (name : string) (index : nat) : op :=
+  Op name [index; 0].
+Definition unsupported_code (operation : op) : nat :=
+  match op_syms operation with [index; 0] => index | _ => 0 end.
+
+End WasmOps.
+Export WasmOps.
 
 (* ===================== Expressions and bindings ========================== *)
 
@@ -1484,7 +1815,7 @@ with binding : Type :=
 (* an application: θ, the output destinations, the needs, and the caller's
    key for each position of F's declared result *)
 | BApply               : usym -> subst -> list (tsym * tsym) -> smap -> list item -> binding
-| BPrimitive           : item -> prim -> binding.
+| BPrimitive           : item -> op -> binding.
 
 (* Named builders are notation for the single binding form. *)
 Definition apply_expression u arguments inputs results body := EBind (BApply u arguments [] inputs results) body.
@@ -1512,7 +1843,7 @@ Inductive provision_value : Type :=
    carries one of each however many copies made it. None is the root's
    own: a platform family's needs as they are, a root's sources in order. *)
 | FunctorClosure : usym -> option smap -> environment -> option (list (option nat)) -> provision_value
-| PrimitiveClosure : prim -> option ty -> provision_value
+| PrimitiveClosure : op -> option ty -> provision_value
 with environment : Type :=
 | EnvironmentWithAliases : subst -> subst -> list (item * provision_value) -> environment.
 Definition Environment (types : subst) (provisions : list (item * provision_value)) :=
@@ -1539,9 +1870,9 @@ Definition typed_capture (d : environment) (types : type_capture) (dc : environm
 Definition capture_environment (d dc : environment) : environment :=
   EnvironmentWithAliases (type_meanings dc ++ type_meanings d)
     (type_aliases dc ++ type_aliases d) (provision_values dc).
-Definition primitive_closure (d : environment) (i : item) (p : prim) : provision_value :=
-  PrimitiveClosure p (match p, i with
-    | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (ground d tau)
+Definition primitive_closure (d : environment) (i : item) (p : op) : provision_value :=
+  PrimitiveClosure p (match decode p, i with
+    | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (ground d tau)
     | _, _ => None end).
 Fixpoint lookup_entry (i : item) (entries : list (item * provision_value)) : option provision_value :=
   match entries with
@@ -1616,7 +1947,7 @@ Record cast_spec : Type := CastSpec {
    providers, wrappers), the core functor bodies `bind F = G;` made, Bool's
    symbols, `main`, main's initial runtime environment (the platform's
    provisions for what main assumes), and the names of primitives the
-   model does not implement (PUnsupported i is the i-th). *)
+   model does not implement, in diagnostic index order. *)
 Record functor_code := FunctorCode {
   fc_inputs : list tsym;
   (* the inputs each application supplies (the rest are captured) *)
@@ -1806,25 +2137,27 @@ Definition raw_receiver (w : value) : value :=
   | VTag n (VRef a (Some _)) => VTag n (VRef a None)
   | _ => w
   end.
-Definition primitive_arguments (p : prim) (ws : list value) : list value :=
+Definition primitive_arguments (p : wasm_prim) (ws : list value) : list value :=
   match p, ws with
   | PArrCopy, [r; i; s; j; count] => [raw_receiver r; i; raw_receiver s; j; count]
   | PDeref, r :: args | PRefSet, r :: args | PArrLen, r :: args
   | PArrGet, r :: args | PArrSet, r :: args | PArrFill, r :: args => raw_receiver r :: args
   | _, _ => ws
   end.
-Definition allocation_result (p : prim) (tau : ty) (o : signal) : signal :=
+Definition allocation_result (p : wasm_prim) (tau : ty) (o : signal) : signal :=
   match p, o with
   | PBox _, Normal (VTag n (VRef a None)) => Normal (VTag n (VRef a (Some (0, tau))))
   | PArrNew _, Normal (VTag n (VRef a None)) => Normal (VTag n (VRef a (Some (1, tau))))
   | _, _ => o
   end.
 Definition call {S : Type}
-    (primitive : program_view -> prim -> list value -> S -> signal * S)
-    (P : program_view) (p : prim) (ot : option ty)
+    (primitive : program_view -> op -> list value -> S -> signal * S)
+    (P : program_view) (operation : op) (ot : option ty)
     (ws : list value) (st : S) : signal * S :=
-  let '(o, st') := primitive P p (primitive_arguments p ws) st in
-  (match ot with Some tau => allocation_result p tau o | None => o end, st').
+  let decoded := decode operation in
+  let arguments := match decoded with Some p => primitive_arguments p ws | None => ws end in
+  let '(o, st') := primitive P operation arguments st in
+  (match ot, decoded with Some tau, Some p => allocation_result p tau o | _, _ => o end, st').
 
 End BaseCall.
 
@@ -1836,7 +2169,7 @@ End BaseCall.
    proofs do not supply that bridge. *)
 Module Type PRIMITIVES.
   Parameter mstate : Type.
-  Parameter run_prim : program_view -> prim -> option ty -> list value -> mstate -> signal * mstate.
+  Parameter run_prim : program_view -> op -> option ty -> list value -> mstate -> signal * mstate.
 End PRIMITIVES.
 
 Module Interpreter (Import Prims : PRIMITIVES).
@@ -2236,6 +2569,7 @@ End Interpreter.
 (* Part IV. The primitives' signatures                                       *)
 (* ######################################################################## *)
 
+Module WasmSignatures.
 Inductive shape : Type := ShapeI32 | ShapeI64 | ShapeF32 | ShapeF64 | ShapeUnit | ShapeBool
 (* Track B: an address as `Memories`' members receive it (an `Addr`, a tag
    over an I32), and any tag (the memory a member is a method of) *)
@@ -2258,7 +2592,7 @@ Definition value_shape (P : program_view) (w : value) (t : shape) : Prop :=
 (* The signatures of lib/wasm.moss, lib/wasip1.moss and wasistd's i32_bool
    (Moss's I32 / I64 / F32 / F64 / () / Bool).  The GC primitives and the
    unmodelled ones have none here: their results depend on the heap. *)
-Definition prim_sig (p : prim) : option (list shape * shape) :=
+Definition prim_sig (p : wasm_prim) : option (list shape * shape) :=
   match p with
   | PI32Bin _ | PI32Cmp _ => Some ([ShapeI32; ShapeI32], ShapeI32)
   | PI32Un _ => Some ([ShapeI32], ShapeI32)
@@ -2306,7 +2640,7 @@ Definition prim_sig (p : prim) : option (list shape * shape) :=
   | PI64ReinterpF64 => Some ([ShapeF64], ShapeI64)
   | PF64ReinterpI64 => Some ([ShapeI64], ShapeF64)
   | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
-  | PArrFill | PArrCopy | PUnsupported _ => None
+  | PArrFill | PArrCopy => None
   end.
 
 (* Track B.  The memory primitives as the platform provides them, as
@@ -2314,7 +2648,7 @@ Definition prim_sig (p : prim) : option (list shape * shape) :=
    argument is an `Addr`, and memory.size and memory.grow receive the
    memory they are a method of. The host must implement these source
    calling conventions as well as the plain primitive signatures. *)
-Definition prim_msig (p : prim) : option (list shape * shape) :=
+Definition prim_msig (p : wasm_prim) : option (list shape * shape) :=
   match p with
   | PLoad _ => Some ([ShapeAddress], ShapeI32)
   | PStore _ => Some ([ShapeAddress; ShapeI32], ShapeUnit)
@@ -2330,113 +2664,8 @@ Definition prim_msig (p : prim) : option (list shape * shape) :=
   | PMemGrow => Some ([ShapeTag; ShapeI32], ShapeI32)
   | _ => None
   end.
-
-(* Which library fn is which primitive: the elaborator gives `main`'s need of
-   a lib/wasm.moss or lib/wasip1.moss fn named n the primitive
-   `prim_of_name n`.  An auditor checks this table
-   against lib/wasm.moss's and lib/wasip1.moss's names. *)
-Section PrimNames.
-Local Open Scope string_scope.
-Definition strip_prefix (pre s : string) : option string :=
-  if String.prefix pre s then Some (substring (String.length pre) (String.length s - String.length pre) s) else None.
-
-Definition i32bin_of (s : string) : option i32bin :=
-  match s with
-  | "add" => Some IAdd | "sub" => Some ISub | "mul" => Some IMul | "div_s" => Some IDivS
-  | "div_u" => Some IDivU | "rem_s" => Some IRemS | "rem_u" => Some IRemU | "and" => Some IAnd
-  | "or" => Some IOr | "xor" => Some IXor | "shl" => Some IShl | "shr_s" => Some IShrS
-  | "shr_u" => Some IShrU | "rotl" => Some IRotl | "rotr" => Some IRotr | _ => None
-  end.
-Definition i32cmp_of (s : string) : option i32cmp :=
-  match s with
-  | "eq" => Some CEq | "ne" => Some CNe | "lt_s" => Some CLtS | "lt_u" => Some CLtU
-  | "gt_s" => Some CGtS | "gt_u" => Some CGtU | "le_s" => Some CLeS | "le_u" => Some CLeU
-  | "ge_s" => Some CGeS | "ge_u" => Some CGeU | _ => None
-  end.
-Definition i32un_of (s : string) : option i32un :=
-  match s with
-  | "eqz" => Some UEqz | "clz" => Some UClz | "ctz" => Some UCtz | "popcnt" => Some UPopcnt
-  | "extend8_s" => Some UExt8 | "extend16_s" => Some UExt16 | _ => None
-  end.
-Definition f64bin_of (s : string) : option f64bin :=
-  match s with
-  | "add" => Some FAdd | "sub" => Some FSub | "mul" => Some FMul | "div" => Some FDiv
-  | "min" => Some FMin | "max" => Some FMax | "copysign" => Some FCopysign | _ => None
-  end.
-Definition f64un_of (s : string) : option f64un :=
-  match s with
-  | "abs" => Some FAbs | "neg" => Some FNeg | "ceil" => Some FCeil | "floor" => Some FFloor
-  | "trunc" => Some FTrunc | "nearest" => Some FNearest | "sqrt" => Some FSqrt | _ => None
-  end.
-Definition f64cmp_of (s : string) : option f64cmp :=
-  match s with
-  | "eq" => Some FEq | "ne" => Some FNe | "lt" => Some FLt | "gt" => Some FGt
-  | "le" => Some FLe | "ge" => Some FGe | _ => None
-  end.
-
-Definition prim_other (s : string) : option prim :=
-  match s with
-  | "i32_load" => Some (PLoad L32) | "i32_load8_s" => Some (PLoad L8S) | "i32_load8_u" => Some (PLoad L8U)
-  | "i32_load16_s" => Some (PLoad L16S) | "i32_load16_u" => Some (PLoad L16U)
-  | "i32_store" => Some (PStore S32) | "i32_store8" => Some (PStore S8) | "i32_store16" => Some (PStore S16)
-  | "f64_load" => Some PF64Load | "f64_store" => Some PF64Store
-  | "memory_size" => Some PMemSize | "memory_grow" => Some PMemGrow
-  | "memory_copy" => Some PMemCopy | "memory_fill" => Some PMemFill
-  | "unreachable" => Some PUnreachable | "fd_write" => Some PFdWrite | "proc_exit" => Some PProcExit
-  | "args_sizes_get" => Some PArgsSizesGet | "args_get" => Some PArgsGet
-  | "path_open" => Some PPathOpen | "fd_read" => Some PFdRead | "fd_close" => Some PFdClose
-  | "i32_bool" => Some PI32Bool
-  | "i32_trunc_f64_s" => Some (PConv CTruncS) | "i32_trunc_f64_u" => Some (PConv CTruncU)
-  | "i32_trunc_sat_f64_s" => Some (PConv CTruncSatS) | "i32_trunc_sat_f64_u" => Some (PConv CTruncSatU)
-  | "f64_convert_i32_s" => Some (PConv CConvS) | "f64_convert_i32_u" => Some (PConv CConvU)
-  | "i32_trunc_f32_s" => Some (PConv32 CTruncS) | "i32_trunc_f32_u" => Some (PConv32 CTruncU)
-  | "i32_trunc_sat_f32_s" => Some (PConv32 CTruncSatS) | "i32_trunc_sat_f32_u" => Some (PConv32 CTruncSatU)
-  | "f32_convert_i32_s" => Some (PConv32 CConvS) | "f32_convert_i32_u" => Some (PConv32 CConvU)
-  | "f32_load" => Some PF32Load | "f32_store" => Some PF32Store | "f32_demote_f64" => Some PDemote
-  | "f64_promote_f32" => Some PPromote | "i32_reinterpret_f32" => Some PI32ReinterpF32
-  | "f32_reinterpret_i32" => Some PF32ReinterpI32
-  | "i64_eqz" => Some (PI64Un U64Eqz) | "i64_clz" => Some (PI64Un U64Clz) | "i64_ctz" => Some (PI64Un U64Ctz)
-  | "i64_popcnt" => Some (PI64Un U64Popcnt) | "i64_extend8_s" => Some (PI64Un U64Ext8)
-  | "i64_extend16_s" => Some (PI64Un U64Ext16) | "i64_extend32_s" => Some (PI64Un U64Ext32)
-  | "i32_wrap_i64" => Some PWrap | "i64_extend_i32_s" => Some PExtendS | "i64_extend_i32_u" => Some PExtendU
-  | "i64_load" => Some (PI64Load L64) | "i64_load8_s" => Some (PI64Load L64_8S) | "i64_load8_u" => Some (PI64Load L64_8U)
-  | "i64_load16_s" => Some (PI64Load L64_16S) | "i64_load16_u" => Some (PI64Load L64_16U)
-  | "i64_load32_s" => Some (PI64Load L64_32S) | "i64_load32_u" => Some (PI64Load L64_32U)
-  | "i64_store" => Some (PI64Store S64) | "i64_store8" => Some (PI64Store S64_8)
-  | "i64_store16" => Some (PI64Store S64_16) | "i64_store32" => Some (PI64Store S64_32)
-  | "i64_reinterpret_f64" => Some PI64ReinterpF64 | "f64_reinterpret_i64" => Some PF64ReinterpI64
-  | "i64_trunc_f64_s" => Some (PConv64 (C64Trunc false true false))
-  | "i64_trunc_f64_u" => Some (PConv64 (C64Trunc false false false))
-  | "i64_trunc_f32_s" => Some (PConv64 (C64Trunc true true false))
-  | "i64_trunc_f32_u" => Some (PConv64 (C64Trunc true false false))
-  | "i64_trunc_sat_f64_s" => Some (PConv64 (C64Trunc false true true))
-  | "i64_trunc_sat_f64_u" => Some (PConv64 (C64Trunc false false true))
-  | "i64_trunc_sat_f32_s" => Some (PConv64 (C64Trunc true true true))
-  | "i64_trunc_sat_f32_u" => Some (PConv64 (C64Trunc true false true))
-  | "f64_convert_i64_s" => Some (PConv64 (C64Conv false true))
-  | "f64_convert_i64_u" => Some (PConv64 (C64Conv false false))
-  | "f32_convert_i64_s" => Some (PConv64 (C64Conv true true))
-  | "f32_convert_i64_u" => Some (PConv64 (C64Conv true false))
-  | _ => None
-  end.
-
-Definition prim_of_name (s : string) : option prim :=
-  match prim_other s with
-  | Some p => Some p
-  | None =>
-      let try_ {A} (pre : string) (f : string -> option A) (k : A -> prim) : option prim :=
-        match strip_prefix pre s with
-        | Some r => option_map k (f r)
-        | None => None
-        end in
-      let first (l : list (option prim)) := fold_right (fun o acc => match o with Some _ => o | None => acc end) None l in
-      first [try_ "i32_" i32bin_of PI32Bin; try_ "i32_" i32cmp_of PI32Cmp; try_ "i32_" i32un_of PI32Un;
-             try_ "f64_" f64bin_of PF64Bin; try_ "f64_" f64cmp_of PF64Cmp; try_ "f64_" f64un_of PF64Un;
-             try_ "f32_" f64bin_of PF32Bin; try_ "f32_" f64cmp_of PF32Cmp; try_ "f32_" f64un_of PF32Un;
-             try_ "i64_" i32bin_of PI64Bin; try_ "i64_" i32cmp_of PI64Cmp]
-  end.
-
-End PrimNames.
+End WasmSignatures.
+Export WasmSignatures.
 
 (* ######################################################################## *)
 (* Part V. The declarative elaboration relation — DRAFT                      *)
@@ -5737,7 +5966,7 @@ Definition ReferenceType (W : world) (array : bool) (t held : ty) : Prop :=
     LangSym W "wasm" NSName (if array then "Arrayed" else "Boxed") parameter /\
     t = TNom symbol args /\ nlook parameter args = Some held.
 
-Definition GCSignature (W : world) (operation : prim) (params : list ty)
+Definition GCSignature (W : world) (operation : wasm_prim) (params : list ty)
     (result : ty) : Prop :=
   match operation, params with
   | PBox symbol, [held] => LangSym W "wasm" NSName "Ref" symbol /\ ReferenceType W false result held
@@ -5757,16 +5986,20 @@ Definition GCSignature (W : world) (operation : prim) (params : list ty)
   | _, _ => False
   end.
 
-Definition PrimitiveSignature (W : world) (operation : prim)
+Definition WasmSignature (W : world) (operation : wasm_prim)
     (params : list ty) (result : ty) : Prop :=
-  match operation with
-  (* An unsupported operation never returns a value, so imposes no result type. *)
-  | PUnsupported _ => True
-  | _ => Signature W params result (prim_sig operation) \/
-      Signature W params result (prim_msig operation) \/ GCSignature W operation params result
+  Signature W params result (prim_sig operation) \/
+  Signature W params result (prim_msig operation) \/ GCSignature W operation params result.
+
+Definition PrimitiveSignature (W : world) (operation : op)
+    (params : list ty) (result : ty) : Prop :=
+  match decode operation with
+  | Some p => WasmSignature W p params result
+  (* An unsupported operation never returns a value. *)
+  | None => True
   end.
 
-Definition AtKey (W : world) (C : cx) (key : item) (operation : prim) : Prop :=
+Definition AtKey (W : world) (C : cx) (key : item) (operation : op) : Prop :=
   match key with
   | IFn f => exists signature, nlook f (c_fns C) = Some signature /\
       PrimitiveSignature W operation (sg_params signature) (sg_ret signature)
@@ -5777,22 +6010,23 @@ Definition AtKey (W : world) (C : cx) (key : item) (operation : prim) : Prop :=
   end.
 
 (* The platform families provide GC methods or methods of Addr. *)
-Definition MethodPrimitive (W : world) (key : item) (operation : prim) : Prop :=
+Definition MethodPrimitive (W : world) (key : item) (operation : op) : Prop :=
   exists receiver method theta d form name params result body,
     key = IMth receiver method theta /\ w_decl W method = Some d /\
     d_ast d = ADFn form name params result body /\
     match form with
     | RDetached =>
-        (name = "boxed" /\ exists symbol, LangSym W "wasm" NSName "Ref" symbol /\ operation = PBox symbol) \/
-        (name = "arrayed" /\ exists symbol, LangSym W "wasm" NSName "Array" symbol /\ operation = PArrNew symbol)
+        (name = "boxed" /\ exists symbol, LangSym W "wasm" NSName "Ref" symbol /\ operation = encode (PBox symbol)) \/
+        (name = "arrayed" /\ exists symbol, LangSym W "wasm" NSName "Array" symbol /\ operation = encode (PArrNew symbol))
     | RAttached path => exists symbol, resolve_sym W (d_mod d) [path] = Some symbol /\
         ((LangSym W "wasm" NSName "Ref" symbol /\
-            ((name = "deref" /\ operation = PDeref) \/ (name = "set" /\ operation = PRefSet))) \/
+            ((name = "deref" /\ operation = encode PDeref) \/ (name = "set" /\ operation = encode PRefSet))) \/
          (LangSym W "wasm" NSName "Array" symbol /\
-            ((name = "length" /\ operation = PArrLen) \/ (name = "get" /\ operation = PArrGet) \/
-             (name = "set" /\ operation = PArrSet) \/ (name = "fill" /\ operation = PArrFill) \/
-             (name = "copy" /\ operation = PArrCopy))) \/
-         (LangSym W "wasm" NSName "Addr" symbol /\ prim_of_name name = Some operation))
+            ((name = "length" /\ operation = encode PArrLen) \/ (name = "get" /\ operation = encode PArrGet) \/
+             (name = "set" /\ operation = encode PArrSet) \/ (name = "fill" /\ operation = encode PArrFill) \/
+             (name = "copy" /\ operation = encode PArrCopy))) \/
+         (LangSym W "wasm" NSName "Addr" symbol /\
+            exists p, prim_of_name name = Some p /\ operation = encode p))
     | RPlain => False
     end.
 
@@ -5903,10 +6137,11 @@ Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> P
     filed_name (d_ast d) = Some (NSName, "i32_one") -> PlatformEntry W P (IVal v) (ValueProvision (VScalar 0 1%Z))
 | PEPrim : forall f d n ps rt body pr, w_decl W f = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = Some pr ->
-    PlatformEntry W P (IFn f) (PrimitiveClosure pr None)
+    PlatformEntry W P (IFn f) (PrimitiveClosure (encode pr) None)
 | PEUnsupported : forall f d n ps rt body i, w_decl W f = Some d -> platform_mod W (d_mod d) ->
-    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = None -> nth_error (program_unsupported P) i = Some n ->
-    PlatformEntry W P (IFn f) (PrimitiveClosure (PUnsupported i) None)
+    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = None ->
+    nth_error (program_unsupported P) i = Some n ->
+    PlatformEntry W P (IFn f) (PrimitiveClosure (unsupported_operation n i) None)
 | PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
     PlatformEntry W P (IFun u) (FunctorClosure h None empty_environment None).
@@ -5989,7 +6224,7 @@ End Platform.
 (* The operations installed anywhere in a program, including captured
    environments and platform-family bodies. Extra interface operations are
    harmless; an interface must supply at least these requirements. *)
-Fixpoint expression_primitives (expression : expr) : list prim :=
+Fixpoint expression_primitives (expression : expr) : list op :=
   match expression with
   | EVar _ | EUnit | EVal _ | EBreak => []
   | ETag _ _ e | EAssign _ e | ELoop e | EReturn e | EField e _ => expression_primitives e
@@ -6001,20 +6236,20 @@ Fixpoint expression_primitives (expression : expr) : list prim :=
   | ERecord fields => flat_map (fun field => expression_primitives (snd field)) fields
   | EMatch e arms => expression_primitives e ++ flat_map (fun arm => expression_primitives (snd arm)) arms
   end
-with binding_primitives (binding : binding) : list prim :=
+with binding_primitives (binding : binding) : list op :=
   match binding with
   | BValue _ e => expression_primitives e
   | BPrimitive _ operation => [operation]
   | _ => []
   end.
-Fixpoint entry_primitives (entry : provision_value) : list prim :=
+Fixpoint entry_primitives (entry : provision_value) : list op :=
   match entry with
   | PrimitiveClosure operation _ => [operation]
   | FunctionClosure _ (EnvironmentWithAliases _ _ captured) | FunctorClosure _ _ (EnvironmentWithAliases _ _ captured) _ =>
       flat_map (fun entry => entry_primitives (snd entry)) captured
   | _ => []
   end.
-Definition required_primitives (program : program) : list prim :=
+Definition required_primitives (program : program) : list op :=
   flat_map (fun fn => expression_primitives (snd fn)) (program_functions program) ++
   flat_map (fun fn => flat_map binding_primitives (fc_bindings (snd fn))) (program_functors program) ++
   flat_map (fun entry => entry_primitives (snd entry)) (provision_values (program_environment program)).
@@ -6045,7 +6280,7 @@ Definition href (Psi : hty) (k : nat) (w : value) (Q : value -> Prop) : Prop :=
   exists n a, w = VTag n (VRef a None) /\ Psi a = Some (k, Q).
 
 (* What a GC primitive needs of its arguments, for contents satisfying Q. *)
-Definition gc_pre (Psi : hty) (p : prim) (ws : list value) (Q : value -> Prop) : Prop :=
+Definition gc_pre (Psi : hty) (p : wasm_prim) (ws : list value) (Q : value -> Prop) : Prop :=
   match p, ws with
   | PBox _, [v] => Q v
   | PDeref, [r] => href Psi 0 r Q
@@ -6061,7 +6296,7 @@ Definition gc_pre (Psi : hty) (p : prim) (ws : list value) (Q : value -> Prop) :
   end.
 
 (* What it gives back, when it gives a value w, with Ψ' its store typing after. *)
-Definition gc_post (Psi Psi' : hty) (p : prim) (Q : value -> Prop) (w : value) : Prop :=
+Definition gc_post (Psi Psi' : hty) (p : wasm_prim) (Q : value -> Prop) (w : value) : Prop :=
   hext Psi Psi' /\
   match p with
   | PBox rf => exists a, w = VTag rf (VRef a None) /\ Psi a = None /\ Psi' a = Some (0, Q)
@@ -6071,7 +6306,7 @@ Definition gc_post (Psi Psi' : hty) (p : prim) (Q : value -> Prop) (w : value) :
   | _ => w = VUnit
   end.
 
-Definition is_gc (p : prim) : bool :=
+Definition is_gc (p : wasm_prim) : bool :=
   match p with
   | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
   | PArrFill | PArrCopy => true
@@ -6092,21 +6327,21 @@ Local Unset Implicit Arguments.
     | _ => False
     end.
 
-  Definition laws (S : Type) (P : program_view) (supported : prim -> bool)
-      (primitive : program_view -> prim -> list value -> S -> signal * S)
+  Definition laws (S : Type) (P : program_view) (supported : op -> bool)
+      (primitive : program_view -> op -> list value -> S -> signal * S)
       (heap_valid : Heap.hty -> S -> Prop) : Prop :=
     let step := primitive P in
     let valid_heap := heap_valid in
     (forall p params result values state,
-      supported p = true -> prim_sig p = Some (params, result) ->
+      supported (encode p) = true -> prim_sig p = Some (params, result) ->
       Forall2 (value_shape P) values params ->
-      primitive_result P result (fst (step p values state))) /\
+      primitive_result P result (fst (step (encode p) values state))) /\
     (forall p params result values state,
-      supported p = true -> prim_msig p = Some (params, result) ->
+      supported (encode p) = true -> prim_msig p = Some (params, result) ->
       Forall2 (value_shape P) values params ->
-      primitive_result P result (fst (step p values state))) /\
-    (forall code values state, supported (PUnsupported code) = true ->
-      fst (step (PUnsupported code) values state) = UnsupportedOperation code) /\
+      primitive_result P result (fst (step (encode p) values state))) /\
+    (forall operation values state, decode operation = None -> supported operation = true ->
+      fst (step operation values state) = UnsupportedOperation (unsupported_code operation)) /\
     (forall typing weaker state,
       valid_heap typing state ->
       (forall address kind predicate,
@@ -6117,12 +6352,12 @@ Local Unset Implicit Arguments.
     (forall state, valid_heap (fun _ => None) state) /\
     (forall p values state typing,
       supported p = true ->
-      Heap.is_gc p = false -> valid_heap typing state ->
-      valid_heap typing (snd (step p values state))) /\
+      (match decode p with Some primitive => Heap.is_gc primitive = false | None => True end) ->
+      valid_heap typing state -> valid_heap typing (snd (step p values state))) /\
     (forall p values state typing predicate,
-      supported p = true ->
+      supported (encode p) = true ->
       valid_heap typing state -> Heap.gc_pre typing p values predicate ->
-      match step p values state with
+      match step (encode p) values state with
       | (Normal value, next) =>
           exists extended, valid_heap extended next /\
             Heap.gc_post typing extended p predicate value
@@ -6177,7 +6412,7 @@ Definition source_read (snapshot : source) (name : string) : option string :=
    so the default interface is one fixed value for every invocation. *)
 Module Type HOST.
   Parameter state : Type.
-  Parameter primitive : program_view -> prim -> list value -> state -> signal * state.
+  Parameter primitive : program_view -> op -> list value -> state -> signal * state.
   Parameter heap_ok : Heap.hty -> state -> Prop.
 End HOST.
 
@@ -6189,8 +6424,8 @@ Module Public (Host : HOST).
   }.
 
   Record interface := HostInterface {
-    supports : prim -> bool;
-    primitive : program_view -> prim -> list value -> Host.state -> signal * Host.state;
+    supports : op -> bool;
+    primitive : program_view -> op -> list value -> Host.state -> signal * Host.state;
     heap_ok : Heap.hty -> Host.state -> Prop
   }.
 

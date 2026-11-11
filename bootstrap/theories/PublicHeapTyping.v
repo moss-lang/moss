@@ -63,10 +63,10 @@ Module HeapSafety (Host : HOST) (M0 : PUBLIC Host).
 Module M := M0.
 
 Theorem box_preserves_heap : forall W P interface H state tag value held raw next,
-  M.interface_laws P interface -> M.supports interface (PBox tag) = true ->
+  M.interface_laws P interface -> M.supports interface (encode (PBox tag)) = true ->
   M.heap_ok interface (heap_predicates W P H) state ->
   value_typed W P H value held ->
-  M.primitive interface P (PBox tag) [value] state = (Normal raw, next) ->
+  M.primitive interface P (encode (PBox tag)) [value] state = (Normal raw, next) ->
   exists H' address,
     heap_extends H H' /\ M.heap_ok interface (heap_predicates W P H') next /\
     raw = VTag tag (VRef address None) /\
@@ -90,10 +90,10 @@ Proof.
 Qed.
 
 Theorem array_preserves_heap : forall W P interface H state tag value held count raw next,
-  M.interface_laws P interface -> M.supports interface (PArrNew tag) = true ->
+  M.interface_laws P interface -> M.supports interface (encode (PArrNew tag)) = true ->
   M.heap_ok interface (heap_predicates W P H) state ->
   value_typed W P H value held ->
-  M.primitive interface P (PArrNew tag) [value; VScalar 0 count] state = (Normal raw, next) ->
+  M.primitive interface P (encode (PArrNew tag)) [value; VScalar 0 count] state = (Normal raw, next) ->
   exists H' address,
     heap_extends H H' /\ M.heap_ok interface (heap_predicates W P H') next /\
     raw = VTag tag (VRef address None) /\

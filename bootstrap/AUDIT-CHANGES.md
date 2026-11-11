@@ -135,10 +135,12 @@ entry they belong to.
 | 101 | Machine types and their classes use a table keyed by declaration symbol | sep S1 | representation change |
 | 102 | Machine values carry scalar bits or a reference header | sep S2 | representation change |
 | 103 | Formed contexts carry merge classes beside their spelling section | merge refactor M2 | representation change |
+| 104 | Primitive code and the interface use named operations | sep S3 | representation change |
 | 105 | Base's host laws are independent of the public interface record | BaseLaws | none (definitional refactoring) |
 | 106 | Base owns primitive argument and allocation-result adaptation | sep S4a | none (definitional) |
 | 107 | Primitive execution receives its site through the host boundary | sep S4b | none for public execution (ABI relocation) |
 | 109 | Integrate scalar/reference carriers with the checked host ABI and merge semantics | sep S2 integration | representation change |
+| 110 | Integrate named operations with the checked host laws and site-erasure proofs | sep S3 integration | representation change |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3339,6 +3341,43 @@ using one fresh atom per abstract class must preserve that behaviour
 - **Class.** Representation change. The old substitution and acceptance
   checks still drive elaboration in this stage.
 
+### 104. Primitive code carries named operations (Base separation S3)
+
+- **Rule.** An `Op` carries a name and platform operands. Bindings,
+  primitive closures, and the interface use that operation identity.
+  `WasmOps` contains the typed Wasm operations and their codec.
+  `WasmSignatures` supplies their signatures. Allocations carry their tag
+  symbol. The Base encoding for an unsupported operation carries its
+  original diagnostic index in a reserved operand form.
+- **Why.** Primitive code can use the same carrier across platforms
+  (criteria section 8). Ea checks the existing Wasm signatures and
+  encodes the operation when it emits the binding. The interpreter's
+  current call adapter decodes the operation for the existing GC
+  argument and result conventions.
+- **Alternatives.** Resolving a name at each call repeats the same work.
+  A shared hash cache avoids repeated parsing but still hashes hot keys.
+  The extracted operation holds its immutable name and operands plus
+  a typed memo slot. The executable resolves required operations before
+  running, and the call adapter and host share the memoized result.
+- **Fidelity.** The supported codec round-trips every Wasm operation.
+  Unsupported operations retain their exact numeric outcome, including
+  when two entries in a relational program's diagnostic table use the
+  same name. The displayed name still comes from the table at that index.
+
+  | Program | Native before → after | moss-ref before → after | Audit before → after |
+  |---|---|---|---|
+  | [float](../tests/wasi/float.moss) | same output | byte-identical output | Wasm scalar operation → its named encoding |
+  | [gc_tree](../tests/wasi/gc_tree.moss), [gc_array](../tests/wasi/gc_array.moss) | same output | byte-identical output | allocation operation → name and tag operand |
+  | [saved_type_rebinding](../tests/wasi/saved_type_rebinding.moss) | rejects → rejects | trap → same trap | same cast result through named allocations |
+  | [unsupported-operation probes](../crates/moss-tests/tests/suite/runtime_platform.rs) | oracle fixture | each name reported with exit 4 | same unsupported index |
+
+- **Proof.** `PublicOperationFacts.v` proves the supported round trip,
+  the decoder's canonical inverse, and exact recovery of unsupported
+  indices. The reference proof decodes before applying the existing
+  primitive safety lemmas. The certificate checks the exact public
+  safety statement and its kernel-primitive assumptions.
+- **Class.** Representation change (criterion 8, platform separation).
+
 ### 105. Base's host laws are independent of the interface record
 
 - **Rule.** `BaseLaws` defines the primitive-result predicate and the
@@ -3448,6 +3487,20 @@ using one fresh atom per abstract class must preserve that behaviour
   Uniform receiver-site storage (#108, pending) is excluded.
 - **Proof.** Preserve the exact public safety certificate, all interpreter/pass
   agreement roots, and same-fuel site-erasure and primitive-block facts.
+- **Class.** Representation change; no intended Moss-observable difference.
+
+### 110. Integrate named operations with current host laws and erasure proofs (S3)
+
+- **Rule.** Carry platform operation names and symbol operands as in #104.
+  Preserve #105's transparent BaseLaws and the existing site-aware ABI;
+  interpret supported Wasm operations through encode/decode. Malformed or
+  unknown operations retain their explicit unsupported outcome and code.
+- **Execution.** Retain the fast raw host, scalar argument packing and literal
+  compiled-interpreter extraction. A decoder-private typed memo caches the
+  pure decode of immutable operation fields. Uniform site storage stays out.
+- **Proof.** Port same-fuel site erasure and primitive-block facts through
+  decode, including decode=None. Keep the exact public safety certificate
+  and all interpreter/pass roots; no new assumptions or relaxed rules.
 - **Class.** Representation change; no intended Moss-observable difference.
 
 ---

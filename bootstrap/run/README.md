@@ -13,7 +13,7 @@ the test suite holds the compiler to it. It runs one pipeline:
    (`theories/ProgramFastPath.v`, `ProgramPrune.v`, `ProgramCapTrim.v`).
 4. **Interpreter**: `Audit.Semantics.Interpreter.run_main`, the reference
    interpreter of Audit.v's run-time semantics. Its primitives are
-   `MossX.run_prim`.
+   `MossX.run_prim_fast`.
 
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
 `LoadListed.v`; `LoadListedFacts.v` proves its complete result, including
@@ -28,18 +28,21 @@ and passes proved against it. **Whole elaborator soundness remains open.**
 The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
 and `EaWorldSound` proofs cover readers, their fuel conditions and the
 world builder. Ea's `SOUND:` comments state the intended per-function
-contracts. The native glue is also unverified: `driver.ml`, and the value
-and primitive conversions in `prims.ml`. The `prim` types are shared through `Obj.magic`, because
-ExecutionModel.v and Audit.v declare them alike. `check.sh` audits the
-extracted roots' assumptions (`assumptions/Certificate.v`).
+contracts. The executable also trusts the OCaml driver, value/primitive conversions in
+`prims.ml`, and the decoder memo in `primCache.ml`. The memo stores a pure
+result alongside immutable operation names and operands. The supported Wasm
+operation conversion uses `Obj.magic` and relies on WasmOps and ExecutionModel
+constructor ordering. Float conversion uses the legacy canonical NaN patterns
+and preserves other Wasm float bit patterns. `check.sh` audits the extracted roots' assumptions.
 
 ## Files
 
 - `Extract.v`: the extraction. It covers the roots above, `Parse.parse_moss`,
-  `Dump.dump_file` and `print_sx` for `--dump`, and `MossX.run_prim` and
+  `Dump.dump_file` and `print_sx` for `--dump`, and `MossX.run_prim_fast` and
   `init_state`.
 - `driver.ml`: the command line. Its header documents the options.
 - `prims.ml`: MossX's primitives at Audit's value type.
+- `primCache.ml`: the native operation carrier and shared decoder memo.
 - `dune`: the extraction, and the executable. The executable needs flambda:
   without it the interpreter keeps every version of linear memory alive.
 - `self-compile.sh`: the bootstrap step run by hand, timed with GNU time.

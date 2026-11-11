@@ -24,7 +24,7 @@ Definition opt_eqb (a : option nat) (b : nat) : bool := match a with Some x => N
 
 (* SOUND: method_primitive k = Some op -> Platform.MethodPrimitive W k op
    (the op is determined by the key's method) *)
-Definition method_primitive (k : item) : option prim :=
+Definition method_primitive (k : item) : option wasm_prim :=
   match k with
   | IMth _ m _ =>
       match w_decl W m with
@@ -87,7 +87,7 @@ Definition is_ref (array : bool) (t : ty) : bool := is_some (reference_held arra
 Definition held_is (array : bool) (t h : ty) : bool :=
   match reference_held array t with Some x => ty_eqb x h | None => false end.
 (* SOUND: gc_signature op ps r = true <-> Platform.GCSignature W op ps r *)
-Definition gc_signature (op : prim) (ps : list ty) (r : ty) : bool :=
+Definition gc_signature (op : wasm_prim) (ps : list ty) (r : ty) : bool :=
   let i32 := machine_type "I32" in
   match op, ps with
   | PBox sym, [h] => opt_eqb (wasm_sym "Ref") sym && held_is false r h
@@ -101,13 +101,12 @@ Definition gc_signature (op : prim) (ps : list ty) (r : ty) : bool :=
   | PArrCopy, [dst; di; src; si; n] => i32 di && i32 si && i32 n && ty_eqb r TUnit && is_ref true dst && is_ref true src
   | _, _ => false
   end.
-Definition primitive_signature (op : prim) (ps : list ty) (r : ty) : bool :=
+Definition primitive_signature (op : wasm_prim) (ps : list ty) (r : ty) : bool :=
   match op with
-  | PUnsupported _ => true
   | _ => signatureb ps r (prim_sig op) || signatureb ps r (prim_msig op) || gc_signature op ps r
   end.
 (* SOUND: at_key C k op = true <-> Platform.AtKey W C k op *)
-Definition at_key (C : cx) (k : item) (op : prim) : bool :=
+Definition at_key (C : cx) (k : item) (op : wasm_prim) : bool :=
   match k with
   | IFn f => match cfn C f with Some g => primitive_signature op (sg_params g) (sg_ret g) | None => false end
   | IMth r m _ => match cmth C r m with Some g => primitive_signature op (r :: sg_params g) (sg_ret g) | None => false end
@@ -220,7 +219,7 @@ Definition platform_code (u : nat) : er functor_code :=
       let! _ := rcheck (machines_fixed u inputs outputs k)
                   (at_sym u ("the platform functor " ++ nu ++ " provides " ++ qkey W k ++ ", which mentions a machine type " ++ nu ++ " is not fixed in")) in
       let! _ := rcheck (handles_read outputs k) (at_sym u "platform primitive has an incompatible declared signature") in
-      Ok (BPrimitive (rkof outputs k) op)) keys in
+      Ok (BPrimitive (rkof outputs k) (encode op))) keys in
   let! _ := rcheck (methods_distinct keys) (at_sym u ("the platform functor " ++ nu ++ " provides two items with one method")) in
   Ok (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) [] [] binds (map (rkof outputs) keys)).
 
@@ -284,8 +283,8 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
               let* _ := check (at_key C (IFn f) pr && handles_read C (IFn f))
                          (at_sym f (if declared_ok then "platform primitive has an incompatible assumed signature"
                                     else "platform primitive has an incompatible declared signature")) in
-              ret (PrimitiveClosure pr None)
-          | None => let* i := unsupported_index nm in ret (PrimitiveClosure (PUnsupported i) None)
+              ret (PrimitiveClosure (encode pr) None)
+          | None => let* i := unsupported_index nm in ret (PrimitiveClosure (unsupported_operation nm i) None)
           end
       | _ => fail (unsupported_need (IFn f))
       end

@@ -6,8 +6,8 @@ From NM Require Import Audit AuditFacts PublicValueTyping.
 Import ListNotations Audit.Semantics.
 
 Module BaseSites.
-Definition retained_site (p : prim) (site : option ty) : option ty :=
-  match p with PBox _ | PArrNew _ => site | _ => None end.
+Definition retained_site (p : op) (site : option ty) : option ty :=
+  match decode p with Some (PBox _) | Some (PArrNew _) => site | _ => None end.
 
 Fixpoint erase_entry (entry : provision_value) : provision_value :=
   match entry with
@@ -42,7 +42,7 @@ Qed.
 
 Lemma retained_site_idempotent : forall operation site,
   retained_site operation (retained_site operation site) = retained_site operation site.
-Proof. intros operation site; destruct operation; reflexivity. Qed.
+Proof. intros operation site. unfold retained_site. destruct (decode operation) as [primitive|]; [destruct primitive|]; reflexivity. Qed.
 
 Fixpoint erase_entry_idempotent (entry : provision_value) :
   erase_entry (erase_entry entry) = erase_entry entry
@@ -165,25 +165,30 @@ Proof.
 Qed.
 
 Lemma base_call_site_irrelevant : forall S
-    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    (primitive : program_view -> op -> list value -> S -> signal * S)
     P operation first second ws st,
-  (forall tau out, BaseCall.allocation_result operation tau out = out) ->
+  (forall decoded, decode operation = Some decoded ->
+    forall tau out, BaseCall.allocation_result decoded tau out = out) ->
   BaseCall.call primitive P operation first ws st =
   BaseCall.call primitive P operation second ws st.
 Proof.
   intros S primitive P operation first second ws st Plain. unfold BaseCall.call.
-  destruct (primitive P operation (BaseCall.primitive_arguments operation ws) st)
-    as [out next]. destruct first, second; rewrite ?Plain; reflexivity.
+  destruct (decode operation) as [decoded|] eqn:Decoded;
+    destruct (primitive P operation _ st) as [out next];
+    destruct first, second; try reflexivity; repeat rewrite (Plain _ eq_refl); reflexivity.
 Qed.
 
 Lemma erased_primitive_call : forall S
-    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    (primitive : program_view -> op -> list value -> S -> signal * S)
     P operation site ws st,
   BaseCall.call primitive P operation site ws st =
   BaseCall.call primitive P operation (retained_site operation site) ws st.
 Proof.
-  intros S primitive P operation site ws st. destruct operation; cbn [retained_site]; try reflexivity;
-    apply base_call_site_irrelevant; intros tau out; reflexivity.
+  intros S primitive P operation site ws st.
+  unfold retained_site. destruct (decode operation) as [decoded|] eqn:Decoded.
+  - destruct decoded; try reflexivity; apply base_call_site_irrelevant;
+      intros decoded Decode tau out; rewrite Decoded in Decode; injection Decode as <-; reflexivity.
+  - apply base_call_site_irrelevant. intros decoded Decode. congruence.
 Qed.
 
 Fixpoint erased_entry_primitives (entry : provision_value) :
@@ -298,7 +303,8 @@ Lemma agreement_primitive : forall left right key operation,
   environments_agree left right -> entries_agree (primitive_closure left key operation) (primitive_closure right key operation).
 Proof.
   intros left right key operation E. unfold primitive_closure.
-  destruct operation; destruct key; constructor; cbn [retained_site];
+  destruct (decode operation) as [decoded|] eqn:Decoded; [destruct decoded|];
+    destruct key; constructor; cbn [retained_site]; rewrite ?Decoded; cbn;
     try reflexivity; rewrite (agreement_ground left right E); reflexivity.
 Qed.
 Lemma agreement_result : forall outputs left right results returned other,
@@ -314,8 +320,8 @@ Proof.
     cbn in *; try discriminate; [injection Eq as Eq; exact Eq|exact I].
 Qed.
 (* Canonical entries used by the primitive-only platform-family fast path. *)
-Definition nonallocating (operation : prim) : bool :=
-  match operation with PBox _ | PArrNew _ => false | _ => true end.
+Definition nonallocating (operation : op) : bool :=
+  match decode operation with Some (PBox _) | Some (PArrNew _) => false | _ => true end.
 Definition primitive_binding (binding : binding) : bool :=
   match binding with BPrimitive _ operation => nonallocating operation | _ => false end.
 Definition canonical_binding (binding : binding) : item * provision_value :=
@@ -331,8 +337,10 @@ Lemma erase_nonallocating_closure : forall d key operation,
   nonallocating operation = true ->
   erase_entry (primitive_closure d key operation) = PrimitiveClosure operation None.
 Proof.
-  intros d key operation Plain. destruct operation; cbn in Plain; try discriminate;
-    destruct key; reflexivity.
+  intros d key operation Plain. unfold nonallocating in Plain.
+  unfold primitive_closure. destruct (decode operation) as [decoded|] eqn:Decoded;
+    [destruct decoded|]; cbn in Plain; try discriminate;
+    destruct key; cbn [erase_entry]; unfold retained_site; rewrite ?Decoded; reflexivity.
 Qed.
 Lemma canonical_installs_erased_step : forall d key operation bindings,
   nonallocating operation = true ->
@@ -345,7 +353,7 @@ Proof.
   rewrite !erase_environment_eq. cbn [type_meanings type_aliases provision_values map rev canonical_binding].
   rewrite <- app_assoc. unfold erase_entries. rewrite !map_app.
   cbn [map fst snd]. rewrite erase_nonallocating_closure by exact Plain.
-  cbn [erase_entry]. destruct operation; reflexivity.
+  cbn [erase_entry]. unfold retained_site. destruct (decode operation) as [decoded|]; [destruct decoded|]; reflexivity.
 Qed.
 End BaseSites.
 
@@ -409,7 +417,7 @@ Proof.
     try reflexivity.
   - cbn [Nat.ltb canonical_installs rev map app bindings_agree].
     repeat split; try reflexivity. unfold environments_agree. destruct d; reflexivity.
-  - destruct binding; cbn [primitive_binding] in Plain; try discriminate.
+  - destruct binding as [t tau|v e|f f' types sm|tau m th f types sm|u h types sm smc|u u' sm rm|u th outputs sm rs|i p]; cbn [primitive_binding] in Plain; try discriminate.
     apply Bool.andb_true_iff in Plain as [Operation Plain].
     specialize (IH fuel P0 (install_provision i (primitive_closure d i p) d) g st Plain).
     change (bindings_agree
@@ -568,7 +576,7 @@ Theorem primitive_chain_normalized : forall bindings continuation fuel d g st,
 Proof.
   induction bindings as [|binding tail IH]; intros continuation fuel d g st Plain Large.
   - cbn [List.length Nat.add fold_right canonical_installs rev map app]. destruct d; reflexivity.
-  - destruct binding; cbn [primitive_binding] in Plain; try discriminate.
+  - destruct binding as [t tau|v e|f f' types sm|tau m th f types sm|u h types sm smc|u u' sm rm|u th outputs sm rs|i p]; cbn [primitive_binding] in Plain; try discriminate.
     apply Bool.andb_true_iff in Plain as [Operation Plain].
     cbn [List.length Nat.add fold_right]. rewrite primitive_bind_step by lia.
     rewrite IH by assumption. apply (proj1 (execution_site_erasure fuel)).
@@ -586,7 +594,7 @@ Proof.
     pose proof (proj1 (proj2 (proj2 (execution_site_erasure fuel)))
       (EnvironmentWithAliases meanings aliases entries) (EnvironmentWithAliases meanings aliases entries) g st continuation eq_refl) as Same.
     exact Same.
-  - destruct binding; cbn [primitive_binding] in Plain; try discriminate.
+  - destruct binding as [t tau|v e|f f' types sm|tau m th f types sm|u h types sm smc|u u' sm rm|u th outputs sm rs|i p]; cbn [primitive_binding] in Plain; try discriminate.
     apply Bool.andb_true_iff in Plain as [Operation Plain].
     cbn [List.length Nat.add app eval_bindings].
     eapply bindings_agree_transitive; [apply IH; exact Plain|].

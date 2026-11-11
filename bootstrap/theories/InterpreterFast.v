@@ -89,7 +89,7 @@ Inductive fprov : Type :=
 | FValue : value -> fprov
 | FFunction : fsym -> fenv -> fprov
 | FFunctor : usym -> option smap -> fenv -> option (list (option nat)) -> fprov
-| FPrimitive : prim -> option ty -> fprov
+| FPrimitive : op -> option ty -> fprov
 with fenv : Type :=
 | FEnv : lsubst -> lsubst -> fstore -> fenv
 with fstore : Type :=
@@ -306,13 +306,13 @@ Definition fappend (a b : fenv) :=
 Definition ftyped_capture (d : fenv) (types : type_capture) (dc : fenv) : fenv :=
   FEnv (ldefer_all (fmeanings d) (capture_generations types))
     (ldefer_all (fmeanings d) (capture_aliases types)) (fstore_of dc).
-Definition fprimitive_closure (d : fenv) (i : item) (p : prim) : fprov :=
-  FPrimitive p (match p, i with
-    | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (lapp (fmeanings d) tau)
+Definition fprimitive_closure (d : fenv) (i : item) (p : op) : fprov :=
+  FPrimitive p (match decode p, i with
+    | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (lapp (fmeanings d) tau)
     | _, _ => None end).
 (* A primitive binding often introduces the very next lookup. Keep that
    row in front of the trie and fold it back before another installation. *)
-Definition finstall_primitive (d : fenv) (i : item) (p : prim) : fenv :=
+Definition finstall_primitive (d : fenv) (i : item) (p : op) : fenv :=
   FEnv (fmeanings d) (faliases d)
     (FOverlay i (fprimitive_closure d i p) (compact (fstore_of d))).
 

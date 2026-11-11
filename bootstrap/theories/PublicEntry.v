@@ -435,11 +435,11 @@ Proof.
     cbn [snd fc_bindings]. apply in_flat_map. exists (BPrimitive (A.rkey_of outputs key) op).
     split; [exact Ib|left; reflexivity]. }
   assert (Held : HeldAt m' (rf :: A.sg_params gf)
-    (match op, A.rkey_of outputs key with
-     | PBox _, IMth tau _ _ | PArrNew _, IMth tau _ _ => Some (ground de tau)
+    (match decode op, A.rkey_of outputs key with
+     | Some (PBox _), IMth tau _ _ | Some (PArrNew _), IMth tau _ _ => Some (ground de tau)
      | _, _ => None end)).
   { rewrite Ek. cbn [A.rkey_of A.rkey]. unfold A.rkey.
-    destruct op; cbn; try exact I; exists rf, (A.sg_params gf); (split; [reflexivity|]);
+    destruct (decode op) as [p|]; [destruct p|]; cbn; try exact I; exists rf, (A.sg_params gf); (split; [reflexivity|]);
       symmetry; apply G; right; left; reflexivity. }
   unfold primitive_closure. cbn [FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk]. intros H1 st1 ws Ext St Args.
   rewrite <- (G (A.sg_ret gf) (or_introl eq_refl)).

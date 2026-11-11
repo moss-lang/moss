@@ -120,7 +120,7 @@ Fixpoint installs (d : environment) (bs : list binding) : environment :=
   end.
 
 (* The last operation installed under k. *)
-Fixpoint last_prim (k : item) (bs : list binding) : option prim :=
+Fixpoint last_prim (k : item) (bs : list binding) : option op :=
   match bs with
   | [] => None
   | BPrimitive k1 op :: r =>

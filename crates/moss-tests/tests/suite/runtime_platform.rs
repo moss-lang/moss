@@ -29,6 +29,24 @@ fn primitive_arity_and_types_are_checked() {
 }
 
 #[test]
+fn unsupported_operations_report_their_own_names() {
+    let dir = sources(&[
+        ("lib/wasm.moss", "fn first_probe(); fn second_probe(); context Probes = first_probe, second_probe;"),
+        ("lib/prelude.moss", ""),
+        ("first_probe.moss", "import \"./lib/wasm.moss\" use Probes, first_probe; assume Probes { fn main() { first_probe(); } }"),
+        ("second_probe.moss", "import \"./lib/wasm.moss\" use Probes, second_probe; assume Probes { fn main() { second_probe(); } }"),
+    ]);
+    let prelude = format!("{dir}/lib/prelude.moss");
+    for name in ["first_probe", "second_probe"] {
+        let entry = format!("{dir}/{name}.moss");
+        let out = oracle_command(&["--prelude", &prelude, &entry]);
+        assert_eq!(out.code, 4, "{}", out.stderr);
+        assert_eq!(out.stderr, format!("[unsupported primitive {name}]\n"));
+        assert!(out.stdout.is_empty());
+    }
+}
+
+#[test]
 fn machine_constants_have_machine_types() {
     refused(
         &[

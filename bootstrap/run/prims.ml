@@ -1,9 +1,10 @@
-(* The primitives Audit's interpreter runs with: MossX.run_prim (the
+(* The primitives Audit's interpreter runs with: MossX.run_prim_fast (the
    machine model of ExecutionModel.v's primitives), at Audit's value type.
-   UNVERIFIED glue (README.md): the conversions below preserve the Base
-   scalars' bit patterns and translate their reference headers. *)
+   UNVERIFIED glue (README.md): the conversions below translate Base scalar
+   payloads and reference headers; NaNs use the legacy canonical encodings. *)
 open ExecutionModel
 module A = Audit.Semantics
+module Ops = A.WasmOps
 
 (* Field names: MossX's are numbers, Audit's are strings.  A decimal string
    is that number; any other name is interned to a negative number, so a
@@ -35,10 +36,9 @@ let rec ty_back (t : A.ty) : ExecutionModel.ty = match t with
   | A.TMachine s -> TAbs (-1 - s)
   | A.TRecord fs -> TNom (-1000, List.map (fun (f, t) -> (fld_back f, ty_back t)) fs)
 
-(* The two prim types (and their operand enumerations) are declared
-   constructor for constructor alike in ExecutionModel.v and Audit.v, so
-   they have one representation. *)
-let prim_back (p : A.prim) : ExecutionModel.prim = Obj.magic p
+(* The supported Wasm operations and their operand enumerations are
+   declared in the same order as the supported ExecutionModel primitives. *)
+let prim_back (p : Ops.wasm_prim) : ExecutionModel.prim = Obj.magic p
 
 (* MossX keeps binary32 values in binary64. Its reinterpretation ops
    canonicalize NaNs, so use those same bit patterns at the boundary. *)
@@ -76,20 +76,24 @@ let rec value_back (w : A.value) : xvalue = match w with
   | A.VRef (a, Some (1, t)) -> XVRefAt (true, ty_back t, Uint63.of_int a)
   | A.VRef (_, Some _) -> invalid_arg "unknown Base reference kind"
 
-(* MossX.run_prim reads the host (argv, files, Bool's symbols) from an
+(* MossX.run_prim_fast reads the host (argv, files, Bool's symbols) from an
    ExecutionModel xprog; the driver sets it before the run.  Its program
    tables are empty: no primitive reads them. *)
 let host : xprog option ref = ref None
 
 module P = struct
   type mstate = MossX.mstate
-  let raw_primitive (_ : A.program_view) (p : A.prim) (ws : A.value list) (st : mstate) : A.signal * mstate =
-    let xp = match !host with Some x -> x | None -> assert false in
-    let (o, st') = MossX.run_prim_fast xp (prim_back p) (List.map value_back ws) st in
-    ((match o with
-      | XOk w -> A.Normal (value w) | XRet w -> A.Returning (value w) | XBrk -> A.Breaking
-      | XErr n -> A.Stuck n | XTrap n -> A.Trap n | XExit c -> A.Exit c | XUns n -> A.UnsupportedOperation n
-      | XFuel -> A.OutOfFuel), st')
+  let raw_primitive (_ : A.program_view) operation (ws : A.value list) (st : mstate) :
+      A.signal * mstate =
+    match Ops.decode operation with
+    | None -> (A.UnsupportedOperation (Ops.unsupported_code operation), st)
+    | Some p ->
+        let xp = match !host with Some x -> x | None -> assert false in
+        let (o, st') = MossX.run_prim_fast xp (prim_back p) (List.map value_back ws) st in
+        ((match o with
+          | XOk w -> A.Normal (value w) | XRet w -> A.Returning (value w) | XBrk -> A.Breaking
+          | XErr n -> A.Stuck n | XTrap n -> A.Trap n | XExit c -> A.Exit c
+          | XUns n -> A.UnsupportedOperation n | XFuel -> A.OutOfFuel), st')
   let run_prim program operation site values state =
     A.BaseCall.call raw_primitive program operation site values state
 end
