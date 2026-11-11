@@ -536,6 +536,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.BootstrapBuild.load_elaborate_world);
   root (@NM.BootstrapBuild.elaborate_main_environment);
   root (@NM.BootstrapBuild.elaborate_platform_sound);
+  root (@NM.BootstrapBuild.elaborate_finite_layouts);
   root (@NM.EaMain.elaborate);
   root (@NM.EaMain.elaborate_with);
   root (@NM.EaBase.default_strategy);

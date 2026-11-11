@@ -1,5 +1,5 @@
 From Stdlib Require Import List String.
-From NM Require Audit AuditBase EaBase EaContextTableSound EaMain EaPlatform EaPlatformSound EaSatisfiesSound EaTypes EaTypesSound EaWorldSound
+From NM Require Audit AuditBase EaBase EaContextTableSound EaExpand EaLayoutSound EaMain EaPlatform EaPlatformSound EaSatisfiesSound EaTypes EaTypesSound EaWorldSound
   SnapshotLoader Sx.
 From NM Require Import EaControlSound.
 
@@ -40,7 +40,8 @@ Theorem assemble_entry : forall env bound entry before program after,
   (exists start finish, EaPlatform.main_environment env (program_main program) start =
     Ok (program_environment program, finish)) /\
   P.Tables (e_W env) (program_machines program) (program_casts program) /\
-  P.EntryPoint (e_W env) program /\ LangItemsFormed (e_W env) /\ InstalledBool (e_W env) program.
+  P.EntryPoint (e_W env) program /\ LangItemsFormed (e_W env) /\ InstalledBool (e_W env) program /\
+  EaExpand.finite_layouts (e_W env) (e_fuel env) bound = Ok tt.
 Proof.
   intros env bound entry before program after Contexts Run.
   unfold EaMain.assemble in Run.
@@ -84,6 +85,10 @@ Proof.
   clear Read.
   apply mbind_ok in Run as (language_checked & after_language & Read & Run).
   destruct (EaPlatform.lang_items_formed env) as [[]|message] eqn:Language; [|discriminate Read].
+  apply mbind_ok in Run as (_ & after_casts & _ & Run).
+  apply mbind_ok in Run as (finite_checked & after_finite & FiniteRun & Run).
+  destruct (EaExpand.finite_layouts (e_W env) (e_fuel env) bound) as [[]|message] eqn:Finite;
+    [|discriminate FiniteRun].
   destruct (EaPlatform.bool_syms env) as [[boolean truth] falsity] eqn:Symbols.
   repeat apply mbind_ok in Run as (?value & ?state & ?step & Run).
   injection Run as <- _.
@@ -92,7 +97,10 @@ Proof.
   split; [now apply EaPlatformSound.tables_sound|].
   pose proof (EaPlatformSound.lang_items_formed_sound _ Language) as LanguageFormed.
   split; [|split; [exact LanguageFormed|]].
-  2: { eapply EaPlatformSound.bool_symbols_sound; [exact LanguageFormed|exact Symbols]. }
+  2: {
+    split; [|reflexivity].
+    eapply EaPlatformSound.bool_symbols_sound; [exact LanguageFormed|exact Symbols].
+  }
   assert (KindMain : kind_sym (e_W env) symbol = Some DKFn).
   { destruct Main as (d & n & rt & body & Declaration & Shape).
     unfold kind_sym. rewrite Declaration, Shape. reflexivity. }
@@ -147,6 +155,8 @@ Lemma elaborate_uses_assemble : forall strategy bundle world program,
   EaMain.elaborate_with strategy bundle = Ok (world, program) ->
   exists env bound after,
     e_W env = world /\
+    (forall symbol d, w_decl world symbol = Some d -> symbol < bound) /\
+    EaMain.decls_form env bound = Ok tt /\
     EaMain.assemble env bound (b_entry bundle) (init_state bound) = Ok (program, after).
 Proof.
   intros strategy bundle world program Run.
@@ -157,7 +167,17 @@ Proof.
   | context [match ?step with _ => _ end] => destruct step eqn:?; try discriminate
   end.
   injection Run as <- <-.
-  do 3 eexists. split; [|eassumption]. reflexivity.
+  match goal with
+  | Assembled : EaMain.assemble ?env bound _ _ = Ok (_, ?after) |- _ =>
+      exists env, bound, after
+  end.
+  split; [reflexivity|]. split.
+  - intros symbol d Declared. eapply EaWorldSound.bundle_world_r_bound;
+      [exact World|exact Declared].
+  - match goal with
+    | Declarations : EaMain.decls_form _ _ = Ok ?u |- _ => destruct u
+    end.
+    split; eassumption.
 Qed.
 
 Theorem elaborate_main_environment : forall strategy bundle world program,
@@ -173,7 +193,7 @@ Theorem elaborate_main_environment : forall strategy bundle world program,
 Proof.
   intros strategy bundle world program Run.
   pose proof (EaContextTableSound.elaborate_with_context_table_sound _ _ _ _ Run) as Contexts.
-  destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & Assembled).
+  destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & Bounded & Declarations & Assembled).
   destruct (assemble_entry _ _ _ _ _ _ Contexts Assembled)
     as (Scope & Main & (start & finish & EnvironmentRun) & Tables & _).
   split; [exact Scope|split; [exact Main|]].
@@ -190,7 +210,24 @@ Theorem elaborate_platform_sound : forall strategy bundle world program,
 Proof.
   intros strategy bundle world program Run.
   pose proof (EaContextTableSound.elaborate_with_context_table_sound _ _ _ _ Run) as Contexts.
-  destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & Assembled).
-  destruct (assemble_entry _ _ _ _ _ _ Contexts Assembled) as (_ & _ & _ & Checked).
-  exact Checked.
+  destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & Bounded & Declarations & Assembled).
+  destruct (assemble_entry _ _ _ _ _ _ Contexts Assembled) as (_ & _ & _ & Tables & Entry & Language & Bool & _).
+  exact (conj Tables (conj Entry (conj Language Bool))).
+Qed.
+
+(* Declaration checking reads each payload in the full context of source
+   names. The layout check reads the same payload at its own requirements. *)
+Theorem elaborate_finite_layouts : forall strategy bundle world program,
+  EaMain.elaborate_with strategy bundle = Ok (world, program) -> FiniteLayouts world.
+Proof.
+  intros strategy bundle world program Run.
+  pose proof (EaWorldSound.elaborate_with_world_sound _ _ _ _ Run) as World.
+  pose proof (EaContextTableSound.elaborate_with_context_table_sound _ _ _ _ Run) as Contexts.
+  destruct (elaborate_uses_assemble _ _ _ _ Run)
+    as (env & bound & after & <- & Bounded & Declarations & Assembled).
+  destruct (assemble_entry _ _ _ _ _ _ Contexts Assembled)
+    as (_ & _ & _ & _ & _ & _ & _ & Finite).
+  eapply EaLayoutSound.finite_layouts_sound; [| |exact Finite].
+  - intros tag payload Read. inversion Read. eapply Bounded. eassumption.
+  - eapply EaLayoutSound.declarations_cover_payload_reads; eassumption.
 Qed.
