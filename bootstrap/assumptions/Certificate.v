@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFunctionSound EaMatchSound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
+From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFunctionSound EaMatchSound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
 From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenaming BaseHostExecutionRenaming.
 
 From NM Require AuditExamples AuditBuildExample
@@ -550,6 +550,13 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaMatchSound.arms_list_sound);
   root (@NM.EaMatchSound.arms_sound);
   root (@NM.EaMatchSound.match_sound);
+  root (@NM.EaBreaksSound.break_scans_sound);
+  root (@NM.EaBreaksSound.block_breaks_yes);
+  root (@NM.EaBreaksSound.block_breaks_no);
+  root (@NM.EaBlockSound.blk_sound);
+  root (@NM.EaBlockSound.blke_sound);
+  root (@NM.EaCallExpressionSound.plain_call_sound);
+  root (@NM.EaCallExpressionSound.bracketed_plain_call_sound);
   root (@NM.EaConstructSound.tag_call_sound);
   root (@NM.EaConstructSound.record_expression_sound);
   root (@NM.EaConstructSound.field_expression_sound);
