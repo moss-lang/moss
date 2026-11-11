@@ -1684,7 +1684,7 @@ Proof.
   (* each callee key finds the caller's provision *)
   assert (Find : forall k, In k ns -> lookup_provision (A.rkey_of Cf k) de = lookup_provision (A.rkey_of C (A.at_th C th k)) d).
   { intros k Ik. change (lookup_provision (A.rkey_of Cf k) de) with (lookup_provision (A.rkey_of Cf k) dc).
-    rewrite (select_lookup d sm dc _ Sel), SmEq.
+    rewrite (select_lookup d sm dc _ Sel), SmEq. unfold A.satisfaction_map.
     rewrite (sm_find_map (A.rkey_of Cf) (fun k' => A.rkey_of C (A.at_th C th k')) ns k Ik); [reflexivity|].
     intros k' Ik' E. exact (rkey_of_injective Cf k' k (Shape k' Ik') (Shape k Ik) E). }
   assert (Dom : forall t, incl (A.gens t) (map fst (A.c_ty Cf)) -> forall x, In x (A.gens t) -> lookup_subst x th <> None).
@@ -3133,7 +3133,7 @@ Proof.
   destruct Sat as [SmEq [Prov _]].
   destruct (ctx_needs W f Cf ns Ctx) as [Nd [ProvNs Shape]].
   change (lookup_provision (A.rkey_of Cf k) (callee_env d th dc)) with (lookup_provision (A.rkey_of Cf k) dc).
-  rewrite (select_lookup d sm dc _ Sel), SmEq.
+  rewrite (select_lookup d sm dc _ Sel), SmEq. unfold A.satisfaction_map.
   rewrite (sm_find_map (A.rkey_of Cf) (fun k' => A.rkey_of C (A.at_th C th k')) ns k Ik);
     [|intros k' Ik' E; exact (rkey_of_injective Cf k' k (Shape k' Ik') (Shape k Ik) E)].
   pose proof (Prov k Ik) as Pr. pose proof (Shape k Ik) as Sh.
@@ -3716,7 +3716,7 @@ Proof.
   destruct (select_provisions_empty _ _ _ Sel) as [Em Ea].
   assert (Find : forall k0, In k0 caps -> lookup_provision (A.rkey_of Cg k0) dc = lookup_provision (A.rkey_of C (A.at_th C th k0)) d).
   { intros k0 Ik. change (lookup_provision (A.rkey_of Cg k0) dc) with (lookup_provision (A.rkey_of Cg k0) dsel).
-    rewrite (select_lookup d smc dsel _ Sel), SmEq.
+    rewrite (select_lookup d smc dsel _ Sel), SmEq. unfold A.satisfaction_map.
     rewrite (sm_find_map (A.rkey_of Cg) (fun k' => A.rkey_of C (A.at_th C th k')) caps k0 Ik); [reflexivity|].
     intros k' Ik' E. exact (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (CapsIn k' Ik'))) (ShapeG k0 (proj1 (CapsIn k0 Ik))) E). }
   set (gfx := ground_fixed (type_meanings d) fx).

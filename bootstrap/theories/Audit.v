@@ -3400,17 +3400,12 @@ Definition canon_sig (C : cx) (g : fsig) : fsig :=
   FSig (map (canon C) (sg_params g)) (canon C (sg_ret g)).
 
 (* [D20]/[D62]/[D71]: a call of callee s (assume context Cs, needs ns)
-   from context C at instantiation th is answered by satisfaction map sm:
-   sm sends each need (exactly once) to the caller's provision of it read
-   here, which must be in force, at the instantiation the callee needs it
-   at (coherence), with the type or signature the callee's context gives
-   it read at th; and the callee's merges ([D43]) must hold here. A
-   provision's type can mention types that are not its requirements, so
-   recorded requirement meanings alone do not determine it. *)
-Definition Satisfies (C : cx) (Cs : cx) (th : subst) (ns : list item) (sm : smap) : Prop :=
-  (* each need, by its run-time key in the callee, to the caller's
-     provision of it read here, by its run-time key here (note 28) *)
-  sm = map (fun k => (rkey_of Cs k, rkey_of C (at_th C th k))) ns /\
+   from context C at instantiation th needs the caller's provision of
+   each requirement. The provision must be in force at the required
+   instantiation, with the type or signature the callee's context gives
+   it read at th. The callee's merges ([D43]) must hold here. A
+   provision's type can mention types beyond its own requirements. *)
+Definition NeedsSatisfied (C Cs : cx) (th : subst) (ns : list item) : Prop :=
   (forall k, In k ns -> provides C (at_th C th k)) /\
   (* coherence: where both say what a requirement means, they agree *)
   (forall k a, In k ns -> ilook k (c_apps Cs) = Some a ->
@@ -3437,6 +3432,14 @@ Definition Satisfies (C : cx) (Cs : cx) (th : subst) (ns : list item) (sm : smap
   (forall g, (forall y, (exists x, (x = g \/ In x (gens (canon Cs (TAbs g)))) /\
                           canon Cs (TAbs y) = canon Cs (TAbs x)) -> nlook y (c_ty C) <> None) ->
      canon C (app_subst (c_ty C) (TAbs g)) = canon C (app_subst (c_ty C) (canon Cs (TAbs g)))).
+
+(* Translation uses the same provision readings to pair each callee
+   key with the caller's run-time key. *)
+Definition satisfaction_map (C Cs : cx) (th : subst) (ns : list item) : smap :=
+  map (fun k => (rkey_of Cs k, rkey_of C (at_th C th k))) ns.
+
+Definition Satisfies (C Cs : cx) (th : subst) (ns : list item) (sm : smap) : Prop :=
+  sm = satisfaction_map C Cs th ns /\ NeedsSatisfied C Cs th ns.
 
 (* Arguments checked against parameter types ([D17] fits), elaborated in order. *)
 
