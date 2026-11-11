@@ -502,6 +502,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicSiteErasure.Simulation.primitive_bindings_normalized);
   root (@PublicSiteErasure.Simulation.primitive_chain_normalized);
   root (@PublicSiteErasure.Simulation.primitive_prefix_normalized);
+  root (@PublicSiteErasure.Simulation.primitive_functor_application_normalized);
 
 (* Deferred type substitution. *)
   root (@LazyTop.leval_agrees);

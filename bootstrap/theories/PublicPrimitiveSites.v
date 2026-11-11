@@ -433,6 +433,67 @@ Proof.
     + exact IH.
 Qed.
 
+(* Completing a primitive-only functor body uses the same simultaneous output
+   reading as apply_functor. This proof-side function separates that boundary
+   from dispatch and the primitive body's exact fuel cutoff. *)
+Definition primitive_application_result (code : functor_code)
+    (outputs : list (tsym * tsym)) (results : list item)
+    (positions : option (list (option nat))) (body : environment) (st : mstate)
+    : (environment * mstate) + evaluation :=
+  match select_provisions body (result_selection results positions (fc_sources code)) with
+  | Some returned =>
+      match result_environment outputs body (fc_outputs code) returned with
+      | Some result => inl (result, st)
+      | None => inr (Evaluation (Stuck e_compose) [] st)
+      end
+  | None => inr (Evaluation (Stuck e_compose) [] st)
+  end.
+
+Lemma primitive_application_result_agrees : forall code outputs results positions left right st,
+  environments_agree left right ->
+  applications_agree (primitive_application_result code outputs results positions left st)
+    (primitive_application_result code outputs results positions right st).
+Proof.
+  intros code outputs results positions left right st Eq.
+  unfold primitive_application_result.
+  pose proof (agreement_select left right (result_selection results positions (fc_sources code)) Eq) as Selected.
+  destruct (select_provisions left (result_selection results positions (fc_sources code))) as [returned|],
+    (select_provisions right (result_selection results positions (fc_sources code))) as [other|];
+    cbn in Selected; try contradiction; [|reflexivity].
+  pose proof (agreement_result outputs left right (fc_outputs code) returned other Eq Selected) as Result.
+  destruct (result_environment outputs left (fc_outputs code) returned),
+    (result_environment outputs right (fc_outputs code) other); cbn in Result; try contradiction;
+    [split; [exact Result|reflexivity]|reflexivity].
+Qed.
+
+Theorem primitive_functor_application_normalized : forall fuel P0 d functor body adaptation captures positions
+    code substitution outputs selection results st selected adapted,
+  lookup_provision (IFun functor) d = Some (FunctorClosure body adaptation captures positions) ->
+  view_functor P0 body = Some code ->
+  select_provisions d selection = Some selected ->
+  adapt_provisions selected adaptation = Some adapted ->
+  forallb primitive_binding (fc_bindings code) = true ->
+  applications_agree
+    (apply_functor (S fuel) P0 d functor substitution outputs selection results st)
+    (if Nat.ltb (length (fc_bindings code)) fuel then
+       primitive_application_result code outputs results positions
+         (canonical_installs (application_environment P0 d body substitution
+           (append_environment adapted captures)) (fc_bindings code)) st
+     else inr (Evaluation OutOfFuel [] st)).
+Proof.
+  intros fuel P0 d functor body adaptation captures positions code substitution outputs selection results
+    st selected adapted Found Code Selected Adapted Primitive.
+  cbn [apply_functor]. rewrite Found, Code, Selected, Adapted.
+  pose proof (primitive_bindings_normalized (fc_bindings code) fuel P0
+    (application_environment P0 d body substitution (append_environment adapted captures)) [] st Primitive) as Body.
+  destruct (Nat.ltb (length (fc_bindings code)) fuel);
+    destruct (eval_bindings fuel P0 (application_environment P0 d body substitution
+      (append_environment adapted captures)) [] st (fc_bindings code)) as [[[final ignored] next]|result];
+    cbn [bindings_agree] in Body; try contradiction.
+  - destruct Body as [Environments [-> ->]]. apply primitive_application_result_agrees. exact Environments.
+  - cbn [applications_agree]. exact Body.
+Qed.
+
 Definition execution_agrees (fuel : nat) : Prop :=
   (forall d d' g st e, environments_agree d d' -> eval fuel P d g st e = eval fuel P d' g st e) /\
   (forall d d' g st args, environments_agree d d' -> eval_arguments fuel P d g st args = eval_arguments fuel P d' g st args) /\
