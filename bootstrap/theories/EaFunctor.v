@@ -141,6 +141,26 @@ Definition apply_abstract (F : frame) (C : cx) (u : nat) : M (wrapper * cx * fra
 
 (* ---- BFunCopy and CopyInterpretation ---- *)
 
+Definition copy_result_position (source target : string) (Cu result source_result : cx)
+    (rho : subst) (indexed : list (nat * item)) (key : item) : M nat :=
+  let target_key := app_subst_item rho (provision_id key) in
+  let candidates := filter (fun q => item_eqb
+    (app_subst_item rho (canon_item Cu (provision_id (snd q)))) target_key) indexed in
+  match rev candidates with
+  | (position, selected) :: _ =>
+      let* _ := check (forallb (fun q => item_eqb (provision_id (snd q)) (provision_id selected)) candidates)
+        (source ++ " cannot be copied to " ++ target ++ ": two of its result items fall under one key of " ++ target ++ "'s (D84 rule 7)") in
+      let mismatch := (source ++ " cannot be copied to " ++ target ++ ": its effective output interpretation differs (D78)")%string in
+      match ilook (provision_id key) (c_provisions result), ilook (provision_id selected) (c_provisions source_result) with
+      | Some provided, Some actual =>
+          let* _ := check (provision_eqb (provision_subst rho provided)
+            (provision_subst rho (canon_provision Cu actual))) mismatch in
+          ret position
+      | _, _ => fail mismatch
+      end
+  | [] => fail (source ++ " cannot be bound to " ++ target ++ ": it does not provide " ++ qkey W key ++ ", which " ++ target ++ " promises (D78)")
+  end.
+
 (* SOUND: copy_interpretation sigma u h Cu nsu nsh Ch = Ok (sm, rm)
    yields the chosen target keys and CopyInterpretation. *)
 Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : list item) (Ch : cx)
@@ -164,23 +184,8 @@ Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : 
     ret (k, k')) nsh in
   let* (Cr, ks) := pure (provide_result E u Cu (fun t => TAbs (gen t))) in
   let* (Cr', ks') := pure (provide_result E h Ch (fun t => TAbs (gen t))) in
-  let at_rho := fun k => app_subst_item rho (provision_id k) in
-  let at_rho_h := fun k => app_subst_item rho (canon_item Cu (provision_id k)) in
-  let ix' := combine (seq 0 (List.length ks')) ks' in
-  let* rm := mmap (fun k =>
-    match rev (filter (fun q => item_eqb (at_rho_h (snd q)) (at_rho k)) ix') with
-    | (j, k') :: _ =>
-        let* _ := check (forallb (fun q => item_eqb (provision_id (snd q)) (provision_id k')) (filter (fun q => item_eqb (at_rho_h (snd q)) (at_rho k)) ix'))
-                   (nh ++ " cannot be copied to " ++ nu ++ ": two of its result items fall under one key of " ++ nu ++ "'s (D84 rule 7)") in
-        match ilook (provision_id k) (c_provisions Cr), ilook (provision_id k') (c_provisions Cr') with
-        | Some p, Some p' =>
-            let* _ := check (provision_eqb (provision_subst rho p) (provision_subst rho (canon_provision Cu p')))
-                       (nh ++ " cannot be copied to " ++ nu ++ ": its effective output interpretation differs (D78)") in
-            ret j
-        | _, _ => fail (nh ++ " cannot be copied to " ++ nu ++ ": its effective output interpretation differs (D78)")
-        end
-    | [] => fail (nh ++ " cannot be bound to " ++ nu ++ ": it does not provide " ++ qkey W k ++ ", which " ++ nu ++ " promises (D78)")
-    end) ks in
+  let indexed := combine (seq 0 (List.length ks')) ks' in
+  let* rm := mmap (copy_result_position nh nu Cu Cr Cr' rho indexed) ks in
   ret (map (fun q => (rkof Ch (fst q), rkof Cu (snd q))) needs, rm).
 
 (* SOUND: fun_copy F C u h = Ok (wrap, C') -> BindItem ... by BFunCopy *)

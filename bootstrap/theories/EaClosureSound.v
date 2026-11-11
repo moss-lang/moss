@@ -9,7 +9,7 @@ Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Import EaLinkBodySound.
 Local Open Scope list_scope.
 
-Local Lemma fixed_here_exact : forall E bound C u x t,
+Lemma fixed_here_exact : forall E bound C u x t,
   (forall n d, w_decl (e_W E) n = Some d -> n < bound) ->
   EaBudget.metadata_budget (e_W E) bound < e_metadata_fuel E ->
   In (x, t) (EaFunctor.fixed_here E u C) <-> Fixed (e_W E) u x /\ nlook x (c_ty C) = Some t.

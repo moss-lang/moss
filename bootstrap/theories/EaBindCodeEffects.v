@@ -31,7 +31,7 @@ Proof.
   intro matched. apply code_effect_bind; [apply code_effect_pure|]. intros [result keys].
   apply code_effect_bind; [apply code_effect_pure|]. intros [source source_keys].
   apply code_effect_bind.
-  { apply code_effect_mmap. intro key.
+  { apply code_effect_mmap. intro key. unfold EaFunctor.copy_result_position.
     match goal with
     | |- PreservesOldCode (match ?positions with [] => _ | _ :: _ => _ end) =>
       destruct positions as [|[position selected] rest]; [apply code_effect_fail|]

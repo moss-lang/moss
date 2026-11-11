@@ -236,6 +236,11 @@ From NM Require EaClosureSound EaDeclarationSound.
 Print Assumptions NM.EaClosureSound.fun_closure_sound.
 Print Assumptions NM.EaDeclarationSound.same_result_exact_at_declarations.
 
+From NM Require EaCopySound.
+Print Assumptions NM.EaCopySound.copy_result_position_sound.
+Print Assumptions NM.EaCopySound.copy_interpretation_sound.
+Print Assumptions NM.EaCopySound.fun_copy_sound.
+
 From NM Require EaLambdaKeys.
 Print Assumptions NM.EaLambdaKeys.lambda_need_keys_exact.
 Print Assumptions NM.EaLambdaKeys.captured_cx_keys_match.
