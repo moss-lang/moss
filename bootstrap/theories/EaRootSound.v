@@ -55,7 +55,7 @@ Qed.
 Section Roots.
 Variable E : env.
 Let W := e_W E.
-Let fuel := e_fuel E.
+Let fuel := e_metadata_fuel E.
 Hypothesis FixedExact : forall u x, In x (fixed W fuel u) <-> Fixed W u x.
 Hypothesis FixedReads : forall u tm, FixedReadings W u tm (fixed_readings W fuel u tm).
 

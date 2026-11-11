@@ -123,7 +123,7 @@ Theorem elaborate_with_main_symbols_exact : forall strategy b W program,
   EaMain.elaborate_with strategy b = Ok (W, program) ->
   forall s, In s (EaMain.main_symbols W (map am_path (b_mods b))) <-> IsMainFn W s.
 Proof.
-  intros strategy b W program Run. unfold EaMain.elaborate_with in Run.
+  intros strategy b W program Run. unfold EaMain.elaborate_with, EaMain.elaborate_with_metadata in Run.
   destruct (EaMain.bundle_world_r b) as [[source_world bound]|message] eqn:WorldRead;
     [|discriminate].
   repeat match type of Run with

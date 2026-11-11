@@ -74,3 +74,8 @@ Print Assumptions NM.EaRootSound.lang_sym_complete.
 Print Assumptions NM.EaRootSound.lang_item_sym_complete.
 Print Assumptions NM.EaRootSound.root_items_sound.
 Print Assumptions NM.EaRootSound.root_ctx_sound.
+
+From NM Require EaMetadataSound.
+Print Assumptions NM.EaMetadataSound.metadata_fuel_sufficient.
+Print Assumptions NM.EaMetadataSound.metadata_fuel_legacy.
+Print Assumptions NM.EaMetadataSound.bundle_world_r_metadata_exact.

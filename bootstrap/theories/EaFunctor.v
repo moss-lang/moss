@@ -20,6 +20,7 @@ Section Functor.
 Variable E : env.
 Let W := e_W E.
 Let fuel := e_fuel E.
+Let metadata_fuel := e_metadata_fuel E.
 Variable R : rec.
 
 Definition gen_of (tbl : list (nat * nat)) (t : nat) : nat :=
@@ -28,7 +29,7 @@ Definition fresh_table (u : nat) (l : list nat) : M (list (nat * nat)) :=
   mmap (fun t => let* g := fresh in let* _ := put_name g (sym_name W t ++ "@" ++ sym_name W u) in ret (t, g)) l.
 
 Definition fixed_here (u : nat) (C : cx) : subst :=
-  flat_map (fun x => match nlook x (c_ty C) with Some t => [(x, t)] | None => [] end) (fixed W fuel u).
+  flat_map (fun x => match nlook x (c_ty C) with Some t => [(x, t)] | None => [] end) (fixed W metadata_fuel u).
 
 Definition abstract_functor (u : nat) : bool :=
   match ast_of W u with Some (ADFunctor _ _ _ _ None) => true | _ => false end.
@@ -79,7 +80,7 @@ Definition apply_abstract (F : frame) (C : cx) (u : nat) : M (wrapper * cx * fra
                       " (D84 rule 5, D72)")
             | None => ret tt end in
   let* sm := pure (satisfies W ("applying " ++ fu) ("applying " ++ fu) C Cu th ns) in
-  let outs := fun_outputs W fuel u in
+  let outs := fun_outputs W metadata_fuel u in
   let retg := match fr_ret F with Some r => gens r | None => [] end ++
               match fr_this F with Some r => gens r | None => [] end in
   let mentioned := context_gens C ++ key_receiver_gens C in
@@ -102,7 +103,7 @@ Definition apply_abstract (F : frame) (C : cx) (u : nat) : M (wrapper * cx * fra
 (* SOUND: copy_interpretation sigma u h Cu nsh Ch = Ok rm -> CopyInterpretation W sigma u h Cu nsh Ch rm *)
 Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsh : list item) (Ch : cx) : M (list nat) :=
   let nu := qs W u in let nh := qs W h in
-  let outs := fun_outputs W fuel u in
+  let outs := fun_outputs W metadata_fuel u in
   let ys := uniq (filter (fun y => negb (is_some (lookup_subst y sigma)))
                          (flat_map (fun q => match nlook (fst q) (c_ty Cu) with Some tx => gens tx | None => [] end) (c_ty Cu))) in
   let* gtab := fresh_table u outs in
@@ -147,11 +148,11 @@ Definition fun_copy (F : frame) (C : cx) (u h : nat) : M (wrapper * cx) :=
   let* _ := match find (fun k => negb (imem (canon_item Cu k) nsu)) nsh with
             | Some k => fail (nh ++ " cannot be bound to " ++ nu ++ ": it needs " ++ qkey W k ++ ", which " ++ nu ++ " does not take (D78)")
             | None => ret tt end in
-  let fu := fixed W fuel u in
+  let fu := fixed W metadata_fuel u in
   let* _ := match find (fun x => negb (bound_in C x)) fu with
             | Some x => fail ("binding " ++ nu ++ " needs " ++ qs W x ++ " in force: it is a fixed input (D84)")
             | None => ret tt end in
-  let* _ := match find (fun x => negb (nmem x fu)) (fixed W fuel h) with
+  let* _ := match find (fun x => negb (nmem x fu)) (fixed W metadata_fuel h) with
             | Some x => fail (nh ++ " cannot be bound to " ++ nu ++ ": it is fixed in " ++ qs W x ++ ", in which " ++ nu ++ " is polymorphic (D84 rule 4)")
             | None => ret tt end in
   let* _ := check (fixed_agreement E C h) ("copying " ++ nh ++ " after rebinding its fixed input changes its interpretation (D84)") in
@@ -188,7 +189,7 @@ Definition link_body (u gg : nat) : M nat :=
   | ADFunctor _ _ _ _ (Some bodies) =>
       let* (Cu, nsu) := lift (w_context W u) ("the context of " ++ nu ++ " does not form") in
       let* (Cg, nsg) := lift (w_context W gg) ("the context of " ++ ng ++ " does not form") in
-      let fu := fixed W fuel u in
+      let fu := fixed W metadata_fuel u in
       let linked k := imem (canon_item Cu k) nsu in
       let* _ := match find (fun k =>
           if linked k then false else
@@ -209,12 +210,12 @@ Definition link_body (u gg : nat) : M nat :=
              (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
       let its := List.concat bodies in
       let Fg := Frame (d_mod dg) None None false (mk_frame_vars false [] (flat_map (item_names W fuel (d_mod dg)) its))
-                      [] [] (let pl := poly W fuel u in
+                      [] [] (let pl := poly W metadata_fuel u in
                              (* 3d (Q6, N5 #95): P(F) ∩ M(F) *)
-                             filter (fun t => nmem t pl) (mentions W fuel u)) in
+                             filter (fun t => nmem t pl) (mentions W metadata_fuel u)) in
       let* (((wrap, Cb), Fb), made) := r_bind_items R Fg Cg its in
       let* _ := check (forallb (fun t => negb (bound_in Cu t)) made) (bound_to ++ " makes a type " ++ nu ++ " takes as an input (D84)") in
-      let outs := fun_outputs W fuel u in
+      let outs := fun_outputs W metadata_fuel u in
       let* _ := match find (fun t => negb (bound_in Cb t)) outs with
                 | Some t => fail (bound_to ++ " does not provide the type " ++ qs W t ++ " (D78)")
                 | None => ret tt end in
@@ -296,7 +297,7 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
   let* _ := check (abstract_functor u) (nu ++ " has a body, so it is applied (`bind " ++ sym_name W u ++ ";`), not bound (D78)") in
   let* (Cu, nsu) := lift (w_context W u) ("the context of " ++ nu ++ " does not form") in
   let* (Cg, nsg) := lift (w_context W gg) ("the context of " ++ ng ++ " does not form") in
-  let* _ := match find (fun x => negb (bound_in C x)) (fixed W fuel u) with
+  let* _ := match find (fun x => negb (bound_in C x)) (fixed W metadata_fuel u) with
             | Some x => fail ("binding " ++ nu ++ " needs " ++ qs W x ++ " in force: it is a fixed input (D84)")
             | None => ret tt end in
   let* _ := check (same_result W fuel u gg) (result_mismatch u gg) in

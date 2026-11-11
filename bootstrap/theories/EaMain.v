@@ -11,6 +11,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit NMap EaBase EaTypes EaCtx EaCall EaFamily EaDecide EaExpr EaFunctor EaBind EaPlatform EaExpand.
 From NM Require Sx ElabWorld PublicWorld LoadListed.
+From NM Require Import EaBudget.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -287,16 +288,18 @@ Definition elab_fuel : nat := 100000.
 
 (* SOUND: elaborate_with strat b = Ok (W, P) -> ElaboratesIn b W P /\ Platform.Linked W P
    (for every strategy; pending pieces in elab-STATUS.md) *)
-Definition elaborate_with (strat : strategy) (b : bundle) : er (world * program) :=
+Definition elaborate_with_metadata (strat : strategy)
+  (choose_metadata_fuel : world -> nat -> nat) (b : bundle) : er (world * program) :=
   match bundle_world_r b with
   | Err m => Err m
   | Ok (W0, bound) =>
       let mods := map am_path (b_mods b) in
       let mains := main_symbols W0 mods in
-      let E0 := Env W0 strat mods mains elab_fuel in
+      let dependency_fuel := choose_metadata_fuel W0 bound in
+      let E0 := Env W0 strat mods mains elab_fuel dependency_fuel in
       let T := context_table E0 bound in
       let W := ElabWorld.with_context W0 (nget T) in
-      let E := Env W strat mods mains elab_fuel in
+      let E := Env W strat mods mains elab_fuel dependency_fuel in
       match assumes_complete E bound with
       | Err m => Err m
       | Ok _ =>
@@ -310,5 +313,13 @@ Definition elaborate_with (strat : strategy) (b : bundle) : er (world * program)
       end
       end
   end.
+
+(* Preserve the existing recursion limit. Only source dependency sets use the
+   finite-world budget, computed once and shared before/after context formation. *)
+Definition metadata_fuel (W : world) (bound : nat) : nat :=
+  Nat.max elab_fuel (S (metadata_budget W bound)).
+
+Definition elaborate_with (strat : strategy) (b : bundle) : er (world * program) :=
+  elaborate_with_metadata strat metadata_fuel b.
 
 Definition elaborate (b : bundle) : er (world * program) := elaborate_with default_strategy b.

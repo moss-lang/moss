@@ -9,7 +9,7 @@
  (extracted_modules
   Ascii Audit ProgramCapTrim InterpreterCompiled InterpreterFast ProgramFastPath InterpreterLazy ProgramPrune BinInt BinNat BinNums
   LoadWorld LoadListed BinPos Bool0 Byte Byte0 Datatypes Decimal SourceNames EaBase
-  EaBind EaCall EaCtx EaDecide EaExpand EaExpr EaFamily EaFunctor EaMain
+  EaBind EaBudget EaCall EaCtx EaDecide EaDepth EaExpand EaExpr EaFamily EaFunctor EaMain
   EaPlatform EaTypes ElabWorld ExecutionModel
   FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap
   Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicMergePresent PublicWorld

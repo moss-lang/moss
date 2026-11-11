@@ -30,6 +30,7 @@ Section Family.
 Variable E : env.
 Let W := e_W E.
 Let fuel := e_fuel E.
+Let metadata_fuel := e_metadata_fuel E.
 
 (* ---- OutputBrackets, OutputItemEntries, ProvideResult ---- *)
 
@@ -64,7 +65,7 @@ Fixpoint output_item_entries (n : nat) (stk : list nat) (p : string) (ob tm : li
           let tm2 := bs ++ ob ++ tm in
           let! rt := recv_ty W fuel r tm2 in
           let! g := sig_of W fuel m tm2 (Some rt) in
-          Ok ([NMth rt m g (app_of W fuel m tm2)], tm)
+          Ok ([NMth rt m g (app_of W metadata_fuel m tm2)], tm)
       | Spec (Some pa) None a =>
           let! s := ropt (resolve_sym W p pa) (bq (show_path pa) ++ " is not in scope") in
           let! d := decl_of W s in
@@ -75,14 +76,14 @@ Fixpoint output_item_entries (n : nat) (stk : list nat) (p : string) (ob tm : li
           | ADUnit _ | ADTag _ _ _ | ADAlias _ _ | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => Ok ([], tm)
           | ADVal _ t None =>
               let! ty0 := ty_of W fuel (d_mod d) tm2 None t in
-              Ok ([NVal s ty0 (app_of W fuel s tm2)], tm)
+              Ok ([NVal s ty0 (app_of W metadata_fuel s tm2)], tm)
           | ADFn RPlain _ _ _ None =>
               let! g := sig_of W fuel s tm2 None in
-              Ok ([NFn s g (app_of W fuel s tm2)], tm)
+              Ok ([NFn s g (app_of W metadata_fuel s tm2)], tm)
           | ADFunctor _ _ _ _ None =>
-              let! _ := rcheck (forallb (fun x => is_some (nlook x tm2)) (fixed W fuel s))
+              let! _ := rcheck (forallb (fun x => is_some (nlook x tm2)) (fixed W metadata_fuel s))
                           ("a functor result's functor " ++ qs W s ++ " needs the types it is fixed in in force (D84)") in
-              Ok ([NFun s (fixed_readings W fuel s tm2)], tm)
+              Ok ([NFun s (fixed_readings W metadata_fuel s tm2)], tm)
           | ADCtx _ its =>
               let! _ := rcheck (negb (nmem s stk)) ("context " ++ qs W s ++ " nests in a cycle") in
               (* [D90]: an equation is a requirement, and a result provides *)
@@ -112,7 +113,7 @@ with output_items_entries (n : nat) (stk : list nat) (p : string) (ob tm : list 
 Definition provide_result (u : nat) (C : cx) (out : nat -> ty) : er (cx * list item) :=
   let! (d, fp) := ropt (functor_decl W u) "not a functor" in
   let '(_, _, r, _) := fp in
-  let outs := fun_outputs W fuel u in
+  let outs := fun_outputs W metadata_fuel u in
   let! (es, tm') := output_items_entries fuel [] (d_mod d) [] (output_type_map C outs out) r in
   Ok (output_cx C tm' es, flat_map (fun e => match entry_key (c_sub C) e with Some k => [k] | None => [] end) es).
 
@@ -141,7 +142,7 @@ Fixpoint family_result (n : nat) (mi : string) (sp : spec) {struct n} : bool :=
 
 Definition family_bracket_free (p : string) (a : option (list (path * spec))) (t : nat) : bool :=
   existsb (fun b => match snd b with
-    | Spec (Some pa) _ bs => nmem t (free_in W fuel (w_reqs W) p (ATRef pa bs))
+    | Spec (Some pa) _ bs => nmem t (free_in W metadata_fuel (w_reqs W) p (ATRef pa bs))
     | _ => false end) (bracket_list a).
 
 Fixpoint family_keyed (n : nat) (u : nat) (pl : list nat) (p : string) (sp : spec) {struct n} : bool :=
@@ -154,8 +155,8 @@ Fixpoint family_keyed (n : nat) (u : nat) (pl : list nat) (p : string) (sp : spe
           | Some r =>
               match method_named W p r dn with
               | Some m =>
-                  let sm := sig_mentions W fuel m in
-                  let recv := free_in W fuel (w_reqs W) p (ATRef pa None) in
+                  let sm := sig_mentions W metadata_fuel m in
+                  let recv := free_in W metadata_fuel (w_reqs W) p (ATRef pa None) in
                   forallb (fun t =>
                     if (nmem t sm || family_bracket_free p a t) && negb (nmem t (bracket_bound W p a))
                     then nmem t recv else true) pl
@@ -189,7 +190,7 @@ Definition is_family (u : nat) : bool :=
            | Some names => forallb (fun x => match resolve_sym W (d_mod d) [x] with
                                              | Some t => kind_is W t DKType | None => true end) names
            | None => true end) &&
-          forallb (family_keyed fuel u (poly W fuel u) (d_mod d)) r
+          forallb (family_keyed fuel u (poly W metadata_fuel u) (d_mod d)) r
       | _ => false
       end
   | None => false
@@ -243,7 +244,7 @@ Definition marks_cx (C : cx) (marks : list nat) : cx := family_context C (map (f
 
 (* the formal keys of family u with method m whose receivers match ot *)
 Definition formal_matches (C : cx) (u : nat) (ot : ty) (m : nat) : er (list subst) :=
-  let marks := poly W fuel u in
+  let marks := poly W metadata_fuel u in
   let! (_, fkeys) := provide_result u (marks_cx C marks) (fun t => TAbs t) in
   Ok (flat_map (fun k => match k with
     | IMth rf m' _ => if Nat.eqb m m' then match read_off_one C marks rf ot with Some mt => [mt] | None => [] end else []
@@ -299,7 +300,7 @@ Definition fixed_agreement (C : cx) (u : nat) : bool :=
         | _ => true
         end
     | _, _ => true
-    end) (fixed W fuel u).
+    end) (fixed W metadata_fuel u).
 
 (* SOUND: family_application C u mt = Ok (th, sm, C', ks) ->
      FamilyApplication W C u mt th sm C' ks *)
@@ -307,7 +308,7 @@ Definition family_application (C : cx) (u : nat) (mt : subst) : er (subst * smap
   let fname := bq (sym_name W u) in
   let! _ := ropt (cfun C u) (fname ++ " is not available in the context here") in
   let! _ := rcheck (is_family u) (fname ++ " is not a family") in
-  let pl := poly W fuel u in
+  let pl := poly W metadata_fuel u in
   let! _ := rcheck (forallb (fun q => nmem (fst q) pl) mt) ("applying the family " ++ fname ++ " matches a type outside its polymorphic inputs") in
   let! (formal, fneeds) := ropt (w_context W u) ("the context of the family " ++ fname ++ " does not form") in
   let C1 := family_context C mt in

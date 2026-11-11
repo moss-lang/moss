@@ -2,11 +2,9 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit AuditFacts EaBase EaTypes EaTypesSound EaMentionsSound.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+From NM Require Export EaDepth.
 Local Open Scope list_scope.
 
-
-Definition largest {A} (size : A -> nat) (xs : list A) : nat :=
-  fold_right (fun x rest => Nat.max (size x) rest) 0 xs.
 
 Lemma largest_member : forall A (size : A -> nat) xs x,
   In x xs -> size x <= largest size xs.
@@ -16,22 +14,6 @@ Proof.
   - apply Nat.le_max_l.
   - eapply Nat.le_trans; [apply IH; exact Member|apply Nat.le_max_r].
 Qed.
-
-Fixpoint spec_depth (syntax : spec) : nat :=
-  match syntax with
-  | Spec _ _ application => S (match application with
-      | Some bindings => largest (fun b => spec_depth (snd b)) bindings
-      | None => 0
-      end)
-  end.
-
-Fixpoint type_depth (syntax : aty) : nat :=
-  S (match syntax with
-     | ATRec fields => largest (fun field => type_depth (snd field)) fields
-     | ATUnion alternatives => largest type_depth alternatives
-     | ATRef _ application => largest (fun b => spec_depth (snd b)) (bracket_list application)
-     | _ => 0
-     end).
 
 Section DepthBounds.
 Variable W : world.

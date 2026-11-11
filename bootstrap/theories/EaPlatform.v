@@ -13,6 +13,7 @@ Section Platform.
 Variable E : env.
 Let W := e_W E.
 Let fuel := e_fuel E.
+Let metadata_fuel := e_metadata_fuel E.
 
 Definition library_module (short p : string) : bool :=
   match w_library W with Some dir => String.eqb p (dir ++ (short ++ ".moss")) | None => false end.
@@ -126,7 +127,7 @@ Definition machines_fixed (u : nat) (inputs outputs : cx) (k : item) : bool :=
       match cmth outputs r m with
       | Some g =>
           let gs := flat_map gens (sg_ret g :: r :: sg_params g) in
-          forallb (fun sym => negb (nmem sym gs) || (nmem sym (fixed W fuel u) && bound_in inputs sym))
+          forallb (fun sym => negb (nmem sym gs) || (nmem sym (fixed W metadata_fuel u) && bound_in inputs sym))
             (map fst (Platform.machine_table W))
       | None => true end
   | _ => true end.
@@ -209,7 +210,7 @@ Definition casts_ok : bool :=
 Definition platform_code (u : nat) : er functor_code :=
   let nu := qs W u in
   let! (inputs, _) := ropt (w_context W u) (at_sym u ("the context of the platform functor " ++ nu ++ " does not form")) in
-  let! _ := rcheck (match fun_outputs W fuel u with [] => true | _ => false end)
+  let! _ := rcheck (match fun_outputs W metadata_fuel u with [] => true | _ => false end)
               (at_sym u ("the platform functor " ++ nu ++ " provides a type")) in
   let! (outputs, keys) := provide_result E u inputs (fun t => TAbs t) in
   let! _ := rcheck (inodupb (map provision_id keys)) (at_sym u ("the platform functor " ++ nu ++ " provides two items under one key")) in

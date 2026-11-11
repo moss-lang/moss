@@ -530,3 +530,6 @@ Print Assumptions NM.InputGenerationAllocate.reserved_input_symbols.
 Print Assumptions NM.InputGenerationAllocate.reserved_private_scope.
 Print Assumptions NM.InputGenerationRuntime.old_input_survives_output_shadowing.
 Print Assumptions NM.InputGenerationRuntime.private_capture_grounding_survives_caller_rebinding.
+
+From NM Require EaMetadataSound.
+Print Assumptions NM.EaMetadataSound.elaborate_with_legacy_metadata.

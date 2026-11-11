@@ -16,6 +16,7 @@ Section Bind.
 Variable E : env.
 Let W := e_W E.
 Let fuel := e_fuel E.
+Let metadata_fuel := e_metadata_fuel E.
 Variable R : rec.
 
 (* ---- FnProvider ---- *)
@@ -180,7 +181,7 @@ Definition bind_item (F : frame) (C : cx) (it : spec * option aexpr) : M (wrappe
       let* rt := pure (ty_of W fuel md (bs ++ c_ty C) None (ATRef pa None)) in
       let* sg := pure (sig_of W fuel m (bs ++ c_ty C) (Some rt)) in
       let* (((target, types), pre), sm) := meth_provider m F C y sg rt in
-      let ap := app_of W fuel m (bs ++ c_ty C) in
+      let ap := app_of W metadata_fuel m (bs ++ c_ty C) in
       let key := mkey (canon C rt) m in
       let* _ := match find (fun u => family_produces E C u key) (cfun_keys C) with
                 | Some u => fail (bq (sty W (canon C rt) ++ mname W m) ++ " is a member of the family " ++ qs W u ++
@@ -200,17 +201,17 @@ Definition bind_item (F : frame) (C : cx) (it : spec * option aexpr) : M (wrappe
           let* declared := pure (ty_of W fuel (d_mod d) (c_ty C) None t0) in
           let* (x, xt) := r_ex R F C y (Some declared) in
           let* _ := check (fitsb xt declared) ("bind of " ++ qs W s ++ ": got " ++ qty W xt ++ ", its declared type is " ++ qty W declared) in
-          let a := app_of W fuel s (c_ty C) in
+          let a := app_of W metadata_fuel s (c_ty C) in
           ret ((fun e => bind_value_expression s x e), provide C (IVal s) a (set_val C s declared), F, [])
       | ADFn RPlain _ _ _ _, Some (AEPath pg None) =>
           let* sg := pure (sig_of W fuel s (c_ty C) None) in
           let* ((g, types), sm) := fn_provider "fn" F C pg sg in
-          let a := app_of W fuel s (c_ty C) in
+          let a := app_of W metadata_fuel s (c_ty C) in
           ret ((fun x => bind_function_expression s g types sm x), provide C (IFn s) a (set_fn C s sg), F, [])
       | ADFn RPlain _ _ _ _, Some (AELam ps rt body) =>
           let* sg := pure (sig_of W fuel s (c_ty C) None) in
           let* ((pid, pre), sm) := lambda_provider (qs W s) F C ps rt body sg None in
-          let a := app_of W fuel s (c_ty C) in
+          let a := app_of W metadata_fuel s (c_ty C) in
           ret ((fun x => pre (bind_function_expression s pid (lexical_capture C) sm x)),
                provide C (IFn s) a (set_fn C s sg), F, [])
       | ADFunctor _ _ _ _ (Some bodies), None =>

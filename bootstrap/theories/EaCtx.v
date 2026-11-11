@@ -23,6 +23,7 @@ Section Ctx.
 Variable E : env.
 Let W := e_W E.
 Let fuel := e_fuel E.
+Let metadata_fuel := e_metadata_fuel E.
 
 (* ---- ItemEntries ---- *)
 
@@ -41,7 +42,7 @@ Fixpoint item_entries (n : nat) (stk : list nat) (p : string) (ob tm : list (nat
           let tm2 := bs ++ ob ++ tm in
           let! rt := recv_ty W fuel r tm2 in
           let! g := sig_of W fuel m tm2 (Some rt) in
-          Ok ([NMth rt m g (app_of W fuel m tm2)], tm)
+          Ok ([NMth rt m g (app_of W metadata_fuel m tm2)], tm)
       | Spec (Some pa) None a =>
           let! s := ropt (resolve_sym W p pa) ("`" ++ show_path pa ++ "` is not in scope") in
           let! d := decl_of W s in
@@ -56,22 +57,22 @@ Fixpoint item_entries (n : nat) (stk : list nat) (p : string) (ob tm : list (nat
               let! bs := brackets W fuel p (ob ++ tm) s a in
               let tm2 := bs ++ ob ++ tm in
               let! ty0 := ty_of W fuel (d_mod d) tm2 None t in
-              Ok ([NVal s ty0 (app_of W fuel s tm2)], tm)
+              Ok ([NVal s ty0 (app_of W metadata_fuel s tm2)], tm)
           | ADFn RPlain _ _ _ _ =>
               let! bs := brackets W fuel p (ob ++ tm) s a in
               let tm2 := bs ++ ob ++ tm in
               let! g := sig_of W fuel s tm2 None in
-              Ok ([NFn s g (app_of W fuel s tm2)], tm)
+              Ok ([NFn s g (app_of W metadata_fuel s tm2)], tm)
           | ADFunctor _ _ _ _ None =>
               let! _ := rcheck none_a (bq (sym_name W s) ++ " takes no brackets in a context (D71)") in
-              let fx := fixed W fuel s in
+              let fx := fixed W metadata_fuel s in
               let! _ := match filter (fun x => negb (is_some (nlook x tm))) fx with
                         | [] => Ok tt
                         | absent => Err ("assuming " ++ bq (sym_name W s) ++ " needs `" ++
                                          String.concat "`, `" (map (sym_name W) absent) ++ "` in force: " ++
                                          bq (sym_name W s) ++ " is fixed in them (D84, D20)")
                         end in
-              Ok ([NFun s (fixed_readings W fuel s tm)], tm)
+              Ok ([NFun s (fixed_readings W metadata_fuel s tm)], tm)
           | ADCtx _ its =>
               (* a context on its own path has no finite derivation *)
               let! _ := rcheck (negb (nmem s stk)) ("context " ++ bq (sym_name W s) ++ " nests in a cycle") in
@@ -125,9 +126,9 @@ Fixpoint root_items (q : string) (es0 : list entry) (tm : list (nat * ty)) (its 
                   match d_ast du with
                   | ADFunctor _ _ _ _ None =>
                       if has_nfun u es0 then skip else
-                      let xs := fixed W fuel u in
+                      let xs := fixed W metadata_fuel u in
                       let tm1 := add_tys xs tm in
-                      let fx := fixed_readings W fuel u tm1 in
+                      let fx := fixed_readings W metadata_fuel u tm1 in
                       let! (es, tm') := root_items q (es0 ++ map NTy xs ++ [NFun u fx]) tm1 rest in
                       Ok (map NTy xs ++ [NFun u fx] ++ es, tm')
                   | ADFunctor _ _ _ _ (Some _) =>
@@ -341,7 +342,7 @@ Definition fun_ctx (u : nat) : er (cx * list item) :=
   let '(ps, a, r, b) := fp in
   let! (es, tm) := items_entries fuel [] (d_mod d) [] [] (map CISpec a) in
   let implicit := match b with
-                  | None => filter (fun t => negb (is_some (nlook t tm))) (mentions W fuel u)
+                  | None => filter (fun t => negb (is_some (nlook t tm))) (mentions W metadata_fuel u)
                   | Some _ => [] end in
   let tm' := map (fun t => (t, TAbs t)) implicit ++ tm in
   let! (sg, M) := merge es in

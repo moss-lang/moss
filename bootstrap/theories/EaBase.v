@@ -174,13 +174,15 @@ Definition default_strategy : strategy := Strategy (fun _ _ => true) (fun _ _ =>
 (* e_W: the world (ElabWorld.bundle_world, with w_context the table EaCtx
    computes); e_mods: the loaded module paths; e_mains: the symbols some
    module's scope names `main` (IsMainFn); e_fuel: the depth bound for
-   jumps (aliases, contexts, constants, functor bodies). *)
+   jumps (aliases, contexts, constants, functor bodies); e_metadata_fuel:
+   the separately derived bound for source dependency-set readers. *)
 Record env := Env {
   e_W : world;
   e_strat : strategy;
   e_mods : list string;
   e_mains : list nat;
-  e_fuel : nat
+  e_fuel : nat;
+  e_metadata_fuel : nat
 }.
 
 (* ======================================================================== *)

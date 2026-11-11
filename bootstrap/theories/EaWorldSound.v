@@ -58,7 +58,7 @@ Qed.
 Theorem elaborate_with_world_sound : forall strategy bundle W program,
   EaMain.elaborate_with strategy bundle = Ok (W, program) -> WorldOf bundle W.
 Proof.
-  intros strategy bundle W program Run. unfold EaMain.elaborate_with in Run.
+  intros strategy bundle W program Run. unfold EaMain.elaborate_with, EaMain.elaborate_with_metadata in Run.
   destruct (EaMain.bundle_world_r bundle) as [[source_world bound]|message] eqn:WorldRead;
     [|discriminate].
   repeat match type of Run with
