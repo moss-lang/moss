@@ -231,7 +231,7 @@ Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newg
   LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
   LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
-  A.LinkBinding W h0 Ch0 nsh0 Cg nsg ->
+  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg gf0 ->
   LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -576,7 +576,7 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
-  A.LinkBinding W u Cu ns Cg nsg ->
+  PublicContextFacts.ClosureBinding W u Cu ns Cg nsg gfx ->
   LR.PA.FS.CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->

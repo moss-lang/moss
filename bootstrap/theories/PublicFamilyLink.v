@@ -93,8 +93,6 @@ Proof.
   2: { destruct CP as (code & E & _). discriminate. }
   destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB _]] & _).
   injection E as E1h _ E3h. subst h2 dc2.
-  pose proof (PublicLinkRun.link_binding_merged_inputs W u Cu ns Cg nsg
-    (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FCu)) Binding) as LRd'.
   pose proof (link_body_family_bindings _ _ _ _ LB _ FB Fam) as FBs.
   (* 3: the body writes no input of F, so it keeps the caller's θ readings *)
   destruct (family_binds_no_dests W Prog _ _ _ _ _ _ _ binds0 Items BO FBs) as [Made _].
@@ -121,11 +119,43 @@ Proof.
   { apply (proj2 (PublicContextFacts.reads_merge_canon_iff Cu _
       (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FCu)))).
     intro t. exact (f_equal (ground d) (ThSig t)). }
+  pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs0.
+  assert (CanF : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
+  (* Q6: u's fixed readings are θ's (the family's fixed agreement) *)
+  assert (FxIn : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))).
+  { destruct (CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
+    2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code & sms & dc' & rms & rm & gfh & E & _).
+         injection E as _ _ _ E. destruct rms; discriminate. }
+    2: { destruct CP as (code & E & _). discriminate. }
+    destruct CL as (gg5 & h5 & Cu5 & nsu5 & Cg5 & nsg5 & dc5 & _ & _ & FCu5 & _ & FxIn5 & _).
+    destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu5) as [<- <-]. exact FxIn5. }
+  assert (GfxA : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (app_subst th (TAbs x)))).
+  { pose proof Pre0 as [_ [_ [_ [_ [[_ [_ [_ KM]]] _]]]]].
+    assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
+    assert (FxF : A.nlook u (A.c_funs Cf) = Some fx) by (unfold A.c_funs; rewrite EprF, Ep; exact Fx).
+    intros x Fx0. destruct Fm as [Cov Vm]. destruct (Cov x Fx0) as [tx Ixt]. rewrite (Vm x tx Ixt).
+    pose proof (FxIn x Fx0) as Ix. cbn [app_subst]. rewrite (ThL x Ix). f_equal.
+    destruct (A.nlook x (A.c_ty Cf)) as [now|] eqn:Ln; [|exfalso; exact (InF x Ix Ln)].
+    replace (app_subst (A.c_ty Cf) (TAbs x)) with now by (cbn [app_subst]; rewrite lookup_subst_nlook', Ln; reflexivity).
+    destruct (CF.CN.CC.LR.PA.FS.CopyA.S.nlook_fixed_app fx x (Cov x Fx0)) as [was [Nw Iw]].
+    pose proof (FAg x Fx0) as Ag.
+    rewrite (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_apps_fun Cf u fx (PublicCallRealize.funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
+    assert (Eg1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
+    injection Eg1 as Eg1. rewrite Eg1, CanF, (Abs0 now).
+    pose proof Pre0 as (_ & _ & _ & _ & (AbsM0 & _) & _).
+    apply AbsM0. unfold Cf in Ag.
+    now rewrite PublicContextFacts.family_context_merge, Emg in Ag. }
+  set (Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list).
+  assert (Inputs : PublicContextFacts.LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))).
+  { intros x tx Found Shared. rewrite !PublicCopySubst.ground_app_subst.
+    apply (proj2 Binding Tin); [| |exact Found|exact Shared].
+    - intros t v Equal. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst. exact (ThMerge t v Equal).
+    - intros y Fixed. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst. exact (GfxA y Fixed). }
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
     ground d3 t = ground d (app_subst th t)).
   { exact (LRn.link_run_fact W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg Items BO MadeOut FB th
       (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d _ [] st d3 g3 st3
-      (PublicLinkRun.declared_link_inputs_read Cu Cg _ LRd' ThMerge) Run). }
+      Inputs Run). }
   (* 4: positions *)
   assert (PRf : A.ProvideResult W u Cu (fun t => TAbs t) Cr' ks').
   { destruct PR' as (dd & pss & aa & rr0 & bb & outsI & es & tm' & D & FP & OutsI & OIE & RK & ECr).
@@ -245,33 +275,7 @@ Proof.
     change (In y (A.gens (A.canon Cb (app_subst (pins ++ A.c_ty Cg) rf)))) in Irb. rewrite Erb in Irb.
     exact (proj2 (InCb _ _ Iact y Ny) Irb). }
   (* 7: the transfer *)
-  pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs0.
   pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real3) as Abs3.
-  assert (CanF : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
-  (* Q6: u's fixed readings are θ's (the family's fixed agreement) *)
-  assert (FxIn : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))).
-  { destruct (CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok) as [CL|[CCp|CP]].
-    2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & target0 & code & sms & dc' & rms & rm & gfh & E & _).
-         injection E as _ _ _ E. destruct rms; discriminate. }
-    2: { destruct CP as (code & E & _). discriminate. }
-    destruct CL as (gg5 & h5 & Cu5 & nsu5 & Cg5 & nsg5 & dc5 & _ & _ & FCu5 & _ & FxIn5 & _).
-    destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu5) as [<- <-]. exact FxIn5. }
-  assert (GfxA : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (app_subst th (TAbs x)))).
-  { pose proof Pre0 as [_ [_ [_ [_ [[_ [_ [_ KM]]] _]]]]].
-    assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
-    assert (FxF : A.nlook u (A.c_funs Cf) = Some fx) by (unfold A.c_funs; rewrite EprF, Ep; exact Fx).
-    intros x Fx0. destruct Fm as [Cov Vm]. destruct (Cov x Fx0) as [tx Ixt]. rewrite (Vm x tx Ixt).
-    pose proof (FxIn x Fx0) as Ix. cbn [app_subst]. rewrite (ThL x Ix). f_equal.
-    destruct (A.nlook x (A.c_ty Cf)) as [now|] eqn:Ln; [|exfalso; exact (InF x Ix Ln)].
-    replace (app_subst (A.c_ty Cf) (TAbs x)) with now by (cbn [app_subst]; rewrite lookup_subst_nlook', Ln; reflexivity).
-    destruct (CF.CN.CC.LR.PA.FS.CopyA.S.nlook_fixed_app fx x (Cov x Fx0)) as [was [Nw Iw]].
-    pose proof (FAg x Fx0) as Ag.
-    rewrite (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_apps_fun Cf u fx (PublicCallRealize.funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
-    assert (Eg1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
-    injection Eg1 as Eg1. rewrite Eg1, CanF, (Abs0 now).
-    pose proof Pre0 as (_ & _ & _ & _ & (AbsM0 & _) & _).
-    apply AbsM0. unfold Cf in Ag.
-    now rewrite PublicContextFacts.family_context_merge, Emg in Ag. }
   (* Q6: a pin reads, after the body, as u's fixed reading of the pinned input *)
   assert (Ed2 : type_meanings d2 = [] /\ type_aliases d2 = []) by exact (CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
   destruct Ed2 as [Em2 Ea2].
@@ -341,10 +345,10 @@ Proof.
       destruct (A.nlook y (A.c_ty Cg)) as [ty|] eqn:Ly;
         [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ y _) Iyg Ly)].
       rewrite lookup_subst_nlook', Ly.
-      destruct (LRd' y ty Ly (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [InU Can].
+      destruct (Inputs y ty Ly (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [InU Read].
       change (ground d3 ty = ground d (app_subst th (TAbs y))).
       rewrite (RunFact ty (GgDom y ty Ly) (fun z Iz => proj1 (PublicFamilyAgree.nlook_dom _ z _) (InU z Iz))).
-      symmetry. apply ThMerge. exact Can. }
+      symmetry. exact Read. }
   assert (GEp : forall l1 l2, Forall2 (PublicFamilyAgree.SigAgree Cf Cu th) l1 l2 -> incl l2 (A.sg_params gf) ->
     map (fun t => ground d3 (app_subst pr0 t)) l2 = map (ground d) l1).
   { intros l1' l2' F2. induction F2 as [|tc tf l1' l2' A1 _ IH]; intros Inc; [reflexivity|]. cbn [map].

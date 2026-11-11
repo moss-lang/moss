@@ -15,6 +15,18 @@ Definition CxSection (C : A.cx) : Prop := A.SectionOf (A.c_merge C) (A.c_sub C).
 Definition ReadsMerge (C : A.cx) (read : ty -> ty) : Prop :=
   forall t u, A.MergeEq (A.c_merge C) t u -> read t = read u.
 
+(* Shared inputs keep their application meanings through a linked body. *)
+Definition LinkedInputsRead (Cu Cg : A.cx) (read : ty -> ty) : Prop :=
+  forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
+    read (TAbs x) = read tx.
+
+Definition ClosureBinding W u Cu nsu Cg nsg gfx : Prop :=
+  A.LinkBinding W u Cu nsu Cg nsg /\
+  forall T, ReadsMerge Cu (app_subst T) ->
+    (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
+    LinkedInputsRead Cu Cg (app_subst T).
+
 Lemma reads_empty_merge : forall C read, A.c_merge C = [] -> ReadsMerge C read.
 Proof.
   intros C read Empty t u Equal. rewrite Empty in Equal.

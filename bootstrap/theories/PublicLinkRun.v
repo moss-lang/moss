@@ -107,34 +107,6 @@ Proof.
   apply existsb_exists in E as [z [Iz E]]. apply Nat.eqb_eq in E. subst z. exact (N Iz).
 Qed.
 
-(* The body's shared inputs read as the application reads them. *)
-Definition LinkedInputsRead (Cu Cg : A.cx) (read : ty -> ty) : Prop :=
-  forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
-    read (TAbs x) = read tx.
-
-Lemma link_binding_merged_inputs : forall W u Cu nsu Cg nsg,
-  CxSection Cu -> A.LinkBinding W u Cu nsu Cg nsg ->
-  forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
-    A.MergeEq (A.c_merge Cu) (TAbs x) tx.
-Proof.
-  intros W u Cu nsu Cg nsg Section Binding x tx Found Shared.
-  destruct (@A.link_bind_inputs W u Cu nsu Cg nsg Binding x tx Found Shared) as [Scope Same].
-  split; [exact Scope|]. apply (context_canon_iff_mergeeq Cu Section). exact Same.
-Qed.
-
-Lemma declared_link_inputs_read : forall Cu Cg read,
-  (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
-    A.MergeEq (A.c_merge Cu) (TAbs x) tx) ->
-  ReadsMerge Cu read -> LinkedInputsRead Cu Cg read.
-Proof.
-  intros Cu Cg read Link Reads x tx Found Input.
-  destruct (Link x tx Found Input) as [Scoped Equal].
-  split; [exact Scoped|exact (Reads _ _ Equal)].
-Qed.
-
 Module LinkRun (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CC := PublicChainCore.ChainCore Prims I0.
 

@@ -171,7 +171,7 @@ Definition PinsAgree (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx pins : sub
    copy of an applicable closure, or a platform family. *)
 Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_value -> Prop :=
 | CLink : forall u gg h Cu nsu Cg nsg dc gfx pins,
-    A.LinkBody W Prog u gg h pins -> A.LinkBinding W u Cu nsu Cg nsg ->
+    A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg gfx ->
     A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
     (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
     (* u is abstract (BFunClosure binds only an abstract functor) *)
@@ -3786,7 +3786,13 @@ Proof.
   - reflexivity.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure h (Some sm) dc None), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
-    + subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx pins LB Binding FCu FCg).
+    + assert (ReadBinding : ClosureBinding W u Cu nsu Cg nsg gfx).
+      { split; [exact Binding|].
+        intros T Reads _ x tx Found Shared.
+        destruct (@A.link_bind_inputs W u Cu nsu Cg nsg Binding x tx Found Shared) as [Scoped Equal].
+        split; [exact Scoped|]. apply Reads.
+        apply (context_canon_iff_mergeeq Cu (proj2 (functor_context_merge W u Cu nsu FCu))). exact Equal. }
+      subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg dc gfx pins LB ReadBinding FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
       { exact U. }
       * intros gm Am. split; [|split].
@@ -3993,7 +3999,7 @@ Qed.
    closure. The body reads each input through G's table (fc_table), so
    G's merges hold by construction. *)
 Lemma link_entry : forall rr H d th d1 u gg h pins Cu nsu Cg nsg dc gfx d2,
-  A.LinkBody W Prog u gg h pins -> A.LinkBinding W u Cu nsu Cg nsg -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+  A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg gfx -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   map fst th = map fst (A.c_ty Cu) ->
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
   Realizes rr Cu (callee_env d th d1) H ->
@@ -4015,7 +4021,7 @@ Proof.
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
   destruct (functx_static _ _ _ FCg) as [[CanG DomG] [[SectionG KMg] [NdG [ProvNsG [ShapeG [ScG FixG]]]]]].
   destruct (functx_static _ _ _ FCu) as [[CanU DomU] [[SectionU KMu] [NdU [ProvNsU [ShapeU [ScU FixU]]]]]].
-  pose proof (@A.link_bind_provisions W u Cu nsu Cg nsg Binding) as LPeq.
+  pose proof (@A.link_bind_provisions W u Cu nsu Cg nsg (proj1 Binding)) as LPeq.
   set (ce := callee_env d th d1). set (de := application_environment P d h th (append_environment d2 dc)).
   (* each input's own meaning (B), and the body's environment over it *)
   set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
@@ -4254,7 +4260,7 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists gg h Cu nsu Cg nsg dc,
      pv = FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu nsu nsg))) dc None /\
      (exists pins, A.LinkBody W Prog u gg h pins /\ PinsAgree u Cu Cg dc gfx pins /\
-       A.LinkBinding W u Cu nsu Cg nsg) /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
+       ClosureBinding W u Cu nsu Cg nsg gfx) /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
      (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) /\
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
         (forall v t, In (IVal v) (captured Cu nsu nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
@@ -5112,7 +5118,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   lookup_provision (IFun u) d = Some (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg))) dc None) ->
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg))) dc None) ->
   FixedMeans u d fx gfx ->
-  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins -> A.LinkBinding W u Cu ns Cg nsg -> PinsAgree u Cu Cg dc gfx pins ->
+  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins -> ClosureBinding W u Cu ns Cg nsg gfx -> PinsAgree u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (linked_needs Cu ns nsg)) = Some d2 ->
   AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->

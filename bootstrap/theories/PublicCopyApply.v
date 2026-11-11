@@ -126,6 +126,30 @@ Proof.
     rewrite (TyA z w' Lw). cbn [app_subst]. rewrite Lz. exact Iw.
 Qed.
 
+(* A reading chosen at the binding site can be instantiated by any
+   application that preserves the recorded fixed inputs. *)
+Lemma site_read_composition : forall u Cu nsu recorded ys cg T rho0,
+  A.FunCtx W u Cu nsu -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
+  NoDup (map cg ys) ->
+  (forall y, (exists x tx, A.nlook x (A.c_ty Cu) = Some tx /\ In y (A.gens tx)) ->
+    lookup_subst y (A.copy_fixed_readings Cu recorded) = None -> In y ys) ->
+  (forall x t, In (x, t) recorded ->
+    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+    app_subst rho0 t = app_subst T (TAbs x)) ->
+  forall t, incl (A.gens t) (map fst (A.c_ty Cu)) ->
+  app_subst (PublicCopySubst.cg_read ys cg T rho0)
+    (app_subst (A.copy_subst (A.copy_fixed_readings Cu recorded) ys cg) (A.canon Cu t)) =
+  app_subst T (A.canon Cu t).
+Proof.
+  intros u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed t Scope.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as Section.
+  apply PublicCopySubst.copy_ty_read; [exact Fresh|].
+  intros y Occurs. split.
+  - exact (PublicCopySubst.copy_fixed_gen_at Cu recorded T rho0 (map cg ys) Section Reads Fixed y).
+  - intros Missing NotFresh. exfalso. apply NotFresh, Residual; [|exact Missing].
+    exact (canon_gens_read u Cu nsu t FCu Scope y Occurs).
+Qed.
+
 Lemma recorded_fixed_meaning : forall u C fx d gfx T x t,
   A.FixedReadings W u (A.c_ty C) fx -> S.AbsorbsCanon C d ->
   gfx = S.ground_fixed (type_meanings d) fx ->
@@ -172,11 +196,9 @@ Proof.
   destruct (proj1 (AllocationFacts.copy_allocation_contract W recorded outs gen ys cg) (proj1 Allocation))
     as (Nd & Avoid & _ & _).
   assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
-  destruct (functx_scoped W u Cu nsu FCu) as (TyA & ScU & _).
+  destruct (functx_scoped W u Cu nsu FCu) as (_ & ScU & _).
   destruct (functx_scoped W h Ch nsh FCh) as (_ & ScH & _).
   pose proof (keys_sub _ _ Sub) as SubK.
-  assert (SectionU : PublicContextFacts.CxSection Cu)
-    by exact (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)).
   assert (FixedAt : forall x t, In (x, t) recorded ->
     (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
     app_subst (type_meanings d1) t = app_subst T (TAbs x)).
@@ -184,24 +206,12 @@ Proof.
     - intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
       apply in_flat_map. exists (x,t). split; [exact Member|exact Iz].
     - exact (proj2 (recorded_fixed_meaning u C1 fx1 d1 gfx T x t Fx1 Ab1 Egfx FixT Member)). }
-  assert (Gen : forall y, (exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w)) ->
-    PublicCopySubst.CopyGen sigma ys cg T (type_meanings d1) y).
-  { intros y Ry. split.
-    - exact (PublicCopySubst.copy_fixed_gen_at Cu recorded T (type_meanings d1)
-        (map cg ys) SectionU Reads FixedAt y).
-    - intros Ls Ny. exfalso. apply Ny. apply Ys. split; [exact Ry|exact Ls]. }
-  assert (RG : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) -> forall y, In y (A.gens (A.canon Cu t)) ->
-    exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w)).
-  { intros t Sc y Iy. unfold A.canon in Iy.
-    destruct (PublicCallRealize.gens_subst t (A.c_sub Cu) y Iy) as [z [Iz [[Lz ->]|[w [Lz Iw]]]]].
-    - destruct (keys_in _ z (Sc z Iz)) as [w Lw]. exists z, w. split; [exact Lw|].
-      rewrite (TyA z w Lw). cbn [app_subst]. rewrite Lz. left. reflexivity.
-    - destruct (keys_in _ z (Sc z Iz)) as [w' Lw]. exists z, w'. split; [exact Lw|].
-      rewrite (TyA z w' Lw). cbn [app_subst]. rewrite Lz. exact Iw. }
   assert (Tr : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) ->
     app_subst (PublicCopySubst.cg_read ys cg T (type_meanings d1)) (app_subst (A.copy_subst sigma ys cg) (A.canon Cu t)) =
     app_subst T (A.canon Cu t)).
-  { intros t Sc. exact (PublicCopySubst.copy_ty_read sigma ys cg T (type_meanings d1) NdC (A.canon Cu t) (fun y Iy => Gen y (RG t Sc y Iy))). }
+  { apply (site_read_composition u Cu nsu recorded ys cg T (type_meanings d1) FCu Reads NdC);
+      [|exact FixedAt].
+    intros y Reading Missing. apply Ys. exact (conj Reading Missing). }
   assert (TrE : forall a b, incl (A.gens a) (map fst (A.c_ty Cu)) -> incl (A.gens b) (map fst (A.c_ty Cu)) ->
     app_subst (A.copy_subst sigma ys cg) (A.canon Cu a) = app_subst (A.copy_subst sigma ys cg) (A.canon Cu b) ->
     app_subst T (A.canon Cu a) = app_subst T (A.canon Cu b)).
@@ -458,7 +468,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      CopyChain u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) None /\
      ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) dc None) /\
      (exists pins, A.LinkBody W Prog h0 gg code pins /\ S.PinsAgree W h0 Ch0 Cg dc gf0 pins /\
-       A.LinkBinding W h0 Ch0 nsh0 Cg nsg) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
+       PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg gf0) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
      (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) /\
      adapt_provisions e1 sms = Some e2 /\
      Realizes rr Cg (application_environment P d code (thof f Ch0) (append_environment e2 dc)) H) \/
@@ -567,7 +577,7 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   CopyChain u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) dc None) ->
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
-  A.LinkBinding W h0 Ch0 nsh0 Cg nsg ->
+  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg gf0 ->
   S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->

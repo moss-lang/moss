@@ -365,18 +365,14 @@ Proof.
     (* the root's level, carried up the chain *)
     assert (Abs0 : CRz.CSg.Abstract W h0)
       by exact (CRz.CSg.abstract_of_ast W h0 (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_link_abstract W Prog argv read state_ok _ _ _ _ _ _ _ Ok0)).
-    assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
-      (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx).
-    { exact (PublicLinkRun.link_binding_merged_inputs W h0 Ch0 nsh0 Cg nsg
-        (proj2 (PublicContextFacts.functor_context_merge W h0 Ch0 nsh0 FC0)) Binding). }
     assert (ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None)
       by (intros z Iz; rewrite (ThL z (Keys z Iz)); discriminate).
+    assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
+    { intros y Fy. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
+      rewrite E. exact (FixT y Fu). }
     (* Q6: the root's pins read as the application's fixed inputs *)
     assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
     { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
-      assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
-      { intros y Fy. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
-        rewrite E. exact (FixT y Fu). }
       (* the closure's environment d2 carries no type meanings *)
       assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
       { destruct sms' as [sm'|]; cbn in A2.
@@ -412,7 +408,7 @@ Proof.
              apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
         unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
     pose proof (CRz.root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
-      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3 PinT) as Root.
+      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD gf0 Binding th d d3 _ j1 g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr

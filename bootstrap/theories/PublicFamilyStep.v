@@ -285,7 +285,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
-  A.LinkBinding W u Cu ns Cg nsg ->
+  PublicContextFacts.ClosureBinding W u Cu ns Cg nsg gfx ->
   CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
