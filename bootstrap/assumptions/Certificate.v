@@ -571,3 +571,11 @@ Print Assumptions NM.InputGenerationRuntime.private_capture_grounding_survives_c
 
 From NM Require EaMetadataSound.
 Print Assumptions NM.EaMetadataSound.elaborate_with_legacy_metadata.
+
+From NM Require EaControlSound.
+Print Assumptions NM.EaControlSound.args_sound.
+Print Assumptions NM.EaControlSound.cond_sound.
+Print Assumptions NM.EaControlSound.branch_sound.
+Print Assumptions NM.EaControlSound.bare_return_sound.
+Print Assumptions NM.EaControlSound.return_sound.
+Print Assumptions NM.EaControlSound.break_sound.

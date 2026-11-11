@@ -1,0 +1,160 @@
+(* Expression/control subrules with explicit lower-fuel elaboration contracts. *)
+From Stdlib Require Import List String Bool Arith Lia.
+From NM Require Import Audit EaBase EaTypes EaExpr EaTypesSound.
+From NM Require PublicTypeFacts.
+Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Local Open Scope string_scope.
+Local Open Scope list_scope.
+
+Lemma mbind_ok : forall A B (m : M A) (next : A -> M B) before value after,
+  mbind m next before = Ok (value, after) ->
+  exists a middle, m before = Ok (a, middle) /\ next a middle = Ok (value, after).
+Proof.
+  intros A B m next before value after Run. unfold mbind in Run.
+  destruct (m before) as [[a middle]|message]; [exists a, middle; split; [reflexivity|exact Run]|discriminate].
+Qed.
+
+Theorem fitsb_exact : forall t expected, fitsb t expected = true <-> fits t expected.
+Proof.
+  intros t expected. unfold fitsb, fits.
+  assert (Union : (match expected with
+    | TUnion ms => forallb (fun m => existsb (ty_eqb m) ms) (members t)
+    | _ => false end) = true <->
+    exists ms, expected = TUnion ms /\ forall m, In m (members t) -> In m ms).
+  { destruct expected; try (split; [discriminate|intros [? [Impossible _]]; discriminate]).
+    rewrite forallb_forall. split.
+    - intro Checked. exists l. split; [reflexivity|]. intros member Present.
+      specialize (Checked member Present). apply existsb_exists in Checked as [found [InUnion Equal]].
+      apply PublicTypeFacts.ty_eqb_spec in Equal. now subst.
+    - intros [ms [Equal Included]]. injection Equal as <-. intros member Present.
+      apply existsb_exists. exists member. split; [apply Included, Present|apply PublicTypeFacts.ty_eqb_spec; reflexivity]. }
+  rewrite !orb_true_iff, !PublicTypeFacts.ty_eqb_spec, Union. tauto.
+Qed.
+
+Lemma oty_eqb_exact : forall a b, oty_eqb a b = true <-> a = b.
+Proof.
+  intros [a|] [b|]; cbn [oty_eqb]; try (split; congruence).
+  rewrite PublicTypeFacts.ty_eqb_spec. split; congruence.
+Qed.
+
+Section Control.
+Variables (E : env) (R : rec) (P : program).
+Let W := e_W E.
+
+(* The lower-fuel contracts thread the caller's invariant through each
+   successful elaboration. In particular they need not hold for arbitrary
+   contents of the generated-body and constant caches. *)
+Variable valid : frame -> cx -> est -> Prop.
+Definition ExSoundAt (n : nat) : Prop :=
+  forall F C syntax expected before after value t,
+  valid F C before ->
+  ex E R n F C syntax expected before = Ok ((value, t), after) ->
+  Ex W P F C syntax expected value t /\ valid F C after.
+
+Definition BlkESoundAt (n : nat) : Prop :=
+  forall F C syntax expected before after value t,
+  valid F C before ->
+  blke E R n F C syntax expected before = Ok ((value, t), after) ->
+  BlkE W P F C syntax expected value t /\ valid F C after.
+
+Theorem args_sound : forall n,
+  (forall depth, depth < n -> ExSoundAt depth) ->
+  forall F C callee names syntax types before after values,
+  valid F C before ->
+  args E R n F C callee names syntax types before = Ok (values, after) ->
+  Args W P F C syntax types values /\ valid F C after.
+Proof.
+  induction n as [|n IH]; intros Below F C callee names syntax types before after values Valid Run;
+    [discriminate|]. cbn [args] in Run.
+  destruct (negb (Nat.eqb (List.length syntax) (List.length types))); [discriminate|].
+  destruct syntax as [|argument syntax], types as [|expected types]; try discriminate.
+  - unfold ret in Run. injection Run as <- <-. split; [constructor|exact Valid].
+  - apply mbind_ok in Run as [[value actual] [middle [First Run]]].
+    destruct (fitsb (canon C actual) (canon C expected)) eqn:Fits; [|discriminate].
+    change (mbind (args E R n F C callee (tl names) syntax types)
+      (fun rest => ret (value :: rest)) middle = Ok (values, after)) in Run.
+    apply mbind_ok in Run as [rest [final [Tail Run]]]. unfold ret in Run. injection Run as <- <-.
+    destruct (Below n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ _ Valid First) as [Argument Middle].
+    assert (Less : forall depth, depth < n -> ExSoundAt depth) by (intros; apply Below; lia).
+    destruct (IH Less _ _ _ _ _ _ _ _ _ Middle Tail) as [Rest Final].
+    split; [eapply ArgsCons; [exact Argument|apply fitsb_exact; exact Fits|exact Rest]|exact Final].
+Qed.
+
+Theorem cond_sound : forall n,
+  (forall depth, depth < n -> ExSoundAt depth) ->
+  forall F C syntax before after value,
+  valid F C before ->
+  cond E R n F C syntax before = Ok (value, after) -> Cond W P F C syntax value /\ valid F C after.
+Proof.
+  intros [|n] Below F C syntax before after value Valid Run; [discriminate|].
+  cbn [cond] in Run. fold (ex E R) in Run.
+  destruct (lang_sym (e_W E) "bool" NSName "Bool") as [boolean|] eqn:Boolean; [|discriminate].
+  cbn [mbind ret] in Run.
+  apply mbind_ok in Run as [[x t] [middle [Read Run]]].
+  destruct (fitsb t (TNom boolean [])) eqn:Fits; [|discriminate].
+  cbn [mbind ret] in Run. injection Run as <- <-.
+  destruct (Below n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ _ Valid Read) as [Expression Final].
+  split; [|exact Final]. eapply CondBool with (t:=t) (b:=boolean).
+  - change (LangSym W "bool" NSName "Bool" boolean). eapply lang_sym_sound; exact Boolean.
+  - exact Expression.
+  - apply fitsb_exact. exact Fits.
+Qed.
+
+Theorem branch_sound : forall n,
+  (forall depth, depth < n -> ExSoundAt depth) ->
+  (forall depth, depth < n -> BlkESoundAt depth) ->
+  forall F C syntax expected before after value t,
+  valid F C before ->
+  branch E R n F C syntax expected before = Ok ((value, t), after) ->
+  Branch W P F C syntax expected value t /\ valid F C after.
+Proof.
+  intros [|n] ExprBelow BlockBelow F C syntax expected before after value t Valid Run; [discriminate|].
+  destruct syntax; cbn [branch] in Run;
+    try solve [split;
+      [apply BranchExpr; [intros b Impossible; discriminate|
+        exact (proj1 (ExprBelow n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ _ Valid Run))]
+      |exact (proj2 (ExprBelow n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ _ Valid Run))]].
+  apply mbind_ok in Run as [[x actual] [middle [Read Run]]]. unfold ret in Run. injection Run as <- <- <-.
+  destruct (BlockBelow n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ _ Valid Read) as [Block Final].
+  split; [apply BranchBlock; exact Block|exact Final].
+Qed.
+
+Theorem bare_return_sound : forall n F C expected before after value t,
+  ex E R n F C (AEReturn None) expected before = Ok ((value, t), after) ->
+  Ex W P F C (AEReturn None) expected value t /\ before = after.
+Proof.
+  intros [|n] F C expected before after value t Run; [discriminate|]. cbn [ex] in Run.
+  destruct (oty_eqb (fr_ret F) (Some TUnit)) eqn:Return; [|discriminate].
+  cbn [mbind ret] in Run. injection Run as <- <- <-.
+  split; [apply ExReturnUnit, oty_eqb_exact; exact Return|reflexivity].
+Qed.
+
+Theorem return_sound : forall n,
+  (forall depth, depth < n -> ExSoundAt depth) ->
+  forall F C syntax expected before after value t,
+  valid F C before ->
+  ex E R n F C (AEReturn syntax) expected before = Ok ((value, t), after) ->
+  Ex W P F C (AEReturn syntax) expected value t /\ valid F C after.
+Proof.
+  intros n Below F C [syntax|] expected before after value t Valid Run.
+  - destruct n as [|n]; [discriminate|]. cbn [ex] in Run.
+    destruct (fr_ret F) as [ret_type|] eqn:Return; [|discriminate]. cbn [mbind ret] in Run.
+    apply mbind_ok in Run as [[x actual] [middle [Read Run]]].
+    destruct (fitsb actual ret_type) eqn:Fits; [|discriminate].
+    cbn [mbind ret] in Run. injection Run as <- <- <-.
+    destruct (Below n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ _ Valid Read) as [Expression Final].
+    split; [eapply ExReturn; [exact Return|exact Expression|apply fitsb_exact; exact Fits]|exact Final].
+  - destruct (bare_return_sound _ _ _ _ _ _ _ _ Run) as [Returned Equal].
+    split; [exact Returned|now rewrite <- Equal].
+Qed.
+
+Theorem break_sound : forall n F C expected before after value t,
+  ex E R n F C AEBreak expected before = Ok ((value, t), after) ->
+  Ex W P F C AEBreak expected value t /\ before = after.
+Proof.
+  intros [|n] F C expected before after value t Run; [discriminate|]. cbn [ex] in Run.
+  destruct (fr_loop F) eqn:Loop; [|discriminate]. cbn [mbind ret] in Run. injection Run as <- <- <-.
+  split; [apply ExBreak; exact Loop|reflexivity].
+Qed.
+
+End Control.

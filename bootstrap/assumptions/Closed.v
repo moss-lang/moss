@@ -140,3 +140,6 @@ From NM Require EaPatternSound.
 Print Assumptions NM.EaPatternSound.member_with_head_sound.
 Print Assumptions NM.EaPatternSound.field_pats_sound.
 Print Assumptions NM.EaPatternSound.pat_of_sound.
+
+From NM Require EaControlSound.
+Print Assumptions NM.EaControlSound.fitsb_exact.
