@@ -270,17 +270,7 @@ Proof.
   apply code_effect_bind; [apply Binds|]. intros [[[wrap returned] frame] made].
   apply code_effect_bind; [apply code_effect_check|intros []].
   apply code_effect_bind; [apply link_output_roles_code_effect|]. intros [[outputs generations] [result keys]].
-  apply code_effect_bind.
-  { match goal with
-    | |- PreservesOldCode (match ?problem with Some _ => _ | None => _ end) =>
-      destruct problem as [[fixed reading]|]; [|apply code_effect_return]
-    end.
-    match goal with
-    | |- PreservesOldCode (match ?capture with Some _ => _ | None => _ end) =>
-      destruct capture; apply code_effect_fail
-    end. }
-  intros []. apply code_effect_bind; [apply code_effect_optional_failure|intros []].
-  apply code_effect_bind; [apply code_effect_optional_failure|intros []].
+  apply code_effect_bind; [apply code_effect_pure|]. intro plan.
   apply code_effect_bind; [apply code_effect_lift|]. intro bindings.
   apply code_effect_bind.
   { match goal with

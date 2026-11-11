@@ -322,6 +322,68 @@ Definition emit_linked_body (u gg : nat) (pins : subst) (code : functor_code)
   let* _ := put_link (u, gg) h in
   ret h.
 
+Record linked_result_plan := LinkedResultPlan {
+  link_plan_pins : subst;
+  link_plan_site : cx;
+  link_plan_keys : list item
+}.
+
+Definition check_linked_result (u gg : nat) (Cu Cg Cb Cr : cx) (made outs : list nat)
+    (gen : nat -> nat) (keys : list item) : er linked_result_plan :=
+  let nu := qs W u in let ng := qs W gg in
+  let bound_to := (ng ++ ", bound to " ++ nu ++ ",")%string in
+  let fu := fixed W metadata_fuel u in
+  (* Q6, N5 (#95): the pins of fixed inputs: what the body binds each
+     to, unless it is G's own reading of a fixed input G takes *)
+  let pins := linked_pins Cg Cb fu in
+  let pin_ok := valid_link_pin Cu Cg made fu in
+  let! _ := match find (fun q => negb (forallb pin_ok (gens (snd q)))) pins with
+            | Some (x, v) =>
+                match find (fun y => bound_in Cu y && negb (nmem y fu)) (gens v) with
+                | Some y => Err (ng ++ " cannot be bound to " ++ nu ++ " here: it pins " ++ qs W x ++ ", which " ++ nu ++
+                                  " is fixed in, to a type that mentions " ++ qs W y ++ ", a type each application of " ++ nu ++
+                                  " supplies (D84 3d)")
+                | None => Err (bound_to ++ " pins " ++ qs W x ++ ", which " ++ nu ++ " is fixed in, to " ++ qty W v ++
+                                ", which mentions a type that is not one of " ++ ng ++ "'s own unmerged inputs in its actual body (Q6, D84 3d)")
+                end
+            | None => Ok tt end in
+  (* #73: link_site reads a pinned fixed input at its pin *)
+  let site := link_site Cg Cb pins outs gen in
+  let site0 := link_site Cg Cb [] outs gen in
+  let reads := role_reads site outs gen ++ pin_reads Cb pins in
+  (* #73: a key the pins re-read must be one the body made, not one of
+     G's own provisions *)
+  let bad0 := find (fun k =>
+      negb (item_eqb (at_site site k) (at_site site0 k)) &&
+      is_some (ilook (provision_id (at_site site k)) (c_provisions Cg))) keys in
+  let! _ := match bad0 with
+            | Some k => Err (bound_to ++ " does not provide " ++ qkey W k ++ " at the fixed input its body pins (#73, D78)")
+            | None => Ok tt end in
+  let bad := find (fun k => negb
+      match ilook (provision_id k) (c_provisions Cr), ilook (provision_id (at_site site k)) (c_provisions site) with
+      | Some required, Some actual =>
+          provision_refinesb (provision_subst (c_sub site) (provision_subst reads required))
+                             (provision_subst (c_sub site) actual)
+      | _, _ => false
+      end) keys in
+  let! _ := match bad with
+            | None => Ok tt
+            | Some k => Err (bound_to ++ " " ++
+                              match ilook (provision_id (at_site site k)) (c_provisions site) with
+                              | None => "does not provide " ++ qkey W k ++ " (D78)"
+                              | Some _ => match k with
+                                          | IFun _ => "provides " ++ qkey W k ++ " at another fixed interpretation than promised (D78)"
+                                          | _ => "provides " ++ qkey W k ++ " at another type than " ++ nu ++
+                                                 " promises in its actual body (D78, D84 3e)" end end)
+            end in
+  Ok (LinkedResultPlan pins site keys).
+
+Definition translate_linked_result (Cu Cg : cx) (outs : list nat) (bindings : list binding)
+    (plan : linked_result_plan) : functor_code :=
+  let site := link_plan_site plan in
+  translate_linked_body Cu Cg outs bindings
+    (map (fun key => rkof site (at_site site key)) (link_plan_keys plan)).
+
 Definition link_body_frame (u : nat) (dg : decl) (bodies : list (list (spec * option aexpr))) : frame :=
   let items := List.concat bodies in
   let protected := filter (fun t => nmem t (poly W metadata_fuel u)) (mentions W metadata_fuel u) in
@@ -342,56 +404,13 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
   | ADFunctor _ _ _ _ (Some bodies) =>
       let* (Cu, nsu) := lift (w_context W u) ("the context of " ++ nu ++ " does not form") in
       let* (Cg, nsg) := lift (w_context W gg) ("the context of " ++ ng ++ " does not form") in
-      let fu := fixed W metadata_fuel u in
       let its := List.concat bodies in
       let Fg := link_body_frame u dg bodies in
       let* (((wrap, Cb), Fb), made) := r_bind_items R Fg Cg its in
       let* _ := check (forallb (fun t => negb (bound_in Cu t)) made) (bound_to ++ " makes a type " ++ nu ++ " takes as an input (D84)") in
       let* ((outs, gtab), (Cr, ks)) := link_output_roles u Cu Cb bound_to in
       let gen := gen_of gtab in
-      (* Q6, N5 (#95): the pins of fixed inputs: what the body binds each
-         to, unless it is G's own reading of a fixed input G takes *)
-      let pins := linked_pins Cg Cb fu in
-      let pin_ok := valid_link_pin Cu Cg made fu in
-      let* _ := match find (fun q => negb (forallb pin_ok (gens (snd q)))) pins with
-                | Some (x, v) =>
-                    match find (fun y => bound_in Cu y && negb (nmem y fu)) (gens v) with
-                    | Some y => fail (ng ++ " cannot be bound to " ++ nu ++ " here: it pins " ++ qs W x ++ ", which " ++ nu ++
-                                      " is fixed in, to a type that mentions " ++ qs W y ++ ", a type each application of " ++ nu ++
-                                      " supplies (D84 3d)")
-                    | None => fail (bound_to ++ " pins " ++ qs W x ++ ", which " ++ nu ++ " is fixed in, to " ++ qty W v ++
-                                    ", which mentions a type that is not one of " ++ ng ++ "'s own unmerged inputs in its actual body (Q6, D84 3d)")
-                    end
-                | None => ret tt end in
-      (* #73: link_site reads a pinned fixed input at its pin *)
-      let site := link_site Cg Cb pins outs gen in
-      let site0 := link_site Cg Cb [] outs gen in
-      let reads := role_reads site outs gen ++ pin_reads Cb pins in
-      (* #73: a key the pins re-read must be one the body made, not one of
-         G's own provisions *)
-      let bad0 := find (fun k =>
-          negb (item_eqb (at_site site k) (at_site site0 k)) &&
-          is_some (ilook (provision_id (at_site site k)) (c_provisions Cg))) ks in
-      let* _ := match bad0 with
-                | Some k => fail (bound_to ++ " does not provide " ++ qkey W k ++ " at the fixed input its body pins (#73, D78)")
-                | None => ret tt end in
-      let bad := find (fun k => negb
-          match ilook (provision_id k) (c_provisions Cr), ilook (provision_id (at_site site k)) (c_provisions site) with
-          | Some required, Some actual =>
-              provision_refinesb (provision_subst (c_sub site) (provision_subst reads required))
-                                 (provision_subst (c_sub site) actual)
-          | _, _ => false
-          end) ks in
-      let* _ := match bad with
-                | None => ret tt
-                | Some k => fail (bound_to ++ " " ++
-                                  match ilook (provision_id (at_site site k)) (c_provisions site) with
-                                  | None => "does not provide " ++ qkey W k ++ " (D78)"
-                                  | Some _ => match k with
-                                              | IFun _ => "provides " ++ qkey W k ++ " at another fixed interpretation than promised (D78)"
-                                              | _ => "provides " ++ qkey W k ++ " at another type than " ++ nu ++
-                                                     " promises in its actual body (D78, D84 3e)" end end)
-                end in
+      let* plan := pure (check_linked_result u gg Cu Cg Cb Cr made outs gen ks) in
       let* binds0 := lift (binds_of (wrap EUnit)) "internal: a functor body made a statement" in
       let* _ := if is_family E u then
                   match find (fun b => match b with BValue _ _ => true | BApply v _ _ _ _ => negb (is_family E v) | _ => false end) binds0 with
@@ -401,8 +420,7 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
                                                      ", which is not a family, so where an application is placed could be observed (D84 rule 7)")
                   | _ => ret tt end
                 else ret tt in
-      let code := translate_linked_body Cu Cg outs binds0 (map (fun k => rkof site (at_site site k)) ks) in
-      emit_linked_body u gg pins code
+      emit_linked_body u gg (link_plan_pins plan) (translate_linked_result Cu Cg outs binds0 plan)
   | _ => fail (ng ++ " has no body")
   end
   end.

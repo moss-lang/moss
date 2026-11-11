@@ -151,6 +151,65 @@ Proof.
   apply valid_link_pin_sound. exact (proj1 (forallb_forall _ _) Good y Generation).
 Qed.
 
+Record TypesLinkedResult (W : world) (u : nat) (Cu Cg Cb Cr : cx)
+    (made outs : list nat) (gen : nat -> nat) (keys : list item) (plan : linked_result_plan) : Prop := {
+  linked_plan_result_keys : link_plan_keys plan = keys;
+  linked_plan_result_site : link_plan_site plan = link_site Cg Cb (link_plan_pins plan) outs gen;
+  linked_plan_pin_provisions : forall k, In k keys ->
+    at_site (link_plan_site plan) k <> at_site (link_site Cg Cb [] outs gen) k ->
+    ilook (provision_id (at_site (link_plan_site plan) k)) (c_provisions Cg) = None;
+  linked_plan_realizes : ResultRealizes (link_plan_site plan) Cr
+    (role_reads (link_plan_site plan) outs gen ++ pin_reads Cb (link_plan_pins plan)) keys;
+  linked_plan_pins_exact : forall x tx, In (x, tx) (link_plan_pins plan) <->
+    Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
+    (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx);
+  linked_plan_pin_scope : forall x tx y, In (x, tx) (link_plan_pins plan) -> In y (gens tx) ->
+    In y (map fst (c_ty Cg)) /\ lookup_subst y (c_sub Cg) = None /\ ~ In y made /\
+    (In y (map fst (c_ty Cu)) -> Fixed W u y)
+}.
+
+Theorem check_linked_result_sound : forall E u gg Cu Cg Cb Cr made outs gen keys plan,
+  (forall x, In x (fixed (e_W E) (e_metadata_fuel E) u) <-> Fixed (e_W E) u x) ->
+  check_linked_result E u gg Cu Cg Cb Cr made outs gen keys = Ok plan ->
+  TypesLinkedResult (e_W E) u Cu Cg Cb Cr made outs gen keys plan.
+Proof.
+  intros E u gg Cu Cg Cb Cr made outs gen keys plan FixedExact Check.
+  unfold check_linked_result in Check. cbv zeta in Check.
+  set (fixed_inputs := fixed (e_W E) (e_metadata_fuel E) u) in *.
+  set (pins := linked_pins Cg Cb fixed_inputs) in *.
+  set (site := link_site Cg Cb pins outs gen) in *.
+  set (plain := link_site Cg Cb [] outs gen) in *.
+  apply EaTypesSound.rbind_ok in Check as ([] & PinsCheck & Check).
+  match type of PinsCheck with
+  | context [match ?bad with Some _ => _ | None => _ end] =>
+      destruct bad as [[bad_pin wrong]|] eqn:PinsSafe
+  end.
+  { match type of PinsCheck with
+    | context [match ?bad with Some _ => _ | None => _ end] => destruct bad; discriminate PinsCheck
+    end. }
+  apply EaTypesSound.rbind_ok in Check as ([] & PinKeysCheck & Check).
+  match type of PinKeysCheck with
+  | context [match ?bad with Some _ => _ | None => _ end] =>
+      destruct bad eqn:PinKeys; [discriminate PinKeysCheck|]
+  end.
+  apply EaTypesSound.rbind_ok in Check as ([] & ResultsCheck & Check).
+  match type of ResultsCheck with
+  | context [match ?bad with Some _ => _ | None => _ end] =>
+      destruct bad eqn:Results; [discriminate ResultsCheck|]
+  end.
+  injection Check as <-. constructor; cbn [link_plan_keys link_plan_site link_plan_pins].
+  - reflexivity.
+  - reflexivity.
+  - apply link_pin_provisions. exact PinKeys.
+  - apply link_result_realizes. exact Results.
+  - intros t tx. unfold pins. rewrite linked_pins_spec, FixedExact. reflexivity.
+  - intros t tx y Pin Generation.
+    destruct (pins_have_link_scope _ _ _ _ _ PinsSafe t tx y Pin Generation)
+      as (Live & Unmerged & NotMade & FixedInput).
+    split; [exact Live|]. split; [exact Unmerged|]. split; [exact NotMade|].
+    intro Taken. now apply FixedExact, FixedInput.
+Qed.
+
 Lemma successful_link_lift : forall A (read : option A) message before value after,
   lift read message before = Ok (value, after) -> read = Some value /\ after = before.
 Proof. intros A [x|] message before value after Run; [now injection Run as <- <-|discriminate]. Qed.
@@ -316,30 +375,20 @@ Proof.
   destruct (EaLinkAllocationSound.link_output_roles_sound E bound _ _ _ _ _ _ _ _ _ _
     Declared Budget (Nat.le_trans _ _ _ Floor Grows) Outputs) as (OutputsTyped & _ & Next).
   set (generation := EaFunctor.gen_of table) in *.
-  set (pins := linked_pins Cg Cb fixed_inputs) in *.
-  apply EaControlSound.mbind_ok in Run as (pin_check & s7 & PinsCheck & Run).
-  match type of PinsCheck with
-  | context [match ?bad with Some _ => _ | None => _ end] =>
-      destruct bad as [[bad_pin wrong]|] eqn:PinsSafe
-  end.
-  { match type of PinsCheck with
-    | context [match ?bad with Some _ => _ | None => _ end] => destruct bad; discriminate PinsCheck
-    end. }
-  injection PinsCheck as _ <-.
+  apply EaControlSound.mbind_ok in Run as (plan & s7 & CheckedResult & Run).
+  unfold pure in CheckedResult.
+  destruct (check_linked_result E u gg Cu Cg Cb Cr made outs generation keys)
+    as [checked|] eqn:ResultPlan; [|discriminate CheckedResult].
+  assert (CheckedPlan : checked = plan) by congruence. subst checked.
+  assert (SameState : s7 = s6) by congruence. subst s7.
+  assert (FixedExact : forall x, In x fixed_inputs <-> Fixed W u x).
+  { intro x. unfold fixed_inputs. apply (EaResultBudget.fixed_exact W bound Declared); exact Budget. }
+  destruct (check_linked_result_sound E u gg Cu Cg Cb Cr made outs generation keys plan
+    FixedExact ResultPlan) as [PlanKeys PlanSite PinKeys Results PinsExact PinsScope].
+  set (pins := link_plan_pins plan) in *.
   set (site := link_site Cg Cb pins outs generation) in *.
-  set (plain := link_site Cg Cb [] outs generation) in *.
-  apply EaControlSound.mbind_ok in Run as (pin_keys_check & s8 & PinKeysCheck & Run).
-  match type of PinKeysCheck with
-  | context [match ?bad with Some _ => _ | None => _ end] =>
-      destruct bad eqn:PinKeys; [discriminate PinKeysCheck|]
-  end.
-  injection PinKeysCheck as _ <-.
-  apply EaControlSound.mbind_ok in Run as (results_check & s9 & ResultsCheck & Run).
-  match type of ResultsCheck with
-  | context [match ?bad with Some _ => _ | None => _ end] =>
-      destruct bad eqn:Results; [discriminate ResultsCheck|]
-  end.
-  injection ResultsCheck as _ <-.
+  rewrite PlanSite in PinKeys, Results.
+  unfold translate_linked_result in Run. rewrite PlanKeys, PlanSite in Run.
   apply EaControlSound.mbind_ok in Run as (bindings & s10 & Read & Run).
   apply successful_link_lift in Read as [BindingList ->].
   apply EaControlSound.mbind_ok in Run as (family_check & s11 & FamilyCheck & Run).
@@ -398,15 +447,7 @@ Proof.
     - intros t Member. pose proof (proj1 (forallb_forall _ _) Made t Member) as Unbound.
       apply negb_true_iff in Unbound. unfold bound_in in Unbound.
       now destruct (nlook t (c_ty Cu)).
-    - apply link_pin_provisions. exact PinKeys.
-    - apply link_result_realizes. exact Results.
     - now apply binds_of_sound.
-    - intros t tx. unfold pins. rewrite linked_pins_spec.
-      unfold fixed_inputs. rewrite (EaResultBudget.fixed_exact W bound Declared); [tauto|exact Budget].
-    - intros t tx v Pin Generation.
-      pose proof (pins_have_link_scope _ _ _ _ _ PinsSafe t tx v Pin Generation) as (Live & Unmerged & NotMade & Fixed).
-      split; [exact Live|]. split; [exact Unmerged|]. split; [exact NotMade|]. intro Taken.
-      exact (proj1 (EaResultBudget.fixed_exact W bound Declared _ u Budget v) (Fixed Taken)).
   }
   assert (Current : LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)))
     by (rewrite PinsAt; exact Linked).
