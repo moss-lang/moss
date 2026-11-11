@@ -299,7 +299,7 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     TyOf W (d_mod d) [] None annotation t ->
     TypesExpr W layout (Cx [] [] [] [] []) source (Some t) plan actual -> fits actual t ->
     fr_mod layout = d_mod d -> fr_ret layout = None -> fr_this layout = None -> fr_loop layout = false ->
-    fr_fresh layout = [] -> fr_applying layout = [] -> fr_pins layout = [] -> Numbering layout None [] ->
+    fr_fresh layout = [] -> fr_applying layout = [] -> fr_pins layout = [] ->
     TypesExpr W F C (AEPath path None) exp (PlanConstant layout plan) t
 | TypesBracketedCall : forall F C exp path brackets args f expansion t,
     resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
@@ -470,86 +470,170 @@ Definition application_binding (C : cx) (a : application) : binding :=
     (satisfaction_map C (app_input a) (app_arguments a) (app_needs a))
     (map (rkey_of (app_result a)) (app_provisions a)).
 
-Fixpoint emit_expr (slots : list (name * nat)) (C : cx) (plan : expression_plan) : expr :=
-  match plan with
-  | PlanUnit => EUnit
-  | PlanThis => EVar 0
-  | PlanLocal n => EVar (local_number slots n)
-  | PlanBlock body => emit_block slots C body
-  | PlanIf condition body other =>
-      EIf (emit_expr slots C condition) (emit_block slots C body)
-        (match other with Some plan => emit_expr slots C plan | None => EUnit end)
-  | PlanReturnUnit => EReturn EUnit
-  | PlanReturn result => EReturn (emit_expr slots C result)
-  | PlanBreak => EBreak
-  | PlanDefinedCall f formal needs arguments demands call_site args =>
-      translate_demands C demands (translate_call call_site formal f arguments needs
-        (map (emit_expr slots C) args))
-  | PlanAbstractCall f args => EInvoke f (map (emit_expr slots C) args)
-  | PlanUnitTag tag => ETag tag [] EUnit
-  | PlanTag tag arguments payload => ETag tag arguments (emit_expr slots C payload)
-  | PlanRecord tag arguments fields =>
-      ETag tag arguments (ERecord (map (fun '(n, child) => (n, emit_expr slots C child)) fields))
-  | PlanField object field => EField (emit_expr slots C object) field
-  | PlanMatch scrutinee arms =>
-      EMatch (emit_expr slots C scrutinee)
-        (map (fun '(pattern, body) =>
-          (emit_pattern slots pattern, emit_expr slots (pattern_scope C pattern) body)) arms)
-  | PlanMethod receiver selected object args =>
-      emit_method_call C receiver selected (emit_expr slots C object) (map (emit_expr slots C) args)
-  | PlanOperator receiver method family object args =>
-      emit_provided_method C receiver method family (emit_expr slots C object) (map (emit_expr slots C) args)
-  | PlanNumeric literal => emit_literal C literal
-  | PlanGlobalValue symbol => EVal symbol
-  | PlanConstant layout initializer => emit_expr (fr_var layout) (Cx [] [] [] [] []) initializer
-  | PlanBracketedCall expansion => emit_expr slots C expansion
-  end
-with emit_block (slots : list (name * nat)) (C : cx) (plan : block_plan) : expr :=
-  match plan with
-  | PlanEmpty => EUnit
-  | PlanTail result => emit_expr slots C result
-  | PlanLet n t mode initializer rest =>
-      ELet (local_number slots n) (emit_expr slots C initializer) (emit_block slots (add_local C n t mode) rest)
-  | PlanAssign n value rest =>
-      ESeq (EAssign (local_number slots n) (emit_expr slots C value)) (emit_block slots C rest)
-  | PlanExprLast value => ESeq (emit_expr slots C value) EUnit
-  | PlanExprThen value rest => ESeq (emit_expr slots C value) (emit_block slots C rest)
-  | PlanWhile condition body rest =>
-      ESeq (EWhile (emit_expr slots C condition) (emit_block slots C body))
-        (emit_block slots C rest)
-  | PlanLoop body rest =>
-      ESeq (ELoop (emit_block slots C body)) (emit_block slots C rest)
-  | PlanLoopLast body => ESeq (ELoop (emit_block slots C body)) EUnit
-  | PlanBind items result rest =>
-      splice_bindings (flat_map (emit_bind_item slots) items) (emit_block slots result rest)
-  end
-with emit_bind_item (slots : list (name * nat)) (plan : binding_plan) : list binding :=
-  match plan with
-  | PlanTypeBind symbol meaning => [BType symbol meaning]
-  | PlanValueBind site symbol initializer => [BValue symbol (emit_expr slots site initializer)]
-  | PlanInlineApply items => flat_map (emit_bind_item slots) items
-  | PlanAbstractApply site plan => [application_binding site plan]
-  | PlanFunctorCopy target provider Cu Ch selected needs positions =>
-      [BCopyFunctor target provider (map (fun k => (rkey_of Ch k, rkey_of Cu (selected k))) needs) positions]
+Inductive placement_requirement : Type :=
+| PlaceFunction (slot : nat) (body : expr) (section : option subst)
+| PlaceFunctor (slot : nat) (body : functor_code) (source : nat * nat)
+| PlaceLayout (layout : frame) (receiver : option ty) (parameters : list name).
+
+Definition placement_in (W : world) (P : program) (requirement : placement_requirement) : Prop :=
+  match requirement with
+  | PlaceFunction slot body section =>
+      Fresh W slot /\ body_of P slot = Some body /\
+      match section with
+      | Some reads => nlook slot (lambda_sections (program_origins P)) = Some reads
+      | None => True
+      end
+  | PlaceFunctor slot body source =>
+      Fresh W slot /\ funbody_of P slot = Some body /\
+      nlook slot (linked_origins (program_origins P)) = Some source
+  | PlaceLayout layout receiver parameters => Numbering layout receiver parameters
   end.
 
-Definition translate_expr (F : frame) := emit_expr (fr_var F).
-Definition translate_block (F : frame) := emit_block (fr_var F).
+Definition placements_in (W : world) (P : program) :=
+  Forall (placement_in W P).
+
+Record emission (A : Type) := Emission {
+  emitted_code : A;
+  emitted_placements : list placement_requirement
+}.
+Arguments Emission {A}.
+Arguments emitted_code {A}.
+Arguments emitted_placements {A}.
+
+Definition emit_only {A} (code : A) : emission A := Emission code [].
+
+Definition emit_map {A B} (make : A -> B) (source : emission A) : emission B :=
+  Emission (make (emitted_code source)) (emitted_placements source).
+
+Definition emit_pair {A B C} (make : A -> B -> C) (first : emission A) (second : emission B) : emission C :=
+  Emission (make (emitted_code first) (emitted_code second))
+    (emitted_placements first ++ emitted_placements second).
+
+Definition emit_each {A B} (emit : A -> emission B) (sources : list A) : emission (list B) :=
+  Emission (map (fun source => emitted_code (emit source)) sources)
+    (flat_map (fun source => emitted_placements (emit source)) sources).
+
+Definition emit_flat {A B} (emit : A -> emission (list B)) (sources : list A) : emission (list B) :=
+  Emission (flat_map (fun source => emitted_code (emit source)) sources)
+    (flat_map (fun source => emitted_placements (emit source)) sources).
+
+Definition require_placement {A} (requirement : placement_requirement) (source : emission A) : emission A :=
+  Emission (emitted_code source) (requirement :: emitted_placements source).
+
+Fixpoint emit_expr (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
+    (plan : expression_plan) : emission expr :=
+  match plan with
+  | PlanUnit => emit_only EUnit
+  | PlanThis => emit_only (EVar 0)
+  | PlanLocal n => emit_only (EVar (local_number slots n))
+  | PlanBlock body => emit_block resolve slots C body
+  | PlanIf condition body other =>
+      let otherwise := match other with
+        | Some plan => emit_expr resolve slots C plan
+        | None => emit_only EUnit
+        end in
+      emit_pair (fun '(test, yes) no => EIf test yes no)
+        (emit_pair pair (emit_expr resolve slots C condition) (emit_block resolve slots C body))
+        otherwise
+  | PlanReturnUnit => emit_only (EReturn EUnit)
+  | PlanReturn result => emit_map EReturn (emit_expr resolve slots C result)
+  | PlanBreak => emit_only EBreak
+  | PlanDefinedCall f formal needs arguments demands call_site args =>
+      emit_map (fun values => translate_demands C demands (translate_call call_site formal f arguments needs values))
+        (emit_each (emit_expr resolve slots C) args)
+  | PlanAbstractCall f args => emit_map (EInvoke f) (emit_each (emit_expr resolve slots C) args)
+  | PlanUnitTag tag => emit_only (ETag tag [] EUnit)
+  | PlanTag tag arguments payload => emit_map (ETag tag arguments) (emit_expr resolve slots C payload)
+  | PlanRecord tag arguments fields =>
+      emit_map (fun values => ETag tag arguments (ERecord values))
+        (emit_each (fun '(n, child) => emit_map (pair n) (emit_expr resolve slots C child)) fields)
+  | PlanField object field => emit_map (fun value => EField value field) (emit_expr resolve slots C object)
+  | PlanMatch scrutinee arms =>
+      emit_pair EMatch (emit_expr resolve slots C scrutinee)
+        (emit_each (fun '(pattern, body) => emit_map (pair (emit_pattern slots pattern))
+          (emit_expr resolve slots (pattern_scope C pattern) body)) arms)
+  | PlanMethod receiver selected object args =>
+      emit_pair (emit_method_call C receiver selected) (emit_expr resolve slots C object)
+        (emit_each (emit_expr resolve slots C) args)
+  | PlanOperator receiver method family object args =>
+      emit_pair (emit_provided_method C receiver method family) (emit_expr resolve slots C object)
+        (emit_each (emit_expr resolve slots C) args)
+  | PlanNumeric literal => emit_only (emit_literal C literal)
+  | PlanGlobalValue symbol => emit_only (EVal symbol)
+  | PlanConstant layout initializer =>
+      require_placement (PlaceLayout layout None [])
+        (emit_expr resolve (fr_var layout) (Cx [] [] [] [] []) initializer)
+  | PlanBracketedCall expansion => emit_expr resolve slots C expansion
+  end
+with emit_block (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
+    (plan : block_plan) : emission expr :=
+  match plan with
+  | PlanEmpty => emit_only EUnit
+  | PlanTail result => emit_expr resolve slots C result
+  | PlanLet n t mode initializer rest =>
+      emit_pair (ELet (local_number slots n)) (emit_expr resolve slots C initializer)
+        (emit_block resolve slots (add_local C n t mode) rest)
+  | PlanAssign n value rest =>
+      emit_pair (fun value => ESeq (EAssign (local_number slots n) value))
+        (emit_expr resolve slots C value) (emit_block resolve slots C rest)
+  | PlanExprLast value => emit_map (fun value => ESeq value EUnit) (emit_expr resolve slots C value)
+  | PlanExprThen value rest =>
+      emit_pair ESeq (emit_expr resolve slots C value) (emit_block resolve slots C rest)
+  | PlanWhile condition body rest =>
+      emit_pair ESeq (emit_pair EWhile (emit_expr resolve slots C condition) (emit_block resolve slots C body))
+        (emit_block resolve slots C rest)
+  | PlanLoop body rest =>
+      emit_pair (fun body => ESeq (ELoop body)) (emit_block resolve slots C body) (emit_block resolve slots C rest)
+  | PlanLoopLast body => emit_map (fun body => ESeq (ELoop body) EUnit) (emit_block resolve slots C body)
+  | PlanBind items result rest =>
+      emit_pair splice_bindings (emit_flat (emit_bind_item resolve slots) items) (emit_block resolve slots result rest)
+  end
+with emit_bind_item (resolve : nat -> nat) (slots : list (name * nat)) (plan : binding_plan)
+    : emission (list binding) :=
+  match plan with
+  | PlanTypeBind symbol meaning => emit_only [BType symbol meaning]
+  | PlanValueBind site symbol initializer =>
+      emit_map (fun value => [BValue symbol value]) (emit_expr resolve slots site initializer)
+  | PlanInlineApply items => emit_flat (emit_bind_item resolve slots) items
+  | PlanAbstractApply site plan => emit_only [application_binding site plan]
+  | PlanFunctorCopy target provider Cu Ch selected needs positions =>
+      emit_only [BCopyFunctor target provider (map (fun k => (rkey_of Ch k, rkey_of Cu (selected k))) needs) positions]
+  end.
+
+Definition identity_slots (token : nat) := token.
+
+Definition expression_emission (resolve : nat -> nat) (F : frame) := emit_expr resolve (fr_var F).
+Definition block_emission (resolve : nat -> nat) (F : frame) := emit_block resolve (fr_var F).
+Definition argument_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
+  emit_each (expression_emission resolve F C).
+Definition record_fields_emission (resolve : nat -> nat) (F : frame) (C : cx)
+    (fields : list (fld * expression_plan)) :=
+  emit_each (fun '(n, child) => emit_map (pair n) (expression_emission resolve F C child)) fields.
+Definition arms_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
+  emit_each (fun '(pattern, body) => emit_map (pair (translate_pattern F pattern))
+    (expression_emission resolve F (pattern_scope C pattern) body)).
+Definition bind_item_emission (resolve : nat -> nat) (F : frame) := emit_bind_item resolve (fr_var F).
+Definition bind_items_emission (resolve : nat -> nat) (F : frame) :=
+  emit_flat (bind_item_emission resolve F).
+
+Definition translate_expr (F : frame) (C : cx) (plan : expression_plan) :=
+  emitted_code (expression_emission identity_slots F C plan).
+Definition translate_block (F : frame) (C : cx) (plan : block_plan) :=
+  emitted_code (block_emission identity_slots F C plan).
 Definition translate_bind_item (F : frame) (plan : binding_plan) :=
-  splice_bindings (emit_bind_item (fr_var F) plan).
+  splice_bindings (emitted_code (bind_item_emission identity_slots F plan)).
 Definition translate_bind_items (F : frame) (plans : list binding_plan) :=
-  splice_bindings (flat_map (emit_bind_item (fr_var F)) plans).
+  splice_bindings (emitted_code (bind_items_emission identity_slots F plans)).
 
 Lemma translate_block_numbering : forall F F' C plan,
   fr_var F = fr_var F' -> translate_block F C plan = translate_block F' C plan.
-Proof. intros F F' C plan Same. unfold translate_block. now rewrite Same. Qed.
+Proof. intros F F' C plan Same. unfold translate_block, block_emission. now rewrite Same. Qed.
 
 Definition translate_record_fields (F : frame) (C : cx) (fields : list (fld * expression_plan)) :=
-  map (fun '(n, child) => (n, translate_expr F C child)) fields.
+  emitted_code (record_fields_emission identity_slots F C fields).
 
 Definition translate_arms (F : frame) (C : cx) (arms : list (pattern_plan * expression_plan)) :=
-  map (fun '(pattern, body) =>
-    (translate_pattern F pattern, translate_expr F (pattern_scope C pattern) body)) arms.
+  emitted_code (arms_emission identity_slots F C arms).
 
 Scheme types_expr_ind := Induction for TypesExpr Sort Prop
 with types_blke_ind := Induction for TypesBlkE Sort Prop
@@ -566,68 +650,99 @@ Combined Scheme body_typing_ind from types_expr_ind, types_blke_ind, types_blk_i
   types_cond_ind, types_branch_ind, types_fields_ind, types_arms_ind, types_arm_list_ind,
   types_bind_items_ind, types_bind_item_ind.
 
-Theorem body_translation_agrees : forall W P,
+Definition CheckedEmission {A} (W : world) (P : program)
+    (output : emission A) (judgment : A -> Prop) : Prop :=
+  placements_in W P (emitted_placements output) -> judgment (emitted_code output).
+
+Local Ltac use_placements :=
+  unfold placements_in in *;
+  repeat match goal with
+  | Placed : Forall (placement_in _ _) (_ ++ _) |- _ => apply Forall_app in Placed as [? ?]
+  | Placed : Forall (placement_in _ _) (_ :: _) |- _ => apply Forall_cons_iff in Placed as [? ?]
+  end;
+  cbn [placement_in] in *;
+  repeat match goal with
+  | Step : Forall (placement_in ?w ?p) ?slots -> _ |- _ =>
+      let Checked := fresh "Checked" in
+      assert (Checked : Forall (placement_in w p) slots) by assumption;
+      specialize (Step Checked); clear Checked
+  end.
+
+Theorem body_translation_agrees : forall W P resolve,
   (forall F C e expected plan t, TypesExpr W F C e expected plan t ->
-    Ex W P F C e expected (translate_expr F C plan) t) /\
+    CheckedEmission W P (expression_emission resolve F C plan)
+      (fun code => Ex W P F C e expected code t)) /\
   (forall F C block expected plan t, TypesBlkE W F C block expected plan t ->
-    BlkE W P F C block expected (translate_block (without_pins F) C plan) t) /\
+    CheckedEmission W P (block_emission resolve (without_pins F) C plan)
+      (fun code => BlkE W P F C block expected code t)) /\
   (forall F C statements tail expected plan t made, TypesBlk W F C statements tail expected plan t made ->
-    Blk W P F C statements tail expected (translate_block F C plan) t made) /\
+    CheckedEmission W P (block_emission resolve F C plan)
+      (fun code => Blk W P F C statements tail expected code t made)) /\
   (forall F C args types plans, TypesArgs W F C args types plans ->
-    Args W P F C args types (map (translate_expr F C) plans)) /\
+    CheckedEmission W P (argument_emission resolve F C plans) (Args W P F C args types)) /\
   (forall F C condition plan, TypesCond W F C condition plan ->
-    Cond W P F C condition (translate_expr F C plan)) /\
+    CheckedEmission W P (expression_emission resolve F C plan) (Cond W P F C condition)) /\
   (forall F C branch expected plan t, TypesBranch W F C branch expected plan t ->
-    Branch W P F C branch expected (translate_expr F C plan) t) /\
+    CheckedEmission W P (expression_emission resolve F C plan)
+      (fun code => Branch W P F C branch expected code t)) /\
   (forall F C given fields plans, TypesRecordFields W F C given fields plans ->
-    Forall2 (fun ft xf => fst xf = fst ft /\
-      exists n source actual, n = fst ft /\ In (n, source) given /\
-        Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
-          (Some (snd ft)) (snd xf) actual /\ fits actual (snd ft))
-      fields (translate_record_fields F C plans)) /\
+    CheckedEmission W P (record_fields_emission resolve F C plans)
+      (Forall2 (fun ft xf => fst xf = fst ft /\
+        exists n source actual, n = fst ft /\ In (n, source) given /\
+          Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
+            (Some (snd ft)) (snd xf) actual /\ fits actual (snd ft)) fields)) /\
   (forall F C st arms exp plans t, TypesArms W F C st arms exp plans t ->
-    Arms W P F C st arms exp (translate_arms F C plans) t) /\
+    CheckedEmission W P (arms_emission resolve F C plans)
+      (fun code => Arms W P F C st arms exp code t)) /\
   (forall F C st arms exp plans covered catch t, TypesArmList W F C st arms exp plans covered catch t ->
-    ArmsList W P F C st arms exp (translate_arms F C plans) covered catch t) /\
+    CheckedEmission W P (arms_emission resolve F C plans)
+      (fun code => ArmsList W P F C st arms exp code covered catch t)) /\
   (forall F C items plans result F' made, TypesBindItems W F C items plans result F' made ->
-    BindItems W P F C items (translate_bind_items F plans) result F' made) /\
+    CheckedEmission W P (bind_items_emission resolve F plans)
+      (fun code => BindItems W P F C items (splice_bindings code) result F' made)) /\
   (forall F C item plan result F' made, TypesBindItem W F C item plan result F' made ->
-    BindItem W P F C item (translate_bind_item F plan) result F' made).
+    CheckedEmission W P (bind_item_emission resolve F plan)
+      (fun code => BindItem W P F C item (splice_bindings code) result F' made)).
 Proof.
-  intros W P. apply body_typing_ind;
-    cbn [translate_expr translate_block emit_expr emit_block translate_record_fields translate_arms
-      translate_bind_item emit_bind_item splice_bindings fold_right map];
-    intros;
+  intros W P resolve. apply body_typing_ind; intros; unfold CheckedEmission in *;
+    cbn [expression_emission block_emission argument_emission record_fields_emission
+      arms_emission bind_items_emission bind_item_emission emit_expr emit_block emit_bind_item
+      emit_only emit_map emit_pair emit_each emit_flat require_placement emitted_code emitted_placements
+      splice_bindings fold_right map flat_map app] in *;
+    intros; use_placements;
     eauto 8 using ExUnit, ExThis, ExLocal, ExBlock, ExIfThen, ExIfElse, ExReturnUnit, ExReturn,
     ExBreak, ExCallD, ExCallA, ExUnitTag, ExTag, ExRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
-    ExLit, ExVal, ExCallBr, provided_method_translation, method_call_translation, literal_translation, BlkECheck, BlkTail,
-    BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop, BlkLoopLast, ArgsNil,
-    ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever, ArmsSome,
-    ArmsOne, ArmsMore, pattern_translation, BINil, BTypeBind, BValBind, BApplyBody, BApplyAbstract, BFunCopy.
+    ExLit, ExVal, ExCallBr, provided_method_translation, method_call_translation, literal_translation,
+    BlkECheck, BlkTail, BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop,
+    BlkLoopLast, ArgsNil, ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever,
+    ArmsSome, ArmsOne, ArmsMore, pattern_translation, BINil, BTypeBind, BValBind, BApplyBody,
+    BApplyAbstract, BFunCopy.
   - eapply ExConst; try eassumption. exists layout, actual. repeat first [assumption | split].
-  - match goal with
+  - (* The outgoing scope changes typing, while the local numbers persist. *)
+    lazymatch goal with
     | Typed : TypesBindItems W F C items plans result F' made,
-      Tail : Blk W P F' result rest tail exp (translate_block F' result continuation) t created |- _ =>
-      unfold translate_block in Tail;
-      rewrite (bind_plans_numbering _ _ _ _ _ _ _ _ Typed) in Tail;
-      eapply BlkBind; eassumption
+      Tail : Forall _ _ -> Blk W P F' result rest tail exp _ t created |- _ =>
+      let Same := fresh "Same" in
+      pose proof (bind_plans_numbering _ _ _ _ _ _ _ _ Typed) as Same;
+      unfold block_emission in Tail;
+      rewrite Same in Tail;
+      eapply (@BlkBind W P F C items rest tail exp
+        (splice_bindings (emitted_code (bind_items_emission resolve F plans))) result F'
+        (emitted_code (block_emission resolve F result continuation)) t made created);
+        [eassumption|eapply Tail; eassumption]
     end.
-  - constructor; [|assumption]. cbn [fst snd]. split; [reflexivity|].
-    exists n, syntax, actual. repeat split; assumption.
+  - constructor; [|eauto]. cbn [fst snd]. split; [reflexivity|].
+    exists n, syntax, actual. repeat split; eauto.
   - lazymatch goal with
     | Typed : TypesBindItem W F C ?source_item plan middle F1 made1,
-      Tail : BindItems W P F1 middle rest (translate_bind_items F1 plans) result F2 made2 |- _ =>
-      unfold translate_bind_items in Tail |- *; cbn [flat_map]; rewrite splice_bindings_append;
-      rewrite (binding_plan_numbering _ _ _ _ _ _ _ _ Typed) in Tail;
-      eapply BICons; eassumption
+      Tail : Forall _ _ -> BindItems W P F1 middle rest _ result F2 made2 |- _ =>
+      let Same := fresh "Same" in
+      pose proof (binding_plan_numbering _ _ _ _ _ _ _ _ Typed) as Same;
+      unfold bind_item_emission in Tail;
+      rewrite Same in Tail;
+      rewrite splice_bindings_append;
+      eapply BICons; [eassumption|eapply Tail; eassumption]
     end.
-  - eapply (@BTypeBind W P F C path0 symbol right arguments meaning); eassumption.
-  - eapply (@BValBind W P F C path0 symbol d name0 annotation initializer declared source0
-      (translate_expr F C plan) actual arguments); eassumption.
-  - eapply (@BApplyAbstract W P F C path0 plan); eassumption.
-  - eapply (@BFunCopy W P F C path0 u provider h Cu nsu Ch nsh target
-      (map (fun k => (rkey_of Ch k, rkey_of Cu (target k))) nsh) fixed positions);
-      first [eassumption|reflexivity].
 Qed.
 
 Definition HasExpressionPlan (W : world) (P : program) (F : frame) (C : cx) (source : aexpr) : Prop :=
