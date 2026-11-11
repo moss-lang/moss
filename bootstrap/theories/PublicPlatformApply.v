@@ -28,6 +28,7 @@
    by item: family_items_agree) and PrimsGroundOk (the primitives callable
    wherever the fixed machine inputs read as the machine types). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require Import AuditBase.
 From NM Require PublicContextFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.

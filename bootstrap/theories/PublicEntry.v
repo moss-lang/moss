@@ -3,7 +3,8 @@
    the entry to the slice's safety (`Safe`) and main's initial realization
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
-From NM Require Import Audit AuditFacts PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
+From NM Require Import BaseFacts.
+From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize PublicFamilyCopy.
@@ -680,7 +681,7 @@ Proof.
     (ex_intro _ bundle Wo) CIF LR CA PA).
 Qed.
 
-(* Audit.Public's CORRECT.safety, for every prelude, with no hypotheses. *)
+(* AuditBase.Public's CORRECT.safety, for every prelude, with no hypotheses. *)
 Theorem public_safety : forall prelude program interface initial,
   M.Admissible prelude program ->
   M.Compatible program interface ->

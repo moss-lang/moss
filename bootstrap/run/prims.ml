@@ -4,7 +4,7 @@
    payloads and reference headers; NaNs use the legacy canonical encodings. *)
 open ExecutionModel
 module A = Audit.Semantics
-module Ops = A.WasmOps
+module Ops = AuditBase.WasmOps
 
 (* Field names: MossX's are numbers, Audit's are strings.  A decimal string
    is that number; any other name is interned to a negative number, so a
@@ -95,5 +95,5 @@ module P = struct
           | XErr n -> A.Stuck n | XTrap n -> A.Trap n | XExit c -> A.Exit c
           | XUns n -> A.UnsupportedOperation n | XFuel -> A.OutOfFuel), st')
   let run_prim program operation site values state =
-    A.BaseCall.call raw_primitive program operation site values state
+    AuditBase.BaseCall.call raw_primitive program operation site values state
 end

@@ -2,6 +2,7 @@
    Allocation grows immutable type assignments and weakens old predicates
    using value-typing monotonicity. No concrete heap representation is used. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require Import BaseFacts.
 From NM Require Import Audit PublicValueTyping.
 Import Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.

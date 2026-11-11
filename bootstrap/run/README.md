@@ -23,8 +23,10 @@ and is absent from executable extraction.
 
 ## Trust
 
-Audit.v defines the semantics, and steps 3 and 4 are Audit's own interpreter
-and passes proved against it. **Whole elaborator soundness remains open.**
+Audit.v defines the generic language semantics, and AuditBase.v supplies
+the concrete Base platform. Both files contain definitions without proofs.
+Steps 3 and 4 use the interpreter and passes proved against these definitions.
+**Whole elaborator soundness remains open.**
 The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
 and `EaWorldSound` proofs cover readers, their fuel conditions and the
 world builder. Ea's `SOUND:` comments state the intended per-function

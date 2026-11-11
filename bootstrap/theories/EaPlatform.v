@@ -3,6 +3,7 @@
    linking clauses and supplies the language-item checks for main. *)
 
 From Stdlib Require Import List String Bool Arith ZArith.
+From NM Require Import AuditBase.
 From NM Require Import Audit EaBase EaTypes EaCall EaFamily.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.

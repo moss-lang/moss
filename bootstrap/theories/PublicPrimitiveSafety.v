@@ -11,6 +11,7 @@
    declared to return `|` has the result shape ShapeNever, which no value
    has, so the result law forbids it to return normally. *)
 From Stdlib Require Import List String Arith Bool PrimInt63.
+From NM Require Import BaseFacts.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
   PublicHeapTyping PublicBoolTyping PublicTagCheck PublicOperationFacts.
 Import Audit.Input Audit.Semantics ListNotations.

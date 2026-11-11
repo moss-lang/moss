@@ -9,6 +9,7 @@
    arm selection) are explicit Section hypotheses; each is a named
    remaining obligation, not an assumption about accepted programs. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicCallable PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicRuntimeKeys.

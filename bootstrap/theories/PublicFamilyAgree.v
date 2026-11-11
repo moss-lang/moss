@@ -8,6 +8,7 @@
    instantiation's requirements are in force on both sides (InstSome), and
    the first reading mentions only generations in a given list K. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicFormation PublicOutputSubst PublicCallerKeys PublicOrientation.
 From NM Require Import AuditFacts.

@@ -39,6 +39,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import BaseFacts.
 From NM Require Import AuditFacts.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require NatTrie ProgramPrune.

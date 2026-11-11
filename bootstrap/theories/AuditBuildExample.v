@@ -1,7 +1,8 @@
 (* A complete source reading and public build/run derivation. In particular,
    the revised contract is inhabited without any runtime-typing hypothesis. *)
 From Stdlib Require Import List String Arith Lia.
-From NM Require Import Audit AuditFacts AuditExamples FrontEnd.
+From NM Require Import BaseFacts.
+From NM Require Import Audit AuditExamples FrontEnd.
 From NM Require PublicMergePresent.
 Import Audit.Semantics.
 Import ListNotations Input Elaboration.

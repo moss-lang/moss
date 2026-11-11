@@ -9,6 +9,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
+From NM Require Import AuditBase.
 From NM Require Import Audit NMap EaBase EaTypes EaCtx EaCall EaFamily EaDecide EaExpr EaFunctor EaBind EaPlatform EaExpand.
 From NM Require Sx ElabWorld PublicWorld LoadListed.
 From NM Require Import EaBudget.

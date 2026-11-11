@@ -346,7 +346,7 @@ Lemma primitive_closure_to : forall d i p,
   primitive_closure (to_env d) i p = to_prov (lprimitive_closure d i p).
 Proof.
   intros d i p. unfold primitive_closure, lprimitive_closure. cbn [to_prov].
-  destruct (decode p) as [decoded|]; [destruct decoded|]; destruct i; rewrite ?ground_to; reflexivity.
+  destruct i; rewrite ?ground_to; reflexivity.
 Qed.
 
 Lemma lookup_entry_to : forall i ps,

@@ -8,6 +8,7 @@
    PlatformApplyOk read through copies). LinkResultsOk and
    PlatformApplyOk are their chains of length zero. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.

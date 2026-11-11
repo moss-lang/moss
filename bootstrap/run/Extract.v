@@ -12,6 +12,7 @@
    assumptions/Certificate.v audits these roots. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
+From NM Require AuditBase.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
 From NM Require EaMain ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
@@ -58,14 +59,14 @@ Extract Inductive Audit.Semantics.op => "PrimCache.operation"
   "(fun f operation -> f (PrimCache.name operation) (PrimCache.symbols operation))".
 Extract Inlined Constant Audit.Semantics.op_name => "PrimCache.name".
 Extract Inlined Constant Audit.Semantics.op_syms => "PrimCache.symbols".
-Extraction NoInline Audit.Semantics.WasmOps.decode.
-Extract Constant Audit.Semantics.WasmOps.decode => "PrimCache.memoize decode_operation".
+Extraction NoInline AuditBase.WasmOps.decode.
+Extract Constant AuditBase.WasmOps.decode => "PrimCache.memoize decode_operation".
 Extraction Blacklist String List Char Bool.
-Separate Extraction Audit.Semantics.BaseCall.call init_state run_prim_fast
+Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx Parse.load
   EaMain.elaborate
   ProgramFastPath.fastpath ProgramPrune.prune ProgramCapTrim.captrim
-  Audit.Semantics.WasmOps.decode_operation Audit.Semantics.WasmOps.unsupported_code
+  AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program
   InterpreterLazy.LazyInterpreter InterpreterLazy.lift_env

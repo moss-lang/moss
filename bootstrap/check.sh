@@ -10,8 +10,8 @@
 #   global context.
 # - Nothing is Admitted, and Parameters and Axioms are declared only inside
 #   module types (public and component obligations, never assumptions).
-# - theories/Audit.v, the trusted statement, holds no proofs: its helper
-#   lemmas live in theories/AuditFacts.v.
+# - Audit.v and AuditBase.v hold no proofs: their helper lemmas live
+#   in AuditFacts.v and BaseFacts.v.
 set -euo pipefail
 cd "$(dirname "$0")"
 fail() { echo "check.sh: $*" >&2; exit 1; }
@@ -42,8 +42,8 @@ open=$(grep -vx 'Closed under the global context' "$build_dir/Closed.log" || tru
 [ -z "$open" ] || fail "a theorem of assumptions/Closed.v is not closed: $open"
 
 if grep -snE '\b(Admitted|admit)\.' theories/*.v run/*.v; then fail "Admitted"; fi
-if grep -nE '\b(Proof|Qed|Defined|Admitted)\.' theories/Audit.v; then
-  fail "theories/Audit.v contains a proof; put lemmas in theories/AuditFacts.v and write definitions as terms"
+if grep -nE '\b(Proof|Qed|Defined|Admitted)\.' theories/Audit.v theories/AuditBase.v; then
+  fail "trusted definitions contain a proof; use AuditFacts.v or BaseFacts.v for lemmas"
 fi
 if sed '/^[[:space:]]*Module Type /,/^[[:space:]]*End /d' theories/*.v | grep -E '^\s*(Parameter|Axiom)\b'; then
   fail "a Parameter or Axiom outside a module type"

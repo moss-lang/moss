@@ -12,6 +12,7 @@
    The forward direction files u's item under the key of an item of h0
    with method m, which is then h0's item (Platform.MethodsDistinct). *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicFormation PublicFamilyAgree PublicTypeFacts.
 From NM Require Import AuditFacts.

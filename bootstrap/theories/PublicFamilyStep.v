@@ -21,6 +21,7 @@
    receiver in C0's scope. `family_step_ok` is then FamilyStepOk, with no
    premise beyond the application obligations. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.

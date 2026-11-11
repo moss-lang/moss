@@ -3,6 +3,7 @@
    assumptions are transitively everything the guarantee rests on, and
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
+From NM Require Import BaseFacts.
 From NM Require Parse EaCtx EaMain EaWorldSound MossX.
 
 From NM Require AuditExamples AuditBuildExample
@@ -19,10 +20,10 @@ From NM Require AuditExamples AuditBuildExample
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
   PublicMergeClass PublicMerge PublicMergePresent PublicMergeOps EagerCopy ElabWorld ElabWorldExample ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
 
-Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
+Module PublicPublic := AuditBase.Public AuditExamples.Host.
 (* Check the Base specialization by reduction, using the given public
    instance rather than instantiating another interpreter. *)
-Module BasePublicEquations (Host : Audit.HOST) (M : PublicValueTyping.PUBLIC Host).
+Module BasePublicEquations (Host : AuditBase.HOST) (M : BaseFacts.PUBLIC Host).
 Import Audit.Semantics.
 Lemma linked_exact : forall W P, M.Link.Linked W P = Platform.Linked W P.
 Proof. reflexivity. Qed.
@@ -474,7 +475,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BasePublicBoundary.ready_exact);
   root (@BasePublicBoundary.laws_exact);
   root (@BasePublicBoundary.call_exact);
-  root (@NM.AuditFacts.platform_linked_fields);
+  root (@NM.BaseFacts.platform_linked_fields);
   root (@PublicEntryTop.PS.primitive_safe);
   root (@PublicEntryTop.PS.state_ok_initial);
   root (@NM.PublicTypeRead.tyof_abs);

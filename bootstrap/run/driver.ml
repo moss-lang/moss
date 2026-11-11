@@ -161,7 +161,7 @@ let () =
       let t = now () in let p = pass p in time "%s in %.3fs" name (now () -. t); p) p passes in
   (* Resolve each required operation in the shared decoder cache before
      entering the interpreter. *)
-  List.iter (fun operation -> ignore (A.WasmOps.decode operation)) (A.required_primitives p);
+  List.iter (fun operation -> ignore (AuditBase.WasmOps.decode operation)) (A.required_primitives p);
   let argv0 = match !argv0 with Some a -> a | None -> Filename.remove_extension (Filename.basename file) ^ ".wasm" in
   let argv = List.map bytes_of_string (argv0 :: args) in
   let read name = Option.map bytes_of_string (read_file (string_of_bytes name)) in

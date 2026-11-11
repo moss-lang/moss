@@ -4,6 +4,7 @@
    guard reads a complete argument, and an enabled guard makes the payload
    a handle type. Unit declarations have no cast entry. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
   PublicCastTyping PublicBoolTyping PublicBodySafety.
 Import Audit.Input Audit.Semantics ListNotations.

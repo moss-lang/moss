@@ -1,5 +1,6 @@
 (* The supported Base operations have canonical names and symbol operands. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require Import AuditBase.
 From NM Require Import Audit.
 Import Audit.Semantics ListNotations.
 

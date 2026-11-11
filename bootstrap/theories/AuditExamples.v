@@ -1,6 +1,7 @@
 (* Executable and negative checks of the public model. No model
    equivalence is assumed. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require Import AuditBase.
 From NM Require Import Audit.
 Import Audit.Semantics.
 Import ListNotations Input Elaboration.

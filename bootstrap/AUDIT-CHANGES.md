@@ -144,6 +144,7 @@ entry they belong to.
 | 110 | Integrate named operations with the checked host laws and site-erasure proofs | sep S3 integration | representation change |
 | 111 | Static linking consumes Tables, Provides, and EntryABI | sep S5a | none (equivalent regrouping) |
 | 112 | Public contracts consume one platform at build and run time | sep S5b | none for the Base specialization |
+| 113 | Separate concrete Base definitions into AuditBase.v | sep S5c | none (relocation) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3557,6 +3558,21 @@ using one fresh atom per abstract class must preserve that behaviour
   the statement's platform interface. Generic safety and a physical
   `AuditBase.v` split remain separate work.
 - **Class.** Definitional factoring for the Base specialization.
+
+### 113. Separate concrete Base definitions into AuditBase.v (S5c)
+
+- **Rule.** `Audit.v` remains self-contained for the generic language,
+  interpreter, elaboration, platform contract and five public obligations.
+  `AuditBase.v` imports it and owns the existing Wasm codec/signatures,
+  entry/tables, heap, call adapter, laws and Base `HOST`/`Public` aliases.
+- **Fidelity.** This relocates definitions without changing their bodies.
+  Keep the exact Base specialization and safety/engine/pass certificates.
+  Extraction and native callers follow the new namespace, preserving the
+  fast host callback, typed decoder memo and scalar/literal extraction.
+- **Boundary.** Both trusted definition files are checked proof-free.
+  Base proof facts are in `BaseFacts.v`; generic proof helpers stay in
+  `AuditFacts.v`. The safety proof still certifies the concrete Base instance.
+- **Class.** File and namespace relocation; no acceptance or runtime change.
 
 ---
 

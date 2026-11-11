@@ -2,6 +2,7 @@
    The normalization below is proof-side. It exposes exactly the fields
    that FastPath may erase while retaining type meanings and source aliases. *)
 From Stdlib Require Import List Lia.
+From NM Require Import BaseFacts.
 From NM Require Import Audit AuditFacts PublicValueTyping.
 Import ListNotations Audit.Semantics.
 

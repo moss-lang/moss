@@ -5,6 +5,7 @@
    compatible interface never reaches a Stuck entry signal, is stated here
    as entry_never_stuck and passed as an explicit premise. *)
 From Stdlib Require Import List.
+From NM Require Import BaseFacts.
 From NM Require Import Audit PublicValueTyping.
 Import Audit.Semantics ListNotations.
 

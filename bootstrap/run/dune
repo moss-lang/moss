@@ -7,7 +7,7 @@
 (rocq.extraction
  (prelude Extract)
  (extracted_modules
-  Ascii Audit ProgramCapTrim InterpreterCompiled InterpreterFast ProgramFastPath InterpreterLazy ProgramPrune BinInt BinNat BinNums
+  Ascii Audit AuditBase ProgramCapTrim InterpreterCompiled InterpreterFast ProgramFastPath InterpreterLazy ProgramPrune BinInt BinNat BinNums
   LoadWorld LoadListed BinPos Bool0 Byte Byte0 Datatypes Decimal SourceNames EaBase
   EaBind EaBudget EaCall EaCtx EaDecide EaDepth EaExpand EaExpr EaFamily EaFunctor EaMain
   EaPlatform EaTypes ElabWorld ExecutionModel
