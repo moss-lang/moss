@@ -5,7 +5,7 @@
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
 From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
-From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming.
+From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenaming.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -603,7 +603,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BaseRenaming.rename_unsupported_operation);
   root (@BaseRenaming.linked_entry_operation_fixed);
   root (@BaseRenaming.linked_family_operations_fixed);
-  root (@BaseRenaming.base_call_equivariant)].
+  root (@BaseRenaming.base_call_equivariant);
+  root (@BaseHostRenaming.raw_gc_renamed)].
 
 Print Assumptions certificate_roots.
 
