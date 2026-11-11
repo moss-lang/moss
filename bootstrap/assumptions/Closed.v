@@ -106,3 +106,12 @@ Print Assumptions NM.EaOutputSound.provide_result_sound.
 Print Assumptions NM.EaOutputSound.output_entries_sound_at_budget.
 Print Assumptions NM.EaOutputSound.provide_result_sound_at_budget.
 Print Assumptions NM.EaOutputSound.bundle_world_r_provide_result_sound.
+
+From NM Require EaFamilySound.
+Print Assumptions NM.EaFamilySound.family_result_sound.
+Print Assumptions NM.EaFamilySound.is_family_shape_sound.
+Print Assumptions NM.EaFamilySound.family_bracket_free_sound.
+Print Assumptions NM.EaFamilySound.family_bracket_free_complete.
+Print Assumptions NM.EaFamilySound.family_keyed_sound.
+Print Assumptions NM.EaFamilySound.is_family_sound.
+Print Assumptions NM.EaFamilySound.bundle_world_r_is_family_sound.

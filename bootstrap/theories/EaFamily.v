@@ -179,7 +179,9 @@ Fixpoint family_keyed (n : nat) (u : nat) (pl : list nat) (p : string) (sp : spe
       end
   end.
 
-(* SOUND: is_family u = true <-> Family W u *)
+(* EaFamilySound proves the successful classification implies Family at the
+   initialized metadata budget. Completeness also needs sufficient traversal
+   fuel for family_result/family_keyed and remains a separate obligation. *)
 Definition is_family (u : nat) : bool :=
   match w_decl W u with
   | Some d =>
