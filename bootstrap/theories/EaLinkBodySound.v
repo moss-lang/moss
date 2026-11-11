@@ -66,7 +66,7 @@ Proof.
     apply PublicTypeFacts.ty_eqb_spec in Equal. subst. exfalso. apply Distinct. reflexivity.
 Qed.
 
-Local Lemma bound_in_key : forall C t, bound_in C t = true <-> In t (map fst (c_ty C)).
+Lemma bound_in_key : forall C t, bound_in C t = true <-> In t (map fst (c_ty C)).
 Proof.
   intros C t. unfold bound_in. destruct (nlook t (c_ty C)) as [value|] eqn:Found.
   - split; [intros _|reflexivity]. apply PublicTypeRead.nlook_in in Found.
@@ -151,11 +151,11 @@ Proof.
   apply valid_link_pin_sound. exact (proj1 (forallb_forall _ _) Good y Generation).
 Qed.
 
-Local Lemma successful_link_lift : forall A (read : option A) message before value after,
+Lemma successful_link_lift : forall A (read : option A) message before value after,
   lift read message before = Ok (value, after) -> read = Some value /\ after = before.
 Proof. intros A [x|] message before value after Run; [now injection Run as <- <-|discriminate]. Qed.
 
-Local Lemma successful_link_check : forall (passed : bool) message before value after,
+Lemma successful_link_check : forall (passed : bool) message before value after,
   check passed message before = Ok (value, after) -> passed = true /\ after = before.
 Proof. intros [] message before value after Run; [now injection Run as _ <-|discriminate]. Qed.
 

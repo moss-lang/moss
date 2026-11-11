@@ -192,3 +192,58 @@ Proof.
   - exact Constants.
   - exact Decls.
 Qed.
+
+Lemma checked_functor_result_read : forall E bound u,
+  (forall n d, w_decl (e_W E) n = Some d -> n < bound) ->
+  EaMain.decls_form E bound = Ok tt -> kind_sym (e_W E) u = Some DKFunctor ->
+  exists C out C' keys, EaFamily.provide_result E u C out = Ok (C', keys).
+Proof.
+  intros E bound u Bounded Checks Kind. unfold kind_sym in Kind.
+  destruct (w_decl (e_W E) u) as [d|] eqn:Declared; [|discriminate].
+  destruct (d_ast d) as [| | | | | |receiver fn_name fn_params fn_result fn_body| |name parameters arguments results bodies]
+    eqn:Ast; try discriminate Kind.
+  1: destruct receiver; discriminate Kind.
+  assert (Present : In u (seq 0 bound)) by
+    (apply in_seq; pose proof (Bounded _ _ Declared); lia).
+  unfold EaMain.decls_form in Checks. apply EaTypesSound.rbind_ok in Checks as (checked & Checks & _).
+  destruct (EaDependencyFuel.rmap_member_read _ _ _ _ _ Checks _ Present) as (result & Read).
+  destruct (EaMain.decl_forms E bound u) as [formed|message] eqn:Formed; [|discriminate Read].
+  unfold EaMain.decl_forms in Formed. rewrite Declared, Ast in Formed.
+  apply EaTypesSound.rbind_ok in Formed as ([context needs] & _ & Formed).
+  apply EaTypesSound.rbind_ok in Formed as ([called keys] & Provide & _).
+  do 4 eexists. exact Provide.
+Qed.
+
+Local Lemma checked_result_leaves_exact : forall E bound u,
+  (forall n d, w_decl (e_W E) n = Some d -> n < bound) ->
+  EaMain.decls_form E bound = Ok tt -> kind_sym (e_W E) u = Some DKFunctor ->
+  forall key, In key (EaDecide.result_leaves (e_W E) (e_fuel E) u) <-> ResultLeaf (e_W E) u key.
+Proof.
+  intros E bound u Bounded Decls Kind key. split; [apply EaResultLeafSound.result_leaves_sound|].
+  destruct (checked_functor_result_read E bound u Bounded Decls Kind) as (C & out & C' & keys & Read).
+  eapply EaResultLeafSound.result_leaves_covered_after_read; exact Read.
+Qed.
+
+Local Lemma result_leaf_mem : forall key keys,
+  existsb (EaDecide.leaf_eqb key) keys = true <-> In key keys.
+Proof.
+  intros key keys. rewrite existsb_exists. split.
+  - intros [found [Member Read]]. apply EaResultLeafSound.leaf_eqb_spec in Read. now subst found.
+  - intro Member. exists key. split; [exact Member|apply EaResultLeafSound.leaf_eqb_spec; reflexivity].
+Qed.
+
+Theorem same_result_exact_at_declarations : forall E bound u gg,
+  (forall n d, w_decl (e_W E) n = Some d -> n < bound) ->
+  EaMain.decls_form E bound = Ok tt ->
+  kind_sym (e_W E) u = Some DKFunctor -> kind_sym (e_W E) gg = Some DKFunctor ->
+  EaDecide.same_result (e_W E) (e_fuel E) u gg = true <-> SameResult (e_W E) u gg.
+Proof.
+  intros E bound u gg Bounded Decls Target Provider.
+  pose proof (checked_result_leaves_exact E bound _ Bounded Decls Target) as Left.
+  pose proof (checked_result_leaves_exact E bound _ Bounded Decls Provider) as Right.
+  unfold EaDecide.same_result, SameResult. rewrite andb_true_iff, !forallb_forall.
+  setoid_rewrite result_leaf_mem. setoid_rewrite Left. setoid_rewrite Right.
+  split.
+  - intros [Forward Backward] key. split; [apply Forward|apply Backward].
+  - intros Same. split; intros key; apply Same.
+Qed.

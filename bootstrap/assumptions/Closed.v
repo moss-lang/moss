@@ -231,3 +231,7 @@ Print Assumptions NM.EaExpressionCodeEffects.expression_code_effects.
 Print Assumptions NM.EaExpressionCodeEffects.run_code_effect.
 Print Assumptions NM.EaAssemblyCodeEffects.assemble_preserves_code_bound.
 Print Assumptions NM.EaAssemblyCodeEffects.assembled_code_lookup_exact.
+
+From NM Require EaClosureSound EaDeclarationSound.
+Print Assumptions NM.EaClosureSound.fun_closure_sound.
+Print Assumptions NM.EaDeclarationSound.same_result_exact_at_declarations.

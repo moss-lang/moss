@@ -2,7 +2,7 @@
    family classifier. Its dependency tests use the separate metadata bound. *)
 From Stdlib Require Import List Bool Arith Lia.
 From NM Require Import Audit EaBase EaBudget EaTypes EaTypesSound EaFamily EaOutputSound.
-From NM Require EaFamilySound EaDependencyFuel EaMentionsSound EaResultBudget EaResultCoverage EaMain.
+From NM Require EaDeclarationSound EaFamilySound EaDependencyFuel EaMentionsSound EaResultBudget EaResultCoverage EaMain.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -166,15 +166,10 @@ Theorem decls_form_family_classifier : forall E bound,
   forall u, Family (e_W E) u -> is_family E u = true.
 Proof.
   intros E bound Bounded Budget Checks u FamilyFormed.
-  destruct FamilyFormed as ((d & n & ps & a & r & Declared & Ast & Shape & Names) & Keyed).
-  assert (Present : In u (seq 0 bound)) by
-    (apply in_seq; pose proof (Bounded _ _ Declared); lia).
-  unfold EaMain.decls_form in Checks. apply rbind_ok in Checks as (checked & Checks & _).
-  destruct (EaDependencyFuel.rmap_member_read _ _ _ _ _ Checks _ Present) as (result & Read).
-  destruct (EaMain.decl_forms E bound u) as [formed|message] eqn:Formed; [|discriminate Read].
-  unfold EaMain.decl_forms in Formed. rewrite Declared, Ast in Formed.
-  apply rbind_ok in Formed as ([context needs] & _ & Formed).
-  apply rbind_ok in Formed as ([called keys] & Provide & _).
-  eapply is_family_complete_after_read; [exact Bounded|exact Budget|exact Provide|].
-  split; [|exact Keyed]. exists d, n, ps, a, r. auto.
+  assert (Kind : kind_sym (e_W E) u = Some DKFunctor).
+  { destruct FamilyFormed as ((d & n & ps & a & r & Declared & Ast & _) & _).
+    unfold kind_sym. rewrite Declared, Ast. reflexivity. }
+  destruct (EaDeclarationSound.checked_functor_result_read E bound u Bounded Checks Kind)
+    as (C & out & C' & keys & Provide).
+  eapply is_family_complete_after_read; eassumption.
 Qed.
