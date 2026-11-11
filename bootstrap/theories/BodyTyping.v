@@ -1,8 +1,8 @@
-(* Separate typing and translation for local control and function calls.
-   Typing chooses a plan over source names; translation uses numbered locals
-   and encodes the checked context and demand choices. *)
+(* Separate expression and control-flow typing from translation.
+   Typing chooses a plan over source names. Translation uses the frame's
+   numbering and encodes the checked context and demand choices. *)
 From Stdlib Require Import List String Bool.
-From NM Require Import Audit.
+From NM Require Import Audit BodyLiteralTyping BodyMethodTyping.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -159,6 +159,16 @@ Inductive expression_plan : Type :=
 | PlanRecord (tag : nat) (arguments : subst) (fields : list (fld * expression_plan))
 | PlanField (object : expression_plan) (field : fld)
 | PlanMatch (scrutinee : expression_plan) (arms : list (pattern_plan * expression_plan))
+| PlanMethod (receiver : ty) (selected : method_call_plan) (object : expression_plan)
+    (args : list expression_plan)
+| PlanOperator (receiver : ty) (method : nat) (family : option family_use) (object : expression_plan)
+    (args : list expression_plan)
+| PlanNumeric (literal : literal_plan)
+| PlanGlobalValue (symbol : nat)
+(* A constant's initializer has its own numbering, recorded as a layout
+   witness so the bridge can reproduce the exact code at each occurrence. *)
+| PlanConstant (initializer_layout : frame) (initializer : expression_plan)
+| PlanBracketedCall (expansion : expression_plan)
 with block_plan : Type :=
 | PlanEmpty
 | PlanTail (result : expression_plan)
@@ -238,6 +248,48 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
 | TypesMatch : forall F C exp scrutinee arms plan st plans t,
     TypesExpr W F C scrutinee None plan st -> TypesArms W F C (canon C st) arms exp plans t ->
     TypesExpr W F C (AEMatch scrutinee arms) exp (PlanMatch plan plans) t
+| TypesMethod : forall F C exp object path args receiver object_type selected signature plans,
+    TypesExpr W F C object None receiver object_type ->
+    TypesMethodSelection W F C (canon C object_type) path selected signature ->
+    TypesArgs W F C args (sg_params signature) plans ->
+    TypesExpr W F C (AEMeth object path args) exp
+      (PlanMethod (canon C object_type) selected receiver plans) (sg_ret signature)
+| TypesUnary : forall F C exp op operand lib name method receiver object_type family signature plans,
+    operator_method op true = Some (lib, name) -> LangSym W lib NSDetached name method ->
+    TypesExpr W F C operand None receiver object_type -> head (canon C object_type) <> None ->
+    TypesMethodProvision W C (canon C object_type) method family signature ->
+    TypesArgs W F C [] (sg_params signature) plans ->
+    TypesExpr W F C (AEUnary op operand) exp
+      (PlanOperator (canon C object_type) method family receiver plans) (sg_ret signature)
+| TypesBinary : forall F C exp op left right lib name method receiver object_type family signature plans,
+    operator_method op false = Some (lib, name) -> LangSym W lib NSDetached name method ->
+    TypesExpr W F C left None receiver object_type -> head (canon C object_type) <> None ->
+    TypesMethodProvision W C (canon C object_type) method family signature ->
+    TypesArgs W F C [right] (sg_params signature) plans ->
+    TypesExpr W F C (AEBinary op left right) exp
+      (PlanOperator (canon C object_type) method family receiver plans) (sg_ret signature)
+| TypesNumeric : forall F C exp text plan t,
+    NumericText text -> TypesLiteral W C (literal_tree_of text) plan t ->
+    TypesExpr W F C (AELit text) exp (PlanNumeric plan) t
+| TypesGlobalValue : forall F C exp path symbol d name annotation t,
+    (forall n, path = [n] -> slook n (c_locals C) = None) ->
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADVal name annotation None -> nlook symbol (c_vals C) = Some t ->
+    TypesExpr W F C (AEPath path None) exp (PlanGlobalValue symbol) t
+| TypesConstant : forall F C exp path symbol d name annotation source t layout plan actual,
+    (forall n, path = [n] -> slook n (c_locals C) = None) ->
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADVal name annotation (Some source) -> d_assumes d = [] ->
+    TyOf W (d_mod d) [] None annotation t ->
+    TypesExpr W layout (Cx [] [] [] [] []) source (Some t) plan actual -> fits actual t ->
+    fr_mod layout = d_mod d -> fr_ret layout = None -> fr_this layout = None -> fr_loop layout = false ->
+    fr_fresh layout = [] -> fr_applying layout = [] -> fr_pins layout = [] -> Numbering layout None [] ->
+    TypesExpr W F C (AEPath path None) exp (PlanConstant layout plan) t
+| TypesBracketedCall : forall F C exp path brackets args f expansion t,
+    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
+    CallBrackets W (fr_mod F) f brackets ->
+    TypesExpr W F C (Audit.Syntax.call_block path brackets args) None expansion t ->
+    TypesExpr W F C (AECall path (Some brackets) args) exp (PlanBracketedCall expansion) t
 with TypesBlkE (W : world) : frame -> cx -> ablock -> option ty -> block_plan -> ty -> Prop :=
 | TypesBlkCheck : forall F C ss tl exp plan t made,
     TypesBlk W (without_pins F) C ss tl exp plan t made ->
@@ -351,6 +403,14 @@ Fixpoint translate_expr (F : frame) (C : cx) (plan : expression_plan) : expr :=
       EMatch (translate_expr F C scrutinee)
         (map (fun '(pattern, body) =>
           (translate_pattern F pattern, translate_expr F (pattern_scope C pattern) body)) arms)
+  | PlanMethod receiver selected object args =>
+      emit_method_call C receiver selected (translate_expr F C object) (map (translate_expr F C) args)
+  | PlanOperator receiver method family object args =>
+      emit_provided_method C receiver method family (translate_expr F C object) (map (translate_expr F C) args)
+  | PlanNumeric literal => emit_literal C literal
+  | PlanGlobalValue symbol => EVal symbol
+  | PlanConstant layout initializer => translate_expr layout (Cx [] [] [] [] []) initializer
+  | PlanBracketedCall expansion => translate_expr F C expansion
   end
 with translate_block (F : frame) (C : cx) (plan : block_plan) : expr :=
   match plan with
@@ -415,12 +475,14 @@ Theorem body_translation_agrees : forall W P,
 Proof.
   intros W P. apply body_typing_ind; cbn [translate_expr translate_block translate_record_fields translate_arms map]; intros;
     eauto 8 using ExUnit, ExThis, ExLocal, ExBlock, ExIfThen, ExIfElse, ExReturnUnit, ExReturn,
-    ExBreak, ExCallD, ExCallA, ExUnitTag, ExTag, ExRecord, ExField, ExMatch, BlkECheck, BlkTail,
+    ExBreak, ExCallD, ExCallA, ExUnitTag, ExTag, ExRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
+    ExLit, ExVal, ExCallBr, provided_method_translation, method_call_translation, literal_translation, BlkECheck, BlkTail,
     BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop, BlkLoopLast, ArgsNil,
     ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever, ArmsSome,
     ArmsOne, ArmsMore, pattern_translation.
-  constructor; [|assumption]. cbn [fst snd]. split; [reflexivity|].
-  exists n, syntax, actual. repeat split; assumption.
+  - eapply ExConst; try eassumption. exists layout, actual. repeat first [assumption | split].
+  - constructor; [|assumption]. cbn [fst snd]. split; [reflexivity|].
+    exists n, syntax, actual. repeat split; assumption.
 Qed.
 
 Definition HasExpressionPlan (W : world) (P : program) (F : frame) (C : cx) (source : aexpr) : Prop :=
@@ -595,6 +657,15 @@ Proof.
       TypesPatternRecord, field_pattern_renumber, renumbered_named.
 Qed.
 
+Local Lemma method_selection_renumber : forall W F C receiver path plan signature slots,
+  TypesMethodSelection W F C receiver path plan signature ->
+  TypesMethodSelection W (renumber_body_frame F slots) C receiver path plan signature.
+Proof.
+  intros W F C receiver path plan signature slots Typed. destruct Typed; cbn zeta in *;
+    eauto using TypesMethodQualified, TypesMethodProvisionWins, TypesMethodAttachedDefined,
+      TypesMethodAttachedAbstract, TypesMethodDetached.
+Qed.
+
 Theorem body_typing_renumber : forall W,
   (forall F C e expected plan t, TypesExpr W F C e expected plan t ->
     forall slots, SameLocalNames F slots -> TypesExpr W (renumber_body_frame F slots) C e expected plan t) /\
@@ -620,7 +691,8 @@ Proof.
   intros W. apply body_typing_ind; intros;
     eauto 9 using TypesUnit, TypesThis, TypesLocal, TypesBlock, TypesIfThen, TypesIfElse, TypesReturnUnit,
     TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesUnitTag, TypesTag, TypesRecord,
-    TypesField, TypesMatch, TypesBlkCheck, TypesTail, TypesEmpty, TypesLet, TypesAssign, TypesExprLast,
+    TypesField, TypesMatch, TypesMethod, TypesUnary, TypesBinary, TypesNumeric, TypesGlobalValue,
+    TypesConstant, TypesBracketedCall, method_selection_renumber, TypesBlkCheck, TypesTail, TypesEmpty, TypesLet, TypesAssign, TypesExprLast,
     TypesExprThen, TypesWhile, TypesLoop, TypesLoopLast, TypesArgsNil, TypesArgsCons, TypesBool,
     TypesBranchBlock, TypesBranchExpr, TypesRecordFieldsEmpty, TypesRecordFieldsCons, TypesArmsEmpty,
     TypesArmsSome, TypesArmOne, TypesArmMore, pattern_renumber, renumbered_named.
