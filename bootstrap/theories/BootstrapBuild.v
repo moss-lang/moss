@@ -1,10 +1,11 @@
 From Stdlib Require Import List String.
-From NM Require Audit AuditBase EaBase EaContextTableSound EaMain EaPlatform EaSatisfiesSound EaWorldSound
+From NM Require Audit AuditBase EaBase EaContextTableSound EaMain EaPlatform EaPlatformSound EaSatisfiesSound EaTypes EaTypesSound EaWorldSound
   SnapshotLoader Sx.
 From NM Require Import EaControlSound.
 
 Module L := Audit.Loader.
 Module E := Audit.Semantics.Elaboration.
+Module P := AuditBase.Platform.
 
 (* The first two stages of the driver build the same world as the audit
    semantics on the bundle loaded from source. *)
@@ -21,19 +22,27 @@ Qed.
 
 Import ListNotations Audit.Input Audit.Semantics E EaBase.
 
+Definition InstalledBool (W : world) (program : program) : Prop :=
+  (LangItem W LIBool (program_bool program) /\ LangItem W LITrue (program_true program) /\
+    LangItem W LIFalse (program_false program)) \/
+  ((forall symbol, ~ LangItem W LIBool symbol) /\
+    program_bool program = 0 /\ program_true program = 0 /\ program_false program = 0).
+
 (* Successful assembly selects the source entry and gives its environment
    to the result. The platform proof can use the successful environment
    calculation directly. *)
 Theorem assemble_entry : forall env bound entry before program after,
+  EaContextTableSound.ContextTableSound (e_W env) ->
   EaMain.assemble env bound entry before = Ok (program, after) ->
   w_scope (e_W env) entry NSName "main"%string = Some (ESym (program_main program)) /\
   (exists d n rt body, w_decl (e_W env) (program_main program) = Some d /\
     d_ast d = ADFn RPlain n [] rt (Some body)) /\
-  program_machines program = AuditBase.Platform.machine_table (e_W env) /\
-  exists start finish, EaPlatform.main_environment env (program_main program) start =
-    Ok (program_environment program, finish).
+  (exists start finish, EaPlatform.main_environment env (program_main program) start =
+    Ok (program_environment program, finish)) /\
+  P.Tables (e_W env) (program_machines program) (program_casts program) /\
+  P.EntryPoint (e_W env) program /\ LangItemsFormed (e_W env) /\ InstalledBool (e_W env) program.
 Proof.
-  intros env bound entry before program after Run.
+  intros env bound entry before program after Contexts Run.
   unfold EaMain.assemble in Run.
   apply mbind_ok in Run as (_ & after_functions & _ & Run).
   apply mbind_ok in Run as (_ & after_constants & _ & Run).
@@ -57,12 +66,40 @@ Proof.
     exists d, name, result, body. split; [reflexivity|exact Shape].
   }
   apply mbind_ok in Run as (environment & after_environment & Env & Run).
-  apply mbind_ok in Run as ([context needs] & after_context & _ & Run).
-  destruct (EaPlatform.bool_syms env) as [[boolean truth] falsity].
+  apply mbind_ok in Run as ([context needs] & after_context & Read & Run).
+  destruct (w_context (e_W env) symbol) as [[C ns]|] eqn:Context; [|discriminate Read].
+  injection Read as <- <- <-.
+  apply mbind_ok in Run as (signature & after_signature & Read & Run).
+  unfold pure in Read.
+  destruct (EaTypes.sig_of (e_W env) (e_fuel env) symbol (c_ty C) None)
+    as [sg|message] eqn:Signature; [|discriminate Read].
+  injection Read as <- <-.
+  apply mbind_ok in Run as (result_checked & after_result & Read & Run).
+  destruct (sg_params sg) as [|parameter params] eqn:Parameters; [|discriminate Read].
+  destruct (EaPlatform.entry_result env (e_fuel env) (sg_ret sg)) eqn:Result;
+    [|discriminate Read].
+  clear Read.
+  apply mbind_ok in Run as (layouts_checked & after_layouts & Read & Run).
+  destruct (EaPlatform.layouts env) as [[]|message] eqn:Layouts; [|discriminate Read].
+  clear Read.
+  apply mbind_ok in Run as (language_checked & after_language & Read & Run).
+  destruct (EaPlatform.lang_items_formed env) as [[]|message] eqn:Language; [|discriminate Read].
+  destruct (EaPlatform.bool_syms env) as [[boolean truth] falsity] eqn:Symbols.
   repeat apply mbind_ok in Run as (?value & ?state & ?step & Run).
   injection Run as <- _.
   split; [reflexivity|split; [exact Main|]].
-  split; [reflexivity|]. exists after_arity, after_environment. exact Env.
+  split; [exists after_arity, after_environment; exact Env|].
+  split; [now apply EaPlatformSound.tables_sound|].
+  pose proof (EaPlatformSound.lang_items_formed_sound _ Language) as LanguageFormed.
+  split; [|split; [exact LanguageFormed|]].
+  2: { eapply EaPlatformSound.bool_symbols_sound; [exact LanguageFormed|exact Symbols]. }
+  assert (KindMain : kind_sym (e_W env) symbol = Some DKFn).
+  { destruct Main as (d & n & rt & body & Declaration & Shape).
+    unfold kind_sym. rewrite Declaration, Shape. reflexivity. }
+  exists C, ns, sg. split.
+  - specialize (Contexts symbol C ns Context). now rewrite KindMain in Contexts.
+  - split; [eapply EaTypesSound.sig_of_sound; exact Signature|].
+    split; [exact Parameters|eapply EaPlatformSound.entry_result_sound; exact Result].
 Qed.
 
 Lemma platform_entries_keys : forall env C needs before entries after,
@@ -137,10 +174,23 @@ Proof.
   intros strategy bundle world program Run.
   pose proof (EaContextTableSound.elaborate_with_context_table_sound _ _ _ _ Run) as Contexts.
   destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & Assembled).
-  destruct (assemble_entry _ _ _ _ _ _ Assembled) as (Scope & Main & Machines & start & finish & EnvironmentRun).
+  destruct (assemble_entry _ _ _ _ _ _ Contexts Assembled)
+    as (Scope & Main & (start & finish & EnvironmentRun) & Tables & _).
   split; [exact Scope|split; [exact Main|]].
   assert (Kind : kind_sym (e_W env) (program_main program) = Some DKFn).
   { destruct Main as (d & n & rt & body & Declaration & Shape).
     unfold kind_sym. rewrite Declaration, Shape. reflexivity. }
-  rewrite Machines. eapply main_environment_typed; eassumption.
+  rewrite (proj1 (proj2 Tables)). eapply main_environment_typed; eassumption.
+Qed.
+
+Theorem elaborate_platform_sound : forall strategy bundle world program,
+  EaMain.elaborate_with strategy bundle = Ok (world, program) ->
+  P.Tables world (program_machines program) (program_casts program) /\
+  P.EntryPoint world program /\ LangItemsFormed world /\ InstalledBool world program.
+Proof.
+  intros strategy bundle world program Run.
+  pose proof (EaContextTableSound.elaborate_with_context_table_sound _ _ _ _ Run) as Contexts.
+  destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & Assembled).
+  destruct (assemble_entry _ _ _ _ _ _ Contexts Assembled) as (_ & _ & _ & Checked).
+  exact Checked.
 Qed.
