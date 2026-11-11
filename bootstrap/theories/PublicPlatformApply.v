@@ -28,7 +28,7 @@
    by item: family_items_agree) and PrimsGroundOk (the primitives callable
    wherever the fixed machine inputs read as the machine types). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
-From NM Require Import AuditBase.
+From NM Require Import AuditBase PublicPrimitiveFamily.
 From NM Require PublicContextFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
@@ -111,7 +111,7 @@ Module FS := PublicFamilyStep.FamilyStep Prims I0.
 
 (* ---- the family's code runs its installs ------------------------------------- *)
 
-Definition IsPrim (b : binding) : Prop := exists k op, b = BPrimitive k op.
+Definition IsPrim := PublicPrimitiveFamily.IsPrim.
 
 Fixpoint installs (d : environment) (bs : list binding) : environment :=
   match bs with
@@ -240,6 +240,23 @@ Lemma family_data : forall u code, Platform.Family W Prog u code ->
   exists inputs needs outputs keys bindings, FamilyData u code inputs needs outputs keys bindings.
 Proof. intros u code (i & n & o & k & b & D). exists i, n, o, k, b. exact D. Qed.
 
+Lemma family_data_primitives : forall u code inputs needs outputs keys bindings,
+  FamilyData u code inputs needs outputs keys bindings -> Forall IsPrim bindings.
+Proof.
+  intros u code inputs needs outputs keys bindings (_ & _ & _ & _ & Rows & _).
+  induction Rows as [|key binding keys' tail [operation [-> _]] _ IH]; constructor;
+    [do 2 eexists; reflexivity|exact IH].
+Qed.
+Lemma family_primitive_code : forall u code,
+  Platform.Family W Prog u code -> PrimitiveFamilyCode Prog code.
+Proof.
+  intros u code Family.
+  destruct (family_data u code Family) as (inputs & needs & outputs & keys & bindings & Data).
+  pose proof Data as (_ & _ & _ & Body & _).
+  eexists. split; [exact Body|]. cbn [fc_bindings].
+  exact (family_data_primitives _ _ _ _ _ _ _ Data).
+Qed.
+
 (* The environment a family's code runs in. *)
 Definition app_env (d : environment) (code : usym) (th : subst) (d1 : environment) : environment :=
   application_environment P d code th (append_environment d1 (EnvironmentWithAliases [] [] [])).
@@ -309,68 +326,11 @@ Definition PlatformNotLinked : Prop :=
   forall h0 code u gg pins fc, Platform.Family W Prog h0 code -> A.LinkBody W Prog u gg code pins ->
   A.funbody_of Prog code = Some fc -> fc_bindings fc = [].
 
-(* ---- no source item binds a primitive ---------------------------------------- *)
-
-(* The run of binds an expression starts with binds no primitive. *)
-Fixpoint NoPrim (e : expr) : Prop :=
-  match e with
-  | EBind b r => match b with BPrimitive _ _ => False | _ => True end /\ NoPrim r
-  | _ => True
-  end.
-
-Lemma lambda_np : forall F C ps rt body sg this pid pre sm,
-  A.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, NoPrim x -> NoPrim (pre x).
-Proof.
-  intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x Nx. cbv beta.
-  match goal with |- NoPrim (fold_right _ x ?l) => generalize l end.
-  intros l. induction l as [|q l IH]; [exact Nx|].
-  cbn [fold_right]. split; [exact Logic.I|exact IH].
-Qed.
-
-Lemma meth_np : forall F C y sg rt target types pre sm,
-  A.MethProvider W Prog F C y sg rt target types pre sm -> forall x, NoPrim x -> NoPrim (pre x).
-Proof.
-  intros F C y sg rt target types pre sm MP. destruct MP; intros x Nx; try exact Nx.
-  match goal with LP : A.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ => exact (lambda_np _ _ _ _ _ _ _ _ _ _ LP x Nx) end.
-Qed.
-
-Fixpoint item_np F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
-  forall x, NoPrim x -> NoPrim (w x)
-with items_np F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
-  forall x, NoPrim x -> NoPrim (w x).
-Proof.
-  - destruct D; intros x0 Nx.
-    all: try (cbn; split; [exact Logic.I|exact Nx]).
-    all: first
-      [ match goal with LP : A.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
-          apply (lambda_np _ _ _ _ _ _ _ _ _ _ LP); cbn; split; [exact Logic.I|exact Nx] end
-      | match goal with MP : A.MethProvider _ _ _ _ _ _ _ _ _ _ _ |- _ =>
-          apply (meth_np _ _ _ _ _ _ _ _ _ MP); cbn; split; [exact Logic.I|exact Nx] end
-      | match goal with Di : A.BindItems _ _ _ _ _ _ _ _ _ |- _ => exact (items_np _ _ _ _ _ _ _ Di x0 Nx) end ].
-  - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 D2]; intros x0 Nx; [exact Nx|].
-    exact (item_np _ _ _ _ _ _ _ D1 _ (items_np _ _ _ _ _ _ _ D2 x0 Nx)).
-Qed.
-
-Lemma bindsof_np : forall e l, A.BindsOf e l -> NoPrim e -> forall k op, ~ In (BPrimitive k op) l.
-Proof.
-  intros e l B. induction B as [|b body rest B IH]; intros N k op I; [exact I|].
-  destruct N as [Nb Nr]. destruct I as [->|I]; [exact Nb|exact (IH Nr k op I)].
-Qed.
-
-(* A platform family's code is no linked body's, unless it binds nothing:
-   a linked body's binds come from source items, none a primitive. *)
+(* The concrete family contract supplies the generic code shape. *)
 Lemma platform_not_linked : PlatformNotLinked.
 Proof.
-  intros h0 code u gg pins fc Fam LB FB.
-  destruct (family_data h0 code Fam) as (Ch0 & needs & outputs & keys & bindings & (_ & _ & _ & FBf & Binds & _)).
-  rewrite FBf in FB. injection FB as <-. cbn [fc_bindings].
-  destruct LB. match goal with
-    | Bo : A.BindsOf (?w EUnit) ?b0, Bi : A.BindItems _ _ _ _ _ ?w _ _ _, Fh : A.funbody_of _ _ = Some _ |- _ =>
-        rewrite FBf in Fh; injection Fh as _ _ _ _ Eb _; subst b0;
-        pose proof (bindsof_np _ _ Bo (items_np _ _ _ _ _ _ _ Bi EUnit Logic.I)) as Np end.
-  destruct bindings as [|b rest]; [reflexivity|exfalso].
-  inversion Binds as [|key b' keys' rest' [op [Eb _]] _]; subst.
-  exact (Np _ op (or_introl eq_refl)).
+  intros h0 code u gg pins fc Family Linked View.
+  eapply primitive_code_not_linked; [apply (family_primitive_code h0 code Family)|exact Linked|exact View].
 Qed.
 
 Lemma forall2_in_l : forall X Y (R : X -> Y -> Prop) l l' x, Forall2 R l l' -> In x l -> exists y, In y l' /\ R x y.
@@ -535,8 +495,7 @@ Proof.
   change (application_environment (program_of Prog argv read) d code th
     (append_environment d2 FS.CopyA.empty_env)) with (app_env d code th d2).
   set (de := app_env d code th d2).
-  assert (AllPrim : Forall IsPrim bindings).
-  { clear -Binds. induction Binds as [|key b keys' bs' [op [-> _]] _ IH]; constructor; [do 2 eexists; reflexivity|exact IH]. }
+  pose proof (family_data_primitives _ _ _ _ _ _ _ FD) as AllPrim.
   destruct (installs_run (program_of Prog argv read) j1 bindings de [] st AllPrim) as [Run|Run]; rewrite Run.
   2: { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   set (Dr := map (A.rkey_of outputs) keys) in *.
@@ -938,8 +897,7 @@ Proof.
     rewrite (FS.CopyA.S.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (E1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
     injection E1 as E1. rewrite <- Ag, CanonEq, (Abs was), <- E1. exact (eq_sym Gx). }
-  assert (AllPrim : Forall IsPrim bindings).
-  { clear -Binds. induction Binds as [|key b keys' bs' [op [-> _]] _ IH]; constructor; [do 2 eexists; reflexivity|exact IH]. }
+  pose proof (family_data_primitives _ _ _ _ _ _ _ FD) as AllPrim.
   destruct (installs_run (program_of Prog argv read) j1 bindings de [] st AllPrim) as [Run|Run]; rewrite Run.
   2: { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   assert (KeysM : forall key, In key keys -> exists r m a op, key = IMth r m a /\
