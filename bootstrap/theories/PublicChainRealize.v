@@ -842,14 +842,20 @@ Proof.
   destruct World as [bw Wo].
   pose proof (PublicFormation.units_bare_of W bw Wo) as UB.
   pose proof (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg) as FormG.
-  destruct (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf) as [_ [BackB [PvB SubB]]].
+  pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf) as ScopeB.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W gg Cg nsg FCg)) as SectionG.
+  pose proof (step_scope_section _ _ _ ScopeB SectionG) as SectionB.
+  destruct ScopeB as [_ [BackB [PvB [_ MergeB]]]].
   destruct (functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg [_ [_ [_ SubG]]]]]].
   assert (SubDom : forall y v, lookup_subst y (A.c_sub Cg) = Some v -> In y DG /\ incl (A.gens v) DG)
     by (intros y v L; exact (SubG y v (lookup_subst_in_pair _ _ _ L))).
-  assert (SubNone : forall y, ~ In y DG -> lookup_subst y (A.c_sub Cb) = None).
-  { intros y Ny. rewrite SubB. destruct (lookup_subst y (A.c_sub Cg)) as [v|] eqn:L; [exfalso; exact (Ny (proj1 (SubDom y v L)))|reflexivity]. }
-  assert (Back : forall t y, In y (A.gens (app_subst (A.c_sub Cb) t)) -> In y (A.gens t) \/ In y DG).
-  { intros t y Iy. rewrite SubB in Iy. destruct (gens_subst t _ y Iy) as [z [Iz [[_ ->]|[v [L Iv]]]]]; [left; exact Iz|right; exact (proj2 (SubDom z v L) y Iv)]. }
+  assert (GensOut : forall t y, ~ In y DG ->
+    (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
+  { apply (sections_gens_out Cg Cb DG SectionG SectionB MergeB).
+    intros row_sym row_ty InRow. exact (SubG row_sym row_ty InRow). }
+  assert (SigGensOut : forall sg y, ~ In y DG ->
+    (In y (A.sig_gens (A.sig_subst (A.c_sub Cb) sg)) <-> In y (A.sig_gens sg)))
+    by exact (section_sig_gens_out Cb DG GensOut).
   assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG).
   { intros y Iy. unfold PublicFormation.scope_gens in Iy. apply in_app_or in Iy as [Iy|Iy].
     - apply in_flat_map in Iy as [[g' v] [Iq Iy]]. cbn [fst snd] in Iy. destruct Iy as [E|Iy].
@@ -896,8 +902,8 @@ Proof.
     1-3: destruct act as [ta aa|ga aa|ga aa|fxa]; cbn in Kind; try contradiction; cbn [A.provision_signature option_map] in Sig;
       pose proof (f_equal (fun o => match o with Some g0 => g0 | None => A.FSig [] TUnit end) Sig) as Sg; cbv beta iota in Sg; change (A.c_sub Ls) with (A.c_sub Cb) in Sg; fold rr in Sg;
       unfold rel_gens, PublicCallRealize.provision_sig_gens in Iy |- *; cbn [A.provision_signature] in Iy |- *;
-      pose proof (sig_keep _ _ y (sig_keep _ _ y Iy (RrNone y Iy0 Np)) (SubNone y Ny)) as Ik2; rewrite Sg in Ik2;
-      destruct (CSg.FL.sig_subst_gens _ _ _ Ik2) as [t' [It' Iy']]; destruct (Back t' y Iy') as [Iy''|D']; [|exfalso; exact (Ny D')];
+      pose proof (proj2 (SigGensOut _ y Ny) (sig_keep _ _ y Iy (RrNone y Iy0 Np))) as Ik2; rewrite Sg in Ik2;
+      destruct (CSg.FL.sig_subst_gens _ _ _ Ik2) as [t' [It' Iy']]; pose proof (proj1 (GensOut t' y Ny) Iy') as Iy'';
       unfold A.sig_gens; apply in_flat_map; exists t'; split; assumption.
     destruct act as [| | |fxa]; cbn in Kind; try contradiction.
     unfold rel_gens in Iy |- *. apply in_flat_map in Iy as [[x tx] [Ixt Iy]]. cbn [snd] in Iy.
@@ -905,14 +911,14 @@ Proof.
       (A.provision_inst (A.provision_subst (A.c_sub Cb) (A.provision_subst rr (A.ProvidedFunctor fx))))).
     { cbn. rewrite !map_map. apply in_map_iff. exists (x, tx). split; [reflexivity|exact Ixt]. }
     pose proof (Inst _ _ Ip) as Ia. cbn in Ia. rewrite map_map in Ia. apply in_map_iff in Ia as [[x' ta] [E Ita]].
-    injection E as -> E. change (A.c_sub Ls) with (A.c_sub Cb) in E. fold rr in E. pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy (RrNone y Iy0 Np)) (SubNone y Ny)) as Ik2.
-    rewrite <- E in Ik2. destruct (Back ta y Ik2) as [Iy''|D']; [|exfalso; exact (Ny D')].
+    injection E as -> E. change (A.c_sub Ls) with (A.c_sub Cb) in E. fold rr in E. pose proof (proj2 (GensOut _ y Ny) (PublicFormation.gens_keep _ _ y Iy (RrNone y Iy0 Np))) as Ik2.
+    unfold A.canon in Ik2. rewrite <- E in Ik2. pose proof (proj1 (GensOut ta y Ny) Ik2) as Iy''.
     apply in_flat_map. exists (x, ta). split; [exact Ita|exact Iy''].
   - intros r m a y -> Iy Iy0. destruct (in_dec Nat.eq_dec y DG) as [I'|Ny]; [left; exact I'|].
     destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
     apply (proj2 (InCb _ _ Iact y Ny Iy0)). cbn [A.at_site A.provision_id PublicCallRealize.key_gens].
     rewrite PublicScoping.map_pair_id. unfold A.canon. change (A.c_sub Ls) with (A.c_sub Cb).
-    apply (PublicFormation.gens_keep _ _ y); [|exact (SubNone y Ny)].
+    apply (proj2 (GensOut _ y Ny)).
     apply (PublicFormation.gens_keep _ _ y Iy).
     unfold Ls. rewrite (lookup_site_in Cg Cb pins outs gen y (d0_not_role y Iy0) Np), lookup_subst_nlook'.
     destruct (A.nlook y (A.c_ty Cg)) eqn:L; [|reflexivity]. exfalso. apply Ny. apply PublicFamilyAgree.nlook_dom. rewrite L. discriminate.

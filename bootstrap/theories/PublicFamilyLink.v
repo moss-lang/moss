@@ -202,13 +202,18 @@ Proof.
   pose proof (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg) as FormG.
   assert (FrG' : PublicFormation.FrameFormed W Fg).
   { split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W). }
-  destruct (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrG') as [_ [BackB [PvB SubB]]].
+  pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrG') as ScopeB.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W gg Cg nsg FCg)) as SectionG.
+  pose proof (step_scope_section _ _ _ ScopeB SectionG) as SectionB.
+  destruct ScopeB as [_ [BackB [PvB [_ MergeB]]]].
   rewrite Made in BackB.
   set (DG := map fst (A.c_ty Cg)) in *.
   assert (SubDom : forall y v, lookup_subst y (A.c_sub Cg) = Some v -> In y DG /\ incl (A.gens v) DG)
     by (intros y v L; exact (SubG y v (lookup_subst_in_pair _ _ _ L))).
-  assert (SubNone : forall y, ~ In y DG -> lookup_subst y (A.c_sub Cb) = None).
-  { intros y Ny. rewrite SubB. destruct (lookup_subst y (A.c_sub Cg)) as [v|] eqn:L; [exfalso; exact (Ny (proj1 (SubDom y v L)))|reflexivity]. }
+  assert (GensOut : forall t y, ~ In y DG ->
+    (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
+  { apply (sections_gens_out Cg Cb DG SectionG SectionB MergeB).
+    intros row_sym row_ty InRow. exact (SubG row_sym row_ty InRow). }
   assert (SigmaGens : forall t y, In y (A.gens (app_subst (A.c_sub Cg) t)) -> In y (A.gens t) \/ In y DG).
   { intros t y Iy. destruct (gens_subst t _ y Iy) as [z [Iz [[_ ->]|[v [L Iv]]]]]; [left; exact Iz|right; exact (proj2 (SubDom z v L) y Iv)]. }
   assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG).
@@ -250,12 +255,12 @@ Proof.
     destruct (in_dec Nat.eq_dec y (map fst pins)) as [Ip|Np]; [right; exact Ip|exfalso].
     assert (Nr : lookup_subst y pr0 = None) by (rewrite Err; exact (PublicLinkRun.lookup_pin_reads_none Cb pins y Np)).
     assert (I1 : In y (A.sig_gens (A.sig_subst (A.c_sub Cb) (A.sig_subst pr0 gf)))).
-    { pose proof (PublicFormation.gens_keep _ (A.c_sub Cb) y (PublicFormation.gens_keep t pr0 y Iy Nr) (SubNone y Ny)) as Ik.
+    { pose proof (proj2 (GensOut _ y Ny) (PublicFormation.gens_keep t pr0 y Iy Nr)) as Ik.
       unfold A.sig_gens, A.sig_subst. cbn.
       destruct It as [<-|It]; [apply in_or_app; left; exact Ik|apply in_or_app; right].
       apply in_flat_map. exists (app_subst (A.c_sub Cb) (app_subst pr0 t)). split; [apply in_map; apply in_map; exact It|exact Ik]. }
-    rewrite SigE in I1. destruct (sig_subst_gens _ _ _ I1) as [t' [It' Iy']]. rewrite SubB in Iy'.
-    destruct (SigmaGens _ _ Iy') as [Iy''|D']; [|exact (Ny D')].
+    rewrite SigE in I1. destruct (sig_subst_gens _ _ _ I1) as [t' [It' Iy']].
+    pose proof (proj1 (GensOut t' y Ny) Iy') as Iy''.
     apply (proj1 (InCb _ _ Iact y Ny)). unfold PublicCallRealize.provision_sig_gens. cbn [A.provision_signature].
     unfold A.sig_gens. apply in_flat_map. exists t'. split; [exact It'|exact Iy'']. }
   (* #73: the receiver is read at the pins, then at G's table *)
@@ -266,7 +271,7 @@ Proof.
     { rewrite PublicCopySubst.lookup_subst_cat, (PublicLinkRun.lookup_subst_out y pins Np), lookup_subst_nlook'.
       destruct (A.nlook y (A.c_ty Cg)) eqn:L; [|reflexivity].
       exfalso. apply Ny. apply PublicFamilyAgree.nlook_dom. rewrite L. discriminate. }
-    pose proof (PublicFormation.gens_keep _ _ y (PublicFormation.gens_keep _ _ y Iy Lc) (SubNone y Ny)) as Irb.
+    pose proof (proj2 (GensOut _ y Ny) (PublicFormation.gens_keep _ _ y Iy Lc)) as Irb.
     change (In y (A.gens (A.canon Cb (app_subst (pins ++ A.c_ty Cg) rf)))) in Irb. rewrite Erb in Irb.
     exact (proj2 (InCb _ _ Iact y Ny) Irb). }
   (* 7: the transfer *)
