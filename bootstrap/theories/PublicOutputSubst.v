@@ -66,16 +66,18 @@ Definition DomSame (tm1 tm2 : list (nat * ty)) : Prop :=
 Lemma domsame_nogap : forall tm1 tm2, DomSame tm1 tm2 -> ~ DomGap tm1 tm2.
 Proof. intros tm1 tm2 D [r N]. exact (N (D r)). Qed.
 
-Definition EntryRel (tm1 tm2 : list (nat * ty)) (e1 e2 : entry) : Prop :=
+Definition EntryRelUnder (gap : Prop) (e1 e2 : entry) : Prop :=
   match e1, e2 with
   | NTy t1, NTy t2 => t1 = t2
   | NVal v1 t1 a1, NVal v2 t2 a2 => v1 = v2 /\ TyRel t1 t2 /\ InstRel a1 a2
   | NFn f1 g1 a1, NFn f2 g2 a2 => f1 = f2 /\ SigRel g1 g2 /\ InstRel a1 a2
   | NMth r1 m1 g1 a1, NMth r2 m2 g2 a2 => m1 = m2 /\ InstRel a1 a2 /\
-      ((TyRel r1 r2 /\ SigRel g1 g2) \/ DomGap tm1 tm2)
+      ((TyRel r1 r2 /\ SigRel g1 g2) \/ gap)
   | NFun u1 fx1, NFun u2 fx2 => u1 = u2 /\ FxRel fx1 fx2
   | _, _ => False
   end.
+
+Definition EntryRel (tm1 tm2 : list (nat * ty)) := EntryRelUnder (DomGap tm1 tm2).
 
 Lemma select_det : forall X (P : X -> Prop) l a b, Select P l a -> Select P l b -> a = b.
 Proof.
@@ -146,28 +148,42 @@ Ltac flat := repeat match goal with
   | H : _ /\ _ |- _ => destruct H
   | H : exists _, _ |- _ => destruct H end.
 
-Theorem output_entries_rel :
+Definition ReceiverDomainGap (tm1 tm2 : list (nat * ty)) (gap : Prop) : Prop :=
+  forall r, kind_sym W r <> Some DKType ->
+    ~ (nlook r tm1 = None <-> nlook r tm2 = None) -> gap.
+
+Lemma recv_missing_kind : forall r tm t,
+  RecvTy W r tm t -> nlook r tm = None -> kind_sym W r <> Some DKType.
+Proof.
+  intros r tm t Read Missing Kind. unfold RecvTy in Read. rewrite Missing in Read.
+  unfold kind_sym in Kind. destruct (w_decl W r) as [d|] eqn:Declared; [|discriminate].
+  destruct (d_ast d) eqn:Ast; try discriminate.
+  - apply (proj1 Read). unfold kind_sym. now rewrite Declared, Ast.
+  - match type of Kind with kind_of (ADFn ?receiver _ _ _ _) = _ => destruct receiver; discriminate end.
+Qed.
+
+Theorem output_entries_rel_under : forall gap,
   (forall p ob1 tm1 sp es1 tm1', OutputItemEntries W p ob1 tm1 sp es1 tm1' ->
      forall ob2 tm2 es2 tm2', OutputItemEntries W p ob2 tm2 sp es2 tm2' ->
-     Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> Forall2 (EntryRel tm1 tm2) es1 es2) /\
+     Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> ReceiverDomainGap tm1 tm2 gap -> Forall2 (EntryRelUnder gap) es1 es2) /\
   (forall p ob1 tm1 sps es1 tm1', OutputItemsEntries W p ob1 tm1 sps es1 tm1' ->
      forall ob2 tm2 es2 tm2', OutputItemsEntries W p ob2 tm2 sps es2 tm2' ->
-     Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> Forall2 (EntryRel tm1 tm2) es1 es2).
+     Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> ReceiverDomainGap tm1 tm2 gap -> Forall2 (EntryRelUnder gap) es1 es2).
 Proof.
-  apply (PublicFormation.oies_mut W
+  intro gap. apply (PublicFormation.oies_mut W
     (fun p ob1 tm1 sp es1 tm1' _ => forall ob2 tm2 es2 tm2', OutputItemEntries W p ob2 tm2 sp es2 tm2' ->
-       Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> Forall2 (EntryRel tm1 tm2) es1 es2)
+       Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> ReceiverDomainGap tm1 tm2 gap -> Forall2 (EntryRelUnder gap) es1 es2)
     (fun p ob1 tm1 sps es1 tm1' _ => forall ob2 tm2 es2 tm2', OutputItemsEntries W p ob2 tm2 sps es2 tm2' ->
-       Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> Forall2 (EntryRel tm1 tm2) es1 es2)).
+       Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> ReceiverDomainGap tm1 tm2 gap -> Forall2 (EntryRelUnder gap) es1 es2)).
   - (* type *)
-    intros p ob tm pa a bs t R K B ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm pa a bs t R K B ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; try (flat; kmis).
     constructor; [|constructor]. cbn. congruence.
   - (* nothing *)
-    intros p ob tm pa a bs s k R K B Kd ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm pa a bs s k R K B Kd ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; first [apply Forall2_nil|flat; kmis].
   - (* val *)
-    intros p ob tm a pa s d n t ty0 bs ap R Dd Ast B T App ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm a pa s d n t ty0 bs ap R Dd Ast B T App ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' s); assert (s' = s) by congruence; subst s' end.
     match goal with H : w_decl W s = Some ?d' |- _ => assert_fails (constr_eq d' d); assert (d' = d) by congruence; subst d' end.
@@ -179,7 +195,7 @@ Proof.
     + match goal with H : TyOf W _ _ None t ?t2 |- _ => exact (tyof_rel W s1 s2 _ _ _ _ _ T _ _ _ H Ag2 (fun _ _ E _ => ltac:(discriminate E))) end.
     + match goal with H : AppOf W s _ ?a2 |- _ => exact (appof_rel _ _ _ _ _ App H Ag2) end.
   - (* fn *)
-    intros p ob tm a pa s g bs ap d rcv n ps rt R K Dd Ast B Sig App ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm a pa s g bs ap d rcv n ps rt R K Dd Ast B Sig App ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' s); assert (s' = s) by congruence; subst s' end.
     pose proof (agree_app s1 s2 _ _ _ _ Ob Ag) as Ag1.
@@ -189,7 +205,7 @@ Proof.
     + match goal with H : SigOf W s _ None ?g2 |- _ => exact (sig_rel W s1 s2 _ _ _ _ _ _ _ Sig H Ag2 (fun _ _ E _ => ltac:(discriminate E))) end.
     + match goal with H : AppOf W s _ ?a2 |- _ => exact (appof_rel _ _ _ _ _ App H Ag2) end.
   - (* functor *)
-    intros p ob tm a bs pa u d n ps args res fx R Dd Ast B Fx Rd ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm a bs pa u d n ps args res fx R Dd Ast B Fx Rd ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' u); assert (s' = u) by congruence; subst s' end.
     pose proof (agree_app s1 s2 _ _ _ _ Ob Ag) as Ag1.
@@ -200,14 +216,13 @@ Proof.
     match goal with H : FixedReadings W u _ ?fx2 |- _ => destruct (proj1 (H x t2) I2) as [_ L2] end.
     exact (Ag2 x t1 t2 L1 L2).
   - (* method *)
-    intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sig App ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm a pa dn r m rt g bs ap R Mn B Rv Sig App ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' r); assert (s' = r) by congruence; subst s' end.
     pose proof (agree_app s1 s2 _ _ _ _ Ob Ag) as Ag1.
     match goal with H : OutputBrackets W p (ob2 ++ _) a ?bs2 |- _ => pose proof (obr_rel _ _ _ _ _ _ B H Ag1) as Bs end.
     pose proof (agree_app s1 s2 _ _ _ _ Bs Ag1) as Ag2.
     rename m into m1.
-    match goal with |- Forall2 (EntryRel _ ?T2) _ _ => set (tmB := T2) in * end.
     match goal with H : MethodNamed W p r dn ?m2 |- _ => rename m2 into mm end.
     assert (Em : mm = m1).
     { match goal with H : MethodNamed W p r dn mm |- _ => destruct Mn as [A1|[N1 S1]]; destruct H as [A2|[N2 S2]] end.
@@ -218,20 +233,28 @@ Proof.
     subst mm.
     constructor; [|constructor]. cbn. split; [reflexivity|]. split.
     + match goal with H : AppOf W m1 _ ?a2 |- _ => exact (appof_rel _ _ _ _ _ App H Ag2) end.
-    + assert (Dec : (nlook r tm = None <-> nlook r tmB = None) \/ DomGap tm tmB).
-      { destruct (nlook r tm) eqn:K1; destruct (nlook r tmB) eqn:K2.
+    + match type of Gap with ReceiverDomainGap tm ?T2 gap => set (tmB := T2) in * end.
+      match goal with H : RecvTy W r (?bs' ++ ob2 ++ tmB) _ |- _ =>
+          rename H into Other; try rename bs' into bs2 end.
+      assert (Dec : (nlook r (bs ++ ob ++ tm) = None <->
+          nlook r (bs2 ++ ob2 ++ tmB) = None) \/ gap).
+      { destruct (nlook r (bs ++ ob ++ tm)) eqn:First;
+          destruct (nlook r (bs2 ++ ob2 ++ tmB)) eqn:Second.
         - left. split; discriminate.
-        - right. exists r. rewrite K1, K2. intros [_ D]. discriminate (D eq_refl).
-        - right. exists r. rewrite K1, K2. intros [D _]. discriminate (D eq_refl).
+        - right. apply (Gap r (recv_missing_kind _ _ _ Other Second)). intro Same.
+          pose proof (prefix_dom _ _ _ _ r Bs (prefix_dom _ _ _ _ r Ob Same)) as Both.
+          destruct Both as [_ Both]. specialize (Both Second). rewrite First in Both. discriminate.
+        - right. apply (Gap r (recv_missing_kind _ _ _ Rv First)). intro Same.
+          pose proof (prefix_dom _ _ _ _ r Bs (prefix_dom _ _ _ _ r Ob Same)) as Both.
+          destruct Both as [Both _]. specialize (Both First). rewrite Second in Both. discriminate.
         - left. split; reflexivity. }
-      destruct Dec as [D|G]; [left|right; exact G].
-      pose proof (prefix_dom _ _ _ _ r Bs (prefix_dom _ _ _ _ r Ob D)) as Df.
+      destruct Dec as [Df|G]; [left|right; exact G].
       match goal with H : RecvTy W r _ ?rt2 |- _ => pose proof (recv_rel _ _ _ _ _ Rv H Ag2 Df) as Rr end.
       split; [exact Rr|].
       match goal with H : SigOf W m1 _ (Some ?rt2) ?g2 |- _ =>
         exact (sig_rel W s1 s2 _ _ _ _ _ _ _ Sig H Ag2 (fun x1 x2 E1 E2 => ltac:(injection E1 as <-; injection E2 as <-; exact Rr))) end.
   - (* context *)
-    intros p ob tm a pa c d n its sps bs es tm' R Dd Ast Esps B Inner IH ob2 tm2 es2 tm2' D2 Ob Ag.
+    intros p ob tm a pa c d n its sps bs es tm' R Dd Ast Esps B Inner IH ob2 tm2 es2 tm2' D2 Ob Ag Gap.
     inversion D2; subst; try (flat; kmis).
     match goal with H : resolve_sym W p pa = Some ?s' |- _ => assert_fails (constr_eq s' c); assert (s' = c) by congruence; subst s' end.
     match goal with H : w_decl W c = Some ?d' |- _ => assert_fails (constr_eq d' d); assert (d' = d) by congruence; subst d' end.
@@ -239,17 +262,30 @@ Proof.
     apply map_CISpec_inj in Ei. subst.
     pose proof (agree_app s1 s2 _ _ _ _ Ob Ag) as Ag1.
     match goal with H : OutputBrackets W p (ob2 ++ _) a ?bs2 |- _ => pose proof (obr_rel _ _ _ _ _ _ B H Ag1) as Bs end.
-    match goal with H : OutputItemsEntries W _ (_ ++ ob2) _ _ ?es2 _ |- _ => exact (IH _ _ _ _ H (Forall2_app Bs Ob) Ag) end.
+    match goal with H : OutputItemsEntries W _ (_ ++ ob2) _ _ ?es2 _ |- _ => exact (IH _ _ _ _ H (Forall2_app Bs Ob) Ag Gap) end.
   - (* nil *)
-    intros p ob tm ob2 tm2 es2 tm2' D2 Ob Ag. inversion D2; subst. constructor.
+    intros p ob tm ob2 tm2 es2 tm2' D2 Ob Ag Gap. inversion D2; subst. constructor.
   - (* cons *)
-    intros p ob tm sp rest es1 tm1 es2 tm2 D1 IH1 Ds IHs ob2 tm2x es2x tm2x' D2 Ob Ag.
+    intros p ob tm sp rest es1 tm1 es2 tm2 D1 IH1 Ds IHs ob2 tm2x es2x tm2x' D2 Ob Ag Gap.
     inversion D2; subst.
     match goal with H1 : OutputItemEntries W p ob2 tm2x sp ?a ?b, H2 : OutputItemsEntries W p ob2 ?b rest ?c ?e |- _ =>
-      pose proof (IH1 _ _ _ _ H1 Ob Ag) as F1;
+      pose proof (IH1 _ _ _ _ H1 Ob Ag Gap) as F1;
       rewrite (proj1 (PublicFormation.output_entries_tm W) _ _ _ _ _ _ H1) in H2;
       rewrite (proj1 (PublicFormation.output_entries_tm W) _ _ _ _ _ _ D1) in IHs;
-      exact (Forall2_app F1 (IHs _ _ _ _ H2 Ob Ag)) end.
+      exact (Forall2_app F1 (IHs _ _ _ _ H2 Ob Ag Gap)) end.
+Qed.
+
+Theorem output_entries_rel :
+  (forall p ob1 tm1 sp es1 tm1', OutputItemEntries W p ob1 tm1 sp es1 tm1' ->
+     forall ob2 tm2 es2 tm2', OutputItemEntries W p ob2 tm2 sp es2 tm2' ->
+     Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> Forall2 (EntryRel tm1 tm2) es1 es2) /\
+  (forall p ob1 tm1 sps es1 tm1', OutputItemsEntries W p ob1 tm1 sps es1 tm1' ->
+     forall ob2 tm2 es2 tm2', OutputItemsEntries W p ob2 tm2 sps es2 tm2' ->
+     Forall2 Rel ob1 ob2 -> Agree tm1 tm2 -> Forall2 (EntryRel tm1 tm2) es1 es2).
+Proof.
+  split; intros; unfold EntryRel;
+    [eapply (proj1 (output_entries_rel_under _))|eapply (proj2 (output_entries_rel_under _))];
+    try eassumption; intros r _ Different; now exists r.
 Qed.
 
 (* The same, for two ProvideResult readings of one functor's result: in

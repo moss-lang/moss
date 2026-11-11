@@ -52,7 +52,8 @@ Proof.
       _ _ _ _ _ _ _ _ _ Arguments) as [Back Typed].
     split; [exact Back|]. intros Valid Post.
     destruct (Typed Valid Post) as [ValidAfter TypedArgs].
-    destruct (Families _ _ _ _ _ _ _ _ _ _ (CallerSection _ _ _ Valid) FamilyRun)
+    destruct (Families _ _ _ _ _ _ _ _ _ _
+      (CallerSection _ _ _ Valid) (CallerSection _ _ _ Valid) FamilyRun)
       as (formal & needs & App & Match & Present & Only & InForce & Map).
     split; [exact ValidAfter|].
     change (rk result_context t method) with (rkof result_context (mkey t method)).

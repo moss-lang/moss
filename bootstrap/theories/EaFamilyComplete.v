@@ -13,7 +13,7 @@ Section ResultDepth.
 Variable E : env.
 Let W := e_W E.
 
-Local Fixpoint ResultDepth (fuel : nat) (p : String.string) (syntax : spec) : Prop :=
+Fixpoint ResultDepth (fuel : nat) (p : String.string) (syntax : spec) : Prop :=
   match fuel with
   | 0 => False
   | S next =>
@@ -46,7 +46,7 @@ Proof.
   apply Forall_forall with (x := child) in Read; assumption.
 Qed.
 
-Local Lemma result_depth_from_reads : forall fuel,
+Lemma result_depth_from_reads : forall fuel,
   (forall stack p ob tm syntax es meanings,
     output_item_entries E fuel stack p ob tm syntax = Ok (es, meanings) ->
     ResultDepth fuel p syntax) /\

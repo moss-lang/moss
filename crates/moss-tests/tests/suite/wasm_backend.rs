@@ -672,6 +672,46 @@ fn family_demand_instantiates_its_method_prerequisites() {
 }
 
 #[test]
+fn merges_do_not_hide_a_second_family_producer() {
+    for equation in ["A = B", "B = A"] {
+        let declarations = format!(
+            r"type A;
+type B;
+tag R;
+assume A {{ fn .m(): A; }}
+functor F[A]: -> A.m;
+context Equated = A, B, {equation};
+"
+        );
+        let demand = source(&format!(
+            r"{declarations}
+functor H[B]: -> B.m[A=B];
+assume Equated, F, H {{
+  fn use_it(x: R) {{ let ignored = x.m(); }}
+}}
+fn main() {{}}
+"
+        ));
+        let error = oracle_rejects(&demand);
+        assert!(
+            error.contains("is produced by two families in force, `F` and `H` (D84 rule 7, D44)"),
+            "{equation}: {error}"
+        );
+
+        let bind = source(&format!(
+            r"{declarations}
+assume Equated, F {{
+  fn use_it() {{ bind R.m[A=R] = () => R; }}
+}}
+fn main() {{}}
+"
+        ));
+        let error = oracle_rejects(&bind);
+        assert!(error.contains("it cannot be bound directly (D84 rule 7)"), "{equation}: {error}");
+    }
+}
+
+#[test]
 fn family_demand_groups_inferred_substitutions() {
     agree("tests/wasi/family_same_full_theta.moss", &[], "");
 }

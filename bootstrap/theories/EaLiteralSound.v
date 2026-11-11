@@ -96,7 +96,7 @@ Proof.
     destruct (cmth result t m) as [signature|] eqn:Found; [|discriminate].
     destruct (fsig_eqb signature (FSig [t] t)) eqn:Fits; [|discriminate].
     apply EaMergeSound.fsig_eqb_spec in Fits. subst signature. injection Run as <-.
-    destruct (Families _ _ _ _ _ _ _ _ _ _ Sectioned Family)
+    destruct (Families _ _ _ _ _ _ _ _ _ _ Sectioned Sectioned Family)
       as (formal & needs & App & Match & Present & Only & InForce & Map).
     change (rk result t m) with (rkof result (mkey t m)).
     rewrite Map, (map_ext _ _ (EaSatisfiesSound.rkof_exact result)), EaSatisfiesSound.rkof_exact.

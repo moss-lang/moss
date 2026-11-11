@@ -359,6 +359,17 @@ Proof.
   destruct (Nat.eqb u f); [reflexivity|exact IH].
 Qed.
 
+Lemma cfun_lookup_in_keys : forall C u arguments,
+  nlook u (c_funs C) = Some arguments -> In u (cfun_keys C).
+Proof.
+  intros C u arguments Lookup. unfold c_funs in Lookup.
+  apply PublicTypeRead.nlook_in in Lookup.
+  apply in_flat_map in Lookup as [[key entry] [Present Found]].
+  unfold cfun_keys. apply in_flat_map. exists (key, entry). split; [exact Present|].
+  destruct key, entry; cbn in *; try contradiction.
+  destruct Found as [Equal|[]]. inversion Equal. now left.
+Qed.
+
 Lemma functx_subst_functional : forall W u C ns,
   FunCtx W u C ns ->
   forall g ty, In (g, ty) (c_sub C) -> lookup_subst g (c_sub C) = Some ty.

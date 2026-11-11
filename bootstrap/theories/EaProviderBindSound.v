@@ -2,21 +2,10 @@
    provider once its own translation has been checked. *)
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit EaBase EaBind EaTypes EaTypesSound EaFamily EaControlSound EaChecked EaRecSound.
-From NM Require PublicTypeRead.
+From NM Require EaSatisfiesSound PublicContextFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
-
-Lemma cfun_lookup_in_keys : forall C u arguments,
-  nlook u (c_funs C) = Some arguments -> In u (cfun_keys C).
-Proof.
-  intros C u arguments Lookup. unfold c_funs in Lookup.
-  apply PublicTypeRead.nlook_in in Lookup.
-  apply in_flat_map in Lookup as [[key entry] [Present Found]].
-  unfold cfun_keys. apply in_flat_map. exists (key, entry). split; [exact Present|].
-  destruct key, entry; cbn in *; try contradiction.
-  destruct Found as [Equal|[]]. inversion Equal. now left.
-Qed.
 
 Section ProviderBinds.
 Variables (E : env) (R : rec) (P : program).
@@ -36,7 +25,9 @@ Hypothesis method_scope : forall F C receiver method signature arguments state,
   valid F C state ->
   let C' := provide C (mkey receiver method) arguments (set_mth C receiver method signature) in
   valid F C' state /\ forall final, valid F C' final -> valid F C final.
+Hypothesis caller_section : forall F C state, valid F C state -> PublicContextFacts.CxSection C.
 Hypothesis method_producer_detected : forall C receiver method u,
+  PublicContextFacts.CxSection C ->
   FamilyProduces W C u (mkey receiver method) ->
   family_produces E C u (mkey receiver method) = true.
 
@@ -148,9 +139,9 @@ Proof.
     + exact ProviderTyped.
     + apply applications.
     + intros u Produces.
-      pose proof (method_producer_detected _ _ _ _ Produces) as Detected.
+      pose proof (method_producer_detected _ _ _ _ (caller_section _ _ _ Valid) Produces) as Detected.
       destruct Produces as [fixed [theta [C0 [keys [InForce _]]]]].
-      pose proof (cfun_lookup_in_keys _ _ _ InForce) as Present.
+      pose proof (EaSatisfiesSound.cfun_lookup_in_keys _ _ _ InForce) as Present.
       pose proof (find_none _ _ Families u Present) as Missing. congruence.
     + intros (rc & nm & ps & rt0 & body & Defined). fold W in Defined. rewrite Defined in Allowed. discriminate.
 Qed.

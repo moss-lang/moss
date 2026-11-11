@@ -124,6 +124,7 @@ Hypotheses
       (fun '(target, types, prefix, needs) _ =>
         MethProvider W P F C syntax signature receiver target types prefix needs))
   (method_producer_detected : forall C receiver method u,
+    PublicContextFacts.CxSection C ->
     FamilyProduces W C u (mkey receiver method) ->
     EaFamily.family_produces E C u (mkey receiver method) = true)
   (closure_provider : forall F C path u provider g,
@@ -158,9 +159,10 @@ Proof.
   destruct label as [method|].
   - destruct rhs as [syntax|]; [|intros before result after Run; discriminate].
     eapply EaProviderBindSound.method_bind_post_sound; try eassumption.
-    intros F' C' receiver symbol signature arguments state Valid.
-    apply valid_scope; [exact Valid|].
-    now apply body_context_provide, body_context_set_mth, (proj1 Valid).
+    + intros F' C' receiver symbol signature arguments state Valid.
+      apply valid_scope; [exact Valid|].
+      now apply body_context_provide, body_context_set_mth, (proj1 Valid).
+    + intros F' C' state [Context _]. exact (proj1 Context).
   - destruct brackets; [intros before result after Run; discriminate|].
     intros before result after Run. pose proof Run as Original.
     unfold bind_item in Run. fold W in Run.

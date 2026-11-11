@@ -160,6 +160,7 @@ entry they belong to.
 | 128 | Rank generated code at its recorded origin | expansion soundness | C |
 | 129 | Check raw handles and the common array-copy held type in executable platform linking | platform soundness | A for the executable |
 | 130 | Read an absent private atomic representative through a linked input | coherent linked inputs | C |
+| 131 | Find family producers after merges | executable family selection | B for the executable |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3914,6 +3915,45 @@ using one fresh atom per abstract class must preserve that behaviour
   method whose result has that class. Binding uses X as Bool and application
   supplies it as Char. The emitted body and provision map use the checked
   reading, and the program prints `7`.
+
+### 131. Find family producers after merges
+
+In both orders of the type equation, the reference accepted this call:
+
+```moss
+type A;
+type B;
+tag R;
+assume A { fn .m(): A; }
+functor F[A]: -> A.m;
+functor H[B]: -> B.m[A=B];
+context Equated = A, B, A = B;
+assume Equated, F, H {
+  fn use_it(x: R) { let ignored = x.m(); }
+}
+fn main() {}
+```
+
+Both F at A=R and H at B=R can produce R.m. A probe used the
+polymorphic input symbols as its temporary type generations. The caller's
+merge could then read one of those generations through the other symbol,
+hiding a producer. The new probe assigns each polymorphic input its own
+temporary generation outside the caller's type and merge tables. Both
+orders now report that F and H produce R.m.
+
+The same correction applies to direct binding. With only F in force,
+`assume Equated, F { fn use_it() { bind R.m[A=R] = () => R; } }`
+formerly elaborated in both orders. Both orders now report that F
+provides R.m and rule 7 forbids binding it directly.
+
+[The executable coverage proof](theories/EaFamilyProducerSound.v)
+relates a successful marked reading to the receiver in each
+`FamilyProduces` witness. If the marked result fails to form, the
+conservative fallback also resolves each written method occurrence in its
+own module. This covers detached method names imported under aliases.
+The proof supplies the coverage needed by `OnlyFamily` and `BMethBind`.
+[The executable regression](../crates/moss-tests/tests/suite/wasm_backend.rs)
+checks both diagnostics in both merge orders.
 
 ---
 

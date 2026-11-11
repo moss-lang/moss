@@ -3,16 +3,15 @@
 (* OutputItemEntries, ProvideResult, Family, FamilyProduces, OnlyFamily,   *)
 (* FamilyReadOff, TypesFamilyApplication, FamilyStep/Demand.                    *)
 (*                                                                           *)
-(* FamilyProduces quantifies over θ; it is decided by reading off: the     *)
-(* family's result is formed once with each P(F) symbol as itself, and a   *)
-(* key is produced iff some item with its method has a receiver that       *)
-(* matches the key's (structural matching, then the equation is checked).  *)
-(* This relies on the commutation of ProvideResult with substitution of    *)
-(* P(F) (design §8 risk 2; to be proved).                                  *)
+(* Producer search reads each polymorphic input as a fresh generation.
+   A successful reading of the family's result induces a substitution
+   from these temporary generations to the receiver it produces.
+   FamilyReadOff separately checks agreement of the family's matchings. *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaTypes EaCall EaDecide.
+From NM Require EaAssumptionAtoms.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -265,21 +264,70 @@ Definition formal_matches (C : cx) (u : nat) (ot : ty) (m : nat) : er (list subs
     | IMth rf m' _ => if Nat.eqb m m' then match read_off_one C marks rf ot with Some mt => [mt] | None => [] end else []
     | _ => [] end) fkeys).
 
-(* SOUND: FamilyProduces W C u (mkey ot m) -> family_produces C u (IMth ot m []) = true,
-   and conversely when the marked result forms (via the commutation lemma) *)
+(* A producer probe gives each polymorphic source input its own role.
+   The caller's merge section cannot absorb these roles. *)
+Definition producer_marker_support (C : cx) : list nat :=
+  flat_map (fun q => fst q :: gens (snd q)) (c_ty C ++ c_sub C).
+
+Definition producer_marker (C : cx) : nat -> nat :=
+  let floor := EaAssumptionAtoms.scope_floor metadata_fuel (producer_marker_support C) in
+  Nat.add floor.
+
+Definition producer_markings (C : cx) (marks : list nat) : subst :=
+  let marker := producer_marker C in
+  map (fun t => (t, TAbs (marker t))) marks.
+
+Definition probe_producer (C : cx) (u : nat) (ot : ty) (m : nat) : er bool :=
+  let marks := poly W metadata_fuel u in
+  let! (_, keys) := provide_result u (family_context C (producer_markings C marks)) (fun t => TAbs t) in
+  let markers := map (producer_marker C) marks in
+  Ok (existsb (fun key => match key with
+    | IMth rf method _ => Nat.eqb m method && is_some (read_off_one C markers rf ot)
+    | _ => false
+    end) keys).
+
+(* If the marked result fails to form, resolve its written method
+   occurrences in their own modules. A detached method can be imported
+   under a different name from the one in its declaration. *)
+Fixpoint result_has_method (depth : nat) (p : string) (m : nat) (sp : spec) : bool :=
+  match depth, sp with
+  | S next, Spec (Some pa) dn _ =>
+      match resolve_sym W p pa with
+      | Some receiver =>
+          match dn with
+          | Some name => match method_named W p receiver name with
+                         | Some method => Nat.eqb m method | None => false end
+          | None => match w_decl W receiver with
+                    | Some d => match d_ast d with
+                                | ADCtx _ items =>
+                                    existsb (result_has_method next (d_mod d) m) (flat_map citem_specs items)
+                                | _ => false end
+                    | None => false end
+          end
+      | None => false
+      end
+  | _, _ => false
+  end.
+
+Definition functor_has_result_method (u m : nat) : bool :=
+  match functor_decl W u with
+  | Some (d, (_, _, results, _)) => existsb (result_has_method fuel (d_mod d) m) results
+  | None => false
+  end.
+
+(* EaFamilyProducerSound proves coverage of FamilyProduces at method keys. *)
 Definition family_produces (C : cx) (u : nat) (k : item) : bool :=
   match k with
   | IMth ot m _ =>
       is_some (cfun C u) && is_family u &&
-      match formal_matches C u ot m with
-      | Ok (_ :: _) => true
-      | Ok [] => false
+      match probe_producer C u ot m with
+      | Ok matches => matches
       (* the marked result does not form (e.g. a union with a P(F) member
          reads only at some θ): conservatively, F may produce the key if
-         it has an item with a method of that name (sound for OnlyFamily
-         and BMethBind's negative premises; may reject) *)
-      | Err _ => existsb (fun l => match snd l with Some dn => String.eqb dn (sym_name W m) | None => false end)
-                         (result_leaves W fuel u)
+         it has a result item of that name or resolved method identity. *)
+      | Err _ =>
+          existsb (fun l => match snd l with Some dn => String.eqb dn (sym_name W m) | None => false end)
+                  (result_leaves W fuel u) || functor_has_result_method u m
       end
   | _ => false
   end.

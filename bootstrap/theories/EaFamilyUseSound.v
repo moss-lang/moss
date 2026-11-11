@@ -13,10 +13,14 @@ Definition FamilyMatchingSound (E : env) : Prop :=
     FamilyReadOff (e_W E) C u receiver method matching.
 
 Definition ProducersCover (E : env) : Prop :=
-  forall C u key, FamilyProduces (e_W E) C u key -> In u (producers E C key).
+  forall C u receiver method,
+    PublicContextFacts.CxSection C ->
+    FamilyProduces (e_W E) C u (mkey receiver method) ->
+    In u (producers E C (mkey receiver method)).
 
 Definition FamilyUseSound (E : env) : Prop :=
   forall C0 C receiver method u matching arguments sm result keys,
+    PublicContextFacts.CxSection C0 ->
     PublicContextFacts.CxSection C ->
     family_for E C0 C receiver method = Ok (u, matching, arguments, sm, result, keys) ->
     exists formal needs,
@@ -44,7 +48,7 @@ Theorem family_for_sound : forall E bound,
   FamilyMatchingSound E -> ProducersCover E -> FamilyUseSound E.
 Proof.
   intros E bound Bounded Enough Contexts Match Cover.
-  intros C0 C receiver method u matching arguments sm result keys Section Run.
+  intros C0 C receiver method u matching arguments sm result keys InitialSection Section Run.
   unfold family_for in Run.
   destruct (producers E C0 (mkey receiver method)) as [|chosen [|other rest]] eqn:Producers;
     try discriminate.
@@ -60,8 +64,9 @@ Proof.
   exists formal, needs. split; [exact Typed|].
   split; [eapply Match; eassumption|]. split; [now apply EaMergeSound.imem_spec|].
   split.
-  - intros u Different Produces. apply Cover in Produces.
-    rewrite Producers in Produces. destruct Produces as [Equal|[]]. congruence.
+  - intros u Different Produces.
+    pose proof (Cover _ _ _ _ InitialSection Produces) as Candidate.
+    rewrite Producers in Candidate. destruct Candidate as [Equal|[]]. congruence.
   - split; [now apply matching_in_force_sound|exact Map].
 Qed.
 
@@ -80,6 +85,7 @@ Qed.
 
 Theorem demand_go_sound : forall E,
   FamilyUseSound E -> forall rest C0 used wanted C wrapper called,
+  PublicContextFacts.CxSection C0 ->
   PublicContextFacts.CxSection C ->
   demand_go E C0 used wanted rest C = Ok (wrapper, called) ->
   exists steps, Demand (e_W E) C0 wanted used C steps called /\
@@ -87,7 +93,7 @@ Theorem demand_go_sound : forall E,
     forall body, wrapper body = translate_demands C steps body.
 Proof.
   intros E Families rest. induction rest as [|key rest IH];
-    intros C0 used wanted C wrapper called Section Run.
+    intros C0 used wanted C wrapper called InitialSection Section Run.
   - cbn [demand_go] in Run. inversion Run; subst wrapper called.
     exists []. split; [apply DemandDone|split; [exact Section|reflexivity]].
   - destruct key as [type|value|fn|receiver method inst|functor]; cbn [demand_go] in Run;
@@ -103,14 +109,14 @@ Proof.
     apply negb_true_iff in NotInitial.
     destruct (cmth C0 receiver method) as [signature|] eqn:Initial; [discriminate NotInitial|].
     apply rbind_ok in Run as ([ [[[[u matching] arguments] sm] result] keys ] & Family & Run).
-    destruct (Families _ _ _ _ _ _ _ _ _ _ Section Family)
+    destruct (Families _ _ _ _ _ _ _ _ _ _ InitialSection Section Family)
       as (formal & needs & App & Read & Provided & Only & InForce & Map).
     apply rbind_ok in Run as (fresh & Fresh & Run).
     destruct (existsb (fun q => Nat.eqb (fst q) u && subst_eqb (snd q) matching) used)
       eqn:Existing; [discriminate Fresh|].
     apply rbind_ok in Run as ([tail final] & Rest & Run).
     inversion Run; subst wrapper called.
-    destruct (IH _ _ _ _ _ _ (restored_family_section _ _ _ _ _ _ _ _ _ Section App) Rest)
+    destruct (IH _ _ _ _ _ _ InitialSection (restored_family_section _ _ _ _ _ _ _ _ _ Section App) Rest)
       as (steps & Tail & Final & Emit).
     exists (FamilyUse u matching arguments formal needs result keys :: steps).
     split.
