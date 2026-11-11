@@ -144,7 +144,7 @@ Theorem lambda_provider_sound : forall what F C ps annotation body sg this befor
   PublicContextFacts.CxSection C ->
   PublicCallRealize.KeysMatch (c_provisions C) ->
   bound <= es_next before -> CodeTablesBound before ->
-  (forall n, es_next before <= n -> read_origin before FunctionTable n = None) ->
+  LambdaOriginsBound before ->
   (forall v, In v (value_provision_keys (c_provisions C)) -> v < es_next before) ->
   TypedLinkCache W P before ->
   GeneratedPost bound final after ->

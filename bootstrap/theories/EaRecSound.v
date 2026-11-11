@@ -39,7 +39,7 @@ Theorem code_transition_preserves_post : forall source_bound before after final,
   GeneratedPost source_bound final after ->
   GeneratedPost source_bound final before.
 Proof.
-  intros source_bound before after final [Counter Code Bound Origin Links] Post.
+  intros source_bound before after final [Counter Code Bound Origin Links _] Post.
   eapply generated_post_compose; [|exact Post]. constructor; [exact Counter| |].
   - intros table number value [_ Issued] Read. now rewrite Code by exact Issued.
   - intros table number value [_ Issued] Read. now rewrite Origin by exact Issued.
@@ -53,7 +53,7 @@ Theorem source_action_establishes_post : forall A source_bound (action : M A) be
   GeneratedPost source_bound after before.
 Proof.
   intros A source_bound action before result after Preserves Lower Bound Run.
-  destruct (Preserves _ _ _ Lower Bound Run) as (Counter & Bound' & Code & Origin & Links).
+  destruct (Preserves _ _ _ Lower Bound Run) as (Counter & Bound' & Code & Origin & Links & _).
   constructor; [exact Counter| |].
   - intros table number value [Generated Issued] Read. now rewrite Code by assumption.
   - intros table number value [_ Issued] Read. now rewrite Origin by assumption.

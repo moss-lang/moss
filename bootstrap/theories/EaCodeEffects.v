@@ -13,7 +13,8 @@ Record CodeTransition (before after : est) : Prop := {
   code_bound_preserved : CodeTablesBound before -> CodeTablesBound after;
   old_origins_preserved : forall table n, n < es_next before ->
     read_origin after table n = read_origin before table n;
-  link_records_preserved : LinkRecords before -> LinkRecords after
+  link_records_preserved : LinkRecords before -> LinkRecords after;
+  lambda_origins_bound_preserved : LambdaOriginsBound before -> LambdaOriginsBound after
 }.
 
 Definition PreservesOldCode {A} (action : M A) : Prop :=
@@ -25,11 +26,13 @@ Proof. constructor; auto. Qed.
 Lemma code_transition_compose : forall a b c,
   CodeTransition a b -> CodeTransition b c -> CodeTransition a c.
 Proof.
-  intros a b c [NextB SlotsB BoundB OriginsB LinksB] [NextC SlotsC BoundC OriginsC LinksC]. constructor.
+  intros a b c [NextB SlotsB BoundB OriginsB LinksB LambdaB]
+    [NextC SlotsC BoundC OriginsC LinksC LambdaC]. constructor.
   - lia.
   - intros table n Old. rewrite SlotsC by lia. exact (SlotsB table n Old).
   - auto.
   - intros table n Old. rewrite OriginsC by lia. exact (OriginsB table n Old).
+  - auto.
   - auto.
 Qed.
 
@@ -66,6 +69,7 @@ Proof.
     split; [lia|]. split.
     + unfold read_link_target. now rewrite Links.
     + now rewrite Same.
+  - intros Bound n Beyond. rewrite Origins. apply Bound. lia.
 Qed.
 
 Lemma code_effect_return : forall A (x : A), PreservesOldCode (ret x).
@@ -122,17 +126,19 @@ Proof.
 Qed.
 
 Lemma code_effect_reserved_lamcx : forall slot C a b c value,
-  es_next a <= slot_index slot ->
+  es_next a <= slot_index slot < es_next b ->
   CodeTransition a b ->
   put_lamcx slot C b = Ok (value, c) ->
   CodeTransition a c.
 Proof.
-  intros slot C a b c value Fresh [Next Code Bound Origins Links] Run.
+  intros slot C a b c value [Fresh Issued] [Next Code Bound Origins Links Lambda] Run.
   unfold put_lamcx in Run. injection Run as _ <-.
-  constructor; [exact Next|exact Code|exact Bound| |exact Links].
-  intros [] n Old; cbn [read_origin es_lamcx es_link].
-  - rewrite WorldSound.nget_nset_other by lia. apply (Origins FunctionTable n Old).
-  - apply (Origins FunctorTable n Old).
+  constructor; [exact Next|exact Code|exact Bound| |exact Links|].
+  - intros [] n Old; cbn [read_origin es_lamcx es_link].
+    + rewrite WorldSound.nget_nset_other by lia. apply (Origins FunctionTable n Old).
+    + apply (Origins FunctorTable n Old).
+  - intros Before n Beyond. cbn [es_next] in Beyond. cbn [read_origin es_lamcx].
+    rewrite WorldSound.nget_nset_other by lia. exact (Lambda Before n Beyond).
 Qed.
 
 Lemma code_effect_reserved_write : forall table (slot : code_slot table) code a b c value,
@@ -144,7 +150,7 @@ Proof.
   intros [] [slot] code a b c value [Fresh Valid] Transition Run;
     unfold write_code, write_fn_code, write_fun_code, set_fn_body, set_fun_body in Run;
     injection Run as _ <-;
-    destruct Transition as [Next Old Bound Origins Links]; cbn [slot_index] in Fresh, Valid;
+    destruct Transition as [Next Old Bound Origins Links Lambda]; cbn [slot_index] in Fresh, Valid;
     constructor; cbn [es_next].
   all: try exact Next.
   all: try solve [intros table n Present; destruct table; cbn [read_code es_fns es_funs];
@@ -155,6 +161,7 @@ Proof.
     first [exact (Bound BoundA n Future FunctionTable)|exact (Bound BoundA n Future FunctorTable)]].
   all: try solve [intros [] n Earlier;
     [exact (Origins FunctionTable n Earlier)|exact (Origins FunctorTable n Earlier)]].
+  all: try exact Lambda.
   all: intros Registered target linked Member;
     destruct (Links Registered target linked Member) as (Below & Target & Stored);
     split; [exact Below|split; [exact Target|]].
@@ -276,7 +283,9 @@ Proof.
   destruct (reserved_slot_number _ _ _ _ Reserve) as [Index Next].
   assert (Range : es_next s <= slot_index slot < es_next validated).
   { pose proof (counter_grows _ _ Prepare). lia. }
-  eapply (code_effect_reserved_lamcx slot C); [lia| |exact Note].
+  assert (Written : es_next written = es_next validated).
+  { unfold write_fn_code, set_fn_body in Write. now injection Write as _ <-. }
+  eapply (code_effect_reserved_lamcx slot C s written); [lia| |exact Note].
   eapply (code_effect_reserved_write FunctionTable); [exact Range| |exact Write].
   eapply code_transition_compose; [eapply code_effect_reserve; exact Reserve|exact Prepare].
 Qed.

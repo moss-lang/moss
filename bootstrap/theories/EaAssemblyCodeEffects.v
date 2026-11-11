@@ -13,14 +13,15 @@ Definition PreservesCodeBound {A} (bound : nat) (action : M A) : Prop :=
     action s = Ok (x, s') -> es_next s <= es_next s' /\ CodeTablesBound s' /\
     (forall table id, bound <= id -> id < es_next s -> read_code s' table id = read_code s table id) /\
     (forall table id, id < es_next s -> read_origin s' table id = read_origin s table id) /\
-    (LinkRecords s -> LinkRecords s').
+    (LinkRecords s -> LinkRecords s') /\
+    (LambdaOriginsBound s -> LambdaOriginsBound s').
 
 Lemma code_effect_preserves_bound : forall A bound (action : M A),
   PreservesOldCode action -> PreservesCodeBound bound action.
 Proof.
   intros A bound action Effect s x s' Next Bound Run.
-  destruct (Effect _ _ _ Run) as [Next' Old Bound' Origins Links]. split; [exact Next'|].
-  split; [exact (Bound' Bound)|]. split; [|split; assumption].
+  destruct (Effect _ _ _ Run) as [Next' Old Bound' Origins Links Lambda]. split; [exact Next'|].
+  split; [exact (Bound' Bound)|]. split; [|split; [exact Origins|split; assumption]].
   intros table id _ Earlier. apply Old. exact Earlier.
 Qed.
 
@@ -31,8 +32,8 @@ Lemma code_bound_bind : forall A B bound (action : M A) (next : A -> M B),
 Proof.
   intros A B bound action next First Second s x s' Next Bound Run.
   apply EaControlSound.mbind_ok in Run as (middle & state & Run1 & Run2).
-  destruct (First _ _ _ Next Bound Run1) as (Next' & Bound' & Earlier & Origins & Links).
-  destruct (Second middle state x s' ltac:(lia) Bound' Run2) as (Next'' & Bound'' & Earlier' & Origins' & Links').
+  destruct (First _ _ _ Next Bound Run1) as (Next' & Bound' & Earlier & Origins & Links & Lambda).
+  destruct (Second middle state x s' ltac:(lia) Bound' Run2) as (Next'' & Bound'' & Earlier' & Origins' & Links' & Lambda').
   split; [lia|]. split; [exact Bound''|]. split.
   - intros table id Generated Old. rewrite Earlier' by lia. apply Earlier; assumption.
   - split.
@@ -64,7 +65,7 @@ Proof.
   split; [lia|]. split; [exact Tables|]. split.
   2: {
     split; [intros table id _; apply Origins|].
-    unfold set_fn_body in Run. injection Run as _ <-. exact (fun links => links).
+    unfold set_fn_body in Run. injection Run as _ <-. split; auto.
   }
   intros table id Generated Old.
   apply Other. right. cbn [slot_index]. lia.
@@ -245,6 +246,16 @@ Theorem assembly_link_records : forall E bound entry P final,
 Proof.
   intros E bound entry P final Run.
   destruct (assemble_preserves_code_bound E bound entry (init_state bound) P final
-    (Nat.le_refl bound) (code_tables_initial bound) Run) as (_ & _ & _ & _ & Links).
+    (Nat.le_refl bound) (code_tables_initial bound) Run) as (_ & _ & _ & _ & Links & _).
   apply Links, initial_link_records.
+Qed.
+
+Theorem assembly_lambda_origins_bound : forall E bound entry P final,
+  EaMain.assemble E bound entry (init_state bound) = Ok (P, final) ->
+  LambdaOriginsBound final.
+Proof.
+  intros E bound entry P final Run.
+  destruct (assemble_preserves_code_bound E bound entry (init_state bound) P final
+    (Nat.le_refl bound) (code_tables_initial bound) Run) as (_ & _ & _ & _ & _ & Lambda).
+  apply Lambda, initial_lambda_origins_bound.
 Qed.

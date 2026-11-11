@@ -43,6 +43,16 @@ Definition LinkRecords (s : est) : Prop :=
 Lemma initial_link_records : forall start, LinkRecords (init_state start).
 Proof. intros start target slot []. Qed.
 
+(* Lambda origins are recorded only after their function slot is issued. *)
+Definition LambdaOriginsBound (s : est) : Prop :=
+  forall n, es_next s <= n -> read_origin s FunctionTable n = None.
+
+Lemma initial_lambda_origins_bound : forall start, LambdaOriginsBound (init_state start).
+Proof.
+  intros start n _. cbn [read_origin es_lamcx init_state].
+  now rewrite WorldSound.nget_NE.
+Qed.
+
 Definition VacantCode (s : est) (n : nat) : Prop :=
   forall table, read_code s table n = None.
 

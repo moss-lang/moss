@@ -77,15 +77,17 @@ Qed.
 Theorem function_pass_selects : forall symbols f before after,
   NoDup symbols -> (forall k, In k symbols -> k < bound) ->
   In f symbols -> bound <= es_next before -> CodeTablesBound before -> LinkRecords before ->
+  LambdaOriginsBound before ->
   miter (EaMain.elaborate_function E) symbols before = Ok (tt, after) ->
   exists started finished remaining,
     EaMain.elaborate_function E f started = Ok (tt, finished) /\
     bound <= es_next started /\ CodeTablesBound started /\ LinkRecords started /\
+    LambdaOriginsBound started /\
     read_code after FunctionTable f = read_code finished FunctionTable f /\
     (forall k, In k remaining -> k < bound) /\
     miter (EaMain.elaborate_function E) remaining finished = Ok (tt, after).
 Proof.
-  induction symbols as [|k symbols IH]; intros f before after Distinct Within Present Counter Bound Links Run;
+  induction symbols as [|k symbols IH]; intros f before after Distinct Within Present Counter Bound Links Lambda Run;
     [contradiction|].
   inversion Distinct as [|? ? NotTail TailDistinct]; subst.
   cbn [miter] in Run. apply mbind_ok in Run as ([] & middle & Head & Tail).
@@ -93,22 +95,23 @@ Proof.
   { unfold EaMain.elaborate_function. destruct (EaMain.defined_fn E k).
     - apply code_bound_with_msg, source_function_preserves_bound, Within. now left.
     - apply code_effect_preserves_bound, code_effect_return. }
-  destruct (Bounds _ _ _ Counter Bound Head) as (Middle & BoundMiddle & _ & _ & LinksMiddle).
+  destruct (Bounds _ _ _ Counter Bound Head) as (Middle & BoundMiddle & _ & _ & LinksMiddle & LambdaMiddle).
   assert (TailWithin : forall x, In x symbols -> x < bound).
   { intros x Member. apply Within. now right. }
   destruct Present as [<-|Present].
   - exists before, middle, symbols. split; [exact Head|].
-    split; [exact Counter|split; [exact Bound|split; [exact Links|]]].
+    split; [exact Counter|split; [exact Bound|split; [exact Links|split; [exact Lambda|]]]].
     split; [|exact (conj TailWithin Tail)].
     eapply function_pass_keeps_unchecked; try eassumption; [apply Within; now left|lia].
   - eapply (IH f middle after); [exact TailDistinct|exact TailWithin|exact Present|lia|
-      exact BoundMiddle|now apply LinksMiddle|exact Tail].
+      exact BoundMiddle|now apply LinksMiddle|now apply LambdaMiddle|exact Tail].
 Qed.
 
 Theorem assemble_functions_sound : forall entry P final,
   EaMain.assemble E bound entry (init_state bound) = Ok (P, final) ->
   (forall F C block expected code t started emitted,
     bound <= es_next started -> CodeTablesBound started -> LinkRecords started ->
+    LambdaOriginsBound started ->
     r_blke (EaMain.R0 E) F C block expected started = Ok ((code, t), emitted) ->
     GeneratedPost bound final emitted ->
     BlkE (e_W E) P F C block expected code t) ->
@@ -123,8 +126,8 @@ Proof.
     (intros k Present; apply in_seq in Present; lia).
   assert (Present : In f (seq 0 bound)) by (apply in_seq; lia).
   destruct (function_pass_selects (seq 0 bound) f (init_state bound) after_functions (seq_NoDup _ _) Within Present (Nat.le_refl bound)
-    (code_tables_initial bound) (initial_link_records bound) Functions)
-    as (started & finished & remaining & Checked & Counter & Bound & Links & SourceCode & TailWithin & Tail).
+    (code_tables_initial bound) (initial_link_records bound) (initial_lambda_origins_bound bound) Functions)
+    as (started & finished & remaining & Checked & Counter & Bound & Links & Lambda & SourceCode & TailWithin & Tail).
   pose proof (function_action_run _ _ _ _ _ _ _ _ _ Declared Ast Checked) as Function.
   destruct (EaFunctionSound.elab_fn_read _ _ _ _ _ _ _ _ _ _ Contexts Declared Ast Function)
     as (C & ns & this & g & F & code & t & start & emitted &
@@ -134,7 +137,7 @@ Proof.
     (eapply declared_slot_write; exact Write).
   destruct (EaExpressionCodeEffects.mkrec_code_effect _
     (EaExpressionCodeEffects.run_code_effect E (e_fuel E))) as (_ & BlockEffect & _).
-  destruct (BlockEffect _ _ _ _ _ _ _ Body) as [BodyCounter _ BodyBound _ _].
+  destruct (BlockEffect _ _ _ _ _ _ _ Body) as [BodyCounter _ BodyBound _ _ _].
   specialize (BodyBound Bound).
   destruct (source_write_preserves_bound bound f code DeclaredBelow emitted tt finished
     ltac:(lia) BodyBound Write) as (WriteCounter & WriteBound & WriteCode & WriteOrigins & _).
@@ -142,9 +145,9 @@ Proof.
     ltac:(lia) WriteBound Tail) as (TailCounter & _ & TailCode & TailOrigins & _).
   pose proof (code_effect_miter _ (EaMain.elaborate_constant E) (seq 0 bound) (constant_code_effect E))
     as ConstantEffects.
-  destruct (ConstantEffects _ _ _ Constants) as [ConstantCounter ConstantCode _ ConstantOrigins _].
+  destruct (ConstantEffects _ _ _ Constants) as [ConstantCounter ConstantCode _ ConstantOrigins _ _].
   destruct (finish_assembly_code_effect E bound entry _ _ _ Finish)
-    as [FinalCounter FinishCode _ FinishOrigins _].
+    as [FinalCounter FinishCode _ FinishOrigins _ _].
   assert (Retained : GeneratedPost bound final emitted).
   {
     constructor; [lia| |].
@@ -155,7 +158,7 @@ Proof.
   }
   assert (Code : body_of P f = Some code).
   { rewrite FinalCode, FinishCode, ConstantCode, SourceCode, Written; try reflexivity; lia. }
-  pose proof (Blocks _ _ _ _ _ _ _ _ Counter Bound Links Body Retained) as Typed.
+  pose proof (Blocks _ _ _ _ _ _ _ _ Counter Bound Links Lambda Body Retained) as Typed.
   exists C, ns, this, g, F, code, t.
   repeat first [assumption | split].
 Qed.

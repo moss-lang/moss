@@ -151,9 +151,9 @@ Lemma code_effect_prepare_link : forall slot pins a b c value,
   put_pins slot pins b = Ok (value, c) ->
   CodeTransition a c.
 Proof.
-  intros slot pins a b c value Fresh [Next Code Bound Origins Links] Run.
+  intros slot pins a b c value Fresh [Next Code Bound Origins Links Lambda] Run.
   unfold put_pins in Run. injection Run as _ <-.
-  constructor; [exact Next|exact Code|exact Bound| |exact Links].
+  constructor; [exact Next|exact Code|exact Bound| |exact Links|exact Lambda].
   intros [] n Old.
   - apply (Origins FunctionTable n Old).
   - cbn [read_origin]. unfold link_pins_at. cbn [es_pins].
@@ -169,9 +169,9 @@ Lemma code_effect_register_link : forall key slot a b c value code,
   put_link key slot b = Ok (value, c) ->
   CodeTransition a c.
 Proof.
-  intros key slot a b c value code [Fresh Valid] Same Stored [Next Code Bound Origins Links] Run.
+  intros key slot a b c value code [Fresh Valid] Same Stored [Next Code Bound Origins Links Lambda] Run.
   unfold put_link in Run. injection Run as _ <-.
-  constructor; [exact Next|exact Code|exact Bound| |].
+  constructor; [exact Next|exact Code|exact Bound| | |exact Lambda].
   - intros [] n Old.
     + apply (Origins FunctionTable n Old).
     + unfold read_origin, read_link_target, link_pins_at. cbn [es_link es_pins find fst snd].
