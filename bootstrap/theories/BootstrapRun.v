@@ -2,7 +2,7 @@
    interpreter. The native caller supplies the compiled lookup tables. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit BaseFacts.
-From NM Require InterpreterCompiled ProgramFastPath ProgramPrune ProgramCapTrim.
+From NM Require InterpreterCompiled InterpreterState ProgramFastPath ProgramPrune ProgramCapTrim.
 Import Audit.Semantics ListNotations.
 Open Scope string_scope.
 
@@ -70,3 +70,73 @@ Proof.
   eapply run_compiled_sound; eassumption.
 Qed.
 End Sound.
+
+(* The extracted driver keeps only the primitive-managed state in the
+   interpreter. Public observations add the read-only part of the world. *)
+Module Native (Host : HOST) (M : PUBLIC Host).
+Module Model := Sound Host M.
+
+Module RawHost <: PRIMITIVES.
+  Definition mstate := Host.state.
+  Definition run_prim := @BaseCall.call mstate Host.primitive.
+End RawHost.
+
+Module RawReference := Interpreter RawHost.
+Module C := InterpreterCompiled.CloInterpreter RawHost RawReference.
+Module State := InterpreterState.StateSimulation RawHost M.ReferenceHost RawReference M.Reference.
+
+Definition lift_state (initial : M.state) (external : Host.state) : M.ReferenceHost.mstate :=
+  (M.default_interface, M.World (M.arguments initial) (M.read_file initial) external).
+
+Lemma primitive_commutes : forall P initial operation site values state,
+  M.ReferenceHost.run_prim P operation site values (lift_state initial state) =
+    let '(out, next) := RawHost.run_prim P operation site values state in
+    (out, lift_state initial next).
+Proof.
+  intros P initial operation site values state.
+  unfold M.ReferenceHost.run_prim, Base.call, RawHost.run_prim, BaseCall.call.
+  unfold M.ReferenceHost.raw_primitive, lift_state.
+  cbn [M.default_interface M.supports M.primitive M.external M.arguments M.read_file].
+  destruct (decode operation); destruct (Host.primitive _ _ _ _); reflexivity.
+Qed.
+
+Definition run (p : program) (initial : M.state) (tbl : fsym -> option C.code)
+    : M.partial M.execution :=
+  fun fuel =>
+    M.observe (State.lift_eval (lift_state initial)
+      (C.crun_program (M.runtime p initial) tbl fuel p (M.external initial))).
+
+Theorem run_agrees : forall p initial tbl ftbl fuel,
+  C.tbl_ok (M.runtime p initial) tbl ftbl ->
+  run p initial tbl fuel =
+  M.observe (M.Reference.run_main fuel (M.runtime p initial)
+    (program_main p) (program_environment p) (M.default_interface, initial)).
+Proof.
+  intros p initial tbl ftbl fuel Tables.
+  unfold run, C.crun_program.
+  rewrite (C.crun_main_reference _ _ _ _ _ _ _ Tables).
+  rewrite <- State.run_main_commutes by apply primitive_commutes.
+  destruct initial. reflexivity.
+Qed.
+
+Theorem run_sound : forall p initial tbl ftbl fuel result,
+  C.tbl_ok (M.runtime p initial) tbl ftbl ->
+  run p initial tbl fuel = Some result ->
+  M.Runs p M.default_interface initial result.
+Proof.
+  intros p initial tbl ftbl fuel result Tables Run.
+  exists fuel. rewrite <- (run_agrees p initial tbl ftbl fuel Tables). exact Run.
+Qed.
+
+Theorem run_optimized_sound : forall p initial tbl ftbl fuel result,
+  Model.Prune.code_blind M.default_interface ->
+  (forall code final, ~ M.Runs p M.default_interface initial (M.Result (M.Wrong code) final)) ->
+  C.tbl_ok (M.runtime (optimize p) initial) tbl ftbl ->
+  run (optimize p) initial tbl fuel = Some result ->
+  M.Runs p M.default_interface initial result.
+Proof.
+  intros p initial tbl ftbl fuel result Blind Safe Tables Run.
+  apply (proj1 (Model.runs_optimized p M.default_interface initial result Blind Safe)).
+  eapply run_sound; eassumption.
+Qed.
+End Native.

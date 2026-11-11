@@ -144,7 +144,7 @@ Qed.
    interfaces whose primitives ignore the program's code. Composed after
    the fast path and pruning, as moss-ref runs them (run/driver.ml). *)
 Module CapTrimTop := ProgramCapTrim.TrimRuns AuditExamples.Host PublicPublic.
-Module RunTop := BootstrapRun.Sound AuditExamples.Host PublicPublic.
+Module NativeRunTop := BootstrapRun.Native AuditExamples.Host PublicPublic.
 Definition captrim_runs_agree : forall program interface initial result,
   PruneTop.code_blind interface ->
   PublicPublic.Runs (ProgramCapTrim.captrim program) interface initial result
@@ -157,7 +157,7 @@ Lemma fastpath_prune_captrim_runs_agree : forall prelude program interface initi
   <-> PublicPublic.Runs program interface initial result.
 Proof.
   intros prelude program interface initial result Ha Hc Hb.
-  exact (RunTop.runs_optimized program interface initial result Hb
+  exact (NativeRunTop.Model.runs_optimized program interface initial result Hb
     (PublicEntryTop.public_safety prelude program interface initial Ha Hc)).
 Qed.
 
@@ -544,15 +544,16 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicSiteErasure.Simulation.primitive_functor_application_normalized);
 
 (* Interpreter stages and their public run composition. *)
-  root (@RunTop.C.L.leval_agrees);
-  root (@RunTop.C.L.lrun_main_agrees);
-  root (@RunTop.C.F.feval_agrees);
-  root (@RunTop.C.F.frun_main_agrees);
-  root (@RunTop.C.cc_agrees);
-  root (@RunTop.C.crun_main_agrees);
-  root (@RunTop.C.crun_main_reference);
-  root (@RunTop.run_compiled_sound);
-  root (@RunTop.run_optimized_sound)].
+  root (@NativeRunTop.Model.C.L.leval_agrees);
+  root (@NativeRunTop.Model.C.L.lrun_main_agrees);
+  root (@NativeRunTop.Model.C.F.feval_agrees);
+  root (@NativeRunTop.Model.C.F.frun_main_agrees);
+  root (@NativeRunTop.Model.C.cc_agrees);
+  root (@NativeRunTop.Model.C.crun_main_agrees);
+  root (@NativeRunTop.Model.C.crun_main_reference);
+  root (@NativeRunTop.Model.run_compiled_sound);
+  root (@NativeRunTop.Model.run_optimized_sound);
+  root (@NativeRunTop.run_optimized_sound)].
 
 Print Assumptions certificate_roots.
 

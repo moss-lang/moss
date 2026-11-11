@@ -19,6 +19,9 @@ the test suite holds the compiler to it. It runs one pipeline:
 `BootstrapRun.Sound.run_optimized_sound` composes the passes and interpreter
 against public `Runs` for a safe input program, a host whose primitives
 ignore program code, and compiled tables satisfying `tbl_ok`.
+`BootstrapRun.Native.run_optimized_sound` gives this result for the
+driver's state layout, where only primitive-managed state is threaded
+through the interpreter.
 
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
 `LoadListed.v`; `LoadListedFacts.v` proves its complete result, including
