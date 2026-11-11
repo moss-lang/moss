@@ -647,30 +647,39 @@ Proof.
     apply Forall_app. split; [exact (IH1 SOb STm)|exact (IH2 SOb STm)].
 Qed.
 
+Lemma entry_provision_gens_read_f : forall (K : nat -> Prop) s freeze e k p,
+  (forall t, TyIn K t -> TyIn K (app_subst s t)) -> (forall a, InstP (TyIn K) a -> InstP (TyIn K) (freeze a)) ->
+  EntryP (TyIn K) e -> In (k, p) (entry_provision s freeze e) -> GensIn K (provision_gens p).
+Proof.
+  intros K s freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p Read Fz Ok Iq; cbn in Iq; try contradiction;
+    destruct Iq as [E|[]]; injection E as <- <-; cbn in Ok.
+  - destruct Ok as [Ot Oa]. intros y Iy. unfold provision_gens in Iy. cbn in Iy. rewrite app_nil_r in Iy.
+    apply in_app_or in Iy as [Iy|Iy]; [exact (Read t Ot y Iy)|].
+    apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
+  - destruct Ok as [[Ps Rt] Oa]. intros y Iy. unfold provision_gens in Iy. cbn [provision_signature provision_inst] in Iy.
+    apply in_app_or in Iy as [Iy|Iy].
+    + cbn in Iy. apply in_app_or in Iy as [Iy|Iy]; [exact (Read _ Rt y Iy)|].
+      apply in_flat_map in Iy as [t [It Iy]]. apply in_map_iff in It as [t0 [<- It]].
+      rewrite Forall_forall in Ps. exact (Read t0 (Ps t0 It) y Iy).
+    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
+  - destruct Ok as [_ [[Ps Rt] Oa]]. intros y Iy. unfold provision_gens in Iy. cbn [provision_signature provision_inst] in Iy.
+    apply in_app_or in Iy as [Iy|Iy].
+    + cbn in Iy. apply in_app_or in Iy as [Iy|Iy]; [exact (Read _ Rt y Iy)|].
+      apply in_flat_map in Iy as [t [It Iy]]. apply in_map_iff in It as [t0 [<- It]].
+      rewrite Forall_forall in Ps. exact (Read t0 (Ps t0 It) y Iy).
+    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
+  - intros y Iy. unfold provision_gens in Iy. cbn in Iy. apply in_flat_map in Iy as [[x o] [Iq Iy]].
+    unfold fixed_subst in Iq. rewrite map_map in Iq. apply in_map_iff in Iq as [[x' w] [E Iq]]. cbn in E. injection E as -> <-.
+    cbn in Iy. exact (Read w (Ok _ w Iq) y Iy).
+Qed.
+
 Lemma entry_provision_gens_f : forall (K : nat -> Prop) s freeze e k p,
   (forall g u, In (g, u) s -> GensIn K (gens u)) -> (forall a, InstP (TyIn K) a -> InstP (TyIn K) (freeze a)) ->
   EntryP (TyIn K) e -> In (k, p) (entry_provision s freeze e) -> GensIn K (provision_gens p).
 Proof.
-  intros K s freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p Range Fz Ok Iq; cbn in Iq; try contradiction;
-    destruct Iq as [E|[]]; injection E as <- <-; cbn in Ok.
-  - destruct Ok as [Ot Oa]. intros y Iy. unfold provision_gens in Iy. cbn in Iy. rewrite app_nil_r in Iy.
-    apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s t Range Ot y Iy)|].
-    apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
-  - destruct Ok as [[Ps Rt] Oa]. intros y Iy. unfold provision_gens in Iy. cbn [provision_signature provision_inst] in Iy.
-    apply in_app_or in Iy as [Iy|Iy].
-    + cbn in Iy. apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s _ Range Rt y Iy)|].
-      apply in_flat_map in Iy as [t [It Iy]]. apply in_map_iff in It as [t0 [<- It]].
-      rewrite Forall_forall in Ps. exact (subst_within K s t0 Range (Ps t0 It) y Iy).
-    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
-  - destruct Ok as [_ [[Ps Rt] Oa]]. intros y Iy. unfold provision_gens in Iy. cbn [provision_signature provision_inst] in Iy.
-    apply in_app_or in Iy as [Iy|Iy].
-    + cbn in Iy. apply in_app_or in Iy as [Iy|Iy]; [exact (subst_within K s _ Range Rt y Iy)|].
-      apply in_flat_map in Iy as [t [It Iy]]. apply in_map_iff in It as [t0 [<- It]].
-      rewrite Forall_forall in Ps. exact (subst_within K s t0 Range (Ps t0 It) y Iy).
-    + apply in_flat_map in Iy as [[x [w|]] [Iq Iy]]; [exact (Fz a Oa x w Iq y Iy)|contradiction].
-  - intros y Iy. unfold provision_gens in Iy. cbn in Iy. apply in_flat_map in Iy as [[x o] [Iq Iy]].
-    unfold fixed_subst in Iq. rewrite map_map in Iq. apply in_map_iff in Iq as [[x' w] [E Iq]]. cbn in E. injection E as -> <-.
-    cbn in Iy. exact (subst_within K s w Range (Ok _ w Iq) y Iy).
+  intros K s freeze e k p Rows Freeze Entry InProv.
+  apply (entry_provision_gens_read_f K s freeze e k p); [|exact Freeze|exact Entry|exact InProv].
+  intros t Within. exact (subst_within K s t Rows Within).
 Qed.
 
 Lemma entry_provision_gens : forall (K : nat -> Prop) s e k p,
@@ -954,28 +963,30 @@ Proof.
 Qed.
 
 Lemma entries_cx_scoped : forall F σ classes tm es, IdForm tm -> (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
-  (forall g t, In (g, t) σ -> incl (gens t) (map fst tm)) -> ThisScoped W F (entries_cx σ classes tm es) ->
+  incl (merge_symbols classes) (map fst tm) -> ThisScoped W F (entries_cx σ classes tm es) ->
   SectionOf classes σ -> EntriesRead W es ->
   CxScoped W F (entries_cx σ classes tm es).
 Proof.
-  intros F σ classes tm es Id Eg Sg Th Section Rd. set (K := fun y => In y (scope_gens (entries_cx σ classes tm es))).
+  intros F σ classes tm es Id Eg Classes Th Section Rd. set (K := fun y => In y (scope_gens (entries_cx σ classes tm es))).
   assert (Key : forall x, In x (map fst tm) -> K x) by (intros x Ix; exact (idform_scope σ classes tm es x Id Ix)).
-  assert (Range : forall g u, In (g, u) σ -> GensIn K (gens u)) by (intros g u Iq y Iy; exact (Key y (Sg g u Iq y Iy))).
+  assert (Read : forall t, TyIn K t -> TyIn K (app_subst σ t)).
+  { intros t Within. refine (@PublicMerge.section_gens_bound classes σ Section _ _ t Within).
+    intros y Iy. exact (Key y (Classes y Iy)). }
   split; [intros n t mu []|split; [|exact (conj Th (methsread_entries W σ classes tm es Section Rd))]].
   intros k p Iq y Iy. cbn in Iq. apply in_flat_map in Iq as [e [Ie Iq]].
-  refine (entry_provision_gens_f K σ _ e k p Range _ (entry_gens_entryp K e (fun y Iy => Key y (Eg e Ie y Iy))) Iq y Iy).
+  refine (entry_provision_gens_read_f K σ _ e k p Read _ (entry_gens_entryp K e (fun y Iy => Key y (Eg e Ie y Iy))) Iq y Iy).
   intros a Ia x w Iq' z Iz. apply in_map_iff in Iq' as [[x0 o] [E Iq']]. cbn in E. injection E as E0 E. subst x.
   destruct o as [t0|]; cbn in E.
-  - injection E as <-. exact (subst_within K σ t0 Range (Ia _ _ Iq') z Iz).
+  - injection E as <-. exact (Read t0 (Ia _ _ Iq') z Iz).
   - destruct (nlook x0 tm) as [t0|] eqn:L; cbn in E; [|discriminate]. injection E as <-.
-    apply (subst_within K σ t0 Range); [|exact Iz]. intros y' Iy'.
+    apply (Read t0); [|exact Iz]. intros y' Iy'.
     pose proof (idform_nlook tm x0 t0 Id L) as ->. destruct Iy' as [E'|[]]. subst y'. apply Key.
     change x0 with (fst (x0, TAbs x0)). apply in_map. exact (nlook_in _ _ _ _ L).
 Qed.
 
 Theorem ctxof_cxscoped : forall f C ns F, CtxOf W f C ns -> ThisScoped W F C -> CxScoped W F C.
 Proof.
-  intros f C ns F (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & Section & -> & _ & _) Th.
+  intros f C ns F (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & Merge & Section & -> & _ & _) Th.
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er)).
   { destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI].
@@ -989,12 +1000,12 @@ Proof.
     exfalso. destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI]; [exact I|exact (root_read W _ _ _ _ _ _ RI _ _ _ _ I)]. }
   apply entries_cx_scoped; [exact IdR| | |exact Th|exact Section|exact Rd].
   - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
-  - destruct MGM as [_ [_ [_ [Dom _]]]]. intros g t Iq y Iy. exact (All y (proj2 (Dom g t Iq) y Iy)).
+  - intros y Iy. apply All. exact (proj1 (proj2 (proj2 Merge)) y Iy).
 Qed.
 
 Theorem functx_cxscoped : forall u C ns F, FunCtx W u C ns -> ThisScoped W F C -> CxScoped W F C.
 Proof.
-  intros u C ns F (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & Section & -> & _ & _) Th.
+  intros u C ns F (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & Merge & Section & -> & _ & _) Th.
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   assert (Id' : IdForm (map (fun t => (t, TAbs t)) implicit ++ tm)).
   { apply Forall_app. split; [|exact IdT]. apply Forall_forall. intros q Iq. apply in_map_iff in Iq as [t [<- _]]. reflexivity. }
@@ -1002,7 +1013,7 @@ Proof.
   { intros x Ix. rewrite map_app. apply in_or_app. right. exact Ix. }
   apply entries_cx_scoped; [exact Id'| | |exact Th|exact Section|exact (proj2 (entries_read W) _ _ _ _ _ _ IE)].
   - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
-  - destruct MGM as [_ [_ [_ [Dom _]]]]. intros g t Iq y Iy. exact (Sub y (EsT y (proj2 (Dom g t Iq) y Iy))).
+  - intros y Iy. apply Sub, EsT. exact (proj1 (proj2 (proj2 Merge)) y Iy).
 Qed.
 
 (* ---- a callee's needs, read at the call site ---------------------------------- *)

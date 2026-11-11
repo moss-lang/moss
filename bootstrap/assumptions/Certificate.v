@@ -429,6 +429,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.tmok_read);
   root (@NM.PublicCallRealize.sig_read_scoped);
   root (@NM.PublicSubstFacts.gens_subst_iff);
+  root (@NM.PublicScoping.entry_provision_gens_read_f);
   root (@NM.PublicFormation.scope_gens_section_bound);
   root (@NM.PublicFormation.functx_scope_gens);
   root (@NM.PublicFormation.ctxof_class_formed);
