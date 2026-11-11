@@ -613,6 +613,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NativeRunTop.native_tables_ok);
   root (@NativeRunTop.run_optimized_sound);
   root (@BaseHost.primitive_laws);
+  root (@BaseHost.call_in_agrees);
   root (@BaseHost.default_compatible);
   root (@BaseHost.primitive_ignores_code);
   root (@concrete_run_sound);

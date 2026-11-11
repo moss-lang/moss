@@ -7,7 +7,7 @@
    substitution, InterpreterLazy, trie-keyed provisions, InterpreterFast, and compiled
    to closures, InterpreterCompiled; proved equal to it: InterpreterCompiled.crun_main_reference),
    plus the primitives the
-   driver runs it with (MossX.run_prim, MossX.init_state).
+   driver runs it with (BaseHost.call_in, MossX.init_state).
    assumptions/Certificate.v audits these roots. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
@@ -78,7 +78,7 @@ Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
   BootstrapRun.passes BootstrapRun.indexed_program_of CodeTable.get
-  BaseHost.primitive_in BaseHostScalars.legacy_view BaseHost.decode_host_operation
+  BaseHost.call_in BaseHostScalars.legacy_view BaseHost.decode_host_operation
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program

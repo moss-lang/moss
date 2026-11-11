@@ -32,16 +32,142 @@ Definition decode_host_operation (operation : op) : option (wasm_prim * prim) :=
   option_map (fun p => (p, base_primitive p)) (decode operation).
 Definition decode_host := decode_host_operation.
 
+Definition primitive_decoded (P : xprog) (p : wasm_prim) (concrete : prim)
+    (values : list value) (state : mstate) : signal * mstate :=
+  let '(out, next) := run_prim_fast P concrete (gc_arguments p values) state in
+  (from_signal out, next).
+
 Definition primitive_in (P : xprog) (operation : op) (values : list value)
     (state : mstate) : signal * mstate :=
   match decode_host operation with
-  | Some (p, concrete) =>
-      let '(out, next) := run_prim_fast P concrete (gc_arguments p values) state in
-      (from_signal out, next)
+  | Some (p, concrete) => primitive_decoded P p concrete values state
   | None => (UnsupportedOperation (unsupported_code operation), state)
   end.
 
 Definition primitive (P : program_view) := primitive_in (legacy_view P).
+
+Definition scalar_i32 (w : value) : option int :=
+  match w with VScalar 0 bits => Some (w32 (Uint63.of_Z bits)) | _ => None end.
+
+Definition address_i32 (w : value) : option int :=
+  match w with VTag _ payload => scalar_i32 payload | _ => scalar_i32 w end.
+
+Definition i32_result (bits : int) : signal := Normal (VScalar 0 (Uint63.to_Z bits)).
+
+(* The common integer operations can read and return Audit scalars
+   directly. The ordinary machine step handles all other operands. *)
+Definition direct_i32 (p : wasm_prim) (values : list value) (state : mstate) : option (signal * mstate) :=
+  match p, values with
+  | PI32Bin kind, [a; b] =>
+      match scalar_i32 a, scalar_i32 b with
+      | Some x, Some y =>
+          Some (match i32_bin kind x y with inl r => i32_result r | inr trap => Trap trap end, state)
+      | _, _ => None
+      end
+  | PI32Cmp kind, [a; b] =>
+      match scalar_i32 a, scalar_i32 b with
+      | Some x, Some y => Some (i32_result (i32_cmp kind x y), state)
+      | _, _ => None
+      end
+  | PI32Un kind, [a] =>
+      match scalar_i32 a with Some x => Some (i32_result (i32_un kind x), state) | _ => None end
+  | PLoad kind, [a] =>
+      match address_i32 a with
+      | Some x => Some (match load_op kind state x with
+                        | Some r => i32_result r | None => Trap trap_oob end, state)
+      | None => None
+      end
+  | PStore kind, [a; b] =>
+      match address_i32 a, address_i32 b with
+      | Some x, Some y =>
+          Some (match store_op kind state x y with
+                | Some next => (Normal VUnit, keep_heap state next)
+                | None => (Trap trap_oob, state)
+                end)
+      | _, _ => None
+      end
+  | _, _ => None
+  end.
+
+Lemma scalar_i32_argument : forall w i, scalar_i32 w = Some i -> to_scalar w = XVI32 i.
+Proof.
+  intros [|tag payload|fields|[|sort] bits|address header] i Found; try discriminate.
+  now injection Found as <-.
+Qed.
+
+Lemma address_i32_argument : forall w i, address_i32 w = Some i -> unaddr (to_scalar w) = XVI32 i.
+Proof.
+  intros w i Found. destruct w; try now rewrite (scalar_i32_argument _ _ Found).
+  cbn [address_i32 to_scalar] in *. now rewrite (scalar_i32_argument _ _ Found).
+Qed.
+
+Lemma keep_heap_same : forall state, keep_heap state state = state.
+Proof. destruct state; reflexivity. Qed.
+
+Lemma direct_i32_agrees : forall P p values state result,
+  direct_i32 p values state = Some result ->
+  primitive_decoded P p (base_primitive p) values state = result.
+Proof.
+  intros P p values state result Direct.
+  destruct p; destruct values as [|a [|b [|extra rest]]];
+    cbn [direct_i32] in Direct; try discriminate Direct;
+    unfold primitive_decoded; cbn [base_primitive gc_arguments map run_prim_fast numeric_prim].
+  all: repeat match type of Direct with
+    | context [scalar_i32 ?w] =>
+        let bits := fresh "bits" in let read := fresh "Read" in
+        destruct (scalar_i32 w) as [bits|] eqn:read; try discriminate Direct;
+        rewrite (scalar_i32_argument _ _ read)
+    end.
+  all: try (injection Direct as <-; cbn [run_prim0]; try reflexivity;
+    match goal with |- context [i32_bin ?kind ?left ?right] =>
+      destruct (i32_bin kind left right); reflexivity end).
+  all: unfold run_prim; cbn [is_gc_prim mem_args map].
+  all: repeat match type of Direct with
+    | context [address_i32 ?w] =>
+        let bits := fresh "bits" in let read := fresh "Read" in
+        destruct (address_i32 w) as [bits|] eqn:read; try discriminate Direct;
+        rewrite (address_i32_argument _ _ read)
+    end.
+  all: injection Direct as <-; cbn [run_prim0].
+  - destruct (load_op _ _ _); cbn [okv]; now rewrite keep_heap_same.
+  - unfold unit_or_trap. destruct (store_op _ _ _ _); [reflexivity|now rewrite keep_heap_same].
+Qed.
+
+Definition primitive_decoded_fast (P : xprog) (p : wasm_prim) (concrete : prim)
+    (values : list value) (state : mstate) : signal * mstate :=
+  match direct_i32 p values state with
+  | Some result => result
+  | None => primitive_decoded P p concrete values state
+  end.
+
+Lemma primitive_decoded_fast_agrees : forall P p values state,
+  primitive_decoded_fast P p (base_primitive p) values state =
+  primitive_decoded P p (base_primitive p) values state.
+Proof.
+  intros. unfold primitive_decoded_fast.
+  destruct (direct_i32 p values state) eqn:Direct; [symmetry; eapply direct_i32_agrees; exact Direct|reflexivity].
+Qed.
+
+(* The default host already dispatches on the decoded operation. Use that
+   result for its input and output adaptation as well. *)
+Definition call_in (P : xprog) (operation : op) (site : option ty)
+    (values : list value) (state : mstate) : signal * mstate :=
+  match decode_host operation with
+  | Some (p, concrete) =>
+      let '(out, next) := primitive_decoded_fast P p concrete (BaseCall.primitive_arguments p values) state in
+      (match site with Some ty => BaseCall.allocation_result p ty out | None => out end, next)
+  | None => (UnsupportedOperation (unsupported_code operation), state)
+  end.
+
+Theorem call_in_agrees : forall P operation site values state,
+  call_in (legacy_view P) operation site values state =
+  BaseCall.call primitive P operation site values state.
+Proof.
+  intros. unfold call_in, BaseCall.call, primitive, primitive_in, decode_host, decode_host_operation.
+  destruct (decode operation) as [p|]; [|destruct site; reflexivity].
+  cbn [option_map]. rewrite primitive_decoded_fast_agrees.
+  destruct (primitive_decoded _ _ _ _ _) as [out next]. destruct site; reflexivity.
+Qed.
 
 Definition stored_ok (Q : value -> Prop) (w : xvalue) : Prop :=
   match w with XVStored v => Q v | _ => False end.
@@ -161,7 +287,7 @@ Lemma primitive_keeps_heap : forall P operation ws state typing,
   heap_ok typing state ->
   heap_ok typing (snd (primitive P operation ws state)).
 Proof.
-  intros P operation ws state typing NotGC Valid. unfold primitive, primitive_in, decode_host, decode_host_operation.
+  intros P operation ws state typing NotGC Valid. unfold primitive, primitive_in, primitive_decoded, decode_host, decode_host_operation.
   destruct (decode operation) eqn:Decode; [|exact Valid].
   cbn [option_map]. rewrite run_prim_fast_spec. unfold run_prim.
   rewrite concrete_is_gc, NotGC.
@@ -192,7 +318,7 @@ Lemma primitive_gc : forall P p ws state typing Q,
 Proof.
   intros P p ws state typing Q Valid Pre.
   assert (IsGC : Heap.is_gc p = true) by (destruct p; cbn in Pre; try contradiction; reflexivity).
-  unfold primitive, primitive_in. rewrite decode_host_encode, gc_run by exact IsGC.
+  unfold primitive, primitive_in, primitive_decoded. rewrite decode_host_encode, gc_run by exact IsGC.
   destruct p; cbn [Heap.gc_pre] in Pre; try contradiction.
   - destruct ws as [|v [|extra rest]]; try contradiction.
     cbn [gc_arguments base_primitive gc_prim].
@@ -312,12 +438,12 @@ Theorem primitive_laws : forall P,
 Proof.
   intros P. repeat split.
   - intros p params result values state _ Sig Args.
-    unfold primitive, primitive_in. rewrite decode_host_encode, (plain_arguments _ _ _ _ Sig).
+    unfold primitive, primitive_in, primitive_decoded. rewrite decode_host_encode, (plain_arguments _ _ _ _ Sig).
     exact (scalar_sound P _ _ _ _ _ Sig Args).
   - intros p params result values state _ Sig Args.
-    unfold primitive, primitive_in. rewrite decode_host_encode, (method_arguments _ _ _ _ Sig).
+    unfold primitive, primitive_in, primitive_decoded. rewrite decode_host_encode, (method_arguments _ _ _ _ Sig).
     exact (scalar_method_sound P _ _ _ _ _ Sig Args).
-  - intros operation values state Decode _. unfold primitive, primitive_in, decode_host, decode_host_operation.
+  - intros operation values state Decode _. unfold primitive, primitive_in, primitive_decoded, decode_host, decode_host_operation.
     now rewrite Decode.
   - apply heap_weaken.
   - apply empty_heap_ok.

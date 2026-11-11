@@ -41,6 +41,9 @@ Steps 3 and 4 use the interpreter and passes proved against these definitions.
 `BaseHost.primitive_laws` verifies the extracted host's scalar, WASI and
 heap operations against the Base contract, and `BaseHost.default_compatible`
 supplies the interface laws once the program is ready to link.
+`BaseHost.call_in_agrees` proves that the extracted call shares its decoded
+operation with the Base adapter and that direct I32 steps implement the
+same call as `BaseCall.call`.
 **Whole elaborator soundness remains open.**
 The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
 and `EaWorldSound` proofs cover readers, their fuel conditions and the

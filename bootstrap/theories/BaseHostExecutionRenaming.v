@@ -128,7 +128,7 @@ Proof.
     pose proof (rename_plain_primitive primitive IsGC) as Fixed.
     pose proof (gc_arguments_renamed rename primitive values) as Arguments.
     rewrite Fixed in Arguments.
-    unfold BaseHost.primitive, BaseHost.primitive_in.
+    unfold BaseHost.primitive, BaseHost.primitive_in, BaseHost.primitive_decoded.
     rewrite rename_base_encoding, Fixed, !BaseHost.decode_host_encode, !run_prim_fast_spec.
     unfold run_prim. rewrite BaseHost.concrete_is_gc, IsGC.
     rewrite Arguments, mem_args_renamed.

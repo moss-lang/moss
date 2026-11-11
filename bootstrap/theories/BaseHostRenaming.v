@@ -292,7 +292,7 @@ Proof.
   intros P P' primitive values state IsGC.
   assert (RenamedGC : Heap.is_gc (rename_base_primitive rename primitive) = true).
   { destruct primitive; exact IsGC. }
-  unfold BaseHost.primitive, BaseHost.primitive_in.
+  unfold BaseHost.primitive, BaseHost.primitive_in, BaseHost.primitive_decoded.
   rewrite rename_base_encoding, !BaseHost.decode_host_encode, !BaseHost.gc_run by assumption.
   rewrite gc_arguments_renamed, gc_step_renamed by assumption.
   destruct (gc_prim _ _ _) as [out next].
