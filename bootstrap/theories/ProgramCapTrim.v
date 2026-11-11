@@ -85,13 +85,16 @@ Fixpoint trim_caps (rd enc : nat -> bool) (seen : list nat) (l : subst) : subst 
 Definition trim_tc (T : tbl) (enc : nat -> bool) (f' : fsym) (tc : type_capture) : type_capture :=
   TypeCapture (trim_caps (Gt T f') enc [] (capture_generations tc)) [].
 
+Definition trim_call_types (T : tbl) (f : fsym) (th : subst) : subst :=
+  trim_caps (Gt T f) all_gens [] th.
+
 Fixpoint trim_e (T : tbl) (enc : nat -> bool) (e : expr) : expr :=
   match e with
   | EVar x => EVar x
   | EUnit => EUnit
   | EVal v => EVal v
   | ETag n th e1 => ETag n th (trim_e T enc e1)
-  | ECall f th sm args => ECall f th sm (map (trim_e T enc) args)
+  | ECall f th sm args => ECall f (trim_call_types T f th) sm (map (trim_e T enc) args)
   | EInvoke f args => EInvoke f (map (trim_e T enc) args)
   | EMethod e0 m it args => EMethod (trim_e T enc e0) m it (map (trim_e T enc) args)
   | ELet x e1 e2 => ELet x (trim_e T enc e1) (trim_e T enc e2)
@@ -148,7 +151,9 @@ Fixpoint nchk (e : expr) : bool :=
   | EVar _ | EUnit | EBreak | EVal _ => true
   | ETag _ th e1 => sok th && forallb S casts && nchk e1
   | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => nchk e1
-  | ECall f th _ args => sok th && forallb (fun q => Dt T f (fst q)) th && forallb nchk args
+  | ECall f th _ args =>
+      let kept := trim_call_types T f th in
+      sok kept && forallb (fun q => Dt T f (fst q)) kept && forallb nchk args
   | EInvoke _ args => forallb nchk args
   | EMethod e0 _ _ args => nchk e0 && forallb nchk args
   | ELet _ a b | ESeq a b | EWhile a b => nchk a && nchk b
@@ -220,7 +225,8 @@ Fixpoint walk_e (cur : option fsym) (Dm : nat -> bool) (e : expr) (A : tbl) : tb
   | ETag _ th e1 => walk_e cur Dm e1 (addG cur (sgens th ++ casts) A)
   | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => walk_e cur Dm e1 A
   | ECall f th _ args =>
-      fold_left (fun A a => walk_e cur Dm a A) args (addD f (map fst th) (addG cur (sgens th) A))
+      let kept := trim_call_types T f th in
+      fold_left (fun A a => walk_e cur Dm a A) args (addD f (map fst kept) (addG cur (sgens kept) A))
   | EInvoke _ args => fold_left (fun A a => walk_e cur Dm a A) args A
   | EMethod e0 _ _ args => fold_left (fun A a => walk_e cur Dm a A) args (walk_e cur Dm e0 A)
   | ELet _ a b | ESeq a b | EWhile a b => walk_e cur Dm b (walk_e cur Dm a A)
@@ -366,6 +372,13 @@ Proof.
   - destruct (IH _ _ _ H) as [A B]. simpl. auto.
 Qed.
 
+Lemma lookup_subst_trim_call : forall T f th g, Gt T f g = true ->
+  lookup_subst g (trim_call_types T f th) = lookup_subst g th.
+Proof.
+  intros T f th g Read. unfold trim_call_types. rewrite trim_caps_lookup by exact Read.
+  cbn [existsb all_gens]. destruct (lookup_subst g th); [now rewrite orb_true_r|reflexivity].
+Qed.
+
 Section Agree.
 Variable T : tbl.
 
@@ -499,18 +512,24 @@ Proof.
   - rewrite A3, B3. reflexivity.
 Qed.
 
-(* The callee's activation (call_environment): agree on everything θ
-   defines; θ's keys are in the callee's D. *)
+(* The callee agrees on the grounded arguments its code can read. *)
 Lemma envrel_call : forall S Dm x d d' th dc dc' g, envrel S Dm x d d' -> xrel dc dc' ->
-  sok S th = true -> forallb (fun q => Dt T g (fst q)) th = true ->
+  sok S (trim_call_types T g th) = true ->
+  forallb (fun q => Dt T g (fst q)) (trim_call_types T g th) = true ->
   type_meanings dc' = [] ->
-  envrel (Gt T g) (Dt T g) false (call_environment d th dc) (call_environment d' th dc').
+  envrel (Gt T g) (Dt T g) false (call_environment d th dc)
+    (call_environment d' (trim_call_types T g th) dc').
 Proof.
   intros S Dm x d d' th dc dc' g H [C1 [C2 C3]] Hs Hd Hdc.
   unfold call_environment, append_environment, instantiate. simpl.
-  rewrite (envrel_ground_subst H Hs). rewrite C2. split; [|split; [|split]]; simpl; auto; [| |discriminate].
-  - intros h _. reflexivity.
-  - intros h Hh. rewrite Hdc, app_nil_r. unfold mean. rewrite lookup_subst_none; [reflexivity|].
+  rewrite C2, Hdc, !app_nil_r. split; [|split; [|split]]; simpl; auto; [| |discriminate].
+  - intros h Read. unfold mean. rewrite !lookup_subst_map.
+    rewrite <- (@lookup_subst_trim_call T g th h Read).
+    destruct (lookup_subst h (trim_call_types T g th)) as [tau|] eqn:Found; [|reflexivity].
+    simpl. apply (envrel_ground H).
+    unfold sok in Hs. rewrite forallb_forall in Hs.
+    exact (Hs _ (lookup_subst_in Found)).
+  - intros h Hh. unfold mean. rewrite lookup_subst_none; [reflexivity|].
     intros [t tau] Hin E. simpl in E. subst t.
     apply in_map_iff in Hin as [[t' tau'] [Eq Hin]]. simpl in Eq. injection Eq as -> _.
     rewrite forallb_forall in Hd. specialize (Hd _ Hin). simpl in Hd. congruence.
@@ -826,7 +845,7 @@ Proof.
       destruct (eval_arguments k P d g st args) as [[[ws g1] st1]|]; simpl in Hn; [|reflexivity].
       destruct (select_provisions d sm) as [dc|] eqn:Ec.
       * destruct (xrel_select H Ec) as [dc' [-> Hdc]].
-        rewrite (IHe _ _ false (call_environment d th dc) (call_environment d' th dc') (parameter_values ws)
+        rewrite (IHe _ _ false (call_environment d th dc) (call_environment d' (trim_call_types T f th) dc') (parameter_values ws)
                   st1 body (Hclosed Ef)
                   (@envrel_call T S Dm x d d' th dc dc' f H Hdc H0 H2 (eq_trans (eq_sym (proj1 (proj2 Hdc))) (select_empty_types Ec)))
                   Hn).
