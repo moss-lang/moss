@@ -1215,7 +1215,11 @@ mod merging {
             let entry = with_context(items);
             let out = oracle_command(&["--elab-only", &entry]);
             assert_eq!(out.code, ORACLE_REJECTED, "{}", out.stderr);
-            assert!(out.stderr.contains("a type that is not in force (D43)"), "{}", out.stderr);
+            assert!(
+                out.stderr.contains("a type that is not in force (D43)"),
+                "{}",
+                out.stderr
+            );
         }
         let entry = with_context("T, A, f[T=A], f");
         let out = oracle_command(&["--elab-only", &entry]);
