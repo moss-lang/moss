@@ -641,6 +641,63 @@ Proof.
   - injection K2 as <-. injection E1 as <-. destruct R as (<- & _). destruct R' as (<- & _). reflexivity.
 Qed.
 
+(* Equality of the emitted section keys is exactly class equality of
+   their raw source keys. *)
+Lemma entry_keys_merge_iff : forall C, PublicContextFacts.CxSection C -> forall e e',
+  A.OptionEq (A.KeyEq (A.c_merge C)) (A.raw_entry_key e) (A.raw_entry_key e') <->
+  A.entry_key (A.c_sub C) e = A.entry_key (A.c_sub C) e'.
+Proof.
+  intros C Section e e'. rewrite !PublicMerge.entry_key_raw.
+  destruct (A.raw_entry_key e) as [k|] eqn:Key;
+    destruct (A.raw_entry_key e') as [k'|] eqn:Key'; cbn [A.OptionEq option_map].
+  - pose proof (PublicMerge.section_key_eq Section k k') as Equiv.
+    rewrite (PublicMerge.raw_key_identity e Key),
+      (PublicMerge.raw_key_identity e' Key') in Equiv.
+    rewrite Equiv. split; [intro Equal; now rewrite Equal|intro Equal; now injection Equal].
+  - split; [contradiction|discriminate].
+  - split; [contradiction|discriminate].
+  - split; auto.
+Qed.
+
+(* Collision transfer depends on the raw keys' merge classes. The target
+   keys are still the concrete keys emitted by the transitional rules. *)
+Lemma tr_all_merge : forall W C (s1 s2 : subst) K tm1 tm2 (L : list (A.entry * A.entry)),
+  (forall q, In q L -> PublicOutputSubst.EntryRel s1 s2 tm1 tm2 (fst q) (snd q) /\ EntryRelM W s1 s2 K (fst q) (snd q) /\
+     PublicCallerKeys.SameKind (fst q) (snd q)) ->
+  PublicContextFacts.ReadsMerge C (app_subst s1) ->
+  forall p p' k, In p L -> In p' L -> A.entry_key s2 (snd p) = Some k ->
+    A.OptionEq (A.KeyEq (A.c_merge C)) (A.raw_entry_key (fst p)) (A.raw_entry_key (fst p')) ->
+    A.entry_key s2 (snd p') = Some k.
+Proof.
+  intros W C s1 s2 K tm1 tm2 L FL Reading p p' k Ip Ip' K2 Keys.
+  destruct (FL p Ip) as (R & RM & Sk). destruct (FL p' Ip') as (R' & RM' & Sk').
+  destruct p as [e1 e2], p' as [e1' e2']. cbn [fst snd] in *.
+  destruct e1 as [?|?|?|r1 m1 g1 a1|?|? ?], e2 as [?|?|?|r2 m2 g2 a2|?|? ?]; cbn in Sk; try contradiction;
+    destruct e1' as [?|?|?|r1' m1' g1' a1'|?|? ?], e2' as [?|?|?|r2' m2' g2' a2'|?|? ?]; cbn in Sk'; try contradiction;
+    cbn [A.OptionEq A.raw_entry_key A.KeyEq A.provision_id A.mkey] in Keys;
+    cbn in K2, R, R', RM, RM' |- *; try discriminate; try contradiction.
+  - injection K2 as <-. injection Keys as <-. destruct R as (<- & _). destruct R' as (<- & _). reflexivity.
+  - injection K2 as <-. injection Keys as <-. destruct R as (<- & _). destruct R' as (<- & _). reflexivity.
+  - rewrite <- K2. destruct Keys as [Names Receivers]. destruct RM as (<- & Rr & _). destruct RM' as (<- & Rr' & _).
+    subst. unfold A.mkey, PublicOutputSubst.TyRel in *. rewrite <- Rr, <- Rr', (Reading r1 r1' Receivers). reflexivity.
+  - injection K2 as <-. injection Keys as <-. destruct R as (<- & _). destruct R' as (<- & _). reflexivity.
+Qed.
+
+(* The section bridge is confined to the current emitted-key boundary. *)
+Lemma tr_all_section : forall W C (s1 s2 : subst) K tm1 tm2 (L : list (A.entry * A.entry)),
+  PublicContextFacts.CxSection C ->
+  (forall q, In q L -> PublicOutputSubst.EntryRel s1 s2 tm1 tm2 (fst q) (snd q) /\ EntryRelM W s1 s2 K (fst q) (snd q) /\
+     PublicCallerKeys.SameKind (fst q) (snd q)) ->
+  PublicContextFacts.ReadsMerge C (app_subst s1) ->
+  forall p p' k, In p L -> In p' L -> A.entry_key s2 (snd p) = Some k ->
+    A.entry_key (A.c_sub C) (fst p) = A.entry_key (A.c_sub C) (fst p') ->
+    A.entry_key s2 (snd p') = Some k.
+Proof.
+  intros W C s1 s2 K tm1 tm2 L Section FL Reading p p' k Ip Ip' Key Equal.
+  apply (tr_all_merge W C s1 s2 K tm1 tm2 L FL Reading p p' k Ip Ip' Key).
+  apply (proj2 (entry_keys_merge_iff C Section (fst p) (fst p'))). exact Equal.
+Qed.
+
 (* A functor provision a result adds lists every fixed input. *)
 Lemma result_fun_cover : forall W v C o C' ks, A.ProvideResult W v C o C' ks ->
   forall news, A.c_provisions C' = (news ++ A.c_provisions C)%list ->
@@ -1065,7 +1122,10 @@ Proof.
     { intros j' k'' Lt N E. subst k''. rewrite <- keys_of_map, <- EK' in N. destruct (Lastj j' _ N Ekey) as [_ Le]. lia. }
     destruct (pos_last_all (A.c_sub Ch) (A.c_sub Ch) L
       (fun q Iq => PublicChainSigs.same_kind_none _ _ _ _ (proj2 (proj2 (FLa q Iq))))
-      (tr_all W s1r (A.c_sub Ch) (A.c_sub Ch) _ tm1 tm2 L FLa S1Inv) j k' Nj Lj)
+      (tr_all_section W Ch s1r (A.c_sub Ch) _ tm1 tm2 L
+        (proj2 (PublicContextFacts.functor_context_merge W h Ch nsh FCh)) FLa
+        (proj2 (PublicContextFacts.reads_merge_canon_iff Ch _
+          (proj2 (PublicContextFacts.functor_context_merge W h Ch nsh FCh))) S1Inv)) j k' Nj Lj)
       as (pp & k1 & q1 & q2 & Ipp & K1 & K2 & N1 & L1 & P1 & P2 & I1 & I2).
     assert (Eq2 : q2 = p').
     { pose proof (I2 (A.c_provisions Ch)) as I2'. rewrite ECr' in Lp'. cbn [A.output_cx A.c_provisions] in Lp'.
@@ -1335,7 +1395,10 @@ Proof.
   { intros i' k' Lt N E. subst k'. rewrite <- keys_of_map, <- EKs in N. apply (Last i' Lt). unfold rs. rewrite nth_error_map, N. reflexivity. }
   destruct (pos_last_all (A.c_sub Cu) (A.c_sub C) L
     (fun q Iq => PublicChainSigs.same_kind_none _ _ _ _ (proj2 (proj2 (FLa q Iq))))
-    (tr_all W s1 (A.c_sub C) (A.c_sub Cu) _ tm1 tm2 L FLa S1Inv) i k Ni Li)
+    (tr_all_section W Cu s1 (A.c_sub C) _ tm1 tm2 L
+      (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FC)) FLa
+      (proj2 (PublicContextFacts.reads_merge_canon_iff Cu _
+        (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FC))) S1Inv)) i k Ni Li)
     as (pp & k1 & q1 & q2 & Ipp & K1 & K2 & N1 & L1 & P1 & P2 & I1 & I2).
   assert (Nu : nth_error ksu i = Some k1) by (rewrite EKu, keys_of_map; exact N1).
   destruct (RealU i k1 Nu) as (p & pv & Lp & Spv & Rp).
