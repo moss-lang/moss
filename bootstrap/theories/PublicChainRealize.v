@@ -841,9 +841,7 @@ Proof.
   pose proof (PublicFormation.units_bare_of W bw Wo) as UB.
   pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
   pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf) as ScopeB.
-  pose proof (proj2 (PublicContextFacts.functor_context_merge W gg Cg nsg FCg)) as SectionG.
-  pose proof (step_scope_section _ _ _ ScopeB SectionG) as SectionB.
-  destruct ScopeB as [_ [BackB [PvB [_ MergeB]]]].
+  destruct (functx_step_scope W gg Cg nsg Cb made FCg ScopeB) as [ScopeG [[BackB PvB] [SectionB MergeB]]].
   destruct (functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg _]]].
   assert (GensOut : forall t y, ~ In y DG ->
     (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
@@ -852,12 +850,10 @@ Proof.
   assert (SigGensOut : forall sg y, ~ In y DG ->
     (In y (A.sig_gens (A.sig_subst (A.c_sub Cb) sg)) <-> In y (A.sig_gens sg)))
     by exact (section_sig_gens_out Cb DG GensOut).
-  assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG)
-    by exact (PublicFormation.functx_scope_gens W gg Cg nsg FCg).
   assert (InCb : forall k p, In (k, p) (A.c_provisions Cb) -> forall y, ~ In y DG -> In y D0 ->
     ~ In y (rel_gens p) /\ ~ In y (PublicCallRealize.key_gens k)).
   { intros k0 p0 I y Ny Iy0.
-    assert (NoScope : ~ In y (PublicFormation.scope_gens Cb)).
+    assert (NoScope : ~ In y (PublicFormation.class_scope_gens Cb)).
     { intros Is. destruct (BackB y Is) as [Ig|Im]; [exact (Ny (ScopeG y Ig))|].
       pose proof (MadeOut y Im) as N. apply (proj2 (PublicFamilyAgree.nlook_dom _ y _)) in Iy0. exact (Iy0 N). }
     destruct (PvB k0 p0 I) as [Ig|[Sp Sk]].

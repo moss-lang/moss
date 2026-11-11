@@ -8,7 +8,7 @@
    provisions by the context it starts from. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicScoping.
-From NM Require PublicContextFacts PublicMerge.
+From NM Require PublicContextFacts PublicMerge PublicOrientation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -22,17 +22,92 @@ Hypothesis family_sig_ok : FamilySigReadOffOk W.
 Definition ProvScope (C C' : cx) : Prop := forall k p, In (k, p) (c_provisions C') ->
   In (k, p) (c_provisions C) \/ (incl (provision_gens p) (scope_gens C') /\ incl (PublicCallRealize.key_gens k) (scope_gens C')).
 
+
+(* Binds may read old meanings through the merge, but keep each meaning's
+   class. This is independent of its stored representative. *)
+Definition TypesKept (C C' : cx) : Prop := PublicContextFacts.CxSection C ->
+  forall x t, In (x, t) (c_ty C) -> exists u,
+    In (x, u) (c_ty C') /\ MergeEq (c_merge C) t u.
+
+Lemma types_kept_incl : forall C C', incl (c_ty C) (c_ty C') -> TypesKept C C'.
+Proof.
+  intros C C' Included _ x t It. exists t. split; [exact (Included _ It)|apply MERefl].
+Qed.
+
 Definition StepScope (C C' : cx) (m : list nat) : Prop :=
   incl (scope_gens C) (scope_gens C') /\ (forall y, In y (scope_gens C') -> In y (scope_gens C) \/ In y m) /\
-  ProvScope C C' /\ (c_sub C' = c_sub C /\ c_merge C' = c_merge C).
+  ProvScope C C' /\ (c_sub C' = c_sub C /\ c_merge C' = c_merge C) /\ TypesKept C C'.
 
 (* The temporary row identity is used only to transport the section.
    Subsequent occurrence reasoning compares sections of the same merge. *)
 Lemma step_scope_section : forall C C' made,
   StepScope C C' made -> PublicContextFacts.CxSection C -> PublicContextFacts.CxSection C'.
 Proof.
-  intros C C' made [_ [_ [_ [Rows Merge]]]] Section.
+  intros C C' made [_ [_ [_ [[Rows Merge] _]]]] Section.
   exact (PublicContextFacts.section_same_fields C C' Rows Merge Section).
+Qed.
+
+
+Lemma step_class_scope_grows : forall C C' made,
+  StepScope C C' made -> PublicContextFacts.CxSection C ->
+  incl (class_scope_gens C) (class_scope_gens C').
+Proof.
+  intros C C' made [_ [_ [_ [[_ Merge] Kept]]]] Section y Iy.
+  unfold class_scope_gens in *. rewrite Merge. apply in_app_or in Iy as [Inside|Iy].
+  - apply in_or_app. left. exact Inside.
+  - apply in_or_app. destruct (in_dec Nat.eq_dec y (merge_symbols (c_merge C))) as [Inside|Outside];
+      [left; exact Inside|right].
+    destruct (tm_gens_in _ y Iy) as [x [t [It IY]]].
+    destruct (Kept Section x t It) as [u [Iu Equal]].
+    apply (in_tm_gens _ y x u Iu). apply (proj1 (PublicMerge.merge_eq_gens_out Equal y Outside)). exact IY.
+Qed.
+
+Lemma step_scope_class_view : forall C C' made,
+  StepScope C C' made -> PublicContextFacts.CxSection C ->
+  (forall g v, In (g, v) (c_sub C) -> lookup_subst g (c_sub C) = Some v) ->
+  ClassScopeView C -> ClassScopeView C'.
+Proof.
+  intros C C' made Step Section Function View.
+  pose proof (step_scope_section C C' made Step Section) as Section'.
+  pose proof (step_class_scope_grows C C' made Step Section) as Grow.
+  destruct Step as [Scope [_ [_ [[Rows Merge] _]]]].
+  apply class_scope_view; [exact Section'| |].
+  - intros g v Iq. rewrite Rows in Iq |- *. split; [exact (Function g v Iq)|].
+    apply Grow, (proj1 (View g)). exact (scope_sub_key C g v Iq).
+  - intros y Iy. apply Scope, (proj2 (View y)). unfold class_scope_gens.
+    apply in_or_app. left. rewrite <- Merge. exact Iy.
+Qed.
+
+Definition ClassStepScope (C C' : cx) (made : list nat) : Prop :=
+  (forall y, In y (class_scope_gens C') -> In y (class_scope_gens C) \/ In y made) /\
+  (forall k p, In (k, p) (c_provisions C') -> In (k, p) (c_provisions C) \/
+    (incl (provision_gens p) (class_scope_gens C') /\ incl (PublicCallRealize.key_gens k) (class_scope_gens C'))).
+
+Lemma step_scope_classes : forall C C' made,
+  StepScope C C' made -> ClassScopeView C -> ClassScopeView C' -> ClassStepScope C C' made.
+Proof.
+  intros C C' made [_ [Back [Prov _]]] View View'. split.
+  - intros y Iy. destruct (Back y (proj2 (View' y) Iy)) as [Before|Made]; [left|right; exact Made].
+    exact (proj1 (View y) Before).
+  - intros k p Iq. destruct (Prov k p Iq) as [Old|[Types Keys]]; [left; exact Old|right].
+    split; intros y Iy; apply (proj1 (View' y)); [exact (Types y Iy)|exact (Keys y Iy)].
+Qed.
+
+(* The live linking interface speaks only about class scopes. The stored
+   row function is needed to establish the temporary view, not its clients. *)
+Lemma functx_step_scope : forall u C ns C' made,
+  FunCtx W u C ns -> StepScope C C' made ->
+  incl (class_scope_gens C) (map fst (c_ty C)) /\ ClassStepScope C C' made /\
+  PublicContextFacts.CxSection C' /\ c_merge C' = c_merge C.
+Proof.
+  intros u C ns C' made FC Step.
+  destruct (functx_scope_view W u C ns FC) as [View Bound].
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u C ns FC)) as Section.
+  pose proof (step_scope_class_view C C' made Step Section
+    (PublicOrientation.functx_sub_function W u C ns FC) View) as View'.
+  split; [exact Bound|split; [exact (step_scope_classes C C' made Step View View')|split]].
+  - exact (step_scope_section C C' made Step Section).
+  - exact (proj2 (proj1 (proj2 (proj2 (proj2 Step))))).
 Qed.
 
 (* A section cannot erase or introduce a generation outside its merge. *)
@@ -129,8 +204,12 @@ Lemma step_provide : forall C k0 p0 a,
   incl (provision_gens p0 ++ inst_gens a) (scope_gens C) -> incl (PublicCallRealize.key_gens k0) (scope_gens C) ->
   StepScope C (provide C k0 a (set_provision C k0 p0)) [].
 Proof.
-  intros C k0 p0 a Sp Sk. unfold StepScope. rewrite scope_provide_set, sub_provide_set, merge_provide_set.
-  split; [intros y I; exact I|split; [intros y I; left; exact I|split; [|split; reflexivity]]].
+  intros C k0 p0 a Sp Sk.
+  assert (Keep : TypesKept C (provide C k0 a (set_provision C k0 p0))).
+  { apply types_kept_incl. rewrite (proj1 (provide_tables C k0 a (set_provision C k0 p0))).
+    intros q Iq. exact Iq. }
+  unfold StepScope. rewrite scope_provide_set, sub_provide_set, merge_provide_set.
+  split; [intros y I; exact I|split; [intros y I; left; exact I|split; [|split; [split; reflexivity|exact Keep]]]].
   intros k p I. rewrite scope_provide_set. destruct (provide_set_in _ _ _ _ _ _ I) as [Ic|[-> Sg]]; [left; exact Ic|right].
   split; [intros y Iy; exact (Sp y (Sg y Iy))|exact Sk].
 Qed.
@@ -138,7 +217,9 @@ Qed.
 Lemma step_set_fun : forall C u fx, (forall x tx, In (x, tx) fx -> nlook x (c_ty C) = Some tx) ->
   StepScope C (set_fun C u fx) [].
 Proof.
-  intros C u fx Fx. split; [intros y I; exact I|split; [intros y I; left; exact I|split; [|split; reflexivity]]].
+  intros C u fx Fx.
+  assert (Keep : TypesKept C (set_fun C u fx)) by (apply types_kept_incl; intros q Iq; exact Iq).
+  split; [intros y I; exact I|split; [intros y I; left; exact I|split; [|split; [split; reflexivity|exact Keep]]]].
   intros k p I. destruct (set_provision_in _ _ _ _ _ I) as [E|Ic]; [|left; exact Ic].
   injection E as -> ->. right. split; [|intros y []].
   intros y Iy. unfold provision_gens in Iy. cbn in Iy.
@@ -148,13 +229,17 @@ Qed.
 
 Lemma step_trans : forall C C1 C2 m1 m2, StepScope C C1 m1 -> StepScope C1 C2 m2 -> StepScope C C2 (m1 ++ m2).
 Proof.
-  intros C C1 C2 m1 m2 [I1 [B1 [P1 [S1 M1]]]] [I2 [B2 [P2 [S2 M2]]]].
-  split; [intros y I; exact (I2 y (I1 y I))|split; [|split; [|split; [rewrite S2; exact S1|rewrite M2; exact M1]]]].
+  intros C C1 C2 m1 m2 [I1 [B1 [P1 [[S1 M1] K1]]]] [I2 [B2 [P2 [[S2 M2] K2]]]].
+  split; [intros y I; exact (I2 y (I1 y I))|split; [|split; [|split; [split; [rewrite S2; exact S1|rewrite M2; exact M1]|]]]].
   - intros y I. destruct (B2 y I) as [I'|I']; [destruct (B1 y I') as [I''|I'']; [left; exact I''|]|];
       right; apply in_or_app; [left|right]; assumption.
   - intros k p I. destruct (P2 k p I) as [I'|S]; [|right; exact S].
     destruct (P1 k p I') as [I''|[Sa Sb]]; [left; exact I''|right].
     split; intros y Iy; [exact (I2 y (Sa y Iy))|exact (I2 y (Sb y Iy))].
+  - intros Section x t It. destruct (K1 Section x t It) as [u [Iu E1]].
+    pose proof (PublicContextFacts.section_same_fields C C1 S1 M1 Section) as Section1.
+    destruct (K2 Section1 x u Iu) as [v [Iv E2]]. exists v. split; [exact Iv|].
+    eapply METrans; [exact E1|rewrite <- M1; exact E2].
 Qed.
 
 Lemma pg_split : forall p y, In y (provision_gens p) ->
@@ -184,7 +269,9 @@ Proof.
     + (* bind T = tau *)
       assert (Sv : forall y, In y (gens (canon C tau)) -> In y (scope_gens C)).
       { intros y Iy. destruct (gens_canon C tau y Iy) as [I|I]; [exact (ty_scope C y (tyof_none_gens W _ _ _ _ T y I))|exact I]. }
-      split; [exact (scope_set_ty C t _)|split; [intros y I; left; exact (set_ty_back C t _ Sv y I)|split; [|split; reflexivity]]].
+      assert (Keep : TypesKept C (set_ty C t (canon C tau)))
+        by (apply types_kept_incl; intros q Iq; right; exact Iq).
+      split; [exact (scope_set_ty C t _)|split; [intros y I; left; exact (set_ty_back C t _ Sv y I)|split; [|split; [split; reflexivity|exact Keep]]]].
       intros k p I. left. exact I.
     + (* bind v = e *)
       apply step_provide; [|intros y []].
@@ -244,7 +331,13 @@ Proof.
       { intros t Ft. split; [exact (canon_ok W C _ Cf (tyok_abs W _ (OutAbs t Ft)))|].
         exact (table_scope C' t _ (InTy _ _ (OutIn t (proj2 (OutsI' t) Ft)))). }
       destruct (provide_result_ok W _ _ _ _ _ K PR (cf_read _ _ Cf) ReadK TyK OutK) as [_ [_ [_ Pr]]].
-      split; [exact Inc|split; [|split; [|split; [exact Esub|exact (PublicContextFacts.provided_result_merge W u C _ C' _ PR)]]]].
+      assert (Keep : TypesKept C C').
+      { intros Section x v Iq. exists (app_subst (c_sub C') (canon C v)).
+        split; [exact (InTy _ _ (OldIn _ _ Iq))|]. rewrite Esub.
+        eapply METrans.
+        - exact (@PublicMerge.merge_eq_read _ _ (proj1 Section) v).
+        - exact (@PublicMerge.merge_eq_read _ _ (proj1 Section) (canon C v)). }
+      split; [exact Inc|split; [|split; [|split; [split; [exact Esub|exact (PublicContextFacts.provided_result_merge W u C _ C' _ PR)]|exact Keep]]]].
       * intros y I. destruct (Back y I) as [I'|[t [Ft ->]]]; [left; exact I'|right].
         apply in_map. exact (proj2 (OutsI t) Ft).
       * intros k p Iq. destruct (Pr k p Iq) as [Iq'|[_ [_ Kr]]]; [left; exact Iq'|].
@@ -259,7 +352,8 @@ Proof.
       match goal with Fx : forall x tx, In (x, tx) fx <-> _ |- _ =>
         apply step_set_fun; intros x tx Iq; exact (proj2 (proj1 (Fx x tx) Iq)) end.
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 D2]; intros Fc Ff.
-    + split; [intros y I; exact I|split; [intros y I; left; exact I|split; [intros k p I; left; exact I|split; reflexivity]]].
+    + split; [intros y I; exact I|split; [intros y I; left; exact I|split; [intros k p I; left; exact I|split; [split; reflexivity|]]]].
+      apply types_kept_incl. intros q Iq. exact Iq.
     + destruct (binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D1 Fc Ff) as [Fc1 Ff1].
       exact (step_trans _ _ _ _ _ (item_scope _ _ _ _ _ _ _ D1 Fc Ff) (items_scope _ _ _ _ _ _ _ D2 Fc1 Ff1)).
 Qed.

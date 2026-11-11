@@ -423,6 +423,15 @@ Definition scope_gens (C : cx) : list nat :=
   flat_map (fun q => fst q :: gens (snd q)) (c_sub C) ++
   flat_map (fun q => gens (snd q) ++ gens (canon C (snd q))) (c_ty C).
 
+
+(* The scope stated without section rows or a representative choice. The
+   temporary storage view [scope_gens] is equivalent in genuine contexts. *)
+Definition class_scope_gens (C : cx) : list nat :=
+  merge_symbols (c_merge C) ++ tm_gens (c_ty C).
+
+Definition ClassScopeView (C : cx) : Prop :=
+  forall y, In y (scope_gens C) <-> In y (class_scope_gens C).
+
 Definition ShapesFormed (M : merge) : Prop :=
   forall c t, In c M -> mc_shape c = Some t -> TyFormed W t.
 
@@ -521,6 +530,22 @@ Proof.
     apply in_app_or in Iy as [Iy|Iy].
     + exact (Types y (in_tm_gens _ _ _ _ Iq Iy)).
     + apply (ReadBound v); [|exact Iy]. intros z Iz. exact (Types z (in_tm_gens _ _ _ _ Iq Iz)).
+Qed.
+
+
+Lemma class_scope_view : forall C,
+  SectionOf (c_merge C) (c_sub C) ->
+  (forall g v, In (g, v) (c_sub C) ->
+    lookup_subst g (c_sub C) = Some v /\ In g (class_scope_gens C)) ->
+  incl (merge_symbols (c_merge C)) (scope_gens C) -> ClassScopeView C.
+Proof.
+  intros C Section Rows Recorded y. split.
+  - apply (scope_gens_section_bound C (class_scope_gens C) Section); [|exact Rows|].
+    + intros z Iz. unfold class_scope_gens. apply in_or_app. left. exact Iz.
+    + intros z Iz. unfold class_scope_gens. apply in_or_app. right. exact Iz.
+  - unfold class_scope_gens. intro Iy. apply in_app_or in Iy as [Iy|Iy].
+    + exact (Recorded y Iy).
+    + destruct (tm_gens_in _ y Iy) as [x [v [Iq Iv]]]. exact (scope_ty C x v y Iq Iv).
 Qed.
 
 Lemma scope_gens_ext : forall C1 C2, c_ty C1 = c_ty C2 -> c_sub C1 = c_sub C2 -> scope_gens C1 = scope_gens C2.
@@ -1070,6 +1095,32 @@ Proof.
   - exact (IH Kt).
 Qed.
 
+
+Lemma entries_class_scope_key : forall sigma classes tm es,
+  IdForm tm -> SectionOf classes sigma -> forall x, In x (map fst tm) ->
+  In x (class_scope_gens (entries_cx sigma classes tm es)).
+Proof.
+  intros sigma classes tm es Id Section x Ix. unfold class_scope_gens. apply in_or_app.
+  destruct (in_dec Nat.eq_dec x (merge_symbols classes)) as [Inside|Outside]; [left; exact Inside|right].
+  apply in_map_iff in Ix as [[y t] [E Iq]]. cbn in E. subst y.
+  unfold IdForm in Id. rewrite Forall_forall in Id. pose proof (Id _ Iq) as E. cbn in E. subst t.
+  apply (in_tm_gens _ x x (app_subst sigma (TAbs x))).
+  - cbn [entries_cx c_ty]. apply in_map_iff. exists (x, TAbs x). split; [reflexivity|exact Iq].
+  - apply (proj1 (PublicMerge.merge_eq_gens_out (@PublicMerge.merge_eq_read classes sigma (proj1 Section) (TAbs x)) x Outside)).
+    left. reflexivity.
+Qed.
+
+Lemma entries_scope_class_view : forall sigma classes tm es,
+  IdForm tm -> SectionOf classes sigma -> incl (merge_symbols classes) (map fst tm) ->
+  (forall g v, In (g, v) sigma -> lookup_subst g sigma = Some v /\ In g (map fst tm)) ->
+  ClassScopeView (entries_cx sigma classes tm es).
+Proof.
+  intros sigma classes tm es Id Section Classes Rows. apply class_scope_view; [exact Section| |].
+  - intros g v Iq. destruct (Rows g v Iq) as [Read Key]. split; [exact Read|].
+    exact (entries_class_scope_key sigma classes tm es Id Section g Key).
+  - intros y Iy. exact (idform_scope sigma classes tm es y Id (Classes y Iy)).
+Qed.
+
 Lemma entries_cx_formed : forall σ classes tm es,
   IdForm tm -> KeysAbstract tm -> KeysDecl tm -> Forall (EntryP (TyOk W)) es ->
   (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
@@ -1153,11 +1204,10 @@ Proof.
 Qed.
 
 
-(* A functor's initial scope is bounded through its merge classes and the
-   canonical readings of its input telescope. Row domains/functions are
-   retained solely to account for the legacy storage representation. *)
-Theorem functx_scope_gens : forall u C ns, FunCtx W u C ns ->
-  incl (scope_gens C) (map fst (c_ty C)).
+(* The input scope has an exact class view. Stored rows are used only to
+   relate that view to the temporary storage scope. *)
+Theorem functx_scope_view : forall u C ns, FunCtx W u C ns ->
+  ClassScopeView C /\ incl (class_scope_gens C) (map fst (c_ty C)).
 Proof.
   intros u C ns FC. pose proof (PublicCallRealize.functx_merge_symbols W u C ns FC) as Classes.
   destruct FC as (d & ps & a & r & b & es & tm & tm' & sigma & classes & implicit &
@@ -1171,16 +1221,27 @@ Proof.
   { intros x Ix. unfold tmr. rewrite map_app. apply in_or_app. right. exact (Entries x Ix). }
   assert (Keys : map fst (c_ty (entries_cx sigma classes tmr es)) = map fst tmr).
   { cbn [entries_cx c_ty]. rewrite map_map. reflexivity. }
-  apply scope_gens_section_bound; [exact Section|exact Classes| |].
-  - intros g v Iq. split.
-    + exact (proj2 (proj2 (proj2 (proj2 MGM))) g v Iq).
-    + rewrite Keys. apply Source. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g v Iq)).
-  - rewrite Keys. intros y Iy. destruct (tm_gens_in _ y Iy) as [x [v [Iq Iv]]].
-    cbn [entries_cx c_ty] in Iq. apply in_map_iff in Iq as [[x0 v0] [Eq Iq]]. cbn in Eq. injection Eq as -> <-.
-    unfold IdForm in Id. rewrite Forall_forall in Id. pose proof (Id _ Iq) as V0. cbn in V0. rewrite V0 in Iv.
-    refine (@PublicMerge.section_gens_bound classes sigma Section (map fst tmr) _ (TAbs x) _ y Iv).
-    + rewrite <- Keys. exact Classes.
-    + intros z [<-|[]]. change x with (fst (x, v0)). exact (in_map fst _ _ Iq).
+  split.
+  - apply entries_scope_class_view; [exact Id|exact Section| |].
+    + intros y Iy. apply Source. exact (proj1 (proj2 (proj2 Merge)) y Iy).
+    + intros g v Iq. split.
+      * exact (proj2 (proj2 (proj2 (proj2 MGM))) g v Iq).
+      * apply Source. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g v Iq)).
+  - unfold class_scope_gens. intros y Iy. apply in_app_or in Iy as [Iy|Iy].
+    + exact (Classes y Iy).
+    + rewrite Keys. destruct (tm_gens_in _ y Iy) as [x [v [Iq Iv]]].
+      cbn [entries_cx c_ty] in Iq. apply in_map_iff in Iq as [[x0 v0] [Eq Iq]]. cbn in Eq. injection Eq as -> <-.
+      unfold IdForm in Id. rewrite Forall_forall in Id. pose proof (Id _ Iq) as V0. cbn in V0. rewrite V0 in Iv.
+      refine (@PublicMerge.section_gens_bound classes sigma Section (map fst tmr) _ (TAbs x) _ y Iv).
+      * rewrite <- Keys. exact Classes.
+      * intros z [<-|[]]. change x with (fst (x, v0)). exact (in_map fst _ _ Iq).
+Qed.
+
+Theorem functx_scope_gens : forall u C ns, FunCtx W u C ns ->
+  incl (scope_gens C) (map fst (c_ty C)).
+Proof.
+  intros u C ns FC y Iy. destruct (functx_scope_view u C ns FC) as [View Bound].
+  exact (Bound y (proj1 (View y) Iy)).
 Qed.
 
 End Initial.

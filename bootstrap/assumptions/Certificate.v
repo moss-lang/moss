@@ -451,6 +451,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicScoping.entry_provision_gens_read_f);
   root (@NM.PublicFormation.scope_gens_section_bound);
   root (@NM.PublicFormation.functx_scope_gens);
+  root (@NM.PublicFormation.functx_scope_view);
+  root (@NM.PublicLinkScope.step_scope_class_view);
+  root (@NM.PublicLinkScope.functx_step_scope);
   root (@NM.PublicFormation.ctxof_class_formed);
   root (@NM.PublicFormation.functx_class_formed);
   root (@NM.PublicMerge.merge_eq_gens_bound);

@@ -201,17 +201,13 @@ Proof.
   assert (FrG' : PublicFormation.FrameFormed W Fg).
   { split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W). }
   pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrG') as ScopeB.
-  pose proof (proj2 (PublicContextFacts.functor_context_merge W gg Cg nsg FCg)) as SectionG.
-  pose proof (step_scope_section _ _ _ ScopeB SectionG) as SectionB.
-  destruct ScopeB as [_ [BackB [PvB [_ MergeB]]]].
+  destruct (functx_step_scope W gg Cg nsg Cb made FCg ScopeB) as [ScopeG [[BackB PvB] [SectionB MergeB]]].
   rewrite Made in BackB.
   set (DG := map fst (A.c_ty Cg)) in *.
   assert (GensOut : forall t y, ~ In y DG ->
     (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
   { apply (section_gens_out Cb DG SectionB). rewrite MergeB.
     exact (PublicCallRealize.functx_merge_symbols W gg Cg nsg FCg). }
-  assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG)
-    by exact (PublicFormation.functx_scope_gens W gg Cg nsg FCg).
   assert (InCb : forall k p, In (k, p) (A.c_provisions Cb) -> forall y, ~ In y DG ->
     ~ In y (PublicCallRealize.provision_sig_gens p) /\ ~ In y (PublicCallRealize.key_gens k)).
   { intros k p I y Ny. destruct (PvB k p I) as [Ig|[Sp Sk]].
