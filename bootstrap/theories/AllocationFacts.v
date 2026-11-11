@@ -168,3 +168,36 @@ Proof.
     intros Present. apply value_provision_keys_spec in Present.
     exact (Present (Unprovided v InBatch)).
 Qed.
+
+Theorem link_output_allocation_contract : forall W (outs : list nat) (gen : nat -> nat),
+  AllocationFresh (link_output_scope W) (map gen outs) <->
+  NoDup (map gen outs) /\ (forall t, In t outs -> Fresh W (gen t)).
+Proof.
+  intros W outs gen. unfold AllocationFresh, link_output_scope.
+  cbn. rewrite Forall_forall. split.
+  - intros [Distinct Permitted]. split; [exact Distinct|].
+    intros t Member. exact (proj1 (Permitted (gen t) (in_map gen outs t Member))).
+  - intros [Distinct Permitted]. split; [exact Distinct|].
+    intros g Member. apply in_map_iff in Member as [t [<- Member]].
+    split; [apply Permitted; exact Member|tauto].
+Qed.
+
+Scheme bind_items_scope_ind := Induction for BindItems Sort Prop
+  with bind_item_scope_ind := Induction for BindItem Sort Prop.
+Combined Scheme bind_scope_ind from bind_items_scope_ind, bind_item_scope_ind.
+
+Theorem bind_allocation_history : forall W P,
+  (forall F C items wrap C' F' made,
+    BindItems W P F C items wrap C' F' made ->
+    incl (fr_fresh F) (fr_fresh F')) /\
+  (forall F C item wrap C' F' made,
+    BindItem W P F C item wrap C' F' made ->
+    incl (fr_fresh F) (fr_fresh F')).
+Proof.
+  intros W P. apply bind_scope_ind; intros; cbn [carry_frame_allocations frame_after_allocation
+    extend_allocation_scope body_allocation_scope fr_fresh scope_allocated] in *;
+    try apply incl_refl.
+  - eapply incl_tran; eassumption.
+  - assumption.
+  - intros g Earlier. apply in_or_app. left. exact Earlier.
+Qed.

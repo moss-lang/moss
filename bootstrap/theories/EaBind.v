@@ -229,7 +229,7 @@ Definition bind_item (F : frame) (C : cx) (it : spec * option aexpr) : M (wrappe
       | ADFunctor _ _ _ _ (Some bodies), None =>
           let* _ := check (negb (nmem s (fr_applying F))) ("functor " ++ qs W s ++ " applies itself") in
           let* (((wrap, C'), F'), made) := r_bind_items R (with_mod F (d_mod d) s) C (List.concat bodies) in
-          ret (wrap, C', Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F') (fr_applying F) (fr_pins F), made)
+          ret (wrap, C', carry_frame_allocations F F', made)
       | ADFunctor _ _ _ _ None, None => apply_abstract E F C s
       | ADFunctor _ _ _ _ None, Some (AEPath pg None) =>
           let* g := lift (resolve_sym W md pg) (bq (show_path pg) ++ " is not in scope") in

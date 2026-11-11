@@ -3666,7 +3666,9 @@ Lemma link_facts : forall u gg h pins, A.LinkBody W Prog u gg h pins -> exists d
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins.
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins
-    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR _ RR BO Fam FrH FB PinsI PinG].
+    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outputs _ RR BO Fam [_ FB] PinsI PinG].
+  destruct Outputs as (Outs & OutM & Allocated & PR).
+  apply AllocationFacts.link_output_allocation_contract in Allocated as [NdG FrG].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
   unfold LinkData. repeat first [assumption | split].
 Qed.

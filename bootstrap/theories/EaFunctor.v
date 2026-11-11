@@ -259,6 +259,17 @@ Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx)
          (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
   ret (declared_link_target Cu nsu).
 
+(* Allocate the temporary output roles used to read the promised result. *)
+Definition link_output_roles (u : nat) (Cu Cb : cx) (bound_to : string)
+    : M ((list nat * list (nat * nat)) * (cx * list item)) :=
+  let outs := fun_outputs W metadata_fuel u in
+  let* _ := match find (fun t => negb (bound_in Cb t)) outs with
+            | Some t => fail (bound_to ++ " does not provide the type " ++ qs W t ++ " (D78)")
+            | None => ret tt end in
+  let* gtab := fresh_table u outs in
+  let* promised := pure (provide_result E u Cu (fun t => TAbs (gen_of gtab t))) in
+  ret ((outs, gtab), promised).
+
 (* SOUND: link_body u gg = Ok h -> LinkBody W P u gg (slot_index h) pins, pins the
    ones it records (get_pins h) (P final, I2) *)
 Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
@@ -281,13 +292,8 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
                              filter (fun t => nmem t pl) (mentions W metadata_fuel u)) in
       let* (((wrap, Cb), Fb), made) := r_bind_items R Fg Cg its in
       let* _ := check (forallb (fun t => negb (bound_in Cu t)) made) (bound_to ++ " makes a type " ++ nu ++ " takes as an input (D84)") in
-      let outs := fun_outputs W metadata_fuel u in
-      let* _ := match find (fun t => negb (bound_in Cb t)) outs with
-                | Some t => fail (bound_to ++ " does not provide the type " ++ qs W t ++ " (D78)")
-                | None => ret tt end in
-      let* gtab := fresh_table u outs in
+      let* ((outs, gtab), (Cr, ks)) := link_output_roles u Cu Cb bound_to in
       let gen := gen_of gtab in
-      let* (Cr, ks) := pure (provide_result E u Cu (fun t => TAbs (gen t))) in
       (* Q6, N5 (#95): the pins of fixed inputs: what the body binds each
          to, unless it is G's own reading of a fixed input G takes *)
       let pins := flat_map (fun x => match nlook x (c_ty Cb) with
@@ -345,9 +351,7 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
                                                      ", which is not a family, so where an application is placed could be observed (D84 rule 7)")
                   | _ => ret tt end
                 else ret tt in
-      let code := FunctorCode (map fst (c_ty Cg))
-                    (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
-                    (map ITy outs) binds0 (map (fun k => rkof site (at_site site k)) ks) in
+      let code := translate_linked_body Cu Cg outs binds0 (map (fun k => rkof site (at_site site k)) ks) in
       let* h := emit_fun_code code in
       let* _ := put_pins h pins in
       let* _ := put_link (u, gg) h in

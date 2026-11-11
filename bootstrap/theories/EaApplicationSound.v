@@ -240,15 +240,6 @@ Proof.
   exists f, f'. repeat split. now apply ProgramPrune.item_eqb_true.
 Qed.
 
-Local Lemma outputs_nodup : forall W fuel u,
-  NoDup (EaTypes.fun_outputs W fuel u).
-Proof.
-  intros W fuel u. unfold EaTypes.fun_outputs.
-  destruct (EaTypes.functor_decl W u) as [[d [[[params inputs] outputs] body]]|];
-    [|constructor].
-  apply EaRootSound.ascending_nodup, EaDependencyFuel.sort_uniq_ascending.
-Qed.
-
 Local Lemma pure_read : forall A (reader : er A) before value after,
   pure reader before = Ok (value, after) -> reader = Ok value /\ after = before.
 Proof.
@@ -304,7 +295,7 @@ Proof.
   apply mbind_ok in Run as (checked & s9 & Read & Run).
   destruct (EaDecide.collides_only_as ks ksf) eqn:Collisions; [|discriminate Read].
   injection Run as <- <- <- <- _.
-  assert (Unique : NoDup outs) by apply outputs_nodup.
+  assert (Unique : NoDup outs) by apply EaRootSound.fun_outputs_nodup.
   assert (Fuel : bound < e_metadata_fuel E).
   { assert (Depth : bound <= EaBudget.metadata_depth (e_W E) bound).
     { unfold EaBudget.metadata_depth. apply Nat.le_max_l. }

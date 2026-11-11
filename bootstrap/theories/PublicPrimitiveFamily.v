@@ -69,10 +69,11 @@ Proof.
   rewrite Body in View. injection View as <-. destruct Linked.
   match goal with
   | Bo : A.BindsOf (?w EUnit) ?bindings, Bi : A.BindItems _ _ _ _ _ ?w _ _ _,
-    Fh : A.funbody_of _ _ = Some (FunctorCode _ _ _ _ ?bindings _) |- _ =>
+    Translation : A.TranslatesLinkedBody _ _ _ _ _ _ _ ?bindings _ |- _ =>
+      destruct Translation as [_ Fh];
       rewrite Body in Fh; injection Fh as Same; subst actual;
       pose proof (bindsof_np _ _ Bo (items_np _ _ _ _ _ _ _ Bi EUnit Logic.I)) as Excludes;
-      cbn [fc_bindings] in Primitive |- *;
+      cbn [A.translate_linked_body fc_bindings] in Primitive |- *;
       destruct bindings as [|binding tail]; [reflexivity|exfalso]
   end.
   inversion Primitive as [|binding' tail' Head Rest]; subst.

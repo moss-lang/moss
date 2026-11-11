@@ -159,6 +159,16 @@ Proof.
   apply unchanged_code_transition; [apply PeanoNat.Nat.le_refl|intros [] i; reflexivity].
 Qed.
 
+Lemma link_output_roles_code_effect : forall E u Cu Cb who,
+  PreservesOldCode (EaFunctor.link_output_roles E u Cu Cb who).
+Proof.
+  intros E u Cu Cb who. unfold EaFunctor.link_output_roles.
+  apply code_effect_bind; [apply code_effect_optional_failure|intros []].
+  apply code_effect_bind; [apply fresh_table_code_effect|]. intro roles.
+  apply code_effect_bind; [apply code_effect_pure|]. intro promised.
+  apply code_effect_return.
+Qed.
+
 Theorem link_body_code_effect : forall E R,
   (forall F C items, PreservesOldCode (r_bind_items R F C items)) ->
   forall u g, PreservesOldCode (EaFunctor.link_body E R u g).
@@ -172,9 +182,7 @@ Proof.
   apply code_effect_bind; [apply code_effect_lift|]. intros [definition definition_needs].
   apply code_effect_bind; [apply Binds|]. intros [[[wrap returned] frame] made].
   apply code_effect_bind; [apply code_effect_check|intros []].
-  apply code_effect_bind; [apply code_effect_optional_failure|intros []].
-  apply code_effect_bind; [apply fresh_table_code_effect|]. intro generations.
-  apply code_effect_bind; [apply code_effect_pure|]. intros [result keys].
+  apply code_effect_bind; [apply link_output_roles_code_effect|]. intros [[outputs generations] [result keys]].
   apply code_effect_bind.
   { match goal with
     | |- PreservesOldCode (match ?problem with Some _ => _ | None => _ end) =>

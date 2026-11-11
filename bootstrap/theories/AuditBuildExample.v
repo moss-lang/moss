@@ -174,7 +174,10 @@ Proof.
         apply Nat.eqb_eq in E; subst pid; unfold Fresh in Fr; discriminate
     end.
   - exfalso. inversion Link; subst.
-    match goal with Body : funbody_of _ h = Some _ |- _ => discriminate Body end.
+    match goal with
+    | Translated : TranslatesLinkedBody _ _ h _ _ _ _ _ _ |- _ =>
+        destruct Translated as [_ Body]; discriminate Body
+    end.
 Qed.
 
 (* No nominal has a payload and the one body enters nothing, so no edge. *)

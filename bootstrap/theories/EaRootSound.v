@@ -31,6 +31,14 @@ Proof.
   - apply IH. exact (ascending_tail _ _ Sorted).
 Qed.
 
+Lemma fun_outputs_nodup : forall W fuel u, NoDup (fun_outputs W fuel u).
+Proof.
+  intros W fuel u. unfold fun_outputs.
+  destruct (functor_decl W u) as [[d [[[params inputs] outputs] body]]|];
+    [|constructor].
+  apply ascending_nodup, sort_uniq_ascending.
+Qed.
+
 Lemma mentions_nodup : forall W fuel u, NoDup (mentions W fuel u).
 Proof.
   intros W fuel u. unfold mentions.

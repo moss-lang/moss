@@ -3746,6 +3746,12 @@ Definition frame_after_allocation (F : frame) (after : allocation_scope nat) : f
   Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F)
     (scope_allocated after) (fr_applying F) (fr_pins F).
 
+(* Returning from a nested source body keeps its allocation history in
+   the caller's scope. *)
+Definition carry_frame_allocations (caller nested : frame) : frame :=
+  Frame (fr_mod caller) (fr_ret caller) (fr_this caller) (fr_loop caller)
+    (fr_var caller) (fr_fresh nested) (fr_applying caller) (fr_pins caller).
+
 Definition value_provision_keys (entries : list (item * provision)) : list nat :=
   flat_map (fun q => match fst q with IVal v => [v] | _ => [] end) entries.
 
@@ -4291,6 +4297,31 @@ Definition pin_reads (body : cx) (pins : subst) : subst :=
 Definition link_site (Cg Cb : cx) (pins : subst) (outs : list nat) (gen : nat -> nat) : cx :=
   Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ pins ++ c_ty Cg)
      (c_sub Cb) (c_merge Cb) (c_provisions Cb) (c_locals Cb).
+(* A linked body's output probes are local to the comparison with its
+   promised result. They are read at [link_site] before code emission. *)
+Definition link_output_scope (W : world) : allocation_scope nat :=
+  AllocationScope (Fresh W) [] [].
+
+Definition TypesLinkOutputs (W : world) (u : nat) (Cu Cb : cx)
+    (outs : list nat) (gen : nat -> nat) (Cr : cx) (ks : list item) : Prop :=
+  (forall t, In t outs <-> FunOutputs W u t) /\
+  (forall t, In t outs -> exists meaning, nlook t (c_ty Cb) = Some meaning) /\
+  AllocationFresh (link_output_scope W) (map gen outs) /\
+  ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks.
+
+Definition translate_linked_body (Cu Cg : cx) (outs : list nat)
+    (bindings : list binding) (keys : list item) : functor_code :=
+  FunctorCode (map fst (c_ty Cg))
+    (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
+    (c_ty Cg) (map ITy outs) bindings keys.
+
+Definition TranslatesLinkedBody (W : world) (P : program) (h : nat)
+    (Cu Cg site : cx) (outs : list nat) (bindings : list binding) (ks : list item) : Prop :=
+  Fresh W h /\
+  funbody_of P h =
+    Some (translate_linked_body Cu Cg outs bindings
+      (map (fun k => rkey_of site (at_site site k)) ks)).
+
 (* Each promised key, read at the body's site (at_site re-reads its
    receiver), is provided there, at the promised provision with `reads`
    substituted (the roles' meanings, role_reads). *)
@@ -4911,7 +4942,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     d_ast d = ADFunctor n ps a r (Some bodies) -> ~ In u (fr_applying F) ->
     BindItems W P (with_mod F (d_mod d) u) C (concat bodies) wrap C' F' made ->
     BindItem W P F C (Spec (Some pa) None None, None) wrap C'
-             (Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F') (fr_applying F) (fr_pins F)) made
+             (carry_frame_allocations F F') made
 (* [D78]: all output destinations are made here, so values of their
    types may not leave the block. *)
 | BApplyAbstract : forall F C pa a,
@@ -5098,11 +5129,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
        unmentioned merge representative, tests/errors/link_kept_output_rep.moss;
        scratch/orch/realize2-AUDIT.md) *)
     (forall t, In t made -> nlook t (c_ty Cu) = None) ->
-    (forall t, In t outs <-> FunOutputs W u t) ->
-    (forall t, In t outs -> exists meaning, nlook t (c_ty Cb) = Some meaning) ->
-    NoDup (map gen outs) ->
-    (forall t, In t outs -> Fresh W (gen t)) ->
-    ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks ->
+    TypesLinkOutputs W u Cu Cb outs gen Cr ks ->
     (* a key the pins re-read must be one the body made, not one of G's
        own provisions (the oracle's and native's "does not bind", by
        written leaf; tests/errors/pin_fixed_key_need.moss, AUDIT-CHANGES #73) *)
@@ -5115,15 +5142,9 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     (* h's body, as a run of binds, is what `wrap` puts around nothing *)
     BindsOf (wrap EUnit) binds0 ->
     (Family W u -> FamilyBindings W binds0) ->
-    Fresh W h ->
-    (* each item of F's declared result, position by position, is read
-       where the body bound it: a method under the body's runtime key for
-       its receiver read at link_site (the application installs it under
-       the caller's key for that position) *)
-    funbody_of P h = Some (FunctorCode (map fst (c_ty Cg))
-      (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
-      (map ITy outs) binds0
-      (map (fun k => rkey_of (link_site Cg Cb pins outs gen) (at_site (link_site Cg Cb pins outs gen) k)) ks)) ->
+    (* The caller installs each result under its own key for the same
+       position. Emission uses the body's runtime key at that position. *)
+    TranslatesLinkedBody W P h Cu Cg (link_site Cg Cb pins outs gen) outs binds0 ks ->
     (* the pins of fixed inputs: what the body binds each to, in G's input
        terms (each bind reads its type where it is made, and a later bind
        writes only its own alias; tests/wasi/pin_taken_chain.moss).  A fixed
