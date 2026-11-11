@@ -54,3 +54,8 @@ From NM Require EaMainSymbols.
 Print Assumptions NM.EaMainSymbols.load_world_scope_path.
 Print Assumptions NM.EaMainSymbols.bundle_world_r_main_symbols_exact.
 Print Assumptions NM.EaMainSymbols.elaborate_with_main_symbols_exact.
+
+From NM Require EaResultCoverage.
+Print Assumptions NM.EaResultCoverage.result_mentions_path.
+Print Assumptions NM.EaResultCoverage.result_mentions_eventually_complete.
+Print Assumptions NM.EaResultCoverage.mentions_eventually_complete.
