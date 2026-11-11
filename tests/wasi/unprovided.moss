@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D68: an operator is a call of a fixed method of lib/num.moss, so one the
 # context does not provide at its operand's type is the error the call
@@ -13,7 +13,7 @@ assume Std {
   fn by_method(c: Char): Char { c.add(c) }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     putchar(by_operator(char::a));

@@ -23,7 +23,7 @@ assume Std {
   }
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     bind c=char::h;

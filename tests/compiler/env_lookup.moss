@@ -1,7 +1,7 @@
 import "../../src/boot.moss" as boot;
 import "../../src/lower.moss" as lower;
 import "../../lib/wasirawstd.moss" use WasiRawStd;
-import "../../lib/base.moss" use Base;
+import "../../lib/base.moss" use ReferenceBase;
 
 assume Std {
   assume boot::Compiler {
@@ -40,6 +40,6 @@ assume Std {
   }
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() { bind WasiRawStd; probe(); }
 }

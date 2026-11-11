@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw, WasiContainers, Numerics, Containers;
 import "../../lib/wasm.moss" use Wasm, I32, Memory, Arrayed, Array, Arrays, .arrayed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D81 with D79: an array lives in no linear memory, so `Array` lists no
 # `Memory`. One made in the main memory's scope is written and read in a
@@ -25,7 +25,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Arrayed = Int;

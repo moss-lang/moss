@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # A recursive function that rebinds one of its own fn needs on its own
 # recursive path. Compiled under `Loud`, `count`'s body binds `Loud`
@@ -48,7 +48,7 @@ assume Std, note {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind note = (n) => {};

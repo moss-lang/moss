@@ -45,7 +45,7 @@ Lemma put_forwarder_spec : forall s g arity slot,
 Proof.
   intros s g arity slot.
   exists (Est (es_next s) (es_fns s) (es_funs s) (nset (es_fwd s) g (nset (forwarders_at s g) arity slot)) (es_wrap s)
-    (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+    (es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
   split; [reflexivity|]. split.
   - unfold forwarder_at, forwarders_at. cbn [es_fwd]. now rewrite !WorldSound.nget_nset_same.
   - split; [reflexivity|intros [] number; reflexivity].
@@ -191,7 +191,6 @@ Record ForwarderEffects (before after : est) : Prop := {
   forwarder_wrap : es_wrap after = es_wrap before;
   forwarder_link : es_link after = es_link before;
   forwarder_const : es_const after = es_const before;
-  forwarder_unsupported : es_unsupported after = es_unsupported before;
   forwarder_lamcx : es_lamcx after = es_lamcx before;
   forwarder_pins : es_pins after = es_pins before;
   forwarder_names : es_names after = es_names before

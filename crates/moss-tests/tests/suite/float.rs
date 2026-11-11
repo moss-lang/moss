@@ -24,7 +24,7 @@ fn nan_comparisons() {
         r#"import "{root}/lib/wasm.moss" as w use Wasm;
 import "{root}/lib/wasistd.moss" use Branch, i32_bool;
 import "{root}/lib/wasi.moss" use WasiStd;
-import "{root}/lib/wasip1.moss" use Wasi;
+import "{root}/lib/wasip1.moss" use WasiCore;
 assume Std, Wasm, Branch {
   fn yes(b: Bool) { if b { putchar(char::y) } else { putchar(char::n) } }
   fn run() {
@@ -42,7 +42,7 @@ assume Std, Wasm, Branch {
     yes(i32_bool(w::f64_eq(w::f64_min(nan, one), w::f64_min(nan, one))));
   }
 }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     run();

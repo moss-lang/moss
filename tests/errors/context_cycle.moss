@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # A context cycle is invalid at declaration (Audit note 30).
 type T;
@@ -10,7 +10,7 @@ assume A {
   fn id(x: T): T { x }
 }
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     bind T = I32;
     proc_exit(id(w::i32_one));

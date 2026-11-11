@@ -2,12 +2,12 @@
 
 import "./cli.moss" as cli;
 import "../lib/wasirawstd.moss" use WasiRawStd;
-import "../lib/base.moss" use Base;
+import "../lib/base.moss" use ReferenceBase;
 
 # The self-hosted compiler's entry point (D52): `main` receives the
 # primitive context and installs the raw-memory implementation of `Std`,
 # itself written in Moss, before calling the front end written against `Std`.
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind WasiRawStd;
     cli::cli();

@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D71: a tag is parameterized by the type symbols its payload mentions.
 # `W`'s payload mentions `Char`, not `T`, so `W[T=Char]` binds nothing
@@ -19,7 +19,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     demo();

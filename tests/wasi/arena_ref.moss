@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw, alloc;
 import "../../lib/wasm.moss" as w use Wasm, I32, StructRef, Boxed, Ref, Heap, .boxed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D78: swapping the GC heap. `Ref[Boxed]`'s payload is the platform's
 # abstract `StructRef`, so a scope can rebind it and provide `.boxed` and
@@ -98,7 +98,7 @@ assume Std, Wasm, Branch, word, unword {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     {

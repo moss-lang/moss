@@ -89,9 +89,9 @@ Theorem reserve_code_spec : forall W start table s,
     (forall table' n, read_code s' table' n = read_code s table' n) /\
     VacantCode s' (slot_index slot) /\ CodeTablesBound s'.
 Proof.
-  intros W start table [next fns funs fwd wrap link const unsupported lamcx pins names]
+  intros W start table [next fns funs fwd wrap link const lamcx pins names]
     Bounded WorldBound Tables.
-  exists (CodeSlot next), (Est (S next) fns funs fwd wrap link const unsupported lamcx pins names).
+  exists (CodeSlot next), (Est (S next) fns funs fwd wrap link const lamcx pins names).
   split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|]. split.
   - change (Allocates
       (AllocationScope (Fresh W) (seq start (next - start)) []) [next]
@@ -103,8 +103,8 @@ Proof.
     + intros n Present. cbn [scope_allocated scope_support] in Present.
       rewrite app_nil_r in Present. apply in_seq in Present.
       cbn [es_next] in Bounded. lia.
-  - assert (Same : forall table' n, read_code (Est (S next) fns funs fwd wrap link const unsupported lamcx pins names)
-      table' n = read_code (Est next fns funs fwd wrap link const unsupported lamcx pins names) table' n)
+  - assert (Same : forall table' n, read_code (Est (S next) fns funs fwd wrap link const lamcx pins names)
+      table' n = read_code (Est next fns funs fwd wrap link const lamcx pins names) table' n)
       by (intros [] n; reflexivity).
     split; [exact Same|]. split.
     + intro k. rewrite Same. apply Tables. apply Nat.le_refl.
@@ -121,23 +121,23 @@ Theorem write_code_spec : forall table (slot : code_slot table) code s,
     (forall table' n, table' <> table \/ n <> slot_index slot ->
       read_code s' table' n = read_code s table' n).
 Proof.
-  intros [] [slot] code [next fns funs fwd wrap link const unsupported lamcx pins names] Bounded Tables.
-  - exists (Est next (nset fns slot code) funs fwd wrap link const unsupported lamcx pins names).
+  intros [] [slot] code [next fns funs fwd wrap link const lamcx pins names] Bounded Tables.
+  - exists (Est next (nset fns slot code) funs fwd wrap link const lamcx pins names).
     split; [reflexivity|]. split; [reflexivity|].
     assert (Other : forall table' n, table' <> FunctionTable \/ n <> slot ->
-      read_code (Est next (nset fns slot code) funs fwd wrap link const unsupported lamcx pins names) table' n =
-      read_code (Est next fns funs fwd wrap link const unsupported lamcx pins names) table' n).
+      read_code (Est next (nset fns slot code) funs fwd wrap link const lamcx pins names) table' n =
+      read_code (Est next fns funs fwd wrap link const lamcx pins names) table' n).
     { intros [] n [Kind|Different]; try contradiction; try reflexivity.
       cbn [read_code es_fns]. apply WorldSound.nget_nset_other. exact Different. }
     split.
     + intros n Beyond table'. rewrite Other; [apply Tables; exact Beyond|].
       right. cbn [es_next slot_index] in *. lia.
     + split; [apply WorldSound.nget_nset_same|exact Other].
-  - exists (Est next fns (nset funs slot code) fwd wrap link const unsupported lamcx pins names).
+  - exists (Est next fns (nset funs slot code) fwd wrap link const lamcx pins names).
     split; [reflexivity|]. split; [reflexivity|].
     assert (Other : forall table' n, table' <> FunctorTable \/ n <> slot ->
-      read_code (Est next fns (nset funs slot code) fwd wrap link const unsupported lamcx pins names) table' n =
-      read_code (Est next fns funs fwd wrap link const unsupported lamcx pins names) table' n).
+      read_code (Est next fns (nset funs slot code) fwd wrap link const lamcx pins names) table' n =
+      read_code (Est next fns funs fwd wrap link const lamcx pins names) table' n).
     { intros [] n [Kind|Different]; try contradiction; try reflexivity.
       cbn [read_code es_funs]. apply WorldSound.nget_nset_other. exact Different. }
     split.

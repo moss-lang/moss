@@ -9,7 +9,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/access.moss" use Elem, .get, .set, .length;
 import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
 import "./saturating.moss" use Saturating;
@@ -44,7 +44,7 @@ assume Std {
   fn nl() { putchar(10.char()); }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     pr(sum(fill(3))); nl();                  # wraps: 6000000000 mod 2^32

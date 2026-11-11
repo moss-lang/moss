@@ -1,11 +1,11 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw;
 import "../../lib/wasm.moss" as w use Gc, Wasm, I32, I64, Arrayed, Arrays, Array, .arrayed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # Probe: apply the platform's `Arrays` after rebinding `I32`, which its
 # result's signatures mention (`.arrayed(length: I32)`, `.length(): I32`).
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     let n = w::i32_one;

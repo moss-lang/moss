@@ -1,12 +1,12 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # Two tags with one record payload: a bare record type is structural, so
 # one tag's bound payload builds the other (Audit note 35). Exits 3.
 tag P { a: I32 };
 tag Q { a: I32 };
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn wrap(r: { a: I32 }): Q { Q(r) }
 
   fn main() {

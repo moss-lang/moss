@@ -3,7 +3,7 @@ import "wasi.moss" use WasiStd;
 import "wasistd.moss" use Branch, WasiFloats, WasiFloats32;
 import "int.moss" use Int;
 import "wasm.moss" use Wasm, I32;
-import "wasip1.moss" use Wasi;
+import "wasip1.moss" use WasiCore;
 
 # D78: an abstract functor whose result holds types. `Fast` promises
 # `Floats` — the type `Float` and everything over
@@ -58,7 +58,7 @@ assume Std, Wasm, Branch, Fast {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     {

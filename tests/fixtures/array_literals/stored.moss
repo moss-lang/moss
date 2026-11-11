@@ -4,13 +4,13 @@ import "./provider.moss" use *;
 import "../../../lib/wasi.moss" use WasiStd;
 import "../../../lib/wasistd.moss" use Branch, raw;
 import "../../../lib/wasm.moss" as w use Wasm, Boxed, Heap, .boxed, Arrayed, Arrays, .arrayed;
-import "../../../lib/wasip1.moss" use Wasi;
+import "../../../lib/wasip1.moss" use WasiCore;
 
 assume Wasm {
   tag Stored { text: ArrayText };
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind LiteralBuilder = Building;

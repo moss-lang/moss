@@ -780,10 +780,6 @@ Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> P
 | PEPrim : forall f d n ps rt body pr, w_decl W f = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = Some pr ->
     PlatformEntry W P (IFn f) (PrimitiveClosure (encode pr) None)
-| PEUnsupported : forall f d n ps rt body i, w_decl W f = Some d -> platform_mod W (d_mod d) ->
-    d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = None ->
-    nth_error (program_unsupported P) i = Some n ->
-    PlatformEntry W P (IFn f) (PrimitiveClosure (unsupported_operation n i) None)
 | PEFun : forall u d n ps a r h, w_decl W u = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFunctor n ps a r None -> funbody_of P h <> None ->
     PlatformEntry W P (IFun u) (FunctorClosure h None empty_environment None).

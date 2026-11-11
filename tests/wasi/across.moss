@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "./acrosslib.moss" as out use emit, upper_a;
 
 # A call across a module boundary, both ways of naming one: `emit` and
@@ -8,7 +8,7 @@ import "./acrosslib.moss" as out use emit, upper_a;
 # body, its signature, the module its own names resolve in — comes from
 # the module that declared it, not the one that called it.
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     emit(upper_a());
     emit(w::i32_add(upper_a(), out::two()));

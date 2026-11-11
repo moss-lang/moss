@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/wasistd.moss" use WasiBasics, Basics, Branch;
 import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
 import "../../lib/char.moss" as char use Char;
@@ -8,7 +8,7 @@ import "../../lib/int.moss" use Int, zero, one;
 import "../../lib/std.moss" use putchar;
 
 # Every name below — String and its methods, Int and its arithmetic — is
-# provided in Moss over Wasi. Nothing here is native.
+# provided in Moss over WasiCore. Nothing here is native.
 assume Basics, WasiChars {
   fn show() {
     let s = first_arg();
@@ -19,7 +19,7 @@ assume Basics, WasiChars {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiBasics;
     bind WasiCharConsts;

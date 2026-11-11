@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # A pattern with a payload names a tag: `Red` is a unit, and carries
 # nothing to bind (D34). Rejected in both compilers.
@@ -8,7 +8,7 @@ tag Red;
 tag Green;
 type Colour = | Red | Green;
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn pick(c: Colour): I32 {
     match c {
       Red(x) => w::i32_one,

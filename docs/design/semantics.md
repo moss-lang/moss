@@ -5097,16 +5097,20 @@ the platform root context during checking, including an imported function
 ([Audit.v note 41](../../bootstrap/theories/Audit.v)).
 
 
-## Base: the compiler-provided context
+## Platform entry contexts
 
-`lib/base.moss` names the complete primitive context `Base`: `Wasm`,
-`Wasi`, `Branch`, and `Gc`. The prelude imports it and `StdBase`, the
-ordinary library functor from `Base` to `Std`. Entry points can assume
-`Base` and bind `StdBase`; reusable library code can continue to assume
-`Std` or narrower contexts. The individual primitive groups remain
-available. `WasiStd` remains a compatibility wrapper around `StdBase`.
-`println` is ordinary library code over contextual string construction
-and `print`, and appends one newline.
+`lib/base.moss` names the full compiled context `Base` with
+`Wasm`, `Wasi`, `Branch`, and `Gc`.
+`ReferenceBase` uses `WasiCore`, the seven Preview 1
+calls the reference host implements. The prelude imports both contexts
+and `StdBase`. Programs that run on both back ends can assume
+`ReferenceBase` and bind `StdBase`. Reusable code can assume
+`Std` or narrower contexts. The reference checks every declared
+assumption of `main` at build time.
+
+`WasiStd` is a compatibility wrapper around `StdBase`.
+`println` is ordinary library code over contextual string
+construction and `print` and appends one newline.
 
 Importing `StdBase` through the prelude also brings the GC string
 implementation into the compiler's source bundle. The compiler still

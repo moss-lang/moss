@@ -124,7 +124,7 @@ Theorem place_forwarder_keeps_state : forall W P bound before after,
   ForwarderEffects before after -> ForwarderRecords bound after ->
   BodyState W P bound after.
 Proof.
-  intros W P bound before after [State LinkTyped] [Change Wrap Link Const Unsupported Origin Pins Names]
+  intros W P bound before after [State LinkTyped] [Change Wrap Link Const Origin Pins Names]
     Forwarders. split; [|eapply link_cache_same; eassumption].
   destruct State as [Floor Tables Links Origins Constants _ Wrappers].
   constructor; try exact Forwarders.
@@ -141,7 +141,7 @@ Theorem place_wrapper_keeps_state : forall W P bound before after,
   MethodWrapperEffects before after -> WrappedRecords W bound after ->
   BodyState W P bound after.
 Proof.
-  intros W P bound before after [State LinkTyped] [Change Fwd Link Const Unsupported Origin Pins Names]
+  intros W P bound before after [State LinkTyped] [Change Fwd Link Const Origin Pins Names]
     Wrappers. split; [|eapply link_cache_same; eassumption].
   destruct State as [Floor Tables Links Origins Constants Forwarders _].
   constructor; try exact Wrappers.

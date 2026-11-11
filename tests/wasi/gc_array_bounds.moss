@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw;
 import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D81: an array operation traps on an index past the array's length, as
 # the instruction does: the platform's bounds check, for nothing. The
@@ -14,7 +14,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Arrayed = Int;

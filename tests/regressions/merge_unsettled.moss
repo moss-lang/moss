@@ -7,7 +7,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 type Foo;
 type A;
@@ -39,6 +39,6 @@ context K0 = B7, C7, B8, C8, B7.w[Foo=B8], C7.w[Foo=C8], B6, C6, B7, C7, B6.w[Fo
 assume Std, K0, Ctx1, Ctx2 {
   fn f(x: B8): B8 { x }
 }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() { bind WasiStd; }
 }

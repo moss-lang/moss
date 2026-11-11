@@ -11,7 +11,7 @@ import "../../lib/wasm.moss" use Boxed, Ref, Heap, .boxed;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 assume Std {
   fn print_int(n: Int) {
@@ -44,7 +44,7 @@ assume Std, Wasm, Heap, U, T, F, V {
     rec(wrap(x), n - 1)
   }
 }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind U = A;

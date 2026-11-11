@@ -1,7 +1,10 @@
 import "./wasm.moss" use Wasm, Gc;
-import "./wasip1.moss" use Wasi;
+import "./wasip1.moss" use Wasi, WasiCore;
 import "./wasistd.moss" use Branch;
 
 # Everything supplied by the compiler at a program's entry point:
 # Wasm instructions and types, WASI calls, branching, and GC functors.
 context Base = Wasm, Wasi, Branch, Gc;
+
+# The entry context available to the verified reference runner.
+context ReferenceBase = Wasm, WasiCore, Branch, Gc;

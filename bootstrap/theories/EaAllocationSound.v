@@ -10,10 +10,10 @@ Theorem fresh_n_range : forall count s,
 Proof.
   induction count as [|count IH]; intros s.
   - exists s. split; [reflexivity|lia].
-  - destruct s as [next fns funs fwd wrap link const unsupported lamcx pins names].
+  - destruct s as [next fns funs fwd wrap link const lamcx pins names].
     cbn [fresh_n mbind fresh es_next es_fns es_funs es_fwd es_wrap es_link
-      es_const es_unsupported es_lamcx es_pins es_names].
-    destruct (IH (Est (S next) fns funs fwd wrap link const unsupported lamcx pins names))
+      es_const es_lamcx es_pins es_names].
+    destruct (IH (Est (S next) fns funs fwd wrap link const lamcx pins names))
       as (s' & Run & Next).
     cbn [es_next] in Run, Next. unfold mbind. rewrite Run.
     exists s'. split; [reflexivity|lia].
@@ -26,9 +26,9 @@ Theorem fresh_table_range : forall E u roles s,
 Proof.
   intros E u roles. induction roles as [|role roles IH]; intros s.
   - exists s. split; [reflexivity|cbn; lia].
-  - destruct s as [next fns funs fwd wrap link const unsupported lamcx pins names].
+  - destruct s as [next fns funs fwd wrap link const lamcx pins names].
     cbn [EaFunctor.fresh_table mmap mbind fresh put_name es_next es_fns es_funs
-      es_fwd es_wrap es_link es_const es_unsupported es_lamcx es_pins es_names ret].
+      es_fwd es_wrap es_link es_const es_lamcx es_pins es_names ret].
     unfold mbind.
     match goal with
     | |- context [mmap ?allocate roles ?after] =>

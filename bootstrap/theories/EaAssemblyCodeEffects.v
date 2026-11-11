@@ -89,16 +89,6 @@ Qed.
 Lemma code_effect_get : PreservesOldCode get.
 Proof. intros s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.
 
-Lemma code_effect_unsupported : forall name, PreservesOldCode (unsupported_index name).
-Proof.
-  intros name s x s' Run. unfold unsupported_index in Run.
-  match type of Run with
-  | context [match ?existing with Some _ => _ | None => _ end] =>
-    destruct existing
-  end; injection Run as _ <-; apply unchanged_code_transition;
-    try apply Nat.le_refl; try reflexivity; intros [] i; reflexivity.
-Qed.
-
 Lemma platform_entry_code_effect : forall E C k, PreservesOldCode (EaPlatform.platform_entry E C k).
 Proof.
   intros E C [type|value|fn|receiver method args|functor].
@@ -118,8 +108,7 @@ Proof.
       destruct primitive
     end.
     + apply code_effect_bind; [apply code_effect_check|intros []]. apply code_effect_return.
-    + apply code_effect_bind; [apply code_effect_check|intros []].
-      apply code_effect_bind; [apply code_effect_unsupported|]. intro index. apply code_effect_return.
+    + apply code_effect_fail.
   - apply code_effect_bind; [apply code_effect_lift|]. intro declaration.
     destruct (d_ast declaration) as [| | | | | | | |name parameters arguments results body]; try apply code_effect_fail.
     destruct body; [apply code_effect_fail|].

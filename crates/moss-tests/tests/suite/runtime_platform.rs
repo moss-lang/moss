@@ -1,6 +1,6 @@
 //! The oracle checks its selected library's runtime contracts. Choosing a
 //! custom prelude does not make arbitrary declarations valid primitives.
-use moss_tests::{oracle_command, sources, ORACLE_REJECTED};
+use moss_tests::{oracle_command, sources, ORACLE_REJECTED, ORACLE_UNSUPPORTED};
 
 fn refused(files: &[(&str, &str)], message: &str) {
     let dir = sources(files);
@@ -29,39 +29,50 @@ fn primitive_arity_and_types_are_checked() {
 }
 
 #[test]
-fn unsupported_operations_report_their_own_names() {
+fn main_requires_implemented_platform_operations_even_when_unused() {
     let dir = sources(&[
-        ("lib/wasm.moss", "fn first_probe(); fn second_probe(); context Probes = first_probe, second_probe;"),
+        ("lib/wasm.moss", "fn probe();"),
         ("lib/prelude.moss", ""),
-        ("first_probe.moss", "import \"./lib/wasm.moss\" use Probes, first_probe; assume Probes { fn main() { first_probe(); } }"),
-        ("second_probe.moss", "import \"./lib/wasm.moss\" use Probes, second_probe; assume Probes { fn main() { second_probe(); } }"),
+        ("main.moss", "import \"./lib/wasm.moss\" use probe; assume probe { fn main() {} }"),
     ]);
     let prelude = format!("{dir}/lib/prelude.moss");
-    for name in ["first_probe", "second_probe"] {
-        let entry = format!("{dir}/{name}.moss");
-        let out = oracle_command(&["--prelude", &prelude, &entry]);
-        assert_eq!(out.code, 4, "{}", out.stderr);
-        assert_eq!(out.stderr, format!("[unsupported primitive {name}]\n"));
-        assert!(out.stdout.is_empty());
-    }
+    let entry = format!("{dir}/main.moss");
+    let out = oracle_command(&["--prelude", &prelude, "--elab-only", &entry]);
+    assert_eq!(out.code, ORACLE_UNSUPPORTED, "{}", out.stderr);
+    assert!(out.stderr.contains("main assumes") && out.stderr.contains("probe"), "{}", out.stderr);
+    assert!(out.stderr.contains("which the reference host does not implement"), "{}", out.stderr);
+    assert!(out.stdout.is_empty());
 }
 
 #[test]
-fn unsupported_operations_preserve_raw_handle_types() {
-    refused(
-        &[
-            (
-                "lib/wasm.moss",
-                "type I32; type StructRef; type Boxed;
-                 assume StructRef, Boxed { tag Ref[Boxed](StructRef); }
-                 assume I32, Boxed { fn unrecognized(x: Ref[StructRef = I32, Boxed = Boxed]); }
-                 context Probe = I32, Boxed, unrecognized;",
-            ),
-            ("lib/prelude.moss", "import \"./wasm.moss\" use Probe;"),
-            ("main.moss", "assume Probe { fn main() {} }"),
-        ],
-        "platform primitive has an incompatible raw handle",
-    );
+fn full_wasi_is_available_to_compiled_programs() {
+    let dir = sources(&[
+        ("main.moss", r#"
+            import "wasm.moss" as w use Wasm;
+            import "wasip1.moss" use Wasi, random_get;
+            assume Wasm, Wasi {
+              fn main() { random_get(w::i32_zero, w::i32_one); }
+            }
+        "#),
+        ("unused.moss", r#"
+            import "wasm.moss" use I32, Memory;
+            import "wasip1.moss" use random_get;
+            assume I32, Memory, random_get { fn main() {} }
+        "#),
+    ]);
+    let entry = format!("{dir}/main.moss");
+    let out = oracle_command(&["--elab-only", &entry]);
+    assert_eq!(out.code, ORACLE_UNSUPPORTED, "{}", out.stderr);
+    assert!(out.stderr.contains("which the reference host does not implement"), "{}", out.stderr);
+
+    let unused = format!("{dir}/unused.moss");
+    let out = oracle_command(&["--elab-only", &unused]);
+    assert_eq!(out.code, ORACLE_UNSUPPORTED, "{}", out.stderr);
+    assert!(out.stderr.contains("random_get"), "{}", out.stderr);
+
+    let module = build_with(&entry, "lib/prelude.moss");
+    assert!(wasm_text(&module).contains("\"wasi_snapshot_preview1\" \"random_get\""));
+    assert_eq!(run_module(&module, &[]), "");
 }
 
 #[test]
@@ -358,7 +369,7 @@ fn platform_bindings_check_the_merged_entry_view() {
     for body in [
         "tag U; context Bad=Wasm,w::i32_one[w::I32=U]; assume Bad {fn main(){match w::i32_one{U=>()};}}",
         "tag U; context Bad=Wasm,w::i32_add[w::I32=U]; assume Bad {fn main(){w::i32_add(U,U);}}",
-        "import \"./wasip1.moss\" as p use Wasi; tag U; context Bad=w::Memory,Wasi,p::fd_write[w::I32=U,w::Memory=w::Memory]; assume Bad {fn main(){p::fd_write(U,U,U,U);}}",
+        "import \"./wasip1.moss\" as p use WasiCore; tag U; context Bad=w::Memory,WasiCore,p::fd_write[w::I32=U,w::Memory=w::Memory]; assume Bad {fn main(){p::fd_write(U,U,U,U);}}",
     ] {
         let dir = sources(&[]);
         let lib = format!("{dir}/lib");
@@ -392,12 +403,12 @@ fn fixed_platform_content_can_be_a_user_type() {
     }
     let wasm = repo().join(&lib).join("wasm.moss");
     let declarations = fs::read_to_string(&wasm).unwrap().replace("functor Heap[Boxed]", "functor Heap[]");
-    fs::write(&wasm, format!("{declarations}\ntype P; assume P {{fn witness():P;}}\n")).unwrap();
+    fs::write(&wasm, format!("{declarations}\ntype P; assume I32, P {{fn proc_exit(code: I32);}}\n")).unwrap();
     let entry = format!("{lib}/fixed_content.moss");
     fs::write(repo().join(&entry), r#"
 import "./wasm.moss" as w use Wasm, .boxed;
 tag Held(w::I32);
-context HeldHeap=Wasm,w::Boxed,w::witness[w::P=w::Boxed],w::witness[w::P=Held],w::Heap;
+context HeldHeap=Wasm,w::Boxed,w::proc_exit[w::P=w::Boxed],w::proc_exit[w::P=Held],w::Heap;
 assume HeldHeap {
   fn main() {
     bind w::Heap;

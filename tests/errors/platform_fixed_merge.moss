@@ -14,7 +14,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 assume I32 {
   fn ff(): I32;
@@ -22,7 +22,7 @@ assume I32 {
 
 context Two = ff[I32 = Bool], ff;
 
-assume Wasm, Wasi, Branch, Two {
+assume Wasm, WasiCore, Branch, Two {
   fn main() {
     bind WasiStd;
   }

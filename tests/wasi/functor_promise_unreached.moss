@@ -2,7 +2,7 @@ import "../../lib/float.moss" use Floats;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiFloats;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # functor_promise.moss with `kernel` never called. D16: it is checked all
 # the same, and with it the application of `Fast` in it, which must make
@@ -20,7 +20,7 @@ assume Std, Wasm, Branch, Fast {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Fast = WasiFloats;

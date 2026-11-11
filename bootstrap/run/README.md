@@ -110,9 +110,16 @@ primitive NAME]`, `[out of fuel]`. Rejections are `[front end: MSG]` and
 | 0, or proc_exit's code | normal |
 | 63 | the front end rejected the program (lex, parse or load error) |
 | 64 | the elaborator rejected it |
-| 65 | a construct not modelled, which is an elaborator message starting `unsupported: `: no `main` (a library), a `main` that assumes an item no platform library provides |
+| 65 | a construct not modelled, which is an elaborator message starting `unsupported: `: no `main` (a library), a `main` whose assumptions the reference platform cannot supply |
 | 134 / 3 / 4 / 5 | trap / stuck / unsupported primitive / out of fuel |
 | 2 | usage |
+
+**WASI contexts.** `WasiCore` declares the calls the reference host
+implements. `ReferenceBase` combines it with Wasm, branching, and GC and
+is available through the prelude. Use it with `StdBase` for programs
+that run on both back ends. `Wasi` and `Base` offer the full Preview 1
+declarations to compiled programs. The reference checks each assumption
+of `main` during elaboration, including unused assumptions.
 
 **Linear memories (D79).** Base selects the memory from the resolved
 `Memory` argument of each `Addr` method. Each distinct type names its own

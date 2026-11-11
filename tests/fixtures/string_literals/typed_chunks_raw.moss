@@ -2,7 +2,7 @@ import "./typed_chunks.moss" use run;
 import "../../../lib/wasi.moss" use WasiRawStd;
 import "../../../lib/wasistd.moss" use Branch;
 import "../../../lib/wasm.moss" use Wasm;
-import "../../../lib/wasip1.moss" use Wasi;
-assume Wasm, Wasi, Branch {
+import "../../../lib/wasip1.moss" use WasiCore;
+assume Wasm, WasiCore, Branch {
   fn main() { bind WasiRawStd; run(); }
 }

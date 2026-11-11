@@ -12,7 +12,7 @@ import "../../lib/wasm.moss" use Boxed, Ref, Heap, .boxed;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 assume Std {
   fn print_int(n: Int) {
@@ -30,7 +30,7 @@ assume Std, Wasm, T {
   type Nest = Nil | Cons;
   fn zero_of(l: Nest): Int { match l { Nil => 0, Cons { head, tail } => 1 } }
 }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind T = A;

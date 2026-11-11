@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/wasistd.moss" use WasiBasics, WasiFiles, Basics, Files, Branch;
 import "../../lib/string.moss" use print, first_arg;
 import "../../lib/path.moss" use pwd, .join, .read;
@@ -8,6 +8,6 @@ assume Basics, Files {
   fn cat() { print(pwd.join(first_arg()).read()); }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() { bind WasiBasics; bind WasiFiles; cat(); }
 }

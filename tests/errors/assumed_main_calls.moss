@@ -10,12 +10,12 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 type T;
 assume T { fn f(); }
 assume f { fn g() { f(); } }
 assume Std { fn hello() { putchar(char::h); putchar(char::newline); } }
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind f = hello;

@@ -11,7 +11,7 @@
 # Audit rejects (TyUnion: members are nominal where the union is written;
 # since #76 also at pick's declaration).
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # D15: a union's members are nominal where the union is written. `T` is
 # abstract in `pick`'s signature, so `T | A[X=Colour]` is refused there.
@@ -26,7 +26,7 @@ tag Green;
 type Colour = | Red | Green;
 type T;
 
-assume T, Wasm, Wasi {
+assume T, Wasm, WasiCore {
   fn pick(u: T | A[X=Colour]): I32 {
     let one = w::i32_one;
     match u {
@@ -39,7 +39,7 @@ assume T, Wasm, Wasi {
   }
 }
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     let one = w::i32_one;
     let seven = w::i32_add(w::i32_add(w::i32_add(one, one), w::i32_add(one, one)), w::i32_add(w::i32_add(one, one), one));

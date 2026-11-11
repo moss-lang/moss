@@ -24,7 +24,7 @@ functor ByX: Std, Q -> Q.describe, Q.show {
   bind Q.show = (c) => putchar(c);
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     bind Both = ByX;

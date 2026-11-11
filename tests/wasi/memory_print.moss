@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiRawStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, string_of;
 import "../../lib/wasm.moss" as w use Wasm, Memory;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D79: `print` takes a string in the main memory, which is the only one
 # WASI preview 1 reads. A string made in `Scratch` is a
@@ -10,7 +10,7 @@ import "../../lib/wasip1.moss" use Wasi;
 
 tag Scratch;
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiRawStd;
     let s = {

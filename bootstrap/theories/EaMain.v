@@ -140,7 +140,7 @@ Definition finish_assembly (bound : nat) (entry : string) : M program :=
   let* st := get in
   let '(bl, tr, fl) := bool_syms E in
   let program := Program (collect (es_fns st) (es_next st) []) (collect (es_funs st) (es_next st) [])
-                    bl tr fl main env0 (es_unsupported st) (casts E) (Platform.machine_table W) (assembled_origins st) in
+                    bl tr fl main env0 [] (casts E) (Platform.machine_table W) (assembled_origins st) in
   let* _ := check (expansion_ok W fuel program (es_fns st) (es_funs st) bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
   ret program.

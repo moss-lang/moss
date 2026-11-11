@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # Contexts nest to any depth (Audit note 30): `T` is seventy contexts down,
 # both for what `Box` and `open` require and for the context `open`'s body
@@ -82,7 +82,7 @@ assume C69 {
   fn open(b: Box): T { match b { Box(x) => x, } }
 }
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     bind T = I32;
     proc_exit(open(Box(w::i32_add(w::i32_one, w::i32_one))));

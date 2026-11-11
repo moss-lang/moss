@@ -32,7 +32,7 @@ functor ByX: Std, Q -> Q.describe {
   bind Q.describe = () => char::x;
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     bind Desc = ByX;

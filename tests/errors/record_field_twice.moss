@@ -1,12 +1,12 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # A record literal gives every field of the payload once (D58): a payload
 # that names a field twice has no record literal, as the `{ a = one }`
 # below cannot give both `a`s (Audit note 62).
 tag P { a: I32, a: I32 };
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     let p = P { a = w::i32_one };
     match p {

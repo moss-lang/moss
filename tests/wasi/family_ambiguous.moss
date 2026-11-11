@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D84 rule 7 (strengthened): `F[A, B]: -> A.m, B.m` and a call at
 # A = B: two items of one family share an instance of their key.
@@ -16,6 +16,6 @@ assume Std, F {
   fn use_it() { let x = one.m(); putchar((x + char::digit0.code()).char()); }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() { bind WasiStd; bind F = G; use_it(); putchar(char::newline); }
 }

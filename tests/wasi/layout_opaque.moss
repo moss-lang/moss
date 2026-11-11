@@ -18,7 +18,7 @@
 import "../../lib/wasm.moss" use Wasm, StructRef, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 type Link;
 type Target;
@@ -32,7 +32,7 @@ assume Std, Wasm, Links { tag LHold(Ref[Boxed=LNode]); }
 assume Target { tag Handle[Target](StructRef); }
 tag LTree { left: LNil | Handle[Target=LTree] };
 assume LT { tag LBox[LT](LT); tag LPair[LT] { a: LT, b: LBox, c: LNil | LBox }; }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Link = LEnd;

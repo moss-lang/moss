@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # D15: a type symbol may be a union member where the context the union
 # is written in binds it to a nominal type. After `bind T = U`, `T | V`
@@ -9,7 +9,7 @@ type T;
 tag U;
 tag V;
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     bind T = U;
     let x: T | V = U;

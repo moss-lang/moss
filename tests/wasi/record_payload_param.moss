@@ -1,11 +1,11 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # Binding a struct tag's payload gives a bare record type (Audit note 35),
 # which a parameter can name. Exits 3.
 tag P { a: I32, b: I32 };
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn get(r: { a: I32, b: I32 }): I32 { r.b }
 
   fn main() {

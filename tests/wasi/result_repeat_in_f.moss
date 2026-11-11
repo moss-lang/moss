@@ -11,7 +11,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 type A;
 assume A { fn .m(); }
@@ -27,6 +27,6 @@ assume Std, F {
   fn use_it() { bind A = Int; bind F; one.m(); }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() { bind WasiStd; bind F = G; use_it(); putchar(char::newline); }
 }

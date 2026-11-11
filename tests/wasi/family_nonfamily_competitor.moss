@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/int.moss" use Int, one;
 type A;
 type B;
@@ -11,7 +11,7 @@ functor Good[A]: A, B -> A.bar;
 functor NotFamily[A, B]: A, B -> A.bar;
 functor G: A, B -> A.bar { bind A.bar = (v) => v; }
 assume B, give, Good, NotFamily, Int, one { fn work(): B { one.bar(give) } }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
  fn main() {
   bind WasiStd;
   bind A = Int;

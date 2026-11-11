@@ -91,7 +91,7 @@ fn module_aliases_from_explicit_globs_shadow_the_prelude() {
 
 #[test]
 fn unshadowed_prelude_defaults_remain_available() {
-    accepts(&[("main.moss", "type Local;\nassume Base { fn main() { bind StdBase; print(\"defaults\"); putchar(char::newline); } }\n")], "defaults\n");
+    accepts(&[("main.moss", "type Local;\nassume ReferenceBase { fn main() { bind StdBase; print(\"defaults\"); putchar(char::newline); } }\n")], "defaults\n");
 }
 
 #[test]
@@ -100,11 +100,11 @@ fn shadowing_does_not_change_bindings_in_other_modules() {
         &[
             (
                 "helper.moss",
-                "assume Base { fn report() { bind StdBase; print(\"prelude\"); putchar(char::newline); } }\n",
+                "assume ReferenceBase { fn report() { bind StdBase; print(\"prelude\"); putchar(char::newline); } }\n",
             ),
             (
                 "main.moss",
-                "import \"./helper.moss\" use report;\nassume Base {\n  fn print() { bind StdBase; println(\"local\"); }\n  fn main() { bind StdBase; print(); report(); print(); }\n}\n",
+                "import \"./helper.moss\" use report;\nassume ReferenceBase {\n  fn print() { bind StdBase; println(\"local\"); }\n  fn main() { bind StdBase; print(); report(); print(); }\n}\n",
             ),
         ],
         "local\nprelude\nlocal\n",
@@ -171,10 +171,10 @@ fn implicit_prelude_names_are_not_reexported() {
 fn explicit_named_imports_can_reexport_prelude_symbols() {
     accepts(
         &[
-            ("helper.moss", "import \"base.moss\" use Base;\n"),
+            ("helper.moss", "import \"base.moss\" use ReferenceBase;\n"),
             (
                 "main.moss",
-                "import \"./helper.moss\" use Base;\nassume Base { fn main() {} }\n",
+                "import \"./helper.moss\" use ReferenceBase;\nassume ReferenceBase { fn main() {} }\n",
             ),
         ],
         "",
@@ -187,11 +187,11 @@ fn a_named_import_promotes_a_glob_binding_to_an_export() {
         &[
             (
                 "helper.moss",
-                "import \"base.moss\" use *;\nimport \"base.moss\" use Base;\n",
+                "import \"base.moss\" use *;\nimport \"base.moss\" use ReferenceBase;\n",
             ),
             (
                 "main.moss",
-                "import \"./helper.moss\" use Base;\nassume Base { fn main() {} }\n",
+                "import \"./helper.moss\" use ReferenceBase;\nassume ReferenceBase { fn main() {} }\n",
             ),
         ],
         "",

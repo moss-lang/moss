@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32, I64;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # D15: no two members of a union share a head. Here they would be two
 # instantiations of `A`, and an arm `A(y)` could not say which one y is
@@ -9,7 +9,7 @@ assume X { tag A[X](X); }
 
 type U = | A[X=I32] | A[X=I64];
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn first(u: U): I32 {
     match u {
       A(y) => y,

@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, fd_write, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, fd_write, proc_exit;
 
 # Applying a *type*: `Box[Elem=I32]` substitutes into a payload. Both
 # compilers compile this file. `Box`'s payload mentions `Elem`, which is
@@ -7,7 +7,7 @@ import "../../lib/wasip1.moss" use Wasi, fd_write, proc_exit;
 # a symbol the payload does not mention is an error
 # (`tests/wasi/irrelevant_tag.moss`).
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   type Elem;
 
   assume Elem {

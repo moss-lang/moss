@@ -8,12 +8,12 @@
 # Verdicts: oracle rejects (D15, as union-latent-overlap); native accepts
 # and exits 2 (the U arm); Audit rejects (TyUnion).
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 type T;
 tag U;
 
-assume T, Wasm, Wasi {
+assume T, Wasm, WasiCore {
   fn pick(u: T | U): I32 {
     let one = w::i32_one;
     match u {
@@ -23,7 +23,7 @@ assume T, Wasm, Wasi {
   }
 }
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn main() {
     bind T = U;
     let t: T = U;

@@ -1,7 +1,7 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
 import "../../lib/wasistd.moss" use Branch, i32_bool;
 import "../../lib/wasi.moss" use WasiStd;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # Do records and unions allocate? Watch the heap pointer across a run of
 # both, the way the D58 test watched nominal wrappers.
@@ -34,7 +34,7 @@ assume Std, Wasm, Branch {
 
 # The platform runs `main` with the primitive context, and `run` under the
 # `Std` it installs (D52).
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     run();

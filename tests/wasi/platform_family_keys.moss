@@ -4,7 +4,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # Audit's `Platform.Family` filed a platform family's primitives, and its
 # result, under the result's static keys (`mkey`, no instantiation), but
@@ -29,7 +29,7 @@ assume Std, Wasm, Heap {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     demo();

@@ -1,7 +1,7 @@
 import "../../../lib/wasi.moss" use WasiStd;
 import "../../../lib/wasistd.moss" use Branch;
 import "../../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
-import "../../../lib/wasip1.moss" use Wasi;
+import "../../../lib/wasip1.moss" use WasiCore;
 assume Std, Wasm {
   tag TA(Ref[Boxed=B]);
   tag TC(Ref[Boxed=Int]);
@@ -17,7 +17,7 @@ assume Std, Wasm, TI, BI, II {
  fn evalT(t:T):Int { match t { TA(r)=>evalB(r.deref()), TC(r)=>r.deref(), } }
  fn evalB(b:B):Int { match b { BD(r)=>evalT(r.deref()), BE(r)=>r.deref(), } }
 }
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
  fn main(){
   bind WasiStd;
   bind Boxed=Int; bind Heap;

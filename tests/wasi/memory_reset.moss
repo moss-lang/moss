@@ -2,7 +2,7 @@ import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers,
   heap_mark, heap_reset, ints_addr, Num, i32_bool, raw;
 import "../../lib/wasm.moss" as w use Wasm, Memory;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D79: an arena. `Scratch` is a memory of its own, so resetting its
 # allocator drops everything made there at once and leaves the main
@@ -49,7 +49,7 @@ assume Char, Numerics, Containers {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     let xs = int_list();

@@ -24,7 +24,7 @@ functor CharTok: Std, Tok -> tok {
   bind tok = () => char::q;
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     bind Tok = Char;

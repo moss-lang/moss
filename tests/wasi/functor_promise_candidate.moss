@@ -2,7 +2,7 @@ import "../../lib/int.moss" as int;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # The application of `Pick` in `pos` is reached, with `Pick` bound to
 # `Good`, which makes `make` at the type promised. But `Pick` is also
@@ -39,7 +39,7 @@ assume Std, Wasm, Branch, Pick {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn other() {
     bind Pick = Bad;
   }

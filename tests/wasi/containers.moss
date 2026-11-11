@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/wasistd.moss" use WasiBasics, WasiContainers, Basics, Containers, Branch;
 import "../../lib/wasichar.moss" use WasiCharConsts, WasiChars;
 import "../../lib/char.moss" as char use Char;
@@ -28,7 +28,7 @@ assume Basics, Containers, WasiChars {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiBasics;
     bind WasiContainers;

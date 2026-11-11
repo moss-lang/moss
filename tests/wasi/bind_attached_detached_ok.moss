@@ -15,7 +15,7 @@ assume Std {
   fn Meter.describe() { putchar(char::m); }
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     let d = Meter(3);

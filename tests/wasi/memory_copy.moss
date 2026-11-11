@@ -2,7 +2,7 @@ import "../../lib/wasi.moss" use WasiRawStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, Str, Num, Packed, Item,
   alloc, four, raw, code_of, ints_addr, elem, i32_bool;
 import "../../lib/wasm.moss" as w use Wasm, Memory;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D79: printing text made in another memory. WASI preview 1 reads only
 # the main memory, so `print` takes a string there — `String` as
@@ -56,7 +56,7 @@ assume Wasm, Branch {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiRawStd;
     let s = {

@@ -1,5 +1,5 @@
 #!/usr/bin/env moss
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     println("Hello, world!");

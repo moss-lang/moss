@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasip1.moss" use WasiCore, fd_write;
 import "../../lib/wasistd.moss" use Branch, i32_bool;
 
 # A fn bind captures its provider's context at the bind site (D26): the
@@ -10,7 +10,7 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 
 fn .say();
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }

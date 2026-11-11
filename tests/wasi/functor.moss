@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, fd_write;
+import "../../lib/wasip1.moss" use WasiCore, fd_write;
 import "../../lib/wasistd.moss" use Branch, i32_bool;
 
 # A signature, an implementation of it over the primitive context, and a
@@ -20,7 +20,7 @@ assume Glyph {
   context Ink = Glyph, blank, stamp, Glyph.bump;
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }
   fn four(): I32 { w::i32_add(two(), two()) }
   fn eight(): I32 { w::i32_add(four(), four()) }
@@ -53,7 +53,7 @@ assume Wasm, Wasi, Branch {
   fn first_mark(): Mark { Mark(w::i32_zero) }
 }
 
-functor Ready: Wasm, Wasi, Branch -> Ink {
+functor Ready: Wasm, WasiCore, Branch -> Ink {
   bind Glyph = Mark;
   bind blank = first_mark();
   bind stamp = mark_stamp;
@@ -67,7 +67,7 @@ assume Ink {
   fn thrice() { stamp(blank.bump().bump().bump()); }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind Ready;
     stamp(blank);   # 0, 'A'

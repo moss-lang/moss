@@ -171,33 +171,6 @@ Proof.
   repeat rewrite orb_true_iff in Checked. intuition eauto.
 Qed.
 
-Local Lemma unsupported_search : forall name names start index,
-  (let fix find l i :=
-    match l with [] => None | x :: rest => if String.eqb x name then Some i else find rest (S i) end
-   in find names start) = Some index ->
-  exists offset, index = start + offset /\ nth_error names offset = Some name.
-Proof.
-  intros name names. induction names as [|first rest IH]; intros start index Found; [discriminate|].
-  cbn in Found. destruct (String.eqb first name) eqn:Matches.
-  - injection Found as <-. exists 0. split; [lia|]. cbn. f_equal. now apply String.eqb_eq.
-  - destruct (IH (S start) index Found) as [offset [Equal Read]]. exists (S offset).
-    split; [lia|exact Read].
-Qed.
-
-Theorem unsupported_index_sound : forall name s index after,
-  unsupported_index name s = Ok (index, after) ->
-  nth_error (es_unsupported after) index = Some name.
-Proof.
-  intros name s index after Checked. unfold unsupported_index in Checked.
-  match type of Checked with
-  | context [match ?existing with Some _ => _ | None => _ end] => destruct existing eqn:Existing
-  end.
-  - injection Checked as <- <-. destruct (unsupported_search _ _ _ _ Existing) as [offset [Equal Read]].
-    cbn in Equal. now subst offset.
-  - injection Checked as <- <-. cbn [es_unsupported].
-    rewrite nth_error_app2 by lia. now rewrite Nat.sub_diag.
-Qed.
-
 Theorem platform_value_sound : forall C v s value after,
   platform_entry E C (IVal v) s = Ok (value, after) ->
   after = s /\ forall program, P.Provides W program C (IVal v) value.
@@ -220,30 +193,21 @@ Proof.
 Qed.
 
 Theorem platform_function_sound : forall P C f s value after,
-  (exists signature, nlook f (c_fns C) = Some signature) ->
-  (forall i name, nth_error (es_unsupported after) i = Some name -> nth_error (program_unsupported P) i = Some name) ->
   platform_entry E C (IFn f) s = Ok (value, after) -> P.Provides W P C (IFn f) value.
 Proof.
-  intros P C f s value after HasSignature Unsupported Checked.
+  intros P C f s value after Checked.
   unfold platform_entry, mbind, ret, fail in Checked. cbv zeta in Checked. fold W in Checked.
   destruct (w_decl W f) as [declaration|] eqn:Decl; [|discriminate].
   destruct (platform_modb E (d_mod declaration)) eqn:ModuleOk; [|discriminate].
   destruct (d_ast declaration) as [| | | | | |receiver name params result body| |] eqn:Ast; try discriminate.
   destruct receiver; try discriminate.
-  destruct (prim_of_name name) as [operation|] eqn:Primitive.
-  - destruct (at_key E C (IFn f) operation && handles_read E C (IFn f)) eqn:Checks; [|discriminate].
-    injection Checked as <- <-. apply andb_true_iff in Checks as [Signature Handles].
-    split; [split|].
-    + now apply at_key_sound.
-    + now apply handles_read_sound.
-    + eapply P.PEPrim; eauto using platform_modb_sound.
-  - destruct (handles_read E C (IFn f)) eqn:Handles; [|discriminate].
-    destruct (unsupported_index name s) as [[index after']|] eqn:Index; [|discriminate].
-    injection Checked as <- <-. split; [split|].
-    + destruct HasSignature as [signature Lookup]. exists signature. split; [exact Lookup|].
-      unfold P.PrimitiveSignature. now rewrite (proj1 (PublicOperationFacts.unsupported_operation_code _ _)).
-    + now apply handles_read_sound.
-    + eapply P.PEUnsupported; eauto using platform_modb_sound, unsupported_index_sound.
+  destruct (prim_of_name name) as [operation|] eqn:Primitive; [|discriminate].
+  destruct (at_key E C (IFn f) operation && handles_read E C (IFn f)) eqn:Checks; [|discriminate].
+  injection Checked as <- <-. apply andb_true_iff in Checks as [Signature Handles].
+  split; [split|].
+  - now apply at_key_sound.
+  - now apply handles_read_sound.
+  - eapply P.PEPrim; eauto using platform_modb_sound.
 Qed.
 
 (* Platform families install the GC and address operations at their checked keys. *)
@@ -425,11 +389,10 @@ Qed.
 Lemma emit_fun_code_records : forall code before slot after,
   emit_fun_code code before = Ok (slot, after) ->
   slot_index slot < es_next after /\
-  EaCodeAllocationSound.read_code after FunctorTable (slot_index slot) = Some code /\
-  es_unsupported after = es_unsupported before.
+  EaCodeAllocationSound.read_code after FunctorTable (slot_index slot) = Some code.
 Proof.
   intros code [] slot after Run. cbv [emit_fun_code mbind reserve_code fresh write_fun_code set_fun_body ret] in Run.
-  injection Run as <- <-. split; [cbn; lia|]. split; [apply WorldSound.nget_nset_same|reflexivity].
+  injection Run as <- <-. split; [cbn; lia|apply WorldSound.nget_nset_same].
 Qed.
 
 Theorem platform_functor_sound : forall bound program main C needs u before value after,
@@ -450,7 +413,7 @@ Proof.
     | Ok (slot, state) => Ok (FunctorClosure (slot_index slot) None empty_environment None, state)
     | Err message => Err message end) = Ok (value, after)) in Run.
   destruct (emit_fun_code code before) as [[slot state]|] eqn:Emit; [|discriminate].
-  injection Run as <- <-. destruct (emit_fun_code_records _ _ _ _ Emit) as [Below [Stored _]].
+  injection Run as <- <-. destruct (emit_fun_code_records _ _ _ _ Emit) as [Below Stored].
   pose proof (Codes _ _ Below Stored) as BodyStored.
   split; [split|].
   - eapply platform_code_sound; try eassumption. eauto 8.
@@ -458,104 +421,40 @@ Proof.
   - eapply P.PEFun; try eassumption. now apply platform_modb_sound. congruence.
 Qed.
 
-Definition UnsupportedExtends (before after : est) : Prop :=
-  forall i name, nth_error (es_unsupported before) i = Some name -> nth_error (es_unsupported after) i = Some name.
-
-Lemma unsupported_index_extends : forall name before i after,
-  unsupported_index name before = Ok (i, after) -> UnsupportedExtends before after.
-Proof.
-  intros name before i after Run. unfold unsupported_index in Run.
-  match type of Run with
-  | context [match ?existing with Some _ => _ | None => _ end] => destruct existing
-  end.
-  - injection Run as _ <-. intros j name' Read. exact Read.
-  - injection Run as _ <-. intros j name' Read. cbn [es_unsupported].
-    rewrite nth_error_app1; [exact Read|]. apply nth_error_Some. congruence.
-Qed.
-
-Lemma platform_entry_unsupported_extends : forall C key before value after,
-  platform_entry E C key before = Ok (value, after) -> UnsupportedExtends before after.
-Proof.
-  intros C [ty|v|f|receiver method args|u] before value after Run; try discriminate.
-  - apply platform_value_sound in Run.
-    destruct Run as [-> _]. intros j name Read. exact Read.
-  - unfold platform_entry, mbind, ret, fail in Run. cbv zeta in Run. fold W in Run.
-    destruct (w_decl W f) as [declaration|]; [|discriminate].
-    destruct (platform_modb E (d_mod declaration)); [|discriminate].
-    destruct (d_ast declaration) as [| | | | | |form name params result body| |]; try discriminate.
-    destruct form; try discriminate. destruct (prim_of_name name) as [operation|].
-    + destruct (at_key E C (IFn f) operation && handles_read E C (IFn f)); [|discriminate].
-      injection Run as _ <-. intros j name' Read. exact Read.
-    + destruct (handles_read E C (IFn f)); [|discriminate].
-      destruct (unsupported_index name before) as [[index state]|] eqn:Index; [|discriminate].
-      injection Run as _ <-. eapply unsupported_index_extends. exact Index.
-  - unfold platform_entry, mbind, ret, fail in Run. cbv zeta in Run. fold W in Run.
-    destruct (w_decl W u) as [declaration|]; [|discriminate].
-    destruct (platform_modb E (d_mod declaration)); [|discriminate].
-    destruct (d_ast declaration) as [| | | | | | | |name params arguments results body]; try discriminate.
-    destruct body; try discriminate. destruct (fixed_machines_read E C u); [|discriminate].
-    destruct (platform_code E u) as [code|]; [|discriminate].
-    change ((match emit_fun_code code before with
-      | Ok (slot, state) => Ok (FunctorClosure (slot_index slot) None empty_environment None, state)
-      | Err message => Err message end) = Ok (value, after)) in Run.
-    destruct (emit_fun_code code before) as [[slot state]|] eqn:Emit; [|discriminate].
-    injection Run as _ <-. destruct (emit_fun_code_records _ _ _ _ Emit) as [_ [_ Same]].
-    intros j name' Read. now rewrite Same.
-Qed.
-
-Lemma function_need_signature : forall main C needs f,
-  CtxOf W main C needs -> In (IFn f) needs -> exists signature, nlook f (c_fns C) = Some signature.
-Proof.
-  intros main C needs f (d & entries & tm & root & tmr & sigma & classes & _ & _ & _ & _ & _ & _ & -> & [_ Needs] & _) Member.
-  apply Needs in Member as [entry [Member Key]].
-  destruct entry as [| |found signature inst| | |]; try discriminate Key.
-  injection Key as Same. subst f. apply PublicCallRealize.nlook_some.
-  unfold c_fns. cbn [entries_cx c_provisions].
-  apply in_map_iff. exists (found, sig_subst sigma signature). split; [reflexivity|].
-  apply in_flat_map. eexists (IFn found, ProvidedFn (sig_subst sigma signature) _). split.
-  - apply in_flat_map. exists (NFn found signature inst). split; [exact Member|now left].
-  - now left.
-Qed.
-
-(* Later entries retain both the generated family bodies and the indices of
-   unsupported operations that earlier entries installed. *)
+(* Later entries retain the family bodies installed by earlier entries. *)
 Definition PlatformResources (program : program) (s : est) : Prop :=
-  (forall h code, h < es_next s -> EaCodeAllocationSound.read_code s FunctorTable h = Some code -> funbody_of program h = Some code) /\
-  (forall i name, nth_error (es_unsupported s) i = Some name -> nth_error (program_unsupported program) i = Some name).
+  forall h code, h < es_next s ->
+    EaCodeAllocationSound.read_code s FunctorTable h = Some code ->
+    funbody_of program h = Some code.
 
 Lemma platform_entries_provide : forall bound program main C needs required before entries after,
   (forall symbol d, w_decl W symbol = Some d -> symbol < bound) ->
   metadata_budget W bound < e_metadata_fuel E -> EaContextTableSound.ContextTableSound W ->
-  program_machines program = P.machine_table W -> CtxOf W main C needs -> incl required needs ->
+  program_machines program = P.machine_table W -> CtxOf W main C needs ->
   PlatformResources program after ->
   mmap (fun k => let* value := platform_entry E C (rkof C k) in ret (rkof C k, value)) required before = Ok (entries, after) ->
-  UnsupportedExtends before after /\ Forall (fun q => P.Provides W program C (fst q) (snd q)) entries.
+  Forall (fun q => P.Provides W program C (fst q) (snd q)) entries.
 Proof.
   intros bound program main C needs required before entries after Bounded Enough Contexts Machines Ctx.
-  revert before entries after. induction required as [|k required IH]; intros before entries after Included Resources Run.
-  - injection Run as <- <-. split; [intros i name Read; exact Read|constructor].
+  revert before entries after. induction required as [|k required IH]; intros before entries after Resources Run.
+  - injection Run as <- <-. constructor.
   - cbn [mmap] in Run. apply EaControlSound.mbind_ok in Run as (row & middle & Head & Run).
     apply EaControlSound.mbind_ok in Head as (value & state & Entry & Head).
     injection Head as RowEqual MiddleEqual. subst row middle.
     apply EaControlSound.mbind_ok in Run as (tail & finish & Tail & Run).
     injection Run as EntriesEqual FinishEqual. subst entries finish.
-    destruct (IH _ _ _ (fun x Member => Included x (or_intror Member)) Resources Tail) as [Extends Provided].
-    split.
-    + intros i name Read. apply Extends. eapply platform_entry_unsupported_extends; eassumption.
-    + constructor; [|exact Provided]. cbn [fst snd].
-      destruct k as [ty|v|f|receiver method args|u]; cbn [rkof] in *; try discriminate Entry.
-      * exact (proj2 (platform_value_sound C v before value state Entry) program).
-      * eapply platform_function_sound; [| |exact Entry].
-        -- eapply function_need_signature; [exact Ctx|]. apply Included. now left.
-        -- intros i name Read. exact (proj2 Resources i name (Extends i name Read)).
-      * eapply platform_functor_sound; [exact Bounded|exact Enough|exact Contexts|exact Machines|exact Ctx| |exact Entry].
-        assert (Transition : EaCodeEffects.CodeTransition state after).
-        { eapply EaCodeEffects.code_effect_mmap; [|exact Tail]. intros key.
-          apply EaCodeEffects.code_effect_bind; [apply EaAssemblyCodeEffects.platform_entry_code_effect|].
-          intro provided. apply EaCodeEffects.code_effect_return. }
-        intros h code Below Read. apply (proj1 Resources h code).
-        -- pose proof (EaCodeEffects.counter_grows _ _ Transition). lia.
-        -- now rewrite (EaCodeEffects.old_slots_preserved _ _ Transition FunctorTable h Below).
+    constructor; [|eapply IH; eassumption]. cbn [fst snd].
+    destruct k as [ty|v|f|receiver method args|u]; cbn [rkof] in *; try discriminate Entry.
+    + exact (proj2 (platform_value_sound C v before value state Entry) program).
+    + eapply platform_function_sound. exact Entry.
+    + eapply platform_functor_sound; [exact Bounded|exact Enough|exact Contexts|exact Machines|exact Ctx| |exact Entry].
+      assert (Transition : EaCodeEffects.CodeTransition state after).
+      { eapply EaCodeEffects.code_effect_mmap; [|exact Tail]. intros key.
+        apply EaCodeEffects.code_effect_bind; [apply EaAssemblyCodeEffects.platform_entry_code_effect|].
+        intro provided. apply EaCodeEffects.code_effect_return. }
+      intros h code Below Read. apply (Resources h code).
+      * pose proof (EaCodeEffects.counter_grows _ _ Transition). lia.
+      * now rewrite (EaCodeEffects.old_slots_preserved _ _ Transition FunctorTable h Below).
 Qed.
 
 Theorem main_environment_provides : forall bound program main before after,
@@ -575,8 +474,8 @@ Proof.
   apply EaControlSound.mbind_ok in Run as (provisions & finish & Entries & Run).
   injection Run as Environment State. subst finish. rewrite <- Environment. cbn [provision_values].
   exists C, needs. split; [exact Ctx|].
-  eapply (proj2 (platform_entries_provide bound program main C needs needs middle provisions after
-    Bounded Enough Contexts Machines Ctx (fun _ Member => Member) Resources Entries)).
+  exact (platform_entries_provide bound program main C needs needs middle provisions after
+    Bounded Enough Contexts Machines Ctx Resources Entries).
 Qed.
 
 End Entries.
@@ -589,7 +488,6 @@ Lemma assemble_platform_resources : forall bound entry before program after,
   EaMain.assemble E bound entry before = Ok (program, after) ->
   kind_sym W (program_main program) = Some DKFn /\
   program_machines program = P.machine_table W /\
-  program_unsupported program = es_unsupported after /\
   exists start, main_environment E (program_main program) start = Ok (program_environment program, after).
 Proof.
   intros bound entry before program after Run. unfold EaMain.assemble, EaMain.finish_assembly in Run.
@@ -631,13 +529,11 @@ Theorem assemble_platform_provides : forall bound entry program after,
     Forall (fun q => P.Provides W program C (fst q) (snd q)) (provision_values (program_environment program)).
 Proof.
   intros bound entry program after Bounded Enough Contexts Run.
-  destruct (assemble_platform_resources _ _ _ _ _ Run) as [Kind [Machines [Unsupported [start Initial]]]].
+  destruct (assemble_platform_resources _ _ _ _ _ Run) as [Kind [Machines [start Initial]]].
   destruct (EaAssemblyCodeEffects.assembled_code_lookup_exact _ _ _ _ _ Run) as [_ Codes].
   apply (main_environment_provides E bound program (program_main program) start after
     Bounded Enough Contexts Kind Machines); [|exact Initial].
-  split.
-  - intros h code _ Read. now rewrite Codes.
-  - intros i name Read. now rewrite Unsupported.
+  intros h code _ Read. now rewrite Codes.
 Qed.
 
 End Assembly.

@@ -147,6 +147,14 @@ assume I32, Memory {
   }
 }
 
+# The preview-1 operations implemented by the verified reference host.
+context WasiCore =
+  I32, I64,
+  args_get, args_sizes_get,
+  fd_close, fd_read, fd_write, path_open,
+  proc_exit,
+;
+
 context Wasi =
   I32,
   I64,

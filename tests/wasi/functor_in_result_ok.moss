@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D84 control for fun_in_result.moss: the same shapes, but nothing pins
 # `K`: `OuterOK` binds `Inner` to a functor that makes its `K` with
@@ -49,7 +49,7 @@ assume Std {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     demo();

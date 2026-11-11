@@ -9,12 +9,12 @@ import "./wasm.moss" use Wasm, Gc, ArrayRef;
 import "./array.moss" as array use ArrayHandle, Arrays;
 import "./size.moss" as size use Size, .size, .int;
 import "./int.moss" use Int;
-import "./wasip1.moss" use Wasi;
+import "./wasip1.moss" use WasiCore;
 
 # Raw-memory standard bindings, shared by the compiler/bootstrap and the
 # public WasiStd facade. Keep optional providers such as GC strings out of
 # this module so the Rocq bootstrap does not load their implementation.
-functor WasiRawStd: Wasm, Gc, Wasi, Branch -> Std {
+functor WasiRawStd: Wasm, Gc, WasiCore, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
   bind WasiOutput;

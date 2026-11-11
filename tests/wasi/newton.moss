@@ -7,7 +7,7 @@ import "../../lib/wasibyte.moss" use WasiByteConsts;
 import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiOutput,
   WasiFiles, WasiFloats32, GcArrays;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # `Float` (D67): written once against `Std`, run at f64 — what `WasiStd`
 # provides — and then at f32, under a `Std` assembled the same way but
@@ -106,7 +106,7 @@ assume Std {
 }
 
 # lib/wasi.moss's `WasiStd`, but for one line.
-functor WasiStd32: Wasm, Gc, Wasi, Branch -> Std {
+functor WasiStd32: Wasm, Gc, WasiCore, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
   bind WasiOutput;
@@ -129,7 +129,7 @@ functor WasiStd32: Wasm, Gc, Wasi, Branch -> Std {
 # the two never meet: `report` is compiled once per block. Applying
 # `WasiFloats32` inside a scope that already has `WasiStd`'s floats works
 # too, and is tests/wasi/shadow.moss.
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     {
       bind WasiStd;

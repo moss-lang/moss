@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D81: writing through a reference is a context item, which only the
 # platform's `Mutable` provides. `demo` has applied `Heap` but not
@@ -19,7 +19,7 @@ assume Std, Wasm, Heap {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     demo();

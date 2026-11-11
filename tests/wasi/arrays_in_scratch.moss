@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw, WasiContainers;
 import "../../lib/wasm.moss" use Gc, Wasm, I32, Memory, Arrayed, Array, Arrays, .arrayed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # Draft section 6, default 2: bracket `Arrays[Arrayed]`, every other type
 # of its inputs fixed. `Wasm` lists `Memory` (lib/wasm.moss:289), so
@@ -11,7 +11,7 @@ import "../../lib/wasip1.moss" use Wasi;
 # memory (D81, settled point 6). Today it runs and prints 6.
 tag Scratch;
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     let total = {

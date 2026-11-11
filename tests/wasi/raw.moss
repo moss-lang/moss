@@ -1,9 +1,9 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, fd_write, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, fd_write, proc_exit;
 
 # Hello from the primitive context (D52): no Std, no prelude bridge —
 # just Wasm instructions and two WASI imports.
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   # iovec at 0 is [ptr=8, len=1]; the byte goes at 8, nwritten at 12.
   fn emit(c: I32) {
     let one = w::i32_one;

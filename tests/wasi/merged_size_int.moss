@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/array.moss" use Item, Array, .arrayed;
 import "../../lib/int.moss" use Int;
 import "../../lib/size.moss" use Size;
@@ -41,7 +41,7 @@ assume Std, Size = Int {
 
 # A caller satisfies the equation where the two types are already one:
 # `WasiStd` binds both `Int` and `Size` to `Num`. Prints `21`.
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     print_int(total(7.arrayed(3.size())));

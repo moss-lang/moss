@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D75: a recursive type through a garbage-collected reference, as Rust's
 # `Binary(Box<Expr>, Box<Expr>)`. A `Ref` is one scalar, so `Binary` has
@@ -114,7 +114,7 @@ assume Std, Wasm, ExprHeap {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Boxed = Expr;

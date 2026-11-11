@@ -2,7 +2,7 @@ import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Chr, Numerics, Containers, WasiNumerics,
   WasiContainers, heap_mark, heap_reset;
 import "../../lib/wasm.moss" use Wasm, Memory;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D72, D78: two applications of arena.moss's `Arena` in force at once
 # make two generations of its types, so a list made after the first is
@@ -44,7 +44,7 @@ assume Char, Numerics, Containers {
   }
 }
 
-assume Std, Wasm, Wasi, Branch, Arena {
+assume Std, Wasm, WasiCore, Branch, Arena {
   fn report() {
     {
       bind Arena;
@@ -55,7 +55,7 @@ assume Std, Wasm, Wasi, Branch, Arena {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Arena = InScratch;

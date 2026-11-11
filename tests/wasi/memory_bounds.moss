@@ -1,13 +1,13 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" as w use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # A load just past the end of memory traps, as Wasm's does: a memory
 # grows only by `memory_grow`, which the library's allocator calls when
 # it runs out. Output: `a`, then a trap.
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     putchar(char::a);

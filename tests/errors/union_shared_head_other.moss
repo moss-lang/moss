@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32, I64;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # D15, as in union_shared_head.moss: an A[X=I32] would be matched by its
 # head and read at the other member's payload type, I64.
@@ -8,7 +8,7 @@ assume X { tag A[X](X); }
 
 type U = | A[X=I32] | A[X=I64];
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn first(u: U): I32 {
     match u {
       A(y) => w::i32_wrap_i64(y),

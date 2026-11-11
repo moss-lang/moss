@@ -76,7 +76,6 @@ Record est := Est {
   es_wrap : list ((nat * nat) * code_slot FunctionTable);
   es_link : list ((nat * nat) * code_slot FunctorTable);
   es_const : nmap (expr * ty);
-  es_unsupported : list string;
   es_lamcx : nmap cx;                   (* a lambda provider's enclosing context *)
   es_pins : nmap subst;                  (* what a link body pins fixed inputs to (LinkBody's pins, Q6) *)
   es_names : nmap string                 (* a fresh generation's name, for messages only ("T@F") *)
@@ -368,15 +367,15 @@ Record rec := Rec {
    before, and above every symbol in sight. *)
 Definition fresh : M nat :=
   fun s => Ok (es_next s, Est (S (es_next s)) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s)
-                             (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+                             (es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
 Fixpoint fresh_n (n : nat) : M (list nat) :=
   match n with 0 => ret [] | S k => let* g := fresh in let* gs := fresh_n k in ret (g :: gs) end.
 Definition set_fn_body (f : nat) (x : expr) : M unit :=
   fun s => Ok (tt, Est (es_next s) (nset (es_fns s) f x) (es_funs s) (es_fwd s) (es_wrap s)
-                      (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+                      (es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
 Definition set_fun_body (h : nat) (c : functor_code) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (nset (es_funs s) h c) (es_fwd s) (es_wrap s)
-                      (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+                      (es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
 
 Definition reserve_code (table : code_table) : M (code_slot table) :=
   let* n := fresh in ret (CodeSlot n).
@@ -401,47 +400,35 @@ Definition put_fwd (g arity : nat) (w : code_slot FunctionTable) : M unit :=
   fun s =>
     let cache := nset (es_fwd s) g (nset (forwarders_at s g) arity w) in
     Ok (tt, Est (es_next s) (es_fns s) (es_funs s) cache (es_wrap s)
-      (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+      (es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
 Fixpoint pair_look {A} (k : nat * nat) (l : list ((nat * nat) * A)) : option A :=
   match l with [] => None | (k', a) :: r => if Nat.eqb (fst k) (fst k') && Nat.eqb (snd k) (snd k') then Some a else pair_look k r end.
 Definition get_wrap (k : nat * nat) : M (option (code_slot FunctionTable)) := fun s => Ok (pair_look k (es_wrap s), s).
 Definition put_wrap (k : nat * nat) (w : code_slot FunctionTable) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) ((k, w) :: es_wrap s)
-                      (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+                      (es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
 Definition get_link (k : nat * nat) : M (option (code_slot FunctorTable)) := fun s => Ok (pair_look k (es_link s), s).
 Definition put_link (k : nat * nat) (h : code_slot FunctorTable) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s)
-                      ((k, h) :: es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+                      ((k, h) :: es_link s) (es_const s) (es_lamcx s) (es_pins s) (es_names s)).
 Definition get_const (c : nat) : M (option (expr * ty)) := fun s => Ok (nget (es_const s) c, s).
 Definition put_const (c : nat) (v : expr * ty) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s)
-                      (es_link s) (nset (es_const s) c v) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
-(* the index of an unsupported primitive's name, added on first use *)
-Definition unsupported_index (n : string) : M nat :=
-  fun s =>
-    let fix find (l : list string) (i : nat) : option nat :=
-      match l with [] => None | x :: r => if String.eqb x n then Some i else find r (S i) end in
-    match find (es_unsupported s) 0 with
-    | Some i => Ok (i, s)
-    | None => Ok (List.length (es_unsupported s),
-                  Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
-                      (es_const s) (es_unsupported s ++ [n]) (es_lamcx s) (es_pins s) (es_names s))
-    end.
-
-Definition init_state (next : nat) : est := Est next NE NE NE [] [] NE [] NE NE NE.
+                      (es_link s) (nset (es_const s) c v) (es_lamcx s) (es_pins s) (es_names s)).
+Definition init_state (next : nat) : est := Est next NE NE NE [] [] NE NE NE NE.
 Definition put_pins (h : code_slot FunctorTable) (p : subst) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
-                      (es_const s) (es_unsupported s) (es_lamcx s) (nset (es_pins s) (slot_index h) p) (es_names s)).
+                      (es_const s) (es_lamcx s) (nset (es_pins s) (slot_index h) p) (es_names s)).
 Definition put_name (g : nat) (n : string) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
-                      (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (nset (es_names s) g n)).
+                      (es_const s) (es_lamcx s) (es_pins s) (nset (es_names s) g n)).
 Definition link_pins_at (s : est) (h : nat) : subst :=
   match nget (es_pins s) h with Some p => p | None => [] end.
 Definition get_pins (h : code_slot FunctorTable) : M subst :=
   fun s => Ok (link_pins_at s (slot_index h), s).
 Definition put_lamcx (pid : code_slot FunctionTable) (C : cx) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
-                      (es_const s) (es_unsupported s) (nset (es_lamcx s) (slot_index pid) C) (es_pins s) (es_names s)).
+                      (es_const s) (nset (es_lamcx s) (slot_index pid) C) (es_pins s) (es_names s)).
 
 (* ======================================================================== *)
 (* 7. Frames                                                                *)

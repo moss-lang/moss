@@ -4,7 +4,7 @@ import "./wasibyte.moss" use WasiByteTypes, RawAscii, RawLead2,
   continuation_raw, prefix3_lead, prefix3_second, prefix4_lead, prefix4_second;
 import "./wasm.moss" as w use Wasm, Gc, I32, F32, F64, Memory, ArrayRef, Arrayed;
 import "./array.moss" as array use Item, Array, ArrayHandle, .arrayed;
-import "./wasip1.moss" use Wasi, fd_write, fd_read, fd_close,
+import "./wasip1.moss" use WasiCore, fd_write, fd_read, fd_close,
   args_sizes_get, args_get, path_open;
 # One declaration per accessor, so importing them here is unambiguous —
 # and `Elem` comes with them, because every provision below names the
@@ -243,7 +243,7 @@ assume Wasm, Branch {
     Str(s)
   }
 
-  assume Wasi {
+  assume WasiCore {
     fn write_all(ptr: I32, len: I32) {
       w::i32_store(w::i32_zero, ptr);
       w::i32_store(four(), len);
@@ -335,7 +335,7 @@ assume Wasm, Branch {
   # does, so the bytes are the same either way. Named, though only
   # `WasiOutput` binds it, as the counterpart of the bootstrap back end's
   # native shim (bootstrap/mossc/build.py, tests/wasi/bulk.moss).
-  assume Wasi {
+  assume WasiCore {
     fn wasi_put_bytes(bytes: Packed[Item=Num]) {
       let data = w::i32_load(ints_addr(bytes));
       let n = w::i32_load(data);
@@ -558,12 +558,12 @@ functor WasiFloats32: Wasm, Branch -> Floats {
 }
 
 # The two together, plus the items whose signatures need both — the whole
-# slice of Std that runs over Wasi so far. Applying a functor from inside
+# slice of Std that runs over WasiCore so far. Applying a functor from inside
 # a functor is just another bind (D55).
 context Basics =
   Console, Numerics, Int.char, Char.code, arg_count, arg_at, Strings;
 
-functor WasiBasics: Wasm, Wasi, Branch -> Basics {
+functor WasiBasics: Wasm, WasiCore, Branch -> Basics {
   bind WasiConsole;
   bind WasiNumerics;
   bind Int.char = () => Chr(raw(this));
@@ -635,11 +635,11 @@ functor WasiContainers: Wasm, Branch -> Containers {
   bind StrList.length[Index=Int] = () => Num(w::i32_load(w::i32_load(strs_addr(this))));
 }
 
-functor WasiOutput: Wasm, Wasi, Branch -> Output {
+functor WasiOutput: Wasm, WasiCore, Branch -> Output {
   bind put_bytes = wasi_put_bytes;
 }
 
-functor WasiFiles: Wasm, Wasi, Branch -> Files {
+functor WasiFiles: Wasm, WasiCore, Branch -> Files {
   bind path::Path = Loc;
   bind path::pwd = Loc(string_of(w::i32_zero, w::i32_zero));
   bind Path.join = (name) => {
@@ -687,7 +687,7 @@ functor WasiFiles: Wasm, Wasi, Branch -> Files {
   };
 }
 
-functor WasiConsole: Wasm, Wasi, Branch -> Console {
+functor WasiConsole: Wasm, WasiCore, Branch -> Console {
   # The type binds come first: flattening walks the body in order, and a
   # signature mentioning Char cannot be elaborated before Char is bound.
   bind char::Char = Chr;

@@ -3,7 +3,7 @@ import "../../lib/array.moss" use Item, Array, .arrayed;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "./doubledouble.moss" use DoubleDouble;
 import "./shadowing.moss" use Shadow, tolerance;
 
@@ -88,7 +88,7 @@ assume Std {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     report();

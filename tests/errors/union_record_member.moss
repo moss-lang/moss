@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi, proc_exit;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 
 # D15: a union's members are nominal. A bare record type is not (it has
 # no head for a match arm to name), so it is no member (Audit note 34).
@@ -7,7 +7,7 @@ tag P { a: I32 };
 tag Red;
 type U = | { a: I32 } | Red;
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn get(u: U): I32 {
     match u {
       Red => w::i32_one,

@@ -10,7 +10,7 @@ assume Std {
   }
 }
 
-assume Base {
+assume ReferenceBase {
   fn main() {
     bind StdBase;
     foo(char::g, char::h);

@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers, Numerics, Containers, Num, Chr;
 import "../../lib/wasm.moss" use Gc, Wasm, Memory;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D79 under D84: `Memory` bound to types that are not units, `Num` and
 # `Chr`. The memory instructions are the family `Memories`, polymorphic
@@ -33,7 +33,7 @@ assume Char, Numerics, Containers {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     let xs = int_list();

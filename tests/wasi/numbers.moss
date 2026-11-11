@@ -1,12 +1,12 @@
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/wasistd.moss" use WasiBasics, Basics, Branch;
 import "../../lib/char.moss" use Char, .char;
 import "../../lib/std.moss" use putchar;
 import "../../lib/int.moss" use Int, zero, one;
 
 # Ordinary Moss over Std's own names: `Int`, `zero`, `one`, `.add`, `.lt`
-# are all provided by a functor over Wasi, not natively.
+# are all provided by a functor over WasiCore, not natively.
 assume Basics {
   fn count(stop: Int, c: Char) {
     var i = 0;
@@ -20,11 +20,11 @@ assume Basics {
 # Operators and literals (D68) are those same provisions: `i < stop` is
 # `i.lt(stop)`, and `3` is `one`s added up, all at the `Int` that
 # `WasiBasics` binds.
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiBasics;
     count(3, (64 + 1).char());   # 'A', three times
-    # The rest of the operator surface, over Wasi: (7*9 - 2) % 32 + 32 = 61
+    # The rest of the operator surface, over WasiCore: (7*9 - 2) % 32 + 32 = 61
     let big = 7 * 9 - 2;
     let half = (one << 6) >> 1;
     if big % half + half >= 0 {

@@ -17,7 +17,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # Principal θ (AUDIT-CHANGES #50), from bootstrap/examples: `f`'s context
 # merges `X` with `Y` (through `B.w` and `C.w` once `B` and `C` are one),
@@ -59,7 +59,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     demo();

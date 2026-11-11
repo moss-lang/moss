@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, WasiContainers;
 import "../../lib/wasm.moss" use Wasm, Memory;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D79: a list's type says which memory it is in. `ys` is made in
 # `Scratch`, a `Packed[Item=Num, Memory=Scratch]`, and leaves its block
@@ -23,7 +23,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     let ys = {

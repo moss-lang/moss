@@ -2,7 +2,7 @@ import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/array.moss" use .arrayed;
 import "../../lib/wasistd.moss" use Branch, WasiFloats32;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # A packed `IntList` (D69) beside a fixed-size array of `Float` (D84,
 # draft: `Std`'s `Array[Item=Float]`, which replaced `FloatList`), so
@@ -70,7 +70,7 @@ assume Std {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     report();

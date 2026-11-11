@@ -2,7 +2,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 type P;
 type T;
@@ -30,7 +30,7 @@ assume Std, Left, Right, Target {
     match seed.out() { Yes => putchar(char::y), No => putchar(char::n) };
   }
 }
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind P = Old;

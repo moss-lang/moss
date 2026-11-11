@@ -44,7 +44,6 @@ Record MethodWrapperEffects (before after : est) : Prop := {
   method_wrapper_fwd : es_fwd after = es_fwd before;
   method_wrapper_link : es_link after = es_link before;
   method_wrapper_const : es_const after = es_const before;
-  method_wrapper_unsupported : es_unsupported after = es_unsupported before;
   method_wrapper_lamcx : es_lamcx after = es_lamcx before;
   method_wrapper_pins : es_pins after = es_pins before;
   method_wrapper_names : es_names after = es_names before

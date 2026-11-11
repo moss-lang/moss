@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm, Boxed, Ref, Heap, .boxed;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # Today's D78: rebinding the platform's own `Heap` to a wrapper that
 # applies `Heap` inside (the polyfill pattern). `Heap`'s inputs are
@@ -11,7 +11,7 @@ functor Wrapped: Wasm, Heap, Boxed -> Boxed.boxed, Ref.deref {
   bind Heap;
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     bind Heap = Wrapped;

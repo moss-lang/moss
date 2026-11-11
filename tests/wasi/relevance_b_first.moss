@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D71: a nominal's relevant parameters are the least fixpoint over
 # mutually recursive declarations. A mentions T and B; B mentions only A;
@@ -33,7 +33,7 @@ assume Std, T, get_a {
   fn first() {}
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
   }

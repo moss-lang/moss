@@ -3,7 +3,7 @@ import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw, WasiNumerics, WasiFloats,
   WasiFloats32;
 import "../../lib/wasm.moss" use Gc, Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D78: an abstract functor whose result holds types. `Fast` promises
 # `Floats` — the type `Float`, the type `FloatList`, and everything over
@@ -51,7 +51,7 @@ assume Std {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch, Fast {
+assume Wasm, Gc, WasiCore, Branch, Fast {
   fn report() {
     bind WasiStd;
     print_int(Num(root(raw(2))));
@@ -61,7 +61,7 @@ assume Wasm, Gc, Wasi, Branch, Fast {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() {
     {
       bind Fast = WasiFloats;

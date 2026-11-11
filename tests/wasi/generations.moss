@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, i32_bool;
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # D72: a type bind starts a new generation of the symbol it binds, and
 # what was typed before it keeps the old one. In `double`, generic over
@@ -51,7 +51,7 @@ assume Wasm, Branch, Int, Int.add {
   }
 }
 
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     print_int(double(2147483647));

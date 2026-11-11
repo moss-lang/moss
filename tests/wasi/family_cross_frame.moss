@@ -1,7 +1,7 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Gc, Wasm;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 import "../../lib/array.moss" use Item, Array, ArrayHandle, Arrays, .arrayed;
 import "../../lib/access.moss" use Elem, Index, .get;
 import "../../lib/size.moss" use Size, Sizes, .size;
@@ -39,6 +39,6 @@ assume Std, Pairs {
   }
 }
 
-assume Wasm, Gc, Wasi, Branch {
+assume Wasm, Gc, WasiCore, Branch {
   fn main() { bind WasiStd; bind Pairs = PairsImpl; go(); }
 }

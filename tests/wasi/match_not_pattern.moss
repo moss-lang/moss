@@ -1,5 +1,5 @@
 import "../../lib/wasm.moss" as w use Wasm, I32;
-import "../../lib/wasip1.moss" use Wasi;
+import "../../lib/wasip1.moss" use WasiCore;
 
 # A single name in a pattern is a binder only if it names nothing else:
 # `red` is a function, which is neither a binder nor a unit or tag to
@@ -9,7 +9,7 @@ tag Red;
 tag Green;
 type Colour = | Red | Green;
 
-assume Wasm, Wasi {
+assume Wasm, WasiCore {
   fn red(): Colour { Red }
 
   fn pick(c: Colour): I32 {

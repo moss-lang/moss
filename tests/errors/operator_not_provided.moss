@@ -3,7 +3,7 @@
 import "wasi.moss" use WasiStd;
 import "wasistd.moss" use Branch;
 import "wasm.moss" use Wasm;
-import "wasip1.moss" use Wasi;
+import "wasip1.moss" use WasiCore;
 
 assume Std {
   fn run() {
@@ -14,7 +14,7 @@ assume Std {
 
 # The platform runs `main` with the primitive context, and `run` under
 # the `Std` it installs (D52).
-assume Wasm, Wasi, Branch {
+assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
     run();

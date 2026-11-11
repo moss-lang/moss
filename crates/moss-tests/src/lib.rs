@@ -533,11 +533,11 @@ pub fn source(text: &str) -> String {
 /// The imports and `main` that make a program written against `Std` a
 /// program the platform runs (D52): `main` assumes the primitive context
 /// and applies `StdBase`, then calls the program's own `run`.
-pub const WASI_IMPORTS: &str = "import \"base.moss\" use Base;\n\
+pub const WASI_IMPORTS: &str = "import \"base.moss\" use ReferenceBase;\n\
      import \"wasi.moss\" use StdBase;\n";
 
 pub const WASI_MAIN: &str =
-    "assume Base {\n  fn main() {\n    bind StdBase;\n    run();\n  }\n}\n";
+    "assume ReferenceBase {\n  fn main() {\n    bind StdBase;\n    run();\n  }\n}\n";
 
 /// A program over `Std`, as the Python bootstrap ran one with its native
 /// `Std`: `imports`, then `assume Std { decls fn run() { body } }`, then
