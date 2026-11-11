@@ -468,6 +468,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.fn_body_formed);
   root (@NM.PublicFormation.units_bare_of);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.arms_select);
+  root (@NM.PublicTagCheck.base_cast_table_formed);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_check_from_table);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_check);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_extends);

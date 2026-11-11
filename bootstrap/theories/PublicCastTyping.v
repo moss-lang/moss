@@ -36,6 +36,26 @@ Proof.
   unfold type_argument. rewrite lookup_ground_arguments, Found. reflexivity.
 Qed.
 
+(* A sufficient table condition for checked tag construction. The guard
+   reads a source payload requirement at a machine reference type of the
+   cast's kind. No platform names or layout rules occur in this contract. *)
+Definition CastTableFormed (W : A.world) (machines : list (tsym * machine_class))
+    (casts : list (nsym * cast_spec)) : Prop :=
+  forall tag schema, lookup_cast tag casts = Some schema ->
+  A.kind_sym W tag = Some A.DKTag /\
+  exists raw, cast_handle schema = Some (raw, TMachine raw) /\
+    A.PayloadOf W tag (map (fun t => (t, TAbs t)) (A.w_reqs W tag)) (TAbs raw) /\
+    A.nlook raw machines = Some (MReference (cast_kind schema)).
+
+Lemma formed_cast_not_unit : forall W machines casts,
+  CastTableFormed W machines casts -> forall tag,
+  A.kind_sym W tag = Some A.DKUnit -> lookup_cast tag casts = None.
+Proof.
+  intros W machines casts Formed tag Unit.
+  destruct (lookup_cast tag casts) as [schema|] eqn:Found; [|reflexivity].
+  pose proof (proj1 (Formed tag schema Found)) as Tag. congruence.
+Qed.
+
 Module CastTyping (Primitives : PRIMITIVES) (R0 : INTERP Primitives).
 Module R := R0.
 
