@@ -55,10 +55,33 @@ Definition push_arg {D S R : Type}
   | inr result => inr result
   end.
 
-Module CloInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims).
+Module Type DEFERRED_PRIMITIVES (Prims : PRIMITIVES).
+  Parameter run_prim_deferred :
+    program_view -> op -> option dty -> list value -> Prims.mstate -> signal * Prims.mstate.
+  Axiom run_prim_deferred_agrees : forall P operation site values state,
+    run_prim_deferred P operation site values state =
+    Prims.run_prim P operation (force_held site) values state.
+End DEFERRED_PRIMITIVES.
+
+Module ForcePrimitives (Prims : PRIMITIVES) <: DEFERRED_PRIMITIVES Prims.
+  Definition run_prim_deferred P operation site :=
+    Prims.run_prim P operation (force_held site).
+  Theorem run_prim_deferred_agrees : forall P operation site values state,
+    run_prim_deferred P operation site values state =
+    Prims.run_prim P operation (force_held site) values state.
+  Proof. reflexivity. Qed.
+End ForcePrimitives.
+
+Module CloInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims)
+    (Deferred : DEFERRED_PRIMITIVES Prims).
 Module F := FastInterpreter Prims Reference.
 Module L := F.L.
 Module I := F.I.
+
+Local Lemma deferred_call_agrees : forall P p held values state,
+  Deferred.run_prim_deferred P p held values state =
+  I.run_prim_at P p (force_held held) values state.
+Proof. exact Deferred.run_prim_deferred_agrees. Qed.
 
 Definition code := nat -> fenv -> locals -> mstate -> I.evaluation.
 Definition lcode := nat -> fenv -> locals -> mstate -> (list value * locals * mstate) + I.evaluation.
@@ -344,7 +367,7 @@ Fixpoint sev (d : fenv) (g : locals) (st : mstate) (s : sexpr) {struct s} : opti
       match read d i with
       | Some (FPrimitive p held) =>
           match ev with
-          | Some (ws, st1) => match I.run_prim_at P p (force_held held) ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+          | Some (ws, st1) => match Deferred.run_prim_deferred P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
           | None => None
           end
       | _ => None
@@ -429,7 +452,7 @@ Fixpoint scalar_compile (keys : list lk) (s : sexpr) {struct s} : scalar_code :=
         | Some (FPrimitive p held) =>
             match ca slots g st with
             | Some (ws, st1) =>
-                match I.run_prim_at P p (force_held held) ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+                match Deferred.run_prim_deferred P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
             | None => None
             end
         | _ => None
@@ -553,7 +576,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | Some (FPrimitive p held) =>
               match ca k d g st with
               | inl (ws, g1, st1) =>
-                  let (o, st2) := I.run_prim_at P p (force_held held) ws st1 in I.Evaluation o g1 st2
+                  let (o, st2) := Deferred.run_prim_deferred P p held ws st1 in I.Evaluation o g1 st2
               | inr r => r
               end
           | _ => I.Evaluation (Stuck I.e_entry) g st
@@ -583,7 +606,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
               | I.Evaluation (Normal w0) g0 st0 =>
                   match ca k d g0 st0 with
                   | inl (ws, g1, st1) =>
-                      let (o, st2) := I.run_prim_at P p (force_held held) (w0 :: ws) st1 in I.Evaluation o g1 st2
+                      let (o, st2) := Deferred.run_prim_deferred P p held (w0 :: ws) st1 in I.Evaluation o g1 st2
                   | inr r => r
                   end
               | r => r
@@ -894,10 +917,11 @@ Proof.
             | None => None end end) ss st) with (sevl P d g ss st) in Ev.
       destruct (read d (remapo pl (IFn f))) as [[| | |p held]|] eqn:R; try discriminate.
       destruct (sevl P d g ss st) as [[ws st1]|] eqn:Ea; [|discriminate].
-      destruct (I.run_prim_at P p (force_held held) ws st1) as [[]  st2] eqn:Rp; try discriminate.
+      destruct (Deferred.run_prim_deferred P p held ws st1) as [[]  st2] eqn:Rp; try discriminate.
       injection Ev as <- <-. cbn [sdepth] in Fu. fold needed in Fu.
       destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval]. rewrite H, R.
-      rewrite (IHl n pl l ss Ta d de H g st ws st1 Ea k ltac:(lia)). rewrite Rp. reflexivity.
+      rewrite (IHl n pl l ss Ta d de H g st ws st1 Ea k ltac:(lia)).
+      rewrite <- deferred_call_agrees, Rp. reflexivity.
     + (* EMatch *) destruct l as [|[p b] [|]]; try discriminate.
       destruct (tos P m n pl e) as [s1|] eqn:T1; [|discriminate].
       destruct (tos P m n pl b) as [sb|] eqn:Tb; [|discriminate]. injection T as <-.
@@ -971,7 +995,7 @@ Lemma sev_prim : forall d g st i args,
   | Some (FPrimitive p held) =>
       match sevl P d g args st with
       | Some (ws, st1) =>
-          match I.run_prim_at P p (force_held held) ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+          match Deferred.run_prim_deferred P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
       | None => None
       end
   | _ => None
@@ -1094,14 +1118,16 @@ Proof.
       * rewrite Ht. destruct (view_function P f') as [body|]; cbn [option_map]; [|reflexivity].
         rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].
         rewrite IHe. reflexivity.
-      * rewrite IHl. reflexivity.
+      * rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r];
+          [now rewrite deferred_call_agrees|reflexivity].
     + destruct (flookup_provision i d) as [[w|f' df|u a dc q|p o]|]; try reflexivity.
       * rewrite Ht. destruct (view_function P f') as [body|]; cbn [option_map]; [|reflexivity].
         rewrite IHe. destruct (F.feval k P d g st e) as [[] g0 st0]; try reflexivity.
         rewrite IHl. destruct (F.feval_arguments k P d g0 st0 l) as [[[ws g1] st1]|r]; [|reflexivity].
         rewrite IHe. reflexivity.
       * rewrite IHe. destruct (F.feval k P d g st e) as [[] g0 st0]; try reflexivity.
-        rewrite IHl. reflexivity.
+        rewrite IHl. destruct (F.feval_arguments k P d g0 st0 l) as [[[ws g1] st1]|r];
+          [now rewrite deferred_call_agrees|reflexivity].
     + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
       rewrite IHe. reflexivity.
     + destruct b; try (

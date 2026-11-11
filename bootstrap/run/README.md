@@ -56,6 +56,9 @@ supplies the interface laws once the program is ready to link.
 `BaseHost.call_in_agrees` proves that the extracted call shares its decoded
 operation with the Base adapter and that direct I32 steps implement the
 same call as `BaseCall.call`.
+The native runner delays the method receiver type until a box or array
+allocation needs its header. The compiled primitive adapter agrees with
+the ordinary call for every suspended type.
 `EaBodyAssembly.elaborate_bodies_sound` verifies body elaboration, and
 `BootstrapVerified.build_sound` combines it with the front end and the
 world checks. The executable trusts OCaml's recursive table binding and

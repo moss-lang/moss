@@ -13,7 +13,7 @@ From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require AuditBase.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require SnapshotLoader EaMain BootstrapRun BaseHost BaseHostScalars CodeTable InterpreterLazy InterpreterFast InterpreterCompiled.
+From NM Require SnapshotLoader EaMain BootstrapRun BaseFacts BaseHost BaseHostScalars CodeTable InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -73,12 +73,13 @@ Extraction NoInline AuditBase.WasmOps.decode.
 Extract Constant AuditBase.WasmOps.decode => "PrimCache.memoize decode_operation".
 Extraction NoInline BaseHost.decode_host_operation.
 Extract Constant BaseHost.decode_host => "PrimCache.memoize_host decode_host_operation".
+Extraction Inline BaseFacts.DeferredBaseCall.result_at_site.
 Extraction Blacklist String List Char Bool.
 Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
   BootstrapRun.passes BootstrapRun.indexed_program_of CodeTable.get
-  BaseHost.call_in BaseHostScalars.legacy_view BaseHost.decode_host_operation
+  BaseHost.call_in BaseHost.call_in_deferred BaseHostScalars.legacy_view BaseHost.decode_host_operation
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program

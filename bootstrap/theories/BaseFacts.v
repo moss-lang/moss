@@ -4,6 +4,44 @@ From NM Require Import Audit AuditBase PublicValueTyping.
 Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Export AuditBase.
 
+Module DeferredBaseCall.
+(* Base only consults the method's receiver type when allocating a
+   fresh reference header. *)
+Definition result_at_site (p : wasm_prim) (site : unit -> option ty) (out : signal) : signal :=
+  match p with
+  | PBox _ | PArrNew _ =>
+      match site tt with Some t => BaseCall.allocation_result p t out | None => out end
+  | _ => out
+  end.
+
+Lemma result_at_site_agrees : forall p site out,
+  result_at_site p site out =
+  match site tt with Some t => BaseCall.allocation_result p t out | None => out end.
+Proof. intros [] site out; unfold result_at_site; destruct (site tt), out; reflexivity. Qed.
+
+Definition call {S : Type}
+    (primitive : program_view -> op -> list value -> S -> signal * S)
+    (P : program_view) (operation : op) (site : unit -> option ty)
+    (values : list value) (state : S) : signal * S :=
+  let decoded := decode operation in
+  let arguments := match decoded with Some p => BaseCall.primitive_arguments p values | None => values end in
+  let '(out, next) := primitive P operation arguments state in
+  (match decoded with Some p => result_at_site p site out | None => out end, next).
+
+Theorem call_agrees : forall S
+    (primitive : program_view -> op -> list value -> S -> signal * S)
+    P operation site values state,
+  call primitive P operation site values state =
+  BaseCall.call primitive P operation (site tt) values state.
+Proof.
+  intros. unfold call, BaseCall.call.
+  destruct (decode operation) as [p|].
+  - destruct (primitive P operation (BaseCall.primitive_arguments p values) state) as [out next].
+    rewrite result_at_site_agrees. now destruct (site tt).
+  - destruct (primitive P operation values state) as [out next]. now destruct (site tt).
+Qed.
+End DeferredBaseCall.
+
 (* A Public instance, kept transparent, for the same reason: CORRECT's
    obligations are stated inside one particular instance. *)
 Module Type PUBLIC (Host : HOST).

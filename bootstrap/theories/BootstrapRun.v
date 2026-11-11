@@ -2,7 +2,7 @@
    interpreter. The native caller supplies the compiled lookup tables. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit BaseFacts NatTrie CodeTable.
-From NM Require InterpreterCompiled InterpreterState ProgramFastPath ProgramPrune ProgramCapTrim.
+From NM Require InterpreterCompiled InterpreterFast InterpreterState ProgramFastPath ProgramPrune ProgramCapTrim.
 Import Audit.Semantics ListNotations.
 Open Scope string_scope.
 
@@ -30,7 +30,8 @@ Lemma indexed_functor_lookup : forall p argv read u,
 Proof. intros. apply index_rows_lookup. Qed.
 
 Module Sound (Host : HOST) (M : PUBLIC Host).
-Module C := InterpreterCompiled.CloInterpreter M.ReferenceHost M.Reference.
+Module Forced := InterpreterCompiled.ForcePrimitives M.ReferenceHost.
+Module C := InterpreterCompiled.CloInterpreter M.ReferenceHost M.Reference Forced.
 Module Fast := ProgramFastPath.FastRuns Host M.
 Module Prune := ProgramPrune.PruneRuns Host M.
 Module Trim := ProgramCapTrim.TrimRuns Host M.
@@ -97,7 +98,15 @@ Module RawHost <: PRIMITIVES.
 End RawHost.
 
 Module RawReference := Interpreter RawHost.
-Module C := InterpreterCompiled.CloInterpreter RawHost RawReference.
+Module Deferred <: InterpreterCompiled.DEFERRED_PRIMITIVES RawHost.
+  Definition run_prim_deferred P operation site :=
+    DeferredBaseCall.call Host.primitive P operation (fun _ => InterpreterFast.force_held site).
+  Theorem run_prim_deferred_agrees : forall P operation site values state,
+    run_prim_deferred P operation site values state =
+    RawHost.run_prim P operation (InterpreterFast.force_held site) values state.
+  Proof. intros. apply DeferredBaseCall.call_agrees. Qed.
+End Deferred.
+Module C := InterpreterCompiled.CloInterpreter RawHost RawReference Deferred.
 Module State := InterpreterState.StateSimulation RawHost M.ReferenceHost RawReference M.Reference.
 
 Definition lift_state (initial : M.state) (external : Host.state) : M.ReferenceHost.mstate :=

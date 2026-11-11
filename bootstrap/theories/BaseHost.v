@@ -1,7 +1,7 @@
 (* Base's concrete primitive implementation. MossX provides the machine
    and heap operations. Stored Audit values cross the heap intact. *)
 From Stdlib Require Import List Bool Arith PrimInt63 Uint63.
-From NM Require Import Audit AuditBase BaseHostScalars MossX.
+From NM Require Import Audit AuditBase BaseFacts BaseHostScalars MossX.
 From NM Require ExecutionModel HTrie NatTrie PublicOperationFacts.
 Import Audit.Semantics ListNotations.
 Import ExecutionModel (xvalue(..), xprog(..), prim, base_primitive).
@@ -145,7 +145,7 @@ Proof.
     cbn [direct_i32] in Direct; try discriminate; split; reflexivity.
 Qed.
 
-Definition call_in (P : xprog) (operation : op) (site : option ty)
+Definition call_in_deferred (P : xprog) (operation : op) (site : unit -> option ty)
     (values : list value) (state : mstate) : signal * mstate :=
   match decode_host operation with
   | Some (p, concrete) =>
@@ -153,23 +153,33 @@ Definition call_in (P : xprog) (operation : op) (site : option ty)
       | Some result => result
       | None =>
           let '(out, next) := primitive_decoded P p concrete (BaseCall.primitive_arguments p values) state in
-          (match site with Some ty => BaseCall.allocation_result p ty out | None => out end, next)
+          (DeferredBaseCall.result_at_site p site out, next)
       end
   | None => (UnsupportedOperation (unsupported_code operation), state)
   end.
 
-Theorem call_in_agrees : forall P operation site values state,
-  call_in (legacy_view P) operation site values state =
-  BaseCall.call primitive P operation site values state.
+Theorem call_in_deferred_agrees : forall P operation site values state,
+  call_in_deferred (legacy_view P) operation site values state =
+  BaseCall.call primitive P operation (site tt) values state.
 Proof.
-  intros. unfold call_in, BaseCall.call, primitive, primitive_in, decode_host, decode_host_operation.
-  destruct (decode operation) as [p|]; [|destruct site; reflexivity].
+  intros. unfold call_in_deferred, BaseCall.call, primitive, primitive_in, decode_host, decode_host_operation.
+  destruct (decode operation) as [p|]; [|destruct (site tt); reflexivity].
   cbn [option_map]. destruct (direct_i32 p values state) as [[out next]|] eqn:Direct.
   - destruct (direct_i32_no_adaptation _ _ _ _ _ Direct) as [Arguments Result].
     rewrite Arguments, (direct_i32_agrees (legacy_view P) _ _ _ _ Direct).
-    destruct site; [now rewrite Result|reflexivity].
-  - destruct (primitive_decoded _ _ _ _ _) as [out next]. destruct site; reflexivity.
+    destruct (site tt); [now rewrite Result|reflexivity].
+  - destruct (primitive_decoded _ _ _ _ _) as [out next].
+    rewrite DeferredBaseCall.result_at_site_agrees. now destruct (site tt).
 Qed.
+
+Definition call_in (P : xprog) (operation : op) (site : option ty)
+    (values : list value) (state : mstate) : signal * mstate :=
+  call_in_deferred P operation (fun _ => site) values state.
+
+Theorem call_in_agrees : forall P operation site values state,
+  call_in (legacy_view P) operation site values state =
+  BaseCall.call primitive P operation site values state.
+Proof. intros. exact (call_in_deferred_agrees P operation (fun _ => site) values state). Qed.
 
 Definition stored_ok (Q : value -> Prop) (w : xvalue) : Prop :=
   match w with XVStored v => Q v | _ => False end.

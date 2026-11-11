@@ -32,7 +32,7 @@
    a usage error. *)
 module A = Audit.Semantics
 module Reference = A.Interpreter(Prims.P)
-module C = InterpreterCompiled.CloInterpreter(Prims.P)(Reference)
+module C = InterpreterCompiled.CloInterpreter(Prims.P)(Reference)(Prims.Deferred)
 module I = C.I
 
 let read_file f = try Some (In_channel.with_open_bin f In_channel.input_all) with Sys_error _ -> None
