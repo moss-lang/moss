@@ -212,4 +212,81 @@ Proof.
     injection Result as <-. reflexivity.
 Qed.
 
+
+Local Open Scope string_scope.
+
+Theorem lang_sym_sound : forall short ns name symbol,
+  lang_sym W short ns name = Some symbol -> LangSym W short ns name symbol.
+Proof.
+  intros short ns name symbol Run. unfold lang_sym in Run.
+  destruct (w_library W) as [directory|] eqn:Library; [|discriminate].
+  destruct (w_scope W (directory ++ (short ++ ".moss")) ns name) as [[found|module_path]|] eqn:Scope;
+    try discriminate.
+  destruct (w_decl W found) as [d|] eqn:Declaration; [|discriminate].
+  injection Run as <-. exists d, (directory ++ (short ++ ".moss")).
+  split; [exact Declaration|]. split; [unfold LibraryModule; rewrite Library; reflexivity|exact Scope].
+Qed.
+
+Theorem lang_item_sym_sound : forall item symbol,
+  lang_item_sym W item = Some symbol -> LangItem W item symbol.
+Proof.
+  intros item symbol. unfold lang_item_sym, LangItem.
+  destruct (lang_item_key item) as [[short ns] name]. exact (lang_sym_sound short ns name symbol).
+Qed.
+
+Theorem method_named_sound : forall p receiver name method,
+  method_named W p receiver name = Some method -> MethodNamed W p receiver name method.
+Proof.
+  intros p receiver name method Run. unfold method_named in Run.
+  destruct (w_attached W receiver name) as [attached|] eqn:AttachedMethod.
+  - injection Run as <-. left. exact AttachedMethod.
+  - right. split.
+    + intros other Found. unfold Attached in Found. rewrite AttachedMethod in Found. discriminate.
+    + destruct (w_scope W p NSDetached name) as [[found|module_path]|] eqn:Scope;
+        try discriminate.
+      injection Run as <-. reflexivity.
+Qed.
+
+Theorem payload_of_sound : forall fuel symbol arguments payload,
+  payload_of W fuel symbol arguments = Ok payload -> PayloadOf W symbol arguments payload.
+Proof.
+  intros fuel symbol arguments payload Run. unfold payload_of in Run.
+  apply rbind_ok in Run as [d [Declaration Run]].
+  destruct (d_ast d) as [items declarations|name|name body|name parameters syntax|name|name value_type initial|
+    receiver name parameters result body|name items|name parameters inputs outputs body] eqn:Ast;
+    try discriminate.
+  apply rbind_ok in Run as [checked [Checked Run]].
+  eapply PayTag; [exact (decl_of_sound _ _ Declaration)|exact Ast|].
+  exact (ty_of_sound _ _ _ _ _ _ Run).
+Qed.
+
+Theorem recv_ty_sound : forall fuel receiver tm t,
+  recv_ty W fuel receiver tm = Ok t -> RecvTy W receiver tm t.
+Proof.
+  intros fuel receiver tm t Run. unfold recv_ty, RecvTy in *.
+  destruct (nlook receiver tm) as [meaning|] eqn:Lookup.
+  - injection Run as <-. reflexivity.
+  - assert (Arguments : forall arguments,
+      rmap (fun x => let! meaning := ropt (nlook x tm)
+        ("type " ++ bq (sym_name W x) ++ " (required by " ++ bq (sym_name W receiver) ++
+          ") is not available in the context here") in Ok (x, meaning)) (w_reqs W receiver) = Ok arguments ->
+      Forall2 (fun x argument => fst argument = x /\ nlook x tm = Some (snd argument))
+        (w_reqs W receiver) arguments).
+    { intros arguments Read. eapply rmap_sound; [|exact Read].
+      intros x argument Item. cbn [rbind] in Item.
+      destruct (nlook x tm) as [meaning|] eqn:Meaning; [|discriminate].
+      injection Item as <-. split; reflexivity. }
+    destruct (w_decl W receiver) as [d|] eqn:Declaration.
+    + destruct (d_ast d) as [items declarations|name|name body|name parameters syntax|name|name value_type initial|
+        rcvr name parameters result body|name items|name parameters inputs outputs body] eqn:Ast.
+      all: try solve [exact (ty_of_sound _ _ _ _ _ _ Run)].
+      all: destruct (kind_is W receiver DKType) eqn:Kind; [discriminate|].
+      all: apply rbind_ok in Run as [arguments [Read Run]]; injection Run as <-;
+        split; [|exists arguments; split; [reflexivity|exact (Arguments _ Read)]].
+      all: intro IsType; assert (kind_is W receiver DKType = true) by (apply kind_is_spec; exact IsType);
+        congruence.
+    + apply rbind_ok in Run as [arguments [Read Run]]. injection Run as <-.
+      exists arguments. split; [reflexivity|exact (Arguments _ Read)].
+Qed.
+
 End Readers.
