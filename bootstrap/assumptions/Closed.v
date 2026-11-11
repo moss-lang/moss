@@ -40,3 +40,12 @@ From NM Require EaResultSound.
 Print Assumptions NM.EaResultSound.result_mentions_sound.
 Print Assumptions NM.EaResultSound.mentions_sound.
 Print Assumptions NM.EaResultSound.bundle_world_r_result_readers_sound.
+
+From NM Require EaFixedSound.
+Print Assumptions NM.EaFixedSound.poly_explicit_exact.
+Print Assumptions NM.EaFixedSound.poly_sound.
+Print Assumptions NM.EaFixedSound.fixed_sound.
+Print Assumptions NM.EaFixedSound.fixed_readings_member_sound.
+Print Assumptions NM.EaFixedSound.bundle_world_r_fixed_readers_sound.
+
+Print Assumptions NM.EaFixedSound.fixed_readings_unbracketed.
