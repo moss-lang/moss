@@ -32,14 +32,17 @@ Definition TypesFunction (W : world) (f : nat) (d : decl) (receiver : fnrecv) (n
   TypesBlkE W F (function_parameters parameters plan) body (Some (sg_ret g))
     (function_body plan) (function_result plan).
 
-Definition emit_function (parameters : list name) (plan : function_plan) : expr :=
-  translate_block (without_pins (function_layout plan)) (function_parameters parameters plan)
+Definition emit_function (resolve : nat -> nat) (parameters : list name)
+    (plan : function_plan) : emission expr :=
+  block_emission resolve (without_pins (function_layout plan)) (function_parameters parameters plan)
     (function_body plan).
 
-Definition TranslatesFunction (P : program) (f : nat)
+Definition TranslatesFunction (W : world) (P : program) (resolve : nat -> nat) (f : nat)
     (parameters : list name) (plan : function_plan) : Prop :=
+  let output := emit_function resolve parameters plan in
   Numbering (function_layout plan) (function_receiver plan) parameters /\
-  body_of P f = Some (emit_function parameters plan).
+  placements_in W P (emitted_placements output) /\
+  body_of P f = Some (emitted_code output).
 
 Record constant_plan := ConstantPlan {
   constant_layout : frame;
@@ -58,91 +61,98 @@ Definition TypesConstantInitializer (W : world) (d : decl) (annotation : aty) (i
   fr_mod F = d_mod d /\ fr_ret F = None /\ fr_this F = None /\
   fr_loop F = false /\ fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [].
 
-Definition emit_constant (plan : constant_plan) : expr :=
-  translate_expr (constant_layout plan) (Cx [] [] [] [] []) (constant_body plan).
+Definition emit_constant (resolve : nat -> nat) (plan : constant_plan) : emission expr :=
+  expression_emission resolve (constant_layout plan) (Cx [] [] [] [] []) (constant_body plan).
 
-Definition TranslatesConstant (plan : constant_plan) : Prop :=
-  Numbering (constant_layout plan) None [].
+Definition TranslatesConstant (W : world) (P : program) (resolve : nat -> nat)
+    (plan : constant_plan) : Prop :=
+  Numbering (constant_layout plan) None [] /\
+  placements_in W P (emitted_placements (emit_constant resolve plan)).
 
-Theorem function_translation_agrees : forall W P f,
+Theorem function_translation_agrees : forall W P resolve f,
   (forall d receiver n parameters annotation body,
     w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
     exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
-      TranslatesFunction P f (map fst parameters) plan) ->
+      TranslatesFunction W P resolve f (map fst parameters) plan) ->
   FnElab W P f.
 Proof.
-  intros W P f Plans d receiver n parameters annotation body Declared Ast.
+  intros W P resolve f Plans d receiver n parameters annotation body Declared Ast.
   destruct (Plans _ _ _ _ _ _ Declared Ast) as [[C needs this signature F code result] [Typed Emitted]].
   cbn [TypesFunction TranslatesFunction function_context function_needs function_receiver function_signature
     function_layout function_body function_result function_parameters emit_function] in *.
   destruct Typed as (Formal & Receiver & Signature & Module & Return & This & Loop & Fresh & Applying & Pins & Body).
-  destruct Emitted as [Numbered Emitted].
-  exists C, needs, this, signature, F, (translate_block (without_pins F)
+  destruct Emitted as (Numbered & Placed & Emitted).
+  exists C, needs, this, signature, F, (emitted_code (block_emission resolve (without_pins F)
     (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
-      (combine (map fst parameters) (sg_params signature)) C) code), result.
-  pose proof (proj1 (proj2 (body_translation_agrees W P)) _ _ _ _ _ _ Body) as TypedBody.
+      (combine (map fst parameters) (sg_params signature)) C) code)), result.
+  pose proof (proj1 (proj2 (body_translation_agrees W P resolve)) _ _ _ _ _ _ Body Placed) as TypedBody.
   repeat first [assumption|split].
 Qed.
 
-Theorem constant_translation_agrees : forall W P d annotation initial plan,
-  TypesConstantInitializer W d annotation initial plan -> TranslatesConstant plan ->
+Theorem constant_translation_agrees : forall W P resolve d annotation initial plan,
+  TypesConstantInitializer W d annotation initial plan -> TranslatesConstant W P resolve plan ->
   ConstElab W P d annotation initial.
 Proof.
-  intros W P d annotation initial [F code declared actual] Typed Numbered.
-  cbn [TypesConstantInitializer TranslatesConstant constant_layout constant_body constant_declared constant_actual] in *.
+  intros W P resolve d annotation initial [F code declared actual] Typed [Numbered Placed].
+  cbn [TypesConstantInitializer emit_constant constant_layout constant_body constant_declared constant_actual] in *.
   destruct Typed as (Assumes & TypeRead & Body & Fits & Module & Return & This & Loop & Fresh & Applying & Pins).
   split; [exact Assumes|].
   exists declared. split; [exact TypeRead|].
-  exists F, (translate_expr F (Cx [] [] [] [] []) code), actual.
-  pose proof (proj1 (body_translation_agrees W P) _ _ _ _ _ _ Body) as TypedBody.
+  exists F, (emitted_code (expression_emission resolve F (Cx [] [] [] [] []) code)), actual.
+  pose proof (proj1 (body_translation_agrees W P resolve) _ _ _ _ _ _ Body Placed) as TypedBody.
   repeat first [assumption|split].
 Qed.
 
 Theorem function_plan_readback : forall W P,
   (forall F C body expected code t,
     BlkE W P F C body expected code t ->
-    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code) ->
+    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code /\
+      placements_in W P (emitted_placements (block_emission identity_slots (without_pins F) C plan))) ->
   forall f d receiver n parameters annotation body,
   FnElab W P f -> w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
   exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
-    TranslatesFunction P f (map fst parameters) plan.
+    TranslatesFunction W P identity_slots f (map fst parameters) plan.
 Proof.
   intros W P Readback f d receiver n parameters annotation body Typed Declared Ast.
   destruct (Typed _ _ _ _ _ _ Declared Ast) as (C & needs & this & g & F & code & t &
     Formal & Receiver & Signature & Module & Return & This & Loop & Fresh & Applying & Pins & Numbered & Body & Emitted).
-  destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & Emit).
+  destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & Emit & Placed).
   exists (FunctionPlan C needs this g F plan t). split.
   - unfold TypesFunction, function_parameters. cbn. repeat first [assumption|split].
-  - unfold TranslatesFunction, emit_function, function_parameters. cbn. now rewrite Emit.
+  - unfold TranslatesFunction, emit_function, function_parameters. cbn.
+    unfold translate_block in Emit. rewrite Emit. repeat first [assumption|split].
 Qed.
 
 Theorem constant_plan_readback : forall W P,
   (forall F C syntax expected code t,
     Ex W P F C syntax expected code t ->
-    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code) ->
+    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code /\
+      placements_in W P (emitted_placements (expression_emission identity_slots F C plan))) ->
   forall d annotation initial,
   ConstElab W P d annotation initial ->
-  exists plan, TypesConstantInitializer W d annotation initial plan /\ TranslatesConstant plan.
+  exists plan, TypesConstantInitializer W d annotation initial plan /\ TranslatesConstant W P identity_slots plan.
 Proof.
   intros W P Readback d annotation initial
     (Assumes & declared & TypeRead & F & code & actual & Body & Fits & Module & Return & This & Loop &
       Fresh & Applying & Pins & Numbered).
-  destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & _).
+  destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & _ & Placed).
   exists (ConstantPlan F plan declared actual). unfold TypesConstantInitializer, TranslatesConstant.
   cbn. repeat first [assumption|split].
 Qed.
 
-Definition FunctionPlanAt (W : world) (P : program) (f : nat) : Prop :=
+Definition FunctionPlanAt (W : world) (P : program) (resolve : nat -> nat) (f : nat) : Prop :=
   forall d receiver n parameters annotation body,
     w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
     exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
-      TranslatesFunction P f (map fst parameters) plan.
+      TranslatesFunction W P resolve f (map fst parameters) plan.
 
-Definition ConstantPlanAt (W : world) (d : decl) (annotation : aty) (initial : aexpr) : Prop :=
-  exists plan, TypesConstantInitializer W d annotation initial plan /\ TranslatesConstant plan.
+Definition ConstantPlanAt (W : world) (P : program) (resolve : nat -> nat)
+    (d : decl) (annotation : aty) (initial : aexpr) : Prop :=
+  exists plan, TypesConstantInitializer W d annotation initial plan /\
+    TranslatesConstant W P resolve plan.
 
 Definition ElaboratesSeparately (bundle : bundle) (W : world) (P : program) : Prop :=
-  ElaboratesWith bundle W P (FunctionPlanAt W P) (ConstantPlanAt W).
+  exists resolve, ElaboratesWith bundle W P (FunctionPlanAt W P resolve) (ConstantPlanAt W P resolve).
 
 Lemma map_declaration_forms : forall W first second,
   (forall d annotation initial, first d annotation initial -> second d annotation initial) ->
@@ -172,22 +182,24 @@ Qed.
 Theorem separated_elaboration_sound : forall bundle W P,
   ElaboratesSeparately bundle W P -> ElaboratesIn bundle W P.
 Proof.
-  intros bundle W P Typed. eapply map_elaboration_bodies; [| |exact Typed].
+  intros bundle W P [resolve Typed]. eapply map_elaboration_bodies; [| |exact Typed].
   - apply function_translation_agrees.
   - intros d annotation initial [plan [TypedBody Numbered]].
-    exact (constant_translation_agrees W P d annotation initial plan TypedBody Numbered).
+    exact (constant_translation_agrees W P resolve d annotation initial plan TypedBody Numbered).
 Qed.
 
 Theorem separated_elaboration_readback : forall bundle W P,
   (forall F C body expected code t,
     BlkE W P F C body expected code t ->
-    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code) ->
+    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code /\
+      placements_in W P (emitted_placements (block_emission identity_slots (without_pins F) C plan))) ->
   (forall F C syntax expected code t,
     Ex W P F C syntax expected code t ->
-    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code) ->
+    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code /\
+      placements_in W P (emitted_placements (expression_emission identity_slots F C plan))) ->
   ElaboratesIn bundle W P -> ElaboratesSeparately bundle W P.
 Proof.
-  intros bundle W P Blocks Expressions Typed.
+  intros bundle W P Blocks Expressions Typed. exists identity_slots.
   eapply map_elaboration_bodies; [| |exact Typed].
   - intros f Function d receiver n parameters annotation body Declared Ast.
     exact (function_plan_readback W P Blocks f d receiver n parameters annotation body Function Declared Ast).
