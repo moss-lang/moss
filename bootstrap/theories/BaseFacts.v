@@ -120,20 +120,20 @@ Lemma platform_linked_fields : forall W P,
     program_environment P = Environment types entries /\
     Forall (fun entry => Platform.Entry W P context (fst entry) (snd entry)) entries /\
     Forall (fun entry => Platform.PlatformEntry W P (fst entry) (snd entry)) entries /\
-    w_root_item W = Platform.root_item.
+    w_root_item W = Platform.root_item /\ Compilation.Admissible W P.
 Proof.
   intros W P. unfold Platform.Linked, Platform.Link.Linked, Platform.Static.EntryABI,
     Platform.Static.Tables, Platform.Static.Provides, Platform.EntryABI, Platform.Tables, Platform.Provides.
   split.
-  - intros (Root & ABI & [Layouts Representations] & C & ns & types & entries & Ctx & Types & Env & Provisions).
+  - intros (Root & ABI & Admissible & [Layouts Representations] & C & ns & types & entries & Ctx & Types & Env & Provisions).
     split; [exact ABI|]. split; [exact Layouts|]. split; [exact Representations|].
     exists C, ns, types, entries. split; [exact Ctx|]. split; [exact Types|]. split; [exact Env|].
     rewrite Forall_forall in Provisions. split.
     + rewrite Forall_forall. intros entry Member. exact (proj1 (Provisions entry Member)).
-    + split; [|exact Root]. rewrite Forall_forall. intros entry Member.
+    + split; [|exact (conj Root Admissible)]. rewrite Forall_forall. intros entry Member.
       exact (proj2 (Provisions entry Member)).
-  - intros (ABI & Layouts & Representations & C & ns & types & entries & Ctx & Types & Env & Entries & Native & Root).
-    split; [exact Root|]. split; [exact ABI|]. split; [split; assumption|].
+  - intros (ABI & Layouts & Representations & C & ns & types & entries & Ctx & Types & Env & Entries & Native & Root & Admissible).
+    split; [exact Root|]. split; [exact ABI|]. split; [exact Admissible|]. split; [split; assumption|].
     exists C, ns, types, entries. split; [exact Ctx|]. split; [exact Types|]. split; [exact Env|].
     rewrite Forall_forall in Entries, Native |- *. intros entry Member. split; [apply Entries|apply Native]; exact Member.
 Qed.

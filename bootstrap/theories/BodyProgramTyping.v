@@ -82,7 +82,7 @@ Lemma map_elaboration_bodies : forall bundle W P first_fn second_fn first_const 
   ElaboratesWith bundle W P second_fn second_const.
 Proof.
   intros bundle W P first_fn second_fn first_const second_const Function Constant
-    (World & Functions & Entry & Main & Environment & Bool & Lang & FiniteCalls & Assumes & Decls & Layouts).
+    (World & Functions & Entry & Main & Environment & Bool & Lang & Assumes & Decls).
   assert (Functions' : forall f d rcv n ps rt body,
     w_decl W f = Some d -> d_ast d = ADFn rcv n ps rt (Some body) -> second_fn f).
   { intros. apply Function. eapply Functions; eassumption. }

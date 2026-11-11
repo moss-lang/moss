@@ -37,10 +37,8 @@ Proof.
   pose proof (EaWorldSound.elaborate_with_world_sound _ _ _ _ Run) as World.
   destruct (BootstrapBuild.elaborate_main_environment _ _ _ _ Run) as (Main & Entry & Environment).
   destruct (BootstrapBuild.elaborate_platform_sound _ _ _ _ Run) as (_ & _ & Lang & Bool).
-  pose proof (BootstrapBuild.elaborate_with_expansion_bounded _ _ _ _ Run) as Expansion.
   pose proof (EaAssumesSound.elaborate_with_assumes_complete _ _ _ _ Run) as Assumes.
   pose proof (EaDeclarationSound.elaborate_declarations_sound _ _ _ _ Run Constants) as Declarations.
-  pose proof (BootstrapBuild.elaborate_finite_layouts _ _ _ _ Run) as Layouts.
   pose proof (BootstrapBuild.elaborate_linked _ _ _ _ Run) as Linked.
   split; [|exact Linked].
   apply BodyProgramTyping.separated_elaboration_readback.

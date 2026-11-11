@@ -5152,7 +5152,7 @@ Definition lang_modules (w : world) : list (string * nat) :=
            (w_order w).
 
 (* The elaborator: a total function from a bundle to a program or an error. *)
-(* D58 on definitions (Audit's FiniteLayouts): a tag whose payload, read at
+(* D58 on definitions (Base's FiniteLayouts): a tag whose payload, read at
    its own requirements, reaches the tag is rejected, used or not.  The
    layout follows a tag's payload at its arguments, a record's fields and a
    union's members; an abstract type (a machine type included) is a leaf,

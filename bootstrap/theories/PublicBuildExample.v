@@ -1,6 +1,8 @@
 (* A complete source reading and public build/run derivation. In particular,
    the revised contract is inhabited without any runtime-typing hypothesis. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require Import AuditBase.
+Import AuditBase.Compilation.
 From NM Require Import BaseFacts.
 From NM Require BodyProgramTyping.
 From NM Require Import LegacyBodyJudgments.
@@ -230,7 +232,7 @@ Proof.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|reflexivity].
-      * split; [|split; [exact main_lang_items|split; [exact main_bounded|split; [exact main_assumes|split; [exact main_decls|exact main_layouts]]]]]. right. split.
+      * split; [|split; [exact main_lang_items|split; [exact main_assumes|exact main_decls]]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.
@@ -253,7 +255,8 @@ Proof.
       * split; [reflexivity|]. exists None, None. split; [right;split;[exact (NoWasm NSName "Ref")|reflexivity]|].
         split; [right;split;[exact (NoWasm NSName "Array")|reflexivity]|reflexivity].
       * exists empty_context, [], [], []. split; [exact main_context|].
-        split; [reflexivity|]. split; [reflexivity|]. repeat split; constructor.
+        split; [reflexivity|]. split; [reflexivity|]. split; [constructor|].
+        split; [constructor|]. split; [reflexivity|exact (conj main_layouts main_bounded)].
 Qed.
 
 Definition main_text := "fn main() {}".

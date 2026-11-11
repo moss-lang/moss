@@ -1,4 +1,6 @@
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import AuditBase.
+Import AuditBase.Compilation.
 From NM Require Import Audit EaBase EaTypes EaTypesSound.
 From NM Require EaDependencyFuel EaExpand EaMain EaTypeScope PublicCallRealize PublicTypeRead PublicWorldFormation.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.

@@ -1,5 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* EaExpand.v — the expanding-cycle check (Audit's NoExpandingCycle,       *)
+(* EaExpand.v — the expanding-cycle check (Base's NoExpandingCycle,       *)
 (* D16/D30): TypesBounded and InstantiationsBounded, decided.              *)
 (*                                                                           *)
 (* Tarjan proposes levels by numbering the components in completion order. *)
@@ -7,6 +7,8 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
+From NM Require Import AuditBase.
+Import AuditBase.Compilation.
 From NM Require Import Audit NMap EaBase EaTypes.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.

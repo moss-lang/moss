@@ -1,4 +1,6 @@
 From Stdlib Require Import List String Arith Lia.
+From NM Require Import AuditBase.
+Import AuditBase.Compilation.
 From NM Require Audit AuditBase EaBase EaContextTableSound EaCodeAllocationSound EaAssemblyCodeEffects EaExpand EaExpansionSound EaLayoutSound EaMain EaPlatform EaPlatformSound EaSatisfiesSound EaTypes EaTypesSound EaWorldSound
   SnapshotLoader Sx.
 From NM Require Import EaControlSound.
@@ -226,27 +228,6 @@ Proof.
   exact (conj Tables (conj Entry (conj Language Bool))).
 Qed.
 
-(* Assembly checks the platform ABI and tables, then records the checked
-   provisions for the exact context that elaboration chose for main. *)
-Theorem elaborate_linked : forall strategy bundle world program,
-  EaMain.elaborate_with strategy bundle = Ok (world, program) -> P.Linked world program.
-Proof.
-  intros strategy bundle world program Run.
-  destruct (elaborate_platform_sound _ _ _ _ Run) as [Tables [Entry _]].
-  destruct (elaborate_main_environment _ _ _ _ Run)
-    as (_ & _ & C & needs & types & provisions & MainCtx & Initial & Env & _).
-  destruct (EaPlatformEntrySound.elaborate_platform_provides _ _ _ _ Run)
-    as (provided_context & provided_needs & PlatformCtx & Provided).
-  assert (provided_context = C).
-  { destruct MainCtx as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Read).
-    destruct PlatformCtx as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & ProvidedRead).
-    congruence. }
-  subst provided_context. rewrite Env in Provided.
-  split; [exact (EaWorldSound.elaborate_with_root _ _ _ _ Run)|].
-  split; [exact Entry|split; [exact Tables|]].
-  exists C, needs, types, provisions. repeat split; assumption.
-Qed.
-
 (* Declaration checking reads each payload in the full context of source
    names. The layout check reads the same payload at its own requirements. *)
 Theorem elaborate_finite_layouts : forall strategy bundle world program,
@@ -322,4 +303,27 @@ Proof.
     destruct (elaborate_uses_assemble _ _ _ _ Run)
       as (env & bound & after & <- & _ & _ & Assembled).
     eapply assemble_instantiation_bounded; eassumption.
+Qed.
+
+(* Assembly checks the platform ABI and tables, then records the checked
+   provisions for the exact context that elaboration chose for main. *)
+Theorem elaborate_linked : forall strategy bundle world program,
+  EaMain.elaborate_with strategy bundle = Ok (world, program) -> P.Linked world program.
+Proof.
+  intros strategy bundle world program Run.
+  destruct (elaborate_platform_sound _ _ _ _ Run) as [Tables [Entry _]].
+  destruct (elaborate_main_environment _ _ _ _ Run)
+    as (_ & _ & C & needs & types & provisions & MainCtx & Initial & Env & _).
+  destruct (EaPlatformEntrySound.elaborate_platform_provides _ _ _ _ Run)
+    as (provided_context & provided_needs & PlatformCtx & Provided).
+  assert (provided_context = C).
+  { destruct MainCtx as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & Read).
+    destruct PlatformCtx as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & ProvidedRead).
+    congruence. }
+  subst provided_context. rewrite Env in Provided.
+  split; [exact (EaWorldSound.elaborate_with_root _ _ _ _ Run)|].
+  split; [exact Entry|]. split.
+  - split; [eapply elaborate_finite_layouts|eapply elaborate_with_expansion_bounded]; exact Run.
+  - split; [exact Tables|].
+    exists C, needs, types, provisions. repeat split; assumption.
 Qed.

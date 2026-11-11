@@ -1,6 +1,8 @@
 (* The cycle checker accepts only after checking a level on every edge.
    Soundness uses the checked inequalities, independent of how levels are found. *)
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import AuditBase.
+Import AuditBase.Compilation.
 From NM Require Import Audit NMap EaBase EaTypes EaTypesSound EaExpand.
 From NM Require EaReadClosure PublicCallRealize PublicTypeRead WorldSound.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
