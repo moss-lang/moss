@@ -167,9 +167,9 @@ Qed.
 
 Theorem captured_cx_keys_match : forall C caps capvals,
   PublicCallRealize.KeysMatch (c_provisions C) ->
-  PublicCallRealize.KeysMatch (c_provisions (EaBind.captured_cx C caps capvals)).
+  PublicCallRealize.KeysMatch (c_provisions (captured_cx C caps capvals)).
 Proof.
-  intros C caps capvals Match. unfold EaBind.captured_cx.
+  intros C caps capvals Match. unfold captured_cx.
   assert (Capture : forall pairs start,
     PublicCallRealize.KeysMatch (c_provisions start) ->
     PublicCallRealize.KeysMatch (c_provisions

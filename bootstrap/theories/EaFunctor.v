@@ -322,12 +322,6 @@ Definition emit_linked_body (u gg : nat) (pins : subst) (code : functor_code)
   let* _ := put_link (u, gg) h in
   ret h.
 
-Record linked_result_plan := LinkedResultPlan {
-  link_plan_pins : subst;
-  link_plan_site : cx;
-  link_plan_keys : list item
-}.
-
 Definition check_linked_result (u gg : nat) (Cu Cg Cb Cr : cx) (made outs : list nat)
     (gen : nat -> nat) (keys : list item) : er linked_result_plan :=
   let nu := qs W u in let ng := qs W gg in

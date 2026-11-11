@@ -5709,6 +5709,321 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
 Definition Elaborates (b : bundle) (P : program) : Prop :=
   exists W, ElaboratesIn b W P.
 
+Module Export Typing.
+
+(* Named providers *)
+
+Record named_provider_plan := NamedProviderPlan {
+  provider_symbol : nat;
+  provider_formal : cx;
+  provider_needs : list item;
+  provider_arguments : subst
+}.
+
+Record TypesNamedProviderCall (W : world) (C : cx) (g : nat) (recv : option ty)
+    (want : fsig) (plan : named_provider_plan) : Prop := {
+  provider_source_exact : provider_symbol plan = g;
+  provider_context_typed : CtxOf W g (provider_formal plan) (provider_needs plan);
+  provider_needs_satisfied : NeedsSatisfied C (provider_formal plan)
+    (provider_arguments plan) (provider_needs plan);
+  provider_call_arguments : CallTheta W C (provider_formal plan) g (provider_arguments plan);
+  provider_signature_typed : SigOf W g (c_ty C) recv want;
+  provider_requirements_in_force : RequirementsInForce C (provider_formal plan)
+}.
+
+Definition named_signature_at (C : cx) (g : fsig) : fsig :=
+  FSig (map (canon C) (sg_params g)) (canon C (sg_ret g)).
+
+Definition TypesNamedFunctionPlan (W : world) (F : frame) (C : cx) (path : path)
+    (signature : fsig) (plan : named_provider_plan) : Prop :=
+  exists g,
+    resolve_sym W (fr_mod F) path = Some g /\ kind_sym W g = Some DKFn /\
+    (exists n ps rt body, ast_of W g = Some (ADFn RPlain n ps rt (Some body))) /\
+    TypesNamedProviderCall W C g None (named_signature_at C signature) plan.
+
+Definition TypesAttachedMethodPlan (W : world) (F : frame) (C : cx) (path : path)
+    (name : name) (receiver : ty) (signature : fsig) (site : cx) (plan : named_provider_plan) : Prop :=
+  exists root arguments method,
+    resolve_sym W (fr_mod F) path = Some root /\ Attached W root name method /\
+    (exists rn ps rt body, ast_of W method = Some (ADFn (RAttached rn) name ps rt (Some body))) /\
+    canon C receiver = TNom root arguments /\ site = family_context C arguments /\
+    TypesNamedProviderCall W site method (Some (canon C receiver)) (named_signature_at C signature) plan.
+
+(* Function and wrapped method providers *)
+
+Inductive function_provider_plan :=
+| NamedFunctionProvider (provider : named_provider_plan)
+| AbstractFunctionForwarder (occurrence : nat) (handle : forwarder_handle).
+
+Definition TypesFunctionProvider (W : world) (F : frame) (C : cx) (pa : path)
+    (signature : fsig) (plan : function_provider_plan) : Prop :=
+  match plan with
+  | NamedFunctionProvider named => TypesNamedFunctionPlan W F C pa signature named
+  | AbstractFunctionForwarder _ handle => TypesForwarder W F C pa signature handle
+  end.
+
+Record wrapped_method_plan := WrappedMethodOf {
+  wrapped_method_occurrence : nat;
+  wrapped_method_provider : named_provider_plan
+}.
+
+Definition TypesWrappedMethodPlan (W : world) (F : frame) (C : cx)
+    (path : path) (signature : fsig) (plan : wrapped_method_plan) : Prop :=
+  TypesNamedFunctionPlan W F C path signature (wrapped_method_provider plan).
+
+(* Linked results and bodies *)
+
+Record linked_result_plan := LinkedResultPlan {
+  link_plan_pins : subst;
+  link_plan_site : cx;
+  link_plan_keys : list item
+}.
+
+Record TypesLinkedResult (W : world) (u : nat) (Cu Cg Cb Cr : cx)
+    (made outs : list nat) (gen : nat -> nat) (keys : list item) (plan : linked_result_plan) : Prop := {
+  linked_plan_result_keys : link_plan_keys plan = keys;
+  linked_plan_result_site : link_plan_site plan = link_site Cg Cb (link_plan_pins plan) outs gen;
+  linked_plan_pin_provisions : forall k, In k keys ->
+    at_site (link_plan_site plan) k <> at_site (link_site Cg Cb [] outs gen) k ->
+    ilook (provision_id (at_site (link_plan_site plan) k)) (c_provisions Cg) = None;
+  linked_plan_realizes : ResultRealizes (link_plan_site plan) Cr
+    (role_reads (link_plan_site plan) outs gen ++ pin_reads Cb (link_plan_pins plan)) keys;
+  linked_plan_pins_exact : forall x tx, In (x, tx) (link_plan_pins plan) <->
+    Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
+    (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx);
+  linked_plan_pin_scope : forall x tx y, In (x, tx) (link_plan_pins plan) -> In y (gens tx) ->
+    In y (map fst (c_ty Cg)) /\ lookup_subst y (c_sub Cg) = None /\ ~ In y made /\
+    (In y (map fst (c_ty Cu)) -> Fixed W u y)
+}.
+
+Record linked_body_handle := LinkedBodyOf {
+  linked_target_symbol : nat;
+  linked_provider_symbol : nat;
+  linked_occurrence : nat
+}.
+
+Record linked_body_descriptor (BindPlan : Type) := LinkedBodyDescriptor {
+  linked_handle : linked_body_handle;
+  linked_target_context : cx;
+  linked_provider_context : cx;
+  linked_output_roles : list nat;
+  linked_result_reading : linked_result_plan;
+  linked_bind_plan : BindPlan
+}.
+
+Arguments LinkedBodyDescriptor {BindPlan}.
+Arguments linked_handle {BindPlan}.
+Arguments linked_target_context {BindPlan}.
+Arguments linked_provider_context {BindPlan}.
+Arguments linked_output_roles {BindPlan}.
+Arguments linked_result_reading {BindPlan}.
+Arguments linked_bind_plan {BindPlan}.
+
+Section LinkedSource.
+Variable BindPlan : Type.
+Variable types_binds : world -> frame -> cx -> list (spec * option aexpr) ->
+  BindPlan -> cx -> frame -> list nat -> Prop.
+Variable family_binds : world -> BindPlan -> Prop.
+
+Inductive TypesLinkedBody (W : world) (Fg : frame) (descriptor : linked_body_descriptor BindPlan) : Prop :=
+| TLB : forall dg name parameters inputs results bodies target_needs provider_needs Cb Fb made gen promised,
+    let target := linked_target_symbol (linked_handle descriptor) in
+    let provider := linked_provider_symbol (linked_handle descriptor) in
+    let Cu := linked_target_context descriptor in
+    let Cg := linked_provider_context descriptor in
+    let outs := linked_output_roles descriptor in
+    let reading := linked_result_reading descriptor in
+    let plan := linked_bind_plan descriptor in
+    w_decl W provider = Some dg -> d_ast dg = ADFunctor name parameters inputs results (Some bodies) ->
+    FunCtx W target Cu target_needs -> FunCtx W provider Cg provider_needs ->
+    fr_mod Fg = d_mod dg -> fr_ret Fg = None -> fr_this Fg = None -> fr_loop Fg = false ->
+    (forall x, In x (fr_pins Fg) <-> Mentions W target x /\ Poly W target x) ->
+    types_binds W Fg Cg (concat bodies) plan Cb Fb made ->
+    (forall t, In t made -> nlook t (c_ty Cu) = None) ->
+    TypesLinkOutputs W target Cu Cb outs gen promised (link_plan_keys reading) ->
+    TypesLinkedResult W target Cu Cg Cb promised made outs gen (link_plan_keys reading) reading ->
+    (Family W target -> family_binds W plan) ->
+    TypesLinkedBody W Fg descriptor.
+
+End LinkedSource.
+
+(* Lambda providers *)
+
+Definition captured_cx (C : cx) (caps : list name) (capvals : list nat) : cx :=
+  fold_left (fun C' q => let '(n, v) := q in
+                match slook n (c_locals C) with
+                | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
+                | None => C' end)
+            (combine caps capvals) (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []).
+
+Definition lambda_parameter_context (C : cx) (parameters : list name) (types : list ty) : cx :=
+  fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine parameters types) C.
+
+Record lambda_body_descriptor (BodyPlan : Type) := LambdaBodyOf {
+  lambda_occurrence : nat;
+  lambda_plan_capture_names : list name;
+  lambda_plan_capture_symbols : list nat;
+  lambda_plan_capture_context : cx;
+  lambda_source_body : BodyPlan;
+  lambda_provision_needs : list item
+}.
+
+Arguments LambdaBodyOf {BodyPlan}.
+Arguments lambda_occurrence {BodyPlan}.
+Arguments lambda_plan_capture_names {BodyPlan}.
+Arguments lambda_plan_capture_symbols {BodyPlan}.
+Arguments lambda_plan_capture_context {BodyPlan}.
+Arguments lambda_source_body {BodyPlan}.
+Arguments lambda_provision_needs {BodyPlan}.
+
+Section LambdaSource.
+Variable BodyPlan : Type.
+Variable types_body : world -> frame -> cx -> ablock -> option ty -> BodyPlan -> ty -> Prop.
+
+Definition lambda_descriptor_site (signature : fsig) (ps : list (name * option aty))
+    (descriptor : lambda_body_descriptor BodyPlan) : cx :=
+  lambda_parameter_context (lambda_plan_capture_context descriptor) (map fst ps) (sg_params signature).
+
+Inductive TypesLambdaProvider (W : world) (F : frame) (C : cx)
+    (ps : list (name * option aty)) (rt : option aty) (body : aexpr) (signature : fsig)
+    (this : option ty) (Fl : frame) (descriptor : lambda_body_descriptor BodyPlan) : Prop :=
+| TLP : forall body_type,
+    let caps := lambda_plan_capture_names descriptor in
+    let capvals := lambda_plan_capture_symbols descriptor in
+    let Cl := lambda_plan_capture_context descriptor in
+    length ps = length (sg_params signature) -> NoDup (map fst ps) ->
+    Forall2 (fun parameter t =>
+      match snd parameter with
+      | Some annotation => exists read,
+          TyOf W (fr_mod F) (c_ty C) this annotation read /\ MergeEq (c_merge C) read t
+      | None => True
+      end) ps (sg_params signature) ->
+    (match rt with
+     | Some annotation => exists read,
+         TyOf W (fr_mod F) (c_ty C) this annotation read /\ MergeEq (c_merge C) read (sg_ret signature)
+     | None => True
+     end) ->
+    TypesLambdaCaptures W F C (map fst ps) body caps capvals ->
+    Cl = captured_cx C caps capvals ->
+    fr_mod Fl = fr_mod F -> fr_ret Fl = Some (sg_ret signature) -> fr_this Fl = this -> fr_loop Fl = false ->
+    incl (fr_fresh F ++ context_gens C) (fr_fresh Fl) ->
+    Forall (Named Fl) caps -> Forall (Named F) caps ->
+    types_body W Fl (lambda_descriptor_site signature ps descriptor)
+      (ABlock [] (Some body)) (Some (sg_ret signature)) (lambda_source_body descriptor) body_type ->
+    fits body_type (sg_ret signature) ->
+    (forall k, In k (lambda_provision_needs descriptor) <->
+      provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = provision_id k) ->
+    NoDup (lambda_provision_needs descriptor) ->
+    TypesLambdaProvider W F C ps rt body signature this Fl descriptor.
+
+End LambdaSource.
+
+End Typing.
+
+Module Export Translation.
+
+(* Provider captures and placements *)
+
+Definition named_provider_capture (plan : named_provider_plan) : type_capture :=
+  TypeCapture (provider_arguments plan) (provider_arguments plan).
+
+Definition named_provider_provisions (C : cx) (plan : named_provider_plan) : smap :=
+  satisfaction_map C (provider_formal plan) (provider_arguments plan) (provider_needs plan).
+
+Definition function_plan_target (resolve : nat -> nat) (plan : function_provider_plan) : nat :=
+  match plan with
+  | NamedFunctionProvider named => provider_symbol named
+  | AbstractFunctionForwarder occurrence _ => resolve occurrence
+  end.
+
+Definition function_plan_capture (plan : function_provider_plan) : type_capture :=
+  match plan with
+  | NamedFunctionProvider named => named_provider_capture named
+  | AbstractFunctionForwarder _ _ => TypeCapture [] []
+  end.
+
+Definition function_plan_provisions (C : cx) (plan : function_provider_plan) : smap :=
+  match plan with
+  | NamedFunctionProvider named => named_provider_provisions C named
+  | AbstractFunctionForwarder _ handle =>
+      [(IFn (forwarder_source handle), IFn (forwarder_source handle))]
+  end.
+
+Definition FunctionProviderPlacement (W : world) (P : program) (resolve : nat -> nat)
+    (signature : fsig) (plan : function_provider_plan) : Prop :=
+  match plan with
+  | NamedFunctionProvider _ => True
+  | AbstractFunctionForwarder occurrence handle =>
+      TranslatesForwarder W P handle signature (resolve occurrence)
+  end.
+
+Definition wrapped_method_code (signature : fsig) (plan : wrapped_method_plan) : expr :=
+  let provider := wrapped_method_provider plan in
+  let formal := provider_formal provider in
+  ECall (provider_symbol provider) (theta_ctx formal)
+    (map (fun k => (rkey_of formal k, rkey_of formal k)) (provider_needs provider))
+    (map EVar (seq 1 (length (sg_params signature)))).
+
+Definition WrappedMethodPlacement (W : world) (P : program) (resolve : nat -> nat)
+    (signature : fsig) (plan : wrapped_method_plan) : Prop :=
+  let slot := resolve (wrapped_method_occurrence plan) in
+  Fresh W slot /\ body_of P slot = Some (wrapped_method_code signature plan).
+
+(* Linked body placement *)
+
+Definition splice_link_bindings (bindings : list binding) : expr -> expr :=
+  fun body => fold_right EBind body bindings.
+
+Section LinkedTranslation.
+Variable BindPlan : Type.
+
+Definition linked_descriptor_code (descriptor : linked_body_descriptor BindPlan) (bindings : list binding)
+    : functor_code :=
+  let reading := linked_result_reading descriptor in
+  let site := link_plan_site reading in
+  translate_linked_body (linked_target_context descriptor) (linked_provider_context descriptor)
+    (linked_output_roles descriptor) bindings (map (fun key => rkey_of site (at_site site key)) (link_plan_keys reading)).
+
+Definition LinkedBodyPlacement (W : world) (P : program) (resolve : nat -> nat)
+    (descriptor : linked_body_descriptor BindPlan) (bindings : list binding) : Prop :=
+  let handle := linked_handle descriptor in
+  let slot := resolve (linked_occurrence handle) in
+  Fresh W slot /\
+  funbody_of P slot = Some (linked_descriptor_code descriptor bindings) /\
+  nlook slot (linked_origins (program_origins P)) =
+    Some (linked_target_symbol handle, linked_provider_symbol handle).
+
+End LinkedTranslation.
+
+(* Lambda body placement *)
+
+Section LambdaTranslation.
+Variable BodyPlan : Type.
+
+Definition lambda_descriptor_captures (descriptor : lambda_body_descriptor BodyPlan) : list (name * nat) :=
+  combine (lambda_plan_capture_names descriptor) (lambda_plan_capture_symbols descriptor).
+
+Definition lambda_descriptor_prefix (F : frame) (descriptor : lambda_body_descriptor BodyPlan) : expr -> expr :=
+  translate_lambda_captures F (lambda_descriptor_captures descriptor).
+
+Definition lambda_descriptor_needs (C : cx) (descriptor : lambda_body_descriptor BodyPlan) : smap :=
+  map (fun k => (rkey_of (lambda_plan_capture_context descriptor) k, rkey_of C k))
+    (lambda_provision_needs descriptor).
+
+Definition lambda_descriptor_code (Fl : frame) (descriptor : lambda_body_descriptor BodyPlan)
+    (emitted : expr) : expr :=
+  translate_lambda_body Fl (lambda_descriptor_captures descriptor) emitted.
+
+Definition LambdaBodyPlacement (W : world) (P : program) (C : cx) (Fl : frame)
+    (resolve : nat -> nat) (descriptor : lambda_body_descriptor BodyPlan) (emitted : expr) : Prop :=
+  let slot := resolve (lambda_occurrence descriptor) in
+  Fresh W slot /\ body_of P slot = Some (lambda_descriptor_code Fl descriptor emitted) /\
+  nlook slot (lambda_sections (program_origins P)) = Some (c_sub C).
+
+End LambdaTranslation.
+
+End Translation.
+
 End Elaboration.
 
 

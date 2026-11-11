@@ -34,17 +34,6 @@ Proof.
   cbn [fold_left]. apply IH. exact Section.
 Qed.
 
-Record TypesNamedProviderCall (W : world) (C : cx) (g : nat) (recv : option ty)
-    (want : fsig) (plan : named_provider_plan) : Prop := {
-  provider_source_exact : provider_symbol plan = g;
-  provider_context_typed : CtxOf W g (provider_formal plan) (provider_needs plan);
-  provider_needs_satisfied : NeedsSatisfied C (provider_formal plan)
-    (provider_arguments plan) (provider_needs plan);
-  provider_call_arguments : CallTheta W C (provider_formal plan) g (provider_arguments plan);
-  provider_signature_typed : SigOf W g (c_ty C) recv want;
-  provider_requirements_in_force : RequirementsInForce C (provider_formal plan)
-}.
-
 Local Lemma provider_pure_read : forall A (read : er A) before value after,
   pure read before = Ok (value, after) -> read = Ok value /\ before = after.
 Proof. intros A [found|] before value after Read; [now injection Read as -> ->|discriminate]. Qed.

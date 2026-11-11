@@ -2,48 +2,10 @@
    Translation assigns a slot only to the generated body. *)
 From Stdlib Require Import List.
 From NM Require Import Audit.
-From NM Require BodyProviderTyping EaBind EaDefinedProviderSound.
+From NM Require BodyProviderTyping.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
-Import BodyProviderTyping EaBind EaDefinedProviderSound.
+Import BodyProviderTyping.
 Local Open Scope list_scope.
-
-Inductive function_provider_plan :=
-| NamedFunctionProvider (provider : named_provider_plan)
-| AbstractFunctionForwarder (occurrence : nat) (handle : forwarder_handle).
-
-Definition TypesFunctionProvider (W : world) (F : frame) (C : cx) (pa : path)
-    (signature : fsig) (plan : function_provider_plan) : Prop :=
-  match plan with
-  | NamedFunctionProvider named => TypesNamedFunctionPlan W F C pa signature named
-  | AbstractFunctionForwarder _ handle => TypesForwarder W F C pa signature handle
-  end.
-
-Definition function_plan_target (resolve : nat -> nat) (plan : function_provider_plan) : nat :=
-  match plan with
-  | NamedFunctionProvider named => provider_symbol named
-  | AbstractFunctionForwarder occurrence _ => resolve occurrence
-  end.
-
-Definition function_plan_capture (plan : function_provider_plan) : type_capture :=
-  match plan with
-  | NamedFunctionProvider named => named_provider_capture named
-  | AbstractFunctionForwarder _ _ => TypeCapture [] []
-  end.
-
-Definition function_plan_provisions (C : cx) (plan : function_provider_plan) : smap :=
-  match plan with
-  | NamedFunctionProvider named => named_provider_provisions C named
-  | AbstractFunctionForwarder _ handle =>
-      [(IFn (forwarder_source handle), IFn (forwarder_source handle))]
-  end.
-
-Definition FunctionProviderPlacement (W : world) (P : program) (resolve : nat -> nat)
-    (signature : fsig) (plan : function_provider_plan) : Prop :=
-  match plan with
-  | NamedFunctionProvider _ => True
-  | AbstractFunctionForwarder occurrence handle =>
-      TranslatesForwarder W P handle signature (resolve occurrence)
-  end.
 
 Theorem function_provider_plan_translates : forall W P F C path signature plan resolve,
   TypesFunctionProvider W F C path signature plan ->
@@ -78,29 +40,6 @@ Proof.
     split; [exact Forward|]. split; [exact Placed|].
     repeat split; reflexivity.
 Qed.
-
-(* A wrapped method calls a declared function at its own context. A
-   forwarder has a fresh slot, so it cannot supply that declared context. *)
-Record wrapped_method_plan := WrappedMethodOf {
-  wrapped_method_occurrence : nat;
-  wrapped_method_provider : named_provider_plan
-}.
-
-Definition TypesWrappedMethodPlan (W : world) (F : frame) (C : cx)
-    (path : path) (signature : fsig) (plan : wrapped_method_plan) : Prop :=
-  TypesNamedFunctionPlan W F C path signature (wrapped_method_provider plan).
-
-Definition wrapped_method_code (signature : fsig) (plan : wrapped_method_plan) : expr :=
-  let provider := wrapped_method_provider plan in
-  let formal := provider_formal provider in
-  ECall (provider_symbol provider) (theta_ctx formal)
-    (map (fun k => (rkey_of formal k, rkey_of formal k)) (provider_needs provider))
-    (map EVar (seq 1 (length (sg_params signature)))).
-
-Definition WrappedMethodPlacement (W : world) (P : program) (resolve : nat -> nat)
-    (signature : fsig) (plan : wrapped_method_plan) : Prop :=
-  let slot := resolve (wrapped_method_occurrence plan) in
-  Fresh W slot /\ body_of P slot = Some (wrapped_method_code signature plan).
 
 Local Lemma named_plan_context : forall W F C path signature plan,
   TypesNamedFunctionPlan W F C path signature plan ->

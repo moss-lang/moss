@@ -164,7 +164,7 @@ Theorem lambda_provider_sound : forall what F C ps annotation body sg this befor
     TypesLambdaCaptures W F C (map fst ps) body caps capvals ->
     StateValid start -> TypedLinkCache W P start -> GeneratedPost bound final finish ->
     let Fl := lambda_body_frame E F C (map fst ps) sg this body caps in
-    let Cl := lambda_parameter_context (EaBind.captured_cx C caps capvals) (map fst ps) (sg_params sg) in
+    let Cl := lambda_parameter_context (captured_cx C caps capvals) (map fst ps) (sg_params sg) in
     r_blke R Fl Cl (ABlock [] (Some body)) (Some (sg_ret sg)) start = Ok ((code, result), finish) ->
     BlkE W P Fl Cl (ABlock [] (Some body)) (Some (sg_ret sg)) code result /\
     TypedLinkCache W P finish /\ StateValid finish) ->
@@ -204,7 +204,7 @@ Proof.
     as (found & next & Reserved & Index & Next & _ & _ & Vacant & _).
   rewrite Reserve in Reserved. injection Reserved as <- <-.
   destruct (reserve_keeps_origins _ _ _ _ Reserve) as (ReserveOrigins & ReserveLinks & ReservePins).
-  set (Cl := EaBind.captured_cx C caps capvals) in *.
+  set (Cl := captured_cx C caps capvals) in *.
   set (Fl := lambda_body_frame E F C parameters sg this body caps) in *.
   set (inner := lambda_parameter_context Cl parameters (sg_params sg)) in *.
   apply EaControlSound.mbind_ok in Run as (checked_captures & s5 & CapturedNames & Run).

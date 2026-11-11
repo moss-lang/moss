@@ -151,23 +151,6 @@ Proof.
   apply valid_link_pin_sound. exact (proj1 (forallb_forall _ _) Good y Generation).
 Qed.
 
-Record TypesLinkedResult (W : world) (u : nat) (Cu Cg Cb Cr : cx)
-    (made outs : list nat) (gen : nat -> nat) (keys : list item) (plan : linked_result_plan) : Prop := {
-  linked_plan_result_keys : link_plan_keys plan = keys;
-  linked_plan_result_site : link_plan_site plan = link_site Cg Cb (link_plan_pins plan) outs gen;
-  linked_plan_pin_provisions : forall k, In k keys ->
-    at_site (link_plan_site plan) k <> at_site (link_site Cg Cb [] outs gen) k ->
-    ilook (provision_id (at_site (link_plan_site plan) k)) (c_provisions Cg) = None;
-  linked_plan_realizes : ResultRealizes (link_plan_site plan) Cr
-    (role_reads (link_plan_site plan) outs gen ++ pin_reads Cb (link_plan_pins plan)) keys;
-  linked_plan_pins_exact : forall x tx, In (x, tx) (link_plan_pins plan) <->
-    Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
-    (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx);
-  linked_plan_pin_scope : forall x tx y, In (x, tx) (link_plan_pins plan) -> In y (gens tx) ->
-    In y (map fst (c_ty Cg)) /\ lookup_subst y (c_sub Cg) = None /\ ~ In y made /\
-    (In y (map fst (c_ty Cu)) -> Fixed W u y)
-}.
-
 Theorem check_linked_result_sound : forall E u gg Cu Cg Cb Cr made outs gen keys plan,
   (forall x, In x (fixed (e_W E) (e_metadata_fuel E) u) <-> Fixed (e_W E) u x) ->
   check_linked_result E u gg Cu Cg Cb Cr made outs gen keys = Ok plan ->

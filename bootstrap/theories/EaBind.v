@@ -29,13 +29,6 @@ Definition sig_mismatch (kind : string) (pv : nat) (got want : fsig) : string :=
    then "; a plain function providing a method takes the method's parameters, which exclude the receiver (D54)"
    else "").
 
-Record named_provider_plan := NamedProviderPlan {
-  provider_symbol : nat;
-  provider_formal : cx;
-  provider_needs : list item;
-  provider_arguments : subst
-}.
-
 Definition check_named_provider (kind : string) (C : cx) (g : nat) (recv : option ty)
     (want : fsig) : er named_provider_plan :=
   let who := ("binding to " ++ qs W g)%string in
@@ -85,13 +78,6 @@ Definition fn_provider (kind : string) (F : frame) (C : cx) (pa : path) (sg : fs
   end.
 
 (* ---- LambdaProvider ---- *)
-
-Definition captured_cx (C : cx) (caps : list name) (capvals : list nat) : cx :=
-  fold_left (fun C' q => let '(n, v) := q in
-                match slook n (c_locals C) with
-                | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
-                | None => C' end)
-            (combine caps capvals) (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []).
 
 Definition lambda_capture_names (F : frame) (C : cx) (parameters : list name) (body : aexpr) : list name :=
   match fr_applying F with
@@ -143,9 +129,6 @@ Definition lambda_body_frame (F : frame) (C : cx) (parameters : list name)
   Frame (fr_mod F) (Some (sg_ret sg)) this false
     (mk_frame_vars (is_some this) parameters (caps ++ ex_names W fuel (fr_mod F) body))
     (fr_fresh F ++ context_gens C) (fr_applying F) [].
-
-Definition lambda_parameter_context (C : cx) (parameters : list name) (types : list ty) : cx :=
-  fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine parameters types) C.
 
 (* SOUND: lambda_provider F C ps rt body sg this = Ok (pid, pre, sm) ->
      LambdaProvider W P F C ps rt body sg this pid pre sm *)

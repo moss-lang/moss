@@ -2,34 +2,8 @@
    uses its declared body, so these bindings need no generated placement. *)
 From Stdlib Require Import List.
 From NM Require Import Audit.
-From NM Require EaBind EaDefinedProviderSound.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
-Import EaBind EaDefinedProviderSound.
 Local Open Scope list_scope.
-
-Definition named_provider_capture (plan : named_provider_plan) : type_capture :=
-  TypeCapture (provider_arguments plan) (provider_arguments plan).
-
-Definition named_provider_provisions (C : cx) (plan : named_provider_plan) : smap :=
-  satisfaction_map C (provider_formal plan) (provider_arguments plan) (provider_needs plan).
-
-Definition named_signature_at (C : cx) (g : fsig) : fsig :=
-  FSig (map (canon C) (sg_params g)) (canon C (sg_ret g)).
-
-Definition TypesNamedFunctionPlan (W : world) (F : frame) (C : cx) (path : path)
-    (signature : fsig) (plan : named_provider_plan) : Prop :=
-  exists g,
-    resolve_sym W (fr_mod F) path = Some g /\ kind_sym W g = Some DKFn /\
-    (exists n ps rt body, ast_of W g = Some (ADFn RPlain n ps rt (Some body))) /\
-    TypesNamedProviderCall W C g None (named_signature_at C signature) plan.
-
-Definition TypesAttachedMethodPlan (W : world) (F : frame) (C : cx) (path : path)
-    (name : name) (receiver : ty) (signature : fsig) (site : cx) (plan : named_provider_plan) : Prop :=
-  exists root arguments method,
-    resolve_sym W (fr_mod F) path = Some root /\ Attached W root name method /\
-    (exists rn ps rt body, ast_of W method = Some (ADFn (RAttached rn) name ps rt (Some body))) /\
-    canon C receiver = TNom root arguments /\ site = family_context C arguments /\
-    TypesNamedProviderCall W site method (Some (canon C receiver)) (named_signature_at C signature) plan.
 
 Lemma named_function_plan_translates : forall W P F C path signature plan,
   TypesNamedFunctionPlan W F C path signature plan ->
