@@ -156,6 +156,10 @@ Definition Abstract (g : nat) : Prop := kind_sym W g <> Some DKTag /\ kind_sym W
 Definition TyOk (t : ty) : Prop := TyFormed W t /\ forall g, In g (gens t) -> Abstract g.
 Definition OptOk (o : option ty) : Prop := forall t, o = Some t -> TyOk t.
 Definition TmOk (tm : list (nat * ty)) : Prop := forall x u, In (x, u) tm -> TyOk u.
+(* The semantic property of a type reading. Unlike TmOk, this does not
+   constrain unused or shadowed rows in its storage representation. *)
+Definition ReadOk (s : subst) : Prop := forall t, TyOk t -> TyOk (app_subst s t).
+
 Definition SigP (P : ty -> Prop) (g : fsig) : Prop := Forall P (sg_params g) /\ P (sg_ret g).
 Definition InstP (P : ty -> Prop) (a : inst) : Prop := forall x t, In (x, Some t) a -> P t.
 Definition SigOk := SigP TyOk.
@@ -256,6 +260,16 @@ Proof.
   - apply subst_formed; [|exact Ft]. intros x u L. exact (proj1 (Hs x u (lookup_subst_in_pair _ _ _ L))).
   - intros y Iy. destruct (gens_subst t s y Iy) as [z [Iz [[_ ->]|[u [L Iu]]]]]; [exact (Gt z Iz)|].
     exact (proj2 (Hs z u (lookup_subst_in_pair _ _ _ L)) y Iu).
+Qed.
+
+
+Lemma tmok_read : forall s, TmOk s -> ReadOk s.
+Proof. intros s Rows t Ok. exact (tyok_subst s t Rows Ok). Qed.
+
+Lemma sigok_read : forall s g, ReadOk s -> SigOk g -> SigOk (sig_subst s g).
+Proof.
+  intros s [ps r] Read [Ps R]. split; cbn in *; [|exact (Read r R)].
+  apply Forall_map. apply (Forall_impl _ (fun t Ok => Read t Ok)). exact Ps.
 Qed.
 
 Lemma sigok_subst : forall s g, TmOk s -> SigOk g -> SigOk (sig_subst s g).
@@ -412,7 +426,7 @@ Definition scope_gens (C : cx) : list nat :=
 (* (a) formation *)
 Record CxFormed (C : cx) : Prop := {
   cf_ty : TmOk W (c_ty C);
-  cf_sub : TmOk W (c_sub C);
+  cf_read : ReadOk W (c_sub C);
   cf_prov : forall k p, In (k, p) (c_provisions C) -> KeyOk W k /\ ProvOk W p;
   cf_locals : forall n t mu, In (n, (t, mu)) (c_locals C) -> TyOk W t
 }.
@@ -527,7 +541,7 @@ Proof.
 Qed.
 
 Lemma canon_ok : forall C t, CxFormed C -> TyOk W t -> TyOk W (canon C t).
-Proof. intros C t Cf Ok. exact (tyok_subst W _ _ (cf_sub _ Cf) Ok). Qed.
+Proof. intros C t Cf Ok. exact (cf_read _ Cf t Ok). Qed.
 
 (* ---- context steps ---------------------------------------------------------- *)
 
@@ -912,6 +926,21 @@ Proof.
   exact (merge_shapes_formed es M (proj1 (proj2 Merge)) Entries).
 Qed.
 
+
+(* Formation and abstractness of class symbols determine every canonical
+   reading. There is no premise about the stored section's rows. *)
+Lemma merge_section_ok : forall es M s, MergeOf es M -> SectionOf M s ->
+  Forall (EntryP (TyFormed W)) es -> (forall x, In x (merge_symbols M) -> Abstract W x) ->
+  ReadOk W s.
+Proof.
+  intros es M s Merge Section Entries Classes t [Ft At]. split.
+  - exact (merge_section_formed es M s Merge Section Entries t Ft).
+  - intros y Iy. destruct (in_dec Nat.eq_dec y (merge_symbols M)) as [Inside|Outside].
+    + exact (Classes y Inside).
+    + apply At. apply (proj2 (PublicMerge.merge_eq_gens_out
+        (@PublicMerge.merge_eq_read M s (proj1 Section) t) y Outside)). exact Iy.
+Qed.
+
 Lemma spec_types_kind : forall p sp t, SpecTypes W p sp t -> kind_sym W t = Some DKType.
 Proof. intros p sp t H. induction H; assumption. Qed.
 
@@ -991,20 +1020,20 @@ Proof.
   - exact (IH Id Ka).
 Qed.
 
-Lemma entry_provision_ok : forall s freeze e k p, TmOk W s -> (forall a, InstOk W a -> InstOk W (freeze a)) ->
+Lemma entry_provision_ok : forall s freeze e k p, ReadOk W s -> (forall a, InstOk W a -> InstOk W (freeze a)) ->
   EntryP (TyOk W) e -> In (k, p) (entry_provision s freeze e) -> KeyOk W k /\ ProvOk W p.
 Proof.
   intros s freeze [t|v t a|f g a|r m g a|u fx|eql eqr] k p Ss Fr Ok Iq; cbn in Iq; try contradiction;
     destruct Iq as [E|[]]; injection E as <- <-; cbn in Ok.
   - destruct Ok as [Ot Oa]. split; [exact Logic.I|]. split; [|exact (Fr a Oa)].
-    intros g E; injection E as <-; split; [constructor|exact (tyok_subst W _ _ Ss Ot)].
+    intros g E; injection E as <-; split; [constructor|exact (Ss _ Ot)].
   - destruct Ok as [Og Oa]. split; [exact Logic.I|]. split; [|exact (Fr a Oa)].
-    intros g' E; injection E as <-; exact (sigok_subst W _ _ Ss Og).
-  - destruct Ok as [Or [Og Oa]]. split; [exact (tyok_subst W _ _ Ss Or)|]. split; [|exact (Fr a Oa)].
-    intros g' E; injection E as <-; exact (sigok_subst W _ _ Ss Og).
+    intros g' E; injection E as <-; exact (sigok_read W _ _ Ss Og).
+  - destruct Ok as [Or [Og Oa]]. split; [exact (Ss _ Or)|]. split; [|exact (Fr a Oa)].
+    intros g' E; injection E as <-; exact (sigok_read W _ _ Ss Og).
   - split; [exact Logic.I|]. split; [intros g E; discriminate|]. intros x t Ix. cbn in Ix. unfold fixed_subst in Ix.
     rewrite map_map in Ix. apply in_map_iff in Ix as [[y v] [E Iq]]. cbn in E. injection E as -> <-.
-    exact (tyok_subst W _ _ Ss (Ok _ _ Iq)).
+    exact (Ss _ (Ok _ _ Iq)).
 Qed.
 
 Lemma entry_provision_key : forall s freeze e r m th p, In (IMth r m th, p) (entry_provision s freeze e) ->
@@ -1053,24 +1082,22 @@ Qed.
 Lemma entries_cx_formed : forall σ classes tm es,
   IdForm tm -> KeysAbstract tm -> KeysDecl tm -> Forall (EntryP (TyOk W)) es ->
   (forall e, In e es -> incl (entry_gens e) (map fst tm)) ->
-  (forall g t, In (g, t) σ -> TyFormed W t /\ incl (gens t) (map fst tm)) ->
+  ReadOk W σ ->
   FormedCx W (entries_cx σ classes tm es).
 Proof.
-  intros σ classes tm es Id Ka Kd Es Eg Sg.
-  assert (So : TmOk W σ).
-  { intros g t Iq. destruct (Sg g t Iq) as [Ft Gt]. split; [exact Ft|]. intros y Iy. exact (Ka y (Gt y Iy)). }
+  intros σ classes tm es Id Ka Kd Es Eg So.
   pose proof (idform_ok _ Id Ka) as Tm.
   assert (Fr : forall a, InstOk W a -> InstOk W (map (fun q => (fst q, option_map (app_subst σ)
                  (match snd q with Some t => Some t | None => nlook (fst q) tm end))) a)).
   { intros a Ia x t Iq. apply in_map_iff in Iq as [[y o] [E Iq]]. cbn in E. injection E as -> E.
     destruct o as [t0|]; cbn in E.
-    - injection E as <-. exact (tyok_subst W _ _ So (Ia _ _ Iq)).
+    - injection E as <-. exact (So _ (Ia _ _ Iq)).
     - destruct (nlook x tm) as [t0|] eqn:L; cbn in E; [|discriminate]. injection E as <-.
-      exact (tyok_subst W _ _ So (Tm _ _ (nlook_in _ _ _ _ L))). }
+      exact (So _ (Tm _ _ (nlook_in _ _ _ _ L))). }
   rewrite Forall_forall in Es. split; [|split].
   - constructor; cbn.
     + intros x u Iq. apply in_map_iff in Iq as [[y v] [E Iq]]. cbn in E. injection E as -> <-.
-      exact (tyok_subst W _ _ So (Tm _ _ Iq)).
+      exact (So _ (Tm _ _ Iq)).
     + exact So.
     + intros k p Iq. apply in_flat_map in Iq as [e [Ie Iq]].
       exact (entry_provision_ok _ _ e k p So Fr (Es e Ie) Iq).
@@ -1104,16 +1131,8 @@ Proof.
     destruct Root as [_|gc d0 n0 its er' tmr' _ _ _ _ RI]; [exact Kt|exact (root_keys_decl _ _ _ _ _ _ RI Kt)]. }
   apply entries_cx_formed; [exact IdR|exact KaR|exact KdR|exact Ok| |].
   - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
-  - intros g t Iq. split.
-    + assert (Read : app_subst σ (TAbs g) = t).
-      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
-      rewrite <- Read. exact (merge_section_formed (es ++ er) classes σ Merge Section
-        (Forall_impl _ entry_ok_formed Ok) (TAbs g) Logic.I).
-    + assert (Read : app_subst σ (TAbs g) = t).
-      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
-      rewrite <- Read. apply (PublicMerge.section_gens_bound Section).
-      * intros y Iy. apply All. exact (proj1 (proj2 (proj2 Merge)) y Iy).
-      * intros y [<-|[]]. apply All. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t Iq)).
+  - apply (merge_section_ok (es ++ er) classes σ Merge Section (Forall_impl _ entry_ok_formed Ok)).
+    intros y Iy. apply KaR, All. exact (proj1 (proj2 (proj2 Merge)) y Iy).
 Qed.
 
 (* The context a functor's argument telescope forms is formed. *)
@@ -1135,16 +1154,8 @@ Proof.
     - exact (proj2 entries_keys_decl _ _ _ _ _ _ IE (fun y (Iy : In y []) => match Iy with end) x Ix). }
   apply entries_cx_formed; [exact Id'|exact Ka'|exact Kd'|exact OkT| |].
   - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
-  - intros g t Iq. split.
-    + assert (Read : app_subst σ (TAbs g) = t).
-      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
-      rewrite <- Read. exact (merge_section_formed es classes σ Merge Section
-        (Forall_impl _ entry_ok_formed OkT) (TAbs g) Logic.I).
-    + assert (Read : app_subst σ (TAbs g) = t).
-      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
-      rewrite <- Read. apply (PublicMerge.section_gens_bound Section).
-      * intros y Iy. apply Sub, EsT. exact (proj1 (proj2 (proj2 Merge)) y Iy).
-      * intros y [<-|[]]. apply Sub, EsT. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t Iq)).
+  - apply (merge_section_ok es classes σ Merge Section (Forall_impl _ entry_ok_formed OkT)).
+    intros y Iy. apply Ka', Sub, EsT. exact (proj1 (proj2 (proj2 Merge)) y Iy).
 Qed.
 
 
@@ -1299,7 +1310,7 @@ Qed.
    every new provision is ok, and its key mentions only generations K. *)
 Lemma provide_result_ok : forall u C0 out C' ks (K : nat -> Prop),
   ProvideResult W u C0 out C' ks ->
-  TmOk W (c_sub C0) -> (forall g v, In (g, v) (c_sub C0) -> GensIn K (gens v)) ->
+  ReadOk W (c_sub C0) -> (forall g v, In (g, v) (c_sub C0) -> GensIn K (gens v)) ->
   (forall x v, In (x, v) (c_ty C0) -> TyOk W (canon C0 v) /\ GensIn K (gens (canon C0 v))) ->
   (forall t, FunOutputs W u t -> TyOk W (canon C0 (out t)) /\ GensIn K (gens (canon C0 (out t)))) ->
   c_sub C' = c_sub C0 /\ c_locals C' = c_locals C0 /\
@@ -1367,7 +1378,7 @@ Lemma family_application_ok : forall C u matching th sm Cr ks,
 Proof.
   intros C u matching th sm Cr ks (fixed & formal & needs & Fx & Fam & Poly & FC & Args & InF & FA & Sat & PR & Nd) Cf Ks Mt.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
-  assert (P1 : TmOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_sub _ _ Cf)).
+  assert (P1 : ReadOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_read _ _ Cf)).
   assert (P2 : forall g v, In (g, v) (c_sub (family_context C matching)) -> GensIn (GenScoped W C) (gens v)).
   { intros g v Iq y Iy. rewrite Esub in Iq. exact (scope_sub C g v y Iq Iy). }
   assert (P3 : forall x v, In (x, v) (c_ty (family_context C matching)) ->
@@ -1517,7 +1528,7 @@ Proof.
   apply IH.
   - constructor.
     + exact (cf_ty _ _ Cf0).
-    + change (TmOk W (c_sub Cr)). rewrite Sub. exact (cf_sub _ _ Cf0).
+    + change (ReadOk W (c_sub Cr)). rewrite Sub. exact (cf_read _ _ Cf0).
     + intros k p Iq. destruct (Pr k p Iq) as [Kk [Pk _]]. split; assumption.
     + change (forall n t mu, In (n, (t, mu)) (c_locals Cr) -> TyOk W t). rewrite Lo. exact (cf_locals _ _ Cf0).
   - intros r m' th' p Iq. apply (scoped_ext W _ _ _ (eq_sym Sc)). exact (proj2 (proj2 (Pr _ _ Iq)) r m' th' eq_refl).
@@ -1557,7 +1568,7 @@ Proof.
      TyOk W (canon C (TAbs (gensof t))) /\ GensIn (fun y => In y (scope_gens C')) (gens (canon C (TAbs (gensof t))))).
   { intros t Ft. split; [exact (canon_ok W C _ Cf (tyok_abs W _ (OutAbs t Ft)))|].
     exact (table_scope C' t _ (InTy _ _ (OutIn t (proj2 (OutsI t) Ft)))). }
-  destruct (provide_result_ok _ _ _ _ _ (fun y => In y (scope_gens C')) PR (cf_sub _ _ Cf) SubK TyK OutK) as [_ [_ [_ Pr]]].
+  destruct (provide_result_ok _ _ _ _ _ (fun y => In y (scope_gens C')) PR (cf_read _ _ Cf) SubK TyK OutK) as [_ [_ [_ Pr]]].
   assert (Scope : incl (scope_gens C) (scope_gens C')).
   { intros y Iy. unfold scope_gens in Iy. apply in_app_or in Iy as [Iy|Iy].
     - apply in_flat_map in Iy as [[g v] [Iq Iy]]. destruct Iy as [E|Iy].
@@ -1575,7 +1586,7 @@ Proof.
       apply (canon_ok W C _ Cf). apply (canon_ok W C _ Cf). apply in_app_or in Iq as [Iq|Iq].
       * apply in_map_iff in Iq as [t [E It]]. injection E as <- <-. exact (tyok_abs W _ (OutAbs t (proj1 (OutsI t) It))).
       * exact (cf_ty _ _ Cf _ _ Iq).
-    + change (TmOk W (c_sub C')). rewrite Esub. exact (cf_sub _ _ Cf).
+    + change (ReadOk W (c_sub C')). rewrite Esub. exact (cf_read _ _ Cf).
     + intros k p Iq. destruct (Pr k p Iq) as [Iq'|[Kk [Pk _]]]; [exact (cf_prov _ _ Cf k p Iq')|split; assumption].
     + change (forall n t mu, In (n, (t, mu)) (c_locals C') -> TyOk W t). rewrite Elo. exact (cf_locals _ _ Cf).
   - intros r m th p Iq. destruct (Pr _ _ Iq) as [Iq'|[_ [_ S]]]; [|intros y Iy; exact (S r m th eq_refl y Iy)].

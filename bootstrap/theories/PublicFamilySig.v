@@ -51,7 +51,7 @@ Proof.
   pose proof (proj1 Fc) as Cf.
   set (K := scope_gens C ++ gens ot).
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
-  assert (P1 : TmOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_sub _ _ Cf)).
+  assert (P1 : ReadOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_read _ _ Cf)).
   assert (P2 : forall g v, In (g, v) (c_sub (family_context C matching)) -> incl (gens v) K).
   { intros g0 v Iq y Iy. rewrite Esub in Iq. apply in_or_app. left. exact (scope_sub C g0 v y Iq Iy). }
   assert (P3 : forall x v, In (x, v) (c_ty (family_context C matching)) ->

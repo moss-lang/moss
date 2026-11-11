@@ -192,7 +192,7 @@ Proof.
     destruct (PublicFormation.sub_ok W _ _ Sb Ok) as [Ov Iv]. split; [exact Ov|intros g Ig; exact (Sc g (Iv g Ig))]. }
   set (Cf := A.family_context C matching) in *.
   assert (CanF : forall t, A.canon Cf t = A.canon C t) by (intros t; unfold A.canon; rewrite Esub; reflexivity).
-  assert (P1 : PublicFormation.TmOk W (A.c_sub Cf)) by (rewrite Esub, Es; exact (PublicFormation.cf_sub W C0 Cf0)).
+  assert (P1 : PublicFormation.ReadOk W (A.c_sub Cf)) by (rewrite Esub, Es; exact (PublicFormation.cf_read W C0 Cf0)).
   assert (P2 : forall g v, In (g, v) (A.c_sub Cf) -> PublicFormation.GensIn K (A.gens v)).
   { intros g v Iq y Iy. rewrite Esub, Es in Iq. exact (PublicFormation.scope_sub C0 g v y Iq Iy). }
   assert (P3 : forall x v, In (x, v) (A.c_ty Cf) ->
@@ -208,7 +208,7 @@ Proof.
     = PublicFormation.scope_gens C0) by (apply PublicFormation.scope_gens_ext; [reflexivity|cbn; rewrite SubR, Esub, Es; reflexivity]).
   split; [constructor|split].
   - cbn. exact (PublicFormation.cf_ty W C0 Cf0).
-  - cbn. rewrite SubR, Esub, Es. exact (PublicFormation.cf_sub W C0 Cf0).
+  - cbn. rewrite SubR, Esub, Es. exact (PublicFormation.cf_read W C0 Cf0).
   - cbn. intros k p Iq. destruct (PrR k p Iq) as [Iq'|[Kk [Pk _]]];
       [rewrite Epr, Ep in Iq'; exact (PublicFormation.cf_prov W C0 Cf0 k p Iq')|exact (conj Kk Pk)].
   - cbn. intros n t mu Iq. rewrite LoR, Elo, El in Iq. exact (PublicFormation.cf_locals W C0 Cf0 n t mu Iq).

@@ -5551,7 +5551,7 @@ Proof.
       apply (ex_step F0 (A.Cx [] [] [] [] []) i (Some t) x t' Dx).
       destruct Pre0 as [_ [_ [L [S Abs]]]]. split; [|split; [|split; [exact L|split; [exact S|split]]]].
       4: { split.
-           - split; [constructor; [intros x9 u9 []|intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
+           - split; [constructor; [intros x9 u9 []|apply PublicFormation.tmok_read; intros x9 u9 []|intros k9 p9 []|intros n9 t9 mu9 []]|].
              split; [intros r9 m9 th9 p9 []|intros x9 []].
            - split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
              split; [intros n9 t9 mu9 []|split; [intros k9 p9 []|split; [intros t9 E9; rewrite This in E9; discriminate|]]].

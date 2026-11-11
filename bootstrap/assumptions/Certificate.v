@@ -426,6 +426,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.merge_shapes_formed);
   root (@NM.PublicFormation.class_section_formed);
   root (@NM.PublicFormation.merge_section_formed);
+  root (@NM.PublicFormation.merge_section_ok);
+  root (@NM.PublicFormation.tmok_read);
   root (@NM.PublicCallRealize.sig_read_scoped);
   root (@NM.PublicSubstFacts.gens_subst_iff);
   root (@NM.PublicFormation.scope_gens_section_bound);

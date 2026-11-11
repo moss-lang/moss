@@ -1107,16 +1107,16 @@ Proof.
   assert (Over : forall t, TyOk W t -> incl (gens t) (map fst (c_ty Cf)) ->
             (forall z, In z (gens t) -> P (canon X (app_subst th (TAbs z)))) -> P (canon X (app_subst th t))).
   { intros t Ok Sc Pz. set (rd := fun z => canon X (app_subst th (TAbs z))).
-    set (comp := map (fun z => (z, rd z)) (gens t) ++ c_sub X).
+    set (comp := map (fun z => (z, rd z)) (gens t) ++ []).
     assert (Lk : forall z, In z (gens t) -> lookup_subst z comp = Some (rd z)).
-    { intros z Iz. unfold comp. exact (lookup_keys_app rd (gens t) (c_sub X) z Iz). }
+    { intros z Iz. unfold comp. exact (lookup_keys_app rd (gens t) [] z Iz). }
     assert (Ec : canon X (app_subst th t) = app_subst comp t).
     { unfold canon at 1. rewrite <- (app_subst_nil (app_subst comp t)). apply subst2_agree.
       intros z Iz. rewrite app_subst_nil. cbn [app_subst]. rewrite (Lk z Iz). reflexivity. }
     rewrite Ec. split.
     - apply (tyok_subst W comp t); [|exact Ok]. apply tmok_app.
       + intros x w Iq. apply in_map_iff in Iq as [z [E Iz]]. injection E as <- <-. exact (proj1 (Pz z Iz)).
-      + rewrite Es. exact (cf_sub W C (proj1 Fc)).
+      + intros x w [].
     - intros y Iy. destruct (gens_subst t comp y Iy) as [z [Iz [[Nz _]|[w [L Iw]]]]].
       + rewrite (Lk z Iz) in Nz. discriminate.
       + rewrite (Lk z Iz) in L. injection L as <-. exact (proj2 (Pz z Iz) y Iw). }
@@ -1137,7 +1137,8 @@ Proof.
       assert (Eu : canon Cf (TAbs x) = u) by (unfold canon; cbn [app_subst]; rewrite Lx; reflexivity).
       rewrite Eu in AllF |- *. pose proof (lookup_subst_in_pair _ _ _ Lx) as Iq.
       apply Over.
-      + exact (cf_sub W Cf CfF x u Iq).
+      + rewrite <- Eu. apply (cf_read W Cf CfF).
+        apply tyok_abs, typed_abstract. exact (ctxof_keys_typed Mt f Cf ns Ctx x Ix).
       + exact (proj2 (Dom x u Iq)).
       + intros z Iz. apply InF; [exact (proj2 (Dom x u Iq) z Iz)|exact (AllF z Iz)]. }
   apply in_map_iff in Ir as [k [E Ik]].

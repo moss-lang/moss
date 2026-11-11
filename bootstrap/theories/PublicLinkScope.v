@@ -243,7 +243,7 @@ Proof.
          TyOk W (canon C (TAbs (gensof t))) /\ GensIn K (gens (canon C (TAbs (gensof t))))).
       { intros t Ft. split; [exact (canon_ok W C _ Cf (tyok_abs W _ (OutAbs t Ft)))|].
         exact (table_scope C' t _ (InTy _ _ (OutIn t (proj2 (OutsI' t) Ft)))). }
-      destruct (provide_result_ok W _ _ _ _ _ K PR (cf_sub _ _ Cf) SubK TyK OutK) as [_ [_ [_ Pr]]].
+      destruct (provide_result_ok W _ _ _ _ _ K PR (cf_read _ _ Cf) SubK TyK OutK) as [_ [_ [_ Pr]]].
       split; [exact Inc|split; [|split; [|split; [exact Esub|exact (PublicContextFacts.provided_result_merge W u C _ C' _ PR)]]]].
       * intros y I. destruct (Back y I) as [I'|[t [Ft ->]]]; [left; exact I'|right].
         apply in_map. exact (proj2 (OutsI t) Ft).
