@@ -21,7 +21,8 @@ against public `Runs` for a safe input program, a host whose primitives
 ignore program code, and compiled tables satisfying `tbl_ok`.
 `BootstrapRun.Native.run_optimized_sound` gives this result for the
 driver's state layout, where only primitive-managed state is threaded
-through the interpreter.
+through the interpreter. Its extracted program view uses indexed lookups
+proved to return the same bodies as Audit.
 
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
 `LoadListed.v`; `LoadListedFacts.v` proves its complete result, including

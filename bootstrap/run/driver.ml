@@ -166,19 +166,11 @@ let () =
     xp_fixed_inst = (fun _ -> []); xp_fixed_keys = (fun _ -> []);
     xp_bool = p.A.program_bool; xp_true = p.A.program_true; xp_false = p.A.program_false;
     xp_argv = argv; xp_read = read };
-  (* program_of's view, its two lookups realized with Hashtbls: the first
-     body for a symbol wins, as program_of's nlook. *)
-  (* Symbols are OCaml ints: hash them as ints, not with caml_hash. *)
-  let module T = Hashtbl.Make (struct type t = int let equal = Int.equal let hash x = x land max_int end) in
-  let table l = let t = T.create 4096 in List.iter (fun (k, v) -> T.replace t k v) (List.rev l); t in
-  let fns = table p.A.program_functions and funs = table p.A.program_functors in
-  let view = { (A.program_of p argv read) with
-               A.view_function = T.find_opt fns; A.view_functor = T.find_opt funs } in
+  let view = BootstrapRun.indexed_program_of p argv read in
   let t2 = now () in
   (* InterpreterCompiled.crun_main_reference: under tbl_ok, the compiled run on the
      converted environment returns exactly what Interpreter.run_main
-     returns. The arrays are trusted driver code, as the Hashtbls realizing
-     the view are: tbl and ftbl hold the code of the view's bodies (the
+     returns. The arrays are trusted driver code: tbl and ftbl hold the code of the view's bodies (the
      first body for a symbol wins, as there), closures that read the very
      arrays they are stored in, filled before the run starts. *)
   let nf = 1 + List.fold_left (fun n (f, _) -> max n f) 0 p.A.program_functions in

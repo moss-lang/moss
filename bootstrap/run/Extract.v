@@ -64,7 +64,7 @@ Extraction Blacklist String List Char Bool.
 Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
-  BootstrapRun.passes
+  BootstrapRun.passes BootstrapRun.indexed_program_of
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program

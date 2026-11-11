@@ -1,5 +1,5 @@
-(* A change of state representation commutes with execution when it
-   commutes with every primitive call. *)
+(* Execution commutes with a change of state representation and pointwise
+   equivalent code lookup when the primitive calls agree. *)
 From Stdlib Require Import List Bool Arith.
 From NM Require Import Audit PublicValueTyping.
 Import Audit.Semantics ListNotations.
@@ -7,10 +7,16 @@ Import Audit.Semantics ListNotations.
 Module StateSimulation (Raw Public : PRIMITIVES) (R : INTERP Raw) (S : INTERP Public).
 Section StateMap.
 Variable lift : Raw.mstate -> Public.mstate.
-Variable P : program_view.
+Variables raw_view public_view : program_view.
+Hypothesis functions_agree : forall f, view_function public_view f = view_function raw_view f.
+Hypothesis functors_agree : forall u, view_functor public_view u = view_functor raw_view u.
+Hypothesis bool_agrees : view_bool public_view = view_bool raw_view.
+Hypothesis true_agrees : view_true public_view = view_true raw_view.
+Hypothesis false_agrees : view_false public_view = view_false raw_view.
+Hypothesis casts_agree : view_casts public_view = view_casts raw_view.
 Hypothesis primitive_commutes : forall operation site values state,
-  Public.run_prim P operation site values (lift state) =
-    let '(signal, next) := Raw.run_prim P operation site values state in
+  Public.run_prim public_view operation site values (lift state) =
+    let '(signal, next) := Raw.run_prim raw_view operation site values state in
     (signal, lift next).
 
 Definition lift_eval (r : R.evaluation) : S.evaluation :=
@@ -51,15 +57,30 @@ Proof.
   destruct (S.bind_fields (field :: fields) record); reflexivity.
 Qed.
 
+Lemma truthy_agrees : forall value, S.truthy public_view value = R.truthy raw_view value.
+Proof. intros. unfold S.truthy, R.truthy. now rewrite bool_agrees, true_agrees, false_agrees. Qed.
+
+Lemma check_tag_agrees : forall env tag th value,
+  S.check_tag public_view env tag th value = R.check_tag raw_view env tag th value.
+Proof. intros. unfold S.check_tag, R.check_tag. now rewrite casts_agree. Qed.
+
+Lemma application_environment_agrees : forall env h th captured,
+  application_environment public_view env h th captured =
+  application_environment raw_view env h th captured.
+Proof. intros. unfold application_environment. now rewrite functors_agree. Qed.
+
 Definition commutes fuel :=
   (forall d g st e,
-    S.eval fuel P d g (lift st) e = lift_eval (R.eval fuel P d g st e)) /\
+    S.eval fuel public_view d g (lift st) e = lift_eval (R.eval fuel raw_view d g st e)) /\
   (forall d g st args,
-    S.eval_arguments fuel P d g (lift st) args = lift_args_result (R.eval_arguments fuel P d g st args)) /\
+    S.eval_arguments fuel public_view d g (lift st) args =
+      lift_args_result (R.eval_arguments fuel raw_view d g st args)) /\
   (forall d g st bindings,
-    S.eval_bindings fuel P d g (lift st) bindings = lift_bind_result (R.eval_bindings fuel P d g st bindings)) /\
+    S.eval_bindings fuel public_view d g (lift st) bindings =
+      lift_bind_result (R.eval_bindings fuel raw_view d g st bindings)) /\
   (forall d u th outs sm rs st,
-    S.apply_functor fuel P d u th outs sm rs (lift st) = lift_apply_result (R.apply_functor fuel P d u th outs sm rs st)).
+    S.apply_functor fuel public_view d u th outs sm rs (lift st) =
+      lift_apply_result (R.apply_functor fuel raw_view d u th outs sm rs st)).
 
 Theorem execution_commutes : forall fuel, commutes fuel.
 Proof.
@@ -79,13 +100,17 @@ Proof.
     | progress rewrite IHapp
     | progress rewrite primitive_commutes
     | progress rewrite select_arm_exact
+    | progress rewrite truthy_agrees
+    | progress rewrite check_tag_agrees
+    | progress rewrite application_environment_agrees
+    | progress rewrite functions_agree
+    | progress rewrite functors_agree
     | progress unfold R.run_prim_at, S.run_prim_at
     | progress cbn [lift_eval lift_args_result lift_bind_result lift_apply_result
         R.evaluation_signal R.evaluation_locals R.evaluation_state
         S.ret_call R.ret_call S.pop1 R.pop1 S.popn R.popn S.with_g R.with_g]
     | solve [reflexivity]
     | match goal with
-      | |- context [S.truthy ?p ?w] => change (S.truthy p w) with (R.truthy p w)
       | |- context [S.get_field ?f ?w] => change (S.get_field f w) with (R.get_field f w)
       | |- context [R.eval ?k ?p ?d ?g ?st ?e] =>
           let signal := fresh "signal" in
@@ -110,14 +135,14 @@ Proof.
 Qed.
 
 Theorem run_main_commutes : forall fuel main env initial,
-  S.run_main fuel P main env (lift initial) =
-    lift_eval (R.run_main fuel P main env initial).
+  S.run_main fuel public_view main env (lift initial) =
+    lift_eval (R.run_main fuel raw_view main env initial).
 Proof.
   intros fuel main env initial.
   unfold S.run_main, R.run_main.
-  destruct (view_function P main); [|reflexivity].
+  rewrite functions_agree. destruct (view_function raw_view main); [|reflexivity].
   rewrite (proj1 (execution_commutes fuel)).
-  destruct (R.eval fuel P env [] initial e). reflexivity.
+  destruct (R.eval fuel raw_view env [] initial e). reflexivity.
 Qed.
 End StateMap.
 End StateSimulation.
