@@ -136,6 +136,7 @@ entry they belong to.
 | 103 | Formed contexts carry merge classes beside their spelling section | merge refactor M2 | representation change |
 | 105 | Base's host laws are independent of the public interface record | BaseLaws | none (definitional refactoring) |
 | 106 | Base owns primitive argument and allocation-result adaptation | sep S4a | none (definitional) |
+| 107 | Primitive execution receives its site through the host boundary | sep S4b | none for public execution (ABI relocation) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3364,6 +3365,40 @@ using one fresh atom per abstract class must preserve that behaviour
   one step would couple this move to the FastPath simulation. Those changes are
   the next S4 slice, with their own checks.
 - **Class.** Definitional relocation (criterion 8, platform separation).
+
+### 107. Primitive execution receives its site through the host boundary (S4b)
+
+- **Change.** `PRIMITIVES.run_prim` takes the optional type recorded in its
+  closure. The interpreter forwards that site directly. `ReferenceHost` and the
+  executable host apply `BaseCall.call` around their raw primitive step.
+- **Why.** The language interpreter can forward the platform's site information
+  without inspecting operation names or implementing Base's argument and result
+  conventions (criterion 8). The external interface's raw primitive contract and
+  host laws remain the same.
+- **Equivalence.** For the public reference host, unfolding its new primitive
+  entry gives exactly the previous `BaseCall.call` around the same raw callback.
+  The closure site, arguments, state, outcome and fuel are preserved. The native
+  host makes the same call around its existing conversion and raw MossX step.
+- **Fidelity.** Existing closure construction still records the site for the two
+  allocating operations. Generic site recording for other methods is a separate
+  step because the FastPath proof currently uses those closures' absent sites.
+
+  | Program | Native before → after | moss-ref before → after | Audit before → after |
+  |---|---|---|---|
+  | [gc_tree](../tests/wasi/gc_tree.moss), [gc_array](../tests/wasi/gc_array.moss) | same implementation | same adapter around the raw step | same reference result and state |
+  | [saved_type_rebinding](../tests/wasi/saved_type_rebinding.moss) | same implementation | same cast trap | same reference result and state |
+  | [float](../tests/wasi/float.moss) | same implementation | same raw numeric step | same reference result and state |
+
+- **Proof.** Pass simulations quantify over every optional site. A shared
+  `base_call_state` fact proves that adapting the result preserves the state
+  returned by the callback, and the pass invariants use its preservation
+  consequence. The primitive safety proof unfolds the host boundary directly.
+  The exact public safety statement and kernel assumption audit are retained.
+- **Alternatives.** Passing a raw callback into the interpreter would leave Base's
+  decoding and reference-header convention there. A separate raw callback in the
+  host keeps the interpreter's operational rules generic while retaining the
+  existing external interface and its heap laws.
+- **Class.** Calling-convention relocation (criterion 8, platform separation).
 
 ---
 

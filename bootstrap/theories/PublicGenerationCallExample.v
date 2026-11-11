@@ -63,7 +63,7 @@ Proof. reflexivity. Qed.
 
 Module Primitives <: PRIMITIVES.
 Definition mstate := unit.
-Definition run_prim (_ : program_view) (_ : prim) (_ : list value) (state : unit) := (Trap 0,state).
+Definition run_prim (_ : program_view) (_ : prim) (_ : option ty) (_ : list value) (state : unit) := (Trap 0,state).
 End Primitives.
 Module R := Interpreter Primitives.
 Definition with_functor := install_provision (IFun 1) (FunctorClosure 1 None captured None) caller.

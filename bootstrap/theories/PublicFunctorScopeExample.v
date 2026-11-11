@@ -7,7 +7,7 @@ Import Audit.Semantics ListNotations.
 
 Module Prims <: PRIMITIVES.
 Definition mstate := unit.
-Definition run_prim (_ : program_view) (_ : prim) (_ : list value) (st : unit) := (Trap 0,st).
+Definition run_prim (_ : program_view) (_ : prim) (_ : option ty) (_ : list value) (st : unit) := (Trap 0,st).
 End Prims.
 Module R := Interpreter Prims.
 

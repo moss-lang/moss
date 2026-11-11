@@ -464,7 +464,7 @@ Lemma run_supported : forall P iface p held ws s,
      (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
       (iface, M.World (M.arguments s) (M.read_file s) next))).
 Proof.
-  intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, BaseCall.call, M.ReferenceHost.run_prim.
+  intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
   rewrite Supp. destruct (M.primitive iface P p (BaseCall.primitive_arguments p ws) (M.external s)); reflexivity.
 Qed.
 

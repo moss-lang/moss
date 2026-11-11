@@ -60,11 +60,13 @@ let host : xprog option ref = ref None
 
 module P = struct
   type mstate = MossX.mstate
-  let run_prim (_ : A.program_view) (p : A.prim) (ws : A.value list) (st : mstate) : A.signal * mstate =
+  let raw_primitive (_ : A.program_view) (p : A.prim) (ws : A.value list) (st : mstate) : A.signal * mstate =
     let xp = match !host with Some x -> x | None -> assert false in
     let (o, st') = MossX.run_prim_fast xp (prim_back p) (List.map value_back ws) st in
     ((match o with
       | XOk w -> A.Normal (value w) | XRet w -> A.Returning (value w) | XBrk -> A.Breaking
       | XErr n -> A.Stuck n | XTrap n -> A.Trap n | XExit c -> A.Exit c | XUns n -> A.UnsupportedOperation n
       | XFuel -> A.OutOfFuel), st')
+  let run_prim program operation site values state =
+    A.BaseCall.call raw_primitive program operation site values state
 end

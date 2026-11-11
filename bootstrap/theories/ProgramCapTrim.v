@@ -39,6 +39,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import AuditFacts.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require NatTrie ProgramPrune.
 Import Audit.Semantics ListNotations.
@@ -654,8 +655,8 @@ Variables P P' : program_view.
 Variable ok : mstate -> Prop.
 Hypothesis Hfn : forall f, view_function P' f = option_map (trim_e T (Dt T f)) (view_function P f).
 Hypothesis Hfun : forall h, view_functor P' h = option_map (trim_code T) (view_functor P h).
-Hypothesis Hprim : forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st.
-Hypothesis Hok : forall q ws st, ok st -> ok (snd (run_prim P q ws st)).
+Hypothesis Hprim : forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st.
+Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
@@ -756,7 +757,7 @@ Proof.
 Qed.
 
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
-Proof. intros. unfold run_prim_at, BaseCall.call. rewrite Hprim by assumption. reflexivity. Qed.
+Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
 
 Lemma prim_closure_eq : forall S Dm x d d' i p, envrel T S Dm x d d' ->
   match i with IMth tau _ _ => gok S tau | _ => true end = true ->
@@ -1079,8 +1080,8 @@ Theorem run_main_trimmed : forall T p argv rd fuel st0 (ok : mstate -> Prop),
   check T p = true ->
   let P := program_of p argv rd in
   let P' := program_of (trim_program T p) argv rd in
-  (forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st) ->
-  (forall q ws st, ok st -> ok (snd (run_prim P q ws st))) ->
+  (forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st) ->
+  (forall q site ws st, ok st -> ok (snd (run_prim P q site ws st))) ->
   ok st0 ->
   run_main fuel P' (program_main (trim_program T p)) (program_environment (trim_program T p)) st0
   = run_main fuel P (program_main p) (program_environment p) st0.
@@ -1126,8 +1127,8 @@ Qed.
 Theorem captrim_sound : forall p argv rd fuel st0 (ok : mstate -> Prop),
   let P := program_of p argv rd in
   let P' := program_of (captrim p) argv rd in
-  (forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st) ->
-  (forall q ws st, ok st -> ok (snd (run_prim P q ws st))) ->
+  (forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st) ->
+  (forall q site ws st, ok st -> ok (snd (run_prim P q site ws st))) ->
   ok st0 ->
   run_main fuel P' (program_main (captrim p)) (program_environment (captrim p)) st0
   = run_main fuel P (program_main p) (program_environment p) st0.
@@ -1173,13 +1174,15 @@ Proof.
   intros program interface initial Hblind fuel. unfold M.runtime.
   rewrite (@PS.captrim_sound program (M.arguments initial) (M.read_file initial) fuel (interface, initial)
               (fun st => fst st = interface)); [reflexivity| | |reflexivity].
-  - intros q ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim.
+  - intros q site ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (captrim_view program (M.arguments initial) (M.read_file initial))
       as [B [T [F [A [Rd C]]]]].
     rewrite (Hblind _ _ B T F A Rd C). reflexivity.
-  - intros q ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim.
-    destruct (M.supports interface q); [|reflexivity].
-    destruct (M.primitive interface _ q ws (M.external s)). reflexivity.
+  - intros q site ws st Hi. unfold M.ReferenceHost.run_prim.
+    eapply base_call_preserves; [|exact Hi].
+    intros operation arguments [i s] Valid. unfold M.ReferenceHost.raw_primitive.
+    destruct (M.supports i operation); [|exact Valid].
+    destruct (M.primitive i _ operation arguments (M.external s)); exact Valid.
 Qed.
 
 Theorem runs_trimmed : forall program interface initial result,

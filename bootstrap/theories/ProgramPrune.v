@@ -32,6 +32,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import AuditFacts.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require NatTrie.
 Import Audit.Semantics ListNotations.
@@ -506,7 +507,7 @@ Import Prims I.
 Section Inv.
 Variable P : program_view.
 Variable ok : mstate -> Prop.
-Hypothesis Hok : forall q ws st, ok st -> ok (snd (run_prim P q ws st)).
+Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
 
 Definition okr (r : evaluation) : Prop := ok (evaluation_state r).
 Definition okl {A : Type} (r : (A * locals * mstate) + evaluation) : Prop :=
@@ -527,7 +528,7 @@ Proof.
   unfold INV, okr, okl, oka in *.
   repeat split.
   all: intros; simpl.
-  all: repeat (unfold run_prim_at, BaseCall.call, ret_call, pop1, popn, with_g in *; simpl in *;
+  all: repeat (unfold run_prim_at, ret_call, pop1, popn, with_g in *; simpl in *;
          match goal with
          | H : ok ?st |- context [eval ?k' P ?d ?g ?st ?e] =>
              let Hn := fresh "Hn" in pose proof (IHe d g st e H) as Hn;
@@ -541,9 +542,9 @@ Proof.
          | H : ok ?st |- context [apply_functor ?k' P ?d ?u ?th ?o ?sm ?rs ?st] =>
              let Hn := fresh "Hn" in pose proof (IHa d u th o sm rs st H) as Hn;
              destruct (apply_functor k' P d u th o sm rs st) as [[? ?]|] eqn:?; simpl in Hn
-         | |- context [run_prim ?PP ?q ?ws ?st] =>
-             let Hn := fresh "Hn" in pose proof (@Hok q ws st ltac:(assumption)) as Hn;
-             destruct (run_prim PP q ws st) eqn:?; simpl in Hn
+         | |- context [run_prim ?PP ?q ?site ?ws ?st] =>
+             let Hn := fresh "Hn" in pose proof (@Hok q site ws st ltac:(assumption)) as Hn;
+             destruct (run_prim PP q site ws st) eqn:?; simpl in Hn
          | |- context [match ?x with _ => _ end] =>
              lazymatch x with
              | context [match _ with _ => _ end] => fail
@@ -568,8 +569,8 @@ Variables P P' : program_view.
 Variable ok : mstate -> Prop.
 Hypothesis Hfn : forall f, view_function P' f = option_map (prune_e R) (view_function P f).
 Hypothesis Hfun : forall h, view_functor P' h = option_map (prune_code R) (view_functor P h).
-Hypothesis Hprim : forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st.
-Hypothesis Hok : forall q ws st, ok st -> ok (snd (run_prim P q ws st)).
+Hypothesis Hprim : forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st.
+Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
@@ -648,7 +649,7 @@ Lemma check_tag_eq : forall S d d' n th w, agree R S d d' ->
   check_tag P' d' n th w = check_tag P d n th w.
 Proof. intros S d d' n th w H. unfold check_tag, ground. rewrite Hcasts, (agree_tm H). reflexivity. Qed.
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
-Proof. intros. unfold run_prim_at, BaseCall.call. rewrite Hprim by assumption. reflexivity. Qed.
+Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
 
 Lemma app_env_rel : forall T d d' h th dc dc', agree R T d d' -> lrel R dc dc' ->
   lrel R (application_environment P d h th dc) (application_environment P' d' h th dc').
@@ -916,8 +917,8 @@ Theorem run_main_pruned : forall R p argv rd fuel st0 (ok : mstate -> Prop),
   check R p = true ->
   let P := program_of p argv rd in
   let P' := program_of (prune_program R p) argv rd in
-  (forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st) ->
-  (forall q ws st, ok st -> ok (snd (run_prim P q ws st))) ->
+  (forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st) ->
+  (forall q site ws st, ok st -> ok (snd (run_prim P q site ws st))) ->
   ok st0 ->
   stuck (run_main fuel P (program_main p) (program_environment p) st0)
   \/ run_main fuel P' (program_main (prune_program R p)) (program_environment (prune_program R p)) st0
@@ -955,8 +956,8 @@ Qed.
 Theorem prune_sound : forall p argv rd fuel st0 (ok : mstate -> Prop),
   let P := program_of p argv rd in
   let P' := program_of (prune p) argv rd in
-  (forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st) ->
-  (forall q ws st, ok st -> ok (snd (run_prim P q ws st))) ->
+  (forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st) ->
+  (forall q site ws st, ok st -> ok (snd (run_prim P q site ws st))) ->
   ok st0 ->
   stuck (run_main fuel P (program_main p) (program_environment p) st0)
   \/ run_main fuel P' (program_main (prune p)) (program_environment (prune p)) st0
@@ -1007,13 +1008,15 @@ Proof.
   intros program interface initial Hblind Hsafe fuel. unfold M.runtime.
   destruct (@PS.prune_sound program (M.arguments initial) (M.read_file initial) fuel (interface, initial)
               (fun st => fst st = interface)) as [Hs|E].
-  - intros q ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim.
+  - intros q site ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (prune_view program (M.arguments initial) (M.read_file initial))
       as [B [T [F [A [Rd C]]]]].
     rewrite (Hblind _ _ B T F A Rd C). reflexivity.
-  - intros q ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim.
-    destruct (M.supports interface q); [|reflexivity].
-    destruct (M.primitive interface _ q ws (M.external s)). reflexivity.
+  - intros q site ws st Hi. unfold M.ReferenceHost.run_prim.
+    eapply base_call_preserves; [|exact Hi].
+    intros operation arguments [i s] Valid. unfold M.ReferenceHost.raw_primitive.
+    destruct (M.supports i operation); [|exact Valid].
+    destruct (M.primitive i _ operation arguments (M.external s)); exact Valid.
   - reflexivity.
   - exfalso. destruct Hs as [c Hc].
     apply (Hsafe c (snd (M.Reference.evaluation_state (M.Reference.run_main fuel

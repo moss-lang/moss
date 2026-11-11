@@ -1834,11 +1834,13 @@ End BaseCall.
 
 (* Reference execution is parameterized by primitive operations and their
    state. Public.interface_laws specifies their typed and heap behavior.
-   A concrete implementation must prove that its representation refines this
-   interface; the existing ExecutionModel proofs do not supply that bridge. *)
+   The callback receives the closure's optional site and implements its
+   platform's calling convention. A concrete implementation must prove that
+   its representation refines this interface; the existing ExecutionModel
+   proofs do not supply that bridge. *)
 Module Type PRIMITIVES.
   Parameter mstate : Type.
-  Parameter run_prim : program_view -> prim -> list value -> mstate -> signal * mstate.
+  Parameter run_prim : program_view -> prim -> option ty -> list value -> mstate -> signal * mstate.
 End PRIMITIVES.
 
 Module Interpreter (Import Prims : PRIMITIVES).
@@ -1888,7 +1890,7 @@ Definition check_tag (P : program_view) (d : environment) (n : nsym) (th : subst
       else Normal (VTag n w)
   end.
 (* Transparent call entry for the interpreter-agreement proofs. *)
-Definition run_prim_at := @BaseCall.call mstate run_prim.
+Definition run_prim_at := run_prim.
 
 Definition truthy (P : program_view) (w : value) : option bool :=
   match w with
@@ -6233,12 +6235,13 @@ Module Public (Host : HOST).
 
   Module ReferenceHost <: PRIMITIVES.
     Definition mstate := (interface * state)%type.
-    Definition run_prim P p values (machine : mstate) :=
+    Definition raw_primitive P p values (machine : mstate) :=
       let '(interface, state) := machine in
       if supports interface p then
         let '(out, next) := primitive interface P p values (external state) in
         (out, (interface, World (arguments state) (read_file state) next))
       else (Stuck e_missing_primitive, machine).
+    Definition run_prim := @BaseCall.call mstate raw_primitive.
   End ReferenceHost.
   Module Reference := Interpreter ReferenceHost.
 

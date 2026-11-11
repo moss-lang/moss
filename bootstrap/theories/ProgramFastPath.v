@@ -40,6 +40,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import AuditFacts.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require ProgramPrune.
 From Stdlib Require PrimInt63.
@@ -824,8 +825,8 @@ Variables P P' : program_view.
 Variable ok : mstate -> Prop.
 Hypothesis Hfn : forall f, view_function P' f = option_map (fp_e U cH) (view_function P f).
 Hypothesis Hfun : forall h, view_functor P' h = option_map (fp_code U cH) (view_functor P h).
-Hypothesis Hprim : forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st.
-Hypothesis Hok : forall q ws st, ok st -> ok (snd (run_prim P q ws st)).
+Hypothesis Hprim : forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st.
+Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
@@ -850,19 +851,19 @@ Proof.
   rewrite forallb_forall in Hc. auto.
 Qed.
 
-Lemma Hok' : forall q ws st, ok st -> ok (snd (run_prim P' q ws st)).
+Lemma Hok' : forall q site ws st, ok st -> ok (snd (run_prim P' q site ws st)).
 Proof. intros. rewrite Hprim by assumption. auto. Qed.
 
-Lemma inv_e : forall P0, (forall q ws st, ok st -> ok (snd (run_prim P0 q ws st))) ->
+Lemma inv_e : forall P0, (forall q site ws st, ok st -> ok (snd (run_prim P0 q site ws st))) ->
   forall k d g st e, ok st -> ok (evaluation_state (eval k P0 d g st e)).
 Proof. intros P0 Hk k. exact (proj1 (@PS.inv_all P0 ok Hk k)). Qed.
-Lemma inv_l : forall P0, (forall q ws st, ok st -> ok (snd (run_prim P0 q ws st))) ->
+Lemma inv_l : forall P0, (forall q site ws st, ok st -> ok (snd (run_prim P0 q site ws st))) ->
   forall k d g st l, ok st -> PS.okl (ok := ok) (eval_arguments k P0 d g st l).
 Proof. intros P0 Hk k. exact (proj1 (proj2 (@PS.inv_all P0 ok Hk k))). Qed.
-Lemma inv_b : forall P0, (forall q ws st, ok st -> ok (snd (run_prim P0 q ws st))) ->
+Lemma inv_b : forall P0, (forall q site ws st, ok st -> ok (snd (run_prim P0 q site ws st))) ->
   forall k d g st bs, ok st -> PS.okl (ok := ok) (eval_bindings k P0 d g st bs).
 Proof. intros P0 Hk k. exact (proj1 (proj2 (proj2 (@PS.inv_all P0 ok Hk k)))). Qed.
-Lemma inv_a : forall P0, (forall q ws st, ok st -> ok (snd (run_prim P0 q ws st))) ->
+Lemma inv_a : forall P0, (forall q site ws st, ok st -> ok (snd (run_prim P0 q site ws st))) ->
   forall k d u th outputs sm rs st, ok st -> PS.oka (ok := ok) (apply_functor k P0 d u th outputs sm rs st).
 Proof. intros P0 Hk k. exact (proj2 (proj2 (proj2 (@PS.inv_all P0 ok Hk k)))). Qed.
 
@@ -872,7 +873,7 @@ Lemma check_tag_eq : forall S d d' n th w, agree S d d' ->
   check_tag P' d' n th w = check_tag P d n th w.
 Proof. intros S d d' n th w Hd. unfold check_tag, ground. rewrite Hcasts, (ag_tm Hd). reflexivity. Qed.
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
-Proof. intros. unfold run_prim_at, BaseCall.call. rewrite Hprim by assumption. reflexivity. Qed.
+Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
 
 Lemma app_env_rel : forall S d d' h th dc dc', agree S d d' -> lrel dc dc' ->
   lrel (application_environment P d h th dc) (application_environment P' d' h th dc').
@@ -1910,8 +1911,8 @@ Hypothesis Hchk : ok_program U H p = true.
 Let P := program_of p argv rd.
 Let P' := program_of (fp_program U cH p) argv rd.
 Variable ok : mstate -> Prop.
-Hypothesis Hprim : forall q ws st, ok st -> run_prim P' q ws st = run_prim P q ws st.
-Hypothesis Hok : forall q ws st, ok st -> ok (snd (run_prim P q ws st)).
+Hypothesis Hprim : forall q site ws st, ok st -> run_prim P' q site ws st = run_prim P q site ws st.
+Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)).
 
 Lemma chk_parts : body_ok cH = true
   /\ (forall f b, view_function P f = Some b -> ok_e U b = true)
@@ -1959,7 +1960,7 @@ Theorem run_main_backward : forall fuel st0, ok st0 ->
                    = run_main fuel P' (program_main p) (program_environment p) st0).
 Proof.
   intros fuel st0 Hst. destruct chk_parts as [Hb [Hf [Hu He]]]. destruct views as [Hfn Hfun].
-  assert (Hok' : forall q ws st, ok st -> ok (snd (run_prim P' q ws st)))
+  assert (Hok' : forall q site ws st, ok st -> ok (snd (run_prim P' q site ws st)))
     by (intros; rewrite Hprim by assumption; auto).
   destruct (@bwd_all U H cH P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
     as [Hsim _].
@@ -2001,17 +2002,19 @@ Proof.
   destruct (Elaboration.nlook H (program_functors program)) as [cH|] eqn:Ec; [|tauto].
   destruct (ok_program U H program) eqn:Eok; [|tauto].
   set (ok := fun st : M.ReferenceHost.mstate => fst st = interface).
-  assert (Hprim : forall q ws st, ok st ->
-    M.ReferenceHost.run_prim (program_of (fp_program U cH program) (M.arguments initial) (M.read_file initial)) q ws st
-    = M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q ws st).
-  { intros q ws [i s] Hi. unfold ok in Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim.
+  assert (Hprim : forall q site ws st, ok st ->
+    M.ReferenceHost.run_prim (program_of (fp_program U cH program) (M.arguments initial) (M.read_file initial)) q site ws st
+    = M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q site ws st).
+  { intros q site ws [i s] Hi. unfold ok in Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (FS.fp_view U cH program (M.arguments initial) (M.read_file initial)) as [B [T [F [A [Rd C]]]]].
     rewrite (Hblind _ _ B T F A Rd C). reflexivity. }
-  assert (Hok : forall q ws st, ok st ->
-    ok (snd (M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q ws st))).
-  { intros q ws [i s] Hi. unfold ok in Hi. simpl in Hi. subst i. unfold ok, M.ReferenceHost.run_prim.
-    destruct (M.supports interface q); [|reflexivity].
-    destruct (M.primitive interface _ q ws (M.external s)). reflexivity. }
+  assert (Hok : forall q site ws st, ok st ->
+    ok (snd (M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q site ws st))).
+  { intros q site ws st Hi. unfold M.ReferenceHost.run_prim.
+    eapply base_call_preserves; [|exact Hi].
+    intros operation arguments [i s] Valid. unfold M.ReferenceHost.raw_primitive.
+    destruct (M.supports i operation); [|exact Valid].
+    destruct (M.primitive i _ operation arguments (M.external s)); exact Valid. }
   unfold M.Runs, M.runtime. simpl. split.
   - intros [fuel E].
     destruct (FS.run_main_backward U H program cH (M.arguments initial) (M.read_file initial) Ec Eok ok

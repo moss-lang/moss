@@ -111,3 +111,30 @@ Proof.
   intros W s e1 e2 [A1 M1] [A2 M2]. apply ascending_det; [exact A1 | exact A2|].
   intro t. rewrite M1, M2. reflexivity.
 Qed.
+
+(* Base's result adaptation retains the state returned by the raw host. *)
+Section BaseCallFacts.
+Import Audit.Semantics.
+
+Lemma base_call_state : forall S
+    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    P operation held ws st,
+  snd (BaseCall.call primitive P operation held ws st) =
+  snd (primitive P operation (BaseCall.primitive_arguments operation ws) st).
+Proof.
+  intros S primitive P operation held ws st. unfold BaseCall.call.
+  destruct (primitive P operation (BaseCall.primitive_arguments operation ws) st)
+    as [out next]. destruct held; reflexivity.
+Qed.
+
+Lemma base_call_preserves : forall S
+    (primitive : program_view -> prim -> list value -> S -> signal * S)
+    P (ok : S -> Prop),
+  (forall operation ws st, ok st -> ok (snd (primitive P operation ws st))) ->
+  forall operation held ws st, ok st ->
+    ok (snd (BaseCall.call primitive P operation held ws st)).
+Proof.
+  intros S primitive P ok Keeps operation held ws st Valid.
+  rewrite base_call_state. apply Keeps. exact Valid.
+Qed.
+End BaseCallFacts.
