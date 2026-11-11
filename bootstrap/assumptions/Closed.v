@@ -135,3 +135,8 @@ Print Assumptions NM.EaContextTableSound.bundle_world_r_context_table_sound.
 From NM Require EaUnifySound.
 Print Assumptions NM.EaUnifySound.resolve_absorbed.
 Print Assumptions NM.EaUnifySound.unify_absorbed.
+
+From NM Require EaPatternSound.
+Print Assumptions NM.EaPatternSound.member_with_head_sound.
+Print Assumptions NM.EaPatternSound.field_pats_sound.
+Print Assumptions NM.EaPatternSound.pat_of_sound.
