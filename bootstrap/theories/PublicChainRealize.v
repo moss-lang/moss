@@ -851,8 +851,8 @@ Proof.
     by (intros y v L; exact (SubG y v (lookup_subst_in_pair _ _ _ L))).
   assert (GensOut : forall t y, ~ In y DG ->
     (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
-  { apply (sections_gens_out Cg Cb DG SectionG SectionB MergeB).
-    intros row_sym row_ty InRow. exact (SubG row_sym row_ty InRow). }
+  { apply (section_gens_out Cb DG SectionB). rewrite MergeB.
+    exact (PublicCallRealize.functx_merge_symbols W gg Cg nsg FCg). }
   assert (SigGensOut : forall sg y, ~ In y DG ->
     (In y (A.sig_gens (A.sig_subst (A.c_sub Cb) sg)) <-> In y (A.sig_gens sg)))
     by exact (section_sig_gens_out Cb DG GensOut).

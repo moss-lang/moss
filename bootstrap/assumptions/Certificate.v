@@ -386,6 +386,11 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.FCp.CRz.root_level);
   root (@NM.PublicChainRealize.entry_reading_of_rel);
   root (@NM.PublicChainRealize.entry_peq);
+  root (@NM.PublicCallRealize.gens_subst_hit);
+  root (@NM.PublicCallRealize.gens_subst_iff);
+  root (@NM.PublicCallRealize.functx_merge_symbols);
+  root (@NM.PublicMerge.merge_eq_gens_out);
+  root (@NM.PublicLinkScope.section_gens_out);
   root (@NM.PublicLinkScope.step_scope_section);
   root (@NM.PublicLinkScope.sections_gens_out);
   root (@NM.PublicLinkScope.section_sig_gens_out);

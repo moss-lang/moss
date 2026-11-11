@@ -29,16 +29,8 @@ Import A.
 (* A substitution's image of a mentioned symbol is mentioned. *)
 Lemma gens_hit : forall t s y u, In y (gens t) -> lookup_subst y s = Some u -> incl (gens u) (gens (app_subst s t)).
 Proof.
-  fix IH 1. intros [m|fields| |g|n th|ms] s y u Iy L z Iz.
-  - contradiction.
-  - rewrite subst_record. cbn in Iy |- *. induction fields as [|[f t] rest Tail]; [contradiction|].
-    cbn in Iy |- *. apply in_app_or in Iy as [Iy|Iy]; apply in_or_app; [left; exact (IH t s y u Iy L z Iz)|right; exact (Tail Iy)].
-  - contradiction.
-  - cbn in Iy. destruct Iy as [<-|[]]. cbn. rewrite L. exact Iz.
-  - rewrite subst_nom. unfold PublicTypeRead.smap. cbn in Iy |- *. induction th as [|[x t] rest Tail]; [contradiction|].
-    cbn in Iy |- *. apply in_app_or in Iy as [Iy|Iy]; apply in_or_app; [left; exact (IH t s y u Iy L z Iz)|right; exact (Tail Iy)].
-  - rewrite subst_union. cbn in Iy |- *. induction ms as [|t rest Tail]; [contradiction|].
-    cbn in Iy |- *. apply in_app_or in Iy as [Iy|Iy]; apply in_or_app; [left; exact (IH t s y u Iy L z Iz)|right; exact (Tail Iy)].
+  intros t s y u InTy Read z InU. apply (PublicCallRealize.gens_subst_hit t s y z InTy).
+  cbn [app_subst]. rewrite Read. exact InU.
 Qed.
 
 Lemma ilook_in' : forall {X} k (l : list (item * X)) p, ilook k l = Some p -> In (k, p) l.

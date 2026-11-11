@@ -784,6 +784,23 @@ Proof.
   exists c. split; [exact C | apply in_or_app; right; now rewrite Sh].
 Qed.
 
+(* Class equations can change only generations mentioned by the merge. *)
+Theorem merge_eq_gens_out : forall M t u, MergeEq M t u ->
+  forall y, ~ In y (merge_symbols M) -> (In y (gens t) <-> In y (gens u)).
+Proof.
+  intros M t u Equal. induction Equal; intros z Outside.
+  - reflexivity.
+  - symmetry. exact (IHEqual z Outside).
+  - transitivity (In z (gens u)); [apply IHEqual1|apply IHEqual2]; exact Outside.
+  - cbn. split; intros [<-|[]]; exfalso; apply Outside; eapply merge_symbol_from_member; eassumption.
+  - split.
+    + cbn. intros [<-|[]]. exfalso. apply Outside. eapply merge_symbol_from_member; eassumption.
+    + intro InShape. exfalso. apply Outside. eapply merge_symbol_from_shape; eassumption.
+  - rewrite !PublicCallRealize.gens_subst_iff. split; intros [x [InX InY]]; exists x; split; [exact InX| |exact InX|].
+    + apply (proj1 (H0 x InX z Outside)). exact InY.
+    + apply (proj2 (H0 x InX z Outside)). exact InY.
+Qed.
+
 Lemma shape_table_range : forall M n x t,
   In (x,t) (shape_table M n) -> incl (gens t) (merge_symbols M).
 Proof.

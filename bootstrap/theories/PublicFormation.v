@@ -210,16 +210,8 @@ Qed.
 
 Lemma gens_keep : forall t s y, In y (gens t) -> lookup_subst y s = None -> In y (gens (app_subst s t)).
 Proof.
-  fix IH 1. intros [m|fields| |g|n th|ms] s y Iy L.
-  - contradiction.
-  - rewrite subst_record. cbn in Iy |- *. induction fields as [|[f t] rest Tail]; [contradiction|].
-    cbn in Iy |- *. apply in_app_or in Iy as [Iy|Iy]; apply in_or_app; [left; exact (IH t s y Iy L)|right; exact (Tail Iy)].
-  - contradiction.
-  - cbn in Iy. destruct Iy as [<-|[]]. cbn. rewrite L. left. reflexivity.
-  - rewrite subst_nom. unfold PublicTypeRead.smap. cbn in Iy |- *. induction th as [|[x t] rest Tail]; [contradiction|].
-    cbn in Iy |- *. apply in_app_or in Iy as [Iy|Iy]; apply in_or_app; [left; exact (IH t s y Iy L)|right; exact (Tail Iy)].
-  - rewrite subst_union. cbn in Iy |- *. induction ms as [|t rest Tail]; [contradiction|].
-    cbn in Iy |- *. apply in_app_or in Iy as [Iy|Iy]; apply in_or_app; [left; exact (IH t s y Iy L)|right; exact (Tail Iy)].
+  intros t s y InTy None. apply (PublicCallRealize.gens_subst_hit t s y y InTy).
+  cbn [app_subst]. rewrite None. left. reflexivity.
 Qed.
 
 (* ---- ok types --------------------------------------------------------------- *)

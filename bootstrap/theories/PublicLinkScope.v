@@ -35,6 +35,17 @@ Proof.
   exact (PublicContextFacts.section_same_fields C C' Rows Merge Section).
 Qed.
 
+(* A section cannot erase or introduce a generation outside its merge. *)
+Lemma section_gens_out : forall C D,
+  PublicContextFacts.CxSection C -> incl (merge_symbols (c_merge C)) D ->
+  forall t y, ~ In y D -> (In y (gens (canon C t)) <-> In y (gens t)).
+Proof.
+  intros C D Section Support t y Outside. symmetry.
+  eapply PublicMerge.merge_eq_gens_out.
+  - apply PublicMerge.merge_eq_read. exact (proj1 Section).
+  - intro InMerge. exact (Outside (Support y InMerge)).
+Qed.
+
 Lemma sections_gens_out : forall C C' D,
   PublicContextFacts.CxSection C -> PublicContextFacts.CxSection C' -> c_merge C' = c_merge C ->
   (forall g v, In (g, v) (c_sub C) -> In g D /\ incl (gens v) D) ->

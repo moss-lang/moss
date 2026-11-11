@@ -534,6 +534,35 @@ Proof.
     + destruct (Tail Ix) as [z [Iz R]]. exists z. split; [apply in_or_app; right; exact Iz|exact R].
 Qed.
 
+(* Every generation a substituted variable mentions occurs at each use of
+   that variable in the template. Together with gens_subst this is exact. *)
+Lemma gens_subst_hit : forall t s x y, In x (A.gens t) ->
+  In y (A.gens (app_subst s (TAbs x))) -> In y (A.gens (app_subst s t)).
+Proof.
+  fix IH 1. intros [m|fields| |g|n th|ms] s x y Ix Iy.
+  - contradiction.
+  - rewrite subst_record. cbn in Ix |- *. induction fields as [|[f t] rest Tail]; [contradiction|].
+    cbn in Ix |- *. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app;
+      [left; exact (IH t s x y Ix Iy)|right; exact (Tail Ix)].
+  - contradiction.
+  - cbn in Ix. destruct Ix as [<-|[]]. exact Iy.
+  - rewrite subst_nom. unfold smap. cbn in Ix |- *. induction th as [|[z t] rest Tail]; [contradiction|].
+    cbn in Ix |- *. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app;
+      [left; exact (IH t s x y Ix Iy)|right; exact (Tail Ix)].
+  - rewrite subst_union. cbn in Ix |- *. induction ms as [|t rest Tail]; [contradiction|].
+    cbn in Ix |- *. apply in_app_or in Ix as [Ix|Ix]; apply in_or_app;
+      [left; exact (IH t s x y Ix Iy)|right; exact (Tail Ix)].
+Qed.
+
+Lemma gens_subst_iff : forall t s y, In y (A.gens (app_subst s t)) <->
+  exists x, In x (A.gens t) /\ In y (A.gens (app_subst s (TAbs x))).
+Proof.
+  intros t s y. split.
+  - intro InTy. destruct (gens_subst t s y InTy) as [x [Ix [[None ->]|[v [Some InV]]]]];
+      exists x; split; try exact Ix; cbn [app_subst]; [rewrite None; left; reflexivity|rewrite Some; exact InV].
+  - intros [x [Ix Iy]]. exact (gens_subst_hit t s x y Ix Iy).
+Qed.
+
 Section Support2.
 Variable W : A.world.
 Import A.
@@ -660,6 +689,18 @@ Qed.
 (* A functor's own context, as a function's: its table is canonical
    self-reference, its merge and provisions are over its keys, and its
    provisions are its needs. *)
+(* MergeOf bounds the classes directly by the functor's input telescope. *)
+Theorem functx_merge_symbols : forall u C ns, FunCtx W u C ns ->
+  incl (merge_symbols (c_merge C)) (map fst (c_ty C)).
+Proof.
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & sigma & classes & implicit &
+    D & FP & IE & Imp & -> & MGM & Merge & Section & -> & Needs & Context).
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [_ [_ Scope]].
+  destruct Merge as [_ [_ [Support _]]]. intros y InMerge.
+  cbn [c_merge c_ty entries_cx]. rewrite map_map. cbn. rewrite map_app.
+  apply in_or_app. right. exact (Scope y (Support y InMerge)).
+Qed.
+
 Theorem functx_scoped : forall u C ns, FunCtx W u C ns ->
   (forall k v, nlook k (c_ty C) = Some v -> v = app_subst (c_sub C) (TAbs k)) /\
   (forall k p, In (k, p) (c_provisions C) ->
