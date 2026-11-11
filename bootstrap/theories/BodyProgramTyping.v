@@ -131,3 +131,92 @@ Proof.
   exists (ConstantPlan F plan declared actual). unfold TypesConstant, TranslatesConstant.
   cbn. repeat first [assumption|split].
 Qed.
+
+Definition FunctionPlanAt (W : world) (P : program) (f : nat) : Prop :=
+  forall d receiver n parameters annotation body,
+    w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
+    exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
+      TranslatesFunction P f (map fst parameters) plan.
+
+Definition ConstantPlanAt (W : world) (d : decl) (annotation : aty) (initial : aexpr) : Prop :=
+  exists plan, TypesConstant W d annotation initial plan /\ TranslatesConstant plan.
+
+Definition ElaboratesSeparately (bundle : bundle) (W : world) (P : program) : Prop :=
+  ElaboratesWith bundle W P (FunctionPlanAt W P) (ConstantPlanAt W).
+
+Lemma map_declaration_forms : forall W first second,
+  (forall d annotation initial, first d annotation initial -> second d annotation initial) ->
+  forall symbol, DeclFormsWith W first symbol -> DeclFormsWith W second symbol.
+Proof.
+  intros W first second Convert symbol Typed d Declared.
+  specialize (Typed d Declared). destruct (d_ast d); try exact Typed.
+  destruct Typed as [TypeRead Body]. split; [exact TypeRead|]. auto.
+Qed.
+
+Lemma map_elaboration_bodies : forall bundle W P first_fn second_fn first_const second_const,
+  (forall f, first_fn f -> second_fn f) ->
+  (forall d annotation initial, first_const d annotation initial -> second_const d annotation initial) ->
+  ElaboratesWith bundle W P first_fn first_const ->
+  ElaboratesWith bundle W P second_fn second_const.
+Proof.
+  intros bundle W P first_fn second_fn first_const second_const Function Constant
+    (World & Functions & Entry & Main & Environment & Bool & Lang & FiniteCalls & Assumes & Decls & Layouts).
+  assert (Functions' : forall f d rcv n ps rt body,
+    w_decl W f = Some d -> d_ast d = ADFn rcv n ps rt (Some body) -> second_fn f).
+  { intros. apply Function. eapply Functions; eassumption. }
+  assert (Decls' : forall s, DeclFormsWith W second_const s).
+  { intro s. exact (map_declaration_forms W first_const second_const Constant s (Decls s)). }
+  unfold ElaboratesWith. repeat first [assumption|split].
+Qed.
+
+Theorem separated_elaboration_sound : forall bundle W P,
+  ElaboratesSeparately bundle W P -> ElaboratesIn bundle W P.
+Proof.
+  intros bundle W P Typed. eapply map_elaboration_bodies; [| |exact Typed].
+  - apply function_translation_agrees.
+  - intros d annotation initial [plan [TypedBody Numbered]].
+    exact (constant_translation_agrees W P d annotation initial plan TypedBody Numbered).
+Qed.
+
+Theorem separated_elaboration_readback : forall bundle W P,
+  (forall F C body expected code t,
+    BlkE W P F C body expected code t ->
+    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code) ->
+  (forall F C syntax expected code t,
+    Ex W P F C syntax expected code t ->
+    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code) ->
+  ElaboratesIn bundle W P -> ElaboratesSeparately bundle W P.
+Proof.
+  intros bundle W P Blocks Expressions Typed.
+  eapply map_elaboration_bodies; [| |exact Typed].
+  - intros f Function d receiver n parameters annotation body Declared Ast.
+    exact (function_plan_readback W P Blocks f d receiver n parameters annotation body Function Declared Ast).
+  - apply constant_plan_readback. exact Expressions.
+Qed.
+
+Theorem function_typing_renumber : forall W f d receiver name parameters body
+    C needs this signature F plan result slots,
+  TypesFunction W f d receiver name parameters body (FunctionPlan C needs this signature F plan result) ->
+  SameLocalNames F slots ->
+  TypesFunction W f d receiver name parameters body
+    (FunctionPlan C needs this signature (renumber_body_frame F slots) plan result).
+Proof.
+  intros W f d receiver name parameters body C needs this signature F plan result slots Typed Names.
+  unfold TypesFunction in *. cbn [function_context function_needs function_receiver function_signature
+    function_layout function_body function_result function_parameters renumber_body_frame] in *.
+  destruct Typed as (Formal & Receiver & Signature & Module & Return & This & Loop & Fresh & Applying & Pins & Body).
+  pose proof (proj1 (proj2 (body_typing_renumber W)) _ _ _ _ _ _ Body slots Names) as Body'.
+  repeat first [assumption|split].
+Qed.
+
+Theorem constant_typing_renumber : forall W d annotation initial F plan declared actual slots,
+  TypesConstant W d annotation initial (ConstantPlan F plan declared actual) ->
+  SameLocalNames F slots ->
+  TypesConstant W d annotation initial (ConstantPlan (renumber_body_frame F slots) plan declared actual).
+Proof.
+  intros W d annotation initial F plan declared actual slots Typed Names.
+  unfold TypesConstant in *. cbn [constant_layout constant_body constant_declared constant_actual renumber_body_frame] in *.
+  destruct Typed as (Assumes & TypeRead & Body & Fits & Module & Return & This & Loop & Fresh & Applying & Pins).
+  pose proof (proj1 (body_typing_renumber W) _ _ _ _ _ _ Body slots Names) as Body'.
+  repeat first [assumption|split].
+Qed.

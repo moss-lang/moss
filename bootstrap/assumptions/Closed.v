@@ -285,3 +285,7 @@ Print Assumptions NM.EaBindItemSound.bind_item_post_sound.
 Print Assumptions NM.BodyTyping.body_translation_agrees.
 Print Assumptions NM.BodyTyping.body_typing_renumber.
 Print Assumptions NM.BodyTyping.local_source_has_plan.
+
+From NM Require BodyProgramTyping.
+Print Assumptions NM.BodyProgramTyping.separated_elaboration_sound.
+Print Assumptions NM.BodyProgramTyping.separated_elaboration_readback.

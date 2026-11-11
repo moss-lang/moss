@@ -5642,13 +5642,13 @@ Definition FunctorTotal (W : world) (u : nat) : Prop :=
      a type its result mentions, as lib/wasistd.moss's WasiFloats binds
      Int), and, if it has a body, the body binds its whole result
      (FunctorTotal), applied or not. *)
-Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
+Definition DeclFormsWith (W : world) (constant : decl -> aty -> aexpr -> Prop) (s : nat) : Prop :=
   forall d, w_decl W s = Some d ->
     match d_ast d with
     | ADCtx _ its => exists L es tm, ItemsEntries W (d_mod d) [] (as_written L) its es tm
     | ADTag _ _ t | ADAlias _ t => exists L tau, TyOf W (d_mod d) (as_written L) None t tau
     | ADVal _ t i => (exists L tau, TyOf W (d_mod d) (as_written L) None t tau) /\
-                     (forall e, i = Some e -> ConstElab W P d t e)
+                     (forall e, i = Some e -> constant d t e)
     | ADFn RPlain _ _ _ _ => exists L g, SigOf W s (as_written L) None g
     | ADFn _ _ _ _ _ => exists L this g, SigOf W s (as_written L) (Some this) g
     | ADFunctor _ _ _ _ _ => exists C ns L C' ks, FunCtx W s C ns /\
@@ -5656,6 +5656,9 @@ Definition DeclForms (W : world) (P : program) (s : nat) : Prop :=
           (fun t => TAbs t) C' ks /\ FunctorTotal W s
     | _ => True
     end.
+
+Definition DeclForms (W : world) (P : program) : nat -> Prop :=
+  DeclFormsWith W (ConstElab W P).
 
 Definition DeclsForm (W : world) (P : program) : Prop := forall s, DeclForms W P s.
 
@@ -5672,10 +5675,11 @@ Definition LangItemsFormed (W : world) : Prop :=
        PayloadOf W symbol [] (TUnion [TNom falsity []; TNom truth []])).
 
 (* The relation.  [D16]: every defined fn is elaborated, reached or not. *)
-Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
+Definition ElaboratesWith (b : bundle) (W : world) (P : program)
+    (function : nat -> Prop) (constant : decl -> aty -> aexpr -> Prop) : Prop :=
   WorldOf b W /\
     (forall f d rcv n ps rt body, w_decl W f = Some d -> d_ast d = ADFn rcv n ps rt (Some body) ->
-       FnElab W P f) /\
+       function f) /\
     (* main: the entry's `main`, a defined fn assuming only what the
        platform provides *)
     w_scope W (b_entry b) NSName "main" = Some (ESym (program_main P)) /\
@@ -5695,9 +5699,12 @@ Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
     (* [D20]: assumed items bring their requirements and needs *)
     AssumesComplete W /\
     (* criteria section 7: every declaration forms as written *)
-    DeclsForm W P /\
+    (forall s, DeclFormsWith W constant s) /\
     (* [D58]/[D59]: every tag has a finite layout *)
     FiniteLayouts W.
+
+Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
+  ElaboratesWith b W P (FnElab W P) (ConstElab W P).
 
 Definition Elaborates (b : bundle) (P : program) : Prop :=
   exists W, ElaboratesIn b W P.
@@ -5903,11 +5910,13 @@ Module PublicFor (Pf : PLATFORM) (Host : HOST_FOR Pf).
   (* The build target is this platform. source declarations and primitive
      bindings are checked against one shared static reading of the bundle.
      The prelude is fixed configuration and is read through source too. *)
-  Definition Builds (prelude : file_path) (source : source) (entry : file_path)
+  Definition BuildsWith (elaborates : Input.bundle -> Elaboration.world -> program -> Prop) (prelude : file_path) (source : source) (entry : file_path)
       (program : program) : Prop :=
     exists bundle world,
       Loader.Bundled (source_read source) "/" (path_text prelude) (path_text entry) bundle /\
-      Elaboration.ElaboratesIn bundle world program /\ Link.Linked world program.
+      elaborates bundle world program /\ Link.Linked world program.
+
+  Definition Builds := BuildsWith Elaboration.ElaboratesIn.
 
   Definition Admissible (prelude : file_path) (program : program) : Prop :=
     exists source entry, Builds prelude source entry program.
