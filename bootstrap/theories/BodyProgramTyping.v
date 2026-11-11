@@ -48,7 +48,7 @@ Record constant_plan := ConstantPlan {
   constant_actual : ty
 }.
 
-Definition TypesConstant (W : world) (d : decl) (annotation : aty) (initial : aexpr)
+Definition TypesConstantInitializer (W : world) (d : decl) (annotation : aty) (initial : aexpr)
     (plan : constant_plan) : Prop :=
   let F := constant_layout plan in
   let C := Cx [] [] [] [] [] in
@@ -85,11 +85,11 @@ Proof.
 Qed.
 
 Theorem constant_translation_agrees : forall W P d annotation initial plan,
-  TypesConstant W d annotation initial plan -> TranslatesConstant plan ->
+  TypesConstantInitializer W d annotation initial plan -> TranslatesConstant plan ->
   ConstElab W P d annotation initial.
 Proof.
   intros W P d annotation initial [F code declared actual] Typed Numbered.
-  cbn [TypesConstant TranslatesConstant constant_layout constant_body constant_declared constant_actual] in *.
+  cbn [TypesConstantInitializer TranslatesConstant constant_layout constant_body constant_declared constant_actual] in *.
   destruct Typed as (Assumes & TypeRead & Body & Fits & Module & Return & This & Loop & Fresh & Applying & Pins).
   split; [exact Assumes|].
   exists declared. split; [exact TypeRead|].
@@ -122,13 +122,13 @@ Theorem constant_plan_readback : forall W P,
     exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code) ->
   forall d annotation initial,
   ConstElab W P d annotation initial ->
-  exists plan, TypesConstant W d annotation initial plan /\ TranslatesConstant plan.
+  exists plan, TypesConstantInitializer W d annotation initial plan /\ TranslatesConstant plan.
 Proof.
   intros W P Readback d annotation initial
     (Assumes & declared & TypeRead & F & code & actual & Body & Fits & Module & Return & This & Loop &
       Fresh & Applying & Pins & Numbered).
   destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & _).
-  exists (ConstantPlan F plan declared actual). unfold TypesConstant, TranslatesConstant.
+  exists (ConstantPlan F plan declared actual). unfold TypesConstantInitializer, TranslatesConstant.
   cbn. repeat first [assumption|split].
 Qed.
 
@@ -139,7 +139,7 @@ Definition FunctionPlanAt (W : world) (P : program) (f : nat) : Prop :=
       TranslatesFunction P f (map fst parameters) plan.
 
 Definition ConstantPlanAt (W : world) (d : decl) (annotation : aty) (initial : aexpr) : Prop :=
-  exists plan, TypesConstant W d annotation initial plan /\ TranslatesConstant plan.
+  exists plan, TypesConstantInitializer W d annotation initial plan /\ TranslatesConstant plan.
 
 Definition ElaboratesSeparately (bundle : bundle) (W : world) (P : program) : Prop :=
   ElaboratesWith bundle W P (FunctionPlanAt W P) (ConstantPlanAt W).
@@ -210,12 +210,12 @@ Proof.
 Qed.
 
 Theorem constant_typing_renumber : forall W d annotation initial F plan declared actual slots,
-  TypesConstant W d annotation initial (ConstantPlan F plan declared actual) ->
+  TypesConstantInitializer W d annotation initial (ConstantPlan F plan declared actual) ->
   SameLocalNames F slots ->
-  TypesConstant W d annotation initial (ConstantPlan (renumber_body_frame F slots) plan declared actual).
+  TypesConstantInitializer W d annotation initial (ConstantPlan (renumber_body_frame F slots) plan declared actual).
 Proof.
   intros W d annotation initial F plan declared actual slots Typed Names.
-  unfold TypesConstant in *. cbn [constant_layout constant_body constant_declared constant_actual renumber_body_frame] in *.
+  unfold TypesConstantInitializer in *. cbn [constant_layout constant_body constant_declared constant_actual renumber_body_frame] in *.
   destruct Typed as (Assumes & TypeRead & Body & Fits & Module & Return & This & Loop & Fresh & Applying & Pins).
   pose proof (proj1 (body_typing_renumber W) _ _ _ _ _ _ Body slots Names) as Body'.
   repeat first [assumption|split].
