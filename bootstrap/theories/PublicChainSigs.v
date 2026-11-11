@@ -521,7 +521,8 @@ Proof.
     destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCv FCu) as [Ecv _]. subst Cv.
     pose proof (sub_inv W u Cu nsu T FCu Tok) as InvU.
     (* H's merges hold at T: the copy's input comparison, read at T *)
-    destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm target gfx gfh T FCu FCh InCu Site FixT)
+    destruct (FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm target gfx gfh T FCu FCh InCu Site
+      (table_reads_merge W u Cu nsu T FCu Tok) FixT)
       as [RdT _].
     assert (TokH : TableOk T Ch).
     { intros x tx Lx. pose proof (RdT x tx Lx) as E. unfold A.canon in E.
@@ -532,9 +533,11 @@ Proof.
     destruct (IH eq_refl eq_refl Ch nsh FCh TokH FixTh) as (Crh & ksh & PRh & Inv).
     destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
     pose proof (proj1 (FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
-    set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
+    set (recorded := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
+    unfold A.CopyInterpretation in CO1.
+    set (sigma := A.copy_fixed_readings Cu recorded) in CO1.
     destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & scope_after & Outs & Allocation & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
-    destruct (proj1 (AllocationFacts.copy_allocation_contract W sigma outs gen ys cg) (proj1 Allocation))
+    destruct (proj1 (AllocationFacts.copy_allocation_contract W recorded outs gen ys cg) (proj1 Allocation))
       as (Nd & Avoid & FrG & FrC).
     exists Cr, ks. split; [exact (pr_noout W u Cu _ _ Cr ks PRu NoU)|].
     intros i r m a g a0 Ki Lk key Ik Si.
@@ -548,19 +551,21 @@ Proof.
     destruct k' as [?|?|?|r' m' a'|?]; cbn in Ekey; try discriminate. cbn in Idk'. injection Idk' as Ea'. subst a'.
     cbn in Ekey. injection Ekey as Er' ->. cbn [A.provision_id] in Lp'.
     (* the copy step at T *)
-    assert (FunFx : forall x t t', In (x, t) fx1 -> In (x, t') fx1 -> t = t').
-    { intros x t t' I I'. destruct (proj1 (Fx1 x t) I) as [_ E]. destruct (proj1 (Fx1 x t') I') as [_ E']. congruence. }
+    assert (SectionU : PublicContextFacts.CxSection Cu)
+      by exact (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)).
+    assert (FixedAt : forall x t, In (x, t) recorded ->
+      (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+      app_subst (type_meanings d1) t = app_subst T (TAbs x)).
+    { intros x t Member. split.
+      - intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
+        apply in_flat_map. exists (x,t). split; [exact Member|exact Iz].
+      - exact (proj2 (FL.CF.CN.CC.LR.PA.FS.CopyA.recorded_fixed_meaning W u C1 fx1 d1 gfx T
+          x t Fx1 Ab1 Egfx FixT Member)). }
     assert (Gen : forall y, (exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w)) ->
       PublicCopySubst.CopyGen sigma ys cg T (type_meanings d1) y).
     { intros y Ry. split.
-      - intros s0 Ls. pose proof (lookup_subst_in_pair _ _ _ Ls) as Is. split.
-        + intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
-          apply in_flat_map. exists (y, s0). split; [exact Is|exact Iz].
-        + unfold sigma in Is. apply in_map_iff in Is as [[x' tx] [E Itx]]. cbn in E. injection E as -> <-.
-          destruct (proj1 (Fx1 y tx) Itx) as [Fu _].
-          pose proof (FixT y Fu) as Fg. rewrite Egfx, (FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed _ fx1 y tx FunFx Itx) in Fg.
-          assert (Fg' : app_subst (type_meanings d1) tx = app_subst T (TAbs y)) by congruence.
-          change (ground d1 (A.canon C1 tx) = app_subst T (TAbs y)). rewrite (Ab1 tx). exact Fg'.
+      - exact (PublicCopySubst.copy_fixed_gen_at Cu recorded T (type_meanings d1)
+          (map cg ys) SectionU (table_reads_merge W u Cu nsu T FCu Tok) FixedAt y).
       - intros Ls Ny. exfalso. apply Ny. apply Ys. split; [exact Ry|exact Ls]. }
     assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
     pose proof (FL.CF.CN.CC.LR.PA.FS.CopyA.keys_sub _ _ InCu) as SubK.

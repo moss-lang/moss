@@ -1,0 +1,22 @@
+# F merges fixed X with polymorphic Y. The copy reads both through X = Old.
+# It applies F and calls the copied output at Old (AUDIT-CHANGES #121).
+type X;
+type Y;
+tag Old;
+assume X, Y { fn out(a: X, b: Y); }
+context M = Y = X;
+functor F[Y]: M -> out;
+functor H[Y]: M -> out[X=Old,Y=Old];
+functor G: M -> out[X=Old,Y=Old] {
+  bind X = Old;
+  bind Y = Old;
+  bind out = (a, b) => ();
+}
+fn main() {
+  bind X = Old;
+  bind Y = Old;
+  bind H = G;
+  bind F = H;
+  bind F;
+  out(Old, Old);
+}

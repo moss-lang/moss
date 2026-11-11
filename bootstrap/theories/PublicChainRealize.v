@@ -981,7 +981,7 @@ Proof.
     pose proof (PublicChainSigs.table_rows_of_merge W u Cu nsu Tin FCu Valuation) as Tok.
     pose proof (PublicChainSigs.sub_inv W u Cu nsu Tin FCu Tok) as InvU.
     (* H's merges hold at Tin: the copy's input comparison, read at Tin *)
-    destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm target gfx gfh Tin FCu FCh InCu Site FixT) as [RdT _].
+    destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at W u h Cu nsu Ch nsh rm target gfx gfh Tin FCu FCh InCu Site Valuation FixT) as [RdT _].
     assert (TokH : PublicChainSigs.TableOk Tin Ch).
     { intros x tx Lx. pose proof (RdT x tx Lx) as E. unfold A.canon in E. rewrite <- (InvU tx), <- E, InvU. reflexivity. }
     assert (FixTh : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (app_subst Tin (TAbs x))).
@@ -989,9 +989,11 @@ Proof.
     destruct (IH eq_refl eq_refl Ch nsh FCh (PublicChainSigs.table_reads_merge W h Ch nsh Tin FCh TokH) FixTh) as (gh & outsh & Crh & ksh & Oh & Frh & Injh & PRh & RealH).
     destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
     pose proof (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
-    set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
+    set (recorded := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
+    unfold A.CopyInterpretation in CO1.
+    set (sigma := A.copy_fixed_readings Cu recorded) in CO1.
     destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & scope_after & Outs & Allocation & Ys & _ & _ & PRu & PRh' & Lrm & Pos).
-    destruct (proj1 (AllocationFacts.copy_allocation_contract W sigma outs gen ys cg) (proj1 Allocation))
+    destruct (proj1 (AllocationFacts.copy_allocation_contract W recorded outs gen ys cg) (proj1 Allocation))
       as (Nd & Avoid & FrG & FrC).
     assert (InjG : forall a b, In a outs -> In b outs -> gen a = gen b -> a = b)
       by (intros a b Ia Ib; exact (nodup_map_inj gen outs a b (NoDup_app_remove_r _ _ Nd) Ia Ib)).
@@ -1003,28 +1005,34 @@ Proof.
     destruct (Pos i k Ki) as (j & k' & p & p' & Rj & Kj & Ekey & Lastj & Lp & Lp' & Ep).
     (* the copy step at Tu *)
     set (rho0 := (map (fun t => (gen t, M t)) outs ++ type_meanings d1)%list).
-    assert (FunFx : forall x t t', In (x, t) fx1 -> In (x, t') fx1 -> t = t').
-    { intros x t t' I I'. destruct (proj1 (Fx1 x t) I) as [_ E]. destruct (proj1 (Fx1 x t') I') as [_ E']. congruence. }
     assert (GS : forall t, In t outs -> lookup_subst (gen t) (A.c_sub Cu) = None)
       by (intros t It; exact (fresh_not_sub W mentions_typed u Cu nsu (gen t) FCu (FrG t It))).
     assert (GSh : forall t, A.FunOutputs W h t -> lookup_subst (gen t) (A.c_sub Ch) = None)
       by (intros t Ft; exact (fresh_not_sub W mentions_typed h Ch nsh (gen t) FCh (FrG t (HU t Ft)))).
-    (* a generation of F's table readings, or an output role *)
+    assert (TokU' : PublicChainSigs.TableOk Tu Cu)
+      by exact (tableok_roles W mentions_typed u Cu nsu gen M outs Tin FCu FrG Tok).
+    assert (SectionU : PublicContextFacts.CxSection Cu)
+      by exact (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)).
+    assert (FixedAt : forall x t, In (x, t) recorded ->
+      (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+      app_subst rho0 t = app_subst Tu (TAbs x)).
+    { intros x t Member.
+      assert (Av : forall z, In z (A.gens t) -> ~ In z (map gen outs ++ map cg ys)).
+      { intros z Iz. apply Avoid. apply in_flat_map. exists (x,t). split; [exact Member|exact Iz]. }
+      split; [intros z Iz Ic; exact (Av z Iz (in_or_app _ _ _ (or_intror Ic)))|].
+      destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.recorded_fixed_meaning W u C1 fx1 d1 gfx Tin
+        x t Fx1 Ab1 Egfx FixT Member) as [Fu Read].
+      unfold rho0. rewrite tv_off by (intros z Iz Ig; exact (Av z Iz (in_or_app _ _ _ (or_introl Ig)))).
+      rewrite Read. unfold Tu, Tv.
+      rewrite tv_off; [reflexivity|]. intros z [<-|[]].
+      apply (fresh_off_dom W mentions_typed u Cu nsu gen outs FCu FrG).
+      exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W u Cu nsu x AbU FCu Fu). }
+    (* A generation of F's table readings, or an output role. *)
     assert (Gen : forall x, ((exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In x (A.gens w)) \/ (exists t, In t outs /\ x = gen t)) ->
       PublicCopySubst.CopyGen sigma ys cg Tu rho0 x).
     { intros x Kx. split.
-      - intros s0 Ls. pose proof (lookup_subst_in_pair _ _ _ Ls) as Is.
-        assert (Av : forall z, In z (A.gens s0) -> ~ In z (map gen outs ++ map cg ys)).
-        { intros z Iz. apply Avoid. apply in_flat_map. exists (x, s0). split; [exact Is|exact Iz]. }
-        split; [intros z Iz Ic; exact (Av z Iz (in_or_app _ _ _ (or_intror Ic)))|].
-        unfold sigma in Is. apply in_map_iff in Is as [[x' tx] [E Itx]]. cbn in E. injection E as -> <-.
-        destruct (proj1 (Fx1 x tx) Itx) as [Fu _].
-        pose proof (FixT x Fu) as Fg. rewrite Egfx, (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed _ fx1 x tx FunFx Itx) in Fg. injection Fg as Fg.
-        unfold rho0. rewrite tv_off by (intros z Iz Ig; exact (Av z Iz (in_or_app _ _ _ (or_introl Ig)))).
-        change (ground d1 (A.canon C1 tx) = app_subst Tu (TAbs x)). rewrite (Ab1 tx). unfold ground. rewrite Fg.
-        unfold Tu, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]].
-        apply (fresh_off_dom W mentions_typed u Cu nsu gen outs FCu FrG).
-        exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W u Cu nsu x AbU FCu Fu).
+      - exact (PublicCopySubst.copy_fixed_gen_at Cu recorded Tu rho0 (map cg ys) SectionU
+          (PublicChainSigs.table_reads_merge W u Cu nsu Tu FCu TokU') FixedAt x).
       - intros Ls Ny. destruct Kx as [Kx|[t [It ->]]].
         + exfalso. apply Ny. apply Ys. split; [exact Kx|exact Ls].
         + split; [exact (PublicCopyFresh.nodup_app_disj _ _ _ Nd (in_map gen _ _ It))|].
@@ -1046,7 +1054,6 @@ Proof.
       exact (GenC y (result_gens_out W h Ch nsh h gen Cr' ks' FCh PRh' GSh k' p' (nth_error_In _ _ Kj) Lp' y Iy) x Ix'). }
     assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
     pose proof (PublicCopySubst.copy_outputs_at sigma ys cg Tu rho0 NdC _ _ Ep GenF GenH) as Ept0.
-    assert (TokU' : PublicChainSigs.TableOk Tu Cu) by exact (tableok_roles W mentions_typed u Cu nsu gen M outs Tin FCu FrG Tok).
     pose proof (PublicChainSigs.sub_inv W u Cu nsu Tu FCu TokU') as InvUu.
     assert (Ept : A.provision_subst Tu p = A.provision_subst Tu p').
     { rewrite Ept0. unfold A.canon_provision. apply PublicCopySubst.provision_agree. intros x _. exact (InvUu (TAbs x)). }

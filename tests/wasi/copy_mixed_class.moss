@@ -1,7 +1,5 @@
-# F merges fixed X with polymorphic Y. At this copy site X is Old,
-# so H's output at Old should agree with F's at both parameters.
-# Default moss-ref rejects D78. Flipping the merge orientation and
-# the self-hosted compiler both accept this program.
+# F merges fixed X with polymorphic Y. The copy reads both through X = Old.
+# It applies F and calls the copied output at Old (AUDIT-CHANGES #121).
 type X;
 type Y;
 tag Old;

@@ -386,6 +386,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicCopySubst.provision_gens_subst);
   root (@NM.PublicCopyFresh.result_gens);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_read_at);
+  root (@NM.PublicCopySubst.copy_fixed_reading_member);
+  root (@NM.PublicCopySubst.copy_fixed_reading_unique);
   root (@NM.PublicLinkPins.items_dests_made);
   root (@NM.PublicConsol.link_body_has_body);
   root (@NM.PublicConsol.result_realizes_restated);

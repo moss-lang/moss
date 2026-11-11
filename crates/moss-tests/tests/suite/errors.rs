@@ -36,11 +36,6 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          (tests/wasi/closure_partial_unbound_zyx.moss is accepted)",
     ),
     (
-        "tests/errors/copy_mixed_class.moss",
-        "AUDIT-CHANGES #98: the reference uses the polymorphic representative's \
-         fresh type for the whole class instead of the fixed member's meaning",
-    ),
-    (
         "tests/errors/duplicate_field_binder.moss",
         "AUDIT-CHANGES #1 (E21): the self-hosted compiler lets a pattern \
          bind a name twice",

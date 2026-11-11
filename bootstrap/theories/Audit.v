@@ -4143,6 +4143,17 @@ Definition SameResult (W : world) (u g : nat) : Prop :=
 Definition copy_subst (sigma : subst) (ys : list nat) (cg : nat -> nat) : subst :=
   sigma ++ map (fun y => (y, TAbs (cg y))) ys.
 
+(* Fixed readings of an atomic class use one slot of the current
+   section. A class with different recorded readings stays symbolic. *)
+Definition copy_fixed_slot (C : cx) (x : nat) : nat :=
+  match canon C (TAbs x) with TAbs y => y | _ => x end.
+
+Definition copy_fixed_readings (C : cx) (sigma : subst) : subst :=
+  let readings := map (fun q => (copy_fixed_slot C (fst q), snd q)) sigma in
+  filter (fun q =>
+    forallb (fun r => negb (Nat.eqb (fst q) (fst r)) || ty_eqb (snd q) (snd r)) readings)
+    readings.
+
 Definition copy_allocation_scope (W : world) (sigma : subst) : allocation_scope nat :=
   AllocationScope (Fresh W) [] (flat_map (fun q => gens (snd q)) sigma).
 
@@ -4176,33 +4187,34 @@ Definition CopyNeedChoice (Cu Ch : cx) (s : subst) (needs : list item)
 
 Definition CopyInterpretation (W : world) (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : list item) (Ch : cx)
     (rm : list nat) (target : item -> item) : Prop :=
+  let fixed := copy_fixed_readings Cu sigma in
   exists outs gen ys cg Cr ks Cr' ks' scope_after,
     (forall t, In t outs <-> FunOutputs W u t) /\
     Allocates (copy_allocation_scope W sigma) (map gen outs ++ map cg ys) scope_after /\
     (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
-                          lookup_subst y sigma = None) /\
+                          lookup_subst y fixed = None) /\
     (* inputs *)
     (forall x tx, nlook x (c_ty Ch) = Some tx ->
-       app_subst (copy_subst sigma ys cg) (canon Cu (TAbs x)) = app_subst (copy_subst sigma ys cg) (canon Cu tx)) /\
+       app_subst (copy_subst fixed ys cg) (canon Cu (TAbs x)) = app_subst (copy_subst fixed ys cg) (canon Cu tx)) /\
     (* needs *)
     (forall k, In k nsh -> exists p,
        ilook (provision_id k) (c_provisions Ch) = Some p /\
-       CopyNeedChoice Cu Ch (copy_subst sigma ys cg) nsu k p (target k)) /\
+       CopyNeedChoice Cu Ch (copy_subst fixed ys cg) nsu k p (target k)) /\
     (* the result *)
     ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
     ProvideResult W h Ch (fun t => TAbs (gen t)) Cr' ks' /\
     length rm = length ks /\
     (forall i k, nth_error ks i = Some k -> exists j k' p p',
        nth_error rm i = Some j /\ nth_error ks' j = Some k' /\
-       app_subst_item (copy_subst sigma ys cg) (canon_item Cu (provision_id k')) =
-         app_subst_item (copy_subst sigma ys cg) (provision_id k) /\
+       app_subst_item (copy_subst fixed ys cg) (canon_item Cu (provision_id k')) =
+         app_subst_item (copy_subst fixed ys cg) (provision_id k) /\
        (forall j' k'', nth_error ks' j' = Some k'' ->
-          app_subst_item (copy_subst sigma ys cg) (canon_item Cu (provision_id k'')) =
-            app_subst_item (copy_subst sigma ys cg) (provision_id k) ->
+          app_subst_item (copy_subst fixed ys cg) (canon_item Cu (provision_id k'')) =
+            app_subst_item (copy_subst fixed ys cg) (provision_id k) ->
           provision_id k'' = provision_id k' /\ j' <= j) /\
        ilook (provision_id k) (c_provisions Cr) = Some p /\
        ilook (provision_id k') (c_provisions Cr') = Some p' /\
-       provision_subst (copy_subst sigma ys cg) p = provision_subst (copy_subst sigma ys cg) (canon_provision Cu p')).
+       provision_subst (copy_subst fixed ys cg) p = provision_subst (copy_subst fixed ys cg) (canon_provision Cu p')).
 
 (* A promised item is compared with the body's at the body's meanings of
    the output roles (each role at what the site's table makes of it,

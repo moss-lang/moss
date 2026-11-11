@@ -126,6 +126,25 @@ Proof.
     rewrite (TyA z w' Lw). cbn [app_subst]. rewrite Lz. exact Iw.
 Qed.
 
+Lemma recorded_fixed_meaning : forall u C fx d gfx T x t,
+  A.FixedReadings W u (A.c_ty C) fx -> S.AbsorbsCanon C d ->
+  gfx = S.ground_fixed (type_meanings d) fx ->
+  (forall y, A.Fixed W u y -> lookup_subst y gfx = Some (app_subst T (TAbs y))) ->
+  In (x,t) (map (fun q => (fst q, A.canon C (snd q))) fx) ->
+  A.Fixed W u x /\ app_subst (type_meanings d) t = app_subst T (TAbs x).
+Proof.
+  intros u C fx d gfx T x t Fixed Abs Recorded Read Member.
+  assert (Function : forall y v w, In (y,v) fx -> In (y,w) fx -> v = w).
+  { intros y v w First Second.
+    destruct (proj1 (Fixed y v) First) as [_ FirstRead].
+    destruct (proj1 (Fixed y w) Second) as [_ SecondRead]. congruence. }
+  apply in_map_iff in Member as [[y tx] [Equal InFx]]. cbn in Equal. injection Equal as -> <-.
+  destruct (proj1 (Fixed x tx) InFx) as [Fx _]. split; [exact Fx|].
+  pose proof (Read x Fx) as Fg. rewrite Recorded, (S.lookup_ground_fixed _ fx x tx Function InFx) in Fg.
+  injection Fg as Fg. change (ground d (A.canon C tx) = app_subst T (TAbs x)).
+  rewrite (Abs tx). exact Fg.
+Qed.
+
 (* A copy's comparisons of inputs and needs (CopyInterpretation, at
    copy_subst) hold at any meanings T that read F's fixed inputs as the
    copy site did (its recorded readings gfx): every generation the compared
@@ -135,6 +154,7 @@ Lemma copy_read_at : forall u h Cu nsu Ch nsh rm target gfx gfh T,
   A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
   S.CopySite W u h Cu nsu nsh Ch rm target gfx gfh ->
+  PublicContextFacts.ReadsMerge Cu (app_subst T) ->
   (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> app_subst T (A.canon Cu (TAbs x)) = app_subst T (A.canon Cu tx)) /\
   (forall k, In k nsh -> exists p' p, A.ilook (A.provision_id k) (A.c_provisions Ch) = Some p' /\
@@ -142,29 +162,33 @@ Lemma copy_read_at : forall u h Cu nsu Ch nsh rm target gfx gfh T,
      A.copy_need_key Cu T k = A.copy_need_key Cu T (target k) /\
      prov_shape T Cu p' = prov_shape T Cu p).
 Proof.
-  intros u h Cu nsu Ch nsh rm target gfx gfh T FCu FCh Sub Site FixT.
+  intros u h Cu nsu Ch nsh rm target gfx gfh T FCu FCh Sub Site Reads FixT.
   destruct Site as (C1 & fx1 & fxh & d1 & _ & AbM & Section1 & Fx1 & CO1 & Egfx & _ & _ & _ & _ & AbU).
   pose proof (proj1 (S.absorbs_canon_iff C1 d1 Section1) AbM) as Ab1.
-  set (sigma := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
+  set (recorded := map (fun q => (fst q, A.canon C1 (snd q))) fx1) in CO1.
+  unfold A.CopyInterpretation in CO1.
+  set (sigma := A.copy_fixed_readings Cu recorded) in CO1.
   destruct CO1 as (outs & gen & ys & cg & Cr & ks & Cr' & ks' & scope_after & Outs & Allocation & Ys & Inp & Nds & _).
-  destruct (proj1 (AllocationFacts.copy_allocation_contract W sigma outs gen ys cg) (proj1 Allocation))
+  destruct (proj1 (AllocationFacts.copy_allocation_contract W recorded outs gen ys cg) (proj1 Allocation))
     as (Nd & Avoid & _ & _).
   assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
-  assert (FunFx : forall x t t', In (x, t) fx1 -> In (x, t') fx1 -> t = t').
-  { intros x t t' I I'. destruct (proj1 (Fx1 x t) I) as [_ E]. destruct (proj1 (Fx1 x t') I') as [_ E']. congruence. }
   destruct (functx_scoped W u Cu nsu FCu) as (TyA & ScU & _).
   destruct (functx_scoped W h Ch nsh FCh) as (_ & ScH & _).
   pose proof (keys_sub _ _ Sub) as SubK.
+  assert (SectionU : PublicContextFacts.CxSection Cu)
+    by exact (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)).
+  assert (FixedAt : forall x t, In (x, t) recorded ->
+    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+    app_subst (type_meanings d1) t = app_subst T (TAbs x)).
+  { intros x t Member. split.
+    - intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
+      apply in_flat_map. exists (x,t). split; [exact Member|exact Iz].
+    - exact (proj2 (recorded_fixed_meaning u C1 fx1 d1 gfx T x t Fx1 Ab1 Egfx FixT Member)). }
   assert (Gen : forall y, (exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w)) ->
     PublicCopySubst.CopyGen sigma ys cg T (type_meanings d1) y).
   { intros y Ry. split.
-    - intros s0 Ls. pose proof (lookup_subst_in_pair _ _ _ Ls) as Is. split.
-      + intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
-        apply in_flat_map. exists (y, s0). split; [exact Is|exact Iz].
-      + unfold sigma in Is. apply in_map_iff in Is as [[x' tx] [E Itx]]. cbn in E. injection E as -> <-.
-        destruct (proj1 (Fx1 y tx) Itx) as [Fu _].
-        pose proof (FixT y Fu) as Fg. rewrite Egfx, (S.lookup_ground_fixed _ fx1 y tx FunFx Itx) in Fg. injection Fg as Fg.
-        change (ground d1 (A.canon C1 tx) = app_subst T (TAbs y)). rewrite (Ab1 tx). exact Fg.
+    - exact (PublicCopySubst.copy_fixed_gen_at Cu recorded T (type_meanings d1)
+        (map cg ys) SectionU Reads FixedAt y).
     - intros Ls Ny. exfalso. apply Ny. apply Ys. split; [exact Ry|exact Ls]. }
   assert (RG : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) -> forall y, In y (A.gens (A.canon Cu t)) ->
     exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w)).
@@ -411,7 +435,9 @@ Proof.
     lookup_subst x gfx = Some (app_subst (type_meanings (S.callee_env d (thof f Cu) e1)) (TAbs x))).
   { intros x Fu. rewrite (Fixd x Fu). cbn [app_subst].
     rewrite (callee_meaning f d Cu e1 x (S.fixed_in_functx W u Cu nsu x AbU FCu Fu)). reflexivity. }
-  destruct (copy_read_at u h Cu nsu Ch nsh rm target gfx gfh _ FCu FCh Sub Site FixT) as [Rd Nd].
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as SectionU.
+  pose proof (proj2 (S.absorbs_canon_iff _ _ SectionU) Abs) as Reads.
+  destruct (copy_read_at u h Cu nsu Ch nsh rm target gfx gfh _ FCu FCh Sub Site Reads FixT) as [Rd Nd].
   split; [exact Rd|].
   intros k Ik. destruct (Nd k Ik) as (p' & p & L' & L & Key & Shape).
   exists p', p. split; [exact L'|]. split; [exact L|]. split; [|exact Shape].

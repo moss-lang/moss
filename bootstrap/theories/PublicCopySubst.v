@@ -13,10 +13,36 @@
 
    Also: grounding after a substitution is one substitution
    (ground_app_subst), and the lemmas lift from types to provisions. *)
-From Stdlib Require Import List Arith.
+From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
+From NM Require PublicContextFacts PublicMerge PublicTypeFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
+(* An effective row reads an actual fixed member of its class. *)
+Lemma copy_fixed_reading_member : forall C sigma y t,
+  PublicContextFacts.CxSection C -> In (y, t) (A.copy_fixed_readings C sigma) ->
+  exists x, In (x, t) sigma /\ A.MergeEq (A.c_merge C) (TAbs x) (TAbs y).
+Proof.
+  intros C sigma y t Section Member. unfold A.copy_fixed_readings in Member.
+  apply filter_In in Member as [Mapped _].
+  apply in_map_iff in Mapped as [[x u] [Equal InSigma]]. cbn in Equal.
+  injection Equal as <- <-. exists x. split; [exact InSigma|].
+  unfold A.copy_fixed_slot. destruct (A.canon C (TAbs x)) eqn:Reading; try apply A.MERefl.
+  rewrite <- Reading. apply PublicMerge.merge_eq_read. exact (proj1 Section).
+Qed.
+
+Lemma copy_fixed_reading_unique : forall C sigma x t u,
+  In (x, t) (A.copy_fixed_readings C sigma) ->
+  In (x, u) (A.copy_fixed_readings C sigma) -> t = u.
+Proof.
+  intros C sigma x t u First Second. unfold A.copy_fixed_readings in *.
+  apply filter_In in First as [_ Agrees].
+  apply filter_In in Second as [Member _].
+  apply forallb_forall with (x := (x,u)) in Agrees; [|exact Member].
+  cbn [fst snd] in Agrees. rewrite Nat.eqb_refl in Agrees. cbn in Agrees.
+  apply PublicTypeFacts.ty_eqb_spec. exact Agrees.
+Qed.
+
 (* ---- composing substitutions ------------------------------------------------ *)
 
 Lemma lookup_subst_map_app : forall (f : ty -> ty) x (s r : subst),
@@ -226,4 +252,21 @@ Proof.
     cbn in E. injection E as -> <-. cbn in Iy.
     destruct (ty_gens_subst s t' y Iy) as [z [Iz Iy']]. exists z. split; [|exact Iy'].
     apply in_or_app. right. apply in_flat_map. exists (x, Some t'). split; [apply in_map_iff; exists (x, t'); split; [reflexivity|exact Iq]|exact Iz].
+Qed.
+
+Lemma copy_fixed_gen_at : forall C recorded T rho0 fresh,
+  PublicContextFacts.CxSection C ->
+  PublicContextFacts.ReadsMerge C (app_subst T) ->
+  (forall x t, In (x, t) recorded ->
+    (forall z, In z (A.gens t) -> ~ In z fresh) /\
+    app_subst rho0 t = app_subst T (TAbs x)) ->
+  forall y t, lookup_subst y (A.copy_fixed_readings C recorded) = Some t ->
+    (forall z, In z (A.gens t) -> ~ In z fresh) /\
+    app_subst rho0 t = app_subst T (TAbs y).
+Proof.
+  intros C recorded T rho0 fresh Section Reads Fixed y t Lookup.
+  apply lookup_subst_in_pair in Lookup.
+  destruct (copy_fixed_reading_member C recorded y t Section Lookup) as [x [Member Equal]].
+  destruct (Fixed x t Member) as [Avoid Read].
+  split; [exact Avoid|]. rewrite Read. apply Reads. exact Equal.
 Qed.

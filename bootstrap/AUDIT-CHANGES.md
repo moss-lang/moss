@@ -151,6 +151,7 @@ entry they belong to.
 | 117 | Call instantiation respects merge classes | M4a | none (equivalent on formed contexts) |
 | 118 | Fixed inputs and lambda annotations compare by merge class | M4b | none (equivalent on formed contexts) |
 | 119 | Copy needs match at the binding site with an explicit ambiguity check | M4c | B and C |
+| 121 | A copy reads an atomic class through its fixed members | M4c | C |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3124,7 +3125,7 @@ callback in `EaBase.default_strategy`. The Audit rules are unchanged.
 
 | program | native | default moss-ref | flipped moss-ref |
 |---|---|---|---|
-| [copy-mixed-class](../tests/errors/copy_mixed_class.moss) | runs | rejects D78 | runs |
+| [copy-mixed-class](../tests/wasi/copy_mixed_class.moss) | runs | rejects D78 | runs |
 | [pin-merged-class-yz](../tests/wasi/pin_merged_class_yz.moss) | runs | runs | runs |
 | [pin-merged-class-zy](../tests/wasi/pin_merged_class_zy.moss) | runs | runs | runs |
 
@@ -3715,6 +3716,26 @@ using one fresh atom per abstract class must preserve that behaviour
   rejected and names the same source class member in both orientations.
 - **Class.** Scoped assumption readings (criterion 2).
 
+
+
+### 121. Copy readings use the fixed meaning of an atomic class (M4c)
+
+- **Rule.** An atomic class reads at the copy site as the common meaning
+  of its fixed members. It stays symbolic if it has no fixed reading or
+  if its recorded fixed readings differ. The section supplies the current
+  storage slot for that class.
+- **Example.** F merges fixed X with polymorphic Y. X is Old where the
+  copy is bound, so the output must read at Old even when the section
+  spells the class as Y. The reference rejected that orientation. Both
+  now apply the copy and call the result. The self-hosted compiler
+  accepts both. [X = Y](../tests/wasi/copy_mixed_class.moss),
+  [Y = X](../tests/wasi/copy_mixed_class_flip.moss).
+- **Proof.** An effective fixed row has a source member of its class
+  and one meaning per slot. The application reads the source member
+  through its fixed capture and every equal member through the same
+  class. Freshness still reserves the original fixed meanings.
+- **Class C** (criterion 2). The existing input, provision and result
+  comparisons now use the class reading.
 
 ---
 

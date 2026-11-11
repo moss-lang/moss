@@ -151,12 +151,13 @@ Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : 
     : M (smap * list nat) :=
   let nu := qs W u in let nh := qs W h in
   let outs := fun_outputs W metadata_fuel u in
-  let ys := uniq (filter (fun y => negb (is_some (lookup_subst y sigma)))
+  let fixed := copy_fixed_readings Cu sigma in
+  let ys := uniq (filter (fun y => negb (is_some (lookup_subst y fixed)))
                          (flat_map (fun q => match nlook (fst q) (c_ty Cu) with Some tx => gens tx | None => [] end) (c_ty Cu))) in
   let* gtab := fresh_table u outs in
   let* ctab := fresh_table u ys in
   let gen := gen_of gtab in
-  let rho := sigma ++ map (fun y => (y, TAbs (gen_of ctab y))) ys in
+  let rho := copy_subst fixed ys (gen_of ctab) in
   let* _ := check (forallb (fun q => match nlook (fst q) (c_ty Ch) with
                      | Some tx => ty_eqb (app_subst rho (canon Cu (TAbs (fst q)))) (app_subst rho (canon Cu tx)) | None => true end) (c_ty Ch))
              (nh ++ " cannot be copied to " ++ nu ++ ": its input interpretation differs (D78)") in
