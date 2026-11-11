@@ -14,7 +14,7 @@ From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicCallable PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicRuntimeKeys.
-From NM Require PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
+From NM Require AllocationFacts PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -4780,8 +4780,10 @@ Lemma lambda_fn_chain : forall k, Below k -> forall F C sp f sg ps rt body pid p
 Proof.
   intros k Bel F C sp f sg ps rt body pid pre sm a Sig LP FS.
   remember (@None ty) as none eqn:NoneE in LP.
-  destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
-    FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+  destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn Captures
+    FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+  destruct Captures as (CapsIff & NdC & LenV & scope_after & Allocated).
+  destruct (proj1 (AllocationFacts.capture_allocation_contract W C capvals) (proj1 Allocated)) as (NdV & FreshV & Unprov).
   subst sm this.
   assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []))
     by exact ClE.
@@ -4799,7 +4801,7 @@ Proof.
   exists (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs ++ [BFunction f pid (A.lexical_capture C)
     (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys)])%list.
   split.
-  { intros x. cbn beta. rewrite fold_bind_values, fold_right_app. reflexivity. }
+  { intros x. unfold A.translate_lambda_captures. cbn beta. rewrite fold_bind_values, fold_right_app. reflexivity. }
   apply (chain_app k F C F (cap_cx C qs) F (A.provide C (IFn f) a (A.set_fn C f sg)) False
     (ItemBreaks F (sp, Some (AELam ps rt body))) (ItemBreaks F (sp, Some (AELam ps rt body))) [] []);
     [| |tauto].
@@ -4985,8 +4987,10 @@ Proof.
     apply meanings_grow_refl; reflexivity.
   - (* lambda *)
       remember (Some rt) as recv eqn:RecvE in LP.
-    destruct LP as [F C ps r0 body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn CapsIff NdC LenV
-      FreshV NdV Unprov FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+    destruct LP as [F C ps r0 body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn Captures
+      FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+    destruct Captures as (CapsIff & NdC & LenV & scope_after & Allocated).
+    destruct (proj1 (AllocationFacts.capture_allocation_contract W C capvals) (proj1 Allocated)) as (NdV & FreshV & Unprov).
     subst sm this.
     assert (ClE' : Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []))
       by exact ClE.
@@ -5002,7 +5006,7 @@ Proof.
     set (bm := BMethod (A.canon C rt) m (A.theta_of C ap) pid (A.lexical_capture C)
       (map (fun k => (A.rkey_of Cl k, A.rkey_of C k)) keys)).
     exists (map (fun q => BValue (snd q) (EVar (A.var_of F (fst q)))) qs ++ [bm])%list.
-    split; [intros x; cbn beta; rewrite fold_bind_values, fold_right_app; reflexivity|].
+    split; [intros x; unfold A.translate_lambda_captures; cbn beta; rewrite fold_bind_values, fold_right_app; reflexivity|].
     apply (chain_app k F C F (cap_cx C qs) F Cres False Bi Bi [] []); [| |tauto].
     + apply prefix_chain; [|exact Ndq]. intros q Iq. split; [exact (NamedF _ (InCaps q Iq))|].
       split; [exact (proj1 (CapsIn _ (InCaps q Iq)))|exact (Unprov _ (InVals q Iq))].

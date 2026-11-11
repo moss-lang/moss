@@ -156,11 +156,14 @@ Print Assumptions NM.AllocationFacts.frame_allocation_transition.
 Print Assumptions NM.AllocationFacts.fresh_outputs_disjoint.
 Print Assumptions NM.AllocationFacts.frame_allocation_compatible.
 Print Assumptions NM.AllocationFacts.copy_allocation_contract.
+Print Assumptions NM.AllocationFacts.capture_allocation_contract.
 
 From NM Require EaAllocationSound.
 Print Assumptions NM.EaAllocationSound.fresh_n_range.
 Print Assumptions NM.EaAllocationSound.fresh_table_range.
 Print Assumptions NM.EaAllocationSound.fresh_tables_allocate.
+Print Assumptions NM.EaAllocationSound.capture_counter_allocation.
+Print Assumptions NM.EaAllocationSound.lambda_captures_from_counter.
 
 From NM Require EaSatisfiesSound.
 Print Assumptions NM.EaSatisfiesSound.pfind_exact.

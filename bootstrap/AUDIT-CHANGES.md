@@ -3757,6 +3757,21 @@ using one fresh atom per abstract class must preserve that behaviour
   translation returns the same slot and leaves the counter as it was.
 - **Class.** Equivalent factoring of typing and translation.
 
+### 123. Type lambda captures in an explicit allocation scope
+
+- **Rule.** `TypesLambdaCaptures` finds the enclosing locals mentioned by a
+  lambda and allocates their value identities in one batch. The scope
+  reserves the enclosing context's value keys and the declaration names.
+- **Translation.** The capture prefix emits the bindings that take the
+  locals' current values. The generated body loads the captured values
+  into its own numbered locals. The executable uses these same two
+  translation definitions.
+- **Proof.** The allocation condition is equivalent to the old distinctness,
+  undeclared-symbol and unavailable-value checks. `lambda_captures_from_counter`
+  verifies both the selected local names and their allocation when the
+  counter lies above the support.
+- **Class.** Equivalent factoring of capture typing and translation.
+
 ---
 
 ## Consolidation (branch ob-consol)

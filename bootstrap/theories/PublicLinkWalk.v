@@ -40,7 +40,7 @@ Qed.
 Lemma lambda_applies : forall F C ps rt body sg this pid pre sm,
   A.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, applies (pre x) = applies x.
 Proof.
-  intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x. cbv beta.
+  intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x. unfold A.translate_lambda_captures. cbv beta.
   match goal with |- applies (fold_right _ x ?l) = _ => generalize l end.
   intros l. induction l as [|q l IH]; [reflexivity|]. cbn. exact IH.
 Qed.

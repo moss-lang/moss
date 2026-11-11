@@ -24,7 +24,7 @@ Fixpoint NoPrim (e : expr) : Prop :=
 Lemma lambda_np : forall F C ps rt body sg this pid pre sm,
   A.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, NoPrim x -> NoPrim (pre x).
 Proof.
-  intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x Nx. cbv beta.
+  intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x Nx. unfold A.translate_lambda_captures. cbv beta.
   match goal with |- NoPrim (fold_right _ x ?l) => generalize l end.
   intros l. induction l as [|q l IH]; [exact Nx|].
   cbn [fold_right]. split; [exact Logic.I|exact IH].

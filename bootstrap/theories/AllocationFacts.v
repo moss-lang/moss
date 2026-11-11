@@ -1,7 +1,7 @@
 (* Laws for the explicit allocation scope used by abstract applications. *)
 From Stdlib Require Import List Arith Lia.
 From NM Require Import Audit.
-Import ListNotations Audit.Semantics.Elaboration.
+Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
 
 Lemma allocation_member : forall A (before after : allocation_scope A) batch g,
   Allocates before batch after -> In g batch ->
@@ -139,4 +139,32 @@ Proof.
       * apply in_map_iff in Output as [t [<- Present]]. apply Outputs. exact Present.
       * apply in_map_iff in Input as [y [<- Present]]. apply Inputs. exact Present.
     + intros Present. exact (Reserved g Present Member).
+Qed.
+
+Lemma value_provision_keys_spec : forall entries v,
+  In v (value_provision_keys entries) <-> ilook (IVal v) entries <> None.
+Proof.
+  intros entries v. induction entries as [|[key body] entries IH].
+  - cbn [value_provision_keys flat_map ilook]. intuition.
+  - destruct key as [t|s|f|r m a|u]; cbn [value_provision_keys flat_map fst app ilook item_eqb]; try exact IH.
+    destruct (Nat.eqb_spec v s) as [->|Different].
+    + split; [intros _; discriminate|intros _; left; reflexivity].
+    + rewrite <- IH. cbn [In]. intuition congruence.
+Qed.
+
+Theorem capture_allocation_contract : forall W C batch,
+  AllocationFresh (capture_allocation_scope W C) batch <->
+  NoDup batch /\ Forall (Fresh W) batch /\
+  Forall (fun v => ilook (IVal v) (c_provisions C) = None) batch.
+Proof.
+  intros W C batch. unfold AllocationFresh, capture_allocation_scope. cbn.
+  rewrite !Forall_forall. split.
+  - intros [Distinct Checked]. split; [exact Distinct|]. split.
+    + intros v InBatch. exact (proj1 (Checked v InBatch)).
+    + intros v InBatch. destruct (ilook (IVal v) (c_provisions C)) eqn:Read; [exfalso|reflexivity].
+      apply (proj2 (Checked v InBatch)), value_provision_keys_spec. congruence.
+  - intros (Distinct & Undeclared & Unprovided). split; [exact Distinct|].
+    intros v InBatch. split; [exact (Undeclared v InBatch)|].
+    intros Present. apply value_provision_keys_spec in Present.
+    exact (Present (Unprovided v InBatch)).
 Qed.

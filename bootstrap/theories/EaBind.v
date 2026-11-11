@@ -75,6 +75,13 @@ Definition captured_cx (C : cx) (caps : list name) (capvals : list nat) : cx :=
                 | None => C' end)
             (combine caps capvals) (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []).
 
+Definition lambda_capture_names (F : frame) (C : cx) (parameters : list name) (body : aexpr) : list name :=
+  match fr_applying F with
+  | [] => suniq (filter (fun n => is_some (slook n (c_locals C)) && negb (smem n parameters))
+                        (mentioned_names W F body))
+  | _ => []
+  end.
+
 (* SOUND: lambda_provider F C ps rt body sg this = Ok (pid, pre, sm) ->
      LambdaProvider W P F C ps rt body sg this pid pre sm *)
 Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name * option aty)) (rt : option aty) (body : aexpr)
@@ -98,10 +105,7 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
                            ", but " ++ what ++ " returns " ++ qty W (sg_ret sg) ++ " (D70)")
             | None => ret tt end in
   let pnames := map fst ps in
-  let caps := match fr_applying F with
-              | [] => suniq (filter (fun n => is_some (slook n (c_locals C)) && negb (smem n pnames))
-                                    (mentioned_names W F body))
-              | _ => [] end in
+  let caps := lambda_capture_names F C pnames body in
   let* capvals := fresh_n (List.length caps) in
   let* pid := reserve_code FunctionTable in
   let* _ := put_lamcx pid C in
@@ -116,13 +120,14 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
                           (ABlock [] (Some body)) (Some (sg_ret sg))) in
   let* _ := check (fitsb ltype (sg_ret sg))
              ("the anonymous function bound to " ++ what ++ " yields " ++ qty W ltype ++ ", but " ++ what ++ " returns " ++ qty W (sg_ret sg)) in
-  let* _ := write_fn_code pid (fold_right (fun q x => ELet (var_of Fl (fst q)) (EVal (snd q)) x) lbody (combine caps capvals)) in
+  let captures := combine caps capvals in
+  let* _ := write_fn_code pid (translate_lambda_body Fl captures lbody) in
   let ixl := PIdx (pindex (c_provisions Cl)) in
   let ix := PIdx (pindex (c_provisions C)) in
   let keys := filter (fun k => match k with ITy _ => false | _ => providesb_i Cl ixl k && item_eqb k (provision_id k) end)
                      (iuniq_fast (map fst (c_provisions Cl))) in
   let sm := map (fun k => (rkof_i Cl ixl k, rkof_i C ix k)) keys in
-  ret (slot_index pid, (fun x => fold_right (fun q x => bind_value_expression (snd q) (EVar (var_of F (fst q))) x) x (combine caps capvals)), sm).
+  ret (slot_index pid, translate_lambda_captures F captures, sm).
 
 (* ---- MethProvider ---- *)
 

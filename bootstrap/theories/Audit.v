@@ -3746,6 +3746,12 @@ Definition frame_after_allocation (F : frame) (after : allocation_scope nat) : f
   Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F)
     (scope_allocated after) (fr_applying F) (fr_pins F).
 
+Definition value_provision_keys (entries : list (item * provision)) : list nat :=
+  flat_map (fun q => match fst q with IVal v => [v] | _ => [] end) entries.
+
+Definition capture_allocation_scope (W : world) (C : cx) : allocation_scope nat :=
+  AllocationScope (Fresh W) [] (value_provision_keys (c_provisions C)).
+
 (* The meaning of a decimal literal ([D68]): digits, an optional fraction
    and an optional exponent, as numerator / denominator. *)
 Fixpoint digits_val (l : list ascii) (acc : nat) : nat :=
@@ -4354,6 +4360,22 @@ End LexicalNames.
 Definition Mentions_name (W : world) (F : frame) (body : aexpr) (n : name) : Prop :=
   In n (free_names (fun n => match resolve W (fr_mod F) [n] with
     | Some _ => true | None => false end) body).
+
+(* A lambda captures the enclosing locals it mentions, except its own
+   parameters. The corresponding value identities extend the capture
+   scope as a batch, preserving every provision already in force. *)
+Definition TypesLambdaCaptures (W : world) (F : frame) (C : cx)
+    (parameters : list name) (body : aexpr) (caps : list name) (values : list nat) : Prop :=
+  (forall n, In n caps <-> (Mentions_name W F body n /\ slook n (c_locals C) <> None /\
+    ~ In n parameters /\ fr_applying F = [])) /\
+  NoDup caps /\ length values = length caps /\
+  exists after, Allocates (capture_allocation_scope W C) values after.
+
+Definition translate_lambda_captures (F : frame) (captures : list (name * nat)) (next : expr) : expr :=
+  fold_right (fun q rest => bind_value_expression (snd q) (EVar (var_of F (fst q))) rest) next captures.
+
+Definition translate_lambda_body (F : frame) (captures : list (name * nat)) (body : expr) : expr :=
+  fold_right (fun q rest => ELet (var_of F (fst q)) (EVal (snd q)) rest) body captures.
 
 (* Automatic family demand checks an initial missing method key, then applies
    its unique family in the context extended by preceding demands.  Type
@@ -4986,12 +5008,7 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
                          | None => True end) ps (sg_params sg) ->
     match rt with Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ MergeEq (c_merge C) t' (sg_ret sg)
                  | None => True end ->
-    (* captured: the enclosing locals it mentions, less its parameters *)
-    (forall n, In n caps <-> (Mentions_name W F body n /\ slook n (c_locals C) <> None /\ ~ In n (map fst ps) /\ fr_applying F = [])) ->
-    NoDup caps -> length capvals = length caps -> Forall (Fresh W) capvals -> NoDup capvals ->
-    (* new symbols: no val the context provides is reused, so the
-       prefix that binds them leaves every provision in force as it was *)
-    Forall (fun v => ilook (IVal v) (c_provisions C) = None) capvals ->
+    TypesLambdaCaptures W F C (map fst ps) body caps capvals ->
     Fresh W pid ->
     (* the provider's own context: everything here, the captured vals in
        force (as LCaptured locals: not assignable), no other locals *)
@@ -5011,15 +5028,12 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
                            (combine (map fst ps) (sg_params sg)) Cl)
          (ABlock [] (Some body)) (Some (sg_ret sg)) lbody ltype ->
     fits ltype (sg_ret sg) ->
-    body_of P pid = Some (fold_right (fun q x => ELet (var_of Fl (fst q)) (EVal (snd q)) x) lbody
-                                    (combine caps capvals)) ->
+    body_of P pid = Some (translate_lambda_body Fl (combine caps capvals) lbody) ->
     (* its needs: every key in force here, each answered by itself *)
     (forall k, In k keys <-> (provides Cl k /\
        (match k with ITy _ => False | _ => True end) /\ k = provision_id k)) ->
     NoDup keys -> sm = map (fun k => (rkey_of Cl k, rkey_of C k)) keys ->
-    LambdaProvider W P F C ps rt body sg this pid
-      (fun x => fold_right (fun q x => bind_value_expression (snd q) (EVar (var_of F (fst q))) x) x (combine caps capvals))
-      sm
+    LambdaProvider W P F C ps rt body sg this pid (translate_lambda_captures F (combine caps capvals)) sm
 
 (* [D78]/[D84] 3e: G's result is F's, item by item: the same leaves
    (keys, as written, through contexts). *)
