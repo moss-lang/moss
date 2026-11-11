@@ -90,7 +90,7 @@ Lemma translate_named_provider_sound : forall C g recv want plan,
       satisfaction_map C (provider_formal plan) (provider_arguments plan) (provider_needs plan)).
 Proof.
   intros C g recv want plan Typed. unfold translate_named_provider.
-  now rewrite (provider_source_exact _ _ _ _ _ _ Typed), EaSatisfiesSound.translate_needs_exact.
+  now rewrite (provider_source_exact Typed), EaSatisfiesSound.translate_needs_exact.
 Qed.
 
 Theorem defined_function_provider_post_sound : forall F C path symbol name parameters result body signature kind,
