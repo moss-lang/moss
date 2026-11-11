@@ -1,0 +1,58 @@
+# The linked method returns X in F and private representative Y in G.
+# Y is absent from the closure. Applying F reads both through the supplied X.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type Foo;
+type A;
+type X;
+type Y;
+
+fn .gimme(): Foo;
+fn input(): A;
+
+assume Std {
+  fn run(): Int;
+}
+
+context Merge = A, X, Y, A.gimme[Foo=X], A.gimme[Foo=Y], input;
+context Lin = A, X, A.gimme[Foo=X], input;
+
+functor F: Std, Lin -> run;
+
+functor G: Std, Merge, X, Y -> run {
+  bind run = () => { let ignored = input().gimme(); 7 };
+}
+
+assume Std, Lin, F {
+  fn go(): Int { bind F; run() }
+}
+
+assume Std {
+  fn print_int(n: Int) {
+    if n >= 10 { print_int(n / 10); }
+    putchar((n % 10 + char::digit0.code()).char());
+  }
+  fn demo() {
+    bind A = Char;
+    bind Foo = Bool;
+    bind X = Bool;
+    bind A.gimme = () => true;
+    bind input = () => char::digit7;
+    bind F = G;
+    bind X = Char;
+    bind Foo = Char;
+    bind A.gimme = () => this;
+    print_int(go());
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    demo();
+  }
+}

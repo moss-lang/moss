@@ -4317,11 +4317,34 @@ Definition TypesLinkOutputs (W : world) (u : nat) (Cu Cb : cx)
   AllocationFresh (link_output_scope W) (map gen outs) /\
   ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks.
 
+(* An atomic source class that has a shared input can use that input
+   to read its private representative. The emitted table keeps the source
+   symbols as keys, so body code still reads its own lexical names. *)
+Definition link_input_anchors (Cu Cg : cx) : subst :=
+  flat_map (fun q =>
+    let y := fst q in
+    match nlook y (c_ty Cu) with
+    | Some _ => []
+    | None =>
+        match find (fun shared =>
+          match nlook (fst shared) (c_ty Cu) with
+          | Some _ => ty_eqb (snd shared) (TAbs y)
+          | None => false
+          end) (c_ty Cg) with
+        | Some shared => [(y, TAbs (fst shared))]
+        | None => []
+        end
+    end) (c_ty Cg).
+
+Definition link_input_table (Cu Cg : cx) : subst :=
+  let anchors := link_input_anchors Cu Cg in
+  map (fun q => (fst q, app_subst anchors (snd q))) (c_ty Cg).
+
 Definition translate_linked_body (Cu Cg : cx) (outs : list nat)
     (bindings : list binding) (keys : list item) : functor_code :=
   FunctorCode (map fst (c_ty Cg))
     (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
-    (c_ty Cg) (map ITy outs) bindings keys.
+    (link_input_table Cu Cg) (map ITy outs) bindings keys.
 
 Definition TranslatesLinkedBody (W : world) (P : program) (u gg h : nat)
     (Cu Cg site : cx) (outs : list nat) (bindings : list binding) (ks : list item) : Prop :=
@@ -4591,6 +4614,12 @@ Definition LinkNeedChoice (Cu Cg : cx) (nsu : list item) (rho : subst)
       (~ (LinkNeedScope Cu k p /\ LinkNeedScope Cg k p) -> ~ In (canon_item Cu k) nsu)
   end.
 
+(* A missing private representative is supplied by the linked class only
+   when the closure has no lexical meaning for it. *)
+Definition link_adopted_inputs (C Cu Cg : cx) : subst :=
+  filter (fun q => negb (existsb (Nat.eqb (fst q))
+    (map fst (c_ty C) ++ context_gens C))) (link_input_anchors Cu Cg).
+
 (* A private input that is directly in force reads from the closure's
    lexical capture. The shared inputs always come from its application. *)
 Definition link_private_readings (C Cu Cg : cx) : subst :=
@@ -4603,10 +4632,10 @@ Definition link_private_readings (C Cu Cg : cx) : subst :=
 (* Shared inputs are checked under the target's fixed site readings and
    fresh atoms for the other classes. The body is checked separately. *)
 Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
-    (Cg : cx) (nsg : list item) (recorded private : subst) (target : item -> option item) : Prop := {
+    (Cg : cx) (nsg : list item) (recorded private adopted : subst) (target : item -> option item) : Prop := {
   link_bind_scope : forall k p t, In k nsg -> target k = None ->
     ilook (provision_id k) (c_provisions Cg) = Some p ->
-    In t (link_need_gens k p) -> nlook t (c_ty Cu) <> None -> Fixed W u t;
+    In t (link_need_gens k p) -> lookup_subst t adopted = None /\ (nlook t (c_ty Cu) <> None -> Fixed W u t);
   link_bind_interpretation :
     let fixed := copy_fixed_readings Cu recorded in
     exists ys cg scope_after,
@@ -4615,8 +4644,9 @@ Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
       (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
         lookup_subst y fixed = None) /\
       (forall k, In k nsg -> exists p, ilook (provision_id k) (c_provisions Cg) = Some p /\
-        LinkNeedChoice Cu Cg nsu rho k p (target k)) /\
+        LinkNeedChoice Cu Cg nsu rho (app_subst_item adopted k) (provision_subst adopted p) (target k)) /\
       (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
+        let tx := app_subst adopted tx in
         (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None \/ lookup_subst y private <> None) /\
         app_subst rho (canon Cu (TAbs x)) = app_subst (private ++ rho) (canon Cu tx))
 }.
@@ -5056,7 +5086,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
-    LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) (link_private_readings C Cu Cg) target -> LinkBody W P u gg h pins ->
+    LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) (link_private_readings C Cu Cg) (link_adopted_inputs C Cu Cg) target -> LinkBody W P u gg h pins ->
     (* the linked needs: those of G that are F's, read through F's merge *)
     sm = link_map Cu Cg target nsg ->
     (* 3b: the captured needs are answered here as a call would answer

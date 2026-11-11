@@ -159,6 +159,7 @@ entry they belong to.
 | 127 | Read directly bound private inputs from the closure’s capture | M4c | C |
 | 128 | Rank generated code at its recorded origin | expansion soundness | C |
 | 129 | Check raw handles and the common array-copy held type in executable platform linking | platform soundness | A for the executable |
+| 130 | Read an absent private atomic representative through a linked input | coherent linked inputs | C |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -1457,7 +1458,7 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [tests/errors/closure_partial_class_xyz.moss](../tests/errors/closure_partial_class_xyz.moss) (X = Bool and Y = Char at the bind, Z unbound) | rejects ("linked input interpretation differs") | prints k | rejects (LinkBody forces representative X; Y = X fails) | accepts |
+  | [tests/wasi/closure_partial_class_xyz.moss](../tests/wasi/closure_partial_class_xyz.moss) (X = Bool and Y = Char at the bind, Z unbound) | rejects ("linked input interpretation differs") | prints k | rejects (LinkBody forces representative X; Y = X fails) | accepts |
   | [tests/wasi/closure_partial_class_zyx.moss](../tests/wasi/closure_partial_class_zyx.moss) (the same, merge listed the other way) | prints k | prints k | rejects | accepts |
   | [tests/errors/closure_partial_unbound_xyz.moss](../tests/errors/closure_partial_unbound_xyz.moss) (X unbound at the bind) | rejects | prints k | accepts | accepts |
   | [tests/wasi/closure_partial_unbound_zyx.moss](../tests/wasi/closure_partial_unbound_zyx.moss) | prints k | prints k | accepts | accepts |
@@ -3895,6 +3896,24 @@ using one fresh atom per abstract class must preserve that behaviour
 - Both checks implement existing clauses of the platform contract. The
   [custom prelude regressions](../crates/moss-tests/tests/suite/runtime_platform.rs)
   exercise the formerly accepted declarations.
+
+### 130. Read an absent private atomic representative through a linked input
+
+- [The XYZ-order fixture](../tests/wasi/closure_partial_class_xyz.moss)
+  has X in the target and Z absent from the binding site. G's telescope
+  reads X, Y and Z through Z in this order. The executable used to reject
+  because the required provision mentioned Z. Its [reverse-order companion](../tests/wasi/closure_partial_class_zyx.moss)
+  already printed `k`. Both orders now print `k`.
+- A linked body's input table reads a private atomic representative through
+  a shared input of the same source class. The check uses this reading
+  when the lexical capture has no meaning for the representative. If it
+  has a meaning, the binding comparison establishes that the shared input
+  agrees with the capture at each compatible application. The check still
+  rejects application-supplied readings in captured provisions.
+- [The method fixture](../tests/wasi/link_absent_private_method.moss) calls a
+  method whose result has that class. Binding uses X as Bool and application
+  supplies it as Char. The emitted body and provision map use the checked
+  reading, and the program prints `7`.
 
 ---
 

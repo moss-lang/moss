@@ -4,7 +4,7 @@
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts.
 From NM Require Import PublicContextFacts.
-From NM Require PublicSubstFacts PublicMerge.
+From NM Require PublicLinkAnchors PublicSubstFacts PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -265,7 +265,7 @@ Lemma lookup_subst_nlook' : forall k (s : subst), lookup_subst k s = nlook k s.
 Proof. intros k s; induction s as [|[a t] r IH]; cbn; [reflexivity|rewrite IH; reflexivity]. Qed.
 
 Lemma lookup_subst_in_pair : forall x (s : subst) t, lookup_subst x s = Some t -> In (x, t) s.
-Proof. intros x s t L. rewrite lookup_subst_nlook' in L. exact (nlook_in _ _ _ _ L). Qed.
+Proof. exact PublicSubstFacts.lookup_subst_in_pair. Qed.
 
 (* The callee's view of a type over its own symbols is the caller's view
    of that type read at θ. *)
@@ -682,6 +682,34 @@ Proof.
   destruct Merge as [_ [_ [Support _]]]. intros y InMerge.
   cbn [c_merge c_ty entries_cx]. rewrite map_map. cbn. rewrite map_app.
   apply in_or_app. right. exact (Scope y (Support y InMerge)).
+Qed.
+
+Lemma functx_type_row : forall u C ns x value, FunCtx W u C ns ->
+  In (x, value) (c_ty C) -> value = canon C (TAbs x).
+Proof.
+  intros u C ns x value
+    (d & ps & a & r & b & es & tm & tm' & sigma & classes & implicit & D & FP & IE & Imp & -> & MGM & Merge & Section & -> & _ & _) Member.
+  cbn [entries_cx c_ty canon c_sub] in *.
+  apply in_map_iff in Member as [[y t] [Equal Member]]. cbn [fst snd] in Equal.
+  injection Equal as <- <-. change (app_subst sigma t = app_subst sigma (TAbs y)).
+  f_equal. apply in_app_or in Member as [Implicit|Explicit].
+  - apply in_map_iff in Implicit as [z [Read _]]. injection Read as -> ->. reflexivity.
+  - destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [Rows _].
+    unfold IdForm in Rows. exact (proj1 (Forall_forall _ _) Rows (y,t) Explicit).
+Qed.
+
+Lemma functx_anchor_context : forall g Cu Cg ns y x,
+  FunCtx W g Cg ns -> lookup_subst y (link_input_anchors Cu Cg) = Some (TAbs x) ->
+  nlook x (c_ty Cg) = Some (TAbs y).
+Proof.
+  intros g Cu Cg ns y x Context Read.
+  destruct (PublicLinkAnchors.input_anchor_read _ _ _ _ Read)
+    as (shared & original & input & Equal & _ & Row & _ & _).
+  injection Equal as <-.
+  destruct (nlook_some _ _ _ (in_map fst _ (x, TAbs y) Row)) as [found Lookup].
+  change (nlook x (c_ty Cg) = Some found) in Lookup. rewrite Lookup. f_equal.
+  rewrite (functx_type_row g Cg ns x found Context (nlook_in _ _ _ _ Lookup)).
+  symmetry. exact (functx_type_row g Cg ns x (TAbs y) Context Row).
 Qed.
 
 Theorem functx_scoped : forall u C ns, FunCtx W u C ns ->

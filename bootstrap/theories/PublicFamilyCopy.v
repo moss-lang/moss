@@ -335,7 +335,7 @@ Proof.
     pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.bindsof_fold in BO. subst binds0.
     assert (AF : forall X, (match CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs with
        | inl (d3, _, st3) => match select_provisions d3 (result_selection (map (A.rkey_of Cr) ks) rms' (fc_sources (FunctorCode
-           (map fst (A.c_ty Cg)) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
+           (map fst (A.c_ty Cg)) (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Ch0))) (map fst (A.c_ty Cg))) (A.link_input_table Ch0 Cg)
            (map ITy outs') bs (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks')))) with
            | Some dr => match result_environment [] d3 (map ITy outs') dr with
                | Some result => inl (result, st3) | None => inr (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.Evaluation (Stuck CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.e_compose) [] st3) end
@@ -376,41 +376,9 @@ Proof.
       - exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ A2).
       - injection A2 as <-. exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
     destruct E2 as [Em2 Ea2].
-    (* Q6: the root's pins read as the application's fixed inputs *)
-    assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
-    { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
-      (* the closure's environment d2 carries no type meanings *)
-      set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Ch0)) then app_subst Tin (TAbs y)
-                                    else cmeaning dc y)) (map fst (A.c_ty Cg))).
-      assert (Am : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm0).
-      { split.
-        - intros y Fy Ig. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-          rewrite PublicLinkRun.existsb_eqb_in by exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 y (CRz.CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fy).
-          symmetry. exact (Fix0 y Fy).
-        - intros y Ig Ou. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-          rewrite PublicLinkRun.existsb_eqb_out by exact Ou. reflexivity. }
-      intros x tx Ip. destruct (proj1 (PinsI x tx) Ip) as [Fx0 _].
-      split; [exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 x (CRz.CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fx0)|].
-      pose proof (PinsOk gm0 Am x tx Ip) as Pa. rewrite (Fix0 x Fx0) in Pa. injection Pa as Pa.
-      transitivity (app_subst gm0 tx); [|exact (eq_sym Pa)].
-      unfold ground. apply subst_agree_on. intros y Iy. cbn [app_subst].
-      destruct (PinG x tx y Ip Iy) as [Ig [Sy [Nm Fy]]].
-      rewrite (CRz.CSg.FL.LRn.link_own_meaning W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made bs _ _ FCgL ItemsL BOL FBL th
-        argv read j1 d (append_environment d2 dc) [] st d3 g3 st3 Run y Ig Sy Nm).
-      unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-      destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Ch0))) as [Iu|Ou].
-      - rewrite (PublicLinkRun.existsb_eqb_in y (map fst (A.c_ty Ch0)) Iu).
-        rewrite PublicLinkRun.existsb_eqb_in by (apply filter_In; split; [exact Ig|exact (PublicLinkRun.existsb_eqb_in y _ Iu)]).
-        destruct (lookup_subst y th) as [m|] eqn:Lm; [|exfalso; exact (ThDom y Iu Lm)].
-        unfold Tin. cbn [app_subst]. rewrite PublicCopySubst.lookup_subst_cat, PublicLinkRun.lookup_map_snd, Lm. reflexivity.
-      - rewrite (PublicLinkRun.existsb_eqb_out y (map fst (A.c_ty Ch0)) Ou).
-        rewrite PublicLinkRun.existsb_eqb_out.
-        2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
-             apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
-        unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
     pose proof (CRz.root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
       Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD linktarget dc gf0 Binding th d d3 _ j1 g3 st st3
-      (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2) ThDom Run Pre3 Fix0 PinT) as Root.
+      (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2) ThDom Run Pre3 Fix0 Abs0 PinsOk) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr

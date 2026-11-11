@@ -13,6 +13,15 @@ Proof.
   cbn in *. destruct (Nat.eqb_spec x y); [discriminate|]. destruct In' as [E|In']; [congruence|exact (IH In')].
 Qed.
 
+Lemma lookup_subst_nlook : forall x s, lookup_subst x s = nlook x s.
+Proof.
+  intros x s. induction s as [|[y value] rest IH]; [reflexivity|].
+  cbn. now destruct (Nat.eqb x y).
+Qed.
+
+Lemma lookup_subst_in_pair : forall x s t, lookup_subst x s = Some t -> In (x,t) s.
+Proof. intros x s t Read. rewrite lookup_subst_nlook in Read. eapply PublicTypeRead.nlook_in; exact Read. Qed.
+
 Lemma gens_subst : forall t s x, In x (A.gens (app_subst s t)) ->
   exists y, In y (A.gens t) /\
     ((lookup_subst y s = None /\ x = y) \/ (exists u, lookup_subst y s = Some u /\ In x (A.gens u))).

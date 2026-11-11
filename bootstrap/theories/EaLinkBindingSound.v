@@ -63,30 +63,32 @@ Qed.
 Theorem check_link_binding_sound : forall E bound,
   (forall symbol d, w_decl (e_W E) symbol = Some d -> symbol < bound) ->
   metadata_budget (e_W E) bound < e_metadata_fuel E ->
-  forall u gg Cu nsu Cg nsg recorded private s after target,
+  forall u gg Cu nsu Cg nsg recorded private adopted s after target,
   FunCtx (e_W E) u Cu nsu -> bound <= es_next s ->
-  check_link_binding E u gg Cu nsu Cg nsg recorded private s = Ok (target, after) ->
-  after = s /\ LinkBinding (e_W E) u Cu nsu Cg nsg recorded private target.
+  check_link_binding E u gg Cu nsu Cg nsg recorded private adopted s = Ok (target, after) ->
+  after = s /\ LinkBinding (e_W E) u Cu nsu Cg nsg recorded private adopted target.
 Proof.
-  intros E bound Bounded Budget u gg Cu nsu Cg nsg recorded private s after target FCu Counter Checked.
+  intros E bound Bounded Budget u gg Cu nsu Cg nsg recorded private adopted s after target FCu Counter Checked.
   unfold check_link_binding, mbind, get in Checked.
   set (rho := site_theta (es_next s) Cu recorded private) in *.
   set (error := (qs (e_W E) gg ++ " cannot provide " ++ qs (e_W E) u ++ ": its linked input interpretation differs (D84)")%string) in Checked.
-  set (decide := link_need_choice E Cu Cg nsu rho error) in Checked.
+  set (decide := link_need_choice E Cu Cg nsu rho adopted error) in Checked.
   unfold pure in Checked.
   destruct (rmap (fun k => let! choice := decide k in Ok (k, choice)) nsg) as [choices|] eqn:Choices; [|discriminate].
   set (chosen := fun k => match ilook k choices with Some choice => choice | None => None end) in Checked.
-  destruct (find (unsafe_capture Cu Cg chosen (EaTypes.fixed (e_W E) (e_metadata_fuel E) u)) nsg)
+  destruct (find (unsafe_capture Cu Cg chosen (EaTypes.fixed (e_W E) (e_metadata_fuel E) u) adopted) nsg)
     as [offender|] eqn:Capture; [discriminate|].
-  destruct (forallb (fun q => linked_type_agrees Cu Cg rho private (fst q)) (c_ty Cg)) eqn:Types; [|discriminate].
+  destruct (forallb (fun q => linked_type_agrees Cu Cg rho private adopted (fst q)) (c_ty Cg)) eqn:Types; [|discriminate].
   injection Checked as <- <-. split; [reflexivity|]. constructor.
-  - intros k p t InNeed Captured Lookup Mentions Bound.
+  - intros k p t InNeed Captured Lookup Mentions.
     pose proof (find_none _ _ Capture k InNeed) as Safe.
     unfold unsafe_capture, is_linked in Safe. rewrite Captured, Lookup in Safe.
     apply negb_false_iff in Safe.
     pose proof (proj1 (forallb_forall _ _) Safe t Mentions) as TypeSafe.
-    cbn beta in TypeSafe. rewrite (proj2 (bound_in_spec Cu t) Bound) in TypeSafe.
-    apply (fixed_exact _ _ Bounded _ _ Budget _), nmem_spec, TypeSafe.
+    cbn beta in TypeSafe. apply andb_true_iff in TypeSafe as [NotAdopted TypeSafe]. split.
+    + destruct (lookup_subst t adopted); [discriminate|reflexivity].
+    + intro Bound. rewrite (proj2 (bound_in_spec Cu t) Bound) in TypeSafe.
+      apply (fixed_exact _ _ Bounded _ _ Budget _), nmem_spec, TypeSafe.
   - cbv zeta. set (fixed := copy_fixed_readings Cu recorded).
     set (ys := site_classes Cu fixed). set (cg := site_atom (es_next s) (recorded ++ private)).
     exists ys, cg, (extend_allocation_scope (copy_allocation_scope (e_W E) (recorded ++ private)) (map cg ys)).

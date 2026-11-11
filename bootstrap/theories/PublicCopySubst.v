@@ -14,6 +14,7 @@
    Also: grounding after a substitution is one substitution
    (ground_app_subst), and the lemmas lift from types to provisions. *)
 From Stdlib Require Import List Arith Bool.
+From NM Require PublicLinkAnchors.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicContextFacts PublicMerge PublicTagCheck PublicTypeFacts.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -465,3 +466,40 @@ Proof.
 Qed.
 
 End PrivateLink.
+
+(* A private representative that is already captured keeps that reading.
+   The binding comparison enforces equality with its chosen shared input;
+   when the representative is absent, the comparison reads that input. *)
+Lemma link_reads_after_adoption : forall W g C Cu Cg needs T dc,
+  A.FunCtx W g Cg needs ->
+  let base := PublicContextFacts.link_base_reading Cu Cg T dc in
+  let adopted := A.link_adopted_inputs C Cu Cg in
+  (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+    app_subst T (TAbs x) = app_subst base (app_subst adopted tx)) ->
+  forall t, incl (A.gens t) (map fst (A.c_ty Cg)) ->
+  app_subst base (app_subst adopted t) = app_subst (PublicContextFacts.link_reading Cu Cg T dc) t.
+Proof.
+  intros W g C Cu Cg needs T dc Source base adopted Inputs t Scope.
+  rewrite PublicContextFacts.link_reading_compose by exact Scope. apply subst2_agree.
+  intros y _. cbn [app_subst].
+  destruct (lookup_subst y adopted) as [v|] eqn:Adopted.
+  - unfold adopted in Adopted. apply PublicLinkAnchors.adopted_input_read in Adopted as [_ Anchor]. now rewrite Anchor.
+  - destruct (lookup_subst y (A.link_input_anchors Cu Cg)) as [v|] eqn:Anchor; [|reflexivity].
+    destruct (PublicLinkAnchors.input_anchor_read _ _ _ _ Anchor)
+      as (x & original & input & -> & _ & SourceRow & _ & SharedRow).
+    pose proof (functx_anchor_context W g Cu Cg needs y x Source Anchor) as Lookup.
+    pose proof (Inputs x (TAbs y) Lookup ltac:(congruence)) as Agree.
+    cbn [app_subst] in Agree. rewrite Adopted in Agree. rewrite <- Agree.
+    unfold base. cbn [app_subst].
+    rewrite PublicContextFacts.link_base_reading_shared;
+      [reflexivity| |exact (in_map fst _ (x,TAbs y) SourceRow)].
+    exact (in_map fst _ (x,input) (PublicTypeRead.nlook_in _ _ _ _ SharedRow)).
+Qed.
+
+Lemma link_provision_after_adoption : forall C Cu Cg T dc p,
+  let reading := PublicContextFacts.link_reading Cu Cg T dc in
+  A.provision_subst reading (A.provision_subst (A.link_adopted_inputs C Cu Cg) p) = A.provision_subst reading p.
+Proof.
+  intros C Cu Cg T dc p reading. apply provision_agree.
+  intros y _. unfold reading. apply PublicContextFacts.link_reading_adopted.
+Qed.

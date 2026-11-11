@@ -1189,7 +1189,8 @@ Hypothesis FixedAt : forall x, A.Fixed W h0 x -> lookup_subst x gf0 = Some (app_
 (* Q6: a pinned fixed input is an input of h0, and reads at the
    application as its pin does (the closure's fixed readings, which the
    application's agree with) *)
-Hypothesis PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x).
+Hypothesis RootAbstract : CSg.Abstract W h0.
+Hypothesis PinsOk : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins.
 
 Lemma root_level : PublicContextFacts.ReadsMerge Ch0 (app_subst Tin) ->
   LevelReal (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks') d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin h0 Ch0 None.
@@ -1199,6 +1200,26 @@ Proof.
   assert (Inj : forall a b, In a outs' -> In b outs' -> gen a = gen b -> a = b)
     by (intros a0 b0 Ia Ib; exact (nodup_map_inj gen outs' a0 b0 NdG Ia Ib)).
   assert (FrGf : PublicFormation.FrameFormed W Fg) by (split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W)).
+  set (gm := PublicContextFacts.link_reading Ch0 Cg Tin dc).
+  assert (Application : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm).
+  { split.
+    - intros y Fixed Source. unfold gm.
+      pose proof (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 y
+        (CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 RootAbstract) FC0 Fixed) as Target.
+      now rewrite (PublicContextFacts.link_reading_shared _ _ _ _ _ Target Source), FixedAt.
+    - intros y Source Private Present. unfold gm. eapply PublicContextFacts.closure_bind_captures; eassumption. }
+  assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
+  { intros x tx Pin. destruct (proj1 (PinsI x tx) Pin) as [Fixed _].
+    split; [exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 x
+      (CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 RootAbstract) FC0 Fixed)|].
+    pose proof (PinsOk gm Application x tx Pin) as Reading. rewrite FixedAt in Reading by exact Fixed.
+    injection Reading as Reading. transitivity (app_subst gm tx); [|exact (eq_sym Reading)].
+    unfold ground. apply subst_agree_on.
+    intros y Member. cbn [app_subst]. destruct (PinG x tx y Pin Member) as [Source [Unmerged [Kept _]]].
+    rewrite (CSg.FL.LRn.link_own_meaning W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCg Items BO FB th ThDom
+      argv read j' d dc' [] st d3 g3 st3 Run y Source Unmerged Kept).
+    unfold gm. change (PublicLinkRun.caller_readings d th) with Tin.
+    now rewrite (PublicContextFacts.link_reading_same_capture Ch0 Cg Tin dc' dc Capture). }
   assert (InputRead : PublicContextFacts.LinkedInputsRead Ch0 Cg (fun t => ground d (app_subst th t))
     (app_subst (PublicContextFacts.link_reading Ch0 Cg (PublicLinkRun.caller_readings d th) dc'))).
   { change (PublicContextFacts.LinkedInputsRead Ch0 Cg (fun t => ground d (app_subst th t))
@@ -1547,42 +1568,10 @@ Proof.
     - exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
     - injection Sel2 as <-. exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
   destruct E2 as [Em2 Ea2].
-  (* Q6: the root's pins read as the application's fixed inputs *)
-  assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
-  { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
-    (* the closure's environment d2 carries no type meanings *)
-    set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Ch0)) then app_subst Tin (TAbs y)
-                                  else cmeaning dc y)) (map fst (A.c_ty Cg))).
-    assert (Am : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm0).
-    { split.
-      - intros y Fy Ig. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-        rewrite PublicLinkRun.existsb_eqb_in by exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 y (CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fy).
-        symmetry. exact (Fix0 y Fy).
-      - intros y Ig Ou. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-        rewrite PublicLinkRun.existsb_eqb_out by exact Ou. reflexivity. }
-    intros x tx Ip. destruct (proj1 (PinsI x tx) Ip) as [Fx0 _].
-    split; [exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W h0 Ch0 nsh0 x (CSg.ast_of_abstract W h0 Ch0 nsh0 FC0 Abs0) FC0 Fx0)|].
-    pose proof (PinsOk gm0 Am x tx Ip) as Pa. rewrite (Fix0 x Fx0) in Pa. injection Pa as Pa.
-    transitivity (app_subst gm0 tx); [|exact (eq_sym Pa)].
-    unfold ground. apply subst_agree_on. intros y Iy. cbn [app_subst].
-    destruct (PinG x tx y Ip Iy) as [Ig [Sy [Nm Fy]]].
-    rewrite (CSg.FL.LRn.link_own_meaning W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCgL ItemsL BOL FBL th
-      argv read j' d (append_environment d2 dc) [] st d3 g3 st3 Run y Ig Sy Nm).
-    unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-    destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Ch0))) as [Iu|Ou].
-    - rewrite (PublicLinkRun.existsb_eqb_in y (map fst (A.c_ty Ch0)) Iu).
-      rewrite PublicLinkRun.existsb_eqb_in by (apply filter_In; split; [exact Ig|exact (PublicLinkRun.existsb_eqb_in y _ Iu)]).
-      destruct (lookup_subst y th) as [m|] eqn:Lm; [|exfalso; exact (ThDom y Iu Lm)].
-      unfold Tin. cbn [app_subst]. rewrite PublicCopySubst.lookup_subst_cat, PublicLinkRun.lookup_map_snd, Lm. reflexivity.
-    - rewrite (PublicLinkRun.existsb_eqb_out y (map fst (A.c_ty Ch0)) Ou).
-      rewrite PublicLinkRun.existsb_eqb_out.
-      2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
-           apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
-      unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
   set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks').
   pose proof (root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD linktarget dc gf0 Binding th d d3 _ j' g3 st st3
-    (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2) ThDom Run Pre3 Fix0 PinT) as Root.
+    (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2) ThDom Run Pre3 Fix0 Abs0 PinsOk) as Root.
   pose proof (chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
     Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
   assert (LenS : List.length (closure_sources rms srcs) = List.length ks).

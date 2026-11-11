@@ -283,14 +283,15 @@ Proof.
   (* 7: the transfer *)
   pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real3) as Abs3.
   (* Q6: a pin reads, after the body, as u's fixed reading of the pinned input *)
-  set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Cu)) then ground d (app_subst th (TAbs y))
-                                else cmeaning dc y)) DG).
+  set (gm0 := PublicContextFacts.link_reading Cu Cg Tin dc).
   assert (Am : CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W u Cu Cg dc gfx gm0).
   { split.
-    - intros y Fy Ig. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-      rewrite (PublicLinkRun.existsb_eqb_in y _ (FxIn y Fy)). symmetry. exact (GfxA y Fy).
-    - intros y Ig Ou. unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-      rewrite (PublicLinkRun.existsb_eqb_out y _ Ou). reflexivity. }
+    - intros y Fy Ig. unfold gm0. rewrite (PublicContextFacts.link_reading_shared _ _ _ _ _ (FxIn y Fy) Ig).
+      symmetry. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst. exact (GfxA y Fy).
+    - intros y Ig Ou Present. unfold gm0.
+      eapply PublicContextFacts.closure_bind_captures; [exact Binding| | |exact Ig|exact Ou|exact Present].
+      + intros t v Equal. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst. exact (ThMerge t v Equal).
+      + intros fixed_type Fixed. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst. exact (GfxA fixed_type Fixed). }
   assert (PinRun : forall x tx, In (x, tx) pins -> ground d3 tx = ground d (app_subst th (TAbs x))).
   { intros x tx Ip. destruct (proj1 (PinsI x tx) Ip) as [Fx0 _].
     pose proof (PinsOk gm0 Am x tx Ip) as Pa. rewrite (GfxA x Fx0) in Pa. injection Pa as Pa.
@@ -298,17 +299,9 @@ Proof.
     unfold ground. apply subst_agree_on. intros y Iy. cbn [app_subst].
     destruct (PinG x tx y Ip Iy) as [Ig [Sy [Nm Fy]]].
     rewrite (LRn.link_own_meaning W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg Items BO FB th
-      argv read j' d (append_environment d2 dc) [] st d3 g3 st3 Run y Ig Sy Nm).
-    unfold gm0. rewrite PublicLinkRun.lookup_map_key_nat by exact Ig.
-    destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Cu))) as [Iu|Ou].
-    - rewrite (PublicLinkRun.existsb_eqb_in y (map fst (A.c_ty Cu)) Iu).
-      rewrite PublicLinkRun.existsb_eqb_in by (apply filter_In; split; [exact Ig|exact (PublicLinkRun.existsb_eqb_in y _ Iu)]).
-      cbn [app_subst]. rewrite (ThL y Iu). reflexivity.
-    - rewrite (PublicLinkRun.existsb_eqb_out y (map fst (A.c_ty Cu)) Ou).
-      rewrite PublicLinkRun.existsb_eqb_out.
-      2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
-           apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
-      unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
+      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d (append_environment d2 dc) [] st d3 g3 st3 Run y Ig Sy Nm).
+    unfold gm0. change (PublicLinkRun.caller_readings d th) with Tin.
+    now rewrite (PublicContextFacts.link_reading_same_capture Cu Cg Tin _ dc (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2)). }
   assert (GE : forall tc tf, PublicFamilyAgree.SigAgree Cf Cu th tc tf ->
     (forall y, In y (A.gens tf) -> In y DG \/ In y (map fst pins)) -> ground d3 (app_subst pr0 tf) = ground d tc).
   { intros tc tf [Sc Ec] Ig. rewrite <- (Abs0 tc), <- CanF, Ec, CanF, (Abs0 (app_subst th tf)).

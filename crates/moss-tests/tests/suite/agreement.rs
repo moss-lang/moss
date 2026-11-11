@@ -84,7 +84,6 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/attached_on_abstract.moss", Accept, Reject, SELF_HOSTED_BUG_Q5),
     ("tests/errors/beyond_std.moss", Reject, Unsupported, BEYOND),
     ("tests/errors/bracket_method_receiver.moss", Accept, Reject, RECORDED),
-    ("tests/errors/closure_partial_class_xyz.moss", Accept, Reject, RECORDED),
     ("tests/errors/closure_partial_unbound_xyz.moss", Accept, Reject, RECORDED),
     ("tests/errors/context_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_CONTEXT_BRACKETS),
     ("tests/errors/context_item_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_ITEM_BRACKETS),

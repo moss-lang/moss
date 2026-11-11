@@ -24,16 +24,9 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          attached method at the bracket's receiver, and prints a wrong `1`",
     ),
     (
-        "tests/errors/closure_partial_class_xyz.moss",
-        "AUDIT-CHANGES #54 and #97: Audit accepts (some orientation of G's \
-         merge meets LinkBody's linked-input clause); the reference, which \
-         fixes one orientation, rejects this order and accepts \
-         tests/wasi/closure_partial_class_zyx.moss",
-    ),
-    (
         "tests/errors/closure_partial_unbound_xyz.moss",
-        "AUDIT-CHANGES #54 and #97: as closure_partial_class_xyz \
-         (tests/wasi/closure_partial_unbound_zyx.moss is accepted)",
+        "AUDIT-CHANGES #54, #97 and #130: the chosen private representative \
+         is directly bound (tests/wasi/closure_partial_unbound_zyx.moss is accepted)",
     ),
     (
         "tests/errors/duplicate_field_binder.moss",

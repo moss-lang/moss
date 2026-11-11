@@ -18,7 +18,7 @@
 # Y as X, never as the captured Char.
 # Oracle (moss_m2): rejects ("its linked input interpretation differs (D84)");
 # with the other merge order it prints k, so the oracle is order-dependent here.
-# Native (ob-family moss, seed 1h1710x0): prints k.
+# Native and current moss-ref print k in both orders after AUDIT-CHANGES #130.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

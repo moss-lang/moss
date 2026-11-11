@@ -15,7 +15,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicCallable PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicRuntimeKeys.
 From NM Require AllocationFacts PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
-From NM Require PublicCopySubst.
+From NM Require PublicCopySubst PublicLinkAnchors.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -117,7 +117,8 @@ Definition ground_fixed (gm : subst) (fx : subst) : subst :=
    other linked inputs are never mentioned by what it captures, D84 3b.) *)
 Definition AppMeanings (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx gm : subst) : Prop :=
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gm = lookup_subst x gfx) /\
-  (forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) -> lookup_subst x gm = Some (cmeaning dc x)).
+  (forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
+    output_meaning dc x <> None -> lookup_subst x gm = Some (cmeaning dc x)).
 
 (* An abstract functor's context lists every symbol it mentions. *)
 Lemma fixed_in_functx : forall u Cu ns x, (exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None)) ->
@@ -2822,20 +2823,27 @@ Proof. intros f l x. induction l as [|[a t] r IH]; [reflexivity|]. cbn. destruct
 (* A closure over C's lexical capture reads a symbol in force as the
    table does and one it mentions as its meaning: either way as d reads
    it canonically. *)
-Lemma cmeaning_capture : forall d C dc x, AbsorbsCanon C d ->
+Lemma output_meaning_capture : forall d C dc x, AbsorbsCanon C d ->
   A.nlook x (A.c_ty C) <> None \/ In x (capture_gens C) ->
-  cmeaning (typed_capture d (A.lexical_capture C) dc) x = ground d (A.canon C (app_subst (A.c_ty C) (TAbs x))).
+  output_meaning (typed_capture d (A.lexical_capture C) dc) x = Some (ground d (A.canon C (app_subst (A.c_ty C) (TAbs x)))).
 Proof.
-  intros d C dc x Abs Ix. unfold cmeaning, output_meaning.
+  intros d C dc x Abs Ix. unfold output_meaning.
   replace (type_aliases (typed_capture d (A.lexical_capture C) dc))
     with (map (fun q => (fst q, ground d (A.canon C (snd q)))) (A.c_ty C)) by (cbn; rewrite map_map; reflexivity).
   rewrite (lookup_map_snd (fun t => ground d (A.canon C t))). cbn [app_subst].
   destruct (lookup_subst x (A.c_ty C)) as [tx|] eqn:Lx; [reflexivity|]. cbn [option_map].
   rewrite typed_capture_meanings.
   destruct Ix as [Ix|Ix]; [exfalso; apply Ix; rewrite <- lookup_subst_nlook'; exact Lx|].
-  rewrite (lookup_capture d _ x Ix). symmetry. exact (Abs (TAbs x)).
+  rewrite (lookup_capture d _ x Ix). f_equal. symmetry. exact (Abs (TAbs x)).
 Qed.
 
+
+Lemma cmeaning_capture : forall d C dc x, AbsorbsCanon C d ->
+  A.nlook x (A.c_ty C) <> None \/ In x (capture_gens C) ->
+  cmeaning (typed_capture d (A.lexical_capture C) dc) x = ground d (A.canon C (app_subst (A.c_ty C) (TAbs x))).
+Proof.
+  intros d C dc x Abs Member. unfold cmeaning. now rewrite (output_meaning_capture d C dc x Abs Member).
+Qed.
 
 (* An environment without aliases reads a canonical table in its meanings. *)
 Lemma alias_none : forall C d, type_aliases d = [] -> AbsorbsCanon C d ->
@@ -3648,7 +3656,7 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
     (A.role_reads (A.link_site Cg Cb pins outs gen) outs gen ++ A.pin_reads Cb pins) ks /\
   A.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
-      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg)
+      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.link_input_table Cu Cg)
       (map ITy outs) binds0
       (link_sources (A.link_site Cg Cb pins outs gen) outs gen ks)) /\
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) /\
@@ -3711,7 +3719,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
       A.SameResult W u gg ->
-      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) (A.link_private_readings C Cu Cg) linktarget -> A.LinkBody W Prog u gg h pins ->
+      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) (A.link_private_readings C Cu Cg) (A.link_adopted_inputs C Cu Cg) linktarget -> A.LinkBody W Prog u gg h pins ->
       sm = A.link_map Cu Cg linktarget nsg ->
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (A.captured_needs linktarget nsg) smc ->
@@ -3733,7 +3741,7 @@ Proof.
   destruct (functx_scoped W gg Cg nsg FCg) as [CanG [ScG [KMg [NdG [ProvNsG [ShapeG _]]]]]].
   assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ linktarget k0 = None).
   { intros k0 I. exact (proj1 (captured_spec linktarget nsg k0) I). }
-  pose proof (@A.link_bind_scope W u Cu nsu Cg nsg _ _ linktarget Binding) as B3.
+  pose proof (@A.link_bind_scope W u Cu nsu Cg nsg _ _ _ linktarget Binding) as B3.
   (* the caller provides every captured need *)
   assert (Caller : forall k0, In k0 caps -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k0)) d = Some pv).
   { intros k0 Ik. pose proof (Prov k0 Ik) as Pr. pose proof (ShapeG k0 (proj1 (CapsIn k0 Ik))) as Sh.
@@ -3770,11 +3778,14 @@ Proof.
     rewrite (lookup_map_snd (app_subst (type_meanings d))).
     rewrite (Lth x (Sc x Ix)). cbn [option_map].
     destruct (in_dec Nat.eq_dec x (map fst (A.c_ty Cu))) as [Iu|Ou].
-    2: { rewrite (Am2 x (Sc x Ix) Ou). unfold dc.
-         rewrite (cmeaning_capture d C dsel x Abs (captured_in_force C gg Cg nsg caps smc FCg (proj1 (proj2 (proj1 Fmd))) (fun k I => proj1 (CapsIn k I)) SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix))).
-         reflexivity. }
+    2: { pose proof (captured_in_force C gg Cg nsg caps smc FCg (proj1 (proj2 (proj1 Fmd)))
+           (fun k I => proj1 (CapsIn k I)) SatC' k0 p x Ik Il (Gp x Ix) (Sc x Ix)) as Captured.
+         assert (Present : output_meaning dc x <> None).
+         { unfold dc. rewrite (output_meaning_capture d C dsel x Abs Captured). discriminate. }
+         rewrite (Am2 x (Sc x Ix) Ou Present). unfold dc.
+         now rewrite (cmeaning_capture d C dsel x Abs Captured). }
     assert (Fu : A.Fixed W u x).
-    { apply (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix)).
+    { apply (proj2 (B3 k0 p x (proj1 (CapsIn k0 Ik)) (proj2 (CapsIn k0 Ik)) Il (Gp x Ix))).
       destruct (keys_in _ x Iu) as [v Lv]. rewrite Lv. discriminate. }
     destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
     replace (app_subst (A.c_ty C) (TAbs x)) with tx by (cbn [app_subst]; rewrite (lookup_subst_nlook' x (A.c_ty C)), Lx; reflexivity).
@@ -3805,7 +3816,9 @@ Proof.
       replace (app_subst (A.c_ty C) (TAbs y)) with ty by (cbn [app_subst]; rewrite (lookup_subst_nlook' y (A.c_ty C)), Ly; reflexivity).
       change (app_subst (type_meanings d) (A.canon C ty)) with (ground d (A.canon C ty)). rewrite (Abs ty).
       unfold gfx. rewrite (lookup_ground_fixed _ fx y ty FunFx (proj2 (Fx y ty) (conj Fyy Ly))). reflexivity.
-    - rewrite (Am2 y Ig Ou). unfold dc.
+    - assert (Present : output_meaning dc y <> None).
+      { unfold dc. rewrite (output_meaning_capture d C dsel y Abs (or_introl (InF y Iy))). discriminate. }
+      rewrite (Am2 y Ig Ou Present). unfold dc.
       rewrite (cmeaning_capture d C dsel y Abs (or_introl (InF y Iy))). reflexivity. }
   set (d' := install_provision (IFun u) (FunctorClosure h (Some sm) dc None) d).
   exists d', g, st, H. split; [intros a1 c1 L1; exact L1|]. split; [apply meanings_grow_refl; reflexivity|]. split; [|reflexivity].
@@ -3832,12 +3845,14 @@ Proof.
         { intros T Fix x t Member. split.
           - intros z InT. apply Avoid, in_or_app. left. apply in_flat_map. exists (x,t). split; assumption.
           - exact (proj2 (recorded_fixed_meaning u C fx d gfx T x t Fx Abs eq_refl Fix Member)). }
-        constructor.
-        - intros need key Member Chosen. destruct (Choices need Member) as (p & _ & Choice).
-          rewrite Chosen in Choice. exact (proj1 (proj1 (proj2 (proj2 Choice)))).
-        - intros T Reads Fix x tx Found Shared.
+        assert (RawInputs : forall T, ReadsMerge Cu (app_subst T) ->
+          (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
+          forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+          app_subst T (TAbs x) = app_subst (link_base_reading Cu Cg T dc)
+            (app_subst (A.link_adopted_inputs C Cu Cg) tx)).
+        { intros T Reads Fix x tx Found Shared.
           destruct (Inputs x tx Found Shared) as [Supported Equal].
-          set (G := link_reading Cu Cg T dc).
+          set (G := link_base_reading Cu Cg T dc).
           set (reading := PublicCopySubst.cg_read ys cg T (type_meanings d)).
           assert (Separate : forall y, In y (map fst private) -> ~ In y (map fst (A.c_ty Cu))).
           { intros y Private Public. destruct (keys_in _ y Private) as [t Lookup].
@@ -3850,7 +3865,7 @@ Proof.
             - intros z Member. apply Avoid, in_or_app. right. apply in_flat_map.
               exists (y,t). split; [exact (lookup_subst_in_pair _ _ _ Lookup)|exact Member].
             - destruct (PublicCopySubst.private_link_row C Cu Cg y t Lookup) as [Ig [Absent [raw [Here ->]]]].
-              unfold G. rewrite (link_reading_private Cu Cg T dc y); [| |exact Ig].
+              unfold G. rewrite (link_base_reading_private Cu Cg T dc y); [| |exact Ig].
               + unfold dc. rewrite (cmeaning_capture d C dsel y Abs) by (left; rewrite Here; discriminate).
                 cbn [app_subst]. rewrite lookup_subst_nlook', Here. reflexivity.
               + intros InCu. destruct (keys_in _ y InCu) as [ty Present]. congruence. }
@@ -3867,36 +3882,67 @@ Proof.
           eapply (PublicCopySubst.read_through_private_capture W u Cu nsu Cg); [exact FCu|exact Reads|exact Fresh| |exact (FixedAt T Fix)|exact Separate|exact PrivateAt| | |].
           + intros y Leaf Missing. apply Residual. exact (conj Leaf Missing).
           + intros y InCu InG. change (app_subst G (TAbs y) = app_subst T (TAbs y)).
-            unfold G at 1. change ((match lookup_subst y (link_reading Cu Cg T dc) with
+            unfold G at 1. change ((match lookup_subst y (link_base_reading Cu Cg T dc) with
               | Some v => v | None => TAbs y end) = app_subst T (TAbs y)).
-            now rewrite (link_reading_shared Cu Cg T dc y InCu InG).
-          + intros y Member. pose proof (PublicCopySubst.canon_input_support W gg Cg nsg FCg x) as ScopeG.
+            now rewrite (link_base_reading_shared Cu Cg T dc y InCu InG).
+          + apply PublicLinkAnchors.adoption_keeps_source_scope.
+            intros y Member. pose proof (PublicCopySubst.canon_input_support W gg Cg nsg FCg x) as ScopeG.
             destruct (functx_scoped W gg Cg nsg FCg) as [Row _]. rewrite (Row x tx Found) in Member.
             apply ScopeG; [exact (in_map fst _ (x,tx) (PublicTypeRead.nlook_in _ _ _ _ Found))|exact Member].
           + intros y Member. apply in_or_app. destruct (Supported y Member) as [SharedY|PrivateY].
             * left. destruct (A.nlook y (A.c_ty Cu)) as [v|] eqn:Lookup; [|contradiction].
               exact (in_map fst _ (y,v) (PublicTypeRead.nlook_in _ _ _ _ Lookup)).
             * right. destruct (lookup_subst y private) as [v|] eqn:Lookup; [|contradiction].
-              exact (in_map fst _ (y,v) (lookup_subst_in_pair _ _ _ Lookup)).
-        - intros T G Reads Fix Shared need p Member Lookup key Chosen.
+              exact (in_map fst _ (y,v) (lookup_subst_in_pair _ _ _ Lookup)). }
+        assert (ReadAfter : forall T, ReadsMerge Cu (app_subst T) ->
+          (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
+          forall t, incl (A.gens t) (map fst (A.c_ty Cg)) ->
+          app_subst (link_base_reading Cu Cg T dc) (app_subst (A.link_adopted_inputs C Cu Cg) t) =
+          app_subst (link_reading Cu Cg T dc) t).
+        { intros T Reads Fix. eapply PublicCopySubst.link_reads_after_adoption; [exact FCg|exact (RawInputs T Reads Fix)]. }
+        constructor.
+        - intros need key Member Chosen. destruct (Choices need Member) as (p & _ & Choice).
+          rewrite Chosen in Choice. exact (proj1 (proj1 (proj2 (proj2 Choice)))).
+        - intros T Reads Fix x tx Found Shared. rewrite (RawInputs T Reads Fix x tx Found Shared).
+          apply ReadAfter; [exact Reads|exact Fix|].
+          intros y Member. pose proof (PublicCopySubst.canon_input_support W gg Cg nsg FCg x) as ScopeG.
+          rewrite (CanG x tx Found) in Member.
+          apply ScopeG; [exact (in_map fst _ (x,tx) (PublicTypeRead.nlook_in _ _ _ _ Found))|exact Member].
+        - intros T Reads Fix y InG Private Present.
+          assert (NotAdopted : lookup_subst y (A.link_adopted_inputs C Cu Cg) = None).
+          { destruct (lookup_subst y (A.link_adopted_inputs C Cu Cg)) as [value|] eqn:Adopted; [|reflexivity].
+            exfalso. apply Present. unfold dc. eapply PublicLinkAnchors.lexical_capture_has_no_adopted_input; exact Adopted. }
+          pose proof (ReadAfter T Reads Fix (TAbs y) ltac:(intros x [<-|[]]; exact InG)) as Reading.
+          cbn [app_subst] in Reading. rewrite NotAdopted in Reading. cbn [app_subst] in Reading.
+          rewrite (link_base_reading_private Cu Cg T dc y Private InG), (link_reading_lookup Cu Cg T dc y InG) in Reading.
+          rewrite (link_reading_lookup Cu Cg T dc y InG). f_equal. symmetry. exact Reading.
+        - intros T Reads Fix need p Member Lookup key Chosen.
           destruct (Choices need Member) as [p0 [Read Choice]]. rewrite Lookup in Read. injection Read as <-.
+          set (adopted := A.link_adopted_inputs C Cu Cg).
+          set (need' := app_subst_item adopted need). set (p' := A.provision_subst adopted p).
+          fold adopted need' p' in Choice.
           rewrite Chosen in Choice. destruct Choice as [InU [InG [[_ [At _]] TargetScope]]].
-          assert (Atom : forall y, In y (A.link_need_gens need p) -> lookup_subst y G = lookup_subst y T).
-          { intros y Occurs. apply Shared.
+          set (G := link_reading Cu Cg T dc).
+          assert (Atom : forall y, In y (A.link_need_gens need' p') -> app_subst G (TAbs y) = app_subst T (TAbs y)).
+          { intros y Occurs. unfold G. cbn [app_subst]. rewrite link_reading_shared; [reflexivity| |].
             - destruct (A.nlook y (A.c_ty Cu)) as [v|] eqn:Found; [|exfalso; exact (InU y Occurs Found)].
               exact (in_map fst _ (y,v) (PublicTypeRead.nlook_in _ _ _ _ Found)).
             - destruct (A.nlook y (A.c_ty Cg)) as [v|] eqn:Found; [|exfalso; exact (InG y Occurs Found)].
               exact (in_map fst _ (y,v) (PublicTypeRead.nlook_in _ _ _ _ Found)). }
           destruct (PublicCopySubst.site_need_read W u Cu nsu _ ys cg T (type_meanings d) FCu Reads Fresh
-            (fun y Leaf Missing => proj2 (Residual y) (conj Leaf Missing)) (FixedAt T Fix) need p key InU At TargetScope)
+            (fun y Leaf Missing => proj2 (Residual y) (conj Leaf Missing)) (FixedAt T Fix) need' p' key InU At TargetScope)
             as [q [Q [Key Provision]]].
           exists q. split; [exact Q|]. split.
-          + rewrite <- Key. destruct need as [t|v|f|r m a|h0]; try reflexivity.
-            change (A.mkey (app_subst G r) m = A.mkey (app_subst T r) m).
-            f_equal. apply subst_agree_on. intros y Occurs. cbn [app_subst].
-            rewrite (Atom y (in_or_app _ _ _ (or_intror Occurs))). reflexivity.
-          + rewrite <- Provision. apply PublicCopySubst.provision_same_reading.
-            intros y Occurs. exact (Atom y (in_or_app _ _ _ (or_introl Occurs))). }
+          + rewrite <- Key. unfold need'. destruct need as [t|v|f|r m a|h0]; try reflexivity.
+            change (A.mkey (app_subst G r) m = A.mkey (app_subst T (app_subst adopted r)) m).
+            f_equal. transitivity (app_subst G (app_subst adopted r)).
+            * symmetry. unfold G, adopted. apply link_reading_adopted.
+            * apply subst_agree_on. intros y Occurs. apply Atom, in_or_app. right. exact Occurs.
+          + rewrite <- Provision. transitivity (A.provision_subst G p').
+            * symmetry. unfold G, p', adopted. apply PublicCopySubst.link_provision_after_adoption.
+            * rewrite <- (PublicCopySubst.provision_subst_nil p') at 1.
+              apply PublicCopySubst.provision_agree. intros y Occurs. rewrite app_subst_nil.
+              apply Atom, in_or_app. now left. }
       subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg linktarget dc gfx pins LB ReadBinding FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
       { exact U. }
@@ -4127,13 +4173,8 @@ Proof.
   destruct (functx_static _ _ _ FCg) as [[CanG DomG] [[SectionG KMg] [NdG [ProvNsG [ShapeG [ScG FixG]]]]]].
   destruct (functx_static _ _ _ FCu) as [[CanU DomU] [[SectionU KMu] [NdU [ProvNsU [ShapeU [ScU FixU]]]]]].
   set (ce := callee_env d th d1). set (de := application_environment P d h th (append_environment d2 dc)).
-  (* each input's own meaning (B), and the body's environment over it *)
-  set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
-  set (base := fun source => match (if existsb (Nat.eqb source) lnk then lookup_subst source th else None) with
-    | Some meaning => ground d meaning
-    | None => match output_meaning (append_environment d2 dc) source with Some meaning => meaning | None => TAbs source end
-    end).
-  set (B := map (fun source => (source, base source)) (map fst (A.c_ty Cg))).
+  (* The selected body reads its canonical leaves at this application. *)
+  set (B := link_reading Cu Cg (type_meanings ce) dc).
   set (de0 := EnvironmentWithAliases B B (provision_values (append_environment d2 dc))).
   pose proof RealU as [ReadsU [[ValsU [FnsU [MthsU FunsU]]] [_ KMU']]].
   assert (Code : view_functor P h = A.funbody_of Prog h) by reflexivity.
@@ -4146,37 +4187,29 @@ Proof.
     exfalso. apply in_map_iff in Ix as [[y v] [E Iq]]. cbn in E. subst y.
     clear -L Iq. induction th as [|[a0 t0] rest IH]; [contradiction|]. cbn in L, Iq.
     destruct (Nat.eqb_spec x a0) as [->|Ne]; [discriminate|]. destruct Iq as [E|Iq]; [injection E as E; congruence|apply IH; assumption]. }
-  (* the body's meanings *)
+  (* Provision selection changes no captured type meaning. *)
+  assert (SameCapture : forall x, cmeaning (append_environment d2 dc) x = cmeaning dc x).
+  { intro x. unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment].
+    now rewrite Ea2, Em2. }
   assert (Mde : type_meanings de = map (fun source => (source, match lookup_subst source (A.c_ty Cg) with
-    | Some t => app_subst B t | None => base source end)) (map fst (A.c_ty Cg))).
-  { unfold de, application_environment. rewrite Code, FB. reflexivity. }
-  assert (MeanL : forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
-    lookup_subst x B = option_map (ground d) (lookup_subst x th)).
-  { intros x Ig Iu. unfold B. rewrite (lookup_map_nat _ _ x Ig). unfold base. cbv beta.
-    assert (Ex : existsb (Nat.eqb x) lnk = true).
-    { unfold lnk. apply existsb_exists. exists x. split; [apply filter_In; split; [exact Ig|]|apply Nat.eqb_refl].
-      apply existsb_exists. exists x. split; [exact Iu|apply Nat.eqb_refl]. }
-    rewrite Ex. destruct (Th x Iu) as [v Lv]. rewrite Lv. reflexivity. }
-  assert (MeanC : forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
-    lookup_subst x B = Some (cmeaning dc x)).
-  { intros x Ig Ou. unfold B. rewrite (lookup_map_nat _ _ x Ig). unfold base. cbv beta.
-    assert (Ex : existsb (Nat.eqb x) lnk = false).
-    { unfold lnk. destruct (existsb _ _) eqn:E; [|reflexivity]. exfalso. apply existsb_exists in E as [y [Iy E]].
-      apply Nat.eqb_eq in E. subst y. apply filter_In in Iy as [_ Iy]. apply existsb_exists in Iy as [z [Iz E]].
-      apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
-    rewrite Ex. unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
-  assert (Am : AppMeanings u Cu Cg dc gfx B).
-  { split.
-    - intros x Fx Ig. rewrite (Gfx x Fx). exact (MeanL x Ig (FxIn x Fx)).
-    - intros x Ig Ou. exact (MeanC x Ig Ou). }
+    | Some t => app_subst B t | None => TAbs source end)) (map fst (A.c_ty Cg))).
+  { unfold de. erewrite linked_application_table.
+    - unfold B, ce. cbn [callee_env type_meanings]. now rewrite (link_reading_same_capture _ _ _ _ _ SameCapture).
+    - rewrite Code. exact FB.
+    - intros x Member. destruct (Th x Member) as [v Read]. congruence.
+    - intros x t Read. rewrite lookup_subst_nlook' in Read.
+      intros y Member. pose proof (PublicCopySubst.canon_input_support W gg Cg nsg FCg x) as Scope.
+      rewrite (CanG x t Read) in Member. apply Scope;
+        [exact (in_map fst _ (x,t) (PublicTypeRead.nlook_in _ _ _ _ Read))|exact Member]. }
   assert (FixAt : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst (type_meanings ce) (TAbs x))).
   { intros x Fixed. rewrite (Gfx x Fixed). unfold ce, callee_env. cbn [type_meanings app_subst].
     rewrite lookup_map_snd. destruct (Th x (FxIn x Fixed)) as [v ->]. reflexivity. }
-  assert (Shared : forall x, In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
-      lookup_subst x B = lookup_subst x (type_meanings ce)).
-  { intros x Iu Ig. rewrite (MeanL x Ig Iu). unfold ce, callee_env. cbn [type_meanings].
-    rewrite lookup_map_snd. reflexivity. }
-  pose proof (closure_bind_provisions _ _ _ _ _ _ _ _ _ Binding (type_meanings ce) B ReadsU FixAt Shared) as Compare.
+  assert (Am : AppMeanings u Cu Cg dc gfx B).
+  { split.
+    - intros x Fx Ig. unfold B. now rewrite (link_reading_shared _ _ _ _ _ (FxIn x Fx) Ig), FixAt.
+    - intros x Ig Ou Present. unfold B. eapply closure_bind_captures; eassumption. }
+  pose proof (closure_bind_provisions _ _ _ _ _ _ _ _ _ Binding (type_meanings ce) ReadsU FixAt) as Compare.
+  fold B in Compare.
   assert (InLks : forall k0 key, In k0 nsg -> linktarget k0 = Some key -> In k0 lks).
   { intros k0 key Ig Selected. apply linked_spec. split; [exact Ig|congruence]. }
   assert (InCaps : forall k0, In k0 nsg -> linktarget k0 = None -> In k0 caps).
@@ -4218,7 +4251,7 @@ Proof.
       assert (Ls : lookup_subst x (A.c_sub Cg) = None).
       { destruct (lookup_subst x (A.c_sub Cg)) as [t0|] eqn:Ls; [|reflexivity].
         exfalso. exact (Og (proj1 (DomG x t0 (lookup_subst_in_pair _ _ _ Ls)))). }
-      rewrite Ls. cbv iota. rewrite (subst_abs B). unfold B. rewrite (lookup_map_out _ _ x Og). reflexivity. }
+      rewrite Ls. cbv iota. rewrite (subst_abs B). unfold B. now rewrite link_reading_out. }
   assert (Env0 : EnvOk rr Cg de0 H).
   { split; [|split; [|split]].
   - intros v t Found. destruct (vals_ilook _ v t KMg Found) as [inst Il].

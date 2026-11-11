@@ -2,7 +2,7 @@
 From Stdlib Require Import List Arith Bool.
 From NM Require AuditFacts.
 From NM Require Import Audit PublicAliasContext.
-From NM Require PublicBodySafety PublicMerge PublicSubstFacts.
+From NM Require PublicBodySafety PublicLinkAnchors PublicMerge PublicSubstFacts PublicTypeRead.
 Import Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -18,16 +18,16 @@ Definition ReadsMerge (C : A.cx) (read : ty -> ty) : Prop :=
 
 (* A source input reads at the application if the target shares it.
    Otherwise its meaning comes from the lexical capture. *)
-Definition link_reading (Cu Cg : A.cx) (T : subst) (dc : environment) : subst :=
+Definition link_base_reading (Cu Cg : A.cx) (T : subst) (dc : environment) : subst :=
   map (fun q => (fst q,
     if existsb (Nat.eqb (fst q)) (map fst (A.c_ty Cu))
     then app_subst T (TAbs (fst q)) else PublicBodySafety.cmeaning dc (fst q))) (A.c_ty Cg).
 
-Lemma link_reading_shared : forall Cu Cg T dc x,
+Lemma link_base_reading_shared : forall Cu Cg T dc x,
   In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
-  lookup_subst x (link_reading Cu Cg T dc) = Some (app_subst T (TAbs x)).
+  lookup_subst x (link_base_reading Cu Cg T dc) = Some (app_subst T (TAbs x)).
 Proof.
-  intros Cu Cg T dc x Shared Source. unfold link_reading.
+  intros Cu Cg T dc x Shared Source. unfold link_base_reading.
   rewrite (PublicSubstFacts.lookup_on_keys (fun y =>
     if existsb (Nat.eqb y) (map fst (A.c_ty Cu))
     then app_subst T (TAbs y) else PublicBodySafety.cmeaning dc y) _ x Source).
@@ -37,11 +37,11 @@ Proof.
   now rewrite Found.
 Qed.
 
-Lemma link_reading_private : forall Cu Cg T dc x,
+Lemma link_base_reading_private : forall Cu Cg T dc x,
   ~ In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
-  lookup_subst x (link_reading Cu Cg T dc) = Some (PublicBodySafety.cmeaning dc x).
+  lookup_subst x (link_base_reading Cu Cg T dc) = Some (PublicBodySafety.cmeaning dc x).
 Proof.
-  intros Cu Cg T dc x Private Source. unfold link_reading.
+  intros Cu Cg T dc x Private Source. unfold link_base_reading.
   rewrite (PublicSubstFacts.lookup_on_keys (fun y =>
     if existsb (Nat.eqb y) (map fst (A.c_ty Cu))
     then app_subst T (TAbs y) else PublicBodySafety.cmeaning dc y) _ x Source).
@@ -50,12 +50,146 @@ Proof.
   apply existsb_exists in Found as [y [Member Equal]]. apply Nat.eqb_eq in Equal. now subst y.
 Qed.
 
+Lemma link_base_reading_same_capture : forall Cu Cg T dc dc',
+  (forall x, PublicBodySafety.cmeaning dc x = PublicBodySafety.cmeaning dc' x) ->
+  link_base_reading Cu Cg T dc = link_base_reading Cu Cg T dc'.
+Proof.
+  intros Cu Cg T dc dc' Same. unfold link_base_reading.
+  apply map_ext. intros [x t]. cbn [fst]. now rewrite Same.
+Qed.
+
+(* A body's canonical leaves read through the emitted input table. *)
+Definition link_reading (Cu Cg : A.cx) (T : subst) (dc : environment) : subst :=
+  let base := link_base_reading Cu Cg T dc in
+  let anchors := A.link_input_anchors Cu Cg in
+  map (fun q => (fst q, app_subst base (app_subst anchors (TAbs (fst q))))) (A.c_ty Cg).
+
+Lemma link_reading_lookup : forall Cu Cg T dc x,
+  In x (map fst (A.c_ty Cg)) ->
+  lookup_subst x (link_reading Cu Cg T dc) =
+  Some (app_subst (link_base_reading Cu Cg T dc) (app_subst (A.link_input_anchors Cu Cg) (TAbs x))).
+Proof.
+  intros Cu Cg T dc x Member. unfold link_reading.
+  exact (PublicSubstFacts.lookup_on_keys (fun y => app_subst (link_base_reading Cu Cg T dc)
+    (app_subst (A.link_input_anchors Cu Cg) (TAbs y))) (A.c_ty Cg) x Member).
+Qed.
+
+Lemma link_reading_out : forall Cu Cg T dc x,
+  ~ In x (map fst (A.c_ty Cg)) -> lookup_subst x (link_reading Cu Cg T dc) = None.
+Proof.
+  intros Cu Cg T dc x Outside. unfold link_reading.
+  destruct (lookup_subst x _) as [v|] eqn:Read; [|reflexivity].
+  apply PublicSubstFacts.lookup_subst_in_pair in Read. apply in_map_iff in Read as [[y t] [Same Member]].
+  injection Same as <- _. exfalso. apply Outside. exact (in_map fst _ (y,t) Member).
+Qed.
+
+Lemma link_reading_compose : forall Cu Cg T dc t,
+  incl (A.gens t) (map fst (A.c_ty Cg)) ->
+  app_subst (link_reading Cu Cg T dc) t =
+  app_subst (link_base_reading Cu Cg T dc) (app_subst (A.link_input_anchors Cu Cg) t).
+Proof.
+  intros Cu Cg T dc t Scope. rewrite <- (PublicTypeRead.app_subst_nil t) at 1.
+  apply PublicTypeRead.subst2_agree. intros x Member. cbn [app_subst lookup_subst].
+  now rewrite link_reading_lookup by exact (Scope x Member).
+Qed.
+
+Lemma link_reading_shared : forall Cu Cg T dc x,
+  In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
+  lookup_subst x (link_reading Cu Cg T dc) = Some (app_subst T (TAbs x)).
+Proof.
+  intros Cu Cg T dc x Shared Source. rewrite link_reading_lookup by exact Source.
+  cbn [app_subst]. rewrite PublicLinkAnchors.input_anchor_keeps_shared by
+    (rewrite <- PublicSubstFacts.lookup_subst_nlook; now apply PublicSubstFacts.lookup_subst_in).
+  cbn [app_subst]. now rewrite link_base_reading_shared.
+Qed.
+
+Lemma link_reading_anchor : forall Cu Cg T dc y x,
+  lookup_subst y (A.link_input_anchors Cu Cg) = Some (TAbs x) ->
+  lookup_subst y (link_reading Cu Cg T dc) = Some (app_subst T (TAbs x)).
+Proof.
+  intros Cu Cg T dc y x Read.
+  destruct (PublicLinkAnchors.input_anchor_read _ _ _ _ Read)
+    as (shared & original & input & Same & Private & Source & _ & Shared).
+  injection Same as <-.
+  rewrite link_reading_lookup by exact (in_map fst _ (y,original) Private).
+  cbn [app_subst]. rewrite Read. cbn [app_subst]. rewrite link_base_reading_shared; [reflexivity| |exact (in_map fst _ (x,TAbs y) Source)].
+  exact (in_map fst _ (x,input) (PublicTypeRead.nlook_in _ _ _ _ Shared)).
+Qed.
+
 Lemma link_reading_same_capture : forall Cu Cg T dc dc',
   (forall x, PublicBodySafety.cmeaning dc x = PublicBodySafety.cmeaning dc' x) ->
   link_reading Cu Cg T dc = link_reading Cu Cg T dc'.
 Proof.
-  intros Cu Cg T dc dc' Same. unfold link_reading.
-  apply map_ext. intros [x t]. cbn [fst]. now rewrite Same.
+  intros Cu Cg T dc dc' Same. unfold link_reading. now rewrite (link_base_reading_same_capture _ _ _ _ _ Same).
+Qed.
+
+Lemma link_reading_adopted : forall C Cu Cg T dc t,
+  app_subst (link_reading Cu Cg T dc) (app_subst (A.link_adopted_inputs C Cu Cg) t) =
+  app_subst (link_reading Cu Cg T dc) t.
+Proof.
+  intros C Cu Cg T dc t. rewrite <- (PublicTypeRead.app_subst_nil t) at 2.
+  apply PublicTypeRead.subst2_agree. intros y _. cbn [app_subst lookup_subst].
+  destruct (lookup_subst y (A.link_adopted_inputs C Cu Cg)) as [value|] eqn:Adopted; [|reflexivity].
+  apply PublicLinkAnchors.adopted_input_read in Adopted as [_ Anchor].
+  destruct (PublicLinkAnchors.input_anchor_read _ _ _ _ Anchor)
+    as (x & original & input & -> & _ & Source & _ & Shared).
+  cbn [app_subst]. rewrite (link_reading_anchor _ _ _ _ _ _ Anchor).
+  now rewrite link_reading_shared with (x := x) by
+    first [exact (in_map fst _ (x,TAbs y) Source)|exact (in_map fst _ (x,input) (PublicTypeRead.nlook_in _ _ _ _ Shared))].
+Qed.
+
+Lemma linked_application_table : forall P d h Cu Cg outs binds sources th dc,
+  view_functor P h = Some (FunctorCode (map fst (A.c_ty Cg))
+    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg)))
+    (A.link_input_table Cu Cg) outs binds sources) ->
+  (forall y, In y (map fst (A.c_ty Cu)) -> lookup_subst y th <> None) ->
+  (forall y t, lookup_subst y (A.c_ty Cg) = Some t -> incl (A.gens t) (map fst (A.c_ty Cg))) ->
+  type_meanings (application_environment P d h th dc) =
+  map (fun source => (source, match lookup_subst source (A.c_ty Cg) with
+    | Some t => app_subst (link_reading Cu Cg (map (fun q => (fst q, ground d (snd q))) th) dc) t
+    | None => TAbs source
+    end)) (map fst (A.c_ty Cg)).
+Proof.
+  intros P d h Cu Cg outs binds sources th dc Code Complete Scope.
+  unfold application_environment. rewrite Code. cbn [type_meanings fc_inputs fc_linked fc_table].
+  set (linked := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
+  set (base := fun source =>
+    match (if existsb (Nat.eqb source) linked then lookup_subst source th else None) with
+    | Some meaning => ground d meaning
+    | None => PublicBodySafety.cmeaning dc source
+    end).
+  set (arguments := map (fun q => (fst q, ground d (snd q))) th).
+  assert (Base : map (fun source => (source, base source)) (map fst (A.c_ty Cg)) =
+      link_base_reading Cu Cg arguments dc).
+  { unfold link_base_reading. rewrite map_map. apply map_ext_in. intros [x value] Source.
+    cbn [fst]. f_equal. unfold base.
+    assert (Linked : existsb (Nat.eqb x) linked = existsb (Nat.eqb x) (map fst (A.c_ty Cu))).
+    { destruct (existsb (Nat.eqb x) (map fst (A.c_ty Cu))) eqn:Shared.
+      - apply existsb_exists. exists x. split; [|apply Nat.eqb_refl].
+        apply filter_In. split; [exact (in_map fst _ (x,value) Source)|exact Shared].
+      - destruct (existsb (Nat.eqb x) linked) eqn:Found; [|reflexivity].
+        apply existsb_exists in Found as [y [Member Equal]]. apply Nat.eqb_eq in Equal. subst y.
+        apply filter_In in Member as [_ Present]. congruence. }
+    rewrite Linked. destruct (existsb (Nat.eqb x) (map fst (A.c_ty Cu))) eqn:Shared; [|reflexivity].
+    assert (Member : In x (map fst (A.c_ty Cu))).
+    { apply existsb_exists in Shared as [y [Member Equal]]. apply Nat.eqb_eq in Equal. now subst y. }
+    unfold arguments. cbn [app_subst].
+    assert (Lookup : forall rows, lookup_subst x (map (fun q => (fst q, ground d (snd q))) rows) =
+      option_map (ground d) (lookup_subst x rows)).
+    { induction rows as [|[y t] rest IH]; [reflexivity|]. cbn. now destruct (Nat.eqb x y). }
+    rewrite Lookup. destruct (lookup_subst x th) as [found|] eqn:Read; [reflexivity|].
+    exfalso. exact (Complete x Member Read). }
+  change (map (fun source => (source, match lookup_subst source (A.link_input_table Cu Cg) with
+    | Some t => app_subst (map (fun y => (y, base y)) (map fst (A.c_ty Cg))) t
+    | None => base source end)) (map fst (A.c_ty Cg)) =
+    map (fun source => (source, match lookup_subst source (A.c_ty Cg) with
+      | Some t => app_subst (link_reading Cu Cg arguments dc) t
+      | None => TAbs source end)) (map fst (A.c_ty Cg))).
+  rewrite Base. apply map_ext_in. intros source Member. f_equal.
+  destruct (lookup_subst source (A.c_ty Cg)) as [t|] eqn:Read.
+  - rewrite (PublicLinkAnchors.anchored_input_table_read _ _ _ _ Read). symmetry.
+    apply link_reading_compose. exact (Scope source t Read).
+  - exfalso. exact (PublicSubstFacts.lookup_subst_in _ _ Member Read).
 Qed.
 
 Definition LinkedInputsRead (Cu Cg : A.cx) (caller body : ty -> ty) : Prop :=
@@ -76,11 +210,14 @@ Record ClosureBinding (W : A.world) (u : nat) (Cu : A.cx) (nsu : list item)
   closure_bind_inputs : forall T, ReadsMerge Cu (app_subst T) ->
     (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
     LinkedInputsRead Cu Cg (app_subst T) (app_subst (link_reading Cu Cg T dc));
-  closure_bind_provisions : forall T G, ReadsMerge Cu (app_subst T) ->
+  closure_bind_captures : forall T, ReadsMerge Cu (app_subst T) ->
     (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
-    (forall x, In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
-      lookup_subst x G = lookup_subst x T) ->
-    LinkedProvisionsRead Cu Cg nsg target T G
+    forall x, In x (map fst (A.c_ty Cg)) -> ~ In x (map fst (A.c_ty Cu)) ->
+    output_meaning dc x <> None ->
+    lookup_subst x (link_reading Cu Cg T dc) = Some (PublicBodySafety.cmeaning dc x);
+  closure_bind_provisions : forall T, ReadsMerge Cu (app_subst T) ->
+    (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
+    LinkedProvisionsRead Cu Cg nsg target T (link_reading Cu Cg T dc)
 }.
 
 Lemma reads_empty_merge : forall C read, A.c_merge C = [] -> ReadsMerge C read.

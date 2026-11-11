@@ -235,22 +235,24 @@ Definition choose_link_target (Cu Cg : cx) (nsu : list item) (rho : subst)
     else Ok None
   else if linked_need Cu nsu k then Err error else Ok None.
 
-Definition link_need_choice (Cu Cg : cx) (nsu : list item) (rho : subst) (error : string) (k : item) : er (option item) :=
+Definition link_need_choice (Cu Cg : cx) (nsu : list item) (rho adopted : subst) (error : string) (k : item) : er (option item) :=
   match ilook (provision_id k) (c_provisions Cg) with
-  | Some p => choose_link_target Cu Cg nsu rho k p error
+  | Some p => choose_link_target Cu Cg nsu rho (app_subst_item adopted k) (provision_subst adopted p) error
   | None => Err error
   end.
 
-Definition unsafe_capture (Cu Cg : cx) (target : item -> option item) (fixed : list nat) (k : item) : bool :=
+Definition unsafe_capture (Cu Cg : cx) (target : item -> option item) (fixed : list nat) (adopted : subst) (k : item) : bool :=
   if is_linked target k then false else
   match ilook (provision_id k) (c_provisions Cg) with
-  | Some p => negb (forallb (fun t => negb (bound_in Cu t) || nmem t fixed) (link_need_gens k p))
+  | Some p => negb (forallb (fun t => negb (is_some (lookup_subst t adopted)) &&
+      (negb (bound_in Cu t) || nmem t fixed)) (link_need_gens k p))
   | None => false
   end.
 
-Definition linked_type_agrees (Cu Cg : cx) (rho private : subst) (x : nat) : bool :=
+Definition linked_type_agrees (Cu Cg : cx) (rho private adopted : subst) (x : nat) : bool :=
   match nlook x (c_ty Cg) with
   | Some tx => if bound_in Cu x then
+      let tx := app_subst adopted tx in
       forallb (fun y => bound_in Cu y || is_some (lookup_subst y private)) (gens tx) &&
       ty_eqb (app_subst rho (canon Cu (TAbs x))) (app_subst (private ++ rho) (canon Cu tx)) else true
   | None => true
@@ -258,7 +260,7 @@ Definition linked_type_agrees (Cu Cg : cx) (rho private : subst) (x : nat) : boo
 
 (* Check the source binding separately from lookup or generation of body code. *)
 Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item)
-    (recorded private : subst) : M (item -> option item) :=
+    (recorded private adopted : subst) : M (item -> option item) :=
   let nu := qs W u in let ng := qs W gg in
   let bound_to := (ng ++ ", bound to " ++ nu ++ ",")%string in
   let error := (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)")%string in
@@ -266,12 +268,12 @@ Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx)
   let* state := get in
   let rho := site_theta (es_next state) Cu recorded private in
   let* choices := pure (rmap (fun k =>
-    let! choice := link_need_choice Cu Cg nsu rho error k in Ok (k, choice)) nsg) in
+    let! choice := link_need_choice Cu Cg nsu rho adopted error k in Ok (k, choice)) nsg) in
   let target := fun k => match ilook k choices with Some choice => choice | None => None end in
-  let* _ := match find (unsafe_capture Cu Cg target fu) nsg with
+  let* _ := match find (unsafe_capture Cu Cg target fu adopted) nsg with
       | Some k => fail (bound_to ++ " captures " ++ qkey W k ++ ", which mentions a type each application of " ++ nu ++ " supplies (D84 3b)")
       | None => ret tt end in
-  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg rho private (fst q)) (c_ty Cg))
+  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg rho private adopted (fst q)) (c_ty Cg))
       (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
   ret target.
 
@@ -404,7 +406,9 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
             | None => ret tt end in
   let* _ := check (same_result W fuel u gg) (result_mismatch u gg) in
   let fx := fixed_here u C in
-  let* target := check_link_binding u gg Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) (link_private_readings C Cu Cg) in
+  let adopted := link_adopted_inputs C Cu Cg in
+  let* target := check_link_binding u gg Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx)
+    (link_private_readings C Cu Cg) adopted in
   let* h := link_body u gg in
   let sm := translate_link_targets Cu Cg target nsg in
   let thg := map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg) in

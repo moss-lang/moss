@@ -114,7 +114,7 @@ Proof.
     Same) as ResultsAgree.
   set (fx := EaFunctor.fixed_here E u C) in *.
   apply EaControlSound.mbind_ok in Run as (target & s6 & Binding & Run).
-  apply (EaLinkBindingSound.check_link_binding_sound E bound Bounded Budget _ _ _ _ _ _ _ _ _ _ _
+  apply (EaLinkBindingSound.check_link_binding_sound E bound Bounded Budget u gg Cu nsu Cg nsg _ _ _ _ _ target
     FormalTarget Floor) in Binding as [-> LinkBinding].
   apply EaControlSound.mbind_ok in Run as (h & s7 & Link & Run).
   set (sm := EaFunctor.translate_link_targets Cu Cg target nsg) in *.
