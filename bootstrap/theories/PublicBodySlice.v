@@ -30,7 +30,6 @@ Variable state_ok : heap_types -> Prims.mstate -> Prop.
 
 Hypothesis Layouts : Platform.Layouts W.
 (* HYPOTHESES (T29): context formation's own premises (PublicFormation). *)
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis Bools : BoolSymbols W Prog.
@@ -1455,7 +1454,7 @@ Proof.
         apply params_typed. rewrite Params.
         clear -Args. induction Args; constructor; auto.
       + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_merge|apply add_locals_provisions|exact Real]|].
-        destruct (PublicFormation.fn_body_formed W f Cf ns None g0 (map fst ps) merge_formed mentions_typed Ctx Sig
+        destruct (PublicFormation.fn_body_formed W f Cf ns None g0 (map fst ps) mentions_typed Ctx Sig
           (PublicFormation.optok_none W)) as [Sg FBf].
         split; [exact FBf|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; apply PublicFormation.optok_none]|].
         exact (PublicScoping.fn_body_cxscoped W f Cf ns F0 None g0 (map fst ps) Ctx Sig FThis (PublicScoping.optscoped_none W Cf)). }
@@ -1514,10 +1513,10 @@ Proof.
         apply params_typed. unfold all. constructor; [rewrite This; exact Recv|].
         rewrite Params. clear -Args. induction Args; constructor; auto.
       + split; [apply (realizes_same _ Cf); [apply add_locals_ty|apply add_locals_sub|apply add_locals_merge|apply add_locals_provisions|exact Real]|].
-        pose proof (PublicFormation.ctxof_cx_formed W merge_formed mentions_typed att Cf ns Ctx) as Fc.
+        pose proof (PublicFormation.ctxof_cx_formed W mentions_typed att Cf ns Ctx) as Fc.
         assert (Ot : PublicFormation.OptOk W (Some (TNom r args))).
         { apply PublicFormation.optok_some. exact (PublicFormation.attached_this_ok W Cf r args (proj1 Fc) Reqs). }
-        destruct (PublicFormation.fn_body_formed W att Cf ns (Some (TNom r args)) g0 (map fst ps) merge_formed mentions_typed Ctx Sig Ot)
+        destruct (PublicFormation.fn_body_formed W att Cf ns (Some (TNom r args)) g0 (map fst ps) mentions_typed Ctx Sig Ot)
           as [Sg FBf].
         split; [exact FBf|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite FThis; exact Ot]|].
         apply (PublicScoping.fn_body_cxscoped W att Cf ns F0 (Some (TNom r args)) g0 (map fst ps) Ctx Sig FThis).
@@ -5194,7 +5193,7 @@ Proof.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
-    4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
+    4: { split; [exact (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg)|].
          split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
          apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (functx_locals _ _ _ FCg) in Found. discriminate.

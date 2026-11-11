@@ -525,7 +525,6 @@ Qed.
 
 (* ---- applying a copy -------------------------------------------------------- *)
 
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
@@ -576,7 +575,7 @@ Proof.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
-    4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
+    4: { split; [exact (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg)|].
          split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
          apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (S.functx_locals W _ _ _ FCg) in Found. discriminate.
@@ -589,7 +588,7 @@ Proof.
   intros rest. rewrite S.bindings_apply_eq.
   destruct j as [|j1].
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
-  destruct (S.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+  destruct (S.items_chain W Prog argv read state_ok mentions_typed family_sig_ok all_fn_elab World
     captured_in_force (S j1) k Bel (IH (S j1) LJ) _ _ _ _ _ _ _ Items) as [bs [Ew Ch']].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply S.bindsof_fold in BO. subst binds0.
   rewrite S.apply_functor_eq, Look. change (view_functor (program_of Prog argv read) code) with (PublicBodySlice.A.funbody_of Prog code). rewrite FB.

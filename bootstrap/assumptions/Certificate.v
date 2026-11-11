@@ -296,7 +296,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.safety_obligations);
   root (@PublicEntryTop.public_safety);
   root (@PublicEntryTop.handles_formed);
-  root (@NM.PublicWorldFormation.merge_formed_of);
   root (@NM.PublicWorldFormation.mentions_typed_of);
   root (@NM.PublicFamilySig.family_sig_ok_readoff);
   root (@NM.PublicScoping.ex_scoped);

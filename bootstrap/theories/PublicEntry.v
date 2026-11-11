@@ -230,14 +230,14 @@ Qed.
 
 (* main's initial state: its frame, no locals, the platform's provisions. *)
 Lemma entry_pre : forall n F C ns g types platform H0 st0,
-  PublicFormation.MergeFormed W -> PublicFormation.MentionsTyped W ->
+  PublicFormation.MentionsTyped W ->
   A.CtxOf W (program_main Prog) C ns -> FrameOk F -> A.fr_this F = None ->
   A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
   state_ok H0 st0 -> A.InitialTypes (program_machines Prog) C types -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok n F C (Environment types platform) [] H0 [] st0.
 Proof.
-  intros n F C ns g types platform H0 st0 Mf Mt Ctx Frame This Ret Sig St Types Real.
-  destruct (PublicFormation.fn_body_formed W _ C ns None g [] Mf Mt Ctx Sig (PublicFormation.optok_none W)) as [Sg Fc].
+  intros n F C ns g types platform H0 st0 Mt Ctx Frame This Ret Sig St Types Real.
+  destruct (PublicFormation.fn_body_formed W _ C ns None g [] Mt Ctx Sig (PublicFormation.optok_none W)) as [Sg Fc].
   split; [exact Frame|]. split; [split|split; [apply Forall2_nil|split; [exact St|split; [exact Real|]]]].
   3: { split; [exact Fc|]. split; [split; [rewrite Ret; apply PublicFormation.optok_some; exact (proj2 Sg)|rewrite This; apply PublicFormation.optok_none]|].
        exact (PublicScoping.fn_body_cxscoped W _ C ns F None g [] Ctx Sig This (PublicScoping.optscoped_none W C)). }
@@ -376,7 +376,7 @@ Proof.
   pose proof FD as (FC & _ & PRf & _ & Binds & _).
   destruct (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.forall2_in_l _ _ _ _ _ _ Binds Ik) as [bd [_ [op' [_ [_ [_ [_ HR]]]]]]].
   rewrite Ek in HR. pose proof (HR gf Mgf) as Raws.
-  pose proof (PublicFormation.functx_cx_formed W (PublicWorldFormation.merge_formed_of W)
+  pose proof (PublicFormation.functx_cx_formed W
     (PublicWorldFormation.mentions_typed_of b W Wo) u inputs needs FC) as Fi.
   pose proof (PublicFormation.apply_abstract_formed W inputs u (fun t => t) outputs keys Fi
     (fun t _ => or_introl eq_refl) PRf) as Fo.
@@ -461,7 +461,7 @@ Theorem entry_safe : forall prelude
   (forall Prog iface initial bundle W, M.Compatible Prog iface ->
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
+     PublicFormation.MentionsTyped W /\
      exists H0, state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface H0 (iface, initial) /\
        forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> A.InitialTypes (program_machines Prog) C types ->
          program_environment Prog = Environment types platform ->
@@ -473,7 +473,7 @@ Theorem entry_safe : forall prelude
   SR.entry_never_stuck prelude.
 Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
-  destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [[Mf Mt] [H0 [St Prims]]]].
+  destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [Mt [H0 [St Prims]]]].
   pose proof Link as (_ & Lay & Reps & _).
   pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys) & _).
   destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
@@ -486,7 +486,7 @@ Proof.
   - exact MainDecl.
   - intros C0 ns0 Ctx0 F g Frame This Ret Sig.
     destruct (function_context_unique Wd _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
-    apply (entry_pre Wd Prog _ _ _ fuel F C ns g types platform H0 _ Mf Mt Ctx Frame This Ret Sig St Types).
+    apply (entry_pre Wd Prog _ _ _ fuel F C ns g types platform H0 _ Mt Ctx Frame This Ret Sig St Types).
     apply (entry_realizes Wd Prog _ _ _ fuel C ns types platform H0 Lay Reps Ctx Types Keys Entries).
     intros f op sg Ip Found At. exact (Prims fuel C ns types platform Ctx Types Env f op sg Ip Found At).
 Qed.
@@ -498,7 +498,7 @@ Theorem entry_safe_public : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Safe W Prog (M.arguments initial) (M.read_file initial)
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
+     PublicFormation.MentionsTyped W /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
   SR.entry_never_stuck prelude.
@@ -525,7 +525,7 @@ Theorem safety_public : forall prelude,
      A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
      (forall k, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Safe W Prog (M.arguments initial) (M.read_file initial)
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
-     (PublicFormation.MergeFormed W /\ PublicFormation.MentionsTyped W) /\
+     PublicFormation.MentionsTyped W /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
         Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
   forall program interface initial,
@@ -545,7 +545,7 @@ Proof.
   destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
   destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
-  pose proof (PublicFormation.ctxof_cx_formed W (PublicWorldFormation.merge_formed_of W)
+  pose proof (PublicFormation.ctxof_cx_formed W
     (PublicWorldFormation.mentions_typed_of bundle W Wo) _ C ns Ctx) as Fc.
   pose proof (PublicFormation.fns_ok W C f sg (proj1 Fc) Found) as [Fp Fr].
   assert (Formed : Forall (PublicFormation.TyOk W) (A.sg_ret sg :: A.sg_params sg)) by (constructor; assumption).
@@ -580,7 +580,7 @@ Proof. intros W F C tr x t L [_ [_ Cs]]. exact (PublicScoping.literal_scoped W C
 Lemma demand_scoped_ok : forall W b, A.WorldOf b W -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.DemandScopedOk W.
 Proof.
   intros W b Wo F C X f Cf ns th r m [Fc _] Tin Es Ctx CT RB I.
-  exact (PublicScoping.demand_at_th_scoped W C X f Cf ns th r m (PublicWorldFormation.merge_formed_of W)
+  exact (PublicScoping.demand_at_th_scoped W C X f Cf ns th r m
     (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es Tin Ctx CT RB I).
 Qed.
 
@@ -637,7 +637,7 @@ Proof.
   intros Prog iface initial bundle W Compat Elab Link.
   assert (CRz : FCp.CRz.CSg.FL.CF.CN.ChainRealizeOk W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
-    by exact (FCp.CRz.chain_realize_ok W Prog _ _ _ (ex_intro _ bundle (proj1 Elab)) (PublicWorldFormation.merge_formed_of W)
+    by exact (FCp.CRz.chain_realize_ok W Prog _ _ _ (ex_intro _ bundle (proj1 Elab))
       (PublicWorldFormation.mentions_typed_of bundle W (proj1 Elab))).
 
   assert (RAc : FCp.CRz.CSg.FL.CF.ChainForwardCopySigs W Prog (M.arguments initial) (M.read_file initial)
@@ -658,10 +658,9 @@ Proof.
   pose proof Elab as (Wo & AllFn & _).
   pose proof (FCp.CRz.CSg.FL.family_link_new_ok W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface)
-    (ex_intro _ bundle Wo) (PublicWorldFormation.merge_formed_of W) (PublicWorldFormation.mentions_typed_of bundle W Wo)) as FLN.
+    (ex_intro _ bundle Wo) (PublicWorldFormation.mentions_typed_of bundle W Wo)) as FLN.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
   pose proof Link as (_ & Lay & Reps & _).
-  pose proof (PublicWorldFormation.merge_formed_of W) as Mf.
   pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].
@@ -671,13 +670,13 @@ Proof.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.chain_platform_ok W Prog _ _ _ RA (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.chain_prims_of_ground W Prog _ _ _ PG)) as CP.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.family_platform_ok W Prog _ _ _ PG FRA) as FPA.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.link_results_of_chain W Prog _ _ _ CR) as LR.
-  pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_apply_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
+  pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.copy_apply_ok W Prog _ _ _ Mt Fs AllFn (ex_intro _ bundle Wo) CIF CR CP) as CA.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.platform_apply_of_chain W Prog _ _ _ CP) as PA.
-  pose proof (FCp.family_copy_realize_ok W Prog _ _ _ (ex_intro _ bundle Wo) Mf Mt Fs AllFn CIF LR CA PA PG) as FCA.
+  pose proof (FCp.family_copy_realize_ok W Prog _ _ _ (ex_intro _ bundle Wo) Mt Fs AllFn CIF LR CA PA PG) as FCA.
   assert (FSt : FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.FamilyStepOk W Prog _ _ _)
-    by exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.family_step_ok W Prog _ _ _ Mf Mt Fs AllFn (ex_intro _ bundle Wo) CIF LR CA PA FLR FCA FPA).
-  split; [|split; [split; assumption|exact (handles_formed bundle W Prog Elab Link)]].
-  exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.safe_all W Prog _ _ _ Lay Mf Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
+    by exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.family_step_ok W Prog _ _ _ Mt Fs AllFn (ex_intro _ bundle Wo) CIF LR CA PA FLR FCA FPA).
+  split; [|split; [exact Mt|exact (handles_formed bundle W Prog Elab Link)]].
+  exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.safe_all W Prog _ _ _ Lay Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
     (ex_intro _ bundle Wo) CIF LR CA PA).
 Qed.
 

@@ -49,12 +49,11 @@ Proof.
 Qed.
 
 (* Context formation's premises, as the body slice assumes them (T29). *)
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 
 Lemma functx_keys_declared : forall u Cu ns, FunCtx W u Cu ns -> forall x, In x (map fst (c_ty Cu)) -> ~ Fresh W x.
 Proof.
-  intros u Cu ns Fc x I Fr. destruct (PublicFormation.functx_cx_formed W merge_formed mentions_typed u Cu ns Fc) as [_ [_ Ty]].
+  intros u Cu ns Fc x I Fr. destruct (PublicFormation.functx_cx_formed W mentions_typed u Cu ns Fc) as [_ [_ Ty]].
   pose proof (Ty x I) as K. unfold kind_sym, Fresh in *. rewrite Fr in K. discriminate.
 Qed.
 

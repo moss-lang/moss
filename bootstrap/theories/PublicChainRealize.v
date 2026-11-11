@@ -591,21 +591,20 @@ Qed.
 
 Section Roles.
 Variable W : A.world.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 
 Lemma fresh_off_dom : forall v Cv ns (g : nat -> nat) outs, A.FunCtx W v Cv ns -> (forall t, In t outs -> A.Fresh W (g t)) ->
   forall x, In x (map fst (A.c_ty Cv)) -> ~ In x (map g outs).
 Proof.
   intros v Cv ns g outs Fc Fr x Ix I. apply in_map_iff in I as [t [<- It]].
-  exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed v Cv ns Fc (g t) Ix (Fr t It)).
+  exact (PublicCopyFresh.functx_keys_declared W mentions_typed v Cv ns Fc (g t) Ix (Fr t It)).
 Qed.
 
 Lemma fresh_not_sub : forall v Cv ns z, A.FunCtx W v Cv ns -> A.Fresh W z -> lookup_subst z (A.c_sub Cv) = None.
 Proof.
   intros v Cv ns z Fc Fz. destruct (lookup_subst z (A.c_sub Cv)) as [w|] eqn:L; [|reflexivity]. exfalso.
   destruct (functx_scoped W v Cv ns Fc) as (_ & _ & _ & _ & _ & _ & SubSc).
-  exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed v Cv ns Fc z (proj1 (SubSc z w (lookup_subst_in_pair _ _ _ L))) Fz).
+  exact (PublicCopyFresh.functx_keys_declared W mentions_typed v Cv ns Fc z (proj1 (SubSc z w (lookup_subst_in_pair _ _ _ L))) Fz).
 Qed.
 
 Lemma tableok_roles : forall v Cv ns (g : nat -> nat) (M : nat -> ty) outs R, A.FunCtx W v Cv ns ->
@@ -812,7 +811,6 @@ Section R2.
 Variable W : A.world.
 Variable Prog : program.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Variables (h0 gg : nat) (Ch0 Cg Cb : A.cx) (nsh0 nsg : list item) (Fg Fb : A.frame)
   (its : list (spec * option aexpr)) (wrap : expr -> expr) (made outs : list nat) (gen : nat -> nat) (Cr : A.cx) (ks : list item)
@@ -831,7 +829,7 @@ Let D0 := map fst (A.c_ty Ch0).
 Lemma d0_not_role : forall y, In y D0 -> ~ In y (map gen outs).
 Proof.
   intros y Iy I. apply in_map_iff in I as [t [<- It]].
-  exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed h0 Ch0 nsh0 FCh0 (gen t) Iy (FrGen t It)).
+  exact (PublicCopyFresh.functx_keys_declared W mentions_typed h0 Ch0 nsh0 FCh0 (gen t) Iy (FrGen t It)).
 Qed.
 
 Lemma r2 : forall k, In k ks -> forall p, A.ilook (A.provision_id k) (A.c_provisions Cr) = Some p ->
@@ -841,7 +839,7 @@ Proof.
   intros k Ik p Lp.
   destruct World as [bw Wo].
   pose proof (PublicFormation.units_bare_of W bw Wo) as UB.
-  pose proof (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg) as FormG.
+  pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
   pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf) as ScopeB.
   pose proof (proj2 (PublicContextFacts.functor_context_merge W gg Cg nsg FCg)) as SectionG.
   pose proof (step_scope_section _ _ _ ScopeB SectionG) as SectionB.
@@ -918,7 +916,6 @@ Variable W : A.world.
 Variables (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Let P := program_of Prog argv read.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Variables (n : nat) (H3 : heap_types).
 
@@ -1011,9 +1008,9 @@ Proof.
     assert (FunFx : forall x t t', In (x, t) fx1 -> In (x, t') fx1 -> t = t').
     { intros x t t' I I'. destruct (proj1 (Fx1 x t) I) as [_ E]. destruct (proj1 (Fx1 x t') I') as [_ E']. congruence. }
     assert (GS : forall t, In t outs -> lookup_subst (gen t) (A.c_sub Cu) = None)
-      by (intros t It; exact (fresh_not_sub W merge_formed mentions_typed u Cu nsu (gen t) FCu (FrG t It))).
+      by (intros t It; exact (fresh_not_sub W mentions_typed u Cu nsu (gen t) FCu (FrG t It))).
     assert (GSh : forall t, A.FunOutputs W h t -> lookup_subst (gen t) (A.c_sub Ch) = None)
-      by (intros t Ft; exact (fresh_not_sub W merge_formed mentions_typed h Ch nsh (gen t) FCh (FrG t (HU t Ft)))).
+      by (intros t Ft; exact (fresh_not_sub W mentions_typed h Ch nsh (gen t) FCh (FrG t (HU t Ft)))).
     (* a generation of F's table readings, or an output role *)
     assert (Gen : forall x, ((exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In x (A.gens w)) \/ (exists t, In t outs /\ x = gen t)) ->
       PublicCopySubst.CopyGen sigma ys cg Tu rho0 x).
@@ -1028,7 +1025,7 @@ Proof.
         unfold rho0. rewrite tv_off by (intros z Iz Ig; exact (Av z Iz (in_or_app _ _ _ (or_introl Ig)))).
         change (ground d1 (A.canon C1 tx) = app_subst Tu (TAbs x)). rewrite (Ab1 tx). unfold ground. rewrite Fg.
         unfold Tu, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]].
-        apply (fresh_off_dom W merge_formed mentions_typed u Cu nsu gen outs FCu FrG).
+        apply (fresh_off_dom W mentions_typed u Cu nsu gen outs FCu FrG).
         exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W u Cu nsu x AbU FCu Fu).
       - intros Ls Ny. destruct Kx as [Kx|[t [It ->]]].
         + exfalso. apply Ny. apply Ys. split; [exact Kx|exact Ls].
@@ -1051,7 +1048,7 @@ Proof.
       exact (GenC y (result_gens_out W h Ch nsh h gen Cr' ks' FCh PRh' GSh k' p' (nth_error_In _ _ Kj) Lp' y Iy) x Ix'). }
     assert (NdC : NoDup (map cg ys)) by exact (NoDup_app_remove_l _ _ Nd).
     pose proof (PublicCopySubst.copy_outputs_at sigma ys cg Tu rho0 NdC _ _ Ep GenF GenH) as Ept0.
-    assert (TokU' : PublicChainSigs.TableOk Tu Cu) by exact (tableok_roles W merge_formed mentions_typed u Cu nsu gen M outs Tin FCu FrG Tok).
+    assert (TokU' : PublicChainSigs.TableOk Tu Cu) by exact (tableok_roles W mentions_typed u Cu nsu gen M outs Tin FCu FrG Tok).
     pose proof (PublicChainSigs.sub_inv W u Cu nsu Tu FCu TokU') as InvUu.
     assert (Ept : A.provision_subst Tu p = A.provision_subst Tu p').
     { rewrite Ept0. unfold A.canon_provision. apply PublicCopySubst.provision_agree. intros x _. exact (InvUu (TAbs x)). }
@@ -1092,7 +1089,7 @@ Proof.
       A.nlook x (A.c_ty Ch) = None -> A.kind_sym W x = Some A.DKType).
     { intros q pa x _ N N'. exfalso. exact (N N'). }
     assert (G1f : forall t, In t outsh -> ~ In (gh t) (map fst (A.c_ty Ch)))
-      by (intros t It I; exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed h Ch nsh FCh (gh t) I (Frh t It))).
+      by (intros t It I; exact (PublicCopyFresh.functx_keys_declared W mentions_typed h Ch nsh FCh (gh t) I (Frh t It))).
     assert (G2s : forall t, In t outsh -> lookup_subst (gen t) (A.c_sub Ch) = None)
       by (intros t It; exact (GSh t (proj1 (Oh t) It))).
     destruct (level_rel W Ch h thh gh gen outsh Ch nsh Crh ksh Cr' ks' PartsH FCh PRh (fun t => IdmH t) KTh Oh G1f Injh G2s)
@@ -1132,15 +1129,15 @@ Proof.
       pose proof (I1 (A.c_provisions Ch)) as I1'. rewrite ECrh in Lph. cbn [A.output_cx A.c_provisions] in Lph. congruence. }
     subst ph.
     (* the two valuations along h's two readings *)
-    assert (TokHu : PublicChainSigs.TableOk Tu Ch) by exact (tableok_roles W merge_formed mentions_typed h Ch nsh gen M outs Tin FCh FrG TokH).
-    assert (TokH' : PublicChainSigs.TableOk Th Ch) by exact (tableok_roles W merge_formed mentions_typed h Ch nsh gh M outsh Tin FCh Frh TokH).
+    assert (TokHu : PublicChainSigs.TableOk Tu Ch) by exact (tableok_roles W mentions_typed h Ch nsh gen M outs Tin FCh FrG TokH).
+    assert (TokH' : PublicChainSigs.TableOk Th Ch) by exact (tableok_roles W mentions_typed h Ch nsh gh M outsh Tin FCh Frh TokH).
     assert (OnK : forall x, In x (map fst (A.c_ty Ch) ++ map gh outsh) -> app_subst Tu (app_subst s1r (TAbs x)) = app_subst Th (TAbs x)).
     { intros x Ix. apply in_app_or in Ix as [Ix|Ix].
       - unfold s1r. rewrite (app_subst_app_dom thh _ (TAbs x)) by (rewrite ThKeys; intros y [<-|[]]; exact Ix).
         rewrite (PublicChainSigs.th_inv W h Ch nsh Tu (A.c_ty Ch) FCh TokHu).
         unfold Tu, Th, Tv. rewrite !tv_off; [reflexivity| |].
-        + intros z [<-|[]]. exact (fresh_off_dom W merge_formed mentions_typed h Ch nsh gh outsh FCh Frh x Ix).
-        + intros z [<-|[]]. exact (fresh_off_dom W merge_formed mentions_typed h Ch nsh gen outs FCh FrG x Ix).
+        + intros z [<-|[]]. exact (fresh_off_dom W mentions_typed h Ch nsh gh outsh FCh Frh x Ix).
+        + intros z [<-|[]]. exact (fresh_off_dom W mentions_typed h Ch nsh gen outs FCh FrG x Ix).
       - apply in_map_iff in Ix as [t [<- It]]. unfold s1r.
         rewrite (s1_role W Ch h thh gh gen outsh Ch Cr' ks' PartsH G1f Injh t It).
         unfold Tu, Th, Tv. rewrite !tv_role; [reflexivity|exact It|exact Injh|exact (HU t (proj1 (Oh t) It))|exact InjG]. }
@@ -1207,7 +1204,7 @@ Proof.
   set (D0 := map fst (A.c_ty Ch0)).
   assert (NR : forall y, In y D0 -> ~ In y (map gen outs')).
   { intros y Iy I. apply in_map_iff in I as [t [<- It]].
-    exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed h0 Ch0 nsh0 FC0 (gen t) Iy (FrG t It)). }
+    exact (PublicCopyFresh.functx_keys_declared W mentions_typed h0 Ch0 nsh0 FC0 (gen t) Iy (FrG t It)). }
   set (Ls := A.link_site Cg Cb pins outs' gen).
   set (rr := (A.role_reads Ls outs' gen ++ A.pin_reads Cb pins)%list).
   set (T0 := Tv (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin gen outs').
@@ -1263,12 +1260,12 @@ Proof.
   intros i k Ki. pose proof (nth_error_In _ _ Ki) as Ik.
   destruct (CSg.FL.CF.CN.CC.body_provides W Prog argv read state_ok n Ls d3 H3 Cr ks' rr (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_link_site W Prog argv read state_ok n Cg Cb pins outs' gen d3 H3 Real3) RR k Ik)
     as [p [pv [Lp [Lpv BR]]]].
-  destruct (r2 W Prog World merge_formed mentions_typed h0 gg Ch0 Cg Cb nsh0 nsg Fg Fb _ wrap made outs' gen Cr ks' pins
+  destruct (r2 W Prog World mentions_typed h0 gg Ch0 Cg Cb nsh0 nsg Fg Fb _ wrap made outs' gen Cr ks' pins
     FC0 FCg Items FrGf MadeOut FrG RR k Ik p Lp) as [R2s R2r].
   assert (GS : forall t, A.FunOutputs W h0 t -> lookup_subst (gen t) (A.c_sub Ch0) = None)
-    by (intros t Ft; exact (fresh_not_sub W merge_formed mentions_typed h0 Ch0 nsh0 (gen t) FC0 (FrG t (proj2 (OutsR t) Ft)))).
+    by (intros t Ft; exact (fresh_not_sub W mentions_typed h0 Ch0 nsh0 (gen t) FC0 (FrG t (proj2 (OutsR t) Ft)))).
   assert (OkP : forall y, In y (rel_gens p) -> OkG2 y).
-  { intros y Iy. destruct (PublicCopyFresh.result_gens W merge_formed mentions_typed h0 Ch0 nsh0 h0 gen Cr ks' FC0 PR
+  { intros y Iy. destruct (PublicCopyFresh.result_gens W mentions_typed h0 Ch0 nsh0 h0 gen Cr ks' FC0 PR
       (fun t Ft => FrG t (proj2 (OutsR t) Ft)) k p Ik Lp y (rel_gens_sub p y Iy)) as [I0|[t [Ft ->]]].
     - destruct (R2s y Iy I0) as [Ig|Ip]; [left; left; split; [exact I0|exact Ig]|right; exact Ip].
     - left. right. exists t. split; [exact (proj2 (OutsR t) Ft)|reflexivity]. }
@@ -1347,7 +1344,7 @@ Proof.
   destruct LvU as (gu & outsu & Cru & ksu & Ou & Fru & Inju & PRu & RealU).
   pose proof (CSg.FL.CF.app_keys_typed W F C pa u fx Cu ns sm th gensof C' ks newgens outs TsC AP) as KT.
   assert (G1f : forall t, In t outsu -> ~ In (gu t) (map fst (A.c_ty Cu)))
-    by (intros t It I; exact (PublicCopyFresh.functx_keys_declared W merge_formed mentions_typed u Cu ns FC (gu t) I (Fru t It))).
+    by (intros t It I; exact (PublicCopyFresh.functx_keys_declared W mentions_typed u Cu ns FC (gu t) I (Fru t It))).
   pose proof (CSg.FL.CF.CN.CC.LR.dest_scope W F C pa u fx Cu ns sm th gensof C' ks newgens outs AP FmC (CSg.FL.CF.CN.CC.LR.kept_outputs_unmentioned W)) as DS.
   assert (G2s : forall t, In t outsu -> lookup_subst (gensof t) (A.c_sub C) = None).
   { intros t It. destruct (lookup_subst (gensof t) (A.c_sub C)) as [w|] eqn:L; [|reflexivity]. exfalso.
@@ -1404,7 +1401,7 @@ Proof.
   set (Tu := Tv M Tin gu outsu).
   assert (TokU : PublicChainSigs.TableOk Tin Cu).
   { intros x tx Lx. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst, (TyA x tx Lx), ThS. reflexivity. }
-  assert (TokU' : PublicChainSigs.TableOk Tu Cu) by exact (tableok_roles W merge_formed mentions_typed u Cu ns gu M outsu Tin FC Fru TokU).
+  assert (TokU' : PublicChainSigs.TableOk Tu Cu) by exact (tableok_roles W mentions_typed u Cu ns gu M outsu Tin FC Fru TokU).
   pose proof (CSg.FL.CF.CN.CC.LR.result_grows_by_destinations d d3 dr outs gensof) as Gr.
   assert (AvC : forall g0, In g0 (map gensof outs) -> ~ In g0 (A.context_gens C)).
   { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]]. destruct (DS t It) as [_ [Nc _]]. exact (fun I => Nc (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.cg_l C _ I)). }
@@ -1417,7 +1414,7 @@ Proof.
       change (ground d' (app_subst th (TAbs x)) = app_subst Tu (TAbs x)).
       rewrite (CSg.FL.CF.CN.CC.LR.ground_grow_writes (map gensof outs) d d' _ Gr).
       + unfold Tu, Tv. rewrite tv_off; [exact (PublicCopySubst.ground_app_subst d th (TAbs x))|].
-        intros z [<-|[]]. exact (fresh_off_dom W merge_formed mentions_typed u Cu ns gu outsu FC Fru x Ix).
+        intros z [<-|[]]. exact (fresh_off_dom W mentions_typed u Cu ns gu outsu FC Fru x Ix).
       + intros g0 Ig Ig'. apply (AvC g0 Ig).
         destruct (nlook_some _ x _ Ix) as [w Lw]. destruct (Inp x w Lw) as [here Lh].
         assert (Lx : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x))))
@@ -1484,7 +1481,6 @@ Variable W : A.world.
 Variables (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 
 Theorem chain_realize_ok : CSg.FL.CF.CN.ChainRealizeOk W Prog argv read state_ok.
@@ -1589,15 +1585,15 @@ Proof.
            apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
       unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
   set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks').
-  pose proof (root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
+  pose proof (root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
     Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD LRs th d d3 _ j' g3 st st3 ThDom Run Pre3 PinT) as Root.
-  pose proof (chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
+  pose proof (chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
     Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
   assert (LenS : List.length (closure_sources rms srcs) = List.length ks).
   { refine (proj1 (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_sources_range W u gfx sms rms h0 gf0 _ None Chn eq_refl srcs _) _ _ _ _ PR).
     intros C0 o C0' ks0 P0. unfold srcs, CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite length_map.
     exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ Cr ks' C0 o C0' ks0 PR' P0). }
-  exact (top_envok W Prog argv read state_ok merge_formed mentions_typed rr H3 F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
+  exact (top_envok W Prog argv read state_ok mentions_typed rr H3 F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
     d d3 dr rms srcs Idem KMc (proj1 Fmd) (proj2 (proj2 (proj1 Fmd))) AbU LvU Sdr LenS news En).
 Qed.
 End Obligation.

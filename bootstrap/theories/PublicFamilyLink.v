@@ -33,7 +33,6 @@ Variables (Prog : program) (argv : list (list int)) (read : list int -> option (
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Let P := program_of Prog argv read.
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 
 Lemma subst_nil_item : forall k, app_subst_item [] k = k.
@@ -198,7 +197,7 @@ Proof.
   { rewrite (select_lookup _ _ _ _ Sdr), Fs, <- Es'. exact Lpv. }
   (* 6: F's signature and receiver mention only G's inputs *)
   pose proof (PublicFormation.units_bare_of W bw Wo) as UB.
-  pose proof (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg) as FormG.
+  pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
   assert (FrG' : PublicFormation.FrameFormed W Fg).
   { split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W). }
   pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrG') as ScopeB.

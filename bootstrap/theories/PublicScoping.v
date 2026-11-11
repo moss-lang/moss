@@ -1085,14 +1085,14 @@ Qed.
    table, with its merge; rule B's companion): ok, and scoped where X's
    table is.  Rule B puts each requirement in force at X through the
    callee's merge class, so θ reads it as a type X's table means. *)
-Theorem demand_at_th_scoped : forall C X f Cf ns th r m, MergeFormed W -> MentionsTyped W -> FormedCx W C ->
+Theorem demand_at_th_scoped : forall C X f Cf ns th r m, MentionsTyped W -> FormedCx W C ->
   c_sub X = c_sub C ->
   (forall x v, In (x, v) (c_ty X) -> TyOk W (canon X v) /\ ScopedTy W C (canon X v)) ->
   CtxOf W f Cf ns -> CallTheta W X Cf f th -> RequirementsInForce X Cf ->
   In (mkey r m) (map (at_th X th) ns) -> TyOk W r /\ ScopedTy W C r.
 Proof.
-  intros C X f Cf ns th r m Mf Mt Fc Es Tin Ctx [Keys [Bound Merges]] RB Ir.
-  pose proof (ctxof_cx_formed W Mf Mt f Cf ns Ctx) as [CfF _].
+  intros C X f Cf ns th r m Mt Fc Es Tin Ctx [Keys [Bound Merges]] RB Ir.
+  pose proof (ctxof_cx_formed W Mt f Cf ns Ctx) as [CfF _].
   destruct (ctx_table_formed W f Cf ns Ctx) as [_ Dom].
   assert (CX : forall t, canon X t = canon C t) by (intros t; unfold canon; rewrite Es; reflexivity).
   set (P := fun t => TyOk W t /\ ScopedTy W C t).

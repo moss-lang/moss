@@ -419,7 +419,6 @@ Module FL := PublicFamilyLink.FamilyLink Prims I0.
 
 Section Sigs.
 Variable W : A.world.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 
 Definition Abstract (v : nat) : Prop :=

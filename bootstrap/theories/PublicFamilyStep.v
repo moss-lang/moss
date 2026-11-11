@@ -228,7 +228,6 @@ Local Notation P := (program_of Prog argv read).
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 
 (* The slice's premises the abstract application uses. *)
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
@@ -465,7 +464,7 @@ Proof.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
     split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
-    4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
+    4: { split; [exact (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg)|].
          split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
          apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
     - intros n1 t mu Found. rewrite (CopyA.S.functx_locals W _ _ _ FCg) in Found. discriminate.
@@ -475,9 +474,9 @@ Proof.
       + intros k0 v0 L0. unfold de, application_environment. change (view_functor P h) with (A.funbody_of Prog h).
         rewrite FB. cbn [type_meanings fc_inputs]. rewrite CopyA.S.lookup_map_nat; [discriminate|].
         change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
-  pose proof (CopyA.S.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+  pose proof (CopyA.S.case_BApplyAbstract W Prog argv read state_ok mentions_typed family_sig_ok all_fn_elab World
     captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
-  destruct (CopyA.S.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+  destruct (CopyA.S.items_chain W Prog argv read state_ok mentions_typed family_sig_ok all_fn_elab World
     captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Ch]].
   pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply CopyA.S.bindsof_fold in BO. subst binds0.
   rewrite CopyA.S.apply_functor_eq, Look. change (view_functor P h) with (A.funbody_of Prog h). rewrite FB.

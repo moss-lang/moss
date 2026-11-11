@@ -720,17 +720,6 @@ Section Initial.
 Variable W : A.world.
 Import A.
 
-(* Legacy abstract-helper obligation (merge formation). [MostGeneralMerge] characterizes a merge
-   only as a most general idempotent unifier over the telescope's
-   generations; it does not say that the merge's values are formed. A most
-   general unifier of formed entries should map each generation to a formed
-   type (every node of a value is forced by some formed entry type).
-   Proved from most generality alone in
-   PublicWorldFormation.merge_formed_of. Actual CtxOf/FunCtx formation below
-   instead uses class shapes and SectionOf. *)
-Definition MergeFormed : Prop := forall s es, MostGeneralMerge s es -> Forall (EntryP (TyFormed W)) es ->
-  forall g t, In (g, t) s -> TyFormed W t.
-
 (* HYPOTHESIS (mentioned inputs are types). The implicit inputs of a
    functor, and the fixed inputs main's root context puts in force, are
    symbols its result mentions: type symbols, never tags or units. This
@@ -1197,14 +1186,13 @@ Qed.
 End Initial.
 
 
-(* Compatibility entry points retain the old abstract-helper signatures.
-   Actual context formation now follows ShapesRead and SectionOf, without
-   the unrelated world-wide MostGeneralMerge formation premise. *)
-Theorem ctxof_cx_formed (W : A.world) (_ : MergeFormed W) (Mt : MentionsTyped W) :
+(* Context formation follows ShapesRead and SectionOf. Both entry point
+   names are retained while consumers move to the class-based helpers. *)
+Theorem ctxof_cx_formed (W : A.world) (Mt : MentionsTyped W) :
   forall f C ns, A.CtxOf W f C ns -> FormedCx W C.
 Proof. exact (ctxof_class_formed W Mt). Qed.
 
-Theorem functx_cx_formed (W : A.world) (_ : MergeFormed W) (Mt : MentionsTyped W) :
+Theorem functx_cx_formed (W : A.world) (Mt : MentionsTyped W) :
   forall u C ns, A.FunCtx W u C ns -> FormedCx W C.
 Proof. exact (functx_class_formed W Mt). Qed.
 
@@ -1856,11 +1844,11 @@ Qed.
 
 (* A fn or method body's context: the assumes' context with the parameters. *)
 Lemma fn_body_formed : forall f C ns this g names,
-  MergeFormed W -> MentionsTyped W ->
+  MentionsTyped W ->
   CtxOf W f C ns -> SigOf W f (c_ty C) this g -> OptOk W this ->
   SigOk W g /\ FormedCx W (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine names (sg_params g)) C).
 Proof.
-  intros f C ns this g names Hm Ht Ctx Sig Th. pose proof (ctxof_cx_formed W Hm Ht f C ns Ctx) as Fc.
+  intros f C ns this g names Ht Ctx Sig Th. pose proof (ctxof_cx_formed W Ht f C ns Ctx) as Fc.
   pose proof (sigof_ok W _ _ _ _ Sig (cf_ty _ _ (proj1 Fc)) Th) as Sg.
   split; [exact Sg|exact (params_formed W C names _ Fc (proj1 Sg))].
 Qed.

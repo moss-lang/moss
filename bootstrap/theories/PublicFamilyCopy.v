@@ -44,7 +44,6 @@ Variables (Prog : program) (argv : list (list int)) (read : list int -> option (
 Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Local Notation P := (program_of Prog argv read).
 Hypothesis World : exists b, A.WorldOf b W.
-Hypothesis merge_formed : PublicFormation.MergeFormed W.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 
 (* ---- the top: the caller's new methods --------------------------------------- *)
@@ -205,7 +204,7 @@ Proof.
     { apply (CRz.rel_gens_sub (A.ProvidedMethod gf a') y).
       unfold PublicChainRealize.rel_gens, PublicCallRealize.provision_sig_gens, A.sig_gens. cbn [A.provision_signature].
       apply in_flat_map. exists t. split; assumption. }
-    destruct (PublicCopyFresh.result_gens W merge_formed mentions_typed h0 Ch0 needs h0 (fun t => t) outputs keys FC0 PRf
+    destruct (PublicCopyFresh.result_gens W mentions_typed h0 Ch0 needs h0 (fun t => t) outputs keys FC0 PRf
       (fun t Ft => match NoH t Ft with end) key _ Ik La' y Ip) as [I0|[t' [Ft _]]]; [exact I0|exfalso; exact (NoH t' Ft)]. }
   assert (Gr0 : forall y, In y (A.gens rf) -> In y (map fst (A.c_ty Ch0))).
   { intros y Iy. rewrite Ek in Ik.
@@ -315,7 +314,7 @@ Proof.
     assert (PreB : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok rr Fg Cg de [] H [] st).
     { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
       split; [split; [|split]|split; [apply Forall2_nil|split; [exact St|split; [exact RealG|]]]].
-      4: { split; [exact (PublicFormation.functx_cx_formed W merge_formed mentions_typed gg Cg nsg FCg)|].
+      4: { split; [exact (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg)|].
            split; [split; [rewrite Ret; apply PublicFormation.optok_none|rewrite This; apply PublicFormation.optok_none]|].
            apply (PublicScoping.functx_cxscoped W gg Cg nsg Fg FCg). intros t0 E0. rewrite This in E0. discriminate. }
       - intros n1 t mu Found. rewrite (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_locals W _ _ _ FCg) in Found. discriminate.
@@ -325,9 +324,9 @@ Proof.
         + intros k0 v0 L0. unfold de, application_environment. change (view_functor P code) with (A.funbody_of Prog code).
           rewrite FB. cbn [type_meanings fc_inputs]. rewrite CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_nat; [discriminate|].
           change k0 with (fst (k0, v0)). apply in_map. exact (nlook_in _ _ _ _ L0). }
-    pose proof (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.case_BApplyAbstract W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+    pose proof (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.case_BApplyAbstract W Prog argv read state_ok mentions_typed family_sig_ok all_fn_elab World
       captured_in_force link_results copy_apply platform_apply k Bel (S j1)) as Ap.
-    destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.items_chain W Prog argv read state_ok merge_formed mentions_typed family_sig_ok all_fn_elab World
+    destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.items_chain W Prog argv read state_ok mentions_typed family_sig_ok all_fn_elab World
       captured_in_force (S j1) k Bel Ap _ _ _ _ _ _ _ Items) as [bs [Ew Chb]].
     pose proof (Ew EUnit) as E0. rewrite E0 in BO. apply CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.bindsof_fold in BO. subst binds0.
     assert (AF : forall X, (match CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs with
@@ -420,9 +419,9 @@ Proof.
         2: { intros If. apply filter_In in If as [_ If]. apply existsb_exists in If as [z [Iz E]].
              apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
         unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
-    pose proof (CRz.root_level W Prog argv read state_ok merge_formed mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
+    pose proof (CRz.root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
       Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3 PinT) as Root.
-    pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
+    pose proof (CRz.chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr
       (LenU _ _ _ _ PR)) as New.
@@ -453,7 +452,7 @@ Proof.
       pose proof (Mach x Inm F0) as Mx. rewrite Egf, (Fixd x Fu) in Mx. injection Mx as Mx.
       rewrite (Gr (TAbs x) ltac:(intros y [<-|[]]; exact Ix0)). cbn [app_subst]. rewrite (ThL x (Kin x Ix0)). exact Mx. }
     pose proof (platform_level prims_ground rr H h0 code Ch0 needs outputs keys bindings FD d d2 th (fun t => TAbs t) Gr MachG) as Root0.
-    pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H h0 Ch0 needs (map (A.rkey_of outputs) keys)
+    pose proof (CRz.chain_real W Prog argv read state_ok mentions_typed rr H h0 Ch0 needs (map (A.rkey_of outputs) keys)
       (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) (fun t => TAbs t) Tin FC0 AbsH (fun _ => Root0) u gfx sms' rms' h0 gf0 None None Chn eq_refl eq_refl
       Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     set (Dr := map (A.rkey_of outputs) keys) in *.
