@@ -66,6 +66,46 @@ Proof.
       rewrite End, Next. now rewrite Nat.add_succ_r.
 Qed.
 
+Lemma allocation_floor_sound : forall support before result after,
+  EaFunctor.require_allocation_floor support before = Ok (result, after) ->
+  before = after /\ forall g, In g support -> g < es_next before.
+Proof.
+  intros support before result after Read. unfold EaFunctor.require_allocation_floor in Read.
+  destruct (forallb (fun g => Nat.ltb g (es_next before)) support) eqn:Checked; [|discriminate Read].
+  injection Read as _ <-. split; [reflexivity|]. intros g Member.
+  apply Nat.ltb_lt. now apply forallb_forall with (x := g) in Checked.
+Qed.
+
+Local Lemma application_output_batch : forall E F C u outs before rows after,
+  EaFunctor.allocate_application_outputs E F C u outs before = Ok (rows, after) ->
+  let protected := (match fr_ret F with Some t => gens t | None => [] end) ++
+    match fr_this F with Some t => gens t | None => [] end in
+  Forall2 (OutputChoice C (context_gens C ++ key_receiver_gens C) protected) outs rows /\
+  allocated_output_generations rows =
+    seq (es_next before) (length (allocated_output_generations rows)) /\
+  es_next after = es_next before + length (allocated_output_generations rows) /\
+  (outs = [] \/ forall g,
+    In g (scope_allocated (body_allocation_scope (e_W E) F C) ++
+      scope_support (body_allocation_scope (e_W E) F C)) ->
+    g < es_next before).
+Proof.
+  intros E F C u outs before rows after Run. cbn zeta.
+  unfold EaFunctor.allocate_application_outputs in Run. cbn zeta in Run.
+  apply mbind_ok in Run as (checked & start & Check & Batch).
+  assert (Floor : before = start /\ (outs = [] \/ forall g,
+    In g (scope_allocated (body_allocation_scope (e_W E) F C) ++
+      scope_support (body_allocation_scope (e_W E) F C)) -> g < es_next before)).
+  {
+    destruct outs as [|role rest].
+    - injection Check as _ <-. auto.
+    - apply allocation_floor_sound in Check as [-> Below]. split; [reflexivity|right].
+      intros g Present. apply Below. cbn [body_allocation_scope scope_allocated scope_support] in Present.
+      rewrite !in_app_iff in *. tauto.
+  }
+  destruct Floor as [<- Floor]. apply output_batch_sound in Batch as (Choices & Range & After).
+  now split.
+Qed.
+
 Theorem allocate_application_outputs_range : forall E F C u outs before rows after,
   EaFunctor.allocate_application_outputs E F C u outs before = Ok (rows, after) ->
   let allocated := allocated_output_generations rows in
@@ -73,7 +113,7 @@ Theorem allocate_application_outputs_range : forall E F C u outs before rows aft
   es_next after = es_next before + length allocated.
 Proof.
   intros E F C u outs before rows after Run. cbn zeta.
-  apply output_batch_sound in Run. exact (proj2 Run).
+  apply application_output_batch in Run as (_ & Range & End & _). now split.
 Qed.
 
 Local Lemma output_roles : forall C mentioned protected outs rows,
@@ -135,17 +175,14 @@ Theorem application_output_identities : forall E F C a before after,
   NoDup (app_outputs a) ->
   (forall t, In t (app_outputs a) <-> FunOutputs (e_W E) (app_functor a) t) ->
   (forall g, es_next before <= g -> Fresh (e_W E) g) ->
-  (forall g, In g (scope_allocated (body_allocation_scope (e_W E) F C) ++
-      scope_support (body_allocation_scope (e_W E) F C)) -> g < es_next before) ->
   (forall t, In t (app_outputs a) -> t < es_next before) ->
   FreshFor (e_W E) F C (app_allocated a) /\
   (forall x y, FunOutputs (e_W E) (app_functor a) x ->
     FunOutputs (e_W E) (app_functor a) y -> app_identity a x = app_identity a y -> x = y) /\
   OutputIdentityAt (e_W E) F C a.
 Proof.
-  intros E F C a before after Run Unique Roles Fresh Below RolesBelow.
-  unfold EaFunctor.allocate_application_outputs in Run. cbn zeta in Run.
-  apply output_batch_sound in Run as (Choices & Range & _).
+  intros E F C a before after Run Unique Roles Fresh RolesBelow.
+  apply application_output_batch in Run as (Choices & Range & _ & Floor).
   assert (Read : forall role, In role (app_outputs a) ->
     exists choice, In (role, choice) (app_output_choices a) /\
       OutputChoice C (context_gens C ++ key_receiver_gens C)
@@ -159,8 +196,13 @@ Proof.
     unfold output_choice_at. rewrite (nlook_unique_row _ _ _ _ Unique Row). reflexivity.
   }
   split.
-  { unfold FreshFor, app_allocated. rewrite Range.
-    exact (proj1 (AllocationFacts.allocate_range (body_allocation_scope (e_W E) F C) _ _ Fresh Below)). }
+  {
+    unfold FreshFor, app_allocated.
+    destruct Floor as [Empty|Below].
+    - rewrite Empty in Choices. inversion Choices. split; constructor.
+    - rewrite Range. exact (proj1 (AllocationFacts.allocate_range
+        (body_allocation_scope (e_W E) F C) _ _ Fresh Below)).
+  }
   split.
   - intros x y X Y Equal. apply Roles in X, Y.
     destruct (Read x X) as (choice_x & Rx & _ & Ex).
@@ -218,13 +260,11 @@ Theorem apply_abstract_sound : forall E bound F C pa u before wrap result F' mad
   resolve_sym (e_W E) (fr_mod F) pa = Some u ->
   kind_sym (e_W E) u = Some DKFunctor ->
   bound <= es_next before ->
-  (forall g, In g (scope_allocated (body_allocation_scope (e_W E) F C) ++
-      scope_support (body_allocation_scope (e_W E) F C)) -> g < es_next before) ->
   EaFunctor.apply_abstract E F C u before = Ok ((wrap, result, F', made), after) ->
   BindItem (e_W E) P F C (Spec (Some pa) None None, None) wrap result F' made.
 Proof.
   intros E bound F C pa u before wrap result F' made after P
-    Bounded Budget Contexts Resolved Kind Counter Scope Run.
+    Bounded Budget Contexts Resolved Kind Counter Run.
   unfold EaFunctor.apply_abstract in Run. cbv zeta in Run.
   apply mbind_ok in Run as (fx & s1 & Read & Run).
   destruct (cfun C u) as [fixed|] eqn:Available; [|discriminate Read].
@@ -278,11 +318,11 @@ Proof.
   { intros g Above. unfold Fresh. destruct (w_decl (e_W E) g) as [d|] eqn:Declaration;
       [pose proof (Bounded g d Declaration); lia|reflexivity]. }
   assert (RowRoles : map fst rows = outs).
-  { apply output_batch_sound in Allocated as (Choices & _). eapply output_roles; exact Choices. }
+  { apply application_output_batch in Allocated as (Choices & _). eapply output_roles; exact Choices. }
   rewrite <- RowRoles in Allocated, Unique, Roles, Below |- *.
   pose (a := Application u formal needs th rows C' ks).
   destruct (application_output_identities E F C a _ _ Allocated
-    Unique Roles Unused Scope Below) as (Fresh & Injective & Identities).
+    Unique Roles Unused Below) as (Fresh & Injective & Identities).
   assert (KeysRead : map (rkof C') ks = map (rkey_of C') ks).
   { apply map_ext. apply EaSatisfiesSound.rkof_exact. }
   rewrite KeysRead. apply (@BApplyAbstract _ _ F C pa a).

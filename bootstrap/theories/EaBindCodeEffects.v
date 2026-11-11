@@ -20,6 +20,7 @@ Theorem copy_interpretation_code_effect : forall E sigma u h Cu nsu nsh Ch,
   PreservesOldCode (EaFunctor.copy_interpretation E sigma u h Cu nsu nsh Ch).
 Proof.
   intros E sigma u h Cu nsu nsh Ch. unfold EaFunctor.copy_interpretation.
+  apply code_effect_bind; [apply code_effect_require_allocation_floor|intros []].
   apply code_effect_bind; [apply fresh_table_code_effect|]. intro outputs.
   apply code_effect_bind; [apply fresh_table_code_effect|]. intro inputs.
   apply code_effect_bind; [apply code_effect_check|intros []].

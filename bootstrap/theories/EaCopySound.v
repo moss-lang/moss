@@ -6,6 +6,7 @@ From NM Require EaAllocationSound EaClosureSound EaContextFuel EaContextTableSou
   EaCopyNeedSound EaDeclarationSound EaDependencyFuel EaFamilySound EaLinkBodySound EaMain EaMainSymbols
   EaOutputSound EaResultBudget EaRootSound EaSatisfiesSound PublicCallRealize PublicContextFacts
   PublicTypeFacts PublicTypeRead.
+From NM Require EaApplicationSound.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -204,13 +205,14 @@ Hypotheses
 
 Theorem copy_interpretation_sound : forall sigma u h Cu nsu nsh Ch before sm rm after,
   FunCtx W h Ch nsh -> bound <= es_next before ->
-  (forall g, In g (scope_support (copy_allocation_scope W sigma)) -> g < es_next before) ->
   copy_interpretation E sigma u h Cu nsu nsh Ch before = Ok ((sm, rm), after) ->
   exists chosen, sm = map (fun k => (rkey_of Ch k, rkey_of Cu (chosen k))) nsh /\
     CopyInterpretation W sigma u h Cu nsu nsh Ch rm chosen.
 Proof.
-  intros sigma u h Cu nsu nsh Ch before sm rm after Source Floor Scope Run.
+  intros sigma u h Cu nsu nsh Ch before sm rm after Source Floor Run.
   unfold copy_interpretation in Run. cbv zeta in Run. fold W in Run.
+  apply EaControlSound.mbind_ok in Run as (checked & start & Check & Run).
+  apply EaApplicationSound.allocation_floor_sound in Check as [<- Scope].
   set (outs := fun_outputs W (e_metadata_fuel E) u) in *.
   set (fixed := copy_fixed_readings Cu sigma) in *.
   set (ys := uniq (filter (fun g => negb (is_some (lookup_subst g fixed)))
@@ -280,11 +282,11 @@ Theorem fun_copy_sound : forall P F C pa u pg h before wrap C' after,
   EaContextTableSound.ContextTableSound W -> EaMain.decls_form E bound = Ok tt ->
   resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
   kind_sym W h = Some DKFunctor -> PublicContextFacts.CxSection C ->
-  bound <= es_next before -> (forall g, In g (context_gens C) -> g < es_next before) ->
+  bound <= es_next before ->
   fun_copy E F C u h before = Ok ((wrap, C'), after) ->
   BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) wrap C' F [].
 Proof.
-  intros P F C pa u pg h before wrap C' after Contexts Decls Target Provider ProviderKind Section Floor Scope Run.
+  intros P F C pa u pg h before wrap C' after Contexts Decls Target Provider ProviderKind Section Floor Run.
   unfold fun_copy in Run. fold W in Run.
   apply EaControlSound.mbind_ok in Run as (checked & s1 & Abstract & Run).
   apply EaLinkBodySound.successful_link_check in Abstract as [Abstract ->].
@@ -327,15 +329,7 @@ Proof.
   injection Run as <- <- _.
   assert (FixedRows : forall x t, In (x,t) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some t).
   { intros x t. unfold fx. eapply EaClosureSound.fixed_here_exact; eassumption. }
-  assert (Reserved : forall g, In g (scope_support (copy_allocation_scope W
-    (map (fun q => (fst q, canon C (snd q))) fx))) -> g < es_next before).
-  { intros g Member. apply Scope. cbn [scope_support copy_allocation_scope] in Member.
-    apply in_flat_map in Member as [[x t] [Row Occurs]].
-    apply in_map_iff in Row as [[y original] [Equal Row]]. cbn [fst snd] in Equal. injection Equal as <- <-.
-    apply FixedRows in Row as [_ Found]. unfold context_gens. apply in_or_app. right. apply in_or_app. left.
-    apply in_flat_map. exists (y,original). split; [now apply PublicTypeRead.nlook_in|].
-    apply in_or_app. now right. }
-  destruct (copy_interpretation_sound _ _ _ _ _ _ _ _ _ _ _ FormalProvider Floor Reserved Copied)
+  destruct (copy_interpretation_sound _ _ _ _ _ _ _ _ _ _ _ FormalProvider Floor Copied)
     as [chosen [Selected Interpretation]].
   eapply (@BFunCopy W P F C pa u pg h Cu nsu Ch nsh chosen sm fx rm); try eassumption.
   - congruence.

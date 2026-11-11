@@ -89,6 +89,11 @@ Definition result_mismatch (u g : nat) : string :=
           " does not; a functor bound to an abstract one provides exactly its result (D78)"
   end.
 
+(* The counter allocates above the identities currently reserved in scope. *)
+Definition require_allocation_floor (support : list nat) : M unit := fun state =>
+  check (forallb (fun g => Nat.ltb g (es_next state)) support)
+    "internal: an allocation would overlap a reserved identity" state.
+
 (* ---- BApplyAbstract ---- *)
 
 Definition allocate_output (C : cx) (u : nat) (mentioned retg : list nat)
@@ -106,6 +111,10 @@ Definition allocate_application_outputs (F : frame) (C : cx) (u : nat)
   let retg := match fr_ret F with Some r => gens r | None => [] end ++
               match fr_this F with Some r => gens r | None => [] end in
   let mentioned := context_gens C ++ key_receiver_gens C in
+  let* _ := match outs with
+            | [] => ret tt
+            | _ => require_allocation_floor (fr_fresh F ++ mentioned ++ retg)
+            end in
   mmap (allocate_output C u mentioned retg) outs.
 
 (* SOUND: apply_abstract F C pa u = Ok (wrap, C', F', made) ->
@@ -170,6 +179,7 @@ Definition copy_interpretation (sigma : subst) (u h : nat) (Cu : cx) (nsu nsh : 
   let fixed := copy_fixed_readings Cu sigma in
   let ys := uniq (filter (fun y => negb (is_some (lookup_subst y fixed)))
                          (flat_map (fun q => match nlook (fst q) (c_ty Cu) with Some tx => gens tx | None => [] end) (c_ty Cu))) in
+  let* _ := require_allocation_floor (flat_map (fun q => gens (snd q)) sigma) in
   let* gtab := fresh_table u outs in
   let* ctab := fresh_table u ys in
   let gen := gen_of gtab in

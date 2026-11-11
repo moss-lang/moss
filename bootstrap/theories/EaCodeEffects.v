@@ -337,11 +337,20 @@ Proof.
     intro slot. apply code_effect_return.
 Qed.
 
+Lemma code_effect_require_allocation_floor : forall support,
+  PreservesOldCode (EaFunctor.require_allocation_floor support).
+Proof.
+  intros support before result after Read. unfold EaFunctor.require_allocation_floor in Read.
+  eapply code_effect_check. exact Read.
+Qed.
+
 Theorem application_outputs_code_effect : forall E F C u outs,
   PreservesOldCode (EaFunctor.allocate_application_outputs E F C u outs).
 Proof.
   intros E F C u outs. unfold EaFunctor.allocate_application_outputs. cbn zeta.
-  apply code_effect_mmap. intro output. unfold EaFunctor.allocate_output.
+  apply code_effect_bind.
+  { destruct outs; [apply code_effect_return|apply code_effect_require_allocation_floor]. }
+  intros []. apply code_effect_mmap. intro output. unfold EaFunctor.allocate_output.
   destruct (EaCall.bound_in C output || nmem output (context_gens C ++ key_receiver_gens C))%bool.
   - apply code_effect_bind; [apply code_effect_fresh|]. intro generation.
     apply code_effect_bind; [apply code_effect_put_name|intro named; apply code_effect_return].
