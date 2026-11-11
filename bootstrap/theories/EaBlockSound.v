@@ -1,7 +1,9 @@
 (* Successful executable blocks thread the frame, context and generated
    body state described by the block rules. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit EaBase EaTypes EaTypesSound EaDecide EaExpr EaDecideSound EaControlSound EaBreaksSound.
+From NM Require Import Audit EaBase EaTypes EaTypesSound EaDecide EaExpr EaDecideSound EaControlSound EaBreaksSound
+  EaChecked EaRecSound.
+From NM Require EaMain.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 Local Open Scope string_scope.
@@ -74,12 +76,156 @@ Proof.
   split; [reflexivity|]. split; [reflexivity|eapply block_breaks_no; exact Run].
 Qed.
 
-Section Blocks.
+Section BlocksPost.
 Variables (E : env) (R : rec) (P : program).
 Let W := e_W E.
 Let fuel := e_fuel E.
 Variable valid : frame -> cx -> est -> Prop.
+Variable post : est -> Prop.
+Local Notation Expr := (ExPostAt E P valid post R).
+Local Notation Block := (BlkEPostAt E P valid post R).
 
+Hypothesis local_scope : forall F C name t mu state,
+  valid F (add_local C name t mu) state <-> valid F C state.
+Hypothesis loop_scope : forall F C state,
+  valid (with_loop F) C state <-> valid F C state.
+Hypothesis unpinned_scope : forall F C state,
+  valid (without_pins F) C state <-> valid F C state.
+Hypothesis bindings : BindItemsSound E P valid post (r_bind_items R).
+
+Theorem blk_post_sound : forall n,
+  (forall depth, depth < n -> Expr depth) ->
+  (forall depth, depth < n -> Block depth) ->
+  BlkPostAt E P valid post R n.
+Proof.
+  induction n as [|n IH]; intros Expressions Blocks F C statements tail expected before
+    [[compiled t] made] after Run; [discriminate|].
+  pose proof (Expressions n (Nat.lt_succ_diag_r n)) as ExprHere.
+  pose proof (Blocks n (Nat.lt_succ_diag_r n)) as BlockHere.
+  pose proof (IH ltac:(intros depth Less; apply Expressions; lia)
+    ltac:(intros depth Less; apply Blocks; lia)) as RestHere.
+  cbn [blk] in Run. fold (ex E R) (blk E R) (cond E R) (blke E R) in Run.
+  destruct statements as [|statement rest].
+  - destruct tail as [tail|].
+    + apply mbind_ok in Run as [[value actual] [next [Tail Run]]].
+      unfold ret in Run. injection Run as <- <- <- <-.
+      destruct (ExprHere _ _ _ _ _ _ _ Tail) as [Backward Typed].
+      split; [exact Backward|]. intros Valid Post.
+      destruct (Typed Valid Post) as [Final TailTyped].
+      split; [exact Final|constructor; exact TailTyped].
+    + unfold ret in Run. injection Run as <- <- <- <-.
+      split; [tauto|intros Valid _; split; [exact Valid|constructor]].
+  - destruct statement as [name annotation value|name annotation value|name value|items|condition body|body|value].
+    1,2: apply mbind_ok in Run as [declared [reading [Read Run]]];
+      apply read_local_annotation_sound in Read as [<- Annotation];
+      apply mbind_ok in Run as [[v vt] [next [Value Run]]];
+      apply mbind_ok in Run as [t0 [chosen [Choice Run]]];
+      apply local_type_check_sound in Choice as [<- Chosen];
+      apply mbind_ok in Run as [unit [named [Named Run]]];
+      apply named_check_sound in Named as [Named <-];
+      apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]];
+      unfold ret in Run; injection Run as <- <- <- <-;
+      destruct (ExprHere _ _ _ _ _ _ _ Value) as [Earlier TypedValue];
+      destruct (RestHere _ _ _ _ _ _ _ _ Rest) as [Backward TypedRest];
+      split; [intros Post; now apply Earlier, Backward|intros Valid Post];
+      destruct (TypedValue Valid (Backward Post)) as [Next ValueTyped];
+      destruct (TypedRest (proj2 (local_scope F C name t0 _ _) Next) Post) as [Final RestTyped];
+      apply (proj1 (local_scope F C name t0 _ _)) in Final;
+      split; [exact Final|eapply BlkLet; [constructor|exact Annotation|exact ValueTyped|exact Chosen|exact Named|exact RestTyped]].
+    + destruct (slook name (c_locals C)) as [[tv []]|] eqn:Local; try discriminate.
+      apply mbind_ok in Run as [[v vt] [next [Value Run]]].
+      destruct (fitsb vt tv) eqn:Fits; cbn [mbind ret] in Run; [|discriminate].
+      apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]].
+      apply mbind_ok in Run as [unit [named [Named Run]]].
+      apply named_check_sound in Named as [Named <-].
+      unfold ret in Run. injection Run as <- <- <- <-.
+      destruct (ExprHere _ _ _ _ _ _ _ Value) as [Earlier TypedValue].
+      destruct (RestHere _ _ _ _ _ _ _ _ Rest) as [Backward TypedRest].
+      split; [intros Post; now apply Earlier, Backward|]. intros Valid Post.
+      destruct (TypedValue Valid (Backward Post)) as [Next ValueTyped].
+      destruct (TypedRest Next Post) as [Final RestTyped].
+      split; [exact Final|eapply BlkAssign; [exact Local|exact ValueTyped|now apply fitsb_exact|exact RestTyped|exact Named]].
+    + apply mbind_ok in Run as [[[[wrap C'] F'] created] [next [Bindings Run]]].
+      apply mbind_ok in Run as [[[xr rt] more] [final [Rest Run]]].
+      unfold ret in Run. injection Run as <- <- <- <-.
+      destruct (bindings _ _ _ _ _ _ Bindings) as [Earlier TypedBindings].
+      destruct (RestHere _ _ _ _ _ _ _ _ Rest) as [Backward TypedRest].
+      split; [intros Post; now apply Earlier, Backward|]. intros Valid Post.
+      destruct (TypedBindings Valid (Backward Post)) as [[Next Restore] BindingsTyped].
+      destruct (TypedRest Next Post) as [Final RestTyped].
+      split; [now apply Restore|eapply BlkBind; eassumption].
+    + apply mbind_ok in Run as [cx' [checked [Condition Run]]].
+      apply mbind_ok in Run as [[bx bt] [next [Body Run]]].
+      apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]].
+      unfold ret in Run. injection Run as <- <- <- <-.
+      destruct (cond_post_sound E R P valid post n ltac:(intros depth Less; apply Expressions; lia)
+        _ _ _ _ _ _ Condition) as [Earlier TypedCondition].
+      destruct (BlockHere _ _ _ _ _ _ _ Body) as [BackwardBody TypedBody].
+      destruct (RestHere _ _ _ _ _ _ _ _ Rest) as [Backward TypedRest].
+      split; [intros Post; now apply Earlier, BackwardBody, Backward|]. intros Valid Post.
+      destruct (TypedCondition Valid (BackwardBody (Backward Post))) as [Checked ConditionTyped].
+      destruct (TypedBody (proj2 (loop_scope F C checked) Checked) (Backward Post)) as [Next BodyTyped].
+      destruct (TypedRest (proj1 (loop_scope F C next) Next) Post) as [Final RestTyped].
+      split; [exact Final|eapply BlkWhile; eassumption].
+    + fold W fuel in Run.
+      destruct (match rest, tail with
+        | [], None => block_breaks W fuel (fr_mod F) body
+        | _, _ => Some true end) as [[|]|] eqn:Follow; try discriminate.
+      all: apply mbind_ok in Run as [[bx bt] [next [Body Run]]].
+      all: destruct (BlockHere _ _ _ _ _ _ _ Body) as [Earlier TypedBody].
+      * apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]].
+        unfold ret in Run. injection Run as <- <- <- <-.
+        destruct (RestHere _ _ _ _ _ _ _ _ Rest) as [Backward TypedRest].
+        split; [intros Post; now apply Earlier, Backward|]. intros Valid Post.
+        destruct (TypedBody (proj2 (loop_scope F C before) Valid) (Backward Post)) as [Next BodyTyped].
+        destruct (TypedRest (proj1 (loop_scope F C next) Next) Post) as [Final RestTyped].
+        split; [exact Final|eapply BlkLoop; [eapply loop_follow_yes; exact Follow|exact BodyTyped|exact RestTyped]].
+      * unfold ret in Run. injection Run as <- <- <- <-.
+        destruct (loop_follow_no _ _ _ _ _ _ Follow) as [-> [-> NoBreak]].
+        split; [exact Earlier|]. intros Valid Post.
+        destruct (TypedBody (proj2 (loop_scope F C before) Valid) Post) as [Next BodyTyped].
+        split; [exact (proj1 (loop_scope F C _) Next)|eapply BlkLoopLast; eassumption].
+    + destruct rest as [|next_statement rest], tail as [tail|].
+      all: apply mbind_ok in Run as [[v vt] [next [Value Run]]].
+      all: destruct (ExprHere _ _ _ _ _ _ _ Value) as [Earlier TypedValue].
+      2: { unfold ret in Run. injection Run as <- <- <- <-.
+           split; [exact Earlier|]. intros Valid Post.
+           destruct (TypedValue Valid Post) as [Final ValueTyped].
+           split; [exact Final|eapply BlkExprLast; exact ValueTyped]. }
+      all: apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]];
+        unfold ret in Run; injection Run as <- <- <- <-;
+        destruct (RestHere _ _ _ _ _ _ _ _ Rest) as [Backward TypedRest];
+        split; [intros Post; now apply Earlier, Backward|intros Valid Post];
+        destruct (TypedValue Valid (Backward Post)) as [Next ValueTyped];
+        destruct (TypedRest Next Post) as [Final RestTyped];
+        split; [exact Final|eapply BlkExpr;
+          [solve [left; discriminate|right; discriminate]|exact ValueTyped|exact RestTyped]].
+Qed.
+
+Theorem blke_post_sound : forall n,
+  (forall depth, depth < n -> Expr depth) ->
+  (forall depth, depth < n -> Block depth) ->
+  Block n.
+Proof.
+  intros [|n] Expressions Blocks F C [statements tail] expected before [compiled t] after Run;
+    [discriminate|]. cbn [blke] in Run. fold (blk E R) in Run.
+  apply mbind_ok in Run as [[[value actual] made] [next [Body Run]]].
+  destruct (find (fun g => nmem g made) (gens actual)) eqn:Escapes; cbn [mbind ret] in Run; [discriminate|].
+  destruct (opt_fitsb actual expected) eqn:Fits; cbn [mbind ret] in Run; [|discriminate].
+  injection Run as <- <- <-.
+  destruct (blk_post_sound n ltac:(intros depth Less; apply Expressions; lia)
+    ltac:(intros depth Less; apply Blocks; lia) _ _ _ _ _ _ _ _ Body) as [Backward Typed].
+  split; [exact Backward|]. intros Valid Post.
+  destruct (Typed (proj2 (unpinned_scope F C _) Valid) Post) as [Final BodyTyped].
+  split; [exact (proj1 (unpinned_scope F C _) Final)|].
+  eapply BlkECheck; [exact BodyTyped|now apply block_result_generations_disjoint|now apply opt_fitsb_exact].
+Qed.
+End BlocksPost.
+
+Section Blocks.
+Variables (E : env) (R : rec) (P : program).
+Let W := e_W E.
+Variable valid : frame -> cx -> est -> Prop.
 Hypothesis local_scope : forall F C name t mu state,
   valid F (add_local C name t mu) state <-> valid F C state.
 Hypothesis loop_scope : forall F C state,
@@ -92,6 +238,14 @@ Hypothesis bind_items_sound : forall F C items wrap C' F' made before after,
   BindItems W P F C items wrap C' F' made /\ valid F' C' after /\
   forall final, valid F' C' final -> valid F C final.
 
+Local Lemma bindings_without_post : BindItemsSound E P valid (fun _ => True) (r_bind_items R).
+Proof.
+  intros F C items before [[[wrap C'] F'] made] after Run.
+  split; [tauto|]. intros Valid _.
+  destruct (bind_items_sound _ _ _ _ _ _ _ _ _ Valid Run) as [Typed [Final Restore]].
+  exact (conj (conj Final Restore) Typed).
+Qed.
+
 Definition BlkSoundAt (n : nat) : Prop :=
   forall F C statements tail expected before after compiled t made,
     valid F C before ->
@@ -103,84 +257,11 @@ Theorem blk_sound : forall n,
   (forall depth, depth < n -> BlkESoundAt E R P valid depth) ->
   BlkSoundAt n.
 Proof.
-  induction n as [|n IH]; intros Expressions Blocks F C statements tail expected before after compiled t made Valid Run;
-    [discriminate|].
-  pose proof (Expressions n (Nat.lt_succ_diag_r n)) as ExprHere.
-  pose proof (Blocks n (Nat.lt_succ_diag_r n)) as BlockHere.
-  pose proof (IH ltac:(intros depth Less; apply Expressions; lia)
-    ltac:(intros depth Less; apply Blocks; lia)) as RestHere.
-  cbn [blk] in Run. fold (ex E R) (blk E R) (cond E R) (blke E R) in Run.
-  destruct statements as [|statement rest].
-  - destruct tail as [tail|].
-    + apply mbind_ok in Run as [[value actual] [next [Tail Run]]].
-      unfold ret in Run. injection Run as <- <- <- <-.
-      destruct (ExprHere _ _ _ _ _ _ _ _ Valid Tail) as [Typed Final].
-      split; [constructor; exact Typed|exact Final].
-    + unfold ret in Run. injection Run as <- <- <- <-. split; [constructor|exact Valid].
-  - destruct statement as [name annotation value|name annotation value|name value|items|condition body|body|value].
-    1,2: apply mbind_ok in Run as [declared [reading [Read Run]]];
-      apply read_local_annotation_sound in Read as [<- Annotation];
-      apply mbind_ok in Run as [[v vt] [next [Value Run]]];
-      destruct (ExprHere _ _ _ _ _ _ _ _ Valid Value) as [ValueTyped Next];
-      apply mbind_ok in Run as [t0 [chosen [Choice Run]]];
-      apply local_type_check_sound in Choice as [<- Chosen];
-      apply mbind_ok in Run as [unit [named [Named Run]]];
-      apply named_check_sound in Named as [Named <-];
-      apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]];
-      unfold ret in Run; injection Run as <- <- <- <-;
-      destruct (RestHere _ _ _ _ _ _ _ _ _ _ (proj2 (local_scope _ _ _ _ _ _) Next) Rest)
-        as [RestTyped Final];
-      apply (proj1 (local_scope F C name t0 _ _)) in Final;
-      split; [eapply BlkLet; [constructor|exact Annotation|exact ValueTyped|exact Chosen|exact Named|exact RestTyped]|exact Final].
-    + destruct (slook name (c_locals C)) as [[tv []]|] eqn:Local; try discriminate.
-      apply mbind_ok in Run as [[v vt] [next [Value Run]]].
-      destruct (fitsb vt tv) eqn:Fits; cbn [mbind ret] in Run; [|discriminate].
-      apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]].
-      apply mbind_ok in Run as [unit [named [Named Run]]].
-      apply named_check_sound in Named as [Named <-].
-      unfold ret in Run. injection Run as <- <- <- <-.
-      destruct (ExprHere _ _ _ _ _ _ _ _ Valid Value) as [ValueTyped Next].
-      destruct (RestHere _ _ _ _ _ _ _ _ _ _ Next Rest) as [RestTyped Final].
-      split; [eapply BlkAssign; [exact Local|exact ValueTyped|now apply fitsb_exact|exact RestTyped|exact Named]|exact Final].
-    + apply mbind_ok in Run as [[[[wrap C'] F'] created] [next [Bindings Run]]].
-      apply mbind_ok in Run as [[[xr rt] more] [final [Rest Run]]].
-      unfold ret in Run. injection Run as <- <- <- <-.
-      destruct (bind_items_sound _ _ _ _ _ _ _ _ _ Valid Bindings) as [BindingsTyped [Next Restore]].
-      destruct (RestHere _ _ _ _ _ _ _ _ _ _ Next Rest) as [RestTyped Final].
-      split; [eapply BlkBind; eassumption|now apply Restore].
-    + apply mbind_ok in Run as [cx' [checked [Condition Run]]].
-      apply mbind_ok in Run as [[bx bt] [next [Body Run]]].
-      apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]].
-      unfold ret in Run. injection Run as <- <- <- <-.
-      destruct (cond_sound E R P valid n ltac:(intros depth Less; apply Expressions; lia)
-        _ _ _ _ _ _ Valid Condition) as [ConditionTyped Checked].
-      destruct (BlockHere _ _ _ _ _ _ _ _ (proj2 (loop_scope _ _ _) Checked) Body)
-        as [BodyTyped Next]. apply (proj1 (loop_scope F C next)) in Next.
-      destruct (RestHere _ _ _ _ _ _ _ _ _ _ Next Rest) as [RestTyped Final].
-      split; [eapply BlkWhile; eassumption|exact Final].
-    + fold W fuel in Run.
-      destruct (match rest, tail with
-        | [], None => block_breaks W fuel (fr_mod F) body
-        | _, _ => Some true end) as [[|]|] eqn:Follow; try discriminate.
-      all: apply mbind_ok in Run as [[bx bt] [next [Body Run]]].
-      all: destruct (BlockHere _ _ _ _ _ _ _ _ (proj2 (loop_scope _ _ _) Valid) Body)
-        as [BodyTyped Next]; apply (proj1 (loop_scope F C next)) in Next.
-      * apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]].
-        unfold ret in Run. injection Run as <- <- <- <-.
-        destruct (RestHere _ _ _ _ _ _ _ _ _ _ Next Rest) as [RestTyped Final].
-        split; [eapply BlkLoop; [eapply loop_follow_yes; exact Follow|exact BodyTyped|exact RestTyped]|exact Final].
-      * unfold ret in Run. injection Run as <- <- <- <-.
-        destruct (loop_follow_no _ _ _ _ _ _ Follow) as [-> [-> NoBreak]].
-        split; [eapply BlkLoopLast; eassumption|exact Next].
-    + destruct rest as [|next_statement rest], tail as [tail|].
-      all: apply mbind_ok in Run as [[v vt] [next [Value Run]]].
-      all: destruct (ExprHere _ _ _ _ _ _ _ _ Valid Value) as [ValueTyped Next].
-      2: { unfold ret in Run. injection Run as <- <- <- <-.
-           split; [eapply BlkExprLast; exact ValueTyped|exact Next]. }
-      all: apply mbind_ok in Run as [[[xr rt] created] [final [Rest Run]]];
-        unfold ret in Run; injection Run as <- <- <- <-;
-        destruct (RestHere _ _ _ _ _ _ _ _ _ _ Next Rest) as [RestTyped Final];
-        split; [eapply BlkExpr; [solve [left; discriminate|right; discriminate]|exact ValueTyped|exact RestTyped]|exact Final].
+  intros n Expressions Blocks F C statements tail expected before after compiled t made Valid Run.
+  destruct (blk_post_sound E R P valid (fun _ => True) local_scope loop_scope bindings_without_post n
+    (fun depth Less => ex_without_post _ _ _ _ _ (Expressions depth Less))
+    (fun depth Less => blke_without_post _ _ _ _ _ (Blocks depth Less)) _ _ _ _ _ _ _ _ Run) as [_ Checked].
+  destruct (Checked Valid I) as [Final Typed]. now split.
 Qed.
 
 Theorem blke_sound : forall n,
@@ -188,16 +269,29 @@ Theorem blke_sound : forall n,
   (forall depth, depth < n -> BlkESoundAt E R P valid depth) ->
   BlkESoundAt E R P valid n.
 Proof.
-  intros [|n] Expressions Blocks F C [statements tail] expected before after compiled t Valid Run;
-    [discriminate|]. cbn [blke] in Run. fold (blk E R) in Run.
-  apply mbind_ok in Run as [[[value actual] made] [next [Body Run]]].
-  destruct (find (fun g => nmem g made) (gens actual)) eqn:Escapes; cbn [mbind ret] in Run; [discriminate|].
-  destruct (opt_fitsb actual expected) eqn:Fits; cbn [mbind ret] in Run; [|discriminate].
-  injection Run as <- <- <-.
-  destruct (blk_sound n ltac:(intros depth Less; apply Expressions; lia)
-    ltac:(intros depth Less; apply Blocks; lia) _ _ _ _ _ _ _ _ _ _
-    (proj2 (unpinned_scope _ _ _) Valid) Body) as [Typed Final].
-  apply (proj1 (unpinned_scope F C _)) in Final. split; [|exact Final].
-  eapply BlkECheck; [exact Typed|now apply block_result_generations_disjoint|now apply opt_fitsb_exact].
+  intros n Expressions Blocks F C syntax expected before after compiled t Valid Run.
+  destruct (blke_post_sound E R P valid (fun _ => True) local_scope loop_scope unpinned_scope bindings_without_post n
+    (fun depth Less => ex_without_post _ _ _ _ _ (Expressions depth Less))
+    (fun depth Less => blke_without_post _ _ _ _ _ (Blocks depth Less)) _ _ _ _ _ _ _ Run) as [_ Checked].
+  destruct (Checked Valid I) as [Final Typed]. now split.
 Qed.
 End Blocks.
+
+Theorem run_elaboration_with_blocks : forall E P valid post fuel,
+  (forall F C name t mu state, valid F (add_local C name t mu) state <-> valid F C state) ->
+  (forall F C state, valid (with_loop F) C state <-> valid F C state) ->
+  (forall F C state, valid (without_pins F) C state <-> valid F C state) ->
+  (forall R, RecSound E P valid post R -> forall n,
+    (forall depth, depth < n -> ExPostAt E P valid post R depth) ->
+    (forall depth, depth < n -> BlkEPostAt E P valid post R depth) ->
+    ExPostAt E P valid post R n) ->
+  (forall R, RecSound E P valid post R -> BindItemSound E P valid post R) ->
+  RecSound E P valid post (EaMain.mkrec (EaMain.run E fuel)).
+Proof.
+  intros E P valid post fuel Local Loop Unpinned Expression BindItem.
+  apply run_elaboration_sound; [|exact BindItem].
+  intros R Callbacks n ExprBelow BlockBelow. split.
+  - exact (Expression R Callbacks n ExprBelow BlockBelow).
+  - exact (blke_post_sound E R P valid post Local Loop Unpinned (proj2 (proj2 Callbacks)) n
+      ExprBelow BlockBelow).
+Qed.
