@@ -3,7 +3,7 @@
    assumptions are transitively everything the guarantee rests on, and
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
-From NM Require Parse EaCtx EaMain MossX.
+From NM Require Parse EaCtx EaMain EaWorldSound MossX.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -219,6 +219,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicWorldScope.load_world_world_of_from_requirements);
   root (@NM.PublicWorldRequirements.elaborate_public_world_of);
   root (@NM.ElabWorld.bundle_world_sound);
+  root (@NM.EaWorldSound.elaborate_with_world_sound);
   root (@NM.ElabWorld.bundle_world_with_sound);
   root (@NM.ElabWorldExample.example_world);
   root (@NM.ElabWorldExample.unlisted_rejected);

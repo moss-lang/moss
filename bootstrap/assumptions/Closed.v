@@ -18,3 +18,20 @@ Print Assumptions NM.EaMentionsSound.sig_mentions_sound.
 Print Assumptions NM.EaMentionsSound.spec_types_go_sound.
 Print Assumptions NM.EaMentionsSound.spec_types_sound.
 Print Assumptions NM.EaMentionsSound.fun_outputs_sound.
+
+From NM Require EaDependencyFuel EaContextFuel.
+Print Assumptions NM.EaDependencyFuel.free_in_exact.
+Print Assumptions NM.EaDependencyFuel.sig_mentions_exact.
+Print Assumptions NM.EaDependencyFuel.app_of_sound.
+Print Assumptions NM.EaDependencyFuel.ty_of_depth.
+Print Assumptions NM.EaDependencyFuel.sig_of_depth.
+Print Assumptions NM.EaDependencyFuel.free_in_exact_after_type_read.
+Print Assumptions NM.EaDependencyFuel.app_of_sound_after_signature_read.
+Print Assumptions NM.EaContextFuel.spec_types_eventually_complete.
+Print Assumptions NM.EaContextFuel.spec_types_exact.
+Print Assumptions NM.EaContextFuel.fun_outputs_exact.
+
+From NM Require EaWorldSound.
+Print Assumptions NM.EaWorldSound.bundle_world_r_sound.
+Print Assumptions NM.EaWorldSound.bundle_world_r_bound.
+Print Assumptions NM.EaWorldSound.bundle_world_r_context_readers_exact.
