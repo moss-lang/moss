@@ -118,3 +118,14 @@ Print Assumptions NM.EaFamilySound.family_keyed_sound.
 Print Assumptions NM.EaFamilySound.is_family_sound.
 Print Assumptions NM.EaFamilySound.bundle_world_r_is_family_sound.
 Print Assumptions NM.EaContextTableSound.installed_context_table_sound.
+
+
+From NM Require EaContextReadFacts.
+Print Assumptions NM.EaContextReadFacts.type_readers_context.
+Print Assumptions NM.EaContextReadFacts.mentions_context.
+Print Assumptions NM.EaContextReadFacts.entries_context.
+Print Assumptions NM.EaContextReadFacts.root_ctx_context.
+Print Assumptions NM.EaContextReadFacts.merge_context.
+Print Assumptions NM.EaContextReadFacts.assume_ctx_context.
+Print Assumptions NM.EaContextReadFacts.fun_ctx_context.
+Print Assumptions NM.EaContextReadFacts.context_table_context.
