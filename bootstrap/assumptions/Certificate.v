@@ -20,6 +20,24 @@ From NM Require AuditExamples AuditBuildExample
   PublicMergeClass PublicMerge PublicMergePresent PublicMergeOps EagerCopy ElabWorld ElabWorldExample ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
 
 Module PublicPublic := Audit.Semantics.Public AuditExamples.Host.
+(* Check the Base specialization by reduction, using the given public
+   instance rather than instantiating another interpreter. *)
+Module BasePublicEquations (Host : Audit.HOST) (M : PublicValueTyping.PUBLIC Host).
+Import Audit.Semantics.
+Lemma linked_exact : forall W P, M.Link.Linked W P = Platform.Linked W P.
+Proof. reflexivity. Qed.
+Lemma ready_exact : forall P, M.Link.Ready P = Platform.Ready P.
+Proof. reflexivity. Qed.
+Lemma laws_exact : forall P interface,
+  M.interface_laws P interface =
+  BaseLaws.laws Host.state P (M.supports interface) (M.primitive interface) (M.heap_ok interface).
+Proof. reflexivity. Qed.
+Lemma call_exact : forall P operation site values state,
+  M.ReferenceHost.run_prim P operation site values state =
+  BaseCall.call M.ReferenceHost.raw_primitive P operation site values state.
+Proof. reflexivity. Qed.
+End BasePublicEquations.
+Module BasePublicBoundary := BasePublicEquations AuditExamples.Host PublicPublic.
 Module PublicHeaps := PublicHeapTyping.HeapSafety AuditExamples.Host PublicPublic.
 Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Prims PublicInterp.
@@ -449,6 +467,10 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_extends);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower_extends);
+  root (@BasePublicBoundary.linked_exact);
+  root (@BasePublicBoundary.ready_exact);
+  root (@BasePublicBoundary.laws_exact);
+  root (@BasePublicBoundary.call_exact);
   root (@NM.AuditFacts.platform_linked_fields);
   root (@PublicEntryTop.PS.primitive_safe);
   root (@PublicEntryTop.PS.state_ok_initial);

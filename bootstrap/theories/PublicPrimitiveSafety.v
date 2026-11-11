@@ -455,7 +455,7 @@ Lemma run_supported : forall P iface p held ws s,
      (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
       (iface, M.World (M.arguments s) (M.read_file s) next))).
 Proof.
-  intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
+  intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
   rewrite decode_encode, Supp. destruct (M.primitive iface P (encode p) (BaseCall.primitive_arguments p ws) (M.external s)); reflexivity.
 Qed.
 
@@ -675,7 +675,7 @@ Proof.
     pose proof (decode_canonical _ _ Decoded) as ->.
     eapply primitive_safe_known; eassumption.
   - destruct st as [i s]. destruct Valid as [Ei _]. cbn in Ei. subst i.
-    unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive. rewrite Decoded, Supp.
+    unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive. rewrite Decoded, Supp.
     destruct Laws as [_ [_ [Unsupported _]]].
     specialize (Unsupported operation ws (M.external s) Decoded Supp).
     destruct (M.primitive iface _ operation ws (M.external s)) as [out next].

@@ -143,6 +143,7 @@ entry they belong to.
 | 109 | Integrate scalar/reference carriers with the checked host ABI and merge semantics | sep S2 integration | representation change |
 | 110 | Integrate named operations with the checked host laws and site-erasure proofs | sep S3 integration | representation change |
 | 111 | Static linking consumes Tables, Provides, and EntryABI | sep S5a | none (equivalent regrouping) |
+| 112 | Public contracts consume one platform at build and run time | sep S5b | none for the Base specialization |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3541,6 +3542,21 @@ using one fresh atom per abstract class must preserve that behaviour
   executable are unchanged. This separates static linking only; the full
   runtime platform interface and physical Base file remain future work.
 - **Class.** Equivalent regrouping (criterion 8, platform separation).
+
+### 112. Public contracts consume one platform at build and run time (S5b)
+
+- **Rule.** `PLATFORM` combines the static linking contract with its host
+  heap type, raw-host laws and primitive call adapter. `HOST_FOR` and
+  `PublicFor` consume that contract. The existing `HOST` and `Public`
+  are transparent specializations to `Base`.
+- **Fidelity.** The certificate checks by reduction that Base's linking,
+  readiness, interface laws and primitive dispatch are exactly the previous
+  definitions. The five public statements retain their Base interpretation;
+  the existing exact public safety and interpreter/pass certificates check.
+- **Boundary.** No new host assumption or executable change. This factors
+  the statement's platform interface. Generic safety and a physical
+  `AuditBase.v` split remain separate work.
+- **Class.** Definitional factoring for the Base specialization.
 
 ---
 

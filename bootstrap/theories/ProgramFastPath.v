@@ -2165,7 +2165,7 @@ Proof.
   assert (Hprim : forall q site ws st, ok st ->
     M.ReferenceHost.run_prim (program_of (fp_program U cH program) (M.arguments initial) (M.read_file initial)) q site ws st
     = M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q site ws st).
-  { intros q site ws [i s] Hi. unfold ok in Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
+  { intros q site ws [i s] Hi. unfold ok in Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (FS.fp_view U cH program (M.arguments initial) (M.read_file initial)) as [B [T [F [A [Rd C]]]]].
     rewrite (Hblind _ _ B T F A Rd C). reflexivity. }
   assert (Hok : forall q site ws st, ok st ->

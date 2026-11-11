@@ -1008,7 +1008,7 @@ Proof.
   intros program interface initial Hblind Hsafe fuel. unfold M.runtime.
   destruct (@PS.prune_sound program (M.arguments initial) (M.read_file initial) fuel (interface, initial)
               (fun st => fst st = interface)) as [Hs|E].
-  - intros q site ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, BaseCall.call, M.ReferenceHost.raw_primitive.
+  - intros q site ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (prune_view program (M.arguments initial) (M.read_file initial))
       as [B [T [F [A [Rd C]]]]].
     rewrite (Hblind _ _ B T F A Rd C). reflexivity.

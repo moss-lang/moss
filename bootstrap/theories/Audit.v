@@ -5929,6 +5929,8 @@ Definition Linked (W : world) (P : program) : Prop :=
     CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
     program_environment P = Environment types entries /\
     Forall (fun entry => Pf.Provides W P context (fst entry) (snd entry)) entries.
+Definition Ready (P : program) : Prop :=
+  exists bundle world, ElaboratesIn bundle world P /\ Linked world P.
 End Linking.
 
 Module Platform.
@@ -6245,8 +6247,7 @@ End Static.
 Module Link := Linking Static.
 Definition Linked := Link.Linked.
 
-Definition Ready (P : program) : Prop :=
-  exists bundle world, ElaboratesIn bundle world P /\ Linked world P.
+Definition Ready := Link.Ready.
 End Platform.
 
 (* The operations installed anywhere in a program, including captured
@@ -6435,16 +6436,36 @@ Definition source_read (snapshot : source) (name : string) : option string :=
   | None => None
   end.
 
-(* The concrete host chooses the primitive-managed state and operations.
-   Public keeps arguments and the read-only file snapshot in the world too,
-   so the default interface is one fixed value for every invocation. *)
-Module Type HOST.
+(* The language uses the same static platform at build and run time.
+   The platform supplies its raw-host contract and adapts primitive calls. *)
+Module Type PLATFORM.
+  Include STATIC_PLATFORM.
+  Parameter hty : Type.
+  Parameter call : forall S : Type,
+    (program_view -> op -> list value -> S -> signal * S) ->
+    program_view -> op -> option ty -> list value -> S -> signal * S.
+  Parameter laws : forall S : Type, program_view -> (op -> bool) ->
+    (program_view -> op -> list value -> S -> signal * S) -> (hty -> S -> Prop) -> Prop.
+End PLATFORM.
+
+Module Base <: PLATFORM.
+  Include Platform.Static.
+  Definition hty := Heap.hty.
+  Definition call := @BaseCall.call.
+  Definition laws := BaseLaws.laws.
+End Base.
+
+(* A host chooses the primitive-managed state and raw operations.
+   Public also keeps arguments and the read-only file snapshot in the world. *)
+Module Type HOST_FOR (Pf : PLATFORM).
   Parameter state : Type.
   Parameter primitive : program_view -> op -> list value -> state -> signal * state.
-  Parameter heap_ok : Heap.hty -> state -> Prop.
-End HOST.
+  Parameter heap_ok : Pf.hty -> state -> Prop.
+End HOST_FOR.
 
-Module Public (Host : HOST).
+Module PublicFor (Pf : PLATFORM) (Host : HOST_FOR Pf).
+  Module Link := Linking Pf.
+
   Record state := World {
     arguments : list (list int);
     read_file : list int -> option (list int);
@@ -6454,24 +6475,22 @@ Module Public (Host : HOST).
   Record interface := HostInterface {
     supports : op -> bool;
     primitive : program_view -> op -> list value -> Host.state -> signal * Host.state;
-    heap_ok : Heap.hty -> Host.state -> Prop
+    heap_ok : Pf.hty -> Host.state -> Prop
   }.
 
-  (* Unsupported operations have a defined stopping outcome in the existing
-     primitive model; providing them does not promise a returning result. *)
+  (* The default host makes every operation available; the platform laws
+     describe the behavior of its raw operations. *)
   Definition default_interface : interface :=
     HostInterface (fun _ => true) Host.primitive Host.heap_ok.
 
   Definition runtime (program : program) (initial : state) : program_view :=
     program_of program (arguments initial) (read_file initial).
 
-  Definition primitive_result := BaseLaws.primitive_result.
-
   Definition interface_laws (P : program_view) (interface : interface) : Prop :=
-    BaseLaws.laws Host.state P (supports interface) (primitive interface) (heap_ok interface).
+    @Pf.laws Host.state P (supports interface) (primitive interface) (heap_ok interface).
 
   Definition Compatible (program : program) (interface : interface) : Prop :=
-    Platform.Ready program /\
+    Link.Ready program /\
     (forall operation, In operation (required_primitives program) -> supports interface operation = true) /\
     forall argv read, interface_laws (program_of program argv read) interface.
 
@@ -6501,7 +6520,7 @@ Module Public (Host : HOST).
         let '(out, next) := primitive interface P p values (external state) in
         (out, (interface, World (arguments state) (read_file state) next))
       else (Stuck e_missing_primitive, machine).
-    Definition run_prim := @BaseCall.call mstate raw_primitive.
+    Definition run_prim := @Pf.call mstate raw_primitive.
   End ReferenceHost.
   Module Reference := Interpreter ReferenceHost.
 
@@ -6524,7 +6543,7 @@ Module Public (Host : HOST).
       (program : program) : Prop :=
     exists bundle world,
       Loader.Bundled (source_read source) "/" (path_text prelude) (path_text entry) bundle /\
-      Elaboration.ElaboratesIn bundle world program /\ Platform.Linked world program.
+      Elaboration.ElaboratesIn bundle world program /\ Link.Linked world program.
 
   Definition Admissible (prelude : file_path) (program : program) : Prop :=
     exists source entry, Builds prelude source entry program.
@@ -6535,7 +6554,7 @@ Module Public (Host : HOST).
       observe (Reference.run_main fuel (runtime program initial)
         (program_main program) (program_environment program) (interface, initial)) = Some result.
 
-  (* The five public obligations remain pending. Completeness covers builds
+  (* The five public obligations for an implementation. Completeness covers builds
      for this platform and permits the implementation's own fresh symbols.
      Compatibility with the default interface follows from building;
      other compatible interfaces are covered by the same run/safety claims.
@@ -6573,7 +6592,11 @@ Module Public (Host : HOST).
       forall code final,
         ~ Runs program interface initial (Result (Wrong code) final).
   End CORRECT.
-End Public.
+End PublicFor.
+
+(* The existing public interface is the Base specialization. *)
+Module Type HOST := HOST_FOR Base.
+Module Public (Host : HOST) := PublicFor Base Host.
 
 End Semantics.
 
