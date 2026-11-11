@@ -35,3 +35,8 @@ From NM Require EaWorldSound.
 Print Assumptions NM.EaWorldSound.bundle_world_r_sound.
 Print Assumptions NM.EaWorldSound.bundle_world_r_bound.
 Print Assumptions NM.EaWorldSound.bundle_world_r_context_readers_exact.
+
+From NM Require EaResultSound.
+Print Assumptions NM.EaResultSound.result_mentions_sound.
+Print Assumptions NM.EaResultSound.mentions_sound.
+Print Assumptions NM.EaResultSound.bundle_world_r_result_readers_sound.
