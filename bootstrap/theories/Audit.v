@@ -4361,25 +4361,48 @@ Definition Mentions_name (W : world) (F : frame) (body : aexpr) (n : name) : Pro
 Definition family_restore (C Cr : cx) : cx :=
   Cx (c_ty C) (c_sub Cr) (c_merge Cr) (c_provisions Cr) (c_locals Cr).
 
+Record family_use := FamilyUse {
+  demand_functor : nat;
+  demand_matching : subst;
+  demand_arguments : subst;
+  demand_formal : cx;
+  demand_needs : list item;
+  demand_result : cx;
+  demand_keys : list item
+}.
+
 Inductive FamilyStep (W : world) (C0 : cx) (wanted : list item)
-    : cx -> nat -> subst -> subst -> smap -> list item -> cx -> Prop :=
-| FamilyStepApply : forall C ot m u matching th sm Cr ks,
+    : cx -> nat -> subst -> subst -> cx -> list item -> cx -> list item -> Prop :=
+| FamilyStepApply : forall C ot m u matching th formal needs Cr ks,
     In (mkey ot m) wanted -> mlook ot m (c_mths C0) = None ->
     OnlyFamily W C0 u (mkey ot m) ->
-    FamilyApplication W C u matching th sm Cr ks -> FamilyReadOff W C u ot m matching ->
+    TypesFamilyApplication W C u matching th formal needs Cr ks ->
+    FamilyReadOff W C u ot m matching ->
     In (mkey ot m) ks -> MatchingInForce C matching ->
-    FamilyStep W C0 wanted C u matching th sm (map (rkey_of Cr) ks) (family_restore C Cr).
+    FamilyStep W C0 wanted C u matching th formal needs Cr ks.
 
-(* Group identity is the inferred matching substitution.  Distinct groups
-   may emit equal complete type arguments after reading the other inputs. *)
+(* The matching identifies a demand group. Separate groups can read their
+   complete input arguments alike. *)
 Inductive Demand (W : world) (C0 : cx) (wanted : list item)
-    : list (nat * subst) -> cx -> (expr -> expr) -> cx -> Prop :=
+    : list (nat * subst) -> cx -> list family_use -> cx -> Prop :=
 | DemandDone : forall used C,
-    Demand W C0 wanted used C (fun x => x) C
-| DemandApply : forall used C u matching th sm rs Cm wrap Cf,
-    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th sm rs Cm ->
-    Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
-    Demand W C0 wanted used C (fun x => apply_expression u th sm rs (wrap x)) Cf.
+    Demand W C0 wanted used C [] C
+| DemandApply : forall used C u matching th formal needs Cr ks rest Cf,
+    ~ In (u, matching) used -> FamilyStep W C0 wanted C u matching th formal needs Cr ks ->
+    Demand W C0 wanted ((u, matching) :: used) (family_restore C Cr) rest Cf ->
+    Demand W C0 wanted used C (FamilyUse u matching th formal needs Cr ks :: rest) Cf.
+
+Fixpoint translate_demands (C : cx) (demands : list family_use) (body : expr) : expr :=
+  match demands with
+  | [] => body
+  | d :: rest =>
+      let caller := family_context C (demand_matching d) in
+      let result := demand_result d in
+      apply_expression (demand_functor d) (demand_arguments d)
+        (satisfaction_map caller (demand_formal d) (demand_arguments d) (demand_needs d))
+        (map (rkey_of result) (demand_keys d))
+        (translate_demands (family_restore C result) rest body)
+  end.
 
 (* D89: the bracket application on a call of the fn f: each binding names
    a type symbol among f's requirements and binds it to a type by name. *)
@@ -4493,12 +4516,12 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     Ex W P F C (AECall pa a args) exp (ETag s xs v) (TNom s xs)
 (* [D20]/[D21] a defined fn: its needs answered from here (sm), its
    signature read with the meanings here *)
-| ExCallD : forall F C exp pa args f Cf ns th g xs wrap C',
+| ExCallD : forall F C exp pa args f Cf ns th g xs demands C',
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns ->
     (* family demands read f's needs through θ (rule B's companion) *)
-    Demand W C (map (at_th C th) ns) [] C wrap C' ->
+    Demand W C (map (at_th C th) ns) [] C demands C' ->
     NeedsSatisfied C' Cf th ns -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
     (* Q4: the arguments in the caller's context, as at every call
        (MCAttachedDefined, PrFamily): what the call demands is not in force
@@ -4512,7 +4535,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     (* rule B *)
     RequirementsInForce C Cf ->
     Ex W P F C (AECall pa None args) exp
-       (wrap (translate_call C' Cf f th ns xs)) (sg_ret g)
+       (translate_demands C demands (translate_call C' Cf f th ns xs)) (sg_ret g)
 (* an abstract fn: whatever provides it here *)
 | ExCallA : forall F C exp pa args f g xs,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
@@ -4654,7 +4677,7 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     MethCall W P F C ox ot [n] args x t
 (* [D61] rule 1, a defined attached method: a direct call, at the
    receiver's instantiation ([D74]) *)
-| MCAttachedDefined : forall F C ox ot n args h att Ca ns th g xs rargs wrap Cd,
+| MCAttachedDefined : forall F C ox ot n args h att Ca ns th g xs rargs demands Cd,
     head ot = Some h -> Attached W h n att ->
     ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
     (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
@@ -4662,12 +4685,12 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     CtxOf W att Ca ns ->
     Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
       (map (at_th (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) th) ns) []
-      (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
+      (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) demands Cd ->
     NeedsSatisfied Cd Ca th ns -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
     RequirementsInForce (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca ->
     MethCall W P F C ox ot [n] args
-      (wrap (translate_call Cd Ca att th ns (ox :: xs))) (sg_ret g)
+      (translate_demands (family_context C rargs) demands (translate_call Cd Ca att th ns (ox :: xs))) (sg_ret g)
 (* an abstract attached method: a key the context provides ([D36]) *)
 | MCAttachedAbstract : forall F C ox ot n args h att x t,
     head ot = Some h -> Attached W h n att ->

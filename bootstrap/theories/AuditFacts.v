@@ -111,3 +111,9 @@ Proof.
   intros W s e1 e2 [A1 M1] [A2 M2]. apply ascending_det; [exact A1 | exact A2|].
   intro t. rewrite M1, M2. reflexivity.
 Qed.
+
+Lemma family_application_with_map : forall W C u matching th formal needs Cr ks,
+  TypesFamilyApplication W C u matching th formal needs Cr ks ->
+  FamilyApplication W C u matching th
+    (satisfaction_map (family_context C matching) formal th needs) Cr ks.
+Proof. intros. exists formal, needs. split; [assumption|reflexivity]. Qed.

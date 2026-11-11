@@ -8,6 +8,7 @@
    and bind statements) and two static facts (tag construction and match
    arm selection) are explicit Section hypotheses; each is a named
    remaining obligation, not an assumption about accepted programs. *)
+From NM Require AuditFacts.
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
@@ -1860,14 +1861,18 @@ Lemma demand_gen : forall k, Below k -> forall D0 wanted used C wrap C', A.Deman
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty Cc C') d types H g st -> Pre j F Corig d types H g st ->
      Outcome F d H types t B (AR.O.I.eval j P d g st x)) ->
   forall n, n <= S k -> forall d types H g st, Pre n F Cc d types H g st -> Pre n F Corig d types H g st ->
-  Outcome F d H types t B (AR.O.I.eval n P d g st (wrap x)).
+  Outcome F d H types t B (AR.O.I.eval n P d g st (A.translate_demands C wrap x)).
 Proof.
-  intros k Bel D0 wanted used C wrap C' Dm. induction Dm as [used C|used C u matching th sm rs Cm wrap Cf Nin Step Rest IH];
+  intros k Bel D0 wanted used C wrap C' Dm. induction Dm as [used C|used C u matching th formal needs Cr ks rest Cf Nin Step Rest IH];
     intros F Cc Corig t B x Es Emg Ep El Inc Eo Tin Ts Wk Cont n Ln d types H g st PreC PreO.
   - apply Cont; [exact Ln| |exact PreO].
     replace (with_ty Cc C) with Cc; [exact PreC|]. destruct Cc as [a0 b0 m0 c0 e0], C as [a1 b1 m1 c1 e1]; cbn in *; subst; reflexivity.
-  - inversion Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FA Ro Ik]; subst.
-    cbn beta. unfold apply_expression. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
+  - inversion Step as [C1 ot m u1 matching1 th1 formal1 needs1 Cr1 ks1 Iw Ml Of Typed Ro Ik Matched]; subst.
+    pose (sm := A.satisfaction_map (A.family_context C matching) formal th needs).
+    pose proof (AuditFacts.family_application_with_map Typed) as FA.
+    cbn [A.translate_demands A.demand_functor A.demand_matching A.demand_arguments
+      A.demand_formal A.demand_needs A.demand_result A.demand_keys].
+    unfold apply_expression. fold sm. destruct n as [|n1]; [exact Logic.I|]. rewrite eval_bind_eq0.
     destruct n1 as [|n2]; [cbn; exact Logic.I|].
     destruct (Wk ot m Iw) as [Ok Sc].
     destruct (family_step k Bel Cc C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin Ts F (S (S n2)) n2 d types H g st Ln ltac:(lia) PreC [])
@@ -1906,7 +1911,7 @@ Lemma demand_case : forall k, Below k -> forall F C0 C wanted C' wrap t (B : Pro
      forall r m, In (A.mkey r m) wanted -> PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C0 r) ->
   (forall j, j <= S k -> forall d types H g st, Pre j F (with_ty C0 C') d types H g st -> Pre j F C0 d types H g st ->
      Outcome F d H types t B (AR.O.I.eval j P d g st x)) ->
-  StepSafe k F C0 t B (wrap x).
+  StepSafe k F C0 t B (A.translate_demands C wrap x).
 Proof.
   intros k Bel F C0 C wanted C' wrap t B x Es Emg Ep El Dm Sco Cont d types H g st Pre0.
   pose proof Pre0 as [_ [_ [_ [_ [_ Fm0]]]]]. destruct (Sco Fm0) as [Tin [Ts Wk]].
@@ -2259,21 +2264,25 @@ Qed.
 
 Lemma demand_ty : forall C0 wanted used C wrap C', A.Demand W C0 wanted used C wrap C' -> A.c_ty C' = A.c_ty C.
 Proof.
-  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th sm rs Cm wrap Cf NotUsed Step Rest IH];
+  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th formal needs Cr ks rest Cf NotUsed Step Rest IH];
     [reflexivity|]. rewrite IH. destruct Step. reflexivity.
 Qed.
 
 Lemma demand_sub : forall C0 wanted used C wrap C', A.Demand W C0 wanted used C wrap C' -> A.c_sub C' = A.c_sub C.
 Proof.
-  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th sm rs Cm wrap Cf NotUsed Step Rest IH];
-    [reflexivity|]. rewrite IH. destruct Step as [C ot m u matching th sm Cr ks _ _ _ FA _ _ _]. cbn.
+  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th formal needs Cr ks rest Cf NotUsed Step Rest IH];
+    [reflexivity|]. rewrite IH. destruct Step as [C ot m u matching th formal needs Cr ks _ _ _ Typed _ _ _]. cbn.
+  pose (sm := A.satisfaction_map (A.family_context C matching) formal th needs).
+  pose proof (AuditFacts.family_application_with_map Typed) as FA.
   exact (PublicFormation.family_application_sub W C u matching th sm Cr ks FA).
 Qed.
 
 Lemma demand_merge : forall C0 wanted used C wrap C', A.Demand W C0 wanted used C wrap C' -> A.c_merge C' = A.c_merge C.
 Proof.
-  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th sm rs Cm wrap Cf NotUsed Step Rest IH];
-    [reflexivity|]. rewrite IH. destruct Step as [C ot m u matching th sm Cr ks _ _ _ FA _ _ _]. cbn.
+  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th formal needs Cr ks rest Cf NotUsed Step Rest IH];
+    [reflexivity|]. rewrite IH. destruct Step as [C ot m u matching th formal needs Cr ks _ _ _ Typed _ _ _]. cbn.
+  pose (sm := A.satisfaction_map (A.family_context C matching) formal th needs).
+  pose proof (AuditFacts.family_application_with_map Typed) as FA.
   exact (PublicContextFacts.family_application_merge W C u matching th sm Cr ks FA).
 Qed.
 
@@ -5328,7 +5337,7 @@ Lemma attached_step : forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs
   A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
   A.Args W Prog F C args (A.sg_params g) xs ->
   A.RequirementsInForce (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) Ca ->
-  StepSafe k F C (A.sg_ret g) B (wrap (ECall att th sm (ox :: xs))).
+  StepSafe k F C (A.sg_ret g) B (A.translate_demands (A.family_context C rargs) wrap (ECall att th sm (ox :: xs))).
 Proof.
   intros F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA Ot Head Att Def Rargs Ctx Dem Sat CT Sig Args RB
     d types H lg lst Pre0.

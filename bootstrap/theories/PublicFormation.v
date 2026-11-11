@@ -1496,9 +1496,11 @@ Qed.
 Lemma demand_shape : forall C0 wanted used C wrap Cf, Demand W C0 wanted used C wrap Cf ->
   c_ty Cf = c_ty C /\ c_sub Cf = c_sub C.
 Proof.
-  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm rs Cm wrap Cf Nin Step Rest IH];
+  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th formal needs Cr ks rest Cf Nin Step Rest IH];
     [split; reflexivity|].
-  destruct IH as [E1 E2]. rewrite E1, E2. destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ro Ik].
+  destruct IH as [E1 E2]. rewrite E1, E2. destruct Step as [C1 ot m u1 matching1 th1 formal1 needs1 Cr1 ks1 Iw Ml Of Typed Ro Ik Matched].
+  pose (sm1 := satisfaction_map (family_context C1 matching1) formal1 th1 needs1).
+  pose proof (family_application_with_map Typed) as FAp.
   cbn. split; [reflexivity|exact (family_application_sub _ _ _ _ _ _ _ FAp)].
 Qed.
 
@@ -1607,21 +1609,23 @@ Lemma demand_formed : forall C0 wanted used C wrap Cf,
   (forall r m, In (mkey r m) wanted -> TyOk W r /\ ScopedTy W C r) ->
   CxFormed W Cf /\ KeysScoped W Cf.
 Proof.
-  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th sm rs Cm wrap Cf Nin Step Rest IH];
+  intros C0 wanted used C wrap Cf Dm. induction Dm as [used C|used C u matching th formal needs Cr ks rest Cf Nin Step Rest IH];
     intros Cf0 Ks Wk; [split; assumption|].
-  destruct Step as [C1 ot m u1 matching1 th1 sm1 Cr ks Iw Ml Of FAp Ro Ik].
+  destruct Step as [C1 ot m u1 matching1 th1 formal1 needs1 Cr1 ks1 Iw Ml Of Typed Ro Ik Matched].
+  pose (sm1 := satisfaction_map (family_context C1 matching1) formal1 th1 needs1).
+  pose proof (family_application_with_map Typed) as FAp.
   destruct (Wk ot m Iw) as [Ok Sco].
   destruct (family_application_ok _ _ _ _ _ _ _ FAp Cf0 Ks (family_matching_scoped _ _ _ _ _ Ro Ok Sco)) as [Sub [Lo Pr]].
-  assert (Sc : scope_gens (family_restore C1 Cr) = scope_gens C1) by (apply scope_gens_ext; [reflexivity|exact Sub]).
+  assert (Sc : scope_gens (family_restore C1 Cr1) = scope_gens C1) by (apply scope_gens_ext; [reflexivity|exact Sub]).
   apply IH.
   - constructor.
     + exact (cf_ty _ _ Cf0).
-    + change (ReadOk W (c_sub Cr)). rewrite Sub. exact (cf_read _ _ Cf0).
-    + change (ShapesFormed W (c_merge Cr)).
-      rewrite (PublicContextFacts.family_application_merge W C1 u1 matching1 th1 sm1 Cr ks FAp).
+    + change (ReadOk W (c_sub Cr1)). rewrite Sub. exact (cf_read _ _ Cf0).
+    + change (ShapesFormed W (c_merge Cr1)).
+      rewrite (PublicContextFacts.family_application_merge W C1 u1 matching1 th1 sm1 Cr1 ks1 FAp).
       exact (cf_shapes _ _ Cf0).
     + intros k p Iq. destruct (Pr k p Iq) as [Kk [Pk _]]. split; assumption.
-    + change (forall n t mu, In (n, (t, mu)) (c_locals Cr) -> TyOk W t). rewrite Lo. exact (cf_locals _ _ Cf0).
+    + change (forall n t mu, In (n, (t, mu)) (c_locals Cr1) -> TyOk W t). rewrite Lo. exact (cf_locals _ _ Cf0).
   - intros r m' th' p Iq. apply (scoped_ext W _ _ _ (eq_sym Sc)). exact (proj2 (proj2 (Pr _ _ Iq)) r m' th' eq_refl).
   - intros r m' Iw'. destruct (Wk r m' Iw') as [O1 S1]. split; [exact O1|exact (scoped_ext W _ _ _ (eq_sym Sc) S1)].
 Qed.
