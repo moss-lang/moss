@@ -18,12 +18,18 @@ Definition field_pattern_bindings (fields : list field_pattern_plan) : list (nam
     | PatternIgnore _ => []
     end) fields.
 
-Definition translate_field_patterns (F : frame) (fields : list field_pattern_plan) : list (fld * var) :=
+Definition local_number (slots : list (name * nat)) (n : name) : nat :=
+  match slook n slots with Some slot => slot | None => 0 end.
+
+Definition emit_field_patterns (slots : list (name * nat)) (fields : list field_pattern_plan) : list (fld * var) :=
   flat_map (fun field => match field with
-    | PatternPun n _ => [(n, var_of F n)]
-    | PatternRename n binder _ => [(n, var_of F binder)]
+    | PatternPun n _ => [(n, local_number slots n)]
+    | PatternRename n binder _ => [(n, local_number slots binder)]
     | PatternIgnore _ => []
     end) fields.
+
+Definition translate_field_patterns (F : frame) :=
+  emit_field_patterns (fr_var F).
 
 Inductive TypesFieldPatterns (W : world) (F : frame) (fields : list (fld * ty))
     : list (name * option apat) -> list field_pattern_plan -> Prop :=
@@ -87,14 +93,16 @@ Definition pattern_catches (plan : pattern_plan) : bool :=
 Definition pattern_scope (C : cx) (plan : pattern_plan) : cx :=
   fold_left (fun C q => add_local C (fst q) (snd q) LLet) (pattern_bindings plan) C.
 
-Definition translate_pattern (F : frame) (plan : pattern_plan) : pattern :=
+Definition emit_pattern (slots : list (name * nat)) (plan : pattern_plan) : pattern :=
   match plan with
   | PatternWildcard => PAny None
-  | PatternBinder n _ => PAny (Some (var_of F n))
+  | PatternBinder n _ => PAny (Some (local_number slots n))
   | PatternNominal tag => PHead tag None []
-  | PatternPayload tag n _ => PHead tag (Some (var_of F n)) []
-  | PatternRecord tag fields => PHead tag None (translate_field_patterns F fields)
+  | PatternPayload tag n _ => PHead tag (Some (local_number slots n)) []
+  | PatternRecord tag fields => PHead tag None (emit_field_patterns slots fields)
   end.
+
+Definition translate_pattern (F : frame) := emit_pattern (fr_var F).
 
 Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> pattern_plan -> Prop :=
 | TypesPatternWildcard : TypesPattern W F scrutinee APWild PatternWildcard
@@ -178,7 +186,15 @@ with block_plan : Type :=
 | PlanExprThen (value : expression_plan) (rest : block_plan)
 | PlanWhile (condition : expression_plan) (body rest : block_plan)
 | PlanLoop (body rest : block_plan)
-| PlanLoopLast (body : block_plan).
+| PlanLoopLast (body : block_plan)
+| PlanBind (items : list binding_plan) (result : cx) (rest : block_plan)
+with binding_plan : Type :=
+| PlanTypeBind (symbol : nat) (meaning : ty)
+| PlanValueBind (site : cx) (symbol : nat) (initializer : expression_plan)
+| PlanInlineApply (items : list binding_plan)
+| PlanAbstractApply (site : cx) (application : application)
+| PlanFunctorCopy (target provider : nat) (target_context provider_context : cx)
+    (selected : item -> item) (needs : list item) (positions : list nat).
 
 Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expression_plan -> ty -> Prop :=
 | TypesUnit : forall F C exp, TypesExpr W F C AEUnit exp PlanUnit TUnit
@@ -333,6 +349,10 @@ with TypesBlk (W : world) : frame -> cx -> list astmt -> option aexpr -> option 
 | TypesLoopLast : forall F C b exp bp bt,
     TypesBlkE W (with_loop F) C b None bp bt -> ~ BlockBreaks W (fr_mod F) b ->
     TypesBlk W F C [ASLoop b] None exp (PlanLoopLast bp) never []
+| TypesBindBlock : forall F C items rest tail exp plans result F' continuation t made created,
+    TypesBindItems W F C items plans result F' made ->
+    TypesBlk W F' result rest tail exp continuation t created ->
+    TypesBlk W F C (ASBind items :: rest) tail exp (PlanBind plans result continuation) t (made ++ created)
 with TypesArgs (W : world) : frame -> cx -> list aexpr -> list ty -> list expression_plan -> Prop :=
 | TypesArgsNil : forall F C, TypesArgs W F C [] [] []
 | TypesArgsCons : forall F C a rest t ts plan plans actual,
@@ -376,59 +396,153 @@ with TypesArmList (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
     TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan bt ->
     opt_fits bt exp -> TypesArmList W F C st rest exp plans covered catch rt -> Join bt rt exp t ->
     TypesArmList W F C st ((pat, body) :: rest) exp ((pattern, plan) :: plans)
-      (pattern_heads pattern ++ covered) (pattern_catches pattern || catch) t.
+      (pattern_heads pattern ++ covered) (pattern_catches pattern || catch) t
+with TypesBindItems (W : world) : frame -> cx -> list (spec * option aexpr) ->
+    list binding_plan -> cx -> frame -> list nat -> Prop :=
+| TypesBindEmpty : forall F C, TypesBindItems W F C [] [] C F []
+| TypesBindCons : forall F C item rest plan plans middle F1 made1 result F2 made2,
+    TypesBindItem W F C item plan middle F1 made1 ->
+    TypesBindItems W F1 middle rest plans result F2 made2 ->
+    TypesBindItems W F C (item :: rest) (plan :: plans) result F2 (made1 ++ made2)
+with TypesBindItem (W : world) : frame -> cx -> (spec * option aexpr) ->
+    binding_plan -> cx -> frame -> list nat -> Prop :=
+| TypesBindType : forall F C path symbol right arguments meaning,
+    resolve_sym W (fr_mod F) path = Some symbol -> kind_sym W symbol = Some DKType ->
+    ~ In symbol (fr_pins F) ->
+    TyOf W (fr_mod F) (c_ty C) None (ATRef right arguments) meaning ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath right arguments))
+      (PlanTypeBind symbol (canon C meaning)) (set_ty C symbol (canon C meaning)) F []
+| TypesBindValue : forall F C path symbol d name annotation initializer declared source plan actual arguments,
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADVal name annotation initializer ->
+    TyOf W (d_mod d) (c_ty C) None annotation declared ->
+    TypesExpr W F C source (Some declared) plan actual -> fits actual declared ->
+    AppOf W symbol (c_ty C) arguments ->
+    TypesBindItem W F C (Spec (Some path) None None, Some source) (PlanValueBind C symbol plan)
+      (provide C (IVal symbol) arguments (set_val C symbol declared)) F []
+| TypesBindInlineApply : forall F C path symbol d name parameters inputs outputs bodies plans result nested made,
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADFunctor name parameters inputs outputs (Some bodies) -> ~ In symbol (fr_applying F) ->
+    TypesBindItems W (with_mod F (d_mod d) symbol) C (List.concat bodies) plans result nested made ->
+    TypesBindItem W F C (Spec (Some path) None None, None) (PlanInlineApply plans)
+      result (carry_frame_allocations F nested) made
+| TypesBindAbstractApply : forall F C path plan,
+    TypesApplication W F C path plan ->
+    TypesBindItem W F C (Spec (Some path) None None, None) (PlanAbstractApply C plan) (app_result plan)
+      (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) (app_allocated plan)))
+      (map (app_identity plan) (app_outputs plan))
+| TypesBindFunctorCopy : forall F C path u provider h Cu nsu Ch nsh target fixed positions,
+    resolve_sym W (fr_mod F) path = Some u -> resolve_sym W (fr_mod F) provider = Some h ->
+    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) -> nlook h (c_funs C) <> None ->
+    FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
+    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
+    (forall x, Fixed W h x -> Fixed W u x) -> FixedAgreement W C h -> SameResult W u h ->
+    (forall x t, In (x, t) fixed <-> Fixed W u x /\ nlook x (c_ty C) = Some t) ->
+    (forall x t, nlook x (c_ty Ch) = Some t -> nlook x (c_ty Cu) <> None) ->
+    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fixed) u h Cu nsu nsh Ch positions target ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
+      (PlanFunctorCopy u h Cu Ch target nsh positions) (set_fun C u fixed) F [].
 
-Fixpoint translate_expr (F : frame) (C : cx) (plan : expression_plan) : expr :=
+Lemma binding_plan_numbering : forall W F C item plan result F' made,
+  TypesBindItem W F C item plan result F' made -> fr_var F' = fr_var F.
+Proof. intros W F C item plan result F' made Typed. destruct Typed; reflexivity. Qed.
+
+Lemma bind_plans_numbering : forall W F C items plans result F' made,
+  TypesBindItems W F C items plans result F' made -> fr_var F' = fr_var F.
+Proof.
+  intros W F C items plans result F' made Typed. induction Typed; [reflexivity|].
+  rewrite IHTyped. eapply binding_plan_numbering; eassumption.
+Qed.
+
+Definition splice_bindings (bindings : list binding) (body : expr) : expr := fold_right EBind body bindings.
+
+Lemma splice_bindings_append : forall left right,
+  splice_bindings (left ++ right) = fun body => splice_bindings left (splice_bindings right body).
+Proof.
+  induction left as [|b left IH]; intro right; [reflexivity|].
+  change ((fun body => EBind b (splice_bindings (left ++ right) body)) =
+    fun body => EBind b (splice_bindings left (splice_bindings right body))).
+  now rewrite IH.
+Qed.
+
+Definition application_binding (C : cx) (a : application) : binding :=
+  BApply (app_functor a) (app_arguments a) (map (fun t => (t, app_identity a t)) (app_outputs a))
+    (satisfaction_map C (app_input a) (app_arguments a) (app_needs a))
+    (map (rkey_of (app_result a)) (app_provisions a)).
+
+Fixpoint emit_expr (slots : list (name * nat)) (C : cx) (plan : expression_plan) : expr :=
   match plan with
   | PlanUnit => EUnit
   | PlanThis => EVar 0
-  | PlanLocal n => EVar (var_of F n)
-  | PlanBlock body => translate_block (without_pins F) C body
+  | PlanLocal n => EVar (local_number slots n)
+  | PlanBlock body => emit_block slots C body
   | PlanIf condition body other =>
-      EIf (translate_expr F C condition) (translate_block (without_pins F) C body)
-        (match other with Some plan => translate_expr F C plan | None => EUnit end)
+      EIf (emit_expr slots C condition) (emit_block slots C body)
+        (match other with Some plan => emit_expr slots C plan | None => EUnit end)
   | PlanReturnUnit => EReturn EUnit
-  | PlanReturn result => EReturn (translate_expr F C result)
+  | PlanReturn result => EReturn (emit_expr slots C result)
   | PlanBreak => EBreak
   | PlanDefinedCall f formal needs arguments demands call_site args =>
       translate_demands C demands (translate_call call_site formal f arguments needs
-        (map (translate_expr F C) args))
-  | PlanAbstractCall f args => EInvoke f (map (translate_expr F C) args)
+        (map (emit_expr slots C) args))
+  | PlanAbstractCall f args => EInvoke f (map (emit_expr slots C) args)
   | PlanUnitTag tag => ETag tag [] EUnit
-  | PlanTag tag arguments payload => ETag tag arguments (translate_expr F C payload)
+  | PlanTag tag arguments payload => ETag tag arguments (emit_expr slots C payload)
   | PlanRecord tag arguments fields =>
-      ETag tag arguments (ERecord (map (fun '(n, child) => (n, translate_expr F C child)) fields))
-  | PlanField object field => EField (translate_expr F C object) field
+      ETag tag arguments (ERecord (map (fun '(n, child) => (n, emit_expr slots C child)) fields))
+  | PlanField object field => EField (emit_expr slots C object) field
   | PlanMatch scrutinee arms =>
-      EMatch (translate_expr F C scrutinee)
+      EMatch (emit_expr slots C scrutinee)
         (map (fun '(pattern, body) =>
-          (translate_pattern F pattern, translate_expr F (pattern_scope C pattern) body)) arms)
+          (emit_pattern slots pattern, emit_expr slots (pattern_scope C pattern) body)) arms)
   | PlanMethod receiver selected object args =>
-      emit_method_call C receiver selected (translate_expr F C object) (map (translate_expr F C) args)
+      emit_method_call C receiver selected (emit_expr slots C object) (map (emit_expr slots C) args)
   | PlanOperator receiver method family object args =>
-      emit_provided_method C receiver method family (translate_expr F C object) (map (translate_expr F C) args)
+      emit_provided_method C receiver method family (emit_expr slots C object) (map (emit_expr slots C) args)
   | PlanNumeric literal => emit_literal C literal
   | PlanGlobalValue symbol => EVal symbol
-  | PlanConstant layout initializer => translate_expr layout (Cx [] [] [] [] []) initializer
-  | PlanBracketedCall expansion => translate_expr F C expansion
+  | PlanConstant layout initializer => emit_expr (fr_var layout) (Cx [] [] [] [] []) initializer
+  | PlanBracketedCall expansion => emit_expr slots C expansion
   end
-with translate_block (F : frame) (C : cx) (plan : block_plan) : expr :=
+with emit_block (slots : list (name * nat)) (C : cx) (plan : block_plan) : expr :=
   match plan with
   | PlanEmpty => EUnit
-  | PlanTail result => translate_expr F C result
+  | PlanTail result => emit_expr slots C result
   | PlanLet n t mode initializer rest =>
-      ELet (var_of F n) (translate_expr F C initializer) (translate_block F (add_local C n t mode) rest)
+      ELet (local_number slots n) (emit_expr slots C initializer) (emit_block slots (add_local C n t mode) rest)
   | PlanAssign n value rest =>
-      ESeq (EAssign (var_of F n) (translate_expr F C value)) (translate_block F C rest)
-  | PlanExprLast value => ESeq (translate_expr F C value) EUnit
-  | PlanExprThen value rest => ESeq (translate_expr F C value) (translate_block F C rest)
+      ESeq (EAssign (local_number slots n) (emit_expr slots C value)) (emit_block slots C rest)
+  | PlanExprLast value => ESeq (emit_expr slots C value) EUnit
+  | PlanExprThen value rest => ESeq (emit_expr slots C value) (emit_block slots C rest)
   | PlanWhile condition body rest =>
-      ESeq (EWhile (translate_expr F C condition) (translate_block (without_pins (with_loop F)) C body))
-        (translate_block F C rest)
+      ESeq (EWhile (emit_expr slots C condition) (emit_block slots C body))
+        (emit_block slots C rest)
   | PlanLoop body rest =>
-      ESeq (ELoop (translate_block (without_pins (with_loop F)) C body)) (translate_block F C rest)
-  | PlanLoopLast body => ESeq (ELoop (translate_block (without_pins (with_loop F)) C body)) EUnit
+      ESeq (ELoop (emit_block slots C body)) (emit_block slots C rest)
+  | PlanLoopLast body => ESeq (ELoop (emit_block slots C body)) EUnit
+  | PlanBind items result rest =>
+      splice_bindings (flat_map (emit_bind_item slots) items) (emit_block slots result rest)
+  end
+with emit_bind_item (slots : list (name * nat)) (plan : binding_plan) : list binding :=
+  match plan with
+  | PlanTypeBind symbol meaning => [BType symbol meaning]
+  | PlanValueBind site symbol initializer => [BValue symbol (emit_expr slots site initializer)]
+  | PlanInlineApply items => flat_map (emit_bind_item slots) items
+  | PlanAbstractApply site plan => [application_binding site plan]
+  | PlanFunctorCopy target provider Cu Ch selected needs positions =>
+      [BCopyFunctor target provider (map (fun k => (rkey_of Ch k, rkey_of Cu (selected k))) needs) positions]
   end.
+
+Definition translate_expr (F : frame) := emit_expr (fr_var F).
+Definition translate_block (F : frame) := emit_block (fr_var F).
+Definition translate_bind_item (F : frame) (plan : binding_plan) :=
+  splice_bindings (emit_bind_item (fr_var F) plan).
+Definition translate_bind_items (F : frame) (plans : list binding_plan) :=
+  splice_bindings (flat_map (emit_bind_item (fr_var F)) plans).
+
+Lemma translate_block_numbering : forall F F' C plan,
+  fr_var F = fr_var F' -> translate_block F C plan = translate_block F' C plan.
+Proof. intros F F' C plan Same. unfold translate_block. now rewrite Same. Qed.
 
 Definition translate_record_fields (F : frame) (C : cx) (fields : list (fld * expression_plan)) :=
   map (fun '(n, child) => (n, translate_expr F C child)) fields.
@@ -445,9 +559,12 @@ with types_cond_ind := Induction for TypesCond Sort Prop
 with types_branch_ind := Induction for TypesBranch Sort Prop
 with types_fields_ind := Induction for TypesRecordFields Sort Prop
 with types_arms_ind := Induction for TypesArms Sort Prop
-with types_arm_list_ind := Induction for TypesArmList Sort Prop.
+with types_arm_list_ind := Induction for TypesArmList Sort Prop
+with types_bind_items_ind := Induction for TypesBindItems Sort Prop
+with types_bind_item_ind := Induction for TypesBindItem Sort Prop.
 Combined Scheme body_typing_ind from types_expr_ind, types_blke_ind, types_blk_ind, types_args_ind,
-  types_cond_ind, types_branch_ind, types_fields_ind, types_arms_ind, types_arm_list_ind.
+  types_cond_ind, types_branch_ind, types_fields_ind, types_arms_ind, types_arm_list_ind,
+  types_bind_items_ind, types_bind_item_ind.
 
 Theorem body_translation_agrees : forall W P,
   (forall F C e expected plan t, TypesExpr W F C e expected plan t ->
@@ -471,18 +588,46 @@ Theorem body_translation_agrees : forall W P,
   (forall F C st arms exp plans t, TypesArms W F C st arms exp plans t ->
     Arms W P F C st arms exp (translate_arms F C plans) t) /\
   (forall F C st arms exp plans covered catch t, TypesArmList W F C st arms exp plans covered catch t ->
-    ArmsList W P F C st arms exp (translate_arms F C plans) covered catch t).
+    ArmsList W P F C st arms exp (translate_arms F C plans) covered catch t) /\
+  (forall F C items plans result F' made, TypesBindItems W F C items plans result F' made ->
+    BindItems W P F C items (translate_bind_items F plans) result F' made) /\
+  (forall F C item plan result F' made, TypesBindItem W F C item plan result F' made ->
+    BindItem W P F C item (translate_bind_item F plan) result F' made).
 Proof.
-  intros W P. apply body_typing_ind; cbn [translate_expr translate_block translate_record_fields translate_arms map]; intros;
+  intros W P. apply body_typing_ind;
+    cbn [translate_expr translate_block emit_expr emit_block translate_record_fields translate_arms
+      translate_bind_item emit_bind_item splice_bindings fold_right map];
+    intros;
     eauto 8 using ExUnit, ExThis, ExLocal, ExBlock, ExIfThen, ExIfElse, ExReturnUnit, ExReturn,
     ExBreak, ExCallD, ExCallA, ExUnitTag, ExTag, ExRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
     ExLit, ExVal, ExCallBr, provided_method_translation, method_call_translation, literal_translation, BlkECheck, BlkTail,
     BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop, BlkLoopLast, ArgsNil,
     ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever, ArmsSome,
-    ArmsOne, ArmsMore, pattern_translation.
+    ArmsOne, ArmsMore, pattern_translation, BINil, BTypeBind, BValBind, BApplyBody, BApplyAbstract, BFunCopy.
   - eapply ExConst; try eassumption. exists layout, actual. repeat first [assumption | split].
+  - match goal with
+    | Typed : TypesBindItems W F C items plans result F' made,
+      Tail : Blk W P F' result rest tail exp (translate_block F' result continuation) t created |- _ =>
+      unfold translate_block in Tail;
+      rewrite (bind_plans_numbering _ _ _ _ _ _ _ _ Typed) in Tail;
+      eapply BlkBind; eassumption
+    end.
   - constructor; [|assumption]. cbn [fst snd]. split; [reflexivity|].
     exists n, syntax, actual. repeat split; assumption.
+  - lazymatch goal with
+    | Typed : TypesBindItem W F C ?source_item plan middle F1 made1,
+      Tail : BindItems W P F1 middle rest (translate_bind_items F1 plans) result F2 made2 |- _ =>
+      unfold translate_bind_items in Tail |- *; cbn [flat_map]; rewrite splice_bindings_append;
+      rewrite (binding_plan_numbering _ _ _ _ _ _ _ _ Typed) in Tail;
+      eapply BICons; eassumption
+    end.
+  - eapply (@BTypeBind W P F C path0 symbol right arguments meaning); eassumption.
+  - eapply (@BValBind W P F C path0 symbol d name0 annotation initializer declared source0
+      (translate_expr F C plan) actual arguments); eassumption.
+  - eapply (@BApplyAbstract W P F C path0 plan); eassumption.
+  - eapply (@BFunCopy W P F C path0 u provider h Cu nsu Ch nsh target
+      (map (fun k => (rkey_of Ch k, rkey_of Cu (target k))) nsh) fixed positions);
+      first [eassumption|reflexivity].
 Qed.
 
 Definition HasExpressionPlan (W : world) (P : program) (F : frame) (C : cx) (source : aexpr) : Prop :=
@@ -666,6 +811,24 @@ Proof.
       TypesMethodAttachedAbstract, TypesMethodDetached.
 Qed.
 
+Local Lemma application_renumber : forall W F C path plan slots,
+  TypesApplication W F C path plan -> TypesApplication W (renumber_body_frame F slots) C path plan.
+Proof. exact (fun _ _ _ _ _ _ Typed => Typed). Qed.
+
+Local Lemma binding_plan_keeps_names : forall W F C item plan result F' made slots,
+  TypesBindItem W F C item plan result F' made -> SameLocalNames F slots -> SameLocalNames F' slots.
+Proof.
+  intros W F C item plan result F' made slots Typed Names.
+  unfold SameLocalNames, Named in *. now rewrite (binding_plan_numbering _ _ _ _ _ _ _ _ Typed).
+Qed.
+
+Local Lemma bind_plans_keep_names : forall W F C items plans result F' made slots,
+  TypesBindItems W F C items plans result F' made -> SameLocalNames F slots -> SameLocalNames F' slots.
+Proof.
+  intros W F C items plans result F' made slots Typed Names.
+  unfold SameLocalNames, Named in *. now rewrite (bind_plans_numbering _ _ _ _ _ _ _ _ Typed).
+Qed.
+
 Theorem body_typing_renumber : forall W,
   (forall F C e expected plan t, TypesExpr W F C e expected plan t ->
     forall slots, SameLocalNames F slots -> TypesExpr W (renumber_body_frame F slots) C e expected plan t) /\
@@ -686,7 +849,13 @@ Theorem body_typing_renumber : forall W,
     forall slots, SameLocalNames F slots -> TypesArms W (renumber_body_frame F slots) C st arms exp plans t) /\
   (forall F C st arms exp plans covered catch t, TypesArmList W F C st arms exp plans covered catch t ->
     forall slots, SameLocalNames F slots ->
-      TypesArmList W (renumber_body_frame F slots) C st arms exp plans covered catch t).
+      TypesArmList W (renumber_body_frame F slots) C st arms exp plans covered catch t) /\
+  (forall F C items plans result F' made, TypesBindItems W F C items plans result F' made ->
+    forall slots, SameLocalNames F slots ->
+      TypesBindItems W (renumber_body_frame F slots) C items plans result (renumber_body_frame F' slots) made) /\
+  (forall F C item plan result F' made, TypesBindItem W F C item plan result F' made ->
+    forall slots, SameLocalNames F slots ->
+      TypesBindItem W (renumber_body_frame F slots) C item plan result (renumber_body_frame F' slots) made).
 Proof.
   intros W. apply body_typing_ind; intros;
     eauto 9 using TypesUnit, TypesThis, TypesLocal, TypesBlock, TypesIfThen, TypesIfElse, TypesReturnUnit,
@@ -695,7 +864,18 @@ Proof.
     TypesConstant, TypesBracketedCall, method_selection_renumber, TypesBlkCheck, TypesTail, TypesEmpty, TypesLet, TypesAssign, TypesExprLast,
     TypesExprThen, TypesWhile, TypesLoop, TypesLoopLast, TypesArgsNil, TypesArgsCons, TypesBool,
     TypesBranchBlock, TypesBranchExpr, TypesRecordFieldsEmpty, TypesRecordFieldsCons, TypesArmsEmpty,
-    TypesArmsSome, TypesArmOne, TypesArmMore, pattern_renumber, renumbered_named.
+    TypesArmsSome, TypesArmOne, TypesArmMore, pattern_renumber, renumbered_named,
+    TypesBindEmpty, TypesBindType, TypesBindValue, TypesBindAbstractApply, TypesBindFunctorCopy,
+    application_renumber.
+  - eapply TypesBindBlock with (F' := renumber_body_frame F' slots).
+    + exact (H slots H1).
+    + apply H0. eapply bind_plans_keep_names; eassumption.
+  - eapply (@TypesBindCons W (renumber_body_frame F slots) C item0 rest plan plans middle
+      (renumber_body_frame F1 slots) made1 result (renumber_body_frame F2 slots) made2).
+    + exact (H slots H1).
+    + apply H0. eapply binding_plan_keeps_names; eassumption.
+  - exact (@TypesBindInlineApply W (renumber_body_frame F slots) C path0 symbol d name0 parameters
+      inputs outputs bodies plans result (renumber_body_frame nested slots) made e e0 e1 n (H slots H0)).
 Qed.
 
 (* A source-only fragment for checking the reverse bridge. Names listed

@@ -8,12 +8,9 @@ Local Open Scope list_scope.
 Section Readback.
 Variables (W : world) (P : program).
 
-Hypothesis read_binding_scope : forall F C items rest tail expected wrap C' F' code t made created continuation,
-  BindItems W P F C items wrap C' F' made ->
-  TypesBlk W F' C' rest tail expected continuation t created ->
-  translate_block F' C' continuation = code ->
-  exists plan, TypesBlk W F C (ASBind items :: rest) tail expected plan t (made ++ created) /\
-    translate_block F C plan = wrap code.
+Hypothesis read_provider_binding : forall F C item wrap C' F' made,
+  BindItem W P F C item wrap C' F' made ->
+  exists plan, TypesBindItem W F C item plan C' F' made /\ translate_bind_item F plan = wrap.
 
 Fixpoint read_expression F C source expected code t (D : Ex W P F C source expected code t) {struct D} :
   exists plan, TypesExpr W F C source expected plan t /\ translate_expr F C plan = code
@@ -39,7 +36,11 @@ with read_provided F C object receiver method args code t (D : Provided W P F C 
 with read_block_expression F C body expected code t (D : BlkE W P F C body expected code t) {struct D} :
   exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code
 with read_block F C statements tail expected code t made (D : Blk W P F C statements tail expected code t made) {struct D} :
-  exists plan, TypesBlk W F C statements tail expected plan t made /\ translate_block F C plan = code.
+  exists plan, TypesBlk W F C statements tail expected plan t made /\ translate_block F C plan = code
+with read_bind_items F C items wrap result F' made (D : BindItems W P F C items wrap result F' made) {struct D} :
+  exists plans, TypesBindItems W F C items plans result F' made /\ translate_bind_items F plans = wrap
+with read_bind_item F C item wrap result F' made (D : BindItem W P F C item wrap result F' made) {struct D} :
+  exists plan, TypesBindItem W F C item plan result F' made /\ translate_bind_item F plan = wrap.
 Proof.
   - destruct D as
       [F C exp
@@ -233,8 +234,45 @@ Proof.
       exists (PlanLoop body_plan rest_plan). split; [eapply TypesLoop; eassumption|reflexivity].
     + destruct (read_block_expression _ _ _ _ _ _ Body) as (plan & Typed & <-).
       exists (PlanLoopLast plan). split; [eapply TypesLoopLast; eassumption|reflexivity].
-    + destruct (read_block _ _ _ _ _ _ _ _ Rest) as (continuation & Typed & Exact).
-      eapply read_binding_scope; eassumption.
+    + destruct (read_bind_items _ _ _ _ _ _ _ Items) as (plans & ItemsTyped & <-).
+      destruct (read_block _ _ _ _ _ _ _ _ Rest) as (continuation & Typed & <-).
+      exists (PlanBind plans C' continuation). split; [eapply TypesBindBlock; eassumption|].
+      unfold translate_block. cbn [emit_block].
+      now rewrite (bind_plans_numbering _ _ _ _ _ _ _ _ ItemsTyped).
+  - destruct D as
+      [F C|F C item rest first middle F1 made1 more result F2 made2 Item Rest].
+    + exists []. split; [constructor|reflexivity].
+    + destruct (read_bind_item _ _ _ _ _ _ _ Item) as (plan & Typed & <-).
+      destruct (read_bind_items _ _ _ _ _ _ _ Rest) as (plans & RestTyped & <-).
+      exists (plan :: plans). split; [eapply TypesBindCons; eassumption|].
+      unfold translate_bind_items, translate_bind_item. cbn [flat_map].
+      rewrite splice_bindings_append.
+      now rewrite (binding_plan_numbering _ _ _ _ _ _ _ _ Typed).
+  - pose proof D as Original. destruct D as
+      [F C path symbol right arguments meaning Resolve Kind Unpinned Read
+      |F C path symbol d name annotation initializer declared source code actual arguments
+         Resolve Decl Ast Read Value Fits Application
+      | | |
+      |F C path symbol d name params inputs outputs bodies wrap result nested made
+         Resolve Decl Ast Nonrecursive Body
+      |F C path plan Typed
+      |F C path u provider h Cu nsu Ch nsh target map fixed positions
+         Resolve ResolveProvider Abstract Available Target Provider FixedHere FixedInTarget Agreement
+         Same Map FixedRead Inputs Copy
+      | ].
+    + exists (PlanTypeBind symbol (canon C meaning)).
+      split; [eapply TypesBindType; eassumption|reflexivity].
+    + destruct (read_expression _ _ _ _ _ _ Value) as (plan & Typed & <-).
+      exists (PlanValueBind C symbol plan). split; [eapply TypesBindValue; eassumption|reflexivity].
+    + eapply read_provider_binding; exact Original.
+    + eapply read_provider_binding; exact Original.
+    + eapply read_provider_binding; exact Original.
+    + destruct (read_bind_items _ _ _ _ _ _ _ Body) as (plans & Typed & <-).
+      exists (PlanInlineApply plans). split; [eapply TypesBindInlineApply; eassumption|reflexivity].
+    + exists (PlanAbstractApply C plan). split; [now apply TypesBindAbstractApply|reflexivity].
+    + subst map. exists (PlanFunctorCopy u h Cu Ch target nsh positions).
+      split; [eapply TypesBindFunctorCopy; eassumption|reflexivity].
+    + eapply read_provider_binding; exact Original.
 Qed.
 
 End Readback.
