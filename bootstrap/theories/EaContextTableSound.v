@@ -183,3 +183,46 @@ Proof.
       [exact (assume_ctx_sound E bound Bounded Enough Main Remaining _ _ _ Computed)|exact Found]
     | exact (fun_ctx_sound E bound Bounded Enough Remaining _ _ _ Computed Found) ].
 Qed.
+
+From NM Require EaMain EaMainSymbols EaMetadataSound EaWorldSound EaContextReadFacts.
+
+Corollary bundle_world_r_context_table_sound : forall b W0 bound,
+  EaMain.bundle_world_r b = Ok (W0, bound) -> forall strategy,
+  let modules := map am_path (b_mods b) in
+  let mains := EaMain.main_symbols W0 modules in
+  let metadata := EaMain.metadata_fuel W0 bound in
+  let E0 := Env W0 strategy modules mains EaMain.elab_fuel metadata in
+  let contexts := nget (context_table E0 bound) in
+  let W := ElabWorld.with_context W0 contexts in
+  let E := Env W strategy modules mains EaMain.elab_fuel metadata in
+  ContextMergeRemainder E -> ContextTableSound W.
+Proof.
+  intros b W0 bound Loaded strategy. cbn zeta. intro Remaining.
+  lazymatch type of Remaining with
+  | ContextMergeRemainder ?E => apply (installed_context_table_sound E bound)
+  end.
+  - exact (EaWorldSound.bundle_world_r_bound _ _ _ Loaded).
+  - exact (EaMetadataSound.metadata_fuel_sufficient W0 bound).
+  - exact (EaMainSymbols.bundle_world_r_main_symbols_exact _ _ _ Loaded).
+  - exact Remaining.
+  - intro symbol. cbn [e_W ElabWorld.with_context w_context].
+    rewrite EaContextReadFacts.context_table_context. reflexivity.
+Qed.
+
+Theorem elaborate_with_context_table_sound : forall strategy b W program,
+  EaMain.elaborate_with strategy b = Ok (W, program) ->
+  (forall W0 bound, EaMain.bundle_world_r b = Ok (W0, bound) ->
+    let modules := map am_path (b_mods b) in
+    ContextMergeRemainder (Env W strategy modules (EaMain.main_symbols W0 modules)
+      EaMain.elab_fuel (EaMain.metadata_fuel W0 bound))) ->
+  ContextTableSound W.
+Proof.
+  intros strategy b W program Run Remaining.
+  unfold EaMain.elaborate_with, EaMain.elaborate_with_metadata in Run.
+  destruct (EaMain.bundle_world_r b) as [[W0 bound]|message] eqn:Loaded; [|discriminate].
+  repeat match type of Run with
+  | context [match ?step with _ => _ end] => destruct step eqn:?; try discriminate
+  end.
+  injection Run as <- <-. apply (bundle_world_r_context_table_sound _ _ _ Loaded strategy).
+  apply Remaining. reflexivity.
+Qed.

@@ -129,3 +129,5 @@ Print Assumptions NM.EaContextReadFacts.merge_context.
 Print Assumptions NM.EaContextReadFacts.assume_ctx_context.
 Print Assumptions NM.EaContextReadFacts.fun_ctx_context.
 Print Assumptions NM.EaContextReadFacts.context_table_context.
+
+Print Assumptions NM.EaContextTableSound.bundle_world_r_context_table_sound.
