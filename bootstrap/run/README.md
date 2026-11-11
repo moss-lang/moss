@@ -9,11 +9,14 @@ the test suite holds the compiler to it. It runs one pipeline:
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
    `Audit.Semantics.program` from the bundle, or rejects it.
 3. **Passes**: `ProgramFastPath.fastpath`, `ProgramPrune.prune` and
-   `ProgramCapTrim.captrim`, in that order. Each is proved to keep `Runs`
-   (`theories/ProgramFastPath.v`, `ProgramPrune.v`, `ProgramCapTrim.v`).
-4. **Interpreter**: `Audit.Semantics.Interpreter.run_main`, the reference
-   interpreter of Audit.v's run-time semantics. Its primitives are
-   `MossX.run_prim_fast`.
+   `ProgramCapTrim.captrim`, in the order extracted from `BootstrapRun.passes`.
+4. **Interpreter**: `InterpreterCompiled.crun_program`, the closure-compiled
+   implementation of Audit.v's execution semantics. Its primitives are
+   `MossX.run_prim_fast` through the Base host adapter.
+
+`BootstrapRun.Sound.run_optimized_sound` composes the passes and interpreter
+against public `Runs` for a safe input program, a host whose primitives
+ignore program code, and compiled tables satisfying `tbl_ok`.
 
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
 `LoadListed.v`; `LoadListedFacts.v` proves its complete result, including
@@ -30,8 +33,9 @@ Steps 3 and 4 use the interpreter and passes proved against these definitions.
 The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
 and `EaWorldSound` proofs cover readers, their fuel conditions and the
 world builder. Ea's `SOUND:` comments state the intended per-function
-contracts. The executable also trusts the OCaml driver, value/primitive conversions in
-`prims.ml`, and the decoder memo in `primCache.ml`. The memo stores a pure
+contracts. The executable also trusts the OCaml driver's table construction,
+value and primitive conversions in `prims.ml`, and the decoder memo in
+`primCache.ml`. The memo stores a pure
 result alongside immutable operation names and operands. The supported Wasm
 operation conversion uses `Obj.magic` and relies on WasmOps and ExecutionModel
 constructor ordering. Float conversion uses the legacy canonical NaN patterns

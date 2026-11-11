@@ -27,6 +27,7 @@
 
 From Stdlib Require Import List Bool Arith String.
 From NM Require Import Audit.
+From NM Require Import PublicValueTyping.
 Import Audit.Semantics ListNotations.
 
 Local Open Scope nat_scope.
@@ -467,8 +468,8 @@ Qed.
 
 (* ===================== The interpreter =================================== *)
 
-Module LazyInterpreter (Import Prims : PRIMITIVES).
-Module I := Interpreter Prims.
+Module LazyInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims).
+Module I := Reference.
 
 Definition lcheck_tag (P : program_view) (d : lenv) (n : nsym) (th : subst) (w : value) : signal :=
   match lookup_cast n (view_casts P) with

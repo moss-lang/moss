@@ -1,8 +1,7 @@
 (* Extraction for the reference implementation's executable (run/dune,
    README.md): the Rocq front end (Parse.load, and Parse.parse_moss with
    the AST dump for --dump), the elaborator (EaMain.elaborate), the proved
-   passes on Audit programs (ProgramFastPath.fastpath, ProgramPrune.prune,
-   ProgramCapTrim.captrim) and Audit.v's reference interpreter
+   passes on Audit programs (BootstrapRun.passes) and Audit.v's reference interpreter
    (Audit.Semantics.Interpreter, with program_of), run through
    InterpreterCompiled.CloInterpreter (the same interpreter with deferred type
    substitution, InterpreterLazy, trie-keyed provisions, InterpreterFast, and compiled
@@ -14,7 +13,7 @@ From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require AuditBase.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require EaMain ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
+From NM Require EaMain BootstrapRun InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -65,7 +64,7 @@ Extraction Blacklist String List Char Bool.
 Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx Parse.load
   EaMain.elaborate
-  ProgramFastPath.fastpath ProgramPrune.prune ProgramCapTrim.captrim
+  BootstrapRun.passes
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives
   Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program

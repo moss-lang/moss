@@ -22,6 +22,7 @@
 
 From Stdlib Require Import List Bool Arith String Lia.
 From NM Require Import Audit NatTrie InterpreterLazy InterpreterFast.
+From NM Require Import PublicValueTyping.
 Import Audit.Semantics ListNotations.
 From NM Require ProgramPrune.
 
@@ -53,8 +54,8 @@ Definition push_arg {D S R : Type}
   | inr result => inr result
   end.
 
-Module CloInterpreter (Import Prims : PRIMITIVES).
-Module F := FastInterpreter Prims.
+Module CloInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims).
+Module F := FastInterpreter Prims Reference.
 Module L := F.L.
 Module I := F.I.
 
@@ -745,6 +746,11 @@ Definition crun_main (P : program_view) (tbl : fsym -> option code) (fuel : nat)
   | Some c => I.ret_call [] (c fuel d0 [] st0)
   | None => I.Evaluation (Stuck I.e_nobody) [] st0
   end.
+
+Definition crun_program (P : program_view) (tbl : fsym -> option code)
+    (fuel : nat) (p : program) (st0 : mstate) : I.evaluation :=
+  crun_main P tbl fuel (program_main p)
+    (fast_env (lift_env (program_environment p))) st0.
 
 (* ===================== Agreement ========================================= *)
 

@@ -20,6 +20,7 @@
 
 From Stdlib Require Import List Bool Arith String.
 From NM Require Import Audit NatTrie InterpreterLazy.
+From NM Require Import PublicValueTyping.
 Import Audit.Semantics ListNotations.
 
 Local Open Scope nat_scope.
@@ -487,8 +488,8 @@ Qed.
 
 (* ===================== The interpreter =================================== *)
 
-Module FastInterpreter (Import Prims : PRIMITIVES).
-Module L := LazyInterpreter Prims.
+Module FastInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims).
+Module L := LazyInterpreter Prims Reference.
 Module I := L.I.
 
 Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mstate)

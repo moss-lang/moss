@@ -30,7 +30,8 @@
    proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of fuel; 2
    a usage error. *)
 module A = Audit.Semantics
-module C = InterpreterCompiled.CloInterpreter(Prims.P)
+module Reference = A.Interpreter(Prims.P)
+module C = InterpreterCompiled.CloInterpreter(Prims.P)(Reference)
 module I = C.I
 
 let read_file f = try Some (In_channel.with_open_bin f In_channel.input_all) with Sys_error _ -> None
@@ -107,12 +108,6 @@ let output l =
   List.iter (fun c -> Buffer.add_char b (Char.chr (snd (Uint63.to_int2 c)))) (List.rev l);
   Buffer.contents b
 
-let passes = [
-  ("fastpath", ProgramFastPath.fastpath);
-  ("prune", ProgramPrune.prune);
-  ("captrim", ProgramCapTrim.captrim);
-]
-
 let trap_name = function
   | 1 -> "unreachable" | 2 -> "integer divide by zero" | 3 -> "integer overflow"
   | 4 -> "out of bounds memory access" | 5 -> "invalid conversion to integer"
@@ -158,7 +153,7 @@ let () =
   if !elab_only then exit 0;
   let p = if not !run_passes then p else
     List.fold_left (fun p (name, pass) ->
-      let t = now () in let p = pass p in time "%s in %.3fs" name (now () -. t); p) p passes in
+      let t = now () in let p = pass p in time "%s in %.3fs" name (now () -. t); p) p BootstrapRun.passes in
   (* Resolve each required operation in the shared decoder cache before
      entering the interpreter. *)
   List.iter (fun operation -> ignore (AuditBase.WasmOps.decode operation)) (A.required_primitives p);
@@ -193,8 +188,7 @@ let () =
   let ftbl u = if u >= 0 && u < nu then b.(u) else None in
   List.iter (fun (f, e) -> a.(f) <- Some (C.cc view tbl ftbl e)) (List.rev p.A.program_functions);
   List.iter (fun (u, code) -> b.(u) <- Some (C.ccbs view tbl ftbl code.A.fc_bindings)) (List.rev p.A.program_functors);
-  let r = C.crun_main view tbl max_int p.A.program_main
-    (InterpreterFast.fast_env (InterpreterLazy.lift_env p.A.program_environment)) (MossX.init_state (Uint63.of_int !pages)) in
+  let r = C.crun_program view tbl max_int p (MossX.init_state (Uint63.of_int !pages)) in
   let st = r.I.evaluation_state in
   print_string (output st.MossX.ms_out); flush stdout;
   prerr_string (output st.MossX.ms_err);

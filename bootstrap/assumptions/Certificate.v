@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCtx EaMain EaWorldSound EaContextTableSound MossX.
+From NM Require Parse EaCallSound EaCtx EaMain EaWorldSound EaContextTableSound MossX BootstrapRun.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -144,6 +144,7 @@ Qed.
    interfaces whose primitives ignore the program's code. Composed after
    the fast path and pruning, as moss-ref runs them (run/driver.ml). *)
 Module CapTrimTop := ProgramCapTrim.TrimRuns AuditExamples.Host PublicPublic.
+Module RunTop := BootstrapRun.Sound AuditExamples.Host PublicPublic.
 Definition captrim_runs_agree : forall program interface initial result,
   PruneTop.code_blind interface ->
   PublicPublic.Runs (ProgramCapTrim.captrim program) interface initial result
@@ -152,26 +153,13 @@ Definition captrim_runs_agree : forall program interface initial result,
 Lemma fastpath_prune_captrim_runs_agree : forall prelude program interface initial result,
   PublicPublic.Admissible prelude program -> PublicPublic.Compatible program interface ->
   PruneTop.code_blind interface ->
-  PublicPublic.Runs (ProgramCapTrim.captrim (ProgramPrune.prune (ProgramFastPath.fastpath program)))
-    interface initial result
+  PublicPublic.Runs (BootstrapRun.optimize program) interface initial result
   <-> PublicPublic.Runs program interface initial result.
 Proof.
   intros prelude program interface initial result Ha Hc Hb.
-  rewrite (captrim_runs_agree _ _ _ _ Hb).
-  exact (fastpath_prune_runs_agree prelude program interface initial result Ha Hc Hb).
+  exact (RunTop.runs_optimized program interface initial result Hb
+    (PublicEntryTop.public_safety prelude program interface initial Ha Hc)).
 Qed.
-
-(* Deferred type substitution (InterpreterLazy.v): moss-ref runs the reference
-   interpreter as InterpreterLazy.LazyInterpreter, which returns exactly what the
-   reference returns, at every fuel, for every primitive implementation
-   (run/driver.ml), here at the public reference host. *)
-Module LazyTop := InterpreterLazy.LazyInterpreter PublicPublic.ReferenceHost.
-(* Trie-keyed provisions on top (InterpreterFast.v): equal to the lazy
-   interpreter on related environments, so to the reference. *)
-Module FastTopI := InterpreterFast.FastInterpreter PublicPublic.ReferenceHost.
-(* Compiled to closures on top (InterpreterCompiled.v): under tbl_ok, equal to the
-   fast interpreter, so to the reference. *)
-Module CloTop := InterpreterCompiled.CloInterpreter PublicPublic.ReferenceHost.
 
 (* One dependency traversal computes the union for every root below. The
    roots are a list, not a tuple: a nested pair repeats the types of all
@@ -552,14 +540,16 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicSiteErasure.Simulation.primitive_prefix_normalized);
   root (@PublicSiteErasure.Simulation.primitive_functor_application_normalized);
 
-(* Deferred type substitution. *)
-  root (@LazyTop.leval_agrees);
-  root (@LazyTop.lrun_main_agrees);
-  root (@FastTopI.feval_agrees);
-  root (@FastTopI.frun_main_agrees);
-  root (@CloTop.cc_agrees);
-  root (@CloTop.crun_main_agrees);
-  root (@CloTop.crun_main_reference)].
+(* Interpreter stages and their public run composition. *)
+  root (@RunTop.C.L.leval_agrees);
+  root (@RunTop.C.L.lrun_main_agrees);
+  root (@RunTop.C.F.feval_agrees);
+  root (@RunTop.C.F.frun_main_agrees);
+  root (@RunTop.C.cc_agrees);
+  root (@RunTop.C.crun_main_agrees);
+  root (@RunTop.C.crun_main_reference);
+  root (@RunTop.run_compiled_sound);
+  root (@RunTop.run_optimized_sound)].
 
 Print Assumptions certificate_roots.
 
