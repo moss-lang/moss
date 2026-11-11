@@ -131,3 +131,7 @@ Print Assumptions NM.EaContextReadFacts.fun_ctx_context.
 Print Assumptions NM.EaContextReadFacts.context_table_context.
 
 Print Assumptions NM.EaContextTableSound.bundle_world_r_context_table_sound.
+
+From NM Require EaUnifySound.
+Print Assumptions NM.EaUnifySound.resolve_absorbed.
+Print Assumptions NM.EaUnifySound.unify_absorbed.
