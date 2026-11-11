@@ -384,7 +384,11 @@ Proof.
   - subst sms. exists e1. reflexivity.
   - destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu') as [<- <-].
     destruct (FS.CopyA.copy_step_reads W d f e1 u Cu nsu h Ch nsh rm gfx gfh FCu FCh Sub Site Fixd) as [RdT NdT].
-    destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl RdT NdT Sub Real)
+    destruct (FS.CopyA.copy_step_realizes W Prog argv read state_ok rr H d f e1 u Cu nsu h Ch nsh (A.canon_item Cu)
+      FCu FCh Incl RdT NdT
+      (fun k _ => FS.CopyA.canon_copy_key_reads _ _ k
+        (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real))
+      Sub Real)
       as [e1' [Sel RealH]].
     assert (FixH : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (ground d (f x))).
     { intros x Fh. destruct (Fx x Fh) as [Fu E]. rewrite E. exact (Fixd x Fu). }

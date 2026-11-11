@@ -222,32 +222,46 @@ Proof.
       exact (f_equal (fun l => (3, @None A.fsig, l)) (TrF f' f (fun x t I y Iy => SubK y (Sf' x t I y Iy)) Sf Ef)).
 Qed.
 
+(* The current syntactic pairing reads the same key in a realization.
+   Site-aware pairing will supply this property from its binding check. *)
+Lemma canon_copy_key_reads : forall C d k, S.AbsorbsCanon C d ->
+  app_subst_item (type_meanings d) (A.provision_id k) =
+  app_subst_item (type_meanings d) (A.provision_id (A.canon_item C k)).
+Proof.
+  intros C d [t|v|f|r m a|u] Reads; try reflexivity.
+  change (IMth (ground d r) m [] = IMth (ground d (A.canon C r)) m []).
+  now rewrite Reads.
+Qed.
+
 (* One copy step: H's context is realized where F's is, its needs
    selected from F's by the copy's smap, its inputs read as F's are. *)
-Lemma copy_step_realizes : forall rr H d (f : nat -> ty) e1 u Cu nsu h Ch nsh,
-  A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (A.canon_item Cu k) nsu) ->
+Lemma copy_step_realizes : forall rr H d (f : nat -> ty) e1 u Cu nsu h Ch nsh (target : item -> item),
+  A.FunCtx W u Cu nsu -> A.FunCtx W h Ch nsh -> (forall k, In k nsh -> In (target k) nsu) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx ->
      ground (S.callee_env d (thof f Cu) e1) (A.canon Cu (TAbs x)) = ground (S.callee_env d (thof f Cu) e1) (A.canon Cu tx)) ->
   (forall k, In k nsh -> exists p' p, A.ilook (A.provision_id k) (A.c_provisions Ch) = Some p' /\
-     A.ilook (A.provision_id (A.canon_item Cu k)) (A.c_provisions Cu) = Some p /\
+     A.ilook (A.provision_id (target k)) (A.c_provisions Cu) = Some p /\
      prov_shape (type_meanings (S.callee_env d (thof f Cu) e1)) Cu p' = prov_shape (type_meanings (S.callee_env d (thof f Cu) e1)) Cu p) ->
+  (forall k, In k nsh ->
+     app_subst_item (type_meanings (S.callee_env d (thof f Cu) e1)) (A.provision_id k) =
+     app_subst_item (type_meanings (S.callee_env d (thof f Cu) e1)) (A.provision_id (target k))) ->
   (forall x tx, A.nlook x (A.c_ty Ch) = Some tx -> A.nlook x (A.c_ty Cu) <> None) ->
   Realizes rr Cu (S.callee_env d (thof f Cu) e1) H ->
-  exists e1', select_provisions e1 (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh) = Some e1' /\
+  exists e1', select_provisions e1 (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (target k))) nsh) = Some e1' /\
     Realizes rr Ch (S.callee_env d (thof f Ch) e1') H.
 Proof.
-  intros rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl RdT NdT Sub RealU.
+  intros rr H d f e1 u Cu nsu h Ch nsh target FCu FCh Incl RdT NdT ReadKeys Sub RealU.
   destruct (S.functx_static W _ _ _ FCh) as [[CanH DomH] [[SectionH KMh] [NdH [ProvNsH [ShapeH [ScH FixH]]]]]].
   destruct (S.functx_static W _ _ _ FCu) as [[CanU DomU] [[SectionU KMu] [NdU [ProvNsU [ShapeU [ScU FixU]]]]]].
   set (ce := S.callee_env d (thof f Cu) e1) in *.
   pose proof RealU as [_ [[ValsU [FnsU [MthsU FunsU]]] _]].
   pose proof (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ RealU) as AbsU.
   pose proof (keys_sub _ _ Sub) as SubK.
-  destruct (select_ok e1 (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (A.canon_item Cu k))) nsh)) as [e1' Sel].
+  destruct (select_ok e1 (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (target k))) nsh)) as [e1' Sel].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
     destruct (functx_needs_provided W u Cu nsu FCu _ (Incl k0 Ik)) as [p0 Ip].
     destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShapeU _ (Incl k0 Ik))) as [pv0 L0].
-    change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) e1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) ce). rewrite L0. discriminate. }
+    change (lookup_provision (A.rkey_of Cu (target k0)) e1) with (lookup_provision (A.rkey_of Cu (target k0)) ce). rewrite L0. discriminate. }
   exists e1'. split; [exact Sel|].
   set (ch := S.callee_env d (thof f Ch) e1').
   assert (GA : forall t, incl (A.gens t) (map fst (A.c_ty Ch)) -> ground ch t = ground ce t).
@@ -260,11 +274,11 @@ Proof.
   assert (GAs : forall ts, (forall t, In t ts -> incl (A.gens t) (map fst (A.c_ty Ch))) ->
     map (ground ce) (map (A.canon Cu) ts) = map (ground ch) ts).
   { intros ts Sc. rewrite map_map. apply map_ext_in. intros t It. symmetry. exact (GAc t (Sc t It)). }
-  assert (Look : forall k0 v, In k0 nsh -> lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) ce = Some v ->
+  assert (Look : forall k0 v, In k0 nsh -> lookup_provision (A.rkey_of Cu (target k0)) ce = Some v ->
     lookup_provision (A.rkey_of Ch k0) ch = Some v).
   { intros k0 v Ik L. change (lookup_provision (A.rkey_of Ch k0) ch) with (lookup_provision (A.rkey_of Ch k0) e1').
     rewrite (select_lookup e1 _ e1' _ Sel).
-    rewrite (sm_find_map (A.rkey_of Ch) (fun k => A.rkey_of Cu (A.canon_item Cu k)) nsh k0 Ik).
+    rewrite (sm_find_map (A.rkey_of Ch) (fun k => A.rkey_of Cu (target k)) nsh k0 Ik).
     - exact L.
     - intros k' Ik' E. exact (rkey_of_injective Ch k' k0 (ShapeH k' Ik') (ShapeH k0 Ik) E). }
   split; [|split; [split; [|split; [|split]]|exact (conj SectionH KMh)]].
@@ -285,23 +299,33 @@ Proof.
     transitivity (ground ce (A.canon Cu (TAbs x))); [exact (eq_sym Rd)|apply AbsU].
   - (* vals *) intros v t Found.
     destruct (vals_ilook _ v t KMh Found) as [a0 Il]. pose proof (ProvNsH _ _ (S.ilook_in _ _ _ Il)) as Ik.
-    destruct (NdT (IVal v) Ik) as (p' & p & L' & L & Sh). cbn [A.provision_id A.canon_item app_subst_item] in L', L.
+    destruct (NdT (IVal v) Ik) as (p' & p & L' & L & Sh).
+    assert (Match : target (IVal v) = (IVal v)).
+    { pose proof (ReadKeys (IVal v) Ik) as Read.
+      destruct (target (IVal v)); cbn [A.provision_id app_subst_item] in Read;
+        congruence. }
+    rewrite Match in L. cbn [A.provision_id A.canon_item app_subst_item] in L', L.
     rewrite Il in L'. injection L' as <-.
     destruct p as [tu au|g0 a1|g0 a1|f0]; unfold prov_shape in Sh; cbn in Sh; try discriminate. injection Sh as Et.
     destruct (ValsU v _ (ilook_vals _ v _ _ KMu L)) as [w [Lw T]]. exists w.
-    split; [exact (Look (IVal v) _ Ik Lw)|].
+    split; [apply (Look (IVal v) _ Ik); rewrite Match; exact Lw|].
     destruct (ScH _ _ (S.ilook_in _ _ _ Il)) as [S2 _].
     unfold provision_sig_gens, A.sig_gens in S2. cbn in S2. rewrite app_nil_r in S2.
     rewrite (GAc t S2). replace (ground ce (A.canon Cu t)) with (ground ce tu); [exact T|].
     rewrite <- (AbsU tu). exact (eq_sym Et).
   - (* fns *) intros f' g Found.
     destruct (fns_ilook _ f' g KMh Found) as [a0 Il]. pose proof (ProvNsH _ _ (S.ilook_in _ _ _ Il)) as Ik.
-    destruct (NdT (IFn f') Ik) as (p' & p & L' & L & Sh). cbn [A.provision_id A.canon_item app_subst_item] in L', L.
+    destruct (NdT (IFn f') Ik) as (p' & p & L' & L & Sh).
+    assert (Match : target (IFn f') = (IFn f')).
+    { pose proof (ReadKeys (IFn f') Ik) as Read.
+      destruct (target (IFn f')); cbn [A.provision_id app_subst_item] in Read;
+        congruence. }
+    rewrite Match in L. cbn [A.provision_id A.canon_item app_subst_item] in L', L.
     rewrite Il in L'. injection L' as <-.
     destruct p as [tu au|gu a1|gu a1|f0]; unfold prov_shape in Sh; cbn in Sh; try discriminate.
     destruct g as [ps r], gu as [psu ru]. unfold A.sig_subst in Sh. cbn in Sh. injection Sh as Ep Er.
     destruct (FnsU f' _ (ilook_fns _ f' _ _ KMu L)) as [pv [Lp Ok]]. exists pv.
-    split; [exact (Look (IFn f') _ Ik Lp)|].
+    split; [apply (Look (IFn f') _ Ik); rewrite Match; exact Lp|].
     destruct (ScH _ _ (S.ilook_in _ _ _ Il)) as [S2 _]. cbn [provision_sig_gens A.provision_signature] in S2.
     apply (S.callable_transfer W Prog argv read state_ok rr rr H ce ch psu ps ru r pv (le_n _)); [| |exact Ok].
     + cbn [A.sg_params]. rewrite <- (GAs ps (fun t It => S.sig_gens_param (A.FSig ps r) _ t S2 It)).
@@ -310,18 +334,24 @@ Proof.
     + cbn [A.sg_ret]. rewrite (GAc r (S.sig_gens_ret (A.FSig ps r) _ S2)). rewrite <- (AbsU ru). exact (eq_sym Er).
   - (* methods *) intros r m g Found.
     destruct (mths_ilook _ r m g KMh Found) as [a0 Il]. pose proof (ProvNsH _ _ (S.ilook_in _ _ _ Il)) as Ik.
-    destruct (NdT (A.mkey r m) Ik) as (p' & p & L' & L & Sh). change (A.provision_id (A.mkey r m)) with (A.mkey r m) in L'.
-    change (A.provision_id (A.canon_item Cu (A.mkey r m))) with (A.mkey (A.canon Cu r) m) in L.
+    destruct (NdT (A.mkey r m) Ik) as (p' & p & L' & L & Sh).
+    pose proof (ReadKeys (A.mkey r m) Ik) as Read.
+    destruct (target (A.mkey r m)) as [| | |r' m' a'|] eqn:Match;
+      cbn [A.mkey A.provision_id app_subst_item] in Read; try discriminate.
+    injection Read as SameReceiver SameMethod. subst m'.
+    change (A.provision_id (A.mkey r m)) with (A.mkey r m) in L'.
+    change (A.provision_id (IMth r' m a')) with (A.mkey r' m) in L.
     rewrite Il in L'. injection L' as <-.
     destruct p as [tu au|gu a1|gu a1|f0]; unfold prov_shape in Sh; cbn in Sh; try discriminate.
     destruct g as [ps rt], gu as [psu ru]. unfold A.sig_subst in Sh. cbn in Sh. injection Sh as Ep Er.
     destruct (MthsU _ m _ (ilook_mths _ _ m _ _ KMu L)) as [pv [Lp Ok]]. exists pv.
-    split; [exact (Look (A.mkey r m) _ Ik Lp)|].
+    split; [apply (Look (A.mkey r m) _ Ik); rewrite Match; exact Lp|].
     destruct (ScH _ _ (S.ilook_in _ _ _ Il)) as [S2 K2]. cbn [provision_sig_gens A.provision_signature key_gens A.mkey] in S2, K2.
-    apply (S.callable_transfer W Prog argv read state_ok rr rr H ce ch (A.canon Cu r :: psu) (r :: ps) ru rt pv (le_n _)); [| |exact Ok].
-    + change (map (ground ce) (A.canon Cu r :: psu) = map (ground ch) (r :: ps))
-        with (ground ce (A.canon Cu r) :: map (ground ce) psu = ground ch r :: map (ground ch) ps).
-      f_equal; [symmetry; apply GAc; exact K2|].
+    apply (S.callable_transfer W Prog argv read state_ok rr rr H ce ch (r' :: psu) (r :: ps) ru rt pv (le_n _)); [| |exact Ok].
+    + change (map (ground ce) (r' :: psu) = map (ground ch) (r :: ps))
+        with (ground ce r' :: map (ground ce) psu = ground ch r :: map (ground ch) ps).
+      change (ground ce r = ground ce r') in SameReceiver.
+      f_equal; [rewrite <- SameReceiver; symmetry; apply GA; exact K2|].
       rewrite <- (GAs ps (fun t It => S.sig_gens_param (A.FSig ps rt) _ t S2 It)).
       transitivity (map (ground ce) (map (A.canon Cu) psu)); [rewrite map_map; apply map_ext; intros t; symmetry; apply AbsU|].
       rewrite !map_map in Ep |- *. exact (eq_sym Ep).
@@ -329,13 +359,18 @@ Proof.
   - (* functors *) intros u' fx Found.
     pose proof (funs_ilook _ u' fx KMh Found) as Il. pose proof (ProvNsH _ _ (S.ilook_in _ _ _ Il)) as Ik.
     destruct (FixH u' fx (S.ilook_in _ _ _ Il)) as [CovH ScFH].
-    destruct (NdT (IFun u') Ik) as (p' & p & L' & L & Sh). cbn [A.provision_id A.canon_item app_subst_item] in L', L.
+    destruct (NdT (IFun u') Ik) as (p' & p & L' & L & Sh).
+    assert (Match : target (IFun u') = (IFun u')).
+    { pose proof (ReadKeys (IFun u') Ik) as Read.
+      destruct (target (IFun u')); cbn [A.provision_id app_subst_item] in Read;
+        congruence. }
+    rewrite Match in L. cbn [A.provision_id A.canon_item app_subst_item] in L', L.
     rewrite Il in L'. injection L' as <-.
     destruct p as [tu au|gu a1|gu a1|fxu]; unfold prov_shape in Sh; cbn in Sh; try discriminate. injection Sh as Ef.
     assert (Lu : A.nlook u' (A.c_funs Cu) = Some fxu).
     { change (A.c_funs Cu) with (funs_of (A.c_provisions Cu)). rewrite (funs_by_ilook _ u' KMu), L. reflexivity. }
     destruct (FunsU u' fxu Lu) as [pv [gfx' [Lp [Ok [Cov Vm]]]]]. exists pv, gfx'.
-    split; [exact (Look (IFun u') _ Ik Lp)|]. split; [exact Ok|]. split; [exact CovH|].
+    split; [apply (Look (IFun u') _ Ik); rewrite Match; exact Lp|]. split; [exact Ok|]. split; [exact CovH|].
     intros x tx I.
     assert (I1 : In (x, app_subst (type_meanings ce) (A.canon Cu tx)) (map (fun q => (fst q, app_subst (type_meanings ce) (A.canon Cu (snd q)))) fx))
       by exact (in_map (fun q => (fst q, app_subst (type_meanings ce) (A.canon Cu (snd q)))) fx (x, tx) I).
@@ -407,7 +442,10 @@ Proof.
     rewrite (S.lookup_on_keys f _ x (FxIn x Fx')). reflexivity.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (copy_step_reads d f e1 u Cu nsu h Ch nsh rm gfx gfh FCu FCh Sub Site Fixd) as [RdT NdT].
-    destruct (copy_step_realizes rr H d f e1 u Cu nsu h Ch nsh FCu FCh Incl RdT NdT Sub Real) as [e1' [Sel RealH]].
+    destruct (copy_step_realizes rr H d f e1 u Cu nsu h Ch nsh (A.canon_item Cu)
+      FCu FCh Incl RdT NdT
+      (fun k _ => canon_copy_key_reads _ _ k (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real))
+      Sub Real) as [e1' [Sel RealH]].
     assert (FixH : forall x, A.Fixed W h x -> lookup_subst x gfh = Some (ground d (f x))).
     { intros x Fh. destruct (Fx x Fh) as [Fu E]. rewrite E. exact (Fixd x Fu). }
     assert (Ad : forall e2, adapt_provisions e1' sms = Some e2 ->
