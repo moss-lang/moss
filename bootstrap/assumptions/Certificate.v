@@ -13,7 +13,7 @@ From NM Require AuditExamples AuditBuildExample
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
   PublicGenerationPrototype PublicCaptureScopeFacts PublicFunctorScopeExample PublicContextFacts PublicSafety
   PublicTypeRead PublicBoolTyping PublicBodySafety PublicBodySlice PublicArms PublicTagCheck PublicCallRealize
-  PublicEntry PublicPrimitiveSafety PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
+  PublicEntry PublicPrimitiveSafety PublicPrimitiveSites PublicFormation PublicLinkMerges PublicWorldFormation PublicFamilySig PublicCopyApply
   PublicPlatformApply PublicFamilyStep PublicLinkResults PublicOutputSubst PublicFamilyAgree PublicChainAgree
   PublicChainCore PublicChainNew PublicChainFwd PublicScoping PublicCallerKeys PublicFamilyCoherent PublicCopyFresh PublicLinkWalk PublicLinkScope PublicFamilyLink
   PublicLinkPins PublicLinkRun PublicChainSigs PublicChainRealize PublicFamilyCopy PublicConsol PublicOrientation PublicEquation PublicSameNeed
@@ -38,6 +38,7 @@ Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Pri
    TC PublicTagCheck, TC.CT PublicCastTyping); SR PublicSafety, PS
    PublicPrimitiveSafety. *)
 Module PublicEntryTop := PublicEntry.EntrySafety AuditExamples.Host PublicPublic.
+Module PublicSiteErasure := PublicPrimitiveSites.ReferenceSites AuditExamples.Host PublicPublic.
 
 (* public_safety is CORRECT.safety, the statement Audit.v gives, for the
    same Public instance: the statement below is read off CORRECT's
@@ -476,6 +477,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@CapTrimTop.runs_trimmed);
   root (@captrim_runs_agree);
   root (@fastpath_prune_captrim_runs_agree);
+
+(* Ignored nonallocating primitive sites preserve exact public execution. *)
+  root (@PublicSiteErasure.reference_site_erasure);
 
 (* Deferred type substitution. *)
   root (@LazyTop.leval_agrees);
