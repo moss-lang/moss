@@ -153,6 +153,32 @@ Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * 
 Definition add_binds (C : cx) (binds : list (name * ty)) : cx :=
   fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C.
 
+(* Resolve the call's types and provisions before emitting an instruction.
+   The argument expressions are elaborated in the caller's original scope. *)
+Record prepared_call := PreparedCall {
+  prepared_signature : fsig;
+  prepared_types : subst;
+  prepared_provisions : smap;
+  prepared_demands : wrapper
+}.
+
+Definition check_defined_call (symbol : nat) (C : cx) (this : option ty) : er prepared_call :=
+  let who := ("calling " ++ qs W symbol)%string in
+  let! (formal, needs) := ropt (w_context W symbol) ("the context of " ++ qs W symbol ++ " does not form") in
+  let! _ := rule_b W who C formal in
+  let! initial := call_theta W who C formal in
+  let wanted := map (at_th C initial) needs in
+  let! (wrap, called) := demand E C wanted in
+  let! types := call_theta W who called formal in
+  let! _ := rcheck (ilist_eqb wanted (map (at_th C types) needs))
+    (who ++ ": the keys it needs read otherwise once the families it demands are applied (rule B)") in
+  let! provisions := satisfies W who who called formal types needs in
+  let! signature := sig_of W fuel symbol (c_ty called) this in
+  Ok (PreparedCall signature types provisions wrap).
+
+Definition emit_defined_call (symbol : nat) (call : prepared_call) (args : list expr) : expr :=
+  prepared_demands call (ECall symbol (prepared_types call) (prepared_provisions call) args).
+
 (* ---- The main recursion ---- *)
 
 (* SOUND (given RecSound E P R):
@@ -234,25 +260,11 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
           | None =>
               match body with
               | Some _ =>
-                  let who := ("calling " ++ qs W s)%string in
-                  let* (Cf, ns) := lift (w_context W s) ("the context of " ++ qs W s ++ " does not form") in
-                  (* rule B *)
-                  let* _ := pure (rule_b W who C Cf) in
-                  (* family demands read f's needs through θ (rule B's
-                     companion).  θ is CallTheta's at C' (after the
-                     demand); the demand's keys are computed at θ0 :=
-                     θ at C and checked to be the keys at θ. *)
-                  let* th0 := pure (call_theta W who C Cf) in
-                  let wanted := map (at_th C th0) ns in
-                  let* (wrap, C') := pure (demand E C wanted) in
-                  let* th := pure (call_theta W who C' Cf) in
-                  let* _ := check (ilist_eqb wanted (map (at_th C th) ns))
-                             (who ++ ": the keys it needs read otherwise once the families it demands are applied (rule B)") in
-                  let* sm := pure (satisfies W who who C' Cf th ns) in
-                  let* g := pure (sig_of W fuel s (c_ty C') None) in
+                  let* call := pure (check_defined_call s C None) in
+                  let g := prepared_signature call in
                   (* Q4 (#72): the arguments in the caller's context *)
                   let* xs := args n' F C (dname W s) (param_names s) argl (sg_params g) in
-                  ret (wrap (ECall s th sm xs), sg_ret g)
+                  ret (emit_defined_call s call xs, sg_ret g)
               | None =>
                   let* g := lift (cfn C s) (qs W s ++ " is not available in the context here (assume or bind it)") in
                   let* xs := args n' F C (dname W s) (param_names s) argl (sg_params g) in
@@ -465,19 +477,10 @@ with meth_call (n : nat) (F : frame) (C : cx) (ox : expr) (ot : ty) (pa : path) 
                 | ADFn (RAttached _) _ _ _ (Some _) =>
                     let rargs := match ot with TNom _ xs => xs | _ => [] end in
                     let C1 := fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C in
-                    let who := ("calling " ++ qs W at_)%string in
-                    let* (Ca, ns) := lift (w_context W at_) ("the context of " ++ qs W at_ ++ " does not form") in
-                    let* _ := pure (rule_b W who C1 Ca) in
-                    let* th0 := pure (call_theta W who C1 Ca) in
-                    let wanted := map (at_th C1 th0) ns in
-                    let* (wrap, Cd) := pure (demand E C1 wanted) in
-                    let* th := pure (call_theta W who Cd Ca) in
-                    let* _ := check (ilist_eqb wanted (map (at_th C1 th) ns))
-                               (who ++ ": the keys it needs read otherwise once the families it demands are applied (rule B)") in
-                    let* sm := pure (satisfies W who who Cd Ca th ns) in
-                    let* g := pure (sig_of W fuel at_ (c_ty Cd) (Some ot)) in
+                    let* call := pure (check_defined_call at_ C1 (Some ot)) in
+                    let g := prepared_signature call in
                     let* xs := args n' F C (dname W at_) (param_names at_) argl (sg_params g) in
-                    ret (wrap (ECall at_ th sm (ox :: xs)), sg_ret g)
+                    ret (emit_defined_call at_ call (ox :: xs), sg_ret g)
                 | ADFn (RAttached _) _ _ _ None => provided n' F C ox ot at_ argl
                 | _ => fail ("internal: " ++ qs W at_ ++ " is not an attached method")
                 end
