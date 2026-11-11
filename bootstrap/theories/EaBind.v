@@ -82,6 +82,11 @@ Definition lambda_capture_names (F : frame) (C : cx) (parameters : list name) (b
   | _ => []
   end.
 
+Definition lambda_need_keys (C : cx) (index : pix) : list item :=
+  filter (fun k => match k with ITy _ => false
+    | _ => providesb_i C index k && item_eqb k (provision_id k)
+    end) (iuniq_fast (map fst (c_provisions C))).
+
 (* SOUND: lambda_provider F C ps rt body sg this = Ok (pid, pre, sm) ->
      LambdaProvider W P F C ps rt body sg this pid pre sm *)
 Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name * option aty)) (rt : option aty) (body : aexpr)
@@ -124,8 +129,7 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
   let* _ := put_lamcx pid C in
   let ixl := PIdx (pindex (c_provisions Cl)) in
   let ix := PIdx (pindex (c_provisions C)) in
-  let keys := filter (fun k => match k with ITy _ => false | _ => providesb_i Cl ixl k && item_eqb k (provision_id k) end)
-                     (iuniq_fast (map fst (c_provisions Cl))) in
+  let keys := lambda_need_keys Cl ixl in
   let sm := map (fun k => (rkof_i Cl ixl k, rkof_i C ix k)) keys in
   ret (slot_index pid, translate_lambda_captures F captures, sm).
 
