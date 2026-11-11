@@ -24,10 +24,12 @@ and is absent from executable extraction.
 ## Trust
 
 Audit.v defines the semantics, and steps 3 and 4 are Audit's own interpreter
-and passes proved against it. **The elaborator is not proved.** Ea's
-`SOUND:` comments state what each part should establish, and nothing proves
-it. Neither is the glue: `driver.ml`, and the value and primitive conversions
-in `prims.ml`. The `prim` types are shared through `Obj.magic`, because
+and passes proved against it. **Whole elaborator soundness remains open.**
+The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
+and `EaWorldSound` proofs cover readers, their fuel conditions and the
+world builder. Ea's `SOUND:` comments state the intended per-function
+contracts. The native glue is also unverified: `driver.ml`, and the value
+and primitive conversions in `prims.ml`. The `prim` types are shared through `Obj.magic`, because
 ExecutionModel.v and Audit.v declare them alike. `check.sh` audits the
 extracted roots' assumptions (`assumptions/Certificate.v`).
 
@@ -81,7 +83,9 @@ that rebinds `Memory`, by a bind or as a functor application's output, with
 would share one address space, and it could print a wrong answer.
 
 The interpreter recurses as deeply as the program it runs. Run it with
-`ulimit -s unlimited`. The self-compile needs about 5 GB.
+`ulimit -s unlimited`. The full x86 Linux self-compile at `9af8a75`
+took 65 minutes 21 seconds and peaked at 2.7 GiB; its compiler fixpoint
+was checked byte for byte.
 
 ## Building and running
 
@@ -99,7 +103,7 @@ From the repository root:
 ```sh
 ulimit -s unlimited
 bootstrap/_build/default/run/driver.exe examples/hello.moss
-bootstrap/run/self-compile.sh OUTDIR [REFERENCE-S1.wasm]   # hours
+bootstrap/run/self-compile.sh OUTDIR [REFERENCE-S1.wasm]
 ```
 
 ## Name

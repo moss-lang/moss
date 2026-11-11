@@ -225,7 +225,7 @@
               ''
                 export HOME=$TMPDIR # wasmtime wants a writable cache directory
                 # The interpreter recurses as deeply as the program it runs,
-                # and the self-compile needs about 5 GB.
+                # and the x86 self-compile at 9af8a75 peaked at 2.7 GiB.
                 ulimit -s unlimited 2>/dev/null || ulimit -s "$(ulimit -H -s)"
                 bootstrap_started=$SECONDS
                 bootstrap_phase() {

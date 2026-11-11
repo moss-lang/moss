@@ -3,7 +3,7 @@
 (*                                                                           *)
 (* `world b` reads a bundle as Audit's `world`: the loader's tables          *)
 (* (LoadWorld.load_world), every symbol's requirement list, and the check that   *)
-(* a tag lists only types its nesting requires (Elab.check_listed).  The    *)
+(* a tag lists only types its nesting requires (LoadListed.check). The     *)
 (* requirement lists are the least fixed points ReqsTotal describes, run    *)
 (* with an empty cache, so they depend on nothing the elaborator does.      *)
 (* ReqsTotal's Kleene iteration `it` is a specification: as a function it   *)

@@ -141,8 +141,9 @@ Keep Rocq checking within two minutes, including the full audit at integration
 checkpoints. Measure slow checks and investigate overruns rather than letting
 proof checking become an obstacle to iteration.
 
-A full bootstrap on Audit's reference interpreter takes hours, far more
-than the old oracle's 40 minutes on the local x86 Linux VM, and about 5 GB.
+A full reference-interpreter self-compile at `9af8a75` took 65 minutes
+21 seconds and peaked at 2.7 GiB on the local x86 Linux VM. Its output
+reached the compiler fixpoint.
 Start it in the background and continue other work while it runs
 (`bootstrap/run/self-compile.sh`). Record timings and investigate
 regressions. Bootstrap completion should not block ongoing development.

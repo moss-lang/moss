@@ -16,10 +16,9 @@
   ReqsSolve ReqsTotal Specif String0 Sx Uint63Axioms WorldSound)
  (theories NM Stdlib))
 
-; The OCaml must be flambda: only flambda honours the `[@inlined]` in
-; Extract.v's `nat_case`, without which the interpreter keeps every
-; frame's incoming machine state alive, and the self-compile takes more
-; than 17 GB instead of about 5.
+; Flambda honours the `[@inlined]` in Extract.v's `nat_case`, releasing
+; each frame's earlier machine-state versions at their last use.
+; The full x86 Linux self-compile at 9af8a75 peaked at 2.7 GiB.
 
 (rule
  (target flambda)
