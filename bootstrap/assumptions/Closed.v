@@ -91,3 +91,8 @@ From NM Require EaMergeSound.
 Print Assumptions NM.EaMergeSound.unifiesb_spec.
 Print Assumptions NM.EaMergeSound.merge_unifies.
 Print Assumptions NM.EaMergeSound.needs_exact.
+
+From NM Require EaContextTableSound.
+Print Assumptions NM.EaContextTableSound.context_table_computed.
+Print Assumptions NM.EaContextTableSound.assume_ctx_sound.
+Print Assumptions NM.EaContextTableSound.fun_ctx_sound.
