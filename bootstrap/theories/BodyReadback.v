@@ -3,7 +3,7 @@
 From Stdlib Require Import List String.
 From NM Require Import Audit BodyTyping BodyMethodTyping BodyLiteralTyping.
 From NM Require Import LegacyBodyJudgments.
-From NM Require BodyFunctionProviderTyping BodyProviderTyping.
+From NM Require BodyFunctionProviderTyping BodyProviderTyping BodyLambdaTyping.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -103,7 +103,7 @@ with read_lambda F C ps ann body signature this slot prefix needs
     TypesLambdaHeader W F C ps ann body signature this layout provider result /\
     TypesBlkE W layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
       (Some (sg_ret signature)) (lambda_source_body provider) result /\
-    prefix = lambda_descriptor_prefix F provider /\ needs = lambda_descriptor_needs C provider /\
+    prefix = BodyLambdaTyping.lambda_descriptor_prefix F provider /\ needs = lambda_descriptor_needs C provider /\
     placements_in W P (lambda_binding_placements identity_slots C (map fst ps) layout provider
       (block_emission identity_slots layout (lambda_descriptor_site signature ps provider)
         (lambda_source_body provider)))

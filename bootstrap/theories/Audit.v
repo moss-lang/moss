@@ -4017,10 +4017,6 @@ Definition TypesForwarder (W : world) (F : frame) (C : cx)
 Definition forwarder_body (handle : forwarder_handle) (sg : fsig) : expr :=
   EInvoke (forwarder_source handle) (map EVar (seq 0 (length (sg_params sg)))).
 
-Definition TranslatesForwarder (W : world) (P : program) (handle : forwarder_handle)
-    (sg : fsig) (number : nat) : Prop :=
-  Fresh W number /\ body_of P number = Some (forwarder_body handle sg).
-
 Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
 | JoinExp : forall a b t, Join a b (Some t) t
 | JoinLeftNever : forall b, Join never b None b
@@ -5837,14 +5833,6 @@ Definition function_plan_provisions (C : cx) (plan : function_provider_plan) : s
       [(IFn (forwarder_source handle), IFn (forwarder_source handle))]
   end.
 
-Definition FunctionProviderPlacement (W : world) (P : program) (resolve : nat -> nat)
-    (signature : fsig) (plan : function_provider_plan) : Prop :=
-  match plan with
-  | NamedFunctionProvider _ => True
-  | AbstractFunctionForwarder occurrence handle =>
-      TranslatesForwarder W P handle signature (resolve occurrence)
-  end.
-
 Definition wrapped_method_code (signature : fsig) (plan : wrapped_method_plan) : expr :=
   let provider := wrapped_method_provider plan in
   let formal := provider_formal provider in
@@ -5852,15 +5840,7 @@ Definition wrapped_method_code (signature : fsig) (plan : wrapped_method_plan) :
     (map (fun k => (rkey_of formal k, rkey_of formal k)) (provider_needs provider))
     (map EVar (seq 1 (length (sg_params signature)))).
 
-Definition WrappedMethodPlacement (W : world) (P : program) (resolve : nat -> nat)
-    (signature : fsig) (plan : wrapped_method_plan) : Prop :=
-  let slot := resolve (wrapped_method_occurrence plan) in
-  Fresh W slot /\ body_of P slot = Some (wrapped_method_code signature plan).
-
 (* Linked body placement *)
-
-Definition splice_link_bindings (bindings : list binding) : expr -> expr :=
-  fun body => fold_right EBind body bindings.
 
 Section LinkedTranslation.
 Variable BindPlan : Type.
@@ -5872,24 +5852,12 @@ Definition linked_descriptor_code (descriptor : linked_body_descriptor BindPlan)
   translate_linked_body (linked_target_context descriptor) (linked_provider_context descriptor)
     (linked_output_roles descriptor) bindings (map (fun key => rkey_of site (at_site site key)) (link_plan_keys reading)).
 
-Definition LinkedBodyPlacement (W : world) (P : program) (resolve : nat -> nat)
-    (descriptor : linked_body_descriptor BindPlan) (bindings : list binding) : Prop :=
-  let handle := linked_handle descriptor in
-  let slot := resolve (linked_occurrence handle) in
-  Fresh W slot /\
-  funbody_of P slot = Some (linked_descriptor_code descriptor bindings) /\
-  nlook slot (linked_origins (program_origins P)) =
-    Some (linked_target_symbol handle, linked_provider_symbol handle).
-
 End LinkedTranslation.
 
 (* Lambda body placement *)
 
 Section LambdaTranslation.
 Variable BodyPlan : Type.
-
-Definition lambda_descriptor_prefix (F : frame) (descriptor : lambda_body_descriptor BodyPlan) : expr -> expr :=
-  translate_lambda_captures F (lambda_descriptor_captures descriptor).
 
 Definition lambda_descriptor_needs (C : cx) (descriptor : lambda_body_descriptor BodyPlan) : smap :=
   map (fun k => (rkey_of (lambda_plan_capture_context descriptor) k, rkey_of C k))
@@ -5898,12 +5866,6 @@ Definition lambda_descriptor_needs (C : cx) (descriptor : lambda_body_descriptor
 Definition lambda_descriptor_code (Fl : frame) (descriptor : lambda_body_descriptor BodyPlan)
     (emitted : expr) : expr :=
   translate_lambda_body Fl (lambda_descriptor_captures descriptor) emitted.
-
-Definition LambdaBodyPlacement (W : world) (P : program) (C : cx) (Fl : frame)
-    (resolve : nat -> nat) (descriptor : lambda_body_descriptor BodyPlan) (emitted : expr) : Prop :=
-  let slot := resolve (lambda_occurrence descriptor) in
-  Fresh W slot /\ body_of P slot = Some (lambda_descriptor_code Fl descriptor emitted) /\
-  nlook slot (lambda_sections (program_origins P)) = Some (c_sub C).
 
 End LambdaTranslation.
 
@@ -5949,9 +5911,6 @@ Definition emit_field_patterns (slots : list (name * nat)) (fields : list field_
     | PatternIgnore _ => []
     end) fields.
 
-Definition translate_field_patterns (F : frame) :=
-  emit_field_patterns (fr_var F).
-
 Definition emit_pattern (slots : list (name * nat)) (plan : pattern_plan) : pattern :=
   match plan with
   | PatternWildcard => PAny None
@@ -5960,8 +5919,6 @@ Definition emit_pattern (slots : list (name * nat)) (plan : pattern_plan) : patt
   | PatternPayload tag n _ => PHead tag (Some (local_number slots n)) []
   | PatternRecord tag fields => PHead tag None (emit_field_patterns slots fields)
   end.
-
-Definition translate_pattern (F : frame) := emit_pattern (fr_var F).
 
 (* Code and its placement requirements *)
 
@@ -6170,17 +6127,6 @@ with emit_bind_item (resolve : nat -> nat) (slots : list (name * nat)) (plan : b
 
 Definition expression_emission (resolve : nat -> nat) (F : frame) := emit_expr resolve (fr_var F).
 Definition block_emission (resolve : nat -> nat) (F : frame) := emit_block resolve (fr_var F).
-Definition argument_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
-  emit_each (expression_emission resolve F C).
-Definition record_fields_emission (resolve : nat -> nat) (F : frame) (C : cx)
-    (fields : list (fld * expression_plan)) :=
-  emit_each (fun '(n, child) => emit_map (pair n) (expression_emission resolve F C child)) fields.
-Definition arms_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
-  emit_each (fun '(pattern, body) => emit_map (pair (translate_pattern F pattern))
-    (expression_emission resolve F (pattern_scope C pattern) body)).
-Definition bind_item_emission (resolve : nat -> nat) (F : frame) := emit_bind_item resolve (fr_var F).
-Definition bind_items_emission (resolve : nat -> nat) (F : frame) :=
-  emit_flat (bind_item_emission resolve F).
 
 (* Declared functions and constant initializers *)
 

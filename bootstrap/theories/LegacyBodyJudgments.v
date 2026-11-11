@@ -7,6 +7,10 @@ Set Implicit Arguments.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 
+Definition TranslatesForwarder (W : world) (P : program) (handle : forwarder_handle)
+    (sg : fsig) (number : nat) : Prop :=
+  Fresh W number /\ body_of P number = Some (forwarder_body handle sg).
+
 Definition TranslatesLinkedBody (W : world) (P : program) (u gg h : nat)
     (Cu Cg site : cx) (outs : list nat) (bindings : list binding) (ks : list item) : Prop :=
   Fresh W h /\

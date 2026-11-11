@@ -8,6 +8,19 @@ Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Import BodyProviderTyping.
 Local Open Scope list_scope.
 
+Definition FunctionProviderPlacement (W : world) (P : program) (resolve : nat -> nat)
+    (signature : fsig) (plan : function_provider_plan) : Prop :=
+  match plan with
+  | NamedFunctionProvider _ => True
+  | AbstractFunctionForwarder occurrence handle =>
+      TranslatesForwarder W P handle signature (resolve occurrence)
+  end.
+
+Definition WrappedMethodPlacement (W : world) (P : program) (resolve : nat -> nat)
+    (signature : fsig) (plan : wrapped_method_plan) : Prop :=
+  let slot := resolve (wrapped_method_occurrence plan) in
+  Fresh W slot /\ body_of P slot = Some (wrapped_method_code signature plan).
+
 Theorem function_provider_plan_translates : forall W P F C path signature plan resolve,
   TypesFunctionProvider W F C path signature plan ->
   FunctionProviderPlacement W P resolve signature plan ->

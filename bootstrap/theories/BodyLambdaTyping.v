@@ -6,6 +6,15 @@ From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
+Definition lambda_descriptor_prefix {BodyPlan : Type} (F : frame) (descriptor : lambda_body_descriptor BodyPlan) : expr -> expr :=
+  translate_lambda_captures F (lambda_descriptor_captures descriptor).
+
+Definition LambdaBodyPlacement {BodyPlan : Type} (W : world) (P : program) (C : cx) (Fl : frame)
+    (resolve : nat -> nat) (descriptor : lambda_body_descriptor BodyPlan) (emitted : expr) : Prop :=
+  let slot := resolve (lambda_occurrence descriptor) in
+  Fresh W slot /\ body_of P slot = Some (lambda_descriptor_code Fl descriptor emitted) /\
+  nlook slot (lambda_sections (program_origins P)) = Some (c_sub C).
+
 Section LambdaSource.
 Variable BodyPlan : Type.
 Variable types_body : world -> frame -> cx -> ablock -> option ty -> BodyPlan -> ty -> Prop.

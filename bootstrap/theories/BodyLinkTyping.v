@@ -7,9 +7,18 @@ From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
+Definition LinkedBodyPlacement {BindPlan : Type} (W : world) (P : program) (resolve : nat -> nat)
+    (descriptor : linked_body_descriptor BindPlan) (bindings : list binding) : Prop :=
+  let handle := linked_handle descriptor in
+  let slot := resolve (linked_occurrence handle) in
+  Fresh W slot /\
+  funbody_of P slot = Some (linked_descriptor_code descriptor bindings) /\
+  nlook slot (linked_origins (program_origins P)) =
+    Some (linked_target_symbol handle, linked_provider_symbol handle).
+
 Lemma spliced_link_bindings : forall bindings,
-  BindsOf (splice_link_bindings bindings EUnit) bindings.
-Proof. induction bindings as [|binding rest IH]; cbn [splice_link_bindings fold_right]; constructor; exact IH. Qed.
+  BindsOf (splice_bindings bindings EUnit) bindings.
+Proof. induction bindings as [|binding rest IH]; cbn [splice_bindings fold_right]; constructor; exact IH. Qed.
 
 Section LinkedSource.
 Variable BindPlan : Type.
@@ -22,7 +31,7 @@ Variable emits_binds : frame -> cx -> BindPlan -> list binding -> Prop.
 Theorem linked_body_plan_translates :
   (forall W P F C items plan out F' made bindings,
     types_binds W F C items plan out F' made -> emits_binds F C plan bindings ->
-    BindItems W P F C items (splice_link_bindings bindings) out F' made) ->
+    BindItems W P F C items (splice_bindings bindings) out F' made) ->
   (forall W F C plan bindings,
     family_binds W plan -> emits_binds F C plan bindings -> FamilyBindings W bindings) ->
   forall W P Fg descriptor items result after made bindings resolve,
@@ -51,7 +60,7 @@ Proof.
   { exact Placed. }
   rewrite Site in PinsProvision, ResultTypes, Translated.
   eapply (@LB W P target provider _ dg name parameters inputs results bodies Cu target_needs Cg provider_needs
-    Fg (splice_link_bindings bindings) Cb after created outs gen promised (link_plan_keys reading) bindings
+    Fg (splice_bindings bindings) Cb after created outs gen promised (link_plan_keys reading) bindings
     (link_plan_pins reading)); try eassumption.
   apply spliced_link_bindings.
 Qed.

@@ -1,14 +1,30 @@
-(* Separate expression and control-flow typing from translation.
-   Typing chooses a plan over source names. Translation uses the frame's
-   numbering and encodes the checked context and demand choices. *)
+(* Relate source typing and structural translation to the combined
+   judgments used by the safety proof. *)
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit BodyLiteralTyping BodyMethodTyping.
 From NM Require Import LegacyBodyJudgments.
 From NM Require BodyFunctionProviderTyping BodyProviderTyping.
-From NM Require BodyLinkTyping.
+From NM Require BodyLinkTyping BodyLambdaTyping.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
+
+Definition translate_field_patterns (F : frame) :=
+  emit_field_patterns (fr_var F).
+
+Definition translate_pattern (F : frame) := emit_pattern (fr_var F).
+
+Definition argument_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
+  emit_each (expression_emission resolve F C).
+Definition record_fields_emission (resolve : nat -> nat) (F : frame) (C : cx)
+    (fields : list (fld * expression_plan)) :=
+  emit_each (fun '(n, child) => emit_map (pair n) (expression_emission resolve F C child)) fields.
+Definition arms_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
+  emit_each (fun '(pattern, body) => emit_map (pair (translate_pattern F pattern))
+    (expression_emission resolve F (pattern_scope C pattern) body)).
+Definition bind_item_emission (resolve : nat -> nat) (F : frame) := emit_bind_item resolve (fr_var F).
+Definition bind_items_emission (resolve : nat -> nat) (F : frame) :=
+  emit_flat (bind_item_emission resolve F).
 
 Theorem field_pattern_translation : forall W F fields source plan,
   TypesFieldPatterns W F fields source plan ->
@@ -80,18 +96,18 @@ Qed.
 
 Lemma function_placements_exact : forall W P resolve signature provider,
   placements_in W P (function_placements resolve signature provider) <->
-  FunctionProviderPlacement W P resolve signature provider.
+  BodyFunctionProviderTyping.FunctionProviderPlacement W P resolve signature provider.
 Proof.
-  intros W P resolve signature [named|occurrence handle]; cbn [function_placements FunctionProviderPlacement];
+  intros W P resolve signature [named|occurrence handle]; cbn [function_placements BodyFunctionProviderTyping.FunctionProviderPlacement];
     unfold placements_in; [split; [tauto|intros; constructor]|].
   rewrite Forall_cons_iff. cbn [placement_in]. unfold TranslatesForwarder.
   split; [tauto|]. intros [Fresh Body]. split; [tauto|constructor].
 Qed.
 
 Lemma lambda_prefix_bindings : forall F provider,
-  splice_bindings (lambda_capture_bindings (fr_var F) provider) = lambda_descriptor_prefix F provider.
+  splice_bindings (lambda_capture_bindings (fr_var F) provider) = BodyLambdaTyping.lambda_descriptor_prefix F provider.
 Proof.
-  intros F provider. unfold lambda_capture_bindings, lambda_descriptor_prefix, translate_lambda_captures.
+  intros F provider. unfold lambda_capture_bindings, BodyLambdaTyping.lambda_descriptor_prefix, translate_lambda_captures.
   induction (lambda_descriptor_captures provider) as [|[n v] rest IH]; [reflexivity|].
   change ((fun body => EBind (BValue v (EVar (local_number (fr_var F) n)))
     (splice_bindings (map (fun '(n, symbol) => BValue symbol (EVar (local_number (fr_var F) n))) rest) body)) =
@@ -214,9 +230,9 @@ Local Lemma lambda_from_header : forall W P F C ps ann body signature this layou
   BlkE W P layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
     (Some (sg_ret signature)) code result ->
   Numbering layout (fr_this layout) (map fst ps) ->
-  LambdaBodyPlacement W P C layout resolve provider code ->
+  BodyLambdaTyping.LambdaBodyPlacement W P C layout resolve provider code ->
   LambdaProvider W P F C ps ann body signature this (resolve (lambda_occurrence provider))
-    (lambda_descriptor_prefix F provider) (lambda_descriptor_needs C provider).
+    (BodyLambdaTyping.lambda_descriptor_prefix F provider) (lambda_descriptor_needs C provider).
 Proof.
   intros W P F C ps ann body signature this layout provider result code resolve Typed Body Numbered
     [Fresh [Code Origin]].
@@ -235,7 +251,7 @@ Local Lemma linked_from_header : forall W P resolve layout descriptor items resu
     (splice_bindings (emitted_code (bind_items_emission resolve layout (linked_bind_plan descriptor))))
     result nested made ->
   Numbering layout None [] ->
-  LinkedBodyPlacement W P resolve descriptor
+  BodyLinkTyping.LinkedBodyPlacement W P resolve descriptor
     (emitted_code (bind_items_emission resolve layout (linked_bind_plan descriptor))) ->
   LinkBody W P (linked_target_symbol (linked_handle descriptor)) (linked_provider_symbol (linked_handle descriptor))
     (resolve (linked_occurrence (linked_handle descriptor))) (link_plan_pins (linked_result_reading descriptor)).
@@ -346,17 +362,17 @@ Proof.
       (named_provider_capture (wrapped_method_provider plan)) (fun body => body)
       (named_provider_provisions C (wrapped_method_provider plan))); [eassumption|].
     eapply BodyFunctionProviderTyping.wrapped_method_plan_translates; [eassumption|].
-    unfold WrappedMethodPlacement. tauto.
+    unfold BodyFunctionProviderTyping.WrappedMethodPlacement. tauto.
   - rewrite splice_bindings_append, lambda_prefix_bindings.
     eapply (@BFnLambda W P F C path0 f signature ps ann body (resolve (lambda_occurrence provider))
-      (lambda_descriptor_prefix F provider) (lambda_descriptor_needs C provider) arguments); try eassumption.
+      (BodyLambdaTyping.lambda_descriptor_prefix F provider) (lambda_descriptor_needs C provider) arguments); try eassumption.
     eapply (@lambda_from_header W P F C ps ann body signature None layout provider result
       (emitted_code (block_emission resolve layout (lambda_descriptor_site signature ps provider)
         (lambda_source_body provider))) resolve); eassumption.
   - rewrite splice_bindings_append, lambda_prefix_bindings.
     eapply (@method_binding_from_header W P F C path0 label brackets method receiver signature arguments
       (AELam ps ann body) (resolve (lambda_occurrence provider)) (lexical_capture C)
-      (lambda_descriptor_prefix F provider) (lambda_descriptor_needs C provider)); [eassumption|].
+      (BodyLambdaTyping.lambda_descriptor_prefix F provider) (lambda_descriptor_needs C provider)); [eassumption|].
     apply MPLambda.
     eapply (@lambda_from_header W P F C ps ann body signature (Some receiver) layout provider result
       (emitted_code (block_emission resolve layout (lambda_descriptor_site signature ps provider)
