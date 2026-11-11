@@ -272,3 +272,16 @@ Print Assumptions NM.EaProviderBindSound.lambda_function_bind_post_sound.
 Print Assumptions NM.EaProviderBindSound.method_bind_post_sound.
 Print Assumptions NM.EaForwarderSound.function_provider_post_sound.
 Print Assumptions NM.EaWrappedProviderSound.method_provider_post_sound.
+
+From NM Require BodyTyping BodyMethodTyping BodyLiteralTyping EaFamilyProducerSound EaBindItemSound.
+Print Assumptions NM.BodyMethodTyping.method_call_translation.
+Print Assumptions NM.BodyMethodTyping.method_call_readback.
+Print Assumptions NM.BodyLiteralTyping.literal_translation.
+Print Assumptions NM.BodyLiteralTyping.literal_readback.
+Print Assumptions NM.EaFamilyProducerSound.family_produces_covers.
+Print Assumptions NM.EaFamilyProducerSound.checked_family_use.
+Print Assumptions NM.EaBindItemSound.bind_item_post_sound.
+
+Print Assumptions NM.BodyTyping.body_translation_agrees.
+Print Assumptions NM.BodyTyping.body_typing_renumber.
+Print Assumptions NM.BodyTyping.local_source_has_plan.

@@ -60,7 +60,7 @@ Local Lemma closure_pure_read : forall A (read : er A) before value after,
 Proof. intros A [x|] before value after Run; [now injection Run as <- <-|discriminate]. Qed.
 
 Section Closure.
-Variables (E : env) (R : rec) (P : program) (bound : nat) (Post : est -> Prop).
+Variables (E : env) (R : rec) (P : program) (bound : nat) (Post Extra : est -> Prop).
 Let W := e_W E.
 Hypotheses
   (Bounded : forall n d, w_decl W n = Some d -> n < bound)
@@ -77,10 +77,10 @@ Theorem fun_closure_sound : forall F C pa u pg gg before wrap C' after,
     kind_sym W u = Some DKFunctor -> Post finish ->
     EaFunctor.link_body E R u gg before = Ok (h, finish) ->
     LinkBody W P u gg (slot_index h) (link_pins_at finish (slot_index h)) /\
-    TypedLinkCache W P finish) ->
+    TypedLinkCache W P finish /\ Extra finish) ->
   EaFunctor.fun_closure E R F C u gg before = Ok ((wrap, C'), after) ->
   BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) wrap C' F [] /\
-  TypedLinkCache W P after.
+  TypedLinkCache W P after /\ Extra after.
 Proof.
   intros F C pa u pg gg before wrap C' after TargetName ProviderName ProviderKind Floor Final LinkBodyChecked Run.
   unfold EaFunctor.fun_closure in Run. fold W in Run.
@@ -136,8 +136,8 @@ Proof.
   end.
   injection PinCheck as _ <-.
   injection Run as <- <- <-.
-  destruct (LinkBodyChecked _ _ TargetKind Final Link) as [Body CacheAfter].
-  split; [|exact CacheAfter].
+  destruct (LinkBodyChecked _ _ TargetKind Final Link) as [Body Preserved].
+  split; [|exact Preserved].
   eapply (@BFunClosure W P F C pa u pg gg Cu nsu Cg nsg (slot_index h)
       (link_pins_at s7 (slot_index h)) target sm smc fx); try eassumption.
   - intros x Fixed.

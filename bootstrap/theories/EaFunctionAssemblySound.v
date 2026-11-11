@@ -54,7 +54,7 @@ Proof.
   exact (old_slots_preserved _ _ Effect FunctionTable target Earlier).
 Qed.
 
-Local Lemma function_pass_keeps_unchecked : forall symbols target before after,
+Lemma function_pass_keeps_unchecked : forall symbols target before after,
   (forall f, In f symbols -> f < bound) ->
   ~ In target symbols -> target < bound -> bound <= es_next before -> CodeTablesBound before ->
   miter (EaMain.elaborate_function E) symbols before = Ok (tt, after) ->

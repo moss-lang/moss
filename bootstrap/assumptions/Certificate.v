@@ -5,6 +5,7 @@
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
 From NM Require Parse Sx EaBase CodeTable EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFamilyUseSound EaFunctionAssemblySound EaFunctionSound EaMatchSound EaMain EaRecSound EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
+From NM Require BootstrapVerified EaBodyAssembly.
 From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenaming BaseHostExecutionRenaming.
 
 From NM Require AuditExamples AuditBuildExample
@@ -224,6 +225,8 @@ Proof.
   exact (PublicEntryTop.public_safety prelude program PublicPublic.default_interface
     initial Admissible Compatible code state Runs).
 Qed.
+Definition concrete_pipeline_sound :=
+  concrete_pipeline_sound_from_bodies EaBodyAssembly.elaborate_bodies_sound.
 End ConcretePipeline.
 
 (* One dependency traversal computes the union for every root below. The
@@ -582,6 +585,9 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.BootstrapBuild.elaborate_platform_sound);
   root (@NM.BootstrapBuild.elaborate_linked);
   root (@NM.BootstrapSound.build_sound_from_bodies);
+  root (@NM.EaBodyAssembly.elaborate_bodies_sound);
+  root (@NM.BootstrapVerified.elaborate_sound);
+  root (@NM.BootstrapVerified.build_sound);
   root (@NM.EaFamilyComplete.decls_form_family_classifier);
   root (@NM.BootstrapBuild.elaborate_finite_layouts);
   root (@NM.BootstrapBuild.elaborate_with_expansion_bounded);
@@ -668,6 +674,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BaseHost.primitive_ignores_code);
   root (@concrete_run_sound);
   root (@concrete_pipeline_sound_from_bodies);
+  root (@concrete_pipeline_sound);
   root (@FuelTop.runs_deterministic);
   root (@RuntimeRenaming.program_view_equivariant);
   root (@NominalTop.E.eval_tag_equivariant);

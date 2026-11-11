@@ -270,27 +270,33 @@ Hypotheses
     CodeTransition before after -> Contains after -> Contains before)
   (NestedEffect : forall F C items, PreservesOldCode (r_bind_items R F C items)).
 
+Variable Extra : est -> Prop.
+Hypothesis RolesExtra : forall u Cu Cb label before result after,
+  Extra before -> link_output_roles E u Cu Cb label before = Ok (result, after) -> Extra after.
+Hypothesis EmitExtra : forall u gg pins code before h after,
+  Extra before -> emit_linked_body u gg pins code before = Ok (h, after) -> Extra after.
+
 Theorem link_body_sound : forall u gg before h after,
   kind_sym W u = Some DKFunctor ->
   bound <= es_next before ->
   LinkRecords before -> TypedLinkCache W P before ->
-  Contains after ->
+  Extra before -> Contains after ->
   (forall dg bodies Cg nsg wrap Cb Fb made finish,
     FunCtx W gg Cg nsg -> Contains finish ->
     let Fg := link_body_frame E u dg bodies in
     r_bind_items R Fg Cg (List.concat bodies) before = Ok (((wrap, Cb), Fb), made, finish) ->
-    BindItems W P Fg Cg (List.concat bodies) wrap Cb Fb made /\ TypedLinkCache W P finish) ->
+    BindItems W P Fg Cg (List.concat bodies) wrap Cb Fb made /\ TypedLinkCache W P finish /\ Extra finish) ->
   EaFunctor.link_body E R u gg before = Ok (h, after) ->
   LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)) /\
-  TypedLinkCache W P after.
+  TypedLinkCache W P after /\ Extra after.
 Proof.
-  intros u gg before h after Abstract Floor Registered Cache Final NestedTyping Run.
+  intros u gg before h after Abstract Floor Registered Cache State Final NestedTyping Run.
   destruct (LinkedRead _ Final) as [CodeTable OriginTable].
   unfold EaFunctor.link_body in Run. fold W in Run.
   apply EaControlSound.mbind_ok in Run as (cached & s1 & Cached & Run).
   unfold get_link in Cached. injection Cached as <- <-.
   destruct (pair_look (u, gg) (es_link before)) as [old|] eqn:CacheRead.
-  { injection Run as <- <-. split; [exact (Cache _ _ _ CacheRead)|exact Cache]. }
+  { injection Run as <- <-. split; [exact (Cache _ _ _ CacheRead)|now split]. }
   apply EaControlSound.mbind_ok in Run as (dg & s1 & Read & Run).
   apply successful_link_lift in Read as [Provider ->].
   destruct (d_ast dg) as [| | | | | | | |name parameters inputs results body] eqn:Ast; try discriminate Run.
@@ -378,7 +384,7 @@ Proof.
   { pose proof (Contexts _ _ _ TargetContext) as Valid. now rewrite Abstract in Valid. }
   assert (ProviderContext : FunCtx W gg Cg nsg).
   { pose proof (Contexts _ _ _ BodyContext) as Valid. now rewrite KindProvider in Valid. }
-  destruct (NestedTyping _ _ _ _ _ _ _ _ _ ProviderContext BodyRead Body) as [TypedBody BodyCache].
+  destruct (NestedTyping _ _ _ _ _ _ _ _ _ ProviderContext BodyRead Body) as (TypedBody & BodyCache & BodyState).
   assert (Linked : LinkBody W P u gg (slot_index h) pins).
   {
     eapply (@LB W P u gg (slot_index h) dg name parameters inputs results bodies Cu nsu Cg nsg
@@ -404,10 +410,11 @@ Proof.
   }
   assert (Current : LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)))
     by (rewrite PinsAt; exact Linked).
-  split; [exact Current|].
-  eapply emit_linked_body_preserves_typed_cache; [| |exact Run|exact Current].
-  - exact (link_records_preserved _ _ RolesEffect BodyRecords).
-  - eapply link_output_roles_keeps_cache; eassumption.
+  split; [exact Current|split].
+  - eapply emit_linked_body_preserves_typed_cache; [| |exact Run|exact Current].
+    + exact (link_records_preserved _ _ RolesEffect BodyRecords).
+    + eapply link_output_roles_keeps_cache; eassumption.
+  - eapply EmitExtra; [eapply RolesExtra|]; eassumption.
 Qed.
 
 End Linking.
@@ -448,8 +455,15 @@ Theorem link_body_at_checked_decls : forall E bound P fuel (Contains : est -> Pr
 Proof.
   intros E bound P fuel Contains u gg before h after Declared Budget Decls Contexts
     LinkedRead ReadEarlier Kind Floor Records Cache Code Nested Run.
-  eapply link_body_sound; try eassumption.
-  - exact (EaFamilyComplete.decls_form_family_classifier E bound Declared Budget Decls).
-  - destruct (EaExpressionCodeEffects.mkrec_code_effect _ (EaExpressionCodeEffects.run_code_effect E fuel))
-      as (_ & _ & Effects). exact Effects.
+  destruct (EaExpressionCodeEffects.mkrec_code_effect _ (EaExpressionCodeEffects.run_code_effect E fuel))
+    as (_ & _ & Effects).
+  destruct (link_body_sound E P (EaMain.mkrec (EaMain.run E fuel)) bound Contains
+    Declared Budget Contexts (EaFamilyComplete.decls_form_family_classifier E bound Declared Budget Decls)
+    LinkedRead ReadEarlier Effects (fun _ => True) ltac:(auto) ltac:(auto)
+    u gg before h after Kind Floor Records Cache I Code) as [Typed [Checked _]].
+  - intros dg bodies Cg nsg wrap Cb Fb made finish Formal Kept Fg Run'.
+    destruct (Nested dg bodies Cg nsg wrap Cb Fb made finish Formal Kept Run') as [Body Good].
+    now split.
+  - exact Run.
+  - now split.
 Qed.

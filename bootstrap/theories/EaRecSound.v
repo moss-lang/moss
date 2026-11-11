@@ -153,6 +153,37 @@ Definition RecSound (R : rec) : Prop :=
   (forall F C syntax expected, BlkEActionSound E P valid post F C syntax expected (r_blke R F C syntax expected)) /\
   BindItemsSound (r_bind_items R).
 
+Lemma run_callbacks_successor : forall fuel,
+  ExPostAt E P valid post (mkrec (run E fuel)) (e_fuel E) ->
+  BlkEPostAt E P valid post (mkrec (run E fuel)) (e_fuel E) ->
+  BindItemSound (mkrec (run E fuel)) ->
+  RecSound (mkrec (run E (S fuel))).
+Proof.
+  intros fuel Expressions Blocks Bindings.
+  split; [|split].
+  - intros F C syntax expected before [compiled t] after Read.
+    cbn [mkrec r_ex] in Read.
+    apply mbind_ok in Read as [answer [middle [Call Read]]].
+    cbn [run] in Call. apply mbind_ok in Call as [[x ty] [next [Expr Call]]].
+    unfold ret in Call. injection Call as <- <-.
+    unfold ret in Read. injection Read as <- <- <-.
+    exact (Expressions F C syntax expected before (x, ty) next Expr).
+  - intros F C syntax expected before [compiled t] after Read.
+    cbn [mkrec r_blke] in Read.
+    apply mbind_ok in Read as [answer [middle [Call Read]]].
+    cbn [run] in Call. apply mbind_ok in Call as [[x ty] [next [Block Call]]].
+    unfold ret in Call. injection Call as <- <-.
+    unfold ret in Read. injection Read as <- <- <-.
+    exact (Blocks F C syntax expected before (x, ty) next Block).
+  - intros F C items before [[[wrap C'] F'] made] after Read.
+    cbn [mkrec r_bind_items] in Read.
+    apply mbind_ok in Read as [answer [middle [Call Read]]].
+    cbn [run] in Call. apply mbind_ok in Call as [[[[w D] G] created] [next [Bind Call]]].
+    unfold ret in Call. injection Call as <- <-.
+    unfold ret in Read. injection Read as <- <- <- <- <-.
+    exact (bind_items_sound (mkrec (run E fuel)) Bindings F C items before (w, D, G, created) next Bind).
+Qed.
+
 Theorem run_callbacks_sound : forall fuel,
   (forall R, RecSound R -> ExPostAt E P valid post R (e_fuel E)) ->
   (forall R, RecSound R -> BlkEPostAt E P valid post R (e_fuel E)) ->
@@ -162,28 +193,32 @@ Proof.
   induction fuel as [|fuel IH]; intros Expressions Blocks Bindings.
   { repeat split; intros; discriminate. }
   specialize (IH Expressions Blocks Bindings).
-  split; [|split].
-  - intros F C syntax expected before [compiled t] after Read.
-    cbn [mkrec r_ex] in Read.
-    apply mbind_ok in Read as [answer [middle [Call Read]]].
-    cbn [run] in Call. apply mbind_ok in Call as [[x ty] [next [Expr Call]]].
-    unfold ret in Call. injection Call as <- <-.
-    unfold ret in Read. injection Read as <- <- <-.
-    exact (Expressions (mkrec (run E fuel)) IH F C syntax expected before (x, ty) next Expr).
-  - intros F C syntax expected before [compiled t] after Read.
-    cbn [mkrec r_blke] in Read.
-    apply mbind_ok in Read as [answer [middle [Call Read]]].
-    cbn [run] in Call. apply mbind_ok in Call as [[x ty] [next [Block Call]]].
-    unfold ret in Call. injection Call as <- <-.
-    unfold ret in Read. injection Read as <- <- <-.
-    exact (Blocks (mkrec (run E fuel)) IH F C syntax expected before (x, ty) next Block).
-  - intros F C items before [[[wrap C'] F'] made] after Read.
-    cbn [mkrec r_bind_items] in Read.
-    apply mbind_ok in Read as [answer [middle [Call Read]]].
-    cbn [run] in Call. apply mbind_ok in Call as [[[[w D] G] created] [next [Bind Call]]].
-    unfold ret in Call. injection Call as <- <-.
-    unfold ret in Read. injection Read as <- <- <- <- <-.
-    exact (bind_items_sound (mkrec (run E fuel)) (Bindings _ IH) F C items before (w, D, G, created) next Bind).
+  apply run_callbacks_successor; auto.
+Qed.
+
+Theorem run_elaboration_at_fuel : forall fuel,
+  (forall inner,
+    let R := mkrec (run E inner) in
+    RecSound R -> forall n,
+    (forall depth, depth < n -> ExPostAt E P valid post R depth) ->
+    (forall depth, depth < n -> BlkEPostAt E P valid post R depth) ->
+    ExPostAt E P valid post R n /\ BlkEPostAt E P valid post R n) ->
+  (forall inner,
+    let R := mkrec (run E inner) in RecSound R -> BindItemSound R) ->
+  RecSound (mkrec (run E fuel)).
+Proof.
+  induction fuel as [|fuel IH]; intros BodyStep Bindings.
+  { repeat split; intros; discriminate. }
+  specialize (IH BodyStep Bindings).
+  assert (Bodies : forall n, ExPostAt E P valid post (mkrec (run E fuel)) n /\
+    BlkEPostAt E P valid post (mkrec (run E fuel)) n).
+  {
+    intro n. induction n using lt_wf_ind. apply (BodyStep fuel IH n).
+    - intros depth Less. exact (proj1 (H depth Less)).
+    - intros depth Less. exact (proj2 (H depth Less)).
+  }
+  destruct (Bodies (e_fuel E)) as [Expressions Blocks].
+  apply run_callbacks_successor; auto.
 Qed.
 
 Theorem run_elaboration_sound : forall fuel,
