@@ -41,6 +41,12 @@ Hypothesis function_provider_sound : forall F C path signature,
   Checked post (valid F C) (fun _ => valid F C) (fn_provider E "fn" F C path signature)
     (fun '(target, types, sm) _ => FnProvider W P F C (AEPath path None) signature None target types sm).
 
+Hypothesis lambda_provider_sound : forall what F C parameters ann body signature,
+  Checked post (valid F C) (fun _ => valid F C)
+    (lambda_provider E R what F C parameters ann body signature None)
+    (fun '(target, prefix, sm) _ =>
+      LambdaProvider W P F C parameters ann body signature None target prefix sm).
+
 Hypothesis method_provider_sound : forall method F C syntax signature receiver,
   Checked post (valid F C) (fun _ => valid F C) (meth_provider E R method F C syntax signature receiver)
     (fun '(target, types, prefix, sm) _ =>
@@ -69,6 +75,36 @@ Proof.
   - split; [now apply function_scope|]. intros final Scope.
     exact (proj1 (function_scope F C symbol signature _ final) Scope).
   - eapply BFnBind.
+    + exact Resolve.
+    + unfold kind_sym. fold W. now rewrite Decl, Ast.
+    + eapply sig_of_sound. exact Signature.
+    + exact ProviderTyped.
+    + apply applications.
+Qed.
+
+Theorem lambda_function_bind_post_sound : forall F C left symbol declaration name parameters result body ps ann syntax,
+  resolve_sym W (fr_mod F) left = Some symbol ->
+  w_decl W symbol = Some declaration ->
+  d_ast declaration = ADFn RPlain name parameters result body ->
+  BindItemAt E P valid post R F C (Spec (Some left) None None, Some (AELam ps ann syntax)).
+Proof.
+  intros F C left symbol declaration name parameters result body ps ann syntax Resolve Decl Ast
+    before [[[wrap C'] F'] made] after Run.
+  unfold bind_item in Run. fold W fuel metadata_fuel in Run.
+  rewrite Resolve in Run. cbn [mbind ret] in Run.
+  rewrite Decl in Run. cbn [mbind ret] in Run.
+  rewrite Ast in Run. cbn [mbind ret] in Run.
+  destruct (sig_of W fuel symbol (c_ty C) None) as [signature|] eqn:Signature;
+    cbn [pure mbind ret] in Run; [|discriminate].
+  apply mbind_ok in Run as [[[target prefix] sm] [next [Provider Run]]].
+  unfold ret in Run. injection Run as <- <- <- <- <-.
+  destruct (lambda_provider_sound _ F C ps ann syntax signature _ _ _ Provider) as [Backward TypedProvider].
+  split; [exact Backward|]. intros Valid Post.
+  destruct (TypedProvider Valid Post) as [Final ProviderTyped].
+  split.
+  - split; [now apply function_scope|]. intros final Scope.
+    exact (proj1 (function_scope F C symbol signature _ final) Scope).
+  - eapply BFnLambda.
     + exact Resolve.
     + unfold kind_sym. fold W. now rewrite Decl, Ast.
     + eapply sig_of_sound. exact Signature.

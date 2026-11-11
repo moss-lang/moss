@@ -1,7 +1,8 @@
 (* The wrapper cache preserves the exact body emitted for a callee and arity. *)
 From Stdlib Require Import List String Arith Lia.
 From NM Require Import Audit EaBase EaBind EaChecked EaCodeEffects EaCodeAllocationSound EaRecSound NMap.
-From NM Require EaBindCodeEffects EaContextTableSound EaControlSound EaMain EaSatisfiesSound WorldSound.
+From NM Require EaBindCodeEffects EaContextTableSound EaControlSound EaDefinedProviderSound
+  EaMain EaSatisfiesSound PublicContextFacts WorldSound.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
@@ -157,6 +158,41 @@ Proof.
     assembly world_bound Final Context Stored) as [FreshSlot Body].
   eapply MPWrapped; [exact Provider|eapply wrapped_provider_context; eassumption|reflexivity|
     exact FreshSlot|exact Body].
+Qed.
+
+Theorem method_provider_post_sound : forall bundle R,
+  WorldOf bundle W ->
+  (forall F C state, valid F C state -> PublicContextFacts.CxSection C) ->
+  (forall F C path sg,
+    Checked post (valid F C) (fun _ => valid F C) (fn_provider E "method" F C path sg)
+      (fun '(target, types, sm) _ => FnProvider W P F C (AEPath path None) sg None target types sm)) ->
+  (forall what F C params ann body sg receiver,
+    Checked post (valid F C) (fun _ => valid F C)
+      (lambda_provider E R what F C params ann body sg (Some receiver))
+      (fun '(target, prefix, sm) _ =>
+        LambdaProvider W P F C params ann body sg (Some receiver) target prefix sm)) ->
+  forall method F C syntax sg receiver,
+  Checked post (valid F C) (fun _ => valid F C) (meth_provider E R method F C syntax sg receiver)
+    (fun '(target, types, prefix, sm) _ => MethProvider W P F C syntax sg receiver target types prefix sm).
+Proof.
+  intros bundle R World Caller Function Lambda method F C syntax sg receiver.
+  destruct syntax as [| |path application| |syntax field| | | | | | | | | | |params ann body];
+    try solve [intros before result after Run; discriminate].
+  - destruct application; [intros before result after Run; discriminate|].
+    apply wrapped_method_provider_post_sound, Function.
+  - destruct syntax as [| |path application| | | | | | | | | | | | |];
+      try solve [intros before result after Run; discriminate].
+    destruct application; [intros before result after Run; discriminate|].
+    exact (EaDefinedProviderSound.attached_method_provider_post_sound E P valid post contexts Caller
+      bundle R method F C path field sg receiver World).
+  - intros before [[[target types] prefix] sm] after Run.
+    cbn [meth_provider] in Run. fold W in Run.
+    apply EaControlSound.mbind_ok in Run as ([[provider pre] needs] & written & Provider & Run).
+    unfold ret in Run. injection Run as <- <- <- <- <-.
+    destruct (Lambda _ F C params ann body sg receiver _ _ _ Provider) as [Backward Typed].
+    split; [exact Backward|]. intros Valid Final.
+    destruct (Typed Valid Final) as [ValidAfter ProviderTyped].
+    split; [exact ValidAfter|now apply MPLambda].
 Qed.
 
 End WrappedProvider.
