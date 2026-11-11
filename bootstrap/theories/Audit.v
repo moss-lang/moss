@@ -4050,6 +4050,25 @@ Definition branch_ty (b : ablock) (t : ty) : ty :=
 
 (* Auxiliary judgments (not mutually recursive with the main ones). *)
 
+(* A forwarder's identity is determined by the abstract input it invokes.
+   Typing checks that input in the context. Translation assigns the
+   forwarder's function body its program-table number. *)
+Record forwarder_handle := ForwarderOf { forwarder_source : nat }.
+
+Definition TypesForwarder (W : world) (F : frame) (C : cx)
+    (pa : path) (sg : fsig) (handle : forwarder_handle) : Prop :=
+  let g := forwarder_source handle in
+  resolve_sym W (fr_mod F) pa = Some g /\ kind_sym W g = Some DKFn /\
+  (exists nm ps rt, ast_of W g = Some (ADFn RPlain nm ps rt None)) /\
+  nlook g (c_fns C) = Some sg.
+
+Definition forwarder_body (handle : forwarder_handle) (sg : fsig) : expr :=
+  EInvoke (forwarder_source handle) (map EVar (seq 0 (length (sg_params sg)))).
+
+Definition TranslatesForwarder (W : world) (P : program) (handle : forwarder_handle)
+    (sg : fsig) (number : nat) : Prop :=
+  Fresh W number /\ body_of P number = Some (forwarder_body handle sg).
+
 Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
 | JoinExp : forall a b t, Join a b (Some t) t
 | JoinLeftNever : forall b, Join never b None b
@@ -4893,12 +4912,10 @@ with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> opti
     SigOf W g (c_ty C) None (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
     RequirementsInForce C Cg ->
     FnProvider W P F C (AEPath pa None) sg None g (TypeCapture th th) sm
-| FPForward : forall F C pa g sg w n,
-    resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
-    (exists nm ps rt, ast_of W g = Some (ADFn RPlain nm ps rt None)) ->
-    nlook g (c_fns C) = Some sg -> n = length (sg_params sg) ->
-    Fresh W w -> body_of P w = Some (EInvoke g (map EVar (seq 0 n))) ->
-    FnProvider W P F C (AEPath pa None) sg None w (TypeCapture [] []) [(IFn g, IFn g)]
+| FPForward : forall F C pa sg handle w,
+    TypesForwarder W F C pa sg handle -> TranslatesForwarder W P handle sg w ->
+    FnProvider W P F C (AEPath pa None) sg None w (TypeCapture [] [])
+      [(IFn (forwarder_source handle), IFn (forwarder_source handle))]
 
 (* a method provider (the receiver is the provider's first argument) *)
 with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty -> nat -> type_capture -> (expr -> expr) -> smap -> Prop :=

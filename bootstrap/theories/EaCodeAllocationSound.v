@@ -1,7 +1,7 @@
 (* Scoped registration of generated function and functor bodies. *)
 From Stdlib Require Import List Arith Lia.
 From NM Require Import Audit EaBase NMap.
-From NM Require AllocationFacts WorldSound.
+From NM Require AllocationFacts WorldSound EaMain EaControlSound EaPlatform.
 Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 
 Definition code_in (table : code_table) : Type :=
@@ -162,4 +162,76 @@ Proof.
     + split; [rewrite Index; apply Tables; lia|].
       split; [exact Bounded'|]. split; [exact Stored|].
       intros table' n old Present. apply Extend. now rewrite Unchanged.
+Qed.
+
+Lemma collect_above : forall A (table : nmap A) top number acc,
+  top < number ->
+  nlook number (EaMain.collect table top acc) = nlook number acc.
+Proof.
+  intros A table top. induction top as [|top IH]; intros number acc Above; cbn [EaMain.collect].
+  - destruct (nget table 0); [|reflexivity].
+    cbn [nlook]. destruct (Nat.eqb_spec number 0); [lia|reflexivity].
+  - rewrite IH by lia. destruct (nget table (S top)); [|reflexivity].
+    cbn [nlook]. destruct (Nat.eqb_spec number (S top)); [lia|reflexivity].
+Qed.
+
+Lemma collect_within : forall A (table : nmap A) top number acc,
+  number <= top ->
+  nlook number (EaMain.collect table top acc) =
+  match nget table number with Some code => Some code | None => nlook number acc end.
+Proof.
+  intros A table top. induction top as [|top IH]; intros number acc Within.
+  - assert (number = 0) by lia. subst number. cbn [EaMain.collect].
+    now destruct (nget table 0).
+  - cbn [EaMain.collect]. destruct (Nat.eq_dec number (S top)) as [->|Different].
+    + rewrite collect_above by lia. destruct (nget table (S top)); [|reflexivity].
+      cbn [nlook]. now rewrite Nat.eqb_refl.
+    + rewrite IH by lia. destruct (nget table number); [reflexivity|].
+      destruct (nget table (S top)); [|reflexivity].
+      cbn [nlook]. destruct (Nat.eqb_spec number (S top)); [contradiction|reflexivity].
+Qed.
+
+Lemma collect_code_table : forall A (table : nmap A) top,
+  (forall number, top < number -> nget table number = None) ->
+  forall number, nlook number (EaMain.collect table top []) = nget table number.
+Proof.
+  intros A table top Bound number. destruct (le_lt_dec number top) as [Within|Above].
+  - rewrite collect_within by exact Within. now destruct (nget table number).
+  - rewrite collect_above by exact Above. symmetry. exact (Bound number Above).
+Qed.
+
+Lemma successful_check_state : forall (b : bool) message s value s',
+  check b message s = Ok (value, s') -> s' = s.
+Proof. intros [] message s value s' Run; [now injection Run|discriminate]. Qed.
+
+Theorem assemble_collects_code : forall E bound entry before P after,
+  EaMain.assemble E bound entry before = Ok (P, after) ->
+  program_functions P = EaMain.collect (es_fns after) (es_next after) [] /\
+  program_functors P = EaMain.collect (es_funs after) (es_next after) [].
+Proof.
+  intros E bound entry before P after Run. unfold EaMain.assemble in Run.
+  destruct (EaPlatform.bool_syms E) as [[boolean truth] falsity].
+  do 6 (apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run)).
+  apply EaControlSound.mbind_ok in Run as ([context needs] & ?state & ?step & Run).
+  repeat apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run).
+  injection Run as <- <-.
+  match goal with
+  | Snapshot : get ?state = Ok (?saved, ?after_get),
+    Check : (if ?b then ret tt else fail ?message) ?after_get = Ok (?u, ?after_check) |- _ =>
+      rewrite (successful_check_state b message after_get u after_check Check);
+      unfold get in Snapshot; injection Snapshot as <- <-
+  end.
+  split; reflexivity.
+Qed.
+
+Theorem assembled_code_lookup : forall E bound entry before P after,
+  EaMain.assemble E bound entry before = Ok (P, after) -> CodeTablesBound after ->
+  (forall n, body_of P n = read_code after FunctionTable n) /\
+  (forall n, funbody_of P n = read_code after FunctorTable n).
+Proof.
+  intros E bound entry before P after Run Bound.
+  destruct (assemble_collects_code E bound entry before P after Run) as [Functions Functors].
+  unfold body_of, funbody_of. rewrite Functions, Functors.
+  split; apply collect_code_table; intros n Above; [apply (Bound n ltac:(lia) FunctionTable)|
+    apply (Bound n ltac:(lia) FunctorTable)].
 Qed.

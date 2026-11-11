@@ -177,8 +177,14 @@ From NM Require EaCodeAllocationSound.
 Print Assumptions NM.EaCodeAllocationSound.reserve_code_spec.
 Print Assumptions NM.EaCodeAllocationSound.write_reserved_code_spec.
 Print Assumptions NM.EaCodeAllocationSound.emit_code_spec.
+Print Assumptions NM.EaCodeAllocationSound.assembled_code_lookup.
 
 From NM Require EaApplicationSound.
 Print Assumptions NM.EaApplicationSound.allocate_application_outputs_range.
 Print Assumptions NM.EaApplicationSound.collides_only_as_sound.
 Print Assumptions NM.EaApplicationSound.apply_abstract_sound.
+
+From NM Require EaForwarderSound.
+Print Assumptions NM.EaForwarderSound.read_forwarder_sound.
+Print Assumptions NM.EaForwarderSound.place_forwarder_spec.
+Print Assumptions NM.EaForwarderSound.abstract_provider_sound.

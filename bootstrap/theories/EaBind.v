@@ -28,6 +28,21 @@ Definition sig_mismatch (kind : string) (pv : nat) (got want : fsig) : string :=
   (if String.eqb kind "method"
    then "; a plain function providing a method takes the method's parameters, which exclude the receiver (D54)"
    else "").
+
+Definition read_forwarder (kind : string) (C : cx) (g : nat) (sg : fsig) : er forwarder_handle :=
+  let! provided := ropt (cfn C g) (qs W g ++ " is not available in the context here, so it cannot provide a bind (assume or bind it)") in
+  let! _ := rcheck (fsig_eqb provided sg) (sig_mismatch kind g provided sg) in
+  Ok (ForwarderOf g).
+
+Definition place_forwarder (handle : forwarder_handle) (sg : fsig) : M (code_slot FunctionTable) :=
+  let g := forwarder_source handle in
+  let* cached := get_fwd g in
+  match cached with
+  | Some slot => ret slot
+  | None => let* slot := emit_fn_code (forwarder_body handle sg) in
+            let* _ := put_fwd g slot in ret slot
+  end.
+
 Definition fn_provider (kind : string) (F : frame) (C : cx) (pa : path) (sg : fsig) : M (nat * type_capture * smap) :=
   let not_fn := (bq (show_path pa) ++ " must be a defined function to provide a bind")%string in
   let* g := lift (resolve_sym W (fr_mod F) pa) not_fn in
@@ -44,16 +59,10 @@ Definition fn_provider (kind : string) (F : frame) (C : cx) (pa : path) (sg : fs
       let* _ := check (fsig_eqb g' want) (sig_mismatch kind g g' want) in
       ret (g, TypeCapture th th, sm)
   | Some (ADFn RPlain _ _ _ None) =>
-      let* sg' := lift (cfn C g) (qs W g ++ " is not available in the context here, so it cannot provide a bind (assume or bind it)") in
-      let* _ := check (fsig_eqb sg' sg) (sig_mismatch kind g sg' sg) in
-      let n := List.length (sg_params sg) in
-      let* cached := get_fwd g in
-      let* w := match cached with
-                | Some w => ret w
-                | None => let* w := emit_fn_code (EInvoke g (map EVar (seq 0 n))) in
-                          let* _ := put_fwd g w in ret w
-                end in
-      ret (slot_index w, TypeCapture [] [], [(IFn g, IFn g)])
+      let* handle := pure (read_forwarder kind C g sg) in
+      let* slot := place_forwarder handle sg in
+      let input := forwarder_source handle in
+      ret (slot_index slot, TypeCapture [] [], [(IFn input, IFn input)])
   | _ => fail not_fn
   end.
 

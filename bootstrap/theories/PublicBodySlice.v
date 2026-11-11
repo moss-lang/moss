@@ -2155,7 +2155,7 @@ Proof.
   pose proof Real as [_ [[_ [Fns _]] _]].
   remember (AEPath pa None) as src eqn:Src. remember (@None ty) as none eqn:NoThis.
   pose proof (realizes_absorbs_canon _ _ _ _ Real) as AbsRead.
-  destruct Prov as [F C pa' g sg Cg ns sm th R K Def Ctx Sat CT SigG|F C pa' g sg w n R K Abs' Fn Len Fresh Body].
+  destruct Prov as [F C pa' g sg Cg ns sm th R K Def Ctx Sat CT SigG|F C pa' sg handle w Typed Translated].
   - destruct (callee_realizes_le jn jn C d H g Cg ns sm th (le_n jn) Real Ctx Sat CT) as [dc [Sel [Ag RealG]]].
     exists dc. split; [exact Sel|].
     destruct Def as [n0 [ps0 [rt0 [b0 Def]]]]. unfold A.ast_of in Def.
@@ -2178,11 +2178,14 @@ Proof.
     + change (view_function P g) with (A.body_of Prog g) in View'. rewrite View in View'. injection View' as <-.
       exact Run.
   - (* forwarder *)
+    destruct handle as [g]. destruct Typed as (_ & _ & _ & Fn). destruct Translated as [_ Body].
     destruct (Fns g sg Fn) as [pv [Look Ok]].
     exists (install_provision (IFn g) pv empty_environment). split; [cbn; rewrite Look; reflexivity|].
-    cbn [CallableOk]. exists (EInvoke g (map EVar (seq 0 n))). split; [change (view_function P w) with (A.body_of Prog w); exact Body|].
+    cbn [CallableOk]. exists (A.forwarder_body (A.ForwarderOf g) sg).
+    split; [change (view_function P w) with (A.body_of Prog w); exact Body|].
     intros [|jj] Ljj H' st ws E S Args; [exact Logic.I|].
-    assert (Len' : List.length ws = n) by (pose proof (Forall2_length Args); congruence).
+    assert (Len' : List.length ws = List.length (A.sg_params sg)) by (pose proof (Forall2_length Args); congruence).
+    unfold A.forwarder_body. cbn [A.forwarder_source].
     rewrite <- Len'. cbn [AR.O.I.eval].
     assert (L0 : lookup_provision (IFn g) (typed_capture d (TypeCapture [] []) (install_provision (IFn g) pv empty_environment)) = Some pv)
       by (cbn; rewrite Nat.eqb_refl; reflexivity).
@@ -4960,8 +4963,9 @@ Proof.
     apply Single. intros rr Lr. split; [apply frame_same_refl|]. split; [apply frame_avoids_nil|].
     intros j d types0 H g0 st Lj LJ Pre0 rest. rewrite bindings_method_eq.
     remember (AEPath pw None) as src eqn:Src. remember (@None ty) as none eqn:NoneE.
-    destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R' K Def Ctx' Sat CT SigG|F' C' pa' g' sg' w' n' R' K Abs' Fn Len' Fresh' Body'].
-    2: { exfalso. destruct Ctx as (d0 & _ & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
+    destruct FP as [F' C' pa' g' sg' Cg' ns' sm' th R' K Def Ctx' Sat CT SigG|F' C' pa' sg' handle w' Typed Translated].
+    2: { exfalso. destruct Translated as [Fresh' _].
+         destruct Ctx as (d0 & _ & _ & _ & _ & _ & _ & D & _). unfold A.Fresh in Fresh'. congruence. }
     destruct (PublicContextFacts.function_context_unique W g' Cg' ns' Cg nsg Ctx' Ctx) as [-> ->]. subst n0.
     pose proof Pre0 as [_ [_ [_ [_ [Real _]]]]].
     destruct (callee_realizes_le rr rr C' d H g' Cg nsg sm' th (le_n rr) Real Ctx Sat CT) as [dc [Sel _]].

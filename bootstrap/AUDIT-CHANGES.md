@@ -152,6 +152,7 @@ entry they belong to.
 | 118 | Fixed inputs and lambda annotations compare by merge class | M4b | none (equivalent on formed contexts) |
 | 119 | Copy needs match at the binding site with an explicit ambiguity check | M4c | B and C |
 | 121 | A copy reads an atomic class through its fixed members | M4c | C |
+| 122 | Type forwarding providers before assigning runtime code | typing/translation | none (equivalent factoring) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3736,6 +3737,22 @@ using one fresh atom per abstract class must preserve that behaviour
   class. Freshness still reserves the original fixed meanings.
 - **Class C** (criterion 2). The existing input, provision and result
   comparisons now use the class reading.
+
+### 122. Type forwarding providers before assigning runtime code
+
+- **Rule.** `TypesForwarder` checks the abstract input and its signature in
+  the context and identifies its generated forwarder by that input.
+  `TranslatesForwarder` assigns a fresh number to the forwarder's body in
+  the program. `FPForward` consumes these two judgments.
+- **Proof.** The executable type reader is independent of the runtime
+  slot. On a cache hit the translator reuses a slot holding the same
+  forwarder. On a miss the shared counter allocates and fills a vacant
+  slot. The successful assembly collects both code tables into the
+  audited program.
+- **Fidelity.** The [forwarder probe](theories/EaForwarderExample.v)
+  parses Moss and elaborates the same source provider twice. The second
+  translation returns the same slot and leaves the counter as it was.
+- **Class.** Equivalent factoring of typing and translation.
 
 ---
 
