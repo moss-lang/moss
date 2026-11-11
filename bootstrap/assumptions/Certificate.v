@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFunctionSound EaMatchSound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
+From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFamilyUseSound EaFunctionAssemblySound EaFunctionSound EaMatchSound EaMain EaRecSound EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
 From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenaming BaseHostExecutionRenaming.
 
 From NM Require AuditExamples AuditBuildExample
@@ -561,6 +561,12 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaConstructSound.record_expression_sound);
   root (@NM.EaConstructSound.field_expression_sound);
   root (@NM.EaDefinedCallSound.check_defined_call_sound);
+  root (@NM.EaFamilyUseSound.family_for_sound);
+  root (@NM.EaFamilyUseSound.demand_sound_from_family_reads);
+  root (@NM.EaFunctionAssemblySound.assemble_functions_sound);
+  root (@NM.EaRecSound.run_elaboration_sound);
+  root (@NM.EaRecSound.generated_code_in_assembly);
+  root (@NM.EaRecSound.generated_link_origin_in_assembly);
   root (@NM.EaMain.elaborate);
   root (@NM.EaMain.elaborate_with);
   root (@NM.EaBase.default_strategy);
