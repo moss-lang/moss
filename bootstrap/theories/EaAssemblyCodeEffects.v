@@ -104,7 +104,8 @@ Proof.
       destruct primitive
     end.
     + apply code_effect_bind; [apply code_effect_check|intros []]. apply code_effect_return.
-    + apply code_effect_bind; [apply code_effect_unsupported|]. intro index. apply code_effect_return.
+    + apply code_effect_bind; [apply code_effect_check|intros []].
+      apply code_effect_bind; [apply code_effect_unsupported|]. intro index. apply code_effect_return.
   - apply code_effect_bind; [apply code_effect_lift|]. intro declaration.
     destruct (d_ast declaration) as [| | | | | | | |name parameters arguments results body]; try apply code_effect_fail.
     destruct body; [apply code_effect_fail|].

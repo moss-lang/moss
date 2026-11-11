@@ -47,6 +47,24 @@ fn unsupported_operations_report_their_own_names() {
 }
 
 #[test]
+fn unsupported_operations_preserve_raw_handle_types() {
+    refused(
+        &[
+            (
+                "lib/wasm.moss",
+                "type I32; type StructRef; type Boxed;
+                 assume StructRef, Boxed { tag Ref[Boxed](StructRef); }
+                 assume I32, Boxed { fn unrecognized(x: Ref[StructRef = I32, Boxed = Boxed]); }
+                 context Probe = I32, Boxed, unrecognized;",
+            ),
+            ("lib/prelude.moss", "import \"./wasm.moss\" use Probe;"),
+            ("main.moss", "assume Probe { fn main() {} }"),
+        ],
+        "platform primitive has an incompatible raw handle",
+    );
+}
+
+#[test]
 fn machine_constants_have_machine_types() {
     refused(
         &[

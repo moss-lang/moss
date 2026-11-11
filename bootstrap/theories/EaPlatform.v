@@ -286,7 +286,11 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
                          (at_sym f (if declared_ok then "platform primitive has an incompatible assumed signature"
                                     else "platform primitive has an incompatible declared signature")) in
               ret (PrimitiveClosure (encode pr) None)
-          | None => let* i := unsupported_index nm in ret (PrimitiveClosure (unsupported_operation nm i) None)
+          | None =>
+              let* _ := check (handles_read C (IFn f))
+                (at_sym f "platform primitive has an incompatible raw handle") in
+              let* i := unsupported_index nm in
+              ret (PrimitiveClosure (unsupported_operation nm i) None)
           end
       | _ => fail (unsupported_need (IFn f))
       end
