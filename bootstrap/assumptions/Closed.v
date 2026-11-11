@@ -117,3 +117,4 @@ Print Assumptions NM.EaFamilySound.family_bracket_free_complete.
 Print Assumptions NM.EaFamilySound.family_keyed_sound.
 Print Assumptions NM.EaFamilySound.is_family_sound.
 Print Assumptions NM.EaFamilySound.bundle_world_r_is_family_sound.
+Print Assumptions NM.EaContextTableSound.installed_context_table_sound.

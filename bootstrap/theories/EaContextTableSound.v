@@ -156,3 +156,30 @@ Proof.
     split | reflexivity | apply needs_exact].
 Qed.
 End Formation.
+
+Definition ContextTableSound (W : world) : Prop :=
+  forall symbol C ns, w_context W symbol = Some (C, ns) ->
+    match kind_sym W symbol with
+    | Some DKFn | Some DKMeth | Some DKVal => CtxOf W symbol C ns
+    | Some DKFunctor => FunCtx W symbol C ns
+    | _ => False
+    end.
+
+Theorem installed_context_table_sound : forall E bound,
+  (forall symbol d, w_decl (e_W E) symbol = Some d -> symbol < bound) ->
+  metadata_budget (e_W E) bound < e_metadata_fuel E ->
+  (forall s, In s (e_mains E) <-> IsMainFn (e_W E) s) ->
+  ContextMergeRemainder E ->
+  (forall symbol, w_context (e_W E) symbol = nget (context_table E bound) symbol) ->
+  ContextTableSound (e_W E).
+Proof.
+  intros E bound Bounded Enough Main Remaining Installed symbol C ns Found.
+  assert (Computed : ContextComputed E symbol (C, ns)).
+  { apply (context_table_computed E bound). rewrite <- Installed. exact Found. }
+  unfold ContextComputed in Computed.
+  destruct (kind_sym (e_W E) symbol) as [[]|]; try exact Computed.
+  all: first
+    [ eapply assume_ctx_recorded;
+      [exact (assume_ctx_sound E bound Bounded Enough Main Remaining _ _ _ Computed)|exact Found]
+    | exact (fun_ctx_sound E bound Bounded Enough Remaining _ _ _ Computed Found) ].
+Qed.
