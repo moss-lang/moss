@@ -153,6 +153,38 @@ Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * 
 Definition add_binds (C : cx) (binds : list (name * ty)) : cx :=
   fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C.
 
+Definition constant_frame (d : decl) (initial : aexpr) : frame :=
+  Frame (d_mod d) None None false
+    (mk_frame_vars false [] (ex_names W fuel (d_mod d) initial)) [] [] [].
+
+Definition read_constant (s : nat) (d : decl) (t0 : aty) (i : aexpr) : M (expr * ty) :=
+  let* cached := get_const s in
+  match cached with
+  | Some xt => ret xt
+  | None =>
+      let* _ := check (match d_assumes d with [] => true | _ => false end) ("the constant " ++ qs W s ++ " assumes items; a constant's initializer reads only constants") in
+      let* t := pure (ty_of W fuel (d_mod d) [] None t0) in
+      let F0 := constant_frame d i in
+      let* (x, t') := r_ex R F0 (Cx [] [] [] [] []) i (Some t) in
+      let* _ := check (fitsb t' t) (qs W s ++ " is declared " ++ qty W t ++ " but initialized with " ++ qty W t') in
+      let* _ := put_const s (x, t) in
+      ret (x, t)
+  end.
+
+Definition read_global_value (F : frame) (C : cx) (pa : path) : M (expr * ty) :=
+  let* s := lift (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not in scope") in
+  let* d := lift (w_decl W s) "internal: unknown symbol" in
+  match d_ast d with
+  | ADUnit _ => ret (ETag s [] EUnit, TNom s [])
+  | ADVal _ _ None =>
+      let* t := lift (cval C s) (qs W s ++ " is not available in the context here (assume or bind it)") in ret (EVal s, t)
+  | ADVal _ t0 (Some i) =>
+      read_constant s d t0 i
+  | ADFn _ _ _ _ _ => fail (qs W s ++ " is a function; call it (no first-class fns yet)")
+  | ADTag _ _ _ => fail (qs W s ++ " is a tag; construct it with a payload")
+  | _ => fail (qs W s ++ " is not a value")
+  end.
+
 (* Resolve the call's types and provisions before emitting an instruction.
    The argument expressions are elaborated in the caller's original scope. *)
 Record prepared_call := PreparedCall {
@@ -198,30 +230,7 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
       match local, pa with
       | Some (t, _), [x] => let* _ := need_named F x in ret (EVar (var_of F x), t)
       | _, _ =>
-          let* s := lift (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not in scope") in
-          let* d := lift (w_decl W s) "internal: unknown symbol" in
-          match d_ast d with
-          | ADUnit _ => ret (ETag s [] EUnit, TNom s [])
-          | ADVal _ _ None =>
-              let* t := lift (cval C s) (qs W s ++ " is not available in the context here (assume or bind it)") in ret (EVal s, t)
-          | ADVal _ t0 (Some i) =>
-              let* cached := get_const s in
-              match cached with
-              | Some xt => ret xt
-              | None =>
-                  let* _ := check (match d_assumes d with [] => true | _ => false end) ("the constant " ++ qs W s ++ " assumes items; a constant's initializer reads only constants") in
-                  let* t := pure (ty_of W fuel (d_mod d) [] None t0) in
-                  let names := ex_names W fuel (d_mod d) i in
-                  let F0 := Frame (d_mod d) None None false (mk_frame_vars false [] names) [] [] [] in
-                  let* (x, t') := r_ex R F0 (Cx [] [] [] [] []) i (Some t) in
-                  let* _ := check (fitsb t' t) (qs W s ++ " is declared " ++ qty W t ++ " but initialized with " ++ qty W t') in
-                  let* _ := put_const s (x, t) in
-                  ret (x, t)
-              end
-          | ADFn _ _ _ _ _ => fail (qs W s ++ " is a function; call it (no first-class fns yet)")
-          | ADTag _ _ _ => fail (qs W s ++ " is a tag; construct it with a payload")
-          | _ => fail (qs W s ++ " is not a value")
-          end
+          read_global_value F C pa
       end
   | AEPath pa (Some _) => fail (bq (show_path pa ++ "[…]") ++ ": only a type or a tag constructor takes brackets")
   | AECall pa a argl =>

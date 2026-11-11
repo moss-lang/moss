@@ -44,6 +44,10 @@ Local Ltac expression_effect :=
         code_effect_check, code_effect_lift, code_effect_get_const, code_effect_put_const,
         code_effect_need_named, code_effect_join]
     | lazymatch goal with
+      | |- PreservesOldCode (EaExpr.read_global_value _ _ _ _ _) =>
+        unfold EaExpr.read_global_value; expression_effect
+      | |- PreservesOldCode (EaExpr.read_constant _ _ _ _ _ _) =>
+        unfold EaExpr.read_constant; expression_effect
       | |- PreservesOldCode (mbind _ _) =>
         apply code_effect_bind; [expression_effect|intro; cbn beta iota zeta; expression_effect]
       | |- PreservesOldCode (miter _ _) =>
@@ -64,7 +68,7 @@ Proof.
   - constructor; intros; apply code_effect_fail.
   - destruct IH.
     constructor; intros;
-      cbn [EaExpr.ex EaExpr.mmap_fields EaExpr.args EaExpr.cond EaExpr.branch EaExpr.arms
+      cbn [EaExpr.ex EaExpr.read_global_value EaExpr.read_constant EaExpr.mmap_fields EaExpr.args EaExpr.cond EaExpr.branch EaExpr.arms
         EaExpr.arms_list EaExpr.meth_call EaExpr.provided EaExpr.blke EaExpr.blk];
       expression_effect.
 Qed.

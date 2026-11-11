@@ -253,3 +253,21 @@ Print Assumptions NM.EaFamilyMatching.family_read_off_sound.
 From NM Require EaLambdaSound.
 Print Assumptions NM.EaLambdaSound.lambda_provider_sound.
 Print Assumptions NM.EaLambdaSound.write_lambda_keeps_generated_post.
+
+From NM Require EaConstantSound EaLiteralSound EaMethodSound EaValuePathSound EaExpressionSound
+  EaDefinedProviderSound EaDirectBindSound EaProviderBindSound EaWrappedProviderSound.
+Print Assumptions NM.EaConstantSound.read_constant_sound.
+Print Assumptions NM.EaLiteralSound.literal_expression_sound.
+Print Assumptions NM.EaMethodSound.method_call_post_sound.
+Print Assumptions NM.EaValuePathSound.value_path_sound.
+Print Assumptions NM.EaExpressionSound.expression_step_sound.
+Print Assumptions NM.EaDefinedProviderSound.defined_function_provider_post_sound.
+Print Assumptions NM.EaDefinedProviderSound.attached_method_provider_post_sound.
+Print Assumptions NM.EaDirectBindSound.type_bind_post_sound.
+Print Assumptions NM.EaDirectBindSound.value_bind_post_sound.
+Print Assumptions NM.EaDirectBindSound.inline_functor_post_sound.
+Print Assumptions NM.EaProviderBindSound.named_function_bind_post_sound.
+Print Assumptions NM.EaProviderBindSound.lambda_function_bind_post_sound.
+Print Assumptions NM.EaProviderBindSound.method_bind_post_sound.
+Print Assumptions NM.EaForwarderSound.function_provider_post_sound.
+Print Assumptions NM.EaWrappedProviderSound.method_provider_post_sound.

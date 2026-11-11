@@ -1,6 +1,6 @@
 (* Typed nominal construction, records and field projection. *)
 From Stdlib Require Import List String Bool Arith Lia.
-From NM Require Import Audit EaBase EaTypes EaTypesSound EaExpr EaControlSound.
+From NM Require Import Audit EaBase EaTypes EaTypesSound EaExpr EaControlSound EaChecked.
 From NM Require EaNumbering PublicTypeFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -22,6 +22,9 @@ Section Constructs.
 Variables (E : env) (R : rec) (P : program).
 Let W := e_W E.
 Variable valid : frame -> cx -> est -> Prop.
+Variable post : est -> Prop.
+Local Notation Expr := (ExPostAt E P valid post R).
+Local Notation Action := (ExActionSound E P valid post).
 
 Local Lemma tag_arguments_read : forall C s rows arguments,
   rmap (fun r => let! t := ropt (nlook r (rows ++ c_ty C))
@@ -39,16 +42,15 @@ Proof.
 Qed.
 
 Theorem tag_call_sound : forall n,
-  ExSoundAt E R P valid n ->
-  forall F C path application args expected before after value t s d name ps syntax,
+  Expr n ->
+  forall F C path application args expected s d name ps syntax,
   resolve_sym W (fr_mod F) path = Some s -> w_decl W s = Some d ->
   d_ast d = ADTag name ps syntax ->
-  valid F C before ->
-  ex E R (S n) F C (AECall path application args) expected before = Ok ((value, t), after) ->
-  Ex W P F C (AECall path application args) expected value t /\ valid F C after.
+  Action F C (AECall path application args) expected
+    (ex E R (S n) F C (AECall path application args) expected).
 Proof.
-  intros n Below F C path application args expected before after value t s d name ps syntax
-    Resolve Declared Tag Valid Run.
+  intros n Below F C path application args expected s d name ps syntax
+    Resolve Declared Tag before [value t] after Run.
   cbn [ex] in Run. fold W in Run. rewrite Resolve in Run. cbn [mbind ret] in Run.
   rewrite Declared in Run. cbn [mbind ret] in Run. rewrite Tag in Run.
   apply mbind_ok in Run as (rows & mid & Read & Run).
@@ -62,27 +64,27 @@ Proof.
   apply mbind_ok in Run as (checked & final & Check & Run).
   apply check_result in Check as [Fits [_ <-]].
   injection Run as <- <- <-.
-  destruct (Below _ _ _ _ _ _ _ _ Valid Child) as [Body ValidFinish].
-  split; [|exact ValidFinish].
-  eapply ExTag; [exact Resolve|unfold kind_sym; now rewrite Declared, Tag|
+  destruct (Below _ _ _ _ _ _ _ Child) as [Backward Typed].
+  split; [exact Backward|]. intros Valid Post.
+  destruct (Typed Valid Post) as [Final Body]. split; [exact Final|].
+  eapply ExTag; [exact Resolve|unfold kind_sym; fold W; now rewrite Declared, Tag|
     eapply brackets_sound; exact Rows|now apply tag_arguments_read|
     eapply payload_of_sound; exact Payload|reflexivity|exact Body|now apply fitsb_exact].
 Qed.
 
 Theorem record_fields_sound : forall n,
-  (forall depth, depth < n -> ExSoundAt E R P valid depth) ->
-  forall F C fs ftys before after fields,
-  valid F C before ->
-  mmap_fields E R n F C fs ftys before = Ok (fields, after) ->
-  Forall2 (fun ft xf => fst xf = fst ft /\
-    exists n v vt, n = fst ft /\ In (n, v) fs /\
-      Ex W P F C (match v with Some y => y | None => AEPath [n] None end)
-        (Some (snd ft)) (snd xf) vt /\ fits vt (snd ft)) ftys fields /\ valid F C after.
+  (forall depth, depth < n -> Expr depth) ->
+  forall F C fs ftys,
+  Checked post (valid F C) (fun _ => valid F C) (mmap_fields E R n F C fs ftys)
+    (fun fields _ => Forall2 (fun ft xf => fst xf = fst ft /\
+      exists n v vt, n = fst ft /\ In (n, v) fs /\
+        Ex W P F C (match v with Some y => y | None => AEPath [n] None end)
+          (Some (snd ft)) (snd xf) vt /\ fits vt (snd ft)) ftys fields).
 Proof.
-  induction n as [|n IH]; intros Below F C fs ftys before after fields Valid Run; [discriminate|].
+  induction n as [|n IH]; intros Below F C fs ftys before fields after Run; [discriminate|].
   cbn [mmap_fields] in Run.
   destruct ftys as [|[label field_type] rest].
-  - injection Run as <- <-. split; [constructor|exact Valid].
+  - injection Run as <- <-. split; [tauto|intros Valid _; split; [exact Valid|constructor]].
   - apply mbind_ok in Run as (syntax & started & Read & Run).
     destruct (find (fun q => String.eqb (fst q) label) fs)
       as [[found chosen]|] eqn:Found; [|discriminate Read].
@@ -90,26 +92,28 @@ Proof.
     apply find_some in Found as [Member Equal]. cbn [fst] in Equal.
     apply String.eqb_eq in Equal. subst found.
     apply mbind_ok in Run as ([value actual] & emitted & Field & Run).
-    destruct (Below n ltac:(lia) _ _ _ _ _ _ _ _ Valid Field) as [Typed ValidEmitted].
+    destruct (Below n ltac:(lia) _ _ _ _ _ _ _ Field) as [Earlier TypedField].
     apply mbind_ok in Run as (checked & checked_state & Check & Run).
     apply check_result in Check as [Fits [_ <-]].
     apply mbind_ok in Run as (others & final & Tail & Run).
     injection Run as <- <-.
-    destruct (IH (fun depth Lt => Below depth ltac:(lia)) _ _ _ _ _ _ _ ValidEmitted Tail)
-      as [TypedTail ValidAfter].
-    split; [|exact ValidAfter]. constructor; [|exact TypedTail].
+    destruct (IH (fun depth Lt => Below depth ltac:(lia)) _ _ _ _ _ _ _ Tail)
+      as [Backward TypedFields].
+    split; [intros Post; now apply Earlier, Backward|]. intros Valid Post.
+    destruct (TypedField Valid (Backward Post)) as [ValidEmitted Typed].
+    destruct (TypedFields ValidEmitted Post) as [ValidAfter TypedTail].
+    split; [exact ValidAfter|]. constructor; [|exact TypedTail].
     split; [reflexivity|]. exists label, chosen, actual.
     split; [reflexivity|split; [exact Member|split; [exact Typed|now apply fitsb_exact]]].
 Qed.
 
 Theorem record_expression_sound : forall n,
-  (forall depth, depth < n -> ExSoundAt E R P valid depth) ->
-  forall F C path application fields expected before after value t,
-  valid F C before ->
-  ex E R (S n) F C (AERec path application fields) expected before = Ok ((value, t), after) ->
-  Ex W P F C (AERec path application fields) expected value t /\ valid F C after.
+  (forall depth, depth < n -> Expr depth) ->
+  forall F C path application fields expected,
+  Action F C (AERec path application fields) expected
+    (ex E R (S n) F C (AERec path application fields) expected).
 Proof.
-  intros n Below F C path application fields expected before after value t Valid Run.
+  intros n Below F C path application fields expected before [value t] after Run.
   cbn [ex] in Run.
   apply mbind_ok in Run as (s & middle & Read & Run).
   apply lift_result in Read as [Resolved <-].
@@ -138,24 +142,23 @@ Proof.
   apply check_result in Check as [Arity [_ <-]]. apply Nat.eqb_eq in Arity.
   apply mbind_ok in Run as (translated & finish & Fields & Run).
   injection Run as <- <- <-.
-  destruct (record_fields_sound n Below _ _ _ _ _ _ _ Valid Fields) as [Typed ValidFinish].
-  split; [|exact ValidFinish].
+  destruct (record_fields_sound n Below _ _ _ _ _ _ _ Fields) as [Backward Typed].
+  split; [exact Backward|]. intros Valid Post.
+  destruct (Typed Valid Post) as [Final Proof]. split; [exact Final|].
   eapply ExRecord; [exact Resolved|now apply kind_is_spec|eapply brackets_sound; exact Rows|
     now apply tag_arguments_read|eapply payload_of_sound; exact Payload|reflexivity|
-    now apply EaNumbering.checked_parameters_distinct|exact Arity|exact Typed].
+    now apply EaNumbering.checked_parameters_distinct|exact Arity|exact Proof].
 Qed.
 
 Theorem field_expression_sound : forall n,
-  ExSoundAt E R P valid n ->
-  forall F C receiver field expected before after value t,
-  valid F C before ->
-  ex E R (S n) F C (AEField receiver field) expected before = Ok ((value, t), after) ->
-  Ex W P F C (AEField receiver field) expected value t /\ valid F C after.
+  Expr n ->
+  forall F C receiver field expected,
+  Action F C (AEField receiver field) expected (ex E R (S n) F C (AEField receiver field) expected).
 Proof.
-  intros n Below F C receiver field expected before after value t Valid Run.
+  intros n Below F C receiver field expected before [value t] after Run.
   cbn [ex] in Run.
   apply mbind_ok in Run as ([object object_type] & middle & Object & Run).
-  destruct (Below _ _ _ _ _ _ _ _ Valid Object) as [Typed ValidMiddle].
+  destruct (Below _ _ _ _ _ _ _ Object) as [Backward Typed].
   apply mbind_ok in Run as (record & start & Record & Run).
   assert (ReadRecord :
     ((exists tag args, object_type = TNom tag args /\ kind_sym W tag = Some DKTag /\
@@ -173,7 +176,8 @@ Proof.
   destruct record as [|fields| | | |]; try discriminate.
   apply mbind_ok in Run as (field_type & finish & Read & Run).
   apply lift_result in Read as [Field <-]. injection Run as <- <- <-.
-  split; [|exact ValidMiddle].
-  eapply ExField; [exact Typed|exact Shape|]. exists fields. auto.
+  split; [exact Backward|]. intros Valid Post.
+  destruct (Typed Valid Post) as [Final Proof]. split; [exact Final|].
+  eapply ExField; [exact Proof|exact Shape|]. exists fields. auto.
 Qed.
 End Constructs.
