@@ -49,3 +49,8 @@ Print Assumptions NM.EaFixedSound.fixed_readings_member_sound.
 Print Assumptions NM.EaFixedSound.bundle_world_r_fixed_readers_sound.
 
 Print Assumptions NM.EaFixedSound.fixed_readings_unbracketed.
+
+From NM Require EaMainSymbols.
+Print Assumptions NM.EaMainSymbols.load_world_scope_path.
+Print Assumptions NM.EaMainSymbols.bundle_world_r_main_symbols_exact.
+Print Assumptions NM.EaMainSymbols.elaborate_with_main_symbols_exact.

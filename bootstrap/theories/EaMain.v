@@ -272,6 +272,17 @@ Definition bundle_world_r (b : bundle) : er (world * nat) :=
 Definition bundle_world_n (b : bundle) : option (world * nat) :=
   match bundle_world_r b with Ok r => Some r | Err _ => None end.
 
+Definition module_main (W : world) (p : string) : list nat :=
+  match w_scope W p NSName "main" with
+  | Some (ESym s) => match ast_of W s with
+                    | Some (ADFn RPlain _ _ _ _) => [s]
+                    | _ => [] end
+  | _ => []
+  end.
+
+Definition main_symbols (W : world) (modules : list string) : list nat :=
+  uniq (flat_map (module_main W) modules).
+
 Definition elab_fuel : nat := 100000.
 
 (* SOUND: elaborate_with strat b = Ok (W, P) -> ElaboratesIn b W P /\ Platform.Linked W P
@@ -281,10 +292,7 @@ Definition elaborate_with (strat : strategy) (b : bundle) : er (world * program)
   | Err m => Err m
   | Ok (W0, bound) =>
       let mods := map am_path (b_mods b) in
-      let mains := uniq (flat_map (fun p => match w_scope W0 p NSName "main" with
-                                            | Some (ESym s) => match ast_of W0 s with
-                                                               | Some (ADFn RPlain _ _ _ _) => [s] | _ => [] end
-                                            | _ => [] end) mods) in
+      let mains := main_symbols W0 mods in
       let E0 := Env W0 strat mods mains elab_fuel in
       let T := context_table E0 bound in
       let W := ElabWorld.with_context W0 (nget T) in
