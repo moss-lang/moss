@@ -29,10 +29,13 @@ Variable post : est -> Prop.
 Hypothesis applications : forall symbol meanings,
   AppOf W symbol meanings (app_of W metadata_fuel symbol meanings).
 Hypothesis function_scope : forall F C symbol signature arguments state,
-  valid F (provide C (IFn symbol) arguments (set_fn C symbol signature)) state <-> valid F C state.
+  valid F C state ->
+  let C' := provide C (IFn symbol) arguments (set_fn C symbol signature) in
+  valid F C' state /\ forall final, valid F C' final -> valid F C final.
 Hypothesis method_scope : forall F C receiver method signature arguments state,
-  valid F (provide C (mkey receiver method) arguments (set_mth C receiver method signature)) state
-  <-> valid F C state.
+  valid F C state ->
+  let C' := provide C (mkey receiver method) arguments (set_mth C receiver method signature) in
+  valid F C' state /\ forall final, valid F C' final -> valid F C final.
 Hypothesis method_producer_detected : forall C receiver method u,
   FamilyProduces W C u (mkey receiver method) ->
   family_produces E C u (mkey receiver method) = true.
@@ -72,8 +75,7 @@ Proof.
   split; [exact Backward|]. intros Valid Post.
   destruct (TypedProvider Valid Post) as [Final ProviderTyped].
   split.
-  - split; [now apply function_scope|]. intros final Scope.
-    exact (proj1 (function_scope F C symbol signature _ final) Scope).
+  - exact (function_scope F C symbol signature _ next Final).
   - eapply BFnBind.
     + exact Resolve.
     + unfold kind_sym. fold W. now rewrite Decl, Ast.
@@ -102,8 +104,7 @@ Proof.
   split; [exact Backward|]. intros Valid Post.
   destruct (TypedProvider Valid Post) as [Final ProviderTyped].
   split.
-  - split; [now apply function_scope|]. intros final Scope.
-    exact (proj1 (function_scope F C symbol signature _ final) Scope).
+  - exact (function_scope F C symbol signature _ next Final).
   - eapply BFnLambda.
     + exact Resolve.
     + unfold kind_sym. fold W. now rewrite Decl, Ast.
@@ -137,8 +138,7 @@ Proof.
   split; [exact Backward|]. intros Valid Post.
   destruct (TypedProvider Valid Post) as [Final ProviderTyped].
   split.
-  - split; [now apply method_scope|]. intros final Scope.
-    exact (proj1 (method_scope F C (canon C rt) symbol signature _ final) Scope).
+  - exact (method_scope F C (canon C rt) symbol signature _ next Final).
   - eapply BMethBind.
     + exact Resolve.
     + now apply method_named_sound.

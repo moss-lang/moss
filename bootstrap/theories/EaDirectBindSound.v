@@ -12,9 +12,12 @@ Variable valid : frame -> cx -> est -> Prop.
 Variable post : est -> Prop.
 
 Hypothesis type_scope : forall F C symbol t state,
+  kind_sym W symbol = Some DKType ->
   valid F (set_ty C symbol t) state <-> valid F C state.
 Hypothesis value_scope : forall F C symbol t arguments state,
-  valid F (provide C (IVal symbol) arguments (set_val C symbol t)) state <-> valid F C state.
+  valid F C state ->
+  let C' := provide C (IVal symbol) arguments (set_val C symbol t) in
+  valid F C' state /\ forall final, valid F C' final -> valid F C final.
 Hypothesis module_scope : forall F C path symbol state,
   valid (with_mod F path symbol) C state <-> valid F C state.
 Hypothesis carry_scope : forall F nested C state,
@@ -44,12 +47,13 @@ Proof.
   destruct (ty_of W fuel (fr_mod F) (c_ty C) None (ATRef right arguments)) as [t|] eqn:TypeRead;
     cbn [pure mbind ret] in Run; [|discriminate].
   injection Run as <- <- <- <- <-.
+  assert (Kind : kind_sym W symbol = Some DKType) by (unfold kind_sym; fold W; now rewrite Decl, Ast).
   split; [tauto|]. intros Valid _. split.
   - split; [now apply type_scope|]. intros final Scope.
-    exact (proj1 (type_scope F C symbol (canon C t) final) Scope).
+    exact (proj1 (type_scope F C symbol (canon C t) final Kind) Scope).
   - eapply BTypeBind.
     + exact Resolve.
-    + unfold kind_sym. fold W. now rewrite Decl, Ast.
+    + exact Kind.
     + intro Member. apply nmem_spec in Member. congruence.
     + eapply ty_of_sound. exact TypeRead.
 Qed.
@@ -73,8 +77,7 @@ Proof.
   split; [exact Backward|]. intros Valid Post.
   destruct (TypedValue Valid Post) as [Final ValueTyped].
   split.
-  - split; [now apply value_scope|]. intros final Scope.
-    exact (proj1 (value_scope F C symbol declared _ final) Scope).
+  - exact (value_scope F C symbol declared _ next Final).
   - eapply BValBind; [exact Resolve|exact Decl|exact Ast|eapply ty_of_sound; exact TypeRead|
       exact ValueTyped|now apply fitsb_exact|apply applications].
 Qed.
