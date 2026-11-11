@@ -846,9 +846,7 @@ Proof.
   pose proof (proj2 (PublicContextFacts.functor_context_merge W gg Cg nsg FCg)) as SectionG.
   pose proof (step_scope_section _ _ _ ScopeB SectionG) as SectionB.
   destruct ScopeB as [_ [BackB [PvB [_ MergeB]]]].
-  destruct (functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg [_ [_ [_ SubG]]]]]].
-  assert (SubDom : forall y v, lookup_subst y (A.c_sub Cg) = Some v -> In y DG /\ incl (A.gens v) DG)
-    by (intros y v L; exact (SubG y v (lookup_subst_in_pair _ _ _ L))).
+  destruct (functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg _]]].
   assert (GensOut : forall t y, ~ In y DG ->
     (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
   { apply (section_gens_out Cb DG SectionB). rewrite MergeB.
@@ -856,18 +854,8 @@ Proof.
   assert (SigGensOut : forall sg y, ~ In y DG ->
     (In y (A.sig_gens (A.sig_subst (A.c_sub Cb) sg)) <-> In y (A.sig_gens sg)))
     by exact (section_sig_gens_out Cb DG GensOut).
-  assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG).
-  { intros y Iy. unfold PublicFormation.scope_gens in Iy. apply in_app_or in Iy as [Iy|Iy].
-    - apply in_flat_map in Iy as [[g' v] [Iq Iy]]. cbn [fst snd] in Iy. destruct Iy as [E|Iy].
-      + subst y. exact (proj1 (SubG g' v Iq)).
-      + exact (proj2 (SubG g' v Iq) y Iy).
-    - apply in_flat_map in Iy as [[x v] [Iq Iy]]. cbn [fst snd] in Iy. rewrite (CSg.FL.functx_table_in W _ _ _ FCg x v Iq) in Iy.
-      assert (Ix : In x DG) by (change x with (fst (x, v)); apply in_map; exact Iq).
-      assert (B1 : forall y, In y (A.gens (app_subst (A.c_sub Cg) (TAbs x))) -> In y DG).
-      { intros y' Iy'. destruct (gens_subst _ _ y' Iy') as [z [Iz [[_ ->]|[v' [L Iv]]]]];
-          [destruct Iz as [<-|[]]; exact Ix|exact (proj2 (SubDom z v' L) y' Iv)]. }
-      apply in_app_or in Iy as [Iy|Iy]; [exact (B1 y Iy)|].
-      unfold A.canon in Iy. destruct (gens_subst _ _ y Iy) as [z [Iz [[_ ->]|[v' [L Iv]]]]]; [exact (B1 z Iz)|exact (proj2 (SubDom z v' L) y Iv)]. }
+  assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG)
+    by exact (PublicFormation.functx_scope_gens W gg Cg nsg FCg).
   assert (InCb : forall k p, In (k, p) (A.c_provisions Cb) -> forall y, ~ In y DG -> In y D0 ->
     ~ In y (rel_gens p) /\ ~ In y (PublicCallRealize.key_gens k)).
   { intros k0 p0 I y Ny Iy0.

@@ -114,13 +114,12 @@ Proof.
   assert (ThL : forall z, In z (map fst (A.c_ty Cu)) ->
     lookup_subst z th = Some (A.canon Cf (app_subst (A.c_ty Cf) (TAbs z)))).
   { intros z Iz. rewrite Th. exact (CF.CN.CC.LR.PA.FS.CopyA.S.lookup_on_keys (fun y => A.canon Cf (app_subst (A.c_ty Cf) (TAbs y))) _ z Iz). }
-  destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg [_ [_ [_ SubG]]]]]].
+  destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG [ProvG [KMg _]]].
   destruct (PublicCallRealize.functx_scoped W u Cu ns FCu) as [TblU [ProvU [KMu _]]].
   assert (GgDom : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> incl (A.gens tx) (map fst (A.c_ty Cg))).
-  { intros x tx L z Iz. rewrite (TblG x tx L) in Iz. cbn [app_subst] in Iz.
-    destruct (lookup_subst x (A.c_sub Cg)) as [v|] eqn:Lx.
-    - exact (proj2 (SubG x v (lookup_subst_in_pair _ _ _ Lx)) z Iz).
-    - destruct Iz as [<-|[]]. apply PublicFamilyAgree.nlook_dom. rewrite L. discriminate. }
+  { intros x tx L z Iz. apply (PublicFormation.functx_scope_gens W gg Cg nsg FCg).
+    apply (PublicFormation.ty_scope Cg z). exact (PublicFormation.in_tm_gens _ _ _ _
+      (PublicTypeRead.nlook_in _ _ _ _ L) Iz). }
   assert (Parts : th = map (fun q => (fst q, A.canon Cf (app_subst (A.c_ty Cf) (TAbs (fst q))))) (A.c_ty Cu) /\
     (forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty Cf) <> None) /\
     (forall g t, In (g, t) (A.c_sub Cu) -> (forall x, In x (g :: A.gens t) -> A.nlook x (A.c_ty Cf) <> None) ->
@@ -208,25 +207,12 @@ Proof.
   destruct ScopeB as [_ [BackB [PvB [_ MergeB]]]].
   rewrite Made in BackB.
   set (DG := map fst (A.c_ty Cg)) in *.
-  assert (SubDom : forall y v, lookup_subst y (A.c_sub Cg) = Some v -> In y DG /\ incl (A.gens v) DG)
-    by (intros y v L; exact (SubG y v (lookup_subst_in_pair _ _ _ L))).
   assert (GensOut : forall t y, ~ In y DG ->
     (In y (A.gens (A.canon Cb t)) <-> In y (A.gens t))).
   { apply (section_gens_out Cb DG SectionB). rewrite MergeB.
     exact (PublicCallRealize.functx_merge_symbols W gg Cg nsg FCg). }
-  assert (SigmaGens : forall t y, In y (A.gens (app_subst (A.c_sub Cg) t)) -> In y (A.gens t) \/ In y DG).
-  { intros t y Iy. destruct (gens_subst t _ y Iy) as [z [Iz [[_ ->]|[v [L Iv]]]]]; [left; exact Iz|right; exact (proj2 (SubDom z v L) y Iv)]. }
-  assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG).
-  { intros y Iy. unfold PublicFormation.scope_gens in Iy. apply in_app_or in Iy as [Iy|Iy].
-    - apply in_flat_map in Iy as [[g' v] [Iq Iy]]. cbn [fst snd] in Iy. destruct Iy as [E|Iy].
-      + subst y. exact (proj1 (SubG g' v Iq)).
-      + exact (proj2 (SubG g' v Iq) y Iy).
-    - apply in_flat_map in Iy as [[x v] [Iq Iy]]. cbn [fst snd] in Iy. rewrite (functx_table_in _ _ _ FCg x v Iq) in Iy.
-      assert (Ix : In x DG) by (change x with (fst (x, v)); apply in_map; exact Iq).
-      assert (B1 : forall y, In y (A.gens (app_subst (A.c_sub Cg) (TAbs x))) -> In y DG).
-      { intros y' Iy'. destruct (SigmaGens _ _ Iy') as [[<-|[]]|I']; [exact Ix|exact I']. }
-      apply in_app_or in Iy as [Iy|Iy]; [exact (B1 y Iy)|].
-      unfold A.canon in Iy. destruct (SigmaGens _ _ Iy) as [I'|I']; [exact (B1 y I')|exact I']. }
+  assert (ScopeG : forall y, In y (PublicFormation.scope_gens Cg) -> In y DG)
+    by exact (PublicFormation.functx_scope_gens W gg Cg nsg FCg).
   assert (InCb : forall k p, In (k, p) (A.c_provisions Cb) -> forall y, ~ In y DG ->
     ~ In y (PublicCallRealize.provision_sig_gens p) /\ ~ In y (PublicCallRealize.key_gens k)).
   { intros k p I y Ny. destruct (PvB k p I) as [Ig|[Sp Sk]].

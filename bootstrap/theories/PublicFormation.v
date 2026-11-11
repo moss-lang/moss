@@ -481,6 +481,30 @@ Proof.
   - exact (scope_ty C x _ y Iq (gens_keep _ _ _ Iy L)).
 Qed.
 
+
+(* Class support, source meanings, and storage identity suffice to bound
+   every scoped generation. No substitution-image bound is needed. The
+   function premise accounts for rows which an arbitrary context stores. *)
+Lemma scope_gens_section_bound : forall C K,
+  SectionOf (c_merge C) (c_sub C) -> incl (merge_symbols (c_merge C)) K ->
+  (forall g v, In (g, v) (c_sub C) -> lookup_subst g (c_sub C) = Some v /\ In g K) ->
+  incl (tm_gens (c_ty C)) K -> incl (scope_gens C) K.
+Proof.
+  intros C K Section Classes Rows Types.
+  assert (ReadBound : forall t, incl (gens t) K -> incl (gens (canon C t)) K)
+    by (intros t Source; exact (PublicMerge.section_gens_bound Section Classes t Source)).
+  intros y Iy. unfold scope_gens in Iy. apply in_app_or in Iy as [Iy|Iy].
+  - apply in_flat_map in Iy as [[g v] [Iq Iy]]. cbn in Iy.
+    destruct (Rows g v Iq) as [Read Inside]. destruct Iy as [<-|Iy]; [exact Inside|].
+    assert (Equal : canon C (TAbs g) = v) by (unfold canon; cbn [app_subst]; rewrite Read; reflexivity).
+    rewrite <- Equal in Iy. apply (ReadBound (TAbs g)); [|exact Iy].
+    intros z [<-|[]]. exact Inside.
+  - apply in_flat_map in Iy as [[x v] [Iq Iy]]. cbn in Iy.
+    apply in_app_or in Iy as [Iy|Iy].
+    + exact (Types y (in_tm_gens _ _ _ _ Iq Iy)).
+    + apply (ReadBound v); [|exact Iy]. intros z Iz. exact (Types z (in_tm_gens _ _ _ _ Iq Iz)).
+Qed.
+
 Lemma scope_gens_ext : forall C1 C2, c_ty C1 = c_ty C2 -> c_sub C1 = c_sub C2 -> scope_gens C1 = scope_gens C2.
 Proof. intros C1 C2 E1 E2. unfold scope_gens, canon. rewrite E1, E2. reflexivity. Qed.
 
@@ -1121,6 +1145,37 @@ Proof.
       rewrite <- Read. apply (PublicMerge.section_gens_bound Section).
       * intros y Iy. apply Sub, EsT. exact (proj1 (proj2 (proj2 Merge)) y Iy).
       * intros y [<-|[]]. apply Sub, EsT. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t Iq)).
+Qed.
+
+
+(* A functor's initial scope is bounded through its merge classes and the
+   canonical readings of its input telescope. Row domains/functions are
+   retained solely to account for the legacy storage representation. *)
+Theorem functx_scope_gens : forall u C ns, FunCtx W u C ns ->
+  incl (scope_gens C) (map fst (c_ty C)).
+Proof.
+  intros u C ns FC. pose proof (PublicCallRealize.functx_merge_symbols W u C ns FC) as Classes.
+  destruct FC as (d & ps & a & r & b & es & tm & tm' & sigma & classes & implicit &
+    D & FP & IE & Imp & -> & MGM & Merge & Section & -> & Needs & Context).
+  destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdTm [_ Entries]].
+  set (tmr := (map (fun t => (t, TAbs t)) implicit ++ tm)%list).
+  assert (Id : IdForm tmr).
+  { apply Forall_app. split; [|exact IdTm]. apply Forall_forall. intros q Iq.
+    apply in_map_iff in Iq as [x [<- _]]. reflexivity. }
+  assert (Source : incl (flat_map entry_gens es) (map fst tmr)).
+  { intros x Ix. unfold tmr. rewrite map_app. apply in_or_app. right. exact (Entries x Ix). }
+  assert (Keys : map fst (c_ty (entries_cx sigma classes tmr es)) = map fst tmr).
+  { cbn [entries_cx c_ty]. rewrite map_map. reflexivity. }
+  apply scope_gens_section_bound; [exact Section|exact Classes| |].
+  - intros g v Iq. split.
+    + exact (proj2 (proj2 (proj2 (proj2 MGM))) g v Iq).
+    + rewrite Keys. apply Source. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g v Iq)).
+  - rewrite Keys. intros y Iy. destruct (tm_gens_in _ y Iy) as [x [v [Iq Iv]]].
+    cbn [entries_cx c_ty] in Iq. apply in_map_iff in Iq as [[x0 v0] [Eq Iq]]. cbn in Eq. injection Eq as -> <-.
+    unfold IdForm in Id. rewrite Forall_forall in Id. pose proof (Id _ Iq) as V0. cbn in V0. rewrite V0 in Iv.
+    refine (@PublicMerge.section_gens_bound classes sigma Section (map fst tmr) _ (TAbs x) _ y Iv).
+    + rewrite <- Keys. exact Classes.
+    + intros z [<-|[]]. change x with (fst (x, v0)). exact (in_map fst _ _ Iq).
 Qed.
 
 End Initial.
