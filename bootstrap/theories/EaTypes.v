@@ -5,8 +5,10 @@
 (* (TyOf, Brackets, SigOf, AppOf, RecvTy, MethodNamed, PayloadOf, LangSym), *)
 (* or the set of x for which a Prop holds (FreeIn, SigMentions, SpecTypes,  *)
 (* FunOutputs, ResultMentions, Mentions, Poly, Fixed).  Recursion through   *)
-(* aliases, contexts and functors is bounded by `fuel`; running out is an  *)
-(* error (a cyclic alias or context has no derivation).                     *)
+(* aliases, contexts and functors is bounded by `fuel`. Type readers      *)
+(* report exhausted fuel as an error. Set readers return [] at zero and   *)
+(* use visited paths to collect dependencies through cycles. Their        *)
+(* soundness and coverage conditions are in the corresponding proof files.*)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
@@ -76,7 +78,8 @@ Definition method_named (p : string) (r : nat) (n : name) : option nat :=
 
 (* SOUND: ty_of fuel p tm this a = Ok t -> TyOf W p tm this a t
           brackets fuel p tm g a = Ok bs -> Brackets W p tm g a bs
-   (and conversely, with enough fuel: TyOf is functional, PublicTypeRead) *)
+   EaTypesSound proves these directions. Completeness with enough fuel
+   remains an intended obligation; TyOf functionality is in PublicTypeRead. *)
 Fixpoint ty_of (fuel : nat) (p : string) (tm : list (nat * ty)) (th : option ty) (a : aty) {struct fuel} : er ty :=
   match fuel with
   | 0 => Err "type nests too deeply (a cyclic alias?)"
@@ -165,7 +168,7 @@ Definition sig_of (fuel : nat) (s : nat) (tm : list (nat * ty)) (this : option t
 (* ---- FreeIn and SigMentions ---- *)
 
 (* SOUND: In x (free_in fuel R p a) <-> FreeIn W R p a x (with enough fuel;
-   FreeIn is structural, so fuel = size suffices) *)
+   EaDependencyFuel proves exactness when type_depth a <= fuel) *)
 Fixpoint free_in (fuel : nat) (R : nat -> list nat) (p : string) (a : aty) {struct fuel} : list nat :=
   match fuel with
   | 0 => []
@@ -282,7 +285,7 @@ Definition functor_decl (u : nat) : option (decl * (option (list name) * list sp
   | None => None
   end.
 
-(* Exact FunOutputs membership under the same declaration/fuel bound as
+(* Exact FunOutputs membership under the same declaration and fuel bounds as
    spec_types. The result is sorted and has no repeats. *)
 Definition fun_outputs (fuel : nat) (u : nat) : list nat :=
   match functor_decl u with
@@ -344,7 +347,7 @@ Definition result_mentions (fuel : nat) (self : nat) (p : string) (sp : spec) : 
   result_mentions_go fuel [] self p sp.
 
 (* Membership implies Mentions under the result_mentions budget.
-   General membership completeness remains open; the result is sorted. *)
+   General membership completeness remains open. The result is sorted. *)
 Definition mentions (fuel : nat) (u : nat) : list nat :=
   match functor_decl u with
   | Some (d, (_, _, r, _)) =>
@@ -365,7 +368,7 @@ Definition poly (fuel : nat) (u : nat) : list nat :=
   | _ => []
   end.
 
-(* Membership implies Fixed under the same budget; the result is sorted.
+(* Membership implies Fixed under the same budget. The result is sorted.
    Abstract unbracketed functors have no fixed inputs at any fuel. *)
 Definition fixed (fuel : nat) (u : nat) : list nat :=
   let pl := poly fuel u in filter (fun t => negb (nmem t pl)) (mentions fuel u).
