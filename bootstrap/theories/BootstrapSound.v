@@ -45,6 +45,19 @@ Proof.
   unfold ElaboratesIn. repeat first [assumption | split].
 Qed.
 
+Theorem loaded_build_sound_from_bodies : BodiesSound ->
+  forall prelude snapshot entry bundle W program,
+  Audit.Loader.Bundled (source_read snapshot) "/" (path_text prelude) (path_text entry) bundle ->
+  EaMain.elaborate bundle = EaBase.Ok (W, program) ->
+  Public.Builds prelude snapshot entry program /\ Public.Compatible program Public.default_interface.
+Proof.
+  intros Bodies prelude snapshot entry bundle W program Loaded Elaborated.
+  destruct (elaborate_sound_from_bodies Bodies _ _ _ Elaborated) as [Typed Linked].
+  split.
+  - exists bundle, W. exact (conj Loaded (conj Typed Linked)).
+  - apply BaseHost.default_compatible. exists bundle, W. exact (conj Typed Linked).
+Qed.
+
 Local Opaque SnapshotLoader.load_from EaMain.elaborate.
 Theorem build_sound_from_bodies : BodiesSound ->
   forall prelude snapshot entry program,
@@ -56,9 +69,6 @@ Proof.
     as [bundle|message] eqn:Loaded; [|discriminate].
   destruct (EaMain.elaborate bundle) as [[W found]|message] eqn:Elaborated; [|discriminate].
   injection Run as <-.
-  destruct (elaborate_sound_from_bodies Bodies _ _ _ Elaborated) as [Typed Linked].
-  split.
-  - exists bundle, W. split; [exact (SnapshotLoader.load_from_sound _ _ _ _ _ Loaded)|].
-    exact (conj Typed Linked).
-  - apply BaseHost.default_compatible. exists bundle, W. exact (conj Typed Linked).
+  eapply loaded_build_sound_from_bodies; [exact Bodies| |exact Elaborated].
+  eapply SnapshotLoader.load_from_sound. exact Loaded.
 Qed.

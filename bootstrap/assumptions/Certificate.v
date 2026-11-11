@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFamilyUseSound EaFunctionAssemblySound EaFunctionSound EaMatchSound EaMain EaRecSound EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
+From NM Require Parse Sx EaBase CodeTable EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFamilyUseSound EaFunctionAssemblySound EaFunctionSound EaMatchSound EaMain EaRecSound EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
 From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenaming BaseHostExecutionRenaming.
 
 From NM Require AuditExamples AuditBuildExample
@@ -182,6 +182,49 @@ Proof.
   destruct AdmittedProgram as (source & entry & bundle & world & Loaded & Typed & Linked).
   exists bundle, world. auto.
 Qed.
+
+(* The native CLI resolves its paths before loading and ties the two
+   compiled tables together. Valid source bytes and canonical loaded
+   paths let the successful reads serve as the finite public snapshot. *)
+Section ConcretePipeline.
+Import Audit.Input Audit.Semantics.
+Theorem concrete_pipeline_sound_from_bodies : BootstrapSound.BodiesSound ->
+  forall read cwd prelude_in entry_in bundle world program prelude entry initial tbl ftbl fuel result,
+  SnapshotLoader.load_from read cwd prelude_in entry_in = Sx.Good bundle ->
+  Audit.Loader.normalize cwd None prelude_in = path_text prelude ->
+  Audit.Loader.normalize cwd None entry_in = path_text entry ->
+  (forall m, List.In m (b_mods bundle) -> canonical_path (am_path m) = true) ->
+  (forall m text, List.In m (b_mods bundle) -> read (am_path m) = Some text ->
+    Audit.Syntax.string_utf8_valid text = true) ->
+  EaMain.elaborate bundle = EaBase.Ok (world, program) ->
+  let executable := BootstrapRun.optimize program in
+  let view := NativeRunTop.native_view executable initial in
+  (forall f, tbl f = CodeTable.get (NativeRunTop.C.compile_functions view tbl ftbl executable) f) ->
+  (forall u, ftbl u = CodeTable.get (NativeRunTop.C.compile_functors view tbl ftbl executable) u) ->
+  NativeRunTop.run executable initial tbl fuel = Some result ->
+  exists snapshot,
+    PublicPublic.Builds prelude snapshot entry program /\
+    PublicPublic.Compatible program PublicPublic.default_interface /\
+    PublicPublic.Runs program PublicPublic.default_interface initial result /\
+    forall code state, result <> PublicPublic.Result (PublicPublic.Wrong code) state.
+Proof.
+  intros Bodies read cwd prelude_in entry_in bundle world program prelude entry initial tbl ftbl fuel result
+    Loaded Prelude Entry Canonical Utf8 Elaborated executable view Functions Functors Run.
+  destruct (SnapshotLoader.load_from_snapshot_witness _ _ _ _ _ _ _ Loaded Prelude Entry Canonical Utf8)
+    as [snapshot Bundled].
+  destruct (BootstrapSound.loaded_build_sound_from_bodies Bodies prelude snapshot entry bundle world program
+    Bundled Elaborated) as [Built Compatible].
+  assert (Admissible : PublicPublic.Admissible prelude program).
+  { exists snapshot, entry. exact Built. }
+  assert (Tables : NativeRunTop.C.tbl_ok view tbl ftbl).
+  { eapply NativeRunTop.native_tables_ok; eassumption. }
+  pose proof (concrete_run_sound _ _ _ _ _ _ _ Admissible Tables Run) as Runs.
+  exists snapshot. split; [exact Built|]. split; [exact Compatible|]. split; [exact Runs|].
+  intros code state Equal. subst result.
+  exact (PublicEntryTop.public_safety prelude program PublicPublic.default_interface
+    initial Admissible Compatible code state Runs).
+Qed.
+End ConcretePipeline.
 
 (* One dependency traversal computes the union for every root below. The
    roots are a list, not a tuple: a nested pair repeats the types of all
@@ -533,6 +576,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.Parse.print_sx);
   root (@NM.SnapshotLoader.load_from);
   root (@NM.SnapshotLoader.load_from_sound);
+  root (@NM.SnapshotLoader.load_from_snapshot_witness);
   root (@NM.BootstrapBuild.load_elaborate_world);
   root (@NM.BootstrapBuild.elaborate_main_environment);
   root (@NM.BootstrapBuild.elaborate_platform_sound);
@@ -623,6 +667,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BaseHost.default_compatible);
   root (@BaseHost.primitive_ignores_code);
   root (@concrete_run_sound);
+  root (@concrete_pipeline_sound_from_bodies);
   root (@FuelTop.runs_deterministic);
   root (@RuntimeRenaming.program_view_equivariant);
   root (@NominalTop.E.eval_tag_equivariant);

@@ -171,6 +171,75 @@ Theorem load_from_sound : forall read root prelude entry bundle,
   L.Bundled read root prelude entry bundle.
 Proof. exact (load_from_at_sound 100000). Qed.
 
+Local Lemma resolve_absolute_root_independent : forall root other prelude importer path,
+  L.is_abs prelude = true -> L.is_abs importer = true ->
+  L.resolve root prelude importer path = L.resolve other prelude importer path.
+Proof.
+  intros root other prelude importer path Prelude Importer.
+  unfold L.resolve. destruct (L.is_abs path || String.eqb (L.first_segment path) "." ||
+    String.eqb (L.first_segment path) "..")%bool;
+    unfold L.normalize; destruct (L.is_abs path); rewrite ?Prelude, ?Importer; reflexivity.
+Qed.
+
+Local Lemma snapshot_rows_from_modules : forall read modules,
+  (forall m, In m modules ->
+    exists text, read (I.am_path m) = Some text /\ canonical_path (I.am_path m) = true) ->
+  exists files : list (file_path * string),
+    map (fun file => path_text (fst file)) files = map I.am_path modules /\
+    forall m text, In m modules -> read (I.am_path m) = Some text ->
+      exists path, In (path, text) files /\ path_text path = I.am_path m.
+Proof.
+  intros read modules. induction modules as [|m modules IH]; intro Read.
+  - exists []. split; [reflexivity|intros n text []].
+  - destruct (Read m (or_introl eq_refl)) as [text [Head Canonical]].
+    destruct (IH ltac:(intros n Member; apply Read; now right)) as [files [Paths Included]].
+    exists ((AbsolutePath (I.am_path m) Canonical, text) :: files).
+    split.
+    + cbn. now rewrite Paths.
+    + intros n contents [<-|Member] Found.
+      * rewrite Head in Found. injection Found as <-.
+        exists (AbsolutePath (I.am_path m) Canonical). split; [now left|reflexivity].
+      * destruct (Included n contents Member Found) as [path [Row Path]].
+        exists path. split; [now right|exact Path].
+Qed.
+
+Theorem load_from_snapshot_witness : forall read root prelude_in entry_in b prelude entry,
+  load_from read root prelude_in entry_in = Sx.Good b ->
+  L.normalize root None prelude_in = path_text prelude ->
+  L.normalize root None entry_in = path_text entry ->
+  (forall m, In m (I.b_mods b) -> canonical_path (I.am_path m) = true) ->
+  (forall m text, In m (I.b_mods b) -> read (I.am_path m) = Some text ->
+    Syntax.string_utf8_valid text = true) ->
+  exists snapshot, L.Bundled (source_read snapshot) "/" (path_text prelude) (path_text entry) b.
+Proof.
+  intros read root prelude_in entry_in b prelude entry Loaded Prelude Entry Canonical Utf8.
+  destruct (load_from_sound _ _ _ _ _ Loaded)
+    as (EntryFound & PreludeFound & Distinct & Main & Modules).
+  rewrite Prelude in PreludeFound. rewrite Entry in EntryFound.
+  destruct (snapshot_rows_from_modules read (I.b_mods b)) as (files & Paths & Included).
+  { intros m Member.
+    destruct (Modules m Member) as (text & ast & Read & _).
+    exists text. split; [exact Read|now apply Canonical]. }
+  assert (Unique : NoDup (map (fun file => path_text (fst file)) files)) by now rewrite Paths.
+  exists (Source files Unique).
+  unfold L.Bundled. rewrite !path_normalized.
+  repeat split; try assumption.
+  intros m Member.
+  destruct (Modules m Member) as (text & ast & Read & Derived & File & Wants & Targets & Closed & Implicit).
+  exists text, ast.
+  assert (SnapshotRead : source_read (Source files Unique) (I.am_path m) = Some text).
+  { apply source_read_iff.
+    destruct (Included m text Member Read) as [path [Row Path]].
+    exists path. repeat split; try assumption. exact (Utf8 m text Member Read). }
+  repeat split; try assumption.
+  rewrite Targets. apply map_ext. intro import.
+  apply resolve_absolute_root_independent.
+  - rewrite PreludeFound. pose proof (path_canonical prelude) as Absolute.
+    unfold canonical_path in Absolute. now apply andb_true_iff in Absolute as [Absolute _].
+  - specialize (Canonical m Member). unfold canonical_path in Canonical.
+    now apply andb_true_iff in Canonical as [Absolute _].
+Qed.
+
 Theorem load_at_sound : forall fuel snapshot prelude entry bundle,
   load_at fuel snapshot prelude entry = Sx.Good bundle ->
   L.Bundled (source_read snapshot) "/" (path_text prelude) (path_text entry) bundle.

@@ -27,6 +27,15 @@ proved to return the same bodies as Audit.
 the extracted builders. The driver ties their lookup functions together
 before the run and uses OCaml arrays for dense table storage.
 
+The public build takes a finite snapshot of canonical paths and UTF-8 files.
+A successful CLI load supplies that snapshot when its normalized paths are
+canonical and its loaded bytes are UTF-8. The CLI parser can accept a
+non-UTF-8 byte in a comment, so the theorem requires UTF-8 for the loaded
+bytes. The combined theorem also takes elaborator body soundness and the
+driver's compiled table equations as premises. It derives the public build,
+interface compatibility, and the corresponding run without a wrong outcome.
+[Snapshot bridge](../theories/SnapshotLoader.v) · [Pipeline theorem](../assumptions/Certificate.v)
+
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
 `LoadListed.v`; `LoadListedFacts.v` proves its complete result, including
 diagnostics, equal to the legacy checker. The existing `WorldOf` proof
