@@ -59,3 +59,12 @@ From NM Require EaResultCoverage.
 Print Assumptions NM.EaResultCoverage.result_mentions_path.
 Print Assumptions NM.EaResultCoverage.result_mentions_eventually_complete.
 Print Assumptions NM.EaResultCoverage.mentions_eventually_complete.
+
+From NM Require EaResultBudget.
+Print Assumptions NM.EaResultBudget.result_mentions_exact.
+Print Assumptions NM.EaResultBudget.mentions_exact.
+Print Assumptions NM.EaResultBudget.poly_exact.
+Print Assumptions NM.EaResultBudget.fixed_exact.
+Print Assumptions NM.EaResultBudget.fixed_readings_exact.
+Print Assumptions NM.EaResultBudget.bundle_world_r_fixed_readings.
+Print Assumptions NM.EaResultBudget.bundle_world_r_dependency_readers_exact.

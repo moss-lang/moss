@@ -11,30 +11,30 @@ Section ResultPaths.
 Variable W : world.
 
 (* Leaves contain no recursive context/functor dependency. *)
-Inductive ResultLeaf : nat -> string -> spec -> nat -> Prop :=
+Inductive DependencyLeaf : nat -> string -> spec -> nat -> Prop :=
 | LeafValFn : forall self p pa a s t,
     resolve_sym W p pa = Some s -> (kind_sym W s = Some DKVal \/ kind_sym W s = Some DKFn) ->
     (In t (w_reqs W s) \/ kind_sym W s = Some DKFn /\ SigMentions W s t) ->
     ~ (exists b, In b (bracket_list a) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultLeaf self p (Spec (Some pa) None a) t
+    DependencyLeaf self p (Spec (Some pa) None a) t
 | LeafReceiver : forall self p pa dn a r t,
     resolve_sym W p pa = Some r ->
     (t = r /\ kind_sym W r = Some DKType \/ kind_sym W r <> Some DKType /\ In t (w_reqs W r)) ->
     ~ (exists b, In b (bracket_list a) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultLeaf self p (Spec (Some pa) (Some dn) a) t
+    DependencyLeaf self p (Spec (Some pa) (Some dn) a) t
 | LeafMeth : forall self p pa dn a r m t,
     resolve_sym W p pa = Some r -> MethodNamed W p r dn m -> SigMentions W m t ->
     ~ (exists b, In b (bracket_list a) /\ resolve_sym W p (fst b) = Some t) ->
-    ResultLeaf self p (Spec (Some pa) (Some dn) a) t
+    DependencyLeaf self p (Spec (Some pa) (Some dn) a) t
 | LeafBracket : forall self p pa d a bp sp dr sa t,
     resolve_sym W p pa <> None ->
     In (bp, Spec (Some sp) dr sa) (bracket_list a) ->
     FreeIn W (w_reqs W) p (ATRef sp sa) t ->
-    ResultLeaf self p (Spec (Some pa) d a) t.
+    DependencyLeaf self p (Spec (Some pa) d a) t.
 
 (* The pair records the same identity that the executable puts on its stack. *)
 Inductive ResultPath : nat -> string -> spec -> nat -> list (nat * nat) -> Prop :=
-| PathLeaf : forall self p syntax x, ResultLeaf self p syntax x -> ResultPath self p syntax x []
+| PathLeaf : forall self p syntax x, DependencyLeaf self p syntax x -> ResultPath self p syntax x []
 | PathCtx : forall self p pa a c dc n its sp t tail,
     resolve_sym W p pa = Some c -> w_decl W c = Some dc -> d_ast dc = ADCtx n its ->
     In (CISpec sp) its -> ResultPath self (d_mod dc) sp t tail ->
@@ -127,7 +127,7 @@ Proof.
 Qed.
 
 Lemma leaf_eventually_read : forall self p syntax x,
-  ResultLeaf self p syntax x -> exists needed, forall fuel stack,
+  DependencyLeaf self p syntax x -> exists needed, forall fuel stack,
     needed <= fuel -> In x (result_mentions_go W fuel stack self p syntax).
 Proof.
   intros self p syntax x Leaf. destruct Leaf.
