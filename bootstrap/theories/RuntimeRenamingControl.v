@@ -6,7 +6,7 @@ Import Audit.Semantics ListNotations.
 
 Module ControlRenaming (Prims : PRIMITIVES) (I : INTERP Prims).
 Section Control.
-Variable rename : nat -> nat.
+Variable rename : renaming.
 Hypothesis injective : forall left right, rename left = rename right -> left = right.
 
 Local Definition renamed_fields (fields : list (fld * value)) :=

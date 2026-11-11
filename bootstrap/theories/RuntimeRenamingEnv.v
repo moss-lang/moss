@@ -5,7 +5,7 @@ From NM Require Import Audit RuntimeRenaming.
 Import Audit.Semantics ListNotations.
 
 Section Environments.
-Variable rename : nat -> nat.
+Variable rename : renaming.
 Hypothesis injective : forall left right, rename left = rename right -> left = right.
 
 Lemma rename_meanings : forall d,
@@ -139,7 +139,7 @@ Lemma rename_call_environment : forall d th captured,
 Proof. intros. unfold call_environment. now rewrite rename_instantiate, rename_append_environment. Qed.
 
 Lemma rename_primitive_closure : forall d key operation,
-  primitive_closure (rename_environment rename d) (rename_item rename key) operation =
+  primitive_closure (rename_environment rename d) (rename_item rename key) (rename_operation rename operation) =
   rename_provision rename (primitive_closure d key operation).
 Proof.
   intros d key operation. destruct key; try reflexivity.

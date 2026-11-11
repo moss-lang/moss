@@ -1,15 +1,20 @@
 (* Renaming generated symbols preserves runtime lookup and typed casts.
    Local positions, heap addresses, scalar bits and diagnostic codes
    keep their values. A concrete renaming fixes source and platform
-   symbols in its support. Primitive operations keep their platform data,
-   including diagnostic indices. *)
+   symbols in its support. Each platform supplies its operation action. *)
 From Stdlib Require Import List Bool Arith.
 From NM Require Import Audit BaseFacts PublicValueTyping.
 From NM Require PublicCastTyping.
 Import Audit.Semantics ListNotations.
 
+Record renaming := Renaming {
+  rename_symbol : nat -> nat;
+  rename_operation : op -> op
+}.
+Coercion rename_symbol : renaming >-> Funclass.
+
 Section Renaming.
-Variable rename : nat -> nat.
+Variable rename : renaming.
 
 Fixpoint rename_ty (tau : ty) : ty :=
   match tau with
@@ -58,7 +63,7 @@ Fixpoint rename_provision (provided : provision_value) : provision_value :=
   | FunctionClosure f d => FunctionClosure (rename f) (rename_environment d)
   | FunctorClosure h adaptation d positions =>
       FunctorClosure (rename h) (option_map rename_smap adaptation) (rename_environment d) positions
-  | PrimitiveClosure operation site => PrimitiveClosure operation (rename_site site)
+  | PrimitiveClosure operation site => PrimitiveClosure (rename_operation rename operation) (rename_site site)
   end
 with rename_environment (d : environment) : environment :=
   match d with
@@ -126,7 +131,7 @@ with rename_binding (b : binding) : binding :=
   | BApply u th outputs needs results =>
       BApply (rename u) (rename_subst th) (rename_outputs outputs)
         (rename_smap needs) (map rename_item results)
-  | BPrimitive key operation => BPrimitive (rename_item key) operation
+  | BPrimitive key operation => BPrimitive (rename_item key) (rename_operation rename operation)
   end.
 
 Definition rename_functor_code (code : functor_code) : functor_code :=
@@ -271,7 +276,7 @@ End Renaming.
 
 Module ExecutionRenaming (Prims : PRIMITIVES) (I : INTERP Prims).
 Section Equivariance.
-Variable rename : nat -> nat.
+Variable rename : renaming.
 Hypothesis injective : forall left right, rename left = rename right -> left = right.
 Variable state_related : Prims.mstate -> Prims.mstate -> Prop.
 
@@ -296,7 +301,7 @@ Definition primitives_related (P P' : program_view) : Prop :=
   forall operation site values left right,
     state_related left right ->
     let '(out, next) := Prims.run_prim P operation site values left in
-    let '(out', next') := Prims.run_prim P' operation
+    let '(out', next') := Prims.run_prim P' (rename_operation rename operation)
       (rename_site rename site) (map (rename_value rename) values) right in
     out' = rename_signal rename out /\ state_related next next'.
 
@@ -386,7 +391,7 @@ Proof.
     specialize (Calls operation site values state state' Related).
     unfold I.run_prim_at.
     destruct (Prims.run_prim P operation site values state) as [out next].
-    destruct (Prims.run_prim P' operation (rename_site rename site)
+    destruct (Prims.run_prim P' (rename_operation rename operation) (rename_site rename site)
       (map (rename_value rename) values) state') as [out' next'].
     exact (conj (proj1 Calls) (conj eq_refl (proj2 Calls))).
   - contradiction.
@@ -399,7 +404,7 @@ Module PublicRenaming (Host : HOST) (M : PUBLIC Host).
 Module E := ExecutionRenaming M.ReferenceHost M.Reference.
 
 Section Observations.
-Variable rename : nat -> nat.
+Variable rename : renaming.
 Variable interfaces_related : M.interface -> M.interface -> Prop.
 Variable external_related : Host.state -> Host.state -> Prop.
 

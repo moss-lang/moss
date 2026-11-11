@@ -9,7 +9,7 @@ Module E := ExecutionRenaming Prims I.
 Module C := ControlRenaming Prims I.
 
 Section Execution.
-Variable rename : nat -> nat.
+Variable rename : renaming.
 Hypothesis injective : forall left right, rename left = rename right -> left = right.
 Hypothesis fixed_sentinel : rename 0 = 0.
 Variable state_related : Prims.mstate -> Prims.mstate -> Prop.
@@ -214,17 +214,17 @@ Local Ltac compare_primitive :=
   | |- context [I.run_prim_at P ?operation ?site ?values ?st] =>
       match goal with
       | State : state_related st ?st' |- _ =>
-          let right := constr:(I.run_prim_at P' operation (rename_site rename site)
+          let right := constr:(I.run_prim_at P' (rename_operation rename operation) (rename_site rename site)
             (map (rename_value rename) values) st') in
           match goal with
-          | |- context [I.run_prim_at P' operation ?site' ?values' st'] =>
-              let actual := constr:(I.run_prim_at P' operation site' values' st') in
+          | |- context [I.run_prim_at P' ?operation' ?site' ?values' st'] =>
+              let actual := constr:(I.run_prim_at P' operation' site' values' st') in
               unify actual right; change actual with right;
               let Related := fresh "Related" in let Signal := fresh "Signal" in let Next := fresh "Next" in
               pose proof (Calls operation site values st st' State) as Related;
               unfold I.run_prim_at;
               destruct (Prims.run_prim P operation site values st);
-              destruct (Prims.run_prim P' operation (rename_site rename site)
+              destruct (Prims.run_prim P' (rename_operation rename operation) (rename_site rename site)
                 (map (rename_value rename) values) st');
               destruct Related as [Signal Next]; subst
           end
@@ -323,7 +323,7 @@ Module PublicInterpreterRenaming (Host : HOST) (M : PUBLIC Host).
 Module N := InterpreterRenaming M.ReferenceHost M.Reference.
 Module R := PublicRenaming Host M.
 
-Theorem runs_equivariant : forall rename,
+Theorem runs_equivariant : forall (rename : renaming),
   (forall left right, rename left = rename right -> left = right) ->
   rename 0 = 0 ->
   forall interfaces_related external_related program interface interface' initial initial',
