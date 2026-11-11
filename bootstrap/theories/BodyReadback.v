@@ -2,6 +2,7 @@
    follows derivations, including the elaboration of a bracket expansion. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit BodyTyping BodyMethodTyping BodyLiteralTyping.
+From NM Require BodyFunctionProviderTyping BodyProviderTyping.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -15,15 +16,42 @@ Local Ltac finish_placements :=
   cbn [placements expression_emission block_emission argument_emission record_fields_emission
     arms_emission bind_item_emission bind_items_emission emit_expr emit_block emit_bind_item
     emit_only emit_map emit_pair emit_each emit_flat require_placement emitted_placements
+    emit_lambda_binding lambda_binding_placements linked_binding_placements
     flat_map app] in *;
   unfold placements_in in *;
   repeat first [assumption | apply Forall_app; split | apply Forall_cons_iff; split; cbn [placement_in]
     | apply Forall_nil | split | reflexivity].
 
-Hypothesis read_provider_binding : forall F C item wrap C' F' made,
-  BindItem W P F C item wrap C' F' made ->
-  exists plan, TypesBindItem W F C item plan C' F' made /\ translate_bind_item F plan = wrap /\
-    placements (bind_item_emission identity_slots F plan).
+Local Lemma splice_bindings_readback : forall code observed,
+  BindsOf (splice_bindings code EUnit) observed -> observed = code.
+Proof.
+  induction code as [|binding code IH]; intros observed Read; cbn [splice_bindings fold_right] in Read.
+  - now inversion Read.
+  - inversion Read; subst. f_equal. eapply IH; eassumption.
+Qed.
+
+Local Lemma functor_context_recorded : forall symbol C needs,
+  FunCtx W symbol C needs -> w_context W symbol = Some (C, needs).
+Proof.
+  intros symbol C needs (d & ps & a & r & b & es & tm & tm' & sub & classes & implicit &
+    Decl & Parts & Entries & Implied & Types & MostGeneral & Merge & Section & Context & Needs & Recorded).
+  exact Recorded.
+Qed.
+
+Local Lemma linked_header_contexts : forall layout descriptor items result nested made,
+  TypesLinkedHeader W layout descriptor items result nested made ->
+  exists target_needs provider_needs,
+    w_context W (linked_target_symbol (linked_handle descriptor)) =
+      Some (linked_target_context descriptor, target_needs) /\
+    w_context W (linked_provider_symbol (linked_handle descriptor)) =
+      Some (linked_provider_context descriptor, provider_needs).
+Proof.
+  intros layout descriptor items result nested made Typed.
+  destruct Typed as [d name parameters inputs outputs bodies target_needs provider_needs Cb Fb created gen promised
+    target provider Cu Cg outs reading plan Declared Ast Target Provider Module Ret This Loop Protected
+    Shape NoInput Outputs Checked FamilyAllowed].
+  exists target_needs, provider_needs. split; now apply functor_context_recorded.
+Qed.
 
 Fixpoint read_expression F C source expected code t (D : Ex W P F C source expected code t) {struct D} :
   exists plan, TypesExpr W F C source expected plan t /\ translate_expr F C plan = code /\
@@ -65,7 +93,27 @@ with read_bind_items F C items wrap result F' made (D : BindItems W P F C items 
     placements (bind_items_emission identity_slots F plans)
 with read_bind_item F C item wrap result F' made (D : BindItem W P F C item wrap result F' made) {struct D} :
   exists plan, TypesBindItem W F C item plan result F' made /\ translate_bind_item F plan = wrap /\
-    placements (bind_item_emission identity_slots F plan).
+    placements (bind_item_emission identity_slots F plan)
+with read_lambda F C ps ann body signature this slot prefix needs
+    (D : LambdaProvider W P F C ps ann body signature this slot prefix needs) {struct D} :
+  exists layout provider result,
+    lambda_occurrence provider = slot /\
+    TypesLambdaHeader W F C ps ann body signature this layout provider result /\
+    TypesBlkE W layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
+      (Some (sg_ret signature)) (lambda_source_body provider) result /\
+    prefix = lambda_descriptor_prefix F provider /\ needs = lambda_descriptor_needs C provider /\
+    placements_in W P (lambda_binding_placements identity_slots C (map fst ps) layout provider
+      (block_emission identity_slots layout (lambda_descriptor_site signature ps provider)
+        (lambda_source_body provider)))
+with read_linked_body target provider slot pins (D : LinkBody W P target provider slot pins) {struct D} :
+  exists layout descriptor items result nested made,
+    linked_handle descriptor = LinkedBodyOf target provider slot /\
+    link_plan_pins (linked_result_reading descriptor) = pins /\
+    TypesLinkedHeader W layout descriptor items result nested made /\
+    TypesBindItems W layout (linked_provider_context descriptor) items (linked_bind_plan descriptor)
+      result nested made /\
+    placements_in W P (linked_binding_placements identity_slots layout descriptor
+      (bind_items_emission identity_slots layout (linked_bind_plan descriptor))).
 Proof.
   - destruct D as
       [F C exp
@@ -281,31 +329,136 @@ Proof.
       * unfold placements, bind_items_emission, bind_item_emission in *.
         rewrite (binding_plan_numbering _ _ _ _ _ _ _ _ Typed) in *.
         finish_placements.
-  - pose proof D as Original. destruct D as
+  - destruct D as
       [F C path symbol right arguments meaning Resolve Kind Unpinned Read
       |F C path symbol d name annotation initializer declared source code actual arguments
          Resolve Decl Ast Read Value Fits Application
-      | | |
+      |F C path f target signature provider provisions arguments types Resolve Kind Signature Provider Application
+      |F C path f signature ps ann body slot prefix needs arguments Resolve Kind Signature Provider Application
+      |F C path label brackets source receiver_symbol method readings receiver signature target prefix provisions arguments types
+         Resolve Method Brackets Receiver Signature Provider Application NoFamily Abstract
       |F C path symbol d name params inputs outputs bodies wrap result nested made
          Resolve Decl Ast Nonrecursive Body
       |F C path plan Typed
       |F C path u provider h Cu nsu Ch nsh target map fixed positions
          Resolve ResolveProvider Abstract Available Target Provider FixedHere FixedInTarget Agreement
          Same Map FixedRead Inputs Copy
-      | ].
+      |F C path u provider g Cu nsu Cg nsg slot pins selected linked captured fixed
+         Resolve ResolveProvider Abstract TargetContext ProviderContext FixedHere Same Link Linked
+         LinkedMap Captured FixedRead Inputs PinAgreement].
     + exists (PlanTypeBind symbol (canon C meaning)).
       split; [eapply TypesBindType; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_expression _ _ _ _ _ _ Value) as (plan & Typed & <- & ?Placed).
       exists (PlanValueBind C symbol plan). split; [eapply TypesBindValue; eassumption|split; [reflexivity|finish_placements]].
-    + eapply read_provider_binding; exact Original.
-    + eapply read_provider_binding; exact Original.
-    + eapply read_provider_binding; exact Original.
+    + destruct (BodyFunctionProviderTyping.function_provider_plan_readback _ _ _ _ _ _ _ _ _ Provider)
+        as (plan & Typed & Placed & -> & -> & ->).
+      exists (PlanFunctionBind C f signature plan). split; [eapply TypesBindFunction; eassumption|].
+      split; [reflexivity|]. now apply function_placements_exact.
+    + destruct (read_lambda _ _ _ _ _ _ _ _ _ _ Provider)
+        as (layout & plan & body_type & <- & Header & Body & -> & -> & Placed).
+      exists (PlanFunctionLambda C f signature (map fst ps) layout plan).
+      split; [eapply TypesBindFunctionLambda; eassumption|]. split.
+      * unfold translate_bind_item, bind_item_emission. cbn [emit_bind_item emit_lambda_binding emitted_code].
+        now rewrite splice_bindings_append, lambda_prefix_bindings.
+      * exact Placed.
+    + assert (Header : TypesMethodBindHeader W F C path label brackets method receiver signature arguments).
+      { exists receiver_symbol, readings. repeat first [assumption|split]. }
+      pose proof Provider as OriginalProvider. destruct Provider.
+      * lazymatch goal with
+        | Provider : MethProvider _ _ _ ?caller (AEField (AEPath ?provider None) ?method_name) ?signature ?receiver _ _ _ _,
+          Header : TypesMethodBindHeader _ _ ?caller _ _ _ ?method ?receiver ?signature ?arguments |- _ =>
+          destruct (BodyProviderTyping.attached_method_plan_readback _ _ _ _ provider method_name _ _ _ _ _ _ OriginalProvider)
+            as (site & plan & Typed & Target & Capture & Prefix & Needs);
+          exists (PlanAttachedBind (canon caller receiver) method (theta_of caller arguments) site plan);
+          split; [eapply TypesBindAttached; eassumption|];
+          rewrite ?Target, ?Capture, ?Prefix, ?Needs;
+          split; [reflexivity|finish_placements]
+        end.
+      * lazymatch goal with
+        | Provider : MethProvider _ _ _ ?caller (AEPath ?provider None) ?signature ?receiver _ _ _ _,
+          Header : TypesMethodBindHeader _ _ ?caller _ _ _ ?method ?receiver ?signature ?arguments |- _ =>
+          destruct (BodyFunctionProviderTyping.wrapped_method_plan_readback _ _ _ _ provider _ _ _ _ _ _ OriginalProvider)
+            as (plan & Typed & [Fresh Body] & Target & Capture & Prefix & Needs);
+          exists (PlanWrappedBind (canon caller receiver) method (theta_of caller arguments) caller signature plan);
+          split; [eapply TypesBindWrapped; eassumption|];
+          rewrite ?Target, ?Capture, ?Prefix, ?Needs;
+          split; [reflexivity|finish_placements]
+        end.
+      * lazymatch goal with
+        | Lambda : LambdaProvider _ _ ?frame ?caller ?ps ?ann ?body ?signature (Some ?receiver) _ _ _,
+          Header : TypesMethodBindHeader _ ?frame ?caller _ _ _ ?method ?receiver ?signature ?arguments |- _ =>
+          destruct (read_lambda _ _ _ _ _ _ _ _ _ _ Lambda)
+            as (layout & plan & body_type & <- & LambdaHeader & Body & -> & -> & Placed);
+          exists (PlanMethodLambda (canon caller receiver) method (theta_of caller arguments) caller
+            signature (map fst ps) layout plan);
+          split; [eapply TypesBindMethodLambda; eassumption|]; split;
+          [unfold translate_bind_item, bind_item_emission; cbn [emit_bind_item emit_lambda_binding emitted_code];
+           now rewrite splice_bindings_append, lambda_prefix_bindings
+          |exact Placed]
+        end.
     + destruct (read_bind_items _ _ _ _ _ _ _ Body) as (plans & Typed & <- & ?Placed).
       exists (PlanInlineApply plans). split; [eapply TypesBindInlineApply; eassumption|split; [reflexivity|finish_placements]].
     + exists (PlanAbstractApply C plan). split; [now apply TypesBindAbstractApply|split; [reflexivity|finish_placements]].
     + subst map. exists (PlanFunctorCopy u h Cu Ch target nsh positions).
       split; [eapply TypesBindFunctorCopy; eassumption|split; [reflexivity|finish_placements]].
-    + eapply read_provider_binding; exact Original.
+    + subst linked. destruct Captured as [CapturedMap Captured]. subst captured.
+      destruct (read_linked_body _ _ _ _ Linked)
+        as (layout & descriptor & items & result & nested & made & Handle & Pins & Header & Binds & Placed).
+      destruct (linked_header_contexts _ _ _ _ _ _ Header)
+        as (target_needs & provider_needs & TargetRead & ProviderRead).
+      rewrite Handle in TargetRead, ProviderRead. cbn in TargetRead, ProviderRead.
+      assert (Target : linked_target_context descriptor = Cu) by congruence.
+      assert (Provider : linked_provider_context descriptor = Cg) by congruence.
+      exists (PlanFunctorClosure C layout descriptor selected nsg). split.
+      * replace (set_fun C u fixed) with (set_fun C (linked_target_symbol (linked_handle descriptor)) fixed)
+          by now rewrite Handle.
+        eapply (@TypesBindClosure W F C path provider layout descriptor nsu nsg selected fixed
+          items result nested made); cbn zeta; try rewrite Handle; cbn [linked_target_symbol linked_provider_symbol];
+          try rewrite Target; try rewrite Provider; try rewrite Pins; try eassumption.
+        now rewrite Provider in Binds.
+      * split; [|exact Placed].
+        unfold translate_bind_item, bind_item_emission. cbn [emit_bind_item emitted_code].
+        now rewrite Handle, Target, Provider.
+  - destruct D as [F C ps ann body signature this slot caps capvals Cl layout emitted body_type keys needs
+      Length Distinct Annotations Return Capture Fresh Context Module Ret This Loop Keep Numbered
+      NamedBody NamedOuter Body Fits Code Required Unique Needs Origin].
+    subst needs.
+    destruct (read_block_expression _ _ _ _ _ _ Body) as (plan & Typed & <- & Placed).
+    exists layout, (LambdaBodyOf slot caps capvals Cl plan keys), body_type.
+    split; [reflexivity|]. split.
+    + eapply TLP; cbn beta zeta in *; first [eassumption|reflexivity].
+    + split; [exact Typed|]. split; [reflexivity|]. split; [reflexivity|].
+      unfold lambda_binding_placements. rewrite This. finish_placements.
+  - destruct D as [target provider slot d name parameters inputs outputs bodies Cu target_needs Cg provider_needs
+      layout wrap Cb Fb made outs gen promised keys bindings pins Declared Ast Target Provider Module Ret This Loop
+      Numbered Protected Body NoInput Outputs PinsProvision ResultTypes Bindings FamilyAllowed Translated PinsExact PinsScoped].
+    destruct (read_bind_items _ _ _ _ _ _ _ Body) as (plans & Typed & <- & Placed).
+    unfold translate_bind_items in Bindings.
+    apply splice_bindings_readback in Bindings. subst bindings.
+    exists layout, (LinkedBodyDescriptor (LinkedBodyOf target provider slot) Cu Cg outs
+      (LinkedResultPlan pins (link_site Cg Cb pins outs gen) keys) plans),
+      (List.concat bodies), Cb, Fb, made.
+    split; [reflexivity|]. split; [reflexivity|]. split.
+    + eapply TLB; cbn beta zeta in *; try eassumption.
+      * repeat split.
+      * constructor; cbn [link_plan_keys link_plan_site link_plan_pins]; try eassumption; reflexivity.
+      * intro Family. apply (proj2 (family_bind_emission_exact W identity_slots layout plans)).
+        now apply FamilyAllowed.
+    + split; [exact Typed|].
+      destruct Translated as [Fresh [Code Origin]].
+      unfold linked_binding_placements. finish_placements.
 Qed.
+
+Theorem expression_has_plan : forall F C source expected code t,
+  Ex W P F C source expected code t ->
+  exists plan, TypesExpr W F C source expected plan t /\ translate_expr F C plan = code /\
+    placements_in W P (emitted_placements (expression_emission identity_slots F C plan)).
+Proof. exact read_expression. Qed.
+
+Theorem block_has_plan : forall F C body expected code t,
+  BlkE W P F C body expected code t ->
+  exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code /\
+    placements_in W P (emitted_placements (block_emission identity_slots (without_pins F) C plan)).
+Proof. exact read_block_expression. Qed.
 
 End Readback.
