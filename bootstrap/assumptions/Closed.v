@@ -79,3 +79,9 @@ From NM Require EaMetadataSound.
 Print Assumptions NM.EaMetadataSound.metadata_fuel_sufficient.
 Print Assumptions NM.EaMetadataSound.metadata_fuel_legacy.
 Print Assumptions NM.EaMetadataSound.bundle_world_r_metadata_exact.
+
+From NM Require EaEntriesSound.
+Print Assumptions NM.EaEntriesSound.item_entries_sound.
+Print Assumptions NM.EaEntriesSound.items_entries_sound.
+Print Assumptions NM.EaEntriesSound.entries_sound_at_budget.
+Print Assumptions NM.EaEntriesSound.bundle_world_r_entries_sound.
