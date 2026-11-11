@@ -5876,6 +5876,10 @@ Arguments lambda_plan_capture_context {BodyPlan}.
 Arguments lambda_source_body {BodyPlan}.
 Arguments lambda_provision_needs {BodyPlan}.
 
+Definition lambda_descriptor_captures {BodyPlan : Type}
+    (descriptor : lambda_body_descriptor BodyPlan) : list (name * nat) :=
+  combine (lambda_plan_capture_names descriptor) (lambda_plan_capture_symbols descriptor).
+
 Section LambdaSource.
 Variable BodyPlan : Type.
 Variable types_body : world -> frame -> cx -> ablock -> option ty -> BodyPlan -> ty -> Prop.
@@ -6098,9 +6102,6 @@ End LinkedTranslation.
 
 Section LambdaTranslation.
 Variable BodyPlan : Type.
-
-Definition lambda_descriptor_captures (descriptor : lambda_body_descriptor BodyPlan) : list (name * nat) :=
-  combine (lambda_plan_capture_names descriptor) (lambda_plan_capture_symbols descriptor).
 
 Definition lambda_descriptor_prefix (F : frame) (descriptor : lambda_body_descriptor BodyPlan) : expr -> expr :=
   translate_lambda_captures F (lambda_descriptor_captures descriptor).
