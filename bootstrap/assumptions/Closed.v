@@ -191,3 +191,12 @@ Print Assumptions NM.EaForwarderSound.abstract_provider_sound.
 
 From NM Require EaFamilySound.
 Print Assumptions NM.EaFamilySound.family_application_sound.
+
+From NM Require EaCodeEffects.
+Print Assumptions NM.EaCodeEffects.code_transition_extends.
+Print Assumptions NM.EaCodeEffects.nested_code_preserves_reserved_slot.
+Print Assumptions NM.EaCodeEffects.fn_provider_code_effect.
+Print Assumptions NM.EaCodeEffects.lambda_provider_code_effect.
+Print Assumptions NM.EaCodeEffects.meth_provider_code_effect.
+Print Assumptions NM.EaCodeEffects.apply_abstract_code_effect.
+Print Assumptions NM.EaCodeEffects.fresh_table_code_effect.
