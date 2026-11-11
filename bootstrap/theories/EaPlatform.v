@@ -2,7 +2,7 @@
    code, and the machine and cast tables. It also checks the platform's
    linking clauses and supplies the language-item checks for main. *)
 
-From Stdlib Require Import List String Bool Arith PrimInt63 Uint63.
+From Stdlib Require Import List String Bool Arith ZArith.
 From NM Require Import Audit EaBase EaTypes EaCall EaFamily.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
@@ -267,8 +267,8 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
                             else "platform I32 constant has an incompatible declared type")) in
       match filed_name (d_ast d) with
       | Some (NSName, nm) =>
-          if String.eqb nm "i32_zero" then ret (ValueProvision (VI32 0%uint63))
-          else if String.eqb nm "i32_one" then ret (ValueProvision (VI32 1%uint63))
+          if String.eqb nm "i32_zero" then ret (ValueProvision (VScalar 0 0%Z))
+          else if String.eqb nm "i32_one" then ret (ValueProvision (VScalar 0 1%Z))
           else fail (unsupported_need (IVal v))
       | _ => fail (unsupported_need (IVal v))
       end
@@ -316,7 +316,7 @@ Definition cast_entry (array : bool) : list (nsym * cast_spec) :=
   match wasm_sym (if array then "Array" else "Ref"),
         wasm_sym (if array then "Arrayed" else "Boxed"),
         wasm_sym (if array then "ArrayRef" else "StructRef") with
-  | Some n, Some t, Some h => [(n, CastSpec array t (Some (h, TMachine h)))]
+  | Some n, Some t, Some h => [(n, CastSpec (Platform.ref_kind array) t (Some (h, TMachine h)))]
   | _, _, _ => []
   end.
 Definition casts : list (nsym * cast_spec) := cast_entry false ++ cast_entry true.

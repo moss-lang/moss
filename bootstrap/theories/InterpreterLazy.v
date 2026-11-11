@@ -480,8 +480,8 @@ Definition lcheck_tag (P : program_view) (d : lenv) (n : nsym) (th : subst) (w :
                      end in
       if enabled then
         match lookup_subst (cast_held spec) th, w with
-        | Some tau, VCheckedHandle k' tau' _ =>
-            if Bool.eqb (cast_array spec) k' && ty_eqb (lground d tau) tau'
+        | Some tau, VRef _ (Some (k', tau')) =>
+            if Nat.eqb (cast_kind spec) k' && ty_eqb (lground d tau) tau'
             then Normal (VTag n w) else Trap 37
         | _, _ => Trap 37
         end

@@ -103,8 +103,8 @@ Definition run_prim (_ : program_view) (_ : prim) (_ : option ty) (_ : list valu
 End Primitives.
 Module R := Interpreter Primitives.
 Definition casts := ProgramView (fun _ => None) (fun _ => None) 0 0 0 []
-  (fun _ => None) [(11,CastSpec false 9 None)] [].
+  (fun _ => None) [(11,CastSpec 0 9 None)] [].
 Example saved_f64_rejects_integer_handle :
   R.check_tag casts runtime_boxed 11 [(9,read_saved)]
-    (VCheckedHandle false (TMachine 0) 0) = Trap 37.
+    (VRef 0 (Some (0, TMachine 0))) = Trap 37.
 Proof. reflexivity. Qed.

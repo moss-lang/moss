@@ -133,10 +133,12 @@ entry they belong to.
 | 99 | Recorded: unbound assumption requirements and a main context's symbol-only class | merge baseline | an open representative reading and a fidelity control |
 | 100 | Main's root context and Bool's layout are language items (`LIRoot`, `LangItemsFormed`) | sep S0 | none (definitional regrouping) |
 | 101 | Machine types and their classes use a table keyed by declaration symbol | sep S1 | representation change |
+| 102 | Machine values carry scalar bits or a reference header | sep S2 | representation change |
 | 103 | Formed contexts carry merge classes beside their spelling section | merge refactor M2 | representation change |
 | 105 | Base's host laws are independent of the public interface record | BaseLaws | none (definitional refactoring) |
 | 106 | Base owns primitive argument and allocation-result adaptation | sep S4a | none (definitional) |
 | 107 | Primitive execution receives its site through the host boundary | sep S4b | none for public execution (ABI relocation) |
+| 109 | Integrate scalar/reference carriers with the checked host ABI and merge semantics | sep S2 integration | representation change |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3236,6 +3238,40 @@ using one fresh atom per abstract class must preserve that behaviour
   `AuditRepresentation.v` relation for the old elaborator is removed.
 - **Class.** Representation change (criterion 8, platform separation).
 
+### 102. Scalar bits and reference headers use platform-neutral carriers (Base separation S2)
+
+- **Rule.** `VScalar sort bits` carries a scalar's sort and bits.
+  `VRef address header` carries an address and an optional header with
+  its reference kind and held type. Cast entries and the heap laws use
+  numeric kinds. Base supplies sorts 0 through 3 for I32, I64, F32 and F64,
+  and kinds 0 and 1 for boxed and array references.
+- **Why.** The language can carry values of the sorts and kinds in the
+  program's machine table (criteria section 8). Value typing reads that
+  table. A cast checks the kind and held type in a reference header against
+  the cast entry. The host continues to supply primitive operations and
+  heap behavior.
+- **Alternative.** Separate scalar constructors expose Base's layout in
+  the language's value type and require a language edit for each additional
+  sort. A sort and a bit payload give platforms one shared representation.
+  The reference executable uses Zarith integers so that I32 bits fit in a
+  native integer. The OCaml adapter uses the legacy model's canonical NaN
+  patterns and preserves the bits of other Wasm floats.
+- **Fidelity.** The scalar encoding preserves the four Base sorts. A raw
+  reference has an absent header, and the two prior Boolean kinds map to
+  0 and 1. The fixtures below exercise both kinds, floating-point rounding,
+  and a cast that rejects a handle at the wrong held type.
+
+  | Program | Native before → after | moss-ref before → after | Audit before → after |
+  |---|---|---|---|
+  | [float](../tests/wasi/float.moss), [newton](../tests/wasi/newton.moss) | same output | byte-identical output | scalar constructor → sort and bits |
+  | [gc_tree](../tests/wasi/gc_tree.moss), [gc_array](../tests/wasi/gc_array.moss) | same output | byte-identical output | Boolean header kind → numeric kind |
+  | [saved_type_rebinding](../tests/wasi/saved_type_rebinding.moss) | rejects → rejects | trap → same trap | the encoded header fails the same held-type check |
+
+- **Proof.** `public_safety` uses one typing rule for scalars and reads
+  reference kinds from the machine table. The certificate checks its exact
+  public statement and kernel-primitive assumptions. The lazy cast proof
+  checks the same kind and held type as the reference cast.
+- **Class.** Representation change (criterion 8, platform separation).
 ### 103. Formed contexts carry merge classes (merge refactor M2)
 
 - **Rule.** `CtxOf`, `FunCtx`, and `AssumeCtx` pair the old most-general
@@ -3399,6 +3435,20 @@ using one fresh atom per abstract class must preserve that behaviour
   host keeps the interpreter's operational rules generic while retaining the
   existing external interface and its heap laws.
 - **Class.** Calling-convention relocation (criterion 8, platform separation).
+
+### 109. Integrate scalar/reference carriers with the current language (S2)
+
+- **Rule.** Apply the representation from #102 to the current merge-class
+  semantics, retaining #105's transparent BaseLaws and #106/#107's site-aware
+  BaseCall boundary. Scalars carry a platform sort and bits; references carry
+  an address and an optional numeric-kind/type header. No static acceptance
+  rule or failure signal is relaxed.
+- **Execution.** The native adapter retains `MossX.run_prim_fast` and current
+  interpreter extraction. Only value/float-bit/reference conversion changes.
+  Uniform receiver-site storage (#108, pending) is excluded.
+- **Proof.** Preserve the exact public safety certificate, all interpreter/pass
+  agreement roots, and same-fuel site-erasure and primitive-block facts.
+- **Class.** Representation change; no intended Moss-observable difference.
 
 ---
 

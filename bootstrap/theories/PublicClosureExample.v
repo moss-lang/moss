@@ -14,13 +14,13 @@ End Prims.
 Module C := PublicClosurePrototype.Compiler Prims.
 Module R := C.R.
 
-Definition captured_handle := VCheckedHandle false (TMachine 0) 0.
-Definition replacement_handle := VCheckedHandle false (TMachine 0) 1.
+Definition captured_handle := VRef 0 (Some (0, TMachine 0)).
+Definition replacement_handle := VRef 1 (Some (0, TMachine 0)).
 Definition provider_bindings := [BType 2 (TMachine 0); BValue 3 (EVal 1)].
 Definition provider_code := FunctorCode [] [] [] [ITy 2; IVal 3] provider_bindings [IVal 3].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some provider_code else None)
-  0 0 0 [] (fun _ => None) [(11, CastSpec false 9 None)] [].
+  0 0 0 [] (fun _ => None) [(11, CastSpec 0 9 None)] [].
 Definition initial := Environment [(2, TMachine 1)]
   [(IVal 1, ValueProvision captured_handle); (IVal 4, ValueProvision replacement_handle)].
 

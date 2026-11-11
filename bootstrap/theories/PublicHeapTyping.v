@@ -6,7 +6,7 @@ From NM Require Import Audit PublicValueTyping.
 Import Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
-Definition heap_add (H : heap_types) (fresh : address) (kind : bool) (held : ty) : heap_types :=
+Definition heap_add (H : heap_types) (fresh : address) (kind : nat) (held : ty) : heap_types :=
   fun address => if Nat.eqb address fresh then Some (kind, held) else H address.
 
 Lemma heap_add_extends : forall H fresh kind held,
@@ -54,7 +54,7 @@ Proof.
 Qed.
 
 Theorem allocation_header : forall H fresh kind held,
-  handle_typed (heap_add H fresh kind held) kind held (VCheckedHandle kind held fresh).
+  handle_typed (heap_add H fresh kind held) kind held (VRef fresh (Some (kind, held))).
 Proof. intros; constructor; apply heap_add_here. Qed.
 
 End HeapTyping.
@@ -69,8 +69,8 @@ Theorem box_preserves_heap : forall W P interface H state tag value held raw nex
   M.primitive interface P (PBox tag) [value] state = (Normal raw, next) ->
   exists H' address,
     heap_extends H H' /\ M.heap_ok interface (heap_predicates W P H') next /\
-    raw = VTag tag (VHandle address) /\
-    handle_typed H' false held (VCheckedHandle false held address).
+    raw = VTag tag (VRef address None) /\
+    handle_typed H' 0 held (VRef address (Some (0, held))).
 Proof.
   intros W P interface H state tag value held raw next Laws Supported Valid Typed Run.
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
@@ -81,7 +81,7 @@ Proof.
   assert (FreshH : H fresh = None).
   { unfold heap_predicates in Absent.
     destruct (H fresh) as [[kind tau]|]; [discriminate|reflexivity]. }
-  exists (heap_add H fresh false held), fresh. split.
+  exists (heap_add H fresh 0 held), fresh. split.
   - apply heap_add_extends; exact FreshH.
   - split.
     + eapply Weaken; [exact ValidNext|].
@@ -93,22 +93,22 @@ Theorem array_preserves_heap : forall W P interface H state tag value held count
   M.interface_laws P interface -> M.supports interface (PArrNew tag) = true ->
   M.heap_ok interface (heap_predicates W P H) state ->
   value_typed W P H value held ->
-  M.primitive interface P (PArrNew tag) [value; VI32 count] state = (Normal raw, next) ->
+  M.primitive interface P (PArrNew tag) [value; VScalar 0 count] state = (Normal raw, next) ->
   exists H' address,
     heap_extends H H' /\ M.heap_ok interface (heap_predicates W P H') next /\
-    raw = VTag tag (VHandle address) /\
-    handle_typed H' true held (VCheckedHandle true held address).
+    raw = VTag tag (VRef address None) /\
+    handle_typed H' 1 held (VRef address (Some (1, held))).
 Proof.
   intros W P interface H state tag value held count raw next Laws Supported Valid Typed Run.
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
-  specialize (GC (PArrNew tag) [value; VI32 count] state (heap_predicates W P H)
+  specialize (GC (PArrNew tag) [value; VScalar 0 count] state (heap_predicates W P H)
     (fun value => value_typed W P H value held) Supported Valid Typed).
   rewrite Run in GC.
   destruct GC as [extended [ValidNext [Extends [fresh [Raw [Absent Fresh]]]]]].
   assert (FreshH : H fresh = None).
   { unfold heap_predicates in Absent.
     destruct (H fresh) as [[kind tau]|]; [discriminate|reflexivity]. }
-  exists (heap_add H fresh true held), fresh. split.
+  exists (heap_add H fresh 1 held), fresh. split.
   - apply heap_add_extends; exact FreshH.
   - split.
     + eapply Weaken; [exact ValidNext|].

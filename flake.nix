@@ -60,6 +60,7 @@
           rocqPackages.stdlib
           ocamlPackages.ocaml
           ocamlPackages.findlib
+          ocamlPackages.zarith
           pkgs.dune_3
         ];
       };

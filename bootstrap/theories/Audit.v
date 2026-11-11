@@ -7,7 +7,7 @@
      IV. Primitive signatures.
      V. Declarative elaboration.
    Only Rocq's standard library is imported. *)
-From Stdlib Require Import PrimInt63 Uint63 PrimFloat ZArith.
+From Stdlib Require Import PrimInt63 ZArith.
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Strings.Byte.
 Import ListNotations.
@@ -1371,15 +1371,11 @@ Definition fld := string.  (* source field names *)
 Definition address := nat.
 
 Inductive value : Type :=
-| VUnit                : value
-| VTag                 : nsym -> value -> value
-| VI32                 : int -> value                (* invariant kept by every op: < 2^32 *)
-| VF64                 : float -> value
-| VRecord              : list (fld * value) -> value
-| VF32                 : float -> value              (* a binary64 holding a binary32 value *)
-| VI64                 : Z -> value                  (* invariant kept by every op: [0, 2^64) *)
-| VHandle              : address -> value                (* host-facing opaque heap identity *)
-| VCheckedHandle       : bool -> ty -> address -> value. (* allocation kind and ground held type *)
+| VUnit : value
+| VTag : nsym -> value -> value
+| VRecord : list (fld * value) -> value
+| VScalar : nat -> Z -> value
+| VRef : address -> option (nat * ty) -> value.
 
 (* ===================== Primitives ======================================== *)
 
@@ -1609,7 +1605,7 @@ Definition parameter_values (ws : list value) : locals := combine (seq 0 (List.l
 
 (* Program bodies and their declared formal interfaces. *)
 Record cast_spec : Type := CastSpec {
-  cast_array : bool;
+  cast_kind : nat;
   cast_held : tsym;
   (* Ref and Array are ordinary wrappers when their respective raw
      handle payload is rebound to a different representation. *)
@@ -1663,7 +1659,7 @@ Record program_view : Type := ProgramView {
   view_arguments  : list (list int);
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
   view_read  : list int -> option (list int);
-  (* selected Ref/Array tag -> (array?, held-type parameter) *)
+  (* checked reference tags and their header requirements *)
   view_casts : list (nsym * cast_spec);
   view_machines : list (tsym * machine_class)
 }.
@@ -1807,7 +1803,7 @@ Inductive signal : Type :=
 Module BaseCall.
 Definition raw_receiver (w : value) : value :=
   match w with
-  | VTag n (VCheckedHandle _ _ a) => VTag n (VHandle a)
+  | VTag n (VRef a (Some _)) => VTag n (VRef a None)
   | _ => w
   end.
 Definition primitive_arguments (p : prim) (ws : list value) : list value :=
@@ -1819,8 +1815,8 @@ Definition primitive_arguments (p : prim) (ws : list value) : list value :=
   end.
 Definition allocation_result (p : prim) (tau : ty) (o : signal) : signal :=
   match p, o with
-  | PBox _, Normal (VTag n (VHandle a)) => Normal (VTag n (VCheckedHandle false tau a))
-  | PArrNew _, Normal (VTag n (VHandle a)) => Normal (VTag n (VCheckedHandle true tau a))
+  | PBox _, Normal (VTag n (VRef a None)) => Normal (VTag n (VRef a (Some (0, tau))))
+  | PArrNew _, Normal (VTag n (VRef a None)) => Normal (VTag n (VRef a (Some (1, tau))))
   | _, _ => o
   end.
 Definition call {S : Type}
@@ -1882,8 +1878,8 @@ Definition check_tag (P : program_view) (d : environment) (n : nsym) (th : subst
                      end in
       if enabled then
         match lookup_subst (cast_held spec) th, w with
-        | Some tau, VCheckedHandle k' tau' _ =>
-            if Bool.eqb (cast_array spec) k' && ty_eqb (ground d tau) tau'
+        | Some tau, VRef _ (Some (k', tau')) =>
+            if Nat.eqb (cast_kind spec) k' && ty_eqb (ground d tau) tau'
             then Normal (VTag n w) else Trap 37
         | _, _ => Trap 37
         end
@@ -2250,10 +2246,10 @@ Inductive shape : Type := ShapeI32 | ShapeI64 | ShapeF32 | ShapeF64 | ShapeUnit 
 
 Definition value_shape (P : program_view) (w : value) (t : shape) : Prop :=
   match t, w with
-  | ShapeI32, VI32 _ | ShapeI64, VI64 _ | ShapeF32, VF32 _ | ShapeF64, VF64 _ => True
+  | ShapeI32, VScalar 0 _ | ShapeI64, VScalar 1 _ | ShapeF32, VScalar 2 _ | ShapeF64, VScalar 3 _ => True
   | ShapeUnit, VUnit => True
   | ShapeBool, VTag b (VTag t' VUnit) => b = view_bool P /\ (t' = view_true P \/ t' = view_false P)
-  | ShapeAddress, VTag _ (VI32 _) => True
+  | ShapeAddress, VTag _ (VScalar 0 _) => True
   | ShapeTag, VTag _ _ => True
   | ShapeNever, _ => False
   | _, _ => False
@@ -5697,7 +5693,8 @@ Definition i32_class := MScalar 0.
 Definition i64_class := MScalar 1.
 Definition f32_class := MScalar 2.
 Definition f64_class := MScalar 3.
-Definition ref_class (array : bool) := MReference (if array then 1 else 0).
+Definition ref_kind (array : bool) := if array then 1 else 0.
+Definition ref_class (array : bool) := MReference (ref_kind array).
 
 Definition initial_machines : list (name * machine_class) :=
   [("I32", i32_class); ("I64", i64_class); ("F32", f32_class); ("F64", f64_class);
@@ -5901,9 +5898,9 @@ Definition platform_mod (W : world) (p : string) : Prop :=
 
 Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> Prop :=
 | PEZero : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
-    filed_name (d_ast d) = Some (NSName, "i32_zero") -> PlatformEntry W P (IVal v) (ValueProvision (VI32 0%uint63))
+    filed_name (d_ast d) = Some (NSName, "i32_zero") -> PlatformEntry W P (IVal v) (ValueProvision (VScalar 0 0%Z))
 | PEOne : forall v d, w_decl W v = Some d -> platform_mod W (d_mod d) ->
-    filed_name (d_ast d) = Some (NSName, "i32_one") -> PlatformEntry W P (IVal v) (ValueProvision (VI32 1%uint63))
+    filed_name (d_ast d) = Some (NSName, "i32_one") -> PlatformEntry W P (IVal v) (ValueProvision (VScalar 0 1%Z))
 | PEPrim : forall f d n ps rt body pr, w_decl W f = Some d -> platform_mod W (d_mod d) ->
     d_ast d = ADFn RPlain n ps rt body -> prim_of_name n = Some pr ->
     PlatformEntry W P (IFn f) (PrimitiveClosure pr None)
@@ -5917,7 +5914,7 @@ Inductive PlatformEntry (W : world) (P : program) : item -> provision_value -> P
 Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
-  | IVal value, ValueProvision (VI32 _) => exists t,
+  | IVal value, ValueProvision (VScalar 0 _) => exists t,
       nlook value (c_vals C) = Some t /\ MachineType W "I32" t
   | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
   | IFun source, FunctorClosure code None (EnvironmentWithAliases [] [] []) None =>
@@ -5951,7 +5948,7 @@ Definition CastEntry (W : world) (array : bool) (entry : option (nsym * cast_spe
   let raw := if array then "ArrayRef" else "StructRef" in
   (exists n t h, LangSym W "wasm" NSName tag n /\
     LangSym W "wasm" NSName held t /\ LangSym W "wasm" NSName raw h /\
-    entry = Some (n, CastSpec array t
+    entry = Some (n, CastSpec (ref_kind array) t
       (Some (h, TMachine h)))) \/
   ((forall n, ~ LangSym W "wasm" NSName tag n) /\ entry = None).
 Definition Representations (W : world) (P : program) : Prop :=
@@ -6033,10 +6030,10 @@ Definition program_of (p : program) (argv : list (list int))
    laws; no bit ordering or trie structure is part of the language. *)
 Module Heap.
 Local Unset Implicit Arguments.
-(* A store typing: an address's kind (true: an array) and what its
+(* A store typing: an address's kind (0: box, 1: array) and what its
    contents (a box's value, an array's elements) satisfy. Addresses are
    allocation identities, independent of the concrete heap representation. *)
-Definition hty : Type := address -> option (bool * (value -> Prop)).
+Definition hty : Type := address -> option (nat * (value -> Prop)).
 
 (* Ψ' extends Ψ: every address Ψ types, Ψ' types the same way. *)
 Definition hext (Psi Psi' : hty) : Prop :=
@@ -6044,22 +6041,22 @@ Definition hext (Psi Psi' : hty) : Prop :=
 
 (* w is a reference (a tag over a heap address) of kind k whose contents
    satisfy Q. *)
-Definition href (Psi : hty) (k : bool) (w : value) (Q : value -> Prop) : Prop :=
-  exists n a, w = VTag n (VHandle a) /\ Psi a = Some (k, Q).
+Definition href (Psi : hty) (k : nat) (w : value) (Q : value -> Prop) : Prop :=
+  exists n a, w = VTag n (VRef a None) /\ Psi a = Some (k, Q).
 
 (* What a GC primitive needs of its arguments, for contents satisfying Q. *)
 Definition gc_pre (Psi : hty) (p : prim) (ws : list value) (Q : value -> Prop) : Prop :=
   match p, ws with
   | PBox _, [v] => Q v
-  | PDeref, [r] => href Psi false r Q
-  | PRefSet, [r; v] => href Psi false r Q /\ Q v
-  | PArrNew _, [v; VI32 _] => Q v
-  | PArrLen, [r] => href Psi true r Q
-  | PArrGet, [r; VI32 _] => href Psi true r Q
-  | PArrSet, [r; VI32 _; v] => href Psi true r Q /\ Q v
-  | PArrFill, [r; VI32 _; v; VI32 _] => href Psi true r Q /\ Q v
-  | PArrCopy, [r; VI32 _; r2; VI32 _; VI32 _] =>
-      href Psi true r Q /\ exists Q2, href Psi true r2 Q2 /\ forall x, Q2 x -> Q x
+  | PDeref, [r] => href Psi 0 r Q
+  | PRefSet, [r; v] => href Psi 0 r Q /\ Q v
+  | PArrNew _, [v; VScalar 0 _] => Q v
+  | PArrLen, [r] => href Psi 1 r Q
+  | PArrGet, [r; VScalar 0 _] => href Psi 1 r Q
+  | PArrSet, [r; VScalar 0 _; v] => href Psi 1 r Q /\ Q v
+  | PArrFill, [r; VScalar 0 _; v; VScalar 0 _] => href Psi 1 r Q /\ Q v
+  | PArrCopy, [r; VScalar 0 _; r2; VScalar 0 _; VScalar 0 _] =>
+      href Psi 1 r Q /\ exists Q2, href Psi 1 r2 Q2 /\ forall x, Q2 x -> Q x
   | _, _ => False
   end.
 
@@ -6067,10 +6064,10 @@ Definition gc_pre (Psi : hty) (p : prim) (ws : list value) (Q : value -> Prop) :
 Definition gc_post (Psi Psi' : hty) (p : prim) (Q : value -> Prop) (w : value) : Prop :=
   hext Psi Psi' /\
   match p with
-  | PBox rf => exists a, w = VTag rf (VHandle a) /\ Psi a = None /\ Psi' a = Some (false, Q)
-  | PArrNew ar => exists a, w = VTag ar (VHandle a) /\ Psi a = None /\ Psi' a = Some (true, Q)
+  | PBox rf => exists a, w = VTag rf (VRef a None) /\ Psi a = None /\ Psi' a = Some (0, Q)
+  | PArrNew ar => exists a, w = VTag ar (VRef a None) /\ Psi a = None /\ Psi' a = Some (1, Q)
   | PDeref | PArrGet => Q w
-  | PArrLen => exists n, w = VI32 n
+  | PArrLen => exists n, w = VScalar 0 n
   | _ => w = VUnit
   end.
 

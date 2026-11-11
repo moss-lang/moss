@@ -11,7 +11,7 @@
    driver runs it with (MossX.run_prim, MossX.init_state).
    assumptions/Certificate.v audits these roots. *)
 From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
-  ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
+  ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
 From NM Require EaMain ProgramPrune ProgramFastPath ProgramCapTrim InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
@@ -20,6 +20,10 @@ Set Warnings "-extraction-default-directory".
 (* Audit's field names are strings: compare them natively. *)
 Extract Inlined Constant String.eqb => "String.equal".
 Extraction NoInline PrimArray.array.
+(* Scalar payloads are Z in the model. In particular, an I32 at the
+   primitive boundary should fit in one native integer. *)
+Extract Inlined Constant Uint63.to_Z => "(fun x -> Big_int_Z.big_int_of_int64 (Uint63.to_int64 x))".
+Extract Inlined Constant Uint63.of_Z => "(fun z -> Uint63.of_int64 (Big_int_Z.int64_of_big_int (Big_int_Z.extract_big_int z 0 63)))".
 (* ExtrOcamlNatInt's nat_case, with its two branches inlined.  Unchanged in
    meaning; it only changes what the native code keeps alive.  Without the
    attributes, the successor branch `fun k -> ...` is a closure, and its

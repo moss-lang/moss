@@ -76,7 +76,7 @@ Lemma ref_cast : forall (array : bool) s,
   exists held raw, A.LangSym W "wasm" A.NSName (if array then "Arrayed" else "Boxed") held /\
     A.LangSym W "wasm" A.NSName (if array then "ArrayRef" else "StructRef") raw /\
     lookup_cast s (program_casts Prog) =
-      Some (CastSpec array held (Some (raw, TMachine raw))).
+      Some (CastSpec (Platform.ref_kind array) held (Some (raw, TMachine raw))).
 Proof.
   intros array s Sym. destruct Reps as [_ [reference [arr [Ref [Arr Casts]]]]]. rewrite Casts.
   destruct array.
@@ -178,18 +178,15 @@ Qed.
 Lemma keys_smap : forall (args : list (nat * ty)), map fst (PublicTypeRead.smap m args) = map fst args.
 Proof. intros args. unfold PublicTypeRead.smap. rewrite map_map. reflexivity. Qed.
 
-Lemma machine_value : forall H w symbol class,
-  A.nlook symbol (program_machines Prog) = Some class ->
+Lemma scalar_value : forall H w symbol sort,
+  A.nlook symbol (program_machines Prog) = Some (MScalar sort) ->
   value_typed W P H w (TMachine symbol) ->
-  match class with
-  | MScalar 0 => exists n, w = VI32 n | MScalar 1 => exists n, w = VI64 n
-  | MScalar 2 => exists n, w = VF32 n | MScalar 3 => exists n, w = VF64 n
-  | _ => True end.
+  exists bits, w = VScalar sort bits.
 Proof.
-  intros H w symbol class Class Typed. inversion Typed; subst;
+  intros H w symbol sort Class Typed. inversion Typed; subst;
     match goal with Read : A.nlook _ (view_machines _) = Some _ |- _ =>
       change (view_machines P) with (program_machines Prog) in Read;
-      rewrite Class in Read; injection Read as ->; cbn; eauto
+      rewrite Class in Read; inversion Read; subst; eauto
     end.
 Qed.
 
@@ -201,8 +198,8 @@ Proof. destruct array; in_list. Qed.
    the reference's held type. *)
 Lemma ref_input : forall H array t held w, Platform.ReferenceType W array t held -> HandleFormed t ->
   value_typed W P H w (app_subst m t) ->
-  exists s a, (w = VTag s (VHandle a) \/ w = VTag s (VCheckedHandle array (app_subst m held) a)) /\
-    H a = Some (array, app_subst m held).
+  exists s a, (w = VTag s (VRef a None) \/ w = VTag s (VRef a (Some (Platform.ref_kind array, app_subst m held)))) /\
+    H a = Some (Platform.ref_kind array, app_subst m held).
 Proof.
   intros H array t held w [symbol [param [args [Sym [Param [-> Held]]]]]] Formed Typed.
   destruct (ref_cast W Prog Layouts Reps array symbol Sym) as [heldsym [raw [HeldSym [RawSym Cast]]]].
@@ -217,7 +214,7 @@ Proof.
   - congruence.
   - match goal with Found : lookup_cast _ (view_casts _) = Some _ |- _ =>
       cbn [view_casts program_of] in Found; rewrite Cast in Found; injection Found as <- end.
-    cbn [cast_held cast_array] in *.
+    cbn [cast_held cast_kind] in *.
     pose proof (lang_sym_unique _ _ _ _ _ _ HeldSym Param); subst heldsym.
     match goal with Look : lookup_subst param (PublicTypeRead.smap m args) = Some _ |- _ =>
       rewrite lookup_subst_nlook, nlook_smap, Held in Look; injection Look as <- end.
@@ -228,7 +225,7 @@ Qed.
 (* A fresh handle at a reference type, read through its checked header. *)
 Lemma ref_output : forall H array t held s hv, Platform.ReferenceType W array t held -> HandleFormed t ->
   A.LangSym W "wasm" A.NSName (if array then "Array" else "Ref") s ->
-  handle_typed H array (app_subst m held) hv ->
+  handle_typed H (Platform.ref_kind array) (app_subst m held) hv ->
   value_typed W P H (VTag s hv) (app_subst m t).
 Proof.
   intros H array t held s hv [symbol [param [args [Sym [Param [-> Held]]]]]] Formed S Handle.
@@ -242,7 +239,7 @@ Proof.
   pose proof (payload_at_args W symbol (PublicTypeRead.smap m args) raw ltac:(rewrite keys_smap; exact Keys) Identity) as Pay.
   cbn [app_subst] in Pay. rewrite Enabled in Pay.
   rewrite subst_nom.
-  eapply (TypedHeapTag W P H symbol (PublicTypeRead.smap m args) (CastSpec array param _) (app_subst m held)).
+  eapply (TypedHeapTag W P H symbol (PublicTypeRead.smap m args) (CastSpec (Platform.ref_kind array) param _) (app_subst m held)).
   - cbn [view_casts program_of]. exact Cast.
   - unfold cast_enabled, type_argument. cbn [cast_handle]. rewrite Enabled. apply ty_eqb_spec; reflexivity.
   - cbn [cast_held]. rewrite lookup_subst_nlook, nlook_smap, Held. reflexivity.
@@ -252,7 +249,7 @@ Proof.
 Qed.
 
 Lemma addr_input : forall H t w, Platform.NominalType W "wasm" "Addr" t -> HandleFormed t ->
-  value_typed W P H w (app_subst m t) -> exists s n, w = VTag s (VI32 n).
+  value_typed W P H w (app_subst m t) -> exists s n, w = VTag s (VScalar 0 n).
 Proof.
   intros H t w [symbol [args [Sym ->]]] Formed Typed.
   assert (Tag : In ("Addr", "Memory", "I32") handle_tags) by in_list.
@@ -265,7 +262,7 @@ Proof.
       destruct (raw_payload W symbol (PublicTypeRead.smap m args) payload raw ltac:(rewrite keys_smap; exact Keys) Identity Pay)
         as [_ Look];
       rewrite Raw in Look; injection Look as <-;
-      destruct (machine_value _ _ _ _ Class Inner) as [n ->]; eauto end.
+      destruct (scalar_value _ _ _ _ Class Inner) as [n ->]; eauto end.
   - congruence.
   - match goal with Found : lookup_cast _ (view_casts _) = Some _ |- _ =>
       cbn [view_casts program_of] in Found; rewrite (addr_not_cast W Prog Layouts Reps symbol Sym) in Found;
@@ -286,8 +283,8 @@ Lemma bool_typed : forall H s w, A.LangSym W "bool" A.NSName "Bool" s ->
   value_shape P w ShapeBool -> value_typed W P H w (TNom s []).
 Proof.
   intros H s w Sym Shape.
-  destruct w as [|b inner| | | | | | |]; try contradiction.
-  destruct inner as [|t' u| | | | | | |]; try contradiction. destruct u; try contradiction.
+  destruct w as [|b inner| | |]; try contradiction.
+  destruct inner as [|t' u| | |]; try contradiction. destruct u; try contradiction.
   destruct Shape as [Eb Et]. cbn in Eb, Et.
   destruct (proj1 Bools s Sym) as [truth [falsity [T [F [_ [TU [FU [_ [_ Payload]]]]]]]]].
   destruct (bool_syms s Sym) as [-> Names]. destruct (Names _ _ T F) as [-> ->]. subst b.
@@ -304,13 +301,13 @@ Lemma shape_param : forall H t s w, Platform.ValueType W t s -> HandleFormed t -
 Proof.
   intros H t s w VT Formed Typed. destruct s; cbn in VT.
   - destruct (machine_ground "I32" Platform.i32_class t ltac:(in_list) VT) as [symbol [Read Class]].
-    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+    rewrite Read in Typed. destruct (scalar_value _ _ _ _ Class Typed) as [n ->]; exact I.
   - destruct (machine_ground "I64" Platform.i64_class t ltac:(in_list) VT) as [symbol [Read Class]].
-    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+    rewrite Read in Typed. destruct (scalar_value _ _ _ _ Class Typed) as [n ->]; exact I.
   - destruct (machine_ground "F32" Platform.f32_class t ltac:(in_list) VT) as [symbol [Read Class]].
-    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+    rewrite Read in Typed. destruct (scalar_value _ _ _ _ Class Typed) as [n ->]; exact I.
   - destruct (machine_ground "F64" Platform.f64_class t ltac:(in_list) VT) as [symbol [Read Class]].
-    rewrite Read in Typed. destruct (machine_value _ _ _ _ Class Typed) as [n ->]; exact I.
+    rewrite Read in Typed. destruct (scalar_value _ _ _ _ Class Typed) as [n ->]; exact I.
   - subst t. cbn in Typed. inversion Typed; exact I.
   - destruct VT as [symbol [Sym ->]]. cbn in Typed.
     destruct (bool_value_shape W P H symbol w (proj1 Bools) Sym Typed) as [truth [falsity [T [F Shape]]]].
@@ -327,13 +324,17 @@ Lemma shape_result : forall H t s w, Platform.ValueType W t s ->
 Proof.
   intros H t s w VT NA NT Shape. destruct s; cbn in VT; try congruence.
   - destruct (machine_ground "I32" Platform.i32_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w; try contradiction; constructor; exact Class.
+    destruct w as [| | |sort bits|]; try contradiction.
+    destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - destruct (machine_ground "I64" Platform.i64_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w; try contradiction; constructor; exact Class.
+    destruct w as [| | |sort bits|]; try contradiction.
+    destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - destruct (machine_ground "F32" Platform.f32_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w; try contradiction; constructor; exact Class.
+    destruct w as [| | |sort bits|]; try contradiction.
+    destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - destruct (machine_ground "F64" Platform.f64_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w; try contradiction; constructor; exact Class.
+    destruct w as [| | |sort bits|]; try contradiction.
+    destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - subst t. destruct w; try contradiction; constructor.
   - destruct VT as [symbol [Sym ->]]. cbn. exact (bool_typed H symbol w Sym Shape).
   - cbn in Shape. contradiction.
@@ -389,18 +390,18 @@ Module M := M0.
 
 (* HeapTyping.HeapSafety's allocation lemmas, at this instance of Public
    (functor instances have distinct interface records). *)
-Lemma allocation_preserves_heap : forall W P iface H state p args held raw next tag (array : bool),
+Lemma allocation_preserves_heap : forall W P iface H state p args held raw next tag (kind : nat),
   M.interface_laws P iface -> M.supports iface p = true ->
   M.heap_ok iface (heap_predicates W P H) state ->
   Heap.gc_pre (heap_predicates W P H) p args (fun value => value_typed W P H value held) ->
   (forall Psi Psi' Q w, Heap.gc_post Psi Psi' p Q w ->
-     Heap.hext Psi Psi' /\ exists a, w = VTag tag (VHandle a) /\ Psi a = None /\ Psi' a = Some (array, Q)) ->
+     Heap.hext Psi Psi' /\ exists a, w = VTag tag (VRef a None) /\ Psi a = None /\ Psi' a = Some (kind, Q)) ->
   M.primitive iface P p args state = (Normal raw, next) ->
   exists H' address,
     heap_extends H H' /\ M.heap_ok iface (heap_predicates W P H') next /\
-    raw =VTag tag (VHandle address) /\ H' address = Some (array, held).
+    raw = VTag tag (VRef address None) /\ H' address = Some (kind, held).
 Proof.
-  intros W P iface H state p args held raw next tag array Laws Supported Valid Pre Post Run.
+  intros W P iface H state p args held raw next tag kind Laws Supported Valid Pre Post Run.
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
   specialize (GC p args state (heap_predicates W P H) _ Supported Valid Pre).
   rewrite Run in GC.
@@ -408,8 +409,8 @@ Proof.
   destruct (Post _ _ _ _ PostRaw) as [Extends [fresh [Raw [Absent Fresh]]]].
   assert (FreshH : H fresh = None).
   { unfold heap_predicates in Absent.
-    destruct (H fresh) as [[kind tau]|]; [discriminate|reflexivity]. }
-  exists (heap_add H fresh array held), fresh. split.
+    destruct (H fresh) as [[old_kind tau]|]; [discriminate|reflexivity]. }
+  exists (heap_add H fresh kind held), fresh. split.
   - apply heap_add_extends; exact FreshH.
   - split.
     + eapply Weaken; [exact ValidNext|].
@@ -424,8 +425,8 @@ Lemma alloc_plain : forall p tau o, Heap.is_gc p = false -> BaseCall.allocation_
 Proof. intros p tau o GC; destruct p; try discriminate; reflexivity. Qed.
 
 Lemma raw_receiver_of : forall w s a k h,
-  w = VTag s (VHandle a) \/ w = VTag s (VCheckedHandle k h a) ->
-  BaseCall.raw_receiver w = VTag s (VHandle a).
+  w = VTag s (VRef a None) \/ w = VTag s (VRef a (Some (k, h))) ->
+  BaseCall.raw_receiver w = VTag s (VRef a None).
 Proof. intros w s a k h [-> | ->]; reflexivity. Qed.
 
 
@@ -505,7 +506,7 @@ Ltac args_inv := match goal with
 
 Lemma href_of : forall W P H k s a held,
   H a = Some (k, held) ->
-  Heap.href (heap_predicates W P H) k (VTag s (VHandle a)) (fun v => value_typed W P H v held).
+  Heap.href (heap_predicates W P H) k (VTag s (VRef a None)) (fun v => value_typed W P H v held).
 Proof. intros W P H k s a held Found. exists s, a. split; [reflexivity|]. unfold heap_predicates. rewrite Found. reflexivity. Qed.
 
 Theorem gc_safe : forall W Prog argv read iface p held params ret m H s ws,
@@ -521,10 +522,10 @@ Proof.
   intros W Prog argv read iface p held params ret m H s ws Layouts Reps Laws Supp Sig Ground Formed Held Valid Args.
   set (P := program_of Prog argv read) in *.
   assert (I32 : forall H t w, Platform.MachineType W "I32" t -> value_typed W P H w (app_subst m t) ->
-    exists n, w = VI32 n).
+    exists n, w = VScalar 0 n).
   { intros H0 t w MT Typed.
     destruct (machine_ground W Prog Layouts Reps m Ground "I32" Platform.i32_class t ltac:(in_list) MT) as [symbol [Read Class]].
-    rewrite Read in Typed. exact (machine_value W Prog argv read _ _ _ _ Class Typed). }
+    rewrite Read in Typed. exact (scalar_value W Prog argv read _ _ _ _ Class Typed). }
   destruct p; try (exfalso; exact Sig).
   - (* PBox *) destruct params as [|heldt [|]]; try (exfalso; exact Sig). destruct Sig as [Sym RT].
     args_inv. rename x into v.
@@ -533,9 +534,9 @@ Proof.
     specialize (GC (PBox n) [v] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (PBox n) [v] (M.external s)) as [out next] eqn:Run.
     destruct out; try contradiction; [|destruct held; exact I].
-    destruct (allocation_preserves_heap W P iface H (M.external s) (PBox n) [v] (app_subst m heldt) v0 next n false
+    destruct (allocation_preserves_heap W P iface H (M.external s) (PBox n) [v] (app_subst m heldt) v0 next n 0
       Laws Supp Valid ltac:(assumption) ltac:(intros ? ? ? ? [E X]; exact (conj E X)) Run) as [H' [a [Ext [Ok' [-> Cell]]]]].
-    assert (Typed : forall hv, handle_typed H' false (app_subst m heldt) hv ->
+    assert (Typed : forall hv, handle_typed H' 0 (app_subst m heldt) hv ->
       value_typed W P H' (VTag n hv) (app_subst m ret)).
     { intros hv Hv. exact (ref_output W Prog argv read Layouts Reps m Ground H' false ret heldt n hv RT ltac:(assumption) Sym Hv). }
     destruct held as [tau|]; cbn;
@@ -559,12 +560,12 @@ Proof.
     destruct (I32 H count y Count ltac:(assumption)) as [c ->].
     rewrite run_supported by exact Supp. cbn [BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
-    specialize (GC (PArrNew n) [v; VI32 c] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
-    destruct (M.primitive iface P (PArrNew n) [v; VI32 c] (M.external s)) as [out next] eqn:Run.
+    specialize (GC (PArrNew n) [v; VScalar 0 c] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
+    destruct (M.primitive iface P (PArrNew n) [v; VScalar 0 c] (M.external s)) as [out next] eqn:Run.
     destruct out; try contradiction; [|destruct held; exact I].
-    destruct (allocation_preserves_heap W P iface H (M.external s) (PArrNew n) [v; VI32 c] (app_subst m heldt) v0 next n true
+    destruct (allocation_preserves_heap W P iface H (M.external s) (PArrNew n) [v; VScalar 0 c] (app_subst m heldt) v0 next n 1
       Laws Supp Valid ltac:(assumption) ltac:(intros ? ? ? ? [E X]; exact (conj E X)) Run) as [H' [a [Ext [Ok' [-> Cell]]]]].
-    assert (Typed : forall hv, handle_typed H' true (app_subst m heldt) hv ->
+    assert (Typed : forall hv, handle_typed H' 1 (app_subst m heldt) hv ->
       value_typed W P H' (VTag n hv) (app_subst m ret)).
     { intros hv Hv. exact (ref_output W Prog argv read Layouts Reps m Ground H' true ret heldt n hv RT ltac:(assumption) Sym Hv). }
     destruct held as [tau|]; cbn;
@@ -583,7 +584,7 @@ Proof.
     destruct (ref_input W Prog argv read Layouts Reps m Ground H true array ret x RT ltac:(assumption) ltac:(assumption))
       as [s0 [a [Raw Found]]].
     destruct (I32 H index y MT ltac:(assumption)) as [k ->].
-    apply (gc_plain W P iface H s PArrGet held [x; VI32 k] (fun v => value_typed W P H v (app_subst m ret))); auto.
+    apply (gc_plain W P iface H s PArrGet held [x; VScalar 0 k] (fun v => value_typed W P H v (app_subst m ret))); auto.
     + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). apply href_of. exact Found.
     + intros extended w [_ Q]. exact Q.
   - (* PArrSet *) destruct params as [|array [|index [|heldt [|]]]]; try (exfalso; exact Sig).
@@ -591,7 +592,7 @@ Proof.
     destruct (ref_input W Prog argv read Layouts Reps m Ground H true array heldt x RT ltac:(assumption) ltac:(assumption))
       as [s0 [a [Raw Found]]].
     destruct (I32 H index y MT ltac:(assumption)) as [k ->].
-    apply (gc_plain W P iface H s PArrSet held [x; VI32 k; y0] (fun v => value_typed W P H v (app_subst m heldt))); auto.
+    apply (gc_plain W P iface H s PArrSet held [x; VScalar 0 k; y0] (fun v => value_typed W P H v (app_subst m heldt))); auto.
     + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). split; [apply href_of; exact Found|assumption].
     + intros extended w [_ ->]. constructor.
   - (* PArrFill *) destruct params as [|array [|index [|heldt [|count [|]]]]]; try (exfalso; exact Sig).
@@ -600,7 +601,7 @@ Proof.
       as [s0 [a [Raw Found]]].
     destruct (I32 H index y MI ltac:(assumption)) as [k ->].
     destruct (I32 H count y1 MC ltac:(assumption)) as [c ->].
-    apply (gc_plain W P iface H s PArrFill held [x; VI32 k; y0; VI32 c]
+    apply (gc_plain W P iface H s PArrFill held [x; VScalar 0 k; y0; VScalar 0 c]
       (fun v => value_typed W P H v (app_subst m heldt))); auto.
     + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). split; [apply href_of; exact Found|assumption].
     + intros extended w [_ ->]. constructor.
@@ -613,7 +614,7 @@ Proof.
     destruct (I32 H di y MDI ltac:(assumption)) as [k ->].
     destruct (I32 H si y1 MSI ltac:(assumption)) as [j ->].
     destruct (I32 H count y2 MC ltac:(assumption)) as [c ->].
-    apply (gc_plain W P iface H s PArrCopy held [x; VI32 k; y0; VI32 j; VI32 c]
+    apply (gc_plain W P iface H s PArrCopy held [x; VScalar 0 k; y0; VScalar 0 j; VScalar 0 c]
       (fun v => value_typed W P H v (app_subst m heldt))); auto.
     + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw), (raw_receiver_of _ _ _ _ _ Raw'). split; [apply href_of; exact Found|].
       eexists; split; [apply href_of; exact Found'|auto].

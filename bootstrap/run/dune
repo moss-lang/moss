@@ -30,7 +30,7 @@
 
 (executable
  (name driver)
- (libraries unix rocq-runtime.kernel)
+ (libraries unix rocq-runtime.kernel zarith)
  (link_deps flambda)
  (flags (:standard -w -a))
  (ocamlopt_flags (:standard -O3 -inline 200 -unsafe)))

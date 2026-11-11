@@ -33,7 +33,7 @@ Proof.
   - left. rewrite ground_nom in T. destruct (nominal_value W P _ _ _ _ T) as [inner ->].
     exists n, xs, inner. split; [left; reflexivity|]. split; [reflexivity|rewrite ground_nom; exact T].
   - left. destruct (Formed ms eq_refl) as [Nominal _].
-    rewrite ground_union in T. inversion T as [| | | | | | | |? member ? Member In'| |]; subst.
+    rewrite ground_union in T. inversion T as [| | | | |? member ? Member In'| |]; subst.
     apply in_map_iff in In' as [m [<- InM]].
     rewrite Forall_forall in Nominal. destruct (Nominal m InM) as [s [xs ->]].
     rewrite ground_nom in Member. destruct (nominal_value W P _ _ _ _ Member) as [inner ->].
@@ -112,13 +112,13 @@ Proof.
   - split; [intros s []|]. split; [discriminate|]. left.
     exists [(A.var_of F n, w)]; repeat split; repeat constructor; auto; intros [].
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | | | | | |]; cbn [O.I.match_pat];
+    destruct w as [|s' inner| | |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists []; repeat split; constructor.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | | | | | |]; cbn [O.I.match_pat];
+    destruct w as [|s' inner| | |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists [(A.var_of F y, inner)].
@@ -128,7 +128,7 @@ Proof.
       repeat split; repeat constructor; auto; try (intros []); exact Inner.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | | | | | |]; cbn [O.I.match_pat];
+    destruct w as [|s' inner| | |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left.

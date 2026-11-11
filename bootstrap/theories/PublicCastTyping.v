@@ -45,7 +45,7 @@ Theorem check_tag_preserves : forall W P H d tag arguments value payload,
   (forall schema, lookup_cast tag (view_casts P) = Some schema ->
     guard_complete schema arguments /\
     (cast_enabled schema (ground_arguments d arguments) = true ->
-      handle_type P (cast_array schema) payload)) ->
+      handle_type P (cast_kind schema) payload)) ->
   match R.check_tag P d tag arguments value with
   | Normal result => value_typed W P H result (TNom tag (ground_arguments d arguments))
   | Trap _ => True
@@ -67,16 +67,14 @@ Proof.
     rewrite Guard.
     destruct (cast_enabled schema (ground_arguments d arguments)) eqn:Enabled.
     + destruct (lookup_subst (cast_held schema) arguments) as [held|] eqn:Held;
-        destruct value; cbn; try exact I.
-      destruct (Bool.eqb (cast_array schema) b && ty_eqb (ground d held) t) eqn:Check;
+        destruct value as [| | | |a [[kind meaning]|]]; cbn; try exact I.
+      destruct (Nat.eqb (cast_kind schema) kind && ty_eqb (ground d held) meaning) eqn:Check;
         cbn; [|exact I].
       apply andb_true_iff in Check as [Kind Meaning].
       apply ty_eqb_spec in Meaning.
-      assert (KindEq : cast_array schema = b).
-      { destruct (cast_array schema), b; cbn in Kind; congruence. }
-      assert (MeaningEq : ground d held = t) by exact Meaning.
-      rewrite <- KindEq, <- MeaningEq in Typed |- *.
-      destruct (checked_header_typed W P H (cast_array schema) (ground d held) a payload Typed)
+      apply Nat.eqb_eq in Kind.
+      rewrite <- Kind, <- Meaning in Typed |- *.
+      destruct (checked_header_typed W P H (cast_kind schema) (ground d held) a payload Typed)
         as [Cell _].
       eapply TypedHeapTag with (schema := schema) (held := ground d held) (payload := payload).
       * exact Schema.

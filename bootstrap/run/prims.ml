@@ -1,7 +1,7 @@
 (* The primitives Audit's interpreter runs with: MossX.run_prim (the
    machine model of ExecutionModel.v's primitives), at Audit's value type.
-   UNVERIFIED glue (README.md): the two value types are declared alike,
-   and the conversions below map them constructor for constructor. *)
+   UNVERIFIED glue (README.md): the conversions below preserve the Base
+   scalars' bit patterns and translate their reference headers. *)
 open ExecutionModel
 module A = Audit.Semantics
 
@@ -40,18 +40,41 @@ let rec ty_back (t : A.ty) : ExecutionModel.ty = match t with
    they have one representation. *)
 let prim_back (p : A.prim) : ExecutionModel.prim = Obj.magic p
 
+(* MossX keeps binary32 values in binary64. Its reinterpretation ops
+   canonicalize NaNs, so use those same bit patterns at the boundary. *)
+let f32_bits f =
+  let bits = if Float64.is_nan f then 0x7fc00000l else Int32.bits_of_float (Float64.to_float f) in
+  Z.of_int64 (Int64.logand (Int64.of_int32 bits) 0xffffffffL)
+
+let f64_bits f =
+  let bits = if Float64.is_nan f then 0x7ff8000000000000L else Int64.bits_of_float (Float64.to_float f) in
+  Z.of_int64_unsigned bits
+
 let rec value (w : xvalue) : A.value = match w with
-  | XVUnit -> A.VUnit | XVTag (n, w) -> A.VTag (n, value w) | XVI32 i -> A.VI32 i
-  | XVF64 f -> A.VF64 f | XVRec fs -> A.VRecord (List.map (fun (f, w) -> (fld f, value w)) fs)
-  | XVF32 f -> A.VF32 f | XVI64 z -> A.VI64 z
-  | XVRef a -> A.VHandle (snd (Uint63.to_int2 a))
-  | XVRefAt (k, t, a) -> A.VCheckedHandle (k, ty t, snd (Uint63.to_int2 a))
+  | XVUnit -> A.VUnit
+  | XVTag (n, w) -> A.VTag (n, value w)
+  | XVRec fs -> A.VRecord (List.map (fun (f, w) -> (fld f, value w)) fs)
+  | XVI32 i -> A.VScalar (0, Z.of_int (snd (Uint63.to_int2 i)))
+  | XVI64 z -> A.VScalar (1, z)
+  | XVF32 f -> A.VScalar (2, f32_bits f)
+  | XVF64 f -> A.VScalar (3, f64_bits f)
+  | XVRef a -> A.VRef (snd (Uint63.to_int2 a), None)
+  | XVRefAt (array, t, a) ->
+      A.VRef (snd (Uint63.to_int2 a), Some ((if array then 1 else 0), ty t))
+
 let rec value_back (w : A.value) : xvalue = match w with
-  | A.VUnit -> XVUnit | A.VTag (n, w) -> XVTag (n, value_back w) | A.VI32 i -> XVI32 i
-  | A.VF64 f -> XVF64 f | A.VRecord fs -> XVRec (List.map (fun (f, w) -> (fld_back f, value_back w)) fs)
-  | A.VF32 f -> XVF32 f | A.VI64 z -> XVI64 z
-  | A.VHandle a -> XVRef (Uint63.of_int a)
-  | A.VCheckedHandle (k, t, a) -> XVRefAt (k, ty_back t, Uint63.of_int a)
+  | A.VUnit -> XVUnit
+  | A.VTag (n, w) -> XVTag (n, value_back w)
+  | A.VRecord fs -> XVRec (List.map (fun (f, w) -> (fld_back f, value_back w)) fs)
+  | A.VScalar (0, bits) -> XVI32 (Uint63.of_int (Z.to_int bits))
+  | A.VScalar (1, bits) -> XVI64 bits
+  | A.VScalar (2, bits) -> XVF32 (Float64.of_float (Int32.float_of_bits (Int32.of_int (Z.to_int bits))))
+  | A.VScalar (3, bits) -> XVF64 (Float64.of_float (Int64.float_of_bits (Z.to_int64_unsigned bits)))
+  | A.VScalar _ -> invalid_arg "unknown Base scalar sort"
+  | A.VRef (a, None) -> XVRef (Uint63.of_int a)
+  | A.VRef (a, Some (0, t)) -> XVRefAt (false, ty_back t, Uint63.of_int a)
+  | A.VRef (a, Some (1, t)) -> XVRefAt (true, ty_back t, Uint63.of_int a)
+  | A.VRef (_, Some _) -> invalid_arg "unknown Base reference kind"
 
 (* MossX.run_prim reads the host (argv, files, Bool's symbols) from an
    ExecutionModel xprog; the driver sets it before the run.  Its program

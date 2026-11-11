@@ -150,7 +150,7 @@ Lemma cast_entry : forall s schema,
   exists (array : bool) (held : tsym) (raw : tsym),
     A.LangSym W "wasm" A.NSName (if array then "Array" else "Ref") s /\
     A.LangSym W "wasm" A.NSName (if array then "ArrayRef" else "StructRef") raw /\
-    schema = CastSpec array held (Some (raw, TMachine raw)).
+    schema = CastSpec (Platform.ref_kind array) held (Some (raw, TMachine raw)).
 Proof.
   intros s schema Found. destruct Reps as [_ [reference [array [Ref [Arr Casts]]]]].
   rewrite Casts in Found.
@@ -168,8 +168,8 @@ Qed.
 Lemma cast_layout : forall s schema,
   lookup_cast s (program_casts Prog) = Some schema ->
   A.kind_sym W s = Some A.DKTag /\
-  exists (array : bool) (raw : tsym), schema = CastSpec array (cast_held schema) (Some (raw, TMachine raw)) /\
-    cast_array schema = array /\
+  exists (array : bool) (raw : tsym), schema = CastSpec (Platform.ref_kind array) (cast_held schema) (Some (raw, TMachine raw)) /\
+    cast_kind schema = Platform.ref_kind array /\
     A.PayloadOf W s (identity_args (A.w_reqs W s)) (TAbs raw) /\
     A.nlook raw (program_machines Prog) = Some (Platform.ref_class array).
 Proof.
@@ -227,7 +227,7 @@ Proof.
         unfold type_argument in Enabled. rewrite lookup_ground_arguments, Raw in Enabled.
         cbn in Enabled. apply ty_eqb_spec in Enabled.
         change (app_subst (type_meanings d) pay) with (ground d pay) in Enabled.
-        cbn [cast_array]. rewrite Enabled. constructor. exact Class.
+        cbn [cast_kind]. rewrite Enabled. constructor. exact Class.
   - unfold R.check_tag. cbn [view_casts program_of]. rewrite (unit_not_cast W Prog Layouts Reps s Unit).
     inversion Typed; subst. apply TypedUnitTag. exact Unit.
 Qed.

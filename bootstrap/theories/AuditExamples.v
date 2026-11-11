@@ -105,7 +105,7 @@ Proof.
 Qed.
 Example an_arbitrary_cast_entry_is_rejected :
   ~ Platform.Representations no_library
-    (Program [] [] 0 0 0 0 empty_environment [] [(7,CastSpec false 8 None)] []).
+    (Program [] [] 0 0 0 0 empty_environment [] [(7,CastSpec 0 8 None)] []).
 Proof. intro Valid. pose proof (no_library_casts _ Valid). discriminate. Qed.
 
 (* The oracle plan's N6 (AUDIT-CHANGES #94): a platform constant declared
@@ -115,7 +115,7 @@ Proof. intro Valid. pose proof (no_library_casts _ Valid). discriminate. Qed.
 Example a_unit_platform_constant_is_rejected : forall W P C v w,
   nlook v (c_vals C) = Some TUnit -> ~ Platform.Entry W P C (IVal v) (ValueProvision w).
 Proof.
-  intros W P C v w Ty E. destruct w; cbn in E; try contradiction.
+  intros W P C v w Ty E. destruct w as [| | |sort bits|]; cbn in E; try contradiction. destruct sort; cbn in E; try contradiction.
   destruct E as (t & Ty' & symbol & _ & _ & ->). rewrite Ty in Ty'. discriminate.
 Qed.
 

@@ -140,8 +140,9 @@ Proof.
   - intros v t Found. destruct (vals_ilook _ v t KM Found) as [a Il].
     destruct (Find (IVal v) (ProvNs _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc rms0|p held]; cbn in En; try contradiction.
-    destruct w; cbn in En; try contradiction. destruct En as [t' [Lt Mt]].
-    rewrite Found in Lt. injection Lt as <-. exists (VI32 i). split; [exact L|].
+    destruct w as [| | |sort bits|]; cbn in En; try contradiction.
+    destruct sort; cbn in En; try contradiction. destruct En as [t' [Lt Mt]].
+    rewrite Found in Lt. injection Lt as <-. exists (VScalar 0 bits). split; [exact L|].
     destruct Mt as [sym [Lang [_ ->]]].
     pose proof (ctx_val_canonical _ C ns v _ a Ctx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as Canon.
     destruct (ctx_provision_scoped W _ C ns Ctx _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Sc _].
