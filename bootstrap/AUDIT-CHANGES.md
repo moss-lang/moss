@@ -146,6 +146,7 @@ entry they belong to.
 | 112 | Public contracts consume one platform at build and run time | sep S5b | none for the Base specialization |
 | 113 | Separate concrete Base definitions into AuditBase.v | sep S5c | none (relocation) |
 | 114 | Rule B reads each structured dependency through its merge class | M4a | C |
+| 115 | Separate application typing and translation | typing/translation | none (equivalent factoring) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3593,6 +3594,21 @@ using one fresh atom per abstract class must preserve that behaviour
   transfer the bound member's meaning to the required leaf.
 - **Class C** (criterion 2, coherence). Both executable frontends use the
   same class check. The public safety certificate checks the revised rule.
+
+### 115. Separate application typing and translation
+
+- **Typing.** `NeedsSatisfied` checks that the caller supplies a callee's
+  needs with the required types and meanings. `TypesApplication` uses it
+  to check an abstract functor application and its result. This includes
+  the identities of the result types and the application scope.
+- **Translation.** `satisfaction_map` pairs callee and caller run-time keys.
+  `translate_application` uses that map and the checked result to emit the
+  binding. The current encoding of output identities is shared by typing
+  and translation.
+- **Fidelity.** The previous application rule checked the same conditions
+  and required its satisfaction map to equal the computed one. The
+  application now computes that map directly. The safety proof consumes
+  the split rule, and the executable elaborator is unchanged.
 
 ---
 

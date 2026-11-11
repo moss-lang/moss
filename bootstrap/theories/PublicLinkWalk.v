@@ -68,14 +68,18 @@ Proof.
     + apply (wrap_pre pre); [exact (meth_applies _ _ _ _ _ _ _ _ _ H4)|reflexivity].
     + exact (items_applies _ _ _ _ _ _ _ H3).
     + (* an abstract application *)
-      intros x. unfold apply_output_expression. cbn [applies binding_apply app].
+      match goal with
+      | Typed : A.TypesApplication _ _ _ _ ?a |- _ =>
+          destruct a as [u Cu ns th outs gensof newgens C' ks];
+          destruct Typed as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OI & _)
+      end.
+      intros x. unfold A.translate_application, apply_output_expression.
+      cbn [A.app_functor A.app_identity A.app_outputs applies binding_apply app].
       split; [intros p I; right; exact I|split].
       * intros p [<-|I]; [right|left; exact I].
-        intros q Iq. cbn in Iq. apply in_map_iff in Iq as [t [<- It]]. cbn. match goal with
-          OI : forall t, In t outs <-> _ |- _ => exact (proj1 (OI t) It) end.
+        intros q Iq. cbn in Iq. apply in_map_iff in Iq as [t [<- It]]. exact (proj1 (OI t) It).
       * intros y Iy. exists (u, map (fun t => (t, gensof t)) outs). split; [left; reflexivity|split].
-        -- intros q Iq. cbn in Iq. apply in_map_iff in Iq as [t [<- It]]. cbn. match goal with
-             OI : forall t, In t outs <-> _ |- _ => exact (proj1 (OI t) It) end.
+        -- intros q Iq. cbn in Iq. apply in_map_iff in Iq as [t [<- It]]. exact (proj1 (OI t) It).
         -- cbn [snd]. rewrite map_map. exact Iy.
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 D2].
     + intros x. split; [intros p I; exact I|split; [intros p I; left; exact I|intros y []]].

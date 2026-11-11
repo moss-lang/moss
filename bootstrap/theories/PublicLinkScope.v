@@ -263,7 +263,7 @@ Proof.
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
                   |F C pa dn a yp r m bs rt sg target pre sm ap types R MN B T Sig MP App NoFam
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
-                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC In' Th Fix Sat FF Inj Outs Nd OutsI PR
+                  |F C pa a Typed
                   |F C pa u pg h Cu nsu Ch nsh sm fx
                   |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff.
     + (* bind T = tau *)
@@ -305,6 +305,10 @@ Proof.
     + (* bind F; F with a body *)
       exact (items_scope _ _ _ _ _ _ _ Bi Fc Ff).
     + (* bind F; F abstract *)
+      destruct a as [u Cu ns th outs gensof newgens C' ks].
+      destruct Typed as (_ & _ & _ & _ & _ & _ & FF & _ & Outs & _ & OutsI & PR & _).
+      change (ProvideResult W u C (fun t => TAbs (gensof t)) C' ks) in PR.
+      cbv beta iota zeta delta [OutputIdentityAt app_functor app_identity app_allocated] in Outs.
       destruct (apply_abstract_scope W _ _ _ _ _ PR) as [Inc Back].
       destruct (provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo [outs' [OutsI' Ety]]]].
       pose proof Fc as [Cf [Ks Ts]].

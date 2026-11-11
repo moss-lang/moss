@@ -5039,7 +5039,7 @@ Proof.
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
                   |F C pa dn a y r m bs rt sg target pre sm ap types R Named Br Ty Sig Prov App NoFam
                   |F C pa u dcl n0 ps a r bodies wrap C' F' made R Dcl Ast NotApp Ditems
-                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG Uniq Outs NdO OutsIff PR
+                  |F C pa a Typed
                   |F C pa u pg h Cu nsu Ch nsh sm fx rm R1 R2 Abst Hf FCu FCh Incl FixU FixH Agr Same Sm Fx Sub CO
                   |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx R1 R2 U FCu FCg FixU Same LB Sm SatC Fx CapF PinA]; intros FD.
     + exists [BType t0 (A.canon C tau)]. split; [reflexivity|].
@@ -5058,7 +5058,11 @@ Proof.
       apply (chain_reframe_tgt k _ C F'); [|split; [|split; [|split]]; cbn; congruence].
       apply (chain_weaken k _ C F' C' (ItemsBreak (A.with_mod F (A.d_mod dcl) u) (List.concat bodies))); [exact Ch|].
       intros [it [Iit Bi]]. eapply A.IBApply; [exact R|exact Dcl|exact Ast|exact Iit|exact Bi].
-    + exists [BApply u th (map (fun t => (t, gensof t)) outs) sm (map (A.rkey_of C') ks)]. split; [reflexivity|].
+    + destruct a as [u Cu ns th outs gensof newgens C' ks].
+      destruct Typed as (R & (fx & Fx & Fixed) & FC & Inp & Th & Needs & FreshG & Uniq & Outs & NdO & OutsIff & PR & _).
+      pose (sm := A.satisfaction_map C Cu th ns).
+      assert (Sat : A.Satisfies C Cu th ns sm) by (split; [reflexivity|exact Needs]).
+      exists [BApply u th (map (fun t => (t, gensof t)) outs) sm (map (A.rkey_of C') ks)]. split; [reflexivity|].
       apply (chain_weaken k F C _ _ False); [|tauto]. apply single_chain.
       exact (Ap F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC Inp Th Fixed Sat FreshG
         Uniq Outs NdO OutsIff PR).

@@ -4313,6 +4313,69 @@ Definition CallBrackets (W : world) (p : string) (f : nat) (bs : list (path * sp
                               In x (w_reqs W f)) /\
                    exists rp ra, snd b = Spec (Some rp) None ra) bs.
 
+(* [D78]/[D84] rule 5, `bind F;` for F abstract and in force.
+   Typing resolves the functor and determines the meanings at its use,
+   the new identities and the provisions available afterward. *)
+Record application := Application {
+  app_functor : nat;
+  app_input : cx;
+  app_needs : list item;
+  app_arguments : subst;
+  app_outputs : list nat;
+  app_identity : nat -> nat;
+  app_allocated : list nat;
+  app_result : cx;
+  app_provisions : list item
+}.
+
+(* A fresh generation preserves an existing meaning of the same source
+   name. A provision key can mention a type even when it has no binding
+   (tests/errors/lambda_declared_output.moss). LinkBody separately checks
+   that a body does not make an input of the functor to which it is bound
+   (tests/errors/link_kept_output_pin.moss). *)
+Definition OutputIdentityAt (W : world) (F : frame) (C : cx)
+    (a : application) : Prop :=
+  forall t, FunOutputs W (app_functor a) t ->
+    (nlook t (c_ty C) = None /\ app_identity a t = t /\
+      ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
+              (match fr_this F with Some r => gens r | None => [] end)) /\
+      ~ In t (context_gens C ++ key_receiver_gens C)) \/
+    ((nlook t (c_ty C) <> None \/ In t (context_gens C ++ key_receiver_gens C)) /\
+      In (app_identity a t) (app_allocated a)).
+
+Definition TypesApplication (W : world) (F : frame) (C : cx)
+    (pa : path) (a : application) : Prop :=
+  let u := app_functor a in
+  let Cu := app_input a in
+  let th := app_arguments a in
+  let gensof := app_identity a in
+  resolve_sym W (fr_mod F) pa = Some u /\
+  (* Fixed inputs retain their meanings from the provision site. *)
+  (exists fixed, nlook u (c_funs C) = Some fixed /\
+    forall x tx, In (x, tx) fixed -> exists here,
+      nlook x (c_ty C) = Some here /\ canon C here = canon C tx) /\
+  FunCtx W u Cu (app_needs a) /\
+  (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here, nlook t (c_ty C) = Some here) /\
+  th = map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cu) /\
+  NeedsSatisfied C Cu th (app_needs a) /\
+  FreshFor W F C (app_allocated a) /\
+  (forall t t', FunOutputs W u t -> FunOutputs W u t' -> gensof t = gensof t' -> t = t') /\
+  OutputIdentityAt W F C a /\
+  NoDup (app_outputs a) /\ (forall t, In t (app_outputs a) <-> FunOutputs W u t) /\
+  ProvideResult W u C (fun t => TAbs (gensof t)) (app_result a) (app_provisions a) /\
+  (* Distinct result items must stay distinct at this application.
+     The declared result may repeat a key (tests/wasi/result_repeat_in_f.moss). *)
+  (exists Cf ksf, ProvideResult W u Cu (fun t => TAbs t) Cf ksf /\
+    CollidesOnlyAs (app_provisions a) ksf).
+
+(* Encode the checked application as a run-time binding. *)
+Definition translate_application (C : cx) (a : application) : expr -> expr :=
+  let th := app_arguments a in
+  apply_output_expression (app_functor a) th
+    (map (fun t => (t, app_identity a t)) (app_outputs a))
+    (satisfaction_map C (app_input a) th (app_needs a))
+    (map (rkey_of (app_result a)) (app_provisions a)).
+
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
    checked against the expected type `exp` if any, elaborates to x of type t.
@@ -4695,59 +4758,14 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     BindItems W P (with_mod F (d_mod d) u) C (concat bodies) wrap C' F' made ->
     BindItem W P F C (Spec (Some pa) None None, None) wrap C'
              (Frame (fr_mod F) (fr_ret F) (fr_this F) (fr_loop F) (fr_var F) (fr_fresh F') (fr_applying F) (fr_pins F)) made
-(* [D78]/[D84] rule 5, `bind F;` for F abstract and in force: an
-   application at θ = F's inputs read here; each type output already in
-   force or mentioned here becomes a fresh rigid generation ([D72]); F's fixed inputs
-   X(F) must denote what they did where F was provided, else a static error;
-   exactly F's result is then in force, its items at the application's
-   generations. *)
-| BApplyAbstract : forall F C pa u fx Cu ns sm th gensof C' ks newgens outs,
-    resolve_sym W (fr_mod F) pa = Some u -> nlook u (c_funs C) = Some fx ->
-    FunCtx W u Cu ns ->
-    (* inputs in force here, and θ reads them *)
-    (forall t tt, nlook t (c_ty Cu) = Some tt -> exists here, nlook t (c_ty C) = Some here) ->
-    th = map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cu) ->
-    (* rule 5: fixed inputs unchanged since the provision *)
-    (forall x tx, In (x, tx) fx -> exists here,
-      nlook x (c_ty C) = Some here /\ canon C here = canon C tx) ->
-    Satisfies C Cu th ns sm ->
-    FreshFor W F C newgens ->
-    (* Repeated output roles share a generation; distinct roles do not. *)
-    (forall a b, FunOutputs W u a -> FunOutputs W u b -> gensof a = gensof b -> a = b) ->
-    (* outputs: fresh where the symbol is already in force, or is
-       mentioned in scope (by the context or a method key's receiver,
-       e.g. a family demand's key at an unbound declared T): writing it
-       as itself would re-ground what mentions it (stability, criteria.md
-       section 5; tests/errors/lambda_declared_output.moss). One neither in
-       force nor mentioned is installed as itself, and the frame's return
-       and receiver types (read where every symbol they mention is in
-       force) do not mention it.
-       In a body bound to F, a kept output at an input of F is ruled out
-       by LinkBody (nothing the body makes is an input of F,
-       tests/errors/link_kept_output_pin.moss); a block nested in the body
-       may keep one, as both implementations allow
-       (tests/wasi/block_kept_output_pin.moss) *)
-    (forall t, FunOutputs W u t ->
-       (nlook t (c_ty C) = None /\ gensof t = t /\
-          ~ In t ((match fr_ret F with Some r => gens r | None => [] end) ++
-                  (match fr_this F with Some r => gens r | None => [] end)) /\
-          ~ In t (context_gens C ++ key_receiver_gens C)) \/
-       ((nlook t (c_ty C) <> None \/ In t (context_gens C ++ key_receiver_gens C)) /\
-          In (gensof t) newgens)) ->
-    NoDup outs -> (forall t, In t outs <-> FunOutputs W u t) ->
-    ProvideResult W u C (fun t => TAbs (gensof t)) C' ks ->
-    (* [D84] rule 7, coherence (criteria section 2): two result items
-       distinct in F's own terms (its result read at its inputs, each
-       output role itself) are not filed here under one key, where which
-       one is installed would be a choice (tests/wasi/result_collide_ab.moss);
-       a key F itself repeats may repeat (tests/wasi/result_repeat_in_f.moss) *)
-    (exists Cf ksf, ProvideResult W u Cu (fun t => TAbs t) Cf ksf /\ CollidesOnlyAs ks ksf) ->
-    (* [D78]: every output destination, fresh or not, is made here: a
-       value of its type may not leave the block *)
+(* [D78]: all output destinations are made here, so values of their
+   types may not leave the block. *)
+| BApplyAbstract : forall F C pa a,
+    TypesApplication W F C pa a ->
     BindItem W P F C (Spec (Some pa) None None, None)
-      (apply_output_expression u th (map (fun t => (t, gensof t)) outs) sm (map (rkey_of C') ks))
-      C' (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) newgens))
-      (map gensof outs)
+      (translate_application C a) (app_result a)
+      (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) (app_allocated a)))
+      (map (app_identity a) (app_outputs a))
 (* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
    are among F's, and F's binding is H's *)
 | BFunCopy : forall F C pa u pg h Cu nsu Ch nsh sm fx rm,

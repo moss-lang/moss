@@ -1873,7 +1873,7 @@ Proof.
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
                   |F C pa dn a y r m bs rt sg target pre sm ap types R MN B T Sig MP App NoFam
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
-                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC In' Th Fix Sat FF Inj Outs Nd OutsI PR
+                  |F C pa a Typed
                   |F C pa u pg h Cu nsu Ch nsh sm fx
                   |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff.
     + pose proof (tyof_ok W _ _ _ _ _ T (cf_ty _ _ (proj1 Fc)) (optok_none W)) as Htau.
@@ -1897,7 +1897,9 @@ Proof.
       split; [|exact Ff]. apply provide_formed; [|exact (appof_ok W _ _ _ App Full)].
       exact (set_mth_formed W C (canon C rt) m sg Fc (canon_ok W C rt (proj1 Fc) Hrt) (canon_scope C rt Sc) Hsg).
     + destruct (binditems_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' _]. exact (conj Fc' Ff).
-    + split; [|exact Ff].
+    + destruct a as [u Cu ns th outs gensof newgens C' ks].
+      destruct Typed as (_ & _ & _ & _ & _ & _ & FF & _ & Outs & _ & _ & PR & _).
+      split; [|exact Ff].
       apply (apply_abstract_formed W C u gensof C' ks Fc); [|exact PR].
       intros t Ft. destruct (Outs t Ft) as [[_ [E _]]|[_ Ig]]; [left; exact E|right].
       exact (freshfor_fresh W _ _ _ _ FF Ig).

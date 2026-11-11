@@ -1444,7 +1444,7 @@ Proof.
                   |F C pa f sg ps rt body pid pre sm a R K Sig LP App
                   |F C pa dn a yp r m bs rt sg target pre sm ap types R MN B T Sig MP App NoFam
                   |F C pa u d n ps a r bodies wrap C' F' made R D' Ast Na Bi
-                  |F C pa u fx Cu ns sm th gensof C' ks newgens outs R Fx FC In' Th Fix Sat FF Inj Outs Nd OutsI PR
+                  |F C pa a Typed
                   |F C pa u pg h Cu nsu Ch nsh sm fx
                   |F C pa u pg gg Cu nsu Cg nsg h pins sm smc fx]; intros Fc Ff Cs.
     + assert (Sv : forall y, In y (gens (canon C tau)) -> In y (scope_gens C)).
@@ -1486,7 +1486,9 @@ Proof.
     + destruct (binditems_scoped _ _ _ _ _ _ _ Bi Fc Ff Cs) as [[Ls' [Ps' [Ts' Mr']]] [Inc [Back Th]]].
       split; [split; [exact Ls'|split; [exact Ps'|split; [|exact Mr']]]|split; [exact Inc|split; [exact Back|reflexivity]]].
       intros t E. cbn in E. apply Ts'. rewrite Th. exact E.
-    + destruct (apply_abstract_scope W _ _ _ _ _ PR) as [Inc Back].
+    + destruct a as [u Cu ns th outs gensof newgens C' ks].
+      destruct Typed as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR & _).
+      destruct (apply_abstract_scope W _ _ _ _ _ PR) as [Inc Back].
       destruct (provide_result_shape W _ _ _ _ _ PR) as [Esub [Elo [outs' [OutsI' Ety]]]].
       split; [exact (apply_abstract_cxscoped W F (with_fresh F newgens) C u gensof C' ks PR eq_refl Cs)|split; [exact Inc|split; [|reflexivity]]].
       intros y I. destruct (Back y I) as [I'|[t [Ft ->]]]; [left; exact I'|right].
