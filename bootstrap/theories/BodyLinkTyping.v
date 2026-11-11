@@ -2,9 +2,10 @@
    translation chooses a program slot. The occurrence token distinguishes
    separate placements of the same source pair. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
 Definition LinkedBodyPlacement {BindPlan : Type} (W : world) (P : program) (resolve : nat -> nat)

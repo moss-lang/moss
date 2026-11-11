@@ -8,7 +8,7 @@ From NM Require Import Audit NMap EaBase EaTypes EaCtx EaCall EaFamily EaDecide 
 From NM Require Sx ElabWorld PublicWorld LoadListed.
 From NM Require Import EaBudget.
 Import ListNotations.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

@@ -17,12 +17,13 @@
    - Formation of the initial contexts: [ctxof_scoped], [functx_scoped],
      and the steps the slice takes. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require AuditFacts.
 From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicContextFacts.
 From NM Require PublicMerge.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Scoping.
 Variable W : A.world.

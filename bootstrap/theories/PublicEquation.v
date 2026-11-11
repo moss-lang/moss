@@ -10,9 +10,10 @@
    two identify the same types (`PublicOrientation.mgm_classes_iff`):
    `X = Y` and `Y = X` give the same merge classes. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicOrientation.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* Every entry of es is one of es', up to the order of an equation's
    sides. *)

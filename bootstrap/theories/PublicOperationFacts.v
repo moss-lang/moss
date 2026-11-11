@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Lemma operation_symbols_eqb_spec : forall xs ys,
   operation_symbols_eqb xs ys = true <-> xs = ys.

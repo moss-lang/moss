@@ -3,7 +3,7 @@
 From Stdlib Require Import List Bool Arith PrimInt63 Uint63.
 From NM Require Import Audit AuditBase RuntimeRenaming BaseRenaming.
 From NM Require BaseFacts BaseHost BaseHostScalars MossX ExecutionModel HTrie NatTrie.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 Import MossX.
 Import ExecutionModel (xvalue(..), xout(..), prim, xprog, base_primitive).
 Local Opaque loop_fuel.
@@ -65,7 +65,7 @@ Definition rename_step (result : xout * mstate) : xout * mstate :=
 Lemma to_scalar_renamed : forall w,
   BaseHostScalars.to_scalar (rename_value action w) = rename_stored (BaseHostScalars.to_scalar w).
 Proof.
-  induction w as [|tag payload IH|fields|sort bits|address header]; cbn [rename_value rename_stored BaseHostScalars.to_scalar];
+  induction w as [|tag payload IH|fields|[sort bits|address header]]; cbn [rename_value rename_stored BaseHostScalars.to_scalar];
     try reflexivity.
   - now rewrite IH.
   - destruct sort as [|[|[|[|sort]]]]; reflexivity.
@@ -88,8 +88,8 @@ Lemma reference_argument_renamed : forall w,
   BaseHost.reference_argument (rename_value action w) =
   rename_stored (BaseHost.reference_argument w).
 Proof.
-  intros [|tag payload|fields|sort bits|address header]; try reflexivity.
-  destruct payload as [|inner value|fields|sort bits|address [[kind held]|]]; reflexivity.
+  intros [|tag payload|fields|[sort bits|address header]]; try reflexivity.
+  destruct payload as [|inner value|fields|[sort bits|address [[kind held]|]]]; reflexivity.
 Qed.
 
 Lemma scalar_arguments_renamed : forall values,

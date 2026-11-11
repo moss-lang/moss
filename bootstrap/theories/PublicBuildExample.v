@@ -8,7 +8,7 @@ From NM Require BodyProgramTyping.
 From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicModelExamples FrontEnd.
 From NM Require PublicMergePresent.
-Import Audit.Semantics.
+Import AuditBase.Semantics.
 Import ListNotations Input Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.

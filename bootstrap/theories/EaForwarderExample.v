@@ -1,8 +1,9 @@
 (* Check first allocation and cache reuse for the same parsed source provider. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBind EaMain EaCtx NMap ElabWorldExample.
 From NM Require ElabWorld.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope string_scope.
 
 Definition forwarder_source_text : string := "fn original();

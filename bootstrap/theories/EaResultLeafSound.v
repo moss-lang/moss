@@ -1,8 +1,9 @@
 (* Leaves compared by the functor result and body coverage checks. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaDecide EaFamily EaOutputSound.
 From NM Require EaDependencyFuel.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma leaf_eqb_spec : forall a b, leaf_eqb a b = true <-> a = b.

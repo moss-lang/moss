@@ -1,8 +1,9 @@
 (* Live type-capture scope facts. The supplied plan controls the captured
    rows; no source-level theorem about how that plan is formed is claimed. *)
 From Stdlib Require Import List PeanoNat.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Lemma lookup_subst_grounded_rows : forall caller rows symbol,
   lookup_subst symbol (map (fun q => (fst q, ground caller (snd q))) rows) =

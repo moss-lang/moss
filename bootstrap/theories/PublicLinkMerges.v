@@ -17,10 +17,11 @@
      `lexical_capture` keeps its meaning (tests/wasi/bind_merge_unbound.moss:
      a member of its class is in force, the input itself is not). *)
 From Stdlib Require Import List Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation.
 From NM Require PublicValueTyping PublicBodySlice.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Static.
 Variable W : A.world.

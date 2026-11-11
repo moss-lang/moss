@@ -11,11 +11,12 @@
      was the identity on the keys, and `read_rename` at it is
      `role_reads` ([result_realizes_restated], [link_sources_restated]). *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
 From NM Require PublicTypeRead.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Lemma link_body_has_body : forall W P u gg h pins, LegacyBodyJudgments.LinkBody W P u gg h pins ->
   exists n ps a r b, A.ast_of W gg = Some (ADFunctor n ps a r (Some b)).

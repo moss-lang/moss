@@ -1,9 +1,10 @@
 (* The pass order used by moss-ref and its composition with the compiled
    interpreter. The native caller supplies the compiled lookup tables. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit BaseFacts NatTrie CodeTable.
 From NM Require InterpreterCompiled InterpreterFast InterpreterState ProgramFastPath ProgramPrune ProgramCapTrim.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 Open Scope string_scope.
 
 Definition passes : list (string * (program -> program)) :=

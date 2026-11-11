@@ -1,9 +1,10 @@
 (* The executable chooses a provision only after checking the site
    interpretation and resolving any remaining choice in the declared merges. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaMergeSound.
 From NM Require EaFunctor EaCtx EaUnifySound PublicCallRealize PublicMerge PublicTypeFacts.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Local Lemma oty_eqb_spec : forall a b, oty_eqb a b = true <-> a = b.
 Proof.

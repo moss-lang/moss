@@ -1,9 +1,10 @@
 (* Receiver matching visits the formal type structurally. The generated
    substitution binds exactly the polymorphic variables it visited. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaFamily EaTypesSound.
 From NM Require EaBudget EaDependencyFuel EaControlSound EaFamilyUseSound EaOutputSound EaResultBudget EaTypes PublicCallRealize PublicContextFacts PublicTypeFacts PublicTypeRead WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Import EaBudget.
 Local Open Scope list_scope.
 

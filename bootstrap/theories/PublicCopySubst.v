@@ -14,11 +14,12 @@
    Also: grounding after a substitution is one substitution
    (ground_app_subst), and the lemmas lift from types to provisions. *)
 From Stdlib Require Import List Arith Bool.
+From NM Require AuditBase.
 From NM Require PublicLinkAnchors.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicContextFacts PublicMerge PublicTagCheck PublicTypeFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 (* An effective row reads an actual fixed member of its class. *)
 Lemma copy_fixed_reading_member : forall C sigma y t,
   PublicContextFacts.CxSection C -> In (y, t) (A.copy_fixed_readings C sigma) ->

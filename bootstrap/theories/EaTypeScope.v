@@ -1,9 +1,10 @@
 (* A successful type read uses only the source names in its requirements.
    Narrowing the context to those names keeps the result and the fuel. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound.
 From NM Require PublicTypeRead.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

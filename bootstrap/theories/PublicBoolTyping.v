@@ -1,10 +1,11 @@
 (* Typed Bool values have exactly the shape the reference truthy test
    reads, under the platform layout of lib/bool.moss. *)
 From Stdlib Require Import List String Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 Local Open Scope string_scope.
-Module A := Audit.Semantics.Elaboration.
+Module A := AuditBase.Semantics.Elaboration.
 
 Lemma handle_type_not_nominal : forall P kind n xs, ~ handle_type P kind (TNom n xs).
 Proof. intros P kind n xs H; inversion H. Qed.

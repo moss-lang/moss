@@ -1,7 +1,8 @@
 (* Installation of a functor's result follows Audit's output telescope. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaFamily EaTypesSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma ctx_spec_items_sound : forall items specs,

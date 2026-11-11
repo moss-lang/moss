@@ -2,8 +2,9 @@
    formal-input shadowing and simultaneous functor output transfer. These
    calculations do not assert a whole-program Admissible derivation. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Definition caller := Environment [(100,TMachine 100);(101,TMachine 101)] [].
 Definition captured := EnvironmentWithAliases

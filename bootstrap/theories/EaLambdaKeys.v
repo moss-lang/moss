@@ -1,8 +1,9 @@
 (* Captured provisions supply exactly the indexed keys a lambda declares. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase NMap.
 From NM Require EaBind EaMergeSound EaSatisfiesSound PublicCallRealize PublicFormation PublicTypeFacts WorldSound.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Local Definition seen_items (seen : nmap (list item)) (slot : nat) : list item :=
   match nget seen slot with Some entries => entries | None => [] end.

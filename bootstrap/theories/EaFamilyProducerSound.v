@@ -2,12 +2,13 @@
    matching a result receiver. Instantiating those temporary roles
    recovers every successful reading of the same result. *)
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBudget EaFamily EaTypes EaTypesSound.
 From NM Require AuditFacts EaAssumesSound EaContextTableSound EaFamilyComplete EaFamilyMatching EaFamilyUseSound EaMain EaMainSymbols
   EaDeclarationSound EaOutputSound EaResultBudget EaResultCoverage EaSatisfiesSound
   PublicContextFacts PublicCopySubst PublicFamilyCoherent
   PublicFormation PublicOutputSubst PublicSubstFacts PublicTypeRead.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
 Section Markers.

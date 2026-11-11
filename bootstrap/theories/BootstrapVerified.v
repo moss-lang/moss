@@ -1,7 +1,7 @@
 (* Soundness of the executable source-to-program path. *)
 From NM Require Import Audit.
 From NM Require AuditBase BaseHost BootstrapSound EaBase EaBodyAssembly EaMain.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem elaborate_sound : forall bundle W program,
   EaMain.elaborate bundle = EaBase.Ok (W, program) ->

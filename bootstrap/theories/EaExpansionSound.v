@@ -5,7 +5,7 @@ From NM Require Import AuditBase.
 Import AuditBase.Compilation.
 From NM Require Import Audit NMap EaBase EaTypes EaTypesSound EaExpand.
 From NM Require EaReadClosure PublicCallRealize PublicTypeRead WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Definition GraphEdge (g : graph) (a b : vkey) (strict : bool) : Prop :=

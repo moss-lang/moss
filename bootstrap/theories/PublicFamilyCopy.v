@@ -24,6 +24,7 @@
      application runs from: θ x is grounded by d as the level's input
      valuation reads x. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require AuditFacts.
 From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
@@ -33,8 +34,8 @@ From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig PublicChainRealize.
 From NM Require PublicMergeClass PublicContextFacts.
 From NM Require PublicMerge.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Module FamilyCopy (Prims : PRIMITIVES) (I0 : INTERP Prims).
 (* The instance PublicEntry uses (CRz, and through it everything else), so

@@ -1,9 +1,10 @@
 (* The checks of a closure's source binding establish its typing evidence. *)
 From Stdlib Require Import List Bool String Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaFunctor EaLinkSite EaMergeSound EaCopyNeedSound
   EaResultBudget EaTypesSound.
 From NM Require EaLinkSiteSound EaSatisfiesSound PublicCallRealize PublicTypeFacts PublicTypeRead.
-Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Local Lemma bound_in_spec : forall C t,
   bound_in C t = true <-> nlook t (c_ty C) <> None.

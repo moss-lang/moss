@@ -1,9 +1,10 @@
 (* Both defined functions and defined attached methods use this checked
    call preparation. Argument elaboration takes place afterwards. *)
 From Stdlib Require Import List String Bool.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaFamily EaExpr EaTypes EaTypesSound.
 From NM Require EaCallSound EaSatisfiesSound PublicCallRealize PublicContextFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

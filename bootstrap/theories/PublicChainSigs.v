@@ -25,12 +25,13 @@
    - At the top, the caller's reading at C and u's at Cu correspond the
      same way at θ. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd.
 From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink PublicMergeClass.
 From NM Require AllocationFacts PublicContextFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- the last position for a key, on two related readings --------------------- *)
 

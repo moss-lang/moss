@@ -1,8 +1,9 @@
 (* The context facts used by executable expression and bind checking. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBind EaExpr.
 From NM Require PublicCallRealize PublicChainSigs PublicContextFacts PublicFormation PublicMerge.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition BodyContext (W : world) (C : cx) : Prop :=
   PublicContextFacts.CxSection C /\ PublicCallRealize.KeysMatch (c_provisions C) /\

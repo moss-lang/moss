@@ -2,8 +2,9 @@
    the two source patterns below; they do not assert a full Admissible
    derivation or executable-elaboration refinement. *)
 From Stdlib Require Import List PeanoNat.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module Prims <: PRIMITIVES.
 Definition mstate := unit.

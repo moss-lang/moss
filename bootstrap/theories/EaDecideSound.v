@@ -1,9 +1,10 @@
 (* The executable branch checks follow Audit's expected-type and join rules. *)
 From Stdlib Require Import Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaDecide EaExpr EaControlSound EaChecked.
 From NM Require Import LegacyBodyJudgments.
 From NM Require PublicTypeFacts.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem opt_fitsb_exact : forall actual expected,
   opt_fitsb actual expected = true <-> opt_fits actual expected.

@@ -6,11 +6,12 @@
    of the same kinds (same_kind_entries), so the same number of keys, a
    key at the same position in each (provide_result_length). *)
 From Stdlib Require Import String List Arith Bool Lia.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicFormation.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- two readings of one result have entries of the same kinds ------------- *)
 

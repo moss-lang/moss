@@ -3,10 +3,11 @@
    section when the source context respects the target's declared merges.
    A closure binding instead checks its selected keys at the site. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicTagCheck PublicCallRealize PublicOrientation.
 From NM Require PublicFormation.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section SameNeed.
 Variable W : A.world.

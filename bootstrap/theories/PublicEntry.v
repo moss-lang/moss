@@ -3,6 +3,7 @@
    the entry to the slice's safety (`Safe`) and main's initial realization
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
@@ -10,8 +11,8 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize PublicFamilyCopy.
 From NM Require BodyProgramTyping.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Module EntrySafety (Host : HOST) (M0 : PUBLIC Host).
@@ -143,7 +144,7 @@ Proof.
   - intros v t Found. destruct (vals_ilook _ v t KM Found) as [a Il].
     destruct (Find (IVal v) (ProvNs _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc rms0|p held]; cbn in En; try contradiction.
-    destruct w as [| | |sort bits|]; cbn in En; try contradiction.
+    destruct w as [| | |[sort bits|]]; cbn in En; try contradiction.
     destruct sort; cbn in En; try contradiction. destruct En as [t' [Lt Mt]].
     rewrite Found in Lt. injection Lt as <-. exists (VScalar 0 bits). split; [exact L|].
     destruct Mt as [sym [Lang [_ ->]]].

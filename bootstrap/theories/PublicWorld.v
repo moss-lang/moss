@@ -7,7 +7,7 @@ From NM Require Import Audit.
 From NM Require AuditBase.
 From NM Require ExecutionModel Elab WorldSound ComponentContracts NMap Sx.
 Import ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Module A := AuditBase.Semantics.Elaboration.
 Module M := ExecutionModel.Elaboration.
 
 Definition namespace_of (ns : M.nspace) : A.nspace :=

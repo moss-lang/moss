@@ -3,8 +3,9 @@
    not read any proof; check.sh rejects a proof in it. *)
 
 From Stdlib Require Import String List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 (* Context items. *)
 

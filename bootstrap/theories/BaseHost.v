@@ -3,7 +3,7 @@
 From Stdlib Require Import List Bool Arith PrimInt63 Uint63.
 From NM Require Import Audit AuditBase BaseFacts BaseHostScalars MossX.
 From NM Require ExecutionModel HTrie NatTrie PublicOperationFacts.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 Import ExecutionModel (xvalue(..), xprog(..), prim, base_primitive).
 
 Local Opaque loop_fuel.
@@ -100,7 +100,7 @@ Definition direct_i32 (p : wasm_prim) (values : list value) (state : mstate) : o
 
 Lemma scalar_i32_argument : forall w i, scalar_i32 w = Some i -> to_scalar w = XVI32 i.
 Proof.
-  intros [|tag payload|fields|[|sort] bits|address header] i Found; try discriminate.
+  intros [|tag payload|fields|[[|sort] bits|address header]] i Found; try discriminate.
   now injection Found as <-.
 Qed.
 
@@ -388,7 +388,7 @@ Proof.
       * split; [intros ? ? ? E; exact E|reflexivity].
     + discriminate (proj1 Cell).
   - destruct ws as [|v [|count [|extra rest]]]; try contradiction.
-    all: try (destruct count as [|tag w|fields|[|sort] bits|a header]; try contradiction).
+    all: try (destruct count as [|tag w|fields|[[|sort] bits|a header]]; try contradiction).
     cbn [gc_arguments to_scalar base_primitive gc_prim].
     destruct (array_max <? w32 (Uint63.of_Z bits))%uint63; [exact Valid|].
     destruct (heap_alloc state (HArr (XVStored v, HTrie.TE) (w32 (Uint63.of_Z bits))))
@@ -405,7 +405,7 @@ Proof.
     + discriminate (proj1 Cell).
     + exists typing. split; [exact Valid|]. apply array_post; [eexists; reflexivity|exact I].
   - destruct ws as [|r [|i [|extra rest]]]; try contradiction.
-    all: try (destruct i as [|tag w|fields|[|sort] bits|a header]; try contradiction).
+    all: try (destruct i as [|tag w|fields|[[|sort] bits|a header]]; try contradiction).
     destruct (@reference_cell typing state 1 Q r Valid Pre) as (tag & a & -> & At & Cell).
     cbn [gc_arguments reference_argument to_scalar base_primitive gc_prim arr_of ref_of].
     destruct (heap_get state a) as [|w|xs count]; cbn [cell_ok] in Cell; try contradiction.
@@ -416,7 +416,7 @@ Proof.
         cbn [stored_ok] in Typed; try contradiction.
       exists typing. split; [exact Valid|]. apply array_post; [exact Typed|exact I].
   - destruct ws as [|r [|i [|v [|extra rest]]]]; try contradiction.
-    all: try (destruct i as [|tag w|fields|[|sort] bits|a header]; try contradiction).
+    all: try (destruct i as [|tag w|fields|[[|sort] bits|a header]]; try contradiction).
     destruct Pre as [Ref Typed].
     destruct (@reference_cell typing state 1 Q r Valid Ref) as (tag & a & -> & At & Cell).
     cbn [gc_arguments reference_argument to_scalar base_primitive gc_prim arr_of ref_of].
@@ -428,8 +428,8 @@ Proof.
         apply elements_set; [exact (proj2 Cell)|exact Typed].
       * apply array_post; [reflexivity|exact I].
   - destruct ws as [|r [|i [|v [|count [|extra rest]]]]]; try contradiction.
-    all: try (destruct i as [|tag w|fields|[|sort] bits|a header]; try contradiction).
-    all: try (destruct count as [|tag w|fields|[|sort] len|a header]; try contradiction).
+    all: try (destruct i as [|tag w|fields|[[|sort] bits|a header]]; try contradiction).
+    all: try (destruct count as [|tag w|fields|[[|sort] len|a header]]; try contradiction).
     destruct Pre as [Ref Typed].
     destruct (@reference_cell typing state 1 Q r Valid Ref) as (tag & a & -> & At & Cell).
     cbn [gc_arguments reference_argument to_scalar base_primitive gc_prim arr_of ref_of].
@@ -444,9 +444,9 @@ Proof.
       * eapply heap_set_ok; [exact Valid|exact At|split; [reflexivity|exact Elements]].
       * apply array_post; [reflexivity|exact I].
   - destruct ws as [|r [|i [|source [|j [|count [|extra rest]]]]]]; try contradiction.
-    all: try (destruct i as [|tag w|fields|[|sort] at_bits|a header]; try contradiction).
-    all: try (destruct j as [|tag w|fields|[|sort] start_bits|a header]; try contradiction).
-    all: try (destruct count as [|tag w|fields|[|sort] len|a header]; try contradiction).
+    all: try (destruct i as [|tag w|fields|[[|sort] at_bits|a header]]; try contradiction).
+    all: try (destruct j as [|tag w|fields|[[|sort] start_bits|a header]]; try contradiction).
+    all: try (destruct count as [|tag w|fields|[[|sort] len|a header]]; try contradiction).
     destruct Pre as (Ref & Q2 & Source & Implies).
     destruct (@reference_cell typing state 1 Q r Valid Ref) as (tag & a & -> & At & Cell).
     destruct (@reference_cell typing state 1 Q2 source Valid Source) as (tag2 & a2 & -> & At2 & Cell2).

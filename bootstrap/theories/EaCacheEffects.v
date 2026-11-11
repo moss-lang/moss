@@ -1,8 +1,9 @@
 (* State fields left alone by allocation, source body writes and checks. *)
 From Stdlib Require Import List Bool.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeAllocationSound EaCodeEffects EaControlSound.
 From NM Require EaCall EaFunctor.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Record CacheFields (before after : est) : Prop := {
   same_forwarders : es_fwd after = es_fwd before;

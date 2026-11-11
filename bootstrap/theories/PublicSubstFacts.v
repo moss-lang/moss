@@ -1,10 +1,11 @@
 (* Occurrence and support facts for simultaneous type substitution. These
    facts sit below merge classes and context realization. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead.
 From NM Require PublicOrientation.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 Import A.
 
 Lemma lookup_subst_in : forall x (th : subst), In x (map fst th) -> lookup_subst x th <> None.

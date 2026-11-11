@@ -162,7 +162,7 @@ Inductive xvalue : Type :=
 | XVI64  : Z -> xvalue                  (* invariant kept by every op: [0, 2^64) *)
 | XVRef  : nat -> xvalue                (* a heap address *)
 | XVRefAt : bool -> ty -> nat -> xvalue  (* allocation kind and ground held type *)
-| XVStored : Audit.Semantics.value -> xvalue. (* an opaque Audit heap payload *)
+| XVStored : AuditBase.Semantics.value -> xvalue. (* an opaque Audit heap payload *)
 
 (* ===================== Primitives ======================================== *)
 

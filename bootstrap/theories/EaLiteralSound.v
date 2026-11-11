@@ -2,11 +2,12 @@
    and translate through the same provisions as ordinary calls. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From Stdlib Require Import Strings.Byte.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaDecide EaExpr EaFamily EaTypes EaTypesSound EaControlSound
   EaCallExpressionSound EaFamilyUseSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require FrontEnd Parse PublicTypeFacts PublicContextFacts EaMergeSound EaSatisfiesSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

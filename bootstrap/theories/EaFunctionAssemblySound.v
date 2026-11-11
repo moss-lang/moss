@@ -1,11 +1,12 @@
 (* The function pass writes each declared body once. Later stages preserve
    it, including when they emit more generated code. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeAllocationSound EaCodeEffects
   EaAssemblyCodeEffects EaControlSound EaRecSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaMain EaFunctionSound EaContextTableSound EaExpressionCodeEffects WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Section FunctionPass.
 Variable E : env.

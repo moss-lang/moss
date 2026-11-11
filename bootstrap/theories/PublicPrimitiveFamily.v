@@ -1,10 +1,11 @@
 (* The language-side execution shape of a primitive-only family.  This
    proof does not need a platform's operation signatures or entry rules. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition IsPrim (b : binding) : Prop := exists key operation, b = BPrimitive key operation.
 Definition PrimitiveFamilyCode (Prog : program) (code : usym) : Prop :=

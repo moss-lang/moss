@@ -2,9 +2,10 @@
    contract also applies to the knot that calls expression and binding
    elaboration at lower fuel. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeEffects.
 From NM Require EaExpr EaDecide EaMain EaBindCodeEffects.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Lemma code_effect_get_const : forall n, PreservesOldCode (get_const n).
 Proof. intros n s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.

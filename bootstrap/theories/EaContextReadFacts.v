@@ -1,7 +1,8 @@
 (* Source reads are independent of the context table being installed. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaCtx ElabWorld.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma rbind_pointwise : forall A B (x y : er A) (f g : A -> er B),

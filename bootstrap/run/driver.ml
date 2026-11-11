@@ -6,7 +6,7 @@
 
    PROGRAM.moss is read, lexed, parsed and bundled by the Rocq front end
    (SnapshotLoader.load_from; this driver only reads files) and elaborated by the
-   executable elaborator (EaMain.elaborate) into an Audit.Semantics
+   executable elaborator (EaMain.elaborate) into an AuditBase.Semantics
    program.  That program is given the proved passes (ProgramFastPath.fastpath,
    ProgramPrune.prune, ProgramCapTrim.captrim, each proved to keep Runs) and run
    by the closure-compiled interpreter, proved against Audit.v's execution
@@ -29,7 +29,7 @@
    assumes what no platform library provides); otherwise 0 normal, the code for
    proc_exit, 134 trap, 3 stuck, 4 unsupported primitive, 5 out of fuel; 2
    a usage error. *)
-module A = Audit.Semantics
+module A = AuditBase.Semantics
 module Reference = A.Interpreter(Prims.P)
 module C = InterpreterCompiled.CloInterpreter(Prims.P)(Reference)(Prims.Deferred)
 module I = C.I

@@ -2,11 +2,12 @@
    maps each of its type symbols to that symbol's canonical form, and its
    merge substitution and entries mention only those symbols. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts.
 From NM Require Import PublicContextFacts.
 From NM Require PublicLinkAnchors PublicSubstFacts PublicMerge.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Formation.
 Variable W : A.world.

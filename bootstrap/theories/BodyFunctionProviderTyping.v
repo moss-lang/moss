@@ -1,10 +1,11 @@
 (* Source function providers select a declaration or a forwarder handle.
    Translation assigns a slot only to the generated body. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
 From NM Require BodyProviderTyping.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Import BodyProviderTyping.
 Local Open Scope list_scope.
 

@@ -14,8 +14,8 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.
 From NM Require AllocationFacts PublicFormation PublicCallerKeys EagerCopy PublicCopySubst.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Module CopyApply (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module S := PublicBodySlice.BodySlice Prims I0.

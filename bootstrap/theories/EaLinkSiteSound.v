@@ -1,8 +1,9 @@
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaAssumptionAtoms EaLinkSite.
 From NM Require AllocationFacts EaAssumesSound EaDependencyFuel EaMentionsSound EaRootSound
   PublicCallRealize PublicContextFacts PublicTagCheck PublicTypeRead.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Lemma site_classes_spec : forall W u C needs fixed,
   FunCtx W u C needs -> forall y,

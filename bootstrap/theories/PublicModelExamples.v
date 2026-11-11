@@ -4,7 +4,7 @@ From Stdlib Require Import List String Arith Lia.
 From NM Require Import AuditBase.
 From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit.
-Import Audit.Semantics.
+Import AuditBase.Semantics.
 Import ListNotations Input Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -117,7 +117,7 @@ Proof. intro Valid. pose proof (no_library_casts _ Valid). discriminate. Qed.
 Example a_unit_platform_constant_is_rejected : forall W P C v w,
   nlook v (c_vals C) = Some TUnit -> ~ Platform.Entry W P C (IVal v) (ValueProvision w).
 Proof.
-  intros W P C v w Ty E. destruct w as [| | |sort bits|]; cbn in E; try contradiction. destruct sort; cbn in E; try contradiction.
+  intros W P C v w Ty E. destruct w as [| | |[sort bits|]]; cbn in E; try contradiction. destruct sort; cbn in E; try contradiction.
   destruct E as (t & Ty' & symbol & _ & _ & ->). rewrite Ty in Ty'. discriminate.
 Qed.
 

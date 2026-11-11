@@ -1,10 +1,11 @@
 (* Linking allocates private output probes after elaborating the body.
    The probes are consumed by result comparison before code emission. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaCodeEffects.
 From NM Require AllocationFacts EaAllocationSound EaBudget EaContextFuel
   EaExpressionCodeEffects EaFamily EaFunctor EaMain EaOutputSound EaRootSound EaTypes.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem link_output_roles_sound : forall E bound u Cu Cb who before outs table Cr keys after,
   (forall n d, w_decl (e_W E) n = Some d -> n < bound) ->

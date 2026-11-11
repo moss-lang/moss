@@ -9,12 +9,13 @@
      F, by LinkBody's made clause), the body's final meanings of F's
      inputs are the application's. *)
 From Stdlib Require Import List Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicCallRealize PublicCopyFresh PublicCopySubst.
 From NM Require Import LegacyBodyJudgments.
 From NM Require PublicChainCore PublicLinkPins PublicFamilyAgree.
 From NM Require Import PublicContextFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Lemma lookup_map_key_nat : forall (f : nat -> ty) l x, In x l -> lookup_subst x (map (fun s => (s, f s)) l) = Some (f x).
 Proof.

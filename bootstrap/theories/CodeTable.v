@@ -1,8 +1,9 @@
 (* First-match lookup tables for code rows. Small symbol ranges use an
    array under extraction. Larger ranges use a sparse trie. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit NatTrie.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Definition index_rows {A : Type} (rows : list (nat * A)) : tmap A :=
   fold_right (fun '(key, value) index => tset index key value) TE rows.

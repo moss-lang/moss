@@ -1,10 +1,11 @@
 (* Canonicalization facts supplied by actual public context formation. *)
 From Stdlib Require Import List Arith Bool.
+From NM Require AuditBase.
 From NM Require AuditFacts.
 From NM Require Import Audit PublicAliasContext.
 From NM Require PublicBodySafety PublicLinkAnchors PublicMerge PublicSubstFacts PublicTypeRead.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition canonical_context (C : A.cx) : Prop :=
   forall tau, A.canon C (A.canon C tau) = A.canon C tau.

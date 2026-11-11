@@ -9,7 +9,7 @@ the test suite holds the compiler to it. It runs one pipeline:
    `SnapshotLoader.load_from_sound` proves that a successful load satisfies
    `Audit.Loader.Bundled` for those reads.
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
-   `Audit.Semantics.program` from the bundle, or rejects it.
+   `AuditBase.Semantics.program` from the bundle, or rejects it.
    `BootstrapVerified.elaborate_sound` proves that a successful build
    satisfies Audit’s typing and translation judgments and links against Base.
 3. **Passes**: `ProgramFastPath.fastpath`, `ProgramPrune.prune` and

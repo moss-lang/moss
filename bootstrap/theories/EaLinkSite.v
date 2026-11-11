@@ -1,8 +1,9 @@
 (* A closure checks shared inputs using the target's fixed readings and
    one local atom for each remaining atomic class. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaAssumptionAtoms.
-Import Audit.Semantics Audit.Semantics.Elaboration.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition site_classes (C : cx) (fixed : subst) : list nat :=
   filter (fun y => negb (is_some (lookup_subst y fixed))) (sort_uniq (callee_leaves C)).

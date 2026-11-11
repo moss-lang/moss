@@ -1,8 +1,9 @@
 (* Execution commutes with a change of state representation and pointwise
    equivalent code lookup when the primitive calls agree. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicValueTyping.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module StateSimulation (Raw Public : PRIMITIVES) (R : INTERP Raw) (S : INTERP Public).
 Section StateMap.
@@ -48,11 +49,11 @@ Proof.
   induction arms as [|[pat body] arms IH]; intros value; [reflexivity|].
   cbn [S.select_arm R.select_arm].
   destruct pat as [[binder|]|tag binder fields]; try reflexivity.
-  destruct value as [|n payload|record|sort bits|address header]; try exact (IH _).
+  destruct value as [|n payload|record|[sort bits|address header]]; try exact (IH _).
   cbn [S.match_pat R.match_pat].
   destruct (Nat.eqb tag n); [|exact (IH _)].
   destruct fields as [|field fields]; [reflexivity|].
-  destruct payload as [|payload_tag inner|record|sort bits|address header]; try reflexivity.
+  destruct payload as [|payload_tag inner|record|[sort bits|address header]]; try reflexivity.
   change (R.bind_fields (field :: fields) record) with (S.bind_fields (field :: fields) record).
   destruct (S.bind_fields (field :: fields) record); reflexivity.
 Qed.
@@ -62,7 +63,7 @@ Proof. intros. unfold S.truthy, R.truthy. now rewrite bool_agrees, true_agrees, 
 
 Lemma check_tag_agrees : forall env tag th value,
   S.check_tag public_view env tag th value = R.check_tag raw_view env tag th value.
-Proof. intros. unfold S.check_tag, R.check_tag. now rewrite casts_agree. Qed.
+Proof. intros. unfold S.check_tag, R.check_tag, S.check_tag_with, R.check_tag_with. now rewrite casts_agree. Qed.
 
 Lemma application_environment_agrees : forall env h th captured,
   application_environment public_view env h th captured =

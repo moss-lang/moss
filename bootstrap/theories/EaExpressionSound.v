@@ -1,12 +1,13 @@
 (* Assemble the expression cases with the same scope and final-code
    contracts used by the executable block and binding checks. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaExpr EaControlSound EaChecked EaRecSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaConstructSound EaCallExpressionSound EaDecideSound EaMatchSound
   EaMethodSound EaLiteralSound EaValuePathSound EaContextTableSound EaFamilyUseSound EaTypes EaTypesSound
   EaDefinedCallSound PublicContextFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

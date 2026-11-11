@@ -3,7 +3,7 @@ From NM Require Import AuditBase.
 Import AuditBase.Compilation.
 From NM Require Import Audit EaBase EaTypes EaTypesSound.
 From NM Require EaDependencyFuel EaExpand EaMain EaTypeScope PublicCallRealize PublicTypeRead PublicWorldFormation.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 (* Heads reached through fields and union members before following a tag's

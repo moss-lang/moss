@@ -1,7 +1,8 @@
 (* The executable source-type readers satisfy Audit.v's judgments. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma rbind_ok : forall A B (r : er A) (f : A -> er B) b,

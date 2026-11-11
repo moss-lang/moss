@@ -2,9 +2,10 @@
    A lambda reserves its own slot before elaborating its body, and that
    recursive elaboration must preserve the vacancy until the lambda writes. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBind EaCodeAllocationSound NMap.
 From NM Require WorldSound EaControlSound EaFunctor.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Record CodeTransition (before after : est) : Prop := {
   counter_grows : es_next before <= es_next after;

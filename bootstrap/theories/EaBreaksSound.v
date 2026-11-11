@@ -1,8 +1,9 @@
 (* The break scan establishes either answer only with enough evidence.
    Exhaustion has no logical consequence. *)
 From Stdlib Require Import List Bool.
+From NM Require AuditBase.
 From NM Require Import Audit EaDecide.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition break_answer (result : option bool) (fact : Prop) : Prop :=
   match result with

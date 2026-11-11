@@ -1,10 +1,11 @@
 (* A local static/runtime alias-reader invariant. Formation of the initial
    relation and canonicalization idempotence remain separate obligations. *)
 From Stdlib Require Import List PeanoNat.
+From NM Require AuditBase.
 From NM Require Import Audit PublicGenerationFacts.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition alias_context_agrees (C : A.cx) (d : environment) : Prop :=
   forall source tau, A.nlook source (A.c_ty C) = Some tau ->

@@ -20,6 +20,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require ExecutionModel ComponentContracts.
 From NM Require Import NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsTotal ElabFrameCore LoadListedFacts.
@@ -27,7 +28,7 @@ From NM Require PublicWorld PublicWorldRequirements.
 Import ListNotations.
 
 Module M := ExecutionModel.Elaboration.
-Module AE := Audit.Semantics.Elaboration.
+Module AE := AuditBase.Semantics.Elaboration.
 
 (* ======================================================================== *)
 (* 1. Kleene iteration, tabulated                                           *)
@@ -482,7 +483,7 @@ Qed.
 
 (* WorldOf does not read `w_context`, so a world keeps WorldOf when its
    context table is replaced (E-M2 forms the table after the world). *)
-Definition with_context (W : AE.world) (T : nat -> option (AE.cx * list Audit.Semantics.item)) : AE.world :=
+Definition with_context (W : AE.world) (T : nat -> option (AE.cx * list AuditBase.Semantics.item)) : AE.world :=
   AE.World (AE.w_decl W) (AE.w_scope W) (AE.w_exp W) (AE.w_attached W) (AE.w_reqs W) (AE.w_library W) (AE.w_root_item W) T.
 
 Section Context.
@@ -490,7 +491,7 @@ Section Context.
 Variables (d : nat -> option AE.decl) (sc ex : string -> AE.nspace -> name -> option AE.ent)
   (at_ : nat -> name -> option nat) (rq : nat -> list nat) (lib : option string)
   (root : option (string * name))
-  (c c' : nat -> option (AE.cx * list Audit.Semantics.item)).
+  (c c' : nat -> option (AE.cx * list AuditBase.Semantics.item)).
 
 Local Notation W := (AE.World d sc ex at_ rq lib root c).
 Local Notation W' := (AE.World d sc ex at_ rq lib root c').
@@ -587,7 +588,7 @@ Proof.
 Qed.
 
 (* The world with a context table in place. *)
-Definition bundle_world_with (T : nat -> option (AE.cx * list Audit.Semantics.item)) (b : bundle) : option AE.world :=
+Definition bundle_world_with (T : nat -> option (AE.cx * list AuditBase.Semantics.item)) (b : bundle) : option AE.world :=
   option_map (fun W => with_context W T) (bundle_world b).
 
 Theorem bundle_world_with_sound : forall T b W, bundle_world_with T b = Some W -> AE.WorldOf b W.

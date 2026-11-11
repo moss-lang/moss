@@ -19,9 +19,10 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith String.
+From NM Require AuditBase.
 From NM Require Import Audit NatTrie InterpreterLazy.
 From NM Require Import PublicValueTyping.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Local Open Scope nat_scope.
 

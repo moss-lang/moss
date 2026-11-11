@@ -1,8 +1,9 @@
 (* Combined body judgments used by the safety and elaborator proofs.
    BodyProgramTyping proves their agreement with the separated rules in Audit. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Set Implicit Arguments.
 Local Open Scope string_scope.
 Local Open Scope list_scope.

@@ -1,10 +1,11 @@
 (* Fresh assumption readings and the declaration-level assumption check. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaAssumptionAtoms EaCtx EaMain EaTypesSound EaContextTableSound.
 From NM Require AllocationFacts PublicMerge PublicFormation PublicContextFacts PublicSubstFacts
   PublicTypeFacts PublicTypeRead PublicCallRealize EaMentionsSound EaRootSound EaDependencyFuel EaCallSound.
 From NM Require EaWorldSound EaMainSymbols EaMetadataSound EaSatisfiesSound ElabWorld NMap.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

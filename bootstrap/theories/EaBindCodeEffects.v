@@ -1,8 +1,9 @@
 (* The actual bind sequence preserves earlier code and pending slots. *)
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeEffects EaCodeAllocationSound.
 From NM Require EaBind EaControlSound EaFunctor WorldSound.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Lemma code_effect_optional_failure : forall A (problem : option A) message,
   PreservesOldCode (match problem with Some value => fail (message value) | None => ret tt end).

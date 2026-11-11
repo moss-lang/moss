@@ -1,9 +1,10 @@
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaTypesSound NMap.
 From NM Require EaCallSound EaControlSound EaMergeSound ProgramPrune
   PublicContextFacts PublicFamilyCoherent
   PublicOrientation PublicTypeFacts WorldSound.
-Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition slot_entries {A} (slot : nat) (entries : list (item * A)) :=
   filter (fun q => Nat.eqb slot (item_slot (fst q))) entries.

@@ -1,7 +1,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaTypes EaTypesSound.
 From NM Require AuditBase EaPlatform EaRootSound PublicTypeFacts.
-Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 Module P := AuditBase.Platform.

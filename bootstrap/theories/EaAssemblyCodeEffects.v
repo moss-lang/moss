@@ -2,10 +2,11 @@
    preserves the bound on its code tables and keeps all previously
    allocated generated slots. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeAllocationSound EaCodeEffects.
 From NM Require EaBindCodeEffects EaControlSound EaMain EaPlatform WorldSound.
 From NM Require Import EaExpressionCodeEffects.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope string_scope.
 
 Definition PreservesCodeBound {A} (bound : nat) (action : M A) : Prop :=

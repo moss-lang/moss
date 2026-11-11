@@ -1,10 +1,11 @@
 (* The executable family classifier implies Audit's family conditions. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require AuditFacts.
 From NM Require Import Audit EaBase EaTypes EaFamily EaTypesSound EaMentionsSound
   EaDependencyFuel EaResultBudget EaOutputSound EaMetadataSound EaMain EaWorldSound ElabWorld.
 From NM Require EaCall EaContextTableSound EaMergeSound EaSatisfiesSound PublicContextFacts PublicFormation PublicTypeFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Section FamilyShape.

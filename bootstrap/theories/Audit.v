@@ -4,10 +4,9 @@
      I. Source syntax and module loading.
      II. Elaborated programs and runtime structures.
      III. Reference execution.
-     IV. Base primitive signatures (in AuditBase.v).
      V. Declarative typing and translation.
    Only Rocq's standard library is imported. *)
-From Stdlib Require Import PrimInt63 ZArith.
+From Stdlib Require Import PrimInt63.
 From Stdlib Require Import String Ascii List Bool Arith.
 From Stdlib Require Strings.Byte.
 Import ListNotations.
@@ -1208,9 +1207,53 @@ Definition Bundled (read : string -> option string) (root prelude_in entry_in : 
       (am_prelude m = true -> In (b_prelude b) (map am_path (b_mods b))).
 End Loader.
 
+(* Rocq strings store bytes. source contents must pass the UTF-8 check
+   below; paths use normalized absolute names in the modeled filesystem. *)
+Definition canonical_path (name : string) : bool :=
+  Loader.is_abs name &&
+  String.eqb (Loader.normalize "/" None name) name.
+
+Record file_path := AbsolutePath {
+  path_text : string;
+  path_canonical : canonical_path path_text = true
+}.
+(* A build receives an explicit finite snapshot, not an oracle for an
+   unbounded filesystem. Distinct entries have distinct canonical paths. *)
+Record source := Source {
+  source_files : list (file_path * string);
+  source_unique : NoDup (map (fun file => path_text (fst file)) source_files)
+}.
+Definition path_of_string (name : string) : option file_path :=
+  match canonical_path name as b return canonical_path name = b -> option file_path with
+  | true => fun Valid => Some (AbsolutePath name Valid)
+  | false => fun _ => None
+  end eq_refl.
+
+Definition source_lookup (snapshot : source) (name : string) : option string :=
+  option_map snd (find (fun file => String.eqb name (path_text (fst file)))
+    (source_files snapshot)).
+
+Definition source_read (snapshot : source) (name : string) : option string :=
+  match source_lookup snapshot name with
+  | Some text => if Syntax.string_utf8_valid text then Some text else None
+  | None => None
+  end.
+
 (* The public model has its own namespace. Implementation and proof helpers
    may import the shared surface syntax without importing this model's names. *)
-Module Semantics.
+Module Type REPRESENTATION.
+  (* Each platform supplies its own machine types and opaque values. *)
+  Parameter machine_class : Type.
+  Parameter payload : Type -> Type.
+  Parameter tag_check : Type -> Type.
+  (* A checked wrapper can trap. The callbacks compare and read types
+     and supply the wrapper's type arguments at the construction site. *)
+  Parameter tag_trap : forall (T : Type) (equal : T -> T -> bool)
+    (read_type : T -> T) (argument : nat -> option T) (abstract : nat -> T),
+    tag_check T -> option (payload T) -> option nat.
+End REPRESENTATION.
+
+Module Semantics (Repr : REPRESENTATION).
 
 (* ######################################################################## *)
 (* Part II. Elaborated programs                                              *)
@@ -1235,7 +1278,7 @@ Definition usym := nat.  (* functor symbols [D55]/[D78] *)
 
 (* Machine representations and structural records are not nominal declarations.
    Type arguments are finite rows over the declaration's parameter symbols. *)
-Inductive machine_class := MScalar (sort : nat) | MReference (kind : nat).
+Definition machine_class := Repr.machine_class.
 
 Inductive ty : Type :=
 | TMachine : tsym -> ty
@@ -1368,14 +1411,11 @@ Local Open Scope nat_scope.
 
 Definition fld := string.  (* source field names *)
 
-Definition address := nat.
-
 Inductive value : Type :=
 | VUnit : value
 | VTag : nsym -> value -> value
 | VRecord : list (fld * value) -> value
-| VScalar : nat -> Z -> value
-| VRef : address -> option (nat * ty) -> value.
+| VMachine : Repr.payload ty -> value.
 
 (* An operation's platform name and operands. *)
 Record op := Op { op_name : string; op_syms : list nat }.
@@ -1548,13 +1588,7 @@ Definition compose_adaptation (a : option smap) (sm : smap) : option smap :=
 Definition parameter_values (ws : list value) : locals := combine (seq 0 (List.length ws)) ws.
 
 (* Program bodies and their declared formal interfaces. *)
-Record cast_spec : Type := CastSpec {
-  cast_kind : nat;
-  cast_held : tsym;
-  (* Ref and Array are ordinary wrappers when their respective raw
-     handle payload is rebound to a different representation. *)
-  cast_handle : option (tsym * ty)
-}.
+Definition cast_spec := Repr.tag_check ty.
 (* A semantic program contains: the bodies of every
    defined fn (and of the fns elaboration synthesizes: forwarders, lambda
    providers, wrappers), the core functor bodies `bind F = G;` made, Bool's
@@ -1611,7 +1645,7 @@ Record program_view : Type := ProgramView {
   view_arguments  : list (list int);
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
   view_read  : list int -> option (list int);
-  (* checked reference tags and their header requirements *)
+  (* tags whose payloads the platform checks *)
   view_casts : list (nsym * cast_spec);
   view_machines : list (tsym * machine_class)
 }.
@@ -1727,7 +1761,7 @@ Definition result_environment (outputs : list (tsym * tsym))
 
 (* Outcomes.  Normal/Stuck/OutOfFuel are the core's Ok/Err/OutOfFuel; Returning and Breaking
    are control transfers; Trap is a defined failure,
-   Exit a WASI proc_exit, UnsupportedOperation a primitive this model does not implement.
+   Exit a platform-requested process exit, UnsupportedOperation a primitive this model does not implement.
    The nat in Stuck/Trap/UnsupportedOperation is a diagnostic code only. *)
 Inductive signal : Type :=
 | Normal               : value -> signal
@@ -1751,7 +1785,7 @@ Inductive signal : Type :=
    read in the caller's terms (tests/wasi/linked_copy_bracket.moss). *)
 
 (* Reference execution is parameterized by primitive operations and their
-   state. Public.interface_laws specifies their typed and heap behavior.
+   state. The platform supplies the laws for these calls and their state.
    The callback receives the closure's optional site and implements its
    platform's calling convention. A concrete implementation must prove that
    its representation refines this interface; the existing ExecutionModel
@@ -1787,26 +1821,22 @@ Definition popn (n : nat) (r : evaluation) : evaluation :=
 Definition with_g (g : locals) (r : evaluation) : evaluation :=
   match r with Evaluation o _ st => Evaluation o g st end.
 
-(* A checked source wrapper is the native ref.cast_null operation. The
-   metadata is the allocation's runtime type header, carried by an opaque
-   handle; extracting/repacking a handle never changes that header. *)
-Definition check_tag (P : program_view) (d : environment) (n : nsym) (th : subst) (w : value) : signal :=
-  match lookup_cast n (view_casts P) with
-  | None => Normal (VTag n w)
+Definition check_tag_with (read_type : ty -> ty) (P : program_view)
+    (n : nsym) (th : subst) (w : value) : signal :=
+  let error := match lookup_cast n (view_casts P) with
+  | None => None
   | Some spec =>
-      let enabled := match cast_handle spec with
-                     | None => true
-                     | Some (h, expected) => ty_eqb (ground d (match lookup_subst h th with Some t => t | None => TAbs h end)) expected
-                     end in
-      if enabled then
-        match lookup_subst (cast_held spec) th, w with
-        | Some tau, VRef _ (Some (k', tau')) =>
-            if Nat.eqb (cast_kind spec) k' && ty_eqb (ground d tau) tau'
-            then Normal (VTag n w) else Trap 37
-        | _, _ => Trap 37
-        end
-      else Normal (VTag n w)
+      let payload := match w with VMachine raw => Some raw | _ => None end in
+      Repr.tag_trap ty ty_eqb read_type (fun symbol => lookup_subst symbol th) TAbs spec payload
+  end in
+  match error with
+  | None => Normal (VTag n w)
+  | Some code => Trap code
   end.
+
+Definition check_tag (P : program_view) (d : environment) (n : nsym) (th : subst) (w : value) : signal :=
+  check_tag_with (ground d) P n th w.
+
 (* Transparent call entry for the interpreter-agreement proofs. *)
 Definition run_prim_at := run_prim.
 
@@ -4213,9 +4243,7 @@ Definition pin_reads (body : cx) (pins : subst) : subst :=
    alone reads them.  A pinned fixed input (Q6, LinkBody's pins) reads at
    its pin, the body's meaning of it: every application reads it as the
    bind site did, which BFunClosure checks is the pin, so the body's key
-   is the caller's (lib/wasistd.moss's GcArrays binds `Array.get` at
-   `ArrayHandle = ArrayRef`; tests/wasi/pin_fixed_key.moss, AUDIT-CHANGES
-   #73). *)
+   is the caller's (tests/wasi/pin_fixed_key.moss, AUDIT-CHANGES #73). *)
 Definition link_site (Cg Cb : cx) (pins : subst) (outs : list nat) (gen : nat -> nat) : cx :=
   Cx (map (fun t => (gen t, match nlook t (c_ty Cb) with Some v => v | None => TAbs t end)) outs ++ pins ++ c_ty Cg)
      (c_sub Cb) (c_merge Cb) (c_provisions Cb) (c_locals Cb).
@@ -5943,7 +5971,8 @@ End Elaboration.
    to the machine operations supplied at linking, using the same world as
    elaboration. A matching name alone is insufficient. *)
 (* The language's linking rule consumes only this static platform contract.
-   A platform supplies the table interpretation, entry provisions and ABI. *)
+   A platform supplies the root context, tables, entry provisions and ABI,
+   and any additional restrictions on the programs it can run. *)
 Module Type STATIC_PLATFORM.
   Parameter root_item : option (string * Input.name).
   Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> list (nsym * cast_spec) -> Prop.
@@ -6007,42 +6036,6 @@ Definition program_of (p : program) (argv : list (list int))
 (* ######################################################################## *)
 (* Public source-to-world contract                                           *)
 (* ######################################################################## *)
-
-(* Rocq strings store bytes. source contents must pass the UTF-8 check
-   below; paths use normalized absolute names in the modeled filesystem. *)
-Definition canonical_path (name : string) : bool :=
-  Loader.is_abs name &&
-  String.eqb (Loader.normalize "/" None name) name.
-
-Record file_path := AbsolutePath {
-  path_text : string;
-  path_canonical : canonical_path path_text = true
-}.
-(* A build receives an explicit finite snapshot, not an oracle for an
-   unbounded filesystem. Distinct entries have distinct canonical paths. *)
-Record source := Source {
-  source_files : list (file_path * string);
-  source_unique : NoDup (map (fun file => path_text (fst file)) source_files)
-}.
-(* program is the concrete code representation. Admissible below states
-   its source-level typechecking condition; arbitrary code records may
-   still be malformed. *)
-
-Definition path_of_string (name : string) : option file_path :=
-  match canonical_path name as b return canonical_path name = b -> option file_path with
-  | true => fun Valid => Some (AbsolutePath name Valid)
-  | false => fun _ => None
-  end eq_refl.
-
-Definition source_lookup (snapshot : source) (name : string) : option string :=
-  option_map snd (find (fun file => String.eqb name (path_text (fst file)))
-    (source_files snapshot)).
-
-Definition source_read (snapshot : source) (name : string) : option string :=
-  match source_lookup snapshot name with
-  | Some text => if Syntax.string_utf8_valid text then Some text else None
-  | None => None
-  end.
 
 (* The language uses the same static platform at build and run time.
    The platform supplies its raw-host contract and adapts primitive calls. *)
@@ -6196,17 +6189,3 @@ Module PublicFor (Pf : PLATFORM) (Host : HOST_FOR Pf).
 End PublicFor.
 
 End Semantics.
-
-(* Public entry points; detailed definitions live in the model's namespace. *)
-Definition file_path := Semantics.file_path.
-Definition source := Semantics.source.
-Definition Source := Semantics.Source.
-Definition source_files := Semantics.source_files.
-Definition source_lookup := Semantics.source_lookup.
-Definition program := Semantics.program.
-Definition path_text := Semantics.path_text.
-Definition path_canonical := Semantics.path_canonical.
-Definition canonical_path := Semantics.canonical_path.
-Definition path_of_string := Semantics.path_of_string.
-Definition source_read := Semantics.source_read.
-Definition AbsolutePath := Semantics.AbsolutePath.

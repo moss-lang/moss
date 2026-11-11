@@ -1,9 +1,10 @@
 (* A successful action transports final evidence backwards. Its typing
    judgment and outgoing invariant can use evidence at the result state. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaExpr.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition Checked {A} (post valid_before : est -> Prop) (valid_after : A -> est -> Prop)
     (action : M A) (judgment : A -> est -> Prop) : Prop :=

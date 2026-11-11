@@ -1,9 +1,10 @@
 (* Successful result reading gives the fuel needed by both passes of the
    family classifier. Its dependency tests use the separate metadata bound. *)
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBudget EaTypes EaTypesSound EaFamily EaOutputSound.
 From NM Require EaDeclarationSound EaFamilySound EaDependencyFuel EaMentionsSound EaResultBudget EaResultCoverage EaMain.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Local Lemma ctx_spec_items_map : forall specs, ctx_spec_items (map CISpec specs) = Some specs.

@@ -1,9 +1,10 @@
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaControlSound EaTypesSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require AllocationFacts EaBudget EaContextFuel EaContextTableSound EaDecide EaDependencyFuel
   EaFunctor EaOutputSound EaRootSound EaSatisfiesSound EaTypes ProgramPrune PublicFormation PublicTypeFacts PublicTypeRead.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Local Definition OutputChoice (C : cx) (mentioned protected : list nat)

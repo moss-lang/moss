@@ -1,6 +1,7 @@
 (* A successful copy checks the source provisions and their result positions
    at one fresh reading of the target telescope. *)
 From Stdlib Require Import List Bool String Arith Lia Sorting.Sorted.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBudget EaCall EaFunctor EaTypes EaTypesSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaAllocationSound EaClosureSound EaContextFuel EaContextTableSound EaControlSound
@@ -8,7 +9,7 @@ From NM Require EaAllocationSound EaClosureSound EaContextFuel EaContextTableSou
   EaOutputSound EaResultBudget EaRootSound EaSatisfiesSound PublicCallRealize PublicContextFacts
   PublicTypeFacts PublicTypeRead.
 From NM Require EaApplicationSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Local Lemma pure_read : forall A (read : er A) before value after,

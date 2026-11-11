@@ -12,13 +12,14 @@
    This file proves ChainCoreOk from ChainNewOk; ChainNewOk is the
    remaining premise. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require AuditFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults.
 From NM Require PublicFormation PublicCallerKeys PublicContextFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- static facts about a result context ---------------------------------- *)
 

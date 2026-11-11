@@ -3,10 +3,11 @@
    output roles (result_gens). The substitution argument itself is in
    PublicCopySubst. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicCopySubst.
 From NM Require PublicFormation PublicScoping PublicCallerKeys PublicFamilyStep.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 
 (* ---- what a functor's result mentions -------------------------------------- *)

@@ -3,9 +3,10 @@
    keep their values. A concrete renaming fixes source and platform
    symbols in its support. Each platform supplies its operation action. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit BaseFacts PublicValueTyping.
 From NM Require PublicCastTyping.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Record renaming := Renaming {
   rename_symbol : nat -> nat;
@@ -332,10 +333,10 @@ Theorem check_tag_equivariant : forall P P' d tag arguments value,
     (rename_subst rename arguments) (rename_value rename value) =
   rename_signal rename (I.check_tag P d tag arguments value).
 Proof.
-  intros P P' d tag arguments value Casts. unfold I.check_tag.
+  intros P P' d tag arguments value Casts. unfold I.check_tag, I.check_tag_with.
   rewrite Casts, rename_lookup_cast by exact injective.
   destruct (lookup_cast tag (view_casts P)) as [schema|]; [|reflexivity].
-  cbn [option_map].
+  cbn [option_map]. unfold AuditBase.Representation.tag_trap.
   pose proof (rename_cast_guard d schema arguments) as Guard.
   unfold PublicCastTyping.runtime_guard, type_argument in Guard. rewrite Guard.
   destruct (PublicCastTyping.runtime_guard d schema arguments) eqn:Enabled;
@@ -344,7 +345,7 @@ Proof.
   cbn [rename_cast_spec cast_kind cast_held].
   rewrite rename_lookup_subst by exact injective.
   destruct (lookup_subst (cast_held schema) arguments) as [held|]; [|reflexivity].
-  destruct value as [|n value|fields|sort bits|address [[kind header]|]]; try reflexivity.
+  destruct value as [|n value|fields|[sort bits|address [[kind header]|]]]; try reflexivity.
   cbn [option_map rename_value].
   rewrite rename_ground, rename_ty_eqb by exact injective.
   destruct (_ && _); reflexivity.

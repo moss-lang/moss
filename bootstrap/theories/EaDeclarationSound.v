@@ -1,12 +1,13 @@
 (* Declaration checking uses the typed readers and verifies coverage of
    every declared functor output. Constant bodies are checked by assembly. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBudget EaTypes EaTypesSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaMain EaCtx EaFamily EaDecide EaEntriesSound EaOutputSound
   EaContextTableSound EaResultLeafSound EaDependencyFuel EaContextReadFacts
   EaMetadataSound EaWorldSound ElabWorld WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma context_table_functor_complete : forall E bound symbol context,

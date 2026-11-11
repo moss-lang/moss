@@ -1,11 +1,12 @@
 (* Requirement semantics are source-level predicates. Their exact transport
    needs only the public metadata reader, without runtime model refinement. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit PublicWorld PublicWorldScope.
 From NM Require ExecutionModel ComponentContracts.
 From NM Require Import WorldSound Sx.
 Import ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Module A := AuditBase.Semantics.Elaboration.
 Module M := ExecutionModel.Elaboration.
 
 Definition implementation_kind (kind : A.dkind) : M.dkind :=

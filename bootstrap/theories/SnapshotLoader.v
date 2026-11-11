@@ -3,7 +3,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit SourceSnapshot SnapshotLoaderBound.
 From NM Require Sx Parse FrontEnd FrontEndComplete.
-Import Audit.Semantics ListNotations.
+Import ListNotations.
 Module I := Audit.Input.
 Module L := Audit.Loader.
 Local Open Scope string_scope.

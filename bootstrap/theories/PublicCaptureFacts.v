@@ -2,9 +2,10 @@
    closure compilation. Grounding stability needs a complete captured type
    scope; it is not asserted for names absent from the captured snapshot. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Lemma lookup_subst_prefix : forall prefix suffix symbol meaning,
   lookup_subst symbol prefix = Some meaning ->

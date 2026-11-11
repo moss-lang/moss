@@ -1,8 +1,9 @@
 (* The interpreter's environments, captures and functor results commute
    with the renaming of their symbolic keys and type meanings. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit RuntimeRenaming.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Section Environments.
 Variable rename : renaming.

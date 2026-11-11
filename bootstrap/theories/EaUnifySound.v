@@ -1,9 +1,10 @@
 (* Successful unification preserves every solution of its input equations.
    This direction needs neither fuel adequacy nor idempotence. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCtx EaTypesSound EaMergeSound PublicTypeRead.
 From NM Require PublicTypeFacts PublicOrientation PublicCallRealize PublicSubstFacts.
-Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Definition Absorbs (outer inner : subst) : Prop :=

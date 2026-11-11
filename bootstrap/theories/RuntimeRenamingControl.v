@@ -1,8 +1,9 @@
 (* Runtime tests on tags, fields and control flow use the same source
    labels and local positions after a symbol renaming. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicValueTyping RuntimeRenaming.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module ControlRenaming (Prims : PRIMITIVES) (I : INTERP Prims).
 Section Control.
@@ -25,8 +26,8 @@ Lemma rename_get_field : forall field w,
   I.get_field field (rename_value rename w) =
   option_map (rename_value rename) (I.get_field field w).
 Proof.
-  intros field [|tag payload|fields|sort bits|address header]; try reflexivity.
-  - destruct payload; try reflexivity. apply rename_assoc_fld.
+  intros field [|tag payload|fields|[sort bits|address header]]; try reflexivity.
+  - destruct payload as [| |l|[]]; try reflexivity. apply rename_assoc_fld.
   - apply rename_assoc_fld.
 Qed.
 
@@ -50,11 +51,11 @@ Lemma rename_match_pat : forall pat w,
   I.match_pat (rename_pattern rename pat) (rename_value rename w) =
   rename_match_result (I.match_pat pat w).
 Proof.
-  intros [[position|]|tag binder fields] [|n payload|record|sort bits|address header];
+  intros [[position|]|tag binder fields] [|n payload|record|[sort bits|address header]];
     cbn [I.match_pat rename_pattern rename_value]; try reflexivity.
   rewrite rename_eqb by exact injective. destruct (Nat.eqb tag n); [|reflexivity].
   destruct binder as [position|], fields as [|field fields]; try reflexivity.
-  all: destruct payload; cbn [rename_value]; try reflexivity.
+  all: destruct payload as [| |l|[]]; cbn [rename_value]; try reflexivity.
   all: change (map (fun '(name, field) => (name, rename_value rename field)) l) with (renamed_fields l).
   all: rewrite rename_bind_fields.
   all: destruct (I.bind_fields (field :: fields) l) as [g|]; [|reflexivity].
@@ -75,9 +76,9 @@ Lemma rename_truthy : forall P P' w,
   views_related rename P P' ->
   I.truthy P' (rename_value rename w) = I.truthy P w.
 Proof.
-  intros P P' [|tag payload|fields|sort bits|address header] Views; try reflexivity.
-  destruct payload as [|truth payload|fields|sort bits|address header]; try reflexivity.
-  destruct payload; try reflexivity.
+  intros P P' [|tag payload|fields|[sort bits|address header]] Views; try reflexivity.
+  destruct payload as [|truth payload|fields|[sort bits|address header]]; try reflexivity.
+  destruct payload as [| |l|[]]; try reflexivity.
   cbn [I.truthy rename_value].
   rewrite (related_bool _ _ _ Views), (related_true _ _ _ Views), (related_false _ _ _ Views).
   now rewrite !rename_eqb by exact injective.

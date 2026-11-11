@@ -1,10 +1,11 @@
 (* Read the source plans from the joint elaboration derivation. Recursion
    follows derivations, including the elaboration of a bracket expansion. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit BodyTyping BodyMethodTyping BodyLiteralTyping.
 From NM Require Import LegacyBodyJudgments.
 From NM Require BodyFunctionProviderTyping BodyProviderTyping BodyLambdaTyping.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Section Readback.

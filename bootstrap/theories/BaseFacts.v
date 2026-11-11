@@ -1,7 +1,7 @@
 (* Proofs and transparent proof interfaces specific to AuditBase. *)
 From Stdlib Require Import List.
 From NM Require Import Audit AuditBase PublicValueTyping.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Export AuditBase.
 
 Module DeferredBaseCall.
@@ -77,7 +77,7 @@ End PUBLIC.
 (* The Base adapter changes a host result's wrapper, while retaining exactly
    the state returned by the raw primitive. *)
 Section BaseCallFacts.
-Import Audit.Semantics.
+Import AuditBase.Semantics.
 
 Lemma base_call_state : forall S
     (primitive : program_view -> op -> list value -> S -> signal * S)
@@ -111,7 +111,7 @@ End BaseCallFacts.
 
 (* The generic static contract regroups exactly the previous Base conditions. *)
 Section StaticLinkingFacts.
-Import Audit.Semantics.
+Import AuditBase.Semantics.
 Lemma platform_linked_fields : forall W P,
   Platform.Linked W P <->
   Platform.EntryPoint W P /\ Platform.Layouts W /\ Platform.Representations W P /\

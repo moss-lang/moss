@@ -2,7 +2,7 @@
    concern snapshots only; they do not assume or prove loader completeness. *)
 From Stdlib Require Import List ListDec String Bool.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import ListNotations.
 
 (* The host supplies canonical paths through path_of_string. This checked
    constructor validates the finite map rather than requiring the caller

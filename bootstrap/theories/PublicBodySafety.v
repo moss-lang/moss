@@ -5,9 +5,10 @@
    what an evaluation may produce: never Stuck, a Breaking only where the
    source breaks inside a loop, and typed values otherwise. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- fits is sound for runtime types --------------------------------- *)
 

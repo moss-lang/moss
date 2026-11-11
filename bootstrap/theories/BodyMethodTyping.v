@@ -1,9 +1,10 @@
 (* Method selection records the source provision and its type. Translation
    turns that provision into a runtime key, with any family application. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem provided_method_translation : forall W P F C receiver method choice signature syntax object arguments,
   TypesMethodProvision W C receiver method choice signature ->

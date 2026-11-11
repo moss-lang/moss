@@ -1,9 +1,10 @@
 (* Checked tag construction preserves ground data typing. This local result
    does not assert that source typing supplies the required ground payload. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition ground_arguments (d : environment) (arguments : subst) : subst :=
   map (fun q => (fst q, ground d (snd q))) arguments.
@@ -73,9 +74,10 @@ Theorem check_tag_preserves : forall W P H d tag arguments value payload,
   end.
 Proof.
   intros W P H d tag arguments value payload Payload Typed Schemas.
-  unfold R.check_tag.
+  unfold R.check_tag, R.check_tag_with.
   destruct (lookup_cast tag (view_casts P)) as [schema|] eqn:Schema.
-  - destruct (Schemas schema eq_refl) as [Complete Shape].
+  - unfold AuditBase.Representation.tag_trap.
+    destruct (Schemas schema eq_refl) as [Complete Shape].
     assert (Guard :
       (match cast_handle schema with
        | None => true
@@ -87,7 +89,7 @@ Proof.
     rewrite Guard.
     destruct (cast_enabled schema (ground_arguments d arguments)) eqn:Enabled.
     + destruct (lookup_subst (cast_held schema) arguments) as [held|] eqn:Held;
-        destruct value as [| | | |a [[kind meaning]|]]; cbn; try exact I.
+        destruct value as [| | |[|a [[kind meaning]|]]]; cbn; try exact I.
       destruct (Nat.eqb (cast_kind schema) kind && ty_eqb (ground d held) meaning) eqn:Check;
         cbn; [|exact I].
       apply andb_true_iff in Check as [Kind Meaning].

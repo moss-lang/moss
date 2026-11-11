@@ -4,7 +4,7 @@ From NM Require Audit AuditBase BaseHost BootstrapBuild EaAssumesSound
   EaBase EaDeclarationSound EaMain EaWorldSound SnapshotLoader Sx.
 From NM Require Import LegacyBodyJudgments.
 From NM Require BodyProgramTyping.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Module Public := BaseHost.Public.

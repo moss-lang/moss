@@ -1,10 +1,11 @@
 (* Contextual method calls, including the family translation for a missing
    provision. Arguments are checked at the original caller. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaExpr EaFamily EaControlSound EaChecked.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaCallExpressionSound EaFamilyUseSound EaSatisfiesSound PublicContextFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Local Lemma pure_read : forall A (read : er A) before value after,

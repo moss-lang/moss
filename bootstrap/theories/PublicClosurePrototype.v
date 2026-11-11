@@ -4,8 +4,9 @@
    the closed example below discharges for its concrete nonrecursive table.
    This is a boundary experiment, not an implementation of Public.CORRECT. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module Compiler (Prims : PRIMITIVES).
 Module R := Interpreter Prims.

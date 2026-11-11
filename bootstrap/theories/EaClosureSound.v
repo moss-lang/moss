@@ -1,12 +1,13 @@
 (* Closure binding checks its source inputs and ties them to the linked
    body, preserving the cache that the linker established. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaTypes.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaBudget EaCallSound EaContextTableSound EaControlSound EaDeclarationSound
   EaFunctor EaLinkBindingSound EaLinkBodySound EaMain EaResultBudget EaSatisfiesSound EaTypesSound
   PublicContextFacts PublicTypeFacts.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Import EaLinkBodySound.
 Local Open Scope list_scope.
 

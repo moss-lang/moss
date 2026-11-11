@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require AuditBase.
 From NM Require Import Audit NMap LoadWorld Sx EaBase EaMain ElabWorld PublicWorld WorldSound ReqsSolve.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem bundle_world_r_sound : forall bundle W bound,
   EaMain.bundle_world_r bundle = Ok (W, bound) -> WorldOf bundle W.

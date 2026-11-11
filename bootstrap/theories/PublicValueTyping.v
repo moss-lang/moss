@@ -3,9 +3,10 @@
    runtime source-name bindings. Callable/environment typing and its link
    to all source derivations remain separate obligations. *)
 From Stdlib Require Import List Bool String Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition heap_types := address -> option (nat * ty).
 Definition heap_extends (old new : heap_types) : Prop :=

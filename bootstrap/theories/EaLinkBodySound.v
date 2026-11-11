@@ -1,13 +1,14 @@
 (* The executable linker checks the promised output types and provisions,
    validates the body's pins, and records exactly the code it emits. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall EaTypes EaCodeAllocationSound EaCodeEffects.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaAssemblyCodeEffects EaBindCodeEffects EaBudget EaContextTableSound EaControlSound
   EaDependencyFuel EaExpressionCodeEffects EaFamily EaFamilyComplete EaFamilySound EaFunctor
   EaLinkAllocationSound EaMain EaMergeSound EaNumbering EaResultBudget EaSatisfiesSound EaTypesSound
   ProgramPrune PublicCallRealize PublicTypeFacts PublicTypeRead.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Import EaFunctor.
 Local Open Scope list_scope.
 

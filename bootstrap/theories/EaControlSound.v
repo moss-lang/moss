@@ -1,9 +1,10 @@
 (* Expression/control subrules with explicit lower-fuel elaboration contracts. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaExpr EaTypesSound EaChecked.
 From NM Require Import LegacyBodyJudgments.
 From NM Require PublicTypeFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

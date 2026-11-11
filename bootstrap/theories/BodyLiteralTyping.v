@@ -1,8 +1,9 @@
 (* A literal plan records contextual arithmetic choices without emitted code. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit BodyMethodTyping.
 From NM Require Import LegacyBodyJudgments.
-Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem literal_translation : forall W C tree plan t,
   TypesLiteral W C tree plan t -> Literal W C tree (emit_literal C plan) t.

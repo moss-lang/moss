@@ -2,9 +2,10 @@
    WorldOf constrains scopes only on loaded paths, so completeness uses the
    actual loader's stronger fact that every nonempty scope is a bundle path. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypesSound EaMain EaWorldSound NMap LoadWorld Sx.
 From NM Require PublicWorld WorldSound ReqsSolve ElabWorld.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

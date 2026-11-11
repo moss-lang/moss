@@ -2,9 +2,10 @@
    The normalization below is proof-side. It exposes exactly the fields
    that FastPath may erase while retaining type meanings and source aliases. *)
 From Stdlib Require Import List Lia.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import Audit AuditFacts PublicValueTyping.
-Import ListNotations Audit.Semantics.
+Import ListNotations AuditBase.Semantics.
 
 Module BaseSites.
 Definition retained_site (p : op) (site : option ty) : option ty :=
@@ -388,11 +389,12 @@ Lemma check_tags_agree : forall left right tag substitution value,
   environments_agree left right ->
   check_tag P left tag substitution value = check_tag P right tag substitution value.
 Proof.
-  intros left right tag substitution value Eq. unfold check_tag.
+  intros left right tag substitution value Eq. unfold check_tag, check_tag_with.
   destruct (lookup_cast tag (view_casts P)) as [spec|]; [|reflexivity].
+  unfold AuditBase.Representation.tag_trap.
   destruct (cast_handle spec) as [[handle expected]|];
     repeat rewrite (agreement_ground left right Eq);
-    destruct (lookup_subst (cast_held spec) substitution); destruct value;
+    destruct (lookup_subst (cast_held spec) substitution); destruct value as [| | |[|a [[kind header]|]]];
     repeat rewrite (agreement_ground left right Eq); reflexivity.
 Qed.
 

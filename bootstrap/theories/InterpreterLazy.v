@@ -2,7 +2,7 @@
 (* InterpreterLazy.v: Audit's reference interpreter with deferred type           *)
 (* substitution.                                                            *)
 (*                                                                           *)
-(* Audit.Semantics.Interpreter grounds every type an activation receives    *)
+(* AuditBase.Semantics.Interpreter grounds every type an activation receives    *)
 (* when the activation starts: `instantiate` maps `ground d` over a call's  *)
 (* θ, `typed_capture` over a closure's captured generations and aliases,    *)
 (* `application_environment` over a functor's inputs. Most of those types   *)
@@ -26,9 +26,10 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith String.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import PublicValueTyping.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Local Open Scope nat_scope.
 
@@ -472,28 +473,14 @@ Module LazyInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims).
 Module I := Reference.
 
 Definition lcheck_tag (P : program_view) (d : lenv) (n : nsym) (th : subst) (w : value) : signal :=
-  match lookup_cast n (view_casts P) with
-  | None => Normal (VTag n w)
-  | Some spec =>
-      let enabled := match cast_handle spec with
-                     | None => true
-                     | Some (h, expected) => ty_eqb (lground d (match lookup_subst h th with Some t => t | None => TAbs h end)) expected
-                     end in
-      if enabled then
-        match lookup_subst (cast_held spec) th, w with
-        | Some tau, VRef _ (Some (k', tau')) =>
-            if Nat.eqb (cast_kind spec) k' && ty_eqb (lground d tau) tau'
-            then Normal (VTag n w) else Trap 37
-        | _, _ => Trap 37
-        end
-      else Normal (VTag n w)
-  end.
+  I.check_tag_with (lground d) P n th w.
 
 Lemma check_tag_to : forall P d n th w, I.check_tag P (to_env d) n th w = lcheck_tag P d n th w.
 Proof.
-  intros. unfold I.check_tag, lcheck_tag. destruct (lookup_cast n (view_casts P)) as [spec|]; [|reflexivity].
+  intros. unfold I.check_tag, lcheck_tag, I.check_tag_with. destruct (lookup_cast n (view_casts P)) as [spec|]; [|reflexivity].
+  unfold AuditBase.Representation.tag_trap.
   destruct (cast_handle spec) as [[h expected]|]; rewrite ?ground_to;
-  destruct (lookup_subst (cast_held spec) th) as [tau|]; destruct w; rewrite ?ground_to; reflexivity.
+  destruct (lookup_subst (cast_held spec) th) as [tau|]; destruct w as [| | |[|a [[kind header]|]]]; rewrite ?ground_to; reflexivity.
 Qed.
 
 Fixpoint leval (fuel : nat) (P : program_view) (d : lenv) (g : locals) (st : mstate)

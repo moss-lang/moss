@@ -1,10 +1,11 @@
 (* A family demand checks a source application and then emits its keys.
    Receiver matching and producer coverage are the independent obligations. *)
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBudget EaFamily EaTypesSound.
 From NM Require AuditFacts EaCallExpressionSound EaContextTableSound EaDefinedCallSound EaFamilySound
   EaMergeSound EaSatisfiesSound PublicCallRealize PublicContextFacts PublicFormation.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition FamilyMatchingSound (E : env) : Prop :=
   forall C u receiver method matching,

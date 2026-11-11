@@ -3,8 +3,9 @@
    default-host safety claim. The checked handle is an input to the fixture;
    this exercises cast checking, not allocation or heap-law verification. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicClosurePrototype.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module Prims <: PRIMITIVES.
 Definition mstate := unit.

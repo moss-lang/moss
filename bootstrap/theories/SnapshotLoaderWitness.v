@@ -1,10 +1,11 @@
 (* Declarative bundles may retain extra files. They nevertheless agree on
    every reachable module, and therefore describe the same static worlds. *)
 From Stdlib Require Import List String Bool.
+From NM Require AuditBase.
 From NM Require Import Audit SourceSnapshot SnapshotLoader.
 From NM Require FrontEndComplete Parse Sx.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Module L := Audit.Loader.
 
 Lemma module_of_member : forall b p m,

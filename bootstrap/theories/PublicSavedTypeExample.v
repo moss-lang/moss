@@ -2,10 +2,11 @@
    with the previous helper behavior for comparison. No full Admissible
    counterexample or universal safety theorem is asserted. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 (* Symbols: Saved=2, Boxed=3, F64=4, I32=5. *)

@@ -1,8 +1,9 @@
 (* The executable counter supplies a consecutive range of unused identities. *)
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase.
 From NM Require EaFunctor AllocationFacts EaBind EaTypesSound EaDecide.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Theorem fresh_n_range : forall count s,
   exists s', fresh_n count s = Ok (seq (es_next s) count, s') /\

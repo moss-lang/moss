@@ -3,9 +3,10 @@
    encoding is needed at this boundary. This is not whole elaboration
    soundness: contexts, code emission and machine initialization remain. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Elab.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Fixpoint emit_type (t : Elab.ety) : ty :=
   match t with

@@ -7,7 +7,7 @@ From NM Require Import EaControlSound.
 From NM Require EaPlatformEntrySound.
 
 Module L := Audit.Loader.
-Module E := Audit.Semantics.Elaboration.
+Module E := AuditBase.Semantics.Elaboration.
 Module P := AuditBase.Platform.
 
 (* The first two stages of the driver build the same world as the audit
@@ -23,7 +23,7 @@ Proof.
   - eapply EaWorldSound.elaborate_with_world_sound. exact Elaborated.
 Qed.
 
-Import ListNotations Audit.Input Audit.Semantics E EaBase.
+Import ListNotations Audit.Input AuditBase.Semantics E EaBase.
 
 Definition InstalledBool (W : world) (program : program) : Prop :=
   (LangItem W LIBool (program_bool program) /\ LangItem W LITrue (program_true program) /\

@@ -40,13 +40,14 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import AuditFacts PublicPrimitiveSites.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require PublicCopySubst.
 From NM Require ProgramPrune.
 From Stdlib Require PrimInt63.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Set Implicit Arguments.
 Local Open Scope nat_scope.
@@ -98,7 +99,7 @@ Definition binds (s : item) (b : binding) : bool :=
 Definition bent (b : binding) : item * provision_value :=
   match b with BPrimitive i p => (i, PrimitiveClosure p None) | _ => (ITy 0, ValueProvision VUnit) end.
 
-Definition osm_ok (f : Semantics.smap -> bool) (o : option Semantics.smap) : bool :=
+Definition osm_ok (f : AuditBase.Semantics.smap -> bool) (o : option AuditBase.Semantics.smap) : bool :=
   match o with Some sm => f sm | None => true end.
 
 Section Pass.
@@ -225,7 +226,7 @@ Definition preserves_site (th : subst) (q : item * item) : bool :=
       if BaseCall.uses_site primitive then
         match fst q, snd q, fc_table cH with
         | IMth requested _ _, IMth provided _ _, [] =>
-            forallb (supplies_type th) (Audit.Semantics.Elaboration.gens provided) &&
+            forallb (supplies_type th) (AuditBase.Semantics.Elaboration.gens provided) &&
             ty_eqb (app_subst th provided) requested
         | _, _, _ => false
         end
@@ -338,7 +339,7 @@ Qed.
 
 Lemma supplied_site_type : forall P h c caller captured th source,
   view_functor P h = Some c -> fc_table c = [] ->
-  forallb (supplies_type c th) (Audit.Semantics.Elaboration.gens source) = true ->
+  forallb (supplies_type c th) (AuditBase.Semantics.Elaboration.gens source) = true ->
   ground (application_environment P caller h th captured) source =
   ground caller (app_subst th source).
 Proof.
@@ -1033,7 +1034,7 @@ Lemma truthy_eq : forall w, truthy P' w = truthy P w.
 Proof. intros. unfold truthy. rewrite Hbool, Htrue, Hfalse. reflexivity. Qed.
 Lemma check_tag_eq : forall S d d' n th w, agree S d d' ->
   check_tag P' d' n th w = check_tag P d n th w.
-Proof. intros S d d' n th w Hd. unfold check_tag, ground. rewrite Hcasts, (ag_tm Hd). reflexivity. Qed.
+Proof. intros S d d' n th w Hd. unfold check_tag, check_tag_with, ground. rewrite Hcasts, (ag_tm Hd). reflexivity. Qed.
 Lemma prim_at_eq : forall p first second ws st,
   BaseSites.retained_site p first = BaseSites.retained_site p second -> ok st ->
   run_prim_at P' p second ws st = run_prim_at P p first ws st.

@@ -13,14 +13,15 @@
      body adds mentions only G's scope), so the two readings agree with
      the caller's signature (SigAgree). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicChainCore PublicLinkWalk PublicLinkScope.
 From NM Require Import LegacyBodyJudgments.
 From NM Require PublicLinkRun PublicMergeClass PublicCopySubst PublicContextFacts.
 From NM Require PublicChainFwd PublicFormation PublicCallerKeys PublicFamilyAgree PublicFamilyStep PublicFamilyCoherent PublicFamilySig PublicScoping.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Module FamilyLink (Prims : PRIMITIVES) (I0 : INTERP Prims).
 (* The instance PublicEntry uses (CF, and through it CN and CC), so the

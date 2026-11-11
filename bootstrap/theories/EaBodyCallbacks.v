@@ -1,6 +1,7 @@
 (* Instantiate the recursive body checker with the actual context and cache
    invariants and the code of the assembled program. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaExpr EaChecked EaControlSound EaCodeEffects EaRecSound
   EaBodyContext EaBodyState EaLinkBodySound.
 From NM Require Import LegacyBodyJudgments.
@@ -8,7 +9,7 @@ From NM Require EaBind EaBindCodeEffects EaBindItemSound EaBlockSound EaBudget E
   EaContextTableSound EaDefinedCallSound EaDependencyFuel EaExpressionCodeEffects EaExpressionSound
   EaFamily EaFamilyComplete EaFamilyUseSound EaTypes
   EaForwarderSound EaFunctor EaLambdaSound EaMain EaResultBudget EaValuePathSound EaWrappedProviderSound PublicContextFacts PublicFormation PublicWorldFormation.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Definition BodyValid (W : world) (P : program) (bound : nat) (_ : frame) (C : cx) (state : est) : Prop :=

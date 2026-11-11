@@ -1,9 +1,10 @@
 (* Facts about Audit's live generation/output helpers, independent of
    executable elaboration, the generation prototype, and source refinement. *)
 From Stdlib Require Import List PeanoNat.
+From NM Require AuditBase.
 From NM Require Import Audit PublicCaptureFacts.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Theorem bind_type_preserves_generations : forall d source rhs,
   type_meanings (bind_type d source rhs) = type_meanings d.

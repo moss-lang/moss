@@ -5,7 +5,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit SourceSnapshot.
 From NM Require Sx Parse SourceNames.
-Import Audit.Semantics ListNotations.
+Import ListNotations.
 Module I := Audit.Input.
 Module L := Audit.Loader.
 

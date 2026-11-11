@@ -1,9 +1,10 @@
 (* A cached constant keeps its declaration's typed initializer and code. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaControlSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaExpr EaDecide EaNumbering NMap WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Definition ConstantReading (W : world) (P : program) (d : decl) (syntax : aty)

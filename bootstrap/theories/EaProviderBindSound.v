@@ -1,10 +1,11 @@
 (* The bind wrappers validate the declared signature and install a
    provider once its own translation has been checked. *)
 From Stdlib Require Import List String Bool.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBind EaTypes EaTypesSound EaFamily EaControlSound EaChecked EaRecSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaSatisfiesSound PublicContextFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

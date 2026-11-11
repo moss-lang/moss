@@ -1,7 +1,8 @@
 (* Local identities for the absent atomic classes of an assumed item. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCall NMap.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
 Definition scope_floor (bound : nat) (support : list nat) : nat :=

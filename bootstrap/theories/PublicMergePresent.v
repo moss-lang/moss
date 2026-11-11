@@ -2,10 +2,11 @@
    from the telescope. If a structured image had no such occurrence,
    hiding it behind a fresh atom would produce a more general unifier. *)
 From Stdlib Require Import String List Arith Bool Lia.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require PublicMerge PublicTypeRead PublicTypeFacts PublicOrientation
   PublicFormation PublicCallRealize PublicEquation.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 Set Implicit Arguments.
 

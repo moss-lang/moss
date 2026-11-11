@@ -1,10 +1,11 @@
 (* The executable Rule B check decides the class-based judgment when the
    callee has a solved merge and the table uses a section of that merge. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require EaCall EaBase PublicContextFacts PublicMerge PublicFormation
   PublicTypeFacts PublicTypeRead PublicSubstFacts PublicCallRealize.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Lemma bound_reading_spec : forall C Cs r, PublicContextFacts.CxSection Cs ->
   EaCall.has_bound_reading C Cs (canon Cs (TAbs r)) = true <-> InForceClass C (c_merge Cs) r.

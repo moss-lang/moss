@@ -1,7 +1,8 @@
 (* Coverage of result dependencies: repeated declaration visits can be erased. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaMentionsSound EaDependencyFuel EaContextFuel EaResultSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Definition pair_eq_dec (a b : nat * nat) : {a=b}+{a<>b}.
@@ -110,7 +111,7 @@ Lemma method_named_complete : forall p receiver name method,
   MethodNamed W p receiver name method -> method_named W p receiver name = Some method.
 Proof.
   intros p receiver name method [Attached|[Absent Scope]]; unfold method_named.
-  - unfold Audit.Semantics.Elaboration.Attached in Attached. rewrite Attached. reflexivity.
+  - unfold AuditBase.Semantics.Elaboration.Attached in Attached. rewrite Attached. reflexivity.
   - destruct (w_attached W receiver name) as [other|] eqn:Found.
     + exfalso. apply (Absent other). exact Found.
     + rewrite Scope. reflexivity.

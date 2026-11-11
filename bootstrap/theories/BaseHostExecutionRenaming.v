@@ -2,7 +2,7 @@
 From Stdlib Require Import List Bool PrimInt63 Uint63.
 From NM Require Import Audit AuditBase RuntimeRenaming BaseRenaming BaseHostRenaming BaseHostMemoryRenaming.
 From NM Require BaseHost BaseHostScalars MossX ExecutionModel PublicOperationFacts PublicBoolTyping InterpreterRenaming.
-Import Audit.Semantics MossX ListNotations.
+Import AuditBase.Semantics MossX ListNotations.
 Import ExecutionModel (xvalue(..), xout(..), xprog(..), xp_bool, xp_true, xp_false, xp_argv, prim, base_primitive).
 Local Open Scope uint63_scope.
 Local Opaque loop_fuel.
@@ -117,7 +117,7 @@ Lemma split_memory_arguments_renamed : forall primitive values,
 Proof.
   intros primitive values. unfold BaseCall.split_memory_arguments.
   destruct (BaseCall.memory_operation primitive); [|reflexivity].
-  destruct values as [|[|tag payload|fields|sort bits|address [[kind tau]|]] rest]; reflexivity.
+  destruct values as [|[|tag payload|fields|[sort bits|address [[kind tau]|]]] rest]; reflexivity.
 Qed.
 
 Hypothesis injective : forall left right, rename left = rename right -> left = right.
@@ -308,7 +308,7 @@ Qed.
 Lemma declared_bool_labels_fixed : forall rename bundle W program initial,
   fixes_declarations rename W ->
   rename 0%nat = 0%nat ->
-  Audit.Semantics.Elaboration.ElaboratesIn bundle W program ->
+  AuditBase.Semantics.Elaboration.ElaboratesIn bundle W program ->
   rename (view_bool (Public.runtime program initial)) = view_bool (Public.runtime program initial) /\
   rename (view_true (Public.runtime program initial)) = view_true (Public.runtime program initial) /\
   rename (view_false (Public.runtime program initial)) = view_false (Public.runtime program initial).

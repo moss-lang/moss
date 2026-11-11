@@ -6,13 +6,14 @@
    ChainForwardCopySigs, a separate premise (the signature half only:
    the keys are the caller's by construction, Audit.result_selection). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply
   PublicPlatformApply PublicFamilyAgree PublicChainNew.
 From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicOrientation.
 From NM Require PublicContextFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Static.
 Variable W : A.world.

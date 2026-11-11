@@ -8,10 +8,11 @@
    output out of the frame's pins; the made clause implies that for a
    linked body's own binds, so it was dropped, consol.) *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Pins.
 Variable W : A.world.

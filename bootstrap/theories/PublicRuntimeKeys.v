@@ -1,10 +1,11 @@
 (* Proof interface for runtime provision keys.  The normalization belongs to
    this transitional instance: stored-key lookup can supply a later instance. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit PublicContextFacts PublicCallRealize.
 From NM Require PublicMerge.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Record RuntimeKeys (C : A.cx) := {
   runtime_key : item -> item;

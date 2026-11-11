@@ -2,8 +2,8 @@
 From Stdlib Require Import List Bool Arith Lia.
 From Stdlib Require Import PrimInt63 Uint63 PrimFloat FloatClass PArray ZArith.
 From NM Require Import ExecutionModel HTrie.
-From NM Require Audit NatTrie PublicTypeFacts.
-Import Audit.Semantics (ty, ty_eqb).
+From NM Require AuditBase NatTrie PublicTypeFacts.
+Import AuditBase.Semantics (ty, ty_eqb).
 Import ListNotations.
 
 Lemma xinst_map : forall d th,
@@ -1164,10 +1164,10 @@ Fixpoint set_scratch_memory (key : ty) (memory : linear_memory)
 
 Definition scratch_memory_key (state : mstate) (site : option ty) : option ty :=
   match site, ms_memory_parameter state with
-  | Some (Audit.Semantics.TNom _ arguments), Some parameter =>
-      match Audit.Semantics.lookup_subst parameter arguments with
+  | Some (AuditBase.Semantics.TNom _ arguments), Some parameter =>
+      match AuditBase.Semantics.lookup_subst parameter arguments with
       | Some key =>
-          if ty_eqb key (Audit.Semantics.TAbs parameter) then None else Some key
+          if ty_eqb key (AuditBase.Semantics.TAbs parameter) then None else Some key
       | None => None
       end
   | _, _ => None

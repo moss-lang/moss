@@ -1,11 +1,12 @@
 (* Relate source typing and structural translation to the combined
    judgments used by the safety proof. *)
 From Stdlib Require Import List String Bool.
+From NM Require AuditBase.
 From NM Require Import Audit BodyLiteralTyping BodyMethodTyping.
 From NM Require Import LegacyBodyJudgments.
 From NM Require BodyFunctionProviderTyping BodyProviderTyping.
 From NM Require BodyLinkTyping BodyLambdaTyping.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

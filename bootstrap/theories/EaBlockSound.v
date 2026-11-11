@@ -1,11 +1,12 @@
 (* Successful executable blocks thread the frame, context and generated
    body state described by the block rules. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaDecide EaExpr EaDecideSound EaControlSound EaBreaksSound
   EaChecked EaRecSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaMain.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 Local Open Scope string_scope.
 

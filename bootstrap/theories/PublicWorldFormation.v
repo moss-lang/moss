@@ -9,10 +9,11 @@
    Context type formation follows the class-shape evidence directly in
    PublicFormation; no world-wide substitution-row obligation is needed. *)
 From Stdlib Require Import List String Arith Bool Lia.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicFormation.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- requirements are type symbols ------------------------------------------ *)
 

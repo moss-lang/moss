@@ -11,7 +11,7 @@ From NM Require Import AuditBase.
 Import AuditBase.Compilation.
 From NM Require Import Audit NMap EaBase EaTypes.
 Import ListNotations.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

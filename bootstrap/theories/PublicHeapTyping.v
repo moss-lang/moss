@@ -2,10 +2,11 @@
    Allocation grows immutable type assignments and weakens old predicates
    using value-typing monotonicity. No concrete heap representation is used. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import Audit PublicValueTyping.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition heap_add (H : heap_types) (fresh : address) (kind : nat) (held : ty) : heap_types :=
   fun address => if Nat.eqb address fresh then Some (kind, held) else H address.

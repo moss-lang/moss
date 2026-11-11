@@ -15,8 +15,9 @@
      An accepted program is never stuck (public_safety), so the two agree
      on every accepted program. *)
 From Stdlib Require Import List Bool.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Input Audit.Semantics ListNotations.
+Import Audit.Input AuditBase.Semantics ListNotations.
 
 (* The representation before: one smap and one position list per copy,
    the first made first. *)

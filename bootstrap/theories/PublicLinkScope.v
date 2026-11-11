@@ -7,11 +7,12 @@
    with [binditems_scoped]'s growth by `made` this bounds a body's new
    provisions by the context it starts from. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicScoping.
 From NM Require Import LegacyBodyJudgments.
 From NM Require AllocationFacts PublicContextFacts PublicMerge PublicOrientation.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Scope.
 Variable W : A.world.

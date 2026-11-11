@@ -1,9 +1,10 @@
 (* A linked class uses a shared source input as the run-time reading of
    its private atomic representative. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require PublicSubstFacts PublicTypeFacts PublicTypeRead.
-Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Lemma input_anchor_read : forall Cu Cg y t,
   lookup_subst y (link_input_anchors Cu Cg) = Some t ->

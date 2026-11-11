@@ -11,11 +11,12 @@
    declared to return `|` has the result shape ShapeNever, which no value
    has, so the result law forbids it to return normally. *)
 From Stdlib Require Import List String Arith Bool PrimInt63.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
   PublicHeapTyping PublicBoolTyping PublicTagCheck PublicOperationFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Ltac in_list := cbn; repeat (first [left; reflexivity | right]).
@@ -284,8 +285,8 @@ Lemma bool_typed : forall H s w, A.LangSym W "bool" A.NSName "Bool" s ->
   value_shape P w ShapeBool -> value_typed W P H w (TNom s []).
 Proof.
   intros H s w Sym Shape.
-  destruct w as [|b inner| | |]; try contradiction.
-  destruct inner as [|t' u| | |]; try contradiction. destruct u; try contradiction.
+  destruct w as [|b inner| |]; try contradiction.
+  destruct inner as [|t' u| |]; try contradiction. destruct u; try contradiction.
   destruct Shape as [Eb Et]. cbn in Eb, Et.
   destruct (proj1 Bools s Sym) as [truth [falsity [T [F [_ [TU [FU [_ [_ Payload]]]]]]]]].
   destruct (bool_syms s Sym) as [-> Names]. destruct (Names _ _ T F) as [-> ->]. subst b.
@@ -325,16 +326,16 @@ Lemma shape_result : forall H t s w, Platform.ValueType W t s ->
 Proof.
   intros H t s w VT NA NT Shape. destruct s; cbn in VT; try congruence.
   - destruct (machine_ground "I32" Platform.i32_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w as [| | |sort bits|]; try contradiction.
+    destruct w as [| | |[sort bits|]]; try contradiction.
     destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - destruct (machine_ground "I64" Platform.i64_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w as [| | |sort bits|]; try contradiction.
+    destruct w as [| | |[sort bits|]]; try contradiction.
     destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - destruct (machine_ground "F32" Platform.f32_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w as [| | |sort bits|]; try contradiction.
+    destruct w as [| | |[sort bits|]]; try contradiction.
     destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - destruct (machine_ground "F64" Platform.f64_class t ltac:(in_list) VT) as [symbol [-> Class]].
-    destruct w as [| | |sort bits|]; try contradiction.
+    destruct w as [| | |[sort bits|]]; try contradiction.
     destruct sort as [|[|[|[|sort]]]]; try contradiction; constructor; exact Class.
   - subst t. destruct w; try contradiction; constructor.
   - destruct VT as [symbol [Sym ->]]. cbn. exact (bool_typed H symbol w Sym Shape).

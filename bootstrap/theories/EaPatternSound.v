@@ -1,8 +1,9 @@
 (* Successful executable pattern reads satisfy the audited pattern rules. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaExpr EaTypesSound.
 From NM Require Import LegacyBodyJudgments.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma member_with_head_sound : forall st symbol arguments,

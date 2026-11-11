@@ -2,8 +2,9 @@
    enumerate exactly the entry keys. Principality, idempotence and the
    functional substitution invariant remain separate. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCtx EaTypesSound PublicTypeFacts PublicCallRealize.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma nlist_eqb_spec : forall a b, nlist_eqb a b = true <-> a = b.

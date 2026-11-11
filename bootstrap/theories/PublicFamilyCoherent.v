@@ -16,11 +16,12 @@
    which makes it a method symbol ([method_named_meth]), the case where θ
    records the mentioned symbols. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicFormation PublicScoping.
 From NM Require PublicWorldFormation.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- a method named in a loaded module is a method symbol ------------------- *)
 

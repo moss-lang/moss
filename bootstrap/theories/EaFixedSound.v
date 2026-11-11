@@ -1,7 +1,8 @@
 (* Polymorphic and fixed dependency reads use the same source declaration. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaMentionsSound EaDependencyFuel EaResultSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma functor_decl_read : forall W symbol d parameters arguments results body,

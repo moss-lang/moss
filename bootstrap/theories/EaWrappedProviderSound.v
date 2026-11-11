@@ -1,10 +1,11 @@
 (* The wrapper cache preserves the exact body emitted for a callee and arity. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBind EaChecked EaCodeEffects EaCodeAllocationSound EaRecSound NMap.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaBindCodeEffects EaContextTableSound EaControlSound EaDefinedProviderSound
   EaMain EaSatisfiesSound PublicContextFacts WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Definition WrappedSlot (W : world) (bound : nat) (state : est) (g n : nat)

@@ -3,7 +3,7 @@
 From Stdlib Require Import List Bool String.
 From NM Require Import Audit AuditBase RuntimeRenaming.
 From NM Require BaseHost PublicOperationFacts.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Definition rename_base_primitive (rename : nat -> nat) (primitive : wasm_prim) : wasm_prim :=
   match primitive with
@@ -125,8 +125,8 @@ Qed.
 Lemma rename_raw_receiver : forall rename value,
   BaseCall.raw_receiver (rename_value rename value) = rename_value rename (BaseCall.raw_receiver value).
 Proof.
-  intros rename [|tag payload|fields|sort bits|address header]; try reflexivity.
-  destruct payload as [|inner value|fields|sort bits|address [[kind held]|]]; reflexivity.
+  intros rename [|tag payload|fields|[sort bits|address header]]; try reflexivity.
+  destruct payload as [|inner value|fields|[sort bits|address [[kind held]|]]]; reflexivity.
 Qed.
 
 Lemma rename_base_arguments : forall rename primitive values,
@@ -170,8 +170,8 @@ Lemma rename_allocation_result : forall rename primitive site outcome,
   rename_signal (base_renaming rename) (BaseCall.allocation_result primitive site outcome).
 Proof.
   intros rename primitive site outcome. destruct primitive, outcome; try reflexivity.
-  all: destruct v as [|tag payload|fields|sort bits|address header]; try reflexivity.
-  all: destruct payload as [|inner value|fields|sort bits|address [[kind held]|]]; reflexivity.
+  all: destruct v as [|tag payload|fields|[sort bits|address header]]; try reflexivity.
+  all: destruct payload as [|inner value|fields|[sort bits|address [[kind held]|]]]; reflexivity.
 Qed.
 
 Definition raw_calls_related {S : Type} (rename : nat -> nat) (related : S -> S -> Prop)

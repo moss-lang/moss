@@ -20,11 +20,12 @@
      instantiation, with the symbol exhibited (DomGap). With tables of one
      domain (DomSame), DomGap is impossible. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead.
 From NM Require PublicFormation.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section OutputSubst.
 Variable W : A.world.

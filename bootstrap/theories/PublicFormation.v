@@ -4,12 +4,13 @@
    Substitution by formed types keeps types formed, and so do the readings
    TyOf, Brackets and SigOf over formed type tables. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms.
 From NM Require Import LegacyBodyJudgments.
 From NM Require AllocationFacts PublicMerge PublicContextFacts.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Formation.
 Variable W : A.world.

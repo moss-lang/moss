@@ -1,8 +1,9 @@
 (* The evaluator commutes with symbolic renaming when views and primitive
    calls agree under that renaming. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit BaseFacts PublicValueTyping RuntimeRenaming RuntimeRenamingEnv RuntimeRenamingControl.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module InterpreterRenaming (Prims : PRIMITIVES) (I : INTERP Prims).
 Module E := ExecutionRenaming Prims I.

@@ -1,12 +1,13 @@
 (* The actual two source-body passes establish typed bodies and constants.
    Generated code from each pass is read in the same final program. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaExpr EaChecked EaRecSound EaControlSound EaCodeEffects
   EaCodeAllocationSound EaAssemblyCodeEffects EaBodyContext EaBodyState EaBodyCallbacks.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaConstantSound EaContextTableSound EaExpressionCodeEffects EaFunctionSound
   EaFunctionAssemblySound EaMain PublicWorldFormation WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Section BodyPasses.
 Variables (E : env) (P : program) (bound : nat) (final : est).

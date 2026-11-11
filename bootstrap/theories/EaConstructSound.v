@@ -1,9 +1,10 @@
 (* Typed nominal construction, records and field projection. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaExpr EaControlSound EaChecked.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaNumbering PublicTypeFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

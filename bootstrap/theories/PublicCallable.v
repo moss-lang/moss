@@ -2,8 +2,9 @@
    This module depends on the interpreter and value typing, not the body
    safety induction or a platform's primitive signatures. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit PublicValueTyping PublicLocalsTyping.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module Callable (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Section Contracts.

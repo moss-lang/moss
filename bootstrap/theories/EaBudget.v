@@ -1,8 +1,9 @@
 (* Compute one source budget for the executable dependency readers. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Export EaDepth.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 (* Only syntax consulted by a dependency reader contributes to this bound. *)
 Definition declaration_depth (syntax : adecl) : nat :=

@@ -17,8 +17,8 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicCallRealize PublicRuntimeKeys.
 From NM Require AllocationFacts PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
 From NM Require PublicCopySubst PublicLinkAnchors.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Module BodySlice (Prims : PRIMITIVES) (I0 : INTERP Prims).

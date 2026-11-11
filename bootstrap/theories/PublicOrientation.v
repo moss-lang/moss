@@ -7,9 +7,10 @@
    are in force through their class) is therefore the same under every
    orientation. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Lemma mgm_unifies : forall s es, A.MostGeneralMerge s es -> A.Unifies s es.
 Proof. intros s es [U _]. exact U. Qed.

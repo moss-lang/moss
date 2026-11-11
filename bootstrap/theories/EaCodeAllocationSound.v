@@ -1,8 +1,9 @@
 (* Scoped registration of generated function and functor bodies. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase NMap.
 From NM Require AllocationFacts CodeTable WorldSound EaMain EaControlSound EaPlatform.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 
 Definition code_in (table : code_table) : Type :=
   match table with FunctionTable => expr | FunctorTable => functor_code end.

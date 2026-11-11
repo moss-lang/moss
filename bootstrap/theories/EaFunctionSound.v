@@ -1,9 +1,10 @@
 (* The executable function checker forms its source context and signature,
    numbers the frame and records exactly the translated body. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaControlSound.
 From NM Require EaMain EaNumbering EaContextTableSound EaCodeAllocationSound WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 

@@ -3,6 +3,8 @@
    assumptions are transitively everything the guarantee rests on, and
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
+From NM Require Import Audit.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Parse Sx EaBase CodeTable EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaBlockSound EaBreaksSound EaCallExpressionSound EaConstructSound EaDefinedCallSound EaDeclarationSound EaDecideSound EaFamilyComplete EaFamilySound EaFamilyUseSound EaFunctionAssemblySound EaFunctionSound EaMatchSound EaMain EaRecSound EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapSound BootstrapRun BaseHost InterpreterFuel.
 From NM Require BootstrapVerified EaBodyAssembly.
@@ -26,7 +28,7 @@ Module PublicPublic := BaseHost.Public.
 (* Check the Base specialization by reduction, using the given public
    instance rather than instantiating another interpreter. *)
 Module BasePublicEquations (Host : AuditBase.HOST) (M : BaseFacts.PUBLIC Host).
-Import Audit.Semantics.
+Import AuditBase.Semantics.
 Lemma linked_exact : forall W P, M.Link.Linked W P = Platform.Linked W P.
 Proof. reflexivity. Qed.
 Lemma ready_exact : forall P, M.Link.Ready P = Platform.Ready P.
@@ -42,7 +44,7 @@ Proof. reflexivity. Qed.
 End BasePublicEquations.
 Module BasePublicBoundary := BasePublicEquations BaseHost.Concrete PublicPublic.
 Module PublicHeaps := PublicHeapTyping.HeapSafety BaseHost.Concrete PublicPublic.
-Module PublicInterp := Audit.Semantics.Interpreter PublicClosureExample.Prims.
+Module PublicInterp := AuditBase.Semantics.Interpreter PublicClosureExample.Prims.
 Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Prims PublicInterp.
 (* public_safety's instance. Every functor of the body-safety chain is
    instantiated inside it exactly once (PublicFamilyCopy contains
@@ -91,11 +93,11 @@ Definition pruned_observation_agrees : forall prelude program interface initial,
   PruneTop.code_blind interface -> forall fuel,
   PublicPublic.observe (PublicPublic.Reference.run_main fuel
     (PublicPublic.runtime (ProgramPrune.prune program) initial)
-    (Audit.Semantics.program_main (ProgramPrune.prune program))
-    (Audit.Semantics.program_environment (ProgramPrune.prune program)) (interface, initial))
+    (AuditBase.Semantics.program_main (ProgramPrune.prune program))
+    (AuditBase.Semantics.program_environment (ProgramPrune.prune program)) (interface, initial))
   = PublicPublic.observe (PublicPublic.Reference.run_main fuel
-    (PublicPublic.runtime program initial) (Audit.Semantics.program_main program)
-    (Audit.Semantics.program_environment program) (interface, initial)) :=
+    (PublicPublic.runtime program initial) (AuditBase.Semantics.program_main program)
+    (AuditBase.Semantics.program_environment program) (interface, initial)) :=
   fun prelude program interface initial Ha Hc Hb =>
     @PruneTop.observe_pruned program interface initial Hb
       (PublicEntryTop.public_safety prelude program interface initial Ha Hc).
@@ -188,7 +190,7 @@ Qed.
    compiled tables together. Valid source bytes and canonical loaded
    paths let the successful reads serve as the finite public snapshot. *)
 Section ConcretePipeline.
-Import Audit.Input Audit.Semantics.
+Import Audit.Input AuditBase.Semantics.
 Theorem concrete_pipeline_sound_from_bodies : BootstrapSound.BodiesSound ->
   forall read cwd prelude_in entry_in bundle world program prelude entry initial tbl ftbl fuel result,
   SnapshotLoader.load_from read cwd prelude_in entry_in = Sx.Good bundle ->

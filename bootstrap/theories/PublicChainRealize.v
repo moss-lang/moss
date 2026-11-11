@@ -26,6 +26,7 @@
      state after the application, which grounds θ x as d does and each
      destination gensof t as M t. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd
   PublicLinkResults PublicChainCore PublicLinkScope.
@@ -34,8 +35,8 @@ From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys Publi
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig.
 From NM Require PublicMergeClass.
 From NM Require AllocationFacts PublicContextFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- the last position for any key, on two related readings ----------------- *)
 

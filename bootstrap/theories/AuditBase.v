@@ -3,9 +3,67 @@
    Audit.v defines the generic language and public proof obligations. *)
 From Stdlib Require Import PrimInt63 ZArith String Ascii List Bool Arith.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.
+
+(* Base's machine values and the checks on its Wasm reference wrappers. *)
+Module Representation <: Audit.REPRESENTATION.
+Inductive base_class : Type :=
+| MScalar (sort : nat)
+| MReference (kind : nat).
+
+Definition machine_class := base_class.
+Definition address := nat.
+
+Inductive base_payload (T : Type) : Type :=
+| Scalar : nat -> Z -> base_payload T
+| Reference : address -> option (nat * T) -> base_payload T.
+Arguments Scalar {T}.
+Arguments Reference {T}.
+Definition payload := base_payload.
+
+Record base_tag_check (T : Type) : Type := CastSpec {
+  cast_kind : nat;
+  cast_held : nat;
+  (* Ref and Array are ordinary wrappers when the raw handle payload is
+     rebound to another representation. *)
+  cast_handle : option (nat * T)
+}.
+Arguments CastSpec {T}.
+Definition tag_check := base_tag_check.
+
+Definition tag_trap (T : Type) (equal : T -> T -> bool) (read_type : T -> T)
+    (argument : nat -> option T) (abstract : nat -> T)
+    (spec : tag_check T) (raw : option (payload T)) : option nat :=
+  let enabled := match cast_handle spec with
+    | None => true
+    | Some (h, expected) =>
+        equal (read_type (match argument h with Some t => t | None => abstract h end)) expected
+    end in
+  if enabled then
+    match argument (cast_held spec), raw with
+    | Some held, Some (Reference _ (Some (kind, header))) =>
+        if Nat.eqb (cast_kind spec) kind && equal (read_type held) header then None else Some 37
+    | _, _ => Some 37
+    end
+  else None.
+End Representation.
+
+Module Semantics.
+  Include Audit.Semantics Representation.
+  Definition address := Representation.address.
+  Notation MScalar := Representation.MScalar.
+  Notation MReference := Representation.MReference.
+  Notation CastSpec := Representation.CastSpec.
+  Notation cast_kind := Representation.cast_kind.
+  Notation cast_held := Representation.cast_held.
+  Notation cast_handle := Representation.cast_handle.
+  Notation VScalar sort bits := (VMachine (Representation.Scalar sort bits)).
+  Notation VRef address header := (VMachine (Representation.Reference address header)).
+End Semantics.
+
+Import Semantics.
 
 Module WasmOps.
 Local Open Scope string_scope.

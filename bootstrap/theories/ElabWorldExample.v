@@ -3,10 +3,11 @@
    (Parse.load). The first has a reading; the second's tag lists a type
    its nesting does not require (D73), so it has none. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit Sx Parse ElabWorld.
 Import ListNotations.
 Local Open Scope string_scope.
-Module AE := Audit.Semantics.Elaboration.
+Module AE := AuditBase.Semantics.Elaboration.
 
 Definition example_source : string := "type A;
 type B;

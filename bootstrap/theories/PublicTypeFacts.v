@@ -1,7 +1,8 @@
 (* Structural equality facts for the public type syntax. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Theorem ty_eqb_spec : forall left right,
   ty_eqb left right = true <-> left = right.

@@ -1,9 +1,10 @@
 (* Source typing for direct provider binds. A named or attached provider
    uses its declared body, so these bindings need no generated placement. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
 Lemma named_function_plan_translates : forall W P F C path signature plan,

@@ -1,7 +1,8 @@
 (* Result dependency reads are sound above the visited-pair fuel budget. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaMentionsSound EaContextFuel.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Lemma pmem_spec : forall x pairs, pmem x pairs = true <-> In x pairs.

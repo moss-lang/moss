@@ -1,8 +1,9 @@
 (* A checked list of parameter names keeps its prefix in the slot numbering. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypesSound.
 From NM Require PublicFormation WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
 Local Definition add_name (names : list string) (n : string) :=

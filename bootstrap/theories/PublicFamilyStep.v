@@ -29,8 +29,8 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
 From NM Require PublicFormation PublicCopyApply PublicCallerKeys.
 From NM Require Import AuditFacts.
 From NM Require PublicMerge.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- a family's result adds method provisions only ------------------------- *)
 

@@ -2,7 +2,7 @@
    README.md): the Rocq front end (SnapshotLoader.load_from, and Parse.parse_moss with
    the AST dump for --dump), the elaborator (EaMain.elaborate), the proved
    passes on Audit programs (BootstrapRun.passes) and Audit.v's reference interpreter
-   (Audit.Semantics.Interpreter, with program_of), run through
+   (AuditBase.Semantics.Interpreter, with program_of), run through
    InterpreterCompiled.CloInterpreter (the same interpreter with deferred type
    substitution, InterpreterLazy, trie-keyed provisions, InterpreterFast, and compiled
    to closures, InterpreterCompiled; proved equal to it: InterpreterCompiled.crun_main_reference),
@@ -67,11 +67,11 @@ Extract Inlined Constant CodeTable.dense_get => "CodeArray.get".
 Extraction Inline InterpreterCompiled.scalar_nil InterpreterCompiled.scalar_cons InterpreterCompiled.push_arg.
 (* The native operation has the same immutable name and operands.
    Its private memo is shared between the interpreter adapter and host. *)
-Extract Inductive Audit.Semantics.op => "PrimCache.operation"
+Extract Inductive AuditBase.Semantics.op => "PrimCache.operation"
   ["PrimCache.operation"]
   "(fun f operation -> f (PrimCache.name operation) (PrimCache.symbols operation))".
-Extract Inlined Constant Audit.Semantics.op_name => "PrimCache.name".
-Extract Inlined Constant Audit.Semantics.op_syms => "PrimCache.symbols".
+Extract Inlined Constant AuditBase.Semantics.op_name => "PrimCache.name".
+Extract Inlined Constant AuditBase.Semantics.op_syms => "PrimCache.symbols".
 Extraction NoInline AuditBase.WasmOps.decode.
 Extract Constant AuditBase.WasmOps.decode => "PrimCache.memoize decode_operation".
 Extraction NoInline BaseHost.decode_host_operation.
@@ -84,8 +84,8 @@ Separate Extraction AuditBase.BaseCall.call init_memories run_prim_fast
   BootstrapRun.passes BootstrapRun.indexed_program_of CodeTable.get
   BaseHost.call_in BaseHost.call_in_deferred BaseHostScalars.legacy_view BaseHost.decode_host_operation
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
-  Audit.Semantics.required_primitives
-  Audit.Semantics.Interpreter Audit.Semantics.program_of Audit.Semantics.Program
+  AuditBase.Semantics.required_primitives
+  AuditBase.Semantics.Interpreter AuditBase.Semantics.program_of AuditBase.Semantics.Program
   InterpreterLazy.LazyInterpreter InterpreterLazy.lift_env
   InterpreterFast.FastInterpreter InterpreterFast.fast_env InterpreterCompiled.CloInterpreter.
 (* InterpreterCompiled again, alone, with the extraction's term optimizations off

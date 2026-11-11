@@ -5,7 +5,7 @@ From NM Require AuditBase EaCall EaContextFuel EaContextTableSound EaForwarderSo
   EaOutputSound EaResultBudget EaRootSound EaSatisfiesSound EaCodeAllocationSound
   EaAssemblyCodeEffects EaCodeEffects EaControlSound EaMain EaMetadataSound EaWorldSound ElabWorld
   PublicCallRealize PublicOperationFacts PublicTypeFacts PublicTypeRead WorldSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration AuditBase.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration AuditBase.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 Module P := AuditBase.Platform.

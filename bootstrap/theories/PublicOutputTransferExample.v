@@ -1,8 +1,9 @@
 (* Review fixture only: this is not a full Admissible counterexample.
    It isolates inherited caller generations at a new activation boundary. *)
 From Stdlib Require Import List PeanoNat.
+From NM Require AuditBase.
 From NM Require Import Audit.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module Prims <: PRIMITIVES.
 Definition mstate := unit.

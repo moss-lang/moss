@@ -1,11 +1,12 @@
 (* Assemble the local bind proofs into the executable bind-item callback. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaBodyContext EaBind EaChecked EaRecSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaApplicationSound EaBindCodeEffects EaBudget EaCodeEffects EaContextTableSound
   EaControlSound EaCopySound EaDirectBindSound EaFamily EaFunctor EaMain EaProviderBindSound
   PublicContextFacts.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Lemma body_context_path_bind : forall W P F C path provider wrap C' F' made,

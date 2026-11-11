@@ -1,11 +1,12 @@
 (* Lambda typing follows the actual capture allocation, nested body
    elaboration, and registration in the final program. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeAllocationSound EaCodeEffects EaLambdaKeys EaLinkBodySound EaRecSound NMap.
 From NM Require Import LegacyBodyJudgments.
 From NM Require EaAllocationSound EaBind EaControlSound EaMain EaNumbering EaSatisfiesSound
   EaTypes EaTypesSound PublicCallRealize PublicContextFacts PublicTypeFacts WorldSound.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Import EaBind.
 Local Open Scope list_scope.
 

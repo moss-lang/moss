@@ -1,8 +1,9 @@
 (* The executable initializes source-set fuel from the proved finite budget. *)
 From Stdlib Require Import List String Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaDepth EaBudget EaDependencyFuel
   EaContextFuel EaResultBudget EaMain EaWorldSound ElabWorld.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem metadata_fuel_sufficient : forall W bound,
   metadata_budget W bound < EaMain.metadata_fuel W bound.

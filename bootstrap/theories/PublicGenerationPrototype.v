@@ -3,9 +3,10 @@
    are stable within an activation; aliases are already-read source/output
    meanings. A new generic activation may have another generation map. *)
 From Stdlib Require Import List PeanoNat.
+From NM Require AuditBase.
 From NM Require Import Audit PublicCaptureFacts.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Module GenerationPrototype.
 

@@ -5,10 +5,11 @@
    TyUnion produces. Formation of elaborated types is a separate (T29)
    obligation. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Definition UnionFormed (st : ty) : Prop :=
   forall ms, st = TUnion ms ->
@@ -113,13 +114,13 @@ Proof.
   - split; [intros s []|]. split; [discriminate|]. left.
     exists [(A.var_of F n, w)]; repeat split; repeat constructor; auto; intros [].
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | |]; cbn [O.I.match_pat];
+    destruct w as [|s' inner| |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists []; repeat split; constructor.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | |]; cbn [O.I.match_pat];
+    destruct w as [|s' inner| |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists [(A.var_of F y, inner)].
@@ -129,7 +130,7 @@ Proof.
       repeat split; repeat constructor; auto; try (intros []); exact Inner.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
   - split; [intros s' [<-|[]]; eauto|]. split; [discriminate|].
-    destruct w as [|s' inner| | |]; cbn [O.I.match_pat];
+    destruct w as [|s' inner| |]; cbn [O.I.match_pat];
       try (right; repeat split; [intros ? [<-|[]] ? ?; discriminate]).
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left.

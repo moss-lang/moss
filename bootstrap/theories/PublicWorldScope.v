@@ -1,10 +1,11 @@
 (* Exact source export/scope clauses for the public metadata reading.
    These concern shared source syntax only, not runtime typing/refinement. *)
 From Stdlib Require Import List String.
+From NM Require AuditBase.
 From NM Require Import Audit PublicWorld.
 From NM Require ExecutionModel Elab WorldSound ComponentContracts Sx.
 Import ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Module A := AuditBase.Semantics.Elaboration.
 Module M := ExecutionModel.Elaboration.
 
 Definition implementation_entity (entity : A.ent) : M.ent :=

@@ -1,10 +1,11 @@
 (* Function and constant typing choose source body plans. Translation
    supplies the numbering and relates a function plan to its emitted slot. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit BodyTyping.
 From NM Require BodyReadback.
 From NM Require Import LegacyBodyJudgments.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Theorem function_translation_agrees : forall W P resolve f,
   FunctionPlanAt W P resolve f ->

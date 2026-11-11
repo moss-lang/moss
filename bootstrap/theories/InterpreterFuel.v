@@ -1,9 +1,10 @@
 (* Fuel bounds the observation. Every finished execution is unchanged at
    larger bounds, including the final state and explicit failure signals. *)
 From Stdlib Require Import List Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicValueTyping.
 From NM Require Import BaseFacts.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Module Fuel (Prims : PRIMITIVES) (I : INTERP Prims).
 Import I.

@@ -1,9 +1,10 @@
 (* Lambda typing chooses capture identities and a source body plan. The
    occurrence token determines where translation places the body and origin. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 
 Definition lambda_descriptor_prefix {BodyPlan : Type} (F : frame) (descriptor : lambda_body_descriptor BodyPlan) : expr -> expr :=

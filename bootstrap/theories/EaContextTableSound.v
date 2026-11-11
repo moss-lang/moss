@@ -1,7 +1,8 @@
 (* The source derivations and merge witnesses behind context-table entries. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaCtx ElabWorld NMap EaTypesSound EaEntriesSound EaRootSound EaMergeSound EaUnifySound EaFixedSound EaResultBudget.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 Definition ContextComputed (E : env) (symbol : nat) (result : cx * list item) : Prop :=
   match kind_sym (e_W E) symbol with

@@ -1,8 +1,9 @@
 (* Exercise the assumption check through parsed Moss and the actual context table. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaAssumptionAtoms EaMain EaCtx NMap ElabWorldExample.
 From NM Require ElabWorld.
-Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope string_scope.
 
 Definition method_source : string := "type X;

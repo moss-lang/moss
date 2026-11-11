@@ -1,9 +1,10 @@
 (* Ground local stores: lookup, lexical scope and assignment. Source-context
    grounding and callable/provision typing remain separate obligations. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit PublicValueTyping.
-Import Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section LocalStores.
 Variables (W : A.world) (P : program_view).

@@ -32,11 +32,12 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import AuditFacts.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require NatTrie.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Set Implicit Arguments.
 Local Open Scope nat_scope.
@@ -648,7 +649,7 @@ Lemma truthy_eq : forall w, truthy P' w = truthy P w.
 Proof. intros. unfold truthy. rewrite Hbool, Htrue, Hfalse. reflexivity. Qed.
 Lemma check_tag_eq : forall S d d' n th w, agree R S d d' ->
   check_tag P' d' n th w = check_tag P d n th w.
-Proof. intros S d d' n th w H. unfold check_tag, ground. rewrite Hcasts, (agree_tm H). reflexivity. Qed.
+Proof. intros S d d' n th w H. unfold check_tag, check_tag_with, ground. rewrite Hcasts, (agree_tm H). reflexivity. Qed.
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
 Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
 

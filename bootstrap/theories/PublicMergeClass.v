@@ -4,10 +4,11 @@
    is in force here (an application's, a family's, a copy's), that gives
    every equation of the callee's σ, which is the form the proofs use. *)
 From Stdlib Require Import List.
+From NM Require AuditBase.
 From NM Require Import Audit PublicCallRealize.
 From NM Require PublicOrientation.
-Import Audit.Input Audit.Semantics ListNotations.
-Import Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Import AuditBase.Semantics.Elaboration.
 
 Theorem functx_merges : forall W u Cu ns C, FunCtx W u Cu ns ->
   (forall t, In t (map fst (c_ty Cu)) -> nlook t (c_ty C) <> None) ->

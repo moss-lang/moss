@@ -1,9 +1,10 @@
 (* Two choices for one fresh batch differ by a permutation fixing all
    previously allocated and live identities in the surrounding scope. *)
 From Stdlib Require Import List Arith.
+From NM Require AuditBase.
 From NM Require Import Audit.
 From NM Require AllocationFacts.
-Import Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics.Elaboration ListNotations.
 
 Definition swap_atom (x y g : nat) : nat :=
   if Nat.eqb g x then y else if Nat.eqb g y then x else g.

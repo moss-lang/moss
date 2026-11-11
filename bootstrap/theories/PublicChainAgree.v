@@ -16,8 +16,8 @@ From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
 From NM Require PublicFormation PublicFamilyAgree PublicTypeFacts.
 From NM Require Import AuditFacts.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section ChainAgree.
 Variables (b : bundle) (W : A.world).

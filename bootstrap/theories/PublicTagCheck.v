@@ -7,8 +7,8 @@ From Stdlib Require Import List String Arith Bool.
 From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
   PublicCastTyping PublicBoolTyping PublicBodySafety.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 
 Lemma machine_table_lookup : forall W name mach x, Platform.Layouts W -> In (name, mach) Platform.initial_machines ->
@@ -232,7 +232,7 @@ Proof.
         cbn in Enabled. apply ty_eqb_spec in Enabled.
         change (app_subst (type_meanings d) pay) with (ground d pay) in Enabled.
         cbn [cast_kind]. rewrite Enabled. constructor. exact Class.
-  - unfold R.check_tag. cbn [view_casts program_of]. rewrite (formed_cast_not_unit W _ _ Table s Unit).
+  - unfold R.check_tag, R.check_tag_with. cbn [view_casts program_of]. rewrite (formed_cast_not_unit W _ _ Table s Unit).
     inversion Typed; subst. apply TypedUnitTag. exact Unit.
 Qed.
 (* Existing Base clients obtain the generic table evidence from the

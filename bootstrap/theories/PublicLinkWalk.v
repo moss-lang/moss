@@ -6,10 +6,11 @@
      have no outputs) makes nothing and writes no type meaning:
      [family_binds_no_dests]. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicFormation.
 From NM Require Import LegacyBodyJudgments.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section Walk.
 Variable W : A.world.

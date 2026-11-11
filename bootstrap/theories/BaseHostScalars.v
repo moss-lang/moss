@@ -3,7 +3,7 @@
 From Stdlib Require Import List ZArith PrimInt63 Uint63.
 From NM Require Import Audit AuditBase.
 From NM Require ExecutionModel MossX.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 Import ExecutionModel (xvalue(..), xout(..), xprog(..), xty(..), xvty, base_primitive).
 
 Definition legacy_view (P : program_view) : xprog :=
@@ -48,11 +48,11 @@ Fixpoint from_value (w : xvalue) : value :=
 Lemma to_scalar_shape : forall P v shape,
   value_shape P v shape -> xvty (legacy_view P) (to_scalar v) (legacy_shape shape).
 Proof.
-  intros P v shape. destruct shape, v; cbn; try tauto.
+  intros P v shape. destruct shape, v as [| | |[]]; cbn; try tauto.
   all: repeat first
     [ solve [tauto]
     | match goal with
-      | v : value |- _ => destruct v; cbn
+      | v : value |- _ => destruct v as [| | |[]]; cbn
       | |- context [match ?n with O => _ | S _ => _ end] =>
           destruct n as [|[|[|[|n]]]]; cbn
       end ].

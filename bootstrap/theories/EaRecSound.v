@@ -1,10 +1,11 @@
 (* The query driver threads validity forwards and final-program evidence
    backwards. A judgment can use the evidence at the action's end. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaExpr EaBind EaMain EaControlSound
   EaCodeAllocationSound EaCodeEffects EaAssemblyCodeEffects EaChecked.
 From NM Require Import LegacyBodyJudgments.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 
 (* Only populated generated slots need to survive into the final state.
    An enclosing action can still fill a slot reserved around a child. *)

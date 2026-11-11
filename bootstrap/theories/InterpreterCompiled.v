@@ -21,10 +21,11 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith String Lia.
+From NM Require AuditBase.
 From NM Require Import Audit NatTrie InterpreterLazy InterpreterFast.
 From NM Require Import PublicValueTyping.
 From NM Require CodeTable.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 From NM Require ProgramPrune.
 
 Local Open Scope nat_scope.
@@ -822,7 +823,7 @@ Proof.
   intros. unfold cc_tag. destruct (lookup_cast n (view_casts P)) eqn:Cast; [reflexivity|].
   destruct m as [|k]; [reflexivity|].
   destruct (c k d g st) as [[] g1 st1]; try reflexivity.
-  unfold L.lcheck_tag. rewrite Cast. reflexivity.
+  unfold L.lcheck_tag, I.check_tag_with. rewrite Cast. reflexivity.
 Qed.
 
 Lemma select_carm_cc : forall arms w,
@@ -885,7 +886,7 @@ Proof.
       cbn [sev] in Ev. destruct (sev P d g st s1) as [[w1 st1]|] eqn:E1; cbn [option_map] in Ev; [|discriminate].
       injection Ev as <- <-. cbn [sdepth] in Fu. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval].
       rewrite (IHe n pl e s1 T1 d de H g st w1 st1 E1 k ltac:(lia)).
-      unfold L.lcheck_tag. rewrite Cast. reflexivity.
+      unfold L.lcheck_tag, I.check_tag_with. rewrite Cast. reflexivity.
     + (* ECall *) destruct n as [|n']; [discriminate|].
       destruct (view_function P f) as [body|] eqn:Vf; [|discriminate].
       destruct (tosl P m (S n') pl l) as [ss|] eqn:Ta; [|discriminate].

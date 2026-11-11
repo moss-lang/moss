@@ -1,7 +1,8 @@
 (* Local completeness facts needed when dependency readers are negated. *)
 From Stdlib Require Import List String Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit AuditFacts EaBase EaTypes EaTypesSound EaMentionsSound.
-Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
+Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 From NM Require Export EaDepth.
 Local Open Scope list_scope.
 

@@ -24,10 +24,11 @@
    family Provided case has the FamilyReadOff premise in hand), is the
    same statement under FamilyReadOff: [family_sig_ok_readoff]. *)
 From Stdlib Require Import List String Arith Bool.
+From NM Require AuditBase.
 From NM Require AuditFacts.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms PublicFormation.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Section FamilySig.
 Variable W : A.world.

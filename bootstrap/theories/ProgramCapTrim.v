@@ -39,11 +39,12 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List Bool Arith Lia.
+From NM Require AuditBase.
 From NM Require Import BaseFacts.
 From NM Require Import AuditFacts.
 From NM Require Import Audit PublicTypeFacts PublicValueTyping.
 From NM Require NatTrie ProgramPrune.
-Import Audit.Semantics ListNotations.
+Import AuditBase.Semantics ListNotations.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -755,8 +756,9 @@ Lemma check_tag_eq : forall S Dm x d d' n th w, envrel T S Dm x d d' ->
   sok S th = true -> forallb S casts = true ->
   check_tag P' d' n th w = check_tag P d n th w.
 Proof.
-  intros S Dm x d d' n th w H Hs Hc. unfold check_tag. rewrite Hcasts.
+  intros S Dm x d d' n th w H Hs Hc. unfold check_tag, check_tag_with. rewrite Hcasts.
   destruct (lookup_cast n (view_casts P)) as [spec|] eqn:Ecast; [|reflexivity].
+  unfold AuditBase.Representation.tag_trap.
   assert (Hth : forall h t, lookup_subst h th = Some t -> ground d t = ground d' t).
   { intros h t Hl. apply (envrel_ground H). apply lookup_subst_in in Hl.
     unfold sok in Hs. rewrite forallb_forall in Hs. exact (Hs _ Hl). }

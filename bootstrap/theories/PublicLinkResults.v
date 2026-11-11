@@ -5,12 +5,13 @@
    the writes, which shadow, re-ground nothing typed there), and the
    caller's meanings grow only by the destinations. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require PublicContextFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply.
 From NM Require PublicFormation.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 (* ---- result types (read_result_types, fresh_result_types) ---------------- *)
 

@@ -1,10 +1,11 @@
 (* The body passes share one allocator and four code/constant caches.
    Cache typing can use final-program code via GeneratedPost. *)
 From Stdlib Require Import List Arith Lia.
+From NM Require AuditBase.
 From NM Require Import Audit EaBase EaCodeAllocationSound EaCodeEffects EaRecSound EaCacheEffects.
 From NM Require EaAssemblyCodeEffects EaBindCodeEffects EaConstantSound EaControlSound
   EaForwarderSound EaFunctor EaLinkBodySound EaWrappedProviderSound WorldSound.
-Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
+Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Import EaForwarderSound EaWrappedProviderSound EaConstantSound EaLinkBodySound.
 
 Record BodyCaches (W : world) (P : program) (bound : nat) (state : est) : Prop := {

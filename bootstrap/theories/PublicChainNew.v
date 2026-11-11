@@ -5,12 +5,13 @@
    static premise ChainKeysOk is gone. What remains is the realization of
    the new provisions after the application, ChainRealizeOk. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
+From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicFamilyAgree PublicChainCore.
 From NM Require PublicFormation.
-Import Audit.Input Audit.Semantics ListNotations.
-Module A := Audit.Semantics.Elaboration.
+Import Audit.Input AuditBase.Semantics ListNotations.
+Module A := AuditBase.Semantics.Elaboration.
 
 Module ChainNew (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CC := PublicChainCore.ChainCore Prims I0.
