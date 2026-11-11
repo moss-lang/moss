@@ -13,7 +13,7 @@ From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require AuditBase.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require SnapshotLoader EaMain BootstrapRun BaseHost BaseHostScalars InterpreterLazy InterpreterFast InterpreterCompiled.
+From NM Require SnapshotLoader EaMain BootstrapRun BaseHost BaseHostScalars CodeTable InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -55,6 +55,11 @@ Extract Inlined Constant NMap.is_even_nat => "(fun k -> k land 1 = 0)".
 Extract Inlined Constant Nat.div2 => "(fun k -> k asr 1)".
 Extract Inlined Constant tleft => "(fun k -> k = 0 || k land 1 = 1)".
 Extract Inlined Constant tdown => "(fun k -> (k - 1) / 2)".
+(* A dense code table has one optional body per symbol. Its lookup is
+   nth_error followed by flattening the option. *)
+Extract Inductive CodeTable.slots => "CodeArray.t"
+  ["Array.of_list"] "(fun f cells -> f (Array.to_list cells))".
+Extract Inlined Constant CodeTable.dense_get => "CodeArray.get".
 Extraction Inline InterpreterCompiled.scalar_nil InterpreterCompiled.scalar_cons InterpreterCompiled.push_arg.
 (* The native operation has the same immutable name and operands.
    Its private memo is shared between the interpreter adapter and host. *)
@@ -71,7 +76,7 @@ Extraction Blacklist String List Char Bool.
 Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
-  BootstrapRun.passes BootstrapRun.indexed_program_of
+  BootstrapRun.passes BootstrapRun.indexed_program_of CodeTable.get
   BaseHost.primitive_in BaseHostScalars.legacy_view BaseHost.decode_host_operation
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code
   Audit.Semantics.required_primitives

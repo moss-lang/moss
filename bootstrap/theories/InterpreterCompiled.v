@@ -23,6 +23,7 @@
 From Stdlib Require Import List Bool Arith String Lia.
 From NM Require Import Audit NatTrie InterpreterLazy InterpreterFast.
 From NM Require Import PublicValueTyping.
+From NM Require CodeTable.
 Import Audit.Semantics ListNotations.
 From NM Require ProgramPrune.
 
@@ -758,6 +759,27 @@ Definition crun_program (P : program_view) (tbl : fsym -> option code)
 Definition tbl_ok (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode) : Prop :=
   (forall f, tbl f = option_map (cc P tbl ftbl) (view_function P f)) /\
   (forall h, ftbl h = option_map (fun code => ccbs P tbl ftbl (fc_bindings code)) (view_functor P h)).
+
+Definition compile_functions P tbl ftbl (p : program) : CodeTable.table code :=
+  CodeTable.build (map (fun row => (fst row, cc P tbl ftbl (snd row))) (program_functions p)).
+
+Definition compile_functors P tbl ftbl (p : program) : CodeTable.table bcode :=
+  CodeTable.build (map (fun row => (fst row, ccbs P tbl ftbl (fc_bindings (snd row)))) (program_functors p)).
+
+Theorem materialized_tables_ok : forall P p tbl ftbl,
+  (forall f, view_function P f = Elaboration.nlook f (program_functions p)) ->
+  (forall u, view_functor P u = Elaboration.nlook u (program_functors p)) ->
+  (forall f, tbl f = CodeTable.get (compile_functions P tbl ftbl p) f) ->
+  (forall u, ftbl u = CodeTable.get (compile_functors P tbl ftbl p) u) ->
+  tbl_ok P tbl ftbl.
+Proof.
+  intros P p tbl ftbl Functions Functors FindFunction FindFunctor. split; intros.
+  - rewrite FindFunction, Functions. unfold compile_functions. rewrite CodeTable.get_build.
+    exact (CodeTable.nlook_map_values expr code (cc P tbl ftbl) (program_functions p) f).
+  - rewrite FindFunctor, Functors. unfold compile_functors. rewrite CodeTable.get_build.
+    exact (CodeTable.nlook_map_values functor_code bcode
+      (fun body => ccbs P tbl ftbl (fc_bindings body)) (program_functors p) h).
+Qed.
 
 Section Agreement.
 Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).

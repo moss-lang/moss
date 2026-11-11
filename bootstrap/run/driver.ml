@@ -163,18 +163,15 @@ let () =
   let view = BootstrapRun.indexed_program_of p argv read in
   Prims.initialize view;
   let t2 = now () in
-  (* InterpreterCompiled.crun_main_reference: under tbl_ok, the compiled run on the
-     converted environment returns exactly what Interpreter.run_main
-     returns. The arrays are trusted driver code: tbl and ftbl hold the code of the view's bodies (the
-     first body for a symbol wins, as there), closures that read the very
-     arrays they are stored in, filled before the run starts. *)
-  let nf = 1 + List.fold_left (fun n (f, _) -> max n f) 0 p.A.program_functions in
-  let nu = 1 + List.fold_left (fun n (u, _) -> max n u) 0 p.A.program_functors in
-  let a = Array.make nf None and b = Array.make nu None in
-  let tbl f = if f >= 0 && f < nf then a.(f) else None in
-  let ftbl u = if u >= 0 && u < nu then b.(u) else None in
-  List.iter (fun (f, e) -> a.(f) <- Some (C.cc view tbl ftbl e)) (List.rev p.A.program_functions);
-  List.iter (fun (u, code) -> b.(u) <- Some (C.ccbs view tbl ftbl code.A.fc_bindings)) (List.rev p.A.program_functors);
+  (* The compiled closures read the tables they live in. Materialize both
+     tables before execution. The extracted builders prove tbl_ok for
+     these two lookup equations. *)
+  let rec tbl f = CodeTable.get (Lazy.force functions) f
+  and ftbl u = CodeTable.get (Lazy.force functors) u
+  and functions = lazy (C.compile_functions view tbl ftbl p)
+  and functors = lazy (C.compile_functors view tbl ftbl p) in
+  ignore (Lazy.force functions);
+  ignore (Lazy.force functors);
   let r = C.crun_program view tbl max_int p (MossX.init_state (Uint63.of_int !pages)) in
   let st = r.I.evaluation_state in
   print_string (output st.MossX.ms_out); flush stdout;

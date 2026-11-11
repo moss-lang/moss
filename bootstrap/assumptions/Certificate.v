@@ -576,8 +576,10 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NativeRunTop.Model.C.cc_agrees);
   root (@NativeRunTop.Model.C.crun_main_agrees);
   root (@NativeRunTop.Model.C.crun_main_reference);
+  root (@NativeRunTop.Model.C.materialized_tables_ok);
   root (@NativeRunTop.Model.run_compiled_sound);
   root (@NativeRunTop.Model.run_optimized_sound);
+  root (@NativeRunTop.native_tables_ok);
   root (@NativeRunTop.run_optimized_sound);
   root (@BaseHost.primitive_laws);
   root (@BaseHost.default_compatible);

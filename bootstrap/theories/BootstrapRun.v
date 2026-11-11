@@ -1,7 +1,7 @@
 (* The pass order used by moss-ref and its composition with the compiled
    interpreter. The native caller supplies the compiled lookup tables. *)
 From Stdlib Require Import List String.
-From NM Require Import Audit BaseFacts NatTrie.
+From NM Require Import Audit BaseFacts NatTrie CodeTable.
 From NM Require InterpreterCompiled InterpreterState ProgramFastPath ProgramPrune ProgramCapTrim.
 Import Audit.Semantics ListNotations.
 Open Scope string_scope.
@@ -13,17 +13,6 @@ Definition passes : list (string * (program -> program)) :=
 
 Definition optimize (p : program) : program :=
   fold_left (fun p pass => snd pass p) passes p.
-
-Definition index_rows {A : Type} (rows : list (nat * A)) : tmap A :=
-  fold_right (fun '(key, value) index => tset index key value) TE rows.
-
-Lemma index_rows_lookup : forall A (rows : list (nat * A)) key,
-  tget (index_rows rows) key = Elaboration.nlook key rows.
-Proof.
-  intros A rows key. induction rows as [|[entry value] rows IH]; [reflexivity|].
-  unfold index_rows in IH.
-  cbn [index_rows fold_right Elaboration.nlook]. now rewrite tget_tset, IH.
-Qed.
 
 Definition indexed_program_of (p : program) (argv : list (list PrimInt63.int))
     (read : list PrimInt63.int -> option (list PrimInt63.int)) : program_view :=
@@ -116,6 +105,17 @@ Definition lift_state (initial : M.state) (external : Host.state) : M.ReferenceH
 
 Definition native_view (p : program) (initial : M.state) : program_view :=
   indexed_program_of p (M.arguments initial) (M.read_file initial).
+
+Theorem native_tables_ok : forall p initial tbl ftbl,
+  (forall f, tbl f = CodeTable.get (C.compile_functions (native_view p initial) tbl ftbl p) f) ->
+  (forall u, ftbl u = CodeTable.get (C.compile_functors (native_view p initial) tbl ftbl p) u) ->
+  C.tbl_ok (native_view p initial) tbl ftbl.
+Proof.
+  intros p initial tbl ftbl Functions Functors.
+  apply (C.materialized_tables_ok (native_view p initial) p); auto.
+  - intros. apply indexed_function_lookup.
+  - intros. apply indexed_functor_lookup.
+Qed.
 
 Lemma primitive_commutes : Model.Prune.code_blind M.default_interface ->
   forall p initial operation site values state,

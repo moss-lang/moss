@@ -23,6 +23,9 @@ ignore program code, and compiled tables satisfying `tbl_ok`.
 driver's state layout, where only primitive-managed state is threaded
 through the interpreter. Its extracted program view uses indexed lookups
 proved to return the same bodies as Audit.
+`BootstrapRun.Native.native_tables_ok` verifies the compiled tables from
+the extracted builders. The driver ties their lookup functions together
+before the run and uses OCaml arrays for dense table storage.
 
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
 `LoadListed.v`; `LoadListedFacts.v` proves its complete result, including
@@ -42,9 +45,9 @@ supplies the interface laws once the program is ready to link.
 The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
 and `EaWorldSound` proofs cover readers, their fuel conditions and the
 world builder. Ea's `SOUND:` comments state the intended per-function
-contracts. The executable trusts the OCaml driver's table construction,
-setup of the fixed host context, I/O and extraction directives. The
-decoder memo in `primCache.ml` stores pure results alongside immutable
+contracts. The executable trusts OCaml's recursive table binding and
+array representation, host context setup, I/O, and extraction directives.
+The decoder memo in `primCache.ml` stores pure results alongside immutable
 operation names and operands. `check.sh` audits the extracted roots'
 assumptions.
 
