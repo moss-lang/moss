@@ -22,7 +22,7 @@ Definition scope (p : string) (ns : nspace) (n : string) : option ent :=
   else None.
 Definition world_main := World
   (fun s => if Nat.eqb s 1 then Some main_decl else None)
-  scope scope (fun _ _ => None) (fun _ => []) (Some "/lib/")
+  scope scope (fun _ _ => None) (fun _ => []) (Some "/lib/") Platform.root_item
   (fun s => if Nat.eqb s 1 then Some (Cx [] [] [] [] [], []) else None).
 
 Lemma reads_decl : forall s d, w_decl world_main s = Some d -> s = 1 /\ d = main_decl.
@@ -253,7 +253,7 @@ Proof.
       * split; [reflexivity|]. exists None, None. split; [right;split;[exact (NoWasm NSName "Ref")|reflexivity]|].
         split; [right;split;[exact (NoWasm NSName "Array")|reflexivity]|reflexivity].
       * exists empty_context, [], [], []. split; [exact main_context|].
-        split; [reflexivity|]. split; [reflexivity|]. split; constructor.
+        split; [reflexivity|]. split; [reflexivity|]. repeat split; constructor.
 Qed.
 
 Definition main_text := "fn main() {}".

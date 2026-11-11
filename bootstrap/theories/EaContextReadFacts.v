@@ -341,9 +341,10 @@ Lemma root_ctx_context : forall symbol es0 tm,
   root_ctx E' symbol es0 tm = root_ctx E symbol es0 tm.
 Proof.
   intros symbol es0 tm. unfold root_ctx. cbn [E E' e_mains e_W].
-  rewrite lang_item_sym_context. change (w_decl W') with (w_decl W).
+  change (root_context_symbol W') with (root_context_symbol W).
+  change (w_decl W') with (w_decl W).
   destruct (nmem symbol mains); [|reflexivity].
-  destruct (lang_item_sym W LIRoot) as [gc|]; [|reflexivity].
+  destruct (root_context_symbol W) as [gc|]; [|reflexivity].
   destruct (w_decl W gc) as [d|]; [|reflexivity].
   destruct (d_ast d); [reflexivity|reflexivity|reflexivity|reflexivity|reflexivity|reflexivity|reflexivity| |reflexivity].
   apply root_items_context.

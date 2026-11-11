@@ -856,8 +856,10 @@ Definition Tables (W : world) (machines : list (tsym * machine_class))
 Definition Provides (W : world) (P : program) (C : cx) (key : item) (value : provision_value) : Prop :=
   Entry W P C key value /\ PlatformEntry W P key value.
 Definition EntryABI := EntryPoint.
+Definition root_item : option (string * name) := Some ("wasm", "Gc").
 
 Module Static <: STATIC_PLATFORM.
+  Definition root_item := root_item.
   Definition Tables := Tables.
   Definition Provides := Provides.
   Definition EntryABI := EntryABI.

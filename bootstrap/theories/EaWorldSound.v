@@ -1,5 +1,6 @@
 (* The executable world builder preserves the loader's reading and bounds. *)
 From Stdlib Require Import List String Bool Arith.
+From NM Require AuditBase.
 From NM Require Import Audit NMap LoadWorld Sx EaBase EaMain ElabWorld PublicWorld WorldSound ReqsSolve.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
@@ -39,6 +40,16 @@ Proof.
   injection Run as <- <-. exact (load_world_decl_bounded _ _ _ Loaded).
 Qed.
 
+Lemma bundle_world_r_root : forall bundle W bound,
+  EaMain.bundle_world_r bundle = Ok (W, bound) -> w_root_item W = AuditBase.Platform.root_item.
+Proof.
+  intros bundle W bound Run. unfold EaMain.bundle_world_r in Run.
+  repeat match type of Run with
+  | context [match ?step with _ => _ end] => destruct step eqn:?; try discriminate
+  end.
+  injection Run as <- <-. reflexivity.
+Qed.
+
 From NM Require Import EaContextFuel.
 
 Corollary bundle_world_r_context_readers_exact : forall bundle W bound fuel,
@@ -66,4 +77,18 @@ Proof.
   end.
   injection Run as <- <-.
   apply ElabWorld.world_of_context. exact (bundle_world_r_sound _ _ _ WorldRead).
+Qed.
+
+Theorem elaborate_with_root : forall strategy bundle W program,
+  EaMain.elaborate_with strategy bundle = Ok (W, program) ->
+  w_root_item W = AuditBase.Platform.root_item.
+Proof.
+  intros strategy bundle W program Run. unfold EaMain.elaborate_with, EaMain.elaborate_with_metadata in Run.
+  destruct (EaMain.bundle_world_r bundle) as [[source_world bound]|message] eqn:WorldRead;
+    [|discriminate].
+  repeat match type of Run with
+  | context [match ?step with _ => _ end] => destruct step eqn:?; try discriminate
+  end.
+  injection Run as <- <-.
+  exact (bundle_world_r_root _ _ _ WorldRead).
 Qed.

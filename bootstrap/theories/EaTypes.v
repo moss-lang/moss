@@ -67,6 +67,12 @@ Definition lang_sym (short : string) (ns : nspace) (n : name) : option nat :=
 Definition lang_item_sym (i : lang_item) : option nat :=
   let '(m, ns, n) := lang_item_key i in lang_sym m ns n.
 
+Definition root_context_symbol : option nat :=
+  match w_root_item W with
+  | Some (library, context) => lang_sym library NSName context
+  | None => None
+  end.
+
 (* SOUND: method_named p r n = Some m <-> MethodNamed W p r n m *)
 Definition method_named (p : string) (r : nat) (n : name) : option nat :=
   match w_attached W r n with

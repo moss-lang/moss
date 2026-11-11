@@ -105,7 +105,7 @@ with items_entries (n : nat) (stk : list nat) (p : string) (ob tm : list (nat * 
       end
   end.
 
-(* ---- RootCtx (main's Gc functors, note 54) ---- *)
+(* ---- RootCtx (the platform root context, note 54) ---- *)
 
 Definition has_nfun (u : nat) (es : list entry) : bool :=
   existsb (fun e => match e with NFun u' _ => Nat.eqb u u' | _ => false end) es.
@@ -146,7 +146,7 @@ Fixpoint root_items (q : string) (es0 : list entry) (tm : list (nat * ty)) (its 
 (* SOUND: root_ctx s es0 tm = Ok (er, tmr) -> RootCtx W s es0 tm er tmr *)
 Definition root_ctx (s : nat) (es0 : list entry) (tm : list (nat * ty)) : er (list entry * list (nat * ty)) :=
   if nmem s (e_mains E) then
-    match lang_item_sym W LIRoot with
+    match root_context_symbol W with
     | Some gc =>
         match w_decl W gc with
         | Some d => match d_ast d with

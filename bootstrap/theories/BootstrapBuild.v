@@ -242,6 +242,7 @@ Proof.
     destruct PlatformCtx as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & ProvidedRead).
     congruence. }
   subst provided_context. rewrite Env in Provided.
+  split; [exact (EaWorldSound.elaborate_with_root _ _ _ _ Run)|].
   split; [exact Entry|split; [exact Tables|]].
   exists C, needs, types, provisions. repeat split; assumption.
 Qed.

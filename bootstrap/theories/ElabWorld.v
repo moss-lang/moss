@@ -483,16 +483,17 @@ Qed.
 (* WorldOf does not read `w_context`, so a world keeps WorldOf when its
    context table is replaced (E-M2 forms the table after the world). *)
 Definition with_context (W : AE.world) (T : nat -> option (AE.cx * list Audit.Semantics.item)) : AE.world :=
-  AE.World (AE.w_decl W) (AE.w_scope W) (AE.w_exp W) (AE.w_attached W) (AE.w_reqs W) (AE.w_library W) T.
+  AE.World (AE.w_decl W) (AE.w_scope W) (AE.w_exp W) (AE.w_attached W) (AE.w_reqs W) (AE.w_library W) (AE.w_root_item W) T.
 
 Section Context.
 
 Variables (d : nat -> option AE.decl) (sc ex : string -> AE.nspace -> name -> option AE.ent)
   (at_ : nat -> name -> option nat) (rq : nat -> list nat) (lib : option string)
+  (root : option (string * name))
   (c c' : nat -> option (AE.cx * list Audit.Semantics.item)).
 
-Local Notation W := (AE.World d sc ex at_ rq lib c).
-Local Notation W' := (AE.World d sc ex at_ rq lib c').
+Local Notation W := (AE.World d sc ex at_ rq lib root c).
+Local Notation W' := (AE.World d sc ex at_ rq lib root c').
 
 Fixpoint exports_ctx b p ns n e (H : AE.Exports b W p ns n e) {struct H} : AE.Exports b W' p ns n e.
 Proof.
@@ -551,15 +552,15 @@ End Context.
 
 Theorem world_of_context : forall b W T, AE.WorldOf b W -> AE.WorldOf b (with_context W T).
 Proof.
-  intros b [d sc ex at_ rq lib c] T Wo. unfold with_context; cbn [AE.w_decl AE.w_scope AE.w_exp
+  intros b [d sc ex at_ rq lib root c] T Wo. unfold with_context; cbn [AE.w_decl AE.w_scope AE.w_exp
     AE.w_attached AE.w_reqs AE.w_library].
-  assert (Assume : forall s t, AE.AssumeTypes (AE.World d sc ex at_ rq lib c) s t <-> AE.AssumeTypes (AE.World d sc ex at_ rq lib T) s t).
+  assert (Assume : forall s t, AE.AssumeTypes (AE.World d sc ex at_ rq lib root c) s t <-> AE.AssumeTypes (AE.World d sc ex at_ rq lib root T) s t).
   { intros s t. split; intros (dd & pa & Hd & Hin & Hs); exists dd, pa;
       (split; [exact Hd|]); (split; [exact Hin|]); eapply spec_types_ctx; exact Hs. }
-  assert (Closed : forall R, AE.RelevanceClosed (AE.World d sc ex at_ rq lib c) R <-> AE.RelevanceClosed (AE.World d sc ex at_ rq lib T) R).
+  assert (Closed : forall R, AE.RelevanceClosed (AE.World d sc ex at_ rq lib root c) R <-> AE.RelevanceClosed (AE.World d sc ex at_ rq lib root T) R).
   { intro R. split; intros C g dd ps t Hd Hb; destruct (C g dd ps t Hd Hb) as [C1 C2];
       (split; [exact C1|]); intros x Hx; apply C2; revert Hx; apply free_in_ctx. }
-  assert (Scope : forall p ns n e, AE.InScope b (AE.World d sc ex at_ rq lib c) p ns n e <-> AE.InScope b (AE.World d sc ex at_ rq lib T) p ns n e).
+  assert (Scope : forall p ns n e, AE.InScope b (AE.World d sc ex at_ rq lib root c) p ns n e <-> AE.InScope b (AE.World d sc ex at_ rq lib root T) p ns n e).
   { intros p ns n e. split; intro H; destruct H as [p ns n e H | p m ns n e Hm Hp He Hno].
     - apply AE.ScPrimary; eapply ordinary_ctx; exact H.
     - eapply AE.ScPrelude; [exact Hm | exact Hp | eapply exports_ctx; exact He |].

@@ -2355,6 +2355,7 @@ Record world := World {
   w_attached : nat -> name -> option nat;            (* receiver symbol, name -> attached method *)
   w_reqs  : nat -> list nat;                         (* a symbol's requirements (type symbols) *)
   w_library : option string;                        (* prelude's directory prefix *)
+  w_root_item : option (string * name);              (* platform library and context *)
   (* The context and needs each fn, method or functor symbol forms.
      Merge classes describe type equality ([D43]), and the stored section
      supplies its spelling during migration. Every rule reading a symbol's
@@ -2564,11 +2565,8 @@ Definition LangSym (W : world) (short : string) (ns : nspace) (n : name) (s : na
    literal's desugaring (Syntax.string_desugar, resolved in scope).
    - Bool, True, False ([D45]): a condition's type, and its two values.
    - zero, one, and num.moss's add, mul and div ([D68]): a numeric
-     literal's arithmetic; float.moss's float: a fractional literal's.
-   - Gc (note 54): main's root context, the context main assumes
-     implicitly. *)
-Inductive lang_item := LIBool | LITrue | LIFalse | LIZero | LIOne | LIAdd | LIMul | LIDiv | LIFloat
-  | LIRoot.
+     literal's arithmetic; float.moss's float: a fractional literal's. *)
+Inductive lang_item := LIBool | LITrue | LIFalse | LIZero | LIOne | LIAdd | LIMul | LIDiv | LIFloat.
 Definition lang_item_key (i : lang_item) : string * nspace * name :=
   match i with
   | LIBool => ("bool", NSName, "Bool") | LITrue => ("bool", NSName, "True")
@@ -2577,7 +2575,6 @@ Definition lang_item_key (i : lang_item) : string * nspace * name :=
   | LIAdd => ("num", NSDetached, "add") | LIMul => ("num", NSDetached, "mul")
   | LIDiv => ("num", NSDetached, "div")
   | LIFloat => ("float", NSName, "float")
-  | LIRoot => ("wasm", NSName, "Gc")
   end.
 Definition LangItem (W : world) (i : lang_item) (s : nat) : Prop :=
   let '(short, ns, n) := lang_item_key i in LangSym W short ns n s.
@@ -3293,8 +3290,8 @@ Definition Needs (s : subst) (es : list entry) (ns : list item) : Prop :=
 
 (* [D84] (8), [D37] (note 54): `main` runs in the platform's root context.
    Beside what it assumes, any function in scope as `main` has the root
-   context, the language item LIRoot (lib/wasm.moss's `Gc`): each abstract
-   functor it lists that is not already in force,
+   context selected by the platform: each abstract functor it lists
+   that is not already in force,
    after the types it is fixed in (X(F), [D84] rule 1), each in force as
    its own generation unless it is already. *)
 Definition IsMainFn (W : world) (s : nat) : Prop :=
@@ -3302,7 +3299,7 @@ Definition IsMainFn (W : world) (s : nat) : Prop :=
     w_scope W p NSName "main" = Some (ESym s).
 
 
-(* `RootItems W q es0 tm its es tm'`: Gc's items `its` (written in module
+(* `RootItems W q es0 tm its es tm'`: the root context's items `its` (written in module
    q), after the entries es0 and with meanings tm, add the entries es. *)
 Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> list citem -> list entry -> list (nat * ty) -> Prop :=
 | RINil : forall es0 tm, RootItems W q es0 tm [] [] tm
@@ -3319,12 +3316,18 @@ Inductive RootItems (W : world) (q : string) : list entry -> list (nat * ty) -> 
     end ->
     RootItems W q es0 tm rest es tm' -> RootItems W q es0 tm (sp :: rest) es tm'.
 
+Definition RootContextItem (W : world) (symbol : nat) : Prop :=
+  match w_root_item W with
+  | Some (library, context) => LangSym W library NSName context symbol
+  | None => False
+  end.
+
 Inductive RootCtx (W : world) (s : nat) (es0 : list entry) (tm : list (nat * ty)) : list entry -> list (nat * ty) -> Prop :=
 | RootNone :
-    (~ IsMainFn W s \/ forall gc d n its, LangItem W LIRoot gc -> w_decl W gc = Some d -> d_ast d <> ADCtx n its) ->
+    (~ IsMainFn W s \/ forall root d n its, RootContextItem W root -> w_decl W root = Some d -> d_ast d <> ADCtx n its) ->
     RootCtx W s es0 tm [] tm
-| RootGc : forall gc d n its es tm',
-    IsMainFn W s -> LangItem W LIRoot gc -> w_decl W gc = Some d -> d_ast d = ADCtx n its ->
+| RootContext : forall root d n its es tm',
+    IsMainFn W s -> RootContextItem W root -> w_decl W root = Some d -> d_ast d = ADCtx n its ->
     RootItems W (d_mod d) es0 tm its es tm' -> RootCtx W s es0 tm es tm'.
 
 (* `CtxOf W s C ns`: the context the assume nesting of symbol s forms (and,
@@ -6185,6 +6188,7 @@ End Elaboration.
 (* The language's linking rule consumes only this static platform contract.
    A platform supplies the table interpretation, entry provisions and ABI. *)
 Module Type STATIC_PLATFORM.
+  Parameter root_item : option (string * Input.name).
   Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> list (nsym * cast_spec) -> Prop.
   Parameter Provides : Elaboration.world -> program -> Elaboration.cx -> item -> provision_value -> Prop.
   Parameter EntryABI : Elaboration.world -> program -> Prop.
@@ -6193,7 +6197,7 @@ End STATIC_PLATFORM.
 Module Linking (Pf : STATIC_PLATFORM).
 Import Elaboration.
 Definition Linked (W : world) (P : program) : Prop :=
-  Pf.EntryABI W P /\ Pf.Tables W (program_machines P) (program_casts P) /\
+  w_root_item W = Pf.root_item /\ Pf.EntryABI W P /\ Pf.Tables W (program_machines P) (program_casts P) /\
   exists context needs types entries,
     CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
     program_environment P = Environment types entries /\

@@ -23,6 +23,20 @@ Proof.
   destruct (lang_item_key item) as [[short ns] name]. apply lang_sym_complete.
 Qed.
 
+Lemma root_context_symbol_sound : forall W symbol,
+  root_context_symbol W = Some symbol -> RootContextItem W symbol.
+Proof.
+  intros W symbol. unfold root_context_symbol, RootContextItem.
+  destruct (w_root_item W) as [[library context]|]; [apply lang_sym_sound|discriminate].
+Qed.
+
+Lemma root_context_symbol_complete : forall W symbol,
+  RootContextItem W symbol -> root_context_symbol W = Some symbol.
+Proof.
+  intros W symbol. unfold root_context_symbol, RootContextItem.
+  destruct (w_root_item W) as [[library context]|]; [apply lang_sym_complete|contradiction].
+Qed.
+
 Lemma ascending_nodup : forall xs, Ascending xs -> NoDup xs.
 Proof.
   intro xs. induction xs as [|x xs IH]; intro Sorted; [constructor|].
@@ -131,21 +145,21 @@ Proof.
   2: { injection Run as <- <-. apply RootNone. left. intro IsMain.
        apply MainExact, nmem_spec in IsMain. congruence. }
   assert (IsMain : IsMainFn W s) by (apply MainExact, nmem_spec; exact Main).
-  destruct (lang_item_sym W LIRoot) as [gc|] eqn:Root.
+  destruct (root_context_symbol W) as [gc|] eqn:Root.
   2: { injection Run as <- <-. apply RootNone. right.
-       intros g d n its Item. apply lang_item_sym_complete in Item. congruence. }
+       intros g d n its Item. apply root_context_symbol_complete in Item. congruence. }
   destruct (w_decl W gc) as [d|] eqn:Declaration.
   2: { injection Run as <- <-. apply RootNone. right.
-       intros g found n its Item Found. apply lang_item_sym_complete in Item.
+       intros g found n its Item Found. apply root_context_symbol_complete in Item.
        rewrite Root in Item. injection Item as <-. congruence. }
   destruct (d_ast d) as [items declarations|name|name syntax|name parameters syntax|
       name|name syntax initial|receiver name parameters result body|name items|
       name parameters inputs outputs body] eqn:Ast;
     try (injection Run as <- <-; apply RootNone; right;
-      intros g found n its Item Found; apply lang_item_sym_complete in Item;
+      intros g found n its Item Found; apply root_context_symbol_complete in Item;
       rewrite Root in Item; injection Item as <-; rewrite Declaration in Found;
       injection Found as <-; rewrite Ast; discriminate).
-  eapply RootGc; [exact IsMain|apply lang_item_sym_sound; exact Root|
+  eapply RootContext; [exact IsMain|apply root_context_symbol_sound; exact Root|
     exact Declaration|exact Ast|].
   exact (root_items_sound _ _ _ _ _ _ Run).
 Qed.
