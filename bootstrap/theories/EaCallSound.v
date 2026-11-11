@@ -93,19 +93,21 @@ Proof.
   intro Empty. contradiction (SomeKept rest p).
 Qed.
 
-Theorem call_theta_sound : forall W who C Cs s th,
+Theorem call_theta_with_sound : forall W who C Cs read_class s th,
   PublicContextFacts.CxSection C -> PublicContextFacts.CxSection Cs ->
-  EaCall.call_theta W who C Cs = EaBase.Ok th -> CallTheta W C Cs s th.
+  EaCall.call_theta_with W who C Cs read_class = EaBase.Ok th ->
+  th = map (fun q => (fst q, EaCall.call_read C Cs read_class (fst q))) (c_ty Cs) /\
+  CallTheta W C Cs s th.
 Proof.
-  intros W who C Cs s th Caller Callee Check.
-  unfold EaCall.call_theta in Check.
-  set (candidate := map (fun q => (fst q, EaCall.call_read C Cs (fst q))) (c_ty Cs)) in Check.
+  intros W who C Cs read_class s th Caller Callee Check.
+  unfold EaCall.call_theta_with in Check.
+  set (candidate := map (fun q => (fst q, EaCall.call_read C Cs read_class (fst q))) (c_ty Cs)) in *.
   set (fails := fun q : tsym * ty =>
     negb (ty_eqb (canon C (app_subst candidate (TAbs (fst q))))
       (canon C (app_subst candidate (snd q))))) in Check.
   destruct (EaCall.min_first (filter fails (c_sub Cs))) as [[g t]|] eqn:Bad;
     [discriminate Check|].
-  injection Check as <-. apply min_first_none in Bad. split.
+  injection Check as <-. apply min_first_none in Bad. split; [reflexivity|]. split.
   - unfold candidate. now rewrite map_map.
   - split.
     + intros r Ir Bound. unfold candidate.
@@ -120,4 +122,12 @@ Proof.
         assert (In (g,t) (filter fails (c_sub Cs))) by (apply filter_In; auto).
         rewrite Bad in H. contradiction. }
       apply negb_false_iff in Test. exact Test.
+Qed.
+
+Theorem call_theta_sound : forall W who C Cs s th,
+  PublicContextFacts.CxSection C -> PublicContextFacts.CxSection Cs ->
+  EaCall.call_theta W who C Cs = EaBase.Ok th -> CallTheta W C Cs s th.
+Proof.
+  intros W who C Cs s th Caller Callee Check.
+  exact (proj2 (call_theta_with_sound W who C Cs (EaCall.class_value C Cs) s th Caller Callee Check)).
 Qed.

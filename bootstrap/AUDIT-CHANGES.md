@@ -3658,6 +3658,22 @@ using one fresh atom per abstract class must preserve that behaviour
   equality on merge classes to transport each fixed reading.
 - **Class.** Equivalent comparison on formed contexts (criterion 2).
 
+### 120. Assumptions give an absent atomic class a fresh reading (M4d)
+
+- **Rule.** `AssumedComplete` assigns one local atom to each atomic class
+  that occurs in an expanded requirement and has no member in force.
+  Distinct classes get distinct atoms. Allocation reserves the caller's
+  and callee's type support, and structured readings use the same atoms.
+- **Proof.** `choose_assumption_atom_sound` checks the scope transition
+  and exact class coverage. `assumption_theta_sound` checks the resulting
+  readings and call instantiation. `assumes_complete_sound` connects them
+  to the declaration sweep given the context and provision checks.
+- **Fidelity.** The [Moss probes](theories/EaAssumptionExample.v) exercise
+  both merge orientations. An unused detached method forms with a fresh
+  reading in both. An omitted method need is still
+  rejected and names the same source class member in both orientations.
+- **Class.** Scoped assumption readings (criterion 2).
+
 ---
 
 ## Consolidation (branch ob-consol)

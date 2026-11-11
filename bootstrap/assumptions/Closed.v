@@ -161,3 +161,9 @@ From NM Require EaAllocationSound.
 Print Assumptions NM.EaAllocationSound.fresh_n_range.
 Print Assumptions NM.EaAllocationSound.fresh_table_range.
 Print Assumptions NM.EaAllocationSound.fresh_tables_allocate.
+
+From NM Require EaAssumesSound.
+Print Assumptions NM.EaAssumesSound.choose_assumption_atom_sound.
+Print Assumptions NM.EaAssumesSound.assumption_theta_sound.
+Print Assumptions NM.EaAssumesSound.assumes_complete_sound.
+Print Assumptions NM.EaAssumesSound.elaborate_with_assumes_complete.

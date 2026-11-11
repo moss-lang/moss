@@ -33,30 +33,31 @@ Definition class_value (C Cs : cx) (z : nat) : ty :=
 
 (* SOUND: call_theta C Cs s = Ok th -> CallTheta W C Cs s th
    (θ's merge clause is checked; the other two hold by construction).
-   Since rule B (lang-all 2d7e8fe) CallTheta no longer fixes an unbound
-   requirement's value (every use also asks RequirementsInForce); the
-   construction still reads a class with no member bound here through
-   its representative z, which AssumedComplete's principal clause asks. *)
+   Rule B puts the requirements of an ordinary call in force. Assumption
+   checking supplies its own readings for atomic classes left unbound. *)
 (* the entry of the earliest declared symbol, for a stable report *)
 Definition min_first {A} (l : list (nat * A)) : option (nat * A) :=
   fold_left (fun acc q => match acc with Some p => if Nat.ltb (fst q) (fst p) then Some q else acc | None => Some q end) l None.
 Definition merges_msg (W : world) (who : string) (g : nat) (b a' b' : ty) : string :=
   who ++ " needs " ++ bq (sym_name W g) ++ " and " ++ qty W b ++
   " to be one type, which its context merged (D43), but here they are " ++ qty W a' ++ " and " ++ qty W b'.
-Definition call_read (C Cs : cx) (r : nat) : ty :=
+Definition call_read (C Cs : cx) (read_class : nat -> ty) (r : nat) : ty :=
   if bound_in C r then read_here C r else
   match canon Cs (TAbs r) with
-  | TAbs z => class_value C Cs z
-  | t => canon C (app_subst (map (fun z => (z, class_value C Cs z)) (gens t)) t)
+  | TAbs z => read_class z
+  | t => canon C (app_subst (map (fun z => (z, read_class z)) (gens t)) t)
   end.
 
-Definition call_theta (W : world) (who : string) (C Cs : cx) : er subst :=
-  let th := map (fun q => (fst q, call_read C Cs (fst q))) (c_ty Cs) in
+Definition call_theta_with (W : world) (who : string) (C Cs : cx) (read_class : nat -> ty) : er subst :=
+  let th := map (fun q => (fst q, call_read C Cs read_class (fst q))) (c_ty Cs) in
   match min_first (filter (fun q => negb (ty_eqb (canon C (app_subst th (TAbs (fst q)))) (canon C (app_subst th (snd q)))))
              (c_sub Cs)) with
   | Some (g, b) => Err (merges_msg W who g b (canon C (app_subst th (TAbs g))) (canon C (app_subst th b)))
   | None => Ok th
   end.
+
+Definition call_theta (W : world) (who : string) (C Cs : cx) : er subst :=
+  call_theta_with W who C Cs (class_value C Cs).
 
 (* An effective section lets the executable compare canonical readings.
    The structured case first tries the generation itself, then looks for

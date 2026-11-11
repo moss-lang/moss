@@ -10,7 +10,7 @@
 
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import AuditBase.
-From NM Require Import Audit NMap EaBase EaTypes EaCtx EaCall EaFamily EaDecide EaExpr EaFunctor EaBind EaPlatform EaExpand.
+From NM Require Import Audit NMap EaBase EaTypes EaCtx EaCall EaFamily EaDecide EaExpr EaFunctor EaBind EaPlatform EaExpand EaAssumptionAtoms.
 From NM Require Sx ElabWorld PublicWorld LoadListed.
 From NM Require Import EaBudget.
 Import ListNotations.
@@ -147,8 +147,8 @@ Section Assumes.
 Variable E : env.
 Let W := e_W E.
 
-(* SOUND: assumed_complete C ns = Ok tt -> AssumedComplete W C ns *)
-Definition assumed_complete (C : cx) (ns : list item) : er unit :=
+(* SOUND: assumed_complete bound C ns = Ok tt -> AssumedComplete W C ns *)
+Definition assumed_complete (bound : nat) (C : cx) (ns : list item) : er unit :=
   let! _ := rmap (fun k =>
     match need_item k with
     | None => Ok tt
@@ -159,11 +159,9 @@ Definition assumed_complete (C : cx) (ns : list item) : er unit :=
                   | None => Ok tt end in
         let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
         let! (Cs, nss) := ropt (w_context W s) ("the context of " ++ qs W s ++ " does not form") in
-        (* the principal clause (a class with no member in force reads
-           through its representative) holds by call_theta's construction;
-           assuming is not a use, so no rule B here *)
-        let! th := call_theta W ("assuming " ++ qs W s) Cv Cs in
-        let! _ := satisfies W ("calling " ++ qs W s) ("assuming " ++ qs W s) Cv Cs th nss in
+        let! _ := resolve_assumption_error W Cv Cs bound
+          (let! th := assumption_theta W ("assuming " ++ qs W s) Cv Cs bound in
+           satisfies W ("calling " ++ qs W s) ("assuming " ++ qs W s) Cv Cs th nss) in
         Ok tt
     end) ns in
   Ok tt.
@@ -175,7 +173,7 @@ Definition assumes_complete (bound : nat) : er unit :=
     match kind_sym W s with
     | Some _ =>
         match assume_ctx E s with
-        | Ok (C, ns) => match assumed_complete C ns with
+        | Ok (C, ns) => match assumed_complete bound C ns with
                         | Ok _ => Ok tt
                         | Err m => Err (mod_of W s ++ ": " ++ m)
                         end

@@ -3699,6 +3699,9 @@ Definition context_gens (C : cx) : list nat :=
    clause of BApplyAbstract, #10, names them). *)
 Definition key_receiver_gens (C : cx) : list nat :=
   flat_map (fun q => match fst q with IMth r _ _ => gens r | _ => [] end) (c_provisions C).
+
+Definition context_type_support (C : cx) : list nat :=
+  map fst (c_ty C) ++ context_gens C ++ key_receiver_gens C.
 (* A lambda or closure keeps the meanings of the generations its context
    mentions.  A method key's receiver mentions only those: rule B puts a
    callee's requirements in force at every use, so a family demand keys
@@ -5302,6 +5305,32 @@ Definition AssumeCtx (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
 Definition need_item (k : item) : option nat :=
   match k with IVal v => Some v | IFn f => Some f | IMth _ m _ => Some m | _ => None end.
 
+(* An atomic class needed by an assumption is a leaf of an expanded
+   requirement. It needs a fresh reading when no member is in force. *)
+Definition MissingAtomicClass (C Cs : cx) (r : nat) : Prop :=
+  (exists x z, In x (map fst (c_ty Cs)) /\
+    In z (gens (expand (c_merge Cs) (TAbs x))) /\
+    MergeEq (c_merge Cs) (TAbs r) (TAbs z)) /\
+  ~ InForceClass C (c_merge Cs) r.
+
+Definition AssumptionAllocation {identity} (C Cs : cx) (before : allocation_scope identity)
+    (reading : nat -> option identity) : Prop :=
+  exists batch after,
+    Allocates before batch after /\
+    (forall r, MissingAtomicClass C Cs r <-> exists g, reading r = Some g) /\
+    (forall g, In g batch <-> exists r, reading r = Some g) /\
+    (forall r r' g g', reading r = Some g -> reading r' = Some g' ->
+      (g = g' <-> MergeEq (c_merge Cs) (TAbs r) (TAbs r'))).
+
+Definition assumption_scope (W : world) (C Cs : cx) : allocation_scope nat :=
+  AllocationScope (Fresh W) [] (context_type_support C ++ context_type_support Cs).
+
+Definition AssumptionReadings (W : world) (C Cs : cx) (th : subst) : Prop :=
+  exists atom,
+    AssumptionAllocation C Cs (assumption_scope W C Cs) atom /\
+    forall r a, In r (map fst (c_ty Cs)) -> atom r = Some a ->
+      lookup_subst r th = Some (TAbs a).
+
 (* `AssumedComplete W C ns`: in the formed context C, each assumed item
    (a need) has its requirements in force, bound by a bracket on it or
    assumed anywhere in the list (the instantiation it is recorded at,
@@ -5314,12 +5343,7 @@ Definition AssumedComplete (W : world) (C : cx) (ns : list item) : Prop :=
     exists a, ilook k (c_apps C) = Some a /\ (forall t o, In (t, o) a -> o <> None) /\
       let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
       exists Cs nss th sm, CtxOf W s Cs nss /\ CallTheta W Cv Cs s th /\ Satisfies Cv Cs th nss sm /\
-        (* assuming is not a use (rule B does not apply): a requirement
-           whose merge class in Cs has no member in force in Cv is read as
-           itself, through the class's representative *)
-        (forall r z, In r (map fst (c_ty Cs)) -> canon Cs (TAbs r) = TAbs z ->
-           (forall y, canon Cs (TAbs y) = TAbs z -> nlook y (c_ty Cv) = None) ->
-           lookup_subst r th = Some (canon Cv (TAbs z))).
+        AssumptionReadings W Cv Cs th.
 
 (* Every symbol's assume nesting forms, with its assumed items complete.
    The oracle checks each val, fn, method, context and functor symbol's;
