@@ -1,5 +1,5 @@
 (* Extraction for the reference implementation's executable (run/dune,
-   README.md): the Rocq front end (Parse.load, and Parse.parse_moss with
+   README.md): the Rocq front end (SnapshotLoader.load_from, and Parse.parse_moss with
    the AST dump for --dump), the elaborator (EaMain.elaborate), the proved
    passes on Audit programs (BootstrapRun.passes) and Audit.v's reference interpreter
    (Audit.Semantics.Interpreter, with program_of), run through
@@ -13,7 +13,7 @@ From Stdlib Require Import PeanoNat Extraction ExtrOcamlBasic ExtrOcamlNatInt
   ExtrOcamlZBigInt ExtrOCamlInt63 ExtrOCamlFloats ExtrOCamlPArray ExtrOcamlNativeString.
 From NM Require AuditBase.
 From NM Require Import Audit ExecutionModel MossX Sx NatTrie Parse.
-From NM Require EaMain BootstrapRun InterpreterLazy InterpreterFast InterpreterCompiled.
+From NM Require SnapshotLoader EaMain BootstrapRun InterpreterLazy InterpreterFast InterpreterCompiled.
 Extraction Language OCaml.
 (* dune runs this in its build directory, where the extracted files go. *)
 Set Warnings "-extraction-default-directory".
@@ -62,7 +62,7 @@ Extraction NoInline AuditBase.WasmOps.decode.
 Extract Constant AuditBase.WasmOps.decode => "PrimCache.memoize decode_operation".
 Extraction Blacklist String List Char Bool.
 Separate Extraction AuditBase.BaseCall.call init_state run_prim_fast
-  parse_moss Dump.dump_file print_sx Parse.load
+  parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate
   BootstrapRun.passes
   AuditBase.WasmOps.decode_operation AuditBase.WasmOps.unsupported_code

@@ -8,12 +8,12 @@
  (prelude Extract)
  (extracted_modules
   Ascii Audit AuditBase BootstrapRun ProgramCapTrim InterpreterCompiled InterpreterFast ProgramFastPath InterpreterLazy ProgramPrune BinInt BinNat BinNums
-  LoadWorld LoadListed BinPos Bool0 Byte Byte0 Datatypes Decimal SourceNames EaBase
+  LoadWorld LoadListed BinPos Bool0 Byte Byte0 Datatypes Decimal EaBase
   EaBind EaBudget EaCall EaCtx EaDecide EaDepth EaExpand EaExpr EaFamily EaFunctor EaMain
   EaPlatform EaTypes ElabWorld ExecutionModel
   FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap
   Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicMergePresent PublicWorld
-  ReqsSolve ReqsTotal Specif String0 Sx Uint63Axioms WorldSound)
+  ReqsSolve ReqsTotal SnapshotLoader Specif String0 Sx Uint63Axioms WorldSound)
  (theories NM Stdlib))
 
 ; Flambda honours the `[@inlined]` in Extract.v's `nat_case`, releasing

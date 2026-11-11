@@ -5,7 +5,7 @@
           DRIVER --dump OUTDIR FILE.moss...
 
    PROGRAM.moss is read, lexed, parsed and bundled by the Rocq front end
-   (Parse.load; this driver only reads files) and elaborated by the
+   (SnapshotLoader.load_from; this driver only reads files) and elaborated by the
    executable elaborator (EaMain.elaborate) into an Audit.Semantics
    program.  That program is given the proved passes (ProgramFastPath.fastpath,
    ProgramPrune.prune, ProgramCapTrim.captrim, each proved to keep Runs) and run
@@ -133,7 +133,7 @@ let () =
   let file, args = match opts (List.tl (Array.to_list Sys.argv)) with
     | f :: a when not (starts_with "--" f) -> f, a | _ -> usage () in
   let t0 = now () in
-  let b = match Parse.load read_file (Sys.getcwd ()) !prelude file with
+  let b = match SnapshotLoader.load_from read_file (Sys.getcwd ()) !prelude file with
     | Sx.Bad m -> Printf.eprintf "[front end: %s]\n" (relative m); exit 63
     | Sx.Good b -> b in
   time "loaded in %.3fs" (now () -. t0);

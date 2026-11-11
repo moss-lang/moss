@@ -1,6 +1,5 @@
-(* A finite-snapshot loader that returns the parser's typed AST directly.
-   No S-expression encoding/decoding or dump-name representability check is
-   on this path. The production driver is not changed by this module. *)
+(* Loading source files directly into typed syntax. The driver supplies
+   the file reads, and the public build supplies a finite snapshot. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit SourceSnapshot SnapshotLoaderBound.
 From NM Require Sx Parse FrontEnd FrontEndComplete.
@@ -119,9 +118,20 @@ Proof.
 Qed.
 End Bounds.
 
+Definition load_paths (fuel : nat) (read : string -> option string)
+    (root prelude entry : string) : Sx.res I.bundle :=
+  Sx.rbind (walk fuel read root prelude [entry] [] [])
+    (fun modules => Sx.Good (I.Bundle entry prelude modules)).
+
+Definition load_from_at (fuel : nat) (read : string -> option string)
+    (root prelude entry : string) : Sx.res I.bundle :=
+  load_paths fuel read root (L.normalize root None prelude) (L.normalize root None entry).
+
+Definition load_from := load_from_at 100000.
+
 Definition load_at (fuel : nat) (snapshot : source) (prelude entry : file_path) : Sx.res I.bundle :=
-  Sx.rbind (walk fuel (source_read snapshot) "/" (path_text prelude) [path_text entry] [] [])
-    (fun modules => Sx.Good (I.Bundle (path_text entry) (path_text prelude) modules)).
+  load_paths fuel (source_read snapshot) "/" (path_text prelude) (path_text entry).
+
 Definition load (snapshot : source) (prelude entry : file_path) : Sx.res I.bundle :=
   load_at (snapshot_fuel snapshot) snapshot prelude entry.
 
@@ -132,27 +142,47 @@ Proof.
   apply andb_true_iff in Valid as [_ Equal]. apply String.eqb_eq in Equal. exact Equal.
 Qed.
 
-Theorem load_sound : forall snapshot prelude entry bundle,
-  load snapshot prelude entry = Sx.Good bundle ->
-  L.Bundled (source_read snapshot) "/" (path_text prelude) (path_text entry) bundle.
+Theorem load_from_at_sound : forall fuel read root prelude entry bundle,
+  load_from_at fuel read root prelude entry = Sx.Good bundle ->
+  L.Bundled read root prelude entry bundle.
 Proof.
-  intros snapshot prelude entry bundle Run. unfold load, load_at in Run.
-  destruct (walk (snapshot_fuel snapshot) (source_read snapshot) "/" (path_text prelude)
-    [path_text entry] [] []) as [modules|message] eqn:Walk; cbn in Run; [|discriminate].
+  intros fuel read root prelude entry bundle Run.
+  unfold load_from_at, load_paths in Run.
+  set (p := L.normalize root None prelude) in *.
+  set (e := L.normalize root None entry) in *.
+  destruct (walk fuel read root p [e] [] []) as [modules|message] eqn:Walk;
+    cbn in Run; [|discriminate].
   injection Run as <-.
-  destruct (walk_sound (source_read snapshot) "/" (path_text prelude) (path_text entry)
-    _ _ _ _ _ Walk) as [Unique [Entry [OK Closed]]].
+  destruct (walk_sound read root p e _ _ _ _ _ Walk) as [Unique [Entry [OK Closed]]].
   { split; [reflexivity|]. split; [constructor|].
     split; [intros m []|]. split; [intros m target []|].
     left; left; reflexivity. }
-  unfold L.Bundled; cbn. rewrite !path_normalized. repeat split; auto.
+  unfold L.Bundled; cbn. fold p e. repeat split; auto.
   intros m Member. destruct (OK m Member) as [text [Read [Parsed [Wants Targets]]]].
   exists text, (I.am_file m). repeat split; auto.
   - apply FrontEnd.parse_moss_sound; exact Parsed.
   - intros target Present. apply (Closed m target Member). unfold needs. apply in_or_app; left; exact Present.
-  - intro Wanted. apply (Closed m (path_text prelude) Member). unfold needs.
+  - intro Wanted. apply (Closed m p Member). unfold needs.
     rewrite Wanted. apply in_or_app; right; cbn; auto.
 Qed.
+
+Theorem load_from_sound : forall read root prelude entry bundle,
+  load_from read root prelude entry = Sx.Good bundle ->
+  L.Bundled read root prelude entry bundle.
+Proof. exact (load_from_at_sound 100000). Qed.
+
+Theorem load_at_sound : forall fuel snapshot prelude entry bundle,
+  load_at fuel snapshot prelude entry = Sx.Good bundle ->
+  L.Bundled (source_read snapshot) "/" (path_text prelude) (path_text entry) bundle.
+Proof.
+  intros fuel snapshot prelude entry bundle Run. apply load_from_at_sound with (fuel := fuel).
+  unfold load_from_at. rewrite !path_normalized. exact Run.
+Qed.
+
+Theorem load_sound : forall snapshot prelude entry bundle,
+  load snapshot prelude entry = Sx.Good bundle ->
+  L.Bundled (source_read snapshot) "/" (path_text prelude) (path_text entry) bundle.
+Proof. intros; eapply load_at_sound; eassumption. Qed.
 
 Lemma next_todo_app : forall root prelude path ast todo,
   next_todo root prelude path ast todo = next_todo root prelude path ast [] ++ todo.
@@ -223,5 +253,5 @@ Proof.
     rewrite unseen_count_nil, map_length. cbn [List.length]. lia.
   - intros path [<-|[]]. rewrite <- Entry; exact Present.
   - exists (I.Bundle (path_text entry) (path_text prelude) modules).
-    unfold load, load_at. rewrite Run; reflexivity.
+    unfold load, load_at, load_paths. rewrite Run; reflexivity.
 Qed.

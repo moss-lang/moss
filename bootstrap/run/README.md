@@ -4,8 +4,10 @@
 Moss's reference implementation. The compiler is bootstrapped with it, and
 the test suite holds the compiler to it. It runs one pipeline:
 
-1. **Front end**: `Parse.load` (`theories/Parse.v`) reads, lexes, parses and
-   bundles the program and its imports. The driver only reads files.
+1. **Front end**. `SnapshotLoader.load_from` loads the program and its
+   imports through the driver's file reads and returns the typed AST bundle.
+   `SnapshotLoader.load_from_sound` proves that a successful load satisfies
+   `Audit.Loader.Bundled` for those reads.
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
    `Audit.Semantics.program` from the bundle, or rejects it.
 3. **Passes**: `ProgramFastPath.fastpath`, `ProgramPrune.prune` and
