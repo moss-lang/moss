@@ -1,7 +1,7 @@
 (* The actual bind sequence preserves earlier code and pending slots. *)
-From Stdlib Require Import List Bool.
-From NM Require Import Audit EaBase EaCodeEffects.
-From NM Require EaBind EaFunctor.
+From Stdlib Require Import List Bool Arith Lia.
+From NM Require Import Audit EaBase EaCodeEffects EaCodeAllocationSound.
+From NM Require EaBind EaControlSound EaFunctor WorldSound.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 
 Lemma code_effect_optional_failure : forall A (problem : option A) message,
@@ -144,10 +144,18 @@ Qed.
 Lemma code_effect_get_link : forall key, PreservesOldCode (get_link key).
 Proof. intros key s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.
 
-Lemma code_effect_put_link : forall key slot, PreservesOldCode (put_link key slot).
+Lemma code_effect_register_link : forall key slot a b c value,
+  es_next a <= slot_index slot ->
+  CodeTransition a b ->
+  put_link key slot b = Ok (value, c) ->
+  CodeTransition a c.
 Proof.
-  intros key slot s x s' Run. unfold put_link in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply PeanoNat.Nat.le_refl|intros [] i; reflexivity].
+  intros key slot a b c value Fresh [Next Code Bound Origins] Run.
+  unfold put_link in Run. injection Run as _ <-.
+  constructor; [exact Next|exact Code|exact Bound|].
+  intros [] n Old; cbn [read_origin es_lamcx es_link find fst snd].
+  - apply (Origins FunctionTable n Old).
+  - destruct (Nat.eqb_spec n (slot_index slot)); [lia|apply (Origins FunctorTable n Old)].
 Qed.
 
 Lemma code_effect_get_pins : forall slot, PreservesOldCode (get_pins slot).
@@ -156,7 +164,33 @@ Proof. intros slot s x s' Run. injection Run as _ <-. apply code_transition_refl
 Lemma code_effect_put_pins : forall slot pins, PreservesOldCode (put_pins slot pins).
 Proof.
   intros slot pins s x s' Run. unfold put_pins in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply PeanoNat.Nat.le_refl|intros [] i; reflexivity].
+  apply unchanged_code_transition; [apply PeanoNat.Nat.le_refl| |]; intros [] i; reflexivity.
+Qed.
+
+Theorem emit_linked_body_records_origin : forall u gg pins code before h after,
+  EaFunctor.emit_linked_body u gg pins code before = Ok (h, after) ->
+  CodeTransition before after /\ read_code after FunctorTable (slot_index h) = Some code /\
+  read_origin after FunctorTable (slot_index h) = Some (u, gg).
+Proof.
+  intros u gg pins code before h after Run. unfold EaFunctor.emit_linked_body in Run.
+  apply EaControlSound.mbind_ok in Run as (slot & written & Emitted & Run).
+  apply EaControlSound.mbind_ok in Run as (pinned & middle & Pins & Run).
+  apply EaControlSound.mbind_ok in Run as (linked & stored & Link & Run).
+  injection Run as <- <-.
+  assert (Emits : slot_index slot = es_next before /\
+      read_code written FunctorTable (slot_index slot) = Some code).
+  { unfold emit_fun_code, reserve_code, mbind, fresh, ret, write_fun_code, set_fun_body in Emitted.
+    injection Emitted as <- <-. split; [reflexivity|apply WorldSound.nget_nset_same]. }
+  destruct Emits as [Index Code].
+  split.
+  - eapply (code_effect_register_link (u, gg) slot); [lia| |exact Link].
+    eapply code_transition_compose.
+    + exact (code_effect_emit FunctorTable code before slot written Emitted).
+    + eapply code_effect_put_pins; exact Pins.
+  - unfold put_pins in Pins. injection Pins as _ <-.
+    unfold put_link in Link. injection Link as _ <-.
+    split; [exact Code|].
+    cbn [read_origin es_link find snd fst]. now rewrite Nat.eqb_refl.
 Qed.
 
 Lemma link_output_roles_code_effect : forall E u Cu Cb who,
@@ -205,10 +239,8 @@ Proof.
       destruct observable as [binding|]; [destruct binding|];
         first [apply code_effect_return|apply code_effect_fail]
     end. }
-  intros []. apply code_effect_bind; [exact (code_effect_emit FunctorTable _)|]. intro slot.
-  apply code_effect_bind; [apply code_effect_put_pins|intros []].
-  apply code_effect_bind; [apply code_effect_put_link|intros []].
-  apply code_effect_return.
+  intros [] before h after Run.
+  exact (proj1 (emit_linked_body_records_origin _ _ _ _ _ _ _ Run)).
 Qed.
 
 Lemma check_link_binding_code_effect : forall E u g Cu nsu Cg nsg recorded private,

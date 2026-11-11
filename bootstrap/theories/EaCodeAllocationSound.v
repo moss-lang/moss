@@ -20,6 +20,15 @@ Definition read_code (s : est) (table : code_table) (n : nat) : option (code_in 
   | FunctorTable => nget (es_funs s) n
   end.
 
+Definition origin_in (table : code_table) : Type :=
+  match table with FunctionTable => subst | FunctorTable => nat * nat end.
+
+Definition read_origin (s : est) (table : code_table) (n : nat) : option (origin_in table) :=
+  match table with
+  | FunctionTable => option_map c_sub (nget (es_lamcx s) n)
+  | FunctorTable => option_map fst (find (fun q => Nat.eqb n (slot_index (snd q))) (es_link s))
+  end.
+
 Definition VacantCode (s : est) (n : nat) : Prop :=
   forall table, read_code s table n = None.
 

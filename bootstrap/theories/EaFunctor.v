@@ -286,6 +286,13 @@ Definition link_output_roles (u : nat) (Cu Cb : cx) (bound_to : string)
   let* promised := pure (provide_result E u Cu (fun t => TAbs (gen_of gtab t))) in
   ret ((outs, gtab), promised).
 
+Definition emit_linked_body (u gg : nat) (pins : subst) (code : functor_code)
+    : M (code_slot FunctorTable) :=
+  let* h := emit_fun_code code in
+  let* _ := put_pins h pins in
+  let* _ := put_link (u, gg) h in
+  ret h.
+
 (* SOUND: link_body u gg = Ok h -> LinkBody W P u gg (slot_index h) pins, pins the
    ones it records (get_pins h) (P final, I2) *)
 Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
@@ -368,10 +375,7 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
                   | _ => ret tt end
                 else ret tt in
       let code := translate_linked_body Cu Cg outs binds0 (map (fun k => rkof site (at_site site k)) ks) in
-      let* h := emit_fun_code code in
-      let* _ := put_pins h pins in
-      let* _ := put_link (u, gg) h in
-      ret h
+      emit_linked_body u gg pins code
   | _ => fail (ng ++ " has no body")
   end
   end.

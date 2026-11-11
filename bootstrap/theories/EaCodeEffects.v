@@ -10,7 +10,9 @@ Record CodeTransition (before after : est) : Prop := {
   counter_grows : es_next before <= es_next after;
   old_slots_preserved : forall table n, n < es_next before ->
     read_code after table n = read_code before table n;
-  code_bound_preserved : CodeTablesBound before -> CodeTablesBound after
+  code_bound_preserved : CodeTablesBound before -> CodeTablesBound after;
+  old_origins_preserved : forall table n, n < es_next before ->
+    read_origin after table n = read_origin before table n
 }.
 
 Definition PreservesOldCode {A} (action : M A) : Prop :=
@@ -22,10 +24,11 @@ Proof. constructor; auto. Qed.
 Lemma code_transition_compose : forall a b c,
   CodeTransition a b -> CodeTransition b c -> CodeTransition a c.
 Proof.
-  intros a b c [NextB SlotsB BoundB] [NextC SlotsC BoundC]. constructor.
+  intros a b c [NextB SlotsB BoundB OriginsB] [NextC SlotsC BoundC OriginsC]. constructor.
   - lia.
   - intros table n Old. rewrite SlotsC by lia. exact (SlotsB table n Old).
   - auto.
+  - intros table n Old. rewrite OriginsC by lia. exact (OriginsB table n Old).
 Qed.
 
 Lemma code_transition_extends : forall a b,
@@ -48,11 +51,13 @@ Qed.
 Lemma unchanged_code_transition : forall a b,
   es_next a <= es_next b ->
   (forall table n, read_code b table n = read_code a table n) ->
+  (forall table n, read_origin b table n = read_origin a table n) ->
   CodeTransition a b.
 Proof.
-  intros a b Next Same. constructor; try assumption.
+  intros a b Next Same Origins. constructor; try assumption.
   - intros table n _. apply Same.
   - intros Bound n Beyond table. rewrite Same. apply Bound. lia.
+  - intros table n _. apply Origins.
 Qed.
 
 Lemma code_effect_return : forall A (x : A), PreservesOldCode (ret x).
@@ -86,7 +91,7 @@ Qed.
 Lemma code_effect_fresh : PreservesOldCode fresh.
 Proof.
   intros s x s' Run. unfold fresh in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [cbn [es_next]; lia|intros [] n; reflexivity].
+  apply unchanged_code_transition; [cbn [es_next]; lia| |]; intros [] n; reflexivity.
 Qed.
 
 Lemma code_effect_fresh_n : forall count, PreservesOldCode (fresh_n count).
@@ -105,13 +110,21 @@ Qed.
 Lemma code_effect_put_name : forall n name, PreservesOldCode (put_name n name).
 Proof.
   intros n name s x s' Run. unfold put_name in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply Nat.le_refl|intros [] i; reflexivity].
+  apply unchanged_code_transition; [apply Nat.le_refl| |]; intros [] i; reflexivity.
 Qed.
 
-Lemma code_effect_put_lamcx : forall slot C, PreservesOldCode (put_lamcx slot C).
+Lemma code_effect_reserved_lamcx : forall slot C a b c value,
+  es_next a <= slot_index slot ->
+  CodeTransition a b ->
+  put_lamcx slot C b = Ok (value, c) ->
+  CodeTransition a c.
 Proof.
-  intros slot C s x s' Run. unfold put_lamcx in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply Nat.le_refl|intros [] i; reflexivity].
+  intros slot C a b c value Fresh [Next Code Bound Origins] Run.
+  unfold put_lamcx in Run. injection Run as _ <-.
+  constructor; [exact Next|exact Code|exact Bound|].
+  intros [] n Old; cbn [read_origin es_lamcx es_link].
+  - rewrite WorldSound.nget_nset_other by lia. apply (Origins FunctionTable n Old).
+  - apply (Origins FunctorTable n Old).
 Qed.
 
 Lemma code_effect_reserved_write : forall table (slot : code_slot table) code a b c value,
@@ -123,15 +136,16 @@ Proof.
   intros [] [slot] code a b c value [Fresh Valid] Transition Run;
     unfold write_code, write_fn_code, write_fun_code, set_fn_body, set_fun_body in Run;
     injection Run as _ <-;
-    destruct Transition as [Next Old Bound]; cbn [slot_index] in Fresh, Valid;
+    destruct Transition as [Next Old Bound Origins]; cbn [slot_index] in Fresh, Valid;
     constructor; cbn [es_next].
   all: try exact Next.
   all: try solve [intros table n Present; destruct table; cbn [read_code es_fns es_funs];
     try rewrite WorldSound.nget_nset_other by lia;
     first [exact (Old FunctionTable n Present)|exact (Old FunctorTable n Present)]].
-  all: intros BoundA n Future table; cbn [es_next] in Future; destruct table;
+  all: try solve [intros BoundA n Future table; cbn [es_next] in Future; destruct table;
     cbn [read_code es_fns es_funs]; try rewrite WorldSound.nget_nset_other by lia;
-    first [exact (Bound BoundA n Future FunctionTable)|exact (Bound BoundA n Future FunctorTable)].
+    first [exact (Bound BoundA n Future FunctionTable)|exact (Bound BoundA n Future FunctorTable)]].
+  all: intros [] n Earlier; [exact (Origins FunctionTable n Earlier)|exact (Origins FunctorTable n Earlier)].
 Qed.
 
 Lemma code_effect_emit : forall table (code : code_in table), PreservesOldCode (emit_code table code).
@@ -156,7 +170,7 @@ Proof. intros g s x s' Run. injection Run as _ <-. apply code_transition_refl. Q
 Lemma code_effect_put_fwd : forall g slot, PreservesOldCode (put_fwd g slot).
 Proof.
   intros g slot s x s' Run. unfold put_fwd in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply Nat.le_refl|intros [] i; reflexivity].
+  apply unchanged_code_transition; [apply Nat.le_refl| |]; intros [] i; reflexivity.
 Qed.
 
 Theorem place_forwarder_code_effect : forall handle signature,
@@ -233,22 +247,45 @@ Proof.
   intros []. cbn zeta. apply code_effect_bind; [apply code_effect_fresh_n|].
   intros capvals s result final Run.
   apply EaControlSound.mbind_ok in Run as (slot & reserved & Reserve & Run).
-  apply EaControlSound.mbind_ok in Run as (note_result & noted & Note & Run).
   apply EaControlSound.mbind_ok in Run as (numbered_result & numbered & Numbered & Run).
   apply EaControlSound.mbind_ok in Run as ([expression result_type] & nested & Body & Run).
   apply EaControlSound.mbind_ok in Run as (fit_result & validated & Fits & Run).
   apply EaControlSound.mbind_ok in Run as (write_result & written & Write & Run).
+  apply EaControlSound.mbind_ok in Run as (note_result & noted & Note & Run).
   injection Run as _ <-.
   assert (Prepare : CodeTransition reserved validated).
-  { eapply code_transition_compose; [eapply code_effect_put_lamcx; exact Note|].
-    eapply code_transition_compose; [eapply code_effect_check; exact Numbered|].
+  { eapply code_transition_compose; [eapply code_effect_check; exact Numbered|].
     eapply code_transition_compose; [eapply code_effect_map_err; [apply Lower|exact Body]|].
     eapply code_effect_check. exact Fits. }
   destruct (reserved_slot_number _ _ _ _ Reserve) as [Index Next].
   assert (Range : es_next s <= slot_index slot < es_next validated).
   { pose proof (counter_grows _ _ Prepare). lia. }
+  eapply (code_effect_reserved_lamcx slot C); [lia| |exact Note].
   eapply (code_effect_reserved_write FunctionTable); [exact Range| |exact Write].
   eapply code_transition_compose; [eapply code_effect_reserve; exact Reserve|exact Prepare].
+Qed.
+
+
+Theorem lambda_provider_records_section : forall E R what F C ps rt body sg this
+    before pid prefix needs after,
+  lambda_provider E R what F C ps rt body sg this before = Ok ((pid, prefix, needs), after) ->
+  read_origin after FunctionTable pid = Some (c_sub C) /\
+  exists emitted, read_code after FunctionTable pid = Some emitted.
+Proof.
+  intros E R what F C ps rt body sg this before pid prefix needs after Run.
+  unfold lambda_provider in Run.
+  do 7 (apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run)).
+  apply EaControlSound.mbind_ok in Run as ([body_code body_type] & ?state & ?step & Run).
+  do 3 (apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run)).
+  injection Run as <- _ _ <-.
+  match goal with
+  | Note : put_lamcx ?slot C ?written = Ok (_, _),
+    Write : write_fn_code ?slot ?emitted _ = Ok (_, ?written) |- _ =>
+      unfold put_lamcx in Note; injection Note as _ <-;
+      split; [cbn [read_origin es_lamcx]; now rewrite WorldSound.nget_nset_same|];
+      exists emitted; unfold write_fn_code, set_fn_body in Write; injection Write as _ <-;
+      apply WorldSound.nget_nset_same
+  end.
 Qed.
 
 
@@ -327,7 +364,7 @@ Proof. intros key s x s' Run. injection Run as _ <-. apply code_transition_refl.
 Lemma code_effect_put_wrap : forall key slot, PreservesOldCode (put_wrap key slot).
 Proof.
   intros key slot s x s' Run. unfold put_wrap in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply Nat.le_refl|intros [] i; reflexivity].
+  apply unchanged_code_transition; [apply Nat.le_refl| |]; intros [] i; reflexivity.
 Qed.
 
 Theorem meth_provider_code_effect : forall E R method F C provider sg receiver,

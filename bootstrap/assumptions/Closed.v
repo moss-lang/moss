@@ -183,6 +183,9 @@ Print Assumptions NM.EaCodeAllocationSound.emit_code_spec.
 Print Assumptions NM.EaCodeAllocationSound.assembled_code_lookup.
 Print Assumptions NM.EaCodeAllocationSound.assembled_lambda_section.
 Print Assumptions NM.EaCodeAllocationSound.assembled_link_origin.
+From NM Require EaCodeEffects EaBindCodeEffects.
+Print Assumptions NM.EaCodeEffects.lambda_provider_records_section.
+Print Assumptions NM.EaBindCodeEffects.emit_linked_body_records_origin.
 
 From NM Require EaApplicationSound.
 Print Assumptions NM.EaApplicationSound.allocate_application_outputs_range.

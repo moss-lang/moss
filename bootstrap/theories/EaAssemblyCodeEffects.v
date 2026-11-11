@@ -11,14 +11,16 @@ Local Open Scope string_scope.
 Definition PreservesCodeBound {A} (bound : nat) (action : M A) : Prop :=
   forall s x s', bound <= es_next s -> CodeTablesBound s ->
     action s = Ok (x, s') -> es_next s <= es_next s' /\ CodeTablesBound s' /\
-    forall table id, bound <= id -> id < es_next s -> read_code s' table id = read_code s table id.
+    (forall table id, bound <= id -> id < es_next s -> read_code s' table id = read_code s table id) /\
+    (forall table id, id < es_next s -> read_origin s' table id = read_origin s table id).
 
 Lemma code_effect_preserves_bound : forall A bound (action : M A),
   PreservesOldCode action -> PreservesCodeBound bound action.
 Proof.
   intros A bound action Effect s x s' Next Bound Run.
-  destruct (Effect _ _ _ Run) as [Next' Old Bound']. split; [exact Next'|].
-  split; [exact (Bound' Bound)|]. intros table id _ Earlier. apply Old. exact Earlier.
+  destruct (Effect _ _ _ Run) as [Next' Old Bound' Origins]. split; [exact Next'|].
+  split; [exact (Bound' Bound)|]. split; [|exact Origins].
+  intros table id _ Earlier. apply Old. exact Earlier.
 Qed.
 
 Lemma code_bound_bind : forall A B bound (action : M A) (next : A -> M B),
@@ -28,10 +30,11 @@ Lemma code_bound_bind : forall A B bound (action : M A) (next : A -> M B),
 Proof.
   intros A B bound action next First Second s x s' Next Bound Run.
   apply EaControlSound.mbind_ok in Run as (middle & state & Run1 & Run2).
-  destruct (First _ _ _ Next Bound Run1) as (Next' & Bound' & Earlier).
-  destruct (Second middle state x s' ltac:(lia) Bound' Run2) as (Next'' & Bound'' & Earlier').
-  split; [lia|]. split; [exact Bound''|].
-  intros table id Generated Old. rewrite Earlier' by lia. apply Earlier; assumption.
+  destruct (First _ _ _ Next Bound Run1) as (Next' & Bound' & Earlier & Origins).
+  destruct (Second middle state x s' ltac:(lia) Bound' Run2) as (Next'' & Bound'' & Earlier' & Origins').
+  split; [lia|]. split; [exact Bound''|]. split.
+  - intros table id Generated Old. rewrite Earlier' by lia. apply Earlier; assumption.
+  - intros table id Old. rewrite Origins' by lia. now apply Origins.
 Qed.
 
 Lemma code_bound_miter : forall A bound (f : A -> M unit) values,
@@ -49,11 +52,14 @@ Lemma source_write_preserves_bound : forall bound f body,
   f < bound -> PreservesCodeBound bound (set_fn_body f body).
 Proof.
   intros bound f body Source s x s' Next Bound Run.
+  assert (Origins : forall table id, read_origin s' table id = read_origin s table id).
+  { unfold set_fn_body in Run. injection Run as _ <-. intros [] id; reflexivity. }
   destruct (write_code_spec FunctionTable (CodeSlot f) body s ltac:(cbn [slot_index]; lia) Bound)
     as (written & Write & Next' & Tables & _ & Other).
   change (set_fn_body f body s = Ok (tt, written)) in Write.
   rewrite Run in Write. injection Write as _ ->.
-  split; [lia|]. split; [exact Tables|]. intros table id Generated Old.
+  split; [lia|]. split; [exact Tables|]. split; [|intros table id _; apply Origins].
+  intros table id Generated Old.
   apply Other. right. cbn [slot_index]. lia.
 Qed.
 
@@ -82,7 +88,7 @@ Proof.
   | context [match ?existing with Some _ => _ | None => _ end] =>
     destruct existing
   end; injection Run as _ <-; apply unchanged_code_transition;
-    [apply Nat.le_refl|intros [] i; reflexivity|apply Nat.le_refl|intros [] i; reflexivity].
+    try apply Nat.le_refl; intros [] i; reflexivity.
 Qed.
 
 Lemma platform_entry_code_effect : forall E C k, PreservesOldCode (EaPlatform.platform_entry E C k).

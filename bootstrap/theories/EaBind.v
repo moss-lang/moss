@@ -108,7 +108,6 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
   let caps := lambda_capture_names F C pnames body in
   let* capvals := fresh_n (List.length caps) in
   let* pid := reserve_code FunctionTable in
-  let* _ := put_lamcx pid C in
   let Cl := captured_cx C caps capvals in
   let Fl := Frame (fr_mod F) (Some (sg_ret sg)) this false
              (mk_frame_vars (is_some this) pnames (caps ++ ex_names W fuel (fr_mod F) body))
@@ -122,6 +121,7 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
              ("the anonymous function bound to " ++ what ++ " yields " ++ qty W ltype ++ ", but " ++ what ++ " returns " ++ qty W (sg_ret sg)) in
   let captures := combine caps capvals in
   let* _ := write_fn_code pid (translate_lambda_body Fl captures lbody) in
+  let* _ := put_lamcx pid C in
   let ixl := PIdx (pindex (c_provisions Cl)) in
   let ix := PIdx (pindex (c_provisions C)) in
   let keys := filter (fun k => match k with ITy _ => false | _ => providesb_i Cl ixl k && item_eqb k (provision_id k) end)
