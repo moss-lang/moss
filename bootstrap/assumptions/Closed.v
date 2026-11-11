@@ -96,3 +96,13 @@ From NM Require EaContextTableSound.
 Print Assumptions NM.EaContextTableSound.context_table_computed.
 Print Assumptions NM.EaContextTableSound.assume_ctx_sound.
 Print Assumptions NM.EaContextTableSound.fun_ctx_sound.
+
+From NM Require EaOutputSound.
+Print Assumptions NM.EaOutputSound.ctx_spec_items_sound.
+Print Assumptions NM.EaOutputSound.output_brackets_sound.
+Print Assumptions NM.EaOutputSound.output_item_entries_sound.
+Print Assumptions NM.EaOutputSound.output_items_entries_sound.
+Print Assumptions NM.EaOutputSound.provide_result_sound.
+Print Assumptions NM.EaOutputSound.output_entries_sound_at_budget.
+Print Assumptions NM.EaOutputSound.provide_result_sound_at_budget.
+Print Assumptions NM.EaOutputSound.bundle_world_r_provide_result_sound.
