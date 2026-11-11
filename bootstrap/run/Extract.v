@@ -39,7 +39,8 @@ Extract Inlined Constant Uint63.of_Z => "(fun z ->
    dies at its last use.  Only flambda honours the attributes (dune). *)
 Extract Inductive nat => int [ "0" "Stdlib.Int.succ" ]
  "(fun fO fS n -> if n=0 then (fO[@inlined]) () else (fS[@inlined]) (n-1))".
-Extract Constant loop_fuel => "max_int".
+(* MossX.loop_fuel is 2^34. Construct the same bound as a native integer. *)
+Extract Constant loop_fuel => "(1 lsl 34)".
 (* nat equality as int equality, monomorphic: ExtrOcamlNatInt's `(=)` is
    OCaml's polymorphic compare wherever the extracted code's local helpers
    generalize, and caml_equal is then a large share of the run time. *)
