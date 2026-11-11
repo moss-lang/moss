@@ -5913,6 +5913,24 @@ End Elaboration.
 (* The platform's source signatures. These checks relate library declarations
    to the machine operations supplied at linking, using the same world as
    elaboration. A matching name alone is insufficient. *)
+(* The language's linking rule consumes only this static platform contract.
+   A platform supplies the table interpretation, entry provisions and ABI. *)
+Module Type STATIC_PLATFORM.
+  Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> list (nsym * cast_spec) -> Prop.
+  Parameter Provides : Elaboration.world -> program -> Elaboration.cx -> item -> provision_value -> Prop.
+  Parameter EntryABI : Elaboration.world -> program -> Prop.
+End STATIC_PLATFORM.
+
+Module Linking (Pf : STATIC_PLATFORM).
+Import Elaboration.
+Definition Linked (W : world) (P : program) : Prop :=
+  Pf.EntryABI W P /\ Pf.Tables W (program_machines P) (program_casts P) /\
+  exists context needs types entries,
+    CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
+    program_environment P = Environment types entries /\
+    Forall (fun entry => Pf.Provides W P context (fst entry) (snd entry)) entries.
+End Linking.
+
 Module Platform.
 Import Input Elaboration.
 Local Open Scope string_scope.
@@ -6186,11 +6204,14 @@ Definition CastEntry (W : world) (array : bool) (entry : option (nsym * cast_spe
     entry = Some (n, CastSpec (ref_kind array) t
       (Some (h, TMachine h)))) \/
   ((forall n, ~ LangSym W "wasm" NSName tag n) /\ entry = None).
-Definition Representations (W : world) (P : program) : Prop :=
-  program_machines P = machine_table W /\
+Definition RepresentationTables (W : world)
+    (machines : list (tsym * machine_class)) (casts : list (nsym * cast_spec)) : Prop :=
+  machines = machine_table W /\
   exists reference array, CastEntry W false reference /\ CastEntry W true array /\
-    program_casts P = (match reference with Some x => [x] | None => [] end) ++
+    casts = (match reference with Some x => [x] | None => [] end) ++
                 (match array with Some x => [x] | None => [] end).
+Definition Representations (W : world) (P : program) : Prop :=
+  RepresentationTables W (program_machines P) (program_casts P).
 
 (* The native entry ABI carries no argument or result lanes. Nominal units
    and unions carry discriminators; ordinary tags carry their payload lanes. *)
@@ -6209,13 +6230,20 @@ Definition EntryPoint (W : world) (P : program) : Prop :=
     SigOf W (program_main P) (c_ty context) None signature /\
     sg_params signature = [] /\ EntryResult W (sg_ret signature).
 
-Definition Linked (W : world) (P : program) : Prop :=
-  EntryPoint W P /\ Layouts W /\ Representations W P /\
-  exists context needs types entries,
-    CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
-    program_environment P = Environment types entries /\
-    Forall (fun entry => Entry W P context (fst entry) (snd entry)) entries /\
-    Forall (fun entry => PlatformEntry W P (fst entry) (snd entry)) entries.
+Definition Tables (W : world) (machines : list (tsym * machine_class))
+    (casts : list (nsym * cast_spec)) : Prop :=
+  Layouts W /\ RepresentationTables W machines casts.
+Definition Provides (W : world) (P : program) (C : cx) (key : item) (value : provision_value) : Prop :=
+  Entry W P C key value /\ PlatformEntry W P key value.
+Definition EntryABI := EntryPoint.
+
+Module Static <: STATIC_PLATFORM.
+  Definition Tables := Tables.
+  Definition Provides := Provides.
+  Definition EntryABI := EntryABI.
+End Static.
+Module Link := Linking Static.
+Definition Linked := Link.Linked.
 
 Definition Ready (P : program) : Prop :=
   exists bundle world, ElaboratesIn bundle world P /\ Linked world P.

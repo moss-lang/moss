@@ -146,3 +146,30 @@ Proof.
   rewrite base_call_state. apply Keeps. exact Valid.
 Qed.
 End BaseCallFacts.
+
+(* The generic static contract regroups exactly the previous Base conditions. *)
+Section StaticLinkingFacts.
+Import Audit.Semantics.
+Lemma platform_linked_fields : forall W P,
+  Platform.Linked W P <->
+  Platform.EntryPoint W P /\ Platform.Layouts W /\ Platform.Representations W P /\
+  exists context needs types entries,
+    CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
+    program_environment P = Environment types entries /\
+    Forall (fun entry => Platform.Entry W P context (fst entry) (snd entry)) entries /\
+    Forall (fun entry => Platform.PlatformEntry W P (fst entry) (snd entry)) entries.
+Proof.
+  intros W P. unfold Platform.Linked, Platform.Link.Linked, Platform.Static.EntryABI,
+    Platform.Static.Tables, Platform.Static.Provides, Platform.EntryABI, Platform.Tables, Platform.Provides.
+  split.
+  - intros [ABI [[Layouts Representations] (C & ns & types & entries & Ctx & Types & Env & Provisions)]].
+    split; [exact ABI|]. split; [exact Layouts|]. split; [exact Representations|].
+    exists C, ns, types, entries. split; [exact Ctx|]. split; [exact Types|]. split; [exact Env|].
+    rewrite Forall_forall in Provisions. split; rewrite Forall_forall; intros entry Member;
+      [exact (proj1 (Provisions entry Member))|exact (proj2 (Provisions entry Member))].
+  - intros (ABI & Layouts & Representations & C & ns & types & entries & Ctx & Types & Env & Entries & Native).
+    split; [exact ABI|]. split; [split; assumption|].
+    exists C, ns, types, entries. split; [exact Ctx|]. split; [exact Types|]. split; [exact Env|].
+    rewrite Forall_forall in Entries, Native |- *. intros entry Member. split; [apply Entries|apply Native]; exact Member.
+Qed.
+End StaticLinkingFacts.

@@ -3,7 +3,7 @@
    the entry to the slice's safety (`Safe`) and main's initial realization
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
-From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
+From NM Require Import Audit AuditFacts PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize PublicFamilyCopy.
@@ -474,9 +474,9 @@ Theorem entry_safe : forall prelude
 Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
   destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [Mt [H0 [St Prims]]]].
-  pose proof Link as (_ & Lay & Reps & _).
+  pose proof (proj1 (platform_linked_fields _ _) Link) as (_ & Lay & Reps & _).
   pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys) & _).
-  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
+  destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique Wd _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
   unfold M.runtime. rewrite Env.
@@ -509,7 +509,7 @@ Proof.
   split; [exact Safe|]. split; [exact MM|]. exists (fun _ => None).
   pose proof Compat as [_ [Supports Laws]].
   split; [apply PS.state_ok_initial; apply Laws|].
-  pose proof Link as (_ & Lay & Reps & _).
+  pose proof (proj1 (platform_linked_fields _ _) Link) as (_ & Lay & Reps & _).
   intros n C ns types platform Ctx Types Env f op sg Ip Found At.
   apply (entry_primitive W Prog _ _ iface C ns types platform n _ f op sg Lay Reps
     (elaborates_bool_symbols bundle W Prog Elab) (Laws _ _)); [|exact Ctx|exact Types|exact Found|exact At|
@@ -541,7 +541,7 @@ Theorem handles_formed : forall bundle W Prog, A.ElaboratesIn bundle W Prog -> P
 Proof.
   intros bundle W Prog Elab Link C ns f sg op Ctx Found _.
   pose proof Elab as (Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys) & _).
-  destruct Link as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
+  destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
   destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
@@ -660,7 +660,7 @@ Proof.
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface)
     (ex_intro _ bundle Wo) (PublicWorldFormation.mentions_typed_of bundle W Wo)) as FLN.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.family_link_results_ok W Prog _ _ _ FLN) as FLR.
-  pose proof Link as (_ & Lay & Reps & _).
+  pose proof (proj1 (platform_linked_fields _ _) Link) as (_ & Lay & Reps & _).
   pose proof (PublicWorldFormation.mentions_typed_of bundle W Wo) as Mt.
   pose proof (PublicFamilySig.family_sig_ok_readoff W) as Fs.
   pose proof Compat as [_ [Supports Laws]].

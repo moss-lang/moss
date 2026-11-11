@@ -1,7 +1,7 @@
 (* A complete source reading and public build/run derivation. In particular,
    the revised contract is inhabited without any runtime-typing hypothesis. *)
 From Stdlib Require Import List String Arith Lia.
-From NM Require Import Audit AuditExamples FrontEnd.
+From NM Require Import Audit AuditFacts AuditExamples FrontEnd.
 From NM Require PublicMergePresent.
 Import Audit.Semantics.
 Import ListNotations Input Elaboration.
@@ -238,6 +238,7 @@ Proof.
 Qed.
 Lemma main_linked : Platform.Linked world_main AuditExamples.unit_program.
 Proof.
+  apply (proj2 (platform_linked_fields _ _)).
   assert (NoWasm : forall ns n symbol, ~ LangSym world_main "wasm" ns n symbol).
   { intros. eapply no_platform_symbols with (lib:="wasm"); simpl; auto. }
   assert (NoBool : forall ns n symbol, ~ LangSym world_main "bool" ns n symbol).

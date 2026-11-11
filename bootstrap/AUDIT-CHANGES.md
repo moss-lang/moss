@@ -142,6 +142,7 @@ entry they belong to.
 | 108 | Primitive method bindings record their receiver independently of the operation | sep S4c | representation change; public observations preserved |
 | 109 | Integrate scalar/reference carriers with the checked host ABI and merge semantics | sep S2 integration | representation change |
 | 110 | Integrate named operations with the checked host laws and site-erasure proofs | sep S3 integration | representation change |
+| 111 | Static linking consumes Tables, Provides, and EntryABI | sep S5a | none (equivalent regrouping) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3525,6 +3526,21 @@ using one fresh atom per abstract class must preserve that behaviour
   decode, including decode=None. Keep the exact public safety certificate
   and all interpreter/pass roots; no new assumptions or relaxed rules.
 - **Class.** Representation change; no intended Moss-observable difference.
+
+### 111. Static linking consumes a platform's tables, provisions and entry ABI (S5a)
+
+- **Rule.** `Linking` requires the platform's `EntryABI`, `Tables` and
+  `Provides` contract. It still reads main's context and machine types and
+  requires the same initial environment. `Platform.Linked` uses the
+  concrete instance of that generic rule.
+- **Fidelity.** Base's `Tables` regroups the old layout and representation
+  clauses. `Provides` pairs the old two checks for each entry. The checked
+  `platform_linked_fields` equivalence recovers exactly the previous
+  conjunction, preserving every `Builds` and `Compatible` instance.
+- **Boundary.** The public and host functor signatures, runtime and
+  executable are unchanged. This separates static linking only; the full
+  runtime platform interface and physical Base file remain future work.
+- **Class.** Equivalent regrouping (criterion 8, platform separation).
 
 ---
 

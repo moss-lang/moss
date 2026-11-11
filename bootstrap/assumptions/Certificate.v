@@ -447,6 +447,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_extends);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower_extends);
+  root (@NM.AuditFacts.platform_linked_fields);
   root (@PublicEntryTop.PS.primitive_safe);
   root (@PublicEntryTop.PS.state_ok_initial);
   root (@NM.PublicTypeRead.tyof_abs);
