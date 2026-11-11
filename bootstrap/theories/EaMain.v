@@ -143,6 +143,8 @@ Definition finish_assembly (bound : nat) (entry : string) : M program :=
                     bl tr fl main env0 [] (casts E) (Platform.machine_table W) (assembled_origins st) in
   let* _ := check (expansion_ok W fuel program (es_fns st) (es_funs st) bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
+  let* _ := check (Compilation.explicit_references program)
+             "a Wasm reference must be made by Base (use StructCast.cast or ArrayCast.cast for erased handles)" in
   ret program.
 
 Definition assemble (bound : nat) (entry : string) : M program :=

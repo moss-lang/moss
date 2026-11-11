@@ -28,7 +28,6 @@ Proof.
   intros H value unit Unit Typed. inversion Typed; subst.
   - rewrite (payload_tag W _ _ _ ltac:(eassumption)) in Unit. discriminate.
   - reflexivity.
-  - rewrite (payload_tag W _ _ _ ltac:(eassumption)) in Unit. discriminate.
 Qed.
 
 Theorem bool_value_shape : forall H bool value,
@@ -53,10 +52,6 @@ Proof.
       first [rewrite (unit_member_typed H _ _ TrueUnit MemberTyped)
             |rewrite (unit_member_typed H _ _ FalseUnit MemberTyped)]; auto end.
   - congruence.
-  - exfalso. match goal with Read : A.PayloadOf W bool [] ?payload, Shape : handle_type P _ ?payload |- _ =>
-      destruct (Members _ Read) as [->| ->];
-      (eapply handle_type_nominal_union; [|exact Shape]);
-      repeat constructor; do 2 eexists; reflexivity end.
 Qed.
 End Bool.
 

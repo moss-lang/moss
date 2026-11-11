@@ -35,7 +35,7 @@ Proof.
   - left. rewrite ground_nom in T. destruct (nominal_value W P _ _ _ _ T) as [inner ->].
     exists n, xs, inner. split; [left; reflexivity|]. split; [reflexivity|rewrite ground_nom; exact T].
   - left. destruct (Formed ms eq_refl) as [Nominal _].
-    rewrite ground_union in T. inversion T as [| | | | |? member ? Member In'| |]; subst.
+    rewrite ground_union in T. inversion T as [| | | | |? member ? Member In'|]; subst.
     apply in_map_iff in In' as [m [<- InM]].
     rewrite Forall_forall in Nominal. destruct (Nominal m InM) as [s [xs ->]].
     rewrite ground_nom in Member. destruct (nominal_value W P _ _ _ _ Member) as [inner ->].

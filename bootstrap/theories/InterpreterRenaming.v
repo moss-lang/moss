@@ -256,7 +256,6 @@ Proof.
     | progress rewrite rename_lookup_provision by exact injective
     | progress rewrite (related_functions _ _ _ Views)
     | progress rewrite (related_functors _ _ _ Views)
-    | progress rewrite (E.check_tag_equivariant rename injective P P') by exact (related_casts _ _ _ Views)
     | progress rewrite (C.rename_truthy rename injective P P') by exact Views
     | progress rewrite C.rename_get_field
     | progress rewrite C.rename_select_arm by exact injective

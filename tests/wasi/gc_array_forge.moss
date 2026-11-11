@@ -1,14 +1,11 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch, Num, raw;
-import "../../lib/wasm.moss" use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
+import "../../lib/wasm.moss" as w use Wasm, I32, Arrayed, Array, Arrays, .arrayed;
 import "../../lib/wasip1.moss" use WasiCore;
 
-# D81: forging an array, as D75's gc_forge forges a reference. Taking an
-# `Array` apart gives a bare `ArrayRef`; building one again is a cast to
-# the array type of what it claims to hold. At the type it was made at
-# the cast succeeds; at another — `Char`, laid out as one i32 like `Int`,
-# but a type of its own — it traps at the construction, before anything
-# reads it. Output: `42`, then a trap.
+# The Base cast recovers the precise GC type from an erased ArrayRef.
+# Int succeeds. Char has a different heap type and traps.
+# Output: 42, then a trap.
 
 assume Std {
   fn print_int(n: Int) {
@@ -27,10 +24,10 @@ assume Wasm, WasiCore, Branch {
     let n = 42;
     let xs = n.arrayed(raw(3));
     let bare = match xs { Array(a) => a };
-    let ys = Array[Arrayed=Int](bare);
+    let ys = w::ArrayCast[Arrayed=Int](bare).cast();
     print_int(ys.get(raw(2)));
     putchar(char::newline);
-    let cs = Array[Arrayed=Char](bare);
+    let cs = w::ArrayCast[Arrayed=Char](bare).cast();
     putchar(cs.get(raw(0)));
   }
 }

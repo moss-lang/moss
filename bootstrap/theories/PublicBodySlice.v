@@ -5661,7 +5661,7 @@ Proof.
       apply (outcome_seq _ F C d types H lg lst TUnit _ False _ _ _ Pre0 (fun f => False_ind _ f) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      exact (TC.tag_check W Prog Layouts Reps argv read d H1 s [] TUnit w
+      exact (TC.tag_preserves W Prog argv read d H1 s [] TUnit w
         (or_intror (conj K (conj eq_refl eq_refl))) T1).
     + (* val *) exact (val_step F C pa s t Val d types H lg lst Pre0).
     + (* const *)
@@ -5691,7 +5691,7 @@ Proof.
         (fun B => A.BkCall pa a [y] (or_introl eq_refl) B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs pay w
+      exact (TC.tag_preserves W Prog argv read d H1 s xs pay w
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       pose (sm := A.satisfaction_map C' Cf th ns).
@@ -5795,7 +5795,7 @@ Proof.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs (TRecord ftys) w
+      exact (TC.tag_preserves W Prog argv read d H1 s xs (TRecord ftys) w
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + (* field *) cbn [AR.O.I.eval].
       pose proof (sex F C o None ox ot Do d types H lg lst (pre_lower Pre0)) as Out.

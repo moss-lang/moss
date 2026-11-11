@@ -33,7 +33,7 @@ functor G: Wasm, Gc, X, v -> get {
     let raw = match v.boxed() { w::Ref(raw) => raw };
     bind Boxed = w::F64;
     bind w::Heap;
-    let bad = w::Ref(raw);
+    let bad = w::StructCast(raw).cast();
     let y = bad.deref();
     w::f64_add(y, y);
   };

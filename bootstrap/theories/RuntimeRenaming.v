@@ -5,7 +5,6 @@
 From Stdlib Require Import List Bool Arith.
 From NM Require AuditBase.
 From NM Require Import Audit BaseFacts PublicValueTyping.
-From NM Require PublicCastTyping.
 Import AuditBase.Semantics ListNotations.
 
 Record renaming := Renaming {
@@ -309,48 +308,6 @@ Definition primitives_related (P P' : program_view) : Prop :=
       (rename_site rename site) (map (rename_value rename) values) right in
     out' = rename_signal rename out /\ state_related next next'.
 
-Lemma rename_type_argument : forall arguments symbol,
-  type_argument (rename_subst rename arguments) (rename symbol) =
-  rename_ty rename (type_argument arguments symbol).
-Proof.
-  intros arguments symbol. unfold type_argument. rewrite rename_lookup_subst by exact injective.
-  destruct (lookup_subst symbol arguments); reflexivity.
-Qed.
-
-Lemma rename_cast_guard : forall d schema arguments,
-  PublicCastTyping.runtime_guard (rename_environment rename d)
-    (rename_cast_spec rename schema) (rename_subst rename arguments) =
-  PublicCastTyping.runtime_guard d schema arguments.
-Proof.
-  intros d [kind held [[symbol expected]|]] arguments; [|reflexivity].
-  cbn [PublicCastTyping.runtime_guard rename_cast_spec cast_handle option_map].
-  now rewrite rename_type_argument, rename_ground, rename_ty_eqb by exact injective.
-Qed.
-
-Theorem check_tag_equivariant : forall P P' d tag arguments value,
-  view_casts P' = rename_casts rename (view_casts P) ->
-  I.check_tag P' (rename_environment rename d) (rename tag)
-    (rename_subst rename arguments) (rename_value rename value) =
-  rename_signal rename (I.check_tag P d tag arguments value).
-Proof.
-  intros P P' d tag arguments value Casts. unfold I.check_tag, I.check_tag_with.
-  rewrite Casts, rename_lookup_cast by exact injective.
-  destruct (lookup_cast tag (view_casts P)) as [schema|]; [|reflexivity].
-  cbn [option_map]. unfold AuditBase.Representation.tag_trap.
-  pose proof (rename_cast_guard d schema arguments) as Guard.
-  unfold PublicCastTyping.runtime_guard, type_argument in Guard. rewrite Guard.
-  destruct (PublicCastTyping.runtime_guard d schema arguments) eqn:Enabled;
-    unfold PublicCastTyping.runtime_guard, type_argument in Enabled;
-    try rewrite Enabled; [|reflexivity].
-  cbn [rename_cast_spec cast_kind cast_held].
-  rewrite rename_lookup_subst by exact injective.
-  destruct (lookup_subst (cast_held schema) arguments) as [held|]; [|reflexivity].
-  destruct value as [|n value|fields|[sort bits|address [[kind header]|]]]; try reflexivity.
-  cbn [option_map rename_value].
-  rewrite rename_ground, rename_ty_eqb by exact injective.
-  destruct (_ && _); reflexivity.
-Qed.
-
 Theorem eval_tag_equivariant : forall fuel P P' d g left right tag arguments e,
   views_related rename P P' ->
   evaluations_related
@@ -367,8 +324,7 @@ Proof.
   destruct (I.eval fuel P' (rename_environment rename d) (rename_locals rename g) right (rename_expr rename e))
     as [out' locals' next'].
   destruct Related as [Signal [Locals State]]. cbn in Signal, Locals, State. subst out' locals'.
-  destruct out; try (exact (conj eq_refl (conj eq_refl State))).
-  split; [apply check_tag_equivariant; exact (related_casts _ _ _ Views)|exact (conj eq_refl State)].
+  destruct out; exact (conj eq_refl (conj eq_refl State)).
 Qed.
 
 Theorem eval_primitive_equivariant : forall fuel P P' d g left right f operation site args,

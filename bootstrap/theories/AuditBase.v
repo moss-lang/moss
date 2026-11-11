@@ -31,28 +31,16 @@ Record base_tag_check (T : Type) : Type := CastSpec {
   cast_handle : option (nat * T)
 }.
 Arguments CastSpec {T}.
-Definition tag_check := base_tag_check.
-
-Definition tag_trap (T : Type) (equal : T -> T -> bool) (read_type : T -> T)
-    (argument : nat -> option T) (abstract : nat -> T)
-    (spec : tag_check T) (raw : option (payload T)) : option nat :=
-  let enabled := match cast_handle spec with
-    | None => true
-    | Some (h, expected) =>
-        equal (read_type (match argument h with Some t => t | None => abstract h end)) expected
-    end in
-  if enabled then
-    match argument (cast_held spec), raw with
-    | Some held, Some (Reference _ (Some (kind, header))) =>
-        if Nat.eqb (cast_kind spec) kind && equal (read_type held) header then None else Some 37
-    | _, _ => Some 37
-    end
-  else None.
+Definition tag_metadata := base_tag_check.
 End Representation.
 
 Module Semantics.
   Include Audit.Semantics Representation.
   Definition address := Representation.address.
+  Notation cast_spec := tag_metadata.
+  Notation program_casts := program_tag_metadata.
+  Notation view_casts := view_tag_metadata.
+  Notation lookup_cast := lookup_tag_metadata.
   Notation MScalar := Representation.MScalar.
   Notation MReference := Representation.MReference.
   Notation CastSpec := Representation.CastSpec.
@@ -123,7 +111,8 @@ Inductive wasm_prim : Type :=
 (* D75/D81: what `bind Heap;`, `bind Mutable;`, `bind Arrays;` provide;
    PBox and PArrNew carry the `Ref` and `Array` tags *)
 | PBox : nsym -> wasm_prim | PDeref | PRefSet
-| PArrNew : nsym -> wasm_prim | PArrLen | PArrGet | PArrSet | PArrFill | PArrCopy.
+| PArrNew : nsym -> wasm_prim | PArrLen | PArrGet | PArrSet | PArrFill | PArrCopy
+| PGcCast (array : bool) (tag : nsym).
 
 (* Which library fn is which primitive: the elaborator gives `main`'s need of
    a lib/wasm.moss or lib/wasip1.moss fn named n the primitive
@@ -399,10 +388,11 @@ Definition primitive_name (p : wasm_prim) : string :=
   | PBox _ => "Ref.boxed" | PDeref => "Ref.deref" | PRefSet => "Ref.set"
   | PArrNew _ => "Array.arrayed" | PArrLen => "Array.length" | PArrGet => "Array.get"
   | PArrSet => "Array.set" | PArrFill => "Array.fill" | PArrCopy => "Array.copy"
+  | PGcCast array _ => if array then "ArrayCast.cast" else "StructCast.cast"
   end.
 
 Definition encode (p : wasm_prim) : op :=
-  Op (primitive_name p) (match p with PBox n | PArrNew n => [n] | _ => [] end).
+  Op (primitive_name p) (match p with PBox n | PArrNew n | PGcCast _ n => [n] | _ => [] end).
 
 Definition gc_names : list (string * wasm_prim) :=
   [("Ref.deref", PDeref); ("Ref.set", PRefSet); ("Array.length", PArrLen);
@@ -415,6 +405,8 @@ Definition decode_candidate (operation : op) : option wasm_prim :=
   | [tag] =>
       if String.eqb name "Ref.boxed" then Some (PBox tag)
       else if String.eqb name "Array.arrayed" then Some (PArrNew tag)
+      else if String.eqb name "StructCast.cast" then Some (PGcCast false tag)
+      else if String.eqb name "ArrayCast.cast" then Some (PGcCast true tag)
       else None
   | [] =>
       match find (fun entry => String.eqb name (fst entry)) gc_names with
@@ -475,7 +467,11 @@ Definition memory_operation (p : wasm_prim) : bool :=
   end.
 
 Definition uses_site (p : wasm_prim) : bool :=
-  match p with PBox _ | PArrNew _ => true | _ => memory_operation p end.
+  match p with
+  | PBox _ | PArrNew _ | PGcCast _ _ | PDeref | PRefSet
+  | PArrLen | PArrGet | PArrSet | PArrFill | PArrCopy => true
+  | _ => memory_operation p
+  end.
 
 (* The Base raw host ABI prefixes memory calls with the resolved receiver
    type. A reference header carries the type through the existing value
@@ -504,14 +500,66 @@ Definition allocation_result (p : wasm_prim) (tau : ty) (o : signal) : signal :=
   | PArrNew _, Normal (VTag n (VRef a None)) => Normal (VTag n (VRef a (Some (1, tau))))
   | _, _ => o
   end.
+(* Casting is an operation on an erased handle. Its method receiver
+   supplies the requested held type in the first type argument. *)
+Definition cast_result (array : bool) (tag : nsym) (site : option ty) (values : list value) : signal :=
+  match site, values with
+  | Some (TNom _ ((_, expected) :: _)), [VTag _ (VRef a (Some (kind, held)))] =>
+      if Nat.eqb (if array then 1 else 0) kind && ty_eqb expected held
+      then Normal (VTag tag (VRef a (Some (kind, held))))
+      else Trap 37
+  | _, _ => Trap 37
+  end.
+
+(* A Base heap access checks the allocation header before giving the
+   unwrapped address to the host. *)
+Definition reference_matches (array : bool) (site : option ty) (v : value) : bool :=
+  match site, v with
+  | Some (TNom _ ((_, expected) :: _)), VTag _ (VRef _ (Some (kind, held))) =>
+      Nat.eqb (if array then 1 else 0) kind && ty_eqb expected held
+  | _, _ => false
+  end.
+
+Definition heap_arguments_match (p : wasm_prim) (site : unit -> option ty)
+    (values : list value) : bool :=
+  match p with
+  | PDeref | PRefSet =>
+      match values with r :: _ => reference_matches false (site tt) r | _ => false end
+  | PArrLen | PArrGet | PArrSet | PArrFill =>
+      match values with r :: _ => reference_matches true (site tt) r | _ => false end
+  | PArrCopy =>
+      match values with r :: _ :: src :: _ =>
+        let held := site tt in
+        reference_matches true held r && reference_matches true held src
+      | _ => false
+      end
+  | _ => true
+  end.
+
+Definition heap_call_ready (decoded : option wasm_prim) (site : unit -> option ty)
+    (values : list value) : bool :=
+  match decoded with Some p => heap_arguments_match p site values | None => true end.
+
+Definition cast_operation (p : wasm_prim) : option (bool * nsym) :=
+  match p with PGcCast array tag => Some (array, tag) | _ => None end.
+
+Definition cast_at_site (operation : option wasm_prim) : option (bool * nsym) :=
+  match operation with Some p => cast_operation p | None => None end.
+
 Definition call {S : Type}
     (primitive : program_view -> op -> list value -> S -> signal * S)
     (P : program_view) (operation : op) (ot : option ty)
     (ws : list value) (st : S) : signal * S :=
   let decoded := decode operation in
-  let arguments := match decoded with Some p => arguments_at_site p (fun _ => ot) ws | None => ws end in
-  let '(o, st') := primitive P operation arguments st in
-  (match ot, decoded with Some tau, Some p => allocation_result p tau o | _, _ => o end, st').
+  match cast_at_site decoded with
+  | Some (array, tag) => (cast_result array tag ot ws, st)
+  | _ =>
+      if heap_call_ready decoded (fun _ => ot) ws then
+        let arguments := match decoded with Some p => arguments_at_site p (fun _ => ot) ws | None => ws end in
+        let '(o, st') := primitive P operation arguments st in
+        (match ot, decoded with Some tau, Some p => allocation_result p tau o | _, _ => o end, st')
+      else (Trap 37, st)
+  end.
 
 End BaseCall.
 
@@ -586,7 +634,7 @@ Definition prim_sig (p : wasm_prim) : option (list shape * shape) :=
   | PI64ReinterpF64 => Some ([ShapeF64], ShapeI64)
   | PF64ReinterpI64 => Some ([ShapeI64], ShapeF64)
   | PBox _ | PDeref | PRefSet | PArrNew _ | PArrLen | PArrGet | PArrSet
-  | PArrFill | PArrCopy => None
+  | PArrFill | PArrCopy | PGcCast _ _ => None
   end.
 
 (* Track B.  The memory primitives as the platform provides them, as
@@ -858,8 +906,58 @@ Definition FiniteLayouts (W : world) : Prop :=
   forall n pay, PayloadOf W n (map (fun t => (t, TAbs t)) (w_reqs W n)) pay ->
     ~ LayoutReaches W pay n.
 
+(* Precise Wasm reference values are produced by Base operations.
+   A scalar, structural type, or nominal type in the handle parameter
+   gives the tag an ordinary Moss representation. *)
+Definition explicit_reference_tag (machines : list (tsym * machine_class))
+    (metadata : list (nsym * tag_metadata))
+    (tag : nsym) (arguments : subst) : bool :=
+  match lookup_tag_metadata tag metadata with
+  | None => true
+  | Some spec =>
+      match cast_handle spec with
+      | Some (handle, _) =>
+          match lookup_subst handle arguments with
+          | Some (TRecord _ | TUnit | TNom _ _ | TUnion _) => true
+          | Some (TAbs t | TMachine t) =>
+              match nlook t machines with Some (MScalar _) => true | _ => false end
+          | _ => false
+          end
+      | None => false
+      end
+  end.
+
+Fixpoint explicit_reference_expr (machines : list (tsym * machine_class))
+    (metadata : list (nsym * tag_metadata)) (e : expr) : bool :=
+  match e with
+  | ETag tag arguments payload =>
+      explicit_reference_tag machines metadata tag arguments && explicit_reference_expr machines metadata payload
+  | EAssign _ e | ELoop e | EReturn e | EField e _ => explicit_reference_expr machines metadata e
+  | EBind (BValue _ value) body | ELet _ value body | ESeq value body | EWhile value body =>
+      explicit_reference_expr machines metadata value && explicit_reference_expr machines metadata body
+  | EBind _ body => explicit_reference_expr machines metadata body
+  | ECall _ _ _ args | EInvoke _ args => forallb (explicit_reference_expr machines metadata) args
+  | EMethod receiver _ _ args =>
+      explicit_reference_expr machines metadata receiver && forallb (explicit_reference_expr machines metadata) args
+  | EIf c t f =>
+      explicit_reference_expr machines metadata c && explicit_reference_expr machines metadata t &&
+      explicit_reference_expr machines metadata f
+  | ERecord fields => forallb (fun field => explicit_reference_expr machines metadata (snd field)) fields
+  | EMatch scrutinee arms =>
+      explicit_reference_expr machines metadata scrutinee &&
+      forallb (fun arm => explicit_reference_expr machines metadata (snd arm)) arms
+  | EVar _ | EUnit | EVal _ | EBreak => true
+  end.
+
+Definition explicit_references (P : program) : bool :=
+  let check := explicit_reference_expr (program_machines P) (program_tag_metadata P) in
+  forallb (fun fn => check (snd fn)) (program_functions P) &&
+  forallb (fun family => forallb
+    (fun b => match b with BValue _ value => check value | _ => true end)
+    (fc_bindings (snd family))) (program_functors P).
+
 Definition Admissible (W : world) (P : program) : Prop :=
-  FiniteLayouts W /\ NoExpandingCycle W P.
+  FiniteLayouts W /\ NoExpandingCycle W P /\ explicit_references P = true.
 End Compilation.
 
 Module Platform.
@@ -915,6 +1013,12 @@ Definition ReferenceType (W : world) (array : bool) (t held : ty) : Prop :=
     LangSym W "wasm" NSName (if array then "Arrayed" else "Boxed") parameter /\
     t = TNom symbol args /\ nlook parameter args = Some held.
 
+Definition CastTarget (W : world) (array : bool) (t held : ty) : Prop :=
+  exists symbol parameter args,
+    LangSym W "wasm" NSName (if array then "ArrayCast" else "StructCast") symbol /\
+    LangSym W "wasm" NSName (if array then "Arrayed" else "Boxed") parameter /\
+    t = TNom symbol args /\ exists rest, args = (parameter, held) :: rest.
+
 Definition GCSignature (W : world) (operation : wasm_prim) (params : list ty)
     (result : ty) : Prop :=
   match operation, params with
@@ -932,6 +1036,9 @@ Definition GCSignature (W : world) (operation : wasm_prim) (params : list ty)
   | PArrCopy, [dst; di; src; si; count] => MachineType W "I32" di /\
       MachineType W "I32" si /\ MachineType W "I32" count /\ result = TUnit /\
       exists held, ReferenceType W true dst held /\ ReferenceType W true src held
+  | PGcCast array tag, [request] =>
+      LangSym W "wasm" NSName (if array then "Array" else "Ref") tag /\
+      exists held, CastTarget W array request held /\ ReferenceType W array result held
   | _, _ => False
   end.
 
@@ -975,7 +1082,11 @@ Definition MethodPrimitive (W : world) (key : item) (operation : op) : Prop :=
              (name = "set" /\ operation = encode PArrSet) \/ (name = "fill" /\ operation = encode PArrFill) \/
              (name = "copy" /\ operation = encode PArrCopy))) \/
          (LangSym W "wasm" NSName "Addr" symbol /\
-            exists p, prim_of_name name = Some p /\ operation = encode p))
+            exists p, prim_of_name name = Some p /\ operation = encode p) \/
+         (exists (array : bool) tag,
+           LangSym W "wasm" NSName (if array then "ArrayCast" else "StructCast") symbol /\
+           LangSym W "wasm" NSName (if array then "Array" else "Ref") tag /\
+           name = "cast" /\ operation = encode (PGcCast array tag)))
     | RPlain => False
     end.
 

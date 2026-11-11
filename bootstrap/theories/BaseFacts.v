@@ -4,9 +4,13 @@ From NM Require Import Audit AuditBase PublicValueTyping.
 Import AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Export AuditBase.
 
+Lemma heap_arguments_match_force : forall p site values,
+  BaseCall.heap_arguments_match p site values =
+  BaseCall.heap_arguments_match p (fun _ => site tt) values.
+Proof. intros []; reflexivity. Qed.
+
 Module DeferredBaseCall.
-(* Base only consults the method's receiver type when allocating a
-   fresh reference header. *)
+(* Only allocation attaches a type header to the raw host result. *)
 Definition result_at_site (p : wasm_prim) (site : unit -> option ty) (out : signal) : signal :=
   match p with
   | PBox _ | PArrNew _ =>
@@ -24,9 +28,15 @@ Definition call {S : Type}
     (P : program_view) (operation : op) (site : unit -> option ty)
     (values : list value) (state : S) : signal * S :=
   let decoded := decode operation in
-  let arguments := match decoded with Some p => BaseCall.arguments_at_site p site values | None => values end in
-  let '(out, next) := primitive P operation arguments state in
-  (match decoded with Some p => result_at_site p site out | None => out end, next).
+  match BaseCall.cast_at_site decoded with
+  | Some (array, tag) => (BaseCall.cast_result array tag (site tt) values, state)
+  | _ =>
+      if BaseCall.heap_call_ready decoded site values then
+        let arguments := match decoded with Some p => BaseCall.arguments_at_site p site values | None => values end in
+        let '(out, next) := primitive P operation arguments state in
+        (match decoded with Some p => result_at_site p site out | None => out end, next)
+      else (Trap 37, state)
+  end.
 
 Theorem call_agrees : forall S
     (primitive : program_view -> op -> list value -> S -> signal * S)
@@ -36,7 +46,10 @@ Theorem call_agrees : forall S
 Proof.
   intros. unfold call, BaseCall.call.
   destruct (decode operation) as [p|].
-  - assert (Arguments : BaseCall.arguments_at_site p site values =
+  - cbn [BaseCall.cast_at_site BaseCall.heap_call_ready].
+    destruct (BaseCall.cast_operation p) as [[array tag]|]; [reflexivity|].
+    rewrite heap_arguments_match_force. destruct (BaseCall.heap_arguments_match p _ values); [|reflexivity].
+    assert (Arguments : BaseCall.arguments_at_site p site values =
       BaseCall.arguments_at_site p (fun _ => site tt) values).
     { unfold BaseCall.arguments_at_site, BaseCall.memory_arguments.
       destruct (BaseCall.memory_operation p); reflexivity. }
@@ -74,8 +87,8 @@ Module Type PUBLIC (Host : HOST).
   Include Public Host.
 End PUBLIC.
 
-(* The Base adapter changes a host result's wrapper, while retaining exactly
-   the state returned by the raw primitive. *)
+(* The Base adapter leaves state alone when it handles a call itself.
+   Otherwise it keeps the state returned by the raw host primitive. *)
 Section BaseCallFacts.
 Import AuditBase.Semantics.
 
@@ -83,30 +96,41 @@ Lemma base_call_state : forall S
     (primitive : program_view -> op -> list value -> S -> signal * S)
     P operation held ws st,
   snd (BaseCall.call primitive P operation held ws st) =
-  snd (primitive P operation
-    (match decode operation with
-     | Some p => BaseCall.arguments_at_site p (fun _ => held) ws
-     | None => ws
-     end) st).
+  let decoded := decode operation in
+  match BaseCall.cast_at_site decoded with
+  | Some _ => st
+  | None =>
+      if BaseCall.heap_call_ready decoded (fun _ => held) ws then
+        snd (primitive P operation
+          (match decoded with
+           | Some p => BaseCall.arguments_at_site p (fun _ => held) ws
+           | None => ws
+           end) st)
+      else st
+  end.
 Proof.
   intros S primitive P operation held ws st. unfold BaseCall.call.
-  destruct (primitive P operation
-    (match decode operation with
-     | Some p => BaseCall.arguments_at_site p (fun _ => held) ws
-     | None => ws end) st) as [out next].
-  destruct held, (decode operation); reflexivity.
+  destruct (decode operation) as [p|]; cbn [BaseCall.cast_at_site BaseCall.heap_call_ready].
+  - destruct (BaseCall.cast_operation p) as [[array tag]|]; [reflexivity|].
+    destruct (BaseCall.heap_arguments_match p _ ws); [|reflexivity].
+    destruct (primitive P operation _ st), held; reflexivity.
+  - destruct (primitive P operation ws st), held; reflexivity.
 Qed.
 
 Lemma base_call_preserves : forall S
     (primitive : program_view -> op -> list value -> S -> signal * S)
     P (ok : S -> Prop),
   (forall operation ws st, ok st -> ok (snd (primitive P operation ws st))) ->
-  forall operation held ws st, ok st ->
-    ok (snd (BaseCall.call primitive P operation held ws st)).
+  forall operation held ws st,
+    ok st -> ok (snd (BaseCall.call primitive P operation held ws st)).
 Proof.
   intros S primitive P ok Keeps operation held ws st Valid.
-  rewrite base_call_state. apply Keeps. exact Valid.
+  rewrite base_call_state. destruct (decode operation) as [p|];
+    cbn [BaseCall.cast_at_site BaseCall.heap_call_ready]; [|auto].
+  destruct (BaseCall.cast_operation p) as [[array tag]|]; [exact Valid|].
+  destruct (BaseCall.heap_arguments_match p _ ws); auto.
 Qed.
+
 End BaseCallFacts.
 
 (* The generic static contract regroups exactly the previous Base conditions. *)

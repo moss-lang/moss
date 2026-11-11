@@ -256,7 +256,7 @@ Proof.
         split; [right;split;[exact (NoWasm NSName "Array")|reflexivity]|reflexivity].
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|]. split; [constructor|].
-        split; [constructor|]. split; [reflexivity|exact (conj main_layouts main_bounded)].
+        split; [constructor|]. split; [reflexivity|exact (conj main_layouts (conj main_bounded eq_refl))].
 Qed.
 
 Definition main_text := "fn main() {}".

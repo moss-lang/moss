@@ -13,6 +13,6 @@ assume Wasm, Gc {
   let r=fresh.boxed();
   let h=match r { w::Ref(h)=>h };
   bind Boxed=w::I32;
-  let b=w::Ref(h); b.deref();
+  let b=w::StructCast(h).cast(); b.deref();
  }
 }

@@ -647,9 +647,6 @@ Proof. intros. induction fs; simpl; congruence. Qed.
 
 Lemma truthy_eq : forall w, truthy P' w = truthy P w.
 Proof. intros. unfold truthy. rewrite Hbool, Htrue, Hfalse. reflexivity. Qed.
-Lemma check_tag_eq : forall S d d' n th w, agree R S d d' ->
-  check_tag P' d' n th w = check_tag P d n th w.
-Proof. intros S d d' n th w H. unfold check_tag, check_tag_with, ground. rewrite Hcasts, (agree_tm H). reflexivity. Qed.
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
 Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
 
@@ -701,8 +698,7 @@ Proof.
       inversion Ha; subst; try stuck_here. err.
     + (* ETag *)
       destruct (IHe S d d' g st e1 Hc H Hst) as [Hs| ->]; [stk|].
-      destruct (eval k P d g st e1) as [[w| | | | | | |] g1 st1]; try err.
-      rewrite (check_tag_eq n th w H). err.
+      destruct (eval k P d g st e1) as [[w| | | | | | |] g1 st1]; err.
     + (* ECall *)
       rewrite Hfn. destruct (view_function P f) as [body|] eqn:Ef; simpl; [|err].
       destruct (IHl S d d' g st args ltac:(eassumption) H Hst) as [Hs| ->]; [stk|].
@@ -937,7 +933,7 @@ Proof.
   assert (Hfunchk : forall h c, view_functor P h = Some c ->
             forallb (bchk R full) (fc_bindings c) = true).
   { intros h c Hf. apply nlook_in in Hf. rewrite forallb_forall in Hc2. exact (Hc2 (h, c) Hf). }
-  destruct (@sim_all R P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl eq_refl Hclosed Hfunchk fuel)
+  destruct (@sim_all R P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl Hclosed Hfunchk fuel)
     as [Hsim _].
   unfold run_main. simpl program_main. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl; [|right; reflexivity].

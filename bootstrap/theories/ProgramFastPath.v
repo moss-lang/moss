@@ -1032,9 +1032,6 @@ Proof. intros P0 Hk k. exact (proj2 (proj2 (proj2 (@PS.inv_all P0 ok Hk k)))). Q
 
 Lemma truthy_eq : forall w, truthy P' w = truthy P w.
 Proof. intros. unfold truthy. rewrite Hbool, Htrue, Hfalse. reflexivity. Qed.
-Lemma check_tag_eq : forall S d d' n th w, agree S d d' ->
-  check_tag P' d' n th w = check_tag P d n th w.
-Proof. intros S d d' n th w Hd. unfold check_tag, check_tag_with, ground. rewrite Hcasts, (ag_tm Hd). reflexivity. Qed.
 Lemma prim_at_eq : forall p first second ws st,
   BaseSites.retained_site p first = BaseSites.retained_site p second -> ok st ->
   run_prim_at P' p second ws st = run_prim_at P p first ws st.
@@ -1266,8 +1263,7 @@ Proof.
       destruct Ho as [Ha _]. inversion Ha; subst; err.
     + (* ETag *)
       destruct (IHe W d d' g st e1 Hc ltac:(assumption) Hd Hst) as [Hs|[k1 Hk1]]; [red1; bk|].
-      red1. destruct (eval k P d g st e1) as [[w| | | | | | |] g1 st1]; try err.
-      right. evgo. rewrite (check_tag_eq W d d' n th w Hd). reflexivity.
+      red1. destruct (eval k P d g st e1) as [[w| | | | | | |] g1 st1]; err.
     + (* ECall *)
       red1. destruct (view_function P f) as [body|] eqn:Ef.
       2:{ assert (Ef' : view_function P' f = None) by (rewrite Hfn, Ef; reflexivity). err. }
@@ -1680,8 +1676,7 @@ Proof.
     + (* ETag *)
       red1.
       destruct (IHe W d d' g st e1 Hc ltac:(assumption) Hd Hst) as [Hs|[[ks Hs]|[k1 Hk1]]]; [ofB|skB|].
-      destruct (eval k P' d' g st (T e1)) as [[w| | | | | | |] g1 st1]; try errB.
-      right. right. evgo. rewrite (check_tag_eq W d d' n th w Hd). reflexivity.
+      destruct (eval k P' d' g st (T e1)) as [[w| | | | | | |] g1 st1]; errB.
     + (* ECall *)
       red1. rewrite Hfn. destruct (view_function P f) as [body|] eqn:Ef; cbn [option_map]; [|errB].
       destruct (IHl W d d' g st args ltac:(eassumption) ltac:(eassumption) Hd Hst)
@@ -2121,7 +2116,7 @@ Theorem run_main_forward : forall fuel st0, ok st0 ->
                    = run_main fuel P (program_main p) (program_environment p) st0).
 Proof.
   intros fuel st0 Hst. destruct chk_parts as [Hb [Hf [Hu He]]]. destruct views as [Hfn Hfun].
-  destruct (@fwd_all U H cH P P' ok Hfn Hfun Hprim Hok Hsites eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
+  destruct (@fwd_all U H cH P P' ok Hfn Hfun Hprim Hok Hsites eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
     as [Hsim _].
   unfold run_main. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl.
@@ -2143,7 +2138,7 @@ Proof.
   intros fuel st0 Hst. destruct chk_parts as [Hb [Hf [Hu He]]]. destruct views as [Hfn Hfun].
   assert (Hok' : forall q site ws st, ok st -> ok (snd (run_prim P' q site ws st)))
     by (intros; rewrite Hprim by assumption; auto).
-  destruct (@bwd_all U H cH P P' ok Hfn Hfun Hprim Hok Hsites eq_refl eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
+  destruct (@bwd_all U H cH P P' ok Hfn Hfun Hprim Hok Hsites eq_refl eq_refl eq_refl Hf Hu HcH Hb fuel)
     as [Hsim _].
   unfold run_main. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl.

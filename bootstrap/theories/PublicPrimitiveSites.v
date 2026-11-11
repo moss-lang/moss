@@ -173,14 +173,16 @@ Lemma base_call_site_irrelevant : forall S
     (primitive : program_view -> op -> list value -> S -> signal * S)
     P operation first second ws st,
   (forall decoded, decode operation = Some decoded ->
-    BaseCall.memory_operation decoded = false /\
+    BaseCall.cast_operation decoded = None /\ BaseCall.memory_operation decoded = false /\
+    (forall site, BaseCall.heap_arguments_match decoded site ws = true) /\
     forall tau out, BaseCall.allocation_result decoded tau out = out) ->
   BaseCall.call primitive P operation first ws st =
   BaseCall.call primitive P operation second ws st.
 Proof.
   intros S primitive P operation first second ws st Plain. unfold BaseCall.call.
   destruct (decode operation) as [decoded|] eqn:Decoded.
-  - destruct (Plain _ eq_refl) as [NoMemory Allocation].
+  - destruct (Plain _ eq_refl) as [NoCast [NoMemory [Ready Allocation]]].
+    cbn [BaseCall.cast_at_site BaseCall.heap_call_ready]. rewrite NoCast, !Ready.
     unfold BaseCall.arguments_at_site, BaseCall.memory_arguments. rewrite NoMemory.
     destruct (primitive P operation _ st) as [out next].
     destruct first, second; now rewrite ?Allocation.
@@ -197,7 +199,7 @@ Proof.
   intros S primitive P operation site ws st.
   unfold retained_site. destruct (decode operation) as [decoded|] eqn:Decoded.
   - destruct decoded; try reflexivity; apply base_call_site_irrelevant;
-      intros decoded Decode; rewrite Decoded in Decode; injection Decode as <-; split; reflexivity.
+      intros decoded Decode; rewrite Decoded in Decode; injection Decode as <-; repeat split; reflexivity.
   - apply base_call_site_irrelevant. intros decoded Decode. congruence.
 Qed.
 
@@ -385,19 +387,6 @@ Proof.
   intros operation first second ws st Eq. unfold run_prim_at.
   rewrite (CallSites operation first), (CallSites operation second), Eq. reflexivity.
 Qed.
-Lemma check_tags_agree : forall left right tag substitution value,
-  environments_agree left right ->
-  check_tag P left tag substitution value = check_tag P right tag substitution value.
-Proof.
-  intros left right tag substitution value Eq. unfold check_tag, check_tag_with.
-  destruct (lookup_cast tag (view_casts P)) as [spec|]; [|reflexivity].
-  unfold AuditBase.Representation.tag_trap.
-  destruct (cast_handle spec) as [[handle expected]|];
-    repeat rewrite (agreement_ground left right Eq);
-    destruct (lookup_subst (cast_held spec) substitution); destruct value as [| | |[|a [[kind header]|]]];
-    repeat rewrite (agreement_ground left right Eq); reflexivity.
-Qed.
-
 Definition bindings_agree (left right : (environment * locals * mstate) + evaluation) : Prop :=
   match left, right with
   | inl (d, g, st), inl (d', g', st') => environments_agree d d' /\ g = g' /\ st = st'
@@ -530,7 +519,7 @@ Proof.
         inversion Rel; reflexivity.
       * rewrite (agreement_none _ _ _ Eq Found). reflexivity.
     + rewrite (IHe d d' g st e Eq). destruct (eval fuel P d' g st e) as [signal g1 st1].
-      destruct signal; try reflexivity. rewrite (check_tags_agree d d' _ _ _ Eq). reflexivity.
+      reflexivity.
     + destruct (view_function P f) as [body|]; [|reflexivity].
       rewrite (IHargs d d' g st l Eq).
       destruct (eval_arguments fuel P d' g st l) as [[[values g1] st1]|]; [|reflexivity].

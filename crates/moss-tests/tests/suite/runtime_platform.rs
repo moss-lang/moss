@@ -220,29 +220,50 @@ fn cast_probe(decls: &str, body: &str, traps: bool) {
     else { assert_eq!(reference.code,0,"{}",reference.stderr); }
 }
 #[test]
+fn a_precise_wasm_reference_requires_a_base_operation() {
+    let dir = sources(&[("main.moss", r#"
+        import "wasm.moss" as w use Wasm, Gc, Boxed, .boxed;
+        assume Wasm, Gc {
+          fn main() {
+            bind Boxed = w::I32;
+            bind w::Heap;
+            let value = w::i32_one.boxed();
+            let raw = match value { w::Ref(handle) => handle };
+            w::Ref(raw);
+          }
+        }
+    "#)]);
+    let entry = format!("{dir}/main.moss");
+    let reference = oracle_command(&["--elab-only", &entry]);
+    assert_eq!(reference.code, ORACLE_REJECTED, "{}", reference.stderr);
+    assert!(reference.stderr.contains("a Wasm reference must be made by Base"));
+    assert!(!compile(&entry, "lib/prelude.moss").is_module());
+}
+
+#[test]
 fn checked_cast_projection_identity() {
-    cast_probe("tag A(w::I32); tag B(w::I32);", "bind Boxed=A; bind w::Heap; let r=A(w::i32_one).boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=B; let b=w::Ref(h); b.deref();",true);
-    cast_probe("type A=w::I32; type B=w::I32;", "bind Boxed=A; bind w::Heap; let r=w::i32_one.boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=B; let b=w::Ref(h); b.deref();",false);
-    cast_probe("tag A(w::I32);", "bind Boxed=A; bind w::Heap; let r=A(w::i32_one).boxed(); let h=match r {w::Ref(h)=>h}; let b=w::Ref(h); b.deref();",false);
-    cast_probe("tag A(w::I32); tag B(w::I32);", "bind Arrayed=A; bind w::Arrays; let r=A(w::i32_one).arrayed(w::i32_one); let h=match r {w::Array(h)=>h}; bind Arrayed=B; let b=w::Array(h); b.get(w::i32_zero);",true);
-    cast_probe("tag A {x:w::I32,y:w::I32}; tag B {x:w::I32,y:w::I32};", "bind Arrayed=A; bind w::Arrays; let r=A{x=w::i32_one,y=w::i32_one}.arrayed(w::i32_one); let h=match r {w::Array(h)=>h}; bind Arrayed=B; let b=w::Array(h); b.get(w::i32_zero);",true);
+    cast_probe("tag A(w::I32); tag B(w::I32);", "bind Boxed=A; bind w::Heap; let r=A(w::i32_one).boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=B; let b=w::StructCast(h).cast(); b.deref();",true);
+    cast_probe("type A=w::I32; type B=w::I32;", "bind Boxed=A; bind w::Heap; let r=w::i32_one.boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=B; let b=w::StructCast(h).cast(); b.deref();",false);
+    cast_probe("tag A(w::I32);", "bind Boxed=A; bind w::Heap; let r=A(w::i32_one).boxed(); let h=match r {w::Ref(h)=>h}; let b=w::StructCast(h).cast(); b.deref();",false);
+    cast_probe("tag A(w::I32); tag B(w::I32);", "bind Arrayed=A; bind w::Arrays; let r=A(w::i32_one).arrayed(w::i32_one); let h=match r {w::Array(h)=>h}; bind Arrayed=B; let b=w::ArrayCast(h).cast(); b.get(w::i32_zero);",true);
+    cast_probe("tag A {x:w::I32,y:w::I32}; tag B {x:w::I32,y:w::I32};", "bind Arrayed=A; bind w::Arrays; let r=A{x=w::i32_one,y=w::i32_one}.arrayed(w::i32_one); let h=match r {w::Array(h)=>h}; bind Arrayed=B; let b=w::ArrayCast(h).cast(); b.get(w::i32_zero);",true);
     cast_probe("", "bind w::StructRef=w::I32; bind Boxed=w::F64; let r=w::Ref(w::i32_one); let a=match r {w::Ref(a)=>a}; w::i32_add(a,a);",false);
     cast_probe("", "bind Boxed=w::I32; bind w::Heap; let inner=w::i32_one.boxed(); bind Boxed=w::Ref[Boxed=w::I32]; bind w::Heap; let outer=inner.boxed(); let again=outer.deref(); again.deref();",false);
 
-    cast_probe("assume Boxed { fn make(x:Boxed):w::Ref {bind w::Heap; x.boxed()} }", "bind Boxed=w::I32; let r=make(w::i32_one); let h=match r {w::Ref(h)=>h}; let b=w::Ref(h); b.deref();",false);
-    cast_probe("type T; assume T {tag A[T](T);}", "bind T=w::I32; bind Boxed=A[T=w::I32]; bind w::Heap; let r=A(w::i32_one).boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=A[T=w::I32]; let b=w::Ref(h); b.deref();",false);
+    cast_probe("assume Boxed { fn make(x:Boxed):w::Ref {bind w::Heap; x.boxed()} }", "bind Boxed=w::I32; let r=make(w::i32_one); let h=match r {w::Ref(h)=>h}; let b=w::StructCast(h).cast(); b.deref();",false);
+    cast_probe("type T; assume T {tag A[T](T);}", "bind T=w::I32; bind Boxed=A[T=w::I32]; bind w::Heap; let r=A(w::i32_one).boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=A[T=w::I32]; let b=w::StructCast(h).cast(); b.deref();",false);
 
     // A provider retains the allocation type from the point where it was bound.
-    cast_probe("", "bind Boxed=w::I32; bind w::Heap; bind Boxed=w::F64; let r=w::i32_one.boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=w::I32; let b=w::Ref(h); b.deref();", false);
-    cast_probe("", "bind Arrayed=w::I32; bind w::Arrays; bind Arrayed=w::F64; let r=w::i32_one.arrayed(w::i32_one); let h=match r {w::Array(h)=>h}; bind Arrayed=w::I32; let b=w::Array(h); b.get(w::i32_zero);", false);
+    cast_probe("", "bind Boxed=w::I32; bind w::Heap; bind Boxed=w::F64; let r=w::i32_one.boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=w::I32; let b=w::StructCast(h).cast(); b.deref();", false);
+    cast_probe("", "bind Arrayed=w::I32; bind w::Arrays; bind Arrayed=w::F64; let r=w::i32_one.arrayed(w::i32_one); let h=match r {w::Array(h)=>h}; bind Arrayed=w::I32; let b=w::ArrayCast(h).cast(); b.get(w::i32_zero);", false);
 
-    cast_probe("type Fresh; assume Fresh {val fresh:Fresh;} functor F[]:Wasm -> Fresh,fresh; functor Make:Wasm -> Fresh,fresh {bind Fresh=w::I32; bind fresh=w::i32_one;}", "bind F=Make; bind F; bind Boxed=Fresh; bind w::Heap; let r=fresh.boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=w::I32; let b=w::Ref(h); b.deref();", false);
+    cast_probe("type Fresh; assume Fresh {val fresh:Fresh;} functor F[]:Wasm -> Fresh,fresh; functor Make:Wasm -> Fresh,fresh {bind Fresh=w::I32; bind fresh=w::i32_one;}", "bind F=Make; bind F; bind Boxed=Fresh; bind w::Heap; let r=fresh.boxed(); let h=match r {w::Ref(h)=>h}; bind Boxed=w::I32; let b=w::StructCast(h).cast(); b.deref();", false);
 
 }
 
 #[test]
 fn copied_functor_retains_private_captured_type() {
-    let decls = "type T; assume StructRef {val raw:StructRef;} fn note(); functor F[]:Wasm -> note; functor H[]:Wasm,T -> note; functor G:Wasm,T,raw -> note {bind note=()=>{let r=w::Ref[Boxed=T](raw);};}";
+    let decls = "type T; assume StructRef {val raw:StructRef;} fn note(); functor F[]:Wasm -> note; functor H[]:Wasm,T -> note; functor G:Wasm,Gc,T,raw -> note {bind note=()=>{let r=w::StructCast[Boxed=T](raw).cast();};}";
     let body = "bind T=w::I32; bind Boxed=w::I32; bind w::Heap; let r=w::i32_one.boxed(); bind raw=match r {w::Ref(h)=>h}; bind F=G; bind H=F; bind T=w::F64; bind H; note();";
     cast_probe(decls, &body.replace("bind T=w::F64;", ""), false);
     cast_probe(decls, &body.replace("bind F=G; bind H=F;", "bind H=G;"), true);
@@ -686,8 +707,8 @@ fn private_checked_casts_preserve_chained_fixed_pin_meanings() {
          assume T{val private:w::Ref[Boxed=T];} \
          assume T,U,V{fn q(a:T,b:U,c:V);} \
          functor F[]:Wasm,T,U,V,raw->q; \
-         functor G:Wasm,T,U,V,raw->q{ \
-           bind private=w::Ref[Boxed=T](raw); \
+         functor G:Wasm,Gc,T,U,V,raw->q{ \
+           bind private=w::StructCast[Boxed=T](raw).cast(); \
            bind T=U;bind U=V;bind V=Old;bind q=(a,b,c)=>();}",
         "bind Boxed=Old;bind w::Heap; \
          let handle=match Old.boxed(){w::Ref(handle)=>handle};bind raw=handle; \
@@ -715,7 +736,7 @@ fn opaque_nominal_arguments_do_not_force_their_unused_payloads() {
         "bind Boxed=Phantom[Element=Bad];bind w::Heap; \
          let boxed=Phantom[Element=Bad](()).boxed(); \
          let raw=match boxed{w::Ref(raw)=>raw}; \
-         bind Boxed=Phantom[Element=Other];w::Ref(raw).deref();",
+         bind Boxed=Phantom[Element=Other];w::StructCast(raw).cast().deref();",
         true,
     );
 }

@@ -7,7 +7,7 @@
 # Oracle (this worktree's moss_m2): accepts; prints 1, then traps (trap 37)
 # Oracle variant with the check (scratch/expand/variant): rejects: expanding cycle
 # Native (ob-family moss, seed 1h1710x0): crashes at compile time (call stack exhausted)
-import "../../lib/wasm.moss" use Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" use Boxed, Ref, Heap, StructCast, StructCasts, .boxed;
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
@@ -31,12 +31,12 @@ functor G: U -> T, wrap {
   bind T = Box;
   bind wrap = (x) => Box(A);
 }
-assume Std, Wasm, Heap, U, T, F, V {
+assume Std, Wasm, Heap, StructCasts, U, T, F, V {
   fn rec(x: T, n: Int): Int {
     if n == 0 {
       let r = x.boxed();
       let s = match r { Ref(s) => s };
-      let q = Ref[Boxed=V](s);
+      let q = StructCast[Boxed=V](s).cast();
       return 1;
     }
     bind U = T;

@@ -202,53 +202,14 @@ Qed.
 End Layout.
 
 Module Checks (Prims : PRIMITIVES) (R0 : INTERP Prims).
-Module CT := CastTyping Prims R0.
-Module R := R0.
-
-Theorem tag_check_from_table : forall W Prog,
-  CastTableFormed W (program_machines Prog) (program_casts Prog) ->
-  forall argv read d H s xs pay value,
+Theorem tag_preserves : forall W Prog argv read d H s xs pay value,
   (A.kind_sym W s = Some A.DKTag /\ A.PayloadOf W s xs pay /\ map fst xs = A.w_reqs W s) \/
   (A.kind_sym W s = Some A.DKUnit /\ xs = [] /\ pay = TUnit) ->
   value_typed W (program_of Prog argv read) H value (ground d pay) ->
-  match R.check_tag (program_of Prog argv read) d s xs value with
-  | Normal result => value_typed W (program_of Prog argv read) H result (ground d (TNom s xs))
-  | Trap _ => True
-  | _ => False
-  end.
+  value_typed W (program_of Prog argv read) H (VTag s value) (ground d (TNom s xs)).
 Proof.
-  intros W Prog Table argv read d H s xs pay value [[Kind [Pay Keys]]|[Unit [-> ->]]] Typed.
-  - apply (CT.check_tag_preserves W _ H d s xs value (ground d pay)).
-    + exact (payload_subst W (type_meanings d) _ _ _ Pay).
-    + exact Typed.
-    + intros schema Found.
-      destruct (Table s schema Found) as [_ [raw [Handle [Identity Class]]]].
-      destruct (raw_payload W s xs pay raw Keys Identity Pay) as [_ Raw].
-      split.
-      * intros symbol expected FoundHandle. rewrite Handle in FoundHandle.
-        injection FoundHandle as <- _. eauto.
-      * intros Enabled. unfold cast_enabled in Enabled. rewrite Handle in Enabled.
-        unfold type_argument in Enabled. rewrite lookup_ground_arguments, Raw in Enabled.
-        cbn in Enabled. apply ty_eqb_spec in Enabled.
-        change (app_subst (type_meanings d) pay) with (ground d pay) in Enabled.
-        cbn [cast_kind]. rewrite Enabled. constructor. exact Class.
-  - unfold R.check_tag, R.check_tag_with. cbn [view_casts program_of]. rewrite (formed_cast_not_unit W _ _ Table s Unit).
-    inversion Typed; subst. apply TypedUnitTag. exact Unit.
-Qed.
-(* Existing Base clients obtain the generic table evidence from the
-   platform's two concrete static conditions. *)
-Theorem tag_check : forall W Prog, Platform.Layouts W -> Platform.Representations W Prog ->
-  forall argv read d H s xs pay value,
-  (A.kind_sym W s = Some A.DKTag /\ A.PayloadOf W s xs pay /\ map fst xs = A.w_reqs W s) \/
-  (A.kind_sym W s = Some A.DKUnit /\ xs = [] /\ pay = TUnit) ->
-  value_typed W (program_of Prog argv read) H value (ground d pay) ->
-  match R.check_tag (program_of Prog argv read) d s xs value with
-  | Normal result => value_typed W (program_of Prog argv read) H result (ground d (TNom s xs))
-  | Trap _ => True
-  | _ => False
-  end.
-Proof.
-  intros W Prog Layouts Reps. apply tag_check_from_table.
-  exact (base_cast_table_formed W Prog Layouts Reps).
+  intros W Prog argv read d H s xs pay value [[Kind [Payload Keys]]|[Unit [-> ->]]] Typed.
+  - eapply TypedTag; [exact (payload_subst W (type_meanings d) _ _ _ Payload)|exact Typed].
+  - inversion Typed; subst. now apply TypedUnitTag.
 Qed.
 End Checks.

@@ -40,7 +40,7 @@ Fixpoint compile_atom (e : expr) : option code :=
       | Some c => Some (fun fuel d g st =>
           match fuel with 0 => Evaluation OutOfFuel g st | S k =>
             match c k d g st with
-            | Evaluation (Normal w) g1 st1 => Evaluation (check_tag P d n th w) g1 st1
+            | Evaluation (Normal w) g1 st1 => Evaluation (Normal (VTag n w)) g1 st1
             | r => r end end)
       | None => None end
   | _ => None

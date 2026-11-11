@@ -12,19 +12,6 @@ Definition heap_types := address -> option (nat * ty).
 Definition heap_extends (old new : heap_types) : Prop :=
   forall address cell, old address = Some cell -> new address = Some cell.
 
-Definition type_argument (arguments : subst) (symbol : tsym) : ty :=
-  match lookup_subst symbol arguments with Some meaning => meaning | None => TAbs symbol end.
-Definition cast_enabled (schema : cast_spec) (arguments : subst) : bool :=
-  match cast_handle schema with
-  | None => true
-  | Some (symbol, expected) => ty_eqb (type_argument arguments symbol) expected
-  end.
-Definition ordinary_tag (P : program_view) (tag : nsym) (arguments : subst) : Prop :=
-  match lookup_cast tag (view_casts P) with
-  | None => True
-  | Some schema => cast_enabled schema arguments = false
-  end.
-
 Inductive handle_type (P : program_view) : nat -> ty -> Prop :=
 | MachineHandle : forall kind symbol,
     A.nlook symbol (view_machines P) = Some (MReference kind) ->
@@ -55,7 +42,7 @@ Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
 | TypedRecord : forall values fields,
     fields_typed H values fields -> value_typed H (VRecord values) (TRecord fields)
 | TypedTag : forall tag arguments payload value,
-    ordinary_tag P tag arguments -> A.PayloadOf W tag arguments payload ->
+    A.PayloadOf W tag arguments payload ->
     value_typed H value payload -> value_typed H (VTag tag value) (TNom tag arguments)
 (* A unit declaration (`tag True;`) has no payload; ExUnitTag builds it
    with no type arguments. *)
@@ -67,12 +54,6 @@ Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
     A.nlook symbol (view_machines P) = Some (MReference kind) ->
     handle_typed H kind held value ->
     value_typed H value (TMachine symbol)
-| TypedHeapTag : forall tag arguments schema held payload value,
-    lookup_cast tag (view_casts P) = Some schema -> cast_enabled schema arguments = true ->
-    lookup_subst (cast_held schema) arguments = Some held ->
-    A.PayloadOf W tag arguments payload -> handle_type P (cast_kind schema) payload ->
-    handle_typed H (cast_kind schema) held value ->
-    value_typed H (VTag tag value) (TNom tag arguments)
 with fields_typed (H : heap_types) : list (fld * value) -> list (fld * ty) -> Prop :=
 | FieldsNil : fields_typed H [] []
 | FieldsCons : forall name value tau values fields,
@@ -135,6 +116,18 @@ Proof.
     split; [assumption|constructor; assumption].
 Qed.
 
+Lemma tagged_checked_header : forall H tag address kind held tau,
+  value_typed H (VTag tag (VRef address (Some (kind, held)))) tau ->
+  H address = Some (kind, held).
+Proof.
+  intros H tag address kind held tau Typed.
+  remember (VTag tag (VRef address (Some (kind, held)))) as value eqn:Shape.
+  induction Typed; inversion Shape; subst; try solve [eauto].
+  all: first
+    [ solve [eapply checked_header_typed; eassumption]
+    | match goal with Header : handle_typed _ _ _ _ |- _ => inversion Header; congruence end ].
+Qed.
+
 Theorem tagged_payload_typed : forall H tag arguments value,
   A.kind_sym W tag = Some A.DKTag ->
   value_typed H (VTag tag value) (TNom tag arguments) ->
@@ -143,7 +136,6 @@ Proof.
   intros H tag arguments value Tag Typed. inversion Typed; subst.
   - eauto.
   - congruence.
-  - eexists; split; [eassumption|eapply handle_payload_typed; eassumption].
 Qed.
 
 Theorem unit_tag_typed : forall H tag arguments value,

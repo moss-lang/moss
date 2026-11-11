@@ -14,7 +14,7 @@ assume Wasm, Gc {
   bind Saved=w::F64;
   bind w::F64=w::I32;
   bind Boxed=Saved;
-  let bad=w::Ref(raw);
+  let bad=w::StructCast(raw).cast();
   let y=bad.deref();
   w::f64_add(y,y);
  }

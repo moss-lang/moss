@@ -61,10 +61,6 @@ Qed.
 Lemma truthy_agrees : forall value, S.truthy public_view value = R.truthy raw_view value.
 Proof. intros. unfold S.truthy, R.truthy. now rewrite bool_agrees, true_agrees, false_agrees. Qed.
 
-Lemma check_tag_agrees : forall env tag th value,
-  S.check_tag public_view env tag th value = R.check_tag raw_view env tag th value.
-Proof. intros. unfold S.check_tag, R.check_tag, S.check_tag_with, R.check_tag_with. now rewrite casts_agree. Qed.
-
 Lemma application_environment_agrees : forall env h th captured,
   application_environment public_view env h th captured =
   application_environment raw_view env h th captured.
@@ -102,7 +98,6 @@ Proof.
     | progress rewrite primitive_commutes
     | progress rewrite select_arm_exact
     | progress rewrite truthy_agrees
-    | progress rewrite check_tag_agrees
     | progress rewrite application_environment_agrees
     | progress rewrite functions_agree
     | progress rewrite functors_agree

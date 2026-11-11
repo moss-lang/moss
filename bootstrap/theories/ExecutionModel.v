@@ -265,6 +265,7 @@ Definition base_primitive (p : AuditBase.WasmOps.wasm_prim) : prim :=
   | AuditBase.WasmOps.PArrSet => PArrSet
   | AuditBase.WasmOps.PArrFill => PArrFill
   | AuditBase.WasmOps.PArrCopy => PArrCopy
+  | AuditBase.WasmOps.PGcCast _ _ => PUnsupported 0
   end.
 
 (* ===================== Expressions and bindings ========================== *)

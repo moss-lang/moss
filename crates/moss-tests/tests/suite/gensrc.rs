@@ -129,7 +129,8 @@ fn every_wasm_item_has_an_instruction() {
     // D75's two methods are instructions too, but which ones depends on
     // the layout of what a reference holds, so the back end selects them by
     // hand, where `bind Heap;` provides them, rather than from the table;
-    // and so are D81's, which `Mutable` and `Arrays` provide. D79's are
+    // and so are D81's, which `Mutable` and `Arrays` provide. The cast
+    // families recover erased handles at a precise heap type. D79's are
     // `Addr`'s methods, which `Memories` provides: each is the instruction
     // of its name, at the receiver's memory.
     let missing: std::collections::BTreeSet<&str> = declared
@@ -148,6 +149,8 @@ fn every_wasm_item_has_an_instruction() {
         "Array.set",
         "Array.fill",
         "Array.copy",
+        "StructCast.cast",
+        "ArrayCast.cast",
     ]
     .into();
     assert_eq!(missing, expected);

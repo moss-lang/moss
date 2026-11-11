@@ -104,6 +104,12 @@ Proof.
         [|discriminate Check]
   end.
   inversion Check; subst checked after_expansion.
+  apply mbind_ok in Run as (references_checked & after_references & References & Run).
+  lazymatch type of References with
+  | context [Compilation.explicit_references ?P] =>
+      destruct (Compilation.explicit_references P); [|discriminate References]
+  end.
+  inversion References; subst references_checked after_references.
   injection Run as <- <-.
   split; [reflexivity|split; [exact Main|]].
   split; [exists after_arity, after_environment; exact Env|].
@@ -323,7 +329,10 @@ Proof.
   subst provided_context. rewrite Env in Provided.
   split; [exact (EaWorldSound.elaborate_with_root _ _ _ _ Run)|].
   split; [exact Entry|]. split.
-  - split; [eapply elaborate_finite_layouts|eapply elaborate_with_expansion_bounded]; exact Run.
+  - split; [eapply elaborate_finite_layouts; exact Run|]. split.
+    + eapply elaborate_with_expansion_bounded; exact Run.
+    + destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & _ & _ & _ & Assembled).
+      eapply EaCodeAllocationSound.assemble_explicit_references; exact Assembled.
   - split; [exact Tables|].
     exists C, needs, types, provisions. repeat split; assumption.
 Qed.

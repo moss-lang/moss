@@ -1,19 +1,11 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
-import "../../lib/wasm.moss" use Wasm, Boxed, Ref, Heap, .boxed;
+import "../../lib/wasm.moss" as w use Wasm, Boxed, Ref, Heap, .boxed;
 import "../../lib/wasip1.moss" use WasiCore;
 
-# D75: forging. Moss cannot forbid rebuilding a tag at another listed
-# parameter (D73), so taking a `Ref` apart and building it again is
-# allowed; it is also the one place the back end casts. At the type the
-# struct was made at, the cast succeeds, and the reference reads as
-# before; at another, it traps at the construction, before anything can
-# read a `Point`'s struct as an `Int`'s. Output: `3`, `4`, then a trap.
-# Following either reference needs `.deref` at its type, so `Heap` is
-# applied at both.
-# (In `main`, where every type is concrete, so that the interpreter,
-# which knows a generic function's types only generically, can tell the
-# two apart too.)
+# The Base cast recovers the precise GC type from an erased StructRef.
+# Recovering Point succeeds. Asking for Int traps before any access.
+# Output: 3, 4, then a trap.
 
 assume Std, Wasm {
   tag Point { x: Int, y: Int };
@@ -34,12 +26,14 @@ assume Wasm, WasiCore, Branch {
     let pt = Point { x = 3, y = 4 };
     let p = pt.boxed();
     let s = match p { Ref(s) => s };
-    let q = Ref[Boxed=Point](s);
+    bind Boxed = Point;
+    let q = w::StructCast(s).cast();
     print_int(q.deref().x);
     putchar(char::newline);
     print_int(q.deref().y);
     putchar(char::newline);
-    let n = Ref[Boxed=Int](s);
+    bind Boxed = Int;
+    let n = w::StructCast(s).cast();
     print_int(n.deref());
     putchar(char::newline);
   }

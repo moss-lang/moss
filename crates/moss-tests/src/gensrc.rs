@@ -102,6 +102,9 @@ pub const SPELLED: &[&str] = &[
     "Boxed",
     "boxed",
     "deref",
+    "StructCast",
+    "ArrayCast",
+    "cast",
     // D81: garbage-collected arrays, and the methods `Mutable` and
     // `Arrays` provide, likewise compiled in place.
     "ArrayRef",

@@ -1245,12 +1245,7 @@ Module Type REPRESENTATION.
   (* Each platform supplies its own machine types and opaque values. *)
   Parameter machine_class : Type.
   Parameter payload : Type -> Type.
-  Parameter tag_check : Type -> Type.
-  (* A checked wrapper can trap. The callbacks compare and read types
-     and supply the wrapper's type arguments at the construction site. *)
-  Parameter tag_trap : forall (T : Type) (equal : T -> T -> bool)
-    (read_type : T -> T) (argument : nat -> option T) (abstract : nat -> T),
-    tag_check T -> option (payload T) -> option nat.
+  Parameter tag_metadata : Type -> Type.
 End REPRESENTATION.
 
 Module Semantics (Repr : REPRESENTATION).
@@ -1588,7 +1583,7 @@ Definition compose_adaptation (a : option smap) (sm : smap) : option smap :=
 Definition parameter_values (ws : list value) : locals := combine (seq 0 (List.length ws)) ws.
 
 (* Program bodies and their declared formal interfaces. *)
-Definition cast_spec := Repr.tag_check ty.
+Definition tag_metadata := Repr.tag_metadata ty.
 (* A semantic program contains: the bodies of every
    defined fn (and of the fns elaboration synthesizes: forwarders, lambda
    providers, wrappers), the core functor bodies `bind F = G;` made, Bool's
@@ -1629,7 +1624,7 @@ Record program : Type := Program {
   program_main : nat;
   program_environment : environment;
   program_unsupported : list string;
-  program_casts : list (nsym * cast_spec);
+  program_tag_metadata : list (nsym * tag_metadata);
   program_machines : list (tsym * machine_class);
   program_origins : code_origins
 }.
@@ -1645,15 +1640,15 @@ Record program_view : Type := ProgramView {
   view_arguments  : list (list int);
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
   view_read  : list int -> option (list int);
-  (* tags whose payloads the platform checks *)
-  view_casts : list (nsym * cast_spec);
+  (* platform-specific information about named representations *)
+  view_tag_metadata : list (nsym * tag_metadata);
   view_machines : list (tsym * machine_class)
 }.
 
-Fixpoint lookup_cast (n : nsym) (cs : list (nsym * cast_spec)) : option cast_spec :=
+Fixpoint lookup_tag_metadata (n : nsym) (cs : list (nsym * tag_metadata)) : option tag_metadata :=
   match cs with
   | [] => None
-  | (n', c) :: r => if Nat.eqb n n' then Some c else lookup_cast n r
+  | (n', c) :: r => if Nat.eqb n n' then Some c else lookup_tag_metadata n r
   end.
 Definition bind_type (d : environment) (t : tsym) (tau : ty) : environment :=
   EnvironmentWithAliases (type_meanings d) ((t, ground d tau) :: type_aliases d) (provision_values d).
@@ -1821,22 +1816,6 @@ Definition popn (n : nat) (r : evaluation) : evaluation :=
 Definition with_g (g : locals) (r : evaluation) : evaluation :=
   match r with Evaluation o _ st => Evaluation o g st end.
 
-Definition check_tag_with (read_type : ty -> ty) (P : program_view)
-    (n : nsym) (th : subst) (w : value) : signal :=
-  let error := match lookup_cast n (view_casts P) with
-  | None => None
-  | Some spec =>
-      let payload := match w with VMachine raw => Some raw | _ => None end in
-      Repr.tag_trap ty ty_eqb read_type (fun symbol => lookup_subst symbol th) TAbs spec payload
-  end in
-  match error with
-  | None => Normal (VTag n w)
-  | Some code => Trap code
-  end.
-
-Definition check_tag (P : program_view) (d : environment) (n : nsym) (th : subst) (w : value) : signal :=
-  check_tag_with (ground d) P n th w.
-
 (* Transparent call entry for the interpreter-agreement proofs. *)
 Definition run_prim_at := run_prim.
 
@@ -1926,9 +1905,9 @@ Fixpoint eval (fuel : nat) (P : program_view) (d : environment) (g : locals) (st
                  | Some (ValueProvision w) => Evaluation (Normal w) g st
                  | _ => Evaluation (Stuck e_val) g st
                  end
-      | ETag n th e1 =>
+      | ETag n _ e1 =>
           match eval k P d g st e1 with
-          | Evaluation (Normal w) g1 st1 => Evaluation (check_tag P d n th w) g1 st1
+          | Evaluation (Normal w) g1 st1 => Evaluation (Normal (VTag n w)) g1 st1
           | r => r
           end
       | ECall f th sm args =>
@@ -5975,7 +5954,7 @@ End Elaboration.
    and any additional restrictions on the programs it can run. *)
 Module Type STATIC_PLATFORM.
   Parameter root_item : option (string * Input.name).
-  Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> list (nsym * cast_spec) -> Prop.
+  Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> list (nsym * tag_metadata) -> Prop.
   Parameter Provides : Elaboration.world -> program -> Elaboration.cx -> item -> provision_value -> Prop.
   Parameter EntryABI : Elaboration.world -> program -> Prop.
   Parameter Admissible : Elaboration.world -> program -> Prop.
@@ -5985,7 +5964,7 @@ Module Linking (Pf : STATIC_PLATFORM).
 Import Elaboration.
 Definition Linked (W : world) (P : program) : Prop :=
   w_root_item W = Pf.root_item /\ Pf.EntryABI W P /\ Pf.Admissible W P /\
-  Pf.Tables W (program_machines P) (program_casts P) /\
+  Pf.Tables W (program_machines P) (program_tag_metadata P) /\
   exists context needs types entries,
     CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
     program_environment P = Environment types entries /\
@@ -6031,7 +6010,7 @@ Definition program_of (p : program) (argv : list (list int))
     (rd : list int -> option (list int)) : program_view :=
   ProgramView (fun f => Elaboration.nlook f (program_functions p))
     (fun u => Elaboration.nlook u (program_functors p))
-    (program_bool p) (program_true p) (program_false p) argv rd (program_casts p) (program_machines p).
+    (program_bool p) (program_true p) (program_false p) argv rd (program_tag_metadata p) (program_machines p).
 
 (* ######################################################################## *)
 (* Public source-to-world contract                                           *)

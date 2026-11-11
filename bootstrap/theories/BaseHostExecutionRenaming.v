@@ -31,8 +31,9 @@ Lemma keep_heap_renamed : forall original state,
 Proof. reflexivity. Qed.
 
 Lemma rename_plain_primitive : forall primitive,
-  Heap.is_gc primitive = false -> rename_base_primitive rename primitive = primitive.
-Proof. destruct primitive; cbn [Heap.is_gc]; intros; try reflexivity; discriminate. Qed.
+  Heap.is_gc primitive = false -> BaseCall.cast_operation primitive = None ->
+  rename_base_primitive rename primitive = primitive.
+Proof. destruct primitive; cbn [Heap.is_gc BaseCall.cast_operation]; intros; try reflexivity; discriminate. Qed.
 
 Lemma rename_unsupported : forall operation,
   decode operation = None -> rename_base_operation rename operation = operation.
@@ -192,7 +193,11 @@ Proof.
   destruct (decode operation) as [primitive|] eqn:Decode.
   - apply PublicOperationFacts.decode_canonical in Decode. subst operation.
     destruct (Heap.is_gc primitive) eqn:IsGC; [now apply raw_gc_renamed|].
-    pose proof (rename_plain_primitive primitive IsGC) as Fixed.
+    destruct (BaseCall.cast_operation primitive) as [[array tag]|] eqn:Cast.
+    { destruct primitive; try discriminate. unfold BaseHost.primitive, BaseHost.primitive_in.
+      rewrite rename_base_encoding, !BaseHost.decode_host_encode.
+      reflexivity. }
+    pose proof (rename_plain_primitive primitive IsGC Cast) as Fixed.
     unfold BaseHost.primitive, BaseHost.primitive_in, BaseHost.primitive_decoded, BaseHost.with_memory_arguments.
     rewrite rename_base_encoding, Fixed, !BaseHost.decode_host_encode, split_memory_arguments_renamed.
     destruct (BaseCall.split_memory_arguments primitive values) as [site arguments].
@@ -266,7 +271,7 @@ Theorem default_primitive_calls_related : forall rename P P',
 Proof.
   intros rename P P' Injective Views Bool True False.
   unfold Execution.N.E.primitives_related, Public.ReferenceHost.run_prim, Base.call.
-  apply base_call_equivariant, default_raw_calls_related; assumption.
+  apply base_call_equivariant; [assumption|apply default_raw_calls_related; assumption].
 Qed.
 
 Lemma init_state_renamed : forall rename pages,

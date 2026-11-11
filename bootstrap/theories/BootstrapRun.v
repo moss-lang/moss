@@ -141,8 +141,11 @@ Proof.
     Host.primitive (M.runtime p initial) operation arguments state).
   { intros. exact (Blind (M.runtime p initial) (native_view p initial)
       eq_refl eq_refl eq_refl eq_refl eq_refl eq_refl operation arguments state). }
-  rewrite Primitive.
-  destruct (decode operation); destruct (Host.primitive _ _ _ _); reflexivity.
+  destruct (decode operation) as [p0|]; cbn [BaseCall.cast_at_site BaseCall.heap_call_ready].
+  - destruct (BaseCall.cast_operation p0) as [[array tag]|]; [reflexivity|].
+    destruct (BaseCall.heap_arguments_match p0 _ values); [|reflexivity].
+    rewrite Primitive. destruct (Host.primitive _ _ _ _); reflexivity.
+  - rewrite Primitive. destruct (Host.primitive _ _ _ _); reflexivity.
 Qed.
 
 Definition run (p : program) (initial : M.state) (tbl : fsym -> option C.code)
@@ -165,7 +168,6 @@ Proof.
   - destruct initial. reflexivity.
   - intros. symmetry. apply indexed_function_lookup.
   - intros. symmetry. apply indexed_functor_lookup.
-  - reflexivity.
   - reflexivity.
   - reflexivity.
   - reflexivity.

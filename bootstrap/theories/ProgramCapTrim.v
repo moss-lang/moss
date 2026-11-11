@@ -752,32 +752,6 @@ Proof. intros. induction fs; simpl; congruence. Qed.
 Lemma truthy_eq : forall w, truthy P' w = truthy P w.
 Proof. intros. unfold truthy. rewrite Hbool, Htrue, Hfalse. reflexivity. Qed.
 
-Lemma check_tag_eq : forall S Dm x d d' n th w, envrel T S Dm x d d' ->
-  sok S th = true -> forallb S casts = true ->
-  check_tag P' d' n th w = check_tag P d n th w.
-Proof.
-  intros S Dm x d d' n th w H Hs Hc. unfold check_tag, check_tag_with. rewrite Hcasts.
-  destruct (lookup_cast n (view_casts P)) as [spec|] eqn:Ecast; [|reflexivity].
-  unfold AuditBase.Representation.tag_trap.
-  assert (Hth : forall h t, lookup_subst h th = Some t -> ground d t = ground d' t).
-  { intros h t Hl. apply (envrel_ground H). apply lookup_subst_in in Hl.
-    unfold sok in Hs. rewrite forallb_forall in Hs. exact (Hs _ Hl). }
-  assert (E1 : (match cast_handle spec with
-                | None => true
-                | Some (h, expected) => ty_eqb (ground d' (match lookup_subst h th with Some t => t | None => TAbs h end)) expected
-                end) =
-               (match cast_handle spec with
-                | None => true
-                | Some (h, expected) => ty_eqb (ground d (match lookup_subst h th with Some t => t | None => TAbs h end)) expected
-                end)).
-  { destruct (cast_handle spec) as [[h expected]|] eqn:Eh; [|reflexivity].
-    destruct (lookup_subst h th) as [t|] eqn:El; [rewrite (Hth h t El); reflexivity|].
-    rewrite (envrel_ground H); [reflexivity|]. unfold gok. simpl. rewrite andb_true_r.
-    rewrite forallb_forall in Hc. apply Hc. exact (Hcastg Ecast Eh). }
-  rewrite E1. destruct (lookup_subst (cast_held spec) th) as [tau|] eqn:El;
-    [rewrite (Hth _ _ El)|]; reflexivity.
-Qed.
-
 Lemma prim_at_eq : forall p ot ws st, ok st -> run_prim_at P' p ot ws st = run_prim_at P p ot ws st.
 Proof. intros. unfold run_prim_at. rewrite Hprim by assumption. reflexivity. Qed.
 
@@ -838,8 +812,7 @@ Proof.
       * rewrite (lookup_none H El). reflexivity.
     + (* ETag *)
       rewrite (IHe S Dm x d d' g st e1 ltac:(assumption) H Hst).
-      destruct (eval k P d g st e1) as [[w| | | | | | |] g1 st1]; try reflexivity.
-      rewrite (@check_tag_eq S Dm x d d' n th w H ltac:(assumption) ltac:(assumption)). reflexivity.
+      reflexivity.
     + (* ECall *)
       rewrite Hfn. destruct (view_function P f) as [body|] eqn:Ef; simpl; [|reflexivity].
       rewrite (IHl S Dm x d d' g st args ltac:(assumption) H Hst).
@@ -1125,8 +1098,8 @@ Proof.
   assert (Hfunchk : forall h c, view_functor P h = Some c ->
             forallb (bchk T (cast_gens p) all_gens all_gens) (fc_bindings c) = true).
   { intros h c Hf. apply nlook_in in Hf. rewrite forallb_forall in Hc2. exact (Hc2 (h, c) Hf). }
-  destruct (@sim_all T (cast_gens p) P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl eq_refl
-              Hcastg Hclosed Hfunchk fuel) as [Hsim _].
+  destruct (@sim_all T (cast_gens p) P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl
+              Hclosed Hfunchk fuel) as [Hsim _].
   unfold run_main. simpl program_main. simpl program_environment. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl; [|reflexivity].
   assert (Henv : envrel T (Gt T (program_main p)) (Dt T (program_main p)) false

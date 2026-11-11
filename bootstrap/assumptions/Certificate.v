@@ -58,7 +58,7 @@ Module PublicLinkMergesI := PublicLinkMerges.LinkMerges PublicClosureExample.Pri
    PublicChainFwd, CN PublicChainNew, CC PublicChainCore, LR
    PublicLinkResults, PA PublicPlatformApply, FS PublicFamilyStep, CopyA
    PublicCopyApply, S PublicBodySlice (AR PublicArms, B PublicBoolTyping,
-   TC PublicTagCheck, TC.CT PublicCastTyping); SR PublicSafety, PS
+   TC PublicTagCheck); SR PublicSafety, PS
    PublicPrimitiveSafety. *)
 Module PublicEntryTop := PublicEntry.EntrySafety BaseHost.Concrete PublicPublic.
 Module PublicSiteErasure := PublicPrimitiveSites.ReferenceSites BaseHost.Concrete PublicPublic.
@@ -353,7 +353,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFunctorScopeExample.private_input_provider_application_exports_concrete_meaning);
   root (@NM.PublicOutputTransferExample.prior_caller_output_does_not_occupy_callee_destination);
   root (@NM.PublicGenerationPrototype.GenerationPrototype.fresh_export_preserves_supported_type);
-  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.CT.check_tag_preserves);
   root (@NM.PublicHeapTyping.allocation_predicates);
   root (@PublicHeaps.box_preserves_heap);
   root (@PublicHeaps.array_preserves_heap);
@@ -543,8 +542,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.units_bare_of);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.arms_select);
   root (@NM.PublicTagCheck.base_cast_table_formed);
-  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_check_from_table);
-  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_check);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_preserves);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_extends);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower_extends);

@@ -2967,15 +2967,15 @@ written against `Ast` does not change.
   ```
 
   (Both shapes are tests: `gc_tree` and `gc_ast`.)
-- **The one cast.** Taking a `Ref` apart gives a bare `StructRef`, which
-  forgets the precise type for free. Building a `Ref[Boxed=X]` *from* a
-  bare `StructRef` is the one place the back end must cast, to
-  `(ref null $X)`, and it is exactly forging ([D73]: Moss cannot forbid
-  rebuilding a tag at another parameter). A program that never does it
-  contains no cast; one that forges at the wrong layout traps at that
-  construction, rather than reading the wrong data later. Struct types
-  that refer to each other (`Expr`'s struct holds `(ref null $Expr)`s) are
-  emitted together as a `rec` group.
+- **Explicit recovery from an erased reference.** Taking a `Ref` apart
+  gives a bare `StructRef`. Base's `StructCast[Boxed=X](raw).cast()`
+  checks the allocation's type and returns a `Ref[Boxed=X]`. The Wasm
+  backend implements this primitive with `ref.cast_null` to
+  `(ref null $X)`. The Base build rejects direct construction of a
+  Wasm-backed `Ref` from its erased payload. A scope can still use `Ref`
+  as an ordinary tag over a different representation, such as an I32
+  arena address. Struct types that refer to each other are emitted
+  together as a `rec` group.
 - **Every reference is nullable**, `(ref null $X)`. A non-nullable one
   would need the emitter to prove each local assigned before it is read;
   nullable ones are always valid and cost no space. The possible cost is
@@ -3169,7 +3169,7 @@ syntax or types:
 *Implementation.* Both back ends: a reference scalar kind (valtypes
 `(ref null struct)` and `(ref null $X)`), a struct type per boxed type in
 the type section (in `rec` groups where they refer to each other),
-`struct.new`, `struct.get`, and `ref.cast` at a forging construction;
+`struct.new`, `struct.get`, and `ref.cast_null` in the explicit Base recovery operation;
 the Python bootstrap's interpreter held a reference as a Python object. Tests: a
 recursive tree built and folded through `Ref`; the AST example's
 interpreter over `Ref` beside the pool, in one program; an `Expr` and a
@@ -4113,11 +4113,12 @@ exactly as `Packed` does (a test shows it can).
   `Expr` (`i32 i32 ref ref`)
   is four arrays, with no allocation per element. A zero-lane element
   (a unit, `()`) is a struct holding only its length.
-- **Forging, as for `Ref`.** Taking an `Array` apart gives the bare
-  `ArrayRef`, `(ref null eq)` — the supertype of both shapes above;
-  rebuilding one at an `Arrayed` is a `ref.cast` that traps if the array
-  was made at another type ([D73]). Array and struct types are one `rec`
-  group with D75's (an `Expr` can hold an `Array[Arrayed=Expr]`).
+- **Explicit recovery, as for `Ref`.** Taking an `Array` apart gives a
+  bare `ArrayRef`, `(ref null eq)`. Base's
+  `ArrayCast[Arrayed=X](raw).cast()` checks the allocation and returns the
+  precise `Array[Arrayed=X]`. The standard array library uses this
+  primitive when recovering a typed array from its stored erased handle.
+  Array and struct types share a `rec` group.
 - **Mutable boxes: D75's `Ref.set`, by its own functor.** A growable list
   must change where its elements are when it grows, behind a handle
   that does not change. That is a mutable cell, which D75 left for later:

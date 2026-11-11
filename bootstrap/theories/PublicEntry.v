@@ -681,7 +681,7 @@ Proof.
   assert (FSt : FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.FamilyStepOk W Prog _ _ _)
     by exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.family_step_ok W Prog _ _ _ Mt Fs AllFn (ex_intro _ bundle Wo) CIF LR CA PA FLR FCA FPA).
   split; [|split; [exact Mt|exact (handles_formed bundle W Prog Elab Link)]].
-  exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.safe_all W Prog _ _ _ Lay Mt Fs (elaborates_bool_symbols bundle W Prog Elab) Reps FSt FCo ExS LitS DemS AllFn
+  exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.safe_all W Prog _ _ _ Mt Fs (elaborates_bool_symbols bundle W Prog Elab) FSt FCo ExS LitS DemS AllFn
     (ex_intro _ bundle Wo) CIF LR CA PA).
 Qed.
 

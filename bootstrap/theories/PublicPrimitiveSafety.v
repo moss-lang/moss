@@ -196,32 +196,20 @@ Lemma ref_machine : forall array : bool,
   In ((if array then "ArrayRef" else "StructRef"), Platform.ref_class array) Platform.initial_machines.
 Proof. destruct array; in_list. Qed.
 
-(* A typed reference argument is a tagged handle the ghost heap types at
-   the reference's held type. *)
-Lemma ref_input : forall H array t held w, Platform.ReferenceType W array t held -> HandleFormed t ->
-  value_typed W P H w (app_subst m t) ->
-  exists s a, (w = VTag s (VRef a None) \/ w = VTag s (VRef a (Some (Platform.ref_kind array, app_subst m held)))) /\
-    H a = Some (Platform.ref_kind array, app_subst m held).
+(* The first type argument of a Base handle is its held type. *)
+Lemma ref_site : forall array t held,
+  Platform.ReferenceType W array t held -> HandleFormed t ->
+  exists head key rest, app_subst m t = TNom head ((key, app_subst m held) :: rest).
 Proof.
-  intros H array t held w [symbol [param [args [Sym [Param [-> Held]]]]]] Formed Typed.
-  destruct (ref_cast W Prog Layouts Reps array symbol Sym) as [heldsym [raw [HeldSym [RawSym Cast]]]].
-  pose proof (raw_ground _ _ _ _ symbol args raw (ref_tags array) (ref_machine array) Formed Sym RawSym) as Enabled.
-  destruct (layout_raw W Layouts _ _ _ symbol (ref_tags array) Sym) as [_ [_ [Kind _]]].
-  rewrite subst_nom in Typed. inversion Typed; subst.
-  - exfalso. match goal with Ord : ordinary_tag _ _ _ |- _ => unfold ordinary_tag in Ord;
-      cbn [view_casts program_of] in Ord; rewrite Cast in Ord; unfold cast_enabled, type_argument in Ord;
-      cbn [cast_handle] in Ord; rewrite Enabled in Ord end.
-    match goal with Ord : ty_eqb ?x ?x = false |- _ =>
-      rewrite (proj2 (ty_eqb_spec x x) eq_refl) in Ord; discriminate end.
-  - congruence.
-  - match goal with Found : lookup_cast _ (view_casts _) = Some _ |- _ =>
-      cbn [view_casts program_of] in Found; rewrite Cast in Found; injection Found as <- end.
-    cbn [cast_held cast_kind] in *.
-    pose proof (lang_sym_unique _ _ _ _ _ _ HeldSym Param); subst heldsym.
-    match goal with Look : lookup_subst param (PublicTypeRead.smap m args) = Some _ |- _ =>
-      rewrite lookup_subst_nlook, nlook_smap, Held in Look; injection Look as <- end.
-    match goal with Handle : handle_typed _ _ _ _ |- _ => inversion Handle; subst end;
-      do 2 eexists; split; [left; reflexivity|eassumption|right; reflexivity|eassumption].
+  intros array t held [symbol [param [args [Sym [Param [-> Held]]]]]] Formed.
+  destruct (handle_layout W Layouts _ _ _ (ref_tags array)) as [Layout _].
+  destruct (Layout symbol Sym) as [head_param [raw [tail [Param' [_ [_ [Reqs _]]]]]]].
+  pose proof (lang_sym_unique _ _ _ _ _ _ Param Param') as <-.
+  destruct (Formed _ _ _ _ _ (ref_tags array) Sym eq_refl) as [Keys _].
+  rewrite Reqs in Keys. destruct args as [|[key actual] rest]; [discriminate|].
+  injection Keys as <- _. cbn [A.nlook] in Held. rewrite Nat.eqb_refl in Held.
+  injection Held as <-. rewrite subst_nom. exists symbol, key, (PublicTypeRead.smap m rest).
+  reflexivity.
 Qed.
 
 (* A fresh handle at a reference type, read through its checked header. *)
@@ -241,13 +229,9 @@ Proof.
   pose proof (payload_at_args W symbol (PublicTypeRead.smap m args) raw ltac:(rewrite keys_smap; exact Keys) Identity) as Pay.
   cbn [app_subst] in Pay. rewrite Enabled in Pay.
   rewrite subst_nom.
-  eapply (TypedHeapTag W P H symbol (PublicTypeRead.smap m args) (CastSpec (Platform.ref_kind array) param _) (app_subst m held)).
-  - cbn [view_casts program_of]. exact Cast.
-  - unfold cast_enabled, type_argument. cbn [cast_handle]. rewrite Enabled. apply ty_eqb_spec; reflexivity.
-  - cbn [cast_held]. rewrite lookup_subst_nlook, nlook_smap, Held. reflexivity.
-  - exact Pay.
-  - constructor. eapply represented_machine; [exact Layouts|exact Reps|apply ref_machine|exact RawSym].
-  - exact Handle.
+  eapply TypedTag; [exact Pay|].
+  eapply TypedRawHandle; [|exact Handle].
+  eapply represented_machine; [exact Layouts|exact Reps|apply ref_machine|exact RawSym].
 Qed.
 
 Lemma addr_input : forall H t w, Platform.NominalType W "wasm" "Addr" t -> HandleFormed t ->
@@ -266,9 +250,7 @@ Proof.
       rewrite Raw in Look; injection Look as <-;
       destruct (scalar_value _ _ _ _ Class Inner) as [n ->]; eauto end.
   - congruence.
-  - match goal with Found : lookup_cast _ (view_casts _) = Some _ |- _ =>
-      cbn [view_casts program_of] in Found; rewrite (addr_not_cast W Prog Layouts Reps symbol Sym) in Found;
-      discriminate end.
+
 Qed.
 
 Lemma bool_syms : forall s, A.LangSym W "bool" A.NSName "Bool" s ->
@@ -290,10 +272,7 @@ Proof.
   destruct Shape as [Eb Et]. cbn in Eb, Et.
   destruct (proj1 Bools s Sym) as [truth [falsity [T [F [_ [TU [FU [_ [_ Payload]]]]]]]]].
   destruct (bool_syms s Sym) as [-> Names]. destruct (Names _ _ T F) as [-> ->]. subst b.
-  assert (Ord : ordinary_tag P (program_bool Prog) []).
-  { unfold ordinary_tag. cbn [view_casts program_of].
-    rewrite (bool_not_cast W Prog Layouts Reps (proj1 Bools) _ Sym). exact I. }
-  destruct Payload as [Pay|Pay]; (eapply TypedTag; [exact Ord|exact Pay|]);
+  destruct Payload as [Pay|Pay]; (eapply TypedTag; [exact Pay|]);
     destruct Et as [->| ->]; (eapply TypedUnion; [apply TypedUnitTag; eassumption|in_list]).
 Qed.
 
@@ -453,25 +432,41 @@ Proof. intros H a c F; exact F. Qed.
 Lemma run_supported : forall P iface p held ws s,
   M.supports iface (encode p) = true ->
   M.Reference.run_prim_at P (encode p) held ws (iface, s) =
-    (let '(out, next) := M.primitive iface P (encode p) (BaseCall.arguments_at_site p (fun _ => held) ws) (M.external s) in
-     (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
-      (iface, M.World (M.arguments s) (M.read_file s) next))).
+  match BaseCall.cast_operation p with
+  | Some (array, tag) => (BaseCall.cast_result array tag held ws, (iface, s))
+  | None =>
+      if BaseCall.heap_arguments_match p (fun _ => held) ws then
+      let '(out, next) := M.primitive iface P (encode p)
+        (BaseCall.arguments_at_site p (fun _ => held) ws) (M.external s) in
+      (match held with Some tau => BaseCall.allocation_result p tau out | None => out end,
+       (iface, M.World (M.arguments s) (M.read_file s) next))
+      else (Trap 37, (iface, s))
+  end.
 Proof.
   intros P iface p held ws s Supp. unfold M.Reference.run_prim_at, M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
-  rewrite decode_encode, Supp. destruct (M.primitive iface P (encode p) (BaseCall.arguments_at_site p (fun _ => held) ws) (M.external s)); reflexivity.
+  rewrite decode_encode. cbn [BaseCall.cast_at_site BaseCall.heap_call_ready].
+  destruct (BaseCall.cast_operation p) as [[array tag]|]; [reflexivity|].
+  destruct (BaseCall.heap_arguments_match p _ ws); [|reflexivity].
+  rewrite Supp. destruct (M.primitive iface P (encode p) (BaseCall.arguments_at_site p (fun _ => held) ws) (M.external s)); reflexivity.
 Qed.
 
 (* A non-allocating GC operation whose precondition holds at the ghost heap. *)
 Lemma gc_plain : forall W P iface H s p held ws Q t,
   M.interface_laws P iface -> M.supports iface (encode p) = true ->
   M.heap_ok iface (heap_predicates W P H) (M.external s) ->
-  Heap.gc_pre (heap_predicates W P H) p (BaseCall.primitive_arguments p ws) Q ->
+  (BaseCall.heap_arguments_match p (fun _ => held) ws = true ->
+    Heap.gc_pre (heap_predicates W P H) p (BaseCall.primitive_arguments p ws) Q) ->
   (forall extended w, Heap.gc_post (heap_predicates W P H) extended p Q w -> value_typed W P H w t) ->
   (forall tau o, BaseCall.allocation_result p tau o = o) ->
   prim_outcome W P iface H t (M.Reference.run_prim_at P (encode p) held ws (iface, s)).
 Proof.
   intros W P iface H s p held ws Q t Laws Supp Valid Pre Post Plain.
   rewrite run_supported by exact Supp.
+  assert (Cast : BaseCall.cast_operation p = None).
+  { destruct p; try reflexivity. specialize (Pre eq_refl). contradiction. }
+  rewrite Cast.
+  destruct (BaseCall.heap_arguments_match p _ ws) eqn:Ready; [|exact I].
+  specialize (Pre eq_refl).
   rewrite arguments_at_site_gc by (destruct p; cbn in Pre; try contradiction; reflexivity).
   destruct Laws as [_ [_ [_ [Weaken [_ [_ GC]]]]]].
   specialize (GC p (BaseCall.primitive_arguments p ws) (M.external s) _ Q Supp Valid Pre).
@@ -502,6 +497,31 @@ Lemma href_of : forall W P H k s a held,
   Heap.href (heap_predicates W P H) k (VTag s (VRef a None)) (fun v => value_typed W P H v held).
 Proof. intros W P H k s a held Found. exists s, a. split; [reflexivity|]. unfold heap_predicates. rewrite Found. reflexivity. Qed.
 
+Lemma checked_href : forall W P H m array receiver params held w t expected,
+  (exists head key rest, app_subst m receiver = TNom head ((key, expected) :: rest)) ->
+  HeldAt m (receiver :: params) held ->
+  value_typed W P H w t ->
+  BaseCall.reference_matches array held w = true ->
+  Heap.href (heap_predicates W P H) (Platform.ref_kind array) (BaseCall.raw_receiver w)
+    (fun v => value_typed W P H v expected).
+Proof.
+  intros W P H m array receiver params [site|] w t expected Shape Held Typed Checked;
+    [|discriminate].
+  destruct Held as [first [rest [Equation ->]]]. injection Equation as <- <-.
+  destruct Shape as [head [key [arguments Site]]]. rewrite Site in Checked.
+  destruct w as [|tag [| | |[|address [[kind actual]|]]]| |]; try discriminate.
+  cbn [BaseCall.reference_matches] in Checked.
+  change (if array then 1%nat else 0%nat) with (Platform.ref_kind array) in Checked.
+  apply andb_true_iff in Checked as [Kind Same].
+  apply Nat.eqb_eq in Kind. apply ty_eqb_spec in Same. subst kind actual.
+  cbn [BaseCall.raw_receiver]. apply href_of.
+  eapply tagged_checked_header; eassumption.
+Qed.
+
+Ltac reference_input array receiver params held :=
+  eapply (checked_href _ _ _ _ array receiver params held);
+  [ eapply ref_site; eassumption | assumption | eassumption | eassumption ].
+
 Theorem gc_safe : forall W Prog argv read iface p held params ret m H s ws,
   Platform.Layouts W -> Platform.Representations W Prog ->
   M.interface_laws (program_of Prog argv read) iface -> M.supports iface (encode p) = true ->
@@ -522,7 +542,7 @@ Proof.
   destruct p; try (exfalso; exact Sig).
   - (* PBox *) destruct params as [|heldt [|]]; try (exfalso; exact Sig). destruct Sig as [Sym RT].
     args_inv. rename x into v.
-    rewrite run_supported by exact Supp. cbn [BaseCall.arguments_at_site BaseCall.memory_arguments BaseCall.memory_operation BaseCall.primitive_arguments].
+    rewrite run_supported by exact Supp. cbn [BaseCall.cast_operation BaseCall.heap_arguments_match BaseCall.arguments_at_site BaseCall.memory_arguments BaseCall.memory_operation BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PBox n) [v] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (encode (PBox n)) [v] (M.external s)) as [out next] eqn:Run.
@@ -537,21 +557,19 @@ Proof.
     + destruct Held as [first [rest [E ->]]]. injection E as <- <-. apply Typed. constructor. exact Cell.
     + apply Typed. constructor. exact Cell.
   - (* PDeref *) destruct params as [|reference [|]]; try (exfalso; exact Sig). args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H false reference ret x Sig ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
     apply (gc_plain W P iface H s PDeref held [x] (fun v => value_typed W P H v (app_subst m ret))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). apply href_of. exact Found.
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. reference_input false reference (@nil ty) held.
     + intros extended w [_ Q]. exact Q.
   - (* PRefSet *) destruct params as [|reference [|heldt [|]]]; try (exfalso; exact Sig). destruct Sig as [RT ->]. args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H false reference heldt x RT ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
     apply (gc_plain W P iface H s PRefSet held [x; y] (fun v => value_typed W P H v (app_subst m heldt))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). split; [apply href_of; exact Found|assumption].
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. split; [reference_input false reference [heldt] held|assumption].
     + intros extended w [_ ->]. constructor.
   - (* PArrNew *) destruct params as [|heldt [|count [|]]]; try (exfalso; exact Sig). destruct Sig as [Sym [Count RT]].
     args_inv. rename x into v.
     destruct (I32 H count y Count ltac:(assumption)) as [c ->].
-    rewrite run_supported by exact Supp. cbn [BaseCall.arguments_at_site BaseCall.memory_arguments BaseCall.memory_operation BaseCall.primitive_arguments].
+    rewrite run_supported by exact Supp. cbn [BaseCall.cast_operation BaseCall.heap_arguments_match BaseCall.arguments_at_site BaseCall.memory_arguments BaseCall.memory_operation BaseCall.primitive_arguments].
     pose proof Laws as Laws'. destruct Laws' as [_ [_ [_ [_ [_ [_ GC]]]]]].
     specialize (GC (PArrNew n) [v; VScalar 0 c] (M.external s) _ (fun w => value_typed W P H w (app_subst m heldt)) Supp Valid ltac:(assumption)).
     destruct (M.primitive iface P (encode (PArrNew n)) [v; VScalar 0 c] (M.external s)) as [out next] eqn:Run.
@@ -566,52 +584,69 @@ Proof.
     + destruct Held as [first [rest [E ->]]]. injection E as <- <-. apply Typed. constructor. exact Cell.
     + apply Typed. constructor. exact Cell.
   - (* PArrLen *) destruct params as [|array [|]]; try (exfalso; exact Sig). destruct Sig as [MT [heldt RT]]. args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H true array heldt x RT ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
     apply (gc_plain W P iface H s PArrLen held [x] (fun v => value_typed W P H v (app_subst m heldt))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). apply href_of. exact Found.
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. reference_input true array (@nil ty) held.
     + intros extended w [_ [k ->]].
       destruct (machine_ground W Prog Layouts Reps m Ground "I32" Platform.i32_class ret ltac:(in_list) MT) as [symbol [-> Class]].
       constructor. exact Class.
   - (* PArrGet *) destruct params as [|array [|index [|]]]; try (exfalso; exact Sig). destruct Sig as [MT RT]. args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H true array ret x RT ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
     destruct (I32 H index y MT ltac:(assumption)) as [k ->].
     apply (gc_plain W P iface H s PArrGet held [x; VScalar 0 k] (fun v => value_typed W P H v (app_subst m ret))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). apply href_of. exact Found.
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. reference_input true array [index] held.
     + intros extended w [_ Q]. exact Q.
   - (* PArrSet *) destruct params as [|array [|index [|heldt [|]]]]; try (exfalso; exact Sig).
     destruct Sig as [MT [RT ->]]. args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H true array heldt x RT ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
     destruct (I32 H index y MT ltac:(assumption)) as [k ->].
     apply (gc_plain W P iface H s PArrSet held [x; VScalar 0 k; y0] (fun v => value_typed W P H v (app_subst m heldt))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). split; [apply href_of; exact Found|assumption].
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. split; [reference_input true array [index; heldt] held|assumption].
     + intros extended w [_ ->]. constructor.
   - (* PArrFill *) destruct params as [|array [|index [|heldt [|count [|]]]]]; try (exfalso; exact Sig).
     destruct Sig as [MI [MC [RT ->]]]. args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H true array heldt x RT ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
     destruct (I32 H index y MI ltac:(assumption)) as [k ->].
     destruct (I32 H count y1 MC ltac:(assumption)) as [c ->].
     apply (gc_plain W P iface H s PArrFill held [x; VScalar 0 k; y0; VScalar 0 c]
       (fun v => value_typed W P H v (app_subst m heldt))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw). split; [apply href_of; exact Found|assumption].
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. split; [reference_input true array [index; heldt; count] held|assumption].
     + intros extended w [_ ->]. constructor.
   - (* PArrCopy *) destruct params as [|dst [|di [|src [|si [|count [|]]]]]]; try (exfalso; exact Sig).
     destruct Sig as [MDI [MSI [MC [-> [heldt [RD RS]]]]]]. args_inv.
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H true dst heldt x RD ltac:(assumption) ltac:(assumption))
-      as [s0 [a [Raw Found]]].
-    destruct (ref_input W Prog argv read Layouts Reps m Ground H true src heldt y0 RS ltac:(assumption) ltac:(assumption))
-      as [s1 [b [Raw' Found']]].
     destruct (I32 H di y MDI ltac:(assumption)) as [k ->].
     destruct (I32 H si y1 MSI ltac:(assumption)) as [j ->].
     destruct (I32 H count y2 MC ltac:(assumption)) as [c ->].
     apply (gc_plain W P iface H s PArrCopy held [x; VScalar 0 k; y0; VScalar 0 j; VScalar 0 c]
       (fun v => value_typed W P H v (app_subst m heldt))); auto.
-    + cbn. rewrite (raw_receiver_of _ _ _ _ _ Raw), (raw_receiver_of _ _ _ _ _ Raw'). split; [apply href_of; exact Found|].
-      eexists; split; [apply href_of; exact Found'|auto].
+    + intro Ready. cbn [BaseCall.heap_arguments_match] in Ready.
+      apply andb_true_iff in Ready as [Dst Src].
+      cbn [BaseCall.primitive_arguments Heap.gc_pre]. split.
+      * reference_input true dst [di; src; si; count] held.
+      * exists (fun v => value_typed W P H v (app_subst m heldt)). split; [|auto].
+        reference_input true dst [di; src; si; count] held.
     + intros extended w [_ ->]. constructor.
+  - (* explicit cast *)
+    destruct params as [|request [|]]; try contradiction.
+    destruct Sig as [Tag [wanted [Target Result]]].
+    destruct Target as [caster [parameter [types [_ [_ [-> [rest ->]]]]]]].
+    args_inv. rewrite run_supported by exact Supp. cbn [BaseCall.cast_operation].
+    destruct held as [site|]; [|exact I].
+    destruct Held as [first [others [Equation ->]]]. injection Equation as <- <-.
+    rewrite subst_nom.
+    destruct x as [|source raw| |]; try exact I.
+    destruct raw as [| | |[|address [[kind actual]|]]]; try exact I.
+    cbn [BaseCall.cast_result PublicTypeRead.smap map snd].
+    change (if array then 1%nat else 0%nat) with (Platform.ref_kind array).
+    destruct (Nat.eqb (Platform.ref_kind array) kind && ty_eqb (app_subst m wanted) actual)
+      eqn:Checked; [|exact I].
+    apply andb_true_iff in Checked as [Kind TypeEqual].
+    apply Nat.eqb_eq in Kind. apply ty_eqb_spec in TypeEqual. subst kind actual.
+    exists H. split; [apply heap_extends_refl|].
+    split; [split; [reflexivity|exact Valid]|].
+    eapply ref_output; [exact Layouts|exact Reps|exact Ground|exact Result|
+      exact H1|exact Tag|].
+    constructor. eapply tagged_checked_header; eassumption.
 Qed.
 
 (* T11/T17: a primitive closure is a typed call. *)
@@ -641,7 +676,10 @@ Proof.
     pose proof (Keep (encode p) raw (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
     destruct (output_shape p ins out (or_introl Sig')) as [NA NT].
     rewrite run_supported by exact Supp.
-    unfold BaseCall.arguments_at_site. rewrite args_plain by exact GC. fold raw.
+    assert (Cast : BaseCall.cast_operation p = None) by (destruct p; cbn in *; congruence).
+    rewrite Cast. assert (Ready : BaseCall.heap_arguments_match p (fun _ => held) ws = true)
+      by (destruct p; cbn in *; congruence).
+    rewrite Ready. unfold BaseCall.arguments_at_site. rewrite args_plain by exact GC. fold raw.
     destruct (M.primitive iface _ (encode p) raw (M.external s)) as [o next].
     cbn in Result, KeepH. destruct held; [rewrite alloc_plain by exact GC|];
       destruct o; try contradiction; try exact I;
@@ -657,7 +695,10 @@ Proof.
     pose proof (Keep (encode p) raw (M.external s) _ Supp ltac:(rewrite decode_encode; exact GC) Valid) as KeepH.
     destruct (output_shape p ins out (or_intror Sig')) as [NA NT].
     rewrite run_supported by exact Supp.
-    unfold BaseCall.arguments_at_site. rewrite args_plain by exact GC. fold raw.
+    assert (Cast : BaseCall.cast_operation p = None) by (destruct p; cbn in *; congruence).
+    rewrite Cast. assert (Ready : BaseCall.heap_arguments_match p (fun _ => held) ws = true)
+      by (destruct p; cbn in *; congruence).
+    rewrite Ready. unfold BaseCall.arguments_at_site. rewrite args_plain by exact GC. fold raw.
     destruct (M.primitive iface _ (encode p) raw (M.external s)) as [o next].
     cbn in Result, KeepH. destruct held; [rewrite alloc_plain by exact GC|];
       destruct o; try contradiction; try exact I;

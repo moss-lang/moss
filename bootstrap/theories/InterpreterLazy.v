@@ -6,8 +6,8 @@
 (* when the activation starts: `instantiate` maps `ground d` over a call's  *)
 (* θ, `typed_capture` over a closure's captured generations and aliases,    *)
 (* `application_environment` over a functor's inputs. Most of those types   *)
-(* are never observed, since only a cast (check_tag) and an allocating      *)
-(* primitive (primitive_closure) read a type. On the self-compile this      *)
+(* are never observed. Only type-sensitive primitives read their site.     *)
+(* On the self-compile this                                               *)
 (* grounding was about a third of the run time.                              *)
 (*                                                                           *)
 (* Here the same interpreter, clause for clause, keeps each type meaning as *)
@@ -472,17 +472,6 @@ Qed.
 Module LazyInterpreter (Import Prims : PRIMITIVES) (Reference : INTERP Prims).
 Module I := Reference.
 
-Definition lcheck_tag (P : program_view) (d : lenv) (n : nsym) (th : subst) (w : value) : signal :=
-  I.check_tag_with (lground d) P n th w.
-
-Lemma check_tag_to : forall P d n th w, I.check_tag P (to_env d) n th w = lcheck_tag P d n th w.
-Proof.
-  intros. unfold I.check_tag, lcheck_tag, I.check_tag_with. destruct (lookup_cast n (view_casts P)) as [spec|]; [|reflexivity].
-  unfold AuditBase.Representation.tag_trap.
-  destruct (cast_handle spec) as [[h expected]|]; rewrite ?ground_to;
-  destruct (lookup_subst (cast_held spec) th) as [tau|]; destruct w as [| | |[|a [[kind header]|]]]; rewrite ?ground_to; reflexivity.
-Qed.
-
 Fixpoint leval (fuel : nat) (P : program_view) (d : lenv) (g : locals) (st : mstate)
     (e : expr) {struct fuel} : I.evaluation :=
   match fuel with
@@ -500,7 +489,7 @@ Fixpoint leval (fuel : nat) (P : program_view) (d : lenv) (g : locals) (st : mst
                  end
       | ETag n th e1 =>
           match leval k P d g st e1 with
-          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (lcheck_tag P d n th w) g1 st1
+          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (Normal (VTag n w)) g1 st1
           | r => r
           end
       | ECall f th sm args =>
@@ -781,7 +770,7 @@ Ltac conv_rw IHe IHa IHb IHf :=
     | rewrite call_to | rewrite typed_capture_to | rewrite bind_type_to
     | rewrite append_to | rewrite install_primitive_to | rewrite install_value_to
     | rewrite install_function_to | rewrite install_functor_to
-    | rewrite check_tag_to | rewrite application_environment_to | rewrite result_environment_to ].
+    | rewrite application_environment_to | rewrite result_environment_to ].
 
 Ltac conv_destruct :=
   match goal with

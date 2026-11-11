@@ -22,7 +22,7 @@ assume Wasm, Gc, T {
     let h=match r { w::Ref(h)=>h };
     bind Boxed=w::F64;
     bind w::Heap;
-    let b=w::Ref(h);
+    let b=w::StructCast(h).cast();
     let y=b.deref();
     w::f64_add(y,y);
   }

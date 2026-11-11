@@ -705,8 +705,8 @@ functor WasiConsole: Wasm, WasiCore, Branch -> Console {
 
 # `Std`'s fixed-size arrays (array.moss) over D81's garbage-collected
 # ones: the standard binding of `Arrays`, made in `WasiStd`. An
-# `Array[Item=X]` holds the GC array's `ArrayRef`, and each access forges
-# it back (`ref.cast`) to the `Array[Arrayed=X]` the platform made, one
+# `Array[Item=X]` stores the erased `ArrayRef`. Each access explicitly
+# recovers the platform's `Array[Arrayed=X]`, one
 # array per scalar of `X` (D81's lanes). It pins `Size` and `ArrayHandle`,
 # which `Arrays` is fixed in, and captures `Wasm`, `Branch` and the
 # platform's `Arrays` (`Gc`) where it is bound (D84). An index is a `Size`, which is `Num` here, and
@@ -723,13 +723,14 @@ functor GcArrays: Wasm, Gc, Branch, Item ->
   bind array::ArrayHandle = ArrayRef;
   bind Arrayed = Item;
   bind w::Arrays;
+  bind w::ArrayCasts;
   bind Item.arrayed = (length) => match this.w::arrayed(raw(length)) { w::Array(h) => Array(h) };
-  bind Array.get[Elem=Item, Index=Size] = (index) => match this { Array(h) => w::Array(h).get(raw(index)) };
-  bind Array.set[Elem=Item, Index=Size] = (index, value) => match this { Array(h) => w::Array(h).set(raw(index), value) };
-  bind Array.length[Index=Size] = () => match this { Array(h) => Num(w::Array(h).length()) };
+  bind Array.get[Elem=Item, Index=Size] = (index) => match this { Array(h) => w::ArrayCast(h).cast().get(raw(index)) };
+  bind Array.set[Elem=Item, Index=Size] = (index, value) => match this { Array(h) => w::ArrayCast(h).cast().set(raw(index), value) };
+  bind Array.length[Index=Size] = () => match this { Array(h) => Num(w::ArrayCast(h).cast().length()) };
   bind Array.begin[Index=Size] = () => Num(w::i32_zero);
   bind Array.more[Index=Size] = (at) => match this {
-    Array(h) => i32_bool(w::i32_lt_u(raw(at), w::Array(h).length())),
+    Array(h) => i32_bool(w::i32_lt_u(raw(at), w::ArrayCast(h).cast().length())),
   };
   bind Array.after[Index=Size] = (at) => Num(w::i32_add(raw(at), w::i32_one));
 }

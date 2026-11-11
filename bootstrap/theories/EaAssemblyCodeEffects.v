@@ -185,7 +185,7 @@ Proof.
   apply code_effect_bind; [apply code_effect_pure|intros []].
   apply code_effect_bind; [apply code_effect_get|]. intro state.
   destruct (EaPlatform.bool_syms E) as [[boolean true_symbol] false_symbol].
-  apply code_effect_bind; [apply code_effect_check|intros []].
+  do 2 (apply code_effect_bind; [apply code_effect_check|intros []]).
   apply code_effect_return.
 Qed.
 

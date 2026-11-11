@@ -161,10 +161,16 @@ Definition call_in_deferred (P : xprog) (operation : op) (site : unit -> option 
     (values : list value) (state : mstate) : signal * mstate :=
   match decode_host operation with
   | Some (p, concrete) =>
-      let arguments := BaseCall.primitive_arguments p values in
-      let memory := if BaseCall.memory_operation p then scratch_memory_key state (site tt) else None in
-      let '(out, next) := in_memory memory (direct_step P p concrete arguments) state in
-      (DeferredBaseCall.result_at_site p site out, next)
+      match BaseCall.cast_operation p with
+      | Some (array, tag) => (BaseCall.cast_result array tag (site tt) values, state)
+      | None =>
+        if BaseCall.heap_arguments_match p site values then
+          let arguments := BaseCall.primitive_arguments p values in
+          let memory := if BaseCall.memory_operation p then scratch_memory_key state (site tt) else None in
+          let '(out, next) := in_memory memory (direct_step P p concrete arguments) state in
+          (DeferredBaseCall.result_at_site p site out, next)
+        else (Trap 37, state)
+      end
   | None => (UnsupportedOperation (unsupported_code operation), state)
   end.
 
@@ -174,7 +180,10 @@ Theorem call_in_deferred_agrees : forall P operation site values state,
 Proof.
   intros. unfold call_in_deferred, BaseCall.call, primitive, primitive_in, decode_host, decode_host_operation.
   destruct (decode operation) as [p|]; [|destruct (site tt); reflexivity].
-  cbn [option_map]. unfold primitive_decoded, with_memory_arguments, BaseCall.arguments_at_site.
+  cbn [option_map BaseCall.cast_at_site BaseCall.heap_call_ready].
+  destruct (BaseCall.cast_operation p) as [[array tag]|]; [reflexivity|].
+  rewrite heap_arguments_match_force. destruct (BaseCall.heap_arguments_match p _ values); [|reflexivity].
+  unfold primitive_decoded, with_memory_arguments, BaseCall.arguments_at_site.
   rewrite split_memory_arguments_at_site.
   assert (Memory : scratch_memory_key state (if BaseCall.memory_operation p then site tt else None) =
       (if BaseCall.memory_operation p then scratch_memory_key state (site tt) else None)).

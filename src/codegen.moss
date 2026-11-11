@@ -618,6 +618,11 @@ assume Std {
       let ad = spelled();
       sp_Addr(ad);
       cg_gc.push(wasm_symbol(ad));
+      let sc = spelled(); sp_StructCast(sc);
+      let ac = spelled(); sp_ArrayCast(ac);
+      let cast = spelled(); sp_cast(cast);
+      cg_gc.push(attached_in_wasm(wasm_symbol(sc), cast));
+      cg_gc.push(attached_in_wasm(wasm_symbol(ac), cast));
     }
 
     fn attached_in_wasm(recv: Int, name: IntList): Int {
@@ -665,6 +670,8 @@ assume Std {
         }
         k = k + 1;
       }
+      if provider == cg_gc.get(11) { return 11; }
+      if provider == cg_gc.get(12) { return 12; }
       if ast::is_some(addr_sym()) {
         if prog::sym_recv.get(provider) == addr_sym() {
           return mem_prim();
@@ -1386,6 +1393,15 @@ assume Std {
       if prim == 9 {
         if n != 4 { return false; }
         return runtime_scalar(runtime_fn_type(sym, 0, recv), 1, env) & runtime_ref(runtime_fn_type(sym, 1, recv), true, array_held(recv)) & runtime_scalar(runtime_fn_type(sym, 2, recv), 1, env) & runtime_scalar(runtime_fn_type(sym, 3, recv), 1, env) & (rt == types::ty_unit());
+      }
+      if (prim == 11) | (prim == 12) {
+        let array = prim == 12;
+        var parameter = cg_boxed.read();
+        var raw = cg_structref.read();
+        if array { parameter = arrayed_sym(); raw = arrayref_sym(); }
+        if (n != 0) | !ast::is_some(raw) { return false; }
+        let held = held_by(recv, head, parameter);
+        return (types::payload_of(recv) == types::ty_of_decl(raw)) & runtime_ref(rt, array, held);
       }
       # Memory methods have a nominal Addr receiver, whose payload is I32.
       let op = wops::find_op(prog::sym_name.get(sym));
@@ -4107,6 +4123,24 @@ assume Std {
           sig_ret(row_view(grow), sym, recv_ty)
         );
       }
+      if (prim == 11) | (prim == 12) {
+        let result = sig_ret(row_view(grow), sym, recv_ty);
+        let result_ty = spec(result);
+        var held = held_of(result_ty);
+        if prim == 12 { held = array_held(result_ty); }
+        if n != 0 { cg_error(c_bad_type(), prog::sym_name.get(sym)); }
+        if unknown_held(held) {
+          if !checking() { cg_error(c_unbound(), prog::sym_name.get(sym)); }
+          return result;
+        }
+        push_bytes(body, recv);
+        if prim == 11 {
+          op_ref_cast_null(body, ref_valtype(held));
+        } else {
+          op_ref_cast_null(body, emit::vt_ref(array_of(held)));
+        }
+        return result;
+      }
       if prim > 2 {
         return emit_gc_op(
           body, recv, recv_ty, prim, run, n, m,
@@ -4526,31 +4560,20 @@ assume Std {
         let want = int_list();
         want.push(types::member_payload(nominal));
         emit_args(body, ast::b_of(e), ast::c_of(e), m, want);
-        if is_ref_type(spec(nominal)) {
-          # D75: a `Ref` built from a bare `StructRef` is forged, and the
-          # one place a reference is cast — to the struct of what it
-          # claims to hold, trapping if it does not.
-          let held = held_of(spec(nominal));
-          if unknown_held(held) {
-            if checking() {
-              return nominal;
+        # Base requires an explicit primitive to recover a typed GC
+        # reference. Ordinary wrappers over other representations
+        # (for example an I32 arena address) remain plain tags.
+        if (sym == cg_ref.read()) | (sym == array_sym()) {
+          let specialized = spec(nominal);
+          let payload = types::payload_of(specialized);
+          if types::is_kind(payload, types::kd_abstract()) {
+            let slot = wide_scalar(payload);
+            let scalar = (payload == cg_i32.read()) |
+              (ast::is_some(slot) & (slot != emit::vt_structref()) & (slot != emit::vt_eqref()));
+            if !scalar {
+              cg_error(c_unsupported(), prog::sym_name.get(sym));
             }
-            cg_error(c_unbound(), prog::sym_name.get(sym));
-            return nominal;
           }
-          op_ref_cast_null(body, ref_valtype(held));
-        }
-        if is_array_type(spec(nominal)) {
-          # D81: and so is an `Array` built from a bare `ArrayRef`.
-          let held = array_held(spec(nominal));
-          if unknown_held(held) {
-            if checking() {
-              return nominal;
-            }
-            cg_error(c_unbound(), prog::sym_name.get(sym));
-            return nominal;
-          }
-          op_ref_cast_null(body, emit::vt_ref(array_of(held)));
         }
         return nominal;
       }

@@ -297,11 +297,7 @@ Fixpoint tos (m n : nat) (pl : option plan) (e : expr) {struct m} : option sexpr
       | EVar x => Some (SVar x)
       | EUnit => Some SUnit
       | EVal v => Some (SVl (remapo pl (IVal v)))
-      | ETag t th e1 =>
-          match lookup_cast t (view_casts P) with
-          | Some _ => None
-          | None => option_map (STag t) (tos m' n pl e1)
-          end
+      | ETag t _ e1 => option_map (STag t) (tos m' n pl e1)
       | EInvoke f args => option_map (SPrim (remapo pl (IFn f))) (tosl m' n pl args)
       | ECall f th sm args =>
           match n with
@@ -498,30 +494,6 @@ Definition fold_call (e : expr) (fallback : code) : code :=
         else fallback m d g st
   end.
 
-(* The cast table is fixed for the program. Ordinary tags can construct
-   their values directly, without reading a runtime type environment. *)
-Definition cc_tag (n : nsym) (th : subst) (c : code) : code :=
-  match lookup_cast n (view_casts P) with
-  | None => fun m d g st =>
-      match m with
-      | 0 => I.Evaluation OutOfFuel g st
-      | S k =>
-          match c k d g st with
-          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (Normal (VTag n w)) g1 st1
-          | r => r
-          end
-      end
-  | Some _ => fun m d g st =>
-      match m with
-      | 0 => I.Evaluation OutOfFuel g st
-      | S k =>
-          match c k d g st with
-          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
-          | r => r
-          end
-      end
-  end.
-
 Fixpoint cc (e : expr) {struct e} : code :=
   match e with
   | EVar x => fun m d g st =>
@@ -542,7 +514,17 @@ Fixpoint cc (e : expr) {struct e} : code :=
                | _ => I.Evaluation (Stuck I.e_val) g st
                end
       end
-  | ETag n th e1 => cc_tag n th (cc e1)
+  | ETag n _ e1 =>
+      let payload := cc e1 in
+      fun m d g st =>
+        match m with
+        | 0 => I.Evaluation OutOfFuel g st
+        | S k =>
+            match payload k d g st with
+            | I.Evaluation (Normal w) g1 st1 => I.Evaluation (Normal (VTag n w)) g1 st1
+            | r => r
+            end
+        end
   | ECall f th sm args => let ca := cc_list cc args in fold_call (ECall f th sm args) (fun m d g st =>
       match m with
       | 0 => I.Evaluation OutOfFuel g st
@@ -809,23 +791,6 @@ Section Agreement.
 Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).
 Hypothesis Tables : tbl_ok P tbl ftbl.
 
-Lemma cc_tag_spec : forall n th c m d g st,
-  cc_tag P n th c m d g st =
-  match m with
-  | 0 => I.Evaluation OutOfFuel g st
-  | S k =>
-      match c k d g st with
-      | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
-      | r => r
-      end
-  end.
-Proof.
-  intros. unfold cc_tag. destruct (lookup_cast n (view_casts P)) eqn:Cast; [reflexivity|].
-  destruct m as [|k]; [reflexivity|].
-  destruct (c k d g st) as [[] g1 st1]; try reflexivity.
-  unfold L.lcheck_tag, I.check_tag_with. rewrite Cast. reflexivity.
-Qed.
-
 Lemma select_carm_cc : forall arms w,
   select_carm (cc_arms (cc P tbl ftbl) arms) w =
   option_map (fun q => (fst q, cc P tbl ftbl (snd q))) (I.select_arm arms w).
@@ -881,12 +846,11 @@ Proof.
     + (* EVal *) injection T as <-. cbn [sev] in Ev. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval].
       rewrite H. destruct (read d (remapo pl (IVal v))) as [[]|]; try discriminate.
       injection Ev as <- <-. reflexivity.
-    + (* ETag *) destruct (lookup_cast n0 (view_casts P)) eqn:Cast; [discriminate|].
-      destruct (tos P m n pl e) as [s1|] eqn:T1; cbn [option_map] in T; [|discriminate]. injection T as <-.
+    + (* ETag *) destruct (tos P m n pl e) as [s1|] eqn:T1; cbn [option_map] in T; [|discriminate]. injection T as <-.
       cbn [sev] in Ev. destruct (sev P d g st s1) as [[w1 st1]|] eqn:E1; cbn [option_map] in Ev; [|discriminate].
       injection Ev as <- <-. cbn [sdepth] in Fu. destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval].
       rewrite (IHe n pl e s1 T1 d de H g st w1 st1 E1 k ltac:(lia)).
-      unfold L.lcheck_tag, I.check_tag_with. rewrite Cast. reflexivity.
+      reflexivity.
     + (* ECall *) destruct n as [|n']; [discriminate|].
       destruct (view_function P f) as [body|] eqn:Vf; [|discriminate].
       destruct (tosl P m (S n') pl l) as [ss|] eqn:Ta; [|discriminate].
@@ -1092,8 +1056,7 @@ Lemma agree_zero : agree 0.
 Proof.
   repeat split.
   - intros e d g st. destruct e; try reflexivity; try (destruct b; reflexivity).
-    + apply cc_tag_spec.
-    + apply fold_call_ok. reflexivity.
+    apply fold_call_ok. reflexivity.
   - intros l d g st. destruct l as [|e rest]; [reflexivity|].
     destruct e; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
@@ -1111,7 +1074,7 @@ Proof.
     + reflexivity.
     + reflexivity.
     + reflexivity.
-    + rewrite cc_tag_spec, IHe. reflexivity.
+    + now rewrite IHe.
     + rewrite Ht. destruct (view_function P f) as [body|]; cbn [option_map]; [|reflexivity].
       rewrite IHl. destruct (F.feval_arguments k P d g st l) as [[[ws g1] st1]|r]; [|reflexivity].
       destruct (fprepare_call d s s0); [|reflexivity]. rewrite IHe. reflexivity.

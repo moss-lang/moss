@@ -46,6 +46,10 @@ Definition method_primitive (k : item) : option wasm_prim :=
                      else if String.eqb nm "set" then Some PArrSet else if String.eqb nm "fill" then Some PArrFill
                      else if String.eqb nm "copy" then Some PArrCopy else None)
                   else if opt_eqb (wasm_sym "Addr") s then prim_of_name nm
+                  else if String.eqb nm "cast" then
+                    if opt_eqb (wasm_sym "StructCast") s then option_map (PGcCast false) (wasm_sym "Ref")
+                    else if opt_eqb (wasm_sym "ArrayCast") s then option_map (PGcCast true) (wasm_sym "Array")
+                    else None
                   else None
               | None => None
               end
@@ -102,6 +106,14 @@ Definition gc_signature (op : wasm_prim) (ps : list ty) (r : ty) : bool :=
   | PArrFill, [a; i; h; n] => i32 i && i32 n && held_is true a h && ty_eqb r TUnit
   | PArrCopy, [dst; di; src; si; n] => i32 di && i32 si && i32 n && ty_eqb r TUnit &&
       match reference_held true dst with Some held => held_is true src held | None => false end
+  | PGcCast array tag, [request] =>
+      match wasm_sym (if array then "ArrayCast" else "StructCast"),
+            wasm_sym (if array then "Arrayed" else "Boxed"), request with
+      | Some symbol, Some param, TNom caster ((key, held) :: _) =>
+          opt_eqb (wasm_sym (if array then "Array" else "Ref")) tag &&
+          Nat.eqb symbol caster && Nat.eqb param key && held_is array r held
+      | _, _, _ => false
+      end
   | _, _ => false
   end.
 Definition primitive_signature (op : wasm_prim) (ps : list ty) (r : ty) : bool :=

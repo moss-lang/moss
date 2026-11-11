@@ -71,6 +71,18 @@ assume Std {
     push_string(out, "deref");
   }
 
+  fn sp_StructCast(out: IntList) {
+    push_string(out, "StructCast");
+  }
+
+  fn sp_ArrayCast(out: IntList) {
+    push_string(out, "ArrayCast");
+  }
+
+  fn sp_cast(out: IntList) {
+    push_string(out, "cast");
+  }
+
   fn sp_ArrayRef(out: IntList) {
     push_string(out, "ArrayRef");
   }

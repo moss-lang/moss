@@ -92,10 +92,22 @@ Proof.
   all: repeat rewrite andb_true_iff in Checked.
   all: try solve [intuition eauto using machine_type_sound, wasm_symbol_sound, held_is_sound,
     is_ref_sound, unit_checked].
-  destruct Checked as [[[[Destination Source] Count] Result] Read].
-  repeat split; try solve [eauto using machine_type_sound, unit_checked].
-  destruct (reference_held E true a) as [held|] eqn:Held; [|discriminate].
-  exists held. split; [now apply reference_held_sound|now apply held_is_sound].
+  - destruct Checked as [[[[Destination Source] Count] Result] Read].
+    repeat split; try solve [eauto using machine_type_sound, unit_checked].
+    destruct (reference_held E true a) as [held|] eqn:Held; [|discriminate].
+    exists held. split; [now apply reference_held_sound|now apply held_is_sound].
+  - destruct (wasm_sym E (if array then "ArrayCast" else "StructCast")) as [symbol|] eqn:Symbol;
+      [|discriminate].
+    destruct (wasm_sym E (if array then "Arrayed" else "Boxed")) as [param|] eqn:ParamRead;
+      [|discriminate].
+    destruct a as [| | | |caster [|[key held] rest]|]; try discriminate.
+    repeat rewrite andb_true_iff in Checked.
+    destruct Checked as [[[Tag Caster] Key] Result].
+    apply Nat.eqb_eq in Caster, Key. subst caster key.
+    split; [now apply wasm_symbol_sound|]. exists held. split; [|now apply held_is_sound].
+    exists symbol, param, ((param, held) :: rest). repeat split;
+      eauto using lang_sym_sound.
+
 Qed.
 
 Lemma primitive_signature_sound : forall op params result,
@@ -248,8 +260,19 @@ Proof.
                  --- injection Checked as <-. right. right. right. left. now apply String.eqb_eq in Fill.
                  --- destruct (String.eqb name "copy") eqn:Copy; [|discriminate].
                      injection Checked as <-. right. right. right. right. now apply String.eqb_eq in Copy.
-      * destruct (opt_eqb (wasm_sym E "Addr") symbol) eqn:Addr; [|discriminate].
-        right. right. split; [now apply wasm_symbol_sound|]. now exists operation.
+      * destruct (opt_eqb (wasm_sym E "Addr") symbol) eqn:Addr.
+        -- right. right. left. split; [now apply wasm_symbol_sound|]. now exists operation.
+        -- right. right. right. destruct (String.eqb name "cast") eqn:Cast; [|discriminate].
+           apply String.eqb_eq in Cast. subst name.
+           destruct (opt_eqb (wasm_sym E "StructCast") symbol) eqn:Struct.
+           ++ destruct (wasm_sym E "Ref") as [tag|] eqn:Tag; [|discriminate].
+              injection Checked as <-. exists false, tag. repeat split;
+                eauto using wasm_symbol_sound, lang_sym_sound.
+           ++ destruct (opt_eqb (wasm_sym E "ArrayCast") symbol) eqn:Arr; [|discriminate].
+              destruct (wasm_sym E "Array") as [tag|] eqn:Tag; [|discriminate].
+              injection Checked as <-. exists true, tag. repeat split;
+                eauto using wasm_symbol_sound, lang_sym_sound.
+
 Qed.
 
 Lemma machines_fixed_sound : forall bound program u inputs outputs key,

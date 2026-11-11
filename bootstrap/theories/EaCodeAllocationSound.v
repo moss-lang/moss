@@ -250,13 +250,30 @@ Proof.
   apply EaControlSound.mbind_ok in Run as ([context needs] & ?state & ?step & Run).
   repeat apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run).
   injection Run as <- <-.
-  match goal with
-  | Snapshot : get ?state = Ok (?saved, ?after_get),
-    Check : (if ?b then ret tt else fail ?message) ?after_get = Ok (?u, ?after_check) |- _ =>
-      rewrite (successful_check_state b message after_get u after_check Check);
+  repeat match goal with
+  | Check : (if ?b then ret tt else fail ?message) ?state = Ok (?u, ?after_check) |- _ =>
+      rewrite (successful_check_state b message state u after_check Check) in *;
+      clear Check; try clear after_check
+  | Snapshot : get ?state = Ok (?saved, ?after_get) |- _ =>
       unfold get in Snapshot; injection Snapshot as <- <-
   end.
   repeat split; reflexivity.
+Qed.
+
+Theorem assemble_explicit_references : forall E bound entry before P after,
+  EaMain.assemble E bound entry before = Ok (P, after) ->
+  AuditBase.Compilation.explicit_references P = true.
+Proof.
+  intros E bound entry before P after Run. unfold EaMain.assemble, EaMain.finish_assembly in Run.
+  destruct (EaPlatform.bool_syms E) as [[boolean truth] falsity].
+  do 6 (apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run)).
+  apply EaControlSound.mbind_ok in Run as ([context needs] & ?state & ?step & Run).
+  repeat apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run).
+  injection Run as <- <-.
+  match goal with
+  | Check : context [AuditBase.Compilation.explicit_references ?program] |- _ =>
+      destruct (AuditBase.Compilation.explicit_references program); [reflexivity|discriminate Check]
+  end.
 Qed.
 
 Theorem assembled_code_lookup : forall E bound entry before P after,

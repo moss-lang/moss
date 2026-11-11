@@ -12,7 +12,7 @@ assume Wasm, Gc, X = Y {
     let raw = match box { w::Ref(raw) => raw };
     bind Boxed = Phantom[X=Y];
     bind w::Heap;
-    let got = w::Ref(raw);
+    let got = w::StructCast(raw).cast();
     match got.deref() { Phantom(payload) => () };
   }
 }

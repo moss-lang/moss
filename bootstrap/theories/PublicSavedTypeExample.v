@@ -99,14 +99,7 @@ Theorem legacy_saved_and_emitted_reads_differ :
   ground legacy_rebound (TAbs 2) <> ground legacy_rebound read_saved.
 Proof. discriminate. Qed.
 
-Module Primitives <: PRIMITIVES.
-Definition mstate := unit.
-Definition run_prim (_ : program_view) (_ : op) (_ : option ty) (_ : list value) (state : unit) := (Trap 0,state).
-End Primitives.
-Module R := Interpreter Primitives.
-Definition casts := ProgramView (fun _ => None) (fun _ => None) 0 0 0 []
-  (fun _ => None) [(11,CastSpec 0 9 None)] [].
 Example saved_f64_rejects_integer_handle :
-  R.check_tag casts runtime_boxed 11 [(9,read_saved)]
-    (VRef 0 (Some (0, TMachine 0))) = Trap 37.
+  AuditBase.BaseCall.cast_result false 11 (Some (TNom 12 [(9, ground runtime_boxed read_saved)]))
+    [VTag 12 (VRef 0 (Some (0, TMachine 0)))] = Trap 37.
 Proof. reflexivity. Qed.

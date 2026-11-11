@@ -519,7 +519,7 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
                  end
       | ETag n th e1 =>
           match feval k P d g st e1 with
-          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (L.lcheck_tag P (lshadow d) n th w) g1 st1
+          | I.Evaluation (Normal w) g1 st1 => I.Evaluation (Normal (VTag n w)) g1 st1
           | r => r
           end
       | ECall f th sm args =>
@@ -787,10 +787,6 @@ Definition arel (r1 : (fenv * mstate) + I.evaluation) (r2 : (lenv * mstate) + I.
   | _, _ => False
   end.
 
-Lemma check_tag_rel : forall P fd ld n th w, ERel fd ld ->
-  L.lcheck_tag P (lshadow fd) n th w = L.lcheck_tag P ld n th w.
-Proof. intros P fd ld n th w H. destruct H. reflexivity. Qed.
-
 Theorem feval_agrees : forall k,
   (forall P fd ld g st e, ERel fd ld -> feval k P fd g st e = L.leval k P ld g st e) /\
   (forall P fd ld g st l, ERel fd ld -> feval_arguments k P fd g st l = L.leval_arguments k P ld g st l) /\
@@ -827,8 +823,7 @@ Proof.
       * reflexivity.
       * destruct (lookup_cases fd ld (IVal v) H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2;
           [reflexivity|destruct R; reflexivity].
-      * rewrite (IHe P fd ld g st e H). destruct (L.leval k P ld g st e) as [[] ? ?]; try reflexivity.
-        rewrite (check_tag_rel P fd ld n s v H). reflexivity.
+      * now rewrite (IHe P fd ld g st e H).
       * destruct (view_function P f); [|reflexivity]. rewrite (IHa P fd ld g st l H).
         destruct (L.leval_arguments k P ld g st l) as [[[ws g1] st1]|r]; [|reflexivity].
         rewrite fprepare_call_spec.

@@ -9,6 +9,7 @@ Definition rename_base_primitive (rename : nat -> nat) (primitive : wasm_prim) :
   match primitive with
   | PBox tag => PBox (rename tag)
   | PArrNew tag => PArrNew (rename tag)
+  | PGcCast array tag => PGcCast array (rename tag)
   | other => other
   end.
 
@@ -16,6 +17,7 @@ Definition rename_base_operation (rename : nat -> nat) (operation : op) : op :=
   match decode operation with
   | Some (PBox tag) => encode (PBox (rename tag))
   | Some (PArrNew tag) => encode (PArrNew (rename tag))
+  | Some (PGcCast array tag) => encode (PGcCast array (rename tag))
   | _ => operation
   end.
 
@@ -63,6 +65,10 @@ Proof.
     apply PublicOperationFacts.decode_canonical in Decoded.
     rewrite (Fixed _ _ Declared). symmetry. exact Decoded.
   - destruct params as [|held [|count [|extra rest]]]; try contradiction.
+    destruct GC as [(declaration & path & Declared & _) _].
+    apply PublicOperationFacts.decode_canonical in Decoded.
+    rewrite (Fixed _ _ Declared). symmetry. exact Decoded.
+  - destruct params as [|request [|extra rest]]; try contradiction.
     destruct GC as [(declaration & path & Declared & _) _].
     apply PublicOperationFacts.decode_canonical in Decoded.
     rewrite (Fixed _ _ Declared). symmetry. exact Decoded.
@@ -183,7 +189,52 @@ Definition raw_calls_related {S : Type} (rename : nat -> nat) (related : S -> S 
       (map (rename_value (base_renaming rename)) values) right in
     out' = rename_signal (base_renaming rename) out /\ related next next'.
 
+Lemma cast_result_renamed : forall rename array tag site values,
+  (forall x y, rename x = rename y -> x = y) ->
+  BaseCall.cast_result array (rename tag) (rename_site (base_renaming rename) site)
+      (map (rename_value (base_renaming rename)) values) =
+  rename_signal (base_renaming rename) (BaseCall.cast_result array tag site values).
+Proof.
+  intros rename array tag [site|] values Injective; [|reflexivity].
+  destruct site as [| | | |head [|[param expected] rest]|]; try reflexivity.
+  destruct values as [|[|source [| | |[|address [[kind actual]|]]]| |] [|extra tail]];
+    try reflexivity.
+  cbn [BaseCall.cast_result rename_site option_map rename_value rename_ty
+    rename_signal map fst snd base_renaming rename_symbol].
+  rewrite rename_ty_eqb by exact Injective.
+  destruct (_ && _); reflexivity.
+  all: destruct p; reflexivity.
+Qed.
+
+Lemma reference_matches_renamed : forall rename array site value,
+  (forall x y, rename x = rename y -> x = y) ->
+  BaseCall.reference_matches array (rename_site (base_renaming rename) site)
+      (rename_value (base_renaming rename) value) =
+  BaseCall.reference_matches array site value.
+Proof.
+  intros rename array [site|] value Injective; [|reflexivity].
+  destruct site as [| | | |head [|[param expected] rest]|]; try reflexivity.
+  destruct value as [|source [| | |[|address [[kind actual]|]]]| |[]]; try reflexivity.
+  cbn [BaseCall.reference_matches rename_site option_map rename_value rename_ty
+    map fst snd base_renaming rename_symbol].
+  now rewrite rename_ty_eqb by exact Injective.
+Qed.
+
+Lemma heap_arguments_match_renamed : forall rename p site values,
+  (forall x y, rename x = rename y -> x = y) ->
+  BaseCall.heap_arguments_match (rename_base_primitive rename p)
+      (fun _ => rename_site (base_renaming rename) site)
+      (map (rename_value (base_renaming rename)) values) =
+  BaseCall.heap_arguments_match p (fun _ => site) values.
+Proof.
+  intros rename [] site values Injective; try reflexivity;
+    destruct values as [|receiver [|index [|source rest]]];
+    cbn [BaseCall.heap_arguments_match rename_base_primitive map];
+    now rewrite ?reference_matches_renamed by exact Injective.
+Qed.
+
 Theorem base_call_equivariant : forall S rename related raw P P',
+  (forall x y, rename x = rename y -> x = y) ->
   @raw_calls_related S rename related raw P P' ->
   forall operation site values left right,
     related left right ->
@@ -192,10 +243,18 @@ Theorem base_call_equivariant : forall S rename related raw P P',
       (rename_site (base_renaming rename) site) (map (rename_value (base_renaming rename)) values) right in
     out' = rename_signal (base_renaming rename) out /\ related next next'.
 Proof.
-  intros S rename related raw P P' Raw operation site values left right Related.
+  intros S rename related raw P P' Injective Raw operation site values left right Related.
   unfold BaseCall.call. rewrite decode_renamed_base_operation.
   destruct (decode operation) as [primitive|].
-  - cbn [option_map]. rewrite rename_arguments_at_site.
+  - cbn [option_map BaseCall.cast_at_site BaseCall.heap_call_ready].
+    assert (Cast : BaseCall.cast_operation (rename_base_primitive rename primitive) =
+      option_map (fun '(array, tag) => (array, rename tag)) (BaseCall.cast_operation primitive))
+      by (destruct primitive; reflexivity).
+    rewrite Cast. destruct (BaseCall.cast_operation primitive) as [[array tag]|].
+    { split; [now apply cast_result_renamed|exact Related]. }
+    cbn [option_map]. rewrite heap_arguments_match_renamed by exact Injective.
+    destruct (BaseCall.heap_arguments_match primitive _ values); [|now split].
+    rewrite rename_arguments_at_site.
     specialize (Raw operation (BaseCall.arguments_at_site primitive (fun _ => site) values) left right Related).
     destruct (raw P operation (BaseCall.arguments_at_site primitive (fun _ => site) values) left) as [out next].
     destruct (raw P' (rename_base_operation rename operation)
