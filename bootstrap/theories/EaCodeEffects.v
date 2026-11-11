@@ -347,9 +347,8 @@ Proof.
   destruct syntax as [| | | | | |receiver name parameters result body| |]; try apply code_effect_fail.
   destruct receiver; try apply code_effect_fail.
   destruct body as [body|].
-  - apply code_effect_bind; [apply code_effect_lift|intros [Cg needs]].
-    repeat (apply code_effect_bind; [first [apply code_effect_pure | apply code_effect_check]|intro]).
-    apply code_effect_return.
+  - apply code_effect_bind; [apply code_effect_pure|].
+    intro plan. apply code_effect_return.
   - apply code_effect_bind; [apply code_effect_pure|]. intro handle.
     apply code_effect_bind; [apply place_forwarder_code_effect|].
     intro slot. apply code_effect_return.
@@ -443,8 +442,8 @@ Proof.
     destruct body; [|apply code_effect_fail].
     destruct (canon C receiver); try apply code_effect_fail.
     apply code_effect_bind; [apply code_effect_check|intros []].
-    apply code_effect_bind; [apply code_effect_lift|]. intros [context needs].
-    repeat (apply code_effect_bind; [first [apply code_effect_pure | apply code_effect_check]|intro]).
+    apply code_effect_bind; [apply code_effect_pure|].
+    intro plan. destruct (translate_named_provider _ plan) as [[source types] provisions].
     apply code_effect_return.
   - apply code_effect_bind; [apply lambda_provider_code_effect; exact Lower|].
     intros [[slot prefix] needs]. apply code_effect_return.

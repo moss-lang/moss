@@ -129,11 +129,12 @@ Definition sat_map (C Cs : cx) (ix ixs : pix) (th : subst) (ns : list item) : sm
 Definition sat_provides1 (C : cx) (ix : pix) (th : subst) (k : item) : bool := providesb_i C ix (at_th C th k).
 Definition sat_coherent1 (C : cx) (ix ixs : pix) (th : subst) (k : item) : bool := sat_coherent C ix ixs th [k].
 Definition sat_types1 (C : cx) (ix ixs : pix) (th : subst) (k : item) : bool := sat_types C ix ixs th [k].
-Definition satisfies_gen (cap : bool) (W : world) (who whot : string) (C Cs : cx) (th : subst) (ns : list item) : er smap :=
-  (* small need lists: a one-bucket index (a linear scan) beats building one *)
-  let small := Nat.ltb (List.length ns) 12 in
-  let ix := pix_of (negb small) (c_provisions C) in
-  let ixs := pix_of (negb small) (c_provisions Cs) in
+Definition satisfaction_index (C : cx) (ns : list item) : pix :=
+  (* A linear scan beats building an index for small need lists. *)
+  pix_of (negb (Nat.ltb (List.length ns) 12)) (c_provisions C).
+
+Definition check_needs_gen (cap : bool) (W : world) (who whot : string)
+    (C Cs : cx) (th : subst) (ns : list item) (ix ixs : pix) : er unit :=
   (* the merges first, as the old oracle's require_merges *)
   let! _ := match min_first (filter (fun q => negb (sat_merge1 C Cs q)) (c_sub Cs)) with
             | Some (g, _) =>
@@ -176,5 +177,19 @@ Definition satisfies_gen (cap : bool) (W : world) (who whot : string) (C Cs : cx
                 Err (if cap then frozen k else
                      who ++ " needs " ++ qkey W (at_th C th k) ++ want ++ ", but the context here provides it at another type, " ++ have ++ " (D20)")
             | None => Ok tt end in
+  Ok tt.
+
+Definition check_needs (W : world) (who whot : string)
+    (C Cs : cx) (th : subst) (ns : list item) : er unit :=
+  check_needs_gen false W who whot C Cs th ns (satisfaction_index C ns) (satisfaction_index Cs ns).
+
+Definition translate_needs (C Cs : cx) (th : subst) (ns : list item) : smap :=
+  sat_map C Cs (satisfaction_index C ns) (satisfaction_index Cs ns) th ns.
+
+Definition satisfies_gen (cap : bool) (W : world) (who whot : string)
+    (C Cs : cx) (th : subst) (ns : list item) : er smap :=
+  let ix := satisfaction_index C ns in
+  let ixs := satisfaction_index Cs ns in
+  let! _ := check_needs_gen cap W who whot C Cs th ns ix ixs in
   Ok (sat_map C Cs ix ixs th ns).
 Definition satisfies := satisfies_gen false.

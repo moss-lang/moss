@@ -1,7 +1,7 @@
 (* Defined providers read the same context, needs, and signature as a call. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaBind EaCall EaTypes EaTypesSound EaChecked.
-From NM Require EaContextTableSound EaCallSound EaSatisfiesSound EaMergeSound PublicContextFacts.
+From NM Require EaContextTableSound EaControlSound EaCallSound EaSatisfiesSound EaMergeSound PublicContextFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -34,6 +34,21 @@ Proof.
   cbn [fold_left]. apply IH. exact Section.
 Qed.
 
+Record TypesNamedProviderCall (W : world) (C : cx) (g : nat) (recv : option ty)
+    (want : fsig) (plan : named_provider_plan) : Prop := {
+  provider_source_exact : provider_symbol plan = g;
+  provider_context_typed : CtxOf W g (provider_formal plan) (provider_needs plan);
+  provider_needs_satisfied : NeedsSatisfied C (provider_formal plan)
+    (provider_arguments plan) (provider_needs plan);
+  provider_call_arguments : CallTheta W C (provider_formal plan) g (provider_arguments plan);
+  provider_signature_typed : SigOf W g (c_ty C) recv want;
+  provider_requirements_in_force : RequirementsInForce C (provider_formal plan)
+}.
+
+Local Lemma provider_pure_read : forall A (read : er A) before value after,
+  pure read before = Ok (value, after) -> read = Ok value /\ before = after.
+Proof. intros A [found|] before value after Read; [now injection Read as -> ->|discriminate]. Qed.
+
 Section DefinedProviders.
 Variables (E : env) (P : program).
 Let W := e_W E.
@@ -52,21 +67,41 @@ Proof.
     pose proof (contexts g formal needs Found) as Context; now rewrite Kind in Context.
 Qed.
 
-Local Lemma provider_call_reads_sound : forall g C formal needs who th sm,
-  CtxOf W g formal needs ->
+Theorem check_named_provider_sound : forall kind C g recv want plan,
   PublicContextFacts.CxSection C ->
-  call_theta W who C formal = Ok th ->
-  satisfies W ("calling " ++ qs W g) who C formal th needs = Ok sm ->
-  rule_b W who C formal = Ok tt ->
-  Satisfies C formal th needs sm /\ CallTheta W C formal g th /\ RequirementsInForce C formal.
+  (kind_sym W g = Some DKFn \/ kind_sym W g = Some DKMeth) ->
+  check_named_provider E kind C g recv want = Ok plan ->
+  TypesNamedProviderCall W C g recv want plan.
 Proof.
-  intros g C formal needs who th sm Context Caller Types Needs InForce.
+  intros kind C g recv want plan Caller Kind Read.
+  unfold check_named_provider in Read. fold W fuel in Read. cbv zeta in Read.
+  destruct (w_context W g) as [[formal needs]|] eqn:ContextRead; cbn [rbind] in Read; [|discriminate].
+  apply rbind_ok in Read as (arguments & ThetaRead & Read).
+  apply rbind_ok in Read as ([] & NeedsRead & Read).
+  apply rbind_ok in Read as ([] & ForceRead & Read).
+  apply rbind_ok in Read as (provided & SignatureRead & Read).
+  apply rbind_ok in Read as ([] & SignatureCheck & Read).
+  destruct (fsig_eqb provided want) eqn:Signature; [|discriminate].
+  injection Read as <-. apply EaMergeSound.fsig_eqb_spec in Signature. subst provided.
+  pose proof (provider_context g formal needs Kind ContextRead) as Context.
   destruct (PublicContextFacts.function_context_merge _ _ _ _ Context) as [Solved Formal].
-  split.
-  - eapply EaSatisfiesSound.satisfies_sound; [eapply EaSatisfiesSound.ctxof_subst_functional|]; eassumption.
-  - split.
-    + eapply EaCallSound.call_theta_sound; eassumption.
-    + eapply EaCallSound.rule_b_sound; eassumption.
+  constructor; cbn [provider_symbol provider_formal provider_needs provider_arguments].
+  - reflexivity.
+  - exact Context.
+  - eapply EaSatisfiesSound.check_needs_sound; [eapply EaSatisfiesSound.ctxof_subst_functional|]; eassumption.
+  - eapply EaCallSound.call_theta_sound; eassumption.
+  - eapply sig_of_sound; exact SignatureRead.
+  - eapply EaCallSound.rule_b_sound; eassumption.
+Qed.
+
+Lemma translate_named_provider_sound : forall C g recv want plan,
+  TypesNamedProviderCall W C g recv want plan ->
+  translate_named_provider C plan =
+    (g, TypeCapture (provider_arguments plan) (provider_arguments plan),
+      satisfaction_map C (provider_formal plan) (provider_arguments plan) (provider_needs plan)).
+Proof.
+  intros C g recv want plan Typed. unfold translate_named_provider.
+  now rewrite (provider_source_exact _ _ _ _ _ _ Typed), EaSatisfiesSound.translate_needs_exact.
 Qed.
 
 Theorem defined_function_provider_post_sound : forall F C path symbol name parameters result body signature kind,
@@ -82,24 +117,19 @@ Proof.
   unfold fn_provider in Run. fold W fuel in Run.
   rewrite Resolve in Run. cbn [mbind ret] in Run.
   rewrite KindChecked in Run. cbn [mbind ret] in Run. rewrite Ast in Run.
-  destruct (w_context W symbol) as [[formal needs]|] eqn:ContextRead; cbn [mbind ret] in Run; [|discriminate].
-  set (who := ("binding to " ++ qs W symbol)%string) in *.
-  destruct (call_theta W who C formal) as [th|] eqn:ThetaRead; cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (satisfies W ("calling " ++ qs W symbol) who C formal th needs) as [provisions|] eqn:NeedsRead;
-    cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (rule_b W who C formal) as [[]|] eqn:ForceRead; cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (sig_of W fuel symbol (c_ty C) None) as [provided|] eqn:SignatureRead;
-    cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (fsig_eqb provided (FSig (map (canon C) (sg_params signature)) (canon C (sg_ret signature))))
-    eqn:SignatureCheck; cbn [mbind ret] in Run; [|discriminate].
-  injection Run as <- <- <- <-.
+  apply EaControlSound.mbind_ok in Run as (plan & middle & Check & Run).
+  apply provider_pure_read in Check as [Check <-].
+  unfold ret in Run.
+  assert (Output : translate_named_provider C plan = (target, types, sm)) by congruence.
+  assert (SameState : after = before) by congruence. subst after.
   split; [tauto|]. intros Valid _. split; [exact Valid|].
-  pose proof (provider_context symbol formal needs (or_introl Kind) ContextRead) as Context.
-  destruct (provider_call_reads_sound _ _ _ _ _ _ _ Context (caller_section _ _ _ Valid)
-    ThetaRead NeedsRead ForceRead) as [Satisfies [Theta InForce]].
-  apply EaMergeSound.fsig_eqb_spec in SignatureCheck. subst provided.
-  eapply FPDefined; [exact Resolve|exact Kind|eauto 8|exact Context|exact Satisfies|exact Theta|
-    eapply sig_of_sound; exact SignatureRead|exact InForce].
+  pose proof (check_named_provider_sound kind C symbol None _ plan
+    (caller_section _ _ _ Valid) (or_introl Kind) Check) as Typed.
+  pose proof (translate_named_provider_sound _ _ _ _ _ Typed) as Emit.
+  rewrite Emit in Output. injection Output as <- <- <-.
+  destruct Typed as [_ Context Needs Theta Signature InForce].
+  eapply FPDefined; [exact Resolve|exact Kind|eauto 8|exact Context|split; [reflexivity|exact Needs]|
+    exact Theta|exact Signature|exact InForce].
 Qed.
 
 Theorem attached_method_provider_post_sound : forall bundle R method F C path name signature receiver,
@@ -125,26 +155,22 @@ Proof.
   destruct (Nat.eqb rg rg') eqn:Receiver; cbn [mbind ret] in Run; [|discriminate].
   apply Nat.eqb_eq in Receiver. subst rg'.
   set (caller := fold_left (fun C q => set_ty C (fst q) (snd q)) readings C) in *.
-  set (who := ("binding to " ++ qs W att)%string) in *.
-  destruct (w_context W att) as [[formal needs]|] eqn:ContextRead; cbn [mbind ret] in Run; [|discriminate].
-  destruct (call_theta W who caller formal) as [th|] eqn:ThetaRead;
-    cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (satisfies W ("calling " ++ qs W att) who caller formal th needs) as [provisions|] eqn:NeedsRead;
-    cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (rule_b W who caller formal) as [[]|] eqn:ForceRead; cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (sig_of W fuel att (c_ty caller) (Some (TNom rg readings))) as [provided|] eqn:SignatureRead;
-    cbn [pure mbind ret] in Run; [|discriminate].
-  destruct (fsig_eqb provided (FSig (map (canon C) (sg_params signature)) (canon C (sg_ret signature))))
-    eqn:SignatureCheck; cbn [mbind ret] in Run; [|discriminate].
-  injection Run as <- <- <- <- <-.
-  split; [tauto|]. intros Valid _. split; [exact Valid|].
+  apply EaControlSound.mbind_ok in Run as (plan & middle & Check & Run).
+  apply provider_pure_read in Check as [Check <-].
   assert (Kind : kind_sym W att = Some DKMeth) by exact (kind_of_read_declaration W _ _ Ast).
-  pose proof (provider_context att formal needs (or_intror Kind) ContextRead) as Context.
-  assert (Caller : PublicContextFacts.CxSection caller) by (apply set_type_rows_keep_section; exact (caller_section _ _ _ Valid)).
-  destruct (provider_call_reads_sound _ _ _ _ _ _ _ Context Caller ThetaRead NeedsRead ForceRead)
-    as [Satisfies [Theta InForce]].
-  apply EaMergeSound.fsig_eqb_spec in SignatureCheck. subst provided.
+  split.
+  { destruct (translate_named_provider caller plan) as [[source types'] provisions].
+    unfold ret in Run. injection Run as <- <- <- <- <-. tauto. }
+  intros Valid _.
+  assert (Caller : PublicContextFacts.CxSection caller) by
+    (apply set_type_rows_keep_section; exact (caller_section _ _ _ Valid)).
+  pose proof (check_named_provider_sound "attached method" caller att (Some (TNom rg readings)) _ plan
+    Caller (or_intror Kind) Check) as Typed.
+  pose proof (translate_named_provider_sound _ _ _ _ _ Typed) as Emit.
+  rewrite Emit in Run. unfold ret in Run. injection Run as <- <- <- <- <-.
+  split; [exact Valid|].
+  destruct Typed as [_ Context Needs Theta Signature InForce].
   eapply MPAttached; [exact Resolve|exact AttachedRead|eauto 8|exact Canonical|reflexivity|
-    exact Context|exact Satisfies|exact Theta|eapply sig_of_sound; rewrite Canonical; exact SignatureRead|exact InForce].
+    exact Context|split; [reflexivity|exact Needs]|exact Theta|now rewrite Canonical|exact InForce].
 Qed.
 End DefinedProviders.

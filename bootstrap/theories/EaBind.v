@@ -29,6 +29,29 @@ Definition sig_mismatch (kind : string) (pv : nat) (got want : fsig) : string :=
    then "; a plain function providing a method takes the method's parameters, which exclude the receiver (D54)"
    else "").
 
+Record named_provider_plan := NamedProviderPlan {
+  provider_symbol : nat;
+  provider_formal : cx;
+  provider_needs : list item;
+  provider_arguments : subst
+}.
+
+Definition check_named_provider (kind : string) (C : cx) (g : nat) (recv : option ty)
+    (want : fsig) : er named_provider_plan :=
+  let who := ("binding to " ++ qs W g)%string in
+  let! (formal, needs) := ropt (w_context W g) ("the context of " ++ qs W g ++ " does not form") in
+  let! arguments := call_theta W who C formal in
+  let! _ := check_needs W ("calling " ++ qs W g) who C formal arguments needs in
+  let! _ := rule_b W who C formal in
+  let! got := sig_of W fuel g (c_ty C) recv in
+  let! _ := rcheck (fsig_eqb got want) (sig_mismatch kind g got want) in
+  Ok (NamedProviderPlan g formal needs arguments).
+
+Definition translate_named_provider (C : cx) (plan : named_provider_plan) : nat * type_capture * smap :=
+  let arguments := provider_arguments plan in
+  (provider_symbol plan, TypeCapture arguments arguments,
+    translate_needs C (provider_formal plan) arguments (provider_needs plan)).
+
 Definition read_forwarder (kind : string) (C : cx) (g : nat) (sg : fsig) : er forwarder_handle :=
   let! provided := ropt (cfn C g) (qs W g ++ " is not available in the context here, so it cannot provide a bind (assume or bind it)") in
   let! _ := rcheck (fsig_eqb provided sg) (sig_mismatch kind g provided sg) in
@@ -50,15 +73,9 @@ Definition fn_provider (kind : string) (F : frame) (C : cx) (pa : path) (sg : fs
   let* _ := check (kind_is W g DKFn) not_fn in
   match ast_of W g with
   | Some (ADFn RPlain _ _ _ (Some _)) =>
-      let who := ("binding to " ++ qs W g)%string in
-      let* (Cg, ns) := lift (w_context W g) ("the context of " ++ qs W g ++ " does not form") in
-      let* th := pure (call_theta W who C Cg) in
-      let* sm := pure (satisfies W ("calling " ++ qs W g) who C Cg th ns) in
-      let* _ := pure (rule_b W who C Cg) in
-      let* g' := pure (sig_of W fuel g (c_ty C) None) in
       let want := FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg)) in
-      let* _ := check (fsig_eqb g' want) (sig_mismatch kind g g' want) in
-      ret (g, TypeCapture th th, sm)
+      let* plan := pure (check_named_provider kind C g None want) in
+      ret (translate_named_provider C plan)
   | Some (ADFn RPlain _ _ _ None) =>
       let* handle := pure (read_forwarder kind C g sg) in
       let* slot := place_forwarder handle sg in
@@ -191,15 +208,10 @@ Definition meth_provider (m : nat) (F : frame) (C : cx) (y : aexpr) (sg : fsig) 
           | TNom rg' rargs =>
               let* _ := check (Nat.eqb rg rg') ("provider " ++ qs W att ++ " is attached to " ++ qs W rg ++ ", not " ++ qty W (canon C rt)) in
               let Cd := fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C in
-              let who := ("binding to " ++ qs W att)%string in
-              let* (Ca, ns) := lift (w_context W att) ("the context of " ++ qs W att ++ " does not form") in
-              let* th := pure (call_theta W who Cd Ca) in
-              let* sm := pure (satisfies W ("calling " ++ qs W att) who Cd Ca th ns) in
-              let* _ := pure (rule_b W who Cd Ca) in
-              let* g' := pure (sig_of W fuel att (c_ty Cd) (Some (canon C rt))) in
               let want := FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg)) in
-              let* _ := check (fsig_eqb g' want) (sig_mismatch "attached method" att g' want) in
-              ret (att, TypeCapture th th, (fun x => x), sm)
+              let* plan := pure (check_named_provider "attached method" Cd att (Some (canon C rt)) want) in
+              let '(source, types, provisions) := translate_named_provider Cd plan in
+              ret (source, types, (fun x => x), provisions)
           | _ => fail ("provider " ++ qs W att ++ " is attached to " ++ qs W rg ++ ", not " ++ qty W (canon C rt))
           end
       | _ => fail (qs W rg ++ " has no defined attached method `." ++ n ++ "`")

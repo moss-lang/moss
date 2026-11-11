@@ -287,14 +287,14 @@ Proof.
   rewrite Empty in Rejected. contradiction.
 Qed.
 
-Theorem satisfies_gen_sound : forall capture W who whot C Cs th ns sm,
+Theorem check_needs_gen_sound : forall capture W who whot C Cs th ns big,
   (forall g u, In (g, u) (c_sub Cs) -> lookup_subst g (c_sub Cs) = Some u) ->
-  satisfies_gen capture W who whot C Cs th ns = Ok sm ->
-  Satisfies C Cs th ns sm.
+  check_needs_gen capture W who whot C Cs th ns (pix_of big (c_provisions C))
+    (pix_of big (c_provisions Cs)) = Ok tt ->
+  NeedsSatisfied C Cs th ns.
 Proof.
-  intros capture W who whot C Cs th ns sm Functional Run.
-  unfold satisfies_gen in Run. cbv zeta in Run.
-  set (big := negb (List.length ns <? 12)) in *.
+  intros capture W who whot C Cs th ns big Functional Run.
+  unfold check_needs_gen in Run. cbv zeta in Run.
   set (ix := pix_of big (c_provisions C)) in *.
   set (ixs := pix_of big (c_provisions Cs)) in *.
   apply rbind_ok in Run as (merged & Merge & Run).
@@ -318,8 +318,6 @@ Proof.
   apply rbind_ok in Run as (typed & Types & Run).
   destruct (find (fun k => negb (sat_types1 C ix ixs th k)) ns) eqn:Typed;
     [discriminate Types|].
-  injection Run as <-.
-  split; [apply sat_map_exact|].
   split; [|split; [|split]].
   - intros k Member. rewrite forallb_forall in Missing. specialize (Missing k Member).
     unfold sat_provides1 in Missing. eapply providesb_i_sound. exact Missing.
@@ -334,6 +332,33 @@ Proof.
     apply negb_false_iff in Check. unfold sat_types1, sat_types in Check.
     cbn [forallb] in Check. now apply andb_true_iff in Check as [Check _].
   - apply sat_merges_sound; assumption.
+Qed.
+
+Corollary check_needs_sound : forall W who whot C Cs th ns,
+  (forall g u, In (g, u) (c_sub Cs) -> lookup_subst g (c_sub Cs) = Some u) ->
+  check_needs W who whot C Cs th ns = Ok tt ->
+  NeedsSatisfied C Cs th ns.
+Proof.
+  intros W who whot C Cs th ns Functional Checked.
+  unfold check_needs, satisfaction_index in Checked.
+  eapply check_needs_gen_sound; eassumption.
+Qed.
+
+Lemma translate_needs_exact : forall C Cs th ns,
+  translate_needs C Cs th ns = satisfaction_map C Cs th ns.
+Proof. intros. unfold translate_needs, satisfaction_index. apply sat_map_exact. Qed.
+
+Theorem satisfies_gen_sound : forall capture W who whot C Cs th ns sm,
+  (forall g u, In (g, u) (c_sub Cs) -> lookup_subst g (c_sub Cs) = Some u) ->
+  satisfies_gen capture W who whot C Cs th ns = Ok sm ->
+  Satisfies C Cs th ns sm.
+Proof.
+  intros capture W who whot C Cs th ns sm Functional Run.
+  unfold satisfies_gen in Run. cbv zeta in Run.
+  apply rbind_ok in Run as ([] & Checked & Emit). injection Emit as <-.
+  split.
+  - apply translate_needs_exact.
+  - unfold satisfaction_index in Checked. eapply check_needs_gen_sound; eassumption.
 Qed.
 
 Corollary satisfies_sound : forall W who whot C Cs th ns sm,
