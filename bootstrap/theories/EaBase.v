@@ -65,14 +65,14 @@ Arguments slot_index {table} _.
    - I2 (bodies) es_fns/es_funs only grow, and each entry satisfies its
      judgment (FPForward/MPWrapped/LambdaProvider/LinkBody/Platform.Family)
      against the final program (P-monotonicity).
-   - I3 (caches) es_fwd g = w -> body of w is FPForward's for g;
+   - I3 (caches) es_fwd g n = w -> body of w calls g with n arguments;
      es_wrap (g,n) = w -> MPWrapped's body; es_link (u,gg) = h -> LinkBody u gg h;
      es_const s = (x,t) -> ExConst's premises for s at x, t. *)
 Record est := Est {
   es_next : nat;
   es_fns : nmap expr;
   es_funs : nmap functor_code;
-  es_fwd : nmap (code_slot FunctionTable);
+  es_fwd : nmap (nmap (code_slot FunctionTable));
   es_wrap : list ((nat * nat) * code_slot FunctionTable);
   es_link : list ((nat * nat) * code_slot FunctorTable);
   es_const : nmap (expr * ty);
@@ -391,10 +391,17 @@ Definition emit_fn_code (code : expr) : M (code_slot FunctionTable) :=
 Definition emit_fun_code (code : functor_code) : M (code_slot FunctorTable) :=
   let* slot := reserve_code FunctorTable in let* _ := write_fun_code slot code in ret slot.
 
-Definition get_fwd (g : nat) : M (option (code_slot FunctionTable)) := fun s => Ok (nget (es_fwd s) g, s).
-Definition put_fwd (g : nat) (w : code_slot FunctionTable) : M unit :=
-  fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (nset (es_fwd s) g w) (es_wrap s)
-                      (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
+Definition forwarders_at (s : est) (g : nat) : nmap (code_slot FunctionTable) :=
+  match nget (es_fwd s) g with Some by_arity => by_arity | None => NE end.
+Definition forwarder_at (s : est) (g arity : nat) : option (code_slot FunctionTable) :=
+  nget (forwarders_at s g) arity.
+Definition get_fwd (g arity : nat) : M (option (code_slot FunctionTable)) :=
+  fun s => Ok (forwarder_at s g arity, s).
+Definition put_fwd (g arity : nat) (w : code_slot FunctionTable) : M unit :=
+  fun s =>
+    let cache := nset (es_fwd s) g (nset (forwarders_at s g) arity w) in
+    Ok (tt, Est (es_next s) (es_fns s) (es_funs s) cache (es_wrap s)
+      (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
 Fixpoint pair_look {A} (k : nat * nat) (l : list ((nat * nat) * A)) : option A :=
   match l with [] => None | (k', a) :: r => if Nat.eqb (fst k) (fst k') && Nat.eqb (snd k) (snd k') then Some a else pair_look k r end.
 Definition get_wrap (k : nat * nat) : M (option (code_slot FunctionTable)) := fun s => Ok (pair_look k (es_wrap s), s).

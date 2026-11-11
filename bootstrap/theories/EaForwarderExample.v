@@ -30,7 +30,7 @@ Definition checks_reused_forwarder : bool :=
         let run := fn_provider E "fn" F C ["original"] sig in
         match read_forwarder E "fn" C input sig, run (init_state bound) with
         | Ok handle, Ok ((number, _, _), first) =>
-          match run first, nget (es_fns first) number, nget (es_fwd first) input with
+          match run first, nget (es_fns first) number, forwarder_at first input 0 with
           | Ok ((reused, _, _), second), Some (EInvoke called []), Some slot =>
             (forwarder_source handle =? input)%nat && (called =? input)%nat &&
             (number =? bound)%nat && (reused =? number)%nat &&
@@ -48,3 +48,17 @@ Definition checks_reused_forwarder : bool :=
 
 Example source_typed_once_allocates_then_reuses_forwarder : checks_reused_forwarder = true.
 Proof. vm_compute. reflexivity. Qed.
+
+Example different_arities_have_different_forwarders :
+  let place := place_forwarder (ForwarderOf 2) in
+  let run := (let* empty := place (FSig [] TUnit) in
+              let* unary := place (FSig [TUnit] TUnit) in
+              let* empty_again := place (FSig [] TUnit) in
+              ret (slot_index empty, slot_index unary, slot_index empty_again)) in
+  match run (init_state 3) with
+  | Ok (slots, state) =>
+      slots = (3, 4, 3) /\ nget (es_fns state) 3 = Some (EInvoke 2 []) /\
+      nget (es_fns state) 4 = Some (EInvoke 2 [EVar 0]) /\ es_next state = 5
+  | Err _ => False
+  end.
+Proof. vm_compute. repeat split. Qed.

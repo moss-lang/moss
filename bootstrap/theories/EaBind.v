@@ -36,11 +36,12 @@ Definition read_forwarder (kind : string) (C : cx) (g : nat) (sg : fsig) : er fo
 
 Definition place_forwarder (handle : forwarder_handle) (sg : fsig) : M (code_slot FunctionTable) :=
   let g := forwarder_source handle in
-  let* cached := get_fwd g in
+  let arity := List.length (sg_params sg) in
+  let* cached := get_fwd g arity in
   match cached with
   | Some slot => ret slot
   | None => let* slot := emit_fn_code (forwarder_body handle sg) in
-            let* _ := put_fwd g slot in ret slot
+            let* _ := put_fwd g arity slot in ret slot
   end.
 
 Definition fn_provider (kind : string) (F : frame) (C : cx) (pa : path) (sg : fsig) : M (nat * type_capture * smap) :=

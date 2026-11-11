@@ -180,12 +180,12 @@ Proof.
 Qed.
 
 
-Lemma code_effect_get_fwd : forall g, PreservesOldCode (get_fwd g).
-Proof. intros g s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.
+Lemma code_effect_get_fwd : forall g arity, PreservesOldCode (get_fwd g arity).
+Proof. intros g arity s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.
 
-Lemma code_effect_put_fwd : forall g slot, PreservesOldCode (put_fwd g slot).
+Lemma code_effect_put_fwd : forall g arity slot, PreservesOldCode (put_fwd g arity slot).
 Proof.
-  intros g slot s x s' Run. unfold put_fwd in Run. injection Run as _ <-.
+  intros g arity slot s x s' Run. unfold put_fwd in Run. injection Run as _ <-.
   apply unchanged_code_transition; [apply Nat.le_refl| | |reflexivity]; intros [] i; reflexivity.
 Qed.
 
