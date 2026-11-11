@@ -202,6 +202,16 @@ Proof.
   exact (Ok x u Lw).
 Qed.
 
+(* A formed table gives every member of a merge class the same meaning. *)
+Lemma table_reads_merge : forall v Cv ns T, A.FunCtx W v Cv ns ->
+  TableOk T Cv -> PublicContextFacts.ReadsMerge Cv (app_subst T).
+Proof.
+  intros v Cv ns T Context Table.
+  apply (proj2 (PublicContextFacts.reads_merge_canon_iff Cv (app_subst T)
+    (proj2 (PublicContextFacts.functor_context_merge W v Cv ns Context)))).
+  exact (sub_inv v Cv ns T Context Table).
+Qed.
+
 (* A FunCtx's readings θ_h of h's inputs in u's context Cu (canon Cu after
    Cu's table) read at T as T does. *)
 Lemma th_inv : forall u Cu nsu T (l : list (nat * ty)), A.FunCtx W u Cu nsu -> TableOk T Cu ->

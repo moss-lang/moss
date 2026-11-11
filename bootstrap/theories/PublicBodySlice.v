@@ -35,7 +35,7 @@ Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis Bools : BoolSymbols W Prog.
 
 Definition Absorbs (C : A.cx) (d : environment) : Prop :=
-  forall t u, A.MergeEq (A.c_merge C) t u -> ground d t = ground d u.
+  ReadsMerge C (ground d).
 
 (* The canonical readings still used by the transitional rules. *)
 Definition AbsorbsCanon (C : A.cx) (d : environment) : Prop :=
@@ -3604,8 +3604,17 @@ Definition link_sources (Cb : A.cx) (outs : list nat) (gen : nat -> nat) (ks : l
 (* The site a linked body's result keys are read at (A.link_site) has
    the body's provisions and merges, so it is realized where the body is,
    and files keys as the body does. *)
+Lemma merge_link_site : forall Cg Cb pins outs gen,
+  A.c_merge (A.link_site Cg Cb pins outs gen) = A.c_merge Cb.
+Proof. reflexivity. Qed.
+
+Lemma realizes_with_link_site : forall rk n Cg Cb pins outs gen d H,
+  RealizesWith rk n Cb d H ->
+  RealizesWith rk n (A.link_site Cg Cb pins outs gen) d H.
+Proof. intros rk n Cg Cb pins outs gen d H R. exact R. Qed.
+
 Lemma realizes_link_site : forall n Cg Cb pins outs gen d H, Realizes n Cb d H -> Realizes n (A.link_site Cg Cb pins outs gen) d H.
-Proof. intros n Cg Cb pins outs gen d H R. exact R. Qed.
+Proof. intros n Cg Cb pins outs gen d H. apply realizes_with_link_site. Qed.
 Lemma rkey_of_link_site : forall Cg Cb pins outs gen k, A.rkey_of (A.link_site Cg Cb pins outs gen) k = A.rkey_of Cb k.
 Proof. reflexivity. Qed.
 Lemma canon_link_site : forall Cg Cb pins outs gen t, A.canon (A.link_site Cg Cb pins outs gen) t = A.canon Cb t.

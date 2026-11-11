@@ -1052,7 +1052,7 @@ Variables (h0 gg code : nat) (dg : A.decl) (nn : name) (ps : option (list name))
   (Cr : A.cx) (ks' : list item) (binds0 : list binding) (pins : subst).
 Hypothesis LD : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg nn ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins.
 Hypothesis LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
-  (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.canon Ch0 (TAbs x) = A.canon Ch0 tx.
+  (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx.
 Variables (th : subst) (d d3 dc' : environment) (j' : nat) (g3 : locals) (st st3 : Prims.mstate).
 Hypothesis ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None.
 Hypothesis Run : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th dc') [] st binds0 = inl (d3, g3, st3).
@@ -1072,8 +1072,9 @@ Proof.
     by (intros a0 b0 Ia Ib; exact (nodup_map_inj gen outs' a0 b0 NdG Ia Ib)).
   assert (FrGf : PublicFormation.FrameFormed W Fg) by (split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W)).
   (* h0's merges hold of the application's meanings *)
-  assert (ThI : forall t, ground d (app_subst th (A.canon Ch0 t)) = ground d (app_subst th t)).
-  { intros t. rewrite !PublicCopySubst.ground_app_subst. exact (PublicChainSigs.sub_inv W h0 Ch0 nsh0 Tin FC0 Tok t). }
+  assert (ThI : PublicContextFacts.ReadsMerge Ch0 (fun t => ground d (app_subst th t))).
+  { intros t u Equal. rewrite !PublicCopySubst.ground_app_subst.
+    exact (PublicChainSigs.table_reads_merge W h0 Ch0 nsh0 Tin FC0 Tok t u Equal). }
   pose proof (CSg.FL.LRn.link_run_fact W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCg LRs Items BO MadeOut FB th ThDom
     argv read j' d dc' [] st d3 g3 st3 ThI Run) as RunFact.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
@@ -1123,9 +1124,8 @@ Proof.
       assert (Gtx : incl (A.gens tx) DG) by (intros y Iy; exact (PublicChainSigs.table_gens_dom W gg Cg nsg x tx y FCg Lx Iy)).
       rewrite (RunFact tx Gtx (fun y Iy => proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy))).
       rewrite (PublicCopySubst.ground_app_subst d th tx).
-      fold Tin. rewrite <- (PublicChainSigs.sub_inv W h0 Ch0 nsh0 Tin FC0 Tok tx).
-      change (app_subst Tin (A.canon Ch0 tx) = app_subst T0 (TAbs x)). rewrite <- Can. unfold A.canon.
-      rewrite (PublicChainSigs.sub_inv W h0 Ch0 nsh0 Tin FC0 Tok (TAbs x)).
+      fold Tin. rewrite <- (PublicChainSigs.table_reads_merge W h0 Ch0 nsh0 Tin FC0 Tok (TAbs x) tx Can).
+      change (app_subst Tin (TAbs x) = app_subst T0 (TAbs x)).
       unfold T0, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]]. exact (NR x I0).
     - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity. }
     - (* #73: a pinned input, read at its pin *)
@@ -1379,7 +1379,7 @@ Proof.
   assert (AbU : CSg.Abstract W u) by exact (CSg.chain_abs W u gfx sms rms h0 gf0 _ None Chn Abs0).
   (* G's input condition, in full (cap3b), from the closure *)
   assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
-    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.canon Ch0 (TAbs x) = A.canon Ch0 tx).
+    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx).
   { destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
     2: { destruct CCp as (h' & Cu0 & nsu & Ch & nsh & code' & sms' & dc' & rms' & rm & gfh & E & _).
          injection E as _ _ _ E. destruct rms'; discriminate. }
@@ -1389,7 +1389,10 @@ Proof.
     destruct (CSg.FL.link_body_parts W Prog _ _ _ _ LB) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
     destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FCu3) as [<- <-].
     rewrite FB in FB3. injection FB3 as _ _ ETy _ _ _.
-    intros x tx L1 L2. rewrite ETy in L1. exact (LRd3 x tx L1 L2). }
+    intros x tx L1 L2. rewrite ETy in L1.
+    destruct (LRd3 x tx L1 L2) as [Scope Equal]. split; [exact Scope|].
+    apply (PublicContextFacts.context_canon_iff_mergeeq Ch0
+      (proj2 (PublicContextFacts.functor_context_merge W h0 Ch0 nsh0 FC0))). exact Equal. }
   set (Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list).
   assert (Parts : th = map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu) /\
     (forall t, In t (map fst (A.c_ty Cu)) -> A.nlook t (A.c_ty C) <> None) /\

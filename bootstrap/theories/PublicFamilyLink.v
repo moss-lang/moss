@@ -103,8 +103,11 @@ Proof.
   rewrite FB in FB3. injection FB3 as E1 E2 ETy E4 EBinds E6.
   (* cap3b's input condition, at G's table *)
   assert (LRd' : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.canon Cu (TAbs x) = A.canon Cu tx).
-  { intros x tx L1 L2. rewrite ETy in L1. exact (LRd3 x tx L1 L2). }
+     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.MergeEq (A.c_merge Cu) (TAbs x) tx).
+  { intros x tx L1 L2. rewrite ETy in L1.
+    destruct (LRd3 x tx L1 L2) as [Scope Equal]. split; [exact Scope|].
+    apply (PublicContextFacts.context_canon_iff_mergeeq Cu
+      (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FCu))). exact Equal. }
   pose proof (FamB Fam) as FBs. rewrite <- EBinds in FBs.
   (* 3: the body writes no input of F, so it keeps the caller's θ readings *)
   destruct (family_binds_no_dests W Prog _ _ _ _ _ _ _ binds0 Items BO FBs) as [Made _].
@@ -128,10 +131,14 @@ Proof.
     intros d' ps' a' r' b' D FP. destruct Fam as [Shape _]. destruct Shape as (d'' & n'' & ps'' & a'' & r'' & D' & Ast'' & _).
     rewrite D in D'. injection D' as <-. rewrite Ast'' in FP. cbn in FP. injection FP as _ _ _ <-. reflexivity. }
   pose proof (PublicFamilyAgree.th_sigma W C u th Cf (fun t => TAbs t) Cr ks Cu ns EsubF Parts FCu) as ThSig.
+  assert (ThMerge : PublicContextFacts.ReadsMerge Cu (fun t => ground d (app_subst th t))).
+  { apply (proj2 (PublicContextFacts.reads_merge_canon_iff Cu _
+      (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FCu)))).
+    intro t. exact (f_equal (ground d) (ThSig t)). }
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
     ground d3 t = ground d (app_subst th t)).
   { exact (LRn.link_run_fact W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg LRd' Items BO MadeOut FB th
-      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d _ [] st d3 g3 st3 (fun t => f_equal (ground d) (ThSig t)) Run). }
+      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d _ [] st d3 g3 st3 ThMerge Run). }
   (* 4: positions *)
   assert (PRf : A.ProvideResult W u Cu (fun t => TAbs t) Cr' ks').
   { destruct PR' as (dd & pss & aa & rr0 & bb & outsI & es & tm' & D & FP & OutsI & OIE & RK & ECr).
@@ -359,7 +366,7 @@ Proof.
       destruct (LRd' y ty Ly (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [InU Can].
       change (ground d3 ty = ground d (app_subst th (TAbs y))).
       rewrite (RunFact ty (GgDom y ty Ly) (fun z Iz => proj1 (PublicFamilyAgree.nlook_dom _ z _) (InU z Iz))).
-      f_equal. rewrite <- (ThSig (TAbs y)), <- (ThSig ty). unfold A.canon in Can. rewrite Can. reflexivity. }
+      symmetry. apply ThMerge. exact Can. }
   assert (GEp : forall l1 l2, Forall2 (PublicFamilyAgree.SigAgree Cf Cu th) l1 l2 -> incl l2 (A.sg_params gf) ->
     map (fun t => ground d3 (app_subst pr0 t)) l2 = map (ground d) l1).
   { intros l1' l2' F2. induction F2 as [|tc tf l1' l2' A1 _ IH]; intros Inc; [reflexivity|]. cbn [map].

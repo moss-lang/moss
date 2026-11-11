@@ -10,6 +10,23 @@ Definition canonical_context (C : A.cx) : Prop :=
 
 Definition CxSection (C : A.cx) : Prop := A.SectionOf (A.c_merge C) (A.c_sub C).
 
+
+(* A reading gives each merge class one meaning. *)
+Definition ReadsMerge (C : A.cx) (read : ty -> ty) : Prop :=
+  forall t u, A.MergeEq (A.c_merge C) t u -> read t = read u.
+
+Lemma reads_merge_canon_iff : forall C read, CxSection C ->
+  ReadsMerge C read <-> forall t, read (A.canon C t) = read t.
+Proof.
+  intros C read Section. split.
+  - intros Reads t. symmetry. apply Reads, PublicMerge.merge_eq_read.
+    exact (proj1 Section).
+  - intros Reads t u Equal.
+    apply (PublicMerge.merge_section_kernel Section) in Equal.
+    change (A.canon C t = A.canon C u) in Equal.
+    rewrite <- (Reads t), <- (Reads u), Equal. reflexivity.
+Qed.
+
 Theorem entries_canonical : forall substitution classes meanings entries,
   A.MostGeneralMerge substitution entries ->
   canonical_context (A.entries_cx substitution classes meanings entries).

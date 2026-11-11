@@ -12,6 +12,7 @@
 From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicCallRealize PublicCopyFresh PublicCopySubst.
 From NM Require PublicChainCore PublicLinkPins PublicFamilyAgree.
+From NM Require Import PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -175,14 +176,14 @@ Qed.
 Lemma link_input_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
   (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.canon Cu (TAbs x) = A.canon Cu tx) ->
+     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.MergeEq (A.c_merge Cu) (TAbs x) tx) ->
   A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   forall argv read j d dc g st d3 g3 st3,
-  (forall t, ground d (app_subst th (A.canon Cu t)) = ground d (app_subst th t)) ->
+  ReadsMerge Cu (fun t => ground d (app_subst th t)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
@@ -205,7 +206,7 @@ Proof.
     by (unfold table_reading; cbn [fc_table]; rewrite lookup_subst_nlook', Lx; reflexivity).
   assert (V : view_functor (program_of Prog argv read) h = A.funbody_of Prog h) by reflexivity. rewrite FB in V.
   rewrite (app_env_meaning _ d h _ th dc x V Ig).
-  - rewrite Tr. f_equal. rewrite <- (ThSig tx), <- (ThSig (TAbs x)), Can. reflexivity.
+  - rewrite Tr. f_equal. symmetry. apply ThSig. exact Can.
   - rewrite Tr. intros y Iy. cbn [fc_inputs fc_linked].
     pose proof (proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy)) as IyU.
     split; [exact (GgDom y Iy)|]. split; [|exact (ThD y IyU)].
@@ -217,14 +218,14 @@ Qed.
 Corollary link_run_fact : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
   (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.canon Cu (TAbs x) = A.canon Cu tx) ->
+     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.MergeEq (A.c_merge Cu) (TAbs x) tx) ->
   A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   forall argv read j d dc g st d3 g3 st3,
-  (forall t, ground d (app_subst th (A.canon Cu t)) = ground d (app_subst th t)) ->
+  ReadsMerge Cu (fun t => ground d (app_subst th t)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->

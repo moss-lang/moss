@@ -365,7 +365,7 @@ Proof.
     assert (Abs0 : CRz.CSg.Abstract W h0)
       by exact (CRz.CSg.abstract_of_ast W h0 (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_link_abstract W Prog argv read state_ok _ _ _ _ _ _ _ Ok0)).
     assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
-      (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.canon Ch0 (TAbs x) = A.canon Ch0 tx).
+      (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx).
     { destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
       2: { destruct CCp as (h' & Cu1 & nsu1 & Ch1 & nsh1 & code' & sms1 & dc' & rms1 & rm1 & gfh1 & E & _).
            injection E as _ _ _ E. destruct rms1; discriminate. }
@@ -375,7 +375,10 @@ Proof.
       destruct (CRz.CSg.FL.link_body_parts W Prog _ _ _ _ LB2) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FCu3) as [<- <-].
       rewrite FB in FB3. injection FB3 as _ _ ETy _ _ _.
-      intros x tx L1 L2. rewrite ETy in L1. exact (LRd3 x tx L1 L2). }
+      intros x tx L1 L2. rewrite ETy in L1.
+      destruct (LRd3 x tx L1 L2) as [Scope Equal]. split; [exact Scope|].
+      apply (PublicContextFacts.context_canon_iff_mergeeq Ch0
+        (proj2 (PublicContextFacts.functor_context_merge W h0 Ch0 nsh0 FC0))). exact Equal. }
     assert (ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None)
       by (intros z Iz; rewrite (ThL z (Keys z Iz)); discriminate).
     (* Q6: the root's pins read as the application's fixed inputs *)

@@ -239,6 +239,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicContextFacts.functor_context_merge);
   root (@NM.PublicContextFacts.assumed_context_merge);
   root (@NM.PublicContextFacts.context_canon_iff_mergeeq);
+  root (@NM.PublicContextFacts.reads_merge_canon_iff);
   root (@NM.PublicContextFacts.call_theta_respects);
   root (@NM.PublicContextFacts.function_context_canonical);
   root (@NM.PublicContextFacts.functor_context_canonical);
@@ -260,6 +261,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_runtime_iff);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_with_method_keyeq);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.pre_method_provision);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.merge_link_site);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_with_link_site);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.envok_with_of_on);
   root (@NM.PublicCaptureScopeFacts.typed_capture_generation_lookup);
   root (@NM.PublicCaptureScopeFacts.typed_capture_alias_lookup);
@@ -374,6 +377,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EagerCopy.adapt_chain_strict);
   root (@NM.PublicFormation.freshfor_fresh);
   root (@NM.PublicLinkRun.app_env_meaning);
+  root (@NM.PublicChainSigs.table_reads_merge);
+  root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.link_run_fact);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_input);
   root (@NM.PublicLinkPins.link_dests_out);
   root (@NM.PublicCallerKeys.provide_result_key_news);
