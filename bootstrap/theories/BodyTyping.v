@@ -1,10 +1,146 @@
 (* Separate typing and translation for local control and function calls.
    Typing chooses a plan over source names; translation uses numbered locals
    and encodes the checked context and demand choices. *)
-From Stdlib Require Import List String.
+From Stdlib Require Import List String Bool.
 From NM Require Import Audit.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
+Local Open Scope list_scope.
+
+Inductive field_pattern_plan : Type :=
+| PatternPun (field : fld) (field_type : ty)
+| PatternIgnore (field : fld)
+| PatternRename (field : fld) (binder : name) (field_type : ty).
+
+Definition field_pattern_bindings (fields : list field_pattern_plan) : list (name * ty) :=
+  flat_map (fun field => match field with
+    | PatternPun n t | PatternRename _ n t => [(n, t)]
+    | PatternIgnore _ => []
+    end) fields.
+
+Definition translate_field_patterns (F : frame) (fields : list field_pattern_plan) : list (fld * var) :=
+  flat_map (fun field => match field with
+    | PatternPun n _ => [(n, var_of F n)]
+    | PatternRename n binder _ => [(n, var_of F binder)]
+    | PatternIgnore _ => []
+    end) fields.
+
+Inductive TypesFieldPatterns (W : world) (F : frame) (fields : list (fld * ty))
+    : list (name * option apat) -> list field_pattern_plan -> Prop :=
+| TypesFieldsEmpty : TypesFieldPatterns W F fields [] []
+| TypesFieldsPun : forall n t rest plan,
+    slook n fields = Some t -> Named F n -> TypesFieldPatterns W F fields rest plan ->
+    TypesFieldPatterns W F fields ((n, None) :: rest) (PatternPun n t :: plan)
+| TypesFieldsIgnore : forall n t rest plan,
+    slook n fields = Some t -> TypesFieldPatterns W F fields rest plan ->
+    TypesFieldPatterns W F fields ((n, Some APWild) :: rest) (PatternIgnore n :: plan)
+| TypesFieldsRename : forall n binder t rest plan,
+    slook n fields = Some t -> resolve W (fr_mod F) [binder] = None -> Named F binder ->
+    TypesFieldPatterns W F fields rest plan ->
+    TypesFieldPatterns W F fields ((n, Some (APPath [binder])) :: rest) (PatternRename n binder t :: plan).
+
+Theorem field_pattern_translation : forall W F fields source plan,
+  TypesFieldPatterns W F fields source plan ->
+  FieldPats W F fields source (field_pattern_bindings plan) (translate_field_patterns F plan).
+Proof. intros W F fields source plan Typed; induction Typed; cbn; eauto using FPNil, FPPun, FPWild, FPBind. Qed.
+
+Theorem field_pattern_has_plan : forall W F fields source bindings code,
+  FieldPats W F fields source bindings code ->
+  exists plan, TypesFieldPatterns W F fields source plan /\
+    field_pattern_bindings plan = bindings /\ translate_field_patterns F plan = code.
+Proof.
+  intros W F fields source bindings code Typed.
+  induction Typed as [|n t rest bindings code Read Named Rest IH
+    |n t rest bindings code Read Rest IH|n binder t rest bindings code Read Resolve Named Rest IH].
+  - exists []. repeat split. constructor.
+  - destruct IH as (plan & Types & <- & <-). exists (PatternPun n t :: plan).
+    repeat split. now constructor.
+  - destruct IH as (plan & Types & <- & <-). exists (PatternIgnore n :: plan).
+    repeat split. eapply TypesFieldsIgnore; eassumption.
+  - destruct IH as (plan & Types & <- & <-). exists (PatternRename n binder t :: plan).
+    repeat split. now constructor.
+Qed.
+
+Inductive pattern_plan : Type :=
+| PatternWildcard
+| PatternBinder (binder : name) (binder_type : ty)
+| PatternNominal (tag : nat)
+| PatternPayload (tag : nat) (binder : name) (payload : ty)
+| PatternRecord (tag : nat) (fields : list field_pattern_plan).
+
+Definition pattern_bindings (plan : pattern_plan) : list (name * ty) :=
+  match plan with
+  | PatternWildcard | PatternNominal _ => []
+  | PatternBinder n t | PatternPayload _ n t => [(n, t)]
+  | PatternRecord _ fields => field_pattern_bindings fields
+  end.
+
+Definition pattern_heads (plan : pattern_plan) : list nat :=
+  match plan with
+  | PatternNominal tag | PatternPayload tag _ _ | PatternRecord tag _ => [tag]
+  | PatternWildcard | PatternBinder _ _ => []
+  end.
+
+Definition pattern_catches (plan : pattern_plan) : bool :=
+  match plan with PatternWildcard | PatternBinder _ _ => true | _ => false end.
+
+Definition pattern_scope (C : cx) (plan : pattern_plan) : cx :=
+  fold_left (fun C q => add_local C (fst q) (snd q) LLet) (pattern_bindings plan) C.
+
+Definition translate_pattern (F : frame) (plan : pattern_plan) : pattern :=
+  match plan with
+  | PatternWildcard => PAny None
+  | PatternBinder n _ => PAny (Some (var_of F n))
+  | PatternNominal tag => PHead tag None []
+  | PatternPayload tag n _ => PHead tag (Some (var_of F n)) []
+  | PatternRecord tag fields => PHead tag None (translate_field_patterns F fields)
+  end.
+
+Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> pattern_plan -> Prop :=
+| TypesPatternWildcard : TypesPattern W F scrutinee APWild PatternWildcard
+| TypesPatternBinder : forall n,
+    resolve W (fr_mod F) [n] = None -> Named F n ->
+    TypesPattern W F scrutinee (APPath [n]) (PatternBinder n scrutinee)
+| TypesPatternNominal : forall path tag kind arguments,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some kind ->
+    (kind = DKUnit \/ kind = DKTag) -> In (TNom tag arguments) (members scrutinee) ->
+    TypesPattern W F scrutinee (APPath path) (PatternNominal tag)
+| TypesPatternPayload : forall path tag arguments binder payload,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments payload ->
+    resolve W (fr_mod F) [binder] = None -> Named F binder ->
+    TypesPattern W F scrutinee (APTag path (APPath [binder])) (PatternPayload tag binder payload)
+| TypesPatternRecord : forall path tag arguments fields field_types plan,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments (TRecord field_types) ->
+    TypesFieldPatterns W F field_types fields plan -> NoDup (map fst (field_pattern_bindings plan)) ->
+    TypesPattern W F scrutinee (APRec (Some path) fields) (PatternRecord tag plan).
+
+Theorem pattern_translation : forall W F scrutinee source plan,
+  TypesPattern W F scrutinee source plan ->
+  PatOf W F scrutinee source (translate_pattern F plan)
+    (pattern_bindings plan) (pattern_heads plan) (pattern_catches plan).
+Proof.
+  intros W F scrutinee source plan Typed. destruct Typed; cbn;
+    eauto using PWild, PBinder, PUnit, PTagBind, PRecord, field_pattern_translation.
+Qed.
+
+Theorem pattern_has_plan : forall W F scrutinee source code bindings heads catch,
+  PatOf W F scrutinee source code bindings heads catch ->
+  exists plan, TypesPattern W F scrutinee source plan /\ translate_pattern F plan = code /\
+    pattern_bindings plan = bindings /\ pattern_heads plan = heads /\ pattern_catches plan = catch.
+Proof.
+  intros W F scrutinee source code bindings heads catch Typed.
+  destruct Typed as [|n Resolved Named|path tag kind arguments Resolved Kind Nominal Member
+    |path tag arguments binder payload Resolved Kind Member Payload Read Named
+    |path tag arguments fields field_types bindings code Resolved Kind Member Payload Fields Distinct].
+  - exists PatternWildcard. repeat split. constructor.
+  - exists (PatternBinder n scrutinee). repeat split. now constructor.
+  - exists (PatternNominal tag). repeat split. eapply TypesPatternNominal; eassumption.
+  - exists (PatternPayload tag binder payload). repeat split. eapply TypesPatternPayload; eassumption.
+  - destruct (field_pattern_has_plan _ _ _ _ _ _ Fields) as (plan & Typed & <- & <-).
+    exists (PatternRecord tag plan). repeat split. eapply TypesPatternRecord; eassumption.
+Qed.
 
 Inductive expression_plan : Type :=
 | PlanUnit
@@ -18,6 +154,11 @@ Inductive expression_plan : Type :=
 | PlanDefinedCall (f : nat) (formal : cx) (needs : list item)
     (arguments : subst) (demands : list family_use) (call_site : cx) (args : list expression_plan)
 | PlanAbstractCall (f : nat) (args : list expression_plan)
+| PlanUnitTag (tag : nat)
+| PlanTag (tag : nat) (arguments : subst) (payload : expression_plan)
+| PlanRecord (tag : nat) (arguments : subst) (fields : list (fld * expression_plan))
+| PlanField (object : expression_plan) (field : fld)
+| PlanMatch (scrutinee : expression_plan) (arms : list (pattern_plan * expression_plan))
 with block_plan : Type :=
 | PlanEmpty
 | PlanTail (result : expression_plan)
@@ -69,6 +210,34 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     (exists n ps rt, ast_of W f = Some (ADFn RPlain n ps rt None)) ->
     nlook f (c_fns C) = Some g -> TypesArgs W F C args (sg_params g) plans ->
     TypesExpr W F C (AECall pa None args) exp (PlanAbstractCall f plans) (sg_ret g)
+| TypesUnitTag : forall F C exp path tag,
+    (forall n, path = [n] -> slook n (c_locals C) = None) ->
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKUnit ->
+    TypesExpr W F C (AEPath path None) exp (PlanUnitTag tag) (TNom tag [])
+| TypesTag : forall F C exp path brackets payload tag readings arguments payload_type plan actual,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
+    Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
+    PayloadOf W tag arguments payload_type ->
+    TypesExpr W F C payload (Some payload_type) plan actual -> fits actual payload_type ->
+    TypesExpr W F C (AECall path brackets [payload]) exp (PlanTag tag arguments plan) (TNom tag arguments)
+| TypesRecord : forall F C exp path brackets given tag readings arguments fields plans,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
+    Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
+    PayloadOf W tag arguments (TRecord fields) ->
+    NoDup (map fst given) -> List.length given = List.length fields ->
+    TypesRecordFields W F C given fields plans ->
+    TypesExpr W F C (AERec path brackets given) exp (PlanRecord tag arguments plans) (TNom tag arguments)
+| TypesField : forall F C exp object field plan actual payload t,
+    TypesExpr W F C object None plan actual ->
+    ((exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\
+      PayloadOf W tag arguments payload) \/ payload = actual) ->
+    (exists fields, payload = TRecord fields /\ slook field fields = Some t) ->
+    TypesExpr W F C (AEField object field) exp (PlanField plan field) t
+| TypesMatch : forall F C exp scrutinee arms plan st plans t,
+    TypesExpr W F C scrutinee None plan st -> TypesArms W F C (canon C st) arms exp plans t ->
+    TypesExpr W F C (AEMatch scrutinee arms) exp (PlanMatch plan plans) t
 with TypesBlkE (W : world) : frame -> cx -> ablock -> option ty -> block_plan -> ty -> Prop :=
 | TypesBlkCheck : forall F C ss tl exp plan t made,
     TypesBlk W (without_pins F) C ss tl exp plan t made ->
@@ -127,7 +296,35 @@ with TypesBranch (W : world) : frame -> cx -> aexpr -> option ty -> expression_p
     TypesBranch W F C (AEBlock b) exp (PlanBlock plan) (match exp with Some e => e | None => branch_ty b t end)
 | TypesBranchExpr : forall F C e exp plan t,
     (forall b, e <> AEBlock b) -> TypesExpr W F C e exp plan t ->
-    TypesBranch W F C e exp plan t.
+    TypesBranch W F C e exp plan t
+with TypesRecordFields (W : world) : frame -> cx -> list (name * option aexpr) ->
+    list (fld * ty) -> list (fld * expression_plan) -> Prop :=
+| TypesRecordFieldsEmpty : forall F C given, TypesRecordFields W F C given [] []
+| TypesRecordFieldsCons : forall F C given n t syntax plan actual rest plans,
+    In (n, syntax) given ->
+    TypesExpr W F C (match syntax with Some e => e | None => AEPath [n] None end) (Some t) plan actual ->
+    fits actual t -> TypesRecordFields W F C given rest plans ->
+    TypesRecordFields W F C given ((n, t) :: rest) ((n, plan) :: plans)
+with TypesArms (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
+    option ty -> list (pattern_plan * expression_plan) -> ty -> Prop :=
+| TypesArmsEmpty : forall F C exp,
+    TypesArms W F C never [] exp [] (match exp with Some e => e | None => never end)
+| TypesArmsSome : forall F C st arms exp plans covered catch t,
+    st <> never -> TypesArmList W F C st arms exp plans covered catch t ->
+    (catch = true \/ (members st <> [] /\ forall m h, In m (members st) -> head m = Some h -> In h covered)) ->
+    TypesArms W F C st arms exp plans t
+with TypesArmList (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
+    option ty -> list (pattern_plan * expression_plan) -> list nat -> bool -> ty -> Prop :=
+| TypesArmOne : forall F C st pat body exp pattern plan t,
+    TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan t ->
+    opt_fits t exp ->
+    TypesArmList W F C st [(pat, body)] exp [(pattern, plan)] (pattern_heads pattern) (pattern_catches pattern) t
+| TypesArmMore : forall F C st pat body rest exp pattern plan bt plans covered catch rt t,
+    rest <> [] ->
+    TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan bt ->
+    opt_fits bt exp -> TypesArmList W F C st rest exp plans covered catch rt -> Join bt rt exp t ->
+    TypesArmList W F C st ((pat, body) :: rest) exp ((pattern, plan) :: plans)
+      (pattern_heads pattern ++ covered) (pattern_catches pattern || catch) t.
 
 Fixpoint translate_expr (F : frame) (C : cx) (plan : expression_plan) : expr :=
   match plan with
@@ -145,6 +342,15 @@ Fixpoint translate_expr (F : frame) (C : cx) (plan : expression_plan) : expr :=
       translate_demands C demands (translate_call call_site formal f arguments needs
         (map (translate_expr F C) args))
   | PlanAbstractCall f args => EInvoke f (map (translate_expr F C) args)
+  | PlanUnitTag tag => ETag tag [] EUnit
+  | PlanTag tag arguments payload => ETag tag arguments (translate_expr F C payload)
+  | PlanRecord tag arguments fields =>
+      ETag tag arguments (ERecord (map (fun '(n, child) => (n, translate_expr F C child)) fields))
+  | PlanField object field => EField (translate_expr F C object) field
+  | PlanMatch scrutinee arms =>
+      EMatch (translate_expr F C scrutinee)
+        (map (fun '(pattern, body) =>
+          (translate_pattern F pattern, translate_expr F (pattern_scope C pattern) body)) arms)
   end
 with translate_block (F : frame) (C : cx) (plan : block_plan) : expr :=
   match plan with
@@ -164,14 +370,24 @@ with translate_block (F : frame) (C : cx) (plan : block_plan) : expr :=
   | PlanLoopLast body => ESeq (ELoop (translate_block (without_pins (with_loop F)) C body)) EUnit
   end.
 
+Definition translate_record_fields (F : frame) (C : cx) (fields : list (fld * expression_plan)) :=
+  map (fun '(n, child) => (n, translate_expr F C child)) fields.
+
+Definition translate_arms (F : frame) (C : cx) (arms : list (pattern_plan * expression_plan)) :=
+  map (fun '(pattern, body) =>
+    (translate_pattern F pattern, translate_expr F (pattern_scope C pattern) body)) arms.
+
 Scheme types_expr_ind := Induction for TypesExpr Sort Prop
 with types_blke_ind := Induction for TypesBlkE Sort Prop
 with types_blk_ind := Induction for TypesBlk Sort Prop
 with types_args_ind := Induction for TypesArgs Sort Prop
 with types_cond_ind := Induction for TypesCond Sort Prop
-with types_branch_ind := Induction for TypesBranch Sort Prop.
+with types_branch_ind := Induction for TypesBranch Sort Prop
+with types_fields_ind := Induction for TypesRecordFields Sort Prop
+with types_arms_ind := Induction for TypesArms Sort Prop
+with types_arm_list_ind := Induction for TypesArmList Sort Prop.
 Combined Scheme body_typing_ind from types_expr_ind, types_blke_ind, types_blk_ind, types_args_ind,
-  types_cond_ind, types_branch_ind.
+  types_cond_ind, types_branch_ind, types_fields_ind, types_arms_ind, types_arm_list_ind.
 
 Theorem body_translation_agrees : forall W P,
   (forall F C e expected plan t, TypesExpr W F C e expected plan t ->
@@ -185,12 +401,169 @@ Theorem body_translation_agrees : forall W P,
   (forall F C condition plan, TypesCond W F C condition plan ->
     Cond W P F C condition (translate_expr F C plan)) /\
   (forall F C branch expected plan t, TypesBranch W F C branch expected plan t ->
-    Branch W P F C branch expected (translate_expr F C plan) t).
+    Branch W P F C branch expected (translate_expr F C plan) t) /\
+  (forall F C given fields plans, TypesRecordFields W F C given fields plans ->
+    Forall2 (fun ft xf => fst xf = fst ft /\
+      exists n source actual, n = fst ft /\ In (n, source) given /\
+        Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
+          (Some (snd ft)) (snd xf) actual /\ fits actual (snd ft))
+      fields (translate_record_fields F C plans)) /\
+  (forall F C st arms exp plans t, TypesArms W F C st arms exp plans t ->
+    Arms W P F C st arms exp (translate_arms F C plans) t) /\
+  (forall F C st arms exp plans covered catch t, TypesArmList W F C st arms exp plans covered catch t ->
+    ArmsList W P F C st arms exp (translate_arms F C plans) covered catch t).
 Proof.
-  intros W P. apply body_typing_ind; cbn [translate_expr translate_block map]; intros;
+  intros W P. apply body_typing_ind; cbn [translate_expr translate_block translate_record_fields translate_arms map]; intros;
     eauto 8 using ExUnit, ExThis, ExLocal, ExBlock, ExIfThen, ExIfElse, ExReturnUnit, ExReturn,
-    ExBreak, ExCallD, ExCallA, BlkECheck, BlkTail, BlkEmpty, BlkLet, BlkAssign, BlkExprLast,
-    BlkExpr, BlkWhile, BlkLoop, BlkLoopLast, ArgsNil, ArgsCons, CondBool, BranchBlock, BranchExpr.
+    ExBreak, ExCallD, ExCallA, ExUnitTag, ExTag, ExRecord, ExField, ExMatch, BlkECheck, BlkTail,
+    BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop, BlkLoopLast, ArgsNil,
+    ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever, ArmsSome,
+    ArmsOne, ArmsMore, pattern_translation.
+  constructor; [|assumption]. cbn [fst snd]. split; [reflexivity|].
+  exists n, syntax, actual. repeat split; assumption.
+Qed.
+
+Definition HasExpressionPlan (W : world) (P : program) (F : frame) (C : cx) (source : aexpr) : Prop :=
+  forall expected code t, Ex W P F C source expected code t ->
+    exists plan, TypesExpr W F C source expected plan t /\ translate_expr F C plan = code.
+
+Definition HasBranchPlan (W : world) (P : program) (F : frame) (C : cx) (source : aexpr) : Prop :=
+  forall expected code t, Branch W P F C source expected code t ->
+    exists plan, TypesBranch W F C source expected plan t /\ translate_expr F C plan = code.
+
+Theorem unit_tag_source_has_plan : forall W P F C path tag,
+  (forall n, path = [n] -> slook n (c_locals C) = None) ->
+  resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKUnit ->
+  HasExpressionPlan W P F C (AEPath path None).
+Proof.
+  intros W P F C path tag NotLocal Resolve Kind expected code t Typed. inversion Typed; subst.
+  all: try solve [exfalso; match goal with
+    | Read : slook ?name (c_locals ?context) = Some _ |- _ =>
+      pose proof (NotLocal name eq_refl); congruence
+    end].
+  all: try solve [eexists (PlanUnitTag _); split; [eapply TypesUnitTag; eassumption|reflexivity]].
+  all: match goal with
+  | Read : resolve_sym ?world (fr_mod ?frame) ?path = Some ?symbol,
+    Declared : w_decl ?world ?symbol = Some ?d,
+    UnitKind : kind_sym ?world ?target = Some DKUnit,
+    Syntax : d_ast ?d = ADVal _ _ _ |- _ =>
+    assert (symbol = target) by congruence; subst symbol;
+    unfold kind_sym in UnitKind; rewrite Declared, Syntax in UnitKind; discriminate
+  end.
+Qed.
+
+Theorem tag_source_has_plan : forall W P F C path brackets args tag,
+  resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+  (forall child, In child args -> HasExpressionPlan W P F C child) ->
+  HasExpressionPlan W P F C (AECall path brackets args).
+Proof.
+  intros W P F C path brackets args tag Resolve Kind Children expected code t Typed.
+  inversion Typed; subst.
+  all: try solve [
+    match goal with
+    | Function : kind_sym ?world ?symbol = Some DKFn,
+      TagKind : kind_sym ?world ?target = Some DKTag |- _ => congruence
+    end].
+  lazymatch goal with
+  | Child : Ex W P F C ?source (Some ?payload) ?value ?actual,
+    Tag : PayloadOf W ?symbol ?arguments ?payload |- _ =>
+    destruct (Children source (or_introl eq_refl) (Some payload) value actual Child) as (plan & Types & <-);
+    exists (PlanTag symbol arguments plan); split; [eapply TypesTag; eassumption|reflexivity]
+  end.
+Qed.
+
+Theorem record_fields_have_plan : forall W P F C given fields code,
+  (forall n source, In (n, source) given ->
+    HasExpressionPlan W P F C (match source with Some e => e | None => AEPath [n] None end)) ->
+  Forall2 (fun ft xf => fst xf = fst ft /\
+    exists n source actual, n = fst ft /\ In (n, source) given /\
+      Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
+        (Some (snd ft)) (snd xf) actual /\ fits actual (snd ft)) fields code ->
+  exists plan, TypesRecordFields W F C given fields plan /\ translate_record_fields F C plan = code.
+Proof.
+  intros W P F C given fields code Children Typed. induction Typed as
+    [|[n t] [n' expression] fields code [Same (binder & source & actual & Field & Present & Child & Fits)] Tail IH].
+  - exists []. split; [constructor|reflexivity].
+  - cbn [fst snd] in *. subst binder n'.
+    destruct (Children _ _ Present _ _ _ Child) as (plan & TypedPlan & <-).
+    destruct IH as (plans & TypedFields & <-).
+    exists ((n, plan) :: plans). split; [econstructor; eassumption|reflexivity].
+Qed.
+
+Theorem record_source_has_plan : forall W P F C path brackets given,
+  (forall n source, In (n, source) given ->
+    HasExpressionPlan W P F C (match source with Some e => e | None => AEPath [n] None end)) ->
+  HasExpressionPlan W P F C (AERec path brackets given).
+Proof.
+  intros W P F C path brackets given Children expected code t Typed. inversion Typed; subst.
+  lazymatch goal with
+  | Payload : PayloadOf W ?tag ?arguments (TRecord ?field_types),
+    Fields : Forall2 _ ?field_types ?field_code |- _ =>
+    destruct (record_fields_have_plan W P F C given field_types field_code Children Fields)
+      as (plans & TypedFields & <-);
+    exists (PlanRecord tag arguments plans); split; [eapply TypesRecord; eassumption|reflexivity]
+  end.
+Qed.
+
+Theorem field_source_has_plan : forall W P F C source field,
+  HasExpressionPlan W P F C source -> HasExpressionPlan W P F C (AEField source field).
+Proof.
+  intros W P F C source field Object expected code t Typed. inversion Typed; subst.
+  match goal with
+  | Child : Ex W P F C source None ?value ?actual |- _ =>
+    destruct (Object _ _ _ Child) as (plan & TypedPlan & <-);
+    exists (PlanField plan field); split; [eapply TypesField; eassumption|reflexivity]
+  end.
+Qed.
+
+Theorem arm_list_has_plan : forall W P F C st arms exp code covered catch t,
+  ArmsList W P F C st arms exp code covered catch t ->
+  (forall pat body pattern, In (pat, body) arms -> TypesPattern W F st pat pattern ->
+    HasBranchPlan W P F (pattern_scope C pattern) body) ->
+  exists plans, TypesArmList W F C st arms exp plans covered catch t /\ translate_arms F C plans = code.
+Proof.
+  intros W P F C st arms exp code covered catch t Typed.
+  induction Typed as
+    [F C st pat body exp pat_code binds covered catch body_code t Pat Body Fits
+    |F C st pat body rest exp pat_code binds covered catch body_code bt rest_code rest_heads
+      rest_catch rt t Nonempty Pat Body Fits Tail IH Join]; intros Children.
+  - destruct (pattern_has_plan _ _ _ _ _ _ _ _ Pat) as (pattern & TypedPat & <- & <- & <- & <-).
+    destruct (Children _ _ _ (or_introl eq_refl) TypedPat _ _ _ Body) as (plan & TypedBody & <-).
+    exists [(pattern, plan)]. split; [eapply TypesArmOne; eassumption|reflexivity].
+  - destruct (pattern_has_plan _ _ _ _ _ _ _ _ Pat) as (pattern & TypedPat & <- & <- & <- & <-).
+    destruct (Children _ _ _ (or_introl eq_refl) TypedPat _ _ _ Body) as (plan & TypedBody & <-).
+    destruct IH as (plans & TypedRest & <-).
+    { intros p b choice Present. apply Children. now right. }
+    exists ((pattern, plan) :: plans). split; [eapply TypesArmMore; eassumption|reflexivity].
+Qed.
+
+Theorem arms_have_plan : forall W P F C st arms exp code t,
+  Arms W P F C st arms exp code t ->
+  (forall pat body pattern, In (pat, body) arms -> TypesPattern W F st pat pattern ->
+    HasBranchPlan W P F (pattern_scope C pattern) body) ->
+  exists plans, TypesArms W F C st arms exp plans t /\ translate_arms F C plans = code.
+Proof.
+  intros W P F C st arms exp code t Typed Children.
+  destruct Typed as [F C exp|F C st arms exp code covered catch t NotNever Typed Exhaustive].
+  - exists []. split; [constructor|reflexivity].
+  - destruct (arm_list_has_plan _ _ _ _ _ _ _ _ _ _ _ Typed Children) as (plans & TypedArms & <-).
+    exists plans. split; [eapply TypesArmsSome; eassumption|reflexivity].
+Qed.
+
+Theorem match_source_has_plan : forall W P F C scrutinee arms,
+  HasExpressionPlan W P F C scrutinee ->
+  (forall st pat body pattern, In (pat, body) arms -> TypesPattern W F (canon C st) pat pattern ->
+    HasBranchPlan W P F (pattern_scope C pattern) body) ->
+  HasExpressionPlan W P F C (AEMatch scrutinee arms).
+Proof.
+  intros W P F C scrutinee arms Scrutinee Children exp code t Typed. inversion Typed; subst.
+  match goal with
+  | Object : Ex W P F C scrutinee None ?value ?st, ArmReads : Arms W P F C (canon C ?st) arms exp ?xs t |- _ =>
+    destruct (Scrutinee None value st Object) as (plan & TypedObject & <-);
+    destruct (arms_have_plan W P F C (canon C st) arms exp xs t ArmReads (Children st))
+      as (plans & TypedArms & <-);
+    exists (PlanMatch plan plans); split; [eapply TypesMatch; eassumption|reflexivity]
+  end.
 Qed.
 
 (* Slot numbers are absent from the plan. Only the set of source names
@@ -205,6 +578,23 @@ Local Lemma renumbered_named : forall F slots n,
   SameLocalNames F slots -> Named F n -> Named (renumber_body_frame F slots) n.
 Proof. intros F slots n Names NamedBefore. exact (proj1 (Names n) NamedBefore). Qed.
 
+Lemma field_pattern_renumber : forall W F fields source plan slots,
+  TypesFieldPatterns W F fields source plan -> SameLocalNames F slots ->
+  TypesFieldPatterns W (renumber_body_frame F slots) fields source plan.
+Proof.
+  intros W F fields source plan slots Typed Names. induction Typed;
+    eauto using TypesFieldsEmpty, TypesFieldsPun, TypesFieldsIgnore, TypesFieldsRename, renumbered_named.
+Qed.
+
+Lemma pattern_renumber : forall W F st source plan slots,
+  TypesPattern W F st source plan -> SameLocalNames F slots ->
+  TypesPattern W (renumber_body_frame F slots) st source plan.
+Proof.
+  intros W F st source plan slots Typed Names. destruct Typed;
+    eauto using TypesPatternWildcard, TypesPatternBinder, TypesPatternNominal, TypesPatternPayload,
+      TypesPatternRecord, field_pattern_renumber, renumbered_named.
+Qed.
+
 Theorem body_typing_renumber : forall W,
   (forall F C e expected plan t, TypesExpr W F C e expected plan t ->
     forall slots, SameLocalNames F slots -> TypesExpr W (renumber_body_frame F slots) C e expected plan t) /\
@@ -218,13 +608,22 @@ Theorem body_typing_renumber : forall W,
   (forall F C condition plan, TypesCond W F C condition plan ->
     forall slots, SameLocalNames F slots -> TypesCond W (renumber_body_frame F slots) C condition plan) /\
   (forall F C branch expected plan t, TypesBranch W F C branch expected plan t ->
-    forall slots, SameLocalNames F slots -> TypesBranch W (renumber_body_frame F slots) C branch expected plan t).
+    forall slots, SameLocalNames F slots -> TypesBranch W (renumber_body_frame F slots) C branch expected plan t) /\
+  (forall F C given fields plans, TypesRecordFields W F C given fields plans ->
+    forall slots, SameLocalNames F slots -> TypesRecordFields W (renumber_body_frame F slots) C given fields plans) /\
+  (forall F C st arms exp plans t, TypesArms W F C st arms exp plans t ->
+    forall slots, SameLocalNames F slots -> TypesArms W (renumber_body_frame F slots) C st arms exp plans t) /\
+  (forall F C st arms exp plans covered catch t, TypesArmList W F C st arms exp plans covered catch t ->
+    forall slots, SameLocalNames F slots ->
+      TypesArmList W (renumber_body_frame F slots) C st arms exp plans covered catch t).
 Proof.
   intros W. apply body_typing_ind; intros;
     eauto 9 using TypesUnit, TypesThis, TypesLocal, TypesBlock, TypesIfThen, TypesIfElse, TypesReturnUnit,
-    TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesBlkCheck, TypesTail, TypesEmpty,
-    TypesLet, TypesAssign, TypesExprLast, TypesExprThen, TypesWhile, TypesLoop, TypesLoopLast,
-    TypesArgsNil, TypesArgsCons, TypesBool, TypesBranchBlock, TypesBranchExpr, renumbered_named.
+    TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesUnitTag, TypesTag, TypesRecord,
+    TypesField, TypesMatch, TypesBlkCheck, TypesTail, TypesEmpty, TypesLet, TypesAssign, TypesExprLast,
+    TypesExprThen, TypesWhile, TypesLoop, TypesLoopLast, TypesArgsNil, TypesArgsCons, TypesBool,
+    TypesBranchBlock, TypesBranchExpr, TypesRecordFieldsEmpty, TypesRecordFieldsCons, TypesArmsEmpty,
+    TypesArmsSome, TypesArmOne, TypesArmMore, pattern_renumber, renumbered_named.
 Qed.
 
 (* A source-only fragment for checking the reverse bridge. Names listed
