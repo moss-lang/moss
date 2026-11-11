@@ -159,17 +159,105 @@ Local Lemma successful_link_check : forall (passed : bool) message before value 
   check passed message before = Ok (value, after) -> passed = true /\ after = before.
 Proof. intros [] message before value after Run; [now injection Run as _ <-|discriminate]. Qed.
 
-Definition LinkedCodeInProgram (P : program) (s : est) : Prop :=
-  (forall h code, read_code s FunctorTable h = Some code -> funbody_of P h = Some code) /\
-  (forall h target, read_link_target s h = Some target ->
+Definition LinkedCodeInProgram (P : program) (bound : nat) (s : est) : Prop :=
+  (forall h code, bound <= h < es_next s ->
+    read_code s FunctorTable h = Some code -> funbody_of P h = Some code) /\
+  (forall h target pins, bound <= h < es_next s ->
+    read_origin s FunctorTable h = Some (target, pins) ->
     nlook h (linked_origins (program_origins P)) = Some target).
 
 Definition TypedLinkCache (W : world) (P : program) (s : est) : Prop :=
   forall u gg slot, pair_look (u, gg) (es_link s) = Some slot ->
     LinkBody W P u gg (slot_index slot) (link_pins_at s (slot_index slot)).
 
+Lemma initial_typed_link_cache : forall W P start,
+  TypedLinkCache W P (init_state start).
+Proof. intros W P start u gg slot Read. discriminate. Qed.
+
+Theorem linked_code_in_program_earlier : forall P bound before after,
+  CodeTransition before after ->
+  LinkedCodeInProgram P bound after -> LinkedCodeInProgram P bound before.
+Proof.
+  intros P bound before after Effect [Code Origin].
+  pose proof (counter_grows _ _ Effect) as Counter. split.
+  - intros h body Issued Read. apply Code; [lia|].
+    now rewrite (old_slots_preserved _ _ Effect FunctorTable h) by lia.
+  - intros h target pins Issued Read. apply (Origin h target pins); [lia|].
+    now rewrite (old_origins_preserved _ _ Effect FunctorTable h) by lia.
+Qed.
+
+Local Lemma fresh_table_keeps_link_fields : forall E u roles before table after,
+  EaFunctor.fresh_table E u roles before = Ok (table, after) ->
+  es_link after = es_link before /\ es_pins after = es_pins before.
+Proof.
+  intros E u roles. induction roles as [|role rest IH]; intros before table after Run.
+  - inversion Run. now split.
+  - cbn [EaFunctor.fresh_table mmap] in Run.
+    apply EaControlSound.mbind_ok in Run as (head & middle & Head & Run).
+    apply EaControlSound.mbind_ok in Run as (tail & finish & Tail & Run).
+    injection Run as _ <-. specialize (IH _ _ _ Tail).
+    cbn [mbind fresh put_name ret] in Head. inversion Head; subst middle.
+    exact IH.
+Qed.
+
+Local Lemma link_output_roles_keeps_cache : forall E W P u Cu Cb who before result after,
+  TypedLinkCache W P before ->
+  link_output_roles E u Cu Cb who before = Ok (result, after) ->
+  TypedLinkCache W P after.
+Proof.
+  intros E W P u Cu Cb who before result after Cache Run. unfold link_output_roles in Run.
+  apply EaControlSound.mbind_ok in Run as (checked & s1 & Check & Run).
+  match type of Check with
+  | context [match ?missing with Some _ => _ | None => _ end] =>
+      destruct missing; [discriminate Check|]
+  end.
+  injection Check as _ <-.
+  apply EaControlSound.mbind_ok in Run as (table & s2 & Allocated & Run).
+  apply EaControlSound.mbind_ok in Run as (promised & s3 & Promised & Run).
+  unfold pure in Promised.
+  match type of Promised with
+  | context [match ?provided with Ok _ => _ | Err _ => _ end] =>
+      destruct provided; [|discriminate Promised]
+  end.
+  injection Promised as _ <-. injection Run as _ <-.
+  destruct (fresh_table_keeps_link_fields _ _ _ _ _ _ Allocated) as [Links Pins].
+  unfold TypedLinkCache, link_pins_at in *. rewrite Links, Pins. exact Cache.
+Qed.
+
+Local Lemma emitted_link_cache_rows : forall u gg pins code before h after,
+  emit_linked_body u gg pins code before = Ok (h, after) ->
+  es_link after = ((u, gg), h) :: es_link before.
+Proof.
+  intros u gg pins code before h after Run.
+  unfold emit_linked_body, emit_fun_code, reserve_code, mbind, fresh, ret,
+    write_fun_code, set_fun_body, put_pins, put_link in Run.
+  inversion Run. reflexivity.
+Qed.
+
+Theorem emit_linked_body_preserves_typed_cache : forall W P u gg pins code before h after,
+  LinkRecords before -> TypedLinkCache W P before ->
+  emit_linked_body u gg pins code before = Ok (h, after) ->
+  LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)) ->
+  TypedLinkCache W P after.
+Proof.
+  intros W P u gg pins code before h after Registered Cache Emitted Linked target provider slot Lookup.
+  rewrite (emitted_link_cache_rows _ _ _ _ _ _ _ Emitted) in Lookup.
+  cbn [pair_look fst snd] in Lookup.
+  destruct (Nat.eqb target u && Nat.eqb provider gg) eqn:Same.
+  - apply andb_true_iff in Same as [Target Provider].
+    apply Nat.eqb_eq in Target, Provider. subst target provider.
+    now injection Lookup as <-.
+  - pose proof (EaBindCodeEffects.cached_link_records_origin before target provider slot before Registered
+      ltac:(unfold get_link; now rewrite Lookup)) as (_ & Below & Origin & _).
+    pose proof (proj1 (EaBindCodeEffects.emit_linked_body_records_origin _ _ _ _ _ _ _ Emitted)) as Effect.
+    pose proof (old_origins_preserved _ _ Effect FunctorTable _ Below) as Kept.
+    rewrite Origin in Kept. cbn [read_origin] in Kept.
+    destruct (read_link_target after (slot_index slot)); [|discriminate].
+    injection Kept as _ Pins. rewrite Pins. exact (Cache _ _ _ Lookup).
+Qed.
+
 Section Linking.
-Variables (E : env) (P : program) (R : rec) (bound : nat).
+Variables (E : env) (P : program) (R : rec) (bound : nat) (Contains : est -> Prop).
 Let W := e_W E.
 
 Hypotheses
@@ -177,25 +265,32 @@ Hypotheses
   (Budget : EaBudget.metadata_budget W bound < e_metadata_fuel E)
   (Contexts : EaContextTableSound.ContextTableSound W)
   (FamilyComplete : forall u, Family W u -> EaFamily.is_family E u = true)
-  (NestedTyping : forall F C items before wrap Cb Fb made after,
-    r_bind_items R F C items before = Ok (((wrap, Cb), Fb), made, after) ->
-    BindItems W P F C items wrap Cb Fb made)
+  (LinkedRead : forall state, Contains state -> LinkedCodeInProgram P bound state)
+  (ReadEarlier : forall before after,
+    CodeTransition before after -> Contains after -> Contains before)
   (NestedEffect : forall F C items, PreservesOldCode (r_bind_items R F C items)).
 
 Theorem link_body_sound : forall u gg before h after,
   kind_sym W u = Some DKFunctor ->
   bound <= es_next before ->
-  TypedLinkCache W P before ->
-  LinkedCodeInProgram P after ->
+  LinkRecords before -> TypedLinkCache W P before ->
+  Contains after ->
+  (forall dg bodies Cg nsg wrap Cb Fb made finish,
+    FunCtx W gg Cg nsg -> Contains finish ->
+    let Fg := link_body_frame E u dg bodies in
+    r_bind_items R Fg Cg (List.concat bodies) before = Ok (((wrap, Cb), Fb), made, finish) ->
+    BindItems W P Fg Cg (List.concat bodies) wrap Cb Fb made /\ TypedLinkCache W P finish) ->
   EaFunctor.link_body E R u gg before = Ok (h, after) ->
-  LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)).
+  LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)) /\
+  TypedLinkCache W P after.
 Proof.
-  intros u gg before h after Abstract Floor Cache [CodeTable OriginTable] Run.
+  intros u gg before h after Abstract Floor Registered Cache Final NestedTyping Run.
+  destruct (LinkedRead _ Final) as [CodeTable OriginTable].
   unfold EaFunctor.link_body in Run. fold W in Run.
   apply EaControlSound.mbind_ok in Run as (cached & s1 & Cached & Run).
   unfold get_link in Cached. injection Cached as <- <-.
   destruct (pair_look (u, gg) (es_link before)) as [old|] eqn:CacheRead.
-  { injection Run as <- <-. exact (Cache _ _ _ CacheRead). }
+  { injection Run as <- <-. split; [exact (Cache _ _ _ CacheRead)|exact Cache]. }
   apply EaControlSound.mbind_ok in Run as (dg & s1 & Read & Run).
   apply successful_link_lift in Read as [Provider ->].
   destruct (d_ast dg) as [| | | | | | | |name parameters inputs results body] eqn:Ast; try discriminate Run.
@@ -205,14 +300,13 @@ Proof.
   apply EaControlSound.mbind_ok in Run as ([Cg nsg] & s3 & Read & Run).
   apply successful_link_lift in Read as [BodyContext ->].
   set (fixed_inputs := fixed W (e_metadata_fuel E) u) in *.
-  match type of Run with
-  | context [r_bind_items R ?frame Cg (List.concat bodies)] => set (Fg := frame) in Run
-  end.
+  set (Fg := link_body_frame E u dg bodies) in Run.
   apply EaControlSound.mbind_ok in Run as ([[[wrap Cb] Fb] made] & s4 & Body & Run).
   apply EaControlSound.mbind_ok in Run as (made_check & s5 & Made & Run).
   apply successful_link_check in Made as [Made ->].
   apply EaControlSound.mbind_ok in Run as ([[outs table] [Cr keys]] & s6 & Outputs & Run).
-  pose proof (counter_grows _ _ (NestedEffect _ _ _ _ _ _ Body)) as Grows.
+  pose proof (NestedEffect _ _ _ _ _ _ Body) as BodyEffect.
+  pose proof (counter_grows _ _ BodyEffect) as Grows.
   destruct (EaLinkAllocationSound.link_output_roles_sound E bound _ _ _ _ _ _ _ _ _ _
     Declared Budget (Nat.le_trans _ _ _ Floor Grows) Outputs) as (OutputsTyped & _ & Next).
   set (generation := EaFunctor.gen_of table) in *.
@@ -260,16 +354,22 @@ Proof.
   }
   destruct FamilyReady as [FamilyRule ->].
   destruct (EaBindCodeEffects.emit_linked_body_records_origin _ _ _ _ _ _ _ Run)
-    as (_ & Code & Recorded & Range).
+    as (Emitted & Code & Recorded & Range).
+  pose proof (EaBindCodeEffects.link_output_roles_code_effect _ _ _ _ _ _ _ _ Outputs) as RolesEffect.
+  pose proof (code_transition_compose _ _ _ RolesEffect Emitted) as AfterBody.
+  pose proof (link_records_preserved _ _ BodyEffect Registered) as BodyRecords.
+  pose proof (ReadEarlier _ _ AfterBody Final) as BodyRead.
+  assert (Issued : bound <= slot_index h < es_next after) by lia.
+  pose proof (OriginTable _ _ _ Issued Recorded) as OriginInProgram.
   cbn [read_origin] in Recorded.
   destruct (read_link_target after (slot_index h)) as [origin|] eqn:Origin; [|discriminate].
-  injection Recorded as -> ->.
+  injection Recorded as OriginPair PinsAt. subst origin.
   assert (FreshSlot : Fresh W (slot_index h)).
   { unfold Fresh. destruct (w_decl W (slot_index h)) as [d|] eqn:Collision; [|reflexivity].
     pose proof (Declared _ _ Collision). lia. }
   assert (FreshCode : TranslatesLinkedBody W P u gg (slot_index h) Cu Cg site outs bindings keys).
-  { split; [exact FreshSlot|]. split; [|apply OriginTable; exact Origin].
-    apply CodeTable. replace (map (fun k => rkey_of site (at_site site k)) keys)
+  { split; [exact FreshSlot|]. split; [|exact OriginInProgram].
+    apply CodeTable; [exact Issued|]. replace (map (fun k => rkey_of site (at_site site k)) keys)
       with (map (fun k => rkof site (at_site site k)) keys); [exact Code|].
     apply map_ext. intro key. apply EaSatisfiesSound.rkof_exact. }
   assert (KindProvider : kind_sym W gg = Some DKFunctor).
@@ -278,56 +378,76 @@ Proof.
   { pose proof (Contexts _ _ _ TargetContext) as Valid. now rewrite Abstract in Valid. }
   assert (ProviderContext : FunCtx W gg Cg nsg).
   { pose proof (Contexts _ _ _ BodyContext) as Valid. now rewrite KindProvider in Valid. }
-  eapply (@LB W P u gg (slot_index h) dg name parameters inputs results bodies Cu nsu Cg nsg
-    Fg wrap Cb Fb made outs generation Cr keys bindings pins); try reflexivity; try eassumption.
-  - eapply EaNumbering.mk_frame_vars_numbering; [reflexivity|constructor].
-  - intro t. unfold Fg. cbn [fr_pins]. rewrite filter_In, EaTypesSound.nmem_spec.
-    rewrite (EaResultBudget.mentions_exact W bound Declared), (EaResultBudget.poly_exact W bound Declared);
-      [tauto|exact Budget|exact Budget].
-  - eapply NestedTyping; exact Body.
-  - intros t Member. pose proof (proj1 (forallb_forall _ _) Made t Member) as Unbound.
-    apply negb_true_iff in Unbound. unfold bound_in in Unbound.
-    now destruct (nlook t (c_ty Cu)).
-  - apply link_pin_provisions. exact PinKeys.
-  - apply link_result_realizes. exact Results.
-  - now apply binds_of_sound.
-  - intros t tx. unfold pins. rewrite linked_pins_spec.
-    unfold fixed_inputs. rewrite (EaResultBudget.fixed_exact W bound Declared); [tauto|exact Budget].
-  - intros t tx v Pin Generation.
-    pose proof (pins_have_link_scope _ _ _ _ _ PinsSafe t tx v Pin Generation) as (Live & Unmerged & NotMade & Fixed).
-    split; [exact Live|]. split; [exact Unmerged|]. split; [exact NotMade|]. intro Taken.
-    exact (proj1 (EaResultBudget.fixed_exact W bound Declared _ u Budget v) (Fixed Taken)).
+  destruct (NestedTyping _ _ _ _ _ _ _ _ _ ProviderContext BodyRead Body) as [TypedBody BodyCache].
+  assert (Linked : LinkBody W P u gg (slot_index h) pins).
+  {
+    eapply (@LB W P u gg (slot_index h) dg name parameters inputs results bodies Cu nsu Cg nsg
+      Fg wrap Cb Fb made outs generation Cr keys bindings pins); try reflexivity; try eassumption.
+    - eapply EaNumbering.mk_frame_vars_numbering; [reflexivity|constructor].
+    - intro t. change (In t (filter (fun x => nmem x (poly W (e_metadata_fuel E) u))
+          (mentions W (e_metadata_fuel E) u)) <-> Mentions W u t /\ Poly W u t).
+      rewrite filter_In, EaTypesSound.nmem_spec.
+      now rewrite (EaResultBudget.mentions_exact W bound Declared _ u Budget t),
+        (EaResultBudget.poly_exact W bound Declared _ u Budget t).
+    - intros t Member. pose proof (proj1 (forallb_forall _ _) Made t Member) as Unbound.
+      apply negb_true_iff in Unbound. unfold bound_in in Unbound.
+      now destruct (nlook t (c_ty Cu)).
+    - apply link_pin_provisions. exact PinKeys.
+    - apply link_result_realizes. exact Results.
+    - now apply binds_of_sound.
+    - intros t tx. unfold pins. rewrite linked_pins_spec.
+      unfold fixed_inputs. rewrite (EaResultBudget.fixed_exact W bound Declared); [tauto|exact Budget].
+    - intros t tx v Pin Generation.
+      pose proof (pins_have_link_scope _ _ _ _ _ PinsSafe t tx v Pin Generation) as (Live & Unmerged & NotMade & Fixed).
+      split; [exact Live|]. split; [exact Unmerged|]. split; [exact NotMade|]. intro Taken.
+      exact (proj1 (EaResultBudget.fixed_exact W bound Declared _ u Budget v) (Fixed Taken)).
+  }
+  assert (Current : LinkBody W P u gg (slot_index h) (link_pins_at after (slot_index h)))
+    by (rewrite PinsAt; exact Linked).
+  split; [exact Current|].
+  eapply emit_linked_body_preserves_typed_cache; [| |exact Run|exact Current].
+  - exact (link_records_preserved _ _ RolesEffect BodyRecords).
+  - eapply link_output_roles_keeps_cache; eassumption.
 Qed.
 
 End Linking.
 
 Theorem assembled_linked_code_in_program : forall E bound entry P after,
   EaMain.assemble E bound entry (init_state bound) = Ok (P, after) ->
-  LinkedCodeInProgram P after.
+  LinkedCodeInProgram P bound after.
 Proof.
   intros E bound entry P after Run. split.
-  - intros h code Read. rewrite (proj2 (EaAssemblyCodeEffects.assembled_code_lookup_exact _ _ _ _ _ Run)).
+  - intros h code _ Read. rewrite (proj2 (EaAssemblyCodeEffects.assembled_code_lookup_exact _ _ _ _ _ Run)).
     exact Read.
-  - intros h target Read. rewrite (assembled_link_origin _ _ _ _ _ _ h Run). exact Read.
+  - intros h target pins _ Read. rewrite (assembled_link_origin _ _ _ _ _ _ h Run).
+    fold (read_link_target after h). cbn [read_origin] in Read.
+    destruct (read_link_target after h); [|discriminate]. now injection Read as -> _.
 Qed.
 
-Theorem link_body_at_checked_decls : forall E bound P fuel u gg before h after,
+Theorem link_body_at_checked_decls : forall E bound P fuel (Contains : est -> Prop) u gg before h after,
   (forall n d, w_decl (e_W E) n = Some d -> n < bound) ->
   EaBudget.metadata_budget (e_W E) bound < e_metadata_fuel E ->
   EaMain.decls_form E bound = Ok tt ->
   EaContextTableSound.ContextTableSound (e_W E) ->
-  (forall F C items start wrap Cb Fb made finish,
-    r_bind_items (EaMain.mkrec (EaMain.run E fuel)) F C items start =
-      Ok (((wrap, Cb), Fb), made, finish) ->
-    BindItems (e_W E) P F C items wrap Cb Fb made) ->
+  (forall state, Contains state -> LinkedCodeInProgram P bound state) ->
+  (forall start finish, CodeTransition start finish -> Contains finish -> Contains start) ->
   kind_sym (e_W E) u = Some DKFunctor ->
   bound <= es_next before ->
-  TypedLinkCache (e_W E) P before ->
-  LinkedCodeInProgram P after ->
+  LinkRecords before -> TypedLinkCache (e_W E) P before ->
+  Contains after ->
+  (forall dg bodies Cg nsg wrap Cb Fb made finish,
+    FunCtx (e_W E) gg Cg nsg -> Contains finish ->
+    let Fg := link_body_frame E u dg bodies in
+    r_bind_items (EaMain.mkrec (EaMain.run E fuel)) Fg Cg (List.concat bodies) before =
+      Ok (((wrap, Cb), Fb), made, finish) ->
+    BindItems (e_W E) P Fg Cg (List.concat bodies) wrap Cb Fb made /\
+    TypedLinkCache (e_W E) P finish) ->
   EaFunctor.link_body E (EaMain.mkrec (EaMain.run E fuel)) u gg before = Ok (h, after) ->
-  LinkBody (e_W E) P u gg (slot_index h) (link_pins_at after (slot_index h)).
+  LinkBody (e_W E) P u gg (slot_index h) (link_pins_at after (slot_index h)) /\
+  TypedLinkCache (e_W E) P after.
 Proof.
-  intros E bound P fuel u gg before h after Declared Budget Decls Contexts Nested Kind Floor Cache Code Run.
+  intros E bound P fuel Contains u gg before h after Declared Budget Decls Contexts
+    LinkedRead ReadEarlier Kind Floor Records Cache Code Nested Run.
   eapply link_body_sound; try eassumption.
   - exact (EaFamilyComplete.decls_form_family_classifier E bound Declared Budget Decls).
   - destruct (EaExpressionCodeEffects.mkrec_code_effect _ (EaExpressionCodeEffects.run_code_effect E fuel))

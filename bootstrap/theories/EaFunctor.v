@@ -305,6 +305,12 @@ Definition emit_linked_body (u gg : nat) (pins : subst) (code : functor_code)
   let* _ := put_link (u, gg) h in
   ret h.
 
+Definition link_body_frame (u : nat) (dg : decl) (bodies : list (list (spec * option aexpr))) : frame :=
+  let items := List.concat bodies in
+  let protected := filter (fun t => nmem t (poly W metadata_fuel u)) (mentions W metadata_fuel u) in
+  Frame (d_mod dg) None None false
+    (mk_frame_vars false [] (flat_map (item_names W fuel (d_mod dg)) items)) [] [] protected.
+
 (* SOUND: link_body u gg = Ok h -> LinkBody W P u gg (slot_index h) pins, pins the
    ones it records (get_pins h) (P final, I2) *)
 Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
@@ -321,10 +327,7 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
       let* (Cg, nsg) := lift (w_context W gg) ("the context of " ++ ng ++ " does not form") in
       let fu := fixed W metadata_fuel u in
       let its := List.concat bodies in
-      let Fg := Frame (d_mod dg) None None false (mk_frame_vars false [] (flat_map (item_names W fuel (d_mod dg)) its))
-                      [] [] (let pl := poly W metadata_fuel u in
-                             (* 3d (Q6, N5 #95): P(F) ∩ M(F) *)
-                             filter (fun t => nmem t pl) (mentions W metadata_fuel u)) in
+      let Fg := link_body_frame u dg bodies in
       let* (((wrap, Cb), Fb), made) := r_bind_items R Fg Cg its in
       let* _ := check (forallb (fun t => negb (bound_in Cu t)) made) (bound_to ++ " makes a type " ++ nu ++ " takes as an input (D84)") in
       let* ((outs, gtab), (Cr, ks)) := link_output_roles u Cu Cb bound_to in
