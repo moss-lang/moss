@@ -10,6 +10,8 @@ the test suite holds the compiler to it. It runs one pipeline:
    `Audit.Loader.Bundled` for those reads.
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
    `Audit.Semantics.program` from the bundle, or rejects it.
+   `BootstrapVerified.elaborate_sound` proves that a successful build
+   satisfies Audit’s elaboration judgment and links against Base.
 3. **Passes**: `ProgramFastPath.fastpath`, `ProgramPrune.prune` and
    `ProgramCapTrim.captrim`, in the order extracted from `BootstrapRun.passes`.
 4. **Interpreter**: `InterpreterCompiled.crun_program`, the closure-compiled
@@ -31,9 +33,10 @@ The public build takes a finite snapshot of canonical paths and UTF-8 files.
 A successful CLI load supplies that snapshot when its normalized paths are
 canonical and its loaded bytes are UTF-8. The CLI parser can accept a
 non-UTF-8 byte in a comment, so the theorem requires UTF-8 for the loaded
-bytes. The combined theorem also takes elaborator body soundness and the
-driver's compiled table equations as premises. It derives the public build,
-interface compatibility, and the corresponding run without a wrong outcome.
+bytes. The combined theorem uses the driver's compiled table equations
+and proves that a successful load, elaboration, and run satisfy the public
+build and execution judgments, that Base is compatible, and that the
+execution's outcome cannot be `Wrong`.
 [Snapshot bridge](../theories/SnapshotLoader.v) · [Pipeline theorem](../assumptions/Certificate.v)
 
 Source loading uses `LoadWorld.v`. The read-only tag parameter check uses
@@ -53,15 +56,18 @@ supplies the interface laws once the program is ready to link.
 `BaseHost.call_in_agrees` proves that the extracted call shares its decoded
 operation with the Base adapter and that direct I32 steps implement the
 same call as `BaseCall.call`.
-**Whole elaborator soundness remains open.**
-The `EaTypesSound`, `EaMentionsSound`, `EaDependencyFuel`, `EaContextFuel`
-and `EaWorldSound` proofs cover readers, their fuel conditions and the
-world builder. Ea's `SOUND:` comments state the intended per-function
-contracts. The executable trusts OCaml's recursive table binding and
+`EaBodyAssembly.elaborate_bodies_sound` verifies body elaboration, and
+`BootstrapVerified.build_sound` combines it with the front end and the
+world checks. The executable trusts OCaml's recursive table binding and
 array representation, host context setup, I/O, and extraction directives.
 The decoder memo in `primCache.ml` stores pure results alongside immutable
 operation names and operands. `check.sh` audits the extracted roots'
 assumptions.
+
+The compiler package validates S1 as WebAssembly, runs its optimized form
+under Wasmtime to produce S2, and compares the raw S1 and S2 bytes.
+The soundness certificate covers the reference pipeline that produces S1.
+[Compiler build](../../flake.nix)
 
 ## Files
 
