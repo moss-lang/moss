@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost.
+From NM Require Parse EaCallSound EaCopyNeedSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -146,6 +146,7 @@ Qed.
    the fast path and pruning, as moss-ref runs them (run/driver.ml). *)
 Module CapTrimTop := ProgramCapTrim.TrimRuns BaseHost.Concrete PublicPublic.
 Module NativeRunTop := BootstrapRun.Native BaseHost.Concrete PublicPublic.
+Module FuelTop := InterpreterFuel.PublicFuel BaseHost.Concrete PublicPublic.
 Definition captrim_runs_agree : forall program interface initial result,
   PruneTop.code_blind interface ->
   PublicPublic.Runs (ProgramCapTrim.captrim program) interface initial result
@@ -579,7 +580,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BaseHost.primitive_laws);
   root (@BaseHost.default_compatible);
   root (@BaseHost.primitive_ignores_code);
-  root (@concrete_run_sound)].
+  root (@concrete_run_sound);
+  root (@FuelTop.runs_deterministic)].
 
 Print Assumptions certificate_roots.
 
