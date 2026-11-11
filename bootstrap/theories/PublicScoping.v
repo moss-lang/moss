@@ -1288,7 +1288,7 @@ Proof.
   (* ---- Ex ---- *)
   - destruct D as [F C exp|F C exp t Th|F C exp n t mu L Nm|F C exp pa s Hl R K|F C exp pa s d n t0 t Hl R D' Ast L
                   |F C exp pa s d n t0 i t x Hl R D' Ast As T Ex0|F C exp pa a args s bs xs pay y v ty R K B Fx Pay Ea Ey Fi
-                  |F C exp pa args f Cf ns sm th g xs wrap C' R K Def Ctx Dm Sat CT Sig As
+                  |F C exp pa args f Cf ns th g xs wrap C' R K Def Ctx Dm Needs CT Sig As
                   |F C exp pa args f g xs R K Abs L As|F C exp pa bs args f x t R K Br Dx|F C exp o pa args ox ot x t Eo Mc
                   |F C exp op y lib n m ox ot x t Op Ls Ey Hd Pv|F C exp op l r lib n m ox ot x t Op Ls El Hd Pv
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t Cd Bb Br Of J
@@ -1361,7 +1361,7 @@ Proof.
       exact (join_scoped W C _ _ _ _ J Hb Hr Se).
   (* ---- MethCall ---- *)
   - destruct D as [F C ox ot pa args m x t Len Rd Pv|F C ox ot n args h att m x t Hd At Sc Ml Pv
-                  |F C ox ot n args h att Ca ns sm th g xs rargs wrap Cd Hd At Nw Def Ra Ctx Dm Sat CT Sig As
+                  |F C ox ot n args h att Ca ns th g xs rargs wrap Cd Hd At Nw Def Ra Ctx Dm Needs CT Sig As
                   |F C ox ot n args h att x t Hd At Nw Abs Pv|F C ox ot n args m x t Na Sc Pv]; intros Fc Ff Cs Ot So.
     + exact (provided_scoped _ _ _ _ _ _ _ _ Pv Fc Ff Cs Ot So).
     + exact (provided_scoped _ _ _ _ _ _ _ _ Pv Fc Ff Cs Ot So).

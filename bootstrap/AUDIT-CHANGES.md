@@ -146,7 +146,7 @@ entry they belong to.
 | 112 | Public contracts consume one platform at build and run time | sep S5b | none for the Base specialization |
 | 113 | Separate concrete Base definitions into AuditBase.v | sep S5c | none (relocation) |
 | 114 | Rule B reads each structured dependency through its merge class | M4a | C |
-| 115 | Separate application typing and translation | typing/translation | none (equivalent factoring) |
+| 115 | Separate call and application typing from translation | typing/translation | none (equivalent factoring) |
 | 116 | Scope fresh identities in applications and functor copies | names | none (equivalent factoring) |
 | 117 | Call instantiation respects merge classes | M4a | none (equivalent on formed contexts) |
 | 118 | Fixed inputs and lambda annotations compare by merge class | M4b | none (equivalent on formed contexts) |
@@ -3598,20 +3598,21 @@ using one fresh atom per abstract class must preserve that behaviour
 - **Class C** (criterion 2, coherence). Both executable frontends use the
   same class check. The public safety certificate checks the revised rule.
 
-### 115. Separate application typing and translation
+### 115. Separate call and application typing from translation
 
 - **Typing.** `NeedsSatisfied` checks that the caller supplies a callee's
-  needs with the required types and meanings. `TypesApplication` uses it
+  needs with the required types and meanings. Direct calls use this check,
+  including calls to defined attached methods. `TypesApplication` uses it
   to check an abstract functor application and its result. This includes
   the identities of the result types and the application scope.
 - **Translation.** `satisfaction_map` pairs callee and caller run-time keys.
-  `translate_application` uses that map and the checked result to emit the
-  binding. The current encoding of output identities is shared by typing
+  `translate_call` emits direct calls with that map. `translate_application`
+  uses it and the checked result to emit the binding. The current encoding of output identities is shared by typing
   and translation.
 - **Fidelity.** The previous application rule checked the same conditions
-  and required its satisfaction map to equal the computed one. The
-  application now computes that map directly. The safety proof consumes
-  the split rule, and the executable elaborator is unchanged.
+  and required its satisfaction map to equal the computed one. Direct
+  calls and applications now compute that map directly. The safety proof
+  consumes the split rules, and the executable elaborator is unchanged.
 
 ### 116. Scope fresh identities in abstract applications and functor copies
 

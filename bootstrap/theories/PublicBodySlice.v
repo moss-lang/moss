@@ -5453,10 +5453,12 @@ Proof.
   remember (A.canon C ot0) as ot eqn:Ot.
   destruct Meth as [F C ox ot pa args m x t Long Det Prov
                    |F C ox ot n args h att m x t Head Att Scope Mth Prov
-                   |F C ox ot n args h att Ca ns sm th g xs rargs wrap Cd Head Att NotWin Def Rargs Ctx Dem Sat CT Sig Args RB
+                   |F C ox ot n args h att Ca ns th g xs rargs wrap Cd Head Att NotWin Def Rargs Ctx Dem Needs CT Sig Args RB
                    |F C ox ot n args h att x t Head Att NotWin Abs Prov
                    |F C ox ot n args m x t NoAtt Scope Prov]; subst ot;
     try exact (provided_step F C o ox ot0 _ args x t B Do BrkO BrkA Prov).
+  pose (sm := A.satisfaction_map Cd Ca th ns).
+  assert (Sat : A.Satisfies Cd Ca th ns sm) by (split; [reflexivity|exact Needs]).
   exact (attached_step F C o ox ot0 _ n args h att Ca ns sm th g xs rargs wrap Cd B Do BrkO BrkA
     eq_refl Head Att Def Rargs Ctx Dem Sat CT Sig Args RB).
 Qed.
@@ -5487,7 +5489,7 @@ Proof.
       |F C exp pa s dcl n t0 t NotLocal R Decl Ast Val
       |F C exp pa s dcl n t0 i t x NotLocal R Decl Ast NoAssume TyOf0 Init
       |F C exp pa a args s bs xs pay y v vty R K Br F2 Pay Args1 Dy Fits
-      |F C exp pa args f Cf ns sm th sg xs wrap C' R K Def Ctx Dem Sat CT Sig Args RB
+      |F C exp pa args f Cf ns th sg xs wrap C' R K Def Ctx Dem Needs CT Sig Args RB
       |F C exp pa args f sg xs R K Abs Fn Args
       |F C exp pa bs args f x t R K Br Dx
       |F C exp o pa args ox ot x t Do Dm
@@ -5548,6 +5550,8 @@ Proof.
       exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs pay w
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
+      pose (sm := A.satisfaction_map C' Cf th ns).
+      assert (Sat : A.Satisfies C' Cf th ns sm) by (split; [reflexivity|exact Needs]).
       pose proof Pre0 as (_ & _ & _ & _ & (_ & _ & SectionC & _) & _).
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl eq_refl Dem
         (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns th r0 m0 Fm (table_in_self F C Fm) eq_refl

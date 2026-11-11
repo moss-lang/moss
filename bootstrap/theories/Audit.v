@@ -3435,6 +3435,10 @@ Definition NeedsSatisfied (C Cs : cx) (th : subst) (ns : list item) : Prop :=
 Definition satisfaction_map (C Cs : cx) (th : subst) (ns : list item) : smap :=
   map (fun k => (rkey_of Cs k, rkey_of C (at_th C th k))) ns.
 
+Definition translate_call (C Cs : cx) (f : fsym) (th : subst)
+    (needs : list item) (args : list expr) : expr :=
+  ECall f th (satisfaction_map C Cs th needs) args.
+
 Definition Satisfies (C Cs : cx) (th : subst) (ns : list item) (sm : smap) : Prop :=
   sm = satisfaction_map C Cs th ns /\ NeedsSatisfied C Cs th ns.
 
@@ -4419,13 +4423,13 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     Ex W P F C (AECall pa a args) exp (ETag s xs v) (TNom s xs)
 (* [D20]/[D21] a defined fn: its needs answered from here (sm), its
    signature read with the meanings here *)
-| ExCallD : forall F C exp pa args f Cf ns sm th g xs wrap C',
+| ExCallD : forall F C exp pa args f Cf ns th g xs wrap C',
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
     (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
     CtxOf W f Cf ns ->
     (* family demands read f's needs through θ (rule B's companion) *)
     Demand W C (map (at_th C th) ns) [] C wrap C' ->
-    Satisfies C' Cf th ns sm -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
+    NeedsSatisfied C' Cf th ns -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
     (* Q4: the arguments in the caller's context, as at every call
        (MCAttachedDefined, PrFamily): what the call demands is not in force
        for them, so an argument means what it means outside the call (D77:
@@ -4438,7 +4442,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     (* rule B *)
     RequirementsInForce C Cf ->
     Ex W P F C (AECall pa None args) exp
-       (wrap (ECall f th sm xs)) (sg_ret g)
+       (wrap (translate_call C' Cf f th ns xs)) (sg_ret g)
 (* an abstract fn: whatever provides it here *)
 | ExCallA : forall F C exp pa args f g xs,
     resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
@@ -4580,7 +4584,7 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     MethCall W P F C ox ot [n] args x t
 (* [D61] rule 1, a defined attached method: a direct call, at the
    receiver's instantiation ([D74]) *)
-| MCAttachedDefined : forall F C ox ot n args h att Ca ns sm th g xs rargs wrap Cd,
+| MCAttachedDefined : forall F C ox ot n args h att Ca ns th g xs rargs wrap Cd,
     head ot = Some h -> Attached W h n att ->
     ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
     (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
@@ -4589,11 +4593,11 @@ with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> l
     Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
       (map (at_th (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) th) ns) []
       (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
-    Satisfies Cd Ca th ns sm -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
+    NeedsSatisfied Cd Ca th ns -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
     Args W P F C args (sg_params g) xs ->
     RequirementsInForce (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca ->
     MethCall W P F C ox ot [n] args
-      (wrap (ECall att th sm (ox :: xs))) (sg_ret g)
+      (wrap (translate_call Cd Ca att th ns (ox :: xs))) (sg_ret g)
 (* an abstract attached method: a key the context provides ([D36]) *)
 | MCAttachedAbstract : forall F C ox ot n args h att x t,
     head ot = Some h -> Attached W h n att ->
