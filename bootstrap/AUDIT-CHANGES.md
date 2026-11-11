@@ -1117,7 +1117,7 @@ executable tests unless noted.
   `examples/`, `bootstrap/examples/` (before the expand examples), and it
   accepts `src/main.moss`, the self-hosted compiler.
 - **Proof.** `public_safety` unchanged; PublicBoolTyping and
-  AuditBuildExample destructure one more conjunct.
+  PublicBuildExample destructure one more conjunct.
 - **Class B.** Native crashes on everything it rejects except
   control-functor-const, which it compiles. Follow-up: E38 (open; the
   oracle needs the check for E11).
@@ -1359,7 +1359,7 @@ executable tests unless noted.
   edges (for expand-merged-yx only the message's vertex differs). The variant has no lambda or functor-body merges; Audit
   has them too.
 - **Proof.** `public_safety` unchanged: safety never reads the conjunct.
-  `AuditBuildExample.main_bounded` proves the new constraints for the
+  `PublicBuildExample.main_bounded` proves the new constraints for the
   unit program (`node_cx_unmerged`: main's context merges nothing, and
   there is no lambda or linked body).
 - **Class B** (a strengthening of #48's check, which the implementations
@@ -1707,7 +1707,7 @@ executable tests unless noted.
   Audit's verdict changes on the 12 (accept to reject), and on no other
   corpus program by this comparison.
 - **Proof.** `public_safety` unchanged: the conjunct is last and no proof
-  reads it. `AuditBuildExample.main_assumes` proves it of the example
+  reads it. `PublicBuildExample.main_assumes` proves it of the example
   world (main is the only symbol and its nesting is empty).
 - **Class A**, except tests/errors/assumed_need_incoherent.moss, which native accepts
   (class B on that program). Native accepted it only because g never calls
@@ -2335,7 +2335,7 @@ executable tests unless noted.
   every library declaration forms as written. `src/main.moss` is accepted
   by both.
 - **Proof.** `public_safety` unchanged: the conjunct is last and no proof
-  reads it. `AuditBuildExample.main_decls` proves it of the example world.
+  reads it. `PublicBuildExample.main_decls` proves it of the example world.
 - **Class.** A for the cycles (mirrors both implementations); B for an
   unused context that names something not in scope, by section 7.
 
@@ -2445,7 +2445,7 @@ executable tests unless noted.
 - **Corpus.** The comparison of #74 (same variant): no corpus program's
   verdict changes through these checks, every `lib/*.moss` module's
   declarations form, and `src/main.moss` is accepted.
-- **Proof.** No proof reads `DeclsForm`. `AuditBuildExample.main_decls`
+- **Proof.** No proof reads `DeclsForm`. `PublicBuildExample.main_decls`
   now shows main's signature forms.
 - **Class.** B, by criteria section 7 (both implementations accept every
   rejected test).
@@ -2772,7 +2772,7 @@ executable tests unless noted.
   whole library, is accepted.
 - **Proof.** `public_safety` is still proved and `check.sh` is green. The
   conjunct only rejects programs, and no proof reads it.
-  `AuditBuildExample.main_layouts` proves it of the example world (it has
+  `PublicBuildExample.main_layouts` proves it of the example world (it has
   no tag). For the oracle, `Elab.elaborate_with_metadata_run` and
   `Elab.elaborate_run` recover `elab_program`'s result from an accepted
   bundle; `ElabFrame.elaborate_frame`, `FnCoverage`,
@@ -2806,7 +2806,7 @@ executable tests unless noted.
   is weaker.
 - **Proof.** `public_safety` is still proved and `check.sh` is green. No
   proof read `PlatformEntry`; `PublicEntry`'s destructuring of the two
-  clauses and `AuditBuildExample`'s example world change by one pattern
+  clauses and `PublicBuildExample`'s example world change by one pattern
   each.
 - **Class.** None (a move).
 
@@ -2824,7 +2824,7 @@ executable tests unless noted.
 - **Why.** A library name used by a language rule is visible in one place,
   so a reader can tell a language item from a leak (criteria section 8).
 - **Nothing changes.** `LangItem W i s` reduces to the `LangSym` it
-  replaced. The proofs go through unchanged; `AuditBuildExample.main_linked`
+  replaced. The proofs go through unchanged; `PublicBuildExample.main_linked`
   unfolds `LangItem` once.
 - **Class.** None (definitional).
 
@@ -2887,7 +2887,7 @@ executable tests unless noted.
   asks `Entry W P C (IVal v) (ValueProvision (VI32 _))`, which asks the
   val's type in main's context to be `MachineType W "I32" t`: an abstract
   type symbol in scope as `I32` in the library's `wasm.moss`. `()` is not
-  one. `AuditExamples.a_unit_platform_constant_is_rejected` proves that no
+  one. `PublicModelExamples.a_unit_platform_constant_is_rejected` proves that no
   entry exists for a val of type `()` (a certificate root).
 - **The gap is the executable elaborator's.** `EaPlatform.platform_entry`
   decides `PlatformEntry` (which constant) but not `Entry`'s type check
@@ -3221,7 +3221,7 @@ using one fresh atom per abstract class must preserve that behaviour
   so the body slice's `Bools` hypothesis supplies Bool's layout and
   `truthy_typed` no longer takes `Platform.Layouts`. `bool_value_shape`
   and `PublicPrimitiveSafety.bool_not_cast` take `LangItemsFormed`.
-  `AuditBuildExample.main_lang_items` proves it of the example world (it
+  `PublicBuildExample.main_lang_items` proves it of the example world (it
   loads no `lib/bool.moss`).
 - **Class.** None (definitional, and a regrouping).
 

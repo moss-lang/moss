@@ -8,7 +8,7 @@ From NM Require Parse Sx EaBase CodeTable EaCallSound EaCopyNeedSound EaLinkBind
 From NM Require BootstrapVerified EaBodyAssembly.
 From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenaming BaseHostExecutionRenaming.
 
-From NM Require AuditExamples AuditBuildExample
+From NM Require PublicModelExamples PublicBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
   SnapshotLoaderBound PublicWorld PublicTypeFacts PublicValueTyping PublicCastTyping
   PublicSavedTypeExample PublicHeapTyping PublicWorldScope SnapshotLoader
@@ -270,12 +270,12 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMergeOps.joinM_deterministic);
   root (@NM.PublicMergeOps.tyof_merge_agree);
   root (@NM.PublicMergeOps.sigof_merge_agree);
- root (@NM.AuditExamples.bare_return_requires_unit);
-  root (@NM.AuditExamples.one_does_not_insert_a_multiply);
-  root (@NM.AuditExamples.an_arbitrary_cast_entry_is_rejected);
-  root (@NM.AuditExamples.a_unit_platform_constant_is_rejected);
-  root (@NM.AuditBuildExample.public_build_is_inhabited);
-  root (@NM.AuditBuildExample.built_program_runs);
+ root (@NM.PublicModelExamples.bare_return_requires_unit);
+  root (@NM.PublicModelExamples.one_does_not_insert_a_multiply);
+  root (@NM.PublicModelExamples.an_arbitrary_cast_entry_is_rejected);
+  root (@NM.PublicModelExamples.a_unit_platform_constant_is_rejected);
+  root (@NM.PublicBuildExample.public_build_is_inhabited);
+  root (@NM.PublicBuildExample.built_program_runs);
   root (@NM.SourceSnapshot.source_read_iff);
   root (@NM.SourceSnapshot.source_from_files_sound);
   root (@NM.SourceSnapshot.source_from_files_complete);

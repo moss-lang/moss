@@ -4,7 +4,7 @@ From Stdlib Require Import List String Arith Lia.
 From NM Require Import BaseFacts.
 From NM Require BodyProgramTyping.
 From NM Require Import LegacyBodyJudgments.
-From NM Require Import Audit AuditExamples FrontEnd.
+From NM Require Import Audit PublicModelExamples FrontEnd.
 From NM Require PublicMergePresent.
 Import Audit.Semantics.
 Import ListNotations Input Elaboration.
@@ -147,7 +147,7 @@ Proof.
       split; [reflexivity|]. split; [split; [constructor|]; intros k; split; [contradiction|];
         intros [e [Member _]]; contradiction|]. reflexivity.
 Qed.
-Lemma main_function : FnElab world_main AuditExamples.unit_program 1.
+Lemma main_function : FnElab world_main PublicModelExamples.unit_program 1.
 Proof.
   intros d recv n ps rt body Read Ast.
   apply reads_decl in Read as [_ ->]. injection Ast as <- <- <- <- <-.
@@ -166,7 +166,7 @@ Qed.
 
 (* The only node with a context is main, whose context merges nothing. *)
 Lemma node_section_unmerged : forall n section,
-  CodeSection world_main AuditExamples.unit_program n section -> section = [].
+  CodeSection world_main PublicModelExamples.unit_program n section -> section = [].
 Proof.
   intros [f|h] section [_ Read].
   - cbn in Read. destruct (Nat.eqb f 1); [now injection Read|discriminate].
@@ -174,7 +174,7 @@ Proof.
 Qed.
 
 (* No nominal has a payload and the one body enters nothing, so no edge. *)
-Lemma main_bounded : NoExpandingCycle world_main AuditExamples.unit_program.
+Lemma main_bounded : NoExpandingCycle world_main PublicModelExamples.unit_program.
 Proof.
   split; [exists (fun _ => 0)|exists (fun _ => 0); split;
     [|split; [intros n section t v s Read Occ|intros; lia]]].
@@ -206,7 +206,7 @@ Proof.
 Qed.
 
 (* main is the only declaration; its signature, `fn main()`, forms. *)
-Lemma main_decls : DeclsForm world_main AuditExamples.unit_program.
+Lemma main_decls : DeclsForm world_main PublicModelExamples.unit_program.
 Proof.
   intros s d Read. apply reads_decl in Read as [-> ->]. cbn.
   exists [], (FSig [] TUnit), main_decl, RPlain, "main", [], None, (Some main_body).
@@ -220,7 +220,7 @@ Proof.
   eapply no_platform_symbols with (lib := "bool"); [simpl; auto|exact Bool].
 Qed.
 
-Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
+Lemma main_elaborates : ElaboratesIn main_bundle world_main PublicModelExamples.unit_program.
 Proof.
   apply BodyProgramTyping.separated_elaboration_readback.
   split; [exact world_main_valid|]. split.
@@ -234,7 +234,7 @@ Proof.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.
 Qed.
-Lemma main_linked : Platform.Linked world_main AuditExamples.unit_program.
+Lemma main_linked : Platform.Linked world_main PublicModelExamples.unit_program.
 Proof.
   apply (proj2 (platform_linked_fields _ _)).
   assert (NoWasm : forall ns n symbol, ~ LangSym world_main "wasm" ns n symbol).
@@ -275,9 +275,9 @@ Proof.
     + split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|].
       split; [intros t H; contradiction|intros H;discriminate].
 Qed.
-Example public_build_is_inhabited : AuditExamples.Model.Builds prelude main_source entry AuditExamples.unit_program.
+Example public_build_is_inhabited : PublicModelExamples.Model.Builds prelude main_source entry PublicModelExamples.unit_program.
 Proof. exists main_bundle, world_main. split; [exact main_bundled|]. split; [exact main_elaborates|exact main_linked]. Qed.
 Example built_program_runs :
-  AuditExamples.Model.Runs AuditExamples.unit_program AuditExamples.Model.default_interface AuditExamples.initial
-    (AuditExamples.Model.Result (AuditExamples.Model.Returned VUnit) AuditExamples.initial).
-Proof. exact AuditExamples.unit_program_runs. Qed.
+  PublicModelExamples.Model.Runs PublicModelExamples.unit_program PublicModelExamples.Model.default_interface PublicModelExamples.initial
+    (PublicModelExamples.Model.Result (PublicModelExamples.Model.Returned VUnit) PublicModelExamples.initial).
+Proof. exact PublicModelExamples.unit_program_runs. Qed.

@@ -2159,7 +2159,7 @@ End Interpreter.
 (* ######################################################################## *)
 
 (* EaMain.v implements the executable elaborator for these judgments.
-   AuditBuildExample.v checks an inhabited public build/run derivation.
+   PublicBuildExample.v checks an inhabited public build/run derivation.
    Elaborator soundness and completeness are obligations of PublicFor.CORRECT.
 
    WHAT IT SAYS.  `Elaborates b p` relates a bundle `b` (Part I) to an
