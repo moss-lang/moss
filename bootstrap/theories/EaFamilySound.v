@@ -2,7 +2,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaTypes EaFamily EaTypesSound EaMentionsSound
   EaDependencyFuel EaResultBudget EaOutputSound EaMetadataSound EaMain EaWorldSound ElabWorld.
-From NM Require PublicContextFacts PublicTypeFacts.
+From NM Require EaCall EaContextTableSound EaMergeSound EaSatisfiesSound PublicContextFacts PublicFormation PublicTypeFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -185,4 +185,96 @@ Proof.
   apply (is_family_sound _ bound).
   - exact (EaWorldSound.bundle_world_r_bound _ _ _ Run).
   - exact (metadata_fuel_sufficient W bound).
+Qed.
+
+Local Lemma family_context_section : forall C matching,
+  PublicContextFacts.CxSection C ->
+  PublicContextFacts.CxSection (family_context C matching).
+Proof.
+  intros C matching Section. unfold PublicContextFacts.CxSection in *.
+  rewrite PublicContextFacts.family_context_merge.
+  destruct (PublicFormation.fold_set_ty_shape matching C) as [_ [Sub _]].
+  unfold family_context. now rewrite Sub.
+Qed.
+
+Local Lemma inodupb_sound : forall keys, inodupb keys = true -> NoDup keys.
+Proof.
+  induction keys as [|key rest IH]; intro Checked; [constructor|].
+  cbn [inodupb] in Checked. apply andb_true_iff in Checked as [New Distinct].
+  constructor; [|exact (IH Distinct)].
+  intro Member. apply EaMergeSound.imem_spec in Member. now rewrite Member in New.
+Qed.
+
+Theorem family_application_sound : forall E bound C u matching arguments inputs result keys,
+  (forall symbol d, w_decl (e_W E) symbol = Some d -> symbol < bound) ->
+  metadata_budget (e_W E) bound < e_metadata_fuel E ->
+  EaContextTableSound.ContextTableSound (e_W E) ->
+  PublicContextFacts.CxSection C ->
+  family_application E C u matching = Ok (arguments, inputs, result, keys) ->
+  FamilyApplication (e_W E) C u matching arguments inputs result keys.
+Proof.
+  intros E bound C u matching arguments inputs result keys
+    Bounded Budget Contexts Section Run.
+  unfold family_application in Run. cbv zeta in Run.
+  apply rbind_ok in Run as (available & Read & Run).
+  destruct (cfun C u) as [fixed|] eqn:Available; [|discriminate Read].
+  injection Read as <-.
+  apply rbind_ok in Run as (checked & Read & Run).
+  destruct (is_family E u) eqn:IsFamily; [|discriminate Read].
+  clear Read.
+  apply rbind_ok in Run as (checked_poly & Read & Run).
+  destruct (forallb (fun q => nmem (fst q) (poly (e_W E) (e_metadata_fuel E) u)) matching)
+    eqn:Polymorphic; [|discriminate Read].
+  clear Read.
+  apply rbind_ok in Run as ([formal needs] & Read & Run).
+  destruct (w_context (e_W E) u) as [[formal' needs']|] eqn:Context; [|discriminate Read].
+  injection Read as <- <-.
+  set (caller := family_context C matching) in *.
+  set (th := map (fun q => (fst q, canon caller (app_subst (c_ty caller) (TAbs (fst q))))) (c_ty formal')) in *.
+  apply rbind_ok in Run as (bound_types & Read & Run).
+  destruct (find (fun q => negb (EaCall.bound_in caller (fst q))) (c_ty formal'))
+    as [[missing missing_type]|] eqn:InForce; [discriminate Read|].
+  clear Read.
+  apply rbind_ok in Run as (fixed_types & Read & Run).
+  destruct (fixed_agreement E caller u) eqn:Fixed; [|discriminate Read].
+  clear Read.
+  apply rbind_ok in Run as (sm & CheckedNeeds & Run).
+  apply rbind_ok in Run as ([C' ks] & Provided & Run).
+  apply rbind_ok in Run as (distinct & Read & Run).
+  destruct (inodupb (map provision_id ks)) eqn:Distinct; [|discriminate Read].
+  injection Run as <- <- <- <-.
+  pose proof (is_family_sound _ bound Bounded Budget _ IsFamily) as FamilyFormed.
+  assert (Kind : kind_sym (e_W E) u = Some DKFunctor).
+  { destruct FamilyFormed as ((d & name & parameters & args & outputs & Declaration & Shape & _) & _).
+    unfold kind_sym. rewrite Declaration, Shape. reflexivity. }
+  pose proof (Contexts _ _ _ Context) as Formed. rewrite Kind in Formed.
+  apply EaSatisfiesSound.satisfies_sound in CheckedNeeds;
+    [|eapply EaSatisfiesSound.functx_subst_functional; exact Formed].
+  destruct CheckedNeeds as [InputMap Needs].
+  exists formal', needs'. split; [|exact InputMap].
+  unfold TypesFamilyApplication. cbn zeta. fold caller.
+  exists fixed. split; [now rewrite <- EaSatisfiesSound.cfun_exact|].
+  split; [exact FamilyFormed|].
+  split.
+  { apply Forall_forall. intros q Present.
+    apply forallb_forall with (x := q) in Polymorphic; [|exact Present].
+    apply nmem_spec in Polymorphic.
+    apply (EaResultBudget.poly_exact _ bound Bounded _ u Budget). exact Polymorphic. }
+  split; [exact Formed|].
+  split; [reflexivity|].
+  split.
+  { intros t Present Absent. apply in_map_iff in Present as [[x ty] [Equal Present]].
+    cbn [fst] in Equal. subst t.
+    change (nlook x (c_ty caller) = None) in Absent.
+    pose proof (find_none _ _ InForce (x, ty) Present) as Bound.
+    apply negb_false_iff in Bound. unfold EaCall.bound_in in Bound.
+    change (is_some (nlook x (c_ty caller)) = true) in Bound.
+    rewrite Absent in Bound. discriminate Bound. }
+  split.
+  { eapply (fixed_agreement_spec E bound Bounded Budget); [|exact Fixed].
+    now apply family_context_section. }
+  split; [exact Needs|].
+  split.
+  - eapply provide_result_sound_at_budget; eassumption.
+  - now apply inodupb_sound.
 Qed.

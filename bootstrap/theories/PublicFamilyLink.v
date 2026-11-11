@@ -80,7 +80,8 @@ Theorem family_link_new_ok : CF.CN.CC.FamilyLinkNewOk W Prog argv read state_ok.
 Proof.
   intros C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
-  pose proof FA as (fx' & Cu1 & ns1 & Fx' & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu1 & ns1 & (fx' & Fx' & Fam & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & MadeOut & PinsI & PinG).
   destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC FCu) as [-> ->].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].

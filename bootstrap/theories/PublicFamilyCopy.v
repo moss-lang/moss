@@ -68,7 +68,8 @@ Lemma family_top : forall r m g, In (A.mkey r m) ks -> A.mlook r m (A.c_mths Cr)
   lookup_provision (A.rkey Cr r m) dr = Some pv /\ CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk W Prog argv read state_ok n H3 d (r :: A.sg_params g) (A.sg_ret g) pv.
 Proof.
   intros r0 m0 g0 Ik Mg.
-  pose proof FA as (fx & Cu1 & ns1 & Fx & Fam & Poly & FC1 & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu1 & ns1 & (fx & Fx & Fam & Poly & FC1 & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC1 FC) as [-> ->].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
@@ -239,7 +240,8 @@ Theorem family_copy_realize_ok : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.FamilyCopyRealizeO
 Proof.
   intros k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
     fx0 gfx0 h Cu0 nsu Ch nsh target code sms dc rms rm gfh _ Look _ _ _ _ _ _.
-  pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu & ns & (fx & Fx & Fam & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].

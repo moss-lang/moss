@@ -349,3 +349,21 @@ Proof.
   intros W f C ns (d & es & tm & er & tmr & sigma & classes & _ & _ & _ & Merge & _ & _ & -> & _).
   exact (proj2 (proj2 (proj2 (proj2 Merge)))).
 Qed.
+
+Lemma cfun_exact : forall C u, cfun C u = nlook u (c_funs C).
+Proof.
+  intros [types substitution classes entries locals] u. unfold cfun, c_funs.
+  cbn [c_provisions]. induction entries as [|[key value] rest IH]; [reflexivity|].
+  destruct key as [s|s|s|r m th|f], value;
+    cbn [cfun_go flat_map app nlook]; try exact IH.
+  destruct (Nat.eqb u f); [reflexivity|exact IH].
+Qed.
+
+Lemma functx_subst_functional : forall W u C ns,
+  FunCtx W u C ns ->
+  forall g ty, In (g, ty) (c_sub C) -> lookup_subst g (c_sub C) = Some ty.
+Proof.
+  intros W u C ns (d & ps & a & r & b & es & tm & tm' & sigma & classes & implicit_types &
+    _ & _ & _ & _ & _ & Merge & _ & _ & -> & _).
+  exact (proj2 (proj2 (proj2 (proj2 Merge)))).
+Qed.

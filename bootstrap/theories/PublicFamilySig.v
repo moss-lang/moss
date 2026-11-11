@@ -47,7 +47,7 @@ Qed.
 Theorem family_sig_ok_readoff : PublicFormation.FamilySigReadOffOk W.
 Proof.
   intros C u matching th sm Cr ks ot m g FAp Ro Fc Ot _ Ml.
-  destruct FAp as (fixed & formal & needs & Fx & Fam & Poly & FC & Args & InF & FA & Sat & PR & Nd).
+  destruct FAp as (formal & needs & (fixed & Fx & Fam & Poly & FC & Args & InF & FA & _ & PR & Nd) & _).
   pose proof (proj1 Fc) as Cf.
   set (K := scope_gens C ++ gens ot).
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].

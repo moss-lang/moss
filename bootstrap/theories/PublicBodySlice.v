@@ -1840,7 +1840,7 @@ Qed.
 Lemma family_cr : forall C u matching th sm Cr ks, A.FamilyApplication W C u matching th sm Cr ks ->
   incl (A.c_provisions C) (A.c_provisions Cr) /\ A.c_sub Cr = A.c_sub C.
 Proof.
-  intros C u matching th sm Cr ks (fixed & formal & needs & _ & _ & _ & _ & _ & _ & _ & _ & PR & _).
+  intros C u matching th sm Cr ks (formal & needs & (fixed & _ & _ & _ & _ & _ & _ & _ & _ & PR & _) & _).
   destruct PR as (d0 & ps & a & r & b & outs & es & tm' & _ & _ & _ & _ & _ & ->).
   destruct (PublicFormation.fold_set_ty_shape matching C) as [_ [Esub [Epr _]]].
   unfold A.output_cx, A.family_context in *. cbn [A.c_provisions A.c_sub]. split.

@@ -901,7 +901,8 @@ Hypothesis KeysT : forall q pa x, resolve_sym W q pa = Some x ->
 Theorem family_items_agree : ItemsAgree (family_context C matching) Cr Cu outputs th
   (fun r m g => In (mkey r m) ks /\ mlook r m (c_mths Cr) = Some g) keys.
 Proof.
-  destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  destruct FA as (Cu' & ns & (fx & Fx & [Shape _] & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   pose proof (PublicOrientation.merges_by_pairs (family_context C matching) Cu (map fst (c_ty Cu))
@@ -924,7 +925,8 @@ Qed.
 (* The same, position by position. *)
 Theorem family_items_pos : Forall2 (fun k key => app_subst_item th (rkey_of outputs key) = rkey_of Cr k) ks keys.
 Proof.
-  destruct FA as (fx & Cu' & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  destruct FA as (Cu' & ns & (fx & Fx & [Shape _] & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   destruct (functx_uniq W u _ _ _ _ FC FCu) as [-> ->].
   destruct Sat as [_ [_ [_ [_ Merge0]]]].
   pose proof (PublicOrientation.merges_by_pairs (family_context C matching) Cu (map fst (c_ty Cu))

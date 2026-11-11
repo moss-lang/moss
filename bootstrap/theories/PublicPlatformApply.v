@@ -837,7 +837,8 @@ Hypothesis family_keys : FamilyKeysTyped.
 Theorem family_platform_ok : FS.FamilyPlatformApplyOk W Prog argv read state_ok.
 Proof.
   intros k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0 code Look Fam.
-  pose proof FA as (fx & Cu & ns & Fx & _ & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu & ns & (fx & Fx & _ & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   destruct (family_data u code Fam) as (Ch0 & needs & outputs & keys & bindings & FD).
   pose proof FD as (FC0 & _ & PRf & FB & Binds & _).
   destruct (FS.CopyA.S.functx_unique W _ _ _ _ _ FC FC0) as [<- <-].

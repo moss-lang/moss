@@ -240,15 +240,6 @@ Proof.
   exists f, f'. repeat split. now apply ProgramPrune.item_eqb_true.
 Qed.
 
-Local Lemma cfun_exact : forall C u, cfun C u = nlook u (c_funs C).
-Proof.
-  intros [types substitution classes entries locals] u. unfold cfun, c_funs.
-  cbn [c_provisions]. induction entries as [|[key value] rest IH]; [reflexivity|].
-  destruct key as [s|s|s|r m th|f], value;
-    cbn [cfun_go flat_map app nlook]; try exact IH.
-  destruct (Nat.eqb u f); [reflexivity|exact IH].
-Qed.
-
 Local Lemma outputs_nodup : forall W fuel u,
   NoDup (EaTypes.fun_outputs W fuel u).
 Proof.
@@ -256,15 +247,6 @@ Proof.
   destruct (EaTypes.functor_decl W u) as [[d [[[params inputs] outputs] body]]|];
     [|constructor].
   apply EaRootSound.ascending_nodup, EaDependencyFuel.sort_uniq_ascending.
-Qed.
-
-Local Lemma functx_subst_functional : forall W u C ns,
-  FunCtx W u C ns ->
-  forall g ty, In (g, ty) (c_sub C) -> lookup_subst g (c_sub C) = Some ty.
-Proof.
-  intros W u C ns (d & ps & a & r & b & es & tm & tm' & sigma & classes & implicit_types &
-    _ & _ & _ & _ & _ & Merge & _ & _ & -> & _).
-  exact (proj2 (proj2 (proj2 (proj2 Merge)))).
 Qed.
 
 Local Lemma pure_read : forall A (reader : er A) before value after,
@@ -310,7 +292,7 @@ Proof.
   apply pure_read in Read as [Satisfied ->].
   pose proof (Contexts _ _ _ Context) as Formal. rewrite Kind in Formal.
   apply EaSatisfiesSound.satisfies_sound in Satisfied;
-    [|eapply functx_subst_functional; exact Formal].
+    [|eapply EaSatisfiesSound.functx_subst_functional; exact Formal].
   destruct Satisfied as [-> Satisfied].
   set (outs := EaTypes.fun_outputs (e_W E) (e_metadata_fuel E) u) in *.
   apply mbind_ok in Run as (rows & s6 & Allocated & Run).
@@ -349,7 +331,7 @@ Proof.
   unfold TypesApplication, a. cbn zeta.
   split; [exact Resolved|].
   split.
-  { exists fixed. split; [now rewrite <- cfun_exact|].
+  { exists fixed. split; [now rewrite <- EaSatisfiesSound.cfun_exact|].
     intros x tx Member. pose proof (find_none _ _ Fixed (x, tx) Member) as Check.
     cbn [fst snd] in Check.
     destruct (nlook x (c_ty C)) as [here|]; [|discriminate Check].

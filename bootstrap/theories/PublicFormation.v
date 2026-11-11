@@ -1464,7 +1464,7 @@ Lemma family_application_ok : forall C u matching th sm Cr ks,
   (forall k p, In (k, p) (c_provisions Cr) -> KeyOk W k /\ ProvOk W p /\
      forall r m th, k = IMth r m th -> ScopedTy W C r).
 Proof.
-  intros C u matching th sm Cr ks (fixed & formal & needs & Fx & Fam & Poly & FC & Args & InF & FA & Sat & PR & Nd) Cf Ks Mt.
+  intros C u matching th sm Cr ks (formal & needs & (fixed & Fx & Fam & Poly & FC & Args & InF & FA & _ & PR & Nd) & _) Cf Ks Mt.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   assert (P1 : ReadOk W (c_sub (family_context C matching))) by (rewrite Esub; exact (cf_read _ _ Cf)).
   assert (P2 : ReadWithin (GenScoped W C) (c_sub (family_context C matching))).
@@ -1487,7 +1487,7 @@ Qed.
 Lemma family_application_sub : forall C u matching th sm Cr ks,
   FamilyApplication W C u matching th sm Cr ks -> c_sub Cr = c_sub C.
 Proof.
-  intros C u matching th sm Cr ks (fixed & formal & needs & Fx & Fam & Poly & FC & Args & InF & FA & Sat & PR & Nd).
+  intros C u matching th sm Cr ks (formal & needs & (fixed & Fx & Fam & Poly & FC & Args & InF & FA & _ & PR & Nd) & _).
   destruct PR as (d & ps & a & r & b & outs & es & tm' & D & FP & Outs & OIE & RK & ->). cbn.
   exact (proj1 (proj2 (family_context_shape matching C))).
 Qed.
@@ -2027,7 +2027,7 @@ Theorem family_keys_typed : forall W C u matching th sm Cr ks, TysScoped W C ->
   forall x, A.nlook x (A.c_ty (A.family_context C matching)) <> None ->
   A.nlook x (A.c_ty Cu) = None -> A.kind_sym W x = Some A.DKType.
 Proof.
-  intros W C u matching th sm Cr ks Ts (fx & Cu0 & ns & Fx & [Shape _] & Poly & _) Cu needs FC x Lx Nu.
+  intros W C u matching th sm Cr ks Ts (Cu0 & ns & (fx & Fx & [Shape _] & Poly & _) & _) Cu needs FC x Lx Nu.
   destruct (family_context_shape matching C) as [Ety _].
   destruct (A.nlook x (A.c_ty (A.family_context C matching))) as [v|] eqn:L; [|congruence].
   apply nlook_in in L. rewrite Ety in L. apply in_app_or in L as [L|L].

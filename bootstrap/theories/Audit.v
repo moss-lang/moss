@@ -3833,20 +3833,27 @@ Definition OnlyFamily (W : world) (C : cx) (u : nat) (k : item) : Prop :=
 
 Definition family_context (C : cx) (matching : subst) : cx :=
   fold_left (fun C q => set_ty C (fst q) (snd q)) matching C.
-Definition FamilyApplication (W : world) (C : cx) (u : usym)
-    (matching arguments : subst) (inputs : smap) (result : cx) (keys : list item) : Prop :=
-  exists fixed formal needs,
+Definition TypesFamilyApplication (W : world) (C : cx) (u : usym)
+    (matching arguments : subst) (formal : cx) (needs : list item)
+    (result : cx) (keys : list item) : Prop :=
+  let caller := family_context C matching in
+  exists fixed,
     nlook u (c_funs C) = Some fixed /\ Family W u /\
     Forall (fun q => Poly W u (fst q)) matching /\
     FunCtx W u formal needs /\
     arguments = map (fun q => (fst q,
-      canon (family_context C matching)
-        (app_subst (c_ty (family_context C matching)) (TAbs (fst q))))) (c_ty formal) /\
-    (forall t, In t (map fst (c_ty formal)) -> nlook t (c_ty (family_context C matching)) <> None) /\
-    FixedAgreement W (family_context C matching) u /\
-    Satisfies (family_context C matching) formal arguments needs inputs /\
-    ProvideResult W u (family_context C matching) (fun t => TAbs t) result keys /\
+      canon caller (app_subst (c_ty caller) (TAbs (fst q))))) (c_ty formal) /\
+    (forall t, In t (map fst (c_ty formal)) -> nlook t (c_ty caller) <> None) /\
+    FixedAgreement W caller u /\
+    NeedsSatisfied caller formal arguments needs /\
+    ProvideResult W u caller (fun t => TAbs t) result keys /\
     NoDup (map provision_id keys).
+
+Definition FamilyApplication (W : world) (C : cx) (u : usym)
+    (matching arguments : subst) (inputs : smap) (result : cx) (keys : list item) : Prop :=
+  exists formal needs,
+    TypesFamilyApplication W C u matching arguments formal needs result keys /\
+    inputs = satisfaction_map (family_context C matching) formal arguments needs.
 
 (* Rule B for a family demand (criteria sections 2 and 3): the matching
    read off the demanded key is in force here, each generation it

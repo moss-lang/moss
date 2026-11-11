@@ -188,3 +188,6 @@ From NM Require EaForwarderSound.
 Print Assumptions NM.EaForwarderSound.read_forwarder_sound.
 Print Assumptions NM.EaForwarderSound.place_forwarder_spec.
 Print Assumptions NM.EaForwarderSound.abstract_provider_sound.
+
+From NM Require EaFamilySound.
+Print Assumptions NM.EaFamilySound.family_application_sound.

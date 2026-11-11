@@ -79,7 +79,7 @@ Lemma family_news : forall W C u matching th sm Cr ks, A.FamilyApplication W C u
     (forall k p, In (k, p) news -> exists r m g a, k = A.mkey r m /\ p = A.ProvidedMethod g a) /\
     (forall k, In k ks <-> exists p, In (k, p) news).
 Proof.
-  intros W C u matching th sm Cr ks (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  intros W C u matching th sm Cr ks (Cu & ns & (fx & Fx & [Shape _] & Poly & FC & Th & InF & FAg & _ & PR & Nd) & _).
   destruct Shape as (d & n & ps & a & r & D & Ast & FrAll & _).
   destruct PR as (d' & ps' & a' & r' & b' & outs & es & tm' & D' & FP & Outs & OIE & RK & ->).
   rewrite D in D'. injection D' as <-. rewrite Ast in FP. cbn in FP. injection FP as <- <- <- <-.
@@ -181,7 +181,7 @@ Lemma family_formed : forall W C0 C u matching th sm Cr ks ot m,
   PublicFormation.FormedCx W (A.Cx (A.c_ty C0) (A.c_sub Cr) (A.c_merge Cr) (A.c_provisions Cr) (A.c_locals Cr)).
 Proof.
   intros W C0 C u matching th sm Cr ks ot m Es Emg Ep El FA Ro Ok Sc Tin [Cf0 [Ks0 Ts0]].
-  pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu & ns & (fx & Fx & [Shape _] & Poly & FC & Th & InF & FAg & _ & PR & Nd) & _).
   destruct (PublicFormation.family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   set (K := PublicFormation.GenScoped W C0).
   assert (Mt : forall x v, In (x, v) matching ->
@@ -398,7 +398,8 @@ Lemma family_run : forall k, Below k -> forall C0 C u matching th sm Cr ks,
   FamilyStepOut rr F Cr ks u th sm j d types H g st.
 Proof.
   intros k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0.
-  pose proof FA as (fx & Cu & ns & Fx & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu & ns & (fx & Fx & Fam & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
+  pose proof (conj EmittedNeeds TypedNeeds) as Sat.
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
   pose proof Pre0 as [Frame [Ctx [Lt [St [Real Fmd]]]]].

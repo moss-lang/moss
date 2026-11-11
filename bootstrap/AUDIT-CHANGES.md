@@ -3611,6 +3611,7 @@ using one fresh atom per abstract class must preserve that behaviour
   including calls to defined attached methods. `TypesApplication` uses it
   to check an abstract functor application and its result. This includes
   the identities of the result types and the application scope.
+  `TypesFamilyApplication` records the static checks for a family use.
 - **Translation.** `satisfaction_map` pairs callee and caller run-time keys.
   `translate_call` emits direct calls with that map. `translate_application`
   uses it and the checked result to emit the binding. The current encoding of output identities is shared by typing

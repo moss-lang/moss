@@ -715,7 +715,7 @@ Lemma family_application_gens : forall C u matching th sm Cr ks,
   (forall x v, In (x, v) matching -> ScopedTy W C (canon C v)) ->
   forall k p, In (k, p) (c_provisions Cr) -> In (k, p) (c_provisions C) \/ GensIn (GenScoped W C) (provision_gens p).
 Proof.
-  intros C u matching th sm Cr ks (fixed & formal & needs & Fx & Fam & Poly & FC & Args & InF & FA & Sat & PR & Nd) Mt.
+  intros C u matching th sm Cr ks (formal & needs & (fixed & Fx & Fam & Poly & FC & Args & InF & FA & _ & PR & Nd) & _) Mt.
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   intros k p Iq. rewrite <- Epr.
   apply (provide_result_gens _ _ _ _ _ (GenScoped W C) PR); [| | |exact Iq].
@@ -736,7 +736,7 @@ Lemma family_result_cxscoped : forall F C0 C u matching th sm Cr ks ot m,
   CxScoped F C0 -> CxScoped F (Cx (c_ty C0) (c_sub Cr) (c_merge Cr) (c_provisions Cr) (c_locals Cr)).
 Proof.
   intros F C0 C u matching th sm Cr ks ot m Es Merge Ep El FA Ro Ok Sc Tin [Ls [Ps [Ts Mr]]].
-  pose proof FA as (fx & Cu & ns & Fx & [Shape _] & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
+  pose proof FA as (Cu & ns & (fx & Fx & [Shape _] & Poly & FC & Th & InF & FAg & _ & PR & Nd) & _).
   destruct (family_context_shape matching C) as [Ety [Esub [Epr Elo]]].
   set (K := GenScoped W C0).
   assert (Mt : forall x v, In (x, v) matching -> GensIn K (gens (canon C v))).
