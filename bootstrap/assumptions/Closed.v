@@ -244,3 +244,8 @@ Print Assumptions NM.EaCopySound.fun_copy_sound.
 From NM Require EaLambdaKeys.
 Print Assumptions NM.EaLambdaKeys.lambda_need_keys_exact.
 Print Assumptions NM.EaLambdaKeys.captured_cx_keys_match.
+
+From NM Require EaFamilyMatching.
+Print Assumptions NM.EaFamilyMatching.read_off_one_domain.
+Print Assumptions NM.EaFamilyMatching.read_off_one_complete.
+Print Assumptions NM.EaFamilyMatching.family_read_off_sound.

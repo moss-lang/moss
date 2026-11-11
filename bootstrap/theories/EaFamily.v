@@ -200,44 +200,57 @@ Definition is_family (u : nat) : bool :=
 
 (* ---- Matching a formal receiver against a key's (read-off) ---- *)
 
-Fixpoint match_ty (n : nat) (C : cx) (marks : list nat) (rf ot : ty) (acc : subst) {struct n} : option subst :=
-  match n with
-  | 0 => None
-  | S n' =>
-      let many := fix go (l : list (ty * ty)) (acc : subst) :=
-        match l with
-        | [] => Some acc
-        | (a, b) :: r => match match_ty n' C marks a b acc with Some acc' => go r acc' | None => None end
-        end in
-      match rf with
-      | TAbs t =>
-          if nmem t marks then
-            match lookup_subst t acc with
-            | Some v => if ty_eqb (canon C v) ot then Some acc else None
-            | None => Some (acc ++ [(t, ot)])
-            end
-          else if ty_eqb (canon C rf) ot then Some acc else None
-      | TNom k xs =>
-          match ot with
-          | TNom k' ys => if Nat.eqb k k' && nlist_eqb (map fst xs) (map fst ys)
-                          then many (combine (map snd xs) (map snd ys)) acc else None
-          | _ => None end
-      | TRecord xs =>
-          match ot with
-          | TRecord ys => if slist_eqb (map fst xs) (map fst ys)
-                          then many (combine (map snd xs) (map snd ys)) acc else None
-          | _ => None end
-      | TUnion xs =>
-          match ot with
-          | TUnion ys => if Nat.eqb (List.length xs) (List.length ys) then many (combine xs ys) acc else None
-          | _ => None end
-      | _ => if ty_eqb rf ot then Some acc else None
+Fixpoint match_rows {A : Type} (step : A -> A -> subst -> option subst)
+    (formal actual : list A) (acc : subst) : option subst :=
+  match formal, actual with
+  | [], [] => Some acc
+  | x :: xs, y :: ys =>
+      match step x y acc with
+      | Some next => match_rows step xs ys next
+      | None => None
       end
+  | _, _ => None
+  end.
+
+Fixpoint match_ty (C : cx) (marks : list nat) (formal actual : ty) (acc : subst)
+    {struct formal} : option subst :=
+  match formal with
+  | TAbs t =>
+      if nmem t marks then
+        match lookup_subst t acc with
+        | Some v => if ty_eqb (canon C v) actual then Some acc else None
+        | None => Some (acc ++ [(t, actual)])
+        end
+      else if ty_eqb (canon C formal) actual then Some acc else None
+  | TNom tag fields =>
+      match actual with
+      | TNom tag' fields' =>
+          if Nat.eqb tag tag' then
+            match_rows (fun a b acc =>
+              if Nat.eqb (fst a) (fst b) then match_ty C marks (snd a) (snd b) acc else None)
+              fields fields' acc
+          else None
+      | _ => None
+      end
+  | TRecord fields =>
+      match actual with
+      | TRecord fields' =>
+          match_rows (fun a b acc =>
+            if String.eqb (fst a) (fst b) then match_ty C marks (snd a) (snd b) acc else None)
+            fields fields' acc
+      | _ => None
+      end
+  | TUnion members =>
+      match actual with
+      | TUnion members' => match_rows (match_ty C marks) members members' acc
+      | _ => None
+      end
+  | _ => if ty_eqb formal actual then Some acc else None
   end.
 
 (* the matching for one formal receiver, verified against the equation *)
 Definition read_off_one (C : cx) (marks : list nat) (rf ot : ty) : option subst :=
-  match match_ty fuel C marks rf ot [] with
+  match match_ty C marks rf ot [] with
   | Some mt => if ty_eqb (canon C (app_subst mt rf)) ot then Some mt else None
   | None => None
   end.
