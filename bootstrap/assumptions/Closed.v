@@ -203,3 +203,7 @@ Print Assumptions NM.EaCodeEffects.lambda_provider_code_effect.
 Print Assumptions NM.EaCodeEffects.meth_provider_code_effect.
 Print Assumptions NM.EaCodeEffects.apply_abstract_code_effect.
 Print Assumptions NM.EaCodeEffects.fresh_table_code_effect.
+
+From NM Require AllocationRenaming.
+Print Assumptions NM.AllocationRenaming.fresh_batches_are_renamings.
+Print Assumptions NM.AllocationRenaming.allocated_batches_alpha.
