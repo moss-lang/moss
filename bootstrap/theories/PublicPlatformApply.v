@@ -488,7 +488,7 @@ Proof.
   rewrite FB. cbn [fc_bindings fc_outputs fc_sources].
   pose proof Th as Th'. subst th.
   destruct (FS.CopyA.S.static_realizes_le W Prog argv read state_ok rr rr C d H u Cu ns sm _ (le_n _) Real
-    (FS.CopyA.S.functx_static W u Cu ns FC) Sat (FS.CopyA.S.apply_theta W C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
+    (FS.CopyA.S.functx_static W u Cu ns FC) Sat (FS.CopyA.S.apply_theta W C u Cu ns sm FC Section Inp Sat)) as [d1 [Sel [_ RealU]]].
   set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) in *.
   destruct (Adapt d1 Sel RealU) as [d2 [Ad Prims]].
   rewrite Sel, Ad.
@@ -721,7 +721,7 @@ Proof.
   pose proof (FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   set (f := fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))).
   assert (Thf : th = FS.CopyA.thof f Cu) by exact Th.
-  assert (CT : A.CallTheta W C Cu u th) by (rewrite Th; exact (FS.CopyA.S.apply_theta W C u Cu ns sm FC Idem Inp ltac:(rewrite <- Th; exact Sat))).
+  assert (CT : A.CallTheta W C Cu u th) by (rewrite Th; exact (FS.CopyA.S.apply_theta W C u Cu ns sm FC Section Inp ltac:(rewrite <- Th; exact Sat))).
   destruct (FS.CopyA.S.static_realizes_le W Prog argv read state_ok rr rr C d H u Cu ns sm th (le_n _) Real
     (FS.CopyA.S.functx_static W u Cu ns FC) Sat CT) as [d1 [Sel [_ RealU]]].
   assert (Fixd : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (f x))).
@@ -868,12 +868,11 @@ Proof.
   assert (RealF : FS.CopyA.S.Realizes W Prog argv read state_ok rr Cf d H)
     by (apply (FS.CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|unfold Cf; rewrite (PublicContextFacts.family_context_merge matching C); exact Emg|
       rewrite EprF; exact Ep|exact Real]).
-  assert (IdemF : forall t, A.canon Cf (A.canon Cf t) = A.canon Cf t) by (intros t; rewrite !CanonEq; apply Idem).
   assert (Inp : forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty Cf) = Some here).
   { intros t tt L. apply nlook_in in L. destruct (A.nlook t (A.c_ty Cf)) as [here|] eqn:Lh; [exists here; reflexivity|].
     exfalso. exact (InF t (in_map fst _ _ L) Lh). }
   destruct (FS.CopyA.S.static_realizes_le W Prog argv read state_ok rr rr Cf d H u Cu ns sm th (le_n _) RealF
-    (FS.CopyA.S.functx_static W _ _ _ FC) Sat (FS.CopyA.S.apply_theta W Cf u Cu ns sm FC IdemF Inp Sat)) as [d1 [Sel [_ _]]].
+    (FS.CopyA.S.functx_static W _ _ _ FC) Sat (FS.CopyA.S.apply_theta W Cf u Cu ns sm FC (proj1 (proj2 (proj2 RealF))) Inp Sat)) as [d1 [Sel [_ _]]].
   rewrite Sel. cbn [adapt_provisions].
   change (application_environment (program_of Prog argv read) d code th
     (append_environment d1 (EnvironmentWithAliases [] [] []))) with (app_env d code th d1).

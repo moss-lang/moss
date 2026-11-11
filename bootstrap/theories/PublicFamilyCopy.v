@@ -255,12 +255,11 @@ Proof.
   assert (RealF : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok rr Cf d H)
     by (apply (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_ty_free W Prog argv read state_ok rr C0 Cf d H); [rewrite EsubF; exact Es|unfold Cf; rewrite (PublicContextFacts.family_context_merge matching C); exact Emg|
       rewrite EprF; exact Ep|exact Real]).
-  assert (IdemF : forall t, A.canon Cf (A.canon Cf t) = A.canon Cf t) by (intros t; rewrite !CanonEq; apply Idem).
   assert (Inp : forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty Cf) = Some here).
   { intros t tt L. apply nlook_in in L. destruct (A.nlook t (A.c_ty Cf)) as [here|] eqn:Lh; [exists here; reflexivity|].
     exfalso. exact (InF t (in_map fst _ _ L) Lh). }
   destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.static_realizes_le W Prog argv read state_ok rr rr Cf d H u Cu ns sm th (le_n _) RealF
-    (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_static W _ _ _ FC) Sat ltac:(rewrite Th; exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.apply_theta W Cf u Cu ns sm FC IdemF Inp ltac:(rewrite <- Th; exact Sat))))
+    (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_static W _ _ _ FC) Sat ltac:(rewrite Th; exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.apply_theta W Cf u Cu ns sm FC (proj1 (proj2 (proj2 RealF))) Inp ltac:(rewrite <- Th; exact Sat))))
     as [d1 [Sel [_ RealU]]].
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
   assert (FxF : A.nlook u (A.c_funs Cf) = Some fx) by (unfold A.c_funs; rewrite EprF; exact Fx).

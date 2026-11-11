@@ -3,6 +3,7 @@
    merge substitution and entries mention only those symbols. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts.
+From NM Require Import PublicContextFacts.
 From NM Require PublicSubstFacts PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -285,33 +286,30 @@ Proof.
 Qed.
 
 Lemma merged_meaning_tf : forall f Cf C th d x,
-  TableFormed Cf -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) ->
-  In x (map fst (c_ty Cf)) ->
+  TableFormed Cf -> CxSection Cf -> CallTheta W C Cf f th ->
+  ReadsMerge C (ground d) -> In x (map fst (c_ty Cf)) ->
   app_subst (callee_meanings d th) (app_subst (c_sub Cf) (TAbs x)) = ground d (app_subst th (TAbs x)).
 Proof.
-  intros f Cf C th d x Tf [Keys [_ Merges]] Abs Ix.
+  intros f Cf C th d x Tf Section [Keys [_ Respect]] Abs Ix.
   rewrite callee_ground by exact (merge_image_dom_tf Cf th x Tf Keys Ix).
-  replace (app_subst (c_sub Cf) (TAbs x)) with
-    (match lookup_subst x (c_sub Cf) with Some t => t | None => TAbs x end) by reflexivity.
-  destruct (lookup_subst x (c_sub Cf)) as [t|] eqn:L; [|reflexivity].
-  apply lookup_subst_in_pair in L. rewrite <- (Abs (app_subst th t)), <- (Merges x t L), Abs. reflexivity.
+  apply Abs, (PublicMerge.merge_eq_substitute Respect), MESym.
+  exact (proj1 Section x).
 Qed.
 
 Theorem call_agree_tf : forall f Cf C th d,
-  TableFormed Cf -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) ->
+  TableFormed Cf -> CxSection Cf -> CallTheta W C Cf f th ->
+  CxSection C -> ReadsMerge C (ground d) ->
   Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
 Proof.
-  intros f Cf C th d Tf CT Abs k v1 v2 L1 L2.
+  intros f Cf C th d Tf SectionCf CT SectionC Abs k v1 v2 L1 L2.
   pose proof Tf as [Form _]. rewrite (Form k v1 L1).
   assert (Ik : In k (map fst (c_ty Cf))) by (apply nlook_in in L1; change k with (fst (k, v1)); apply in_map, L1).
-  rewrite (merged_meaning_tf f Cf C th d k Tf CT Abs Ik).
+  rewrite (merged_meaning_tf f Cf C th d k Tf SectionCf CT Abs Ik).
   destruct CT as [Keys [Bound _]].
   assert (Th : lookup_subst k th = Some (canon C v2)).
   { rewrite (Bound k Ik ltac:(congruence)). cbn. rewrite lookup_subst_nlook', L2. reflexivity. }
   cbn [app_subst]. rewrite Th. change (app_subst (type_meanings d) v2) with (ground d v2).
-  rewrite <- (Abs v2). reflexivity.
+  symmetry. apply Abs, PublicMerge.merge_eq_read. exact (proj1 SectionC).
 Qed.
 
 Lemma merge_image_dom : forall f Cf ns th x,
@@ -321,16 +319,23 @@ Proof. intros f Cf ns th x Ctx. exact (merge_image_dom_tf Cf th x (ctx_table_for
 
 Lemma merged_meaning : forall f Cf ns C th d x,
   CtxOf W f Cf ns -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) ->
-  In x (map fst (c_ty Cf)) ->
+  ReadsMerge C (ground d) -> In x (map fst (c_ty Cf)) ->
   app_subst (callee_meanings d th) (app_subst (c_sub Cf) (TAbs x)) = ground d (app_subst th (TAbs x)).
-Proof. intros f Cf ns C th d x Ctx. exact (merged_meaning_tf f Cf C th d x (ctx_table_formed f Cf ns Ctx)). Qed.
+Proof.
+  intros f Cf ns C th d x Ctx. apply merged_meaning_tf.
+  - exact (ctx_table_formed f Cf ns Ctx).
+  - exact (proj2 (function_context_merge W f Cf ns Ctx)).
+Qed.
 
 Theorem call_agree : forall f Cf ns C th d,
   CtxOf W f Cf ns -> CallTheta W C Cf f th ->
-  (forall t, ground d (canon C t) = ground d t) ->
+  CxSection C -> ReadsMerge C (ground d) ->
   Agree (callee_meanings d th) (type_meanings d) (c_ty Cf) (c_ty C).
-Proof. intros f Cf ns C th d Ctx. exact (call_agree_tf f Cf C th d (ctx_table_formed f Cf ns Ctx)). Qed.
+Proof.
+  intros f Cf ns C th d Ctx. apply call_agree_tf.
+  - exact (ctx_table_formed f Cf ns Ctx).
+  - exact (proj2 (function_context_merge W f Cf ns Ctx)).
+Qed.
 
 End Calls.
 

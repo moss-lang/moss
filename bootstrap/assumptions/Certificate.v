@@ -262,7 +262,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicContextFacts.context_canon_iff_mergeeq);
   root (@NM.PublicContextFacts.reads_merge_canon_iff);
   root (@NM.PublicContextFacts.reads_empty_merge);
-  root (@NM.PublicContextFacts.call_theta_respects);
+  root (@NM.PublicContextFacts.formed_callee_theta_rows_iff);
   root (@NM.PublicContextFacts.function_context_canonical);
   root (@NM.PublicContextFacts.functor_context_canonical);
   root (@NM.PublicContextFacts.formed_type_binding_preserves_alias_context);
@@ -456,6 +456,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaCallSound.in_force_through_spec);
   root (@NM.EaCallSound.requirements_in_force_spec);
   root (@NM.EaCallSound.rule_b_sound);
+  root (@NM.EaCallSound.call_theta_sound);
   root (@NM.PublicMerge.expanded_generations_by_class);
   root (@NM.PublicFormation.section_output_expanded);
   root (@NM.PublicFormation.scope_gens_section_bound);

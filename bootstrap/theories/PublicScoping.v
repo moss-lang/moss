@@ -1081,28 +1081,20 @@ Proof.
   destruct Iz as [E|Iz]; [congruence|exact (IH Iz)].
 Qed.
 
-(* A call's θ read through the callee's merge: by its merge clause, a
-   type the callee's merge rewrites reads here as the type itself. *)
-Lemma theta_canon_lift : forall C Cs th,
-  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)) ->
-  forall t, canon C (app_subst th (canon Cs t)) = canon C (app_subst th t).
-Proof.
-  intros C Cs th M t. unfold canon at 1 2 3. apply subst3_agree.
-  intros x _. cbn [app_subst lookup_subst]. destruct (lookup_subst x (c_sub Cs)) as [u|] eqn:L; [|reflexivity].
-  symmetry. exact (M x u (lookup_subst_in_pair _ _ _ L)).
-Qed.
-
 (* A callee's method need read through θ at the site X (the caller's
    table, with its merge; rule B's companion): ok, and scoped where X's
    table is.  Rule B puts each requirement in force at X through the
    callee's merge class, so θ reads it as a type X's table means. *)
 Theorem demand_at_th_scoped : forall C X f Cf ns th r m, MentionsTyped W -> FormedCx W C ->
-  c_sub X = c_sub C ->
+  c_sub X = c_sub C -> CxSection X ->
   (forall x v, In (x, v) (c_ty X) -> TyOk W (canon X v) /\ ScopedTy W C (canon X v)) ->
   CtxOf W f Cf ns -> CallTheta W X Cf f th -> RequirementsInForce X Cf ->
   In (mkey r m) (map (at_th X th) ns) -> TyOk W r /\ ScopedTy W C r.
 Proof.
-  intros C X f Cf ns th r m Mt Fc Es Tin Ctx [Keys [Bound Merges]] RB Ir.
+  intros C X f Cf ns th r m Mt Fc Es SectionX Tin Ctx [Keys [Bound Merges]] RB Ir.
+  assert (Read : ReadsMerge Cf (fun t => canon X (app_subst th t))).
+  { intros t u Equal. apply (context_canon_iff_mergeeq X SectionX).
+    exact (PublicMerge.merge_eq_substitute Merges Equal). }
   pose proof (ctxof_cx_formed W Mt f Cf ns Ctx) as [CfF _].
   destruct (function_context_merge W f Cf ns Ctx) as [SolvedCf Section].
   destruct (ctx_table_formed W f Cf ns Ctx) as [_ Dom].
@@ -1136,27 +1128,26 @@ Proof.
   assert (Through : forall x, In x (map fst (c_ty Cf)) -> InForceClass X (c_merge Cf) x ->
     P (canon X (app_subst th (TAbs x)))).
   { intros x Ix [y [Equal Ny]].
-    apply (proj2 (context_canon_iff_mergeeq Cf Section _ _)) in Equal.
+    pose proof (proj2 (context_canon_iff_mergeeq Cf Section _ _) Equal) as CanonEq.
     assert (Iy : In y (map fst (c_ty Cf))).
     { destruct (lookup_subst y (c_sub Cf)) as [u|] eqn:Ly; [exact (proj1 (Dom y u (lookup_subst_in_pair _ _ _ Ly)))|].
-      unfold canon in Equal. cbn [app_subst] in Equal. rewrite Ly in Equal.
+      unfold canon in CanonEq. cbn [app_subst] in CanonEq. rewrite Ly in CanonEq.
       destruct (lookup_subst x (c_sub Cf)) as [u'|] eqn:Lx.
       - subst u'. exact (proj2 (Dom x (TAbs y) (lookup_subst_in_pair _ _ _ Lx)) y (or_introl eq_refl)).
-      - injection Equal as ->. exact Ix. }
-    rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)), <- Equal, (theta_canon_lift X Cf th Merges (TAbs y)).
-    exact (InF y Iy Ny). }
+      - injection CanonEq as ->. exact Ix. }
+    rewrite <- (Read _ _ Equal). exact (InF y Iy Ny). }
   (* The structured case reads each leaf through a bound class member. *)
   assert (Req : forall x, In x (map fst (c_ty Cf)) -> P (canon X (app_subst th (TAbs x)))).
   { intros x Ix. destruct (RB x Ix) as [Class|[NA AllF]]; [exact (Through x Ix Class)|].
-    assert (Read : MergeEq (c_merge Cf) (TAbs x) (canon Cf (TAbs x))).
+    assert (ReadClass : MergeEq (c_merge Cf) (TAbs x) (canon Cf (TAbs x))).
     { apply PublicMerge.merge_eq_read. exact (proj1 Section). }
     assert (Expanded : expand (c_merge Cf) (canon Cf (TAbs x)) = canon Cf (TAbs x)).
     { apply section_output_expanded; [exact SolvedCf|exact Section]. }
-    pose proof (PublicMerge.expand_outer SolvedCf Read) as Outer. rewrite Expanded in Outer.
+    pose proof (PublicMerge.expand_outer SolvedCf ReadClass) as Outer. rewrite Expanded in Outer.
     pose proof (proj1 (@PublicMerge.type_outer_nonabs _ _ Outer) NA) as NonAbs.
-    pose proof (proj1 (@PublicMerge.expanded_in_force X _ _ _ SolvedCf Read) AllF) as Leaves.
+    pose proof (proj1 (@PublicMerge.expanded_in_force X _ _ _ SolvedCf ReadClass) AllF) as Leaves.
     rewrite Expanded in Leaves.
-    rewrite <- (theta_canon_lift X Cf th Merges (TAbs x)).
+    rewrite (Read _ _ ReadClass).
     destruct (lookup_subst x (c_sub Cf)) as [u|] eqn:Lx.
     2: { exfalso. apply (NonAbs x). unfold canon. cbn [app_subst]. rewrite Lx. reflexivity. }
     assert (Eu : canon Cf (TAbs x) = u) by (unfold canon; cbn [app_subst]; rewrite Lx; reflexivity).

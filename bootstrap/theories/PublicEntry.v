@@ -580,9 +580,9 @@ Proof. intros W F C tr x t L [_ [_ Cs]]. exact (PublicScoping.literal_scoped W C
 
 Lemma demand_scoped_ok : forall W b, A.WorldOf b W -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.DemandScopedOk W.
 Proof.
-  intros W b Wo F C X f Cf ns th r m [Fc _] Tin Es Ctx CT RB I.
+  intros W b Wo F C X f Cf ns th r m [Fc _] Tin Es SectionX Ctx CT RB I.
   exact (PublicScoping.demand_at_th_scoped W C X f Cf ns th r m
-    (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es Tin Ctx CT RB I).
+    (PublicWorldFormation.mentions_typed_of b W Wo) Fc Es SectionX Tin Ctx CT RB I).
 Qed.
 
 (* ---- what a functor closure captures (PublicLinkMerges) ---------------------- *)

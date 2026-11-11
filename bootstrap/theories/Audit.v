@@ -3369,7 +3369,7 @@ Definition CallTheta (W : world) (C Cs : cx) (s : nat) (th : subst) : Prop :=
   map fst th = map fst (c_ty Cs) /\
   (forall r, In r (map fst (c_ty Cs)) -> nlook r (c_ty C) <> None ->
      lookup_subst r th = Some (canon C (app_subst (c_ty C) (TAbs r)))) /\
-  (forall g t, In (g, t) (c_sub Cs) -> canon C (app_subst th (TAbs g)) = canon C (app_subst th t)).
+  Respects (c_merge Cs) th (c_merge C).
 
 (* Rule B: a requirement may be supplied through any member of its merge
    class. For a structured meaning, the same rule applies to each abstract

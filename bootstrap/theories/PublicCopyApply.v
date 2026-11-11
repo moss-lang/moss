@@ -556,7 +556,7 @@ Proof.
   set (f := fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))).
   assert (Thf : th = thof f Cu) by exact Th.
   destruct (S.static_realizes_le W Prog argv read state_ok rr rr C d H u Cu ns sm th (le_n _) Real (S.functx_static W _ _ _ FC) Sat
-    ltac:(rewrite Th; exact (S.apply_theta W C u Cu ns sm FC Idem Inp ltac:(rewrite <- Th; exact Sat)))) as [d1 [Sel [_ RealU]]].
+    ltac:(rewrite Th; exact (S.apply_theta W C u Cu ns sm FC Section Inp ltac:(rewrite <- Th; exact Sat)))) as [d1 [Sel [_ RealU]]].
   rewrite Thf in RealU.
   assert (Fixd : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (ground d (f x))).
   { intros x Fx'. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).

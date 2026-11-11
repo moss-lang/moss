@@ -43,13 +43,15 @@ Definition min_first {A} (l : list (nat * A)) : option (nat * A) :=
 Definition merges_msg (W : world) (who : string) (g : nat) (b a' b' : ty) : string :=
   who ++ " needs " ++ bq (sym_name W g) ++ " and " ++ qty W b ++
   " to be one type, which its context merged (D43), but here they are " ++ qty W a' ++ " and " ++ qty W b'.
+Definition call_read (C Cs : cx) (r : nat) : ty :=
+  if bound_in C r then read_here C r else
+  match canon Cs (TAbs r) with
+  | TAbs z => class_value C Cs z
+  | t => canon C (app_subst (map (fun z => (z, class_value C Cs z)) (gens t)) t)
+  end.
+
 Definition call_theta (W : world) (who : string) (C Cs : cx) : er subst :=
-  let th := map (fun q => let r := fst q in
-               (r, if bound_in C r then read_here C r else
-                   match canon Cs (TAbs r) with
-                   | TAbs z => class_value C Cs z
-                   | t => canon C (app_subst (map (fun z => (z, class_value C Cs z)) (gens t)) t)
-                   end)) (c_ty Cs) in
+  let th := map (fun q => (fst q, call_read C Cs (fst q))) (c_ty Cs) in
   match min_first (filter (fun q => negb (ty_eqb (canon C (app_subst th (TAbs (fst q)))) (canon C (app_subst th (snd q)))))
              (c_sub Cs)) with
   | Some (g, b) => Err (merges_msg W who g b (canon C (app_subst th (TAbs g))) (canon C (app_subst th b)))

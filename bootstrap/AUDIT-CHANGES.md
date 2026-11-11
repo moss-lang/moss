@@ -147,6 +147,8 @@ entry they belong to.
 | 113 | Separate concrete Base definitions into AuditBase.v | sep S5c | none (relocation) |
 | 114 | Rule B reads each structured dependency through its merge class | M4a | C |
 | 115 | Separate application typing and translation | typing/translation | none (equivalent factoring) |
+| 116 | Scope fresh identities in applications and functor copies | names | none (equivalent factoring) |
+| 117 | Call instantiation respects merge classes | M4a | none (equivalent on formed contexts) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3626,6 +3628,19 @@ using one fresh atom per abstract class must preserve that behaviour
   table allocations to the copy's batch, given that the starting counter
   lies above its reserved identities.
 - **Class.** Equivalent factoring of the fresh identity conditions.
+
+### 117. Call instantiation respects merge classes (M4a)
+
+- **Rule.** \`CallTheta\` sends the equations of the callee's merge classes
+  to equal types in the caller's merge. The requirement order and bound
+  meanings still determine the other two clauses.
+- **Fidelity.** In a formed callee context, each stored row is an effective
+  row of its section. The checked equivalence recovers the previous test
+  when the caller has a section too. The reference still runs that test.
+- **Proof.** The checked reference call produces \`Respects\` directly.
+  Callee realization and demand scoping use preservation of class equality
+  under the call substitution. Public safety still checks.
+- **Class.** Equivalent comparison on formed contexts (criterion 2).
 
 ---
 

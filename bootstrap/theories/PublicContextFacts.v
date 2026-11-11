@@ -88,14 +88,45 @@ Proof.
   intros C Section t u. symmetry. apply PublicMerge.merge_section_kernel. exact Section.
 Qed.
 
-Theorem call_theta_respects : forall W C Cs symbol th,
-  CxSection C -> CxSection Cs -> A.CallTheta W C Cs symbol th ->
-  A.Respects (A.c_merge Cs) th (A.c_merge C).
+(* Effective section rows are an executable test of the class judgment. *)
+Theorem respects_section_rows_iff : forall C Cs th,
+  CxSection C -> CxSection Cs ->
+  (forall g t, In (g,t) (A.c_sub Cs) -> lookup_subst g (A.c_sub Cs) = Some t) ->
+  A.Respects (A.c_merge Cs) th (A.c_merge C) <->
+  (forall g t, In (g,t) (A.c_sub Cs) ->
+    A.canon C (app_subst th (TAbs g)) = A.canon C (app_subst th t)).
 Proof.
-  intros W C Cs symbol th Caller Callee [_ [_ Equations]].
-  eapply PublicMerge.respects_section; [exact Callee |].
-  intros x t I. apply (context_canon_iff_mergeeq C Caller).
-  exact (Equations x t I).
+  intros C Cs th Caller Callee Effective. split.
+  - intros Respect g t Row.
+    apply (context_canon_iff_mergeeq C Caller).
+    apply (@PublicMerge.merge_eq_substitute _ _ _ Respect).
+    pose proof (proj1 Callee g) as Read. cbn [app_subst] in Read.
+    rewrite (Effective g t Row) in Read. exact Read.
+  - intros Rows. eapply PublicMerge.respects_section; [exact Callee|].
+    intros g t Row. apply (context_canon_iff_mergeeq C Caller). exact (Rows g t Row).
+Qed.
+
+Corollary formed_callee_theta_rows_iff : forall W C Cs s ns th,
+  CxSection C -> (A.CtxOf W s Cs ns \/ A.FunCtx W s Cs ns) ->
+  A.CallTheta W C Cs s th <->
+  map fst th = map fst (A.c_ty Cs) /\
+  (forall r, In r (map fst (A.c_ty Cs)) -> A.nlook r (A.c_ty C) <> None ->
+     lookup_subst r th = Some (A.canon C (app_subst (A.c_ty C) (TAbs r)))) /\
+  (forall g t, In (g,t) (A.c_sub Cs) ->
+    A.canon C (app_subst th (TAbs g)) = A.canon C (app_subst th t)).
+Proof.
+  intros W C Cs s ns th Caller Formed.
+  assert (Callee : CxSection Cs /\
+    (forall g t, In (g,t) (A.c_sub Cs) -> lookup_subst g (A.c_sub Cs) = Some t)).
+  { destruct Formed as [Ctx|Fun].
+    - destruct Ctx as (d & es & tm & er & tmr & sigma & M &
+        _ & _ & _ & [_ [_ [_ [_ Effective]]]] & _ & Section & -> & _).
+      exact (conj Section Effective).
+    - destruct Fun as (d & ps & a & r & b & es & tm & tm' & sigma & M & implicit &
+        _ & _ & _ & _ & _ & [_ [_ [_ [_ Effective]]]] & _ & Section & -> & _).
+      exact (conj Section Effective). }
+  destruct Callee as [Section Effective]. unfold A.CallTheta.
+  now rewrite (respects_section_rows_iff C Cs th Caller Section Effective).
 Qed.
 
 Lemma section_same_fields : forall C C',
@@ -185,17 +216,15 @@ Qed.
 
 (* A call reads members of a callee class as one caller class. *)
 Theorem call_theta_merged : forall W C Cs s th g1 g2,
-  CxSection C -> CxSection Cs -> A.CallTheta W C Cs s th ->
+  CxSection C -> A.CallTheta W C Cs s th ->
   A.MergeEq (A.c_merge Cs) (TAbs g1) (TAbs g2) ->
   In g1 (map fst (A.c_ty Cs)) -> In g2 (map fst (A.c_ty Cs)) ->
   A.nlook g1 (A.c_ty C) <> None -> A.nlook g2 (A.c_ty C) <> None ->
   A.MergeEq (A.c_merge C)
     (app_subst (A.c_ty C) (TAbs g1)) (app_subst (A.c_ty C) (TAbs g2)).
 Proof.
-  intros W C Cs s th g1 g2 Caller Callee Theta Equal R1 R2 F1 F2.
-  pose proof (@PublicMerge.merge_eq_substitute _ _ _
-    (call_theta_respects W C Cs s th Caller Callee Theta) _ _ Equal) as Read.
-  destruct Theta as [_ [Bound _]].
+  intros W C Cs s th g1 g2 Caller [_ [Bound Respects]] Equal R1 R2 F1 F2.
+  pose proof (@PublicMerge.merge_eq_substitute _ _ _ Respects _ _ Equal) as Read.
   cbn [app_subst] in Read. rewrite (Bound g1 R1 F1), (Bound g2 R2 F2) in Read.
   apply (context_canon_iff_mergeeq C Caller).
   apply (context_canon_iff_mergeeq C Caller) in Read.

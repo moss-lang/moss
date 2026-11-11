@@ -69,3 +69,10 @@ Proof.
   intros K s t Range Sc x Ix. destruct (gens_subst t s x Ix) as [y [Iy [[_ ->]|[u [L Iu]]]]]; [exact (Sc y Iy)|].
   exact (Range y u (PublicOrientation.lookup_subst_pair _ _ _ L) x Iu).
 Qed.
+
+Lemma lookup_on_keys : forall (f : nat -> ty) (l : list (nat * ty)) x, In x (map fst l) ->
+  lookup_subst x (map (fun q => (fst q, f (fst q))) l) = Some (f x).
+Proof.
+  intros f l x. induction l as [|[a t] r IH]; intros I; [contradiction|]. cbn in I |- *.
+  destruct (Nat.eqb_spec x a) as [->|Ne]; [reflexivity|]. destruct I as [E|I]; [congruence|exact (IH I)].
+Qed.

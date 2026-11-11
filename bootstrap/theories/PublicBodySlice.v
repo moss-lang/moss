@@ -666,7 +666,7 @@ Definition ExScopedOk : Prop := forall F C a x t, A.Ex W Prog F C a None x t -> 
 Definition LitScopedOk : Prop := forall F C tree x t, A.Literal W C tree x t -> Formed F C ->
   PublicFormation.ScopedTy W C t.
 Definition DemandScopedOk : Prop := forall F C X f Cf ns th r m, Formed F C -> FamilyTableIn X C ->
-  A.c_sub X = A.c_sub C -> A.CtxOf W f Cf ns -> A.CallTheta W X Cf f th -> A.RequirementsInForce X Cf ->
+  A.c_sub X = A.c_sub C -> CxSection X -> A.CtxOf W f Cf ns -> A.CallTheta W X Cf f th -> A.RequirementsInForce X Cf ->
   In (A.mkey r m) (map (A.at_th X th) ns) ->
   PublicFormation.TyOk W r /\ PublicFormation.ScopedTy W C r.
 Hypothesis ex_scoped : ExScopedOk.
@@ -1664,10 +1664,10 @@ Proof.
   intros n0 n C d H f Cf ns sm th Le [AbsM [[Vals [Fns [Mths Funs]]] [Section KM]]] St Sat CT.
   destruct St as [TfC [[SectionC KMf] [NdC [ProvC [ShapeC [ScC FixC]]]]]].
   pose proof (proj1 (absorbs_canon_iff C d Section) AbsM) as Abs.
-  pose proof (call_theta_respects W C Cf f th Section SectionC CT) as Respects.
+
   destruct Sat as [SmEq [Prov [Coh [Types _]]]].
   pose proof NdC as Nd. pose proof ProvC as ProvNs. pose proof ShapeC as Shape.
-  pose proof CT as [Keys [_ _]].
+  pose proof CT as [Keys [_ Respects]].
   (* the caller's provision of each need *)
   assert (Caller : forall k, In k ns -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k)) d = Some pv).
   { intros k Ik. pose proof (Prov k Ik) as Pr. pose proof (Shape k Ik) as Sh.
@@ -1700,7 +1700,7 @@ Proof.
       rewrite <- map_map, Ep, map_map. apply map_ext_in. intros t It. symmetry. apply GroundDe.
       intros x Ix. apply Sc. apply in_or_app. right. apply in_flat_map. exists t. split; assumption.
     - rewrite <- Abs, Er. symmetry. apply GroundDe. intros x Ix. apply Sc. apply in_or_app. left. exact Ix. }
-  split; [exact (call_agree_tf W f Cf C th d TfC CT Abs)|].
+  split; [exact (call_agree_tf W f Cf C th d TfC SectionC CT Section AbsM)|].
   split; [exact (call_absorbs_merge C Cf th d dc TfC SectionC Keys Respects AbsM)|].
   split; [|exact (conj SectionC KMf)].
   split; [|split; [|split]].
@@ -2271,11 +2271,20 @@ Proof.
   exact (PublicFormation.family_application_sub W C u matching th sm Cr ks FA).
 Qed.
 
+Lemma demand_merge : forall C0 wanted used C wrap C', A.Demand W C0 wanted used C wrap C' -> A.c_merge C' = A.c_merge C.
+Proof.
+  intros C0 wanted used C wrap C' D. induction D as [used C|used C u matching th sm rs Cm wrap Cf NotUsed Step Rest IH];
+    [reflexivity|]. rewrite IH. destruct Step as [C ot m u matching th sm Cr ks _ _ _ FA _ _ _]. cbn.
+  exact (PublicContextFacts.family_application_merge W C u matching th sm Cr ks FA).
+Qed.
+
 (* CallTheta reads the caller only through its table and merge. *)
-Lemma call_theta_same : forall C1 C2 Cs s th, A.c_ty C1 = A.c_ty C2 -> A.c_sub C1 = A.c_sub C2 ->
+Lemma call_theta_same : forall C1 C2 Cs s th,
+  A.c_ty C1 = A.c_ty C2 -> A.c_sub C1 = A.c_sub C2 -> A.c_merge C1 = A.c_merge C2 ->
   A.CallTheta W C1 Cs s th -> A.CallTheta W C2 Cs s th.
 Proof.
-  intros C1 C2 Cs s th Et Es CT. unfold A.CallTheta, A.canon in *. rewrite <- Et, <- Es. exact CT.
+  intros C1 C2 Cs s th Et Es Em CT.
+  unfold A.CallTheta, A.canon in *. now rewrite <- Et, <- Es, <- Em.
 Qed.
 
 Lemma pre_with_ty : forall n F C0 C d types H g st, A.c_ty C = A.c_ty C0 ->
@@ -2283,13 +2292,14 @@ Lemma pre_with_ty : forall n F C0 C d types H g st, A.c_ty C = A.c_ty C0 ->
 Proof. intros n F C0 [ty sub classes provs locs] d types H g st; cbn; intros -> Pre0. exact Pre0. Qed.
 
 Lemma receiver_agree : forall att Ca ns Cd th d' r args xs (rest : list (nat * ty)),
-  A.CtxOf W att Ca ns -> A.CallTheta W Cd Ca att th -> AbsorbsCanon Cd d' ->
+  A.CtxOf W att Ca ns -> A.CallTheta W Cd Ca att th -> CxSection Cd -> AbsorbsCanon Cd d' ->
   NoDup (map fst xs) -> A.c_ty Cd = (rev xs ++ rest)%list ->
   Forall2 (fun x xa => fst xa = x /\ A.nlook x (A.c_ty Ca) = Some (snd xa)) (A.w_reqs W r) args ->
   map fst xs = A.w_reqs W r ->
   app_subst (callee_meanings d' th) (TNom r args) = ground d' (TNom r xs).
 Proof.
-  intros att Ca ns Cd th d' r args xs rest Ctx CT Abs Nd Cty Args Keys.
+  intros att Ca ns Cd th d' r args xs rest Ctx CT SectionD Abs Nd Cty Args Keys.
+  pose proof (proj2 (absorbs_canon_iff Cd d' SectionD) Abs) as AbsM.
   destruct (ctxof_formed W att Ca ns Ctx) as [Form _].
   pose proof CT as [ThKeys [Bound _]].
   unfold ground. rewrite !subst_nom. f_equal.
@@ -2303,7 +2313,7 @@ Proof.
       unfold PublicTypeRead.smap. cbn [map fst snd]. f_equal.
       + f_equal. cbn [snd] in Lv. rewrite (Form x v Lv).
         assert (Ix : In x (map fst (A.c_ty Ca))) by (apply nlook_in in Lv; change x with (fst (x, v)); apply in_map, Lv).
-        rewrite (merged_meaning W att Ca ns Cd th d' x Ctx CT Abs Ix).
+        rewrite (merged_meaning W att Ca ns Cd th d' x Ctx CT AbsM Ix).
         assert (Lu : A.nlook x (A.c_ty Cd) = Some u).
         { rewrite Cty. rewrite (nlook_rev_distinct _ xs rest x Nd). apply nlook_app_in; [exact Nd|]. apply Sub. left. reflexivity. }
         cbn [app_subst]. rewrite (Bound x Ix ltac:(congruence)). cbn [app_subst]. rewrite lookup_subst_nlook', Lu. apply Abs.
@@ -2360,7 +2370,7 @@ Proof.
   - intros r' args' g0' Att' Reqs Sig0.
     pose proof (attached_unique rg r' n att Att Att') as <-.
     assert (Recv : app_subst (callee_meanings d th) (TNom rg args') = ground d (TNom rg rargs))
-      by exact (receiver_agree att Ca ns Cd th d rg args' rargs (A.c_ty C) Ctx CT AbsD Nd Et Reqs Keys).
+      by exact (receiver_agree att Ca ns Cd th d rg args' rargs (A.c_ty C) Ctx CT (proj1 (proj2 (proj2 RealD))) AbsD Nd Et Reqs Keys).
     destruct (sig_rel W _ _ att _ _ (Some (TNom rg args')) (Some (A.canon C rt)) g0' _ Sig0 Sig Ag
       (fun x1 x2 E1' E2' => ltac:(injection E1' as <-; injection E2' as <-; rewrite Canon; exact Recv))) as [Ps Rt].
     cbn [A.sg_params A.sg_ret] in Ps, Rt.
@@ -3641,10 +3651,7 @@ Qed.
 
 Lemma lookup_on_keys : forall (f : nat -> ty) (l : list (nat * ty)) x, In x (map fst l) ->
   lookup_subst x (map (fun q => (fst q, f (fst q))) l) = Some (f x).
-Proof.
-  intros f l x. induction l as [|[a t] r IH]; intros I; [contradiction|]. cbn in I |- *.
-  destruct (Nat.eqb_spec x a) as [->|Ne]; [reflexivity|]. destruct I as [E|I]; [congruence|exact (IH I)].
-Qed.
+Proof. exact PublicSubstFacts.lookup_on_keys. Qed.
 
 Lemma lookup_on_keys_some : forall (f : nat -> ty) (l : list (nat * ty)) x, lookup_subst x (map (fun q => (fst q, f (fst q))) l) <> None <->
   In x (map fst l).
@@ -4204,12 +4211,14 @@ Proof.
 Qed.
 (* An application's θ reads F's inputs here, as a call's does. *)
 Lemma apply_theta : forall C u Cu ns sm,
-  A.FunCtx W u Cu ns -> (forall t, A.canon C (A.canon C t) = A.canon C t) ->
+  A.FunCtx W u Cu ns -> CxSection C ->
   (forall t tt, A.nlook t (A.c_ty Cu) = Some tt -> exists here, A.nlook t (A.c_ty C) = Some here) ->
   A.Satisfies C Cu (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) ns sm ->
   A.CallTheta W C Cu u (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)).
 Proof.
-  intros C u Cu ns sm FC Idem Inp Sat. set (th := map _ (A.c_ty Cu)).
+  intros C u Cu ns sm FC SectionC Inp Sat. set (th := map _ (A.c_ty Cu)).
+  pose proof (section_canonical C SectionC) as Idem.
+  pose proof (proj2 (functor_context_merge W u Cu ns FC)) as SectionU.
   destruct (functx_scoped W u Cu ns FC) as [_ [_ [_ [_ [_ [_ Dom]]]]]].
   destruct Sat as [_ [_ [_ [_ Merg]]]].
   assert (Lth : forall x, In x (map fst (A.c_ty Cu)) -> lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x)))).
@@ -4226,7 +4235,9 @@ Proof.
       rewrite lookup_subst_nlook', Lh. discriminate. }
   split; [unfold th; rewrite map_map; reflexivity|]. split.
   - intros r Ir _. exact (Lth r Ir).
-  - intros g t Ig. destruct (Dom g t Ig) as [Gg Gt].
+  - eapply PublicMerge.respects_section; [exact SectionU|].
+    intros g t Ig. apply (context_canon_iff_mergeeq C SectionC).
+    destruct (Dom g t Ig) as [Gg Gt].
     rewrite (Through (TAbs g)) by (intros y [<-|[]]; exact Gg). rewrite (Through t Gt).
     assert (Force : forall x, In x (map fst (A.c_ty Cu)) -> A.nlook x (A.c_ty C) <> None).
     { intros x Kx. destruct (keys_in _ x Kx) as [v Lv]. destruct (Inp x v Lv) as [here Lh]. rewrite Lh. discriminate. }
@@ -5171,7 +5182,7 @@ Proof.
   { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   subst th. set (th := map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cu)) in *.
   destruct (static_realizes_le rr rr C d H u Cu ns sm th (le_n _) Real (functx_static _ _ _ FC) Sat
-    (apply_theta C u Cu ns sm FC Idem Inp Sat)) as [d1 [Sel [_ RealU]]].
+    (apply_theta C u Cu ns sm FC Section Inp Sat)) as [d1 [Sel [_ RealU]]].
   destruct (link_facts _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr & ks' & binds0 & LD).
   pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
@@ -5354,9 +5365,13 @@ Proof.
         destruct World as [bd Wo]. apply (PublicWorldFormation.reqs_typed bd W Wo h xq); [|exact Ir].
         intros E. unfold A.kind_sym in Kind. rewrite E in Kind. destruct Kind; discriminate.
       - exact (proj2 (proj2 (proj1 Fm)) xq Ix). }
+    pose proof (PublicContextFacts.family_context_merge xs0 C) as Emg.
     assert (CT0 : A.CallTheta W Cd0 Ca att th).
-    { apply (call_theta_same Cd); [rewrite (demand_ty _ _ _ _ _ _ Dem); reflexivity|exact (demand_sub _ _ _ _ _ _ Dem)|exact CT]. }
-    intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns th r0 m0 Fm Tin Es Ctx CT0 RB I0). }
+    { apply (call_theta_same Cd); [exact (demand_ty _ _ _ _ _ _ Dem)|exact (demand_sub _ _ _ _ _ _ Dem)|
+        exact (demand_merge _ _ _ _ _ _ Dem)|exact CT]. }
+    pose proof Pre0 as (_ & _ & _ & _ & (_ & _ & SectionC & _) & _).
+    pose proof (section_same_fields C Cd0 Es Emg SectionC) as SectionD.
+    intros r0 m0 I0. exact (demand_scoped F C Cd0 att Ca ns th r0 m0 Fm Tin Es SectionD Ctx CT0 RB I0). }
   intros j Lj d' types' H' g' st' PreD PreC.
   destruct j as [|j]; [exact Logic.I|].
   cbn [AR.O.I.eval]. change (view_function P att) with (A.body_of Prog att). rewrite View.
@@ -5378,7 +5393,7 @@ Proof.
   - intros r' args' g0' Att' Reqs Sig0.
     pose proof (attached_unique h r' n att Att Att') as <-.
     assert (Recv : app_subst (callee_meanings d' th) (TNom h args') = ground d' (TNom h xs0))
-      by exact (receiver_agree att Ca ns Cd th d' h args' xs0 (A.c_ty C) Ctx CT AbsD Nd Cty Reqs Keys).
+      by exact (receiver_agree att Ca ns Cd th d' h args' xs0 (A.c_ty C) Ctx CT (proj1 (proj2 (proj2 RealD))) AbsD Nd Cty Reqs Keys).
     destruct (sig_rel W _ _ att _ _ (Some (TNom h args')) (Some (TNom h xs0)) g0' g Sig0 Sig Ag
       (fun x1 x2 E1' E2' => ltac:(injection E1' as <-; injection E2' as <-; exact Recv))) as [Ps Rt].
     split; [exact Recv|]. split; [exact Ps|exact Rt].
@@ -5537,9 +5552,12 @@ Proof.
       exact (TC.tag_check W Prog Layouts Reps argv read d H1 s xs pay w
         (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
+      pose proof Pre0 as (_ & _ & _ & _ & (_ & _ & SectionC & _) & _).
       exact (demand_case k Bel F C C _ C' wrap (A.sg_ret sg) _ _ eq_refl eq_refl eq_refl eq_refl Dem
-        (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns th r0 m0 Fm (table_in_self F C Fm) eq_refl Ctx
-           (call_theta_same C' C Cf f th (demand_ty _ _ _ _ _ _ Dem) (demand_sub _ _ _ _ _ _ Dem) CT) RB I0)))
+        (fun Fm => conj (table_in_self F C Fm) (conj (proj2 (proj2 (proj1 Fm))) (fun r0 m0 I0 => demand_scoped F C C f Cf ns th r0 m0 Fm (table_in_self F C Fm) eq_refl
+           SectionC Ctx
+           (call_theta_same C' C Cf f th (demand_ty _ _ _ _ _ _ Dem) (demand_sub _ _ _ _ _ _ Dem)
+             (demand_merge _ _ _ _ _ _ Dem) CT) RB I0)))
         (fun j Lj d' types' H' g' st' Pre' PreC => call_code k Bel F C' C args f n0 ps0 rt0 b0 Cf ns sm th sg xs _ Def Ctx Sat CT Sig Args
           (fun a In' B0 => A.BkCall pa None args In' B0) j Lj d' types' H' g' st'
           (pre_with_ty _ _ C C' _ _ _ _ _ (demand_ty _ _ _ _ _ _ Dem) Pre') PreC) d types H lg lst Pre0).
