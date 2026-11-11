@@ -249,3 +249,6 @@ From NM Require EaFamilyMatching.
 Print Assumptions NM.EaFamilyMatching.read_off_one_domain.
 Print Assumptions NM.EaFamilyMatching.read_off_one_complete.
 Print Assumptions NM.EaFamilyMatching.family_read_off_sound.
+From NM Require EaLambdaSound.
+Print Assumptions NM.EaLambdaSound.lambda_provider_sound.
+Print Assumptions NM.EaLambdaSound.write_lambda_keeps_generated_post.

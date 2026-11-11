@@ -87,6 +87,32 @@ Definition lambda_need_keys (C : cx) (index : pix) : list item :=
     | _ => providesb_i C index k && item_eqb k (provision_id k)
     end) (iuniq_fast (map fst (c_provisions C))).
 
+Definition lambda_parameter_message (what parameter : string) (actual expected : ty) : string :=
+  "parameter `" ++ parameter ++ "` of the anonymous function bound to " ++ what ++
+  " is annotated " ++ qty W actual ++ ", but " ++ what ++ " declares " ++ qty W expected ++ " there (D70)".
+
+Definition lambda_return_message (what : string) (expected actual : ty) : string :=
+  "the anonymous function bound to " ++ what ++ " is annotated to return " ++ qty W actual ++
+  ", but " ++ what ++ " returns " ++ qty W expected ++ " (D70)".
+
+Definition check_lambda_annotation (F : frame) (C : cx) (this : option ty)
+    (expected : ty) (annotation : option aty) (message : ty -> string) : M unit :=
+  match annotation with
+  | Some syntax =>
+      let* actual := pure (ty_of W fuel (fr_mod F) (c_ty C) this syntax) in
+      check (ty_eqb (canon C actual) (canon C expected)) (message actual)
+  | None => ret tt
+  end.
+
+Definition lambda_body_frame (F : frame) (C : cx) (parameters : list name)
+    (sg : fsig) (this : option ty) (body : aexpr) (caps : list name) : frame :=
+  Frame (fr_mod F) (Some (sg_ret sg)) this false
+    (mk_frame_vars (is_some this) parameters (caps ++ ex_names W fuel (fr_mod F) body))
+    (fr_fresh F ++ context_gens C) (fr_applying F) [].
+
+Definition lambda_parameter_context (C : cx) (parameters : list name) (types : list ty) : cx :=
+  fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine parameters types) C.
+
 (* SOUND: lambda_provider F C ps rt body sg this = Ok (pid, pre, sm) ->
      LambdaProvider W P F C ps rt body sg this pid pre sm *)
 Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name * option aty)) (rt : option aty) (body : aexpr)
@@ -97,30 +123,18 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
   let* _ := match suniq_dup (map fst ps) with
             | Some n => fail ("anonymous function parameter `" ++ n ++ "` is declared twice")
             | None => ret tt end in
-  let* _ := miter (fun q => match snd (fst q) with
-              | Some a => let* t' := pure (ty_of W fuel (fr_mod F) (c_ty C) this a) in
-                          check (ty_eqb (canon C t') (canon C (snd q)))
-                            ("parameter `" ++ fst (fst q) ++ "` of the anonymous function bound to " ++ what ++
-                             " is annotated " ++ qty W t' ++ ", but " ++ what ++ " declares " ++ qty W (snd q) ++ " there (D70)")
-              | None => ret tt end) (combine ps (sg_params sg)) in
-  let* _ := match rt with
-            | Some a => let* t' := pure (ty_of W fuel (fr_mod F) (c_ty C) this a) in
-                        check (ty_eqb (canon C t') (canon C (sg_ret sg)))
-                          ("the anonymous function bound to " ++ what ++ " is annotated to return " ++ qty W t' ++
-                           ", but " ++ what ++ " returns " ++ qty W (sg_ret sg) ++ " (D70)")
-            | None => ret tt end in
+  let* _ := miter (fun q => check_lambda_annotation F C this (snd q) (snd (fst q))
+    (fun actual => lambda_parameter_message what (fst (fst q)) actual (snd q))) (combine ps (sg_params sg)) in
+  let* _ := check_lambda_annotation F C this (sg_ret sg) rt (lambda_return_message what (sg_ret sg)) in
   let pnames := map fst ps in
   let caps := lambda_capture_names F C pnames body in
   let* capvals := fresh_n (List.length caps) in
   let* pid := reserve_code FunctionTable in
   let Cl := captured_cx C caps capvals in
-  let Fl := Frame (fr_mod F) (Some (sg_ret sg)) this false
-             (mk_frame_vars (is_some this) pnames (caps ++ ex_names W fuel (fr_mod F) body))
-             (fr_fresh F ++ context_gens C) (fr_applying F) [] in
+  let Fl := lambda_body_frame F C pnames sg this body caps in
   let* _ := check (forallb (fun n => is_some (slook n (fr_var F))) caps) "internal: a captured local is not numbered" in
   let* (lbody, ltype) := map_err (fun m => if String.eqb m "`this` is only legal inside method bodies" && negb (is_some this)
-                                          then (m ++ "; an anonymous function bound to a fn has no receiver")%string else m) (r_blke R Fl (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
-                                         (combine pnames (sg_params sg)) Cl)
+                                          then (m ++ "; an anonymous function bound to a fn has no receiver")%string else m) (r_blke R Fl (lambda_parameter_context Cl pnames (sg_params sg))
                           (ABlock [] (Some body)) (Some (sg_ret sg))) in
   let* _ := check (fitsb ltype (sg_ret sg))
              ("the anonymous function bound to " ++ what ++ " yields " ++ qty W ltype ++ ", but " ++ what ++ " returns " ++ qty W (sg_ret sg)) in

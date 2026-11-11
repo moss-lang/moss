@@ -253,11 +253,11 @@ Proof.
   apply code_effect_bind.
   { destruct (suniq_dup (map fst ps)); [apply code_effect_fail|apply code_effect_return]. }
   intros []. apply code_effect_bind.
-  { apply code_effect_miter. intros [[name [annotation|]] argument].
+  { apply code_effect_miter. intros [[name [annotation|]] argument]; cbn [check_lambda_annotation].
     - apply code_effect_bind; [apply code_effect_pure|intro ty; apply code_effect_check].
     - apply code_effect_return. }
   intros []. apply code_effect_bind.
-  { destruct rt as [annotation|].
+  { destruct rt as [annotation|]; cbn [check_lambda_annotation].
     - apply code_effect_bind; [apply code_effect_pure|intro ty; apply code_effect_check].
     - apply code_effect_return. }
   intros []. cbn zeta. apply code_effect_bind; [apply code_effect_fresh_n|].
