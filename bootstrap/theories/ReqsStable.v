@@ -6,9 +6,9 @@
 (* cached when it started; every other write is of a symbol not yet cached. *)
 (* So the cache only grows (rq_group: Ext from before to after every call   *)
 (* of the requirement functions), and `type_requirements x` leaves its      *)
-(* answer cached under x (reqs_cached).  ElabFrame.v's frame carries the    *)
-(* first through the whole elaboration (fr_ext); with it the list a call    *)
-(* reads is the final state's, which is the reading's (ReqsTotal).          *)
+(* answer cached under x (reqs_cached). These local cache laws remain       *)
+(* available to the loader requirement proofs; the retired elaborator's    *)
+(* whole-program frame proof is no longer part of the certificate.         *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.

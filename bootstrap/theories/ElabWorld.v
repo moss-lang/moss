@@ -22,7 +22,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit.
 From NM Require ExecutionModel ComponentContracts.
-From NM Require Import NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsTotal ElabFrame LoadListedFacts.
+From NM Require Import NMap Sx Elab ElabSound WorldSound ReqsSolve ReqsTotal ElabFrameCore LoadListedFacts.
 From NM Require PublicWorld PublicWorldRequirements.
 Import ListNotations.
 

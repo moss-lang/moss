@@ -15,7 +15,7 @@
 (*    R that contains the cached lists of everything else.                  *)
 (* Both hold of the empty cache, and solve_requirements keeps them           *)
 (* (solve_rel); every other write is of a symbol that is no tag or alias    *)
-(* (rel_ext).  ElabFrame.v carries them through the whole elaboration.       *)
+(* (rel_ext). ElabWorld uses these laws when reading requirement tables.    *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.

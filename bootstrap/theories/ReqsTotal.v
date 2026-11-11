@@ -1,7 +1,5 @@
 (* ------------------------------------------------------------------------ *)
-(* ReqsTotal.v — requirement lists for every symbol, and the reading of an  *)
-(* accepted bundle as a WorldOf (Track A, WorldSound.v's TODO_reqs_reading  *)
-(* part (c)).                                                                *)
+(* ReqsTotal.v — requirement lists for every symbol in a loader world.      *)
 (*                                                                           *)
 (* The elaborator caches requirement lists only for the symbols it asks     *)
 (* about.  For the others the reading needs lists too: AssumeTypes for a     *)
@@ -11,13 +9,13 @@
 (* stabilizes (section Kleene), so nothing depends on how deep or whether    *)
 (* cyclic contexts nest.  The reading's lists are the elaborator's cached    *)
 (* list where there is one, and these elsewhere (Rfin); ReqsReading holds of *)
-(* it (reqs_reading), and with the loader's reading and an injective field  *)
-(* numbering, the bundle has a WorldOf reading (elaborate_world_of).        *)
+(* it (reqs_reading). ElabWorld uses these sets to prove the current        *)
+(* executable world builder's WorldOf reading.                              *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import ComponentContracts.
-From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrame.
+From NM Require Import ExecutionModel NMap Sx Elab ElabSound WorldSound ReqsSolve ElabFrameCore.
 Import ListNotations.
 Local Open Scope list_scope.
 
@@ -851,31 +849,4 @@ Proof.
   assert (Hb' : A.nominal_body (A.d_ast (A.Decl (pathi b ls e (gs_mod g0)) (gs_decl g0) (gs_assumes g0))) = Some (tps, tt))
     by (cbn; rewrite Dd; reflexivity).
   destruct (Hlok _ tps tt Dg eq_refl) as [_ L2]. destruct (L2 n Hn) as (x & Hrs & _ & Ha). exists x. split; [exact Hrs | exact Ha].
-Qed.
-
-(* ======================================================================== *)
-(* 6. An accepted bundle has a reading                                       *)
-(* ======================================================================== *)
-
-(* Track A, steps 1-3 of elaborate_sound: whenever the elaborator accepts a
-   bundle, the loader's world with the requirement lists the elaborator
-   cached (and, for the symbols it never asked about, the least ones) and
-   any injective field numbering is a WorldOf of the bundle. *)
-Theorem elaborate_world_of : forall b p, elaborate b = Good p ->
-  exists w s R, load_world b = Good w /\ elab_program (s_init w) = Good (p, s) /\
-    (forall x l, nget (st_reqs s) x = Some l -> R x = l) /\
-    forall F, (forall a c, F a = F c -> a = c) -> A.WorldOf b (W_read w R F).
-Proof.
-  intros b p H. destruct (elaborate_frame b p H) as (w & s & Hw & He & Sw & Sk & _ & _ & _ & Hq & Hrc & Hrl).
-  destruct (load_world_inv b w Hw) as (ls & e & HI & Ew).
-  exists w, s, (Rfin b ls e (st_reqs s)). split; [exact Hw|]. split; [exact He|]. split.
-  { intros x l Hx. unfold Rfin. rewrite Hx. reflexivity. }
-  intros F Hf. apply worldof_of_reading; [exact (load_world_reads b w _ F Hw) | | exact Hf].
-  rewrite Ew in Sk, Hrc, Hrl, He |- *. rewrite Ew in Sw.
-  apply (reqs_reading b ls e HI (st_syms s)); [exact Sk | | exact Hrc | exact Hrl |].
-  - intros x l Hx. destruct (Hq x l Hx) as (Nd & g & Hg & P1 & P2). split; [exact Nd|]. exists g. split; [exact Hg|].
-    rewrite Sw in P1. split; [exact P1 | exact P2].
-  - unfold elab_program in He. apply bind_inv in He as (u & s1 & H1 & _).
-    apply (check_listed_ok b ls e HI (s_init (LoadWorld.World (ls_mods ls) (ls_order ls) e (ls_syms ls) (ls_next_sym ls) (ls_files ls) (Loader.library_dir (b_prelude b)))) u s1);
-      [split; [reflexivity | intros i g Hi; exact Hi] | exact H1].
 Qed.

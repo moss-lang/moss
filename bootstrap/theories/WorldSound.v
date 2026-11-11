@@ -2611,28 +2611,19 @@ Proof.
 Qed.
 
 (* ======================================================================== *)
-(* world_todo: what WorldOf needed (now all proved)                         *)
+(* Loader and requirement reading boundary                                  *)
 (* ======================================================================== *)
 
-(* With s the elaborator's final state and
-   w = st_w s the loader's world:
+(* ReqsSolve proves closure and leastness for requirement caches. ReqsTotal
+   extends those sets to every loader symbol, including cyclic contexts.
+   ElabWorld.bundle_world_sound combines those facts with the loader reading
+   and LoadListed.check. EaWorldSound.elaborate_with_world_sound is the
+   certificate root for the executable elaborator's source-world reading.
+   It does not assert context formation or whole elaboration soundness.
 
-   TODO_reqs_reading: DONE.  (a) ElabFrame.v's ReqOK: the cached lists of
-   symbols that are no tag or alias.  (b) ReqsSolve.v: the cached lists of
-   tags and aliases are closed and least.  (c) ReqsTotal.v: lists for the
-   symbols never cached (AssumeTypes and the least relevance-closed sets,
-   computed by a Kleene iteration over the loader's symbols, so neither
-   the depth nor the cycles of contexts matter), agreeing with the cache;
-   and every tag's listed parameters, which the elaborator now checks of
-   every tag (ExecutionModel.v note 40).  ReqsTotal.elaborate_world_of: an accepted
-   bundle's loader world, with those lists and any injective field
-   numbering, is a WorldOf of it.
-
-   TODO_fld_injective and TODO_syms_frame: DONE in ElabFrame.v
-   (elab_frame, elaborate_frame): every function of the elaborator keeps
-   the loader's world and symbols, makes only non-source symbols, fresh in
-   W_read, and numbers fields 1, 2, …, so fld_ext of the final table is an
-   injective field numbering. *)
+   The former end-to-end frame proof concerned the retired Elab.elaborate
+   executable. Its wrappers and exclusive traversal dependencies have been
+   removed; the shared loader and requirement lemmas above remain in use. *)
 
 Theorem load_world_receiver_shape:forall b w,
  load_world b=Good w->forall key g,nget(w_syms w)key=Some g->

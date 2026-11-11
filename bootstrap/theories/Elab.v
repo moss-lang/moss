@@ -570,7 +570,7 @@ Definition set_reqs (s : nat) (l : list nat) : M unit := upd (s_reqs (fun m => n
 (* a tag's or alias's requirements, during solve_requirements.  Its group
    holds only tags and aliases and every list it computes is without
    repeats, so the guard and the dedup change nothing; they make the cache
-   invariant local (Track A, ElabFrame.v) *)
+   invariant local (ElabFrameCore.ReqOK) *)
 Definition set_nominal_reqs (s : nat) (l : list nat) : M unit :=
   let! g := sym s in
   if kind_eqb (gs_kind g) KTag || kind_eqb (gs_kind g) KAlias then set_reqs s (nodup Nat.eq_dec l) else ret tt.

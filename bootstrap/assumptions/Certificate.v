@@ -218,7 +218,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicWorld.load_world_declaration_complete);
   root (@NM.PublicWorld.load_world_resolves);
   root (@NM.PublicWorldScope.load_world_world_of_from_requirements);
-  root (@NM.PublicWorldRequirements.elaborate_public_world_of);
   root (@NM.ElabWorld.bundle_world_sound);
   root (@NM.EaWorldSound.elaborate_with_world_sound);
   root (@NM.ElabWorld.bundle_world_with_sound);

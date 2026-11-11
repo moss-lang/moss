@@ -3,7 +3,7 @@
 From Stdlib Require Import List String.
 From NM Require Import Audit PublicWorld PublicWorldScope.
 From NM Require ExecutionModel ComponentContracts.
-From NM Require Import Elab WorldSound ReqsTotal ReqsSolve ElabFrame ElabSound NMap Sx.
+From NM Require Import WorldSound Sx.
 Import ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Module M := ExecutionModel.Elaboration.
@@ -215,55 +215,4 @@ Proof.
     + change (A.resolve_sym (world_of W) (M.d_mod raw) [name] = Some parameter).
       rewrite resolve_symbol_of; exact Resolved.
     + exact (proj2 (assume_types_iff W symbol parameter) Assumed).
-Qed.
-
-(* Extract the requirements milestone directly, before the old model's
-   independent field-numbering clause is introduced. *)
-Theorem elaborate_requirements_reading : forall bundle program,
-  Elab.elaborate bundle = Sx.Good program ->
-  exists w state requirements,
-    LoadWorld.load_world bundle = Sx.Good w /\
-    Elab.elab_program (ElabFrame.s_init w) = Sx.Good (program,state) /\
-    (forall symbol parameters, NMap.nget (Elab.st_reqs state) symbol = Some parameters ->
-      requirements symbol = parameters) /\
-    ComponentContracts.SourceReading.ReqsReading
-      (WorldSound.W_read w requirements (fun _ => 0)).
-Proof.
-  intros b p Accepted.
-  destruct (ElabFrame.elaborate_frame b p Accepted)
-    as (w & s & Loaded & Elaborated & Sw & Sk & _ & _ & _ & Hq & Hrc & Hrl).
-  destruct (ReqsSolve.load_world_inv b w Loaded) as (ls & e & HI & Ew).
-  exists w, s, (ReqsTotal.Rfin b ls e (Elab.st_reqs s)).
-  split; [exact Loaded|]. split; [exact Elaborated|]. split.
-  { intros symbol parameters Found. unfold ReqsTotal.Rfin. rewrite Found; reflexivity. }
-  rewrite Ew in Sk, Hrc, Hrl, Elaborated |- *. rewrite Ew in Sw.
-  apply (ReqsTotal.reqs_reading b ls e HI (Elab.st_syms s));
-    [exact Sk | | exact Hrc | exact Hrl |].
-  - intros symbol parameters Found.
-    destruct (Hq symbol parameters Found) as (Unique & declaration & FoundDecl & Plain & Empty).
-    split; [exact Unique|]. exists declaration. split; [exact FoundDecl|].
-    rewrite Sw in Plain. split; [exact Plain|exact Empty].
-  - unfold Elab.elab_program in Elaborated.
-    apply ElabSound.bind_inv in Elaborated as (u & s1 & Checked & _).
-    apply (ReqsTotal.check_listed_ok b ls e HI
-      (ElabFrame.s_init (LoadWorld.World (LoadWorld.ls_mods ls) (LoadWorld.ls_order ls) e
-        (LoadWorld.ls_syms ls) (LoadWorld.ls_next_sym ls) (LoadWorld.ls_files ls)
-        (Audit.Loader.library_dir (Audit.Input.b_prelude b)))) u s1);
-      [split; [reflexivity|intros symbol declaration Found; exact Found]|exact Checked].
-Qed.
-
-Theorem elaborate_public_world_of : forall bundle program,
-  Elab.elaborate bundle = Sx.Good program ->
-  exists w state requirements,
-    LoadWorld.load_world bundle = Sx.Good w /\
-    Elab.elab_program (ElabFrame.s_init w) = Sx.Good (program,state) /\
-    (forall symbol parameters, NMap.nget (Elab.st_reqs state) symbol = Some parameters ->
-      requirements symbol = parameters) /\
-    A.WorldOf bundle (world_read w requirements).
-Proof.
-  intros bundle program Accepted.
-  destruct (elaborate_requirements_reading bundle program Accepted)
-    as (w & state & requirements & Loaded & Elaborated & Cached & Reading).
-  exists w, state, requirements. split; [exact Loaded|]. split; [exact Elaborated|].
-  split; [exact Cached|]. apply load_world_world_of_from_reading; assumption.
 Qed.
