@@ -24,22 +24,22 @@ Proof.
     + change (In y (gens (app_subst (c_sub C) (TAbs x)))). now rewrite <- (Row x tx Lookup).
 Qed.
 
-Theorem site_allocation : forall W bound C recorded,
+Theorem site_allocation : forall W bound C recorded private,
   (forall g d, w_decl W g = Some d -> g < bound) ->
-  let before := copy_allocation_scope W recorded in
-  let batch := map (site_atom bound recorded) (site_classes C (copy_fixed_readings C recorded)) in
+  let before := copy_allocation_scope W (recorded ++ private) in
+  let batch := map (site_atom bound (recorded ++ private)) (site_classes C (copy_fixed_readings C recorded)) in
   Allocates before batch (extend_allocation_scope before batch).
 Proof.
-  intros W bound C recorded Bound before batch. split; [|reflexivity]. split.
+  intros W bound C recorded private Bound before batch. split; [|reflexivity]. split.
   - unfold batch, site_classes. apply AllocationFacts.allocation_rename_nodup.
     + unfold site_atom. lia.
     + apply NoDup_filter, EaRootSound.ascending_nodup, EaDependencyFuel.sort_uniq_ascending.
   - apply Forall_forall. intros g Member.
     apply in_map_iff in Member as [y [<- Member]].
-    set (support := flat_map (fun q => gens (snd q)) recorded).
-    change (Fresh W (site_atom bound recorded y) /\ ~ In (site_atom bound recorded y) support).
+    set (support := flat_map (fun q => gens (snd q)) (recorded ++ private)).
+    change (Fresh W (site_atom bound (recorded ++ private) y) /\ ~ In (site_atom bound (recorded ++ private) y) support).
     split.
-    + unfold Fresh. destruct (w_decl W (site_atom bound recorded y)) as [d|] eqn:Declared; [exfalso|reflexivity].
+    + unfold Fresh. destruct (w_decl W (site_atom bound (recorded ++ private) y)) as [d|] eqn:Declared; [exfalso|reflexivity].
       pose proof (EaAssumesSound.scope_floor_world support bound).
       pose proof (Bound _ _ Declared). unfold site_atom in *. unfold support in *. lia.
     + intros Reserved. pose proof (EaAssumesSound.scope_floor_support support bound _ Reserved).

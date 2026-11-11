@@ -146,9 +146,15 @@ Proof.
     apply AbsM0. unfold Cf in Ag.
     now rewrite PublicContextFacts.family_context_merge, Emg in Ag. }
   set (Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list).
-  assert (Inputs : PublicContextFacts.LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))).
-  { intros x tx Found Shared. rewrite !PublicCopySubst.ground_app_subst.
-    apply (PublicContextFacts.closure_bind_inputs _ _ _ _ _ _ _ _ Binding Tin); [| |exact Found|exact Shared].
+  assert (Ed2 : type_meanings d2 = [] /\ type_aliases d2 = []) by exact (CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
+  destruct Ed2 as [Em2 Ea2].
+  assert (Inputs : PublicContextFacts.LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))
+    (app_subst (PublicContextFacts.link_reading Cu Cg (PublicLinkRun.caller_readings d th) (append_environment d2 dc)))).
+  { change (PublicContextFacts.LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))
+      (app_subst (PublicContextFacts.link_reading Cu Cg Tin (append_environment d2 dc)))).
+    rewrite (PublicContextFacts.link_reading_same_capture Cu Cg Tin _ dc (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2)).
+    intros x tx Found Shared. rewrite PublicCopySubst.ground_app_subst.
+    apply (PublicContextFacts.closure_bind_inputs _ _ _ _ _ _ _ _ _ Binding Tin); [| |exact Found|exact Shared].
     - intros t v Equal. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst. exact (ThMerge t v Equal).
     - intros y Fixed. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst. exact (GfxA y Fixed). }
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
@@ -277,8 +283,6 @@ Proof.
   (* 7: the transfer *)
   pose proof (CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real3) as Abs3.
   (* Q6: a pin reads, after the body, as u's fixed reading of the pinned input *)
-  assert (Ed2 : type_meanings d2 = [] /\ type_aliases d2 = []) by exact (CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
-  destruct Ed2 as [Em2 Ea2].
   set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Cu)) then ground d (app_subst th (TAbs y))
                                 else cmeaning dc y)) DG).
   assert (Am : CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W u Cu Cg dc gfx gm0).
@@ -345,10 +349,10 @@ Proof.
       destruct (A.nlook y (A.c_ty Cg)) as [ty|] eqn:Ly;
         [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ y _) Iyg Ly)].
       rewrite lookup_subst_nlook', Ly.
-      destruct (Inputs y ty Ly (proj2 (PublicFamilyAgree.nlook_dom _ y _) (ScR y Iy))) as [InU Read].
-      change (ground d3 ty = ground d (app_subst th (TAbs y))).
-      rewrite (RunFact ty (GgDom y ty Ly) (fun z Iz => proj1 (PublicFamilyAgree.nlook_dom _ z _) (InU z Iz))).
-      symmetry. exact Read. }
+      pose proof ScopeB as [_ [_ [_ [[Rows _] _]]]].
+      rewrite (TblG y ty Ly), <- Rows.
+      change (ground d3 (A.canon Cb (TAbs y)) = ground d (app_subst th (TAbs y))).
+      rewrite Abs3. apply RunFact; intros z [<-|[]]; [exact Iyg|exact (ScR y Iy)]. }
   assert (GEp : forall l1 l2, Forall2 (PublicFamilyAgree.SigAgree Cf Cu th) l1 l2 -> incl l2 (A.sg_params gf) ->
     map (fun t => ground d3 (app_subst pr0 t)) l2 = map (ground d) l1).
   { intros l1' l2' F2. induction F2 as [|tc tf l1' l2' A1 _ IH]; intros Inc; [reflexivity|]. cbn [map].

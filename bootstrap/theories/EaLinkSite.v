@@ -10,6 +10,6 @@ Definition site_classes (C : cx) (fixed : subst) : list nat :=
 Definition site_atom (bound : nat) (recorded : subst) (y : nat) : nat :=
   scope_floor bound (flat_map (fun q => gens (snd q)) recorded) + y.
 
-Definition site_theta (bound : nat) (C : cx) (recorded : subst) : subst :=
+Definition site_theta (bound : nat) (C : cx) (recorded private : subst) : subst :=
   let fixed := copy_fixed_readings C recorded in
-  copy_subst fixed (site_classes C fixed) (site_atom bound recorded).
+  copy_subst fixed (site_classes C fixed) (site_atom bound (recorded ++ private)).

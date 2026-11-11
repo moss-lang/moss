@@ -248,29 +248,30 @@ Definition unsafe_capture (Cu Cg : cx) (target : item -> option item) (fixed : l
   | None => false
   end.
 
-Definition linked_type_agrees (Cu Cg : cx) (rho : subst) (x : nat) : bool :=
+Definition linked_type_agrees (Cu Cg : cx) (rho private : subst) (x : nat) : bool :=
   match nlook x (c_ty Cg) with
-  | Some tx => if bound_in Cu x then forallb (bound_in Cu) (gens tx) &&
-      ty_eqb (app_subst rho (canon Cu (TAbs x))) (app_subst rho (canon Cu tx)) else true
+  | Some tx => if bound_in Cu x then
+      forallb (fun y => bound_in Cu y || is_some (lookup_subst y private)) (gens tx) &&
+      ty_eqb (app_subst rho (canon Cu (TAbs x))) (app_subst (private ++ rho) (canon Cu tx)) else true
   | None => true
   end.
 
 (* Check the source binding separately from lookup or generation of body code. *)
 Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item)
-    (recorded : subst) : M (item -> option item) :=
+    (recorded private : subst) : M (item -> option item) :=
   let nu := qs W u in let ng := qs W gg in
   let bound_to := (ng ++ ", bound to " ++ nu ++ ",")%string in
   let error := (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)")%string in
   let fu := fixed W metadata_fuel u in
   let* state := get in
-  let rho := site_theta (es_next state) Cu recorded in
+  let rho := site_theta (es_next state) Cu recorded private in
   let* choices := pure (rmap (fun k =>
     let! choice := link_need_choice Cu Cg nsu rho error k in Ok (k, choice)) nsg) in
   let target := fun k => match ilook k choices with Some choice => choice | None => None end in
   let* _ := match find (unsafe_capture Cu Cg target fu) nsg with
       | Some k => fail (bound_to ++ " captures " ++ qkey W k ++ ", which mentions a type each application of " ++ nu ++ " supplies (D84 3b)")
       | None => ret tt end in
-  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg rho (fst q)) (c_ty Cg))
+  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg rho private (fst q)) (c_ty Cg))
       (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
   ret target.
 
@@ -389,7 +390,7 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
             | None => ret tt end in
   let* _ := check (same_result W fuel u gg) (result_mismatch u gg) in
   let fx := fixed_here u C in
-  let* target := check_link_binding u gg Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) in
+  let* target := check_link_binding u gg Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) (link_private_readings C Cu Cg) in
   let* h := link_body u gg in
   let sm := translate_link_targets Cu Cg target nsg in
   let thg := map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg) in

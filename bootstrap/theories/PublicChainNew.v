@@ -40,7 +40,7 @@ Definition ChainRealizeOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   CC.LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (A.link_map Ch0 Cg linktarget nsg)) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (A.link_map Ch0 Cg linktarget nsg)) dc None) ->
   CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
-  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0 ->
+  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget dc gf0 ->
   CC.LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->

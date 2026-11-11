@@ -1,0 +1,24 @@
+# G reads the captured seed through the same type as F fixes for out.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type X; type Y;
+assume Y { val seed: Y; }
+assume X { val out: X; }
+context GInputs = X, Y, Y = X, seed;
+functor F[]: Std, X -> out;
+functor G: Std, GInputs -> out { bind out = seed; }
+assume Std {
+  fn demo() {
+    bind X = Int;
+    bind Y = Int;
+    bind seed = 7;
+    bind F = G;
+    bind F;
+    putchar((out + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch { fn main() { bind WasiStd; demo(); } }

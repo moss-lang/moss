@@ -4591,10 +4591,19 @@ Definition LinkNeedChoice (Cu Cg : cx) (nsu : list item) (rho : subst)
       (~ (LinkNeedScope Cu k p /\ LinkNeedScope Cg k p) -> ~ In (canon_item Cu k) nsu)
   end.
 
+(* A private input that is directly in force reads from the closure's
+   lexical capture. The shared inputs always come from its application. *)
+Definition link_private_readings (C Cu Cg : cx) : subst :=
+  flat_map (fun q =>
+    match nlook (fst q) (c_ty Cu), nlook (fst q) (c_ty C) with
+    | None, Some t => [(fst q, canon C t)]
+    | _, _ => []
+    end) (c_ty Cg).
+
 (* Shared inputs are checked under the target's fixed site readings and
    fresh atoms for the other classes. The body is checked separately. *)
 Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
-    (Cg : cx) (nsg : list item) (recorded : subst) (target : item -> option item) : Prop := {
+    (Cg : cx) (nsg : list item) (recorded private : subst) (target : item -> option item) : Prop := {
   link_bind_scope : forall k p t, In k nsg -> target k = None ->
     ilook (provision_id k) (c_provisions Cg) = Some p ->
     In t (link_need_gens k p) -> nlook t (c_ty Cu) <> None -> Fixed W u t;
@@ -4602,14 +4611,14 @@ Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
     let fixed := copy_fixed_readings Cu recorded in
     exists ys cg scope_after,
       let rho := copy_subst fixed ys cg in
-      Allocates (copy_allocation_scope W recorded) (map cg ys) scope_after /\
+      Allocates (copy_allocation_scope W (recorded ++ private)) (map cg ys) scope_after /\
       (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
         lookup_subst y fixed = None) /\
       (forall k, In k nsg -> exists p, ilook (provision_id k) (c_provisions Cg) = Some p /\
         LinkNeedChoice Cu Cg nsu rho k p (target k)) /\
       (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
-        (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\
-        app_subst rho (canon Cu (TAbs x)) = app_subst rho (canon Cu tx))
+        (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None \/ lookup_subst y private <> None) /\
+        app_subst rho (canon Cu (TAbs x)) = app_subst (private ++ rho) (canon Cu tx))
 }.
 
 (* Main judgments.
@@ -5047,7 +5056,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
-    LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) target -> LinkBody W P u gg h pins ->
+    LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) (link_private_readings C Cu Cg) target -> LinkBody W P u gg h pins ->
     (* the linked needs: those of G that are F's, read through F's merge *)
     sm = link_map Cu Cg target nsg ->
     (* 3b: the captured needs are answered here as a call would answer

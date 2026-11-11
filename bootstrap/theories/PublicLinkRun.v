@@ -1,9 +1,8 @@
 (* The run fact for a linked body (realize2).
 
-   - [app_env_meaning]: the body's environment at an application
-     (application_environment) gives an input x the caller's meaning of
-     its table reading, θ read at the caller, when every symbol of that
-     reading is a linked input θ covers.
+   - [app_env_meaning]: the body's environment reads its table using
+     application meanings for shared inputs and lexical capture for the
+     private inputs.
    - [body_meaning_kept]: a run of binds changes no type meaning outside
      its destinations (PublicChainCore.bindings_writes).
    - With PublicLinkPins.link_dests_out (no destination is an input of
@@ -32,33 +31,40 @@ Lemma lookup_subst_app' : forall x (l1 l2 : subst),
   lookup_subst x (l1 ++ l2) = match lookup_subst x l1 with Some v => Some v | None => lookup_subst x l2 end.
 Proof. intros x l1 l2. rewrite !lookup_subst_nlook', nlook_app'. reflexivity. Qed.
 
-(* The table reading of an input of a functor code. *)
-Definition table_reading (code : functor_code) (x : nat) : ty :=
-  match lookup_subst x (fc_table code) with Some t => t | None => TAbs x end.
+Definition caller_readings (d : environment) (th : subst) : subst :=
+  (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list.
 
-Lemma app_env_meaning : forall P d h code th dc x,
-  view_functor P h = Some code -> In x (fc_inputs code) ->
-  (forall y, In y (A.gens (table_reading code x)) ->
-     In y (fc_inputs code) /\ In y (fc_linked code) /\ lookup_subst y th <> None) ->
+Lemma app_env_meaning : forall P d h Cu Cg outs binds sources th dc x tx,
+  view_functor P h = Some (FunctorCode (map fst (A.c_ty Cg))
+    (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg)))
+    (A.c_ty Cg) outs binds sources) ->
+  In x (map fst (A.c_ty Cg)) -> A.nlook x (A.c_ty Cg) = Some tx ->
+  (forall y, In y (map fst (A.c_ty Cu)) -> lookup_subst y th <> None) ->
+  incl (A.gens tx) (map fst (A.c_ty Cg)) ->
   lookup_subst x (type_meanings (application_environment P d h th dc)) =
-    Some (ground d (app_subst th (table_reading code x))).
+    Some (app_subst (link_reading Cu Cg (caller_readings d th) dc) tx).
 Proof.
-  intros P d h code th dc x V Ix Lk. unfold application_environment. rewrite V. cbn [type_meanings].
-  rewrite lookup_map_key_nat by exact Ix. f_equal.
-  set (base := fun source => match (if existsb (Nat.eqb source) (fc_linked code) then lookup_subst source th else None) with
-    | Some meaning => ground d meaning
-    | None => match output_meaning dc source with Some meaning => meaning | None => TAbs source end end).
-  assert (Base : forall y, In y (fc_linked code) -> lookup_subst y th <> None ->
-    base y = ground d (app_subst th (TAbs y))).
-  { intros y Il Th. unfold base.
-    assert (E : existsb (Nat.eqb y) (fc_linked code) = true) by (apply existsb_exists; exists y; split; [exact Il|apply Nat.eqb_refl]).
-    rewrite E. cbn [app_subst]. destruct (lookup_subst y th) as [v|]; [reflexivity|congruence]. }
-  unfold table_reading in Lk |- *. destruct (lookup_subst x (fc_table code)) as [t|].
-  - rewrite ground_app_subst. apply subst_agree_on. intros y Iy. destruct (Lk y Iy) as [Iin [Il Th]].
-    cbn [app_subst]. rewrite lookup_map_key_nat by exact Iin. refine (eq_trans (Base y Il Th) _).
-    rewrite lookup_subst_app', lookup_map_snd. cbn [app_subst].
-    destruct (lookup_subst y th) as [v|]; [reflexivity|congruence].
-  - destruct (Lk x (or_introl eq_refl)) as [_ [Il Th]]. exact (Base x Il Th).
+  intros P d h Cu Cg outs binds sources th dc x tx Body Member Lookup Complete Scope.
+  unfold application_environment. rewrite Body. cbn [type_meanings fc_inputs fc_linked fc_table].
+  rewrite lookup_map_key_nat by exact Member. rewrite lookup_subst_nlook', Lookup. f_equal.
+  apply subst_agree_on. intros y Occurs. cbn [app_subst].
+  rewrite lookup_map_key_nat by exact (Scope y Occurs).
+  set (linked := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
+  destruct (in_dec Nat.eq_dec y (map fst (A.c_ty Cu))) as [Shared|Private].
+  - rewrite (link_reading_shared Cu Cg _ dc y Shared (Scope y Occurs)).
+    assert (InLinked : In y linked).
+    { apply filter_In. split; [exact (Scope y Occurs)|].
+      apply existsb_exists. exists y. split; [exact Shared|apply Nat.eqb_refl]. }
+    assert (ReadLinked : existsb (Nat.eqb y) linked = true).
+    { apply existsb_exists. exists y. split; [exact InLinked|apply Nat.eqb_refl]. }
+    rewrite ReadLinked. unfold caller_readings. cbn [app_subst].
+    rewrite lookup_subst_app', lookup_map_snd. destruct (lookup_subst y th) eqn:Argument; [reflexivity|].
+    exfalso. exact (Complete y Shared Argument).
+  - rewrite (link_reading_private Cu Cg _ dc y Private (Scope y Occurs)).
+    destruct (existsb (Nat.eqb y) linked) eqn:Read; [|reflexivity].
+    apply existsb_exists in Read as [z [InLinked Equal]]. apply Nat.eqb_eq in Equal. subst z.
+    apply filter_In in InLinked as [_ Present]. apply existsb_exists in Present as [z [InCu Equal]].
+    apply Nat.eqb_eq in Equal. subst z. contradiction.
 Qed.
 
 (* Q6: reading a pinned fixed input through the pins. *)
@@ -105,6 +111,14 @@ Lemma existsb_eqb_out : forall y l, ~ In y l -> existsb (Nat.eqb y) l = false.
 Proof.
   intros y l N. destruct (existsb (Nat.eqb y) l) eqn:E; [|reflexivity]. exfalso.
   apply existsb_exists in E as [z [Iz E]]. apply Nat.eqb_eq in E. subst z. exact (N Iz).
+Qed.
+
+Lemma cmeaning_append_provisions : forall selected captured,
+  type_meanings selected = [] -> type_aliases selected = [] -> forall x,
+  cmeaning (append_environment selected captured) x = cmeaning captured x.
+Proof.
+  intros selected captured Meanings Aliases x. unfold cmeaning, output_meaning.
+  cbn [type_aliases type_meanings append_environment]. now rewrite Meanings, Aliases.
 Qed.
 
 Module LinkRun (Prims : PRIMITIVES) (I0 : INTERP Prims).
@@ -179,7 +193,8 @@ Lemma link_input_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb 
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   forall argv read j d dc g st d3 g3 st3,
-  LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t)) ->
+  LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))
+    (app_subst (link_reading Cu Cg (caller_readings d th) dc)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
@@ -190,23 +205,15 @@ Proof.
   pose proof (proj2 (PublicFamilyAgree.nlook_dom _ x _) Iu) as Nu.
   rewrite (body_meaning_input W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B j _ _ g st d3 g3 st3 Run x Nu).
   destruct (A.nlook x (A.c_ty Cg)) as [tx|] eqn:Lx; [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ x _) Ig Lx)].
-  destruct (Inputs x tx Lx Nu) as [InU Read].
   destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG [_ [_ [_ [_ [_ SubG]]]]]].
   assert (GgDom : incl (A.gens tx) (map fst (A.c_ty Cg))).
   { intros z Iz. rewrite (TblG x tx Lx) in Iz. cbn [app_subst] in Iz.
     destruct (lookup_subst x (A.c_sub Cg)) as [v|] eqn:Lv.
     - exact (proj2 (SubG x v (lookup_subst_in_pair _ _ _ Lv)) z Iz).
     - destruct Iz as [<-|[]]. exact Ig. }
-  assert (Tr : table_reading (FunctorCode (map fst (A.c_ty Cg))
-      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) x = tx)
-    by (unfold table_reading; cbn [fc_table]; rewrite lookup_subst_nlook', Lx; reflexivity).
   assert (V : view_functor (program_of Prog argv read) h = A.funbody_of Prog h) by reflexivity. rewrite FB in V.
-  rewrite (app_env_meaning _ d h _ th dc x V Ig).
-  - rewrite Tr. f_equal. symmetry. exact Read.
-  - rewrite Tr. intros y Iy. cbn [fc_inputs fc_linked].
-    pose proof (proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy)) as IyU.
-    split; [exact (GgDom y Iy)|]. split; [|exact (ThD y IyU)].
-    apply filter_In. split; [exact (GgDom y Iy)|]. apply existsb_exists. exists y. split; [exact IyU|apply Nat.eqb_refl].
+  rewrite (app_env_meaning _ d h Cu Cg _ _ _ th dc x tx V Ig Lx ThD GgDom).
+  f_equal. symmetry. exact (Inputs x tx Lx Nu).
 Qed.
 
 (* So a type over inputs of both G and F grounds in the body's final
@@ -219,7 +226,8 @@ Corollary link_run_fact : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb F
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   forall argv read j d dc g st d3 g3 st3,
-  LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t)) ->
+  LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))
+    (app_subst (link_reading Cu Cg (caller_readings d th) dc)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->

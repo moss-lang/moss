@@ -412,7 +412,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      CopyChain u gfx sms rms h0 gf0 (Some (A.link_map Ch0 Cg linktarget nsg)) None /\
      ClosureOk rr H h0 gf0 (FunctorClosure code (Some (A.link_map Ch0 Cg linktarget nsg)) dc None) /\
      (exists pins, A.LinkBody W Prog h0 gg code pins /\ S.PinsAgree W h0 Ch0 Cg dc gf0 pins /\
-       PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
+       PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget dc gf0) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
      (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) /\
      adapt_provisions e1 sms = Some e2 /\
      Realizes rr Cg (application_environment P d code (thof f Ch0) (append_environment e2 dc)) H) \/
@@ -425,7 +425,7 @@ Proof.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (A.link_map Cu Cg linktarget nsg)) as [e2 Sel2].
     { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-      pose proof (S.linked_targets_in W u Cu nsu Cg nsg linktarget _ Binding k0 Ik) as Iu.
+      pose proof (S.linked_targets_in W u Cu nsu Cg nsg linktarget _ _ Binding k0 Ik) as Iu.
       destruct (functx_needs_provided W u Cu nsu FCu (A.linked_target linktarget k0) Iu) as [p0 Ip].
       destruct (S.functx_static W _ _ _ FCu) as [_ [_ [_ [_ [ShU _]]]]].
       destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real Ip (ShU (A.linked_target linktarget k0) Iu)) as [pv0 L0].
@@ -521,7 +521,7 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   CopyChain u gfx sms rms h0 gf0 (Some (A.link_map Ch0 Cg linktarget nsg)) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (A.link_map Ch0 Cg linktarget nsg)) dc None) ->
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
-  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0 ->
+  PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget dc gf0 ->
   S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->

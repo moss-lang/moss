@@ -285,7 +285,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   ClosureOk rr H u gfx (FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
-  PublicContextFacts.ClosureBinding W u Cu ns Cg nsg linktarget gfx ->
+  PublicContextFacts.ClosureBinding W u Cu ns Cg nsg linktarget dc gfx ->
   CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (A.link_map Cu Cg linktarget nsg) = Some d2 ->
@@ -438,7 +438,7 @@ Proof.
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (A.link_map Cu Cg linktarget nsg)) as [d2 Sel2].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-    pose proof (CopyA.S.linked_targets_in W u Cu ns Cg nsg linktarget _ Binding k0 Ik) as Iu.
+    pose proof (CopyA.S.linked_targets_in W u Cu ns Cg nsg linktarget _ _ Binding k0 Ik) as Iu.
     destruct (functx_needs_provided W u Cu ns FC (A.linked_target linktarget k0) Iu) as [p0 Ip].
     destruct (CopyA.S.functx_static W _ _ _ FC) as [_ [_ [_ [_ [ShU _]]]]].
     destruct (CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU (A.linked_target linktarget k0) Iu)) as [pv0 L0].

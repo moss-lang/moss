@@ -1177,9 +1177,10 @@ Variables (h0 gg code : nat) (dg : A.decl) (nn : name) (ps : option (list name))
   (Fg : A.frame) (wrap : expr -> expr) (Cb : A.cx) (Fb : A.frame) (made outs' : list nat) (gen : nat -> nat)
   (Cr : A.cx) (ks' : list item) (binds0 : list binding) (pins : subst).
 Hypothesis LD : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg nn ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins.
-Variables (linktarget : item -> option item) (gf0 : subst).
-Hypothesis Binding : PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget gf0.
+Variables (linktarget : item -> option item) (dc : environment) (gf0 : subst).
+Hypothesis Binding : PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget dc gf0.
 Variables (th : subst) (d d3 dc' : environment) (j' : nat) (g3 : locals) (st st3 : Prims.mstate).
+Hypothesis Capture : forall x, cmeaning dc' x = cmeaning dc x.
 Hypothesis ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None.
 Hypothesis Run : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j' P (application_environment P d code th dc') [] st binds0 = inl (d3, g3, st3).
 Hypothesis Pre3 : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok n Fb Cb d3 [] H3 g3 st3.
@@ -1198,9 +1199,13 @@ Proof.
   assert (Inj : forall a b, In a outs' -> In b outs' -> gen a = gen b -> a = b)
     by (intros a0 b0 Ia Ib; exact (nodup_map_inj gen outs' a0 b0 NdG Ia Ib)).
   assert (FrGf : PublicFormation.FrameFormed W Fg) by (split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W)).
-  assert (InputRead : PublicContextFacts.LinkedInputsRead Ch0 Cg (fun t => ground d (app_subst th t))).
-  { intros x tx Found Shared. rewrite !PublicCopySubst.ground_app_subst.
-    exact (PublicContextFacts.closure_bind_inputs _ _ _ _ _ _ _ _ Binding Tin Valuation FixedAt x tx Found Shared). }
+  assert (InputRead : PublicContextFacts.LinkedInputsRead Ch0 Cg (fun t => ground d (app_subst th t))
+    (app_subst (PublicContextFacts.link_reading Ch0 Cg (PublicLinkRun.caller_readings d th) dc'))).
+  { change (PublicContextFacts.LinkedInputsRead Ch0 Cg (fun t => ground d (app_subst th t))
+      (app_subst (PublicContextFacts.link_reading Ch0 Cg Tin dc'))).
+    rewrite (PublicContextFacts.link_reading_same_capture Ch0 Cg Tin dc' dc Capture).
+    intros x tx Found Shared. rewrite PublicCopySubst.ground_app_subst.
+    exact (PublicContextFacts.closure_bind_inputs _ _ _ _ _ _ _ _ _ Binding Tin Valuation FixedAt x tx Found Shared). }
   pose proof (CSg.FL.LRn.link_run_fact W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCg Items BO MadeOut FB th ThDom
     argv read j' d dc' [] st d3 g3 st3 InputRead Run) as RunFact.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
@@ -1241,18 +1246,19 @@ Proof.
       unfold T0, Tv. rewrite PublicCopySubst.lookup_subst_cat, (lookup_map_none gen _ outs' x (NR x I0)). reflexivity. }
   assert (KeyTy : forall t, (forall x, In x (A.gens t) -> OkG2 x) -> ground d3 (app_subst rr t) = app_subst T0 t).
   { intros t Ok. unfold ground. apply PublicCopySubst.ty_agree. intros x Ix. exact (KeyX x (Ok x Ix)). }
+  pose proof World as [bundle WorldOf].
+  pose proof (PublicFormation.units_bare_of W bundle WorldOf) as Bare.
+  pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
+  pose proof (items_scope W Prog Bare (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf)
+    as [_ [_ [_ [[Rows _] _]]]].
+  destruct (functx_scoped W gg Cg nsg FCg) as [TblG _].
   assert (RecvX : forall x, OkG2 x -> ground d3 (app_subst (A.c_ty Ls) (TAbs x)) = app_subst T0 (TAbs x)).
   { intros x Okx. destruct (in_dec Nat.eq_dec x (map fst pins)) as [Ip|Np].
     2: { destruct Okx as [[[I0 Ig]|[t0 [It ->]]]|Ip]; [| |exfalso; exact (Np Ip)].
     - cbn [app_subst]. unfold Ls. rewrite (lookup_site_in Cg Cb pins outs' gen x (NR x I0) Np), lookup_subst_nlook'.
       destruct (nlook_some _ x _ Ig) as [tx Lx]. rewrite Lx.
-      destruct (InputRead x tx Lx (proj2 (PublicFamilyAgree.nlook_dom _ x _) I0)) as [InU Read].
-      assert (Gtx : incl (A.gens tx) DG) by (intros y Iy; exact (PublicChainSigs.table_gens_dom W gg Cg nsg x tx y FCg Lx Iy)).
-      rewrite (RunFact tx Gtx (fun y Iy => proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy))).
-      rewrite <- Read, (PublicCopySubst.ground_app_subst d th (TAbs x)).
-      fold Tin.
-      change (app_subst Tin (TAbs x) = app_subst T0 (TAbs x)).
-      unfold T0, Tv. rewrite tv_off; [reflexivity|]. intros z [<-|[]]. exact (NR x I0).
+      rewrite (TblG x tx Lx), <- Rows. change (ground d3 (A.canon Cb (TAbs x)) = app_subst T0 (TAbs x)).
+      rewrite Abs3. exact (DomG x I0 Ig).
     - rewrite (Role t0 It). unfold T0, Tv. rewrite tv_role by assumption. reflexivity. }
     - (* #73: a pinned input, read at its pin *)
       destruct (PublicLinkRun.lookup_subst_dom x pins Ip) as [tx [_ Itx]].
@@ -1536,15 +1542,15 @@ Proof.
   assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
   { intros y Fy. destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
     rewrite E. exact (FixT y Fu). }
+  assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
+  { destruct sms as [sm'|]; cbn in Sel2.
+    - exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
+    - injection Sel2 as <-. exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
+  destruct E2 as [Em2 Ea2].
   (* Q6: the root's pins read as the application's fixed inputs *)
   assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
   { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
     (* the closure's environment d2 carries no type meanings *)
-    assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
-    { destruct sms as [sm'|]; cbn in Sel2.
-      - exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
-      - injection Sel2 as <-. exact (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
-    destruct E2 as [Em2 Ea2].
     set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Ch0)) then app_subst Tin (TAbs y)
                                   else cmeaning dc y)) (map fst (A.c_ty Cg))).
     assert (Am : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm0).
@@ -1575,7 +1581,8 @@ Proof.
       unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
   set (srcs := CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks').
   pose proof (root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg nn ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD linktarget gf0 Binding th d d3 _ j' g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins LD linktarget dc gf0 Binding th d d3 _ j' g3 st st3
+    (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2) ThDom Run Pre3 Fix0 PinT) as Root.
   pose proof (chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin FC0 Abs0
     Root u gfx sms rms h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
   assert (LenS : List.length (closure_sources rms srcs) = List.length ks).

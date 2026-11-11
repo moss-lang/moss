@@ -85,14 +85,14 @@ Proof.
   unfold A.is_linked. destruct (target k); cbn; split; intuition congruence.
 Qed.
 
-Lemma linked_targets_in : forall u Cu nsu Cg nsg target gfx,
-  ClosureBinding W u Cu nsu Cg nsg target gfx -> forall k,
+Lemma linked_targets_in : forall u Cu nsu Cg nsg target dc gfx,
+  ClosureBinding W u Cu nsu Cg nsg target dc gfx -> forall k,
   In k (A.linked_needs target nsg) -> In (A.linked_target target k) nsu.
 Proof.
-  intros u Cu nsu Cg nsg target gfx Binding k Member.
+  intros u Cu nsu Cg nsg target dc gfx Binding k Member.
   apply linked_spec in Member as [Source Linked]. unfold A.linked_target.
   destruct (target k) as [key|] eqn:Target; [|contradiction].
-  exact (closure_bind_targets _ _ _ _ _ _ _ _ Binding k key Source Target).
+  exact (closure_bind_targets _ _ _ _ _ _ _ _ _ Binding k key Source Target).
 Qed.
 
 Lemma sig_gens_ret : forall g K, incl (A.sig_gens g) K -> incl (A.gens (A.sg_ret g)) K.
@@ -181,7 +181,7 @@ Definition PinsAgree (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx pins : sub
    copy of an applicable closure, or a platform family. *)
 Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_value -> Prop :=
 | CLink : forall u gg h Cu nsu Cg nsg linktarget dc gfx pins,
-    A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget gfx ->
+    A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx ->
     A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
     (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
     (* u is abstract (BFunClosure binds only an abstract functor) *)
@@ -3711,7 +3711,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
       A.SameResult W u gg ->
-      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) linktarget -> A.LinkBody W Prog u gg h pins ->
+      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) (A.link_private_readings C Cu Cg) linktarget -> A.LinkBody W Prog u gg h pins ->
       sm = A.link_map Cu Cg linktarget nsg ->
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (A.captured_needs linktarget nsg) smc ->
@@ -3733,7 +3733,7 @@ Proof.
   destruct (functx_scoped W gg Cg nsg FCg) as [CanG [ScG [KMg [NdG [ProvNsG [ShapeG _]]]]]].
   assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ linktarget k0 = None).
   { intros k0 I. exact (proj1 (captured_spec linktarget nsg k0) I). }
-  pose proof (@A.link_bind_scope W u Cu nsu Cg nsg _ linktarget Binding) as B3.
+  pose proof (@A.link_bind_scope W u Cu nsu Cg nsg _ _ linktarget Binding) as B3.
   (* the caller provides every captured need *)
   assert (Caller : forall k0, In k0 caps -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k0)) d = Some pv).
   { intros k0 Ik. pose proof (Prov k0 Ik) as Pr. pose proof (ShapeG k0 (proj1 (CapsIn k0 Ik))) as Sh.
@@ -3819,24 +3819,65 @@ Proof.
   - reflexivity.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure h (Some sm) dc None), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
-    + assert (ReadBinding : ClosureBinding W u Cu nsu Cg nsg linktarget gfx).
-      { destruct Binding as [Scope (ys & cg & after & Allocated & Residual & Choices & Inputs)].
+    + assert (ReadBinding : ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx).
+      { set (private := A.link_private_readings C Cu Cg) in Binding.
+        destruct Binding as [Scope (ys & cg & after & Allocated & Residual & Choices & Inputs)].
         pose proof (proj1 (AllocationFacts.copy_allocation_contract W _ [] (fun x => x) ys cg) (proj1 Allocated))
           as [Fresh [Avoid _]].
-        cbn in Fresh, Avoid.
+        cbn in Fresh, Avoid. rewrite flat_map_app in Avoid.
         assert (FixedAt : forall T, (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
           forall x t, In (x,t) (map (fun q => (fst q, A.canon C (snd q))) fx) ->
           (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
           app_subst (type_meanings d) t = app_subst T (TAbs x)).
         { intros T Fix x t Member. split.
-          - intros z InT. apply Avoid, in_flat_map. exists (x,t). split; assumption.
+          - intros z InT. apply Avoid, in_or_app. left. apply in_flat_map. exists (x,t). split; assumption.
           - exact (proj2 (recorded_fixed_meaning u C fx d gfx T x t Fx Abs eq_refl Fix Member)). }
         constructor.
         - intros need key Member Chosen. destruct (Choices need Member) as (p & _ & Choice).
           rewrite Chosen in Choice. exact (proj1 (proj1 (proj2 (proj2 Choice)))).
-        - intros T Reads Fix. eapply PublicCopySubst.shared_inputs_read_at;
-            [exact FCu|exact Reads|exact Fresh| |exact (FixedAt T Fix)|exact Inputs].
-          intros y Leaf Missing. apply Residual. exact (conj Leaf Missing).
+        - intros T Reads Fix x tx Found Shared.
+          destruct (Inputs x tx Found Shared) as [Supported Equal].
+          set (G := link_reading Cu Cg T dc).
+          set (reading := PublicCopySubst.cg_read ys cg T (type_meanings d)).
+          assert (Separate : forall y, In y (map fst private) -> ~ In y (map fst (A.c_ty Cu))).
+          { intros y Private Public. destruct (keys_in _ y Private) as [t Lookup].
+            rewrite <- lookup_subst_nlook' in Lookup.
+            destruct (PublicCopySubst.private_link_row C Cu Cg y t Lookup) as [_ [Absent _]].
+            destruct (keys_in _ y Public) as [ty Present]. congruence. }
+          assert (PrivateAt : forall y t, lookup_subst y private = Some t ->
+            (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\ lookup_subst y G = Some (app_subst (type_meanings d) t)).
+          { intros y t Lookup. split.
+            - intros z Member. apply Avoid, in_or_app. right. apply in_flat_map.
+              exists (y,t). split; [exact (lookup_subst_in_pair _ _ _ Lookup)|exact Member].
+            - destruct (PublicCopySubst.private_link_row C Cu Cg y t Lookup) as [Ig [Absent [raw [Here ->]]]].
+              unfold G. rewrite (link_reading_private Cu Cg T dc y); [| |exact Ig].
+              + unfold dc. rewrite (cmeaning_capture d C dsel y Abs) by (left; rewrite Here; discriminate).
+                cbn [app_subst]. rewrite lookup_subst_nlook', Here. reflexivity.
+              + intros InCu. destruct (keys_in _ y InCu) as [ty Present]. congruence. }
+          assert (Target : app_subst reading
+            (app_subst (A.copy_subst (A.copy_fixed_readings Cu (map (fun q => (fst q, A.canon C (snd q))) fx)) ys cg)
+              (A.canon Cu (TAbs x))) = app_subst T (TAbs x)).
+          { transitivity (app_subst T (A.canon Cu (TAbs x))).
+            - eapply PublicCopySubst.site_read_composition; [exact FCu|exact Reads|exact Fresh| |exact (FixedAt T Fix)|].
+              + intros y Leaf Missing. apply Residual. exact (conj Leaf Missing).
+              + intros y [<-|[]]. destruct (A.nlook x (A.c_ty Cu)) as [v|] eqn:Lookup; [|contradiction].
+                exact (in_map fst _ (x,v) (PublicTypeRead.nlook_in _ _ _ _ Lookup)).
+            - apply (proj1 (reads_merge_canon_iff Cu _ (proj2 (functor_context_merge W u Cu nsu FCu))) Reads). }
+          rewrite <- Target, Equal. unfold G.
+          eapply (PublicCopySubst.read_through_private_capture W u Cu nsu Cg); [exact FCu|exact Reads|exact Fresh| |exact (FixedAt T Fix)|exact Separate|exact PrivateAt| | |].
+          + intros y Leaf Missing. apply Residual. exact (conj Leaf Missing).
+          + intros y InCu InG. change (app_subst G (TAbs y) = app_subst T (TAbs y)).
+            unfold G at 1. change ((match lookup_subst y (link_reading Cu Cg T dc) with
+              | Some v => v | None => TAbs y end) = app_subst T (TAbs y)).
+            now rewrite (link_reading_shared Cu Cg T dc y InCu InG).
+          + intros y Member. pose proof (PublicCopySubst.canon_input_support W gg Cg nsg FCg x) as ScopeG.
+            destruct (functx_scoped W gg Cg nsg FCg) as [Row _]. rewrite (Row x tx Found) in Member.
+            apply ScopeG; [exact (in_map fst _ (x,tx) (PublicTypeRead.nlook_in _ _ _ _ Found))|exact Member].
+          + intros y Member. apply in_or_app. destruct (Supported y Member) as [SharedY|PrivateY].
+            * left. destruct (A.nlook y (A.c_ty Cu)) as [v|] eqn:Lookup; [|contradiction].
+              exact (in_map fst _ (y,v) (PublicTypeRead.nlook_in _ _ _ _ Lookup)).
+            * right. destruct (lookup_subst y private) as [v|] eqn:Lookup; [|contradiction].
+              exact (in_map fst _ (y,v) (lookup_subst_in_pair _ _ _ Lookup)).
         - intros T G Reads Fix Shared need p Member Lookup key Chosen.
           destruct (Choices need Member) as [p0 [Read Choice]]. rewrite Lookup in Read. injection Read as <-.
           rewrite Chosen in Choice. destruct Choice as [InU [InG [[_ [At _]] TargetScope]]].
@@ -4063,7 +4104,7 @@ Qed.
    closure. The body reads each input through G's table (fc_table), so
    G's merges hold by construction. *)
 Lemma link_entry : forall rr H d th d1 u gg h pins Cu nsu Cg nsg linktarget dc gfx d2,
-  A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget gfx -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+  A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   map fst th = map fst (A.c_ty Cu) ->
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
   Realizes rr Cu (callee_env d th d1) H ->
@@ -4135,7 +4176,7 @@ Proof.
       lookup_subst x B = lookup_subst x (type_meanings ce)).
   { intros x Iu Ig. rewrite (MeanL x Ig Iu). unfold ce, callee_env. cbn [type_meanings].
     rewrite lookup_map_snd. reflexivity. }
-  pose proof (closure_bind_provisions _ _ _ _ _ _ _ _ Binding (type_meanings ce) B ReadsU FixAt Shared) as Compare.
+  pose proof (closure_bind_provisions _ _ _ _ _ _ _ _ _ Binding (type_meanings ce) B ReadsU FixAt Shared) as Compare.
   assert (InLks : forall k0 key, In k0 nsg -> linktarget k0 = Some key -> In k0 lks).
   { intros k0 key Ig Selected. apply linked_spec. split; [exact Ig|congruence]. }
   assert (InCaps : forall k0, In k0 nsg -> linktarget k0 = None -> In k0 caps).
@@ -4312,7 +4353,7 @@ Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists gg h Cu nsu Cg nsg linktarget dc,
      pv = FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None /\
      (exists pins, A.LinkBody W Prog u gg h pins /\ PinsAgree u Cu Cg dc gfx pins /\
-       ClosureBinding W u Cu nsu Cg nsg linktarget gfx) /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
+       ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx) /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
      (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) /\
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
         (forall v t, In (IVal v) (A.captured_needs linktarget nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
@@ -5174,7 +5215,7 @@ Definition LinkResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks n
   lookup_provision (IFun u) d = Some (FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None) ->
   ClosureOk rr H u gfx (FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None) ->
   FixedMeans u d fx gfx ->
-  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins -> ClosureBinding W u Cu ns Cg nsg linktarget gfx -> PinsAgree u Cu Cg dc gfx pins ->
+  LinkData u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins -> ClosureBinding W u Cu ns Cg nsg linktarget dc gfx -> PinsAgree u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (A.link_map Cu Cg linktarget nsg) = Some d2 ->
   AR.O.I.eval_bindings j' P (application_environment P d h th (append_environment d2 dc)) [] st binds0 = inl (d3, g3, st3) ->
@@ -5252,7 +5293,7 @@ Proof.
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (A.link_map Cu Cg linktarget nsg)) as [d2 Sel2].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-    pose proof (linked_targets_in u Cu ns Cg nsg linktarget _ Binding k0 Ik) as Iu.
+    pose proof (linked_targets_in u Cu ns Cg nsg linktarget _ _ Binding k0 Ik) as Iu.
     destruct (functx_needs_provided W u Cu ns FC (A.linked_target linktarget k0) Iu) as [p0 Ip].
     destruct (functx_static _ _ _ FC) as [_ [_ [_ [_ [ShU _]]]]].
     destruct (realized_key _ _ _ _ _ _ RealU Ip (ShU (A.linked_target linktarget k0) Iu)) as [pv0 L0].

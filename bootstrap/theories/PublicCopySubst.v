@@ -308,34 +308,6 @@ Proof.
     exact (canon_gens_read W u Cu nsu t FCu Scope y Occurs).
 Qed.
 
-(* A site equation over shared inputs holds at every application that
-   preserves the recorded readings. *)
-Lemma shared_inputs_read_at : forall W u Cu Cg nsu recorded ys cg T rho0,
-  A.FunCtx W u Cu nsu -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
-  NoDup (map cg ys) ->
-  (forall y, (exists x tx, A.nlook x (A.c_ty Cu) = Some tx /\ In y (A.gens tx)) ->
-    lookup_subst y (A.copy_fixed_readings Cu recorded) = None -> In y ys) ->
-  (forall x t, In (x, t) recorded ->
-    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
-    app_subst rho0 t = app_subst T (TAbs x)) ->
-  PublicContextFacts.LinkedInputsRead Cu Cg
-    (fun t => app_subst (A.copy_subst (A.copy_fixed_readings Cu recorded) ys cg) (A.canon Cu t)) ->
-  PublicContextFacts.LinkedInputsRead Cu Cg (app_subst T).
-Proof.
-  intros W u Cu Cg nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed Site x tx Found Shared.
-  destruct (Site x tx Found Shared) as [Scope Equal]. split; [exact Scope|].
-  assert (Keys : forall y, A.nlook y (A.c_ty Cu) <> None -> In y (map fst (A.c_ty Cu))).
-  { intros y Read. destruct (A.nlook y (A.c_ty Cu)) as [value|] eqn:Lookup; [|contradiction].
-    apply PublicTypeRead.nlook_in in Lookup. exact (in_map fst _ (y,value) Lookup). }
-  pose proof (site_read_composition W u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed) as Compose.
-  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as Section.
-  pose proof (proj1 (PublicContextFacts.reads_merge_canon_iff Cu _ Section) Reads) as Canon.
-  rewrite <- (Canon (TAbs x)), <- (Canon tx).
-  rewrite <- (Compose (TAbs x)) by (intros y [<-|[]]; apply Keys, Shared).
-  rewrite <- (Compose tx) by (intros y Member; apply Keys, Scope, Member).
-  now rewrite Equal.
-Qed.
-
 Lemma provision_subst_nil : forall p, A.provision_subst [] p = p.
 Proof.
   assert (Types : forall ts, map (app_subst []) ts = ts).
@@ -406,3 +378,90 @@ Proof.
   - rewrite <- (KeyRead k p Source), <- (KeyRead other q Target), Key. reflexivity.
   - rewrite <- (ProvisionRead k p Source), <- (ProvisionRead other q Target), Provision. reflexivity.
 Qed.
+
+Section PrivateLink.
+Import A.
+
+Local Lemma lookup_outside : forall s x,
+  ~ In x (map fst s) -> lookup_subst x s = None.
+Proof.
+  intros s x Absent. destruct (lookup_subst x s) as [t|] eqn:Read; [|reflexivity].
+  exfalso. apply Absent. exact (in_map fst _ (x,t) (lookup_subst_in_pair _ _ _ Read)).
+Qed.
+
+Lemma canon_input_support : forall W u Cu needs,
+  FunCtx W u Cu needs -> forall x,
+  In x (map fst (c_ty Cu)) -> incl (gens (canon Cu (TAbs x))) (map fst (c_ty Cu)).
+Proof.
+  intros W u Cu needs Context x Key.
+  destruct (functx_scoped W u Cu needs Context) as [_ [_ [_ [_ [_ [_ Section]]]]]].
+  intros y Occurs. unfold canon in Occurs. cbn [app_subst] in Occurs.
+  destruct (lookup_subst x (c_sub Cu)) as [t|] eqn:Read.
+  - exact (proj2 (Section x t (lookup_subst_in_pair _ _ _ Read)) y Occurs).
+  - destruct Occurs as [<-|[]]. exact Key.
+Qed.
+
+Theorem read_through_private_capture : forall W u Cu needs Cg recorded private ys cg T G rho0,
+  FunCtx W u Cu needs -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
+  NoDup (map cg ys) ->
+  (forall y, (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) ->
+    lookup_subst y (copy_fixed_readings Cu recorded) = None -> In y ys) ->
+  (forall x t, In (x,t) recorded ->
+    (forall z, In z (gens t) -> ~ In z (map cg ys)) /\ app_subst rho0 t = app_subst T (TAbs x)) ->
+  (forall y, In y (map fst private) -> ~ In y (map fst (c_ty Cu))) ->
+  (forall y t, lookup_subst y private = Some t ->
+    (forall z, In z (gens t) -> ~ In z (map cg ys)) /\ lookup_subst y G = Some (app_subst rho0 t)) ->
+  (forall y, In y (map fst (c_ty Cu)) -> In y (map fst (c_ty Cg)) -> app_subst G (TAbs y) = app_subst T (TAbs y)) ->
+  forall t, incl (gens t) (map fst (c_ty Cg)) ->
+  incl (gens t) (map fst (c_ty Cu) ++ map fst private) ->
+  app_subst (cg_read ys cg T rho0)
+    (app_subst (private ++ copy_subst (copy_fixed_readings Cu recorded) ys cg) (canon Cu t)) =
+  app_subst G t.
+Proof.
+  intros W u Cu needs Cg recorded private ys cg T G rho0 Context Reads Fresh Residual Fixed Separate Capture Shared t Source Scope.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu needs Context)) as Section.
+  pose proof (proj1 (PublicContextFacts.reads_merge_canon_iff Cu _ Section) Reads) as Canon.
+  destruct (functx_scoped W u Cu needs Context) as [_ [_ [_ [_ [_ [_ SectionRows]]]]]].
+  set (rho := copy_subst (copy_fixed_readings Cu recorded) ys cg).
+  set (cg_env := cg_read ys cg T rho0).
+  assert (Atoms : forall x, In x (gens t) ->
+      app_subst cg_env (app_subst (private ++ rho) (canon Cu (TAbs x))) = app_subst G (TAbs x)).
+  { intros x Member. destruct (in_app_or _ _ _ (Scope x Member)) as [InCu|InPrivate].
+    - assert (Ignore : app_subst (private ++ rho) (canon Cu (TAbs x)) = app_subst rho (canon Cu (TAbs x))).
+      { apply subst_agree_on. intros y Occurs. cbn [app_subst]. rewrite lookup_subst_cat.
+        assert (Absent : ~ In y (map fst private)).
+        { intros InPrivate. exact (Separate y InPrivate (canon_input_support W u Cu needs Context x InCu y Occurs)). }
+        rewrite (lookup_outside private y Absent). reflexivity. }
+      rewrite Ignore.
+      transitivity (app_subst T (canon Cu (TAbs x))).
+      { apply (site_read_composition W u Cu needs recorded ys cg T rho0 Context Reads Fresh Residual Fixed).
+        intros y [<-|[]]. exact InCu. }
+      rewrite Canon. symmetry. exact (Shared x InCu (Source x Member)).
+    - assert (CanonX : canon Cu (TAbs x) = TAbs x).
+      { unfold canon. cbn [app_subst].
+        destruct (lookup_subst x (c_sub Cu)) as [v|] eqn:Read; [|reflexivity].
+        exfalso. exact (Separate x InPrivate (proj1 (SectionRows x v (lookup_subst_in_pair _ _ _ Read)))). }
+      rewrite CanonX. cbn [app_subst]. rewrite lookup_subst_cat.
+      destruct (PublicTagCheck.keys_in private x InPrivate) as [tx Lookup].
+      rewrite <- lookup_subst_nlook' in Lookup. rewrite Lookup.
+      destruct (Capture x tx Lookup) as [Avoid Meaning].
+      unfold cg_env. rewrite (cg_read_off ys cg T rho0 tx Avoid), Meaning. reflexivity. }
+  change (ground (EnvironmentWithAliases cg_env [] []) (app_subst (private ++ rho) (canon Cu t)) = app_subst G t).
+  rewrite ground_app_subst. unfold canon. apply ty_agree.
+  intros x Member. rewrite <- ground_app_subst. exact (Atoms x Member).
+Qed.
+
+Lemma private_link_row : forall C Cu Cg x t,
+  lookup_subst x (link_private_readings C Cu Cg) = Some t ->
+  In x (map fst (c_ty Cg)) /\ nlook x (c_ty Cu) = None /\
+  exists raw, nlook x (c_ty C) = Some raw /\ t = canon C raw.
+Proof.
+  intros C Cu Cg x t Found. apply lookup_subst_in_pair in Found.
+  unfold link_private_readings in Found. apply in_flat_map in Found as [[y old] [Member Found]].
+  cbn [fst] in Found. destruct (nlook y (c_ty Cu)) as [v|] eqn:Absent; [contradiction|].
+  destruct (nlook y (c_ty C)) as [raw|] eqn:Bound; [|contradiction].
+  destruct Found as [Equal|[]]. injection Equal as <- <-.
+  split; [exact (in_map fst _ (y,old) Member)|]. split; [exact Absent|]. now exists raw.
+Qed.
+
+End PrivateLink.

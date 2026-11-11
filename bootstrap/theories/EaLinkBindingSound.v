@@ -63,14 +63,14 @@ Qed.
 Theorem check_link_binding_sound : forall E bound,
   (forall symbol d, w_decl (e_W E) symbol = Some d -> symbol < bound) ->
   metadata_budget (e_W E) bound < e_metadata_fuel E ->
-  forall u gg Cu nsu Cg nsg recorded s after target,
+  forall u gg Cu nsu Cg nsg recorded private s after target,
   FunCtx (e_W E) u Cu nsu -> bound <= es_next s ->
-  check_link_binding E u gg Cu nsu Cg nsg recorded s = Ok (target, after) ->
-  after = s /\ LinkBinding (e_W E) u Cu nsu Cg nsg recorded target.
+  check_link_binding E u gg Cu nsu Cg nsg recorded private s = Ok (target, after) ->
+  after = s /\ LinkBinding (e_W E) u Cu nsu Cg nsg recorded private target.
 Proof.
-  intros E bound Bounded Budget u gg Cu nsu Cg nsg recorded s after target FCu Counter Checked.
+  intros E bound Bounded Budget u gg Cu nsu Cg nsg recorded private s after target FCu Counter Checked.
   unfold check_link_binding, mbind, get in Checked.
-  set (rho := site_theta (es_next s) Cu recorded) in *.
+  set (rho := site_theta (es_next s) Cu recorded private) in *.
   set (error := (qs (e_W E) gg ++ " cannot provide " ++ qs (e_W E) u ++ ": its linked input interpretation differs (D84)")%string) in Checked.
   set (decide := link_need_choice E Cu Cg nsu rho error) in Checked.
   unfold pure in Checked.
@@ -78,7 +78,7 @@ Proof.
   set (chosen := fun k => match ilook k choices with Some choice => choice | None => None end) in Checked.
   destruct (find (unsafe_capture Cu Cg chosen (EaTypes.fixed (e_W E) (e_metadata_fuel E) u)) nsg)
     as [offender|] eqn:Capture; [discriminate|].
-  destruct (forallb (fun q => linked_type_agrees Cu Cg rho (fst q)) (c_ty Cg)) eqn:Types; [|discriminate].
+  destruct (forallb (fun q => linked_type_agrees Cu Cg rho private (fst q)) (c_ty Cg)) eqn:Types; [|discriminate].
   injection Checked as <- <-. split; [reflexivity|]. constructor.
   - intros k p t InNeed Captured Lookup Mentions Bound.
     pose proof (find_none _ _ Capture k InNeed) as Safe.
@@ -88,8 +88,8 @@ Proof.
     cbn beta in TypeSafe. rewrite (proj2 (bound_in_spec Cu t) Bound) in TypeSafe.
     apply (fixed_exact _ _ Bounded _ _ Budget _), nmem_spec, TypeSafe.
   - cbv zeta. set (fixed := copy_fixed_readings Cu recorded).
-    set (ys := site_classes Cu fixed). set (cg := site_atom (es_next s) recorded).
-    exists ys, cg, (extend_allocation_scope (copy_allocation_scope (e_W E) recorded) (map cg ys)).
+    set (ys := site_classes Cu fixed). set (cg := site_atom (es_next s) (recorded ++ private)).
+    exists ys, cg, (extend_allocation_scope (copy_allocation_scope (e_W E) (recorded ++ private)) (map cg ys)).
     cbv zeta. change (copy_subst fixed ys cg) with rho.
     split.
     + apply EaLinkSiteSound.site_allocation. intros g d Found. specialize (Bounded g d Found). lia.
@@ -104,7 +104,10 @@ Proof.
         cbn [fst] in Agrees. unfold linked_type_agrees in Agrees.
         rewrite Lookup, (proj2 (bound_in_spec Cu x) Bound) in Agrees.
         apply andb_true_iff in Agrees as [Scoped Equal]. split.
-        -- intros y InType. apply bound_in_spec. exact (proj1 (forallb_forall _ _) Scoped y InType).
+        -- intros y InType. pose proof (proj1 (forallb_forall _ _) Scoped y InType) as Present.
+           cbn beta in Present. apply orb_true_iff in Present as [InTarget|Captured].
+           ++ left. now apply bound_in_spec.
+           ++ right. destruct (lookup_subst y private); cbn in Captured; congruence.
         -- now apply PublicTypeFacts.ty_eqb_spec.
 Qed.
 

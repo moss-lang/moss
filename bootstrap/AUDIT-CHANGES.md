@@ -156,6 +156,7 @@ entry they belong to.
 | 124 | Check a closure binding separately from the linked body | M4c | none (equivalent factoring) |
 | 125 | Translate the checked provision choices of a closure binding | M4c | none (equivalent factoring) |
 | 126 | Compare a closure’s shared inputs and needs at the binding site | M4c | C |
+| 127 | Read directly bound private inputs from the closure’s capture | M4c | C |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3832,6 +3833,24 @@ using one fresh atom per abstract class must preserve that behaviour
   keeps the fixed inputs. Entry and result preservation use those
   readings through direct, family, and copy-chain applications.
 - **Class C** (criterion 2). The fixed-input merge programs now pass.
+
+### 127. Read a shared input through a directly bound private input (M4c)
+
+- **Rule.** A shared input's reading can mention a private input that is
+  directly in force at the closure binding. The binding checks the
+  shared reading against that captured meaning. The hypothetical fresh
+  atoms avoid generations in the captured meanings as well as the fixed
+  readings. Linked provision matching still uses the target's input scope.
+- **Examples.** The target fixes `X` to `Int`, and the body takes a
+  private `Y` also bound to `Int`. It returns the captured `seed : Y`
+  where the target promises an `X`. [X = Y](../tests/wasi/link_fixed_captured.moss)
+  and [Y = X](../tests/wasi/link_fixed_captured_flip.moss) both print `7`.
+  The first ordering previously failed the shared-input check. A captured
+  type that disagrees with the fixed type still fails.
+- **Proof.** The closure reads the private row from its lexical capture.
+  The shared row reads at the application. The body and result proofs
+  use the combined reading and the body's preserved merge.
+- **Class C** (criterion 2).
 
 ### 128. Rank generated code at its recorded origin
 

@@ -371,15 +371,15 @@ Proof.
     assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
     { intros y Fy. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
       rewrite E. exact (FixT y Fu). }
+    assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
+    { destruct sms' as [sm'|]; cbn in A2.
+      - exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ A2).
+      - injection A2 as <-. exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
+    destruct E2 as [Em2 Ea2].
     (* Q6: the root's pins read as the application's fixed inputs *)
     assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
     { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
       (* the closure's environment d2 carries no type meanings *)
-      assert (E2 : type_meanings d2 = [] /\ type_aliases d2 = []).
-      { destruct sms' as [sm'|]; cbn in A2.
-        - exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ A2).
-        - injection A2 as <-. exact (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel). }
-      destruct E2 as [Em2 Ea2].
       set (gm0 := map (fun y => (y, if existsb (Nat.eqb y) (map fst (A.c_ty Ch0)) then app_subst Tin (TAbs y)
                                     else cmeaning dc y)) (map fst (A.c_ty Cg))).
       assert (Am : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppMeanings W h0 Ch0 Cg dc gf0 gm0).
@@ -409,7 +409,8 @@ Proof.
              apply Nat.eqb_eq in E. subst z. exact (Ou Iz). }
         unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
     pose proof (CRz.root_level W Prog argv read state_ok mentions_typed rr H3 World h0 gg code dg n0 ps0 a0 rs bodies
-      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD linktarget gf0 Binding th d d3 _ j1 g3 st st3 ThDom Run Pre3 Fix0 PinT) as Root.
+      Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD linktarget dc gf0 Binding th d d3 _ j1 g3 st st3
+      (PublicLinkRun.cmeaning_append_provisions d2 dc Em2 Ea2) ThDom Run Pre3 Fix0 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC (PublicChainSigs.table_reads_merge W u Cu ns Tin FC TokIn) FixT) as LvU.
     pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr

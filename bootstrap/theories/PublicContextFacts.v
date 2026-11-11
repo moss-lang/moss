@@ -1,8 +1,8 @@
 (* Canonicalization facts supplied by actual public context formation. *)
-From Stdlib Require Import List.
+From Stdlib Require Import List Arith Bool.
 From NM Require AuditFacts.
 From NM Require Import Audit PublicAliasContext.
-From NM Require PublicMerge.
+From NM Require PublicBodySafety PublicMerge PublicSubstFacts.
 Import Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -16,11 +16,51 @@ Definition CxSection (C : A.cx) : Prop := A.SectionOf (A.c_merge C) (A.c_sub C).
 Definition ReadsMerge (C : A.cx) (read : ty -> ty) : Prop :=
   forall t u, A.MergeEq (A.c_merge C) t u -> read t = read u.
 
-(* Shared inputs keep their application meanings through a linked body. *)
-Definition LinkedInputsRead (Cu Cg : A.cx) (read : ty -> ty) : Prop :=
+(* A source input reads at the application if the target shares it.
+   Otherwise its meaning comes from the lexical capture. *)
+Definition link_reading (Cu Cg : A.cx) (T : subst) (dc : environment) : subst :=
+  map (fun q => (fst q,
+    if existsb (Nat.eqb (fst q)) (map fst (A.c_ty Cu))
+    then app_subst T (TAbs (fst q)) else PublicBodySafety.cmeaning dc (fst q))) (A.c_ty Cg).
+
+Lemma link_reading_shared : forall Cu Cg T dc x,
+  In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
+  lookup_subst x (link_reading Cu Cg T dc) = Some (app_subst T (TAbs x)).
+Proof.
+  intros Cu Cg T dc x Shared Source. unfold link_reading.
+  rewrite (PublicSubstFacts.lookup_on_keys (fun y =>
+    if existsb (Nat.eqb y) (map fst (A.c_ty Cu))
+    then app_subst T (TAbs y) else PublicBodySafety.cmeaning dc y) _ x Source).
+  cbn beta.
+  assert (Found : existsb (Nat.eqb x) (map fst (A.c_ty Cu)) = true).
+  { apply existsb_exists. exists x. split; [exact Shared|apply Nat.eqb_refl]. }
+  now rewrite Found.
+Qed.
+
+Lemma link_reading_private : forall Cu Cg T dc x,
+  ~ In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
+  lookup_subst x (link_reading Cu Cg T dc) = Some (PublicBodySafety.cmeaning dc x).
+Proof.
+  intros Cu Cg T dc x Private Source. unfold link_reading.
+  rewrite (PublicSubstFacts.lookup_on_keys (fun y =>
+    if existsb (Nat.eqb y) (map fst (A.c_ty Cu))
+    then app_subst T (TAbs y) else PublicBodySafety.cmeaning dc y) _ x Source).
+  cbn beta.
+  destruct (existsb _ _) eqn:Found; [|reflexivity]. exfalso. apply Private.
+  apply existsb_exists in Found as [y [Member Equal]]. apply Nat.eqb_eq in Equal. now subst y.
+Qed.
+
+Lemma link_reading_same_capture : forall Cu Cg T dc dc',
+  (forall x, PublicBodySafety.cmeaning dc x = PublicBodySafety.cmeaning dc' x) ->
+  link_reading Cu Cg T dc = link_reading Cu Cg T dc'.
+Proof.
+  intros Cu Cg T dc dc' Same. unfold link_reading.
+  apply map_ext. intros [x t]. cbn [fst]. now rewrite Same.
+Qed.
+
+Definition LinkedInputsRead (Cu Cg : A.cx) (caller body : ty -> ty) : Prop :=
   forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
-    read (TAbs x) = read tx.
+    caller (TAbs x) = body tx.
 
 Definition LinkedProvisionsRead (Cu Cg : A.cx) (nsg : list item)
     (target : item -> option item) (T G : subst) : Prop :=
@@ -31,11 +71,11 @@ Definition LinkedProvisionsRead (Cu Cg : A.cx) (nsg : list item)
       A.provision_subst G p = A.provision_subst T q.
 
 Record ClosureBinding (W : A.world) (u : nat) (Cu : A.cx) (nsu : list item)
-    (Cg : A.cx) (nsg : list item) (target : item -> option item) (gfx : subst) : Prop := {
+    (Cg : A.cx) (nsg : list item) (target : item -> option item) (dc : environment) (gfx : subst) : Prop := {
   closure_bind_targets : forall k key, In k nsg -> target k = Some key -> In key nsu;
   closure_bind_inputs : forall T, ReadsMerge Cu (app_subst T) ->
     (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
-    LinkedInputsRead Cu Cg (app_subst T);
+    LinkedInputsRead Cu Cg (app_subst T) (app_subst (link_reading Cu Cg T dc));
   closure_bind_provisions : forall T G, ReadsMerge Cu (app_subst T) ->
     (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
     (forall x, In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
