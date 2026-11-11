@@ -1,7 +1,7 @@
 (* Base's nonallocating primitive calls ignore the recorded method site.
    The normalization below is proof-side. It exposes exactly the fields
    that FastPath may erase while retaining type meanings and source aliases. *)
-From Stdlib Require Import List.
+From Stdlib Require Import List Lia.
 From NM Require Import Audit AuditFacts PublicValueTyping.
 Import ListNotations Audit.Semantics.
 
@@ -313,6 +313,40 @@ Proof.
   destruct (result_environment outputs left results returned), (result_environment outputs right results other);
     cbn in *; try discriminate; [injection Eq as Eq; exact Eq|exact I].
 Qed.
+(* Canonical entries used by the primitive-only platform-family fast path. *)
+Definition nonallocating (operation : prim) : bool :=
+  match operation with PBox _ | PArrNew _ => false | _ => true end.
+Definition primitive_binding (binding : binding) : bool :=
+  match binding with BPrimitive _ operation => nonallocating operation | _ => false end.
+Definition canonical_binding (binding : binding) : item * provision_value :=
+  match binding with
+  | BPrimitive key operation => (key, PrimitiveClosure operation None)
+  | _ => (ITy 0, ValueProvision VUnit)
+  end.
+Definition canonical_installs (d : environment) (bindings : list binding) : environment :=
+  EnvironmentWithAliases (type_meanings d) (type_aliases d)
+    (rev (map canonical_binding bindings) ++ provision_values d).
+
+Lemma erase_nonallocating_closure : forall d key operation,
+  nonallocating operation = true ->
+  erase_entry (primitive_closure d key operation) = PrimitiveClosure operation None.
+Proof.
+  intros d key operation Plain. destruct operation; cbn in Plain; try discriminate;
+    destruct key; reflexivity.
+Qed.
+Lemma canonical_installs_erased_step : forall d key operation bindings,
+  nonallocating operation = true ->
+  environments_agree
+    (canonical_installs (install_provision key (primitive_closure d key operation) d) bindings)
+    (canonical_installs d (BPrimitive key operation :: bindings)).
+Proof.
+  intros [meanings aliases entries] key operation bindings Plain.
+  unfold environments_agree, canonical_installs, install_provision.
+  rewrite !erase_environment_eq. cbn [type_meanings type_aliases provision_values map rev canonical_binding].
+  rewrite <- app_assoc. unfold erase_entries. rewrite !map_app.
+  cbn [map fst snd]. rewrite erase_nonallocating_closure by exact Plain.
+  cbn [erase_entry]. destruct operation; reflexivity.
+Qed.
 End BaseSites.
 
 Module SiteSimulation (Prims : PRIMITIVES) (I : INTERP Prims).
@@ -348,12 +382,49 @@ Definition bindings_agree (left right : (environment * locals * mstate) + evalua
   | inr result, inr other => result = other
   | _, _ => False
   end.
+Lemma bindings_agree_transitive : forall first middle last,
+  bindings_agree first middle -> bindings_agree middle last -> bindings_agree first last.
+Proof.
+  intros [[ [first fg] fs]|first] [[[middle mg] ms]|middle] [[[last lg] ls]|last];
+    cbn [bindings_agree]; intros First Last; try contradiction.
+  - destruct First as [First [-> ->]], Last as [Last [-> ->]].
+    split; [|split; reflexivity]. unfold environments_agree in *. congruence.
+  - congruence.
+Qed.
 Definition applications_agree (left right : (environment * mstate) + evaluation) : Prop :=
   match left, right with
   | inl (d, st), inl (d', st') => environments_agree d d' /\ st = st'
   | inr result, inr other => result = other
   | _, _ => False
   end.
+(* The primitive-only body computes a canonical environment up to erased
+   sites. No callback law is needed here: binding primitives never calls it. *)
+Theorem primitive_bindings_normalized : forall bindings fuel P0 d g st,
+  forallb primitive_binding bindings = true ->
+  bindings_agree (eval_bindings fuel P0 d g st bindings)
+    (if Nat.ltb (length bindings) fuel then inl (canonical_installs d bindings, g, st)
+     else inr (Evaluation OutOfFuel g st)).
+Proof.
+  induction bindings as [|binding tail IH]; intros [|fuel] P0 d g st Plain; cbn [eval_bindings];
+    try reflexivity.
+  - cbn [Nat.ltb canonical_installs rev map app bindings_agree].
+    repeat split; try reflexivity. unfold environments_agree. destruct d; reflexivity.
+  - destruct binding; cbn [primitive_binding] in Plain; try discriminate.
+    apply Bool.andb_true_iff in Plain as [Operation Plain].
+    specialize (IH fuel P0 (install_provision i (primitive_closure d i p) d) g st Plain).
+    change (bindings_agree
+      (eval_bindings fuel P0 (install_provision i (primitive_closure d i p) d) g st tail)
+      (if Nat.ltb (length tail) fuel then inl (canonical_installs d (BPrimitive i p :: tail), g, st)
+       else inr (Evaluation OutOfFuel g st))).
+    destruct (Nat.ltb (length tail) fuel) eqn:Enough;
+      destruct (eval_bindings fuel P0 (install_provision i (primitive_closure d i p) d) g st tail)
+        as [[[returned locals] next]|result]; cbn [bindings_agree] in IH |- *; try contradiction.
+    + destruct IH as [Environments [-> ->]]. repeat split; try reflexivity.
+      unfold environments_agree in *. etransitivity; [exact Environments|].
+      apply canonical_installs_erased_step. exact Operation.
+    + exact IH.
+Qed.
+
 Definition execution_agrees (fuel : nat) : Prop :=
   (forall d d' g st e, environments_agree d d' -> eval fuel P d g st e = eval fuel P d' g st e) /\
   (forall d d' g st args, environments_agree d d' -> eval_arguments fuel P d g st args = eval_arguments fuel P d' g st args) /\
@@ -484,6 +555,45 @@ Proof.
       split; [exact Result|reflexivity].
     + subst. reflexivity.
 Qed.
+Lemma primitive_bind_step : forall n d g st key operation e,
+  2 <= n ->
+  eval (S n) P d g st (EBind (BPrimitive key operation) e) =
+  eval n P (install_provision key (primitive_closure d key operation) d) g st e.
+Proof. intros [|[|n]] d g st key operation e Large; try lia; reflexivity. Qed.
+
+Theorem primitive_chain_normalized : forall bindings continuation fuel d g st,
+  forallb primitive_binding bindings = true -> 2 <= fuel ->
+  eval (length bindings + fuel) P d g st (fold_right EBind continuation bindings) =
+  eval fuel P (canonical_installs d bindings) g st continuation.
+Proof.
+  induction bindings as [|binding tail IH]; intros continuation fuel d g st Plain Large.
+  - cbn [List.length Nat.add fold_right canonical_installs rev map app]. destruct d; reflexivity.
+  - destruct binding; cbn [primitive_binding] in Plain; try discriminate.
+    apply Bool.andb_true_iff in Plain as [Operation Plain].
+    cbn [List.length Nat.add fold_right]. rewrite primitive_bind_step by lia.
+    rewrite IH by assumption. apply (proj1 (execution_site_erasure fuel)).
+    apply canonical_installs_erased_step. exact Operation.
+Qed.
+
+Theorem primitive_prefix_normalized : forall bindings continuation fuel d g st,
+  forallb primitive_binding bindings = true ->
+  bindings_agree
+    (eval_bindings (length bindings + fuel) P d g st (bindings ++ continuation))
+    (eval_bindings fuel P (canonical_installs d bindings) g st continuation).
+Proof.
+  induction bindings as [|binding tail IH]; intros continuation fuel d g st Plain.
+  - cbn [List.length Nat.add app canonical_installs rev map]. destruct d as [meanings aliases entries].
+    pose proof (proj1 (proj2 (proj2 (execution_site_erasure fuel)))
+      (EnvironmentWithAliases meanings aliases entries) (EnvironmentWithAliases meanings aliases entries) g st continuation eq_refl) as Same.
+    exact Same.
+  - destruct binding; cbn [primitive_binding] in Plain; try discriminate.
+    apply Bool.andb_true_iff in Plain as [Operation Plain].
+    cbn [List.length Nat.add app eval_bindings].
+    eapply bindings_agree_transitive; [apply IH; exact Plain|].
+    apply (proj1 (proj2 (proj2 (execution_site_erasure fuel)))).
+    apply canonical_installs_erased_step. exact Operation.
+Qed.
+
 Corollary eval_erased : forall fuel d g st e,
   eval fuel P d g st e = eval fuel P (erase_environment d) g st e.
 Proof.

@@ -483,6 +483,9 @@ Definition certificate_roots : list {T : Type & T} := [
 
 (* Ignored nonallocating primitive sites preserve exact public execution. *)
   root (@PublicSiteErasure.reference_site_erasure);
+  root (@PublicSiteErasure.Simulation.primitive_bindings_normalized);
+  root (@PublicSiteErasure.Simulation.primitive_chain_normalized);
+  root (@PublicSiteErasure.Simulation.primitive_prefix_normalized);
 
 (* Deferred type substitution. *)
   root (@LazyTop.leval_agrees);
