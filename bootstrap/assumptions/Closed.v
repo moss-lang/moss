@@ -85,3 +85,5 @@ Print Assumptions NM.EaEntriesSound.item_entries_sound.
 Print Assumptions NM.EaEntriesSound.items_entries_sound.
 Print Assumptions NM.EaEntriesSound.entries_sound_at_budget.
 Print Assumptions NM.EaEntriesSound.bundle_world_r_entries_sound.
+
+Print Assumptions NM.EaRootSound.bundle_world_r_root_ctx_sound.

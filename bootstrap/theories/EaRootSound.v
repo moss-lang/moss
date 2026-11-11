@@ -142,3 +142,35 @@ Proof.
   exact (root_items_sound _ _ _ _ _ _ Run).
 Qed.
 End Roots.
+
+From NM Require Import EaResultBudget EaMetadataSound EaMainSymbols EaMain EaWorldSound ElabWorld.
+
+Theorem root_ctx_sound_at_budget : forall E bound,
+  (forall symbol d, w_decl (e_W E) symbol = Some d -> symbol < bound) ->
+  metadata_budget (e_W E) bound < e_metadata_fuel E ->
+  (forall s, In s (e_mains E) <-> IsMainFn (e_W E) s) ->
+  forall s es0 tm entries meanings,
+  root_ctx E s es0 tm = Ok (entries, meanings) ->
+  RootCtx (e_W E) s es0 tm entries meanings.
+Proof.
+  intros E bound Bounded Enough Main s es0 tm entries meanings Run.
+  apply (root_ctx_sound E); [| |exact Main|exact Run].
+  - intro symbol. apply (EaResultBudget.fixed_exact _ bound Bounded); exact Enough.
+  - intros symbol types. apply (fixed_readings_exact _ bound Bounded); exact Enough.
+Qed.
+
+Corollary bundle_world_r_root_ctx_sound : forall b W bound,
+  EaMain.bundle_world_r b = Ok (W, bound) -> forall contexts strategy,
+  let modules := map am_path (b_mods b) in
+  let E := Env (ElabWorld.with_context W contexts) strategy modules
+    (EaMain.main_symbols W modules) EaMain.elab_fuel (EaMain.metadata_fuel W bound) in
+  forall s es0 tm entries meanings,
+  root_ctx E s es0 tm = Ok (entries, meanings) ->
+  RootCtx (e_W E) s es0 tm entries meanings.
+Proof.
+  intros b W bound Run contexts strategy. cbn zeta.
+  apply (root_ctx_sound_at_budget _ bound).
+  - exact (EaWorldSound.bundle_world_r_bound _ _ _ Run).
+  - exact (metadata_fuel_sufficient W bound).
+  - exact (bundle_world_r_main_symbols_exact _ _ _ Run).
+Qed.
