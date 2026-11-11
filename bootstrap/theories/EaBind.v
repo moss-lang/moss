@@ -135,6 +135,18 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
 
 (* ---- MethProvider ---- *)
 
+Definition method_wrapper_body (g n : nat) (Cg : cx) (needs : list item) : expr :=
+  ECall g (theta_ctx Cg) (map (fun k => (rkof Cg k, rkof Cg k)) needs)
+    (map EVar (seq 1 n)).
+
+Definition place_method_wrapper (g n : nat) (Cg : cx) (needs : list item) : M (code_slot FunctionTable) :=
+  let* cached := get_wrap (g, n) in
+  match cached with
+  | Some slot => ret slot
+  | None => let* slot := emit_fn_code (method_wrapper_body g n Cg needs) in
+            let* _ := put_wrap (g, n) slot in ret slot
+  end.
+
 (* SOUND: meth_provider F C y sg rt = Ok (target, types, pre, sm) ->
      MethProvider W P F C y sg rt target types pre sm *)
 Definition meth_provider (m : nat) (F : frame) (C : cx) (y : aexpr) (sg : fsig) (rt : ty) : M (nat * type_capture * wrapper * smap) :=
@@ -164,14 +176,7 @@ Definition meth_provider (m : nat) (F : frame) (C : cx) (y : aexpr) (sg : fsig) 
   | AEPath pa None =>
       let* ((g, types), sm) := fn_provider "method" F C pa sg in
       let* (Cg, nsg) := lift (w_context W g) ("the context of " ++ qs W g ++ " does not form") in
-      let n := List.length (sg_params sg) in
-      let* cached := get_wrap (g, n) in
-      let* w := match cached with
-                | Some w => ret w
-                | None => let* w := emit_fn_code (ECall g (theta_ctx Cg) (map (fun k => (rkof Cg k, rkof Cg k)) nsg)
-                                                        (map EVar (seq 1 n))) in
-                          let* _ := put_wrap (g, n) w in ret w
-                end in
+      let* w := place_method_wrapper g (List.length (sg_params sg)) Cg nsg in
       ret (slot_index w, types, (fun x => x), sm)
   | AELam ps r body =>
       let* ((pid, pre), sm) := lambda_provider (bq (sty W rt ++ mname W m)) F C ps r body sg (Some rt) in

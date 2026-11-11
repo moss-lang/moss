@@ -383,6 +383,17 @@ Proof.
   apply unchanged_code_transition; [apply Nat.le_refl| | |reflexivity]; intros [] i; reflexivity.
 Qed.
 
+Theorem place_method_wrapper_code_effect : forall g n Cg needs,
+  PreservesOldCode (place_method_wrapper g n Cg needs).
+Proof.
+  intros g n Cg needs. unfold place_method_wrapper.
+  apply code_effect_bind; [apply code_effect_get_wrap|]. intros [slot|].
+  - apply code_effect_return.
+  - apply code_effect_bind; [exact (code_effect_emit FunctionTable _)|].
+    intro slot. apply code_effect_bind; [apply code_effect_put_wrap|].
+    intro stored. apply code_effect_return.
+Qed.
+
 Theorem meth_provider_code_effect : forall E R method F C provider sg receiver,
   (forall F' C' block expected, PreservesOldCode (r_blke R F' C' block expected)) ->
   PreservesOldCode (meth_provider E R method F C provider sg receiver).
@@ -393,12 +404,7 @@ Proof.
   - destruct application; [apply code_effect_fail|].
     apply code_effect_bind; [apply fn_provider_code_effect|]. intros [[g types] sm].
     apply code_effect_bind; [apply code_effect_lift|]. intros [context needs].
-    apply code_effect_bind; [apply code_effect_get_wrap|]. intro cached.
-    apply code_effect_bind.
-    { destruct cached as [slot|]; [apply code_effect_return|].
-      apply code_effect_bind; [exact (code_effect_emit FunctionTable _)|].
-      intro slot. apply code_effect_bind; [apply code_effect_put_wrap|].
-      intro stored. apply code_effect_return. }
+    apply code_effect_bind; [apply place_method_wrapper_code_effect|].
     intro slot. apply code_effect_return.
   - destruct syntax as [| |path application| | | | | | | | | | | | |]; try apply code_effect_fail.
     destruct application; [apply code_effect_fail|].
