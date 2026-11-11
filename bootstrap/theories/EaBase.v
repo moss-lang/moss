@@ -428,8 +428,10 @@ Definition put_pins (h : code_slot FunctorTable) (p : subst) : M unit :=
 Definition put_name (g : nat) (n : string) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
                       (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (nset (es_names s) g n)).
+Definition link_pins_at (s : est) (h : nat) : subst :=
+  match nget (es_pins s) h with Some p => p | None => [] end.
 Definition get_pins (h : code_slot FunctorTable) : M subst :=
-  fun s => Ok (match nget (es_pins s) (slot_index h) with Some p => p | None => [] end, s).
+  fun s => Ok (link_pins_at s (slot_index h), s).
 Definition put_lamcx (pid : code_slot FunctionTable) (C : cx) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
                       (es_const s) (es_unsupported s) (nset (es_lamcx s) (slot_index pid) C) (es_pins s) (es_names s)).

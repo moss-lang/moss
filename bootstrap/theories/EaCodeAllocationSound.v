@@ -20,14 +20,28 @@ Definition read_code (s : est) (table : code_table) (n : nat) : option (code_in 
   | FunctorTable => nget (es_funs s) n
   end.
 
+Definition read_link_target (s : est) (n : nat) : option (nat * nat) :=
+  option_map fst (find (fun q => Nat.eqb n (slot_index (snd q))) (es_link s)).
+
 Definition origin_in (table : code_table) : Type :=
-  match table with FunctionTable => subst | FunctorTable => nat * nat end.
+  match table with FunctionTable => subst | FunctorTable => (nat * nat) * subst end.
 
 Definition read_origin (s : est) (table : code_table) (n : nat) : option (origin_in table) :=
   match table with
   | FunctionTable => option_map c_sub (nget (es_lamcx s) n)
-  | FunctorTable => option_map fst (find (fun q => Nat.eqb n (slot_index (snd q))) (es_link s))
+  | FunctorTable => option_map (fun target => (target, link_pins_at s n)) (read_link_target s n)
   end.
+
+(* Every cached link still has its registered origin and a body at its
+   allocated slot. The same declaration pair may appear more than once. *)
+Definition LinkRecords (s : est) : Prop :=
+  forall target slot, In (target, slot) (es_link s) ->
+    slot_index slot < es_next s /\
+    read_link_target s (slot_index slot) = Some target /\
+    exists code, read_code s FunctorTable (slot_index slot) = Some code.
+
+Lemma initial_link_records : forall start, LinkRecords (init_state start).
+Proof. intros start target slot []. Qed.
 
 Definition VacantCode (s : est) (n : nat) : Prop :=
   forall table, read_code s table n = None.

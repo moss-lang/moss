@@ -12,7 +12,7 @@ Proof. intros n s x s' Run. injection Run as _ <-. apply code_transition_refl. Q
 Lemma code_effect_put_const : forall n value, PreservesOldCode (put_const n value).
 Proof.
   intros n value s x s' Run. unfold put_const in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply Nat.le_refl| |]; intros [] i; reflexivity.
+  apply unchanged_code_transition; [apply Nat.le_refl| | |reflexivity]; intros [] i; reflexivity.
 Qed.
 
 Lemma code_effect_need_named : forall F n, PreservesOldCode (EaExpr.need_named F n).

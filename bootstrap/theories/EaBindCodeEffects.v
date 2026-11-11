@@ -144,33 +144,57 @@ Qed.
 Lemma code_effect_get_link : forall key, PreservesOldCode (get_link key).
 Proof. intros key s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.
 
-Lemma code_effect_register_link : forall key slot a b c value,
+Lemma code_effect_prepare_link : forall slot pins a b c value,
   es_next a <= slot_index slot ->
+  CodeTransition a b ->
+  put_pins slot pins b = Ok (value, c) ->
+  CodeTransition a c.
+Proof.
+  intros slot pins a b c value Fresh [Next Code Bound Origins Links] Run.
+  unfold put_pins in Run. injection Run as _ <-.
+  constructor; [exact Next|exact Code|exact Bound| |exact Links].
+  intros [] n Old.
+  - apply (Origins FunctionTable n Old).
+  - cbn [read_origin]. unfold link_pins_at. cbn [es_pins].
+    rewrite WorldSound.nget_nset_other by lia.
+    exact (Origins FunctorTable n Old).
+Qed.
+
+Lemma code_effect_register_link : forall key slot a b c value code,
+  es_next a <= slot_index slot < es_next b ->
+  es_link b = es_link a ->
+  read_code b FunctorTable (slot_index slot) = Some code ->
   CodeTransition a b ->
   put_link key slot b = Ok (value, c) ->
   CodeTransition a c.
 Proof.
-  intros key slot a b c value Fresh [Next Code Bound Origins] Run.
+  intros key slot a b c value code [Fresh Valid] Same Stored [Next Code Bound Origins Links] Run.
   unfold put_link in Run. injection Run as _ <-.
-  constructor; [exact Next|exact Code|exact Bound|].
-  intros [] n Old; cbn [read_origin es_lamcx es_link find fst snd].
-  - apply (Origins FunctionTable n Old).
-  - destruct (Nat.eqb_spec n (slot_index slot)); [lia|apply (Origins FunctorTable n Old)].
+  constructor; [exact Next|exact Code|exact Bound| |].
+  - intros [] n Old.
+    + apply (Origins FunctionTable n Old).
+    + unfold read_origin, read_link_target, link_pins_at. cbn [es_link es_pins find fst snd].
+      destruct (Nat.eqb_spec n (slot_index slot)); [lia|apply (Origins FunctorTable n Old)].
+  - intros Registered target earlier Member. cbn [es_link] in Member.
+    destruct Member as [Equal|Member].
+    + injection Equal as <- <-. split; [exact Valid|]. split; [|exists code; exact Stored].
+      unfold read_link_target. cbn [es_link find fst snd]. now rewrite Nat.eqb_refl.
+    + destruct (Links Registered target earlier Member) as (Below & Target & Existing).
+      split; [exact Below|split; [|exact Existing]].
+      unfold read_link_target in *. cbn [es_link find fst snd].
+      rewrite Same in Member.
+      pose proof (proj1 (Registered target earlier Member)) as Earlier.
+      destruct (Nat.eqb_spec (slot_index earlier) (slot_index slot)); [lia|exact Target].
 Qed.
 
 Lemma code_effect_get_pins : forall slot, PreservesOldCode (get_pins slot).
 Proof. intros slot s x s' Run. injection Run as _ <-. apply code_transition_refl. Qed.
 
-Lemma code_effect_put_pins : forall slot pins, PreservesOldCode (put_pins slot pins).
-Proof.
-  intros slot pins s x s' Run. unfold put_pins in Run. injection Run as _ <-.
-  apply unchanged_code_transition; [apply PeanoNat.Nat.le_refl| |]; intros [] i; reflexivity.
-Qed.
-
 Theorem emit_linked_body_records_origin : forall u gg pins code before h after,
   EaFunctor.emit_linked_body u gg pins code before = Ok (h, after) ->
   CodeTransition before after /\ read_code after FunctorTable (slot_index h) = Some code /\
-  read_origin after FunctorTable (slot_index h) = Some (u, gg).
+  read_origin after FunctorTable (slot_index h) = Some ((u, gg), pins) /\
+  es_next before <= slot_index h < es_next after.
 Proof.
   intros u gg pins code before h after Run. unfold EaFunctor.emit_linked_body in Run.
   apply EaControlSound.mbind_ok in Run as (slot & written & Emitted & Run).
@@ -178,19 +202,47 @@ Proof.
   apply EaControlSound.mbind_ok in Run as (linked & stored & Link & Run).
   injection Run as <- <-.
   assert (Emits : slot_index slot = es_next before /\
-      read_code written FunctorTable (slot_index slot) = Some code).
+      es_next middle = S (es_next before) /\ es_link middle = es_link before /\
+      read_code middle FunctorTable (slot_index slot) = Some code).
   { unfold emit_fun_code, reserve_code, mbind, fresh, ret, write_fun_code, set_fun_body in Emitted.
-    injection Emitted as <- <-. split; [reflexivity|apply WorldSound.nget_nset_same]. }
-  destruct Emits as [Index Code].
+    injection Emitted as <- <-.
+    unfold put_pins in Pins. injection Pins as _ <-.
+    repeat split; try reflexivity. apply WorldSound.nget_nset_same. }
+  destruct Emits as (Index & Next & Same & Code).
   split.
-  - eapply (code_effect_register_link (u, gg) slot); [lia| |exact Link].
-    eapply code_transition_compose.
-    + exact (code_effect_emit FunctorTable code before slot written Emitted).
-    + eapply code_effect_put_pins; exact Pins.
-  - unfold put_pins in Pins. injection Pins as _ <-.
-    unfold put_link in Link. injection Link as _ <-.
-    split; [exact Code|].
-    cbn [read_origin es_link find snd fst]. now rewrite Nat.eqb_refl.
+  - eapply (code_effect_register_link (u, gg) slot before middle stored linked code);
+      [lia|exact Same|exact Code| |exact Link].
+    eapply (code_effect_prepare_link slot pins); [lia| |exact Pins].
+    exact (code_effect_emit FunctorTable code before slot written Emitted).
+  - unfold put_link in Link. injection Link as _ <-.
+    split; [exact Code|]. split.
+    + unfold put_pins in Pins. injection Pins as _ <-.
+      unfold read_origin, read_link_target, link_pins_at. cbn [es_link es_pins find fst snd].
+      now rewrite Nat.eqb_refl, WorldSound.nget_nset_same.
+    + cbn [es_next]. lia.
+Qed.
+
+Lemma pair_look_found : forall A key (rows : list ((nat * nat) * A)) value,
+  pair_look key rows = Some value -> In (key, value) rows.
+Proof.
+  intros A [u gg] rows value. induction rows as [|[[target provider] stored] rows IH];
+    cbn [pair_look fst snd]; [discriminate|].
+  destruct (Nat.eqb u target && Nat.eqb gg provider) eqn:Equal; [|intro Run; right; now apply IH].
+  apply andb_true_iff in Equal as [U G]. apply Nat.eqb_eq in U, G. subst target provider.
+  intros Run. injection Run as <-. now left.
+Qed.
+
+Theorem cached_link_records_origin : forall before u gg slot after,
+  LinkRecords before ->
+  get_link (u, gg) before = Ok (Some slot, after) ->
+  after = before /\ slot_index slot < es_next after /\
+  read_origin after FunctorTable (slot_index slot) = Some ((u, gg), link_pins_at after (slot_index slot)) /\
+  exists code, read_code after FunctorTable (slot_index slot) = Some code.
+Proof.
+  intros before u gg slot after Registered Read. unfold get_link in Read.
+  injection Read as Present <-. apply pair_look_found in Present.
+  destruct (Registered _ _ Present) as (Earlier & Origin & Code).
+  repeat split; try assumption. cbn [read_origin]. now rewrite Origin.
 Qed.
 
 Lemma link_output_roles_code_effect : forall E u Cu Cb who,
