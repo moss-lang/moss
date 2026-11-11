@@ -134,11 +134,11 @@ Definition assemble (bound : nat) (entry : string) : M program :=
   let* st := get in
   let '(bl, tr, fl) := bool_syms E in
   let links := map (fun q => (fst q, slot_index (snd q))) (es_link st) in
-  let* _ := check (expansion_ok W fuel (Program [] (collect (es_funs st) (es_next st) []) 0 0 0 0 env0 [] [] [])
-                     (es_lamcx st) (es_fns st) (es_funs st) links bound (es_next st))
+  let program := Program (collect (es_fns st) (es_next st) []) (collect (es_funs st) (es_next st) [])
+                    bl tr fl main env0 (es_unsupported st) (casts E) (Platform.machine_table W) in
+  let* _ := check (expansion_ok W fuel program (es_lamcx st) (es_fns st) (es_funs st) links bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
-  ret (Program (collect (es_fns st) (es_next st) []) (collect (es_funs st) (es_next st) [])
-               bl tr fl main env0 (es_unsupported st) (casts E) (Platform.machine_table W)).
+  ret program.
 
 End Main.
 

@@ -2,11 +2,8 @@
 (* EaExpand.v — the expanding-cycle check (Audit's NoExpandingCycle,       *)
 (* D16/D30): TypesBounded and InstantiationsBounded, decided.              *)
 (*                                                                           *)
-(* A level function exists iff no cycle of the (finite) constraint graph   *)
-(* has a strict edge.  The graph's edges a -> b (level b + strict <= level *)
-(* a) are computed from Audit's definitions (InstantiationEdge with the    *)
-(* NodeReads closure, the merge constraints of NodeCx, TypeEdge); strongly *)
-(* connected components (Tarjan) then decide it.                            *)
+(* Tarjan proposes levels by numbering the components in completion order. *)
+(* The final pass checks each inequality directly against those levels.    *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
@@ -66,19 +63,25 @@ Fixpoint strong (fuel : nat) (g : graph) (v : vkey) (t : tst) {struct fuel} : ts
             else t
         end) (succs g v) t in
       if Nat.eqb (getn (t_low t) v) (getn (t_idx t) v) then
-        let '(stack, on, comp) := pop_comp (t_stack t) v (getn (t_idx t) v) (t_on t) (t_comp t) in
-        TSt (t_next t) (t_idx t) (t_low t) on stack comp
+        let rank := t_next t in
+        let '(stack, on, comp) := pop_comp (t_stack t) v rank (t_on t) (t_comp t) in
+        TSt (S rank) (t_idx t) (t_low t) on stack comp
       else t
   end.
 
-(* SOUND: bounded g = true <-> exists a level function for g's edges *)
-Definition bounded (g : graph) : bool :=
+Definition component_ranks (g : graph) : vmap nat :=
   let fuel := S (List.length (g_verts g)) in
-  let t := fold_left (fun t v => match vget (t_idx t) v with Some _ => t | None => strong fuel g v t end)
-                     (g_verts g) (TSt 0 NE NE NE [] NE) in
-  forallb (fun a => forallb (fun bs =>
-    negb (snd bs) || negb (match vget (t_comp t) a, vget (t_comp t) (fst bs) with
-                           | Some x, Some y => Nat.eqb x y | _, _ => false end)) (succs g a)) (g_verts g).
+  let t := fold_left (fun t v => match vget (t_idx t) v with
+       | Some _ => t | None => strong fuel g v t end)
+       (g_verts g) (TSt 0 NE NE NE [] NE) in
+  t_comp t.
+
+Definition check_ranks (g : graph) (ranks : vmap nat) : bool :=
+  forallb (fun a => forallb (fun (edge : vkey * bool) =>
+    Nat.leb (getn ranks (fst edge) + (if snd edge then 1 else 0)) (getn ranks a))
+    (succs g a)) (g_verts g).
+
+Definition bounded (g : graph) : bool := check_ranks g (component_ranks g).
 
 (* ---- TypesBounded ---- *)
 
@@ -178,13 +181,21 @@ Definition read_steps (n : code_node) : list (nat * (nat * bool)) :=
         flat_map (fun o => flat_map (fun q => map (fun vs => (snd o, (fst vs, true))) (ty_occurrences (snd q))) th) outputs
     | _ => [] end) (sites_of n).
 
-(* NodeReads n t: every (u, strict) t reads (closure, strictness kept) *)
+Definition seen_read (acc : list (nat * bool)) (read : nat * bool) : bool :=
+  existsb (fun seen => Nat.eqb (fst seen) (fst read) && Bool.eqb (snd seen) (snd read)) acc.
+
+Definition next_reads (steps : list (nat * (nat * bool))) (frontier : list (nat * bool))
+    : list (nat * bool) :=
+  flat_map (fun current => flat_map (fun step =>
+    if Nat.eqb (fst step) (fst current) then [(fst (snd step), snd current || snd (snd step))]
+    else []) steps) frontier.
+
+(* NodeReads n t: every (u, strict) t reads, keeping strictness along paths. *)
 Fixpoint reads_closure (k : nat) (steps : list (nat * (nat * bool))) (frontier acc : list (nat * bool)) : list (nat * bool) :=
   match k with
   | 0 => acc
   | S k' =>
-      let next := flat_map (fun cs => flat_map (fun st => if Nat.eqb (fst st) (fst cs) then [(fst (snd st), snd cs || snd (snd st))] else []) steps) frontier in
-      let new := filter (fun vs => negb (existsb (fun a => Nat.eqb (fst a) (fst vs) && Bool.eqb (snd a) (snd vs)) acc)) next in
+      let new := filter (fun read => negb (seen_read acc read)) (next_reads steps frontier) in
       match new with [] => acc | _ => reads_closure k' steps new (acc ++ new) end
   end.
 
@@ -212,24 +223,32 @@ Definition merge_graph (g : graph) (n : code_node) (C : cx) : graph :=
     let g := fold_left (fun g vs => gedge g (a, fst vs) (a, fst q) (snd vs)) (ty_occurrences (canon C (TAbs (fst q)))) g in
     match canon C (TAbs (fst q)) with TAbs z => gedge g (a, fst q) (a, z) false | _ => g end) (c_sub C) g.
 
-(* SOUND: expansion_ok bound = true -> NoExpandingCycle W P (with the
-   program's bodies fns/funs, the lambda contexts lamcx) *)
-Definition expansion_ok (bound next : nat) : bool :=
-  bounded (type_graph bound) &&
-  let nodes := flat_map (fun s => (match nget fns s with Some _ => [CodeFn s] | None => [] end) ++
-                                  (match nget funs s with Some _ => [CodeFunctor s] | None => [] end)) (seq 0 next) in
+Definition code_nodes (next : nat) : list code_node :=
+  flat_map (fun s => (match nget fns s with Some _ => [CodeFn s] | None => [] end) ++
+                     (match nget funs s with Some _ => [CodeFunctor s] | None => [] end)) (seq 0 next).
+
+Definition node_context (n : code_node) : option cx :=
+  match n with
+  | CodeFn f => match w_context W f with
+                | Some (C, _) => Some C
+                | None => nget lamcx f
+                end
+  | CodeFunctor h =>
+      match find (fun q => Nat.eqb (snd q) h) links with
+      | Some ((_, gg), _) => option_map fst (w_context W gg)
+      | None => None
+      end
+  end.
+
+Definition instantiation_graph (next : nat) : graph :=
+  let nodes := code_nodes next in
   let g := fold_left node_graph nodes gempty in
-  let g := fold_left (fun g n => match n with
-     | CodeFn f => match w_context W f with
-                   | Some (C, _) => merge_graph g n C
-                   | None => match nget lamcx f with Some C => merge_graph g n C | None => g end
-                   end
-     | CodeFunctor h =>
-         match find (fun q => Nat.eqb (snd q) h) links with
-         | Some ((_, gg), _) => match w_context W gg with Some (C, _) => merge_graph g n C | None => g end
-         | None => g
-         end
-     end) nodes g in
-  bounded g.
+  fold_left (fun g n => match node_context n with
+    | Some C => merge_graph g n C
+    | None => g
+    end) nodes g.
+
+Definition expansion_ok (bound next : nat) : bool :=
+  bounded (type_graph bound) && bounded (instantiation_graph next).
 
 End Expand.
