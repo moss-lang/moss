@@ -146,7 +146,10 @@ Definition rename_program (p : program) : program :=
     (map (fun '(u, code) => (rename u, rename_functor_code code)) (program_functors p))
     (rename (program_bool p)) (rename (program_true p)) (rename (program_false p))
     (rename (program_main p)) (rename_environment (program_environment p)) (program_unsupported p)
-    (rename_casts (program_casts p)) (rename_machines (program_machines p)).
+    (rename_casts (program_casts p)) (rename_machines (program_machines p))
+    (CodeOrigins
+      (map (fun '(f, section) => (rename f, rename_subst section)) (lambda_sections (program_origins p)))
+      (map (fun '(h, (u, gg)) => (rename h, (rename u, rename gg))) (linked_origins (program_origins p)))).
 
 Record views_related (P P' : program_view) : Prop := ViewsRelated {
   related_functions : forall f, view_function P' (rename f) = option_map rename_expr (view_function P f);

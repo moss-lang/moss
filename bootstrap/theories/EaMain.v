@@ -103,6 +103,11 @@ Fixpoint collect {A} (m : nmap A) (n : nat) (acc : list (nat * A)) : list (nat *
   | S k => collect m k (match nget m n with Some a => (n, a) :: acc | None => acc end)
   end.
 
+Definition assembled_origins (s : est) : code_origins :=
+  CodeOrigins
+    (map (fun q => (fst q, c_sub (snd q))) (collect (es_lamcx s) (es_next s) []))
+    (map (fun q => (slot_index (snd q), fst q)) (es_link s)).
+
 (* SOUND: assemble bound entry = Ok P -> ElaboratesIn b W P /\ Linked W P
    (modulo the pending checks) *)
 Definition assemble (bound : nat) (entry : string) : M program :=
@@ -133,10 +138,9 @@ Definition assemble (bound : nat) (entry : string) : M program :=
   let* _ := pure (finite_layouts W fuel bound) in
   let* st := get in
   let '(bl, tr, fl) := bool_syms E in
-  let links := map (fun q => (fst q, slot_index (snd q))) (es_link st) in
   let program := Program (collect (es_fns st) (es_next st) []) (collect (es_funs st) (es_next st) [])
-                    bl tr fl main env0 (es_unsupported st) (casts E) (Platform.machine_table W) in
-  let* _ := check (expansion_ok W fuel program (es_lamcx st) (es_fns st) (es_funs st) links bound (es_next st))
+                    bl tr fl main env0 (es_unsupported st) (casts E) (Platform.machine_table W) (assembled_origins st) in
+  let* _ := check (expansion_ok W fuel program (es_fns st) (es_funs st) bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
   ret program.
 

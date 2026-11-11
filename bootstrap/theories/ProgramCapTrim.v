@@ -123,7 +123,7 @@ Definition trim_program (T : tbl) (p : program) : program :=
   Program (map (fun fb => (fst fb, trim_e T (Dt T (fst fb)) (snd fb))) (program_functions p))
           (map (fun ub => (fst ub, trim_code T (snd ub))) (program_functors p))
           (program_bool p) (program_true p) (program_false p) (program_main p)
-          (program_environment p) (program_unsupported p) (program_casts p) (program_machines p).
+          (program_environment p) (program_unsupported p) (program_casts p) (program_machines p) (program_origins p).
 
 (* ===================== 2. The checker ==================================== *)
 

@@ -1,7 +1,7 @@
 (* Scoped registration of generated function and functor bodies. *)
 From Stdlib Require Import List Arith Lia.
 From NM Require Import Audit EaBase NMap.
-From NM Require AllocationFacts WorldSound EaMain EaControlSound EaPlatform.
+From NM Require AllocationFacts CodeTable WorldSound EaMain EaControlSound EaPlatform.
 Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 
 Definition code_in (table : code_table) : Type :=
@@ -207,7 +207,8 @@ Proof. intros [] message s value s' Run; [now injection Run|discriminate]. Qed.
 Theorem assemble_collects_code : forall E bound entry before P after,
   EaMain.assemble E bound entry before = Ok (P, after) ->
   program_functions P = EaMain.collect (es_fns after) (es_next after) [] /\
-  program_functors P = EaMain.collect (es_funs after) (es_next after) [].
+  program_functors P = EaMain.collect (es_funs after) (es_next after) [] /\
+  program_origins P = EaMain.assembled_origins after.
 Proof.
   intros E bound entry before P after Run. unfold EaMain.assemble in Run.
   destruct (EaPlatform.bool_syms E) as [[boolean truth] falsity].
@@ -221,7 +222,7 @@ Proof.
       rewrite (successful_check_state b message after_get u after_check Check);
       unfold get in Snapshot; injection Snapshot as <- <-
   end.
-  split; reflexivity.
+  repeat split; reflexivity.
 Qed.
 
 Theorem assembled_code_lookup : forall E bound entry before P after,
@@ -230,8 +231,33 @@ Theorem assembled_code_lookup : forall E bound entry before P after,
   (forall n, funbody_of P n = read_code after FunctorTable n).
 Proof.
   intros E bound entry before P after Run Bound.
-  destruct (assemble_collects_code E bound entry before P after Run) as [Functions Functors].
+  destruct (assemble_collects_code E bound entry before P after Run) as (Functions & Functors & _).
   unfold body_of, funbody_of. rewrite Functions, Functors.
   split; apply collect_code_table; intros n Above; [apply (Bound n ltac:(lia) FunctionTable)|
     apply (Bound n ltac:(lia) FunctorTable)].
+Qed.
+
+Theorem assembled_lambda_section : forall E bound entry before P after pid,
+  EaMain.assemble E bound entry before = Ok (P, after) ->
+  pid < es_next after ->
+  nlook pid (lambda_sections (program_origins P)) = option_map c_sub (nget (es_lamcx after) pid).
+Proof.
+  intros E bound entry before P after pid Run Within.
+  destruct (assemble_collects_code E bound entry before P after Run) as (_ & _ & Origins).
+  rewrite Origins. cbn [EaMain.assembled_origins lambda_sections].
+  rewrite CodeTable.nlook_map_values, collect_within by lia.
+  now destruct (nget (es_lamcx after) pid).
+Qed.
+
+Theorem assembled_link_origin : forall E bound entry before P after h,
+  EaMain.assemble E bound entry before = Ok (P, after) ->
+  nlook h (linked_origins (program_origins P)) =
+    option_map fst (find (fun q => Nat.eqb h (slot_index (snd q))) (es_link after)).
+Proof.
+  intros E bound entry before P after h Run.
+  destruct (assemble_collects_code E bound entry before P after Run) as (_ & _ & Origins).
+  rewrite Origins. cbn [EaMain.assembled_origins linked_origins].
+  induction (es_link after) as [|[origin slot] rest IH]; [reflexivity|].
+  cbn [map nlook find fst snd].
+  destruct (Nat.eqb h (slot_index slot)); [reflexivity|exact IH].
 Qed.

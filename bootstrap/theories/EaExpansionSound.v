@@ -293,30 +293,30 @@ Proof.
 Qed.
 End Instantiations.
 
-Local Lemma merge_graph_step : forall n C (row : nat * ty),
+Local Lemma merge_graph_step : forall n section (row : nat * ty),
   GrowsGraph (fun g =>
     let g := fold_left (fun g vs => gedge g (node_id n, fst vs) (node_id n, fst row) (snd vs))
-      (ty_occurrences (canon C (TAbs (fst row)))) g in
-    match canon C (TAbs (fst row)) with TAbs z => gedge g (node_id n, fst row) (node_id n, z) false | _ => g end).
+      (ty_occurrences (app_subst section (TAbs (fst row)))) g in
+    match app_subst section (TAbs (fst row)) with TAbs z => gedge g (node_id n, fst row) (node_id n, z) false | _ => g end).
 Proof.
-  intros n C row g Listed.
+  intros n section row g Listed.
   destruct (graph_fold_grows _ (fun g vs => gedge g (node_id n, fst vs) (node_id n, fst row) (snd vs))
-    (fun _ => graph_add _ _ _) (ty_occurrences (canon C (TAbs (fst row)))) g Listed) as [Next Grown].
-  destruct (canon C (TAbs (fst row))); try (now split).
+    (fun _ => graph_add _ _ _) (ty_occurrences (app_subst section (TAbs (fst row)))) g Listed) as [Next Grown].
+  destruct (app_subst section (TAbs (fst row))); try (now split).
   split; [now apply gedge_lists_vertices|]. intros a b strict Edge. apply gedge_extends. now apply Grown.
 Qed.
 
-Local Lemma merge_graph_grows : forall n C, GrowsGraph (fun g => merge_graph g n C).
-Proof. intros n C. unfold merge_graph. apply graph_fold_grows, merge_graph_step. Qed.
+Local Lemma merge_graph_grows : forall n section, GrowsGraph (fun g => merge_graph g n section).
+Proof. intros n section. unfold merge_graph. apply graph_fold_grows, merge_graph_step. Qed.
 
-Local Lemma merge_occurrence : forall g n C t v strict,
-  VerticesListed g -> In (v, strict) (ty_occurrences (canon C (TAbs t))) ->
-  (v = t /\ strict = false) \/ GraphEdge (merge_graph g n C) (node_id n, v) (node_id n, t) strict.
+Local Lemma merge_occurrence : forall g n section t v strict,
+  VerticesListed g -> In (v, strict) (ty_occurrences (app_subst section (TAbs t))) ->
+  (v = t /\ strict = false) \/ GraphEdge (merge_graph g n section) (node_id n, v) (node_id n, t) strict.
 Proof.
-  intros g n C t v strict Listed Occurrence.
-  destruct (lookup_subst t (c_sub C)) as [meaning|] eqn:Lookup.
+  intros g n section t v strict Listed Occurrence.
+  destruct (lookup_subst t (section)) as [meaning|] eqn:Lookup.
   2: {
-    unfold canon in Occurrence. cbn [app_subst] in Occurrence. rewrite Lookup in Occurrence.
+    cbn [app_subst] in Occurrence. rewrite Lookup in Occurrence.
     cbn [ty_occurrences] in Occurrence. destruct Occurrence as [Equal|[]].
     inversion Equal. now left.
   }
@@ -329,23 +329,23 @@ Proof.
   - intros start ListedStart. cbn [fst snd].
     assert (Added : GraphEdge
       (fold_left (fun g vs => gedge g (node_id n, fst vs) (node_id n, t) (snd vs))
-        (ty_occurrences (canon C (TAbs t))) start) (node_id n, v) (node_id n, t) strict).
+        (ty_occurrences (app_subst section (TAbs t))) start) (node_id n, v) (node_id n, t) strict).
     {
       apply graph_fold_contains with (x := (v, strict)); try assumption.
       - intro. apply graph_add.
       - intros. now apply gedge_inserts.
     }
-    destruct (canon C (TAbs t)); try exact Added. now apply gedge_extends.
+    destruct (app_subst section (TAbs t)); try exact Added. now apply gedge_extends.
 Qed.
 
-Local Lemma merge_alias : forall g n C t z,
-  VerticesListed g -> canon C (TAbs t) = TAbs z ->
-  z = t \/ GraphEdge (merge_graph g n C) (node_id n, t) (node_id n, z) false.
+Local Lemma merge_alias : forall g n section t z,
+  VerticesListed g -> app_subst section (TAbs t) = TAbs z ->
+  z = t \/ GraphEdge (merge_graph g n section) (node_id n, t) (node_id n, z) false.
 Proof.
-  intros g n C t z Listed Alias.
-  destruct (lookup_subst t (c_sub C)) as [meaning|] eqn:Lookup.
+  intros g n section t z Listed Alias.
+  destruct (lookup_subst t (section)) as [meaning|] eqn:Lookup.
   2: {
-    unfold canon in Alias. cbn [app_subst] in Alias. rewrite Lookup in Alias. inversion Alias.
+    cbn [app_subst] in Alias. rewrite Lookup in Alias. inversion Alias.
     now left.
   }
   rewrite PublicCallRealize.lookup_subst_nlook' in Lookup.
@@ -359,17 +359,15 @@ Proof.
 Qed.
 
 Section ProgramGraph.
-Variables (W : world) (P : program) (lamcx : nmap cx) (fns : nmap expr)
-  (funs : nmap functor_code) (links : list ((nat * nat) * nat)) (next : nat).
+Variables (W : world) (P : program) (fns : nmap expr)
+  (funs : nmap functor_code) (next : nat).
 Hypotheses (Functions : forall f, nget fns f = body_of P f)
   (Functors : forall h, nget funs h = funbody_of P h)
-  (CodeWithin : forall n, node_sites P n <> [] -> In n (code_nodes fns funs next))
-  (ContextWithin : forall n C, NodeCx W P n C -> In n (code_nodes fns funs next) /\
-    node_context W lamcx links n = Some C).
+  (CodeWithin : forall n, CodePresent P n -> In n (code_nodes fns funs next)).
 
 Local Definition code_graph := fold_left (node_graph P fns funs) (code_nodes fns funs next) gempty.
-Local Definition add_context g n := match node_context W lamcx links n with
-  | Some C => merge_graph g n C
+Local Definition add_context g n := match code_section W P n with
+  | Some section => merge_graph g n section
   | None => g
   end.
 
@@ -381,14 +379,14 @@ Qed.
 
 Local Lemma add_context_grows : forall n, GrowsGraph (fun g => add_context g n).
 Proof.
-  intro n. unfold add_context. destruct (node_context W lamcx links n).
+  intro n. unfold add_context. destruct (code_section W P n).
   - apply merge_graph_grows.
   - apply graph_noop.
 Qed.
 
 Local Lemma instantiation_edge_covered : forall a b strict,
   InstantiationEdge P a b strict ->
-  GraphEdge (instantiation_graph W P lamcx fns funs links next)
+  GraphEdge (instantiation_graph W P fns funs next)
     (node_id (fst a), snd a) (node_id (fst b), snd b) strict.
 Proof.
   intros a b strict Edge.
@@ -396,22 +394,23 @@ Proof.
   apply (proj2 (graph_fold_grows _ add_context add_context_grows _ _ code_graph_listed)).
   unfold code_graph. apply graph_fold_contains with (x := fst a).
   - intro; apply node_graph_grows.
-  - apply CodeWithin. intro Empty. destruct Edge as (site & th & tau & v & s & s' & Site & _).
-    now rewrite Empty in Site.
+  - apply CodeWithin. destruct Edge as (site & th & tau & v & s & s' & Site & _).
+    destruct (fst a) as [f|h]; cbn [CodePresent node_sites] in *;
+      intro Missing; now rewrite Missing in Site.
   - intros n edges Lookup. discriminate Lookup.
   - intros start Listed. eapply node_graph_covers; eassumption.
 Qed.
 
 Theorem instantiation_graph_sound :
-  bounded (instantiation_graph W P lamcx fns funs links next) = true ->
+  bounded (instantiation_graph W P fns funs next) = true ->
   InstantiationsBounded W P.
 Proof.
   intro Checked. destruct (bounded_sound _ Checked) as [level Levels].
   exists (fun nt => level (node_id (fst nt), snd nt)). split.
   - intros a b strict Edge. apply Levels. now apply instantiation_edge_covered.
   - split.
-    + intros n C t v strict Context Occurrence. cbn [fst snd].
-      destruct (ContextWithin _ _ Context) as [Present ContextRead].
+    + intros n section t v strict [HasCode ContextRead] Occurrence. cbn [fst snd].
+      pose proof (CodeWithin n HasCode) as Present.
       destruct (Nat.eq_dec v t) as [->|Different]; destruct strict;
         try lia.
       all: first [apply (Levels _ _ true)|apply (Levels _ _ false)].
@@ -419,11 +418,11 @@ Proof.
       all: apply graph_fold_contains with (x := n);
         [exact add_context_grows|exact Present|exact code_graph_listed|].
       all: intros g Listed; unfold add_context; rewrite ContextRead.
-      all: destruct (merge_occurrence g n C t _ _ Listed Occurrence) as [[Equal Strict]|Added];
+      all: destruct (merge_occurrence g n section t _ _ Listed Occurrence) as [[Equal Strict]|Added];
         [congruence|exact Added].
-    + intros n C t z Context Alias. cbn [fst snd].
+    + intros n section t z [HasCode ContextRead] Alias. cbn [fst snd].
       destruct (Nat.eq_dec z t) as [->|Different]; [reflexivity|].
-      destruct (ContextWithin _ _ Context) as [Present ContextRead].
+      pose proof (CodeWithin n HasCode) as Present.
       rewrite <- Nat.add_0_r at 1.
       change (level (node_id n, z) + (if false then 1 else 0) <= level (node_id n, t)).
       apply Levels.
@@ -431,7 +430,7 @@ Proof.
       apply graph_fold_contains with (x := n);
         [exact add_context_grows|exact Present|exact code_graph_listed|].
       intros g Listed. unfold add_context. rewrite ContextRead.
-      destruct (merge_alias g n C t z Listed Alias) as [Equal|Added]; [contradiction|exact Added].
+      destruct (merge_alias g n section t z Listed Alias) as [Equal|Added]; [contradiction|exact Added].
 Qed.
 End ProgramGraph.
 
@@ -449,7 +448,7 @@ Proof.
     destruct (nget funs h); [now left|contradiction].
 Qed.
 
-Theorem expansion_ok_sound : forall W fuel P lamcx fns funs links bound next,
+Theorem expansion_ok_sound : forall W fuel P fns funs bound next,
   (forall tag payload, PayloadOf W tag (as_written (w_reqs W tag)) payload -> tag < bound) ->
   (forall tag payload, PayloadOf W tag (as_written (w_reqs W tag)) payload ->
     payload_of W fuel tag (as_written (w_reqs W tag)) = Ok payload) ->
@@ -457,22 +456,20 @@ Theorem expansion_ok_sound : forall W fuel P lamcx fns funs links bound next,
   (forall h, nget funs h = funbody_of P h) ->
   (forall f body, nget fns f = Some body -> f < next) ->
   (forall h code, nget funs h = Some code -> h < next) ->
-  (forall n C, NodeCx W P n C -> In n (code_nodes fns funs next) /\
-    node_context W lamcx links n = Some C) ->
-  expansion_ok W fuel P lamcx fns funs links bound next = true ->
+  expansion_ok W fuel P fns funs bound next = true ->
   NoExpandingCycle W P.
 Proof.
-  intros W fuel P lamcx fns funs links bound next Declared Payloads Functions Functors
-    FunctionBounds FunctorBounds Contexts Checked.
+  intros W fuel P fns funs bound next Declared Payloads Functions Functors
+    FunctionBounds FunctorBounds Checked.
   unfold expansion_ok in Checked. apply andb_true_iff in Checked as [Types Codes].
   split.
   - eapply type_graph_sound; eassumption.
   - eapply instantiation_graph_sound; try eassumption.
-    intros [f|h] Sites; apply code_nodes_contain.
-    + cbn [node_sites] in Sites. rewrite <- Functions in Sites.
+    intros [f|h] Present; apply code_nodes_contain.
+    + cbn [CodePresent] in Present. rewrite <- Functions in Present.
       destruct (nget fns f) as [body|] eqn:Found; [|contradiction].
       split; [eapply FunctionBounds; exact Found|discriminate].
-    + cbn [node_sites] in Sites. rewrite <- Functors in Sites.
+    + cbn [CodePresent] in Present. rewrite <- Functors in Present.
       destruct (nget funs h) as [body|] eqn:Found; [|contradiction].
       split; [eapply FunctorBounds; exact Found|discriminate].
 Qed.

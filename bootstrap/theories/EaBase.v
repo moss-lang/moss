@@ -77,7 +77,7 @@ Record est := Est {
   es_link : list ((nat * nat) * code_slot FunctorTable);
   es_const : nmap (expr * ty);
   es_unsupported : list string;
-  es_lamcx : nmap cx;                   (* a lambda provider's context (NodeCx) *)
+  es_lamcx : nmap cx;                   (* a lambda provider's enclosing context *)
   es_pins : nmap subst;                  (* what a link body pins fixed inputs to (LinkBody's pins, Q6) *)
   es_names : nmap string                 (* a fresh generation's name, for messages only ("T@F") *)
 }.

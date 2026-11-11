@@ -1581,6 +1581,13 @@ Record functor_code := FunctorCode {
      tests/wasi/copy_extra_key.moss, tests/wasi/linked_copy_bracket.moss) *)
   fc_sources : list item
 }.
+(* The static readings attached to generated code by its translation. *)
+Record code_origins := CodeOrigins {
+  lambda_sections : list (nat * subst);
+  linked_origins : list (nat * (nat * nat))  (* slot, declared target and provider *)
+}.
+Definition empty_code_origins : code_origins := CodeOrigins [] [].
+
 Record program : Type := Program {
   program_functions : list (nat * expr);
   program_functors : list (usym * functor_code);
@@ -1589,7 +1596,8 @@ Record program : Type := Program {
   program_environment : environment;
   program_unsupported : list string;
   program_casts : list (nsym * cast_spec);
-  program_machines : list (tsym * machine_class)
+  program_machines : list (tsym * machine_class);
+  program_origins : code_origins
 }.
 
 (* Execution view: symbol lookups, runtime inputs and representation data.
@@ -4315,12 +4323,13 @@ Definition translate_linked_body (Cu Cg : cx) (outs : list nat)
     (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
     (c_ty Cg) (map ITy outs) bindings keys.
 
-Definition TranslatesLinkedBody (W : world) (P : program) (h : nat)
+Definition TranslatesLinkedBody (W : world) (P : program) (u gg h : nat)
     (Cu Cg site : cx) (outs : list nat) (bindings : list binding) (ks : list item) : Prop :=
   Fresh W h /\
   funbody_of P h =
     Some (translate_linked_body Cu Cg outs bindings
-      (map (fun k => rkey_of site (at_site site k)) ks)).
+      (map (fun k => rkey_of site (at_site site k)) ks)) /\
+  nlook h (linked_origins (program_origins P)) = Some (u, gg).
 
 (* Each promised key, read at the body's site (at_site re-reads its
    receiver), is provided there, at the promised provision with `reads`
@@ -5140,6 +5149,7 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
     (forall k, In k keys <-> (provides Cl k /\
        (match k with ITy _ => False | _ => True end) /\ k = provision_id k)) ->
     NoDup keys -> sm = map (fun k => (rkey_of Cl k, rkey_of C k)) keys ->
+    nlook pid (lambda_sections (program_origins P)) = Some (c_sub C) ->
     LambdaProvider W P F C ps rt body sg this pid (translate_lambda_captures F (combine caps capvals)) sm
 
 (* [D78]/[D84] 3e: G's result is F's, item by item: the same leaves
@@ -5186,7 +5196,7 @@ with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
     (Family W u -> FamilyBindings W binds0) ->
     (* The caller installs each result under its own key for the same
        position. Emission uses the body's runtime key at that position. *)
-    TranslatesLinkedBody W P h Cu Cg (link_site Cg Cb pins outs gen) outs binds0 ks ->
+    TranslatesLinkedBody W P u gg h Cu Cg (link_site Cg Cb pins outs gen) outs binds0 ks ->
     (* the pins of fixed inputs: what the body binds each to, in G's input
        terms (each bind reads its type where it is made, and a later bind
        writes only its own alias; tests/wasi/pin_taken_chain.moss).  A fixed
@@ -5373,17 +5383,32 @@ Definition InstantiationEdge (P : program) (a b : code_node * tsym) (strict : bo
     In (snd b, tau) th /\ In (v, s) (ty_occurrences tau) /\
     NodeReads P (fst a) v (snd a) s' /\ strict = s || s'.
 
-(* The context a node's code is elaborated in: a fn's own (the world's
-   record), a lambda provider's (the enclosing context, whose merges it
-   keeps), a linked functor body's (G's). *)
-Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
-| NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
-| NCLambda : forall F C ps rt body sg this pid pre sm,
-    LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
-| NCBody : forall u gg h pins Cu nsu Cg nsg recorded target, LinkBody W P u gg h pins ->
-    w_context W u = Some (Cu, nsu) -> w_context W gg = Some (Cg, nsg) ->
-    LinkBinding W u Cu nsu Cg nsg recorded target ->
-    NodeCx W P (CodeFunctor h) Cg.
+(* Read a code node at its own merge section: the declaration's for
+   source functions, the enclosing section recorded for a lambda, and
+   the provider's for a linked functor body. Generated wrappers and
+   primitive bodies do not register a section. *)
+Definition code_section (W : world) (P : program) (n : code_node) : option subst :=
+  match n with
+  | CodeFn f =>
+      match w_decl W f with
+      | Some _ => option_map (fun q => c_sub (fst q)) (w_context W f)
+      | None => nlook f (lambda_sections (program_origins P))
+      end
+  | CodeFunctor h =>
+      match nlook h (linked_origins (program_origins P)) with
+      | Some (_, gg) => option_map (fun q => c_sub (fst q)) (w_context W gg)
+      | None => None
+      end
+  end.
+
+Definition CodePresent (P : program) (n : code_node) : Prop :=
+  match n with
+  | CodeFn f => body_of P f <> None
+  | CodeFunctor h => funbody_of P h <> None
+  end.
+
+Definition CodeSection (W : world) (P : program) (n : code_node) (section : subst) : Prop :=
+  CodePresent P n /\ code_section W P n = Some section.
 
 (* Merges are edges too (criteria section 2, coherence).  Within a node,
    a type symbol t is the type its context's merge reads it as, `canon C
@@ -5402,9 +5427,11 @@ Definition InstantiationsBounded (W : world) (P : program) : Prop :=
   exists level : code_node * tsym -> nat,
     (forall a b strict,
        InstantiationEdge P a b strict -> level b + (if strict then 1 else 0) <= level a) /\
-    (forall n C t v s, NodeCx W P n C -> In (v, s) (ty_occurrences (canon C (TAbs t))) ->
+    (forall n section t v s, CodeSection W P n section ->
+       In (v, s) (ty_occurrences (app_subst section (TAbs t))) ->
        level (n, t) + (if s then 1 else 0) <= level (n, v)) /\
-    (forall n C t z, NodeCx W P n C -> canon C (TAbs t) = TAbs z -> level (n, z) <= level (n, t)).
+    (forall n section t z, CodeSection W P n section ->
+       app_subst section (TAbs t) = TAbs z -> level (n, z) <= level (n, t)).
 
 (* Types.  A nominal's payload, read at its own requirements, mentions
    nominal instances; an edge (g, x) -> (g', y) says g' is mentioned with

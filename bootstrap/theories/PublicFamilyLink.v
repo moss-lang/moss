@@ -46,7 +46,7 @@ Lemma link_body_family_bindings : forall u gg h pins, A.LinkBody W Prog u gg h p
   A.FamilyBindings W (fc_bindings code).
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins0
-    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outputs _ RR BO Fam [_ FB]].
+    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outputs _ RR BO Fam [_ [FB _]]].
   intros code Code Family. rewrite FB in Code. injection Code as <-. exact (Fam Family).
 Qed.
 

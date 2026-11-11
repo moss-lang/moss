@@ -69,8 +69,8 @@ Proof.
   rewrite Body in View. injection View as <-. destruct Linked.
   match goal with
   | Bo : A.BindsOf (?w EUnit) ?bindings, Bi : A.BindItems _ _ _ _ _ ?w _ _ _,
-    Translation : A.TranslatesLinkedBody _ _ _ _ _ _ _ ?bindings _ |- _ =>
-      destruct Translation as [_ Fh];
+    Translation : A.TranslatesLinkedBody _ _ _ _ _ _ _ _ _ ?bindings _ |- _ =>
+      destruct Translation as [_ [Fh _]];
       rewrite Body in Fh; injection Fh as Same; subst actual;
       pose proof (bindsof_np _ _ Bo (items_np _ _ _ _ _ _ _ Bi EUnit Logic.I)) as Excludes;
       cbn [A.translate_linked_body fc_bindings] in Primitive |- *;

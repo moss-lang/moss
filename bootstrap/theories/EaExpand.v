@@ -160,10 +160,8 @@ Definition finite_layouts (bound : nat) : er unit :=
 Definition node_id (n : code_node) : nat := match n with CodeFn f => 2 * f | CodeFunctor h => S (2 * h) end.
 
 Variable P : program.
-Variable lamcx : nmap cx.
 Variable fns : nmap expr.
 Variable funs : nmap functor_code.
-Variable links : list ((nat * nat) * nat).
 
 Definition sites_of (n : code_node) : list code_site :=
   match n with
@@ -217,34 +215,21 @@ Definition node_graph (g : graph) (n : code_node) : graph :=
           fold_left (fun g us => gedge g (a, fst us) (node_id (fst mt), fst xtau) (snd vs || snd us))
                     (reads (fst vs)) g) (ty_occurrences (snd xtau)) g) (snd mt) g) (targets_of site) g) (sites_of n) g.
 
-Definition merge_graph (g : graph) (n : code_node) (C : cx) : graph :=
+Definition merge_graph (g : graph) (n : code_node) (section : subst) : graph :=
   let a := node_id n in
   fold_left (fun g q =>
-    let g := fold_left (fun g vs => gedge g (a, fst vs) (a, fst q) (snd vs)) (ty_occurrences (canon C (TAbs (fst q)))) g in
-    match canon C (TAbs (fst q)) with TAbs z => gedge g (a, fst q) (a, z) false | _ => g end) (c_sub C) g.
+    let g := fold_left (fun g vs => gedge g (a, fst vs) (a, fst q) (snd vs)) (ty_occurrences (app_subst section (TAbs (fst q)))) g in
+    match app_subst section (TAbs (fst q)) with TAbs z => gedge g (a, fst q) (a, z) false | _ => g end) section g.
 
 Definition code_nodes (next : nat) : list code_node :=
   flat_map (fun s => (match nget fns s with Some _ => [CodeFn s] | None => [] end) ++
                      (match nget funs s with Some _ => [CodeFunctor s] | None => [] end)) (seq 0 next).
 
-Definition node_context (n : code_node) : option cx :=
-  match n with
-  | CodeFn f => match w_context W f with
-                | Some (C, _) => Some C
-                | None => nget lamcx f
-                end
-  | CodeFunctor h =>
-      match find (fun q => Nat.eqb (snd q) h) links with
-      | Some ((_, gg), _) => option_map fst (w_context W gg)
-      | None => None
-      end
-  end.
-
 Definition instantiation_graph (next : nat) : graph :=
   let nodes := code_nodes next in
   let g := fold_left node_graph nodes gempty in
-  fold_left (fun g n => match node_context n with
-    | Some C => merge_graph g n C
+  fold_left (fun g n => match code_section W P n with
+    | Some section => merge_graph g n section
     | None => g
     end) nodes g.
 

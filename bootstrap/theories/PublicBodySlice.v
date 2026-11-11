@@ -3664,7 +3664,7 @@ Lemma link_facts : forall u gg h pins, A.LinkBody W Prog u gg h pins -> exists d
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins.
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins
-    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outputs _ RR BO Fam [_ FB] PinsI PinG].
+    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outputs _ RR BO Fam [_ [FB _]] PinsI PinG].
   destruct Outputs as (Outs & OutM & Allocated & PR).
   apply AllocationFacts.link_output_allocation_contract in Allocated as [NdG FrG].
   exists dg, n, ps, a, r, bodies, Cu, nsu, Cg, nsg, Fg, wrap, Cb, Fb, made, outs, gen, Cr, ks, binds0.
@@ -4823,7 +4823,7 @@ Proof.
   intros k Bel F C sp f sg ps rt body pid pre sm a Sig LP FS.
   remember (@None ty) as none eqn:NoneE in LP.
   destruct LP as [F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn Captures
-    FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+    FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE Origin].
   destruct Captures as (CapsIff & NdC & LenV & scope_after & Allocated).
   destruct (proj1 (AllocationFacts.capture_allocation_contract W C capvals) (proj1 Allocated)) as (NdV & FreshV & Unprov).
   subst sm this.
@@ -5030,7 +5030,7 @@ Proof.
   - (* lambda *)
       remember (Some rt) as recv eqn:RecvE in LP.
     destruct LP as [F C ps r0 body sg this pid caps capvals Cl Fl lbody ltype keys sm Len NdP Ann RtAnn Captures
-      FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE].
+      FreshP ClE FMod FRet FThis FLoop FScope Num NamedFl NamedF Blk Fits BodyOf KeysIff NdK SmE Origin].
     destruct Captures as (CapsIff & NdC & LenV & scope_after & Allocated).
     destruct (proj1 (AllocationFacts.capture_allocation_contract W C capvals) (proj1 Allocated)) as (NdV & FreshV & Unprov).
     subst sm this.

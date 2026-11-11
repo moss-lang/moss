@@ -3833,6 +3833,34 @@ using one fresh atom per abstract class must preserve that behaviour
   readings through direct, family, and copy-chain applications.
 - **Class C** (criterion 2). The fixed-input merge programs now pass.
 
+### 128. Rank generated code at its recorded origin
+
+- **Example.** The reference accepts this program and emits a fresh
+  function whose body is the unit expression.
+
+  ```moss
+  fn f();
+  fn main() {
+    bind f = () => ();
+    f();
+  }
+  ```
+
+  The old `NodeCx` admitted any lambda typing derivation that happened
+  to emit the same unit expression at that number. Rocq checks that
+  the unrelated merge reading `T ↦ {x: T}` gives that same body an
+  impossible strict self edge.
+- **Rule.** A source function with code uses its declared section. A
+  generated lambda uses the section recorded by its translation, and a
+  linked body uses its recorded provider's section. The lambda and
+  linking typing rules require these annotations at their own slots.
+- **Executable and proof.** Assembly attaches the selected readings
+  and checks the expansion graph on the returned program. The rank
+  proof uses the same selector. Successful elaboration establishes
+  both type and code expansion bounds.
+- **Class C.** The contract now ranks the contexts of the emitted
+  program. The original lambda example runs with its empty section.
+
 ---
 
 ## Consolidation (branch ob-consol)

@@ -42,8 +42,7 @@ Theorem assemble_entry : forall env bound entry before program after,
   P.Tables (e_W env) (program_machines program) (program_casts program) /\
   P.EntryPoint (e_W env) program /\ LangItemsFormed (e_W env) /\ InstalledBool (e_W env) program /\
   EaExpand.finite_layouts (e_W env) (e_fuel env) bound = Ok tt /\
-  EaExpand.expansion_ok (e_W env) (e_fuel env) program (es_lamcx after) (es_fns after)
-    (es_funs after) (map (fun q => (fst q, slot_index (snd q))) (es_link after))
+  EaExpand.expansion_ok (e_W env) (e_fuel env) program (es_fns after) (es_funs after)
     bound (es_next after) = true.
 Proof.
   intros env bound entry before program after Contexts Run.
@@ -97,8 +96,8 @@ Proof.
   destruct (EaPlatform.bool_syms env) as [[boolean truth] falsity] eqn:Symbols.
   apply mbind_ok in Run as (checked & after_expansion & Check & Run).
   lazymatch type of Check with
-  | context [EaExpand.expansion_ok ?W ?fuel ?P ?lam ?fns ?funs ?links ?bound ?next] =>
-      destruct (EaExpand.expansion_ok W fuel P lam fns funs links bound next) eqn:Expansion;
+  | context [EaExpand.expansion_ok ?W ?fuel ?P ?fns ?funs ?bound ?next] =>
+      destruct (EaExpand.expansion_ok W fuel P fns funs bound next) eqn:Expansion;
         [|discriminate Check]
   end.
   inversion Check; subst checked after_expansion.
@@ -259,38 +258,46 @@ Proof.
   - eapply EaLayoutSound.declarations_cover_payload_reads; eassumption.
 Qed.
 
-(* The expansion certificate is checked on the exact program being returned.
-   Connecting contexts to their selected generated code origins is separate. *)
+(* The expansion certificate checks each code node at its selected
+   translation's merge section. *)
 Theorem assemble_instantiation_bounded : forall env bound entry program after,
   EaContextTableSound.ContextTableSound (e_W env) ->
   EaMain.assemble env bound entry (init_state bound) = Ok (program, after) ->
-  let links := map (fun q => (fst q, slot_index (snd q))) (es_link after) in
-  (forall n C, NodeCx (e_W env) program n C ->
-    In n (EaExpand.code_nodes (es_fns after) (es_funs after) (es_next after)) /\
-    EaExpand.node_context (e_W env) (es_lamcx after) links n = Some C) ->
   InstantiationsBounded (e_W env) program.
 Proof.
-  intros env bound entry program after Contexts Run links ContextWithin.
+  intros env bound entry program after Contexts Run.
   destruct (assemble_entry _ _ _ _ _ _ Contexts Run)
     as (_ & _ & _ & _ & _ & _ & _ & _ & Expansion).
   unfold EaExpand.expansion_ok in Expansion. apply Bool.andb_true_iff in Expansion as [_ Codes].
   destruct (EaAssemblyCodeEffects.assembly_code_tables_bound _ _ _ _ _ Run) as [_ Bounded].
   destruct (EaAssemblyCodeEffects.assembled_code_lookup_exact _ _ _ _ _ Run)
     as [Functions Functors].
-  eapply EaExpansionSound.instantiation_graph_sound; [| | |exact ContextWithin|exact Codes].
+  eapply EaExpansionSound.instantiation_graph_sound; [| | |exact Codes].
   - intro f. symmetry. exact (Functions f).
   - intro h. symmetry. exact (Functors h).
-  - intros [f|h] Sites; apply EaExpansionSound.code_nodes_contain.
-    + cbn [node_sites] in Sites. rewrite Functions in Sites. cbn [EaCodeAllocationSound.read_code] in Sites.
+  - intros [f|h] Present; apply EaExpansionSound.code_nodes_contain.
+    + cbn [CodePresent] in Present. rewrite Functions in Present. cbn [EaCodeAllocationSound.read_code] in Present.
       destruct (NMap.nget (es_fns after) f) as [body|] eqn:Found; [|contradiction].
       split; [|discriminate].
       apply Nat.lt_nge. intro Outside.
       specialize (Bounded f Outside FunctionTable).
       cbn [EaCodeAllocationSound.read_code] in Bounded. congruence.
-    + cbn [node_sites] in Sites. rewrite Functors in Sites. cbn [EaCodeAllocationSound.read_code] in Sites.
+    + cbn [CodePresent] in Present. rewrite Functors in Present. cbn [EaCodeAllocationSound.read_code] in Present.
       destruct (NMap.nget (es_funs after) h) as [code|] eqn:Found; [|contradiction].
       split; [|discriminate].
       apply Nat.lt_nge. intro Outside.
       specialize (Bounded h Outside FunctorTable).
       cbn [EaCodeAllocationSound.read_code] in Bounded. congruence.
+Qed.
+
+Theorem elaborate_with_expansion_bounded : forall strategy bundle world program,
+  EaMain.elaborate_with strategy bundle = Ok (world, program) ->
+  NoExpandingCycle world program.
+Proof.
+  intros strategy bundle world program Run. split.
+  - eapply elaborate_types_bounded; exact Run.
+  - pose proof (EaContextTableSound.elaborate_with_context_table_sound _ _ _ _ Run) as Contexts.
+    destruct (elaborate_uses_assemble _ _ _ _ Run)
+      as (env & bound & after & <- & _ & _ & Assembled).
+    eapply assemble_instantiation_bounded; eassumption.
 Qed.

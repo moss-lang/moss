@@ -181,6 +181,8 @@ Print Assumptions NM.EaCodeAllocationSound.reserve_code_spec.
 Print Assumptions NM.EaCodeAllocationSound.write_reserved_code_spec.
 Print Assumptions NM.EaCodeAllocationSound.emit_code_spec.
 Print Assumptions NM.EaCodeAllocationSound.assembled_code_lookup.
+Print Assumptions NM.EaCodeAllocationSound.assembled_lambda_section.
+Print Assumptions NM.EaCodeAllocationSound.assembled_link_origin.
 
 From NM Require EaApplicationSound.
 Print Assumptions NM.EaApplicationSound.allocate_application_outputs_range.
