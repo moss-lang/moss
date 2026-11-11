@@ -2,6 +2,7 @@
    Translation assigns a slot only to the generated body. *)
 From Stdlib Require Import List.
 From NM Require Import Audit.
+From NM Require Import LegacyBodyJudgments.
 From NM Require BodyProviderTyping.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Import BodyProviderTyping.

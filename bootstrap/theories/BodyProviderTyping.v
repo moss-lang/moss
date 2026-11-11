@@ -2,6 +2,7 @@
    uses its declared body, so these bindings need no generated placement. *)
 From Stdlib Require Import List.
 From NM Require Import Audit.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 Local Open Scope list_scope.
 

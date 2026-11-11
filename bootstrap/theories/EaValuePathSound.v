@@ -2,6 +2,7 @@
    translated using the checked numbering. *)
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit EaBase EaExpr EaControlSound EaChecked.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaConstantSound EaLiteralSound.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.

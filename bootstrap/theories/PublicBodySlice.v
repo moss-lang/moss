@@ -9,6 +9,7 @@
    arm selection) are explicit Section hypotheses; each is a named
    remaining obligation, not an assumption about accepted programs. *)
 From NM Require AuditFacts.
+From NM Require Import LegacyBodyJudgments.
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
@@ -182,7 +183,7 @@ Definition PinsAgree (u : nat) (Cu Cg : A.cx) (dc : environment) (gfx pins : sub
    copy of an applicable closure, or a platform family. *)
 Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_value -> Prop :=
 | CLink : forall u gg h Cu nsu Cg nsg linktarget dc gfx pins,
-    A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx ->
+    LegacyBodyJudgments.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx ->
     A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
     (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
     (* u is abstract (BFunClosure binds only an abstract functor) *)
@@ -449,19 +450,19 @@ Definition with_ty (C0 C : A.cx) : A.cx := A.Cx (A.c_ty C0) (A.c_sub C) (A.c_mer
 
 Notation Outcome := (AR.O.Outcome W P state_ok).
 
-Definition SafeEx k : Prop := forall F C a exp x t, A.Ex W Prog F C a exp x t ->
+Definition SafeEx k : Prop := forall F C a exp x t, LegacyBodyJudgments.Ex W Prog F C a exp x t ->
   forall d types H g st, Pre k F C d types H g st ->
   Outcome F d H types t (A.Breaks W (A.fr_mod F) a) (AR.O.I.eval k P d g st x).
-Definition SafeBlk k : Prop := forall F C ss tl exp x t made, A.Blk W Prog F C ss tl exp x t made ->
+Definition SafeBlk k : Prop := forall F C ss tl exp x t made, LegacyBodyJudgments.Blk W Prog F C ss tl exp x t made ->
   (forall g, In g made -> ~ In g (A.gens t)) -> forall d types H g st, Pre k F C d types H g st ->
   Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) (ABlock ss tl)) (AR.O.I.eval k P d g st x).
-Definition SafeBlkE k : Prop := forall F C b exp x t, A.BlkE W Prog F C b exp x t ->
+Definition SafeBlkE k : Prop := forall F C b exp x t, LegacyBodyJudgments.BlkE W Prog F C b exp x t ->
   forall d types H g st, Pre k F C d types H g st ->
   Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) b) (AR.O.I.eval k P d g st x).
-Definition SafeBranch k : Prop := forall F C y exp x t, A.Branch W Prog F C y exp x t ->
+Definition SafeBranch k : Prop := forall F C y exp x t, LegacyBodyJudgments.Branch W Prog F C y exp x t ->
   forall d types H g st, Pre k F C d types H g st ->
   Outcome F d H types t (A.Breaks W (A.fr_mod F) y) (AR.O.I.eval k P d g st x).
-Definition SafeCond k : Prop := forall F C c x, A.Cond W Prog F C c x ->
+Definition SafeCond k : Prop := forall F C c x, LegacyBodyJudgments.Cond W Prog F C c x ->
   forall d types H g st, Pre k F C d types H g st ->
   exists b, A.LangSym W "bool" A.NSName "Bool" b /\
     Outcome F d H types (TNom b []) (A.Breaks W (A.fr_mod F) c) (AR.O.I.eval k P d g st x).
@@ -693,9 +694,9 @@ Hypothesis family_coherent : FamilyCoherentOk.
    callee's need read through θ at the call site (at a table X with the
    code's merge; rule B puts the callee's requirements in force there).
    Proved: PublicScoping (ex_scoped, literal_scoped, demand_at_th_scoped). *)
-Definition ExScopedOk : Prop := forall F C a x t, A.Ex W Prog F C a None x t -> Formed F C ->
+Definition ExScopedOk : Prop := forall F C a x t, LegacyBodyJudgments.Ex W Prog F C a None x t -> Formed F C ->
   PublicFormation.ScopedTy W C t.
-Definition LitScopedOk : Prop := forall F C tree x t, A.Literal W C tree x t -> Formed F C ->
+Definition LitScopedOk : Prop := forall F C tree x t, LegacyBodyJudgments.Literal W C tree x t -> Formed F C ->
   PublicFormation.ScopedTy W C t.
 Definition DemandScopedOk : Prop := forall F C X f Cf ns th r m, Formed F C -> FamilyTableIn X C ->
   A.c_sub X = A.c_sub C -> CxSection X -> A.CtxOf W f Cf ns -> A.CallTheta W X Cf f th -> A.RequirementsInForce X Cf ->
@@ -848,14 +849,14 @@ Proof. intros f fs; induction fs as [|[g v] r IH]; cbn; [reflexivity|rewrite IH;
 
 (* A block without a tail yields () or diverges. *)
 Lemma tailless_block : forall F C ss tl exp x t made,
-  A.Blk W Prog F C ss tl exp x t made -> tl = None -> t = TUnit \/ t = A.never.
+  LegacyBodyJudgments.Blk W Prog F C ss tl exp x t made -> tl = None -> t = TUnit \/ t = A.never.
 Proof.
   intros F C ss tl exp x t made D. induction D; intros Tail; try discriminate; auto.
   destruct (ty_eqb vt A.never); auto.
 Qed.
 
 Lemma blke_branch_ty : forall F C b exp x t,
-  A.BlkE W Prog F C b exp x t -> A.fits t (A.branch_ty b t) /\ A.opt_fits t exp.
+  LegacyBodyJudgments.BlkE W Prog F C b exp x t -> A.fits t (A.branch_ty b t) /\ A.opt_fits t exp.
 Proof.
   intros F C b exp x t D. destruct D as [F C ss tl exp x t made Blk _ Fits]. split; [|exact Fits].
   destruct tl; cbn; [apply fits_refl|].
@@ -873,7 +874,7 @@ Proof. intros; constructor. Qed.
 
 Lemma while_safe : forall k, Below k -> forall j, j <= k ->
   forall F C c cx b bx bt d types H g st,
-  A.Cond W Prog F C c cx -> A.BlkE W Prog (A.with_loop F) C b None bx bt ->
+  LegacyBodyJudgments.Cond W Prog F C c cx -> LegacyBodyJudgments.BlkE W Prog (A.with_loop F) C b None bx bt ->
   Pre j F C d types H g st ->
   Outcome F d H types TUnit (A.Breaks W (A.fr_mod F) c) (AR.O.I.eval j P d g st (EWhile cx bx)).
 Proof.
@@ -904,7 +905,7 @@ Qed.
 
 Lemma loop_safe : forall k, Below k -> forall j, j <= k ->
   forall F C b bx bt d types H g st,
-  A.BlkE W Prog (A.with_loop F) C b None bx bt ->
+  LegacyBodyJudgments.BlkE W Prog (A.with_loop F) C b None bx bt ->
   Pre j F C d types H g st ->
   Outcome F d H types TUnit False (AR.O.I.eval j P d g st (ELoop bx)) /\
   (forall w, AR.O.I.evaluation_signal (AR.O.I.eval j P d g st (ELoop bx)) = Normal w -> A.BlockBreaks W (A.fr_mod F) b).
@@ -928,7 +929,7 @@ Qed.
 
 (* Arguments evaluated in order: typed values, or a non-Normal outcome. *)
 Definition ArgSafe F C (breaks : Prop) (e : expr) (t : ty) : Prop :=
-  exists a exp t', A.Ex W Prog F C a exp e t' /\
+  exists a exp t', LegacyBodyJudgments.Ex W Prog F C a exp e t' /\
     (A.fits t' t \/ A.fits (A.canon C t') (A.canon C t)) /\ (A.Breaks W (A.fr_mod F) a -> breaks).
 
 Lemma outcome_conv : forall F d H types t t' breaks r,
@@ -1020,7 +1021,7 @@ Proof. induction binds as [|q r IH]; intros C; [reflexivity|cbn; rewrite IH; ref
 Lemma record_args : forall F C pa a fs ftys xfs,
   Forall2 (fun ft xf => fst xf = fst ft /\
     exists n v vt, n = fst ft /\ In (n, v) fs /\
-      A.Ex W Prog F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
+      LegacyBodyJudgments.Ex W Prog F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
       A.fits vt (snd ft)) ftys xfs ->
   Forall2 (ArgSafe F C (A.Breaks W (A.fr_mod F) (AERec pa a fs))) (map snd xfs) (map snd ftys) /\
   map fst xfs = map fst ftys.
@@ -1071,7 +1072,7 @@ Qed.
 Lemma assign_eval : forall k, Below k ->
   forall F C n y tv v vt d types H g st,
   A.slook n (A.c_locals C) = Some (tv, A.LVar) -> A.Named F n ->
-  A.Ex W Prog F C y (Some tv) v vt -> A.fits vt tv -> Pre k F C d types H g st ->
+  LegacyBodyJudgments.Ex W Prog F C y (Some tv) v vt -> A.fits vt tv -> Pre k F C d types H g st ->
   Outcome F d H types TUnit (A.Breaks W (A.fr_mod F) y) (AR.O.I.eval k P d g st (EAssign (A.var_of F n) v)).
 Proof.
   intros [|k] Bel F C n y tv v vt d types H g st Found Named D Fits Pre0; [exact Logic.I|].
@@ -1086,7 +1087,7 @@ Proof.
   rewrite Assign. exists H1; repeat split; auto. constructor.
 Qed.
 
-Lemma args_argsafe : forall F C args ts xs, A.Args W Prog F C args ts xs ->
+Lemma args_argsafe : forall F C args ts xs, LegacyBodyJudgments.Args W Prog F C args ts xs ->
   forall (B : Prop), (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) -> Forall2 (ArgSafe F C B) xs ts.
 Proof.
   intros F C args ts xs D. induction D as [F C|F C a r t ts x xs at' Dx Fits Rest IH]; intros B Brk; constructor.
@@ -1260,7 +1261,7 @@ Proof.
 Qed.
 
 Lemma ex_code : forall k, Below k -> forall F C a exp e t' t (B : Prop),
-  A.Ex W Prog F C a exp e t' -> Conv C t' t -> (A.Breaks W (A.fr_mod F) a -> B) -> CodeSafe k F C t B e.
+  LegacyBodyJudgments.Ex W Prog F C a exp e t' -> Conv C t' t -> (A.Breaks W (A.fr_mod F) a -> B) -> CodeSafe k F C t B e.
 Proof.
   intros k Bel F C a exp e t' t B D Cv Brk j Le d types H g st Pre0.
   destruct (Bel j Le) as [SEx _].
@@ -1270,7 +1271,7 @@ Proof.
   exact (outcome_conv _ _ _ _ _ _ _ _ (fun H' w => conv_ground C d H' w t' t Abs Cv) Out).
 Qed.
 
-Lemma args_code_of : forall k, Below k -> forall F C args ts xs, A.Args W Prog F C args ts xs ->
+Lemma args_code_of : forall k, Below k -> forall F C args ts xs, LegacyBodyJudgments.Args W Prog F C args ts xs ->
   forall (B : Prop), (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) -> Forall2 (fun e t => CodeSafe k F C t B e) xs ts.
 Proof.
   intros k Bel F C args ts xs D. induction D as [F C|F C a r t ts x xs at' Dx Fits Rest IH]; intros B Brk; constructor.
@@ -1289,12 +1290,12 @@ Qed.
 
 (* Arithmetic a family supplies to a literal: a functor application (T15/T16). *)
 Lemma family_method_case : forall k, Below k -> forall F C o ox ot0 m args u matching th sm C' ks g xs (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  LegacyBodyJudgments.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   A.mlook (A.canon C ot0) m (A.c_mths C) = None ->
   AuditFacts.FamilyApplication W C u matching th sm C' ks -> A.FamilyReadOff W C u (A.canon C ot0) m matching ->
   (Formed F C -> PublicFormation.TyOk W (A.canon C ot0) /\ PublicFormation.ScopedTy W C (A.canon C ot0)) ->
   In (A.mkey (A.canon C ot0) m) ks -> A.OnlyFamily W C u (A.mkey (A.canon C ot0) m) ->
-  A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
+  A.mlook (A.canon C ot0) m (A.c_mths C') = Some g -> LegacyBodyJudgments.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) B
     (apply_expression u th sm (map (A.rkey_of C') ks) (EMethod ox m (A.rkey C' (A.canon C ot0) m) xs)).
 Proof.
@@ -1330,12 +1331,12 @@ Proof.
 Qed.
 
 Lemma lit_step : forall n, Below n ->
-  (forall F C tree x t, A.Literal W C tree x t -> CodeSafe n F C t False x) ->
-  forall F C tree x t, A.Literal W C tree x t -> StepSafe n F C t False x.
+  (forall F C tree x t, LegacyBodyJudgments.Literal W C tree x t -> CodeSafe n F C t False x) ->
+  forall F C tree x t, LegacyBodyJudgments.Literal W C tree x t -> StepSafe n F C t False x.
 Proof.
   intros n Bel IHc F C tree x t D d types H lg lst Pre0.
   assert (Op : forall a b x y result m,
-    A.Literal W C a x t -> A.Literal W C b y t -> A.LitOp W C t m x y result ->
+    LegacyBodyJudgments.Literal W C a x t -> LegacyBodyJudgments.Literal W C b y t -> LegacyBodyJudgments.LitOp W C t m x y result ->
     Outcome F d H types t False (AR.O.I.eval (S n) P d lg lst result)).
   { intros a b x' y result m Da Db Lop. destruct Lop as [Found|u matching th formal needs C' ks None' Typed Ro InK Only Found].
     - refine (method_code n F C False t m (A.FSig [t] t) x' [y] d types H lg lst Found
@@ -1362,7 +1363,7 @@ Proof.
     intros d' H' w _ T. exact (fits_ground W P H' d' w ti tp Fits T).
 Qed.
 
-Lemma lit_code : forall n, Below n -> forall F C tree x t, A.Literal W C tree x t -> CodeSafe (S n) F C t False x.
+Lemma lit_code : forall n, Below n -> forall F C tree x t, LegacyBodyJudgments.Literal W C tree x t -> CodeSafe (S n) F C t False x.
 Proof.
   induction n as [|n IH]; intros Bel F C tree x t D j Le d types H g st Pre0.
   - destruct j as [|j]; [exact Logic.I|]. assert (j = 0) as -> by lia.
@@ -1378,7 +1379,7 @@ Qed.
 (* ---- running a defined function's body ------------------------------------ *)
 
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
-  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
+  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> LegacyBodyJudgments.FnElab W Prog f.
 
 Lemma ctxof_locals : forall f C ns, A.CtxOf W f C ns -> A.c_locals C = [].
 Proof.
@@ -1838,7 +1839,7 @@ Qed.
 Lemma call_core : forall j, Below j -> forall F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
-  A.Args W Prog F CA args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  LegacyBodyJudgments.Args W Prog F CA args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   forall d types H lg lst, Pre (S j) F C d types H lg lst -> Pre (S j) F CA d types H lg lst ->
   Outcome F d H types (A.sg_ret g) B (AR.O.I.eval (S j) P d lg lst (ECall f th sm xs)).
 Proof.
@@ -1956,7 +1957,7 @@ Qed.
 Lemma call_code : forall k, Below k -> forall F C CA args f n0 ps0 rt0 b0 Cf ns sm th g xs (B : Prop),
   A.ast_of W f = Some (ADFn RPlain n0 ps0 rt0 (Some b0)) ->
   A.CtxOf W f Cf ns -> A.Satisfies C Cf th ns sm -> A.CallTheta W C Cf f th -> A.SigOf W f (A.c_ty C) None g ->
-  A.Args W Prog F CA args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  LegacyBodyJudgments.Args W Prog F CA args (A.sg_params g) xs -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   forall j, j <= S k -> forall d types H lg lst, Pre j F C d types H lg lst -> Pre j F CA d types H lg lst ->
   Outcome F d H types (A.sg_ret g) B (AR.O.I.eval j P d lg lst (ECall f th sm xs)).
 Proof.
@@ -2185,7 +2186,7 @@ Qed.
 
 (* A closure bound from a provider is callable below the binding's fuel. *)
 Lemma provider_callable : forall k, Below k -> forall jn, jn <= S k -> forall F C pa sg g types sm d H,
-  A.FnProvider W Prog F C (AEPath pa None) sg None g types sm ->
+  LegacyBodyJudgments.FnProvider W Prog F C (AEPath pa None) sg None g types sm ->
   Realizes jn C d H ->
   exists dc, select_provisions d sm = Some dc /\
     CallableOk jn H d (A.sg_params sg) (A.sg_ret sg) (FunctionClosure g (typed_capture d types dc)).
@@ -2249,7 +2250,7 @@ Lemma units_bare : PublicFormation.UnitsBare W.
 Proof. destruct World as [b Wo]. exact (PublicFormation.units_bare_of W b Wo). Qed.
 
 (* A bind item leaves a formed context (T29, PublicFormation). *)
-Lemma item_formed : forall F C it w C' F' m, A.BindItem W Prog F C it w C' F' m -> Formed F C -> Formed F' C'.
+Lemma item_formed : forall F C it w C' F' m, LegacyBodyJudgments.BindItem W Prog F C it w C' F' m -> Formed F C -> Formed F' C'.
 Proof.
   intros F C it w C' F' m D [Fc [Ff Cs]].
   destruct (PublicFormation.binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff) as [Fc' Ff'].
@@ -2878,7 +2879,7 @@ Lemma lambda_callable : forall k, Below k -> forall jn, jn <= S k ->
   Cl = fold_left (cl_fold C) (combine caps capvals) (A.Cx (A.c_ty C) (A.c_sub C) (A.c_merge C) (A.c_provisions C) []) ->
   A.fr_ret Fl = Some (A.sg_ret sg) -> A.fr_this Fl = this -> A.fr_loop Fl = false ->
   A.Numbering Fl this (map fst ps) -> Forall (A.Named Fl) caps ->
-  A.BlkE W Prog Fl (fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) (combine (map fst ps) (A.sg_params sg)) Cl)
+  LegacyBodyJudgments.BlkE W Prog Fl (fold_left (fun C' q => A.add_local C' (fst q) (snd q) A.LLet) (combine (map fst ps) (A.sg_params sg)) Cl)
        (ABlock [] (Some body)) (Some (A.sg_ret sg)) lbody ltype ->
   A.fits ltype (A.sg_ret sg) ->
   A.body_of Prog pid = Some (fold_right (fun q x => ELet (A.var_of Fl (fst q)) (EVal (snd q)) x) lbody (combine caps capvals)) ->
@@ -3305,12 +3306,12 @@ Qed.
 
 
 (* A bind item changes only the frame's fresh generations. *)
-Lemma bind_item_frame : forall F C it w C' F' m, A.BindItem W Prog F C it w C' F' m ->
+Lemma bind_item_frame : forall F C it w C' F' m, LegacyBodyJudgments.BindItem W Prog F C it w C' F' m ->
   A.fr_mod F' = A.fr_mod F /\ A.fr_ret F' = A.fr_ret F /\ A.fr_this F' = A.fr_this F /\
   A.fr_loop F' = A.fr_loop F /\ A.fr_var F' = A.fr_var F.
 Proof. intros F C it w C' F' m D. destruct D; cbn; auto 10. Qed.
 
-Lemma bind_items_frame : forall F C its w C' F' m, A.BindItems W Prog F C its w C' F' m ->
+Lemma bind_items_frame : forall F C its w C' F' m, LegacyBodyJudgments.BindItems W Prog F C its w C' F' m ->
   A.fr_mod F' = A.fr_mod F /\ A.fr_ret F' = A.fr_ret F /\ A.fr_this F' = A.fr_this F /\
   A.fr_loop F' = A.fr_loop F /\ A.fr_var F' = A.fr_var F.
 Proof.
@@ -3647,14 +3648,14 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
   A.w_decl W gg = Some dg /\ A.d_ast dg = ADFunctor n ps a r (Some bodies) /\
   A.fr_mod Fg = A.d_mod dg /\ A.fr_ret Fg = None /\ A.fr_this Fg = None /\ A.fr_loop Fg = false /\
   A.Numbering Fg None [] /\
-  A.BindItems W Prog Fg Cg (List.concat bodies) wrap Cb Fb made /\
+  LegacyBodyJudgments.BindItems W Prog Fg Cg (List.concat bodies) wrap Cb Fb made /\
   (forall t, In t outs <-> A.FunOutputs W u t) /\
   (forall t, In t outs -> exists meaning, A.nlook t (A.c_ty Cb) = Some meaning) /\
   NoDup (map gen outs) /\ (forall t, In t outs -> A.Fresh W (gen t)) /\
   A.ProvideResult W u Cu (fun t => TAbs (gen t)) Cr ks /\
   A.ResultRealizes (A.link_site Cg Cb pins outs gen) Cr
     (A.role_reads (A.link_site Cg Cb pins outs gen) outs gen ++ A.pin_reads Cb pins) ks /\
-  A.BindsOf (wrap EUnit) binds0 /\
+  LegacyBodyJudgments.BindsOf (wrap EUnit) binds0 /\
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.link_input_table Cu Cg)
       (map ITy outs) binds0
@@ -3668,7 +3669,7 @@ Definition LinkData (u gg h : nat) dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb F
      In y (map fst (A.c_ty Cg)) /\ lookup_subst y (A.c_sub Cg) = None /\ ~ In y made /\
      (In y (map fst (A.c_ty Cu)) -> A.Fixed W u y)).
 
-Lemma link_facts : forall u gg h pins, A.LinkBody W Prog u gg h pins -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
+Lemma link_facts : forall u gg h pins, LegacyBodyJudgments.LinkBody W Prog u gg h pins -> exists dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0,
   LinkData u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins.
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins
@@ -3701,7 +3702,7 @@ Qed.
 
 (* BFunClosure reads F's and G's contexts from the world; LinkBody states
    that they are their FunCtx. *)
-Lemma link_body_functx : forall u gg h pins Cu nsu Cg nsg, A.LinkBody W Prog u gg h pins ->
+Lemma link_body_functx : forall u gg h pins Cu nsu Cg nsg, LegacyBodyJudgments.LinkBody W Prog u gg h pins ->
   A.w_context W u = Some (Cu, nsu) -> A.w_context W gg = Some (Cg, nsg) ->
   A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg.
 Proof.
@@ -3719,7 +3720,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
       A.SameResult W u gg ->
-      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) (A.link_private_readings C Cu Cg) (A.link_adopted_inputs C Cu Cg) linktarget -> A.LinkBody W Prog u gg h pins ->
+      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) (A.link_private_readings C Cu Cg) (A.link_adopted_inputs C Cu Cg) linktarget -> LegacyBodyJudgments.LinkBody W Prog u gg h pins ->
       sm = A.link_map Cu Cg linktarget nsg ->
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (A.captured_needs linktarget nsg) smc ->
@@ -4150,7 +4151,7 @@ Qed.
    closure. The body reads each input through G's table (fc_table), so
    G's merges hold by construction. *)
 Lemma link_entry : forall rr H d th d1 u gg h pins Cu nsu Cg nsg linktarget dc gfx d2,
-  A.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+  LegacyBodyJudgments.LinkBody W Prog u gg h pins -> ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx -> A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   map fst th = map fst (A.c_ty Cu) ->
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
   Realizes rr Cu (callee_env d th d1) H ->
@@ -4385,7 +4386,7 @@ Proof. reflexivity. Qed.
 Lemma closure_cases : forall n H0 u gfx pv, ClosureOk n H0 u gfx pv ->
   (exists gg h Cu nsu Cg nsg linktarget dc,
      pv = FunctorClosure h (Some (A.link_map Cu Cg linktarget nsg)) dc None /\
-     (exists pins, A.LinkBody W Prog u gg h pins /\ PinsAgree u Cu Cg dc gfx pins /\
+     (exists pins, LegacyBodyJudgments.LinkBody W Prog u gg h pins /\ PinsAgree u Cu Cg dc gfx pins /\
        ClosureBinding W u Cu nsu Cg nsg linktarget dc gfx) /\ A.FunCtx W u Cu nsu /\ A.FunCtx W gg Cg nsg /\
      (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) /\
      (forall gm, AppMeanings u Cu Cg dc gfx gm ->
@@ -4448,7 +4449,7 @@ Proof.
     destruct (Funs u fx L) as [pv [gfx [Look _]]]. eauto.
 Qed.
 
-Lemma bindsof_fold : forall bs l, A.BindsOf (fold_right (fun b x => EBind b x) EUnit bs) l -> l = bs.
+Lemma bindsof_fold : forall bs l, LegacyBodyJudgments.BindsOf (fold_right (fun b x => EBind b x) EUnit bs) l -> l = bs.
 Proof.
   induction bs as [|b r IH]; intros l D; cbn in D; inversion D; subst; [reflexivity|]. f_equal. apply IH. assumption.
 Qed.
@@ -4670,7 +4671,7 @@ Proof.
 Qed.
 
 Lemma val_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp v declared y x xt a,
-  A.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
+  LegacyBodyJudgments.Ex W Prog F C y (Some declared) x xt -> A.fits xt declared ->
   (Formed F C -> Formed F (A.provide C (IVal v) a (A.set_val C v declared))) ->
   BindStep J r F C F (A.provide C (IVal v) a (A.set_val C v declared)) (ItemBreaks F (sp, Some y)) [] (BValue v x).
 Proof.
@@ -4697,7 +4698,7 @@ Proof.
 Qed.
 
 Lemma fn_bstep : forall k, Below k -> forall r, r <= S k -> forall F C sp f g sg pg types sm a,
-  A.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
+  LegacyBodyJudgments.FnProvider W Prog F C (AEPath pg None) sg None g types sm ->
   (Formed F C -> Formed F (A.provide C (IFn f) a (A.set_fn C f sg))) ->
   BindStep J r F C F (A.provide C (IFn f) a (A.set_fn C f sg)) (ItemBreaks F (sp, Some (AEPath pg None)))
     [] (BFunction f g types sm).
@@ -4888,7 +4889,7 @@ Proof. intros F qs x. induction qs as [|q r IH]; cbn; [reflexivity|]. rewrite IH
 (* A function lambda bind: its prefix of captured values, then the closure. *)
 Lemma lambda_fn_chain : forall k, Below k -> forall F C sp f sg ps rt body pid pre sm a,
   A.SigOf W f (A.c_ty C) None sg ->
-  A.LambdaProvider W Prog F C ps rt body sg None pid pre sm ->
+  LegacyBodyJudgments.LambdaProvider W Prog F C ps rt body sg None pid pre sm ->
   (Formed F C -> Formed F (A.provide C (IFn f) a (A.set_fn C f sg))) ->
   exists bs, (forall x, pre (bind_function_expression f pid (A.lexical_capture C) sm x) =
                         fold_right (fun b x => EBind b x) x bs) /\
@@ -5046,7 +5047,7 @@ Lemma meth_chain : forall k, Below k -> forall F C pa dn a y r m bs rt sg target
   A.Brackets W (A.fr_mod F) (A.c_ty C) m a bs ->
   A.TyOf W (A.fr_mod F) (bs ++ A.c_ty C)%list None (ATRef pa None) rt ->
   A.SigOf W m (bs ++ A.c_ty C)%list (Some rt) sg ->
-  A.MethProvider W Prog F C y sg rt target types pre sm ->
+  LegacyBodyJudgments.MethProvider W Prog F C y sg rt target types pre sm ->
   A.AppOf W m (bs ++ A.c_ty C)%list ap ->
   (Formed F C -> Formed F (A.provide C (A.mkey (A.canon C rt) m) ap (A.set_mth C (A.canon C rt) m sg))) ->
   exists binds, (forall x, pre (bind_method_expression (A.canon C rt) m (A.theta_of C ap) target types sm x) =
@@ -5170,9 +5171,9 @@ Proof.
 Qed.
 
 (* Each bind item is a chain of bindings. *)
-Fixpoint item_chain k (Bel : Below k) (Ap : AppAt J k) F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
+Fixpoint item_chain k (Bel : Below k) (Ap : AppAt J k) F C it w C' F' m (D : LegacyBodyJudgments.BindItem W Prog F C it w C' F' m) {struct D} :
   exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemBreaks F it) m bs
-with items_chain k (Bel : Below k) (Ap : AppAt J k) F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
+with items_chain k (Bel : Below k) (Ap : AppAt J k) F C its w C' F' m (D : LegacyBodyJudgments.BindItems W Prog F C its w C' F' m) {struct D} :
   exists bs, (forall x, w x = fold_right (fun b x => EBind b x) x bs) /\ Chain k F C F' C' (ItemsBreak F its) m bs.
 Proof.
   - pose proof (item_formed _ _ _ _ _ _ _ D) as FD. revert FD.
@@ -5383,14 +5384,14 @@ Proof.
 Qed.
 
 Lemma item_safe : forall k, Below k -> forall n F C it w C' F' m,
-  A.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks F it) m w.
+  LegacyBodyJudgments.BindItem W Prog F C it w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemBreaks F it) m w.
 Proof.
   intros k Bel n F C it w C' F' m D Le. destruct (item_chain (S k) k Bel (case_BApplyAbstract k Bel (S k)) _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
   intros t B x Av Safe. rewrite Ew. exact (chain_wrap (S k) k n F C F' C' _ m bs Ch Le Le t B x Av Safe).
 Qed.
 
 Lemma items_safe : forall k, Below k -> forall n F C its w C' F' m,
-  A.BindItems W Prog F C its w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemsBreak F its) m w.
+  LegacyBodyJudgments.BindItems W Prog F C its w C' F' m -> n <= S k -> WrapSafe n F C F' C' (ItemsBreak F its) m w.
 Proof.
   intros k Bel n F C its w C' F' m D Le. destruct (items_chain (S k) k Bel (case_BApplyAbstract k Bel (S k)) _ _ _ _ _ _ _ D) as [bs [Ew Ch]].
   intros t B x Av Safe. rewrite Ew. exact (chain_wrap (S k) k n F C F' C' _ m bs Ch Le Le t B x Av Safe).
@@ -5410,7 +5411,7 @@ Lemma unit_k : forall F C d types H g st, Pre k F C d types H g st ->
   Outcome F d H types TUnit False (AR.O.I.eval k P d g st EUnit).
 Proof.
   intros F C d types H g st Pre0.
-  eapply AR.O.outcome_breaks; [|exact (sex F C AEUnit None EUnit TUnit (A.ExUnit W Prog F C None) d types H g st Pre0)].
+  eapply AR.O.outcome_breaks; [|exact (sex F C AEUnit None EUnit TUnit (LegacyBodyJudgments.ExUnit W Prog F C None) d types H g st Pre0)].
   exact (unit_never_breaks _).
 Qed.
 
@@ -5425,7 +5426,7 @@ Proof.
 Qed.
 
 Lemma invoke_step : forall F C pa args f g xs,
-  A.nlook f (A.c_fns C) = Some g -> A.Args W Prog F C args (A.sg_params g) xs ->
+  A.nlook f (A.c_fns C) = Some g -> LegacyBodyJudgments.Args W Prog F C args (A.sg_params g) xs ->
   StepSafe k F C (A.sg_ret g) (A.Breaks W (A.fr_mod F) (AECall pa None args)) (EInvoke f xs).
 Proof.
   intros F C pa args f g xs Found Args d types H lg lst Pre0.
@@ -5449,7 +5450,7 @@ Unshelve. all: exact TUnit.
 Qed.
 
 Lemma attached_step : forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs wrap Cd (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  LegacyBodyJudgments.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
   ot = A.canon C ot0 ->
   A.head ot = Some h -> A.Attached W h n att ->
   (exists rn ps rt b, A.ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
@@ -5459,7 +5460,7 @@ Lemma attached_step : forall F C o ox ot0 ot n args h att Ca ns sm th g xs rargs
     (map (A.at_th (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) th) ns) []
     (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) wrap Cd ->
   A.Satisfies Cd Ca th ns sm -> A.CallTheta W Cd Ca att th -> A.SigOf W att (A.c_ty Cd) (Some ot) g ->
-  A.Args W Prog F C args (A.sg_params g) xs ->
+  LegacyBodyJudgments.Args W Prog F C args (A.sg_params g) xs ->
   A.RequirementsInForce (fold_left (fun C q => A.set_ty C (fst q) (snd q)) rargs C) Ca ->
   StepSafe k F C (A.sg_ret g) B (A.translate_demands (A.family_context C rargs) wrap (ECall att th sm (ox :: xs))).
 Proof.
@@ -5541,8 +5542,8 @@ Unshelve. all: exact TUnit.
 Qed.
 
 Lemma provided_step : forall F C o ox ot0 m args x t (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
-  A.Provided W Prog F C ox (A.canon C ot0) m args x t -> StepSafe k F C t B x.
+  LegacyBodyJudgments.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  LegacyBodyJudgments.Provided W Prog F C ox (A.canon C ot0) m args x t -> StepSafe k F C t B x.
 Proof.
   intros F C o ox ot0 m args x t B Do BrkO BrkA Prov.
   remember (A.canon C ot0) as ot eqn:Ot.
@@ -5589,8 +5590,8 @@ Unshelve. all: exact TUnit.
 Qed.
 
 Lemma methcall_step : forall F C o ox ot0 pa args x t (B : Prop),
-  A.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
-  A.MethCall W Prog F C ox (A.canon C ot0) pa args x t -> StepSafe k F C t B x.
+  LegacyBodyJudgments.Ex W Prog F C o None ox ot0 -> (A.Breaks W (A.fr_mod F) o -> B) -> (forall a, In a args -> A.Breaks W (A.fr_mod F) a -> B) ->
+  LegacyBodyJudgments.MethCall W Prog F C ox (A.canon C ot0) pa args x t -> StepSafe k F C t B x.
 Proof.
   intros F C o ox ot0 pa args x t B Do BrkO BrkA Meth.
   remember (A.canon C ot0) as ot eqn:Ot.
@@ -5606,19 +5607,19 @@ Proof.
     eq_refl Head Att Def Rargs Ctx Dem Sat CT Sig Args RB).
 Qed.
 
-Fixpoint ex_step F C a exp x t (D : A.Ex W Prog F C a exp x t) {struct D} :
+Fixpoint ex_step F C a exp x t (D : LegacyBodyJudgments.Ex W Prog F C a exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
   Outcome F d H types t (A.Breaks W (A.fr_mod F) a) (AR.O.I.eval (S k) P d g st x)
-with blk_step F C ss tl exp x t made (D : A.Blk W Prog F C ss tl exp x t made) {struct D} :
+with blk_step F C ss tl exp x t made (D : LegacyBodyJudgments.Blk W Prog F C ss tl exp x t made) {struct D} :
   (forall g, In g made -> ~ In g (A.gens t)) -> forall d types H g st, Pre (S k) F C d types H g st ->
   Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) (ABlock ss tl)) (AR.O.I.eval (S k) P d g st x)
-with blke_step F C b exp x t (D : A.BlkE W Prog F C b exp x t) {struct D} :
+with blke_step F C b exp x t (D : LegacyBodyJudgments.BlkE W Prog F C b exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
   Outcome F d H types t (A.BlockBreaks W (A.fr_mod F) b) (AR.O.I.eval (S k) P d g st x)
-with branch_step F C y exp x t (D : A.Branch W Prog F C y exp x t) {struct D} :
+with branch_step F C y exp x t (D : LegacyBodyJudgments.Branch W Prog F C y exp x t) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
   Outcome F d H types t (A.Breaks W (A.fr_mod F) y) (AR.O.I.eval (S k) P d g st x)
-with cond_step F C c x (D : A.Cond W Prog F C c x) {struct D} :
+with cond_step F C c x (D : LegacyBodyJudgments.Cond W Prog F C c x) {struct D} :
   forall d types H g st, Pre (S k) F C d types H g st ->
   exists b, A.LangSym W "bool" A.NSName "Bool" b /\
     Outcome F d H types (TNom b []) (A.Breaks W (A.fr_mod F) c) (AR.O.I.eval (S k) P d g st x).

@@ -2,6 +2,7 @@
    arguments in the caller's own context. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaExpr EaTypes EaTypesSound EaControlSound EaDefinedCallSound EaChecked.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaFunctionSound EaContextTableSound EaSatisfiesSound PublicContextFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.

@@ -2,78 +2,12 @@
    supplies the numbering and relates a function plan to its emitted slot. *)
 From Stdlib Require Import List.
 From NM Require Import Audit BodyTyping.
-From NM Require EaFunctionSound.
+From NM Require BodyReadback.
+From NM Require Import LegacyBodyJudgments.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
-Record function_plan := FunctionPlan {
-  function_context : cx;
-  function_needs : list item;
-  function_receiver : option ty;
-  function_signature : fsig;
-  function_layout : frame;
-  function_body : block_plan;
-  function_result : ty
-}.
-
-Definition function_parameters (parameters : list name) (plan : function_plan) : cx :=
-  fold_left (fun C q => add_local C (fst q) (snd q) LLet)
-    (combine parameters (sg_params (function_signature plan))) (function_context plan).
-
-Definition TypesFunction (W : world) (f : nat) (d : decl) (receiver : fnrecv) (n : name)
-    (parameters : list name) (body : ablock) (plan : function_plan) : Prop :=
-  let F := function_layout plan in
-  let C := function_context plan in
-  let g := function_signature plan in
-  CtxOf W f C (function_needs plan) /\
-  EaFunctionSound.FunctionReceiver W f receiver n C (function_receiver plan) /\
-  SigOf W f (c_ty C) (function_receiver plan) g /\
-  fr_mod F = d_mod d /\ fr_ret F = Some (sg_ret g) /\ fr_this F = function_receiver plan /\
-  fr_loop F = false /\ fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [] /\
-  TypesBlkE W F (function_parameters parameters plan) body (Some (sg_ret g))
-    (function_body plan) (function_result plan).
-
-Definition emit_function (resolve : nat -> nat) (parameters : list name)
-    (plan : function_plan) : emission expr :=
-  block_emission resolve (without_pins (function_layout plan)) (function_parameters parameters plan)
-    (function_body plan).
-
-Definition TranslatesFunction (W : world) (P : program) (resolve : nat -> nat) (f : nat)
-    (parameters : list name) (plan : function_plan) : Prop :=
-  let output := emit_function resolve parameters plan in
-  Numbering (function_layout plan) (function_receiver plan) parameters /\
-  placements_in W P (emitted_placements output) /\
-  body_of P f = Some (emitted_code output).
-
-Record constant_plan := ConstantPlan {
-  constant_layout : frame;
-  constant_body : expression_plan;
-  constant_declared : ty;
-  constant_actual : ty
-}.
-
-Definition TypesConstantInitializer (W : world) (d : decl) (annotation : aty) (initial : aexpr)
-    (plan : constant_plan) : Prop :=
-  let F := constant_layout plan in
-  let C := Cx [] [] [] [] [] in
-  d_assumes d = [] /\ TyOf W (d_mod d) [] None annotation (constant_declared plan) /\
-  TypesExpr W F C initial (Some (constant_declared plan)) (constant_body plan) (constant_actual plan) /\
-  fits (constant_actual plan) (constant_declared plan) /\
-  fr_mod F = d_mod d /\ fr_ret F = None /\ fr_this F = None /\
-  fr_loop F = false /\ fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [].
-
-Definition emit_constant (resolve : nat -> nat) (plan : constant_plan) : emission expr :=
-  expression_emission resolve (constant_layout plan) (Cx [] [] [] [] []) (constant_body plan).
-
-Definition TranslatesConstant (W : world) (P : program) (resolve : nat -> nat)
-    (plan : constant_plan) : Prop :=
-  Numbering (constant_layout plan) None [] /\
-  placements_in W P (emitted_placements (emit_constant resolve plan)).
-
 Theorem function_translation_agrees : forall W P resolve f,
-  (forall d receiver n parameters annotation body,
-    w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
-    exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
-      TranslatesFunction W P resolve f (map fst parameters) plan) ->
+  FunctionPlanAt W P resolve f ->
   FnElab W P f.
 Proof.
   intros W P resolve f Plans d receiver n parameters annotation body Declared Ast.
@@ -104,19 +38,15 @@ Proof.
 Qed.
 
 Theorem function_plan_readback : forall W P,
-  (forall F C body expected code t,
-    BlkE W P F C body expected code t ->
-    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code /\
-      placements_in W P (emitted_placements (block_emission identity_slots (without_pins F) C plan))) ->
   forall f d receiver n parameters annotation body,
   FnElab W P f -> w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
   exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
     TranslatesFunction W P identity_slots f (map fst parameters) plan.
 Proof.
-  intros W P Readback f d receiver n parameters annotation body Typed Declared Ast.
+  intros W P f d receiver n parameters annotation body Typed Declared Ast.
   destruct (Typed _ _ _ _ _ _ Declared Ast) as (C & needs & this & g & F & code & t &
     Formal & Receiver & Signature & Module & Return & This & Loop & Fresh & Applying & Pins & Numbered & Body & Emitted).
-  destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & Emit & Placed).
+  destruct (BodyReadback.block_has_plan W P _ _ _ _ _ _ Body) as (plan & Checked & Emit & Placed).
   exists (FunctionPlan C needs this g F plan t). split.
   - unfold TypesFunction, function_parameters. cbn. repeat first [assumption|split].
   - unfold TranslatesFunction, emit_function, function_parameters. cbn.
@@ -124,35 +54,17 @@ Proof.
 Qed.
 
 Theorem constant_plan_readback : forall W P,
-  (forall F C syntax expected code t,
-    Ex W P F C syntax expected code t ->
-    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code /\
-      placements_in W P (emitted_placements (expression_emission identity_slots F C plan))) ->
   forall d annotation initial,
   ConstElab W P d annotation initial ->
   exists plan, TypesConstantInitializer W d annotation initial plan /\ TranslatesConstant W P identity_slots plan.
 Proof.
-  intros W P Readback d annotation initial
+  intros W P d annotation initial
     (Assumes & declared & TypeRead & F & code & actual & Body & Fits & Module & Return & This & Loop &
       Fresh & Applying & Pins & Numbered).
-  destruct (Readback _ _ _ _ _ _ Body) as (plan & Checked & _ & Placed).
+  destruct (BodyReadback.expression_has_plan W P _ _ _ _ _ _ Body) as (plan & Checked & _ & Placed).
   exists (ConstantPlan F plan declared actual). unfold TypesConstantInitializer, TranslatesConstant.
   cbn. repeat first [assumption|split].
 Qed.
-
-Definition FunctionPlanAt (W : world) (P : program) (resolve : nat -> nat) (f : nat) : Prop :=
-  forall d receiver n parameters annotation body,
-    w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
-    exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
-      TranslatesFunction W P resolve f (map fst parameters) plan.
-
-Definition ConstantPlanAt (W : world) (P : program) (resolve : nat -> nat)
-    (d : decl) (annotation : aty) (initial : aexpr) : Prop :=
-  exists plan, TypesConstantInitializer W d annotation initial plan /\
-    TranslatesConstant W P resolve plan.
-
-Definition ElaboratesSeparately (bundle : bundle) (W : world) (P : program) : Prop :=
-  exists resolve, ElaboratesWith bundle W P (FunctionPlanAt W P resolve) (ConstantPlanAt W P resolve).
 
 Lemma map_declaration_forms : forall W first second,
   (forall d annotation initial, first d annotation initial -> second d annotation initial) ->
@@ -180,7 +92,7 @@ Proof.
 Qed.
 
 Theorem separated_elaboration_sound : forall bundle W P,
-  ElaboratesSeparately bundle W P -> ElaboratesIn bundle W P.
+  ElaboratesIn bundle W P -> LegacyElaboratesIn bundle W P.
 Proof.
   intros bundle W P [resolve Typed]. eapply map_elaboration_bodies; [| |exact Typed].
   - apply function_translation_agrees.
@@ -189,21 +101,13 @@ Proof.
 Qed.
 
 Theorem separated_elaboration_readback : forall bundle W P,
-  (forall F C body expected code t,
-    BlkE W P F C body expected code t ->
-    exists plan, TypesBlkE W F C body expected plan t /\ translate_block (without_pins F) C plan = code /\
-      placements_in W P (emitted_placements (block_emission identity_slots (without_pins F) C plan))) ->
-  (forall F C syntax expected code t,
-    Ex W P F C syntax expected code t ->
-    exists plan, TypesExpr W F C syntax expected plan t /\ translate_expr F C plan = code /\
-      placements_in W P (emitted_placements (expression_emission identity_slots F C plan))) ->
-  ElaboratesIn bundle W P -> ElaboratesSeparately bundle W P.
+  LegacyElaboratesIn bundle W P -> ElaboratesIn bundle W P.
 Proof.
-  intros bundle W P Blocks Expressions Typed. exists identity_slots.
+  intros bundle W P Typed. exists identity_slots.
   eapply map_elaboration_bodies; [| |exact Typed].
   - intros f Function d receiver n parameters annotation body Declared Ast.
-    exact (function_plan_readback W P Blocks f d receiver n parameters annotation body Function Declared Ast).
-  - apply constant_plan_readback. exact Expressions.
+    exact (function_plan_readback W P f d receiver n parameters annotation body Function Declared Ast).
+  - apply constant_plan_readback.
 Qed.
 
 Theorem function_typing_renumber : forall W f d receiver name parameters body

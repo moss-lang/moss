@@ -3,6 +3,7 @@
 From Stdlib Require Import List Arith Lia.
 From NM Require Import Audit EaBase EaExpr EaBind EaMain EaControlSound
   EaCodeAllocationSound EaCodeEffects EaAssemblyCodeEffects EaChecked.
+From NM Require Import LegacyBodyJudgments.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 (* Only populated generated slots need to survive into the final state.

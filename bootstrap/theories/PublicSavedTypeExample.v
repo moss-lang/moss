@@ -3,6 +3,7 @@
    counterexample or universal safety theorem is asserted. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -54,12 +55,12 @@ Theorem public_bind_boxed_from_saved : forall W P,
   A.kind_sym W 3 = Some A.DKType ->
   A.resolve_sym W "/example" ["Saved"] = Some 2 ->
   A.kind_sym W 2 = Some A.DKType ->
-  A.BindItem W P frame rebind_f64
+  LegacyBodyJudgments.BindItem W P frame rebind_f64
     (Input.Spec (Some ["Boxed"]) None None, Some (Input.AEPath ["Saved"] None))
     (bind_type_expression 3 (TAbs 4)) (A.set_ty rebind_f64 3 (TAbs 4)) frame [].
 Proof.
   intros W P Boxed BoxedKind Saved SavedKind.
-  eapply A.BTypeBind with (t:=3) (rp:=["Saved"]) (ra:=None) (tau:=TAbs 4).
+  eapply LegacyBodyJudgments.BTypeBind with (t:=3) (rp:=["Saved"]) (ra:=None) (tau:=TAbs 4).
   - exact Boxed.
   - exact BoxedKind.
   - intros [].

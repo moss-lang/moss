@@ -2,6 +2,7 @@
    relation and canonicalization idempotence remain separate obligations. *)
 From Stdlib Require Import List PeanoNat.
 From NM Require Import Audit PublicGenerationFacts.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -51,7 +52,7 @@ Theorem public_type_bind_has_alias_context : forall W P F C d pa target rp ra ta
   A.TyOf W (A.fr_mod F) (A.c_ty C) None (Input.ATRef rp ra) tau ->
   alias_context_agrees C d ->
   A.canon C (A.canon C tau) = A.canon C tau ->
-  A.BindItem W P F C
+  LegacyBodyJudgments.BindItem W P F C
     (Input.Spec (Some pa) None None, Some (Input.AEPath rp ra))
     (bind_type_expression target (A.canon C tau))
     (A.set_ty C target (A.canon C tau)) F [] /\
@@ -60,6 +61,6 @@ Theorem public_type_bind_has_alias_context : forall W P F C d pa target rp ra ta
 Proof.
   intros W P F C d pa target rp ra tau Resolve Kind Unpinned Typed Agrees Idempotent.
   split.
-  - eapply A.BTypeBind; eassumption.
+  - eapply LegacyBodyJudgments.BTypeBind; eassumption.
   - apply type_bind_preserves_alias_context; assumption.
 Qed.

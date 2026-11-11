@@ -3,6 +3,7 @@
 From Stdlib Require Import List String Arith Lia.
 From NM Require Import Audit EaBase EaExpr EaChecked EaControlSound EaCodeEffects EaRecSound
   EaBodyContext EaBodyState EaLinkBodySound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaBind EaBindCodeEffects EaBindItemSound EaBlockSound EaBudget EaCacheEffects EaClosureSound EaConstantSound
   EaContextTableSound EaDefinedCallSound EaDependencyFuel EaExpressionCodeEffects EaExpressionSound
   EaFamily EaFamilyComplete EaFamilyUseSound EaTypes

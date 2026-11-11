@@ -286,6 +286,8 @@ Print Assumptions NM.BodyTyping.body_translation_agrees.
 Print Assumptions NM.BodyTyping.body_typing_renumber.
 Print Assumptions NM.BodyTyping.local_source_has_plan.
 
-From NM Require BodyProgramTyping.
+From NM Require BodyReadback BodyProgramTyping.
+Print Assumptions NM.BodyReadback.expression_has_plan.
+Print Assumptions NM.BodyReadback.block_has_plan.
 Print Assumptions NM.BodyProgramTyping.separated_elaboration_sound.
 Print Assumptions NM.BodyProgramTyping.separated_elaboration_readback.

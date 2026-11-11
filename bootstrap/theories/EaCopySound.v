@@ -2,6 +2,7 @@
    at one fresh reading of the target telescope. *)
 From Stdlib Require Import List Bool String Arith Lia Sorting.Sorted.
 From NM Require Import Audit EaBase EaBudget EaCall EaFunctor EaTypes EaTypesSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaAllocationSound EaClosureSound EaContextFuel EaContextTableSound EaControlSound
   EaCopyNeedSound EaDeclarationSound EaDependencyFuel EaFamilySound EaLinkBodySound EaMain EaMainSymbols
   EaOutputSound EaResultBudget EaRootSound EaSatisfiesSound PublicCallRealize PublicContextFacts

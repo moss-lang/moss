@@ -1,6 +1,7 @@
 (* Assemble the local bind proofs into the executable bind-item callback. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit EaBase EaBodyContext EaBind EaChecked EaRecSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaApplicationSound EaBindCodeEffects EaBudget EaCodeEffects EaContextTableSound
   EaControlSound EaCopySound EaDirectBindSound EaFamily EaFunctor EaMain EaProviderBindSound
   PublicContextFacts.

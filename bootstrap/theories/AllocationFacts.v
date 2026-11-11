@@ -1,6 +1,7 @@
 (* Laws for the explicit allocation scope used by abstract applications. *)
 From Stdlib Require Import List Arith Lia.
 From NM Require Import Audit.
+From NM Require Import LegacyBodyJudgments.
 From NM Require PublicTypeRead.
 Import ListNotations Audit.Semantics Audit.Semantics.Elaboration.
 

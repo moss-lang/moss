@@ -8,6 +8,7 @@
    provisions by the context it starts from. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicScoping.
+From NM Require Import LegacyBodyJudgments.
 From NM Require AllocationFacts PublicContextFacts PublicMerge PublicOrientation.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.

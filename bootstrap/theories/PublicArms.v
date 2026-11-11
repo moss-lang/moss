@@ -6,6 +6,7 @@
    obligation. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -71,7 +72,7 @@ Lemma assoc_slook : forall f (fs : list (fld * value)), O.I.assoc_fld f fs = A.s
 Proof. intros f fs; induction fs as [|[g v] r IH]; cbn; [reflexivity|rewrite IH; reflexivity]. Qed.
 
 Lemma fieldpats_bind : forall F ftys fs bs fxs values,
-  A.FieldPats W F ftys fs bs fxs ->
+  LegacyBodyJudgments.FieldPats W F ftys fs bs fxs ->
   fields_typed W P H values (map (fun q => (fst q, gr (snd q))) ftys) ->
   exists vals, O.I.bind_fields fxs values = Some vals /\
     locals_typed W P H vals (map (fun q => (A.var_of F (fst q), gr (snd q))) bs) /\
@@ -98,7 +99,7 @@ Definition PatResult (F : A.frame) (binds : list (name * ty)) (bs : locals) : Pr
   locals_typed W P H bs (map (fun q => (A.var_of F (fst q), gr (snd q))) binds).
 
 Lemma pat_match : forall F st pat xp binds hs ca w,
-  A.PatOf W F st pat xp binds hs ca -> UnionFormed st -> st <> A.never -> typed w (gr st) ->
+  LegacyBodyJudgments.PatOf W F st pat xp binds hs ca -> UnionFormed st -> st <> A.never -> typed w (gr st) ->
   (forall s, In s hs -> exists xs, In (TNom s xs) (A.members st)) /\
   (ca = false -> hs <> []) /\
   ((exists bs, O.I.match_pat xp w = O.I.PMatch bs /\ PatResult F binds bs) \/
@@ -149,12 +150,12 @@ Qed.
 Definition Selected F C st (arms : list (apat * aexpr)) exp t xarms w : Prop :=
   exists pat body bs eb binds et,
     O.I.select_arm xarms w = Some (bs, eb) /\ In (pat, body) arms /\
-    A.Branch W Prog F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) body exp eb et /\
+    LegacyBodyJudgments.Branch W Prog F (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) body exp eb et /\
     A.fits et t /\ A.opt_fits et exp /\ PatResult F binds bs /\
-    exists xp hs ca, A.PatOf W F st pat xp binds hs ca.
+    exists xp hs ca, LegacyBodyJudgments.PatOf W F st pat xp binds hs ca.
 
 Lemma armslist_select : forall F C st arms exp xarms covered catch t w,
-  A.ArmsList W Prog F C st arms exp xarms covered catch t ->
+  LegacyBodyJudgments.ArmsList W Prog F C st arms exp xarms covered catch t ->
   UnionFormed st -> st <> A.never -> typed w (gr st) ->
   Selected F C st arms exp t xarms w \/
   (O.I.select_arm xarms w = None /\ catch = false /\ covered <> [] /\
@@ -191,7 +192,7 @@ Proof.
 Qed.
 
 Theorem arms_select : forall F C st arms exp xarms t w,
-  A.Arms W Prog F C st arms exp xarms t -> UnionFormed st -> typed w (gr st) ->
+  LegacyBodyJudgments.Arms W Prog F C st arms exp xarms t -> UnionFormed st -> typed w (gr st) ->
   Selected F C st arms exp t xarms w.
 Proof.
   intros F C st arms exp xarms t w Arms Formed T. destruct Arms as [F C exp|F C st arms exp xarms covered catch t NotNever List Exhaustive].

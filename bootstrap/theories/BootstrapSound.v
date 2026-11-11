@@ -2,6 +2,8 @@
 From Stdlib Require Import String.
 From NM Require Audit AuditBase BaseHost BootstrapBuild EaAssumesSound
   EaBase EaDeclarationSound EaMain EaWorldSound SnapshotLoader Sx.
+From NM Require Import LegacyBodyJudgments.
+From NM Require BodyProgramTyping.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 
@@ -41,7 +43,8 @@ Proof.
   pose proof (BootstrapBuild.elaborate_finite_layouts _ _ _ _ Run) as Layouts.
   pose proof (BootstrapBuild.elaborate_linked _ _ _ _ Run) as Linked.
   split; [|exact Linked].
-  unfold ElaboratesIn. repeat first [assumption | split].
+  apply BodyProgramTyping.separated_elaboration_readback.
+  unfold LegacyElaboratesIn. repeat first [assumption | split].
 Qed.
 
 Theorem loaded_build_sound_from_bodies : BodiesSound ->

@@ -18,6 +18,7 @@
      and the steps the slice takes. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require AuditFacts.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicFormation PublicContextFacts.
 From NM Require PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.

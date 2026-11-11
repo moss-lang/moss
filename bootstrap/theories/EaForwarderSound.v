@@ -1,6 +1,7 @@
 (* Typing an abstract provider and assigning its forwarder a runtime slot. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaBind EaTypes EaCodeAllocationSound EaCodeEffects EaChecked EaRecSound NMap.
+From NM Require Import LegacyBodyJudgments.
 From NM Require AllocationFacts EaTypesSound EaMergeSound WorldSound EaMain EaControlSound EaAssemblyCodeEffects.
 From NM Require EaContextTableSound EaDefinedProviderSound PublicContextFacts.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration ListNotations.

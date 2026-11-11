@@ -2,6 +2,7 @@
    turns that provision into a runtime key, with any family application. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit.
+From NM Require Import LegacyBodyJudgments.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 Theorem provided_method_translation : forall W P F C receiver method choice signature syntax object arguments,

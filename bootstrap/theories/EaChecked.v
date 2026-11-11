@@ -2,6 +2,7 @@
    judgment and outgoing invariant can use evidence at the result state. *)
 From Stdlib Require Import List.
 From NM Require Import Audit EaBase EaExpr.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 Definition Checked {A} (post valid_before : est -> Prop) (valid_after : A -> est -> Prop)

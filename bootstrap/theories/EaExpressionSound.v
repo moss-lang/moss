@@ -2,6 +2,7 @@
    contracts used by the executable block and binding checks. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaExpr EaControlSound EaChecked EaRecSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaConstructSound EaCallExpressionSound EaDecideSound EaMatchSound
   EaMethodSound EaLiteralSound EaValuePathSound EaContextTableSound EaFamilyUseSound EaTypes EaTypesSound
   EaDefinedCallSound PublicContextFacts.

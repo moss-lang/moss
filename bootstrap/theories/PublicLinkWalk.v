@@ -7,6 +7,7 @@
      [family_binds_no_dests]. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicFormation.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -38,7 +39,7 @@ Proof.
 Qed.
 
 Lemma lambda_applies : forall F C ps rt body sg this pid pre sm,
-  A.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, applies (pre x) = applies x.
+  LegacyBodyJudgments.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, applies (pre x) = applies x.
 Proof.
   intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x. unfold A.translate_lambda_captures. cbv beta.
   match goal with |- applies (fold_right _ x ?l) = _ => generalize l end.
@@ -46,10 +47,10 @@ Proof.
 Qed.
 
 Lemma meth_applies : forall F C y sg rt target types pre sm,
-  A.MethProvider W Prog F C y sg rt target types pre sm -> forall x, applies (pre x) = applies x.
+  LegacyBodyJudgments.MethProvider W Prog F C y sg rt target types pre sm -> forall x, applies (pre x) = applies x.
 Proof.
   intros F C y sg rt target types pre sm MP. destruct MP; intros x; try reflexivity.
-  match goal with LP : A.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ => exact (lambda_applies _ _ _ _ _ _ _ _ _ _ LP x) end.
+  match goal with LP : LegacyBodyJudgments.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ => exact (lambda_applies _ _ _ _ _ _ _ _ _ _ LP x) end.
 Qed.
 
 Lemma wrap_pre : forall (pre : expr -> expr) b, (forall x, applies (pre x) = applies x) -> binding_apply b = [] ->
@@ -59,8 +60,8 @@ Proof.
   split; [intros p I; exact I|split; [intros p I; left; exact I|intros y []]].
 Qed.
 
-Fixpoint item_applies F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} : WrapApplies w m
-with items_applies F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} : WrapApplies w m.
+Fixpoint item_applies F C it w C' F' m (D : LegacyBodyJudgments.BindItem W Prog F C it w C' F' m) {struct D} : WrapApplies w m
+with items_applies F C its w C' F' m (D : LegacyBodyJudgments.BindItems W Prog F C its w C' F' m) {struct D} : WrapApplies w m.
 Proof.
   - destruct D.
     all: try (apply wrap_bind; reflexivity).
@@ -94,7 +95,7 @@ Proof.
         destruct (M2 y Iy) as [p [Ip Op]]. exists p. split; [exact (I1 p Ip)|exact Op].
 Qed.
 
-Lemma bindsof_applies : forall e l, A.BindsOf e l -> applies e = flat_map binding_apply l.
+Lemma bindsof_applies : forall e l, LegacyBodyJudgments.BindsOf e l -> applies e = flat_map binding_apply l.
 Proof. intros e l B. induction B as [|b body rest B IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
 
 Definition binding_dests (bs : list binding) : list nat :=
@@ -103,13 +104,13 @@ Definition binding_dests (bs : list binding) : list nat :=
 (* A family body applies only families, which have no outputs: it makes
    no generation, and no application in it has an output. *)
 Theorem family_binds_no_dests : forall F C its wrap C' F' made binds,
-  A.BindItems W Prog F C its wrap C' F' made -> A.BindsOf (wrap EUnit) binds -> A.FamilyBindings W binds ->
+  LegacyBodyJudgments.BindItems W Prog F C its wrap C' F' made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds -> LegacyBodyJudgments.FamilyBindings W binds ->
   made = [] /\ binding_dests binds = [] /\
   (forall u th outs sm rs, In (BApply u th outs sm rs) binds -> outs = []).
 Proof.
   intros F C its wrap C' F' made binds D B Fb.
   destruct (items_applies _ _ _ _ _ _ _ D EUnit) as [_ [Bk Mk]]. cbn [applies] in Bk.
-  rewrite (bindsof_applies _ _ B) in Bk, Mk. unfold A.FamilyBindings in Fb. rewrite Forall_forall in Fb.
+  rewrite (bindsof_applies _ _ B) in Bk, Mk. unfold LegacyBodyJudgments.FamilyBindings in Fb. rewrite Forall_forall in Fb.
   assert (NoOut : forall p, In p (flat_map binding_apply binds) -> snd p = []).
   { intros p Ip. destruct (Bk p Ip) as [[]|O].
     apply in_flat_map in Ip as [b [Ib Ip]]. pose proof (Fb b Ib) as Fbb.

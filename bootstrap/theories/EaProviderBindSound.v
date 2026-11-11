@@ -2,6 +2,7 @@
    provider once its own translation has been checked. *)
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit EaBase EaBind EaTypes EaTypesSound EaFamily EaControlSound EaChecked EaRecSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaSatisfiesSound PublicContextFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.

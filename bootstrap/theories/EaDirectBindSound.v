@@ -1,6 +1,7 @@
 (* Direct type and value binds and inline defined-functor application. *)
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaBind EaChecked EaRecSound EaControlSound.
+From NM Require Import LegacyBodyJudgments.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 Section DirectBinds.

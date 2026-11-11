@@ -11,7 +11,7 @@ the test suite holds the compiler to it. It runs one pipeline:
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
    `Audit.Semantics.program` from the bundle, or rejects it.
    `BootstrapVerified.elaborate_sound` proves that a successful build
-   satisfies Audit’s elaboration judgment and links against Base.
+   satisfies Audit’s typing and translation judgments and links against Base.
 3. **Passes**: `ProgramFastPath.fastpath`, `ProgramPrune.prune` and
    `ProgramCapTrim.captrim`, in the order extracted from `BootstrapRun.passes`.
 4. **Interpreter**: `InterpreterCompiled.crun_program`, the closure-compiled

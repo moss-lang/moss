@@ -79,7 +79,7 @@ Definition BoolSymbols (W : A.world) (program : program) : Prop :=
 
 Lemma elaborates_bool_symbols : forall bundle W program,
   A.ElaboratesIn bundle W program -> BoolSymbols W program.
-Proof. intros bundle W program (_ & _ & _ & _ & _ & Bool & Formed & _); exact (conj Formed Bool). Qed.
+Proof. intros bundle W program [resolve (_ & _ & _ & _ & _ & Bool & Formed & _)]; exact (conj Formed Bool). Qed.
 
 Module BoolTruthy (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module I := I0.

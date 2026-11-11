@@ -1,6 +1,7 @@
 (* Each executable match checks its patterns, branch types, and coverage. *)
 From Stdlib Require Import List Bool Arith Lia.
 From NM Require Import Audit EaBase EaExpr EaTypesSound EaPatternSound EaControlSound EaDecideSound EaChecked.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaFamily PublicTypeFacts.
 Import EaFamily (is_nil).
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.

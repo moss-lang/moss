@@ -20,16 +20,6 @@ Proof.
   cbn. constructor; [split; [reflexivity|exact Meaning]|now apply IH].
 Qed.
 
-Definition FunctionReceiver (W : world) (f : nat) (rcv : fnrecv)
-    (n : name) (C : cx) (this : option ty) : Prop :=
-  match rcv with
-  | RAttached _ => exists r args,
-      Attached W r n f /\ (kind_sym W r = Some DKTag \/ kind_sym W r = Some DKUnit) /\
-      this = Some (TNom r args) /\
-      Forall2 (fun x xa => fst xa = x /\ nlook x (c_ty C) = Some (snd xa)) (w_reqs W r) args
-  | _ => this = None
-  end.
-
 Theorem elab_fn_read : forall E f d rcv n ps rt b before after,
   EaContextTableSound.ContextTableSound (e_W E) ->
   w_decl (e_W E) f = Some d -> d_ast d = ADFn rcv n ps rt (Some b) ->

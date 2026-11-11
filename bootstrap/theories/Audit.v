@@ -5,7 +5,7 @@
      II. Elaborated programs and runtime structures.
      III. Reference execution.
      IV. Base primitive signatures (in AuditBase.v).
-     V. Declarative elaboration.
+     V. Declarative typing and translation.
    Only Rocq's standard library is imported. *)
 From Stdlib Require Import PrimInt63 ZArith.
 From Stdlib Require Import String Ascii List Bool Arith.
@@ -2155,7 +2155,7 @@ Definition run_main (fuel : nat) (P : program_view) (main : fsym) (d0 : environm
 End Interpreter.
 
 (* ######################################################################## *)
-(* Part V. The declarative elaboration relation — DRAFT                      *)
+(* Part V. Declarative typing and translation                               *)
 (* ######################################################################## *)
 
 (* EaMain.v implements the executable elaborator for these judgments.
@@ -2166,9 +2166,10 @@ End Interpreter.
    elaborated program `p` (Part II): `p` is *an* elaboration of `b` if
    there is a static reading `W` of the bundle (which declaration each
    symbol number is, what each name in each module denotes, each symbol's
-   requirements) satisfying the conditions of V.1, and every defined
-   function's body in `p` is related to its source by the typed judgment
-   of V.4–V.6 under the context its assumes form (V.3).
+   requirements) satisfying the conditions of V.1. Typing chooses a
+   source plan for each function body and constant initializer under its
+   context. Translation uses those plans to emit code, number locals,
+   and place generated bodies in the program.
 
    WHAT MAKES IT DECLARATIVE.  It fixes no algorithm, no traversal order,
    no fuel, and no numbering. Symbol numbers, local-variable numbers,
@@ -3918,46 +3919,6 @@ Definition FamilyReadOff (W : world) (C : cx) (u : usym) (ot : ty) (m : nat)
        forall t, option_map (canon C) (lookup_subst t matching') =
                  option_map (canon C) (lookup_subst t matching)).
 
-(* A literal's binary arithmetic call uses a provision already in force,
-   or a unique family applied in a scope around that call ([D84] rule 7).
-   Its one parameter and result are exactly the literal's own type. *)
-Inductive LitOp (W : world) (C : cx) (t : ty) (m : nat) (ox oy : expr) : expr -> Prop :=
-| LitOpIn :
-    mlook t m (c_mths C) = Some (FSig [t] t) ->
-    LitOp W C t m ox oy (EMethod ox m (rkey C t m) [oy])
-| LitOpFamily : forall u matching th formal needs C' ks,
-    mlook t m (c_mths C) = None ->
-    TypesFamilyApplication W C u matching th formal needs C' ks -> FamilyReadOff W C u t m matching ->
-    In (mkey t m) ks -> OnlyFamily W C u (mkey t m) ->
-    mlook t m (c_mths C') = Some (FSig [t] t) -> MatchingInForce C matching ->
-    LitOp W C t m ox oy (translate_family_use C (FamilyUse u matching th formal needs C' ks) (EMethod ox m (rkey C' t m) [oy])).
-
-(* Interpret exactly the prescribed tree through contextual arithmetic.
-   A family may supply an operation, using the same rule as an explicit call. *)
-Inductive Literal (W : world) (C : cx) : literal_tree -> expr -> ty -> Prop :=
-| LiteralZero : forall z t,
-    LangItem W LIZero z -> nlook z (c_vals C) = Some t ->
-    Literal W C LZero (EVal z) t
-| LiteralOne : forall o t,
-    LangItem W LIOne o -> nlook o (c_vals C) = Some t ->
-    Literal W C LOne (EVal o) t
-| LiteralAdd : forall a b x y result t m,
-    Literal W C a x t -> Literal W C b y t ->
-    LangItem W LIAdd m -> LitOp W C t m x y result ->
-    Literal W C (LAdd a b) result t
-| LiteralMul : forall a b x y result t m,
-    Literal W C a x t -> Literal W C b y t ->
-    LangItem W LIMul m -> LitOp W C t m x y result ->
-    Literal W C (LMul a b) result t
-| LiteralDiv : forall a b x y result t m,
-    Literal W C a x t -> Literal W C b y t ->
-    LangItem W LIDiv m -> LitOp W C t m x y result ->
-    Literal W C (LDiv a b) result t
-| LiteralFloat : forall a x ti tp t f,
-    Literal W C a x ti -> LangItem W LIFloat f ->
-    nlook f (c_fns C) = Some (FSig [tp] t) -> fits ti tp ->
-    Literal W C (LFloat a) (EInvoke f [x]) t.
-
 (* Operators ([D68], [D77] rule 2): fixed to num.moss's detached methods;
    the `for.` operators of [D85]'s `for` sugar (Parse.for_desugar) to
    access.moss's (note 60).  The library module's short name, and the
@@ -3986,52 +3947,6 @@ Inductive PayloadOf (W : world) : nat -> list (nat * ty) -> ty -> Prop :=
 | PayTag : forall s xs d n ps t pay,
     w_decl W s = Some d -> d_ast d = ADTag n ps t -> TyOf W (d_mod d) xs None t pay ->
     PayloadOf W s xs pay.
-
-(* The fields of a record pattern `P{…}` against the payload's fields
-   `ftys`, in the order written: `x` binds the field x to a local x, `x =
-   y` to a local y, `x = _` binds nothing (note 35). *)
-Inductive FieldPats (W : world) (F : frame) (ftys : list (fld * ty))
-    : list (name * option apat) -> list (name * ty) -> list (fld * var) -> Prop :=
-| FPNil : FieldPats W F ftys [] [] []
-| FPPun : forall n t r bs xs,
-    slook n ftys = Some t -> Named F n -> FieldPats W F ftys r bs xs ->
-    FieldPats W F ftys ((n, None) :: r) ((n, t) :: bs) ((n, var_of F n) :: xs)
-| FPWild : forall n t r bs xs,
-    slook n ftys = Some t -> FieldPats W F ftys r bs xs ->
-    FieldPats W F ftys ((n, Some APWild) :: r) bs xs
-| FPBind : forall n y t r bs xs,
-    slook n ftys = Some t -> resolve W (fr_mod F) [y] = None -> Named F y ->
-    FieldPats W F ftys r bs xs ->
-    FieldPats W F ftys ((n, Some (APPath [y])) :: r) ((y, t) :: bs) ((n, var_of F y) :: xs).
-
-(* The pattern judgment: a source pattern, in frame F, against scrutinee
-   type `st` compiles to an pattern, binding locals; `hs` are the heads it
-   covers and `catch` whether it matches everything.  A head names the one
-   member of st with that head ([D15], note 33). *)
-Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> pattern -> list (name * ty) -> list nat -> bool -> Prop :=
-| PWild : PatOf W F st APWild (PAny None) [] [] true
-| PBinder : forall n,
-    resolve W (fr_mod F) [n] = None -> Named F n ->
-    PatOf W F st (APPath [n]) (PAny (Some (var_of F n))) [(n, st)] [] true
-| PUnit : forall pa s k xs,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some k -> (k = DKUnit \/ k = DKTag) ->
-    In (TNom s xs) (members st) ->
-    PatOf W F st (APPath pa) (PHead s None []) [] [s] false
-(* `S(y)`: y is the payload, at the member's arguments; a struct tag's is a
-   bare record type (note 35) *)
-| PTagBind : forall pa s xs y pay,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
-    PayloadOf W s xs pay ->
-    resolve W (fr_mod F) [y] = None -> Named F y ->
-    PatOf W F st (APTag pa (APPath [y])) (PHead s (Some (var_of F y)) []) [(y, pay)] [s] false
-(* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name.
-   The names it binds are distinct: a repeated binder would be typed by its
-   last field but read from its first. *)
-| PRecord : forall pa s xs fs ftys bs fxs,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
-    PayloadOf W s xs (TRecord ftys) ->
-    FieldPats W F ftys fs bs fxs -> NoDup (map fst bs) ->
-    PatOf W F st (APRec (Some pa) fs) (PHead s None fxs) bs [s] false.
 
 (* `let` binds an immutable local, `var` an assignable one. *)
 Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
@@ -4346,14 +4261,6 @@ Definition translate_linked_body (Cu Cg : cx) (outs : list nat)
     (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg)))
     (link_input_table Cu Cg) (map ITy outs) bindings keys.
 
-Definition TranslatesLinkedBody (W : world) (P : program) (u gg h : nat)
-    (Cu Cg site : cx) (outs : list nat) (bindings : list binding) (ks : list item) : Prop :=
-  Fresh W h /\
-  funbody_of P h =
-    Some (translate_linked_body Cu Cg outs bindings
-      (map (fun k => rkey_of site (at_site site k)) ks)) /\
-  nlook h (linked_origins (program_origins P)) = Some (u, gg).
-
 (* Each promised key, read at the body's site (at_site re-reads its
    receiver), is provided there, at the promised provision with `reads`
    substituted (the roles' meanings, role_reads). *)
@@ -4364,17 +4271,6 @@ Definition ResultRealizes (body promised : cx) (reads : subst) (keys : list item
     provision_refines
       (provision_subst (c_sub body) (provision_subst reads required))
       (provision_subst (c_sub body) actual).
-Definition FamilyBindings (W : world) (bindings : list binding) : Prop :=
-  Forall (fun binding => match binding with
-    | BValue _ _ => False
-    | BApply family _ _ _ _ => Family W family
-    | _ => True end) bindings.
-
-Inductive BindsOf : expr -> list binding -> Prop :=
-| BOEnd : BindsOf EUnit []
-| BOBind : forall binding body rest,
-    BindsOf body rest -> BindsOf (EBind binding body) (binding :: rest).
-
 (* Capture is lexical: an inner binder hides an outer name only after its
    initializer. Assigning an outer name is a mention as well as reading it. *)
 Section LexicalNames.
@@ -4651,634 +4547,9 @@ Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
         app_subst rho (canon Cu (TAbs x)) = app_subst (private ++ rho) (canon Cu tx))
 }.
 
-(* Main judgments.
-   `Ex W P F C e exp x t`: in frame F and context C, the expression e,
-   checked against the expected type `exp` if any, elaborates to x of type t.
-   `Blk W P F C ss tl exp x t`: a block (statements ss, optional tail).
-   `Call W P F C callee args x t` etc. are its pieces. *)
-Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> expr -> ty -> Prop :=
-| ExUnit : forall F C exp, Ex W P F C AEUnit exp EUnit TUnit
-| ExThis : forall F C exp t, fr_this F = Some t -> Ex W P F C AEThis exp (EVar 0) t
-| ExLocal : forall F C exp n t mu,
-    slook n (c_locals C) = Some (t, mu) -> Named F n ->
-    Ex W P F C (AEPath [n] None) exp (EVar (var_of F n)) t
-| ExUnitTag : forall F C exp pa s,
-    (forall n, pa = [n] -> slook n (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKUnit ->
-    Ex W P F C (AEPath pa None) exp (ETag s [] EUnit) (TNom s [])
-| ExVal : forall F C exp pa s d n t0 t,
-    (forall n', pa = [n'] -> slook n' (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) pa = Some s -> w_decl W s = Some d -> d_ast d = ADVal n t0 None ->
-    nlook s (c_vals C) = Some t ->
-    Ex W P F C (AEPath pa None) exp (EVal s) t
-(* a defined val (no assumptions yet, [D50]) is its initializer, inlined,
-   elaborated in an empty context *)
-| ExConst : forall F C exp pa s d n t0 i t x,
-    (forall n', pa = [n'] -> slook n' (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) pa = Some s -> w_decl W s = Some d -> d_ast d = ADVal n t0 (Some i) ->
-    d_assumes d = [] -> TyOf W (d_mod d) [] None t0 t ->
-    (exists F0 t', Ex W P F0 (Cx [] [] [] [] []) i (Some t) x t' /\ fits t' t /\
-                   fr_mod F0 = d_mod d /\ fr_ret F0 = None /\
-                   fr_this F0 = None /\ fr_loop F0 = false /\
-                   fr_fresh F0 = [] /\ fr_applying F0 = [] /\ fr_pins F0 = [] /\
-                   Numbering F0 None []) ->
-    Ex W P F C (AEPath pa None) exp x t
-(* a tag applied to its payload *)
-| ExTag : forall F C exp pa a args s bs xs pay y v ty,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
-    Brackets W (fr_mod F) (c_ty C) s a bs ->
-    Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
-    PayloadOf W s xs pay ->
-    args = [y] -> Ex W P F C y (Some pay) v ty -> fits ty pay ->
-    Ex W P F C (AECall pa a args) exp (ETag s xs v) (TNom s xs)
-(* [D20]/[D21] a defined fn: its needs answered from here (sm), its
-   signature read with the meanings here *)
-| ExCallD : forall F C exp pa args f Cf ns th g xs demands C',
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W f Cf ns ->
-    (* family demands read f's needs through θ (rule B's companion) *)
-    Demand W C (map (at_th C th) ns) [] C demands C' ->
-    NeedsSatisfied C' Cf th ns -> CallTheta W C' Cf f th -> SigOf W f (c_ty C') None g ->
-    (* Q4: the arguments in the caller's context, as at every call
-       (MCAttachedDefined, PrFamily): what the call demands is not in force
-       for them, so an argument means what it means outside the call (D77:
-       a family supplying a key on demand is not a provision of it), and a
-       family's result does not shadow what the caller provides. An
-       argument means what `let a = e; f(a)` would (as a bracket call's
-       arguments, ExCallBr, D89). AUDIT-CHANGES #72;
-       tests/wasi/args_context_provision_wins.moss, tests/wasi/args_context_shadow_call.moss *)
-    Args W P F C args (sg_params g) xs ->
-    (* rule B *)
-    RequirementsInForce C Cf ->
-    Ex W P F C (AECall pa None args) exp
-       (translate_demands C demands (translate_call C' Cf f th ns xs)) (sg_ret g)
-(* an abstract fn: whatever provides it here *)
-| ExCallA : forall F C exp pa args f g xs,
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    (exists n ps rt, ast_of W f = Some (ADFn RPlain n ps rt None)) ->
-    nlook f (c_fns C) = Some g ->
-    Args W P F C args (sg_params g) xs ->
-    Ex W P F C (AECall pa None args) exp (EInvoke f xs) (sg_ret g)
-(* D89: a fn applied to brackets is the call under those binds, its
-   arguments evaluated first (Syntax.call_block) *)
-| ExCallBr : forall F C exp pa bs args f x t,
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    CallBrackets W (fr_mod F) f bs ->
-    Ex W P F C (Syntax.call_block pa bs args) None x t ->
-    Ex W P F C (AECall pa (Some bs) args) exp x t
-| ExMeth : forall F C exp o pa args ox ot x t,
-    Ex W P F C o None ox ot ->
-    MethCall W P F C ox (canon C ot) pa args x t ->
-    Ex W P F C (AEMeth o pa args) exp x t
-(* [D68] operators: the receiver is the (left) operand ([D85]: and the
-   `for.` operators, note 60) *)
-| ExUnary : forall F C exp op y lib n m ox ot x t,
-    operator_method op true = Some (lib, n) -> LangSym W lib NSDetached n m ->
-    Ex W P F C y None ox ot -> head (canon C ot) <> None ->
-    Provided W P F C ox (canon C ot) m [] x t ->
-    Ex W P F C (AEUnary op y) exp x t
-| ExBinary : forall F C exp op l r lib n m ox ot x t,
-    operator_method op false = Some (lib, n) -> LangSym W lib NSDetached n m ->
-    Ex W P F C l None ox ot -> head (canon C ot) <> None ->
-    Provided W P F C ox (canon C ot) m [r] x t ->
-    Ex W P F C (AEBinary op l r) exp x t
-(* [D68] literals *)
-| ExLit : forall F C exp text x t,
-    NumericText text -> Literal W C (literal_tree_of text) x t ->
-    Ex W P F C (AELit text) exp x t
-| ExIfThen : forall F C exp c b cx' bx bt,
-    Cond W P F C c cx' -> BlkE W P F C b exp bx bt ->
-    opt_fits TUnit exp -> (bt = TUnit \/ bt = never) ->
-    Ex W P F C (AEIf c b None) exp (EIf cx' bx EUnit) TUnit
-| ExIfElse : forall F C exp c b y cx' bx bt ex' et t,
-    Cond W P F C c cx' -> BlkE W P F C b exp bx bt ->
-    Branch W P F C y exp ex' et -> opt_fits et exp -> Join (branch_ty b bt) et exp t ->
-    Ex W P F C (AEIf c b (Some y)) exp (EIf cx' bx ex') t
-| ExMatch : forall F C exp s arms sx st xarms t,
-    Ex W P F C s None sx st ->
-    Arms W P F C (canon C st) arms exp xarms t ->
-    Ex W P F C (AEMatch s arms) exp (EMatch sx xarms) t
-| ExBlock : forall F C exp b x t,
-    BlkE W P F C b exp x t -> Ex W P F C (AEBlock b) exp x (match exp with Some e => e | None => t end)
-| ExReturnUnit : forall F C exp,
-    fr_ret F = Some TUnit ->
-    Ex W P F C (AEReturn None) exp (EReturn EUnit) never
-| ExReturn : forall F C exp e expected v actual,
-    fr_ret F = Some expected ->
-    Ex W P F C e (Some expected) v actual -> fits actual expected ->
-    Ex W P F C (AEReturn (Some e)) exp (EReturn v) never
-| ExBreak : forall F C exp, fr_loop F = true -> Ex W P F C AEBreak exp EBreak never
-| ExRecord : forall F C exp pa a fs s bs xs pay ftys xfs,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
-    Brackets W (fr_mod F) (c_ty C) s a bs ->
-    Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
-    PayloadOf W s xs pay -> pay = TRecord ftys ->
-    (* every field given once, in any order; the record holds them in the payload's order *)
-    NoDup (map fst fs) -> length fs = length ftys ->
-    Forall2 (fun ft xf => fst xf = fst ft /\
-               exists n v vt, n = fst ft /\ In (n, v) fs /\
-                 Ex W P F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
-                 fits vt (snd ft)) ftys xfs ->
-    Ex W P F C (AERec pa a fs) exp (ETag s xs (ERecord xfs)) (TNom s xs)
-| ExField : forall F C exp o n ox ot rec t,
-    Ex W P F C o None ox ot ->
-    (* a tag's payload, or a bare record (note 44) *)
-    ((exists s xs, ot = TNom s xs /\ kind_sym W s = Some DKTag /\ PayloadOf W s xs rec) \/ rec = ot) ->
-    (exists ftys, rec = TRecord ftys /\ slook n ftys = Some t) ->
-    Ex W P F C (AEField o n) exp (EField ox (n)) t
-
-(* the payload type of a tag at its arguments *)
-
-with Args (W : world) (P : program) : frame -> cx -> list aexpr -> list ty -> list expr -> Prop :=
-| ArgsNil : forall F C, Args W P F C [] [] []
-| ArgsCons : forall F C a r t ts x xs at',
-    Ex W P F C a (Some t) x at' -> fits (canon C at') (canon C t) ->
-    Args W P F C r ts xs -> Args W P F C (a :: r) (t :: ts) (x :: xs)
-
-(* [D45] a condition is a Bool (lib/bool.moss's) *)
-with Cond (W : world) (P : program) : frame -> cx -> aexpr -> expr -> Prop :=
-| CondBool : forall F C c x t b,
-    LangItem W LIBool b ->
-    Ex W P F C c (Some (TNom b [])) x t -> fits t (TNom b []) -> Cond W P F C c x
-
-(* a branch of an `if` (its `else`) or a match arm: a block has its
-   branch type, or the expected one (note 42) *)
-with Branch (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> expr -> ty -> Prop :=
-| BranchBlock : forall F C b exp x t,
-    BlkE W P F C b exp x t ->
-    Branch W P F C (AEBlock b) exp x (match exp with Some e => e | None => branch_ty b t end)
-| BranchExpr : forall F C y exp x t,
-    (forall b, y <> AEBlock b) -> Ex W P F C y exp x t -> Branch W P F C y exp x t
-
-(* branches agree, or the expected type decides *)
-
-with Arms (W : world) (P : program) : frame -> cx -> ty -> list (apat * aexpr) -> option ty -> list (pattern * expr) -> ty -> Prop :=
-| ArmsEmptyNever : forall F C exp, Arms W P F C never [] exp [] (match exp with Some e => e | None => never end)
-| ArmsSome : forall F C st arms exp xarms covered catch t,
-    st <> never ->
-    ArmsList W P F C st arms exp xarms covered catch t ->
-    (* exhaustive: a catch-all arm, or every member's head covered *)
-    (catch = true \/ (members st <> [] /\ forall m h, In m (members st) -> head m = Some h -> In h covered)) ->
-    Arms W P F C st arms exp xarms t
-
-with ArmsList (W : world) (P : program) : frame -> cx -> ty -> list (apat * aexpr) -> option ty -> list (pattern * expr) -> list nat -> bool -> ty -> Prop :=
-| ArmsOne : forall F C st pat body exp xp binds hs ca bx bt,
-    PatOf W F st pat xp binds hs ca ->
-    Branch W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
-    opt_fits bt exp ->
-    ArmsList W P F C st [(pat, body)] exp [(xp, bx)] hs ca bt
-| ArmsMore : forall F C st pat body rest exp xp binds hs ca bx bt xr hr cr tr t,
-    rest <> [] ->
-    PatOf W F st pat xp binds hs ca ->
-    Branch W P F (fold_left (fun C q => add_local C (fst q) (snd q) LLet) binds C) body exp bx bt ->
-    opt_fits bt exp ->
-    ArmsList W P F C st rest exp xr hr cr tr ->
-    Join bt tr exp t ->
-    ArmsList W P F C st ((pat, body) :: rest) exp ((xp, bx) :: xr) (hs ++ hr) (ca || cr) t
-
-(* [D61]/[D77] which method a call `o.p(args)` means.  `ot` is the
-   receiver's canonical type. *)
-with MethCall (W : world) (P : program) : frame -> cx -> expr -> ty -> path -> list aexpr -> expr -> ty -> Prop :=
-(* `o.mod::m(...)`: the detached method reached through its module *)
-| MCQualified : forall F C ox ot pa args m x t,
-    length pa > 1 -> resolve_detached W (fr_mod F) pa = Some m ->
-    Provided W P F C ox ot m args x t ->
-    MethCall W P F C ox ot pa args x t
-(* [D77] rule 4: the provision of the detached name in scope wins over an
-   attached method, wherever the context provides it at the receiver *)
-| MCProvisionWins : forall F C ox ot n args h att m x t,
-    head ot = Some h -> Attached W h n att ->
-    w_scope W (fr_mod F) NSDetached n = Some (ESym m) -> mlook ot m (c_mths C) <> None ->
-    Provided W P F C ox ot m args x t ->
-    MethCall W P F C ox ot [n] args x t
-(* [D61] rule 1, a defined attached method: a direct call, at the
-   receiver's instantiation ([D74]) *)
-| MCAttachedDefined : forall F C ox ot n args h att Ca ns th g xs rargs demands Cd,
-    head ot = Some h -> Attached W h n att ->
-    ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
-    (exists rn ps rt b, ast_of W att = Some (ADFn (RAttached rn) n ps rt (Some b))) ->
-    rargs = (match ot with TNom _ xs => xs | _ => [] end) ->
-    CtxOf W att Ca ns ->
-    Demand W (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C)
-      (map (at_th (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) th) ns) []
-      (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) demands Cd ->
-    NeedsSatisfied Cd Ca th ns -> CallTheta W Cd Ca att th -> SigOf W att (c_ty Cd) (Some ot) g ->
-    Args W P F C args (sg_params g) xs ->
-    RequirementsInForce (fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C) Ca ->
-    MethCall W P F C ox ot [n] args
-      (translate_demands (family_context C rargs) demands (translate_call Cd Ca att th ns (ox :: xs))) (sg_ret g)
-(* an abstract attached method: a key the context provides ([D36]) *)
-| MCAttachedAbstract : forall F C ox ot n args h att x t,
-    head ot = Some h -> Attached W h n att ->
-    ~ (exists m, w_scope W (fr_mod F) NSDetached n = Some (ESym m) /\ mlook ot m (c_mths C) <> None) ->
-    (exists rn ps rt, ast_of W att = Some (ADFn (RAttached rn) n ps rt None)) ->
-    Provided W P F C ox ot att args x t ->
-    MethCall W P F C ox ot [n] args x t
-(* [D61] rule 2: no attached method; the detached name in scope *)
-| MCDetached : forall F C ox ot n args m x t,
-    (forall h att, head ot = Some h -> ~ Attached W h n att) ->
-    w_scope W (fr_mod F) NSDetached n = Some (ESym m) ->
-    Provided W P F C ox ot m args x t ->
-    MethCall W P F C ox ot [n] args x t
-
-(* [D62] a call of method m on a receiver of type ot: the context's one
-   provision at key (ot, m), whatever it is bound to *)
-with Provided (W : world) (P : program) : frame -> cx -> expr -> ty -> nat -> list aexpr -> expr -> ty -> Prop :=
-| PrIn : forall F C ox ot m args g xs,
-    mlook ot m (c_mths C) = Some g ->
-    Args W P F C args (sg_params g) xs ->
-    Provided W P F C ox ot m args (EMethod ox m (rkey C ot m) xs) (sg_ret g)
-(* [D84] rule 7: no provision here, but a family F in force produces the
-   key at θ (read off the key: θ instantiates P(F) so that a result item's
-   receiver becomes ot); the call is elaborated as if preceded by `bind F;`
-   at θ, in a scope of its own: `apply_expression F θ sm` around the call.  No search:
-   at most one family in a context produces a key (DECISIONS.md, rule 7). *)
-| PrFamily : forall F C ox ot m args u matching th formal needs C' ks g xs,
-    mlook ot m (c_mths C) = None ->
-    TypesFamilyApplication W C u matching th formal needs C' ks -> FamilyReadOff W C u ot m matching ->
-    In (mkey ot m) ks -> OnlyFamily W C u (mkey ot m) ->
-    mlook ot m (c_mths C') = Some g -> Args W P F C args (sg_params g) xs ->
-    MatchingInForce C matching ->
-    Provided W P F C ox ot m args (translate_family_use C (FamilyUse u matching th formal needs C' ks) (EMethod ox m (rkey C' ot m) xs)) (sg_ret g)
-
-(* a block whose type is checked against `exp` and may not let a value of
-   a generation it made escape ([D78]) *)
-with BlkE (W : world) (P : program) : frame -> cx -> ablock -> option ty -> expr -> ty -> Prop :=
-(* a nested block may rebind a pin for its own use: only the linked
-   body's own binds reach its result (tests/wasi/block_pin_rebind.moss) *)
-| BlkECheck : forall F C ss tl exp x t made,
-    Blk W P (without_pins F) C ss tl exp x t made ->
-    (forall g, In g made -> ~ In g (gens t)) ->
-    opt_fits t exp ->
-    BlkE W P F C (ABlock ss tl) exp x t
-
-(* `Blk ... x t made`: `made` are the generations its binds made *)
-with Blk (W : world) (P : program) : frame -> cx -> list astmt -> option aexpr -> option ty -> expr -> ty -> list nat -> Prop :=
-| BlkTail : forall F C y exp x t, Ex W P F C y exp x t -> Blk W P F C [] (Some y) exp x t []
-| BlkEmpty : forall F C exp, Blk W P F C [] None exp EUnit TUnit []
-| BlkLet : forall F C st n ann y rest tl exp declared v vt t0 xr t made mu,
-    LetStmt st n ann y mu ->
-    match ann with
-    | Some a => exists d, TyOf W (fr_mod F) (c_ty C) (fr_this F) a d /\ declared = Some d
-    | None => declared = None
-    end ->
-    Ex W P F C y declared v vt ->
-    (match declared with Some d => fits vt d /\ t0 = d | None => t0 = vt end) ->
-    Named F n ->
-    Blk W P F (add_local C n t0 mu) rest tl exp xr t made ->
-    Blk W P F C (st :: rest) tl exp (ELet (var_of F n) v xr) t made
-| BlkAssign : forall F C n y rest tl exp tv v vt xr t made,
-    slook n (c_locals C) = Some (tv, LVar) ->
-    Ex W P F C y (Some tv) v vt -> fits vt tv ->
-    Blk W P F C rest tl exp xr t made ->
-    Named F n ->
-    Blk W P F C (ASAssign n y :: rest) tl exp (ESeq (EAssign (var_of F n) v) xr) t made
-| BlkExprLast : forall F C y exp v vt,
-    Ex W P F C y None v vt ->
-    Blk W P F C [ASExpr y] None exp (ESeq v EUnit) (if ty_eqb vt never then never else TUnit) []
-| BlkExpr : forall F C y rest tl exp v vt xr t made,
-    (rest <> [] \/ tl <> None) ->
-    Ex W P F C y None v vt ->
-    Blk W P F C rest tl exp xr t made ->
-    Blk W P F C (ASExpr y :: rest) tl exp (ESeq v xr) t made
-| BlkWhile : forall F C c b rest tl exp cx' bx bt xr t made,
-    Cond W P F C c cx' -> BlkE W P (with_loop F) C b None bx bt ->
-    Blk W P F C rest tl exp xr t made ->
-    Blk W P F C (ASWhile c b :: rest) tl exp (ESeq (EWhile cx' bx) xr) t made
-| BlkLoop : forall F C b rest tl exp bx bt xr t made,
-    (rest <> [] \/ tl <> None \/ BlockBreaks W (fr_mod F) b) ->
-    BlkE W P (with_loop F) C b None bx bt ->
-    Blk W P F C rest tl exp xr t made ->
-    Blk W P F C (ASLoop b :: rest) tl exp (ESeq (ELoop bx) xr) t made
-(* a block whose last statement is a `loop` no `break` leaves cannot fall
-   through (note 42) *)
-| BlkLoopLast : forall F C b exp bx bt,
-    BlkE W P (with_loop F) C b None bx bt -> ~ BlockBreaks W (fr_mod F) b ->
-    Blk W P F C [ASLoop b] None exp (ESeq (ELoop bx) EUnit) never []
-(* a bind statement: its items in order, each wrapping the rest *)
-| BlkBind : forall F C its rest tl exp wrap C' F' xr t made made',
-    BindItems W P F C its wrap C' F' made ->
-    Blk W P F' C' rest tl exp xr t made' ->
-    Blk W P F C (ASBind its :: rest) tl exp (wrap xr) t (made ++ made')
-
-(* `BindItems ... wrap C' F' made`: a run of bind items elaborates to the
-   binds `wrap` puts around whatever follows them. *)
-with BindItems (W : world) (P : program) : frame -> cx -> list (spec * option aexpr) -> (expr -> expr) -> cx -> frame -> list nat -> Prop :=
-| BINil : forall F C, BindItems W P F C [] (fun x => x) C F []
-| BICons : forall F C it r w1 C1 F1 m1 w2 C2 F2 m2,
-    BindItem W P F C it w1 C1 F1 m1 -> BindItems W P F1 C1 r w2 C2 F2 m2 ->
-    BindItems W P F C (it :: r) (fun x => w1 (w2 x)) C2 F2 (m1 ++ m2)
-
-with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -> (expr -> expr) -> cx -> frame -> list nat -> Prop :=
-(* [D72] `bind T = τ;` starts a new generation: from here T means τ (read
-   here); what was typed before keeps the old meaning. Runtime closures
-   retain the corresponding type interpretations for checked heap casts.
-   [D84] 3d: in a body bound to F, protected result inputs may not be rebound. *)
-| BTypeBind : forall F C pa t rp ra tau,
-    resolve_sym W (fr_mod F) pa = Some t -> kind_sym W t = Some DKType ->
-    ~ In t (fr_pins F) ->
-    TyOf W (fr_mod F) (c_ty C) None (ATRef rp ra) tau ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath rp ra)) (bind_type_expression t (canon C tau))
-             (set_ty C t (canon C tau)) F []
-(* `bind v = e;` *)
-| BValBind : forall F C pa v d n t0 i declared y x xt a,
-    resolve_sym W (fr_mod F) pa = Some v -> w_decl W v = Some d -> d_ast d = ADVal n t0 i ->
-    TyOf W (d_mod d) (c_ty C) None t0 declared ->
-    Ex W P F C y (Some declared) x xt -> fits xt declared ->
-    AppOf W v (c_ty C) a ->
-    BindItem W P F C (Spec (Some pa) None None, Some y) (bind_value_expression v x)
-             (provide C (IVal v) a (set_val C v declared)) F []
-(* `bind f = g;`: g a defined fn whose signature, read here, is f's *)
-| BFnBind : forall F C pa f g sg pg sm a types,
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    SigOf W f (c_ty C) None sg ->
-    FnProvider W P F C (AEPath pg None) sg None g types sm ->
-    AppOf W f (c_ty C) a ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_function_expression f g types sm)
-             (provide C (IFn f) a (set_fn C f sg)) F []
-(* [D70] `bind f = |ps| body;`: see LambdaProvider *)
-| BFnLambda : forall F C pa f sg ps rt body pid pre sm a,
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    SigOf W f (c_ty C) None sg ->
-    LambdaProvider W P F C ps rt body sg None pid pre sm ->
-    AppOf W f (c_ty C) a ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AELam ps rt body)) (fun x => pre (bind_function_expression f pid (lexical_capture C) sm x))
-             (provide C (IFn f) a (set_fn C f sg)) F []
-(* [D61] `bind R.m[brackets] = provider;`: the key is R read here (under
-   the brackets), the provider an attached defined method of R's head, a
-   defined fn (eta-expanded to take the receiver, [D54]), or a lambda *)
-| BMethBind : forall F C pa dn a y r m bs rt sg target pre sm ap types,
-    resolve_sym W (fr_mod F) pa = Some r -> MethodNamed W (fr_mod F) r dn m ->
-    Brackets W (fr_mod F) (c_ty C) m a bs ->
-    TyOf W (fr_mod F) (bs ++ c_ty C) None (ATRef pa None) rt ->
-    SigOf W m (bs ++ c_ty C) (Some rt) sg ->
-    MethProvider W P F C y sg rt target types pre sm ->
-    AppOf W m (bs ++ c_ty C) ap ->
-    (* [D84] rule 7: a member of a family in force is not bound directly *)
-    (forall u, ~ FamilyProduces W C u (mkey (canon C rt) m)) ->
-    (* Q3: the method item is not a defined (attached) method: a call
-       resolves to the definition (MCAttachedDefined), never to the key,
-       so the provision could not be used (criteria section 6; the
-       oracle's check_bind; tests/errors/bind_attached_defined.moss). A
-       detached method, or an abstract attached one, is bound as before. *)
-    ~ (exists rc nm ps rt0 b, ast_of W m = Some (ADFn rc nm ps rt0 (Some b))) ->
-    BindItem W P F C (Spec (Some pa) (Some dn) a, Some y)
-             (fun x => pre (bind_method_expression (canon C rt) m (theta_of C ap) target types sm x))
-             (provide C (mkey (canon C rt) m) ap (set_mth C (canon C rt) m sg)) F []
-(* [D55] `bind F;` for F with a body: F's binds, here, read in F's module *)
-| BApplyBody : forall F C pa u d n ps a r bodies wrap C' F' made,
-    resolve_sym W (fr_mod F) pa = Some u -> w_decl W u = Some d ->
-    d_ast d = ADFunctor n ps a r (Some bodies) -> ~ In u (fr_applying F) ->
-    BindItems W P (with_mod F (d_mod d) u) C (concat bodies) wrap C' F' made ->
-    BindItem W P F C (Spec (Some pa) None None, None) wrap C'
-             (carry_frame_allocations F F') made
-(* [D78]: all output destinations are made here, so values of their
-   types may not leave the block. *)
-| BApplyAbstract : forall F C pa a,
-    TypesApplication W F C pa a ->
-    BindItem W P F C (Spec (Some pa) None None, None)
-      (translate_application C a) (app_result a)
-      (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) (app_allocated a)))
-      (map (app_identity a) (app_outputs a))
-(* [D78]/[D84] rule 4: `bind F = H;`, H abstract in force: H's inputs
-   are among F's, and F's binding is H's *)
-| BFunCopy : forall F C pa u pg h Cu nsu Ch nsh target sm fx rm,
-    resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some h ->
-    (* only an abstract functor is bound (D78; the oracle's bind_functor,
-       tests/errors/copy_into_body.moss) *)
-    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
-    nlook h (c_funs C) <> None ->
-    FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
-    (* Copying requires the target fixed inputs now and preserves every
-       known fixed interpretation carried by the existing source binding. *)
-    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
-    (forall x, Fixed W h x -> Fixed W u x) ->
-    FixedAgreement W C h ->
-    SameResult W u h ->
-    sm = map (fun k => (rkey_of Ch k, rkey_of Cu (target k))) nsh ->
-    (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
-    (* H's inputs, implicit ones too, are among F's (the oracle's input
-       interpretation check fails on one F lacks) *)
-    (forall x tx, nlook x (c_ty Ch) = Some tx -> nlook x (c_ty Cu) <> None) ->
-    (* and H reads its inputs, needs and result as F does at every
-       application of F (the oracle: input and output interpretation,
-       D78) *)
-    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fx) u h Cu nsu nsh Ch rm target ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (copy_functor_expression u h sm rm) (set_fun C u fx) F []
-(* [D84] rule 3, `bind F = G;`, G with a body: a closure.  G's inputs
-   that F takes (read through F's merge) are linked (supplied by each
-   application), the rest are
-   captured here (vals by value) and must be in force here; G's body is
-   checked once, in its own terms, as the core functor body h (LinkBody,
-   which also asks that G has a body).
-   The closure keeps types as a lambda does (`lexical_capture`): the
-   table's readings and the meanings of what the context mentions, method
-   keys' receivers included, so a captured need keyed at a declared symbol
-   not in force reads as it was provided (tests/errors/functor_captured_unbound.moss,
-   family4-AUDIT.md). *)
-| BFunClosure : forall F C pa u pg gg Cu nsu Cg nsg h pins target sm smc fx,
-    resolve_sym W (fr_mod F) pa = Some u -> resolve_sym W (fr_mod F) pg = Some gg ->
-    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
-    (* F's and G's contexts, as the world records them (LinkBody states
-       that they are their FunCtx) *)
-    w_context W u = Some (Cu, nsu) -> w_context W gg = Some (Cg, nsg) ->
-    (* 3a: X(F) in force here *)
-    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
-    SameResult W u gg ->
-    LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) (link_private_readings C Cu Cg) (link_adopted_inputs C Cu Cg) target -> LinkBody W P u gg h pins ->
-    (* the linked needs: those of G that are F's, read through F's merge *)
-    sm = link_map Cu Cg target nsg ->
-    (* 3b: the captured needs are answered here as a call would answer
-       them, at G's inputs read here: provided, coherent, at G's view of
-       their types, and G's merges holding of the meanings here *)
-    Satisfies C Cg (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg))
-      (captured_needs target nsg) smc ->
-    (forall x tx, In (x, tx) fx <-> Fixed W u x /\ nlook x (c_ty C) = Some tx) ->
-    (* rule B for the closure: G's inputs that F does not take are
-       captured here, so each is in force here, through G's merge class
-       (inputs F takes are linked at each application) *)
-    (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> InForceThrough C Cg x) ->
-    (* Q6: each pin of a fixed input agrees with the bind site: the
-       input's meaning here is the pin's, read with G's types as they are
-       here (the oracle's link check, "it binds `Tok` to ..., and here
-       `Tok` is ..."; tests/errors/pin_fixed_disagree.moss) *)
-    (forall x tx, In (x, tx) pins -> exists here, nlook x (c_ty C) = Some here /\
-       (forall y, In y (gens tx) -> nlook y (c_ty C) <> None) /\
-       canon C here = canon C (app_subst (map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg)) tx)) ->
-    BindItem W P F C (Spec (Some pa) None None, Some (AEPath pg None)) (bind_functor_expression u h (lexical_capture C) sm smc) (set_fun C u fx) F []
-
-(* [D66] a fn provider: a defined fn (its needs answered here), or an
-   abstract fn in force, through a fresh defined forwarder whose body calls
-   it; its signature read here must be the bound fn's. *)
-with FnProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> option ty -> nat -> type_capture -> smap -> Prop :=
-| FPDefined : forall F C pa g sg Cg ns sm th,
-    resolve_sym W (fr_mod F) pa = Some g -> kind_sym W g = Some DKFn ->
-    (exists n ps rt b, ast_of W g = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W g Cg ns -> Satisfies C Cg th ns sm -> CallTheta W C Cg g th ->
-    SigOf W g (c_ty C) None (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    RequirementsInForce C Cg ->
-    FnProvider W P F C (AEPath pa None) sg None g (TypeCapture th th) sm
-| FPForward : forall F C pa sg handle w,
-    TypesForwarder W F C pa sg handle -> TranslatesForwarder W P handle sg w ->
-    FnProvider W P F C (AEPath pa None) sg None w (TypeCapture [] [])
-      [(IFn (forwarder_source handle), IFn (forwarder_source handle))]
-
-(* a method provider (the receiver is the provider's first argument) *)
-with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty -> nat -> type_capture -> (expr -> expr) -> smap -> Prop :=
-| MPAttached : forall F C rp n rg att rt sg Ca ns sm th rargs Cd,
-    resolve_sym W (fr_mod F) rp = Some rg -> Attached W rg n att ->
-    (exists rn ps r b, ast_of W att = Some (ADFn (RAttached rn) n ps r (Some b))) ->
-    canon C rt = TNom rg rargs ->
-    (* as at a direct call, the method is entered at the key's receiver:
-       its requirements read as the receiver's arguments *)
-    Cd = fold_left (fun C q => set_ty C (fst q) (snd q)) rargs C ->
-    CtxOf W att Ca ns -> Satisfies Cd Ca th ns sm -> CallTheta W Cd Ca att th ->
-    SigOf W att (c_ty Cd) (Some (canon C rt))
-      (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    RequirementsInForce Cd Ca ->
-    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (TypeCapture th th) (fun x => x) sm
-| MPWrapped : forall F C pa sg rt g sm w n Cg nsg types,
-    FnProvider W P F C (AEPath pa None) sg None g types sm ->
-    CtxOf W g Cg nsg -> n = length (sg_params sg) ->
-    Fresh W w ->
-    body_of P w = Some (ECall g (theta_ctx Cg) (map (fun k => (rkey_of Cg k, rkey_of Cg k)) nsg) (map EVar (seq 1 n))) ->
-    MethProvider W P F C (AEPath pa None) sg rt w types (fun x => x) sm
-| MPLambda : forall F C ps r body sg rt pid pre sm,
-    LambdaProvider W P F C ps r body sg (Some rt) pid pre sm ->
-    MethProvider W P F C (AELam ps r body) sg rt pid (lexical_capture C) pre sm
-
-(* [D70] an anonymous function at a bind: its parameters are the bound
-   signature's (annotations, if any, must agree); each local of the
-   enclosing body it mentions is captured by value — a fresh val bound here
-   to the local's value; the function is a fresh defined fn assuming
-   everything in force here (with the captured vals), its body read with
-   the captured names as those vals (`let x = v;` in front); its needs are
-   answered by the same items here. *)
-with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * option aty) -> option aty -> aexpr -> fsig -> option ty -> nat -> (expr -> expr) -> smap -> Prop :=
-| LP : forall F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm,
-    length ps = length (sg_params sg) -> NoDup (map fst ps) ->
-    Forall2 (fun pq t => match snd pq with
-                         | Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ MergeEq (c_merge C) t' t
-                         | None => True end) ps (sg_params sg) ->
-    match rt with Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ MergeEq (c_merge C) t' (sg_ret sg)
-                 | None => True end ->
-    TypesLambdaCaptures W F C (map fst ps) body caps capvals ->
-    Fresh W pid ->
-    (* the provider's own context: everything here, the captured vals in
-       force (as LCaptured locals: not assignable), no other locals *)
-    Cl = fold_left (fun C' q => let '(n, v) := q in
-                      match slook n (c_locals C) with
-                      | Some (t, _) => add_local (provide C' (IVal v) [] (set_val C' v t)) n t LCaptured
-                      | None => C' end)
-                   (combine caps capvals)
-                   (Cx (c_ty C) (c_sub C) (c_merge C) (c_provisions C) []) ->
-    (* its frame: numbered afresh, parameters (after `this`) from 0 *)
-    fr_mod Fl = fr_mod F -> fr_ret Fl = Some (sg_ret sg) -> fr_this Fl = this -> fr_loop Fl = false ->
-    (* the generations in scope here stay taken in its body: the closure
-       keeps their meanings, so no application there may make them anew *)
-    incl (fr_fresh F ++ context_gens C) (fr_fresh Fl) ->
-    Numbering Fl this (map fst ps) -> Forall (Named Fl) caps -> Forall (Named F) caps ->
-    BlkE W P Fl (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet)
-                           (combine (map fst ps) (sg_params sg)) Cl)
-         (ABlock [] (Some body)) (Some (sg_ret sg)) lbody ltype ->
-    fits ltype (sg_ret sg) ->
-    body_of P pid = Some (translate_lambda_body Fl (combine caps capvals) lbody) ->
-    (* its needs: every key in force here, each answered by itself *)
-    (forall k, In k keys <-> (provides Cl k /\
-       (match k with ITy _ => False | _ => True end) /\ k = provision_id k)) ->
-    NoDup keys -> sm = map (fun k => (rkey_of Cl k, rkey_of C k)) keys ->
-    nlook pid (lambda_sections (program_origins P)) = Some (c_sub C) ->
-    LambdaProvider W P F C ps rt body sg this pid (translate_lambda_captures F (combine caps capvals)) sm
-
-(* [D78]/[D84] 3e: G's result is F's, item by item: the same leaves
-   (keys, as written, through contexts). *)
-
-(* [D84] 3b–3e: G's binds checked once, in G's own terms — G's context
-   formed from its own inputs, each output of F as itself — producing the
-   core functor body h: its result telescope (F's output types, then F's
-   result items), and its binds. 3d: pins may not rebind P(F) ∩ M(F) (Q6).
-   3e: every item of F's result is made by the binds, at the types F
-   promises. LinkBinding checks each binding of that body. *)
-with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
-| LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins,
-    w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
-    FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
-    fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
-    fr_this Fg = None -> fr_loop Fg = false ->
-    (* its locals are numbered as a body's are *)
-    Numbering Fg None [] ->
-    (* 3d, Q6: the protected inputs Π are the polymorphic types F's result
-       mentions, P(F) ∩ M(F); a fixed input may be pinned (bound by the
-       body), whether or not G takes it, and BFunClosure checks that the
-       pin agrees with the bind site (AUDIT-CHANGES #95) *)
-    (forall x, In x (fr_pins Fg) <-> Mentions W u x /\ Poly W u x) ->
-    BindItems W P Fg Cg (concat bodies) wrap Cb Fb made ->
-    (* no generation the body makes is an input of F: each application
-       supplies F's inputs, and a body write would replace one under a
-       key the caller files at its own reading (a kept output at an
-       unmentioned merge representative, tests/errors/link_kept_output_rep.moss;
-       scratch/orch/realize2-AUDIT.md) *)
-    (forall t, In t made -> nlook t (c_ty Cu) = None) ->
-    TypesLinkOutputs W u Cu Cb outs gen Cr ks ->
-    (* a key the pins re-read must be one the body made, not one of G's
-       own provisions (the oracle's and native's "does not bind", by
-       written leaf; tests/errors/pin_fixed_key_need.moss, AUDIT-CHANGES #73) *)
-    (forall k, In k ks ->
-       at_site (link_site Cg Cb pins outs gen) k <> at_site (link_site Cg Cb [] outs gen) k ->
-       ilook (provision_id (at_site (link_site Cg Cb pins outs gen) k)) (c_provisions Cg) = None) ->
-    (* Every output has the promised signature and known type meanings. *)
-    ResultRealizes (link_site Cg Cb pins outs gen) Cr
-      (role_reads (link_site Cg Cb pins outs gen) outs gen ++ pin_reads Cb pins) ks ->
-    (* h's body, as a run of binds, is what `wrap` puts around nothing *)
-    BindsOf (wrap EUnit) binds0 ->
-    (Family W u -> FamilyBindings W binds0) ->
-    (* The caller installs each result under its own key for the same
-       position. Emission uses the body's runtime key at that position. *)
-    TranslatesLinkedBody W P u gg h Cu Cg (link_site Cg Cb pins outs gen) outs binds0 ks ->
-    (* the pins of fixed inputs: what the body binds each to, in G's input
-       terms (each bind reads its type where it is made, and a later bind
-       writes only its own alias; tests/wasi/pin_taken_chain.moss).  A fixed
-       input that G takes is pinned when the body leaves it at another
-       reading than G's own (tests/wasi/pin_taken_one.moss, #95) *)
-    (forall x tx, In (x, tx) pins <->
-       Fixed W u x /\ nlook x (c_ty Cb) = Some tx /\
-       (In x (map fst (c_ty Cg)) -> nlook x (c_ty Cg) <> Some tx)) ->
-    (* a pin is a type over G's own inputs (each its own merge class),
-       none of them an input of F that applications supply (as the oracle:
-       "a type each application ... supplies") nor a generation the body
-       makes *)
-    (forall x tx y, In (x, tx) pins -> In y (gens tx) ->
-       In y (map fst (c_ty Cg)) /\ lookup_subst y (c_sub Cg) = None /\ ~ In y made /\
-       (In y (map fst (c_ty Cu)) -> Fixed W u y)) ->
-    LinkBody W P u gg h pins.
-
 (* ======================================================================== *)
 (* V.7 Programs                                                              *)
 (* ======================================================================== *)
-
-(* A defined fn or method f: its body, under the context its assumes form
-   (and, for an attached method, the receiver as `this` at its
-   requirements' generations), with the parameters numbered from 0 (after
-   `this`), elaborates to `body_of P f`. *)
-Definition FnElab (W : world) (P : program) (f : nat) : Prop :=
-  forall d rcv n ps rt b,
-    w_decl W f = Some d -> d_ast d = ADFn rcv n ps rt (Some b) ->
-  exists C ns this g F x t,
-    CtxOf W f C ns /\
-    (match rcv with
-     (* Q5: an attached method's receiver is nominal *)
-     | RAttached _ => exists r args, Attached W r n f /\ (kind_sym W r = Some DKTag \/ kind_sym W r = Some DKUnit) /\
-                        this = Some (TNom r args) /\
-                        Forall2 (fun x xa => fst xa = x /\ nlook x (c_ty C) = Some (snd xa)) (w_reqs W r) args
-     | _ => this = None end) /\
-    SigOf W f (c_ty C) this g /\
-    fr_mod F = d_mod d /\ fr_ret F = Some (sg_ret g) /\ fr_this F = this /\ fr_loop F = false /\
-    fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [] /\
-    Numbering F this (map fst ps) /\
-    BlkE W P F (fold_left (fun C' q => add_local C' (fst q) (snd q) LLet) (combine (map fst ps) (sg_params g)) C)
-         b (Some (sg_ret g)) x t /\
-    body_of P f = Some x.
 
 (* The runtime type prefix reads the source context with each machine
    type represented by its declaration's symbol. *)
@@ -5598,14 +4869,6 @@ Definition AssumesComplete (W : world) : Prop :=
    declaration at its own meanings, checked there as before. *)
 Definition as_written (L : list nat) : list (nat * ty) := map (fun t => (t, TAbs t)) L.
 
-(* A defined val's initializer elaborates as ExConst reads it at a use: no
-   assumptions, its type read in an empty context, in an empty frame. *)
-Definition ConstElab (W : world) (P : program) (d : decl) (t0 : aty) (i : aexpr) : Prop :=
-  d_assumes d = [] /\ exists t, TyOf W (d_mod d) [] None t0 t /\
-    exists F0 x t', Ex W P F0 (Cx [] [] [] [] []) i (Some t) x t' /\ fits t' t /\
-      fr_mod F0 = d_mod d /\ fr_ret F0 = None /\ fr_this F0 = None /\ fr_loop F0 = false /\
-      fr_fresh F0 = [] /\ fr_applying F0 = [] /\ fr_pins F0 = [] /\ Numbering F0 None [].
-
 (* [D55] a functor with a body binds everything its result promises: each
    leaf of its declared result (ResultLeaf) is bound by an item of the
    body, by written name, as the oracle's functor_total and native check
@@ -5657,11 +4920,6 @@ Definition DeclFormsWith (W : world) (constant : decl -> aty -> aexpr -> Prop) (
     | _ => True
     end.
 
-Definition DeclForms (W : world) (P : program) : nat -> Prop :=
-  DeclFormsWith W (ConstElab W P).
-
-Definition DeclsForm (W : world) (P : program) : Prop := forall s, DeclForms W P s.
-
 (* The language items are what the language's rules take them to be
    ([D45]): Bool is a tag with no requirements whose payload is the union of
    its two values, True and False, distinct units. *)
@@ -5702,12 +4960,6 @@ Definition ElaboratesWith (b : bundle) (W : world) (P : program)
     (forall s, DeclFormsWith W constant s) /\
     (* [D58]/[D59]: every tag has a finite layout *)
     FiniteLayouts W.
-
-Definition ElaboratesIn (b : bundle) (W : world) (P : program) : Prop :=
-  ElaboratesWith b W P (FnElab W P) (ConstElab W P).
-
-Definition Elaborates (b : bundle) (P : program) : Prop :=
-  exists W, ElaboratesIn b W P.
 
 Module Export Typing.
 
@@ -5821,29 +5073,23 @@ Arguments linked_bind_plan {BindPlan}.
 
 Section LinkedSource.
 Variable BindPlan : Type.
-Variable types_binds : world -> frame -> cx -> list (spec * option aexpr) ->
-  BindPlan -> cx -> frame -> list nat -> Prop.
-Variable family_binds : world -> BindPlan -> Prop.
-
-Inductive TypesLinkedBody (W : world) (Fg : frame) (descriptor : linked_body_descriptor BindPlan) : Prop :=
-| TLB : forall dg name parameters inputs results bodies target_needs provider_needs Cb Fb made gen promised,
+Inductive TypesLinkedHeader (W : world) (Fg : frame) (descriptor : linked_body_descriptor BindPlan)
+    : list (spec * option aexpr) -> cx -> list nat -> Prop :=
+| TLinkedHeader : forall dg name parameters inputs results bodies target_needs provider_needs Cb made gen promised,
     let target := linked_target_symbol (linked_handle descriptor) in
     let provider := linked_provider_symbol (linked_handle descriptor) in
     let Cu := linked_target_context descriptor in
     let Cg := linked_provider_context descriptor in
     let outs := linked_output_roles descriptor in
     let reading := linked_result_reading descriptor in
-    let plan := linked_bind_plan descriptor in
     w_decl W provider = Some dg -> d_ast dg = ADFunctor name parameters inputs results (Some bodies) ->
     FunCtx W target Cu target_needs -> FunCtx W provider Cg provider_needs ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None -> fr_this Fg = None -> fr_loop Fg = false ->
     (forall x, In x (fr_pins Fg) <-> Mentions W target x /\ Poly W target x) ->
-    types_binds W Fg Cg (concat bodies) plan Cb Fb made ->
     (forall t, In t made -> nlook t (c_ty Cu) = None) ->
     TypesLinkOutputs W target Cu Cb outs gen promised (link_plan_keys reading) ->
     TypesLinkedResult W target Cu Cg Cb promised made outs gen (link_plan_keys reading) reading ->
-    (Family W target -> family_binds W plan) ->
-    TypesLinkedBody W Fg descriptor.
+    TypesLinkedHeader W Fg descriptor (concat bodies) Cb made.
 
 End LinkedSource.
 
@@ -5882,16 +5128,15 @@ Definition lambda_descriptor_captures {BodyPlan : Type}
 
 Section LambdaSource.
 Variable BodyPlan : Type.
-Variable types_body : world -> frame -> cx -> ablock -> option ty -> BodyPlan -> ty -> Prop.
 
 Definition lambda_descriptor_site (signature : fsig) (ps : list (name * option aty))
     (descriptor : lambda_body_descriptor BodyPlan) : cx :=
   lambda_parameter_context (lambda_plan_capture_context descriptor) (map fst ps) (sg_params signature).
 
-Inductive TypesLambdaProvider (W : world) (F : frame) (C : cx)
+Inductive TypesLambdaHeader (W : world) (F : frame) (C : cx)
     (ps : list (name * option aty)) (rt : option aty) (body : aexpr) (signature : fsig)
-    (this : option ty) (Fl : frame) (descriptor : lambda_body_descriptor BodyPlan) : Prop :=
-| TLP : forall body_type,
+    (this : option ty) (Fl : frame) (descriptor : lambda_body_descriptor BodyPlan) (result : ty) : Prop :=
+| TLambdaHeader :
     let caps := lambda_plan_capture_names descriptor in
     let capvals := lambda_plan_capture_symbols descriptor in
     let Cl := lambda_plan_capture_context descriptor in
@@ -5912,13 +5157,11 @@ Inductive TypesLambdaProvider (W : world) (F : frame) (C : cx)
     fr_mod Fl = fr_mod F -> fr_ret Fl = Some (sg_ret signature) -> fr_this Fl = this -> fr_loop Fl = false ->
     incl (fr_fresh F ++ context_gens C) (fr_fresh Fl) ->
     Forall (Named Fl) caps -> Forall (Named F) caps ->
-    types_body W Fl (lambda_descriptor_site signature ps descriptor)
-      (ABlock [] (Some body)) (Some (sg_ret signature)) (lambda_source_body descriptor) body_type ->
-    fits body_type (sg_ret signature) ->
+    fits result (sg_ret signature) ->
     (forall k, In k (lambda_provision_needs descriptor) <->
       provides Cl k /\ (match k with ITy _ => False | _ => True end) /\ k = provision_id k) ->
     NoDup (lambda_provision_needs descriptor) ->
-    TypesLambdaProvider W F C ps rt body signature this Fl descriptor.
+    TypesLambdaHeader W F C ps rt body signature this Fl descriptor result.
 
 End LambdaSource.
 
@@ -6020,6 +5263,548 @@ Inductive TypesLiteral (W : world) (C : cx) : literal_tree -> literal_plan -> ty
     TypesLiteral W C tree operand actual -> LangItem W LIFloat f ->
     nlook f (c_fns C) = Some (FSig [expected] t) -> fits actual expected ->
     TypesLiteral W C (LFloat tree) (PlanLiteralFloat f operand) t.
+
+Unset Implicit Arguments.
+
+(* Local bindings and patterns *)
+
+Inductive field_pattern_plan : Type :=
+| PatternPun (field : fld) (field_type : ty)
+| PatternIgnore (field : fld)
+| PatternRename (field : fld) (binder : name) (field_type : ty).
+
+Definition field_pattern_bindings (fields : list field_pattern_plan) : list (name * ty) :=
+  flat_map (fun field => match field with
+    | PatternPun n t | PatternRename _ n t => [(n, t)]
+    | PatternIgnore _ => []
+    end) fields.
+
+Inductive TypesFieldPatterns (W : world) (F : frame) (fields : list (fld * ty))
+    : list (name * option apat) -> list field_pattern_plan -> Prop :=
+| TypesFieldsEmpty : TypesFieldPatterns W F fields [] []
+| TypesFieldsPun : forall n t rest plan,
+    slook n fields = Some t -> Named F n -> TypesFieldPatterns W F fields rest plan ->
+    TypesFieldPatterns W F fields ((n, None) :: rest) (PatternPun n t :: plan)
+| TypesFieldsIgnore : forall n t rest plan,
+    slook n fields = Some t -> TypesFieldPatterns W F fields rest plan ->
+    TypesFieldPatterns W F fields ((n, Some APWild) :: rest) (PatternIgnore n :: plan)
+| TypesFieldsRename : forall n binder t rest plan,
+    slook n fields = Some t -> resolve W (fr_mod F) [binder] = None -> Named F binder ->
+    TypesFieldPatterns W F fields rest plan ->
+    TypesFieldPatterns W F fields ((n, Some (APPath [binder])) :: rest) (PatternRename n binder t :: plan).
+
+Inductive pattern_plan : Type :=
+| PatternWildcard
+| PatternBinder (binder : name) (binder_type : ty)
+| PatternNominal (tag : nat)
+| PatternPayload (tag : nat) (binder : name) (payload : ty)
+| PatternRecord (tag : nat) (fields : list field_pattern_plan).
+
+Definition pattern_bindings (plan : pattern_plan) : list (name * ty) :=
+  match plan with
+  | PatternWildcard | PatternNominal _ => []
+  | PatternBinder n t | PatternPayload _ n t => [(n, t)]
+  | PatternRecord _ fields => field_pattern_bindings fields
+  end.
+
+Definition pattern_heads (plan : pattern_plan) : list nat :=
+  match plan with
+  | PatternNominal tag | PatternPayload tag _ _ | PatternRecord tag _ => [tag]
+  | PatternWildcard | PatternBinder _ _ => []
+  end.
+
+Definition pattern_catches (plan : pattern_plan) : bool :=
+  match plan with PatternWildcard | PatternBinder _ _ => true | _ => false end.
+
+Definition pattern_scope (C : cx) (plan : pattern_plan) : cx :=
+  fold_left (fun C q => add_local C (fst q) (snd q) LLet) (pattern_bindings plan) C.
+
+Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> pattern_plan -> Prop :=
+| TypesPatternWildcard : TypesPattern W F scrutinee APWild PatternWildcard
+| TypesPatternBinder : forall n,
+    resolve W (fr_mod F) [n] = None -> Named F n ->
+    TypesPattern W F scrutinee (APPath [n]) (PatternBinder n scrutinee)
+| TypesPatternNominal : forall path tag kind arguments,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some kind ->
+    (kind = DKUnit \/ kind = DKTag) -> In (TNom tag arguments) (members scrutinee) ->
+    TypesPattern W F scrutinee (APPath path) (PatternNominal tag)
+| TypesPatternPayload : forall path tag arguments binder payload,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments payload ->
+    resolve W (fr_mod F) [binder] = None -> Named F binder ->
+    TypesPattern W F scrutinee (APTag path (APPath [binder])) (PatternPayload tag binder payload)
+| TypesPatternRecord : forall path tag arguments fields field_types plan,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments (TRecord field_types) ->
+    TypesFieldPatterns W F field_types fields plan -> NoDup (map fst (field_pattern_bindings plan)) ->
+    TypesPattern W F scrutinee (APRec (Some path) fields) (PatternRecord tag plan).
+
+(* Expressions, blocks and bindings *)
+
+Inductive expression_plan : Type :=
+| PlanUnit
+| PlanThis
+| PlanLocal (n : name)
+| PlanBlock (body : block_plan)
+| PlanIf (condition : expression_plan) (then_body : block_plan) (otherwise : option expression_plan)
+| PlanReturnUnit
+| PlanReturn (result : expression_plan)
+| PlanBreak
+| PlanDefinedCall (f : nat) (formal : cx) (needs : list item)
+    (arguments : subst) (demands : list family_use) (call_site : cx) (args : list expression_plan)
+| PlanAbstractCall (f : nat) (args : list expression_plan)
+| PlanUnitTag (tag : nat)
+| PlanTag (tag : nat) (arguments : subst) (payload : expression_plan)
+| PlanRecord (tag : nat) (arguments : subst) (fields : list (fld * expression_plan))
+| PlanField (object : expression_plan) (field : fld)
+| PlanMatch (scrutinee : expression_plan) (arms : list (pattern_plan * expression_plan))
+| PlanMethod (receiver : ty) (selected : method_call_plan) (object : expression_plan)
+    (args : list expression_plan)
+| PlanOperator (receiver : ty) (method : nat) (family : option family_use) (object : expression_plan)
+    (args : list expression_plan)
+| PlanNumeric (literal : literal_plan)
+| PlanGlobalValue (symbol : nat)
+(* A constant's initializer has its own numbering, recorded as a layout
+   witness so the bridge can reproduce the exact code at each occurrence. *)
+| PlanConstant (initializer_layout : frame) (initializer : expression_plan)
+| PlanBracketedCall (expansion : expression_plan)
+with block_plan : Type :=
+| PlanEmpty
+| PlanTail (result : expression_plan)
+| PlanLet (n : name) (declared : ty) (mode : lmut) (initializer : expression_plan) (rest : block_plan)
+| PlanAssign (n : name) (value : expression_plan) (rest : block_plan)
+| PlanExprLast (value : expression_plan)
+| PlanExprThen (value : expression_plan) (rest : block_plan)
+| PlanWhile (condition : expression_plan) (body rest : block_plan)
+| PlanLoop (body rest : block_plan)
+| PlanLoopLast (body : block_plan)
+| PlanBind (items : list binding_plan) (result : cx) (rest : block_plan)
+with binding_plan : Type :=
+| PlanTypeBind (symbol : nat) (meaning : ty)
+| PlanValueBind (site : cx) (symbol : nat) (initializer : expression_plan)
+| PlanInlineApply (items : list binding_plan)
+| PlanAbstractApply (site : cx) (application : application)
+| PlanFunctorCopy (target provider : nat) (target_context provider_context : cx)
+    (selected : item -> item) (needs : list item) (positions : list nat)
+| PlanFunctionBind (site : cx) (symbol : nat) (signature : fsig) (provider : function_provider_plan)
+| PlanAttachedBind (receiver : ty) (method : nat) (arguments : subst) (site : cx)
+    (provider : named_provider_plan)
+| PlanWrappedBind (receiver : ty) (method : nat) (arguments : subst) (site : cx)
+    (signature : fsig) (provider : wrapped_method_plan)
+| PlanFunctionLambda (site : cx) (symbol : nat) (signature : fsig) (parameters : list name)
+    (layout : frame) (provider : lambda_body_descriptor block_plan)
+| PlanMethodLambda (receiver : ty) (method : nat) (arguments : subst) (site : cx) (signature : fsig)
+    (parameters : list name) (layout : frame) (provider : lambda_body_descriptor block_plan)
+| PlanFunctorClosure (site : cx) (layout : frame) (body : linked_body_descriptor (list binding_plan))
+    (selected : item -> option item) (provider_needs : list item).
+
+Definition TypesMethodBindHeader (W : world) (F : frame) (C : cx)
+    (path : path) (label : name) (brackets : sapp) (method : nat) (receiver : ty)
+    (signature : fsig) (arguments : inst) : Prop :=
+  exists receiver_symbol readings,
+    resolve_sym W (fr_mod F) path = Some receiver_symbol /\
+    MethodNamed W (fr_mod F) receiver_symbol label method /\
+    Brackets W (fr_mod F) (c_ty C) method brackets readings /\
+    TyOf W (fr_mod F) (readings ++ c_ty C) None (ATRef path None) receiver /\
+    SigOf W method (readings ++ c_ty C) (Some receiver) signature /\
+    AppOf W method (readings ++ c_ty C) arguments /\
+    (forall u, ~ FamilyProduces W C u (mkey (canon C receiver) method)) /\
+    ~ (exists rc n ps rt b, ast_of W method = Some (ADFn rc n ps rt (Some b))).
+
+Inductive binding_activity : Type :=
+| BindValueActivity
+| BindApplyActivity (family : nat)
+| BindOtherActivity.
+
+Fixpoint binding_plan_activities (plan : binding_plan) : list binding_activity :=
+  match plan with
+  | PlanValueBind _ _ _ => [BindValueActivity]
+  | PlanAbstractApply _ application => [BindApplyActivity (app_functor application)]
+  | PlanInlineApply items => flat_map binding_plan_activities items
+  | PlanFunctionLambda _ _ _ _ _ provider | PlanMethodLambda _ _ _ _ _ _ _ provider =>
+      map (fun _ => BindValueActivity) (lambda_descriptor_captures provider) ++ [BindOtherActivity]
+  | _ => [BindOtherActivity]
+  end.
+
+Definition allowed_family_activity (W : world) (activity : binding_activity) : Prop :=
+  match activity with
+  | BindValueActivity => False
+  | BindApplyActivity family => Family W family
+  | BindOtherActivity => True
+  end.
+
+Definition FamilyBindPlans (W : world) (plans : list binding_plan) : Prop :=
+  Forall (allowed_family_activity W) (flat_map binding_plan_activities plans).
+
+Definition closure_arguments (C formal : cx) : subst :=
+  map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty formal).
+
+Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expression_plan -> ty -> Prop :=
+| TypesUnit : forall F C exp, TypesExpr W F C AEUnit exp PlanUnit TUnit
+| TypesThis : forall F C exp t, fr_this F = Some t -> TypesExpr W F C AEThis exp PlanThis t
+| TypesLocal : forall F C exp n t mu,
+    slook n (c_locals C) = Some (t, mu) -> Named F n ->
+    TypesExpr W F C (AEPath [n] None) exp (PlanLocal n) t
+| TypesBlock : forall F C exp b plan t,
+    TypesBlkE W F C b exp plan t ->
+    TypesExpr W F C (AEBlock b) exp (PlanBlock plan) (match exp with Some e => e | None => t end)
+| TypesIfThen : forall F C exp c b cp bp bt,
+    TypesCond W F C c cp -> TypesBlkE W F C b exp bp bt ->
+    opt_fits TUnit exp -> (bt = TUnit \/ bt = never) ->
+    TypesExpr W F C (AEIf c b None) exp (PlanIf cp bp None) TUnit
+| TypesIfElse : forall F C exp c b e cp bp bt ep et t,
+    TypesCond W F C c cp -> TypesBlkE W F C b exp bp bt ->
+    TypesBranch W F C e exp ep et -> opt_fits et exp -> Join (branch_ty b bt) et exp t ->
+    TypesExpr W F C (AEIf c b (Some e)) exp (PlanIf cp bp (Some ep)) t
+| TypesReturnUnit : forall F C exp, fr_ret F = Some TUnit ->
+    TypesExpr W F C (AEReturn None) exp PlanReturnUnit never
+| TypesReturn : forall F C exp e expected plan actual,
+    fr_ret F = Some expected ->
+    TypesExpr W F C e (Some expected) plan actual -> fits actual expected ->
+    TypesExpr W F C (AEReturn (Some e)) exp (PlanReturn plan) never
+| TypesBreak : forall F C exp, fr_loop F = true -> TypesExpr W F C AEBreak exp PlanBreak never
+| TypesDefinedCall : forall F C exp pa args f formal needs arguments g plans demands call_site,
+    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
+    (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
+    CtxOf W f formal needs ->
+    Demand W C (map (at_th C arguments) needs) [] C demands call_site ->
+    NeedsSatisfied call_site formal arguments needs -> CallTheta W call_site formal f arguments ->
+    SigOf W f (c_ty call_site) None g ->
+    TypesArgs W F C args (sg_params g) plans ->
+    RequirementsInForce C formal ->
+    TypesExpr W F C (AECall pa None args) exp
+      (PlanDefinedCall f formal needs arguments demands call_site plans) (sg_ret g)
+| TypesAbstractCall : forall F C exp pa args f g plans,
+    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
+    (exists n ps rt, ast_of W f = Some (ADFn RPlain n ps rt None)) ->
+    nlook f (c_fns C) = Some g -> TypesArgs W F C args (sg_params g) plans ->
+    TypesExpr W F C (AECall pa None args) exp (PlanAbstractCall f plans) (sg_ret g)
+| TypesUnitTag : forall F C exp path tag,
+    (forall n, path = [n] -> slook n (c_locals C) = None) ->
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKUnit ->
+    TypesExpr W F C (AEPath path None) exp (PlanUnitTag tag) (TNom tag [])
+| TypesTag : forall F C exp path brackets payload tag readings arguments payload_type plan actual,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
+    Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
+    PayloadOf W tag arguments payload_type ->
+    TypesExpr W F C payload (Some payload_type) plan actual -> fits actual payload_type ->
+    TypesExpr W F C (AECall path brackets [payload]) exp (PlanTag tag arguments plan) (TNom tag arguments)
+| TypesRecord : forall F C exp path brackets given tag readings arguments fields plans,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
+    Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
+    PayloadOf W tag arguments (TRecord fields) ->
+    NoDup (map fst given) -> List.length given = List.length fields ->
+    TypesRecordFields W F C given fields plans ->
+    TypesExpr W F C (AERec path brackets given) exp (PlanRecord tag arguments plans) (TNom tag arguments)
+| TypesField : forall F C exp object field plan actual payload t,
+    TypesExpr W F C object None plan actual ->
+    ((exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\
+      PayloadOf W tag arguments payload) \/ payload = actual) ->
+    (exists fields, payload = TRecord fields /\ slook field fields = Some t) ->
+    TypesExpr W F C (AEField object field) exp (PlanField plan field) t
+| TypesMatch : forall F C exp scrutinee arms plan st plans t,
+    TypesExpr W F C scrutinee None plan st -> TypesArms W F C (canon C st) arms exp plans t ->
+    TypesExpr W F C (AEMatch scrutinee arms) exp (PlanMatch plan plans) t
+| TypesMethod : forall F C exp object path args receiver object_type selected signature plans,
+    TypesExpr W F C object None receiver object_type ->
+    TypesMethodSelection W F C (canon C object_type) path selected signature ->
+    TypesArgs W F C args (sg_params signature) plans ->
+    TypesExpr W F C (AEMeth object path args) exp
+      (PlanMethod (canon C object_type) selected receiver plans) (sg_ret signature)
+| TypesUnary : forall F C exp op operand lib name method receiver object_type family signature plans,
+    operator_method op true = Some (lib, name) -> LangSym W lib NSDetached name method ->
+    TypesExpr W F C operand None receiver object_type -> head (canon C object_type) <> None ->
+    TypesMethodProvision W C (canon C object_type) method family signature ->
+    TypesArgs W F C [] (sg_params signature) plans ->
+    TypesExpr W F C (AEUnary op operand) exp
+      (PlanOperator (canon C object_type) method family receiver plans) (sg_ret signature)
+| TypesBinary : forall F C exp op left right lib name method receiver object_type family signature plans,
+    operator_method op false = Some (lib, name) -> LangSym W lib NSDetached name method ->
+    TypesExpr W F C left None receiver object_type -> head (canon C object_type) <> None ->
+    TypesMethodProvision W C (canon C object_type) method family signature ->
+    TypesArgs W F C [right] (sg_params signature) plans ->
+    TypesExpr W F C (AEBinary op left right) exp
+      (PlanOperator (canon C object_type) method family receiver plans) (sg_ret signature)
+| TypesNumeric : forall F C exp text plan t,
+    NumericText text -> TypesLiteral W C (literal_tree_of text) plan t ->
+    TypesExpr W F C (AELit text) exp (PlanNumeric plan) t
+| TypesGlobalValue : forall F C exp path symbol d name annotation t,
+    (forall n, path = [n] -> slook n (c_locals C) = None) ->
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADVal name annotation None -> nlook symbol (c_vals C) = Some t ->
+    TypesExpr W F C (AEPath path None) exp (PlanGlobalValue symbol) t
+| TypesConstant : forall F C exp path symbol d name annotation source t layout plan actual,
+    (forall n, path = [n] -> slook n (c_locals C) = None) ->
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADVal name annotation (Some source) -> d_assumes d = [] ->
+    TyOf W (d_mod d) [] None annotation t ->
+    TypesExpr W layout (Cx [] [] [] [] []) source (Some t) plan actual -> fits actual t ->
+    fr_mod layout = d_mod d -> fr_ret layout = None -> fr_this layout = None -> fr_loop layout = false ->
+    fr_fresh layout = [] -> fr_applying layout = [] -> fr_pins layout = [] ->
+    TypesExpr W F C (AEPath path None) exp (PlanConstant layout plan) t
+| TypesBracketedCall : forall F C exp path brackets args f expansion t,
+    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
+    CallBrackets W (fr_mod F) f brackets ->
+    TypesExpr W F C (Syntax.call_block path brackets args) None expansion t ->
+    TypesExpr W F C (AECall path (Some brackets) args) exp (PlanBracketedCall expansion) t
+with TypesBlkE (W : world) : frame -> cx -> ablock -> option ty -> block_plan -> ty -> Prop :=
+| TypesBlkCheck : forall F C ss tl exp plan t made,
+    TypesBlk W (without_pins F) C ss tl exp plan t made ->
+    (forall g, In g made -> ~ In g (gens t)) -> opt_fits t exp ->
+    TypesBlkE W F C (ABlock ss tl) exp plan t
+with TypesBlk (W : world) : frame -> cx -> list astmt -> option aexpr -> option ty -> block_plan -> ty -> list nat -> Prop :=
+| TypesTail : forall F C y exp plan t,
+    TypesExpr W F C y exp plan t -> TypesBlk W F C [] (Some y) exp (PlanTail plan) t []
+| TypesEmpty : forall F C exp, TypesBlk W F C [] None exp PlanEmpty TUnit []
+| TypesLet : forall F C st n ann y rest tl exp declared v vt t0 cont t made mu,
+    LetStmt st n ann y mu ->
+    (match ann with
+    | Some a => exists d, TyOf W (fr_mod F) (c_ty C) (fr_this F) a d /\ declared = Some d
+    | None => declared = None end) ->
+    TypesExpr W F C y declared v vt ->
+    (match declared with Some d => fits vt d /\ t0 = d | None => t0 = vt end) ->
+    Named F n ->
+    TypesBlk W F (add_local C n t0 mu) rest tl exp cont t made ->
+    TypesBlk W F C (st :: rest) tl exp (PlanLet n t0 mu v cont) t made
+| TypesAssign : forall F C n y rest tl exp tv v vt cont t made,
+    slook n (c_locals C) = Some (tv, LVar) ->
+    TypesExpr W F C y (Some tv) v vt -> fits vt tv ->
+    TypesBlk W F C rest tl exp cont t made -> Named F n ->
+    TypesBlk W F C (ASAssign n y :: rest) tl exp (PlanAssign n v cont) t made
+| TypesExprLast : forall F C y exp v vt,
+    TypesExpr W F C y None v vt ->
+    TypesBlk W F C [ASExpr y] None exp (PlanExprLast v) (if ty_eqb vt never then never else TUnit) []
+| TypesExprThen : forall F C y rest tl exp v vt cont t made,
+    (rest <> [] \/ tl <> None) ->
+    TypesExpr W F C y None v vt -> TypesBlk W F C rest tl exp cont t made ->
+    TypesBlk W F C (ASExpr y :: rest) tl exp (PlanExprThen v cont) t made
+| TypesWhile : forall F C c b rest tl exp cp bp bt cont t made,
+    TypesCond W F C c cp -> TypesBlkE W (with_loop F) C b None bp bt ->
+    TypesBlk W F C rest tl exp cont t made ->
+    TypesBlk W F C (ASWhile c b :: rest) tl exp (PlanWhile cp bp cont) t made
+| TypesLoop : forall F C b rest tl exp bp bt cont t made,
+    (rest <> [] \/ tl <> None \/ BlockBreaks W (fr_mod F) b) ->
+    TypesBlkE W (with_loop F) C b None bp bt ->
+    TypesBlk W F C rest tl exp cont t made ->
+    TypesBlk W F C (ASLoop b :: rest) tl exp (PlanLoop bp cont) t made
+| TypesLoopLast : forall F C b exp bp bt,
+    TypesBlkE W (with_loop F) C b None bp bt -> ~ BlockBreaks W (fr_mod F) b ->
+    TypesBlk W F C [ASLoop b] None exp (PlanLoopLast bp) never []
+| TypesBindBlock : forall F C items rest tail exp plans result F' continuation t made created,
+    TypesBindItems W F C items plans result F' made ->
+    TypesBlk W F' result rest tail exp continuation t created ->
+    TypesBlk W F C (ASBind items :: rest) tail exp (PlanBind plans result continuation) t (made ++ created)
+with TypesArgs (W : world) : frame -> cx -> list aexpr -> list ty -> list expression_plan -> Prop :=
+| TypesArgsNil : forall F C, TypesArgs W F C [] [] []
+| TypesArgsCons : forall F C a rest t ts plan plans actual,
+    TypesExpr W F C a (Some t) plan actual -> fits (canon C actual) (canon C t) ->
+    TypesArgs W F C rest ts plans -> TypesArgs W F C (a :: rest) (t :: ts) (plan :: plans)
+with TypesCond (W : world) : frame -> cx -> aexpr -> expression_plan -> Prop :=
+| TypesBool : forall F C c plan t b,
+    LangItem W LIBool b -> TypesExpr W F C c (Some (TNom b [])) plan t ->
+    fits t (TNom b []) -> TypesCond W F C c plan
+with TypesBranch (W : world) : frame -> cx -> aexpr -> option ty -> expression_plan -> ty -> Prop :=
+| TypesBranchBlock : forall F C b exp plan t,
+    TypesBlkE W F C b exp plan t ->
+    TypesBranch W F C (AEBlock b) exp (PlanBlock plan) (match exp with Some e => e | None => branch_ty b t end)
+| TypesBranchExpr : forall F C e exp plan t,
+    (forall b, e <> AEBlock b) -> TypesExpr W F C e exp plan t ->
+    TypesBranch W F C e exp plan t
+with TypesRecordFields (W : world) : frame -> cx -> list (name * option aexpr) ->
+    list (fld * ty) -> list (fld * expression_plan) -> Prop :=
+| TypesRecordFieldsEmpty : forall F C given, TypesRecordFields W F C given [] []
+| TypesRecordFieldsCons : forall F C given n t syntax plan actual rest plans,
+    In (n, syntax) given ->
+    TypesExpr W F C (match syntax with Some e => e | None => AEPath [n] None end) (Some t) plan actual ->
+    fits actual t -> TypesRecordFields W F C given rest plans ->
+    TypesRecordFields W F C given ((n, t) :: rest) ((n, plan) :: plans)
+with TypesArms (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
+    option ty -> list (pattern_plan * expression_plan) -> ty -> Prop :=
+| TypesArmsEmpty : forall F C exp,
+    TypesArms W F C never [] exp [] (match exp with Some e => e | None => never end)
+| TypesArmsSome : forall F C st arms exp plans covered catch t,
+    st <> never -> TypesArmList W F C st arms exp plans covered catch t ->
+    (catch = true \/ (members st <> [] /\ forall m h, In m (members st) -> head m = Some h -> In h covered)) ->
+    TypesArms W F C st arms exp plans t
+with TypesArmList (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
+    option ty -> list (pattern_plan * expression_plan) -> list nat -> bool -> ty -> Prop :=
+| TypesArmOne : forall F C st pat body exp pattern plan t,
+    TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan t ->
+    opt_fits t exp ->
+    TypesArmList W F C st [(pat, body)] exp [(pattern, plan)] (pattern_heads pattern) (pattern_catches pattern) t
+| TypesArmMore : forall F C st pat body rest exp pattern plan bt plans covered catch rt t,
+    rest <> [] ->
+    TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan bt ->
+    opt_fits bt exp -> TypesArmList W F C st rest exp plans covered catch rt -> Join bt rt exp t ->
+    TypesArmList W F C st ((pat, body) :: rest) exp ((pattern, plan) :: plans)
+      (pattern_heads pattern ++ covered) (pattern_catches pattern || catch) t
+with TypesBindItems (W : world) : frame -> cx -> list (spec * option aexpr) ->
+    list binding_plan -> cx -> frame -> list nat -> Prop :=
+| TypesBindEmpty : forall F C, TypesBindItems W F C [] [] C F []
+| TypesBindCons : forall F C item rest plan plans middle F1 made1 result F2 made2,
+    TypesBindItem W F C item plan middle F1 made1 ->
+    TypesBindItems W F1 middle rest plans result F2 made2 ->
+    TypesBindItems W F C (item :: rest) (plan :: plans) result F2 (made1 ++ made2)
+with TypesBindItem (W : world) : frame -> cx -> (spec * option aexpr) ->
+    binding_plan -> cx -> frame -> list nat -> Prop :=
+| TypesBindType : forall F C path symbol right arguments meaning,
+    resolve_sym W (fr_mod F) path = Some symbol -> kind_sym W symbol = Some DKType ->
+    ~ In symbol (fr_pins F) ->
+    TyOf W (fr_mod F) (c_ty C) None (ATRef right arguments) meaning ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath right arguments))
+      (PlanTypeBind symbol (canon C meaning)) (set_ty C symbol (canon C meaning)) F []
+| TypesBindValue : forall F C path symbol d name annotation initializer declared source plan actual arguments,
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADVal name annotation initializer ->
+    TyOf W (d_mod d) (c_ty C) None annotation declared ->
+    TypesExpr W F C source (Some declared) plan actual -> fits actual declared ->
+    AppOf W symbol (c_ty C) arguments ->
+    TypesBindItem W F C (Spec (Some path) None None, Some source) (PlanValueBind C symbol plan)
+      (provide C (IVal symbol) arguments (set_val C symbol declared)) F []
+| TypesBindInlineApply : forall F C path symbol d name parameters inputs outputs bodies plans result nested made,
+    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
+    d_ast d = ADFunctor name parameters inputs outputs (Some bodies) -> ~ In symbol (fr_applying F) ->
+    TypesBindItems W (with_mod F (d_mod d) symbol) C (List.concat bodies) plans result nested made ->
+    TypesBindItem W F C (Spec (Some path) None None, None) (PlanInlineApply plans)
+      result (carry_frame_allocations F nested) made
+| TypesBindAbstractApply : forall F C path plan,
+    TypesApplication W F C path plan ->
+    TypesBindItem W F C (Spec (Some path) None None, None) (PlanAbstractApply C plan) (app_result plan)
+      (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) (app_allocated plan)))
+      (map (app_identity plan) (app_outputs plan))
+| TypesBindFunctorCopy : forall F C path u provider h Cu nsu Ch nsh target fixed positions,
+    resolve_sym W (fr_mod F) path = Some u -> resolve_sym W (fr_mod F) provider = Some h ->
+    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) -> nlook h (c_funs C) <> None ->
+    FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
+    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
+    (forall x, Fixed W h x -> Fixed W u x) -> FixedAgreement W C h -> SameResult W u h ->
+    (forall x t, In (x, t) fixed <-> Fixed W u x /\ nlook x (c_ty C) = Some t) ->
+    (forall x t, nlook x (c_ty Ch) = Some t -> nlook x (c_ty Cu) <> None) ->
+    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fixed) u h Cu nsu nsh Ch positions target ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
+      (PlanFunctorCopy u h Cu Ch target nsh positions) (set_fun C u fixed) F []
+| TypesBindFunction : forall F C path f signature provider plan arguments,
+    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
+    SigOf W f (c_ty C) None signature -> TypesFunctionProvider W F C provider signature plan ->
+    AppOf W f (c_ty C) arguments ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
+      (PlanFunctionBind C f signature plan) (provide C (IFn f) arguments (set_fn C f signature)) F []
+| TypesBindAttached : forall F C path label brackets method receiver signature arguments provider name site plan,
+    TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
+    TypesAttachedMethodPlan W F C provider name receiver signature site plan ->
+    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AEField (AEPath provider None) name))
+      (PlanAttachedBind (canon C receiver) method (theta_of C arguments) site plan)
+      (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
+| TypesBindWrapped : forall F C path label brackets method receiver signature arguments provider plan,
+    TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
+    TypesWrappedMethodPlan W F C provider signature plan ->
+    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AEPath provider None))
+      (PlanWrappedBind (canon C receiver) method (theta_of C arguments) C signature plan)
+      (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
+| TypesBindFunctionLambda : forall F C path f signature ps ann body arguments layout provider result,
+    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
+    SigOf W f (c_ty C) None signature -> AppOf W f (c_ty C) arguments ->
+    TypesLambdaHeader W F C ps ann body signature None layout provider result ->
+    TypesBlkE W layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
+      (Some (sg_ret signature)) (lambda_source_body provider) result ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AELam ps ann body))
+      (PlanFunctionLambda C f signature (map fst ps) layout provider)
+      (provide C (IFn f) arguments (set_fn C f signature)) F []
+| TypesBindMethodLambda : forall F C path label brackets method receiver signature arguments ps ann body layout provider result,
+    TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
+    TypesLambdaHeader W F C ps ann body signature (Some receiver) layout provider result ->
+    TypesBlkE W layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
+      (Some (sg_ret signature)) (lambda_source_body provider) result ->
+    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AELam ps ann body))
+      (PlanMethodLambda (canon C receiver) method (theta_of C arguments) C signature (map fst ps) layout provider)
+      (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
+| TypesBindClosure : forall F C path provider layout descriptor target_needs provider_needs
+    selected fixed items result nested made,
+    let handle := linked_handle descriptor in
+    let u := linked_target_symbol handle in
+    let g := linked_provider_symbol handle in
+    let Cu := linked_target_context descriptor in
+    let Cg := linked_provider_context descriptor in
+    let pins := link_plan_pins (linked_result_reading descriptor) in
+    resolve_sym W (fr_mod F) path = Some u -> resolve_sym W (fr_mod F) provider = Some g ->
+    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
+    w_context W u = Some (Cu, target_needs) -> w_context W g = Some (Cg, provider_needs) ->
+    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
+    SameResult W u g ->
+    LinkBinding W u Cu target_needs Cg provider_needs
+      (map (fun q => (fst q, canon C (snd q))) fixed) (link_private_readings C Cu Cg)
+      (link_adopted_inputs C Cu Cg) selected ->
+    TypesLinkedHeader W layout descriptor items result made ->
+    (Family W u -> FamilyBindPlans W (linked_bind_plan descriptor)) ->
+    TypesBindItems W layout Cg items (linked_bind_plan descriptor) result nested made ->
+    NeedsSatisfied C Cg (closure_arguments C Cg) (captured_needs selected provider_needs) ->
+    (forall x t, In (x, t) fixed <-> Fixed W u x /\ nlook x (c_ty C) = Some t) ->
+    (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> InForceThrough C Cg x) ->
+    (forall x t, In (x, t) pins -> exists here, nlook x (c_ty C) = Some here /\
+      (forall y, In y (gens t) -> nlook y (c_ty C) <> None) /\
+      canon C here = canon C (app_subst (closure_arguments C Cg) t)) ->
+    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
+      (PlanFunctorClosure C layout descriptor selected provider_needs) (set_fun C u fixed) F [].
+
+(* Declared functions and constant initializers *)
+
+Definition FunctionReceiver (W : world) (f : nat) (rcv : fnrecv)
+    (n : name) (C : cx) (this : option ty) : Prop :=
+  match rcv with
+  | RAttached _ => exists r args,
+      Attached W r n f /\ (kind_sym W r = Some DKTag \/ kind_sym W r = Some DKUnit) /\
+      this = Some (TNom r args) /\
+      Forall2 (fun x xa => fst xa = x /\ nlook x (c_ty C) = Some (snd xa)) (w_reqs W r) args
+  | _ => this = None
+  end.
+
+Record function_plan := FunctionPlan {
+  function_context : cx;
+  function_needs : list item;
+  function_receiver : option ty;
+  function_signature : fsig;
+  function_layout : frame;
+  function_body : block_plan;
+  function_result : ty
+}.
+
+Definition function_parameters (parameters : list name) (plan : function_plan) : cx :=
+  fold_left (fun C q => add_local C (fst q) (snd q) LLet)
+    (combine parameters (sg_params (function_signature plan))) (function_context plan).
+
+Definition TypesFunction (W : world) (f : nat) (d : decl) (receiver : fnrecv) (n : name)
+    (parameters : list name) (body : ablock) (plan : function_plan) : Prop :=
+  let F := function_layout plan in
+  let C := function_context plan in
+  let g := function_signature plan in
+  CtxOf W f C (function_needs plan) /\
+  FunctionReceiver W f receiver n C (function_receiver plan) /\
+  SigOf W f (c_ty C) (function_receiver plan) g /\
+  fr_mod F = d_mod d /\ fr_ret F = Some (sg_ret g) /\ fr_this F = function_receiver plan /\
+  fr_loop F = false /\ fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [] /\
+  TypesBlkE W F (function_parameters parameters plan) body (Some (sg_ret g))
+    (function_body plan) (function_result plan).
+
+Record constant_plan := ConstantPlan {
+  constant_layout : frame;
+  constant_body : expression_plan;
+  constant_declared : ty;
+  constant_actual : ty
+}.
+
+Definition TypesConstantInitializer (W : world) (d : decl) (annotation : aty) (initial : aexpr)
+    (plan : constant_plan) : Prop :=
+  let F := constant_layout plan in
+  let C := Cx [] [] [] [] [] in
+  d_assumes d = [] /\ TyOf W (d_mod d) [] None annotation (constant_declared plan) /\
+  TypesExpr W F C initial (Some (constant_declared plan)) (constant_body plan) (constant_actual plan) /\
+  fits (constant_actual plan) (constant_declared plan) /\
+  fr_mod F = d_mod d /\ fr_ret F = None /\ fr_this F = None /\
+  fr_loop F = false /\ fr_fresh F = [] /\ fr_applying F = [] /\ fr_pins F = [].
+
+Set Implicit Arguments.
 
 End Typing.
 
@@ -6150,7 +5935,300 @@ Fixpoint emit_literal (C : cx) (plan : literal_plan) : expr :=
   | PlanLiteralFloat f operand => EInvoke f [emit_literal C operand]
   end.
 
+Unset Implicit Arguments.
+
+(* Pattern layout *)
+
+Definition local_number (slots : list (name * nat)) (n : name) : nat :=
+  match slook n slots with Some slot => slot | None => 0 end.
+
+Definition emit_field_patterns (slots : list (name * nat)) (fields : list field_pattern_plan) : list (fld * var) :=
+  flat_map (fun field => match field with
+    | PatternPun n _ => [(n, local_number slots n)]
+    | PatternRename n binder _ => [(n, local_number slots binder)]
+    | PatternIgnore _ => []
+    end) fields.
+
+Definition translate_field_patterns (F : frame) :=
+  emit_field_patterns (fr_var F).
+
+Definition emit_pattern (slots : list (name * nat)) (plan : pattern_plan) : pattern :=
+  match plan with
+  | PatternWildcard => PAny None
+  | PatternBinder n _ => PAny (Some (local_number slots n))
+  | PatternNominal tag => PHead tag None []
+  | PatternPayload tag n _ => PHead tag (Some (local_number slots n)) []
+  | PatternRecord tag fields => PHead tag None (emit_field_patterns slots fields)
+  end.
+
+Definition translate_pattern (F : frame) := emit_pattern (fr_var F).
+
+(* Code and its placement requirements *)
+
+Definition splice_bindings (bindings : list binding) (body : expr) : expr := fold_right EBind body bindings.
+
+Definition application_binding (C : cx) (a : application) : binding :=
+  BApply (app_functor a) (app_arguments a) (map (fun t => (t, app_identity a t)) (app_outputs a))
+    (satisfaction_map C (app_input a) (app_arguments a) (app_needs a))
+    (map (rkey_of (app_result a)) (app_provisions a)).
+
+Inductive placement_requirement : Type :=
+| PlaceFunction (slot : nat) (body : expr) (section : option subst)
+| PlaceFunctor (slot : nat) (body : functor_code) (source : nat * nat)
+| PlaceLayout (layout : frame) (receiver : option ty) (parameters : list name).
+
+Definition placement_in (W : world) (P : program) (requirement : placement_requirement) : Prop :=
+  match requirement with
+  | PlaceFunction slot body section =>
+      Fresh W slot /\ body_of P slot = Some body /\
+      match section with
+      | Some reads => nlook slot (lambda_sections (program_origins P)) = Some reads
+      | None => True
+      end
+  | PlaceFunctor slot body source =>
+      Fresh W slot /\ funbody_of P slot = Some body /\
+      nlook slot (linked_origins (program_origins P)) = Some source
+  | PlaceLayout layout receiver parameters => Numbering layout receiver parameters
+  end.
+
+Definition placements_in (W : world) (P : program) :=
+  Forall (placement_in W P).
+
+Definition function_placements (resolve : nat -> nat) (signature : fsig)
+    (provider : function_provider_plan) : list placement_requirement :=
+  match provider with
+  | NamedFunctionProvider _ => []
+  | AbstractFunctionForwarder occurrence handle =>
+      [PlaceFunction (resolve occurrence) (forwarder_body handle signature) None]
+  end.
+
+Record emission (A : Type) := Emission {
+  emitted_code : A;
+  emitted_placements : list placement_requirement
+}.
+Arguments Emission {A}.
+Arguments emitted_code {A}.
+Arguments emitted_placements {A}.
+
+Definition emit_only {A} (code : A) : emission A := Emission code [].
+
+Definition emit_map {A B} (make : A -> B) (source : emission A) : emission B :=
+  Emission (make (emitted_code source)) (emitted_placements source).
+
+Definition emit_pair {A B C} (make : A -> B -> C) (first : emission A) (second : emission B) : emission C :=
+  Emission (make (emitted_code first) (emitted_code second))
+    (emitted_placements first ++ emitted_placements second).
+
+Definition emit_each {A B} (emit : A -> emission B) (sources : list A) : emission (list B) :=
+  Emission (map (fun source => emitted_code (emit source)) sources)
+    (flat_map (fun source => emitted_placements (emit source)) sources).
+
+Definition emit_flat {A B} (emit : A -> emission (list B)) (sources : list A) : emission (list B) :=
+  Emission (flat_map (fun source => emitted_code (emit source)) sources)
+    (flat_map (fun source => emitted_placements (emit source)) sources).
+
+Definition require_placement {A} (requirement : placement_requirement) (source : emission A) : emission A :=
+  Emission (emitted_code source) (requirement :: emitted_placements source).
+
+Definition lambda_capture_bindings (slots : list (name * nat)) (provider : lambda_body_descriptor block_plan) :=
+  map (fun '(n, symbol) => BValue symbol (EVar (local_number slots n)))
+    (lambda_descriptor_captures provider).
+
+Definition lambda_binding_placements (resolve : nat -> nat) (site : cx) (parameters : list name)
+    (layout : frame) (provider : lambda_body_descriptor block_plan) (body : emission expr) :=
+  PlaceLayout layout (fr_this layout) parameters ::
+  PlaceFunction (resolve (lambda_occurrence provider))
+    (lambda_descriptor_code layout provider (emitted_code body)) (Some (c_sub site)) ::
+  emitted_placements body.
+
+Definition emit_lambda_binding (resolve : nat -> nat) (slots : list (name * nat)) (site : cx)
+    (parameters : list name) (layout : frame) (provider : lambda_body_descriptor block_plan)
+    (body : emission expr) (make : nat -> smap -> binding) : emission (list binding) :=
+  Emission (lambda_capture_bindings slots provider ++
+    [make (resolve (lambda_occurrence provider)) (lambda_descriptor_needs site provider)])
+    (lambda_binding_placements resolve site parameters layout provider body).
+
+Definition linked_binding_placements (resolve : nat -> nat) (layout : frame)
+    (descriptor : linked_body_descriptor (list binding_plan)) (body : emission (list binding)) :=
+  let handle := linked_handle descriptor in
+  PlaceLayout layout None [] ::
+  PlaceFunctor (resolve (linked_occurrence handle))
+    (linked_descriptor_code descriptor (emitted_code body))
+    (linked_target_symbol handle, linked_provider_symbol handle) ::
+  emitted_placements body.
+
+Fixpoint emit_expr (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
+    (plan : expression_plan) : emission expr :=
+  match plan with
+  | PlanUnit => emit_only EUnit
+  | PlanThis => emit_only (EVar 0)
+  | PlanLocal n => emit_only (EVar (local_number slots n))
+  | PlanBlock body => emit_block resolve slots C body
+  | PlanIf condition body other =>
+      let otherwise := match other with
+        | Some plan => emit_expr resolve slots C plan
+        | None => emit_only EUnit
+        end in
+      emit_pair (fun '(test, yes) no => EIf test yes no)
+        (emit_pair pair (emit_expr resolve slots C condition) (emit_block resolve slots C body))
+        otherwise
+  | PlanReturnUnit => emit_only (EReturn EUnit)
+  | PlanReturn result => emit_map EReturn (emit_expr resolve slots C result)
+  | PlanBreak => emit_only EBreak
+  | PlanDefinedCall f formal needs arguments demands call_site args =>
+      emit_map (fun values => translate_demands C demands (translate_call call_site formal f arguments needs values))
+        (emit_each (emit_expr resolve slots C) args)
+  | PlanAbstractCall f args => emit_map (EInvoke f) (emit_each (emit_expr resolve slots C) args)
+  | PlanUnitTag tag => emit_only (ETag tag [] EUnit)
+  | PlanTag tag arguments payload => emit_map (ETag tag arguments) (emit_expr resolve slots C payload)
+  | PlanRecord tag arguments fields =>
+      emit_map (fun values => ETag tag arguments (ERecord values))
+        (emit_each (fun '(n, child) => emit_map (pair n) (emit_expr resolve slots C child)) fields)
+  | PlanField object field => emit_map (fun value => EField value field) (emit_expr resolve slots C object)
+  | PlanMatch scrutinee arms =>
+      emit_pair EMatch (emit_expr resolve slots C scrutinee)
+        (emit_each (fun '(pattern, body) => emit_map (pair (emit_pattern slots pattern))
+          (emit_expr resolve slots (pattern_scope C pattern) body)) arms)
+  | PlanMethod receiver selected object args =>
+      emit_pair (emit_method_call C receiver selected) (emit_expr resolve slots C object)
+        (emit_each (emit_expr resolve slots C) args)
+  | PlanOperator receiver method family object args =>
+      emit_pair (emit_provided_method C receiver method family) (emit_expr resolve slots C object)
+        (emit_each (emit_expr resolve slots C) args)
+  | PlanNumeric literal => emit_only (emit_literal C literal)
+  | PlanGlobalValue symbol => emit_only (EVal symbol)
+  | PlanConstant layout initializer =>
+      require_placement (PlaceLayout layout None [])
+        (emit_expr resolve (fr_var layout) (Cx [] [] [] [] []) initializer)
+  | PlanBracketedCall expansion => emit_expr resolve slots C expansion
+  end
+with emit_block (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
+    (plan : block_plan) : emission expr :=
+  match plan with
+  | PlanEmpty => emit_only EUnit
+  | PlanTail result => emit_expr resolve slots C result
+  | PlanLet n t mode initializer rest =>
+      emit_pair (ELet (local_number slots n)) (emit_expr resolve slots C initializer)
+        (emit_block resolve slots (add_local C n t mode) rest)
+  | PlanAssign n value rest =>
+      emit_pair (fun value => ESeq (EAssign (local_number slots n) value))
+        (emit_expr resolve slots C value) (emit_block resolve slots C rest)
+  | PlanExprLast value => emit_map (fun value => ESeq value EUnit) (emit_expr resolve slots C value)
+  | PlanExprThen value rest =>
+      emit_pair ESeq (emit_expr resolve slots C value) (emit_block resolve slots C rest)
+  | PlanWhile condition body rest =>
+      emit_pair ESeq (emit_pair EWhile (emit_expr resolve slots C condition) (emit_block resolve slots C body))
+        (emit_block resolve slots C rest)
+  | PlanLoop body rest =>
+      emit_pair (fun body => ESeq (ELoop body)) (emit_block resolve slots C body) (emit_block resolve slots C rest)
+  | PlanLoopLast body => emit_map (fun body => ESeq (ELoop body) EUnit) (emit_block resolve slots C body)
+  | PlanBind items result rest =>
+      emit_pair splice_bindings (emit_flat (emit_bind_item resolve slots) items) (emit_block resolve slots result rest)
+  end
+with emit_bind_item (resolve : nat -> nat) (slots : list (name * nat)) (plan : binding_plan)
+    : emission (list binding) :=
+  match plan with
+  | PlanTypeBind symbol meaning => emit_only [BType symbol meaning]
+  | PlanValueBind site symbol initializer =>
+      emit_map (fun value => [BValue symbol value]) (emit_expr resolve slots site initializer)
+  | PlanInlineApply items => emit_flat (emit_bind_item resolve slots) items
+  | PlanAbstractApply site plan => emit_only [application_binding site plan]
+  | PlanFunctorCopy target provider Cu Ch selected needs positions =>
+      emit_only [BCopyFunctor target provider (map (fun k => (rkey_of Ch k, rkey_of Cu (selected k))) needs) positions]
+  | PlanFunctionBind site symbol signature provider =>
+      Emission [BFunction symbol (function_plan_target resolve provider)
+        (function_plan_capture provider) (function_plan_provisions site provider)]
+        (function_placements resolve signature provider)
+  | PlanAttachedBind receiver method arguments site provider =>
+      emit_only [BMethod receiver method arguments (provider_symbol provider)
+        (named_provider_capture provider) (named_provider_provisions site provider)]
+  | PlanWrappedBind receiver method arguments site signature provider =>
+      let named := wrapped_method_provider provider in
+      let slot := resolve (wrapped_method_occurrence provider) in
+      Emission [BMethod receiver method arguments slot (named_provider_capture named)
+        (named_provider_provisions site named)] [PlaceFunction slot (wrapped_method_code signature provider) None]
+  | PlanFunctionLambda site symbol signature parameters layout provider =>
+      let body_site := lambda_parameter_context (lambda_plan_capture_context provider) parameters (sg_params signature) in
+      emit_lambda_binding resolve slots site parameters layout provider
+        (emit_block resolve (fr_var layout) body_site (lambda_source_body provider))
+        (fun target needs => BFunction symbol target (lexical_capture site) needs)
+  | PlanMethodLambda receiver method arguments site signature parameters layout provider =>
+      let body_site := lambda_parameter_context (lambda_plan_capture_context provider) parameters (sg_params signature) in
+      emit_lambda_binding resolve slots site parameters layout provider
+        (emit_block resolve (fr_var layout) body_site (lambda_source_body provider))
+        (fun target needs => BMethod receiver method arguments target (lexical_capture site) needs)
+  | PlanFunctorClosure site layout descriptor selected needs =>
+      let handle := linked_handle descriptor in
+      let Cu := linked_target_context descriptor in
+      let Cg := linked_provider_context descriptor in
+      let body := emit_flat (emit_bind_item resolve (fr_var layout)) (linked_bind_plan descriptor) in
+      Emission [BFunctor (linked_target_symbol handle) (resolve (linked_occurrence handle)) (lexical_capture site)
+        (link_map Cu Cg selected needs)
+        (satisfaction_map site Cg (closure_arguments site Cg) (captured_needs selected needs))]
+        (linked_binding_placements resolve layout descriptor body)
+  end.
+
+Definition expression_emission (resolve : nat -> nat) (F : frame) := emit_expr resolve (fr_var F).
+Definition block_emission (resolve : nat -> nat) (F : frame) := emit_block resolve (fr_var F).
+Definition argument_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
+  emit_each (expression_emission resolve F C).
+Definition record_fields_emission (resolve : nat -> nat) (F : frame) (C : cx)
+    (fields : list (fld * expression_plan)) :=
+  emit_each (fun '(n, child) => emit_map (pair n) (expression_emission resolve F C child)) fields.
+Definition arms_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
+  emit_each (fun '(pattern, body) => emit_map (pair (translate_pattern F pattern))
+    (expression_emission resolve F (pattern_scope C pattern) body)).
+Definition bind_item_emission (resolve : nat -> nat) (F : frame) := emit_bind_item resolve (fr_var F).
+Definition bind_items_emission (resolve : nat -> nat) (F : frame) :=
+  emit_flat (bind_item_emission resolve F).
+
+(* Declared functions and constant initializers *)
+
+Definition emit_function (resolve : nat -> nat) (parameters : list name)
+    (plan : function_plan) : emission expr :=
+  block_emission resolve (without_pins (function_layout plan)) (function_parameters parameters plan)
+    (function_body plan).
+
+Definition TranslatesFunction (W : world) (P : program) (resolve : nat -> nat) (f : nat)
+    (parameters : list name) (plan : function_plan) : Prop :=
+  let output := emit_function resolve parameters plan in
+  Numbering (function_layout plan) (function_receiver plan) parameters /\
+  placements_in W P (emitted_placements output) /\
+  body_of P f = Some (emitted_code output).
+
+Definition emit_constant (resolve : nat -> nat) (plan : constant_plan) : emission expr :=
+  expression_emission resolve (constant_layout plan) (Cx [] [] [] [] []) (constant_body plan).
+
+Definition TranslatesConstant (W : world) (P : program) (resolve : nat -> nat)
+    (plan : constant_plan) : Prop :=
+  Numbering (constant_layout plan) None [] /\
+  placements_in W P (emitted_placements (emit_constant resolve plan)).
+
+Set Implicit Arguments.
+
 End Translation.
+
+Unset Implicit Arguments.
+
+Definition FunctionPlanAt (W : world) (P : program) (resolve : nat -> nat) (f : nat) : Prop :=
+  forall d receiver n parameters annotation body,
+    w_decl W f = Some d -> d_ast d = ADFn receiver n parameters annotation (Some body) ->
+    exists plan, TypesFunction W f d receiver n (map fst parameters) body plan /\
+      TranslatesFunction W P resolve f (map fst parameters) plan.
+
+Definition ConstantPlanAt (W : world) (P : program) (resolve : nat -> nat)
+    (d : decl) (annotation : aty) (initial : aexpr) : Prop :=
+  exists plan, TypesConstantInitializer W d annotation initial plan /\
+    TranslatesConstant W P resolve plan.
+
+(* One resolution assigns the generated body occurrences their slots. *)
+Definition ElaboratesIn (bundle : bundle) (W : world) (P : program) : Prop :=
+  exists resolve, ElaboratesWith bundle W P (FunctionPlanAt W P resolve) (ConstantPlanAt W P resolve).
+
+Set Implicit Arguments.
+
+Definition Elaborates (b : bundle) (P : program) : Prop :=
+  exists W, ElaboratesIn b W P.
 
 End Elaboration.
 
@@ -6353,13 +6431,11 @@ Module PublicFor (Pf : PLATFORM) (Host : HOST_FOR Pf).
   (* The build target is this platform. source declarations and primitive
      bindings are checked against one shared static reading of the bundle.
      The prelude is fixed configuration and is read through source too. *)
-  Definition BuildsWith (elaborates : Input.bundle -> Elaboration.world -> program -> Prop) (prelude : file_path) (source : source) (entry : file_path)
+  Definition Builds (prelude : file_path) (source : source) (entry : file_path)
       (program : program) : Prop :=
     exists bundle world,
       Loader.Bundled (source_read source) "/" (path_text prelude) (path_text entry) bundle /\
-      elaborates bundle world program /\ Link.Linked world program.
-
-  Definition Builds := BuildsWith Elaboration.ElaboratesIn.
+      Elaboration.ElaboratesIn bundle world program /\ Link.Linked world program.
 
   Definition Admissible (prelude : file_path) (program : program) : Prop :=
     exists source entry, Builds prelude source entry program.

@@ -29,6 +29,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd
   PublicLinkResults PublicChainCore PublicLinkScope.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EagerCopy PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig.
 From NM Require PublicMergeClass.
@@ -817,7 +818,7 @@ Variables (h0 gg : nat) (Ch0 Cg Cb : A.cx) (nsh0 nsg : list item) (Fg Fb : A.fra
   (pins : subst).
 Hypothesis FCh0 : A.FunCtx W h0 Ch0 nsh0.
 Hypothesis FCg : A.FunCtx W gg Cg nsg.
-Hypothesis Items : A.BindItems W Prog Fg Cg its wrap Cb Fb made.
+Hypothesis Items : LegacyBodyJudgments.BindItems W Prog Fg Cg its wrap Cb Fb made.
 Hypothesis FrGf : PublicFormation.FrameFormed W Fg.
 Hypothesis MadeOut : forall t, In t made -> A.nlook t (A.c_ty Ch0) = None.
 Hypothesis FrGen : forall t, In t outs -> A.Fresh W (gen t).

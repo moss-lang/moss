@@ -10,6 +10,7 @@
      inputs are the application's. *)
 From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicCallRealize PublicCopyFresh PublicCopySubst.
+From NM Require Import LegacyBodyJudgments.
 From NM Require PublicChainCore PublicLinkPins PublicFamilyAgree.
 From NM Require Import PublicContextFacts.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -143,7 +144,7 @@ Qed.
 (* With LinkBody's made clause: every input of F keeps its meaning. *)
 Lemma body_meaning_input : forall W Prog (Cu : A.cx) Fg Cg its wrap Cb Fb made binds,
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
-  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  LegacyBodyJudgments.BindItems W Prog Fg Cg its wrap Cb Fb made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds ->
   forall j Pv d g st d' g' st', CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j Pv d g st binds = inl (d', g', st') ->
   forall x, A.nlook x (A.c_ty Cu) <> None ->
   lookup_subst x (type_meanings d') = lookup_subst x (type_meanings d).
@@ -158,7 +159,7 @@ Qed.
    environment gives it: θ's reading when F links it, else the closure's. *)
 Lemma link_own_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
-  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  LegacyBodyJudgments.BindItems W Prog Fg Cg its wrap Cb Fb made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.link_input_table Cu Cg) Dr binds srcs) ->
   forall (th : subst), (forall y, In y (map fst (A.c_ty Cu)) -> lookup_subst y th <> None) ->
@@ -190,7 +191,7 @@ Qed.
    LinkBody's made clause, which keeps F's inputs through the body. *)
 Lemma link_input_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
-  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  LegacyBodyJudgments.BindItems W Prog Fg Cg its wrap Cb Fb made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds ->
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.link_input_table Cu Cg) Dr binds srcs) ->
@@ -217,7 +218,7 @@ Qed.
    meanings as its θ reading grounds in the caller's. *)
 Corollary link_run_fact : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
-  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  LegacyBodyJudgments.BindItems W Prog Fg Cg its wrap Cb Fb made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds ->
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.link_input_table Cu Cg) Dr binds srcs) ->

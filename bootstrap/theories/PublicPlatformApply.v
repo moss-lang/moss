@@ -29,6 +29,7 @@
    wherever the fixed machine inputs read as the machine types). *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require AuditFacts.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import AuditBase PublicPrimitiveFamily.
 From NM Require PublicContextFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
@@ -325,7 +326,7 @@ Definition ChainPrimsOk : Prop :=
    linked body's binds come from source items, none a primitive
    (platform_not_linked). Needed only to tell a closure's root apart. *)
 Definition PlatformNotLinked : Prop :=
-  forall h0 code u gg pins fc, Platform.Family W Prog h0 code -> A.LinkBody W Prog u gg code pins ->
+  forall h0 code u gg pins fc, Platform.Family W Prog h0 code -> LegacyBodyJudgments.LinkBody W Prog u gg code pins ->
   A.funbody_of Prog code = Some fc -> fc_bindings fc = [].
 
 (* The concrete family contract supplies the generic code shape. *)

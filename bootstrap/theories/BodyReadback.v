@@ -2,6 +2,7 @@
    follows derivations, including the elaboration of a bracket expansion. *)
 From Stdlib Require Import List String.
 From NM Require Import Audit BodyTyping BodyMethodTyping BodyLiteralTyping.
+From NM Require Import LegacyBodyJudgments.
 From NM Require BodyFunctionProviderTyping BodyProviderTyping.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
@@ -38,18 +39,19 @@ Proof.
   exact Recorded.
 Qed.
 
-Local Lemma linked_header_contexts : forall layout descriptor items result nested made,
-  TypesLinkedHeader W layout descriptor items result nested made ->
+Local Lemma linked_header_contexts : forall layout
+    (descriptor : linked_body_descriptor (list binding_plan)) items result made,
+  TypesLinkedHeader W layout descriptor items result made ->
   exists target_needs provider_needs,
     w_context W (linked_target_symbol (linked_handle descriptor)) =
       Some (linked_target_context descriptor, target_needs) /\
     w_context W (linked_provider_symbol (linked_handle descriptor)) =
       Some (linked_provider_context descriptor, provider_needs).
 Proof.
-  intros layout descriptor items result nested made Typed.
-  destruct Typed as [d name parameters inputs outputs bodies target_needs provider_needs Cb Fb created gen promised
-    target provider Cu Cg outs reading plan Declared Ast Target Provider Module Ret This Loop Protected
-    Shape NoInput Outputs Checked FamilyAllowed].
+  intros layout descriptor items result made Typed.
+  destruct Typed as [d name parameters inputs outputs bodies target_needs provider_needs Cb created gen promised
+    target provider Cu Cg outs reading Declared Ast Target Provider Module Ret This Loop Protected
+    NoInput Outputs Checked].
   exists target_needs, provider_needs. split; now apply functor_context_recorded.
 Qed.
 
@@ -109,7 +111,8 @@ with read_linked_body target provider slot pins (D : LinkBody W P target provide
   exists layout descriptor items result nested made,
     linked_handle descriptor = LinkedBodyOf target provider slot /\
     link_plan_pins (linked_result_reading descriptor) = pins /\
-    TypesLinkedHeader W layout descriptor items result nested made /\
+    TypesLinkedHeader W layout descriptor items result made /\
+    (Family W target -> FamilyBindPlans W (linked_bind_plan descriptor)) /\
     TypesBindItems W layout (linked_provider_context descriptor) items (linked_bind_plan descriptor)
       result nested made /\
     placements_in W P (linked_binding_placements identity_slots layout descriptor
@@ -403,8 +406,8 @@ Proof.
       split; [eapply TypesBindFunctorCopy; eassumption|split; [reflexivity|finish_placements]].
     + subst linked. destruct Captured as [CapturedMap Captured]. subst captured.
       destruct (read_linked_body _ _ _ _ Linked)
-        as (layout & descriptor & items & result & nested & made & Handle & Pins & Header & Binds & Placed).
-      destruct (linked_header_contexts _ _ _ _ _ _ Header)
+        as (layout & descriptor & items & result & nested & made & Handle & Pins & Header & FamilyPlan & Binds & Placed).
+      destruct (linked_header_contexts _ _ _ _ _ Header)
         as (target_needs & provider_needs & TargetRead & ProviderRead).
       rewrite Handle in TargetRead, ProviderRead. cbn in TargetRead, ProviderRead.
       assert (Target : linked_target_context descriptor = Cu) by congruence.
@@ -426,7 +429,7 @@ Proof.
     destruct (read_block_expression _ _ _ _ _ _ Body) as (plan & Typed & <- & Placed).
     exists layout, (LambdaBodyOf slot caps capvals Cl plan keys), body_type.
     split; [reflexivity|]. split.
-    + eapply TLP; cbn beta zeta in *; first [eassumption|reflexivity].
+    + eapply TLambdaHeader; cbn beta zeta in *; eassumption.
     + split; [exact Typed|]. split; [reflexivity|]. split; [reflexivity|].
       unfold lambda_binding_placements. rewrite This. finish_placements.
   - destruct D as [target provider slot d name parameters inputs outputs bodies Cu target_needs Cg provider_needs
@@ -439,14 +442,14 @@ Proof.
       (LinkedResultPlan pins (link_site Cg Cb pins outs gen) keys) plans),
       (List.concat bodies), Cb, Fb, made.
     split; [reflexivity|]. split; [reflexivity|]. split.
-    + eapply TLB; cbn beta zeta in *; try eassumption.
-      * repeat split.
-      * constructor; cbn [link_plan_keys link_plan_site link_plan_pins]; try eassumption; reflexivity.
+    + eapply TLinkedHeader; cbn beta zeta in *; try eassumption.
+      constructor; cbn [link_plan_keys link_plan_site link_plan_pins]; try eassumption; reflexivity.
+    + split.
       * intro Family. apply (proj2 (family_bind_emission_exact W identity_slots layout plans)).
         now apply FamilyAllowed.
-    + split; [exact Typed|].
-      destruct Translated as [Fresh [Code Origin]].
-      unfold linked_binding_placements. finish_placements.
+      * split; [exact Typed|].
+        destruct Translated as [Fresh [Code Origin]].
+        unfold linked_binding_placements. finish_placements.
 Qed.
 
 Theorem expression_has_plan : forall F C source expected code t,

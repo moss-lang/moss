@@ -25,6 +25,7 @@
      valuation reads x. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require AuditFacts.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicTagCheck
   PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply PublicFamilyAgree PublicChainNew PublicChainFwd
   PublicLinkResults PublicChainCore PublicLinkScope.
@@ -230,7 +231,7 @@ End PlatformLevel.
 Section Main.
 Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
-  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
+  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> LegacyBodyJudgments.FnElab W Prog f.
 Hypothesis captured_in_force : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CapturedInForceOk W.
 Hypothesis link_results : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.LinkResultsOk W Prog argv read state_ok.
 Hypothesis copy_apply : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CopyApplyOk W Prog argv read state_ok.

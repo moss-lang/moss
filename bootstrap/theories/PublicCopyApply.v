@@ -9,6 +9,7 @@
    PlatformApplyOk are their chains of length zero. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import AuditBase.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.
@@ -411,7 +412,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
   (exists h0 gf0 gg Ch0 nsh0 Cg nsg linktarget e2,
      CopyChain u gfx sms rms h0 gf0 (Some (A.link_map Ch0 Cg linktarget nsg)) None /\
      ClosureOk rr H h0 gf0 (FunctorClosure code (Some (A.link_map Ch0 Cg linktarget nsg)) dc None) /\
-     (exists pins, A.LinkBody W Prog h0 gg code pins /\ S.PinsAgree W h0 Ch0 Cg dc gf0 pins /\
+     (exists pins, LegacyBodyJudgments.LinkBody W Prog h0 gg code pins /\ S.PinsAgree W h0 Ch0 Cg dc gf0 pins /\
        PublicContextFacts.ClosureBinding W h0 Ch0 nsh0 Cg nsg linktarget dc gf0) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
      (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) /\
      adapt_provisions e1 sms = Some e2 /\
@@ -569,7 +570,7 @@ Qed.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
-  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
+  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> LegacyBodyJudgments.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
 Hypothesis captured_in_force : S.CapturedInForceOk W.
 Hypothesis chain_results : ChainResultsOk.

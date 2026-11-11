@@ -4,10 +4,12 @@
    (`Pre` at main's frame and context). *)
 From Stdlib Require Import List String Arith Lia PrimInt63.
 From NM Require Import BaseFacts.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping PublicBodySafety PublicBodySlice
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize PublicFamilyCopy.
+From NM Require BodyProgramTyping.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -207,7 +209,7 @@ Qed.
 Theorem main_not_stuck : forall fuel d0 st0 H0,
   (forall k, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Safe W Prog argv read state_ok k) ->
   (forall dcl n rt b, A.w_decl W (program_main Prog) = Some dcl -> A.d_ast dcl = ADFn RPlain n [] rt (Some b) ->
-     A.FnElab W Prog (program_main Prog)) ->
+     LegacyBodyJudgments.FnElab W Prog (program_main Prog)) ->
   (exists dcl n rt b, A.w_decl W (program_main Prog) = Some dcl /\ A.d_ast dcl = ADFn RPlain n [] rt (Some b)) ->
   (forall C ns, A.CtxOf W (program_main Prog) C ns -> forall F g, FrameOk F -> A.fr_this F = None ->
      A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
@@ -476,7 +478,7 @@ Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
   destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [Mt [H0 [St Prims]]]].
   pose proof (proj1 (platform_linked_fields _ _) Link) as (_ & Lay & Reps & _).
-  pose proof Elab as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys) & _).
+  pose proof (BodyProgramTyping.separated_elaboration_sound _ _ _ Elab) as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys) & _).
   destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique Wd _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
@@ -541,7 +543,7 @@ Theorem handles_formed : forall bundle W Prog, A.ElaboratesIn bundle W Prog -> P
     Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg).
 Proof.
   intros bundle W Prog Elab Link C ns f sg op Ctx Found _.
-  pose proof Elab as (Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys) & _).
+  destruct Elab as (resolve & Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys) & _).
   destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
   destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].
@@ -636,15 +638,16 @@ Theorem safety_obligations : forall prelude program interface initial,
 Proof.
   intros prelude. apply (safety_public prelude).
   intros Prog iface initial bundle W Compat Elab Link.
+  pose proof (BodyProgramTyping.separated_elaboration_sound _ _ _ Elab) as Combined.
   assert (CRz : FCp.CRz.CSg.FL.CF.CN.ChainRealizeOk W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
-    by exact (FCp.CRz.chain_realize_ok W Prog _ _ _ (ex_intro _ bundle (proj1 Elab))
-      (PublicWorldFormation.mentions_typed_of bundle W (proj1 Elab))).
+    by exact (FCp.CRz.chain_realize_ok W Prog _ _ _ (ex_intro _ bundle (proj1 Combined))
+      (PublicWorldFormation.mentions_typed_of bundle W (proj1 Combined))).
 
   assert (RAc : FCp.CRz.CSg.FL.CF.ChainForwardCopySigs W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface))
     by exact (FCp.CRz.CSg.chain_forward_copy_sigs W Prog _ _ _).
-  pose proof (family_coherent_ok W bundle (proj1 Elab)) as FCo.
+  pose proof (family_coherent_ok W bundle (proj1 Combined)) as FCo.
   pose proof (FCp.CRz.CSg.FL.CF.app_keys_typed W) as AKT.
   pose proof (family_keys_typed_ok W) as FRA.
   pose proof (captured_in_force_ok W) as CIF.
@@ -652,11 +655,11 @@ Proof.
      (scratch/orch/chainfwd-AUDIT.md section 2) *)
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.kept_outputs_unmentioned W) as KU.
   pose proof (FCp.CRz.CSg.FL.CF.chain_forward_sigs W Prog _ _ _ AKT RAc) as RA.
-  pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Elab))) as ExS.
+  pose proof (ex_scoped_ok W Prog (ex_intro _ bundle (proj1 Combined))) as ExS.
   pose proof (lit_scoped_ok W) as LitS.
-  pose proof (demand_scoped_ok W bundle (proj1 Elab)) as DemS.
+  pose proof (demand_scoped_ok W bundle (proj1 Combined)) as DemS.
   pose proof (FCp.CRz.CSg.FL.CF.CN.CC.chain_results_of_new W Prog _ _ _ (FCp.CRz.CSg.FL.CF.CN.chain_new_ok W Prog _ _ _ CRz) KU) as CR.
-  pose proof Elab as (Wo & AllFn & _).
+  pose proof Combined as (Wo & AllFn & _).
   pose proof (FCp.CRz.CSg.FL.family_link_new_ok W Prog (M.arguments initial) (M.read_file initial)
     (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface)
     (ex_intro _ bundle Wo) (PublicWorldFormation.mentions_typed_of bundle W Wo)) as FLN.

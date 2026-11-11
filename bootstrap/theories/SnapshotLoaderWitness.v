@@ -236,7 +236,7 @@ Theorem bundled_elaborates_in_transport : forall read root prelude entry b c W P
   L.Bundled read root prelude entry b -> L.Bundled read root prelude entry c ->
   ElaboratesIn b W P -> ElaboratesIn c W P.
 Proof.
-  intros read root prelude entry b c W P B C [World Rest]. split.
+  intros read root prelude entry b c W P B C [resolve [World Rest]]. exists resolve. split.
   - exact (bundled_world_transport read root prelude entry b c W B C World).
   - assert (Entry : b_entry b = b_entry c).
     { destruct B as [BE _]; destruct C as [CE _]; congruence. }

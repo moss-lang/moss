@@ -16,6 +16,7 @@ From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicTypeFacts PublicCallRealize PublicBodySlice PublicCopyApply PublicPlatformApply
   PublicLinkResults PublicChainCore PublicLinkWalk PublicLinkScope.
+From NM Require Import LegacyBodyJudgments.
 From NM Require PublicLinkRun PublicMergeClass PublicCopySubst PublicContextFacts.
 From NM Require PublicChainFwd PublicFormation PublicCallerKeys PublicFamilyAgree PublicFamilyStep PublicFamilyCoherent PublicFamilySig PublicScoping.
 Import Audit.Input Audit.Semantics ListNotations.
@@ -41,9 +42,9 @@ Proof.
   unfold map_snd. induction a as [|[x t] a IH]; [reflexivity|]. cbn. rewrite PublicTypeRead.app_subst_nil, IH. reflexivity.
 Qed.
 
-Lemma link_body_family_bindings : forall u gg h pins, A.LinkBody W Prog u gg h pins ->
+Lemma link_body_family_bindings : forall u gg h pins, LegacyBodyJudgments.LinkBody W Prog u gg h pins ->
   forall code, A.funbody_of Prog h = Some code -> A.Family W u ->
-  A.FamilyBindings W (fc_bindings code).
+  LegacyBodyJudgments.FamilyBindings W (fc_bindings code).
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins0
     Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outputs _ RR BO Fam [_ [FB _]]].

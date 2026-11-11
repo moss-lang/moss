@@ -22,6 +22,7 @@
    premise beyond the application obligations. *)
 From Stdlib Require Import List String Arith Bool Lia PrimInt63.
 From NM Require Import AuditBase.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicBodySlice.
@@ -233,7 +234,7 @@ Variable state_ok : heap_types -> Prims.mstate -> Prop.
 Hypothesis mentions_typed : PublicFormation.MentionsTyped W.
 Hypothesis family_sig_ok : PublicFormation.FamilySigReadOffOk W.
 Hypothesis all_fn_elab : forall f dcl rcv n ps rt body,
-  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> A.FnElab W Prog f.
+  A.w_decl W f = Some dcl -> A.d_ast dcl = ADFn rcv n ps rt (Some body) -> LegacyBodyJudgments.FnElab W Prog f.
 Hypothesis World : exists b, A.WorldOf b W.
 Hypothesis captured_in_force : CopyA.S.CapturedInForceOk W.
 Hypothesis link_results : CopyA.S.LinkResultsOk W Prog argv read state_ok.

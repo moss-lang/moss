@@ -1,6 +1,7 @@
 (* Defined providers read the same context, needs, and signature as a call. *)
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaBind EaCall EaTypes EaTypesSound EaChecked.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaContextTableSound EaControlSound EaCallSound EaSatisfiesSound EaMergeSound PublicContextFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.

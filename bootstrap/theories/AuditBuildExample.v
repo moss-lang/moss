@@ -2,6 +2,8 @@
    the revised contract is inhabited without any runtime-typing hypothesis. *)
 From Stdlib Require Import List String Arith Lia.
 From NM Require Import BaseFacts.
+From NM Require BodyProgramTyping.
+From NM Require Import LegacyBodyJudgments.
 From NM Require Import Audit AuditExamples FrontEnd.
 From NM Require PublicMergePresent.
 Import Audit.Semantics.
@@ -220,6 +222,7 @@ Qed.
 
 Lemma main_elaborates : ElaboratesIn main_bundle world_main AuditExamples.unit_program.
 Proof.
+  apply BodyProgramTyping.separated_elaboration_readback.
   split; [exact world_main_valid|]. split.
   - intros f d recv n ps rt body Read Ast. apply reads_decl in Read as [-> ->]. exact main_function.
   - split; [reflexivity|]. split.

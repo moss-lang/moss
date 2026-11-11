@@ -2,6 +2,7 @@
    every declared functor output. Constant bodies are checked by assembly. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaBudget EaTypes EaTypesSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaMain EaCtx EaFamily EaDecide EaEntriesSound EaOutputSound
   EaContextTableSound EaResultLeafSound EaDependencyFuel EaContextReadFacts
   EaMetadataSound EaWorldSound ElabWorld WorldSound.

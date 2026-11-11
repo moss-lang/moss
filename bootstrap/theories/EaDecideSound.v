@@ -1,6 +1,7 @@
 (* The executable branch checks follow Audit's expected-type and join rules. *)
 From Stdlib Require Import Bool Arith Lia.
 From NM Require Import Audit EaBase EaDecide EaExpr EaControlSound EaChecked.
+From NM Require Import LegacyBodyJudgments.
 From NM Require PublicTypeFacts.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 

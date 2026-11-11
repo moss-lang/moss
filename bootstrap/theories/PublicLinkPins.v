@@ -9,6 +9,7 @@
    linked body's own binds, so it was dropped, consol.) *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead.
+From NM Require Import LegacyBodyJudgments.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -40,7 +41,7 @@ Lemma wrap_dests_bind : forall b, bind_apply b = [] -> WrapDests [] (fun x => EB
 Proof. intros b E x p I. cbn [expr_applies] in I. rewrite E in I. left. exact I. Qed.
 
 Lemma lambda_expr_applies : forall F C ps rt body sg this pid pre sm,
-  A.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, expr_applies (pre x) = expr_applies x.
+  LegacyBodyJudgments.LambdaProvider W Prog F C ps rt body sg this pid pre sm -> forall x, expr_applies (pre x) = expr_applies x.
 Proof.
   intros F C ps rt body sg this pid pre sm LP. destruct LP. intros x. unfold A.translate_lambda_captures. cbv beta.
   match goal with |- expr_applies (fold_right _ x ?l) = _ => generalize l end.
@@ -48,19 +49,19 @@ Proof.
 Qed.
 
 Lemma meth_expr_applies : forall F C y sg rt target types pre sm,
-  A.MethProvider W Prog F C y sg rt target types pre sm -> forall x, expr_applies (pre x) = expr_applies x.
+  LegacyBodyJudgments.MethProvider W Prog F C y sg rt target types pre sm -> forall x, expr_applies (pre x) = expr_applies x.
 Proof.
   intros F C y sg rt target types pre sm MP. destruct MP; intros x; try reflexivity.
-  match goal with LP : A.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ => exact (lambda_expr_applies _ _ _ _ _ _ _ _ _ _ LP x) end.
+  match goal with LP : LegacyBodyJudgments.LambdaProvider _ _ _ _ _ _ _ _ _ _ _ _ |- _ => exact (lambda_expr_applies _ _ _ _ _ _ _ _ _ _ LP x) end.
 Qed.
 
 Lemma wrap_dests_pre : forall (pre : expr -> expr) b, (forall x, expr_applies (pre x) = expr_applies x) ->
   bind_apply b = [] -> WrapDests [] (fun x => pre (EBind b x)).
 Proof. intros pre b Pre E x p I. rewrite Pre in I. cbn [expr_applies] in I. rewrite E in I. left. exact I. Qed.
 
-Fixpoint item_dests F C it w C' F' m (D : A.BindItem W Prog F C it w C' F' m) {struct D} :
+Fixpoint item_dests F C it w C' F' m (D : LegacyBodyJudgments.BindItem W Prog F C it w C' F' m) {struct D} :
   WrapDests m w
-with items_dests F C its w C' F' m (D : A.BindItems W Prog F C its w C' F' m) {struct D} :
+with items_dests F C its w C' F' m (D : LegacyBodyJudgments.BindItems W Prog F C its w C' F' m) {struct D} :
   WrapDests m w.
 Proof.
   - destruct D.
@@ -82,7 +83,7 @@ Proof.
       * right. apply (dests_ok_mono m1); [intros z Iz; apply in_or_app; left; exact Iz|exact O].
 Qed.
 
-Lemma bindsof_expr_applies : forall e l, A.BindsOf e l -> expr_applies e = flat_map bind_apply l.
+Lemma bindsof_expr_applies : forall e l, LegacyBodyJudgments.BindsOf e l -> expr_applies e = flat_map bind_apply l.
 Proof. intros e l B. induction B as [|b body rest B IH]; [reflexivity|]. cbn. rewrite IH. reflexivity. Qed.
 
 Definition bind_dests (bs : list binding) : list nat :=
@@ -91,7 +92,7 @@ Definition bind_dests (bs : list binding) : list nat :=
 (* Every destination of the binds a run of items elaborates to is among
    the generations the items make. *)
 Theorem items_dests_made : forall F C its wrap C' F' made binds,
-  A.BindItems W Prog F C its wrap C' F' made -> A.BindsOf (wrap EUnit) binds ->
+  LegacyBodyJudgments.BindItems W Prog F C its wrap C' F' made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds ->
   forall y, In y (bind_dests binds) -> In y made.
 Proof.
   intros F C its wrap C' F' made binds D B y Iy.
@@ -108,7 +109,7 @@ Qed.
    no destination is. *)
 Corollary link_dests_out : forall (Cu : A.cx) Fg Cg its wrap Cb Fb made binds,
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
-  A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
+  LegacyBodyJudgments.BindItems W Prog Fg Cg its wrap Cb Fb made -> LegacyBodyJudgments.BindsOf (wrap EUnit) binds ->
   forall y, In y (bind_dests binds) -> A.nlook y (A.c_ty Cu) = None.
 Proof.
   intros Cu Fg Cg its wrap Cb Fb made binds Out D B y Iy.

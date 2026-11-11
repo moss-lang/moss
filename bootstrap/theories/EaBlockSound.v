@@ -3,6 +3,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaTypes EaTypesSound EaDecide EaExpr EaDecideSound EaControlSound EaBreaksSound
   EaChecked EaRecSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require EaMain.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.

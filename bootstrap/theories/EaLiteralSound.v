@@ -4,6 +4,7 @@ From Stdlib Require Import List String Bool Arith Lia.
 From Stdlib Require Import Strings.Byte.
 From NM Require Import Audit EaBase EaDecide EaExpr EaFamily EaTypes EaTypesSound EaControlSound
   EaCallExpressionSound EaFamilyUseSound.
+From NM Require Import LegacyBodyJudgments.
 From NM Require FrontEnd Parse PublicTypeFacts PublicContextFacts EaMergeSound EaSatisfiesSound.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.

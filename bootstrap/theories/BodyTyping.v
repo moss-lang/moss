@@ -3,49 +3,12 @@
    numbering and encodes the checked context and demand choices. *)
 From Stdlib Require Import List String Bool.
 From NM Require Import Audit BodyLiteralTyping BodyMethodTyping.
+From NM Require Import LegacyBodyJudgments.
 From NM Require BodyFunctionProviderTyping BodyProviderTyping.
 From NM Require BodyLinkTyping.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
-
-Inductive field_pattern_plan : Type :=
-| PatternPun (field : fld) (field_type : ty)
-| PatternIgnore (field : fld)
-| PatternRename (field : fld) (binder : name) (field_type : ty).
-
-Definition field_pattern_bindings (fields : list field_pattern_plan) : list (name * ty) :=
-  flat_map (fun field => match field with
-    | PatternPun n t | PatternRename _ n t => [(n, t)]
-    | PatternIgnore _ => []
-    end) fields.
-
-Definition local_number (slots : list (name * nat)) (n : name) : nat :=
-  match slook n slots with Some slot => slot | None => 0 end.
-
-Definition emit_field_patterns (slots : list (name * nat)) (fields : list field_pattern_plan) : list (fld * var) :=
-  flat_map (fun field => match field with
-    | PatternPun n _ => [(n, local_number slots n)]
-    | PatternRename n binder _ => [(n, local_number slots binder)]
-    | PatternIgnore _ => []
-    end) fields.
-
-Definition translate_field_patterns (F : frame) :=
-  emit_field_patterns (fr_var F).
-
-Inductive TypesFieldPatterns (W : world) (F : frame) (fields : list (fld * ty))
-    : list (name * option apat) -> list field_pattern_plan -> Prop :=
-| TypesFieldsEmpty : TypesFieldPatterns W F fields [] []
-| TypesFieldsPun : forall n t rest plan,
-    slook n fields = Some t -> Named F n -> TypesFieldPatterns W F fields rest plan ->
-    TypesFieldPatterns W F fields ((n, None) :: rest) (PatternPun n t :: plan)
-| TypesFieldsIgnore : forall n t rest plan,
-    slook n fields = Some t -> TypesFieldPatterns W F fields rest plan ->
-    TypesFieldPatterns W F fields ((n, Some APWild) :: rest) (PatternIgnore n :: plan)
-| TypesFieldsRename : forall n binder t rest plan,
-    slook n fields = Some t -> resolve W (fr_mod F) [binder] = None -> Named F binder ->
-    TypesFieldPatterns W F fields rest plan ->
-    TypesFieldPatterns W F fields ((n, Some (APPath [binder])) :: rest) (PatternRename n binder t :: plan).
 
 Theorem field_pattern_translation : forall W F fields source plan,
   TypesFieldPatterns W F fields source plan ->
@@ -68,63 +31,6 @@ Proof.
   - destruct IH as (plan & Types & <- & <-). exists (PatternRename n binder t :: plan).
     repeat split. now constructor.
 Qed.
-
-Inductive pattern_plan : Type :=
-| PatternWildcard
-| PatternBinder (binder : name) (binder_type : ty)
-| PatternNominal (tag : nat)
-| PatternPayload (tag : nat) (binder : name) (payload : ty)
-| PatternRecord (tag : nat) (fields : list field_pattern_plan).
-
-Definition pattern_bindings (plan : pattern_plan) : list (name * ty) :=
-  match plan with
-  | PatternWildcard | PatternNominal _ => []
-  | PatternBinder n t | PatternPayload _ n t => [(n, t)]
-  | PatternRecord _ fields => field_pattern_bindings fields
-  end.
-
-Definition pattern_heads (plan : pattern_plan) : list nat :=
-  match plan with
-  | PatternNominal tag | PatternPayload tag _ _ | PatternRecord tag _ => [tag]
-  | PatternWildcard | PatternBinder _ _ => []
-  end.
-
-Definition pattern_catches (plan : pattern_plan) : bool :=
-  match plan with PatternWildcard | PatternBinder _ _ => true | _ => false end.
-
-Definition pattern_scope (C : cx) (plan : pattern_plan) : cx :=
-  fold_left (fun C q => add_local C (fst q) (snd q) LLet) (pattern_bindings plan) C.
-
-Definition emit_pattern (slots : list (name * nat)) (plan : pattern_plan) : pattern :=
-  match plan with
-  | PatternWildcard => PAny None
-  | PatternBinder n _ => PAny (Some (local_number slots n))
-  | PatternNominal tag => PHead tag None []
-  | PatternPayload tag n _ => PHead tag (Some (local_number slots n)) []
-  | PatternRecord tag fields => PHead tag None (emit_field_patterns slots fields)
-  end.
-
-Definition translate_pattern (F : frame) := emit_pattern (fr_var F).
-
-Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> pattern_plan -> Prop :=
-| TypesPatternWildcard : TypesPattern W F scrutinee APWild PatternWildcard
-| TypesPatternBinder : forall n,
-    resolve W (fr_mod F) [n] = None -> Named F n ->
-    TypesPattern W F scrutinee (APPath [n]) (PatternBinder n scrutinee)
-| TypesPatternNominal : forall path tag kind arguments,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some kind ->
-    (kind = DKUnit \/ kind = DKTag) -> In (TNom tag arguments) (members scrutinee) ->
-    TypesPattern W F scrutinee (APPath path) (PatternNominal tag)
-| TypesPatternPayload : forall path tag arguments binder payload,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
-    In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments payload ->
-    resolve W (fr_mod F) [binder] = None -> Named F binder ->
-    TypesPattern W F scrutinee (APTag path (APPath [binder])) (PatternPayload tag binder payload)
-| TypesPatternRecord : forall path tag arguments fields field_types plan,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
-    In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments (TRecord field_types) ->
-    TypesFieldPatterns W F field_types fields plan -> NoDup (map fst (field_pattern_bindings plan)) ->
-    TypesPattern W F scrutinee (APRec (Some path) fields) (PatternRecord tag plan).
 
 Theorem pattern_translation : forall W F scrutinee source plan,
   TypesPattern W F scrutinee source plan ->
@@ -152,424 +58,6 @@ Proof.
     exists (PatternRecord tag plan). repeat split. eapply TypesPatternRecord; eassumption.
 Qed.
 
-Inductive expression_plan : Type :=
-| PlanUnit
-| PlanThis
-| PlanLocal (n : name)
-| PlanBlock (body : block_plan)
-| PlanIf (condition : expression_plan) (then_body : block_plan) (otherwise : option expression_plan)
-| PlanReturnUnit
-| PlanReturn (result : expression_plan)
-| PlanBreak
-| PlanDefinedCall (f : nat) (formal : cx) (needs : list item)
-    (arguments : subst) (demands : list family_use) (call_site : cx) (args : list expression_plan)
-| PlanAbstractCall (f : nat) (args : list expression_plan)
-| PlanUnitTag (tag : nat)
-| PlanTag (tag : nat) (arguments : subst) (payload : expression_plan)
-| PlanRecord (tag : nat) (arguments : subst) (fields : list (fld * expression_plan))
-| PlanField (object : expression_plan) (field : fld)
-| PlanMatch (scrutinee : expression_plan) (arms : list (pattern_plan * expression_plan))
-| PlanMethod (receiver : ty) (selected : method_call_plan) (object : expression_plan)
-    (args : list expression_plan)
-| PlanOperator (receiver : ty) (method : nat) (family : option family_use) (object : expression_plan)
-    (args : list expression_plan)
-| PlanNumeric (literal : literal_plan)
-| PlanGlobalValue (symbol : nat)
-(* A constant's initializer has its own numbering, recorded as a layout
-   witness so the bridge can reproduce the exact code at each occurrence. *)
-| PlanConstant (initializer_layout : frame) (initializer : expression_plan)
-| PlanBracketedCall (expansion : expression_plan)
-with block_plan : Type :=
-| PlanEmpty
-| PlanTail (result : expression_plan)
-| PlanLet (n : name) (declared : ty) (mode : lmut) (initializer : expression_plan) (rest : block_plan)
-| PlanAssign (n : name) (value : expression_plan) (rest : block_plan)
-| PlanExprLast (value : expression_plan)
-| PlanExprThen (value : expression_plan) (rest : block_plan)
-| PlanWhile (condition : expression_plan) (body rest : block_plan)
-| PlanLoop (body rest : block_plan)
-| PlanLoopLast (body : block_plan)
-| PlanBind (items : list binding_plan) (result : cx) (rest : block_plan)
-with binding_plan : Type :=
-| PlanTypeBind (symbol : nat) (meaning : ty)
-| PlanValueBind (site : cx) (symbol : nat) (initializer : expression_plan)
-| PlanInlineApply (items : list binding_plan)
-| PlanAbstractApply (site : cx) (application : application)
-| PlanFunctorCopy (target provider : nat) (target_context provider_context : cx)
-    (selected : item -> item) (needs : list item) (positions : list nat)
-| PlanFunctionBind (site : cx) (symbol : nat) (signature : fsig) (provider : function_provider_plan)
-| PlanAttachedBind (receiver : ty) (method : nat) (arguments : subst) (site : cx)
-    (provider : named_provider_plan)
-| PlanWrappedBind (receiver : ty) (method : nat) (arguments : subst) (site : cx)
-    (signature : fsig) (provider : wrapped_method_plan)
-| PlanFunctionLambda (site : cx) (symbol : nat) (signature : fsig) (parameters : list name)
-    (layout : frame) (provider : lambda_body_descriptor block_plan)
-| PlanMethodLambda (receiver : ty) (method : nat) (arguments : subst) (site : cx) (signature : fsig)
-    (parameters : list name) (layout : frame) (provider : lambda_body_descriptor block_plan)
-| PlanFunctorClosure (site : cx) (layout : frame) (body : linked_body_descriptor (list binding_plan))
-    (selected : item -> option item) (provider_needs : list item).
-
-Definition TypesMethodBindHeader (W : world) (F : frame) (C : cx)
-    (path : path) (label : name) (brackets : sapp) (method : nat) (receiver : ty)
-    (signature : fsig) (arguments : inst) : Prop :=
-  exists receiver_symbol readings,
-    resolve_sym W (fr_mod F) path = Some receiver_symbol /\
-    MethodNamed W (fr_mod F) receiver_symbol label method /\
-    Brackets W (fr_mod F) (c_ty C) method brackets readings /\
-    TyOf W (fr_mod F) (readings ++ c_ty C) None (ATRef path None) receiver /\
-    SigOf W method (readings ++ c_ty C) (Some receiver) signature /\
-    AppOf W method (readings ++ c_ty C) arguments /\
-    (forall u, ~ FamilyProduces W C u (mkey (canon C receiver) method)) /\
-    ~ (exists rc n ps rt b, ast_of W method = Some (ADFn rc n ps rt (Some b))).
-
-Definition TypesLambdaHeader (W : world) (F : frame) (C : cx)
-    (ps : list (name * option aty)) (ann : option aty) (body : aexpr) (signature : fsig)
-    (this : option ty) (layout : frame) (provider : lambda_body_descriptor block_plan) (result : ty) : Prop :=
-  @TypesLambdaProvider block_plan (fun _ _ _ _ _ _ actual => actual = result)
-    W F C ps ann body signature this layout provider.
-
-Inductive binding_activity : Type :=
-| BindValueActivity
-| BindApplyActivity (family : nat)
-| BindOtherActivity.
-
-Fixpoint binding_plan_activities (plan : binding_plan) : list binding_activity :=
-  match plan with
-  | PlanValueBind _ _ _ => [BindValueActivity]
-  | PlanAbstractApply _ application => [BindApplyActivity (app_functor application)]
-  | PlanInlineApply items => flat_map binding_plan_activities items
-  | PlanFunctionLambda _ _ _ _ _ provider | PlanMethodLambda _ _ _ _ _ _ _ provider =>
-      map (fun _ => BindValueActivity) (lambda_descriptor_captures provider) ++ [BindOtherActivity]
-  | _ => [BindOtherActivity]
-  end.
-
-Definition allowed_family_activity (W : world) (activity : binding_activity) : Prop :=
-  match activity with
-  | BindValueActivity => False
-  | BindApplyActivity family => Family W family
-  | BindOtherActivity => True
-  end.
-
-Definition FamilyBindPlans (W : world) (plans : list binding_plan) : Prop :=
-  Forall (allowed_family_activity W) (flat_map binding_plan_activities plans).
-
-Definition TypesLinkedHeader (W : world) (layout : frame) (body : linked_body_descriptor (list binding_plan))
-    (items : list (spec * option aexpr)) (result : cx) (after : frame) (made : list nat) : Prop :=
-  @TypesLinkedBody (list binding_plan)
-    (fun _ _ _ source _ C F created => source = items /\ C = result /\ F = after /\ created = made)
-    FamilyBindPlans W layout body.
-
-Definition closure_arguments (C formal : cx) : subst :=
-  map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty formal).
-
-Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expression_plan -> ty -> Prop :=
-| TypesUnit : forall F C exp, TypesExpr W F C AEUnit exp PlanUnit TUnit
-| TypesThis : forall F C exp t, fr_this F = Some t -> TypesExpr W F C AEThis exp PlanThis t
-| TypesLocal : forall F C exp n t mu,
-    slook n (c_locals C) = Some (t, mu) -> Named F n ->
-    TypesExpr W F C (AEPath [n] None) exp (PlanLocal n) t
-| TypesBlock : forall F C exp b plan t,
-    TypesBlkE W F C b exp plan t ->
-    TypesExpr W F C (AEBlock b) exp (PlanBlock plan) (match exp with Some e => e | None => t end)
-| TypesIfThen : forall F C exp c b cp bp bt,
-    TypesCond W F C c cp -> TypesBlkE W F C b exp bp bt ->
-    opt_fits TUnit exp -> (bt = TUnit \/ bt = never) ->
-    TypesExpr W F C (AEIf c b None) exp (PlanIf cp bp None) TUnit
-| TypesIfElse : forall F C exp c b e cp bp bt ep et t,
-    TypesCond W F C c cp -> TypesBlkE W F C b exp bp bt ->
-    TypesBranch W F C e exp ep et -> opt_fits et exp -> Join (branch_ty b bt) et exp t ->
-    TypesExpr W F C (AEIf c b (Some e)) exp (PlanIf cp bp (Some ep)) t
-| TypesReturnUnit : forall F C exp, fr_ret F = Some TUnit ->
-    TypesExpr W F C (AEReturn None) exp PlanReturnUnit never
-| TypesReturn : forall F C exp e expected plan actual,
-    fr_ret F = Some expected ->
-    TypesExpr W F C e (Some expected) plan actual -> fits actual expected ->
-    TypesExpr W F C (AEReturn (Some e)) exp (PlanReturn plan) never
-| TypesBreak : forall F C exp, fr_loop F = true -> TypesExpr W F C AEBreak exp PlanBreak never
-| TypesDefinedCall : forall F C exp pa args f formal needs arguments g plans demands call_site,
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    (exists n ps rt b, ast_of W f = Some (ADFn RPlain n ps rt (Some b))) ->
-    CtxOf W f formal needs ->
-    Demand W C (map (at_th C arguments) needs) [] C demands call_site ->
-    NeedsSatisfied call_site formal arguments needs -> CallTheta W call_site formal f arguments ->
-    SigOf W f (c_ty call_site) None g ->
-    TypesArgs W F C args (sg_params g) plans ->
-    RequirementsInForce C formal ->
-    TypesExpr W F C (AECall pa None args) exp
-      (PlanDefinedCall f formal needs arguments demands call_site plans) (sg_ret g)
-| TypesAbstractCall : forall F C exp pa args f g plans,
-    resolve_sym W (fr_mod F) pa = Some f -> kind_sym W f = Some DKFn ->
-    (exists n ps rt, ast_of W f = Some (ADFn RPlain n ps rt None)) ->
-    nlook f (c_fns C) = Some g -> TypesArgs W F C args (sg_params g) plans ->
-    TypesExpr W F C (AECall pa None args) exp (PlanAbstractCall f plans) (sg_ret g)
-| TypesUnitTag : forall F C exp path tag,
-    (forall n, path = [n] -> slook n (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKUnit ->
-    TypesExpr W F C (AEPath path None) exp (PlanUnitTag tag) (TNom tag [])
-| TypesTag : forall F C exp path brackets payload tag readings arguments payload_type plan actual,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
-    Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
-    Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
-    PayloadOf W tag arguments payload_type ->
-    TypesExpr W F C payload (Some payload_type) plan actual -> fits actual payload_type ->
-    TypesExpr W F C (AECall path brackets [payload]) exp (PlanTag tag arguments plan) (TNom tag arguments)
-| TypesRecord : forall F C exp path brackets given tag readings arguments fields plans,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
-    Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
-    Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
-    PayloadOf W tag arguments (TRecord fields) ->
-    NoDup (map fst given) -> List.length given = List.length fields ->
-    TypesRecordFields W F C given fields plans ->
-    TypesExpr W F C (AERec path brackets given) exp (PlanRecord tag arguments plans) (TNom tag arguments)
-| TypesField : forall F C exp object field plan actual payload t,
-    TypesExpr W F C object None plan actual ->
-    ((exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\
-      PayloadOf W tag arguments payload) \/ payload = actual) ->
-    (exists fields, payload = TRecord fields /\ slook field fields = Some t) ->
-    TypesExpr W F C (AEField object field) exp (PlanField plan field) t
-| TypesMatch : forall F C exp scrutinee arms plan st plans t,
-    TypesExpr W F C scrutinee None plan st -> TypesArms W F C (canon C st) arms exp plans t ->
-    TypesExpr W F C (AEMatch scrutinee arms) exp (PlanMatch plan plans) t
-| TypesMethod : forall F C exp object path args receiver object_type selected signature plans,
-    TypesExpr W F C object None receiver object_type ->
-    TypesMethodSelection W F C (canon C object_type) path selected signature ->
-    TypesArgs W F C args (sg_params signature) plans ->
-    TypesExpr W F C (AEMeth object path args) exp
-      (PlanMethod (canon C object_type) selected receiver plans) (sg_ret signature)
-| TypesUnary : forall F C exp op operand lib name method receiver object_type family signature plans,
-    operator_method op true = Some (lib, name) -> LangSym W lib NSDetached name method ->
-    TypesExpr W F C operand None receiver object_type -> head (canon C object_type) <> None ->
-    TypesMethodProvision W C (canon C object_type) method family signature ->
-    TypesArgs W F C [] (sg_params signature) plans ->
-    TypesExpr W F C (AEUnary op operand) exp
-      (PlanOperator (canon C object_type) method family receiver plans) (sg_ret signature)
-| TypesBinary : forall F C exp op left right lib name method receiver object_type family signature plans,
-    operator_method op false = Some (lib, name) -> LangSym W lib NSDetached name method ->
-    TypesExpr W F C left None receiver object_type -> head (canon C object_type) <> None ->
-    TypesMethodProvision W C (canon C object_type) method family signature ->
-    TypesArgs W F C [right] (sg_params signature) plans ->
-    TypesExpr W F C (AEBinary op left right) exp
-      (PlanOperator (canon C object_type) method family receiver plans) (sg_ret signature)
-| TypesNumeric : forall F C exp text plan t,
-    NumericText text -> TypesLiteral W C (literal_tree_of text) plan t ->
-    TypesExpr W F C (AELit text) exp (PlanNumeric plan) t
-| TypesGlobalValue : forall F C exp path symbol d name annotation t,
-    (forall n, path = [n] -> slook n (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
-    d_ast d = ADVal name annotation None -> nlook symbol (c_vals C) = Some t ->
-    TypesExpr W F C (AEPath path None) exp (PlanGlobalValue symbol) t
-| TypesConstant : forall F C exp path symbol d name annotation source t layout plan actual,
-    (forall n, path = [n] -> slook n (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
-    d_ast d = ADVal name annotation (Some source) -> d_assumes d = [] ->
-    TyOf W (d_mod d) [] None annotation t ->
-    TypesExpr W layout (Cx [] [] [] [] []) source (Some t) plan actual -> fits actual t ->
-    fr_mod layout = d_mod d -> fr_ret layout = None -> fr_this layout = None -> fr_loop layout = false ->
-    fr_fresh layout = [] -> fr_applying layout = [] -> fr_pins layout = [] ->
-    TypesExpr W F C (AEPath path None) exp (PlanConstant layout plan) t
-| TypesBracketedCall : forall F C exp path brackets args f expansion t,
-    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
-    CallBrackets W (fr_mod F) f brackets ->
-    TypesExpr W F C (Audit.Syntax.call_block path brackets args) None expansion t ->
-    TypesExpr W F C (AECall path (Some brackets) args) exp (PlanBracketedCall expansion) t
-with TypesBlkE (W : world) : frame -> cx -> ablock -> option ty -> block_plan -> ty -> Prop :=
-| TypesBlkCheck : forall F C ss tl exp plan t made,
-    TypesBlk W (without_pins F) C ss tl exp plan t made ->
-    (forall g, In g made -> ~ In g (gens t)) -> opt_fits t exp ->
-    TypesBlkE W F C (ABlock ss tl) exp plan t
-with TypesBlk (W : world) : frame -> cx -> list astmt -> option aexpr -> option ty -> block_plan -> ty -> list nat -> Prop :=
-| TypesTail : forall F C y exp plan t,
-    TypesExpr W F C y exp plan t -> TypesBlk W F C [] (Some y) exp (PlanTail plan) t []
-| TypesEmpty : forall F C exp, TypesBlk W F C [] None exp PlanEmpty TUnit []
-| TypesLet : forall F C st n ann y rest tl exp declared v vt t0 cont t made mu,
-    LetStmt st n ann y mu ->
-    (match ann with
-    | Some a => exists d, TyOf W (fr_mod F) (c_ty C) (fr_this F) a d /\ declared = Some d
-    | None => declared = None end) ->
-    TypesExpr W F C y declared v vt ->
-    (match declared with Some d => fits vt d /\ t0 = d | None => t0 = vt end) ->
-    Named F n ->
-    TypesBlk W F (add_local C n t0 mu) rest tl exp cont t made ->
-    TypesBlk W F C (st :: rest) tl exp (PlanLet n t0 mu v cont) t made
-| TypesAssign : forall F C n y rest tl exp tv v vt cont t made,
-    slook n (c_locals C) = Some (tv, LVar) ->
-    TypesExpr W F C y (Some tv) v vt -> fits vt tv ->
-    TypesBlk W F C rest tl exp cont t made -> Named F n ->
-    TypesBlk W F C (ASAssign n y :: rest) tl exp (PlanAssign n v cont) t made
-| TypesExprLast : forall F C y exp v vt,
-    TypesExpr W F C y None v vt ->
-    TypesBlk W F C [ASExpr y] None exp (PlanExprLast v) (if ty_eqb vt never then never else TUnit) []
-| TypesExprThen : forall F C y rest tl exp v vt cont t made,
-    (rest <> [] \/ tl <> None) ->
-    TypesExpr W F C y None v vt -> TypesBlk W F C rest tl exp cont t made ->
-    TypesBlk W F C (ASExpr y :: rest) tl exp (PlanExprThen v cont) t made
-| TypesWhile : forall F C c b rest tl exp cp bp bt cont t made,
-    TypesCond W F C c cp -> TypesBlkE W (with_loop F) C b None bp bt ->
-    TypesBlk W F C rest tl exp cont t made ->
-    TypesBlk W F C (ASWhile c b :: rest) tl exp (PlanWhile cp bp cont) t made
-| TypesLoop : forall F C b rest tl exp bp bt cont t made,
-    (rest <> [] \/ tl <> None \/ BlockBreaks W (fr_mod F) b) ->
-    TypesBlkE W (with_loop F) C b None bp bt ->
-    TypesBlk W F C rest tl exp cont t made ->
-    TypesBlk W F C (ASLoop b :: rest) tl exp (PlanLoop bp cont) t made
-| TypesLoopLast : forall F C b exp bp bt,
-    TypesBlkE W (with_loop F) C b None bp bt -> ~ BlockBreaks W (fr_mod F) b ->
-    TypesBlk W F C [ASLoop b] None exp (PlanLoopLast bp) never []
-| TypesBindBlock : forall F C items rest tail exp plans result F' continuation t made created,
-    TypesBindItems W F C items plans result F' made ->
-    TypesBlk W F' result rest tail exp continuation t created ->
-    TypesBlk W F C (ASBind items :: rest) tail exp (PlanBind plans result continuation) t (made ++ created)
-with TypesArgs (W : world) : frame -> cx -> list aexpr -> list ty -> list expression_plan -> Prop :=
-| TypesArgsNil : forall F C, TypesArgs W F C [] [] []
-| TypesArgsCons : forall F C a rest t ts plan plans actual,
-    TypesExpr W F C a (Some t) plan actual -> fits (canon C actual) (canon C t) ->
-    TypesArgs W F C rest ts plans -> TypesArgs W F C (a :: rest) (t :: ts) (plan :: plans)
-with TypesCond (W : world) : frame -> cx -> aexpr -> expression_plan -> Prop :=
-| TypesBool : forall F C c plan t b,
-    LangItem W LIBool b -> TypesExpr W F C c (Some (TNom b [])) plan t ->
-    fits t (TNom b []) -> TypesCond W F C c plan
-with TypesBranch (W : world) : frame -> cx -> aexpr -> option ty -> expression_plan -> ty -> Prop :=
-| TypesBranchBlock : forall F C b exp plan t,
-    TypesBlkE W F C b exp plan t ->
-    TypesBranch W F C (AEBlock b) exp (PlanBlock plan) (match exp with Some e => e | None => branch_ty b t end)
-| TypesBranchExpr : forall F C e exp plan t,
-    (forall b, e <> AEBlock b) -> TypesExpr W F C e exp plan t ->
-    TypesBranch W F C e exp plan t
-with TypesRecordFields (W : world) : frame -> cx -> list (name * option aexpr) ->
-    list (fld * ty) -> list (fld * expression_plan) -> Prop :=
-| TypesRecordFieldsEmpty : forall F C given, TypesRecordFields W F C given [] []
-| TypesRecordFieldsCons : forall F C given n t syntax plan actual rest plans,
-    In (n, syntax) given ->
-    TypesExpr W F C (match syntax with Some e => e | None => AEPath [n] None end) (Some t) plan actual ->
-    fits actual t -> TypesRecordFields W F C given rest plans ->
-    TypesRecordFields W F C given ((n, t) :: rest) ((n, plan) :: plans)
-with TypesArms (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
-    option ty -> list (pattern_plan * expression_plan) -> ty -> Prop :=
-| TypesArmsEmpty : forall F C exp,
-    TypesArms W F C never [] exp [] (match exp with Some e => e | None => never end)
-| TypesArmsSome : forall F C st arms exp plans covered catch t,
-    st <> never -> TypesArmList W F C st arms exp plans covered catch t ->
-    (catch = true \/ (members st <> [] /\ forall m h, In m (members st) -> head m = Some h -> In h covered)) ->
-    TypesArms W F C st arms exp plans t
-with TypesArmList (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
-    option ty -> list (pattern_plan * expression_plan) -> list nat -> bool -> ty -> Prop :=
-| TypesArmOne : forall F C st pat body exp pattern plan t,
-    TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan t ->
-    opt_fits t exp ->
-    TypesArmList W F C st [(pat, body)] exp [(pattern, plan)] (pattern_heads pattern) (pattern_catches pattern) t
-| TypesArmMore : forall F C st pat body rest exp pattern plan bt plans covered catch rt t,
-    rest <> [] ->
-    TypesPattern W F st pat pattern -> TypesBranch W F (pattern_scope C pattern) body exp plan bt ->
-    opt_fits bt exp -> TypesArmList W F C st rest exp plans covered catch rt -> Join bt rt exp t ->
-    TypesArmList W F C st ((pat, body) :: rest) exp ((pattern, plan) :: plans)
-      (pattern_heads pattern ++ covered) (pattern_catches pattern || catch) t
-with TypesBindItems (W : world) : frame -> cx -> list (spec * option aexpr) ->
-    list binding_plan -> cx -> frame -> list nat -> Prop :=
-| TypesBindEmpty : forall F C, TypesBindItems W F C [] [] C F []
-| TypesBindCons : forall F C item rest plan plans middle F1 made1 result F2 made2,
-    TypesBindItem W F C item plan middle F1 made1 ->
-    TypesBindItems W F1 middle rest plans result F2 made2 ->
-    TypesBindItems W F C (item :: rest) (plan :: plans) result F2 (made1 ++ made2)
-with TypesBindItem (W : world) : frame -> cx -> (spec * option aexpr) ->
-    binding_plan -> cx -> frame -> list nat -> Prop :=
-| TypesBindType : forall F C path symbol right arguments meaning,
-    resolve_sym W (fr_mod F) path = Some symbol -> kind_sym W symbol = Some DKType ->
-    ~ In symbol (fr_pins F) ->
-    TyOf W (fr_mod F) (c_ty C) None (ATRef right arguments) meaning ->
-    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath right arguments))
-      (PlanTypeBind symbol (canon C meaning)) (set_ty C symbol (canon C meaning)) F []
-| TypesBindValue : forall F C path symbol d name annotation initializer declared source plan actual arguments,
-    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
-    d_ast d = ADVal name annotation initializer ->
-    TyOf W (d_mod d) (c_ty C) None annotation declared ->
-    TypesExpr W F C source (Some declared) plan actual -> fits actual declared ->
-    AppOf W symbol (c_ty C) arguments ->
-    TypesBindItem W F C (Spec (Some path) None None, Some source) (PlanValueBind C symbol plan)
-      (provide C (IVal symbol) arguments (set_val C symbol declared)) F []
-| TypesBindInlineApply : forall F C path symbol d name parameters inputs outputs bodies plans result nested made,
-    resolve_sym W (fr_mod F) path = Some symbol -> w_decl W symbol = Some d ->
-    d_ast d = ADFunctor name parameters inputs outputs (Some bodies) -> ~ In symbol (fr_applying F) ->
-    TypesBindItems W (with_mod F (d_mod d) symbol) C (List.concat bodies) plans result nested made ->
-    TypesBindItem W F C (Spec (Some path) None None, None) (PlanInlineApply plans)
-      result (carry_frame_allocations F nested) made
-| TypesBindAbstractApply : forall F C path plan,
-    TypesApplication W F C path plan ->
-    TypesBindItem W F C (Spec (Some path) None None, None) (PlanAbstractApply C plan) (app_result plan)
-      (frame_after_allocation F (extend_allocation_scope (body_allocation_scope W F C) (app_allocated plan)))
-      (map (app_identity plan) (app_outputs plan))
-| TypesBindFunctorCopy : forall F C path u provider h Cu nsu Ch nsh target fixed positions,
-    resolve_sym W (fr_mod F) path = Some u -> resolve_sym W (fr_mod F) provider = Some h ->
-    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) -> nlook h (c_funs C) <> None ->
-    FunCtx W u Cu nsu -> FunCtx W h Ch nsh ->
-    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
-    (forall x, Fixed W h x -> Fixed W u x) -> FixedAgreement W C h -> SameResult W u h ->
-    (forall x t, In (x, t) fixed <-> Fixed W u x /\ nlook x (c_ty C) = Some t) ->
-    (forall x t, nlook x (c_ty Ch) = Some t -> nlook x (c_ty Cu) <> None) ->
-    CopyInterpretation W (map (fun q => (fst q, canon C (snd q))) fixed) u h Cu nsu nsh Ch positions target ->
-    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
-      (PlanFunctorCopy u h Cu Ch target nsh positions) (set_fun C u fixed) F []
-| TypesBindFunction : forall F C path f signature provider plan arguments,
-    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
-    SigOf W f (c_ty C) None signature -> TypesFunctionProvider W F C provider signature plan ->
-    AppOf W f (c_ty C) arguments ->
-    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
-      (PlanFunctionBind C f signature plan) (provide C (IFn f) arguments (set_fn C f signature)) F []
-| TypesBindAttached : forall F C path label brackets method receiver signature arguments provider name site plan,
-    TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
-    TypesAttachedMethodPlan W F C provider name receiver signature site plan ->
-    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AEField (AEPath provider None) name))
-      (PlanAttachedBind (canon C receiver) method (theta_of C arguments) site plan)
-      (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
-| TypesBindWrapped : forall F C path label brackets method receiver signature arguments provider plan,
-    TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
-    TypesWrappedMethodPlan W F C provider signature plan ->
-    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AEPath provider None))
-      (PlanWrappedBind (canon C receiver) method (theta_of C arguments) C signature plan)
-      (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
-| TypesBindFunctionLambda : forall F C path f signature ps ann body arguments layout provider result,
-    resolve_sym W (fr_mod F) path = Some f -> kind_sym W f = Some DKFn ->
-    SigOf W f (c_ty C) None signature -> AppOf W f (c_ty C) arguments ->
-    TypesLambdaHeader W F C ps ann body signature None layout provider result ->
-    TypesBlkE W layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
-      (Some (sg_ret signature)) (lambda_source_body provider) result ->
-    TypesBindItem W F C (Spec (Some path) None None, Some (AELam ps ann body))
-      (PlanFunctionLambda C f signature (map fst ps) layout provider)
-      (provide C (IFn f) arguments (set_fn C f signature)) F []
-| TypesBindMethodLambda : forall F C path label brackets method receiver signature arguments ps ann body layout provider result,
-    TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
-    TypesLambdaHeader W F C ps ann body signature (Some receiver) layout provider result ->
-    TypesBlkE W layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
-      (Some (sg_ret signature)) (lambda_source_body provider) result ->
-    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AELam ps ann body))
-      (PlanMethodLambda (canon C receiver) method (theta_of C arguments) C signature (map fst ps) layout provider)
-      (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
-| TypesBindClosure : forall F C path provider layout descriptor target_needs provider_needs
-    selected fixed items result nested made,
-    let handle := linked_handle descriptor in
-    let u := linked_target_symbol handle in
-    let g := linked_provider_symbol handle in
-    let Cu := linked_target_context descriptor in
-    let Cg := linked_provider_context descriptor in
-    let pins := link_plan_pins (linked_result_reading descriptor) in
-    resolve_sym W (fr_mod F) path = Some u -> resolve_sym W (fr_mod F) provider = Some g ->
-    (exists n ps a r, ast_of W u = Some (ADFunctor n ps a r None)) ->
-    w_context W u = Some (Cu, target_needs) -> w_context W g = Some (Cg, provider_needs) ->
-    (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
-    SameResult W u g ->
-    LinkBinding W u Cu target_needs Cg provider_needs
-      (map (fun q => (fst q, canon C (snd q))) fixed) (link_private_readings C Cu Cg)
-      (link_adopted_inputs C Cu Cg) selected ->
-    TypesLinkedHeader W layout descriptor items result nested made ->
-    TypesBindItems W layout Cg items (linked_bind_plan descriptor) result nested made ->
-    NeedsSatisfied C Cg (closure_arguments C Cg) (captured_needs selected provider_needs) ->
-    (forall x t, In (x, t) fixed <-> Fixed W u x /\ nlook x (c_ty C) = Some t) ->
-    (forall x, In x (map fst (c_ty Cg)) -> ~ In x (map fst (c_ty Cu)) -> InForceThrough C Cg x) ->
-    (forall x t, In (x, t) pins -> exists here, nlook x (c_ty C) = Some here /\
-      (forall y, In y (gens t) -> nlook y (c_ty C) <> None) /\
-      canon C here = canon C (app_subst (closure_arguments C Cg) t)) ->
-    TypesBindItem W F C (Spec (Some path) None None, Some (AEPath provider None))
-      (PlanFunctorClosure C layout descriptor selected provider_needs) (set_fun C u fixed) F [].
-
 Lemma binding_plan_numbering : forall W F C item plan result F' made,
   TypesBindItem W F C item plan result F' made -> fr_var F' = fr_var F.
 Proof. intros W F C item plan result F' made Typed. destruct Typed; reflexivity. Qed.
@@ -581,8 +69,6 @@ Proof.
   rewrite IHTyped. eapply binding_plan_numbering; eassumption.
 Qed.
 
-Definition splice_bindings (bindings : list binding) (body : expr) : expr := fold_right EBind body bindings.
-
 Lemma splice_bindings_append : forall left right,
   splice_bindings (left ++ right) = fun body => splice_bindings left (splice_bindings right body).
 Proof.
@@ -591,41 +77,6 @@ Proof.
     fun body => EBind b (splice_bindings left (splice_bindings right body))).
   now rewrite IH.
 Qed.
-
-Definition application_binding (C : cx) (a : application) : binding :=
-  BApply (app_functor a) (app_arguments a) (map (fun t => (t, app_identity a t)) (app_outputs a))
-    (satisfaction_map C (app_input a) (app_arguments a) (app_needs a))
-    (map (rkey_of (app_result a)) (app_provisions a)).
-
-Inductive placement_requirement : Type :=
-| PlaceFunction (slot : nat) (body : expr) (section : option subst)
-| PlaceFunctor (slot : nat) (body : functor_code) (source : nat * nat)
-| PlaceLayout (layout : frame) (receiver : option ty) (parameters : list name).
-
-Definition placement_in (W : world) (P : program) (requirement : placement_requirement) : Prop :=
-  match requirement with
-  | PlaceFunction slot body section =>
-      Fresh W slot /\ body_of P slot = Some body /\
-      match section with
-      | Some reads => nlook slot (lambda_sections (program_origins P)) = Some reads
-      | None => True
-      end
-  | PlaceFunctor slot body source =>
-      Fresh W slot /\ funbody_of P slot = Some body /\
-      nlook slot (linked_origins (program_origins P)) = Some source
-  | PlaceLayout layout receiver parameters => Numbering layout receiver parameters
-  end.
-
-Definition placements_in (W : world) (P : program) :=
-  Forall (placement_in W P).
-
-Definition function_placements (resolve : nat -> nat) (signature : fsig)
-    (provider : function_provider_plan) : list placement_requirement :=
-  match provider with
-  | NamedFunctionProvider _ => []
-  | AbstractFunctionForwarder occurrence handle =>
-      [PlaceFunction (resolve occurrence) (forwarder_body handle signature) None]
-  end.
 
 Lemma function_placements_exact : forall W P resolve signature provider,
   placements_in W P (function_placements resolve signature provider) <->
@@ -636,38 +87,6 @@ Proof.
   rewrite Forall_cons_iff. cbn [placement_in]. unfold TranslatesForwarder.
   split; [tauto|]. intros [Fresh Body]. split; [tauto|constructor].
 Qed.
-
-Record emission (A : Type) := Emission {
-  emitted_code : A;
-  emitted_placements : list placement_requirement
-}.
-Arguments Emission {A}.
-Arguments emitted_code {A}.
-Arguments emitted_placements {A}.
-
-Definition emit_only {A} (code : A) : emission A := Emission code [].
-
-Definition emit_map {A B} (make : A -> B) (source : emission A) : emission B :=
-  Emission (make (emitted_code source)) (emitted_placements source).
-
-Definition emit_pair {A B C} (make : A -> B -> C) (first : emission A) (second : emission B) : emission C :=
-  Emission (make (emitted_code first) (emitted_code second))
-    (emitted_placements first ++ emitted_placements second).
-
-Definition emit_each {A B} (emit : A -> emission B) (sources : list A) : emission (list B) :=
-  Emission (map (fun source => emitted_code (emit source)) sources)
-    (flat_map (fun source => emitted_placements (emit source)) sources).
-
-Definition emit_flat {A B} (emit : A -> emission (list B)) (sources : list A) : emission (list B) :=
-  Emission (flat_map (fun source => emitted_code (emit source)) sources)
-    (flat_map (fun source => emitted_placements (emit source)) sources).
-
-Definition require_placement {A} (requirement : placement_requirement) (source : emission A) : emission A :=
-  Emission (emitted_code source) (requirement :: emitted_placements source).
-
-Definition lambda_capture_bindings (slots : list (name * nat)) (provider : lambda_body_descriptor block_plan) :=
-  map (fun '(n, symbol) => BValue symbol (EVar (local_number slots n)))
-    (lambda_descriptor_captures provider).
 
 Lemma lambda_prefix_bindings : forall F provider,
   splice_bindings (lambda_capture_bindings (fr_var F) provider) = lambda_descriptor_prefix F provider.
@@ -681,155 +100,7 @@ Proof.
   now rewrite IH.
 Qed.
 
-Definition lambda_binding_placements (resolve : nat -> nat) (site : cx) (parameters : list name)
-    (layout : frame) (provider : lambda_body_descriptor block_plan) (body : emission expr) :=
-  PlaceLayout layout (fr_this layout) parameters ::
-  PlaceFunction (resolve (lambda_occurrence provider))
-    (lambda_descriptor_code layout provider (emitted_code body)) (Some (c_sub site)) ::
-  emitted_placements body.
-
-Definition emit_lambda_binding (resolve : nat -> nat) (slots : list (name * nat)) (site : cx)
-    (parameters : list name) (layout : frame) (provider : lambda_body_descriptor block_plan)
-    (body : emission expr) (make : nat -> smap -> binding) : emission (list binding) :=
-  Emission (lambda_capture_bindings slots provider ++
-    [make (resolve (lambda_occurrence provider)) (lambda_descriptor_needs site provider)])
-    (lambda_binding_placements resolve site parameters layout provider body).
-
-Definition linked_binding_placements (resolve : nat -> nat) (layout : frame)
-    (descriptor : linked_body_descriptor (list binding_plan)) (body : emission (list binding)) :=
-  let handle := linked_handle descriptor in
-  PlaceLayout layout None [] ::
-  PlaceFunctor (resolve (linked_occurrence handle))
-    (linked_descriptor_code descriptor (emitted_code body))
-    (linked_target_symbol handle, linked_provider_symbol handle) ::
-  emitted_placements body.
-
-Fixpoint emit_expr (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
-    (plan : expression_plan) : emission expr :=
-  match plan with
-  | PlanUnit => emit_only EUnit
-  | PlanThis => emit_only (EVar 0)
-  | PlanLocal n => emit_only (EVar (local_number slots n))
-  | PlanBlock body => emit_block resolve slots C body
-  | PlanIf condition body other =>
-      let otherwise := match other with
-        | Some plan => emit_expr resolve slots C plan
-        | None => emit_only EUnit
-        end in
-      emit_pair (fun '(test, yes) no => EIf test yes no)
-        (emit_pair pair (emit_expr resolve slots C condition) (emit_block resolve slots C body))
-        otherwise
-  | PlanReturnUnit => emit_only (EReturn EUnit)
-  | PlanReturn result => emit_map EReturn (emit_expr resolve slots C result)
-  | PlanBreak => emit_only EBreak
-  | PlanDefinedCall f formal needs arguments demands call_site args =>
-      emit_map (fun values => translate_demands C demands (translate_call call_site formal f arguments needs values))
-        (emit_each (emit_expr resolve slots C) args)
-  | PlanAbstractCall f args => emit_map (EInvoke f) (emit_each (emit_expr resolve slots C) args)
-  | PlanUnitTag tag => emit_only (ETag tag [] EUnit)
-  | PlanTag tag arguments payload => emit_map (ETag tag arguments) (emit_expr resolve slots C payload)
-  | PlanRecord tag arguments fields =>
-      emit_map (fun values => ETag tag arguments (ERecord values))
-        (emit_each (fun '(n, child) => emit_map (pair n) (emit_expr resolve slots C child)) fields)
-  | PlanField object field => emit_map (fun value => EField value field) (emit_expr resolve slots C object)
-  | PlanMatch scrutinee arms =>
-      emit_pair EMatch (emit_expr resolve slots C scrutinee)
-        (emit_each (fun '(pattern, body) => emit_map (pair (emit_pattern slots pattern))
-          (emit_expr resolve slots (pattern_scope C pattern) body)) arms)
-  | PlanMethod receiver selected object args =>
-      emit_pair (emit_method_call C receiver selected) (emit_expr resolve slots C object)
-        (emit_each (emit_expr resolve slots C) args)
-  | PlanOperator receiver method family object args =>
-      emit_pair (emit_provided_method C receiver method family) (emit_expr resolve slots C object)
-        (emit_each (emit_expr resolve slots C) args)
-  | PlanNumeric literal => emit_only (emit_literal C literal)
-  | PlanGlobalValue symbol => emit_only (EVal symbol)
-  | PlanConstant layout initializer =>
-      require_placement (PlaceLayout layout None [])
-        (emit_expr resolve (fr_var layout) (Cx [] [] [] [] []) initializer)
-  | PlanBracketedCall expansion => emit_expr resolve slots C expansion
-  end
-with emit_block (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
-    (plan : block_plan) : emission expr :=
-  match plan with
-  | PlanEmpty => emit_only EUnit
-  | PlanTail result => emit_expr resolve slots C result
-  | PlanLet n t mode initializer rest =>
-      emit_pair (ELet (local_number slots n)) (emit_expr resolve slots C initializer)
-        (emit_block resolve slots (add_local C n t mode) rest)
-  | PlanAssign n value rest =>
-      emit_pair (fun value => ESeq (EAssign (local_number slots n) value))
-        (emit_expr resolve slots C value) (emit_block resolve slots C rest)
-  | PlanExprLast value => emit_map (fun value => ESeq value EUnit) (emit_expr resolve slots C value)
-  | PlanExprThen value rest =>
-      emit_pair ESeq (emit_expr resolve slots C value) (emit_block resolve slots C rest)
-  | PlanWhile condition body rest =>
-      emit_pair ESeq (emit_pair EWhile (emit_expr resolve slots C condition) (emit_block resolve slots C body))
-        (emit_block resolve slots C rest)
-  | PlanLoop body rest =>
-      emit_pair (fun body => ESeq (ELoop body)) (emit_block resolve slots C body) (emit_block resolve slots C rest)
-  | PlanLoopLast body => emit_map (fun body => ESeq (ELoop body) EUnit) (emit_block resolve slots C body)
-  | PlanBind items result rest =>
-      emit_pair splice_bindings (emit_flat (emit_bind_item resolve slots) items) (emit_block resolve slots result rest)
-  end
-with emit_bind_item (resolve : nat -> nat) (slots : list (name * nat)) (plan : binding_plan)
-    : emission (list binding) :=
-  match plan with
-  | PlanTypeBind symbol meaning => emit_only [BType symbol meaning]
-  | PlanValueBind site symbol initializer =>
-      emit_map (fun value => [BValue symbol value]) (emit_expr resolve slots site initializer)
-  | PlanInlineApply items => emit_flat (emit_bind_item resolve slots) items
-  | PlanAbstractApply site plan => emit_only [application_binding site plan]
-  | PlanFunctorCopy target provider Cu Ch selected needs positions =>
-      emit_only [BCopyFunctor target provider (map (fun k => (rkey_of Ch k, rkey_of Cu (selected k))) needs) positions]
-  | PlanFunctionBind site symbol signature provider =>
-      Emission [BFunction symbol (function_plan_target resolve provider)
-        (function_plan_capture provider) (function_plan_provisions site provider)]
-        (function_placements resolve signature provider)
-  | PlanAttachedBind receiver method arguments site provider =>
-      emit_only [BMethod receiver method arguments (provider_symbol provider)
-        (named_provider_capture provider) (named_provider_provisions site provider)]
-  | PlanWrappedBind receiver method arguments site signature provider =>
-      let named := wrapped_method_provider provider in
-      let slot := resolve (wrapped_method_occurrence provider) in
-      Emission [BMethod receiver method arguments slot (named_provider_capture named)
-        (named_provider_provisions site named)] [PlaceFunction slot (wrapped_method_code signature provider) None]
-  | PlanFunctionLambda site symbol signature parameters layout provider =>
-      let body_site := lambda_parameter_context (lambda_plan_capture_context provider) parameters (sg_params signature) in
-      emit_lambda_binding resolve slots site parameters layout provider
-        (emit_block resolve (fr_var layout) body_site (lambda_source_body provider))
-        (fun target needs => BFunction symbol target (lexical_capture site) needs)
-  | PlanMethodLambda receiver method arguments site signature parameters layout provider =>
-      let body_site := lambda_parameter_context (lambda_plan_capture_context provider) parameters (sg_params signature) in
-      emit_lambda_binding resolve slots site parameters layout provider
-        (emit_block resolve (fr_var layout) body_site (lambda_source_body provider))
-        (fun target needs => BMethod receiver method arguments target (lexical_capture site) needs)
-  | PlanFunctorClosure site layout descriptor selected needs =>
-      let handle := linked_handle descriptor in
-      let Cu := linked_target_context descriptor in
-      let Cg := linked_provider_context descriptor in
-      let body := emit_flat (emit_bind_item resolve (fr_var layout)) (linked_bind_plan descriptor) in
-      Emission [BFunctor (linked_target_symbol handle) (resolve (linked_occurrence handle)) (lexical_capture site)
-        (link_map Cu Cg selected needs)
-        (satisfaction_map site Cg (closure_arguments site Cg) (captured_needs selected needs))]
-        (linked_binding_placements resolve layout descriptor body)
-  end.
-
 Definition identity_slots (token : nat) := token.
-
-Definition expression_emission (resolve : nat -> nat) (F : frame) := emit_expr resolve (fr_var F).
-Definition block_emission (resolve : nat -> nat) (F : frame) := emit_block resolve (fr_var F).
-Definition argument_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
-  emit_each (expression_emission resolve F C).
-Definition record_fields_emission (resolve : nat -> nat) (F : frame) (C : cx)
-    (fields : list (fld * expression_plan)) :=
-  emit_each (fun '(n, child) => emit_map (pair n) (expression_emission resolve F C child)) fields.
-Definition arms_emission (resolve : nat -> nat) (F : frame) (C : cx) :=
-  emit_each (fun '(pattern, body) => emit_map (pair (translate_pattern F pattern))
-    (expression_emission resolve F (pattern_scope C pattern) body)).
-Definition bind_item_emission (resolve : nat -> nat) (F : frame) := emit_bind_item resolve (fr_var F).
-Definition bind_items_emission (resolve : nat -> nat) (F : frame) :=
-  emit_flat (bind_item_emission resolve F).
 
 Definition binding_activity_of (instruction : binding) : binding_activity :=
   match instruction with
@@ -937,7 +208,8 @@ Proof.
   eapply BMethBind; eassumption.
 Qed.
 
-Local Lemma lambda_from_header : forall W P F C ps ann body signature this layout provider result code resolve,
+Local Lemma lambda_from_header : forall W P F C ps ann body signature this layout
+    (provider : lambda_body_descriptor block_plan) result code resolve,
   TypesLambdaHeader W F C ps ann body signature this layout provider result ->
   BlkE W P layout (lambda_descriptor_site signature ps provider) (ABlock [] (Some body))
     (Some (sg_ret signature)) code result ->
@@ -948,15 +220,17 @@ Local Lemma lambda_from_header : forall W P F C ps ann body signature this layou
 Proof.
   intros W P F C ps ann body signature this layout provider result code resolve Typed Body Numbered
     [Fresh [Code Origin]].
-  destruct Typed as [body_type caps capvals Cl Length Distinct Annotations Return Capture Context
-    Module Ret This Loop Keep NamedBody NamedOuter Result Fits Needs Unique].
-  cbn beta in Result. subst body_type. rewrite This in Numbered.
+  destruct Typed as [caps capvals Cl Length Distinct Annotations Return Capture Context
+    Module Ret This Loop Keep NamedBody NamedOuter Fits Needs Unique].
+  rewrite This in Numbered.
   eapply (@LP W P F C ps ann body signature this _ caps capvals Cl layout code result
     (lambda_provision_needs provider) (lambda_descriptor_needs C provider)); try eassumption; reflexivity.
 Qed.
 
 Local Lemma linked_from_header : forall W P resolve layout descriptor items result nested made,
-  TypesLinkedHeader W layout descriptor items result nested made ->
+  TypesLinkedHeader W layout descriptor items result made ->
+  (Family W (linked_target_symbol (linked_handle descriptor)) ->
+    FamilyBindPlans W (linked_bind_plan descriptor)) ->
   BindItems W P layout (linked_provider_context descriptor) items
     (splice_bindings (emitted_code (bind_items_emission resolve layout (linked_bind_plan descriptor))))
     result nested made ->
@@ -966,11 +240,11 @@ Local Lemma linked_from_header : forall W P resolve layout descriptor items resu
   LinkBody W P (linked_target_symbol (linked_handle descriptor)) (linked_provider_symbol (linked_handle descriptor))
     (resolve (linked_occurrence (linked_handle descriptor))) (link_plan_pins (linked_result_reading descriptor)).
 Proof.
-  intros W P resolve layout descriptor items result nested made Typed Body Numbered Placed.
-  destruct Typed as [dg name parameters inputs outputs bodies target_needs provider_needs Cb Fb created gen promised
-    target provider Cu Cg outs reading plan Declared Ast Target Provider Module Ret This Loop Protected
-    [Source [Result [Nested Made]]] NoInput Outputs Checked FamilyAllowed].
-  subst items result nested made.
+  intros W P resolve layout descriptor items result nested made Typed FamilyAllowed Body Numbered Placed.
+  destruct Typed as [dg name parameters inputs outputs bodies target_needs provider_needs Cb created gen promised
+    target provider Cu Cg outs reading Declared Ast Target Provider Module Ret This Loop Protected
+    NoInput Outputs Checked].
+  set (plan := linked_bind_plan descriptor) in *.
   destruct Checked as [_ Site PinsProvision ResultTypes PinsExact PinsScoped].
   set (bindings := emitted_code (bind_items_emission resolve layout plan)) in *.
   assert (FamilyCode : Family W target -> FamilyBindings W bindings).
@@ -979,7 +253,7 @@ Proof.
     Cu Cg (link_plan_site reading) outs bindings (link_plan_keys reading)) by exact Placed.
   rewrite Site in PinsProvision, ResultTypes, Translated.
   eapply (@LB W P target provider _ dg name parameters inputs outputs bodies Cu target_needs Cg provider_needs
-    layout (splice_bindings bindings) Cb Fb created outs gen promised (link_plan_keys reading) bindings
+    layout (splice_bindings bindings) Cb nested created outs gen promised (link_plan_keys reading) bindings
     (link_plan_pins reading)); try eassumption.
   apply BodyLinkTyping.spliced_link_bindings.
 Qed.
@@ -1303,15 +577,16 @@ Local Lemma wrapped_plan_renumber : forall W F C path signature plan slots,
   TypesWrappedMethodPlan W (renumber_body_frame F slots) C path signature plan.
 Proof. exact (fun _ _ _ _ _ _ _ Typed => Typed). Qed.
 
-Local Lemma lambda_header_renumber : forall W F C ps ann body signature this layout provider result slots,
+Local Lemma lambda_header_renumber : forall W F C ps ann body signature this layout
+    (provider : lambda_body_descriptor block_plan) result slots,
   TypesLambdaHeader W F C ps ann body signature this layout provider result ->
   SameLocalNames F slots ->
   TypesLambdaHeader W (renumber_body_frame F slots) C ps ann body signature this layout provider result.
 Proof.
   intros W F C ps ann body signature this layout provider result slots Typed Names.
-  destruct Typed as [body_type caps capvals Cl Length Distinct Annotations Return Capture Context
-    Module Ret This Loop Keep NamedBody NamedOuter Result Fits Needs Unique].
-  eapply TLP; try eassumption.
+  destruct Typed as [caps capvals Cl Length Distinct Annotations Return Capture Context
+    Module Ret This Loop Keep NamedBody NamedOuter Fits Needs Unique].
+  eapply TLambdaHeader; try eassumption.
   rewrite Forall_forall in NamedOuter |- *. intros n Present.
   apply renumbered_named; [exact Names|now apply NamedOuter].
 Qed.
