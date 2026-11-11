@@ -8,7 +8,7 @@
 (* re-read and the round repeats until nothing changes (at most one round  *)
 (* per generation, plus one).  The orientation of a merge of two           *)
 (* generations is the strategy's (s_orient). Validation checks unification *)
-(* and generation scope. Other merge properties need algorithm proofs.     *)
+(* and generation scope; EaUnifySound proves the algorithm properties.     *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
@@ -357,7 +357,7 @@ Definition fun_ctx (u : nat) : er (cx * list item) :=
   let! (sg, M) := merge es in
   Ok (entries_cx sg M tm' es, needs sg es).
 
-(* The w_context table: every fn, method and functor symbol below `bound`
+(* The w_context table: every fn, method, val and functor symbol below `bound`
    whose context forms.
    SOUND: for every s, nget (context_table bound) s = Some (C, ns) ->
      (kind fn/meth: AssumeCtx W s C ns; kind functor: FunCtx's premises

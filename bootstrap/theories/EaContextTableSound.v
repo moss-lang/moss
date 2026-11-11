@@ -1,6 +1,6 @@
 (* The source derivations and merge witnesses behind context-table entries. *)
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit EaBase EaTypes EaCtx ElabWorld NMap EaTypesSound EaEntriesSound EaRootSound EaMergeSound EaFixedSound EaResultBudget.
+From NM Require Import Audit EaBase EaTypes EaCtx ElabWorld NMap EaTypesSound EaEntriesSound EaRootSound EaMergeSound EaUnifySound EaFixedSound EaResultBudget.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 
 Definition ContextComputed (E : env) (symbol : nat) (result : cx * list item) : Prop :=
@@ -53,37 +53,6 @@ Proof.
   repeat first [assumption | split].
 Qed.
 
-(* Only actual source telescopes are passed to the unifier here. Arbitrary
-   entry lists can contain absent instantiation placeholders with no type
-   declaration in the telescope. *)
-Definition ContextTelescope (W : world) (symbol : nat) (entries : list entry) : Prop :=
-  (exists d assumed meanings roots root_meanings,
-    w_decl W symbol = Some d /\
-    ItemsEntries W (d_mod d) [] [] (map assume_spec (d_assumes d)) assumed meanings /\
-    RootCtx W symbol assumed meanings roots root_meanings /\ entries = assumed ++ roots) \/
-  (exists d parameters arguments results body meanings,
-    w_decl W symbol = Some d /\ functor_parts (d_ast d) = Some (parameters, arguments, results, body) /\
-    ItemsEntries W (d_mod d) [] [] (map CISpec arguments) entries meanings).
-
-Definition ContextMergeRemainder (E : env) : Prop :=
-  forall symbol entries sigma classes, ContextTelescope (e_W E) symbol entries ->
-    EaCtx.merge E entries = Ok (sigma, classes) ->
-    (forall t, app_subst sigma (app_subst sigma t) = app_subst sigma t) /\
-    (forall other, Unifies other entries -> forall t,
-      app_subst other (app_subst sigma t) = app_subst other t) /\
-    (forall g t, In (g, t) sigma -> lookup_subst g sigma = Some t).
-
-Lemma context_merge_most_general : forall E,
-  ContextMergeRemainder E -> forall symbol entries sigma classes,
-  ContextTelescope (e_W E) symbol entries ->
-  EaCtx.merge E entries = Ok (sigma, classes) -> MostGeneralMerge sigma entries.
-Proof.
-  intros E Remaining symbol entries sigma classes Telescope Run.
-  destruct (merge_checked _ _ _ _ Run) as [Unifier Scoped].
-  destruct (Remaining _ _ _ _ Telescope Run) as (Idempotent & Principal & Function).
-  repeat first [assumption | split].
-Qed.
-
 Section Formation.
 Variable E : env.
 Variable bound : nat.
@@ -91,10 +60,6 @@ Let W := e_W E.
 Hypothesis Bounded : forall symbol d, w_decl W symbol = Some d -> symbol < bound.
 Hypothesis Enough : metadata_budget W bound < e_metadata_fuel E.
 Hypothesis Main : forall s, In s (e_mains E) <-> IsMainFn W s.
-(* This is the remaining unifier algorithm obligation, not an assumption
-   supplied by the public safety theorem or the host interface. *)
-Hypothesis Remaining : ContextMergeRemainder E.
-
 Theorem assume_ctx_sound : forall symbol C ns,
   assume_ctx E symbol = Ok (C, ns) -> AssumeCtx W symbol C ns.
 Proof.
@@ -107,10 +72,7 @@ Proof.
   { exact (proj2 (entries_sound_at_budget E bound Bounded Enough (e_fuel E)) _ _ _ _ _ _ _ Inputs). }
   assert (Rooted : RootCtx W symbol entries meanings roots root_meanings).
   { exact (root_ctx_sound_at_budget E bound Bounded Enough Main _ _ _ _ _ Root). }
-  assert (Telescope : ContextTelescope W symbol (entries ++ roots)).
-  { left. exists d, entries, meanings, roots, root_meanings. repeat first [assumption | split | reflexivity]. }
-  pose proof (context_merge_most_general E Remaining _ _ _ _ Telescope Merge) as MostGeneral.
-  destruct (merge_presentation E _ _ _ Merge MostGeneral) as [Classes Section].
+  destruct (merge_sound E _ _ _ Merge) as (MostGeneral & Classes & Section).
   exists d, entries, meanings, roots, root_meanings, sigma, classes.
   repeat first [assumption | split | reflexivity | apply needs_exact].
 Qed.
@@ -141,10 +103,7 @@ Proof.
   { unfold functor_parts. rewrite Ast. reflexivity. }
   assert (Items : ItemsEntries W (d_mod d) [] [] (map CISpec arguments) entries meanings).
   { exact (proj2 (entries_sound_at_budget E bound Bounded Enough (e_fuel E)) _ _ _ _ _ _ _ Inputs). }
-  assert (Telescope : ContextTelescope W symbol entries).
-  { right. exists d, parameters, arguments, results, body, meanings. auto. }
-  pose proof (context_merge_most_general E Remaining _ _ _ _ Telescope Merge) as MostGeneral.
-  destruct (merge_presentation E _ _ _ Merge MostGeneral) as [Classes Section].
+  destruct (merge_sound E _ _ _ Merge) as (MostGeneral & Classes & Section).
   exists d, parameters, arguments, results, body, entries, meanings,
     (map (fun t => (t, TAbs t))
       (match body with None => filter (fun t => negb (is_some (nlook t meanings)))
@@ -169,19 +128,18 @@ Theorem installed_context_table_sound : forall E bound,
   (forall symbol d, w_decl (e_W E) symbol = Some d -> symbol < bound) ->
   metadata_budget (e_W E) bound < e_metadata_fuel E ->
   (forall s, In s (e_mains E) <-> IsMainFn (e_W E) s) ->
-  ContextMergeRemainder E ->
   (forall symbol, w_context (e_W E) symbol = nget (context_table E bound) symbol) ->
   ContextTableSound (e_W E).
 Proof.
-  intros E bound Bounded Enough Main Remaining Installed symbol C ns Found.
+  intros E bound Bounded Enough Main Installed symbol C ns Found.
   assert (Computed : ContextComputed E symbol (C, ns)).
   { apply (context_table_computed E bound). rewrite <- Installed. exact Found. }
   unfold ContextComputed in Computed.
   destruct (kind_sym (e_W E) symbol) as [[]|]; try exact Computed.
   all: first
     [ eapply assume_ctx_recorded;
-      [exact (assume_ctx_sound E bound Bounded Enough Main Remaining _ _ _ Computed)|exact Found]
-    | exact (fun_ctx_sound E bound Bounded Enough Remaining _ _ _ Computed Found) ].
+      [exact (assume_ctx_sound E bound Bounded Enough Main _ _ _ Computed)|exact Found]
+    | exact (fun_ctx_sound E bound Bounded Enough _ _ _ Computed Found) ].
 Qed.
 
 From NM Require EaMain EaMainSymbols EaMetadataSound EaWorldSound EaContextReadFacts.
@@ -192,37 +150,31 @@ Corollary bundle_world_r_context_table_sound : forall b W0 bound,
   let mains := EaMain.main_symbols W0 modules in
   let metadata := EaMain.metadata_fuel W0 bound in
   let E0 := Env W0 strategy modules mains EaMain.elab_fuel metadata in
-  let contexts := nget (context_table E0 bound) in
-  let W := ElabWorld.with_context W0 contexts in
-  let E := Env W strategy modules mains EaMain.elab_fuel metadata in
-  ContextMergeRemainder E -> ContextTableSound W.
+  ContextTableSound (ElabWorld.with_context W0 (nget (context_table E0 bound))).
 Proof.
-  intros b W0 bound Loaded strategy. cbn zeta. intro Remaining.
-  lazymatch type of Remaining with
-  | ContextMergeRemainder ?E => apply (installed_context_table_sound E bound)
-  end.
+  intros b W0 bound Loaded strategy. cbn zeta.
+  set (modules := map am_path (b_mods b)).
+  set (mains := EaMain.main_symbols W0 modules).
+  set (metadata := EaMain.metadata_fuel W0 bound).
+  set (E0 := Env W0 strategy modules mains EaMain.elab_fuel metadata).
+  set (W := ElabWorld.with_context W0 (nget (context_table E0 bound))).
+  set (E := Env W strategy modules mains EaMain.elab_fuel metadata).
+  change (ContextTableSound (e_W E)). apply (installed_context_table_sound E bound).
   - exact (EaWorldSound.bundle_world_r_bound _ _ _ Loaded).
   - exact (EaMetadataSound.metadata_fuel_sufficient W0 bound).
   - exact (EaMainSymbols.bundle_world_r_main_symbols_exact _ _ _ Loaded).
-  - exact Remaining.
-  - intro symbol. cbn [e_W ElabWorld.with_context w_context].
+  - intro symbol. unfold E, W, E0. cbn [e_W ElabWorld.with_context w_context].
     rewrite EaContextReadFacts.context_table_context. reflexivity.
 Qed.
 
 Theorem elaborate_with_context_table_sound : forall strategy b W program,
-  EaMain.elaborate_with strategy b = Ok (W, program) ->
-  (forall W0 bound, EaMain.bundle_world_r b = Ok (W0, bound) ->
-    let modules := map am_path (b_mods b) in
-    ContextMergeRemainder (Env W strategy modules (EaMain.main_symbols W0 modules)
-      EaMain.elab_fuel (EaMain.metadata_fuel W0 bound))) ->
-  ContextTableSound W.
+  EaMain.elaborate_with strategy b = Ok (W, program) -> ContextTableSound W.
 Proof.
-  intros strategy b W program Run Remaining.
+  intros strategy b W program Run.
   unfold EaMain.elaborate_with, EaMain.elaborate_with_metadata in Run.
   destruct (EaMain.bundle_world_r b) as [[W0 bound]|message] eqn:Loaded; [|discriminate].
   repeat match type of Run with
   | context [match ?step with _ => _ end] => destruct step eqn:?; try discriminate
   end.
-  injection Run as <- <-. apply (bundle_world_r_context_table_sound _ _ _ Loaded strategy).
-  apply Remaining. reflexivity.
+  injection Run as <- <-. exact (bundle_world_r_context_table_sound _ _ _ Loaded strategy).
 Qed.

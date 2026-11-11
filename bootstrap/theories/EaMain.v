@@ -287,8 +287,8 @@ Definition main_symbols (W : world) (modules : list string) : list nat :=
 
 Definition elab_fuel : nat := 100000.
 
-(* SOUND: elaborate_with strat b = Ok (W, P) -> ElaboratesIn b W P /\ Platform.Linked W P
-   (for every strategy; pending pieces in elab-STATUS.md) *)
+(* Full soundness still asks for ElaboratesIn b W P /\ Platform.Linked W P.
+   EaWorldSound and EaContextTableSound certify the world and its contexts. *)
 Definition elaborate_with_metadata (strat : strategy)
   (choose_metadata_fuel : world -> nat -> nat) (b : bundle) : er (world * program) :=
   match bundle_world_r b with

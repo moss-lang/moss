@@ -31,8 +31,8 @@
 (*   EaMain      the knot (fuel), FnElab for every defined fn, assembly,    *)
 (*               `elaborate`                                                *)
 (*                                                                           *)
-(* No proofs yet.  Soundness statements are written as comments          *)
-(* "SOUND:" on each function, in the form "if it returns X, then J holds".  *)
+(* The Sound files prove the checked reader, merge and context contracts.  *)
+(* The remaining SOUND comments record the targets for unfinished proofs. *)
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
