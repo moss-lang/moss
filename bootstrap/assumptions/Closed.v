@@ -207,3 +207,8 @@ Print Assumptions NM.EaCodeEffects.fresh_table_code_effect.
 From NM Require AllocationRenaming.
 Print Assumptions NM.AllocationRenaming.fresh_batches_are_renamings.
 Print Assumptions NM.AllocationRenaming.allocated_batches_alpha.
+
+From NM Require EaBindCodeEffects.
+Print Assumptions NM.EaBindCodeEffects.copy_interpretation_code_effect.
+Print Assumptions NM.EaBindCodeEffects.link_body_code_effect.
+Print Assumptions NM.EaBindCodeEffects.bind_items_preserve_code.
