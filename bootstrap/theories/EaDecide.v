@@ -19,61 +19,85 @@ Variable fuel : nat.
 
 (* ---- Breaks (note 42) ---- *)
 
-(* SOUND: breaks n md e = true <-> Breaks W md e (with enough fuel), and
-   likewise block_breaks/stmt_breaks/item_breaks *)
-Fixpoint breaks (n : nat) (md : string) (e : aexpr) {struct n} : bool :=
+(* A finite scan may establish a break or its absence. Reaching the
+   depth bound leaves the question undecided. *)
+Definition break_or (left : option bool) (right : unit -> option bool) : option bool :=
+  match left with
+  | Some true => Some true
+  | Some false => right tt
+  | None => match right tt with Some true => Some true | _ => None end
+  end.
+
+Fixpoint any_break {A} (scan : A -> option bool) (items : list A) : option bool :=
+  match items with
+  | [] => Some false
+  | item :: rest => break_or (scan item) (fun _ => any_break scan rest)
+  end.
+
+Definition optional_break {A} (scan : A -> option bool) (item : option A) : option bool :=
+  match item with Some x => scan x | None => Some false end.
+
+Fixpoint breaks (n : nat) (md : string) (e : aexpr) {struct n} : option bool :=
   match n with
-  | 0 => false
+  | 0 => None
   | S n' =>
       match e with
-      | AEBreak => true
-      | AECall _ _ args => existsb (breaks n' md) args
+      | AEBreak => Some true
+      | AECall _ _ args => any_break (breaks n' md) args
       | AEField o _ => breaks n' md o
-      | AEMeth o _ args => breaks n' md o || existsb (breaks n' md) args
-      | AERec _ _ fs => existsb (fun q => match snd q with Some y => breaks n' md y | None => false end) fs
-      | AEIf c b oe => breaks n' md c || block_breaks n' md b || match oe with Some y => breaks n' md y | None => false end
-      | AEMatch s arms => breaks n' md s || existsb (fun q => breaks n' md (snd q)) arms
-      | AEReturn (Some y) => breaks n' md y
+      | AEMeth o _ args => break_or (breaks n' md o) (fun _ => any_break (breaks n' md) args)
+      | AERec _ _ fs => any_break (fun q => optional_break (breaks n' md) (snd q)) fs
+      | AEIf c b oe =>
+          break_or (breaks n' md c) (fun _ =>
+            break_or (block_breaks n' md b) (fun _ => optional_break (breaks n' md) oe))
+      | AEMatch s arms => break_or (breaks n' md s) (fun _ =>
+          any_break (fun q => breaks n' md (snd q)) arms)
+      | AEReturn oe => optional_break (breaks n' md) oe
       | AEBlock b => block_breaks n' md b
       | AEUnary _ y => breaks n' md y
-      | AEBinary _ l r => breaks n' md l || breaks n' md r
-      | _ => false
+      | AEBinary _ l r => break_or (breaks n' md l) (fun _ => breaks n' md r)
+      | _ => Some false
       end
   end
-with block_breaks (n : nat) (md : string) (b : ablock) {struct n} : bool :=
+with block_breaks (n : nat) (md : string) (b : ablock) {struct n} : option bool :=
   match n with
-  | 0 => false
+  | 0 => None
   | S n' => match b with
-            | ABlock ss tl => existsb (stmt_breaks n' md) ss || match tl with Some y => breaks n' md y | None => false end
+            | ABlock ss tl =>
+                break_or (any_break (stmt_breaks n' md) ss) (fun _ => optional_break (breaks n' md) tl)
             end
   end
-with stmt_breaks (n : nat) (md : string) (s : astmt) {struct n} : bool :=
+with stmt_breaks (n : nat) (md : string) (s : astmt) {struct n} : option bool :=
   match n with
-  | 0 => false
+  | 0 => None
   | S n' =>
       match s with
       | ASLet _ _ y | ASVar _ _ y | ASAssign _ y | ASExpr y => breaks n' md y
-      | ASBind its => existsb (item_breaks n' md) its
+      | ASBind its => any_break (item_breaks n' md) its
       | ASWhile c _ => breaks n' md c
-      | ASLoop _ => false
+      | ASLoop _ => Some false
       end
   end
-with item_breaks (n : nat) (md : string) (it : spec * option aexpr) {struct n} : bool :=
+with item_breaks (n : nat) (md : string) (it : spec * option aexpr) {struct n} : option bool :=
   match n with
-  | 0 => false
+  | 0 => None
   | S n' =>
-      match it with
-      | (_, Some y) => breaks n' md y
-      | (Spec (Some pa) None None, None) =>
-          match resolve_sym W md pa with
-          | Some u => match w_decl W u with
-                      | Some d => match d_ast d with
-                                  | ADFunctor _ _ _ _ (Some bodies) => existsb (item_breaks n' (d_mod d)) (List.concat bodies)
-                                  | _ => false end
-                      | None => false end
-          | None => false
+      match snd it with
+      | Some y => breaks n' md y
+      | None =>
+          match fst it with
+          | Spec (Some pa) None None =>
+              match resolve_sym W md pa with
+              | Some u => match w_decl W u with
+                          | Some d => match d_ast d with
+                                      | ADFunctor _ _ _ _ (Some bodies) =>
+                                          any_break (item_breaks n' (d_mod d)) (List.concat bodies)
+                                      | _ => Some false end
+                          | None => Some false end
+              | None => Some false
+              end
+          | _ => Some false
           end
-      | _ => false
       end
   end.
 

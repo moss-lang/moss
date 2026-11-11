@@ -583,12 +583,19 @@ with blk (n : nat) (F : frame) (C : cx) (ss : list astmt) (tl : option aexpr) (e
               let* ((xr, t), made) := blk n' F C rest tl exp in
               ret (ESeq (EWhile cx' bx) xr, t, made)
           | ASLoop b =>
-              let last := match rest, tl with [], None => negb (block_breaks W fuel (fr_mod F) b) | _, _ => false end in
-              let* (bx, _) := blke n' (with_loop F) C b None in
-              if last then ret (ESeq (ELoop bx) EUnit, never, [])
-              else
-                let* ((xr, t), made) := blk n' F C rest tl exp in
-                ret (ESeq (ELoop bx) xr, t, made)
+              let falls_through := match rest, tl with
+                | [], None => block_breaks W fuel (fr_mod F) b
+                | _, _ => Some true
+                end in
+              match falls_through with
+              | None => fail "too deep"
+              | Some more =>
+                  let* (bx, _) := blke n' (with_loop F) C b None in
+                  if more then
+                    let* ((xr, t), made) := blk n' F C rest tl exp in
+                    ret (ESeq (ELoop bx) xr, t, made)
+                  else ret (ESeq (ELoop bx) EUnit, never, [])
+              end
           | ASBind its =>
               let* (((wrap, C'), F'), made) := r_bind_items R F C its in
               let* ((xr, t), made') := blk n' F' C' rest tl exp in
