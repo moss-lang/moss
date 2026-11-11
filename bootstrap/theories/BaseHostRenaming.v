@@ -10,7 +10,7 @@ Local Opaque loop_fuel.
 
 Section HostState.
 Variable rename : nat -> nat.
-Local Definition action := base_renaming rename.
+Local Notation action := (base_renaming rename).
 
 Fixpoint rename_stored (w : xvalue) : xvalue :=
   match w with
