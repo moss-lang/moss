@@ -344,7 +344,7 @@ Fixpoint sev (d : fenv) (g : locals) (st : mstate) (s : sexpr) {struct s} : opti
       match read d i with
       | Some (FPrimitive p held) =>
           match ev with
-          | Some (ws, st1) => match I.run_prim_at P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+          | Some (ws, st1) => match I.run_prim_at P p (force_held held) ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
           | None => None
           end
       | _ => None
@@ -429,7 +429,7 @@ Fixpoint scalar_compile (keys : list lk) (s : sexpr) {struct s} : scalar_code :=
         | Some (FPrimitive p held) =>
             match ca slots g st with
             | Some (ws, st1) =>
-                match I.run_prim_at P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+                match I.run_prim_at P p (force_held held) ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
             | None => None
             end
         | _ => None
@@ -553,7 +553,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | Some (FPrimitive p held) =>
               match ca k d g st with
               | inl (ws, g1, st1) =>
-                  let (o, st2) := I.run_prim_at P p held ws st1 in I.Evaluation o g1 st2
+                  let (o, st2) := I.run_prim_at P p (force_held held) ws st1 in I.Evaluation o g1 st2
               | inr r => r
               end
           | _ => I.Evaluation (Stuck I.e_entry) g st
@@ -583,7 +583,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
               | I.Evaluation (Normal w0) g0 st0 =>
                   match ca k d g0 st0 with
                   | inl (ws, g1, st1) =>
-                      let (o, st2) := I.run_prim_at P p held (w0 :: ws) st1 in I.Evaluation o g1 st2
+                      let (o, st2) := I.run_prim_at P p (force_held held) (w0 :: ws) st1 in I.Evaluation o g1 st2
                   | inr r => r
                   end
               | r => r
@@ -894,7 +894,7 @@ Proof.
             | None => None end end) ss st) with (sevl P d g ss st) in Ev.
       destruct (read d (remapo pl (IFn f))) as [[| | |p held]|] eqn:R; try discriminate.
       destruct (sevl P d g ss st) as [[ws st1]|] eqn:Ea; [|discriminate].
-      destruct (I.run_prim_at P p held ws st1) as [[]  st2] eqn:Rp; try discriminate.
+      destruct (I.run_prim_at P p (force_held held) ws st1) as [[]  st2] eqn:Rp; try discriminate.
       injection Ev as <- <-. cbn [sdepth] in Fu. fold needed in Fu.
       destruct fuel as [|k]; [inversion Fu|]. cbn [F.feval]. rewrite H, R.
       rewrite (IHl n pl l ss Ta d de H g st ws st1 Ea k ltac:(lia)). rewrite Rp. reflexivity.
@@ -971,7 +971,7 @@ Lemma sev_prim : forall d g st i args,
   | Some (FPrimitive p held) =>
       match sevl P d g args st with
       | Some (ws, st1) =>
-          match I.run_prim_at P p held ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
+          match I.run_prim_at P p (force_held held) ws st1 with (Normal w, st2) => Some (w, st2) | _ => None end
       | None => None
       end
   | _ => None

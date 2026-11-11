@@ -90,13 +90,15 @@ Inductive fprov : Type :=
 | FValue : value -> fprov
 | FFunction : fsym -> fenv -> fprov
 | FFunctor : usym -> option smap -> fenv -> option (list (option nat)) -> fprov
-| FPrimitive : op -> option ty -> fprov
+| FPrimitive : op -> option dty -> fprov
 with fenv : Type :=
 | FEnv : lsubst -> lsubst -> fstore -> fenv
 with fstore : Type :=
 | FStore : tmap fprov -> tmap fprov -> tmap fprov
     -> tmap (list ((ty * subst) * fprov)) -> list (tsym * fprov) -> fstore
 | FOverlay : item -> fprov -> fstore -> fstore.
+
+Definition force_held (site : option dty) : option ty := option_map force site.
 
 Definition fmeanings (d : fenv) := match d with FEnv ts _ _ => ts end.
 Definition faliases (d : fenv) := match d with FEnv _ a _ => a end.
@@ -246,7 +248,8 @@ Inductive PRel : fprov -> lprov -> Prop :=
 | PRValue : forall w, PRel (FValue w) (LValue w)
 | PRFunction : forall f fd ld, ERel fd ld -> PRel (FFunction f fd) (LFunction f ld)
 | PRFunctor : forall u a fd ld q, ERel fd ld -> PRel (FFunctor u a fd q) (LFunctor u a ld q)
-| PRPrimitive : forall p o, PRel (FPrimitive p o) (LPrimitive p o)
+| PRPrimitive : forall p deferred held, force_held deferred = held ->
+    PRel (FPrimitive p deferred) (LPrimitive p held)
 with ERel : fenv -> lenv -> Prop :=
 | ERelI : forall ts a s ps,
     (forall i, orel PRel (fget i s) (llookup_entry i ps)) -> ERel (FEnv ts a s) (LEnv ts a ps).
@@ -257,7 +260,7 @@ Fixpoint fast_prov (p : lprov) : fprov :=
   | LValue w => FValue w
   | LFunction f d => FFunction f (fast_env d)
   | LFunctor u a d q => FFunctor u a (fast_env d) q
-  | LPrimitive p o => FPrimitive p o
+  | LPrimitive p o => FPrimitive p (option_map Hold o)
   end
 with fast_env (d : lenv) : fenv :=
   match d with
@@ -269,7 +272,8 @@ with fast_env (d : lenv) : fenv :=
 Fixpoint fast_prov_rel (p : lprov) : PRel (fast_prov p) p
 with fast_env_rel (d : lenv) : ERel (fast_env d) d.
 Proof.
-  - destruct p; cbn [fast_prov]; constructor; apply fast_env_rel.
+  - destruct p as [w|f d|u a d q|p site]; cbn [fast_prov]; constructor; try apply fast_env_rel.
+    destruct site; reflexivity.
   - destruct d as [ts a ps]. cbn [fast_env]. constructor. intro i.
     induction ps as [|[j p] r IH]; cbn [llookup_entry].
     + rewrite fget_empty. constructor.
@@ -309,7 +313,7 @@ Definition ftyped_capture (d : fenv) (types : type_capture) (dc : fenv) : fenv :
     (ldefer_all (fmeanings d) (capture_aliases types)) (fstore_of dc).
 Definition fprimitive_closure (d : fenv) (i : item) (p : op) : fprov :=
   FPrimitive p (match i with
-    | IMth tau _ _ => Some (lapp (fmeanings d) tau)
+    | IMth tau _ _ => Some (ldefer (fmeanings d) tau)
     | _ => None end).
 (* A primitive binding often introduces the very next lookup. Keep that
    row in front of the trie and fold it back before another installation. *)
@@ -445,7 +449,8 @@ Lemma prel_primitive_closure : forall fd ld i p, ERel fd ld ->
   PRel (fprimitive_closure fd i p) (lprimitive_closure ld i p).
 Proof.
   intros fd ld i p H. destruct (erel_meanings fd ld H) as [Em _].
-  unfold fprimitive_closure, lprimitive_closure, lground. rewrite Em. constructor.
+  unfold fprimitive_closure, lprimitive_closure, lground. rewrite Em.
+  constructor. destruct i; reflexivity.
 Qed.
 
 Lemma erel_install_primitive : forall fd ld i p, ERel fd ld ->
@@ -543,7 +548,7 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
           | Some (FPrimitive p held) =>
               match feval_arguments k P d g st args with
               | inl (ws, g1, st1) =>
-                  let (o, st2) := I.run_prim_at P p held ws st1 in I.Evaluation o g1 st2
+                  let (o, st2) := I.run_prim_at P p (force_held held) ws st1 in I.Evaluation o g1 st2
               | inr r => r
               end
           | _ => I.Evaluation (Stuck I.e_entry) g st
@@ -569,7 +574,7 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
               | I.Evaluation (Normal w0) g0 st0 =>
                   match feval_arguments k P d g0 st0 args with
                   | inl (ws, g1, st1) =>
-                      let (o, st2) := I.run_prim_at P p held (w0 :: ws) st1 in I.Evaluation o g1 st2
+                      let (o, st2) := I.run_prim_at P p (force_held held) (w0 :: ws) st1 in I.Evaluation o g1 st2
                   | inr r => r
                   end
               | r => r
@@ -830,13 +835,13 @@ Proof.
         cbn [option_map]. rewrite fast_parameter_values_spec, (IHe P _ _ _ _ _ (erel_call fd ld s d1 d2 H R)).
         reflexivity.
       * destruct (lookup_cases fd ld (IFn f) H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2; [reflexivity|].
-        destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p o]; try reflexivity.
+        destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p deferred held Site]; try reflexivity.
         -- destruct (view_function P f'); [|reflexivity]. rewrite (IHa P fd ld g st l H).
            destruct (L.leval_arguments k P ld g st l) as [[[ws g1] st1]|r]; [|reflexivity].
            rewrite fast_parameter_values_spec, (IHe P _ _ _ _ _ R). reflexivity.
-        -- rewrite (IHa P fd ld g st l H). reflexivity.
+        -- rewrite (IHa P fd ld g st l H), Site. reflexivity.
       * destruct (lookup_cases fd ld i H) as [[E1 E2]|(x & y & E1 & E2 & R)]; rewrite E1, E2; [reflexivity|].
-        destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p o]; try reflexivity.
+        destruct R as [w|f' fd' ld' R|u a fd' ld' q R|p deferred held Site]; try reflexivity.
         -- destruct (view_function P f'); [|reflexivity]. rewrite (IHe P fd ld g st e H).
            destruct (L.leval k P ld g st e) as [[] g0 st0]; try reflexivity.
            rewrite (IHa P fd ld g0 st0 l H).
@@ -844,7 +849,7 @@ Proof.
            rewrite fast_parameter_values_spec, (IHe P _ _ _ _ _ R). reflexivity.
         -- rewrite (IHe P fd ld g st e H).
            destruct (L.leval k P ld g st e) as [[] g0 st0]; try reflexivity.
-           rewrite (IHa P fd ld g0 st0 l H). reflexivity.
+           rewrite (IHa P fd ld g0 st0 l H), Site. reflexivity.
       * rewrite (IHe P fd ld g st e1 H). destruct (L.leval k P ld g st e1) as [[] g1 st1]; try reflexivity.
         rewrite (IHe P fd ld _ _ e2 H). reflexivity.
       * destruct (Bcases P fd ld g st [b] H) as [(e' & E1 & E2)|(fd' & ld' & g' & s' & E1 & E2 & R)];
