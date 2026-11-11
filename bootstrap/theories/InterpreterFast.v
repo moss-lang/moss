@@ -355,17 +355,21 @@ Definition fcall_environment (d : fenv) (th : subst) (dc : fenv) : fenv :=
 (* A direct call selects provisions into an environment with no captured
    types. Its two type tables are the same instantiated parameters. *)
 Definition fprepare_call (d : fenv) (th : subst) (sm : smap) : option fenv :=
-  option_map (fun s => let meanings := ldefer_all (fmeanings d) th in FEnv meanings meanings s)
-    (fselect_store (fstore_of d) sm).
+  match th with
+  | [] => fselect_provisions d sm
+  | _ => option_map (fun s => let meanings := ldefer_all (fmeanings d) th in FEnv meanings meanings s)
+           (fselect_store (fstore_of d) sm)
+  end.
 
 Lemma fprepare_call_spec : forall d th sm,
   fprepare_call d th sm = option_map (fcall_environment d th) (fselect_provisions d sm).
 Proof.
-  intros d th sm. unfold fprepare_call, fselect_provisions.
-  destruct (fselect_store (fstore_of d) sm); cbn [option_map]; [|reflexivity].
-  unfold fcall_environment, selected_environment. destruct th as [|q th]; [reflexivity|].
-  unfold ldefer_all, ldefer_onto. cbn [fmeanings faliases fstore_of dforce].
-  rewrite app_nil_r. reflexivity.
+  intros d th sm. unfold fprepare_call. destruct th as [|q th].
+  - unfold fselect_provisions. destruct (fselect_store (fstore_of d) sm); reflexivity.
+  - unfold fselect_provisions.
+    destruct (fselect_store (fstore_of d) sm); cbn [option_map]; [|reflexivity].
+    unfold fcall_environment, selected_environment, ldefer_all, ldefer_onto.
+    cbn [fmeanings faliases fstore_of dforce]. rewrite app_nil_r. reflexivity.
 Qed.
 
 Definition fapplication_environment (P : program_view) (d : fenv) (h : usym) (th : subst) (dc : fenv) : fenv :=
