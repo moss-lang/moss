@@ -4,7 +4,7 @@
    check.sh requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import BaseFacts.
-From NM Require Parse EaCallSound EaCopyNeedSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
+From NM Require Parse EaCallSound EaCopyNeedSound EaLinkBindingSound EaCtx EaFamilySound EaMain EaWorldSound EaContextTableSound MossX BootstrapBuild BootstrapRun BaseHost InterpreterFuel.
 
 From NM Require AuditExamples AuditBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
@@ -469,6 +469,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaCopyNeedSound.choose_copy_need_sound);
   root (@NM.EaCopyNeedSound.combined_merge_extends);
   root (@NM.EaCopyNeedSound.copy_need_choice_unique);
+  root (@NM.EaLinkBindingSound.check_link_binding_sound);
   root (@NM.EaFamilySound.fixed_agreement_spec);
   root (@NM.PublicMerge.expanded_generations_by_class);
   root (@NM.PublicFormation.section_output_expanded);

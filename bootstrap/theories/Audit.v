@@ -4496,6 +4496,24 @@ Definition translate_application (C : cx) (a : application) : expr -> expr :=
     (satisfaction_map C (app_input a) th (app_needs a))
     (map (rkey_of (app_result a)) (app_provisions a)).
 
+(* The checks made where a closure binds a body to its target functor.
+   The body's code and result checks are independent of this binding. *)
+Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
+    (Cg : cx) (nsg : list item) : Prop := {
+  (* A captured provision can mention fixed or privately captured types. *)
+  link_bind_scope : forall k p t, In k nsg -> ~ In (canon_item Cu k) nsu ->
+    ilook (provision_id k) (c_provisions Cg) = Some p ->
+    In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
+    nlook t (c_ty Cu) <> None -> Fixed W u t;
+  link_bind_provisions : forall k, In k nsg -> In (canon_item Cu k) nsu ->
+    option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)) =
+    ilook (provision_id (canon_item Cu k)) (c_provisions Cu);
+  (* Shared inputs read over the inputs each application supplies. *)
+  link_bind_inputs : forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
+    (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\
+    canon Cu (TAbs x) = canon Cu tx
+}.
+
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
    checked against the expected type `exp` if any, elaborates to x of type t.
@@ -4931,7 +4949,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
-    LinkBody W P u gg h pins ->
+    LinkBinding W u Cu nsu Cg nsg -> LinkBody W P u gg h pins ->
     (* the linked needs: those of G that are F's, read through F's merge *)
     sm = map (fun k => (rkey_of Cg k, rkey_of Cu (canon_item Cu k))) (filter (fun k => existsb (item_eqb (canon_item Cu k)) nsu) nsg) ->
     (* 3b: the captured needs are answered here as a call would answer
@@ -5041,37 +5059,13 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
 (* [D84] 3b–3e: G's binds checked once, in G's own terms — G's context
    formed from its own inputs, each output of F as itself — producing the
    core functor body h: its result telescope (F's output types, then F's
-   result items), and its binds.  3b: no captured item mentions a type
-   that applications supply; 3d: pins may not rebind P(F) ∩ M(F) (Q6); 3e: every item
-   of F's result is made by the binds, at the types F promises. *)
+   result items), and its binds. 3d: pins may not rebind P(F) ∩ M(F) (Q6).
+   3e: every item of F's result is made by the binds, at the types F
+   promises. LinkBinding checks each binding of that body. *)
 with LinkBody (W : world) (P : program) : nat -> nat -> nat -> subst -> Prop :=
 | LB : forall u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins,
     w_decl W gg = Some dg -> d_ast dg = ADFunctor n ps a r (Some bodies) ->
     FunCtx W u Cu nsu -> FunCtx W gg Cg nsg ->
-    (* 3b: a captured item (value, fn, method or functor) may mention fixed
-       or privately captured types, but no target input type supplied afresh
-       by each application: not in its type or signature, its recorded
-       instantiation, or a method's receiver. *)
-    (forall k p t, In k nsg -> ~ In (canon_item Cu k) nsu -> ilook (provision_id k) (c_provisions Cg) = Some p ->
-       In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
-       nlook t (c_ty Cu) <> None -> Fixed W u t) ->
-    (* G reads each need F links as F does, and its readings of F's inputs
-       hold in F's context (the oracle: linked input interpretation, D84).
-       A need of G is linked when it is one of F's read through F's merge
-       (F's congruence decides "same need", whatever representatives the
-       two contexts chose: examples/sameneed-*.moss).  A class of G that
-       met two of F's need classes would be ambiguous; the next clause
-       rules it out (`PublicSameNeed.link_need_unambiguous`).
-       An input of F reads in G as a type over F's inputs: G's merges may
-       not send a linked input to a type only G has, which the closure
-       captures at the bind while each application supplies the input
-       afresh (the oracle's 3b sees the first unmerged reading;
-       tests/errors/link_merge_captured.moss, scratch/orch/cap3b-AUDIT.md) *)
-    (forall k, In k nsg -> In (canon_item Cu k) nsu ->
-       option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)) =
-       ilook (provision_id (canon_item Cu k)) (c_provisions Cu)) ->
-    (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
-       (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\ canon Cu (TAbs x) = canon Cu tx) ->
     fr_mod Fg = d_mod dg -> fr_ret Fg = None ->
     fr_this Fg = None -> fr_loop Fg = false ->
     (* its locals are numbered as a body's are *)
@@ -5307,7 +5301,9 @@ Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
 | NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
 | NCLambda : forall F C ps rt body sg this pid pre sm,
     LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
-| NCBody : forall u gg h pins Cg nsg, LinkBody W P u gg h pins -> w_context W gg = Some (Cg, nsg) ->
+| NCBody : forall u gg h pins Cu nsu Cg nsg, LinkBody W P u gg h pins ->
+    w_context W u = Some (Cu, nsu) -> w_context W gg = Some (Cg, nsg) ->
+    LinkBinding W u Cu nsu Cg nsg ->
     NodeCx W P (CodeFunctor h) Cg.
 
 (* Merges are edges too (criteria section 2, coherence).  Within a node,

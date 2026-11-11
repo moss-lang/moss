@@ -153,6 +153,7 @@ entry they belong to.
 | 119 | Copy needs match at the binding site with an explicit ambiguity check | M4c | B and C |
 | 121 | A copy reads an atomic class through its fixed members | M4c | C |
 | 122 | Type forwarding providers before assigning runtime code | typing/translation | none (equivalent factoring) |
+| 124 | Check a closure binding separately from the linked body | M4c | none (equivalent factoring) |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3771,6 +3772,23 @@ using one fresh atom per abstract class must preserve that behaviour
   verifies both the selected local names and their allocation when the
   counter lies above the support.
 - **Class.** Equivalent factoring of capture typing and translation.
+
+### 124. Closure bindings have separate typing evidence (M4c)
+
+- **Rule.** `LinkBinding` checks capture scope and the agreement of linked
+  inputs and provisions. `LinkBody` checks the body and its result. A
+  closure requires both judgments. A linked body in the cycle graph still
+  requires binding evidence.
+- **Executable.** `check_link_binding` checks the source binding before
+  looking up the linked body. The body remains memoized by the declared
+  target and source pair. The emitted closure uses the body's typed slot.
+- **Proof.** `check_link_binding_sound` establishes the three checked
+  conditions and preserves the elaborator state. The safety proof takes
+  binding evidence through the closure and application chain. The body
+  preservation lemma takes equality of the actual input readings, which
+  follows from the existing declared input condition.
+- **Class.** Equivalent factoring. Binding conditions and runtime
+  translation stay the same.
 
 ---
 

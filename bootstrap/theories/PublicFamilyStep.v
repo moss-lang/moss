@@ -285,6 +285,7 @@ Definition FamilyLinkResultsOk : Prop := forall C0 C u matching th sm Cr ks,
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   CopyA.S.FixedMeans W u d fx gfx ->
   CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
+  A.LinkBinding W u Cu ns Cg nsg ->
   CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
@@ -415,7 +416,7 @@ Proof.
   2: { destruct CP as (code & -> & PFam & _).
        exact (family_platform_apply k Bel C0 C u matching th sm Cr ks Es Emg Ep El Ts FA F rr j d types H g st Lr Lj Pre0
          code Look PFam). }
-  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & [pins [LB PinsOk]] & FCu0 & FCg & FxIn & Caps & CF).
+  destruct CL as (gg & h & Cu0 & nsu & Cg & nsg & dc & -> & [pins [LB [PinsOk Binding]]] & FCu0 & FCg & FxIn & Caps & CF).
   destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu0) as [<- <-].
   intros rest. rewrite CopyA.S.bindings_apply_eq.
   destruct j as [|j1].
@@ -432,7 +433,7 @@ Proof.
     (CopyA.S.functx_static W _ _ _ FC) Sat (CopyA.S.apply_theta W Cf u Cu ns sm FC (proj1 (proj2 (proj2 RealF))) Inp Sat)) as [d1 [Sel [_ RealU]]].
   destruct (CopyA.S.link_facts W Prog _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Cu' & nsu' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr' & ks' & binds0 & LD).
-  pose proof LD as (FCu' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
+  pose proof LD as (FCu' & FCg' & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (CopyA.S.functx_unique W _ _ _ _ _ FC FCu') as [<- <-]. destruct (CopyA.S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (map (fun k0 => (A.rkey_of Cg k0, A.rkey_of Cu (A.canon_item Cu k0))) (CopyA.S.linked_needs Cu ns nsg))) as [d2 Sel2].
@@ -462,7 +463,7 @@ Proof.
     apply (proj1 RealF). eapply A.METrans; [exact Ag|].
     apply PublicMerge.merge_eq_read. exact (proj1 (proj1 (proj2 (proj2 RealF)))). }
   pose proof (CopyA.S.link_entry W Prog argv read state_ok rr H d th d1 u gg h pins Cu ns Cg nsg dc gfx d2
-    LB FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
+    LB Binding FC FCg Keys FxIn RealU GfxA Caps CF Sel2) as RealG.
   set (de := application_environment P d h th (append_environment d2 dc)) in *.
   assert (PreB : Pre rr Fg Cg de [] H [] st).
   { split; [apply (numbering_frame Fg []); rewrite This; exact Num|].
@@ -494,7 +495,7 @@ Proof.
     assert (Run : CopyA.S.AR.O.I.eval_bindings j1 P de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
     destruct (family_link_results C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n0 ps0 a0 rs bodies
-      Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD PinsOk Sel Sel2 Run E3 Pre3)
+      Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins d1 d2 d3 g3 st3 H3 j1 Pre0 FxC0 Look Ok Fm LD Binding PinsOk Sel Sel2 Run E3 Pre3)
       as [dr [Sdr New]].
     rewrite Sdr. left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.
     split; [exact E3|]. split; [exact (proj1 (proj2 (proj2 (proj2 Pre3))))|].

@@ -18,7 +18,7 @@ Proof.
   split; intros; intuition congruence.
 Qed.
 
-Local Lemma provision_eqb_spec : forall a b, provision_eqb a b = true <-> a = b.
+Lemma provision_eqb_spec : forall a b, provision_eqb a b = true <-> a = b.
 Proof.
   intros [] []; cbn [provision_eqb]; try (split; congruence);
     rewrite ?andb_true_iff, ?PublicTypeFacts.ty_eqb_spec, ?fsig_eqb_spec,

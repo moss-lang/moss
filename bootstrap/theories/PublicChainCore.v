@@ -231,6 +231,7 @@ Definition ChainNewOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks newg
   LR.PA.FS.CopyA.CopyChain W u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (LR.PA.FS.CopyA.S.linked_needs Ch0 nsh0 nsg))) dc None) ->
   LR.PA.FS.CopyA.S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
+  A.LinkBinding W h0 Ch0 nsh0 Cg nsg ->
   LR.PA.FS.CopyA.S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -446,12 +447,12 @@ Qed.
 Theorem chain_core_ok : ChainNewOk -> LR.KeptOutputsUnmentioned W -> LR.ChainCoreOk W Prog argv read state_ok.
 Proof.
   intros New Ku F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3.
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3.
   pose proof Pre0 as [_ [[_ [_ Al0]] [_ [_ [[_ [Env [Section KM]]] [Fc _]]]]]].
   pose proof (PublicContextFacts.section_canonical C Section) as Idem.
   pose proof (LR.PA.FS.CopyA.S.pre_absorbs_canon W Prog argv read state_ok _ _ _ _ _ _ _ _ Pre0) as Abs.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].
-  pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
+  pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsR & OutM & _ & _ & PR' & RR & _).
   pose proof AP as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & OutsI & PR).
   destruct (LR.PA.FS.CopyA.chain_sources_range W _ _ _ _ _ _ _ _ Chain eq_refl (LR.PA.FS.CopyA.S.link_sources (A.link_site Cg Cb pins outs' gen) outs' gen ks')
     ltac:(intros C0 o C0' ks0 P0; unfold LR.PA.FS.CopyA.S.link_sources; rewrite length_map;
@@ -461,7 +462,7 @@ Proof.
   destruct (provide_result_news W _ _ _ _ _ PR) as [news [En KMn]].
   pose proof (selection_news u C _ C' ks rms _ d3 dr PR Sdr news En) as Cov.
   pose proof (New F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms dc rms gfx h0 gf0 gg dg n ps a r bodies
-    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD PinsOk Sel Sel2 Run Ext Pre3
+    Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm Chain Ok0 LD Binding PinsOk Sel Sel2 Run Ext Pre3
     dr Sdr news En) as EnvN.
   exists dr. split; [exact Sdr|]. split.
   { intros t It. pose proof (proj1 (OutsI t) It) as Ft.
@@ -575,6 +576,7 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
   ClosureOk rr H u gfx (FunctorClosure h (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg))) dc None) ->
   LR.PA.FS.CopyA.S.FixedMeans W u d fx gfx ->
   LR.PA.FS.CopyA.S.LinkData W Prog u gg h dg n ps a r bodies Cu ns Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' binds0 pins ->
+  A.LinkBinding W u Cu ns Cg nsg ->
   LR.PA.FS.CopyA.S.PinsAgree W u Cu Cg dc gfx pins ->
   select_provisions d sm = Some d1 ->
   select_provisions d1 (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (LR.PA.FS.CopyA.S.linked_needs Cu ns nsg)) = Some d2 ->
@@ -587,9 +589,9 @@ Definition FamilyLinkNewOk : Prop := forall C0 C u matching th sm Cr ks,
 Theorem family_link_results_ok : FamilyLinkNewOk -> LR.PA.FS.FamilyLinkResultsOk W Prog argv read state_ok.
 Proof.
   intros New C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
-    Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3.
+    Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Binding PinsOk Sel Sel2 Run Ext Pre3.
   pose proof Pre3 as [_ [_ [_ [_ [Real3 _]]]]].
-  pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
+  pose proof LD as (_ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & PR' & RR & _).
   destruct (chain_selection rr (A.link_site Cg Cb pins outs' gen) d3 H3 u Cu _ outs' gen Cr' ks' (map (A.rkey_of Cr) ks) None _
     Real3 PR' RR
     ltac:(intros s0 I0; exact I0)) as [dr Sdr].
@@ -600,7 +602,7 @@ Proof.
     apply in_map_iff in Ik as [k1 [<- Ik1]]. destruct (proj1 (Keys k1) Ik1) as [p1 Ip1].
     destruct (NewM k1 p1 Ip1) as (r1 & m1 & _ & _ & -> & _). exists r1, m1. split; [exact Ik1|reflexivity].
   - exact (New C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
-      Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3 dr Sdr).
+      Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Binding PinsOk Sel Sel2 Run Ext Pre3 dr Sdr).
 Qed.
 
 (* ---- what a run of bindings writes ------------------------------------------- *)

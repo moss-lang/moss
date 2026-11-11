@@ -305,12 +305,12 @@ Proof.
   destruct j as [|j1].
   { right. intros rest. rewrite CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.bindings_apply_eq. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }
   destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_entry W Prog argv read state_ok rr H u gfx _ Ok code sms' dc rms' eq_refl d f Cu ns d1 FC RealU' Fixd) as
-    [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & d2 & Chn & Ok0 & [pins [LB PinsOk]] & FC0 & FCg & Keys & A2 & RealG)
+    [(h0 & gf0 & gg & Ch0 & nsh0 & Cg & nsg & d2 & Chn & Ok0 & [pins [LB [PinsOk Binding]]] & FC0 & FCg & Keys & A2 & RealG)
     |(h0 & gf0 & Chn & Edc & Fam0 & Ok0)].
   - (* a linked root: run its body *)
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_facts W Prog _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Ch0' & nsh0' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
       & outs' & gen & Cr' & ks' & binds0 & LD).
-    pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
+    pose proof LD as (FC0' & FCg' & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
     destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
     rewrite <- (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.app_env_thof Prog argv read d code f Cu Ch0 Cg _ _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
     set (de := application_environment P d code th (append_environment d2 dc)) in *.
@@ -367,24 +367,13 @@ Proof.
       by exact (CRz.CSg.abstract_of_ast W h0 (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_link_abstract W Prog argv read state_ok _ _ _ _ _ _ _ Ok0)).
     assert (LRs : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Ch0) <> None ->
       (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Ch0) <> None) /\ A.MergeEq (A.c_merge Ch0) (TAbs x) tx).
-    { destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
-      2: { destruct CCp as (h' & Cu1 & nsu1 & Ch1 & nsh1 & target0 & code' & sms1 & dc' & rms1 & rm1 & gfh1 & E & _).
-           injection E as _ _ _ E. destruct rms1; discriminate. }
-      2: { destruct CP as (code' & E & _). discriminate. }
-      destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB2 _]] & _).
-      injection E as E1h _ E3h. subst h2 dc2.
-      destruct (CRz.CSg.FL.link_body_parts W Prog _ _ _ _ LB2) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & _ & FB3).
-      destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC0 FCu3) as [<- <-].
-      rewrite FB in FB3. injection FB3 as _ _ ETy _ _ _.
-      intros x tx L1 L2. rewrite ETy in L1.
-      destruct (LRd3 x tx L1 L2) as [Scope Equal]. split; [exact Scope|].
-      apply (PublicContextFacts.context_canon_iff_mergeeq Ch0
-        (proj2 (PublicContextFacts.functor_context_merge W h0 Ch0 nsh0 FC0))). exact Equal. }
+    { exact (PublicLinkRun.link_binding_merged_inputs W h0 Ch0 nsh0 Cg nsg
+        (proj2 (PublicContextFacts.functor_context_merge W h0 Ch0 nsh0 FC0)) Binding). }
     assert (ThDom : forall z, In z (map fst (A.c_ty Ch0)) -> lookup_subst z th <> None)
       by (intros z Iz; rewrite (ThL z (Keys z Iz)); discriminate).
     (* Q6: the root's pins read as the application's fixed inputs *)
     assert (PinT : forall x tx, In (x, tx) pins -> In x (map fst (A.c_ty Ch0)) /\ ground d3 tx = app_subst Tin (TAbs x)).
-    { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
+    { pose proof LD as (_ & FCgL & _ & _ & _ & _ & _ & _ & _ & ItemsL & _ & _ & _ & _ & _ & _ & BOL & FBL & _ & PinsI & PinG).
       assert (Fix0 : forall y, A.Fixed W h0 y -> lookup_subst y gf0 = Some (app_subst Tin (TAbs y))).
       { intros y Fy. destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.chain_fixed W _ _ _ _ _ _ _ _ Chn y Fy) as [Fu E].
         rewrite E. exact (FixT y Fu). }

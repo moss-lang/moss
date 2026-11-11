@@ -457,14 +457,15 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
   (exists h0 gf0 gg Ch0 nsh0 Cg nsg e2,
      CopyChain u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) None /\
      ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) dc None) /\
-     (exists pins, A.LinkBody W Prog h0 gg code pins /\ S.PinsAgree W h0 Ch0 Cg dc gf0 pins) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
+     (exists pins, A.LinkBody W Prog h0 gg code pins /\ S.PinsAgree W h0 Ch0 Cg dc gf0 pins /\
+       A.LinkBinding W h0 Ch0 nsh0 Cg nsg) /\ A.FunCtx W h0 Ch0 nsh0 /\ A.FunCtx W gg Cg nsg /\
      (forall x, In x (map fst (A.c_ty Ch0)) -> In x (map fst (A.c_ty Cu))) /\
      adapt_provisions e1 sms = Some e2 /\
      Realizes rr Cg (application_environment P d code (thof f Ch0) (append_environment e2 dc)) H) \/
   (exists h0 gf0, CopyChain u gfx sms rms h0 gf0 None None /\ dc = empty_env /\ Platform.Family W Prog h0 code /\
      ClosureOk rr H h0 gf0 (FunctorClosure code None dc None)).
 Proof.
-  intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx pins LB FCu FCg FxIn AbU Caps CF PinsOk
+  intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg dc gfx pins LB Binding FCu FCg FxIn AbU Caps CF PinsOk
     |u h Cu nsu Ch nsh target code sms dc rms rm gfx gfh Okh IH FCu FCh Incl Fx CO Sub SO Site|u code gfx Fam Mach PR];
     intros code0 sms0 dc0 rms0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
@@ -477,12 +478,12 @@ Proof.
       change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) e1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) (S.callee_env d (thof f Cu) e1)).
       rewrite L0. discriminate. }
     exists u, gfx, gg, Cu, nsu, Cg, nsg, e2.
-    split; [constructor|]. split; [exact (S.CLink W Prog argv read state_ok rr H u gg h Cu nsu Cg nsg dc gfx pins LB FCu FCg FxIn AbU Caps CF PinsOk)|].
-    split; [exact (ex_intro _ pins (conj LB PinsOk))|]. split; [exact FCu|]. split; [exact FCg|]. split; [intros x I; exact I|].
+    split; [constructor|]. split; [exact (S.CLink W Prog argv read state_ok rr H u gg h Cu nsu Cg nsg dc gfx pins LB Binding FCu FCg FxIn AbU Caps CF PinsOk)|].
+    split; [exact (ex_intro _ pins (conj LB (conj PinsOk Binding)))|]. split; [exact FCu|]. split; [exact FCg|]. split; [intros x I; exact I|].
     split; [cbn [adapt_provisions]; exact Sel2|].
     assert (Keys : map fst (thof f Cu) = map fst (A.c_ty Cu)) by (unfold thof; rewrite map_map; reflexivity).
     apply (S.link_entry W Prog argv read state_ok rr H d (thof f Cu) e1 u gg h pins Cu nsu Cg nsg dc gfx e2
-      LB FCu FCg Keys FxIn Real); [|exact Caps|exact CF|exact Sel2].
+      LB Binding FCu FCg Keys FxIn Real); [|exact Caps|exact CF|exact Sel2].
     intros x Fx' _. rewrite (Fixd x Fx'). unfold thof.
     rewrite (S.lookup_on_keys f _ x (FxIn x Fx')). reflexivity.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
@@ -566,6 +567,7 @@ Definition ChainResultsOk : Prop := forall F C pa u fx Cu ns sm th gensof C' ks 
   CopyChain u gfx sms rms h0 gf0 (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) None ->
   ClosureOk rr H h0 gf0 (FunctorClosure code (Some (map (fun k => (A.rkey_of Cg k, A.rkey_of Ch0 (A.canon_item Ch0 k))) (S.linked_needs Ch0 nsh0 nsg))) dc None) ->
   S.LinkData W Prog h0 gg code dg n ps a r bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins ->
+  A.LinkBinding W h0 Ch0 nsh0 Cg nsg ->
   S.PinsAgree W h0 Ch0 Cg dc gf0 pins ->
   select_provisions d sm = Some d1 ->
   adapt_provisions d1 sms = Some d2 ->
@@ -592,9 +594,9 @@ Definition ChainPlatformOk : Prop := forall k, S.Below W Prog argv read state_ok
 Lemma link_results_of_chain : ChainResultsOk -> S.LinkResultsOk W Prog argv read state_ok.
 Proof.
   intros CR F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st h dc gfx gg dg n ps a r bodies nsg Cg Fg wrap
-    Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm LD PinsOk Sel Sel2 Run E3 Pre3.
+    Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm LD Binding PinsOk Sel Sel2 Run E3 Pre3.
   exact (CR F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st h _ dc None gfx u gfx gg dg n ps a r bodies Cu ns Cg nsg
-    Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm (CCRefl _ _ _ _) Ok LD PinsOk Sel
+    Fg wrap Cb Fb made outs' gen Cr ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Look Ok Fm (CCRefl _ _ _ _) Ok LD Binding PinsOk Sel
     ltac:(cbn [adapt_provisions]; exact Sel2) Run E3 Pre3).
 Qed.
 
@@ -650,10 +652,10 @@ Proof.
     |(h0 & gf0 & Chn & Edc & Fam & Ok0)].
   2: { subst dc. exact (chain_platform k Bel F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr Lr j d types H g st Lj Pre0
          code sms' rms' gfx h0 gf0 Look Ok Fm Chn Fam). }
-  destruct LB as [pins [LB PinsOk]].
+  destruct LB as [pins [LB [PinsOk Binding]]].
   destruct (S.link_facts W Prog _ _ _ _ LB) as (dg & n0 & ps0 & a0 & rs & bodies & Ch0' & nsh0' & Cg' & nsg' & Fg & wrap & Cb & Fb & made
     & outs' & gen & Cr & ks' & binds0 & LD).
-  pose proof LD as (FC0' & FCg' & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
+  pose proof LD as (FC0' & FCg' & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsI & OutM & NdG & FrG & PR' & RR & BO & FB & _).
   destruct (S.functx_unique W _ _ _ _ _ FC0 FC0') as [<- <-]. destruct (S.functx_unique W _ _ _ _ _ FCg FCg') as [<- <-].
   rewrite <- (app_env_thof d code f Cu Ch0 Cg _ _ _ _ (append_environment d2 dc) FB Keys), <- Thf in RealG.
   set (de := application_environment P d code th (append_environment d2 dc)) in *.
@@ -689,7 +691,7 @@ Proof.
     assert (Run : S.AR.O.I.eval_bindings j1 (program_of Prog argv read) de [] st bs = inl (d3, g3, st3)) by (rewrite Run0; reflexivity).
     rewrite Run.
     destruct (chain_results F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st code sms' dc rms' gfx h0 gf0 gg dg n0
-      ps0 a0 rs bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs pins d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm Chn Ok0 LD PinsOk
+      ps0 a0 rs bodies Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr ks' bs pins d1 d2 d3 g3 st3 H3 j1 Pre0 Look Ok Fm Chn Ok0 LD Binding PinsOk
       Sel A2 Run E3 Pre3) as [dr [result [Sdr [Rres [PreC GrowC]]]]].
     rewrite Sdr, Rres. left. exists (append_environment result d), g, st3, H3.
     split; [exact E3|]. split; [exact GrowC|]. split; [exact PreC|reflexivity].

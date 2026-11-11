@@ -220,6 +220,45 @@ Definition provision_refinesb (promised actual : provision) : bool :=
                     | Some v => existsb (fun q' => Nat.eqb (fst q') (fst q) && oty_eqb (snd q') (Some v)) (provision_inst actual)
                     | None => true end) (provision_inst promised).
 
+Definition linked_need (Cu : cx) (nsu : list item) (k : item) : bool :=
+  imem (canon_item Cu k) nsu.
+
+Definition unsafe_capture (Cu : cx) (nsu : list item) (Cg : cx) (fu : list nat) (k : item) : bool :=
+  if linked_need Cu nsu k then false else
+  match ilook (provision_id k) (c_provisions Cg) with
+  | Some p => negb (forallb (fun t => negb (bound_in Cu t) || nmem t fu)
+                      (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end))
+  | None => false
+  end.
+
+Definition linked_provision_agrees (Cu : cx) (nsu : list item) (Cg : cx) (k : item) : bool :=
+  if linked_need Cu nsu k then
+    oprovision_eqb (option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)))
+                   (ilook (provision_id (canon_item Cu k)) (c_provisions Cu))
+  else true.
+
+Definition linked_type_agrees (Cu Cg : cx) (x : nat) : bool :=
+  match nlook x (c_ty Cg) with
+  | Some tx => if bound_in Cu x then
+      forallb (bound_in Cu) (gens tx) && ty_eqb (canon Cu (TAbs x)) (canon Cu tx)
+    else true
+  | None => true
+  end.
+
+(* Check the source binding separately from lookup or generation of body code. *)
+Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item) : M unit :=
+  let nu := qs W u in let ng := qs W gg in
+  let bound_to := (ng ++ ", bound to " ++ nu ++ ",")%string in
+  let fu := fixed W metadata_fuel u in
+  let* _ := match find (unsafe_capture Cu nsu Cg fu) nsg with
+      | Some k => fail (bound_to ++ " captures " ++ qkey W k ++ ", which mentions a type each application of " ++ nu ++ " supplies (D84 3b)")
+      | None => ret tt end in
+  let* _ := check (forallb (linked_provision_agrees Cu nsu Cg) nsg)
+         (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)") in
+  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg (fst q)) (c_ty Cg))
+         (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
+  ret tt.
+
 (* SOUND: link_body u gg = Ok h -> LinkBody W P u gg (slot_index h) pins, pins the
    ones it records (get_pins h) (P final, I2) *)
 Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
@@ -235,24 +274,6 @@ Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
       let* (Cu, nsu) := lift (w_context W u) ("the context of " ++ nu ++ " does not form") in
       let* (Cg, nsg) := lift (w_context W gg) ("the context of " ++ ng ++ " does not form") in
       let fu := fixed W metadata_fuel u in
-      let linked k := imem (canon_item Cu k) nsu in
-      let* _ := match find (fun k =>
-          if linked k then false else
-          match ilook (provision_id k) (c_provisions Cg) with
-          | Some p => negb (forallb (fun t => negb (bound_in Cu t) || nmem t fu)
-                              (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end))
-          | None => false
-          end) nsg with
-          | Some k => fail (bound_to ++ " captures " ++ qkey W k ++ ", which mentions a type each application of " ++ nu ++ " supplies (D84 3b)")
-          | None => ret tt end in
-      let* _ := check (forallb (fun k => if linked k then
-              oprovision_eqb (option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)))
-                             (ilook (provision_id (canon_item Cu k)) (c_provisions Cu)) else true) nsg)
-             (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)") in
-      let* _ := check (forallb (fun q => match nlook (fst q) (c_ty Cg) with
-              | Some tx => if bound_in Cu (fst q) then forallb (bound_in Cu) (gens tx) && ty_eqb (canon Cu (TAbs (fst q))) (canon Cu tx) else true
-              | None => true end) (c_ty Cg))
-             (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
       let its := List.concat bodies in
       let Fg := Frame (d_mod dg) None None false (mk_frame_vars false [] (flat_map (item_names W fuel (d_mod dg)) its))
                       [] [] (let pl := poly W metadata_fuel u in
@@ -345,6 +366,7 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
             | Some x => fail ("binding " ++ nu ++ " needs " ++ qs W x ++ " in force: it is a fixed input (D84)")
             | None => ret tt end in
   let* _ := check (same_result W fuel u gg) (result_mismatch u gg) in
+  let* _ := check_link_binding u gg Cu nsu Cg nsg in
   let* h := link_body u gg in
   let linked k := existsb (item_eqb (canon_item Cu k)) nsu in
   let sm := map (fun k => (rkof Cg k, rkof Cu (canon_item Cu k))) (filter linked nsg) in

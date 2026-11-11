@@ -156,26 +156,16 @@ Proof.
   destruct (functx_needs_provided W u C ns FC k Ik) as [p Ip]. split; [exact (proj1 (proj2 (Sc k p Ip)))|exact (Shape k Ik)].
 Qed.
 
-Lemma functx_same : forall u C ns C' ns', A.FunCtx W u C ns -> A.FunCtx W u C' ns' -> C = C' /\ ns = ns'.
-Proof.
-  intros u C ns C' ns' (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E)
-    (d' & ps' & a' & r' & b' & es' & tm2 & tm2' & σ' & classes' & implicit' & _ & _ & _ & _ & _ & _ & _ & _ & _ & _ & E').
-  rewrite E in E'. injection E' as -> ->. split; reflexivity.
-Qed.
-
-(* `bind F = G;`: LinkBody's input-reading clause rules the ambiguous case
-   out. *)
-Corollary link_need_unambiguous : forall P u gg h pins, A.LinkBody W P u gg h pins ->
-  forall Cu nsu Cg nsg, A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
+(* The binding's input reading rules out an ambiguous declared need. *)
+Corollary link_need_unambiguous : forall u gg Cu nsu Cg nsg,
+  A.LinkBinding W u Cu nsu Cg nsg ->
+  A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
   forall k1 k2, A.canon_item Cg k1 = A.canon_item Cg k2 ->
   In (A.canon_item Cu k1) nsu -> In (A.canon_item Cu k2) nsu -> A.canon_item Cu k1 = A.canon_item Cu k2.
 Proof.
-  intros P u gg h pins LB Cu nsu Cg nsg FCu FCg.
-  destruct LB as [u gg h dg n ps a r bodies Cu' nsu' Cg' nsg' Fg wrap Cb Fb made outs gen Cr ks binds0 pins0
-    Dg Ast FCu' FCg' _ _ LRd].
-  destruct (functx_same _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_same _ _ _ _ _ FCg FCg') as [<- <-].
+  intros u gg Cu nsu Cg nsg Binding FCu FCg.
   apply (need_unambiguous Cu nsu Cg (functx_formed _ _ _ FCu) (functx_formed _ _ _ FCg)).
-  - intros x tx L1 L2. exact (proj2 (LRd x tx L1 L2)).
+  - intros x tx L1 L2. exact (proj2 (@A.link_bind_inputs W u Cu nsu Cg nsg Binding x tx L1 L2)).
   - exact (functx_needs_scoped _ _ _ FCu).
 Qed.
 

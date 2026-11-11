@@ -107,6 +107,34 @@ Proof.
   apply existsb_exists in E as [z [Iz E]]. apply Nat.eqb_eq in E. subst z. exact (N Iz).
 Qed.
 
+(* The body's shared inputs read as the application reads them. *)
+Definition LinkedInputsRead (Cu Cg : A.cx) (read : ty -> ty) : Prop :=
+  forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
+    read (TAbs x) = read tx.
+
+Lemma link_binding_merged_inputs : forall W u Cu nsu Cg nsg,
+  CxSection Cu -> A.LinkBinding W u Cu nsu Cg nsg ->
+  forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
+    A.MergeEq (A.c_merge Cu) (TAbs x) tx.
+Proof.
+  intros W u Cu nsu Cg nsg Section Binding x tx Found Shared.
+  destruct (@A.link_bind_inputs W u Cu nsu Cg nsg Binding x tx Found Shared) as [Scope Same].
+  split; [exact Scope|]. apply (context_canon_iff_mergeeq Cu Section). exact Same.
+Qed.
+
+Lemma declared_link_inputs_read : forall Cu Cg read,
+  (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
+    (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
+    A.MergeEq (A.c_merge Cu) (TAbs x) tx) ->
+  ReadsMerge Cu read -> LinkedInputsRead Cu Cg read.
+Proof.
+  intros Cu Cg read Link Reads x tx Found Input.
+  destruct (Link x tx Found Input) as [Scoped Equal].
+  split; [exact Scoped|exact (Reads _ _ Equal)].
+Qed.
+
 Module LinkRun (Prims : PRIMITIVES) (I0 : INTERP Prims).
 Module CC := PublicChainCore.ChainCore Prims I0.
 
@@ -169,32 +197,28 @@ Qed.
 (* The run fact (realize3, extracted from linknewpf's family_link_new_ok):
    at an application of F at θ, a linked body's final meaning of an input x
    of both G and F is the caller's reading of x, θ read at the caller. It
-   needs cap3b's LinkBody input condition (G reads x as a type over F's
-   inputs, merged with x in F's context), θ defined on F's inputs and
-   respecting F's merges, and LinkBody's made clause (the body writes no
-   input of F). *)
+   uses G's type over F's inputs at θ, θ defined on those inputs, and
+   LinkBody's made clause, which keeps F's inputs through the body. *)
 Lemma link_input_meaning : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
-  (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.MergeEq (A.c_merge Cu) (TAbs x) tx) ->
   A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   forall argv read j d dc g st d3 g3 st3,
-  ReadsMerge Cu (fun t => ground d (app_subst th t)) ->
+  LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall x, In x (map fst (A.c_ty Cg)) -> In x (map fst (A.c_ty Cu)) ->
   lookup_subst x (type_meanings d3) = Some (ground d (app_subst th (TAbs x))).
 Proof.
-  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD
-    argv read j d dc g st d3 g3 st3 ThSig Run x Ig Iu.
+  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg D B Out FB th ThD
+    argv read j d dc g st d3 g3 st3 Inputs Run x Ig Iu.
   pose proof (proj2 (PublicFamilyAgree.nlook_dom _ x _) Iu) as Nu.
   rewrite (body_meaning_input W Prog Cu Fg Cg its wrap Cb Fb made binds Out D B j _ _ g st d3 g3 st3 Run x Nu).
   destruct (A.nlook x (A.c_ty Cg)) as [tx|] eqn:Lx; [|exfalso; exact (proj2 (PublicFamilyAgree.nlook_dom _ x _) Ig Lx)].
-  destruct (LRd x tx Lx Nu) as [InU Can].
+  destruct (Inputs x tx Lx Nu) as [InU Read].
   destruct (PublicCallRealize.functx_scoped W gg Cg nsg FCg) as [TblG [_ [_ [_ [_ [_ SubG]]]]]].
   assert (GgDom : incl (A.gens tx) (map fst (A.c_ty Cg))).
   { intros z Iz. rewrite (TblG x tx Lx) in Iz. cbn [app_subst] in Iz.
@@ -206,7 +230,7 @@ Proof.
     by (unfold table_reading; cbn [fc_table]; rewrite lookup_subst_nlook', Lx; reflexivity).
   assert (V : view_functor (program_of Prog argv read) h = A.funbody_of Prog h) by reflexivity. rewrite FB in V.
   rewrite (app_env_meaning _ d h _ th dc x V Ig).
-  - rewrite Tr. f_equal. symmetry. apply ThSig. exact Can.
+  - rewrite Tr. f_equal. symmetry. exact Read.
   - rewrite Tr. intros y Iy. cbn [fc_inputs fc_linked].
     pose proof (proj1 (PublicFamilyAgree.nlook_dom _ y _) (InU y Iy)) as IyU.
     split; [exact (GgDom y Iy)|]. split; [|exact (ThD y IyU)].
@@ -217,27 +241,25 @@ Qed.
    meanings as its θ reading grounds in the caller's. *)
 Corollary link_run_fact : forall W Prog (Cu : A.cx) gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs,
   A.FunCtx W gg Cg nsg ->
-  (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.MergeEq (A.c_merge Cu) (TAbs x) tx) ->
   A.BindItems W Prog Fg Cg its wrap Cb Fb made -> A.BindsOf (wrap EUnit) binds ->
   (forall t, In t made -> A.nlook t (A.c_ty Cu) = None) ->
   A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
       (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds srcs) ->
   forall (th : subst), (forall z, In z (map fst (A.c_ty Cu)) -> lookup_subst z th <> None) ->
   forall argv read j d dc g st d3 g3 st3,
-  ReadsMerge Cu (fun t => ground d (app_subst th t)) ->
+  LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t)) ->
   CC.LR.PA.FS.CopyA.S.AR.O.I.eval_bindings j (program_of Prog argv read) (application_environment (program_of Prog argv read) d h th dc) g st binds
     = inl (d3, g3, st3) ->
   forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
   ground d3 t = ground d (app_subst th t).
 Proof.
-  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD
-    argv read j d dc g st d3 g3 st3 ThSig Run t Ig Iu.
+  intros W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg D B Out FB th ThD
+    argv read j d dc g st d3 g3 st3 Inputs Run t Ig Iu.
   unfold ground. rewrite <- (PublicTypeRead.app_subst_nil (app_subst (type_meanings d3) t)).
   apply subst2_agree. intros z Iz. rewrite PublicTypeRead.app_subst_nil.
   change (app_subst (type_meanings d3) (TAbs z)) with (match lookup_subst z (type_meanings d3) with Some t => t | None => TAbs z end).
-  rewrite (link_input_meaning W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg LRd D B Out FB th ThD
-    argv read j d dc g st d3 g3 st3 ThSig Run z (Ig z Iz) (Iu z Iz)).
+  rewrite (link_input_meaning W Prog Cu gg Cg nsg h Fg its wrap Cb Fb made binds Dr srcs FCg D B Out FB th ThD
+    argv read j d dc g st d3 g3 st3 Inputs Run z (Ig z Iz) (Iu z Iz)).
   reflexivity.
 Qed.
 

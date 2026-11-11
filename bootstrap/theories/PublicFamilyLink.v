@@ -41,18 +41,13 @@ Proof.
   unfold map_snd. induction a as [|[x t] a IH]; [reflexivity|]. cbn. rewrite PublicTypeRead.app_subst_nil, IH. reflexivity.
 Qed.
 
-Lemma link_body_parts : forall u gg h pins, A.LinkBody W Prog u gg h pins ->
-  exists (Cu : A.cx) (nsu : list item) (Cg : A.cx) (nsg : list item) (binds0 : list binding) (Dr srcs : list item), A.FunCtx W u Cu nsu /\
-    (forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-       (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.canon Cu (TAbs x) = A.canon Cu tx) /\
-    (A.Family W u -> A.FamilyBindings W binds0) /\
-    A.funbody_of Prog h = Some (FunctorCode (map fst (A.c_ty Cg))
-      (filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))) (A.c_ty Cg) Dr binds0 srcs).
+Lemma link_body_family_bindings : forall u gg h pins, A.LinkBody W Prog u gg h pins ->
+  forall code, A.funbody_of Prog h = Some code -> A.Family W u ->
+  A.FamilyBindings W (fc_bindings code).
 Proof.
   intros u gg h pins LB. destruct LB as [u gg h dg n ps a r bodies Cu nsu Cg nsg Fg wrap Cb Fb made outs gen Cr ks binds0 pins0
-    Dg Ast FCu FCg B3 LPeq LRd Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR _ RR BO Fam FrH FB].
-  exists Cu, nsu, Cg, nsg, binds0, (map ITy outs),
-    (map (fun k => A.rkey_of (A.link_site Cg Cb pins0 outs gen) (A.at_site (A.link_site Cg Cb pins0 outs gen) k)) ks). split; [exact FCu|split; [exact LRd|split; [exact Fam|exact FB]]].
+    Dg Ast FCu FCg Mod Ret This Loop Num Pins Items MadeU Outs OutM NdG FrG PR _ RR BO Fam FrH FB].
+  intros code Code Family. rewrite FB in Code. injection Code as <-. exact (Fam Family).
 Qed.
 
 Lemma functx_table_in : forall u C ns, A.FunCtx W u C ns -> forall x v, In (x, v) (A.c_ty C) ->
@@ -79,10 +74,10 @@ Qed.
 Theorem family_link_new_ok : CF.CN.CC.FamilyLinkNewOk W Prog argv read state_ok.
 Proof.
   intros C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
-    Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
+    Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD Binding PinsOk Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
   pose proof FA as (Cu1 & ns1 & (fx' & Fx' & Fam & Poly & FC & Th & InF & FAg & TypedNeeds & PR & Nd) & EmittedNeeds).
   pose proof (conj EmittedNeeds TypedNeeds) as Sat.
-  pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & MadeOut & PinsI & PinG).
+  pose proof LD as (FCu & FCg & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & MadeOut & PinsI & PinG).
   destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FC FCu) as [-> ->].
   destruct (PublicFormation.family_context_shape matching C) as [Ety [EsubF [EprF EloF]]].
   set (Cf := A.family_context C matching) in *.
@@ -98,17 +93,9 @@ Proof.
   2: { destruct CP as (code & E & _). discriminate. }
   destruct CL as (gg2 & h2 & Cu2 & nsu2 & Cg2 & nsg2 & dc2 & E & [pins2 [LB _]] & _).
   injection E as E1h _ E3h. subst h2 dc2.
-  destruct (link_body_parts _ _ _ _ LB) as (Cu3 & nsu3 & Cg3 & nsg3 & binds3 & Dr3 & srcs3 & FCu3 & LRd3 & FamB & FB3).
-  destruct (CF.CN.CC.LR.PA.FS.CopyA.S.functx_unique W _ _ _ _ _ FCu FCu3) as [<- <-].
-  rewrite FB in FB3. injection FB3 as E1 E2 ETy E4 EBinds E6.
-  (* cap3b's input condition, at G's table *)
-  assert (LRd' : forall x tx, A.nlook x (A.c_ty Cg) = Some tx -> A.nlook x (A.c_ty Cu) <> None ->
-     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\ A.MergeEq (A.c_merge Cu) (TAbs x) tx).
-  { intros x tx L1 L2. rewrite ETy in L1.
-    destruct (LRd3 x tx L1 L2) as [Scope Equal]. split; [exact Scope|].
-    apply (PublicContextFacts.context_canon_iff_mergeeq Cu
-      (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FCu))). exact Equal. }
-  pose proof (FamB Fam) as FBs. rewrite <- EBinds in FBs.
+  pose proof (PublicLinkRun.link_binding_merged_inputs W u Cu ns Cg nsg
+    (proj2 (PublicContextFacts.functor_context_merge W u Cu ns FCu)) Binding) as LRd'.
+  pose proof (link_body_family_bindings _ _ _ _ LB _ FB Fam) as FBs.
   (* 3: the body writes no input of F, so it keeps the caller's θ readings *)
   destruct (family_binds_no_dests W Prog _ _ _ _ _ _ _ binds0 Items BO FBs) as [Made _].
   assert (ThL : forall z, In z (map fst (A.c_ty Cu)) ->
@@ -136,8 +123,9 @@ Proof.
     intro t. exact (f_equal (ground d) (ThSig t)). }
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
     ground d3 t = ground d (app_subst th t)).
-  { exact (LRn.link_run_fact W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg LRd' Items BO MadeOut FB th
-      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d _ [] st d3 g3 st3 ThMerge Run). }
+  { exact (LRn.link_run_fact W Prog Cu gg Cg nsg h Fg _ wrap Cb Fb made binds0 _ _ FCg Items BO MadeOut FB th
+      (fun z Iz => ltac:(rewrite (ThL z Iz); discriminate)) argv read j' d _ [] st d3 g3 st3
+      (PublicLinkRun.declared_link_inputs_read Cu Cg _ LRd' ThMerge) Run). }
   (* 4: positions *)
   assert (PRf : A.ProvideResult W u Cu (fun t => TAbs t) Cr' ks').
   { destruct PR' as (dd & pss & aa & rr0 & bb & outsI & es & tm' & D & FP & OutsI & OIE & RK & ECr).
