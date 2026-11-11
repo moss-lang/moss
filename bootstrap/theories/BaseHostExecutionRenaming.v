@@ -1,7 +1,7 @@
 (* Equivariance of the actual bootstrap host and its public execution. *)
 From Stdlib Require Import List Bool PrimInt63 Uint63.
 From NM Require Import Audit AuditBase RuntimeRenaming BaseRenaming BaseHostRenaming BaseHostMemoryRenaming.
-From NM Require BaseHost BaseHostScalars MossX ExecutionModel PublicOperationFacts InterpreterRenaming.
+From NM Require BaseHost BaseHostScalars MossX ExecutionModel PublicOperationFacts PublicBoolTyping InterpreterRenaming.
 Import Audit.Semantics MossX ListNotations.
 Import ExecutionModel (xvalue(..), xout(..), xprog(..), xp_bool, xp_true, xp_false, xp_argv, prim, base_primitive).
 Local Open Scope uint63_scope.
@@ -195,6 +195,27 @@ Proof.
   intros rename P P' Views Bool True False.
   unfold Execution.N.E.primitives_related, Public.ReferenceHost.run_prim, Base.call.
   apply base_call_equivariant, default_raw_calls_related; assumption.
+Qed.
+
+Lemma declared_bool_labels_fixed : forall rename bundle W program initial,
+  fixes_declarations rename W ->
+  rename 0%nat = 0%nat ->
+  Audit.Semantics.Elaboration.ElaboratesIn bundle W program ->
+  rename (view_bool (Public.runtime program initial)) = view_bool (Public.runtime program initial) /\
+  rename (view_true (Public.runtime program initial)) = view_true (Public.runtime program initial) /\
+  rename (view_false (Public.runtime program initial)) = view_false (Public.runtime program initial).
+Proof.
+  intros rename bundle W program initial Fixed Zero Elaborated.
+  apply PublicBoolTyping.elaborates_bool_symbols in Elaborated.
+  destruct Elaborated as [_ [[Bool [True False]]|[_ [Bool [True False]]]]].
+  - destruct Bool as (bool_decl & _ & Bool & _).
+    destruct True as (true_decl & _ & True & _).
+    destruct False as (false_decl & _ & False & _).
+    exact (conj (Fixed _ _ Bool) (conj (Fixed _ _ True) (Fixed _ _ False))).
+  - change (rename (program_bool program) = program_bool program /\
+      rename (program_true program) = program_true program /\
+      rename (program_false program) = program_false program).
+    now rewrite Bool, True, False.
 Qed.
 
 Theorem default_runs_equivariant : forall rename program initial initial',

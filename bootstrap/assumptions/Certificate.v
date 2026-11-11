@@ -608,6 +608,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@BaseRenaming.base_call_equivariant);
   root (@BaseHostRenaming.raw_gc_renamed);
   root (@BaseHostExecutionRenaming.raw_primitive_renamed);
+  root (@BaseHostExecutionRenaming.declared_bool_labels_fixed);
   root (@BaseHostExecutionRenaming.default_runs_equivariant)].
 
 Print Assumptions certificate_roots.
