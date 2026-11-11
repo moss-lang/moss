@@ -83,6 +83,9 @@ Definition rename_pattern (pat : pattern) : pattern :=
 Definition rename_capture (capture : type_capture) : type_capture :=
   TypeCapture (rename_subst (capture_generations capture)) (rename_subst (capture_aliases capture)).
 
+Definition rename_outputs (outputs : list (tsym * tsym)) : list (tsym * tsym) :=
+  map (fun '(source, destination) => (rename source, rename destination)) outputs.
+
 Fixpoint rename_expr (e : expr) : expr :=
   match e with
   | EVar x => EVar x
@@ -121,8 +124,7 @@ with rename_binding (b : binding) : binding :=
   | BCopyFunctor u provider needs positions =>
       BCopyFunctor (rename u) (rename provider) (rename_smap needs) positions
   | BApply u th outputs needs results =>
-      BApply (rename u) (rename_subst th)
-        (map (fun '(destination, role) => (rename destination, rename role)) outputs)
+      BApply (rename u) (rename_subst th) (rename_outputs outputs)
         (rename_smap needs) (map rename_item results)
   | BPrimitive key operation => BPrimitive (rename_item key) operation
   end.
