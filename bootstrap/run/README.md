@@ -5,7 +5,7 @@ Moss's reference implementation. The compiler is bootstrapped with it, and
 the test suite holds the compiler to it. It runs one pipeline:
 
 1. **Front end**. `SnapshotLoader.load_from` loads the program and its
-   imports through the driver's file reads and returns the typed AST bundle.
+   imports through the driver's file reads and returns the parsed source bundle.
    `SnapshotLoader.load_from_sound` proves that a successful load satisfies
    `Audit.Loader.Bundled` for those reads.
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an

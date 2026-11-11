@@ -1,12 +1,6 @@
-(* ------------------------------------------------------------------------ *)
-(* EaMain.v — the knot, FnElab for every defined fn, and assembly:         *)
-(* `elaborate : bundle -> er (world * program)`.                           *)
-(*                                                                           *)
-(* SOUND (the goal):                                                       *)
-(*   elaborate b = Ok (W, P) -> ElaboratesIn b W P /\ Platform.Linked W P  *)
-(* Pending pieces (elab-STATUS.md): AssumesComplete and NoExpandingCycle   *)
-(* are not yet checked, and some Linked checks are TODO (EaPlatform).      *)
-(* ------------------------------------------------------------------------ *)
+(* Assemble the executable elaborator and its program tables.
+   BootstrapVerified.elaborate_sound connects a successful result to
+   Audit elaboration and Base linking. *)
 
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import AuditBase.
@@ -302,8 +296,6 @@ Definition main_symbols (W : world) (modules : list string) : list nat :=
 
 Definition elab_fuel : nat := 100000.
 
-(* Full soundness still asks for ElaboratesIn b W P /\ Platform.Linked W P.
-   EaWorldSound and EaContextTableSound certify the world and its contexts. *)
 Definition elaborate_with_metadata (strat : strategy)
   (choose_metadata_fuel : world -> nat -> nat) (b : bundle) : er (world * program) :=
   match bundle_world_r b with

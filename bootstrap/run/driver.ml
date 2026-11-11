@@ -9,8 +9,9 @@
    executable elaborator (EaMain.elaborate) into an Audit.Semantics
    program.  That program is given the proved passes (ProgramFastPath.fastpath,
    ProgramPrune.prune, ProgramCapTrim.captrim, each proved to keep Runs) and run
-   by Audit.v's reference interpreter (Audit.Semantics.Interpreter.run_main),
-   its primitives MossX.run_prim (prims.ml).  The prelude is P (`--prelude ""`
+   by the closure-compiled interpreter, proved against Audit.v's execution
+   rules. Base dispatches the MossX primitives through prims.ml.
+   The prelude is P (`--prelude ""`
    for none), else $MOSS_LIB/prelude.moss, else lib/prelude.moss, from the
    working directory.
 

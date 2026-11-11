@@ -17,8 +17,7 @@ Definition build (prelude : file_path) (snapshot : source) (entry : file_path) :
   | Sx.Bad _ => None
   end.
 
-(* The remaining premise connects successful executable body checking
-   to the typing and translation of functions and constant initializers. *)
+(* The body-checking contract used to assemble the whole-program proof. *)
 Definition BodiesSound : Prop :=
   forall bundle W program,
     EaMain.elaborate bundle = EaBase.Ok (W, program) ->
