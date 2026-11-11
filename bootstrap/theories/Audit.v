@@ -3809,7 +3809,7 @@ Definition FixedAgreement (W : world) (C : cx) (u : nat) : Prop :=
     match ilook (IFun u) (c_apps C), nlook x (c_ty C) with
     | Some recorded, Some now =>
         match nlook x recorded with
-        | Some (Some was) => canon C was = canon C now
+        | Some (Some was) => MergeEq (c_merge C) was now
         | _ => True
         end
     | _, _ => True
@@ -4892,9 +4892,9 @@ with LambdaProvider (W : world) (P : program) : frame -> cx -> list (name * opti
 | LP : forall F C ps rt body sg this pid caps capvals Cl Fl lbody ltype keys sm,
     length ps = length (sg_params sg) -> NoDup (map fst ps) ->
     Forall2 (fun pq t => match snd pq with
-                         | Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ canon C t' = canon C t
+                         | Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ MergeEq (c_merge C) t' t
                          | None => True end) ps (sg_params sg) ->
-    match rt with Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ canon C t' = canon C (sg_ret sg)
+    match rt with Some a => exists t', TyOf W (fr_mod F) (c_ty C) this a t' /\ MergeEq (c_merge C) t' (sg_ret sg)
                  | None => True end ->
     (* captured: the enclosing locals it mentions, less its parameters *)
     (forall n, In n caps <-> (Mentions_name W F body n /\ slook n (c_locals C) <> None /\ ~ In n (map fst ps) /\ fr_applying F = [])) ->

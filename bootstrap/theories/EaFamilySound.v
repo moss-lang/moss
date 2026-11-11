@@ -2,6 +2,7 @@
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require Import Audit EaBase EaTypes EaFamily EaTypesSound EaMentionsSound
   EaDependencyFuel EaResultBudget EaOutputSound EaMetadataSound EaMain EaWorldSound ElabWorld.
+From NM Require PublicContextFacts PublicTypeFacts.
 Import ListNotations Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -78,6 +79,41 @@ Hypothesis enough_metadata : metadata_budget W bound < metadata_fuel.
 
 Lemma metadata_depth_enough : metadata_depth W bound < metadata_fuel.
 Proof. unfold metadata_budget in enough_metadata. lia. Qed.
+
+Theorem fixed_agreement_spec : forall C u,
+  PublicContextFacts.CxSection C ->
+  fixed_agreement E C u = true <-> FixedAgreement W C u.
+Proof.
+  intros C u Section. unfold fixed_agreement, FixedAgreement.
+  rewrite forallb_forall. fold W metadata_fuel.
+  assert (Read : forall x,
+    (match capp C (IFun u), nlook x (c_ty C) with
+     | Some recorded, Some now =>
+         match nlook x recorded with
+         | Some (Some was) => ty_eqb (canon C was) (canon C now)
+         | _ => true
+         end
+     | _, _ => true
+     end) = true <->
+    match ilook (IFun u) (c_apps C), nlook x (c_ty C) with
+    | Some recorded, Some now =>
+        match nlook x recorded with
+        | Some (Some was) => MergeEq (c_merge C) was now
+        | _ => True
+        end
+    | _, _ => True
+    end).
+  { intro x. unfold capp. rewrite <- PublicContextFacts.capps_ilook.
+    destruct (ilook (IFun u) (c_apps C)) as [recorded|], (nlook x (c_ty C)) as [now|];
+      try (split; [intros _; exact I | intros _; reflexivity]).
+    destruct (nlook x recorded) as [[was|]|];
+      try (split; [intros _; exact I | intros _; reflexivity]).
+    rewrite PublicTypeFacts.ty_eqb_spec. apply PublicContextFacts.context_canon_iff_mergeeq.
+    exact Section. }
+  split; intros Ag x Member; apply Read, Ag;
+    apply (fixed_exact W bound declarations_bounded metadata_fuel u enough_metadata x);
+    exact Member.
+Qed.
 
 Lemma family_keyed_sound : forall n symbol p syntax,
   spec_depth syntax <= metadata_depth W bound ->

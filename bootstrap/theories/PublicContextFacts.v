@@ -134,6 +134,13 @@ Lemma section_same_fields : forall C C',
   CxSection C -> CxSection C'.
 Proof. intros C C' Sub Merge Section. unfold CxSection in *. now rewrite Sub, Merge. Qed.
 
+Lemma capps_ilook : forall C k, A.ilook k (A.c_apps C) = option_map A.provision_inst (A.ilook k (A.c_provisions C)).
+Proof.
+  intros [ty sub classes provs locs] k. unfold A.c_apps. cbn [A.c_provisions].
+  induction provs as [|[k' p] r IH]; [reflexivity|]. cbn. destruct (item_eqb k k'); [|exact IH].
+  destruct p; reflexivity.
+Qed.
+
 Lemma provide_merge : forall C k a C',
   A.c_merge (A.provide C k a C') = A.c_merge C'.
 Proof.

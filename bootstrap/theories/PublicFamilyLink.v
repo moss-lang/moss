@@ -78,7 +78,7 @@ Qed.
 
 Theorem family_link_new_ok : CF.CN.CC.FamilyLinkNewOk W Prog argv read state_ok.
 Proof.
-  intros C0 C u matching th sm Cr ks Es Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
+  intros C0 C u matching th sm Cr ks Es Emg Ep El Ts FA rr F d types H g st fx h dc gfx gg dg n ps a r bodies Cu ns Cg nsg Fg wrap
     Cb Fb made outs' gen Cr' ks' binds0 pins d1 d2 d3 g3 st3 H3 j' Pre0 Fx Look Ok Fm LD PinsOk Sel Sel2 Run Ext Pre3 dr Sdr r0 m0 g0 Ik0 Mg0.
   pose proof FA as (fx' & Cu1 & ns1 & Fx' & Fam & Poly & FC & Th & InF & FAg & Sat & PR & Nd).
   pose proof LD as (FCu & FCg & LPeq & LRd & Dg & Ast & Mod & Ret & This & Loop & Num & Items & OutsR & OutM & NdG & FrG & PR' & RR & BO & FB & MadeOut & PinsI & PinG).
@@ -279,7 +279,10 @@ Proof.
     pose proof (FAg x Fx0) as Ag.
     rewrite (CF.CN.CC.LR.PA.FS.CopyA.S.ilook_apps_fun Cf u fx (PublicCallRealize.funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (Eg1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
-    injection Eg1 as Eg1. rewrite Eg1, <- Ag, CanF. symmetry. exact (Abs0 was). }
+    injection Eg1 as Eg1. rewrite Eg1, CanF, (Abs0 now).
+    pose proof Pre0 as (_ & _ & _ & _ & (AbsM0 & _) & _).
+    apply AbsM0. unfold Cf in Ag.
+    now rewrite PublicContextFacts.family_context_merge, Emg in Ag. }
   (* Q6: a pin reads, after the body, as u's fixed reading of the pinned input *)
   assert (Ed2 : type_meanings d2 = [] /\ type_aliases d2 = []) by exact (CF.CN.CC.LR.PA.FS.CopyA.S.select_provisions_empty _ _ _ Sel2).
   destruct Ed2 as [Em2 Ea2].

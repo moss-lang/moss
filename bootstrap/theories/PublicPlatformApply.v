@@ -33,6 +33,7 @@ From NM Require PublicContextFacts.
 From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBodySafety PublicBodySlice PublicTagCheck PublicCallRealize.
 From NM Require PublicFormation PublicCopyApply PublicFamilyStep PublicFamilyAgree PublicChainAgree PublicCallerKeys EagerCopy.
+From NM Require PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -895,7 +896,10 @@ Proof.
     pose proof (FAg x Fx') as Ag.
     rewrite (FS.CopyA.S.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (E1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
-    injection E1 as E1. rewrite <- Ag, CanonEq, (Abs was), <- E1. exact (eq_sym Gx). }
+    injection E1 as E1.
+    rewrite Gx, E1. symmetry.
+    apply (proj1 RealF). eapply A.METrans; [exact Ag|].
+    apply PublicMerge.merge_eq_read. exact (proj1 (proj1 (proj2 (proj2 RealF)))). }
   pose proof (family_data_primitives _ _ _ _ _ _ _ FD) as AllPrim.
   destruct (installs_run (program_of Prog argv read) j1 bindings de [] st AllPrim) as [Run|Run]; rewrite Run.
   2: { right. eexists. split; [reflexivity|]. split; [intros v E; discriminate|exact Logic.I]. }

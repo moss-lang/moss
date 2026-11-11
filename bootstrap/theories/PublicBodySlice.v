@@ -1946,11 +1946,7 @@ Lemma ilook_map_snd : forall X (f : A.provision -> X) k l,
 Proof. intros X f k l. induction l as [|[k' p] r IH]; [reflexivity|]. cbn. destruct (item_eqb k k'); [reflexivity|exact IH]. Qed.
 
 Lemma capps_ilook : forall C k, A.ilook k (A.c_apps C) = option_map A.provision_inst (A.ilook k (A.c_provisions C)).
-Proof.
-  intros [ty sub classes provs locs] k. unfold A.c_apps. cbn [A.c_provisions].
-  induction provs as [|[k' p] r IH]; [reflexivity|]. cbn. destruct (item_eqb k k'); [|exact IH].
-  destruct p; reflexivity.
-Qed.
+Proof. exact PublicContextFacts.capps_ilook. Qed.
 
 Lemma rkey_set : forall C k0 p0 r m, item_eqb (A.mkey r m) k0 = false ->
   A.rkey (set_cx C k0 p0) r m = A.rkey C r m.
@@ -3519,7 +3515,7 @@ Proof.
       destruct (nlook_fixed_app fxh x (Covh x Fh)) as [was [Nw Iw]].
       rewrite (Vmh x was Iw). f_equal.
       pose proof (Agr x Fh) as Ag. rewrite (ilook_apps_fun C h fxh (funs_ilook _ h fxh KM Lh)), Lx, Nw in Ag.
-      change (ground d was = ground d tx). rewrite <- (Abs was), <- (Abs tx), Ag. reflexivity.
+      change (ground d was = ground d tx). exact (AbsM was tx Ag).
     + split.
       * intros x Fu. destruct (A.nlook x (A.c_ty C)) as [tx|] eqn:Lx; [|exfalso; exact (FixU x Fu Lx)].
         exists tx. exact (proj2 (Fx x tx) (conj Fu Lx)).

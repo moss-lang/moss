@@ -30,6 +30,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
 From NM Require PublicFormation PublicTypeFacts PublicCallerKeys PublicCopyFresh PublicCopySubst PublicScoping PublicFamilyStep PublicFamilyLink
   PublicChainSigs PublicOutputSubst PublicLinkRun PublicFamilySig PublicChainRealize.
 From NM Require PublicMergeClass PublicContextFacts.
+From NM Require PublicMerge.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 
@@ -246,7 +247,6 @@ Proof.
   pose proof (PublicContextFacts.section_canonical C0 Section) as Idem.
   pose proof (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Abs.
   assert (FxC0 : A.nlook u (A.c_funs C0) = Some fx) by (unfold A.c_funs; rewrite <- Ep; exact Fx).
-  assert (CanonEq : forall t, A.canon Cf t = A.canon C0 t) by (intros t; unfold A.canon; rewrite EsubF, Es; reflexivity).
   destruct (Funs u fx FxC0) as [pv [gfx [Look' [Ok Fm]]]]. rewrite Look in Look'. injection Look' as <-.
   set (sms' := compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu0 (A.canon_item Cu0 k))) nsh)) in *.
   set (rms' := compose_positions rms rm) in *.
@@ -275,7 +275,9 @@ Proof.
     pose proof (FAg x Fx') as Ag.
     rewrite (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_apps_fun Cf u fx (funs_ilook _ u fx KMf FxF)), Ln, Nw in Ag.
     assert (E1 : Some (ground d tx) = Some (ground d was)) by (rewrite <- (Vm x tx Ixt), <- (Vm x was Iw); reflexivity).
-    injection E1 as E1. rewrite E1, <- Ag, CanonEq. symmetry. exact (Abs was). }
+    injection E1 as E1. rewrite E1.
+    apply (proj1 RealF). eapply A.METrans; [exact Ag|].
+    apply PublicMerge.merge_eq_read. exact (proj1 (proj1 (proj2 (proj2 RealF)))). }
   assert (RealU' : CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok rr Cu (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.callee_env d (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.thof f Cu) d1) H) by (rewrite <- Thf; exact RealU).
   (* the input valuation every level of the chain reads *)
   set (Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list).
