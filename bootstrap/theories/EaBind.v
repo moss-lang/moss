@@ -83,6 +83,22 @@ Definition lambda_capture_names (F : frame) (C : cx) (parameters : list name) (b
   | _ => []
   end.
 
+Definition lambda_capture_scope_free (C : cx) (first count : nat) : bool :=
+  match count with
+  | 0 => true
+  | S _ =>
+      let limit := first + count in
+      forallb (fun q => match fst q with
+        | IVal v => Nat.ltb v first || Nat.leb limit v
+        | _ => true
+        end) (c_provisions C)
+  end.
+
+Definition allocate_lambda_captures (C : cx) (count : nat) : M (list nat) :=
+  fun s =>
+    if lambda_capture_scope_free C (es_next s) count then fresh_n count s
+    else Err "internal: anonymous function capture collides with a value provision".
+
 Definition lambda_need_keys (C : cx) (index : pix) : list item :=
   filter (fun k => match k with ITy _ => false
     | _ => providesb_i C index k && item_eqb k (provision_id k)
@@ -129,7 +145,7 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
   let* _ := check_lambda_annotation F C this (sg_ret sg) rt (lambda_return_message what (sg_ret sg)) in
   let pnames := map fst ps in
   let caps := lambda_capture_names F C pnames body in
-  let* capvals := fresh_n (List.length caps) in
+  let* capvals := allocate_lambda_captures C (List.length caps) in
   let* pid := reserve_code FunctionTable in
   let Cl := captured_cx C caps capvals in
   let Fl := lambda_body_frame F C pnames sg this body caps in

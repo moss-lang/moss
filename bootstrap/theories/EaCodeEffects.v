@@ -251,6 +251,15 @@ Proof.
   injection Run as <- <-. eapply Effect. exact Checked.
 Qed.
 
+Lemma code_effect_allocate_lambda_captures : forall C count,
+  PreservesOldCode (allocate_lambda_captures C count).
+Proof.
+  intros C count before values after Run.
+  unfold allocate_lambda_captures in Run.
+  destruct (lambda_capture_scope_free C (es_next before) count); [|discriminate].
+  eapply code_effect_fresh_n. exact Run.
+Qed.
+
 Theorem lambda_provider_code_effect : forall E R what F C ps rt body sg this,
   (forall F' C' block expected, PreservesOldCode (r_blke R F' C' block expected)) ->
   PreservesOldCode (lambda_provider E R what F C ps rt body sg this).
@@ -267,7 +276,7 @@ Proof.
   { destruct rt as [annotation|]; cbn [check_lambda_annotation].
     - apply code_effect_bind; [apply code_effect_pure|intro ty; apply code_effect_check].
     - apply code_effect_return. }
-  intros []. cbn zeta. apply code_effect_bind; [apply code_effect_fresh_n|].
+  intros []. cbn zeta. apply code_effect_bind; [apply code_effect_allocate_lambda_captures|].
   intros capvals s result final Run.
   apply EaControlSound.mbind_ok in Run as (slot & reserved & Reserve & Run).
   apply EaControlSound.mbind_ok in Run as (numbered_result & numbered & Numbered & Run).

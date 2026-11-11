@@ -134,6 +134,7 @@ Qed.
 
 Section Lambda.
 Variables (E : env) (R : rec) (bound : nat) (entry : string) (P : program) (final : est).
+Variable StateValid : est -> Prop.
 Let W := e_W E.
 Hypotheses
   (Declared : forall n d, w_decl W n = Some d -> n < bound)
@@ -145,23 +146,34 @@ Theorem lambda_provider_sound : forall what F C ps annotation body sg this befor
   PublicCallRealize.KeysMatch (c_provisions C) ->
   bound <= es_next before -> CodeTablesBound before ->
   LambdaOriginsBound before ->
-  (forall v, In v (value_provision_keys (c_provisions C)) -> v < es_next before) ->
-  TypedLinkCache W P before ->
+  StateValid before -> TypedLinkCache W P before ->
   GeneratedPost bound final after ->
+  (forall count capvals captured slot start,
+    fresh_n count before = Ok (capvals, captured) ->
+    reserve_code FunctionTable captured = Ok (slot, start) ->
+    StateValid before -> StateValid start) ->
+  (forall slot code elaborated written,
+    slot_index slot < es_next elaborated ->
+    read_code elaborated FunctionTable (slot_index slot) = None ->
+    write_fn_code slot code elaborated = Ok (tt, written) ->
+    put_lamcx slot C written = Ok (tt, after) ->
+    StateValid elaborated -> StateValid after) ->
   (forall caps capvals captured slot start code result finish,
     fresh_n (List.length caps) before = Ok (capvals, captured) ->
     reserve_code FunctionTable captured = Ok (slot, start) ->
     TypesLambdaCaptures W F C (map fst ps) body caps capvals ->
-    TypedLinkCache W P start -> GeneratedPost bound final finish ->
+    StateValid start -> TypedLinkCache W P start -> GeneratedPost bound final finish ->
     let Fl := lambda_body_frame E F C (map fst ps) sg this body caps in
     let Cl := lambda_parameter_context (EaBind.captured_cx C caps capvals) (map fst ps) (sg_params sg) in
     r_blke R Fl Cl (ABlock [] (Some body)) (Some (sg_ret sg)) start = Ok ((code, result), finish) ->
-    BlkE W P Fl Cl (ABlock [] (Some body)) (Some (sg_ret sg)) code result /\ TypedLinkCache W P finish) ->
+    BlkE W P Fl Cl (ABlock [] (Some body)) (Some (sg_ret sg)) code result /\
+    TypedLinkCache W P finish /\ StateValid finish) ->
   EaBind.lambda_provider E R what F C ps annotation body sg this before = Ok ((pid, prefix, needs), after) ->
-  LambdaProvider W P F C ps annotation body sg this pid prefix needs /\ TypedLinkCache W P after.
+  LambdaProvider W P F C ps annotation body sg this pid prefix needs /\
+  TypedLinkCache W P after /\ StateValid after.
 Proof.
   intros what F C ps annotation body sg this before pid prefix needs after
-    Section Matching Floor Tables Future Values Cache Post NestedTyping Run.
+    Section Matching Floor Tables Future Valid Cache Post ReserveState FinishState NestedTyping Run.
   unfold EaBind.lambda_provider in Run. fold W in Run.
   apply EaControlSound.mbind_ok in Run as (checked_length & s1 & Length & Run).
   apply successful_link_check in Length as [Length ->]. apply Nat.eqb_eq in Length.
@@ -182,13 +194,11 @@ Proof.
   assert (FreshSource : forall n, bound <= n -> Fresh W n).
   { intros n Above. unfold Fresh. destruct (w_decl W n) as [d|] eqn:Found; [|reflexivity].
     pose proof (Declared _ _ Found). lia. }
-  destruct (EaAllocationSound.lambda_captures_from_counter E F C parameters body before
-    ltac:(intros; apply FreshSource; lia) Values) as (allocated & next & Exact & Counter & CaptureTypes).
-  change (fresh_n (List.length caps) before = Ok (allocated, next)) in Exact.
-  rewrite Captures in Exact. injection Exact as <- <-.
-  pose proof (code_effect_fresh_n _ _ _ _ Captures) as CaptureEffect.
+  destruct (EaAllocationSound.lambda_captures_from_counter E F C parameters body before capvals captured
+    ltac:(intros; apply FreshSource; lia) Captures) as (FreshCaptures & Counter & CaptureTypes).
+  pose proof (code_effect_fresh_n _ _ _ _ FreshCaptures) as CaptureEffect.
   pose proof (code_bound_preserved _ _ CaptureEffect Tables) as CapturedTables.
-  destruct (fresh_n_keeps_origins _ _ _ _ Captures) as (CaptureOrigins & CaptureLinks & CapturePins).
+  destruct (fresh_n_keeps_origins _ _ _ _ FreshCaptures) as (CaptureOrigins & CaptureLinks & CapturePins).
   apply EaControlSound.mbind_ok in Run as (slot & reserved & Reserve & Run).
   destruct (reserve_code_spec W bound FunctionTable captured ltac:(lia) FreshSource CapturedTables)
     as (found & next & Reserved & Index & Next & _ & _ & Vacant & _).
@@ -218,19 +228,22 @@ Proof.
   assert (ReservedCache : TypedLinkCache W P reserved).
   { unfold TypedLinkCache, link_pins_at in *. rewrite ReserveLinks, CaptureLinks, ReservePins, CapturePins.
     exact Cache. }
-  destruct (NestedTyping caps capvals _ _ _ _ _ _ Captures Reserve
-    CaptureTypes ReservedCache NestedPost Body)
-    as [TypedBody BodyCache].
+  pose proof (ReserveState _ _ _ _ _ FreshCaptures Reserve Valid) as ReservedValid.
+  destruct (NestedTyping caps capvals _ _ _ _ _ _ FreshCaptures Reserve
+    CaptureTypes ReservedValid ReservedCache NestedPost Body)
+    as (TypedBody & BodyCache & BodyValid).
+  assert (IssuedBeforeWrite : slot_index slot < es_next elaborated).
+  { pose proof (counter_grows _ _ BodyEffect). lia. }
+  pose proof (FinishState _ _ _ _ IssuedBeforeWrite NoCode Write Note BodyValid) as FinalValid.
   assert (Owned : bound <= slot_index slot < es_next finish).
-  { pose proof (counter_grows _ _ BodyEffect).
-    unfold put_lamcx in Note. injection Note as <-.
+  { unfold put_lamcx in Note. injection Note as <-.
     unfold write_fn_code, set_fn_body in Write. injection Write as <-.
     cbn [es_next]. lia. }
   pose proof (generated_code_in_assembly _ _ _ _ _ _ Assembled Post FunctionTable _ _ Owned Stored) as CodeInProgram.
   pose proof (generated_lambda_origin_in_assembly _ _ _ _ _ _ _ _ Assembled Post Owned Origin) as OriginInProgram.
   set (keys := EaBind.lambda_need_keys Cl (PIdx (pindex (c_provisions Cl)))) in *.
   destruct (lambda_need_keys_exact Cl (captured_cx_keys_match _ _ _ Matching)) as [KeysDistinct Keys].
-  split; [|exact (KeepCache BodyCache)].
+  split; [|split; [exact (KeepCache BodyCache)|exact FinalValid]].
   eapply (@LP W P F C ps annotation body sg this (slot_index slot) caps capvals Cl Fl code result keys
     (map (fun k => (rkof_i Cl (PIdx (pindex (c_provisions Cl))) k,
                    rkof_i C (PIdx (pindex (c_provisions C))) k)) keys));

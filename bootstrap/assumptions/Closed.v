@@ -162,6 +162,7 @@ From NM Require EaAllocationSound.
 Print Assumptions NM.EaAllocationSound.fresh_n_range.
 Print Assumptions NM.EaAllocationSound.fresh_table_range.
 Print Assumptions NM.EaAllocationSound.fresh_tables_allocate.
+Print Assumptions NM.EaAllocationSound.lambda_capture_scope_free_exact.
 Print Assumptions NM.EaAllocationSound.capture_counter_allocation.
 Print Assumptions NM.EaAllocationSound.lambda_captures_from_counter.
 

@@ -2,7 +2,7 @@
 From Stdlib Require Import List Bool Arith Lia.
 From NM Require Import Audit EaBase.
 From NM Require EaFunctor AllocationFacts EaBind EaTypesSound EaDecide.
-Import Audit.Semantics.Elaboration ListNotations.
+Import Audit.Semantics Audit.Semantics.Elaboration ListNotations.
 
 Theorem fresh_n_range : forall count s,
   exists s', fresh_n count s = Ok (seq (es_next s) count, s') /\
@@ -75,18 +75,50 @@ Proof.
   apply AllocationFacts.allocate_range; assumption.
 Qed.
 
-Theorem capture_counter_allocation : forall W C count s,
-  (forall g, es_next s <= g -> Fresh W g) ->
-  (forall v, In v (value_provision_keys (c_provisions C)) -> v < es_next s) ->
-  exists batch s',
-    fresh_n count s = Ok (batch, s') /\ es_next s' = es_next s + count /\ length batch = count /\
-    Allocates (capture_allocation_scope W C) batch
-      (extend_allocation_scope (capture_allocation_scope W C) batch).
+Theorem lambda_capture_scope_free_exact : forall C first count,
+  EaBind.lambda_capture_scope_free C first count = true <->
+  forall v, In v (value_provision_keys (c_provisions C)) -> ~ (first <= v < first + count).
 Proof.
-  intros W C count s Permitted Reserved.
-  destruct (fresh_n_range count s) as (s' & Run & Next).
-  exists (seq (es_next s) count), s'. split; [exact Run|]. split; [exact Next|].
-  split; [apply length_seq|apply AllocationFacts.allocate_range; assumption].
+  intros C first [|count].
+  - split; [intros _ v _; lia|reflexivity].
+  - cbn [EaBind.lambda_capture_scope_free]. rewrite forallb_forall. split.
+    + intros Checked v Selected. unfold value_provision_keys in Selected.
+      apply in_flat_map in Selected as ([key provision] & Member & Selected).
+      specialize (Checked (key, provision) Member).
+      destruct key; cbn [fst In] in Selected; try contradiction.
+      destruct Selected as [<-|[]]. cbn [fst] in Checked.
+      apply Bool.orb_true_iff in Checked as [Before|After].
+      * apply Nat.ltb_lt in Before. lia.
+      * apply Nat.leb_le in After. lia.
+    + intros Disjoint [key provision] Member.
+      destruct key as [t|v|f|recv m types|u]; cbn [fst]; try reflexivity.
+      assert (Selected : In v (value_provision_keys (c_provisions C))).
+      { unfold value_provision_keys. apply in_flat_map.
+        exists (IVal v, provision). split; [exact Member|now left]. }
+      specialize (Disjoint v Selected).
+      apply Bool.orb_true_iff. destruct (Nat.lt_ge_cases v first).
+      * left. now apply Nat.ltb_lt.
+      * right. apply Nat.leb_le. lia.
+Qed.
+
+Theorem capture_counter_allocation : forall W C count s batch s',
+  (forall g, es_next s <= g -> Fresh W g) ->
+  EaBind.allocate_lambda_captures C count s = Ok (batch, s') ->
+  fresh_n count s = Ok (batch, s') /\ es_next s' = es_next s + count /\ length batch = count /\
+  Allocates (capture_allocation_scope W C) batch
+    (extend_allocation_scope (capture_allocation_scope W C) batch).
+Proof.
+  intros W C count s batch s' Permitted Run.
+  unfold EaBind.allocate_lambda_captures in Run.
+  destruct (EaBind.lambda_capture_scope_free C (es_next s) count) eqn:Checked; [|discriminate].
+  pose proof (proj1 (lambda_capture_scope_free_exact C (es_next s) count) Checked) as Clear.
+  destruct (fresh_n_range count s) as (after & Exact & Counter).
+  rewrite Run in Exact. inversion Exact; subst batch s'.
+  split; [exact Run|]. split; [exact Counter|]. split; [apply length_seq|].
+  split; [|reflexivity]. split; [apply seq_NoDup|].
+  apply Forall_forall. intros g Issued. apply in_seq in Issued.
+  split; [apply Permitted; lia|].
+  intro Collision. exact (Clear g Collision Issued).
 Qed.
 
 Lemma suniq_exact : forall names,
@@ -139,21 +171,20 @@ Proof.
   - split; [constructor|]. intros n. split; [intros []|intros (_ & _ & _ & Bad); discriminate].
 Qed.
 
-Theorem lambda_captures_from_counter : forall E F C parameters body s,
+Theorem lambda_captures_from_counter : forall E F C parameters body s values s',
   (forall g, es_next s <= g -> Fresh (e_W E) g) ->
-  (forall v, In v (value_provision_keys (c_provisions C)) -> v < es_next s) ->
   let caps := EaBind.lambda_capture_names E F C parameters body in
-  exists values s',
-    fresh_n (length caps) s = Ok (values, s') /\
-    es_next s' = es_next s + length caps /\
-    TypesLambdaCaptures (e_W E) F C parameters body caps values.
+  EaBind.allocate_lambda_captures C (length caps) s = Ok (values, s') ->
+  fresh_n (length caps) s = Ok (values, s') /\
+  es_next s' = es_next s + length caps /\
+  TypesLambdaCaptures (e_W E) F C parameters body caps values.
 Proof.
-  intros E F C parameters body s Permitted Reserved. cbn zeta.
-  set (caps := EaBind.lambda_capture_names E F C parameters body).
+  intros E F C parameters body s values s' Permitted. cbn zeta.
+  set (caps := EaBind.lambda_capture_names E F C parameters body). intro Run.
   destruct (lambda_capture_names_exact E F C parameters body) as [Distinct Names].
-  destruct (capture_counter_allocation (e_W E) C (length caps) s Permitted Reserved)
-    as (values & s' & Run & Next & Length & Allocated).
-  exists values, s'. split; [exact Run|]. split; [exact Next|].
+  destruct (capture_counter_allocation (e_W E) C (length caps) s values s' Permitted Run)
+    as (Fresh & Counter & Length & Allocated).
+  split; [exact Fresh|]. split; [exact Counter|].
   unfold TypesLambdaCaptures. split; [exact Names|].
   split; [exact Distinct|]. split; [exact Length|].
   eexists. exact Allocated.
