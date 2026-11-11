@@ -240,6 +240,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicContextFacts.assumed_context_merge);
   root (@NM.PublicContextFacts.context_canon_iff_mergeeq);
   root (@NM.PublicContextFacts.reads_merge_canon_iff);
+  root (@NM.PublicContextFacts.reads_empty_merge);
   root (@NM.PublicContextFacts.call_theta_respects);
   root (@NM.PublicContextFacts.function_context_canonical);
   root (@NM.PublicContextFacts.functor_context_canonical);
@@ -378,6 +379,8 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.freshfor_fresh);
   root (@NM.PublicLinkRun.app_env_meaning);
   root (@NM.PublicChainSigs.table_reads_merge);
+  root (@NM.PublicChainRealize.entry_reading_of_rel);
+  root (@NM.PublicChainRealize.entry_peq);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.link_run_fact);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.LRn.body_meaning_input);
   root (@NM.PublicLinkPins.link_dests_out);

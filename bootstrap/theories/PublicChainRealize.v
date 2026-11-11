@@ -439,57 +439,124 @@ Proof.
   - injection E as ->. exact H.
 Qed.
 
+(* Static result readings are compared by class before the runtime reading
+   turns them into the exact types CallableOk and RealAt require. *)
+Definition EntryReading (classes : A.merge) (s1 s2 : subst) (e1 e2 : A.entry) : Prop :=
+  match e1, e2 with
+  | A.NTy t1, A.NTy t2 => t1 = t2
+  | A.NVal v1 t1 _, A.NVal v2 t2 _ =>
+      v1 = v2 /\ A.MergeEq classes (app_subst s1 t1) (app_subst s2 t2)
+  | A.NFn f1 g1 _, A.NFn f2 g2 _ =>
+      f1 = f2 /\ A.SigEq classes (A.sig_subst s1 g1) (A.sig_subst s2 g2)
+  | A.NMth r1 m1 g1 _, A.NMth r2 m2 g2 _ =>
+      m1 = m2 /\ A.MergeEq classes (app_subst s1 r1) (app_subst s2 r2) /\
+      A.SigEq classes (A.sig_subst s1 g1) (A.sig_subst s2 g2)
+  | A.NFun u1 fx1, A.NFun u2 fx2 =>
+      u1 = u2 /\ forall x t1 t2, In (x, t1) fx1 -> In (x, t2) fx2 ->
+        A.MergeEq classes (app_subst s1 t1) (app_subst s2 t2)
+  | _, _ => False
+  end.
+
+Lemma sig_reading_of_rel : forall classes s1 s2 g1 g2,
+  PublicOutputSubst.SigRel s1 s2 g1 g2 ->
+  A.SigEq classes (A.sig_subst s1 g1) (A.sig_subst s2 g2).
+Proof.
+  intros classes s1 s2 [ps1 r1] [ps2 r2] [Params Ret].
+  split; cbn [A.sig_subst A.sg_params A.sg_ret] in *.
+  - rewrite Params. clear Params ps1.
+    induction (map (app_subst s2) ps2) as [|t rest IH].
+    + constructor.
+    + constructor; [apply A.MERefl|exact IH].
+  - unfold PublicOutputSubst.TyRel in Ret. rewrite Ret. apply A.MERefl.
+Qed.
+
+Lemma entry_reading_of_rel : forall W classes s1 s2 K tm1 tm2 e1 e2,
+  PublicOutputSubst.EntryRel s1 s2 tm1 tm2 e1 e2 ->
+  EntryRelM W s1 s2 K e1 e2 -> EntryReading classes s1 s2 e1 e2.
+Proof.
+  intros W classes s1 s2 K tm1 tm2
+    [t1|v1 t1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1|l1 r1]
+    [t2|v2 t2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2|l2 r2] Rel Methods;
+    cbn in Rel, Methods |- *; try contradiction.
+  - exact Rel.
+  - destruct Rel as [Id [Types _]]. split; [exact Id|]. unfold PublicOutputSubst.TyRel in Types.
+    rewrite Types. apply A.MERefl.
+  - destruct Rel as [Id [Signatures _]]. split; [exact Id|]. apply sig_reading_of_rel. exact Signatures.
+  - destruct Methods as [Id [Receivers [Signatures _]]]. split; [exact Id|]. split.
+    + unfold PublicOutputSubst.TyRel in Receivers. rewrite Receivers. apply A.MERefl.
+    + apply sig_reading_of_rel. exact Signatures.
+  - destruct Rel as [Id Fixed]. split; [exact Id|]. intros x t1 t2 In1 In2.
+    unfold PublicOutputSubst.FxRel, PublicOutputSubst.TyRel in Fixed.
+    rewrite (Fixed x t1 t2 In1 In2). apply A.MERefl.
+Qed.
+
 Section EntryPeq.
-Variable W : A.world.
-Variables (s1 s2 sg1 T1 T2 : subst) (tm1 tm2 : list (nat * ty)) (K : list nat).
+Variable C2 : A.cx.
+Variables (s1 s2 sg1 T1 T2 : subst) (K : list nat).
 Hypothesis Inv1 : forall t, app_subst T1 (app_subst sg1 t) = app_subst T1 t.
-Hypothesis Inv2 : forall t, app_subst T2 (app_subst s2 t) = app_subst T2 t.
+Hypothesis Read2 : PublicContextFacts.ReadsMerge C2 (app_subst T2).
 Hypothesis OnK : forall x, In x K -> app_subst T2 (app_subst s1 (TAbs x)) = app_subst T1 (TAbs x).
 
-Lemma one_ty : forall t1 t2, app_subst s1 t1 = app_subst s2 t2 -> incl (A.gens t1) K ->
+Lemma one_ty : forall t1 t2,
+  A.MergeEq (A.c_merge C2) (app_subst s1 t1) (app_subst s2 t2) -> incl (A.gens t1) K ->
   app_subst T1 (app_subst sg1 t1) = app_subst T2 (app_subst s2 t2).
 Proof.
-  intros t1 t2 E Inc. rewrite Inv1, Inv2, <- (Inv2 t2), <- E. symmetry. apply PublicCopySubst.ty_agree. intros x Ix. exact (OnK x (Inc x Ix)).
+  intros t1 t2 Equal Scope. rewrite Inv1.
+  transitivity (app_subst T2 (app_subst s1 t1)).
+  - symmetry. apply PublicCopySubst.ty_agree. intros x InX. exact (OnK x (Scope x InX)).
+  - apply Read2. exact Equal.
 Qed.
 
-Lemma one_tys : forall l1 l2, map (app_subst s1) l1 = map (app_subst s2) l2 -> Forall (fun t => incl (A.gens t) K) l1 ->
+Lemma one_tys : forall l1 l2,
+  Forall2 (A.MergeEq (A.c_merge C2)) (map (app_subst s1) l1) (map (app_subst s2) l2) ->
+  Forall (fun t => incl (A.gens t) K) l1 ->
   map (app_subst T1) (map (app_subst sg1) l1) = map (app_subst T2) (map (app_subst s2) l2).
 Proof.
-  induction l1 as [|t1 r1 IH]; intros [|t2 r2] E F; cbn in E; try discriminate; [reflexivity|].
-  injection E as E1 E2. inversion F; subst. cbn. rewrite (one_ty t1 t2 E1), (IH r2 E2); [reflexivity|assumption|assumption].
+  induction l1 as [|t1 r1 IH]; intros [|t2 r2] Equal Scope; inversion Equal; subst; [reflexivity|].
+  inversion Scope; subst. cbn. f_equal.
+  - apply one_ty; assumption.
+  - apply IH; assumption.
 Qed.
 
-Lemma one_sig : forall g1 g2, PublicOutputSubst.SigRel s1 s2 g1 g2 -> PublicFormation.SigP (PublicScoping.TyIn (fun y => In y K)) g1 ->
+Lemma one_sig : forall g1 g2,
+  A.SigEq (A.c_merge C2) (A.sig_subst s1 g1) (A.sig_subst s2 g2) ->
+  PublicFormation.SigP (PublicScoping.TyIn (fun y => In y K)) g1 ->
   A.sig_subst T1 (A.sig_subst sg1 g1) = A.sig_subst T2 (A.sig_subst s2 g2).
 Proof.
-  intros [ps1 rt1] [ps2 rt2] [Ep Er] [Fp Fr]. unfold A.sig_subst. cbn in *. f_equal.
-  - apply one_tys; [exact Ep|]. rewrite Forall_forall in Fp |- *. intros t It y Iy. exact (Fp t It y Iy).
-  - apply one_ty; [exact Er|intros y Iy; exact (Fr y Iy)].
+  intros [ps1 rt1] [ps2 rt2] [Params Ret] [ParamScope RetScope].
+  unfold A.sig_subst. cbn in *. f_equal.
+  - apply one_tys; [exact Params|]. rewrite Forall_forall in ParamScope |- *.
+    intros t InT y InY. exact (ParamScope t InT y InY).
+  - apply one_ty; [exact Ret|intros y InY; exact (RetScope y InY)].
 Qed.
 
 Lemma entry_peq : forall e1 e2 k1 q1 k2 q2,
-  PublicOutputSubst.EntryRel s1 s2 tm1 tm2 e1 e2 -> EntryRelM W s1 s2 K e1 e2 ->
+  EntryReading (A.c_merge C2) s1 s2 e1 e2 ->
   PublicFormation.EntryP (PublicScoping.TyIn (fun y => In y K)) e1 ->
   A.entry_provision sg1 (fun a => a) e1 = [(k1, q1)] -> A.entry_provision s2 (fun a => a) e2 = [(k2, q2)] ->
   (forall u fx1 fx2, e1 = A.NFun u fx1 -> e2 = A.NFun u fx2 -> forall x t2, In (x, t2) fx2 -> exists t1, In (x, t1) fx1) ->
   PEq T1 q1 T2 q2 /\ KeyRel T1 T2 k1 k2.
 Proof.
-  intros [t|v1 t1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1|eql eqr] [t'|v2 t2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2|eql2 eqr2] k1 q1 k2 q2 Rel RelM Ep P1 P2 Cov;
-    cbn in Rel, RelM, P1, P2; try contradiction; try discriminate;
+  intros [t|v1 t1 a1|f1 g1 a1|r1 m1 g1 a1|u1 fx1|eql eqr]
+    [t'|v2 t2 a2|f2 g2 a2|r2 m2 g2 a2|u2 fx2|eql2 eqr2] k1 q1 k2 q2 Reading Scope P1 P2 Cover;
+    cbn in Reading, P1, P2; try contradiction; try discriminate;
     injection P1 as <- <-; injection P2 as <- <-.
-  - destruct Rel as (<- & Rt & _). destruct Ep as [Et _]. split; [cbn; exact (one_ty t1 t2 Rt (fun y Iy => Et y Iy))|].
-    split; intros; discriminate.
-  - destruct Rel as (<- & Rg & _). destruct Ep as [Eg _]. split; [cbn; exact (one_sig g1 g2 Rg Eg)|].
-    split; intros; discriminate.
-  - destruct RelM as (<- & Rr & Rg & _ & _). destruct Ep as (Er & Eg & _). split; [cbn; exact (one_sig g1 g2 Rg Eg)|].
-    split; [|intros; discriminate]. intros r m a E. unfold A.mkey in E. injection E as <- <- <-.
-    exists (app_subst s2 r2), []. split; [reflexivity|]. exact (one_ty r1 r2 Rr (fun y Iy => Er y Iy)).
-  - destruct Rel as (<- & Rf). split.
-    + cbn. intros x t I. apply in_map_iff in I as [[x2 t2] [E I2]]. injection E as -> <-.
-      destruct (Cov u1 fx1 fx2 eq_refl eq_refl x t2 I2) as [t1 I1].
-      exists (app_subst sg1 t1). split; [apply in_map_iff; exists (x, t1); split; [reflexivity|exact I1]|].
-      apply one_ty; [exact (Rf x t1 t2 I1 I2)|intros y Iy; exact (Ep x t1 I1 y Iy)].
-    + split; [intros; discriminate|]. intros u E. injection E as <-. reflexivity.
+  - destruct Reading as [<- Types]. destruct Scope as [TypeScope _]. split.
+    + cbn. exact (one_ty t1 t2 Types (fun y InY => TypeScope y InY)).
+    + split; intros; discriminate.
+  - destruct Reading as [<- Signatures]. destruct Scope as [SigScope _]. split.
+    + cbn. exact (one_sig g1 g2 Signatures SigScope).
+    + split; intros; discriminate.
+  - destruct Reading as [<- [Receivers Signatures]]. destruct Scope as [RecvScope [SigScope _]]. split.
+    + cbn. exact (one_sig g1 g2 Signatures SigScope).
+    + split; [|intros; discriminate]. intros r m a Equal. unfold A.mkey in Equal. injection Equal as <- <- <-.
+      exists (app_subst s2 r2), []. split; [reflexivity|]. exact (one_ty r1 r2 Receivers (fun y InY => RecvScope y InY)).
+  - destruct Reading as [<- Fixed]. split.
+    + cbn. intros x t InT. apply in_map_iff in InT as [[x2 t2] [Equal In2]]. injection Equal as -> <-.
+      destruct (Cover u1 fx1 fx2 eq_refl eq_refl x t2 In2) as [t1 In1].
+      exists (app_subst sg1 t1). split; [apply in_map_iff; exists (x, t1); split; [reflexivity|exact In1]|].
+      apply one_ty; [exact (Fixed x t1 t2 In1 In2)|intros y InY; exact (Scope x t1 In1 y InY)].
+    + split; [intros; discriminate|]. intros u Equal. injection Equal as <-. reflexivity.
 Qed.
 End EntryPeq.
 
@@ -1023,9 +1090,11 @@ Proof.
         rewrite (s1_role W Ch h thh gh gen outsh Ch Cr' ks' PartsH G1f Injh t It).
         unfold Tu, Th, Tv. rewrite !tv_role; [reflexivity|exact It|exact Injh|exact (HU t (proj1 (Oh t) It))|exact InjG]. }
     rewrite Forall_forall in FL. destruct (FL pp Ipp) as (R1 & R2 & _ & R4 & R5).
-    destruct (entry_peq W s1r (A.c_sub Ch) (A.c_sub Ch) Th Tu tm1 tm2 _
-      (PublicChainSigs.sub_inv W h Ch nsh Th FCh TokH') (PublicChainSigs.sub_inv W h Ch nsh Tu FCh TokHu) OnK
-      (fst pp) (snd pp) k1 q1 k' p' R1 R2 R4 P1 P2 R5) as [PE KR].
+    pose proof (entry_reading_of_rel W (A.c_merge Ch) s1r (A.c_sub Ch) _ tm1 tm2 _ _ R1 R2) as Reading.
+    destruct (entry_peq Ch s1r (A.c_sub Ch) (A.c_sub Ch) Th Tu _
+      (PublicChainSigs.sub_inv W h Ch nsh Th FCh TokH')
+      (PublicChainSigs.table_reads_merge W h Ch nsh Tu FCh TokHu) OnK
+      (fst pp) (snd pp) k1 q1 k' p' Reading R4 P1 P2 R5) as [PE KR].
     exists p, pv. split; [exact Lp|]. split.
     + rewrite EagerCopy.sources_compose, (nth_map_error _ _ _ rm i j _ Rj). exact Spv.
     + apply (real_transfer Tu k' p' Tu k p pv (real_transfer Th k1 q1 Tu k' p' pv Rh PE KR)).
@@ -1188,7 +1257,6 @@ Variables (F : A.frame) (C : A.cx) (pa : list string) (u : nat) (fx : subst) (Cu
   (th : subst) (gensof : nat -> nat) (C' : A.cx) (ks : list item) (newgens : list nat) (outs : list nat).
 Hypothesis AP : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AppPremises W F C pa u fx Cu ns sm th gensof C' ks newgens outs.
 Variables (d d3 dr : environment) (rms : option (list (option nat))) (srcs : list item).
-Hypothesis Absd : CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AbsorbsCanon C d.
 Hypothesis IdemC : forall t, A.canon C (A.canon C t) = A.canon C t.
 Hypothesis KMc : PublicCallRealize.KeysMatch (A.c_provisions C).
 Hypothesis FmC : PublicFormation.FormedCx W C.
@@ -1282,10 +1350,6 @@ Proof.
   pose proof (CSg.FL.CF.CN.CC.LR.result_grows_by_destinations d d3 dr outs gensof) as Gr.
   assert (AvC : forall g0, In g0 (map gensof outs) -> ~ In g0 (A.context_gens C)).
   { intros g0 Ig. apply in_map_iff in Ig as [t [<- It]]. destruct (DS t It) as [_ [Nc _]]. exact (fun I => Nc (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.cg_l C _ I)). }
-  destruct (PublicFormation.provide_result_shape W _ _ _ _ _ PR) as [Esub _].
-  pose proof (CSg.FL.CF.CN.CC.LR.absorbs_canon_grow C C' (map gensof outs) d d' Absd Esub Gr AvC) as Abs'.
-  assert (Inv2 : forall t, app_subst (type_meanings d') (app_subst (A.c_sub C) t) = app_subst (type_meanings d') t).
-  { intros t. pose proof (Abs' t) as E. unfold A.canon in E. rewrite Esub in E. exact E. }
   assert (InjO : forall a b, In a outs -> In b outs -> gensof a = gensof b -> a = b)
     by (intros a b Ia Ib; exact (Uniq a b (proj1 (OutsI a) Ia) (proj1 (OutsI b) Ib))).
   assert (OnK : forall x, In x (map fst (A.c_ty Cu) ++ map gu outsu) ->
@@ -1308,8 +1372,13 @@ Proof.
       unfold Tu, Tv. rewrite tv_role by assumption. cbn [app_subst]. unfold d', CSg.FL.CF.CN.CC.LR.result_of. cbn [type_meanings append_environment].
       rewrite PublicCopySubst.lookup_subst_cat, (lookup_roles gensof (CSg.FL.CF.CN.CC.LR.read_meaning d3) outs t Ito InjO). reflexivity. }
   rewrite Forall_forall in FL. destruct (FL pp Ipp) as (R1 & R2 & _ & R4 & R5).
-  destruct (entry_peq W s1 (A.c_sub C) (A.c_sub Cu) Tu (type_meanings d') tm1 tm2 _
-    (PublicChainSigs.sub_inv W u Cu ns Tu FC TokU') Inv2 OnK (fst pp) (snd pp) k1 q1 k q2 R1 R2 R4 P1 P2 R5) as [PE KR].
+  (* This helper has no section premise. Its existing literal output
+     comparison supplies the empty-merge instance. *)
+  pose proof (entry_reading_of_rel W [] s1 (A.c_sub C) _ tm1 tm2 _ _ R1 R2) as Reading.
+  destruct (entry_peq (A.Cx [] [] [] [] []) s1 (A.c_sub C) (A.c_sub Cu) Tu (type_meanings d') _
+    (PublicChainSigs.sub_inv W u Cu ns Tu FC TokU')
+    (PublicContextFacts.reads_empty_merge (A.Cx [] [] [] [] []) (app_subst (type_meanings d')) eq_refl) OnK
+    (fst pp) (snd pp) k1 q1 k q2 Reading R4 P1 P2 R5) as [PE KR].
   exists q2, pv. split.
   - pose proof (I2 (A.c_provisions C)) as I2'. rewrite EC'. cbn [A.output_cx A.c_provisions].
     rewrite <- (PublicCallerKeys.result_key_id W u C _ C' ks k PR Iks). rewrite (PublicCallerKeys.result_key_id W u C _ C' ks k PR Iks). exact I2'.
@@ -1471,7 +1540,7 @@ Proof.
     intros C0 o C0' ks0 P0. unfold srcs, CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.link_sources. rewrite length_map.
     exact (PublicCallerKeys.provide_result_length W h0 Ch0 _ Cr ks' C0 o C0' ks0 PR' P0). }
   exact (top_envok W Prog argv read state_ok merge_formed mentions_typed rr H3 F C pa u fx Cu ns sm th gensof C' ks newgens outs AP
-    d d3 dr rms srcs Abs Idem KMc (proj1 Fmd) (proj2 (proj2 (proj1 Fmd))) AbU LvU Sdr LenS news En).
+    d d3 dr rms srcs Idem KMc (proj1 Fmd) (proj2 (proj2 (proj1 Fmd))) AbU LvU Sdr LenS news En).
 Qed.
 End Obligation.
 

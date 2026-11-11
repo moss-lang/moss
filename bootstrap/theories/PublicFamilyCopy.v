@@ -55,7 +55,6 @@ Variables (C : A.cx) (u : nat) (matching th : subst) (sm : smap) (Cr : A.cx) (ks
 Hypothesis Ts : PublicFormation.TysScoped W C.
 Hypothesis FA : A.FamilyApplication W C u matching th sm Cr ks.
 Variables (d d3 dr : environment) (rms : option (list (option nat))) (srcs : list item) (M : nat -> ty).
-Hypothesis Absd : forall t, ground d (A.canon C t) = ground d t.
 Hypothesis IdemC : forall t, A.canon C (A.canon C t) = A.canon C t.
 Hypothesis KMc : PublicCallRealize.KeysMatch (A.c_provisions C).
 Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list.
@@ -131,14 +130,15 @@ Proof.
   (* the level's valuation, and the state's *)
   assert (TokU : PublicChainSigs.TableOk Tin Cu).
   { intros x tx Lx. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst, (TyA x tx Lx), ThS. reflexivity. }
-  assert (Inv2 : forall t, app_subst (type_meanings d) (app_subst (A.c_sub Cf) t) = app_subst (type_meanings d) t).
-  { intros t. pose proof (Absd t) as E. unfold A.canon in E. rewrite EsubF. exact E. }
   assert (OnK : forall x, In x K -> app_subst (type_meanings d) (app_subst th (TAbs x)) = app_subst Tin (TAbs x)).
   { intros x _. change (ground d (app_subst th (TAbs x)) = app_subst Tin (TAbs x)).
     exact (PublicCopySubst.ground_app_subst d th (TAbs x)). }
   rewrite Forall_forall in FL. destruct (FL pp Ipp) as (R1 & R2 & _ & R4 & R5).
-  destruct (PublicChainRealize.entry_peq W th (A.c_sub Cf) (A.c_sub Cu) Tin (type_meanings d) tm1 tm2 K
-    (PublicChainSigs.sub_inv W u Cu ns Tin FC TokU) Inv2 OnK (fst pp) (snd pp) k1 q1 _ q2 R1 R2 R4 P1 P2 R5) as [PE KR].
+  pose proof (PublicChainRealize.entry_reading_of_rel W [] th (A.c_sub Cf) K tm1 tm2 _ _ R1 R2) as Reading.
+  destruct (PublicChainRealize.entry_peq (A.Cx [] [] [] [] []) th (A.c_sub Cf) (A.c_sub Cu) Tin (type_meanings d) K
+    (PublicChainSigs.sub_inv W u Cu ns Tin FC TokU)
+    (PublicContextFacts.reads_empty_merge (A.Cx [] [] [] [] []) (app_subst (type_meanings d)) eq_refl)
+    OnK (fst pp) (snd pp) k1 q1 _ q2 Reading R4 P1 P2 R5) as [PE KR].
   pose proof (CRz.real_transfer W Prog argv read state_ok n H3 _ _ _ _ _ _ pv Rp PE KR) as Rq.
   (* the caller's method there *)
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF; exact KMc).
@@ -298,7 +298,6 @@ Proof.
   assert (FixT : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst Tin (TAbs x))).
   { intros x Fx'. rewrite (Fixd x Fx'). f_equal. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst.
     cbn [app_subst]. rewrite (ThL x (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.fixed_in_functx W u Cu ns x (CRz.CSg.ast_of_abstract W u Cu ns FC AbU) FC Fx')). reflexivity. }
-  assert (Absd : forall t, ground d (A.canon C t) = ground d t) by (intros t; unfold A.canon; rewrite Es; exact (Abs t)).
   assert (IdemC : forall t, A.canon C (A.canon C t) = A.canon C t) by (intros t; unfold A.canon; rewrite Es; exact (Idem t)).
   assert (KMc : PublicCallRealize.KeysMatch (A.c_provisions C)) by (rewrite Ep; exact KM).
   destruct j as [|j1].
@@ -425,7 +424,7 @@ Proof.
       Ch0 nsh0 Cg nsg Fg wrap Cb Fb made outs' gen Cr' ks' bs pins LD LRs th d d3 _ j1 g3 st st3 ThDom Run Pre3 PinT) as Root.
     pose proof (CRz.chain_real W Prog argv read state_ok merge_formed mentions_typed rr H3 h0 Ch0 nsh0 srcs d3 (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Tin
       FC0 Abs0 Root u gfx sms' rms' h0 gf0 _ None Chn eq_refl eq_refl Cu ns FC TokIn FixT) as LvU.
-    pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) Absd IdemC KMc Cu ns FC LvU Sdr
+    pose proof (family_top rr H3 C u matching th sm Cr ks Ts FA d d3 dr rms' srcs (CRz.CSg.FL.CF.CN.CC.LR.read_meaning d3) IdemC KMc Cu ns FC LvU Sdr
       (LenU _ _ _ _ PR)) as New.
     left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st3, H3.
     split; [exact E3|]. split; [exact (proj1 (proj2 (proj2 (proj2 Pre3))))|].
@@ -481,7 +480,7 @@ Proof.
     destruct (select_ok (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) (result_selection (map (A.rkey_of Cr) ks) rms' Dr)) as [dr Sdr].
     { intros [a b] Iq. cbn [snd]. destruct (PublicCallerKeys.selection_in _ _ _ _ _ Iq) as [_ Ib].
       destruct (SrcKey b (SrcIn b Ib)) as [op Lp]. rewrite CRz.CSg.FL.CF.CN.CC.LR.PA.installs_lookup, Lp. discriminate. }
-    pose proof (family_top rr H C u matching th sm Cr ks Ts FA d (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) dr rms' Dr (fun t => TAbs t) Absd IdemC KMc
+    pose proof (family_top rr H C u matching th sm Cr ks Ts FA d (CRz.CSg.FL.CF.CN.CC.LR.PA.installs de bindings) dr rms' Dr (fun t => TAbs t) IdemC KMc
       Cu ns FC LvU Sdr (LenU _ _ _ _ PR)) as New.
     left. exists (EnvironmentWithAliases [] [] (provision_values dr)), st, H.
     split; [apply CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.extends_refl|]. split; [exact St|]. split; [reflexivity|]. split; [reflexivity|]. split; [exact New|].

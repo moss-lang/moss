@@ -15,6 +15,14 @@ Definition CxSection (C : A.cx) : Prop := A.SectionOf (A.c_merge C) (A.c_sub C).
 Definition ReadsMerge (C : A.cx) (read : ty -> ty) : Prop :=
   forall t u, A.MergeEq (A.c_merge C) t u -> read t = read u.
 
+Lemma reads_empty_merge : forall C read, A.c_merge C = [] -> ReadsMerge C read.
+Proof.
+  intros C read Empty t u Equal. rewrite Empty in Equal.
+  assert (Solves : PublicMerge.SolvesClasses [] []) by (split; intros c x y InClass; contradiction).
+  pose proof (PublicMerge.merge_eq_sound Solves Equal) as Same.
+  rewrite !PublicTypeRead.app_subst_nil in Same. now rewrite Same.
+Qed.
+
 Lemma reads_merge_canon_iff : forall C read, CxSection C ->
   ReadsMerge C read <-> forall t, read (A.canon C t) = read t.
 Proof.
