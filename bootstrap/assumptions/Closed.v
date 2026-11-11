@@ -68,3 +68,9 @@ Print Assumptions NM.EaResultBudget.fixed_exact.
 Print Assumptions NM.EaResultBudget.fixed_readings_exact.
 Print Assumptions NM.EaResultBudget.bundle_world_r_fixed_readings.
 Print Assumptions NM.EaResultBudget.bundle_world_r_dependency_readers_exact.
+
+From NM Require EaRootSound.
+Print Assumptions NM.EaRootSound.lang_sym_complete.
+Print Assumptions NM.EaRootSound.lang_item_sym_complete.
+Print Assumptions NM.EaRootSound.root_items_sound.
+Print Assumptions NM.EaRootSound.root_ctx_sound.
