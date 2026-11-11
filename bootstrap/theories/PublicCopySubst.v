@@ -15,7 +15,7 @@
    (ground_app_subst), and the lemmas lift from types to provisions. *)
 From Stdlib Require Import List Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize.
-From NM Require PublicContextFacts PublicMerge PublicTypeFacts.
+From NM Require PublicContextFacts PublicMerge PublicTagCheck PublicTypeFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 (* An effective row reads an actual fixed member of its class. *)
@@ -269,4 +269,140 @@ Proof.
   destruct (copy_fixed_reading_member C recorded y t Section Lookup) as [x [Member Equal]].
   destruct (Fixed x t Member) as [Avoid Read].
   split; [exact Avoid|]. rewrite Read. apply Reads. exact Equal.
+Qed.
+
+(* A type over a functor context's keys, read through its merge, mentions
+   only generations of its table's readings. *)
+Lemma canon_gens_read : forall W u Cu nsu t, A.FunCtx W u Cu nsu -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
+  forall y, In y (A.gens (A.canon Cu t)) -> exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w).
+Proof.
+  intros W u Cu nsu t FCu Sc y Iy. destruct (functx_scoped W u Cu nsu FCu) as (TyA & _). unfold A.canon in Iy.
+  destruct (PublicCallRealize.gens_subst t (A.c_sub Cu) y Iy) as [z [Iz [[Lz ->]|[w [Lz Iw]]]]].
+  - destruct (PublicTagCheck.keys_in _ z (Sc z Iz)) as [w Lw]. exists z, w. split; [exact Lw|].
+    rewrite (TyA z w Lw). cbn [app_subst]. rewrite Lz. left. reflexivity.
+  - destruct (PublicTagCheck.keys_in _ z (Sc z Iz)) as [w' Lw]. exists z, w'. split; [exact Lw|].
+    rewrite (TyA z w' Lw). cbn [app_subst]. rewrite Lz. exact Iw.
+Qed.
+
+(* A reading chosen at the binding site can be instantiated by any
+   application that preserves the recorded fixed inputs. *)
+Lemma site_read_composition : forall W u Cu nsu recorded ys cg T rho0,
+  A.FunCtx W u Cu nsu -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
+  NoDup (map cg ys) ->
+  (forall y, (exists x tx, A.nlook x (A.c_ty Cu) = Some tx /\ In y (A.gens tx)) ->
+    lookup_subst y (A.copy_fixed_readings Cu recorded) = None -> In y ys) ->
+  (forall x t, In (x, t) recorded ->
+    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+    app_subst rho0 t = app_subst T (TAbs x)) ->
+  forall t, incl (A.gens t) (map fst (A.c_ty Cu)) ->
+  app_subst (cg_read ys cg T rho0)
+    (app_subst (A.copy_subst (A.copy_fixed_readings Cu recorded) ys cg) (A.canon Cu t)) =
+  app_subst T (A.canon Cu t).
+Proof.
+  intros W u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed t Scope.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as Section.
+  apply copy_ty_read; [exact Fresh|].
+  intros y Occurs. split.
+  - exact (copy_fixed_gen_at Cu recorded T rho0 (map cg ys) Section Reads Fixed y).
+  - intros Missing NotFresh. exfalso. apply NotFresh, Residual; [|exact Missing].
+    exact (canon_gens_read W u Cu nsu t FCu Scope y Occurs).
+Qed.
+
+(* A site equation over shared inputs holds at every application that
+   preserves the recorded readings. *)
+Lemma shared_inputs_read_at : forall W u Cu Cg nsu recorded ys cg T rho0,
+  A.FunCtx W u Cu nsu -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
+  NoDup (map cg ys) ->
+  (forall y, (exists x tx, A.nlook x (A.c_ty Cu) = Some tx /\ In y (A.gens tx)) ->
+    lookup_subst y (A.copy_fixed_readings Cu recorded) = None -> In y ys) ->
+  (forall x t, In (x, t) recorded ->
+    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+    app_subst rho0 t = app_subst T (TAbs x)) ->
+  PublicContextFacts.LinkedInputsRead Cu Cg
+    (fun t => app_subst (A.copy_subst (A.copy_fixed_readings Cu recorded) ys cg) (A.canon Cu t)) ->
+  PublicContextFacts.LinkedInputsRead Cu Cg (app_subst T).
+Proof.
+  intros W u Cu Cg nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed Site x tx Found Shared.
+  destruct (Site x tx Found Shared) as [Scope Equal]. split; [exact Scope|].
+  assert (Keys : forall y, A.nlook y (A.c_ty Cu) <> None -> In y (map fst (A.c_ty Cu))).
+  { intros y Read. destruct (A.nlook y (A.c_ty Cu)) as [value|] eqn:Lookup; [|contradiction].
+    apply PublicTypeRead.nlook_in in Lookup. exact (in_map fst _ (y,value) Lookup). }
+  pose proof (site_read_composition W u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed) as Compose.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as Section.
+  pose proof (proj1 (PublicContextFacts.reads_merge_canon_iff Cu _ Section) Reads) as Canon.
+  rewrite <- (Canon (TAbs x)), <- (Canon tx).
+  rewrite <- (Compose (TAbs x)) by (intros y [<-|[]]; apply Keys, Shared).
+  rewrite <- (Compose tx) by (intros y Member; apply Keys, Scope, Member).
+  now rewrite Equal.
+Qed.
+
+Lemma provision_subst_nil : forall p, A.provision_subst [] p = p.
+Proof.
+  assert (Types : forall ts, map (app_subst []) ts = ts).
+  { intro ts. transitivity (map (fun t => t) ts); [apply map_ext, app_subst_nil|apply map_id]. }
+  assert (Inst : forall a : A.inst, map (fun q => (fst q, option_map (app_subst []) (snd q))) a = a).
+  { intro a. transitivity (map (fun q => q) a); [|apply map_id].
+    apply map_ext. intros [x [t|]]; cbn; [now rewrite app_subst_nil|reflexivity]. }
+  assert (Fixed : forall fx : subst, map (fun q => (fst q, app_subst [] (snd q))) fx = fx).
+  { intro fx. transitivity (map (fun q => q) fx); [|apply map_id].
+    apply map_ext. intros [x t]. cbn. now rewrite app_subst_nil. }
+  intros [t a|[ps rt] a|[ps rt] a|fx]; unfold A.provision_subst, A.sig_subst; cbn [A.sg_params A.sg_ret];
+    rewrite ?Types, ?Inst, ?Fixed, ?app_subst_nil; reflexivity.
+Qed.
+
+Lemma provision_same_reading : forall p s t,
+  (forall x, In x (A.provision_gens p) -> lookup_subst x s = lookup_subst x t) ->
+  A.provision_subst s p = A.provision_subst t p.
+Proof.
+  intros p s t Same. rewrite <- (provision_subst_nil p) at 1.
+  apply provision_agree. intros x Member. cbn [app_subst lookup_subst]. now rewrite (Same x Member).
+Qed.
+
+Lemma site_need_read : forall W u Cu nsu recorded ys cg T rho0,
+  A.FunCtx W u Cu nsu -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
+  NoDup (map cg ys) ->
+  (forall y, (exists x tx, A.nlook x (A.c_ty Cu) = Some tx /\ In y (A.gens tx)) ->
+    lookup_subst y (A.copy_fixed_readings Cu recorded) = None -> In y ys) ->
+  (forall x t, In (x, t) recorded ->
+    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+    app_subst rho0 t = app_subst T (TAbs x)) ->
+  forall k p other,
+  A.LinkNeedScope Cu k p ->
+  A.CopyNeedAt Cu (A.copy_subst (A.copy_fixed_readings Cu recorded) ys cg) k p other ->
+  (forall q, A.ilook (A.provision_id other) (A.c_provisions Cu) = Some q -> A.LinkNeedScope Cu other q) ->
+  exists q, A.ilook (A.provision_id other) (A.c_provisions Cu) = Some q /\
+    app_subst_item T (A.provision_id k) = app_subst_item T (A.provision_id other) /\
+    A.provision_subst T p = A.provision_subst T q.
+Proof.
+  intros W u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed k p other Source [Key [q [Lookup Provision]]] Target.
+  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as Section.
+  pose proof (proj1 (PublicContextFacts.reads_merge_canon_iff Cu _ Section) Reads) as Canon.
+  set (fixed := A.copy_fixed_readings Cu recorded) in *.
+  set (rho := A.copy_subst fixed ys cg) in *.
+  set (reading := cg_read ys cg T rho0).
+  assert (Keys : forall y, A.nlook y (A.c_ty Cu) <> None -> In y (map fst (A.c_ty Cu))).
+  { intros y Bound. destruct (A.nlook y (A.c_ty Cu)) as [value|] eqn:Read; [|contradiction].
+    apply PublicTypeRead.nlook_in in Read. exact (in_map fst _ (y,value) Read). }
+  assert (ProvisionRead : forall a b, A.LinkNeedScope Cu a b ->
+    A.provision_subst reading (A.provision_subst rho (A.canon_provision Cu b)) = A.provision_subst T b).
+  { intros a b Scope. transitivity (A.provision_subst T (A.canon_provision Cu b)).
+    - apply copy_provision_read; [exact Fresh|].
+      intros y Occurs. unfold A.canon_provision in Occurs.
+      destruct (provision_gens_subst (A.c_sub Cu) b y Occurs) as [x [InB InCanon]].
+      split.
+      + exact (copy_fixed_gen_at Cu recorded T rho0 (map cg ys) Section Reads Fixed y).
+      + intros Missing NotFresh. exfalso. apply NotFresh, Residual; [|exact Missing].
+        refine (canon_gens_read W u Cu nsu (TAbs x) FCu _ y InCanon).
+        intros z [<-|[]]. apply Keys, Scope. apply in_or_app. now left.
+    - unfold A.canon_provision. apply provision_agree. intros y _. exact (Canon (TAbs y)). }
+  assert (KeyRead : forall a b, A.LinkNeedScope Cu a b ->
+    app_subst_item reading (A.copy_need_key Cu rho a) = app_subst_item T (A.provision_id a)).
+  { intros [t|v|f|r m args|h] b Scope; try reflexivity.
+    change (A.mkey (app_subst reading (app_subst rho (A.canon Cu r))) m = A.mkey (app_subst T r) m).
+    f_equal. transitivity (app_subst T (A.canon Cu r)); [|apply Canon].
+    apply (site_read_composition W u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed r).
+    intros y Member. apply Keys, Scope, in_or_app. now right. }
+  specialize (Target q Lookup). exists q. split; [exact Lookup|]. split.
+  - rewrite <- (KeyRead k p Source), <- (KeyRead other q Target), Key. reflexivity.
+  - rewrite <- (ProvisionRead k p Source), <- (ProvisionRead other q Target), Provision. reflexivity.
 Qed.

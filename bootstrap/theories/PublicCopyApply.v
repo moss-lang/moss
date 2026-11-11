@@ -113,62 +113,6 @@ Proof.
   - destruct Iy as [<-|[]]. exact (nlook_keys _ _ _ Lx).
 Qed.
 
-(* A type over a functor context's keys, read through its merge, mentions
-   only generations of its table's readings. *)
-Lemma canon_gens_read : forall u Cu nsu t, A.FunCtx W u Cu nsu -> incl (A.gens t) (map fst (A.c_ty Cu)) ->
-  forall y, In y (A.gens (A.canon Cu t)) -> exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w).
-Proof.
-  intros u Cu nsu t FCu Sc y Iy. destruct (functx_scoped W u Cu nsu FCu) as (TyA & _). unfold A.canon in Iy.
-  destruct (PublicCallRealize.gens_subst t (A.c_sub Cu) y Iy) as [z [Iz [[Lz ->]|[w [Lz Iw]]]]].
-  - destruct (keys_in _ z (Sc z Iz)) as [w Lw]. exists z, w. split; [exact Lw|].
-    rewrite (TyA z w Lw). cbn [app_subst]. rewrite Lz. left. reflexivity.
-  - destruct (keys_in _ z (Sc z Iz)) as [w' Lw]. exists z, w'. split; [exact Lw|].
-    rewrite (TyA z w' Lw). cbn [app_subst]. rewrite Lz. exact Iw.
-Qed.
-
-(* A reading chosen at the binding site can be instantiated by any
-   application that preserves the recorded fixed inputs. *)
-Lemma site_read_composition : forall u Cu nsu recorded ys cg T rho0,
-  A.FunCtx W u Cu nsu -> PublicContextFacts.ReadsMerge Cu (app_subst T) ->
-  NoDup (map cg ys) ->
-  (forall y, (exists x tx, A.nlook x (A.c_ty Cu) = Some tx /\ In y (A.gens tx)) ->
-    lookup_subst y (A.copy_fixed_readings Cu recorded) = None -> In y ys) ->
-  (forall x t, In (x, t) recorded ->
-    (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
-    app_subst rho0 t = app_subst T (TAbs x)) ->
-  forall t, incl (A.gens t) (map fst (A.c_ty Cu)) ->
-  app_subst (PublicCopySubst.cg_read ys cg T rho0)
-    (app_subst (A.copy_subst (A.copy_fixed_readings Cu recorded) ys cg) (A.canon Cu t)) =
-  app_subst T (A.canon Cu t).
-Proof.
-  intros u Cu nsu recorded ys cg T rho0 FCu Reads Fresh Residual Fixed t Scope.
-  pose proof (proj2 (PublicContextFacts.functor_context_merge W u Cu nsu FCu)) as Section.
-  apply PublicCopySubst.copy_ty_read; [exact Fresh|].
-  intros y Occurs. split.
-  - exact (PublicCopySubst.copy_fixed_gen_at Cu recorded T rho0 (map cg ys) Section Reads Fixed y).
-  - intros Missing NotFresh. exfalso. apply NotFresh, Residual; [|exact Missing].
-    exact (canon_gens_read u Cu nsu t FCu Scope y Occurs).
-Qed.
-
-Lemma recorded_fixed_meaning : forall u C fx d gfx T x t,
-  A.FixedReadings W u (A.c_ty C) fx -> S.AbsorbsCanon C d ->
-  gfx = S.ground_fixed (type_meanings d) fx ->
-  (forall y, A.Fixed W u y -> lookup_subst y gfx = Some (app_subst T (TAbs y))) ->
-  In (x,t) (map (fun q => (fst q, A.canon C (snd q))) fx) ->
-  A.Fixed W u x /\ app_subst (type_meanings d) t = app_subst T (TAbs x).
-Proof.
-  intros u C fx d gfx T x t Fixed Abs Recorded Read Member.
-  assert (Function : forall y v w, In (y,v) fx -> In (y,w) fx -> v = w).
-  { intros y v w First Second.
-    destruct (proj1 (Fixed y v) First) as [_ FirstRead].
-    destruct (proj1 (Fixed y w) Second) as [_ SecondRead]. congruence. }
-  apply in_map_iff in Member as [[y tx] [Equal InFx]]. cbn in Equal. injection Equal as -> <-.
-  destruct (proj1 (Fixed x tx) InFx) as [Fx _]. split; [exact Fx|].
-  pose proof (Read x Fx) as Fg. rewrite Recorded, (S.lookup_ground_fixed _ fx x tx Function InFx) in Fg.
-  injection Fg as Fg. change (ground d (A.canon C tx) = app_subst T (TAbs x)).
-  rewrite (Abs tx). exact Fg.
-Qed.
-
 (* A copy's comparisons of inputs and needs (CopyInterpretation, at
    copy_subst) hold at any meanings T that read F's fixed inputs as the
    copy site did (its recorded readings gfx): every generation the compared
@@ -205,11 +149,11 @@ Proof.
   { intros x t Member. split.
     - intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
       apply in_flat_map. exists (x,t). split; [exact Member|exact Iz].
-    - exact (proj2 (recorded_fixed_meaning u C1 fx1 d1 gfx T x t Fx1 Ab1 Egfx FixT Member)). }
+    - exact (proj2 (S.recorded_fixed_meaning W u C1 fx1 d1 gfx T x t Fx1 Ab1 Egfx FixT Member)). }
   assert (Tr : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) ->
     app_subst (PublicCopySubst.cg_read ys cg T (type_meanings d1)) (app_subst (A.copy_subst sigma ys cg) (A.canon Cu t)) =
     app_subst T (A.canon Cu t)).
-  { apply (site_read_composition u Cu nsu recorded ys cg T (type_meanings d1) FCu Reads NdC);
+  { apply (PublicCopySubst.site_read_composition W u Cu nsu recorded ys cg T (type_meanings d1) FCu Reads NdC);
       [|exact FixedAt].
     intros y Reading Missing. apply Ys. exact (conj Reading Missing). }
   assert (TrE : forall a b, incl (A.gens a) (map fst (A.c_ty Cu)) -> incl (A.gens b) (map fst (A.c_ty Cu)) ->
@@ -481,7 +425,7 @@ Proof.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (A.link_map Cu Cg linktarget nsg)) as [e2 Sel2].
     { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-      pose proof (S.linked_targets_in W u Cu nsu Cg nsg linktarget (proj1 Binding) k0 Ik) as Iu.
+      pose proof (S.linked_targets_in W u Cu nsu Cg nsg linktarget _ Binding k0 Ik) as Iu.
       destruct (functx_needs_provided W u Cu nsu FCu (A.linked_target linktarget k0) Iu) as [p0 Ip].
       destruct (S.functx_static W _ _ _ FCu) as [_ [_ [_ [_ [ShU _]]]]].
       destruct (S.realized_key W Prog argv read state_ok _ _ _ _ _ _ Real Ip (ShU (A.linked_target linktarget k0) Iu)) as [pv0 L0].
@@ -494,7 +438,7 @@ Proof.
     assert (Keys : map fst (thof f Cu) = map fst (A.c_ty Cu)) by (unfold thof; rewrite map_map; reflexivity).
     apply (S.link_entry W Prog argv read state_ok rr H d (thof f Cu) e1 u gg h pins Cu nsu Cg nsg linktarget dc gfx e2
       LB Binding FCu FCg Keys FxIn Real); [|exact Caps|exact CF|exact Sel2].
-    intros x Fx' _. rewrite (Fixd x Fx'). unfold thof.
+    intros x Fx'. rewrite (Fixd x Fx'). unfold thof.
     rewrite (S.lookup_on_keys f _ x (FxIn x Fx')). reflexivity.
   - destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     pose proof (S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real) as Reads.

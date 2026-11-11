@@ -10,7 +10,7 @@
 (* ------------------------------------------------------------------------ *)
 
 From Stdlib Require Import List String Bool Arith.
-From NM Require Import Audit EaBase EaTypes EaCall EaFamily EaDecide EaCtx.
+From NM Require Import Audit EaBase EaTypes EaCall EaFamily EaDecide EaCtx EaLinkSite.
 Import ListNotations.
 Import Audit.Input Audit.Semantics Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -223,41 +223,60 @@ Definition provision_refinesb (promised actual : provision) : bool :=
 Definition linked_need (Cu : cx) (nsu : list item) (k : item) : bool :=
   imem (canon_item Cu k) nsu.
 
-Definition unsafe_capture (Cu : cx) (nsu : list item) (Cg : cx) (fu : list nat) (k : item) : bool :=
-  if linked_need Cu nsu k then false else
+Definition link_need_scoped (C : cx) (k : item) (p : provision) : bool :=
+  forallb (bound_in C) (link_need_gens k p).
+
+Definition choose_link_target (Cu Cg : cx) (nsu : list item) (rho : subst)
+    (k : item) (p : provision) (error : string) : er (option item) :=
+  if link_need_scoped Cu k p && link_need_scoped Cg k p then
+    if existsb (fun other => item_eqb (copy_need_key Cu rho k) (copy_need_key Cu rho other)) nsu then
+      let! other := match choose_copy_need E "" "" Cu Cg rho nsu k p with
+                   | Ok other => Ok other | Err _ => Err error end in
+      match ilook (provision_id other) (c_provisions Cu) with
+      | Some q => if link_need_scoped Cu other q then Ok (Some other) else Err error
+      | None => Err error
+      end
+    else Ok None
+  else if linked_need Cu nsu k then Err error else Ok None.
+
+Definition link_need_choice (Cu Cg : cx) (nsu : list item) (rho : subst) (error : string) (k : item) : er (option item) :=
   match ilook (provision_id k) (c_provisions Cg) with
-  | Some p => negb (forallb (fun t => negb (bound_in Cu t) || nmem t fu)
-                      (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end))
+  | Some p => choose_link_target Cu Cg nsu rho k p error
+  | None => Err error
+  end.
+
+Definition unsafe_capture (Cu Cg : cx) (target : item -> option item) (fixed : list nat) (k : item) : bool :=
+  if is_linked target k then false else
+  match ilook (provision_id k) (c_provisions Cg) with
+  | Some p => negb (forallb (fun t => negb (bound_in Cu t) || nmem t fixed) (link_need_gens k p))
   | None => false
   end.
 
-Definition linked_provision_agrees (Cu : cx) (nsu : list item) (Cg : cx) (k : item) : bool :=
-  if linked_need Cu nsu k then
-    oprovision_eqb (option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)))
-                   (ilook (provision_id (canon_item Cu k)) (c_provisions Cu))
-  else true.
-
-Definition linked_type_agrees (Cu Cg : cx) (x : nat) : bool :=
+Definition linked_type_agrees (Cu Cg : cx) (rho : subst) (x : nat) : bool :=
   match nlook x (c_ty Cg) with
-  | Some tx => if bound_in Cu x then
-      forallb (bound_in Cu) (gens tx) && ty_eqb (canon Cu (TAbs x)) (canon Cu tx)
-    else true
+  | Some tx => if bound_in Cu x then forallb (bound_in Cu) (gens tx) &&
+      ty_eqb (app_subst rho (canon Cu (TAbs x))) (app_subst rho (canon Cu tx)) else true
   | None => true
   end.
 
 (* Check the source binding separately from lookup or generation of body code. *)
-Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item) : M (item -> option item) :=
+Definition check_link_binding (u gg : nat) (Cu : cx) (nsu : list item) (Cg : cx) (nsg : list item)
+    (recorded : subst) : M (item -> option item) :=
   let nu := qs W u in let ng := qs W gg in
   let bound_to := (ng ++ ", bound to " ++ nu ++ ",")%string in
+  let error := (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)")%string in
   let fu := fixed W metadata_fuel u in
-  let* _ := match find (unsafe_capture Cu nsu Cg fu) nsg with
+  let* state := get in
+  let rho := site_theta (es_next state) Cu recorded in
+  let* choices := pure (rmap (fun k =>
+    let! choice := link_need_choice Cu Cg nsu rho error k in Ok (k, choice)) nsg) in
+  let target := fun k => match ilook k choices with Some choice => choice | None => None end in
+  let* _ := match find (unsafe_capture Cu Cg target fu) nsg with
       | Some k => fail (bound_to ++ " captures " ++ qkey W k ++ ", which mentions a type each application of " ++ nu ++ " supplies (D84 3b)")
       | None => ret tt end in
-  let* _ := check (forallb (linked_provision_agrees Cu nsu Cg) nsg)
-         (ng ++ " cannot provide " ++ nu ++ ": its linked input interpretation differs (D84)") in
-  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg (fst q)) (c_ty Cg))
-         (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
-  ret (declared_link_target Cu nsu).
+  let* _ := check (forallb (fun q => linked_type_agrees Cu Cg rho (fst q)) (c_ty Cg))
+      (ng ++ " cannot provide " ++ nu ++ ": its input interpretation differs (D84)") in
+  ret target.
 
 (* Allocate the temporary output roles used to read the promised result. *)
 Definition link_output_roles (u : nat) (Cu Cb : cx) (bound_to : string)
@@ -373,7 +392,8 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
             | Some x => fail ("binding " ++ nu ++ " needs " ++ qs W x ++ " in force: it is a fixed input (D84)")
             | None => ret tt end in
   let* _ := check (same_result W fuel u gg) (result_mismatch u gg) in
-  let* target := check_link_binding u gg Cu nsu Cg nsg in
+  let fx := fixed_here u C in
+  let* target := check_link_binding u gg Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) in
   let* h := link_body u gg in
   let sm := translate_link_targets Cu Cg target nsg in
   let thg := map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty Cg) in
@@ -397,6 +417,6 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
                       match nlook x (c_ty C) with Some here => qty W (canon C here) | None => "not in force" end ++
                       "; " ++ nu ++ " is fixed in " ++ qs W x ++ " (D84)")
             | None => ret tt end in
-  ret ((fun x => bind_functor_expression u (slot_index h) (lexical_capture C) sm smc x), set_fun C u (fixed_here u C)).
+  ret ((fun x => bind_functor_expression u (slot_index h) (lexical_capture C) sm smc x), set_fun C u fx).
 
 End Functor.

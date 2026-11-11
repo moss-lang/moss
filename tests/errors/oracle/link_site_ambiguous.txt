@@ -1,0 +1,1 @@
+[elab: tests/errors/link_site_ambiguous.moss: `G` cannot provide `F`: its linked input interpretation differs (D84)]

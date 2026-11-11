@@ -56,11 +56,6 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          (HandlesRead); the self-hosted compiler accepts the unused fn",
     ),
     (
-        "tests/errors/link_site_merge.moss",
-        "AUDIT-CHANGES #97: LinkBody's linked-input clause is as strict as \
-         #32 was; the self-hosted compiler accepts and prints 1006",
-    ),
-    (
         "tests/errors/sameneed_ambiguous.moss",
         "AUDIT-CHANGES #11 and #51: the self-hosted compiler prints 7",
     ),

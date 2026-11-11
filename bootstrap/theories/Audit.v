@@ -4523,10 +4523,6 @@ Definition translate_application (C : cx) (a : application) : expr -> expr :=
     (satisfaction_map C (app_input a) th (app_needs a))
     (map (rkey_of (app_result a)) (app_provisions a)).
 
-Definition declared_link_target (Cu : cx) (nsu : list item) (k : item) : option item :=
-  let key := canon_item Cu k in
-  if existsb (item_eqb key) nsu then Some key else None.
-
 Definition linked_target (target : item -> option item) (k : item) : item :=
   match target k with Some key => key | None => k end.
 
@@ -4542,23 +4538,43 @@ Definition captured_needs (target : item -> option item) (needs : list item) : l
 Definition link_map (Cu Cg : cx) (target : item -> option item) (needs : list item) : smap :=
   map (fun k => (rkey_of Cg k, rkey_of Cu (linked_target target k))) (linked_needs target needs).
 
-(* The checks made where a closure binds a body to its target functor.
-   The body's code and result checks are independent of this binding. *)
+Definition link_need_gens (k : item) (p : provision) : list nat :=
+  provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end.
+
+Definition LinkNeedScope (C : cx) (k : item) (p : provision) : Prop :=
+  forall x, In x (link_need_gens k p) -> nlook x (c_ty C) <> None.
+
+Definition LinkNeedChoice (Cu Cg : cx) (nsu : list item) (rho : subst)
+    (k : item) (p : provision) (choice : option item) : Prop :=
+  match choice with
+  | Some other => LinkNeedScope Cu k p /\ LinkNeedScope Cg k p /\
+      CopyNeedChoice Cu Cg rho nsu k p other /\
+      (forall q, ilook (provision_id other) (c_provisions Cu) = Some q -> LinkNeedScope Cu other q)
+  | None =>
+      ((LinkNeedScope Cu k p /\ LinkNeedScope Cg k p) ->
+       forall other, In other nsu -> copy_need_key Cu rho k <> copy_need_key Cu rho other) /\
+      (~ (LinkNeedScope Cu k p /\ LinkNeedScope Cg k p) -> ~ In (canon_item Cu k) nsu)
+  end.
+
+(* Shared inputs are checked under the target's fixed site readings and
+   fresh atoms for the other classes. The body is checked separately. *)
 Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
-    (Cg : cx) (nsg : list item) (target : item -> option item) : Prop := {
-  link_bind_target : target = declared_link_target Cu nsu;
-  (* A captured provision can mention fixed or privately captured types. *)
-  link_bind_scope : forall k p t, In k nsg -> ~ In (canon_item Cu k) nsu ->
+    (Cg : cx) (nsg : list item) (recorded : subst) (target : item -> option item) : Prop := {
+  link_bind_scope : forall k p t, In k nsg -> target k = None ->
     ilook (provision_id k) (c_provisions Cg) = Some p ->
-    In t (provision_gens p ++ match k with IMth r _ _ => gens r | _ => [] end) ->
-    nlook t (c_ty Cu) <> None -> Fixed W u t;
-  link_bind_provisions : forall k, In k nsg -> In (canon_item Cu k) nsu ->
-    option_map (canon_provision Cu) (ilook (provision_id k) (c_provisions Cg)) =
-    ilook (provision_id (canon_item Cu k)) (c_provisions Cu);
-  (* Shared inputs read over the inputs each application supplies. *)
-  link_bind_inputs : forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
-    (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\
-    canon Cu (TAbs x) = canon Cu tx
+    In t (link_need_gens k p) -> nlook t (c_ty Cu) <> None -> Fixed W u t;
+  link_bind_interpretation :
+    let fixed := copy_fixed_readings Cu recorded in
+    exists ys cg scope_after,
+      let rho := copy_subst fixed ys cg in
+      Allocates (copy_allocation_scope W recorded) (map cg ys) scope_after /\
+      (forall y, In y ys <-> (exists x tx, nlook x (c_ty Cu) = Some tx /\ In y (gens tx)) /\
+        lookup_subst y fixed = None) /\
+      (forall k, In k nsg -> exists p, ilook (provision_id k) (c_provisions Cg) = Some p /\
+        LinkNeedChoice Cu Cg nsu rho k p (target k)) /\
+      (forall x tx, nlook x (c_ty Cg) = Some tx -> nlook x (c_ty Cu) <> None ->
+        (forall y, In y (gens tx) -> nlook y (c_ty Cu) <> None) /\
+        app_subst rho (canon Cu (TAbs x)) = app_subst rho (canon Cu tx))
 }.
 
 (* Main judgments.
@@ -4996,7 +5012,7 @@ with BindItem (W : world) (P : program) : frame -> cx -> (spec * option aexpr) -
     (* 3a: X(F) in force here *)
     (forall x, Fixed W u x -> nlook x (c_ty C) <> None) ->
     SameResult W u gg ->
-    LinkBinding W u Cu nsu Cg nsg target -> LinkBody W P u gg h pins ->
+    LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, canon C (snd q))) fx) target -> LinkBody W P u gg h pins ->
     (* the linked needs: those of G that are F's, read through F's merge *)
     sm = link_map Cu Cg target nsg ->
     (* 3b: the captured needs are answered here as a call would answer
@@ -5338,9 +5354,9 @@ Inductive NodeCx (W : world) (P : program) : code_node -> cx -> Prop :=
 | NCFn : forall f C ns, w_context W f = Some (C, ns) -> NodeCx W P (CodeFn f) C
 | NCLambda : forall F C ps rt body sg this pid pre sm,
     LambdaProvider W P F C ps rt body sg this pid pre sm -> NodeCx W P (CodeFn pid) C
-| NCBody : forall u gg h pins Cu nsu Cg nsg target, LinkBody W P u gg h pins ->
+| NCBody : forall u gg h pins Cu nsu Cg nsg recorded target, LinkBody W P u gg h pins ->
     w_context W u = Some (Cu, nsu) -> w_context W gg = Some (Cg, nsg) ->
-    LinkBinding W u Cu nsu Cg nsg target ->
+    LinkBinding W u Cu nsu Cg nsg recorded target ->
     NodeCx W P (CodeFunctor h) Cg.
 
 (* Merges are edges too (criteria section 2, coherence).  Within a node,

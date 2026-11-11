@@ -22,11 +22,26 @@ Definition LinkedInputsRead (Cu Cg : A.cx) (read : ty -> ty) : Prop :=
     (forall y, In y (A.gens tx) -> A.nlook y (A.c_ty Cu) <> None) /\
     read (TAbs x) = read tx.
 
-Definition ClosureBinding W u Cu nsu Cg nsg target gfx : Prop :=
-  A.LinkBinding W u Cu nsu Cg nsg target /\
-  forall T, ReadsMerge Cu (app_subst T) ->
+Definition LinkedProvisionsRead (Cu Cg : A.cx) (nsg : list item)
+    (target : item -> option item) (T G : subst) : Prop :=
+  forall k p, In k nsg -> A.ilook (A.provision_id k) (A.c_provisions Cg) = Some p ->
+    forall key, target k = Some key ->
+    exists q, A.ilook (A.provision_id key) (A.c_provisions Cu) = Some q /\
+      app_subst_item G (A.provision_id k) = app_subst_item T (A.provision_id key) /\
+      A.provision_subst G p = A.provision_subst T q.
+
+Record ClosureBinding (W : A.world) (u : nat) (Cu : A.cx) (nsu : list item)
+    (Cg : A.cx) (nsg : list item) (target : item -> option item) (gfx : subst) : Prop := {
+  closure_bind_targets : forall k key, In k nsg -> target k = Some key -> In key nsu;
+  closure_bind_inputs : forall T, ReadsMerge Cu (app_subst T) ->
     (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
-    LinkedInputsRead Cu Cg (app_subst T).
+    LinkedInputsRead Cu Cg (app_subst T);
+  closure_bind_provisions : forall T G, ReadsMerge Cu (app_subst T) ->
+    (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
+    (forall x, In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
+      lookup_subst x G = lookup_subst x T) ->
+    LinkedProvisionsRead Cu Cg nsg target T G
+}.
 
 Lemma reads_empty_merge : forall C read, A.c_merge C = [] -> ReadsMerge C read.
 Proof.

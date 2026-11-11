@@ -15,6 +15,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicBoolTyping PublicBodySafety PublicCallable PublicTypeFacts PublicArms PublicTagCheck PublicContextFacts
   PublicCallRealize PublicRuntimeKeys.
 From NM Require AllocationFacts PublicFormation PublicScoping PublicWorldFormation PublicOrientation PublicMergePresent PublicMerge.
+From NM Require PublicCopySubst.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -84,38 +85,16 @@ Proof.
   unfold A.is_linked. destruct (target k); cbn; split; intuition congruence.
 Qed.
 
-Local Lemma declared_captured_spec : forall Cu nsu nsg k,
-  In k (A.captured_needs (A.declared_link_target Cu nsu) nsg) <-> In k nsg /\ ~ In (A.canon_item Cu k) nsu.
-Proof.
-  intros Cu nsu nsg k. rewrite captured_spec, <- (existsb_item_in (A.canon_item Cu k) nsu). unfold A.declared_link_target. cbn zeta.
-  destruct (existsb (item_eqb (A.canon_item Cu k)) nsu); split; intuition congruence.
-Qed.
-
-Local Lemma declared_linked_spec : forall Cu nsu nsg k,
-  In k (A.linked_needs (A.declared_link_target Cu nsu) nsg) <-> In k nsg /\ In (A.canon_item Cu k) nsu.
-Proof.
-  intros Cu nsu nsg k. rewrite linked_spec, <- (existsb_item_in (A.canon_item Cu k) nsu). unfold A.declared_link_target. cbn zeta.
-  destruct (existsb (item_eqb (A.canon_item Cu k)) nsu); split; intuition congruence.
-Qed.
-
-Lemma linked_targets_in : forall u Cu nsu Cg nsg target,
-  A.LinkBinding W u Cu nsu Cg nsg target -> forall k,
+Lemma linked_targets_in : forall u Cu nsu Cg nsg target gfx,
+  ClosureBinding W u Cu nsu Cg nsg target gfx -> forall k,
   In k (A.linked_needs target nsg) -> In (A.linked_target target k) nsu.
 Proof.
-  intros u Cu nsu Cg nsg target Binding k Member.
-  rewrite (@A.link_bind_target W u Cu nsu Cg nsg target Binding) in *.
-  apply declared_linked_spec in Member as [_ Member]. unfold A.linked_target, A.declared_link_target.
-  now rewrite (proj2 (existsb_item_in _ _) Member).
+  intros u Cu nsu Cg nsg target gfx Binding k Member.
+  apply linked_spec in Member as [Source Linked]. unfold A.linked_target.
+  destruct (target k) as [key|] eqn:Target; [|contradiction].
+  exact (closure_bind_targets _ _ _ _ _ _ _ _ Binding k key Source Target).
 Qed.
 
-Local Lemma declared_link_map : forall Cu Cg nsu nsg,
-  A.link_map Cu Cg (A.declared_link_target Cu nsu) nsg =
-  map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) (A.linked_needs (A.declared_link_target Cu nsu) nsg).
-Proof.
-  intros Cu Cg nsu nsg. unfold A.link_map. apply map_ext_in. intros k Member.
-  apply declared_linked_spec in Member as [_ Member]. unfold A.linked_target, A.declared_link_target.
-  now rewrite (proj2 (existsb_item_in _ _) Member).
-Qed.
 Lemma sig_gens_ret : forall g K, incl (A.sig_gens g) K -> incl (A.gens (A.sg_ret g)) K.
 Proof. intros g K S y Iy. apply S. unfold A.sig_gens. cbn [flat_map]. apply in_or_app. left. exact Iy. Qed.
 Lemma sig_gens_param : forall g K t, incl (A.sig_gens g) K -> In t (A.sg_params g) -> incl (A.gens t) K.
@@ -281,6 +260,25 @@ Definition EnvOk (n : nat) (C : A.cx) (d : environment) (H : heap_types) : Prop 
     | IMth r m _ => A.rkey C r m
     | _ => k
     end) n C d H.
+
+Lemma recorded_fixed_meaning : forall u C fx d gfx T x t,
+  A.FixedReadings W u (A.c_ty C) fx -> AbsorbsCanon C d ->
+  gfx = ground_fixed (type_meanings d) fx ->
+  (forall y, A.Fixed W u y -> lookup_subst y gfx = Some (app_subst T (TAbs y))) ->
+  In (x,t) (map (fun q => (fst q, A.canon C (snd q))) fx) ->
+  A.Fixed W u x /\ app_subst (type_meanings d) t = app_subst T (TAbs x).
+Proof.
+  intros u C fx d gfx T x t Fixed Abs Recorded Read Member.
+  assert (Function : forall y v w, In (y,v) fx -> In (y,w) fx -> v = w).
+  { intros y v w First Second.
+    destruct (proj1 (Fixed y v) First) as [_ FirstRead].
+    destruct (proj1 (Fixed y w) Second) as [_ SecondRead]. congruence. }
+  apply in_map_iff in Member as [[y tx] [Equal InFx]]. cbn in Equal. injection Equal as -> <-.
+  destruct (proj1 (Fixed x tx) InFx) as [Fx _]. split; [exact Fx|].
+  pose proof (Read x Fx) as Fg. rewrite Recorded, (lookup_ground_fixed _ fx x tx Function InFx) in Fg.
+  injection Fg as Fg. change (ground d (A.canon C tx) = app_subst T (TAbs x)).
+  rewrite (Abs tx). exact Fg.
+Qed.
 
 Lemma envok_concrete_iff : forall n C d H,
   EnvOk n C d H <-> EnvOkWith (A.rkey_of C) n C d H.
@@ -3713,7 +3711,7 @@ Lemma case_BFunClosure : forall k, Below k -> forall F C pa u pg gg Cu nsu Cg ns
       
       (forall x, A.Fixed W u x -> A.nlook x (A.c_ty C) <> None) ->
       A.SameResult W u gg ->
-      A.LinkBinding W u Cu nsu Cg nsg linktarget -> A.LinkBody W Prog u gg h pins ->
+      A.LinkBinding W u Cu nsu Cg nsg (map (fun q => (fst q, A.canon C (snd q))) fx) linktarget -> A.LinkBody W Prog u gg h pins ->
       sm = A.link_map Cu Cg linktarget nsg ->
       A.Satisfies C Cg (map (fun q => (fst q, A.canon C (app_subst (A.c_ty C) (TAbs (fst q))))) (A.c_ty Cg))
         (A.captured_needs linktarget nsg) smc ->
@@ -3733,10 +3731,9 @@ Proof.
   pose proof SatC as SatC'. set (caps := A.captured_needs linktarget nsg) in *.
   destruct SatC as [SmEq [Prov [Coh [Types Merg]]]].
   destruct (functx_scoped W gg Cg nsg FCg) as [CanG [ScG [KMg [NdG [ProvNsG [ShapeG _]]]]]].
-  assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ ~ In (A.canon_item Cu k0) nsu).
-  { intros k0 I. unfold caps in I. rewrite (@A.link_bind_target W u Cu nsu Cg nsg linktarget Binding) in I.
-    exact (proj1 (declared_captured_spec Cu nsu nsg k0) I). }
-  pose proof (@A.link_bind_scope W u Cu nsu Cg nsg linktarget Binding) as B3.
+  assert (CapsIn : forall k0, In k0 caps -> In k0 nsg /\ linktarget k0 = None).
+  { intros k0 I. exact (proj1 (captured_spec linktarget nsg k0) I). }
+  pose proof (@A.link_bind_scope W u Cu nsu Cg nsg _ linktarget Binding) as B3.
   (* the caller provides every captured need *)
   assert (Caller : forall k0, In k0 caps -> exists pv, lookup_provision (A.rkey_of C (A.at_th C th k0)) d = Some pv).
   { intros k0 Ik. pose proof (Prov k0 Ik) as Pr. pose proof (ShapeG k0 (proj1 (CapsIn k0 Ik))) as Sh.
@@ -3823,11 +3820,42 @@ Proof.
   - intros k0 Ne. apply install_other. exact Ne.
   - exists (FunctorClosure h (Some sm) dc None), gfx. split; [cbn; rewrite Nat.eqb_refl; reflexivity|]. split.
     + assert (ReadBinding : ClosureBinding W u Cu nsu Cg nsg linktarget gfx).
-      { split; [exact Binding|].
-        intros T Reads _ x tx Found Shared.
-        destruct (@A.link_bind_inputs W u Cu nsu Cg nsg linktarget Binding x tx Found Shared) as [Scoped Equal].
-        split; [exact Scoped|]. apply Reads.
-        apply (context_canon_iff_mergeeq Cu (proj2 (functor_context_merge W u Cu nsu FCu))). exact Equal. }
+      { destruct Binding as [Scope (ys & cg & after & Allocated & Residual & Choices & Inputs)].
+        pose proof (proj1 (AllocationFacts.copy_allocation_contract W _ [] (fun x => x) ys cg) (proj1 Allocated))
+          as [Fresh [Avoid _]].
+        cbn in Fresh, Avoid.
+        assert (FixedAt : forall T, (forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst T (TAbs x))) ->
+          forall x t, In (x,t) (map (fun q => (fst q, A.canon C (snd q))) fx) ->
+          (forall z, In z (A.gens t) -> ~ In z (map cg ys)) /\
+          app_subst (type_meanings d) t = app_subst T (TAbs x)).
+        { intros T Fix x t Member. split.
+          - intros z InT. apply Avoid, in_flat_map. exists (x,t). split; assumption.
+          - exact (proj2 (recorded_fixed_meaning u C fx d gfx T x t Fx Abs eq_refl Fix Member)). }
+        constructor.
+        - intros need key Member Chosen. destruct (Choices need Member) as (p & _ & Choice).
+          rewrite Chosen in Choice. exact (proj1 (proj1 (proj2 (proj2 Choice)))).
+        - intros T Reads Fix. eapply PublicCopySubst.shared_inputs_read_at;
+            [exact FCu|exact Reads|exact Fresh| |exact (FixedAt T Fix)|exact Inputs].
+          intros y Leaf Missing. apply Residual. exact (conj Leaf Missing).
+        - intros T G Reads Fix Shared need p Member Lookup key Chosen.
+          destruct (Choices need Member) as [p0 [Read Choice]]. rewrite Lookup in Read. injection Read as <-.
+          rewrite Chosen in Choice. destruct Choice as [InU [InG [[_ [At _]] TargetScope]]].
+          assert (Atom : forall y, In y (A.link_need_gens need p) -> lookup_subst y G = lookup_subst y T).
+          { intros y Occurs. apply Shared.
+            - destruct (A.nlook y (A.c_ty Cu)) as [v|] eqn:Found; [|exfalso; exact (InU y Occurs Found)].
+              exact (in_map fst _ (y,v) (PublicTypeRead.nlook_in _ _ _ _ Found)).
+            - destruct (A.nlook y (A.c_ty Cg)) as [v|] eqn:Found; [|exfalso; exact (InG y Occurs Found)].
+              exact (in_map fst _ (y,v) (PublicTypeRead.nlook_in _ _ _ _ Found)). }
+          destruct (PublicCopySubst.site_need_read W u Cu nsu _ ys cg T (type_meanings d) FCu Reads Fresh
+            (fun y Leaf Missing => proj2 (Residual y) (conj Leaf Missing)) (FixedAt T Fix) need p key InU At TargetScope)
+            as [q [Q [Key Provision]]].
+          exists q. split; [exact Q|]. split.
+          + rewrite <- Key. destruct need as [t|v|f|r m a|h0]; try reflexivity.
+            change (A.mkey (app_subst G r) m = A.mkey (app_subst T r) m).
+            f_equal. apply subst_agree_on. intros y Occurs. cbn [app_subst].
+            rewrite (Atom y (in_or_app _ _ _ (or_intror Occurs))). reflexivity.
+          + rewrite <- Provision. apply PublicCopySubst.provision_same_reading.
+            intros y Occurs. exact (Atom y (in_or_app _ _ _ (or_introl Occurs))). }
       subst sm. apply (CLink rr H u gg h Cu nsu Cg nsg linktarget dc gfx pins LB ReadBinding FCu FCg).
       { intros x Fx'. exact (fixed_in_functx u Cu nsu x U FCu Fx'). }
       { exact U. }
@@ -4039,7 +4067,7 @@ Lemma link_entry : forall rr H d th d1 u gg h pins Cu nsu Cg nsg linktarget dc g
   map fst th = map fst (A.c_ty Cu) ->
   (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cu))) ->
   Realizes rr Cu (callee_env d th d1) H ->
-  (forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)) ->
+  (forall x, A.Fixed W u x -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)) ->
   (forall gm, AppMeanings u Cu Cg dc gfx gm ->
       (forall v t, In (IVal v) (A.captured_needs linktarget nsg) -> A.nlook v (A.c_vals Cg) = Some t -> exists w,
          lookup_provision (IVal v) dc = Some (ValueProvision w) /\ value_typed W P H w (app_subst gm t)) /\
@@ -4057,9 +4085,6 @@ Proof.
   destruct (functx_unique _ _ _ _ _ FCu FCu') as [<- <-]. destruct (functx_unique _ _ _ _ _ FCg FCg') as [<- <-].
   destruct (functx_static _ _ _ FCg) as [[CanG DomG] [[SectionG KMg] [NdG [ProvNsG [ShapeG [ScG FixG]]]]]].
   destruct (functx_static _ _ _ FCu) as [[CanU DomU] [[SectionU KMu] [NdU [ProvNsU [ShapeU [ScU FixU]]]]]].
-  pose proof (@A.link_bind_target W u Cu nsu Cg nsg linktarget (proj1 Binding)) as Target.
-  subst linktarget. rewrite declared_link_map in Sel.
-  pose proof (@A.link_bind_provisions W u Cu nsu Cg nsg _ (proj1 Binding)) as LPeq.
   set (ce := callee_env d th d1). set (de := application_environment P d h th (append_environment d2 dc)).
   (* each input's own meaning (B), and the body's environment over it *)
   set (lnk := filter (fun t => existsb (Nat.eqb t) (map fst (A.c_ty Cu))) (map fst (A.c_ty Cg))).
@@ -4069,12 +4094,11 @@ Proof.
     end).
   set (B := map (fun source => (source, base source)) (map fst (A.c_ty Cg))).
   set (de0 := EnvironmentWithAliases B B (provision_values (append_environment d2 dc))).
-  pose proof RealU as [_ [[ValsU [FnsU [MthsU FunsU]]] [_ KMU']]].
-  pose proof (realizes_absorbs_canon _ _ _ _ RealU) as AbsU.
+  pose proof RealU as [ReadsU [[ValsU [FnsU [MthsU FunsU]]] [_ KMU']]].
   assert (Code : view_functor P h = A.funbody_of Prog h) by reflexivity.
   destruct (select_provisions_empty _ _ _ Sel) as [Em2 Ea2].
-  set (caps := A.captured_needs (A.declared_link_target Cu nsu) nsg) in *.
-  set (lks := A.linked_needs (A.declared_link_target Cu nsu) nsg) in *.
+  set (caps := A.captured_needs linktarget nsg) in *.
+  set (lks := A.linked_needs linktarget nsg) in *.
   assert (InKeys : forall k0 p, In (k0, p) (A.c_provisions Cg) -> In k0 nsg) by exact ProvNsG.
   assert (Th : forall x, In x (map fst (A.c_ty Cu)) -> exists v, lookup_subst x th = Some v).
   { intros x Ix. rewrite <- Keys in Ix. destruct (lookup_subst x th) as [v|] eqn:L; [eauto|].
@@ -4102,39 +4126,44 @@ Proof.
     rewrite Ex. unfold cmeaning, output_meaning. cbn [type_aliases type_meanings append_environment]. rewrite Ea2, Em2. reflexivity. }
   assert (Am : AppMeanings u Cu Cg dc gfx B).
   { split.
-    - intros x Fx Ig. rewrite (Gfx x Fx Ig). exact (MeanL x Ig (FxIn x Fx)).
+    - intros x Fx Ig. rewrite (Gfx x Fx). exact (MeanL x Ig (FxIn x Fx)).
     - intros x Ig Ou. exact (MeanC x Ig Ou). }
-  assert (GA : forall t, incl (A.gens t) (map fst (A.c_ty Cu)) -> incl (A.gens t) (map fst (A.c_ty Cg)) ->
-    ground de0 t = ground ce t).
-  { intros t SU SG. unfold ground. change (app_subst B t = app_subst (type_meanings ce) t). apply subst_agree_on. intros x Ix. cbn [app_subst].
-    rewrite (MeanL x (SG x Ix) (SU x Ix)). unfold ce, callee_env. cbn [type_meanings].
-    rewrite (lookup_map_snd (ground d)). destruct (lookup_subst x th); reflexivity. }
-  assert (InLks : forall k0, In k0 nsg -> In (A.canon_item Cu k0) nsu -> In k0 lks).
-  { intros k0 Ig Iu. exact (proj2 (declared_linked_spec Cu nsu nsg k0) (conj Ig Iu)). }
-  assert (InCaps : forall k0, In k0 nsg -> ~ In (A.canon_item Cu k0) nsu -> In k0 caps).
-  { intros k0 Ig Ou. exact (proj2 (declared_captured_spec Cu nsu nsg k0) (conj Ig Ou)). }
-  assert (LksIn : forall k0, In k0 lks -> In k0 nsg /\ In (A.canon_item Cu k0) nsu).
-  { intros k0 I. exact (proj1 (declared_linked_spec Cu nsu nsg k0) I). }
-  assert (LookL : forall k0 v, In k0 lks -> lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) ce = Some v ->
-    lookup_provision (A.rkey_of Cg k0) de0 = Some v).
-  { intros k0 v Ik L. change (lookup_provision (A.rkey_of Cg k0) de0) with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
-    rewrite lookup_append_env, (select_lookup d1 _ d2 _ Sel).
-    rewrite (sm_find_map (A.rkey_of Cg) (fun k => A.rkey_of Cu (A.canon_item Cu k)) lks k0 Ik).
-    - change (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) d1) with (lookup_provision (A.rkey_of Cu (A.canon_item Cu k0)) ce). rewrite L. reflexivity.
-    - intros k' Ik' E. exact (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (LksIn k' Ik'))) (ShapeG k0 (proj1 (LksIn k0 Ik))) E). }
+  assert (FixAt : forall x, A.Fixed W u x -> lookup_subst x gfx = Some (app_subst (type_meanings ce) (TAbs x))).
+  { intros x Fixed. rewrite (Gfx x Fixed). unfold ce, callee_env. cbn [type_meanings app_subst].
+    rewrite lookup_map_snd. destruct (Th x (FxIn x Fixed)) as [v ->]. reflexivity. }
+  assert (Shared : forall x, In x (map fst (A.c_ty Cu)) -> In x (map fst (A.c_ty Cg)) ->
+      lookup_subst x B = lookup_subst x (type_meanings ce)).
+  { intros x Iu Ig. rewrite (MeanL x Ig Iu). unfold ce, callee_env. cbn [type_meanings].
+    rewrite lookup_map_snd. reflexivity. }
+  pose proof (closure_bind_provisions _ _ _ _ _ _ _ _ Binding (type_meanings ce) B ReadsU FixAt Shared) as Compare.
+  assert (InLks : forall k0 key, In k0 nsg -> linktarget k0 = Some key -> In k0 lks).
+  { intros k0 key Ig Selected. apply linked_spec. split; [exact Ig|congruence]. }
+  assert (InCaps : forall k0, In k0 nsg -> linktarget k0 = None -> In k0 caps).
+  { intros k0 Ig Captured. apply captured_spec. split; assumption. }
+  assert (LksIn : forall k0, In k0 lks -> In k0 nsg /\ linktarget k0 <> None).
+  { intros k0 I. exact (proj1 (linked_spec linktarget nsg k0) I). }
+  assert (LookL : forall k0 key v, In k0 nsg -> linktarget k0 = Some key ->
+    lookup_provision (A.rkey_of Cu key) ce = Some v -> lookup_provision (A.rkey_of Cg k0) de0 = Some v).
+  { intros k0 key v Ig Selected L.
+    pose proof (InLks k0 key Ig Selected) as Ik.
+    change (lookup_provision (A.rkey_of Cg k0) de0) with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
+    rewrite lookup_append_env, (select_lookup d1 _ d2 _ Sel). unfold A.link_map. fold lks.
+    rewrite (sm_find_map (A.rkey_of Cg) (fun k => A.rkey_of Cu (A.linked_target linktarget k)) lks k0 Ik).
+    - unfold A.linked_target. rewrite Selected. exact (f_equal (fun v => match v with Some p => Some p | None => lookup_provision (A.rkey_of Cg k0) dc end) L).
+    - intros k' Ik' E. exact (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (LksIn k' Ik'))) (ShapeG k0 Ig) E). }
   assert (LookC : forall k0, In k0 caps -> lookup_provision (A.rkey_of Cg k0) de0 = lookup_provision (A.rkey_of Cg k0) dc).
   { intros k0 Ik. change (lookup_provision (A.rkey_of Cg k0) de0) with (lookup_provision (A.rkey_of Cg k0) (append_environment d2 dc)).
-    rewrite lookup_append_env, (select_lookup d1 _ d2 _ Sel).
-    assert (Ck : In k0 nsg /\ ~ In (A.canon_item Cu k0) nsu) by exact (proj1 (declared_captured_spec Cu nsu nsg k0) Ik).
-    assert (None' : sm_find (A.rkey_of Cg k0) (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.canon_item Cu k))) lks) = None).
+    rewrite lookup_append_env, (select_lookup d1 _ d2 _ Sel). unfold A.link_map. fold lks.
+    destruct (proj1 (captured_spec linktarget nsg k0) Ik) as [Ig Captured].
+    assert (Absent : sm_find (A.rkey_of Cg k0) (map (fun k => (A.rkey_of Cg k, A.rkey_of Cu (A.linked_target linktarget k))) lks) = None).
     { assert (All : forall k', In k' lks -> A.rkey_of Cg k' <> A.rkey_of Cg k0).
-      { intros k' Ik' E. pose proof (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (LksIn k' Ik'))) (ShapeG k0 (proj1 Ck)) E) as ->.
-        exact (proj2 Ck (proj2 (LksIn k0 Ik'))). }
+      { intros k' Ik' E. pose proof (rkey_of_injective Cg k' k0 (ShapeG k' (proj1 (LksIn k' Ik'))) (ShapeG k0 Ig) E) as ->.
+        exact (proj2 (LksIn k0 Ik') Captured). }
       clear -All. induction lks as [|k' rest IH]; [reflexivity|]. cbn.
       destruct (item_eqb (A.rkey_of Cg k0) (A.rkey_of Cg k')) eqn:E.
       - apply item_eqb_spec in E. exfalso. exact (All k' (or_introl eq_refl) (eq_sym E)).
       - apply IH. intros k'' I. exact (All k'' (or_intror I)). }
-    rewrite None'. reflexivity. }
+    rewrite Absent. reflexivity. }
   destruct (Caps B Am) as [CVals [CFns CMths]].
   pose proof (CF B Am) as CFs.
   (* the body's meanings read G's table over B *)
@@ -4149,88 +4178,72 @@ Proof.
       { destruct (lookup_subst x (A.c_sub Cg)) as [t0|] eqn:Ls; [|reflexivity].
         exfalso. exact (Og (proj1 (DomG x t0 (lookup_subst_in_pair _ _ _ Ls)))). }
       rewrite Ls. cbv iota. rewrite (subst_abs B). unfold B. rewrite (lookup_map_out _ _ x Og). reflexivity. }
-  (* a type G reads, read through F's merge (a linked need F spells
-     through its own representatives) *)
-  assert (Unc : forall t, incl (A.gens (A.canon Cu t)) (map fst (A.c_ty Cu)) -> incl (A.gens t) (map fst (A.c_ty Cu))).
-  { intros t Sc x Ix. destruct (lookup_subst x (A.c_sub Cu)) as [v|] eqn:Lx.
-    - exact (proj1 (DomU x v (lookup_subst_in_pair _ _ _ Lx))).
-    - exact (Sc x (PublicFormation.gens_keep t (A.c_sub Cu) x Ix Lx)). }
-  assert (GAc : forall t, incl (A.gens (A.canon Cu t)) (map fst (A.c_ty Cu)) -> incl (A.gens t) (map fst (A.c_ty Cg)) ->
-    ground de0 t = ground ce (A.canon Cu t)).
-  { intros t SU SG. transitivity (ground ce t); [exact (GA t (Unc t SU) SG)|symmetry; exact (AbsU t)]. }
-  assert (GAs : forall ts, (forall t, In t ts -> incl (A.gens (A.canon Cu t)) (map fst (A.c_ty Cu))) ->
-    (forall t, In t ts -> incl (A.gens t) (map fst (A.c_ty Cg))) ->
-    map (ground ce) (map (A.canon Cu) ts) = map (ground de0) ts).
-  { intros ts SU SG. rewrite map_map. apply map_ext_in. intros t It. symmetry. exact (GAc t (SU t It) (SG t It)). }
   assert (Env0 : EnvOk rr Cg de0 H).
   { split; [|split; [|split]].
-  - (* vals *) intros v t Found.
-    destruct (vals_ilook _ v t KMg Found) as [a0 Il]. pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
-    destruct (in_keys_dec (IVal v) nsu) as [Iu|Ou].
-    + pose proof (LPeq (IVal v) Ik Iu) as E. cbn [A.provision_id A.canon_item app_subst_item] in E. rewrite Il in E.
-      cbn [option_map A.canon_provision A.provision_subst] in E. symmetry in E.
-      destruct (ValsU v _ (ilook_vals _ v _ _ KMu E)) as [w [Look T]]. exists w.
-      split; [exact (LookL (IVal v) _ (InLks _ Ik Iu) Look)|].
-      destruct (ScU _ _ (ilook_in _ _ _ E)) as [S1 _]. destruct (ScG _ _ (ilook_in _ _ _ Il)) as [S2 _].
-      unfold provision_sig_gens, A.sig_gens in S1, S2. cbn in S1, S2. rewrite app_nil_r in S1, S2.
-      rewrite (GAc t S1 S2). exact T.
-    + destruct (CVals v t (InCaps _ Ik Ou) Found) as [w [Look T]]. exists w.
-      split; [pose proof (LookC (IVal v) (InCaps _ Ik Ou)) as LC; cbn [A.rkey_of] in LC; rewrite LC; exact Look|exact T].
-  - (* fns *) intros f g Found.
-    destruct (fns_ilook _ f g KMg Found) as [a0 Il]. pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
-    destruct (in_keys_dec (IFn f) nsu) as [Iu|Ou].
-    + pose proof (LPeq (IFn f) Ik Iu) as E. cbn [A.provision_id A.canon_item app_subst_item] in E. rewrite Il in E.
-      cbn [option_map A.canon_provision A.provision_subst] in E. symmetry in E.
-      destruct (FnsU f _ (ilook_fns _ f _ _ KMu E)) as [pv [Look Ok]]. exists pv.
-      split; [exact (LookL (IFn f) _ (InLks _ Ik Iu) Look)|].
-      destruct (ScU _ _ (ilook_in _ _ _ E)) as [S1 _]. destruct (ScG _ _ (ilook_in _ _ _ Il)) as [S2 _].
-      cbn [provision_sig_gens A.provision_signature] in S1, S2.
-      apply (callable_transfer rr rr H ce de0 (A.sg_params (A.sig_subst (A.c_sub Cu) g)) (A.sg_params g)
-        (A.sg_ret (A.sig_subst (A.c_sub Cu) g)) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
-      * change (A.sg_params (A.sig_subst (A.c_sub Cu) g)) with (map (A.canon Cu) (A.sg_params g)).
-        apply GAs; intros t It; [exact (sig_gens_param _ _ (A.canon Cu t) S1 (in_map (A.canon Cu) _ t It))|exact (sig_gens_param _ _ t S2 It)].
-      * symmetry. apply GAc; [exact (sig_gens_ret _ _ S1)|exact (sig_gens_ret _ _ S2)].
-    + destruct (CFns f g (InCaps _ Ik Ou) Found) as [pv [Look Ok]]. exists pv.
-      split; [pose proof (LookC (IFn f) (InCaps _ Ik Ou)) as LC; cbn [A.rkey_of] in LC; rewrite LC; exact Look|exact Ok].
-  - (* methods *) intros r m g Found.
-    destruct (mths_ilook _ r m g KMg Found) as [a0 Il]. pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
-    destruct (in_keys_dec (A.canon_item Cu (A.mkey r m)) nsu) as [Iu|Ou].
-    + pose proof (LPeq (A.mkey r m) Ik Iu) as E. change (A.provision_id (A.mkey r m)) with (A.mkey r m) in E. rewrite Il in E.
-      change (A.provision_id (A.canon_item Cu (A.mkey r m))) with (A.mkey (A.canon Cu r) m) in E.
-      cbn [option_map A.canon_provision A.provision_subst] in E. symmetry in E.
-      destruct (MthsU _ m _ (ilook_mths _ _ m _ _ KMu E)) as [pv [Look Ok]]. exists pv.
-      split; [exact (LookL (A.mkey r m) _ (InLks _ Ik Iu) Look)|].
-      destruct (ScU _ _ (ilook_in _ _ _ E)) as [S1 K1]. destruct (ScG _ _ (ilook_in _ _ _ Il)) as [S2 K2].
-      cbn [provision_sig_gens A.provision_signature key_gens A.mkey] in S1, S2, K1, K2.
-      apply (callable_transfer rr rr H ce de0 (A.canon Cu r :: A.sg_params (A.sig_subst (A.c_sub Cu) g)) (r :: A.sg_params g)
-        (A.sg_ret (A.sig_subst (A.c_sub Cu) g)) (A.sg_ret g) pv (le_n _)); [| |exact Ok].
-      * change (A.sg_params (A.sig_subst (A.c_sub Cu) g)) with (map (A.canon Cu) (A.sg_params g)).
-        change (map (ground ce) (A.canon Cu r :: map (A.canon Cu) (A.sg_params g)) = map (ground de0) (r :: A.sg_params g))
-          with (ground ce (A.canon Cu r) :: map (ground ce) (map (A.canon Cu) (A.sg_params g)) = ground de0 r :: map (ground de0) (A.sg_params g)).
-        f_equal; [symmetry; apply GAc; [exact K1|exact K2]|].
-        apply GAs; intros t It; [exact (sig_gens_param _ _ (A.canon Cu t) S1 (in_map (A.canon Cu) _ t It))|exact (sig_gens_param _ _ t S2 It)].
-      * symmetry. apply GAc; [exact (sig_gens_ret _ _ S1)|exact (sig_gens_ret _ _ S2)].
-    + destruct (CMths r m [] g (InCaps _ Ik Ou) Found) as [pv [Look Ok]]. exists pv.
-      split; [rewrite <- Look; exact (LookC (A.mkey r m) (InCaps _ Ik Ou))|exact Ok].
-  - (* functors *) intros u' fx Found.
-    pose proof (funs_ilook _ u' fx KMg Found) as Il. pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
+  - intros v t Found. destruct (vals_ilook _ v t KMg Found) as [inst Il].
+    pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
+    destruct (linktarget (IVal v)) as [key|] eqn:Target.
+    + destruct (Compare (IVal v) _ Ik Il key Target) as [q [Lookup [Key Read]]].
+      destruct key as [ty|v'|f|r m args|h']; cbn [A.provision_id app_subst_item] in Key; try discriminate.
+      injection Key as <-. destruct q as [t' a'|g a'|g a'|fx]; cbn [A.provision_subst] in Read; try discriminate.
+      destruct (ValsU v t' (ilook_vals _ _ _ _ KMu Lookup)) as [w [Look Typed]]. exists w.
+      split; [exact (LookL (IVal v) _ _ Ik Target Look)|].
+      assert (ReadTy : ground de0 t = ground ce t') by (change (app_subst B t = app_subst (type_meanings ce) t'); congruence).
+      rewrite ReadTy. exact Typed.
+    + destruct (CVals v t (InCaps _ Ik Target) Found) as [w [Look Typed]]. exists w.
+      split; [pose proof (LookC (IVal v) (InCaps _ Ik Target)) as LC; cbn [A.rkey_of] in LC; now rewrite LC|exact Typed].
+  - intros f g Found. destruct (fns_ilook _ f g KMg Found) as [inst Il].
+    pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
+    destruct (linktarget (IFn f)) as [key|] eqn:Target.
+    + destruct (Compare (IFn f) _ Ik Il key Target) as [q [Lookup [Key Read]]].
+      destruct key as [ty|v|f'|r m args|h']; cbn [A.provision_id app_subst_item] in Key; try discriminate.
+      injection Key as <-. destruct q as [t' a'|g' a'|g' a'|fx]; cbn [A.provision_subst] in Read; try discriminate.
+      destruct (FnsU f g' (ilook_fns _ _ _ _ KMu Lookup)) as [pv [Look Ok]]. exists pv.
+      split; [exact (LookL (IFn f) _ _ Ik Target Look)|].
+      assert (SigRead : A.sig_subst B g = A.sig_subst (type_meanings ce) g') by congruence.
+      apply (callable_transfer rr rr H ce de0 (A.sg_params g') (A.sg_params g) (A.sg_ret g') (A.sg_ret g) pv (le_n _));
+        [exact (eq_sym (f_equal A.sg_params SigRead))|exact (eq_sym (f_equal A.sg_ret SigRead))|exact Ok].
+    + destruct (CFns f g (InCaps _ Ik Target) Found) as [pv [Look Ok]]. exists pv.
+      split; [pose proof (LookC (IFn f) (InCaps _ Ik Target)) as LC; cbn [A.rkey_of] in LC; now rewrite LC|exact Ok].
+  - intros r m g Found. destruct (mths_ilook _ r m g KMg Found) as [inst Il].
+    pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
+    destruct (linktarget (A.mkey r m)) as [key|] eqn:Target.
+    + destruct (Compare (A.mkey r m) _ Ik Il key Target) as [q [Lookup [Key Read]]].
+      destruct key as [ty|v|f|r' m' args|h']; cbn [A.provision_id A.mkey app_subst_item map_snd] in Key; try discriminate.
+      assert (Name : m' = m) by congruence. subst m'.
+      destruct q as [t' a'|g' a'|g' a'|fx]; cbn [A.provision_subst] in Read; try discriminate.
+      destruct (MthsU r' m g' (ilook_mths _ _ _ _ _ KMu Lookup)) as [pv [Look Ok]]. exists pv.
+      split; [exact (LookL (A.mkey r m) _ _ Ik Target Look)|].
+      assert (SigRead : A.sig_subst B g = A.sig_subst (type_meanings ce) g') by congruence.
+      assert (Receiver : app_subst B r = app_subst (type_meanings ce) r') by congruence.
+      apply (callable_transfer rr rr H ce de0 (r' :: A.sg_params g') (r :: A.sg_params g) (A.sg_ret g') (A.sg_ret g) pv (le_n _)); [| |exact Ok].
+      * cbn [map]. f_equal; [exact (eq_sym Receiver)|exact (eq_sym (f_equal A.sg_params SigRead))].
+      * exact (eq_sym (f_equal A.sg_ret SigRead)).
+    + destruct (CMths r m [] g (InCaps _ Ik Target) Found) as [pv [Look Ok]]. exists pv.
+      split; [rewrite <- Look; exact (LookC (A.mkey r m) (InCaps _ Ik Target))|exact Ok].
+  - intros u' fx Found. pose proof (funs_ilook _ u' fx KMg Found) as Il.
+    pose proof (ProvNsG _ _ (ilook_in _ _ _ Il)) as Ik.
     destruct (FixG u' fx (ilook_in _ _ _ Il)) as [CovG ScFG].
-    destruct (in_keys_dec (IFun u') nsu) as [Iu|Ou].
-    + pose proof (LPeq (IFun u') Ik Iu) as E. cbn [A.provision_id A.canon_item app_subst_item] in E. rewrite Il in E.
-      cbn [option_map A.canon_provision A.provision_subst] in E. symmetry in E.
-      set (fxu := map (fun q => (fst q, app_subst (A.c_sub Cu) (snd q))) fx) in E.
-      assert (Lu : A.nlook u' (A.c_funs Cu) = Some fxu).
-      { change (A.c_funs Cu) with (funs_of (A.c_provisions Cu)). rewrite (funs_by_ilook _ u' KMu), E. reflexivity. }
-      destruct (FunsU u' fxu Lu) as [pv [gfx' [Look [Ok [Cov Vm]]]]]. exists pv, gfx'.
-      split; [exact (LookL (IFun u') _ (InLks _ Ik Iu) Look)|]. split; [exact Ok|]. split; [exact CovG|].
-      destruct (FixU u' fxu (ilook_in _ _ _ E)) as [_ ScFU].
-      intros x tx I.
-      assert (I' : In (x, A.canon Cu tx) fxu) by exact (in_map (fun q => (fst q, app_subst (A.c_sub Cu) (snd q))) fx (x, tx) I).
-      rewrite (Vm x _ I'). f_equal. symmetry. exact (GAc tx (ScFU x _ I') (ScFG x tx I)).
-    + destruct (captured_funs_find _ _ _ _ _ CFs u' fx (captured_funs_in Cg caps u' fx (InCaps _ Ik Ou) Found))
+    destruct (linktarget (IFun u')) as [key|] eqn:Target.
+    + destruct (Compare (IFun u') _ Ik Il key Target) as [q [Lookup [Key Read]]].
+      destruct key as [ty|v|f|r m args|h']; cbn [A.provision_id app_subst_item] in Key; try discriminate.
+      injection Key as <-. destruct q as [t' a'|g' a'|g' a'|fx']; cbn [A.provision_subst] in Read; try discriminate.
+      assert (Lu : A.nlook u' (A.c_funs Cu) = Some fx').
+      { change (A.c_funs Cu) with (funs_of (A.c_provisions Cu)). cbn [A.provision_id] in Lookup. now rewrite (funs_by_ilook _ u' KMu), Lookup. }
+      destruct (FunsU u' fx' Lu) as [pv [gfx' [Look [Ok [Cov Vm]]]]]. exists pv, gfx'.
+      split; [exact (LookL (IFun u') _ _ Ik Target Look)|]. split; [exact Ok|]. split; [exact CovG|].
+      intros x tx I. assert (FxRead : map (fun q => (fst q, app_subst B (snd q))) fx =
+        map (fun q => (fst q, app_subst (type_meanings ce) (snd q))) fx') by congruence.
+      assert (I' : In (x, app_subst B tx) (map (fun q => (fst q, app_subst (type_meanings ce) (snd q))) fx')).
+      { rewrite <- FxRead. exact (in_map (fun q => (fst q, app_subst B (snd q))) fx (x,tx) I). }
+      apply in_map_iff in I' as [[y value] [Equal InFx]]. cbn in Equal. injection Equal as -> Equal.
+      rewrite (Vm x value InFx).
+      change (Some (app_subst (type_meanings ce) value) = Some (app_subst B tx)).
+      exact (f_equal Some Equal).
+    + destruct (captured_funs_find _ _ _ _ _ CFs u' fx (captured_funs_in Cg caps u' fx (InCaps _ Ik Target) Found))
         as [pv [gfx' [Look [Ok Vm]]]].
-      exists pv, gfx'. split; [pose proof (LookC (IFun u') (InCaps _ Ik Ou)) as LC; cbn [A.rkey_of] in LC; rewrite LC; exact Look|]. split; [exact Ok|].
-      split; [exact CovG|]. intros x tx I. exact (Vm x tx I).
+      exists pv, gfx'. split; [pose proof (LookC (IFun u') (InCaps _ Ik Target)) as LC; cbn [A.rkey_of] in LC; now rewrite LC|].
+      split; [exact Ok|]. split; [exact CovG|]. intros x tx I. exact (Vm x tx I).
 }
   split; [|split; [|exact (conj SectionG KMg)]].
   - (* G's merges hold in the body's environment, by its table *)
@@ -5235,14 +5248,14 @@ Proof.
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (A.link_map Cu Cg linktarget nsg)) as [d2 Sel2].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-    pose proof (linked_targets_in u Cu ns Cg nsg linktarget (proj1 Binding) k0 Ik) as Iu.
+    pose proof (linked_targets_in u Cu ns Cg nsg linktarget _ Binding k0 Ik) as Iu.
     destruct (functx_needs_provided W u Cu ns FC (A.linked_target linktarget k0) Iu) as [p0 Ip].
     destruct (functx_static _ _ _ FC) as [_ [_ [_ [_ [ShU _]]]]].
     destruct (realized_key _ _ _ _ _ _ RealU Ip (ShU (A.linked_target linktarget k0) Iu)) as [pv0 L0].
     change (lookup_provision (A.rkey_of Cu (A.linked_target linktarget k0)) d1) with (lookup_provision (A.rkey_of Cu (A.linked_target linktarget k0)) (callee_env d th d1)). rewrite L0. discriminate. }
   assert (Keys : map fst th = map fst (A.c_ty Cu)) by (unfold th; rewrite map_map; reflexivity).
-  assert (GfxA : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)).
-  { intros x Fx' _. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).
+  assert (GfxA : forall x, A.Fixed W u x -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)).
+  { intros x Fx'. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).
     destruct (Fixed x tx Ixt) as [here [Lh Ceq]].
     assert (Lx : lookup_subst x th = Some (A.canon C (app_subst (A.c_ty C) (TAbs x))))
       by (unfold th; exact (lookup_on_keys (fun x => A.canon C (app_subst (A.c_ty C) (TAbs x))) _ x (FxIn x Fx'))).

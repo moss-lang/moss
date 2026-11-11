@@ -16,7 +16,7 @@
      the copy site's meanings, the two agree (PublicCopySubst.copy_ty_read):
      a fixed reading means T x (CopySite, gfx), and every other generation
      of a reading at Cu is in ys (it is a generation of Cu's table:
-     result_gens_vals, PublicCopyApply.canon_gens_read).
+     result_gens_vals, PublicCopySubst.canon_gens_read).
    - h's result at Ch with the copy's roles and with its own correspond
      entry by entry (entries_rel_kinds, at θ_h = Ch's own readings), and the
      last position for a key is the same on both sides (pos_last): this
@@ -559,7 +559,7 @@ Proof.
     { intros x t Member. split.
       - intros z Iz Ic. refine (Avoid z _ (in_or_app _ _ _ (or_intror Ic))).
         apply in_flat_map. exists (x,t). split; [exact Member|exact Iz].
-      - exact (proj2 (FL.CF.CN.CC.LR.PA.FS.CopyA.recorded_fixed_meaning W u C1 fx1 d1 gfx T
+      - exact (proj2 (FL.CF.CN.CC.LR.PA.FS.CopyA.S.recorded_fixed_meaning W u C1 fx1 d1 gfx T
           x t Fx1 Ab1 Egfx FixT Member)). }
     assert (Gen : forall y, (exists z w, A.nlook z (A.c_ty Cu) = Some w /\ In y (A.gens w)) ->
       PublicCopySubst.CopyGen sigma ys cg T (type_meanings d1) y).
@@ -572,7 +572,7 @@ Proof.
     (* H's terms, over Ch's keys, read through F's merge *)
     assert (GenH : forall t, incl (A.gens t) (map fst (A.c_ty Ch)) -> forall y, In y (A.gens (A.canon Cu t)) ->
       PublicCopySubst.CopyGen sigma ys cg T (type_meanings d1) y).
-    { intros t Sc y Iy. apply Gen. apply (FL.CF.CN.CC.LR.PA.FS.CopyA.canon_gens_read W u Cu nsu t FCu); [|exact Iy].
+    { intros t Sc y Iy. apply Gen. apply (PublicCopySubst.canon_gens_read W u Cu nsu t FCu); [|exact Iy].
       intros z Iz. exact (SubK z (Sc z Iz)). }
     assert (ChK : forall y, (exists x tx, A.nlook x (A.c_ty Ch) = Some tx /\ In y (A.gens tx)) -> In y (map fst (A.c_ty Ch))).
     { intros y (x & tx & Lx & Iy). exact (table_gens_dom W h Ch nsh x tx y FCh Lx Iy). }

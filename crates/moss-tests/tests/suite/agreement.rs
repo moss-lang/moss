@@ -107,7 +107,6 @@ const GAPS: &[(&str, Verdict, Verdict, &str)] = &[
     ("tests/errors/family_poly_nontype.moss", Accept, Reject, RECORDED),
     ("tests/errors/functor_output_input_changed.moss", Reject, Accept, AUDIT_ACCEPTS_14),
     ("tests/errors/handle_rebind.moss", Accept, Reject, RECORDED),
-    ("tests/errors/link_site_merge.moss", Accept, Reject, RECORDED),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
     ("tests/errors/record_field_twice.moss", Accept, Reject, SELF_HOSTED_BUG_FIELD_TWICE),
     ("tests/errors/sameneed_ambiguous.moss", Accept, Reject, RECORDED),

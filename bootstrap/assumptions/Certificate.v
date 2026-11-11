@@ -403,7 +403,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMergeClass.functx_merges);
   root (@NM.PublicSameNeed.need_reading_orientation_free_F);
   root (@NM.PublicSameNeed.need_reading_orientation_free_G);
-  root (@NM.PublicSameNeed.link_need_unambiguous);
   root (@NM.EagerCopy.sources_compose);
   root (@NM.EagerCopy.positions_chain);
   root (@NM.EagerCopy.selection_chain);
@@ -473,6 +472,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.EaCopyNeedSound.combined_merge_extends);
   root (@NM.EaCopyNeedSound.copy_need_choice_unique);
   root (@NM.EaLinkBindingSound.check_link_binding_sound);
+  root (@NM.EaLinkBindingSound.link_need_choice_unique);
   root (@NM.EaLinkBindingSound.translate_link_targets_sound);
   root (@NM.EaFamilySound.fixed_agreement_spec);
   root (@NM.PublicMerge.expanded_generations_by_class);

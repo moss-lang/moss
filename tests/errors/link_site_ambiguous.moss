@@ -1,0 +1,34 @@
+# G equates T and U in its declaration, so both target needs match at the binding site.
+# They can denote different method provisions when an application sees T and U separately.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use Wasi;
+
+type T; type U;
+fn .m(): Int;
+assume Std, T, U { fn out(a: T, b: U): Int; }
+functor F[]: Std, T, U, U.m, T.m -> out;
+context GInputs = T, U, T = U, T.m;
+functor G: Std, GInputs -> out {
+  bind out = (a, b) => a.m();
+}
+
+assume Std, T, U, F {
+  fn demo(a: T, b: U) {
+    bind T.m = () => 1;
+    bind U.m = () => 2;
+    bind F;
+    putchar((out(a, b) + char::digit0.code()).char());
+    putchar(char::newline);
+  }
+}
+assume Wasm, Wasi, Branch {
+  fn main() {
+    bind WasiStd;
+    bind T = Int;
+    bind U = Int;
+    bind F = G;
+    demo(0, 0);
+  }
+}

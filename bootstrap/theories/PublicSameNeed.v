@@ -1,24 +1,7 @@
-(* Cross-context need identity (criteria section 2, coherence).
-
-   `bind F = G;` (BFunClosure, LinkBody) and `bind F = H;` (BFunCopy)
-   relate two functor contexts, each with its own most general merge.
-   The two merges choose their representatives independently, so one
-   need can be spelled `X.m` in F's context and `Y.m` in G's. Audit
-   therefore reads G's (H's) needs through F's merge (`canon_item Cu`)
-   before comparing them with F's: F's congruence decides "same need".
-
-   This file proves what makes that reading coherent:
-   - `need_reading_orientation_free_F`: whether a key, read through F's
-     merge, is one of F's needs does not depend on F's orientation;
-   - `need_reading_orientation_free_G`: G's spelling of a key, read
-     through F's merge, does not depend on G's orientation, among the
-     orientations whose readings of F's inputs hold in F (LinkBody's
-     input-reading clause);
-   - `link_need_unambiguous`: no need class of G meets two need classes of
-     F. The input-reading clause rules the ambiguous case out
-     (tests/errors/sameneed_ambiguous.moss). A copy compares H's readings with
-     F's only at F's applications (CopyInterpretation, AUDIT-CHANGES #96),
-     where two of F's needs that one class of H meets are one key. *)
+(* Cross-context need identity under the declaration-only comparison.
+   These lemmas characterize how canonical need keys vary with a merge
+   section when the source context respects the target's declared merges.
+   A closure binding instead checks its selected keys at the site. *)
 From Stdlib Require Import List.
 From NM Require Import Audit PublicTypeRead PublicTagCheck PublicCallRealize PublicOrientation.
 From NM Require PublicFormation.
@@ -156,17 +139,6 @@ Proof.
   destruct (functx_needs_provided W u C ns FC k Ik) as [p Ip]. split; [exact (proj1 (proj2 (Sc k p Ip)))|exact (Shape k Ik)].
 Qed.
 
-(* The binding's input reading rules out an ambiguous declared need. *)
-Corollary link_need_unambiguous : forall u gg Cu nsu Cg nsg target,
-  A.LinkBinding W u Cu nsu Cg nsg target ->
-  A.FunCtx W u Cu nsu -> A.FunCtx W gg Cg nsg ->
-  forall k1 k2, A.canon_item Cg k1 = A.canon_item Cg k2 ->
-  In (A.canon_item Cu k1) nsu -> In (A.canon_item Cu k2) nsu -> A.canon_item Cu k1 = A.canon_item Cu k2.
-Proof.
-  intros u gg Cu nsu Cg nsg target Binding FCu FCg.
-  apply (need_unambiguous Cu nsu Cg (functx_formed _ _ _ FCu) (functx_formed _ _ _ FCg)).
-  - intros x tx L1 L2. exact (proj2 (@A.link_bind_inputs W u Cu nsu Cg nsg target Binding x tx L1 L2)).
-  - exact (functx_needs_scoped _ _ _ FCu).
-Qed.
+
 
 End SameNeed.

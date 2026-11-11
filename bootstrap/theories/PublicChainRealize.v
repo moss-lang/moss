@@ -1020,7 +1020,7 @@ Proof.
       assert (Av : forall z, In z (A.gens t) -> ~ In z (map gen outs ++ map cg ys)).
       { intros z Iz. apply Avoid. apply in_flat_map. exists (x,t). split; [exact Member|exact Iz]. }
       split; [intros z Iz Ic; exact (Av z Iz (in_or_app _ _ _ (or_intror Ic)))|].
-      destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.recorded_fixed_meaning W u C1 fx1 d1 gfx Tin
+      destruct (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.recorded_fixed_meaning W u C1 fx1 d1 gfx Tin
         x t Fx1 Ab1 Egfx FixT Member) as [Fu Read].
       unfold rho0. rewrite tv_off by (intros z Iz Ig; exact (Av z Iz (in_or_app _ _ _ (or_introl Ig)))).
       rewrite Read. unfold Tu, Tv.
@@ -1046,7 +1046,7 @@ Proof.
     assert (GenC : forall y, ((exists z w, A.nlook z (A.c_ty Ch) = Some w /\ In y (A.gens w)) \/ (exists t, A.FunOutputs W h t /\ y = gen t)) ->
       forall x, In x (A.gens (app_subst (A.c_sub Cu) (TAbs y))) -> PublicCopySubst.CopyGen sigma ys cg Tu rho0 x).
     { intros y Ky x Ix. apply Gen. destruct Ky as [(z & w & Lz & Iy)|[t [Ft ->]]].
-      - left. apply (CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.canon_gens_read W u Cu nsu (TAbs y) FCu); [|exact Ix].
+      - left. apply (PublicCopySubst.canon_gens_read W u Cu nsu (TAbs y) FCu); [|exact Ix].
         intros y' [<-|[]]. exact (SubK y (PublicChainSigs.table_gens_dom W h Ch nsh z w y FCh Lz Iy)).
       - right. exists t. split; [exact (HU t Ft)|]. cbn [app_subst] in Ix. rewrite (GS t (HU t Ft)) in Ix. destruct Ix as [<-|[]]. reflexivity. }
     assert (GenH : forall x, In x (A.provision_gens (A.canon_provision Cu p')) -> PublicCopySubst.CopyGen sigma ys cg Tu rho0 x).
@@ -1200,7 +1200,7 @@ Proof.
   assert (FrGf : PublicFormation.FrameFormed W Fg) by (split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W)).
   assert (InputRead : PublicContextFacts.LinkedInputsRead Ch0 Cg (fun t => ground d (app_subst th t))).
   { intros x tx Found Shared. rewrite !PublicCopySubst.ground_app_subst.
-    exact (proj2 Binding Tin Valuation FixedAt x tx Found Shared). }
+    exact (PublicContextFacts.closure_bind_inputs _ _ _ _ _ _ _ _ Binding Tin Valuation FixedAt x tx Found Shared). }
   pose proof (CSg.FL.LRn.link_run_fact W Prog Ch0 gg Cg nsg code Fg _ wrap Cb Fb made binds0 _ _ FCg Items BO MadeOut FB th ThDom
     argv read j' d dc' [] st d3 g3 st3 InputRead Run) as RunFact.
   pose proof Pre3 as [_ [[_ [_ Al3]] [_ [_ [Real3 _]]]]].

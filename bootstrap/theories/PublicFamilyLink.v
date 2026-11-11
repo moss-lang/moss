@@ -148,7 +148,7 @@ Proof.
   set (Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list).
   assert (Inputs : PublicContextFacts.LinkedInputsRead Cu Cg (fun t => ground d (app_subst th t))).
   { intros x tx Found Shared. rewrite !PublicCopySubst.ground_app_subst.
-    apply (proj2 Binding Tin); [| |exact Found|exact Shared].
+    apply (PublicContextFacts.closure_bind_inputs _ _ _ _ _ _ _ _ Binding Tin); [| |exact Found|exact Shared].
     - intros t v Equal. unfold Tin. rewrite <- !PublicCopySubst.ground_app_subst. exact (ThMerge t v Equal).
     - intros y Fixed. unfold Tin. rewrite <- PublicCopySubst.ground_app_subst. exact (GfxA y Fixed). }
   assert (RunFact : forall t, incl (A.gens t) (map fst (A.c_ty Cg)) -> incl (A.gens t) (map fst (A.c_ty Cu)) ->

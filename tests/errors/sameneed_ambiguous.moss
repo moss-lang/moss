@@ -11,10 +11,8 @@
 # - Oracle: rejects ("`G` cannot provide `F`: its linked input
 #   interpretation differs (D84)"). The other order prints 7.
 # - Native: prints 7, in both orders.
-# - Audit before and now: rejects under every orientation. LinkBody's
-#   input-reading clause (#11: G reads X as Y, or Y as X, which F does not
-#   merge) fails; PublicSameNeed.link_need_unambiguous proves that this clause
-#   rules out every need class of G that meets two of F's.
+# - Audit rejects both orientations. F supplies X and Y afresh, so
+#   their distinct site atoms cannot satisfy G's shared-input equation.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

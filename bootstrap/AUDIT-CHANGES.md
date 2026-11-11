@@ -155,6 +155,7 @@ entry they belong to.
 | 122 | Type forwarding providers before assigning runtime code | typing/translation | none (equivalent factoring) |
 | 124 | Check a closure binding separately from the linked body | M4c | none (equivalent factoring) |
 | 125 | Translate the checked provision choices of a closure binding | M4c | none (equivalent factoring) |
+| 126 | Compare a closure’s shared inputs and needs at the binding site | M4c | C |
 
 Totals: 14 B, 1 C, 9 D, 17 A, 7 E (48 entries; #48 is after the range above). Entries from #49 on, and #10 option (b) and #12b, come from the proposals branch, except #50 (class A), from the coherence branch, #51, from the sameneed branch, #52 to #54, from the coherence2 branch, #55, from the call-brackets branch, #56, from the eagercopy branch, and #57 to #59, from the deltafix branch. #74 to #77 come from the n234 branch, #80 from the tyeq branch, #95 from the n5 branch, #96 from the copyfix branch, and #97 from the linkfix branch.
 
@@ -3086,7 +3087,7 @@ body case still needs site-aware matching.
   |---|---|---|---|---|
   | [copy-site-method](../tests/wasi/copy_site_method.moss) (H's merge of T and U represented by U) | rejects | accepts | accepts | rejects |
   | [copy-site-method-flip](../tests/wasi/copy_site_method_flip.moss) (the same, H's entries swapped) | accepts | accepts | accepts | accepts |
-  | [link-site-merge](../tests/errors/link_site_merge.moss) (the closure analogue: G merges F's fixed T and U, and its body uses the merge) | rejects | prints 1006 | rejects | rejects |
+  | [link-site-merge](../tests/wasi/link_site_merge.moss) (the closure analogue: G merges F's fixed T and U, and its body uses the merge) | rejects | prints 1006 | rejects | rejects |
   | [copy-unmentioned-apart](../tests/errors/copy_unmentioned_apart.moss) (inputs neither fixed nor mentioned, applied apart) | rejects | rejects | rejects | rejects |
 
 - **Coherence (criteria section 2).** #96 asks H's merges to hold only at
@@ -3806,6 +3807,31 @@ using one fresh atom per abstract class must preserve that behaviour
   subset of the source needs.
 - **Class.** Equivalent factoring. The selected provisions and generated
   closure code stay the same.
+
+### 126. Read a closure binding at its site (M4c)
+
+- **Rule.** Shared inputs and linked provision choices are compared
+  under the target's fixed readings and local atoms for the other
+  classes. A selected provision must agree under this reading. When
+  several candidates agree, the unique candidate already equal in the
+  two declared merges supplies the provision. The capture check uses
+  the complementary needs. Shared input readings are still restricted
+  to the target's inputs. The body code is checked once per declared
+  target and source pair.
+- **Examples.** In [T before U](../tests/wasi/link_site_merge.moss) and
+  [U before T](../tests/wasi/link_site_merge_flip.moss), the closure's
+  merge holds because the target fixes both types to `Int`. Both cases
+  print `1006`, using the `showT` supplied by the application.
+  [Ambiguous methods](../tests/errors/link_site_ambiguous.moss) and
+  [their reversal](../tests/errors/link_site_ambiguous_flip.moss) still
+  reject. The two methods can denote separate provisions at application
+  even when their receiver types coincide at the bind.
+- **Proof.** The checker establishes each scoped choice and the
+  allocation of the hypothetical classes. The closure proof transports
+  input equations and provision readings to every application that
+  keeps the fixed inputs. Entry and result preservation use those
+  readings through direct, family, and copy-chain applications.
+- **Class C** (criterion 2). The fixed-input merge programs now pass.
 
 ---
 

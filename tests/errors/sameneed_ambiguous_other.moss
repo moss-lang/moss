@@ -5,10 +5,8 @@
 # order (the oracle's representative of {X, Y} in G is then X).
 # - Oracle: prints 7 (G's X.m is F's X.m; it does not check that G's merge
 #   holds in F). Native: prints 7.
-# - Audit before and now: rejects under every orientation (LinkBody's
-#   input-reading clause, #11), as in tests/errors/sameneed_ambiguous.moss. Both
-#   implementations accept it; this is #11's existing class B divergence,
-#   not a change made by #51.
+# - Audit rejects both orientations. G's equality on X and Y does not
+#   hold under F's hypothetical application reading.
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;

@@ -211,12 +211,15 @@ Proof.
   apply code_effect_return.
 Qed.
 
-Lemma check_link_binding_code_effect : forall E u g Cu nsu Cg nsg,
-  PreservesOldCode (EaFunctor.check_link_binding E u g Cu nsu Cg nsg).
+Lemma check_link_binding_code_effect : forall E u g Cu nsu Cg nsg recorded,
+  PreservesOldCode (EaFunctor.check_link_binding E u g Cu nsu Cg nsg recorded).
 Proof.
-  intros E u g Cu nsu Cg nsg. unfold EaFunctor.check_link_binding.
+  intros E u g Cu nsu Cg nsg recorded. unfold EaFunctor.check_link_binding.
+  apply code_effect_bind.
+  { intros s result after Run. injection Run as _ <-. apply code_transition_refl. }
+  intro state. apply code_effect_bind; [apply code_effect_pure|]. intro choices.
   apply code_effect_bind; [apply code_effect_optional_failure|intros []].
-  do 2 (apply code_effect_bind; [apply code_effect_check|intros []]).
+  apply code_effect_bind; [apply code_effect_check|intros []].
   apply code_effect_return.
 Qed.
 

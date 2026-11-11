@@ -438,7 +438,7 @@ Proof.
   (* the closure's own needs, from those the caller selected *)
   destruct (select_ok d1 (A.link_map Cu Cg linktarget nsg)) as [d2 Sel2].
   { intros q Iq. apply in_map_iff in Iq as [k0 [<- Ik]]. cbn [snd].
-    pose proof (CopyA.S.linked_targets_in W u Cu ns Cg nsg linktarget (proj1 Binding) k0 Ik) as Iu.
+    pose proof (CopyA.S.linked_targets_in W u Cu ns Cg nsg linktarget _ Binding k0 Ik) as Iu.
     destruct (functx_needs_provided W u Cu ns FC (A.linked_target linktarget k0) Iu) as [p0 Ip].
     destruct (CopyA.S.functx_static W _ _ _ FC) as [_ [_ [_ [_ [ShU _]]]]].
     destruct (CopyA.S.realized_key W Prog argv read state_ok _ _ _ _ _ _ RealU Ip (ShU (A.linked_target linktarget k0) Iu)) as [pv0 L0].
@@ -447,8 +447,8 @@ Proof.
   (* F's fixed inputs: θ reads them in the family context as the closure recorded them (FixedAgreement) *)
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
   assert (FxF : A.nlook u (A.c_funs Cf) = Some fx) by (unfold A.c_funs; rewrite EprF; exact Fx).
-  assert (GfxA : forall x, A.Fixed W u x -> In x (map fst (A.c_ty Cg)) -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)).
-  { intros x Fx' _. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).
+  assert (GfxA : forall x, A.Fixed W u x -> lookup_subst x gfx = option_map (ground d) (lookup_subst x th)).
+  { intros x Fx'. destruct Fm as [Cov Vm]. destruct (Cov x Fx') as [tx Ixt]. rewrite (Vm x tx Ixt).
     assert (Ix : In x (map fst (A.c_ty Cu))) by exact (FxIn x Fx').
     assert (Lx : lookup_subst x th = Some (A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))))
       by (unfold th; exact (CopyA.S.lookup_on_keys (fun x => A.canon Cf (app_subst (A.c_ty Cf) (TAbs x))) _ x Ix)).
