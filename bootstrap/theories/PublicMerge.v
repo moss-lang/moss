@@ -801,6 +801,25 @@ Proof.
     + apply (proj2 (H0 x InX z Outside)). exact InY.
 Qed.
 
+(* A merge reading cannot introduce a generation outside the presentation
+   and the source type. This statement does not inspect section rows. *)
+Theorem merge_eq_gens_bound : forall M t u, MergeEq M t u ->
+  forall K, incl (merge_symbols M) K -> incl (gens t) K -> incl (gens u) K.
+Proof.
+  intros M t u Equal K Classes Source y Iy.
+  destruct (in_dec Nat.eq_dec y (merge_symbols M)) as [Inside|Outside].
+  - exact (Classes y Inside).
+  - apply Source. apply (proj2 (merge_eq_gens_out Equal y Outside)). exact Iy.
+Qed.
+
+Corollary section_gens_bound : forall M s, SectionOf M s ->
+  forall K, incl (merge_symbols M) K -> forall t, incl (gens t) K ->
+  incl (gens (app_subst s t)) K.
+Proof.
+  intros M s Section K Classes t Source.
+  exact (@merge_eq_gens_bound M t (app_subst s t) (@merge_eq_read M s (proj1 Section) t) K Classes Source).
+Qed.
+
 Lemma shape_table_range : forall M n x t,
   In (x,t) (shape_table M n) -> incl (gens t) (merge_symbols M).
 Proof.

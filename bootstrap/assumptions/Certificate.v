@@ -421,6 +421,15 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.ex_nominal_formed');
   root (@NM.PublicFormation.keys_scoped);
   root (@NM.PublicFormation.table_keys_scoped);
+  root (@NM.PublicFormation.subst_equal_gens);
+  root (@NM.PublicFormation.retracted_formed);
+  root (@NM.PublicFormation.merge_shapes_formed);
+  root (@NM.PublicFormation.class_section_formed);
+  root (@NM.PublicFormation.merge_section_formed);
+  root (@NM.PublicFormation.ctxof_class_formed);
+  root (@NM.PublicFormation.functx_class_formed);
+  root (@NM.PublicMerge.merge_eq_gens_bound);
+  root (@NM.PublicMerge.section_gens_bound);
   root (@NM.PublicFormation.ctxof_cx_formed);
   root (@NM.PublicFormation.functx_cx_formed);
   root (@NM.PublicFormation.demand_formed_cx);

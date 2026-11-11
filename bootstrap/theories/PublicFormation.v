@@ -5,6 +5,7 @@
    TyOf, Brackets and SigOf over formed type tables. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms.
+From NM Require PublicMerge.
 From NM Require Import AuditFacts.
 Import Audit.Input Audit.Semantics ListNotations.
 Module A := Audit.Semantics.Elaboration.
@@ -677,13 +678,14 @@ Section Initial.
 Variable W : A.world.
 Import A.
 
-(* HYPOTHESIS (merge formation). [MostGeneralMerge] characterizes a merge
+(* Legacy abstract-helper obligation (merge formation). [MostGeneralMerge] characterizes a merge
    only as a most general idempotent unifier over the telescope's
    generations; it does not say that the merge's values are formed. A most
    general unifier of formed entries should map each generation to a formed
    type (every node of a value is forced by some formed entry type).
    Proved from most generality alone in
-   PublicWorldFormation.merge_formed_of. *)
+   PublicWorldFormation.merge_formed_of. Actual CtxOf/FunCtx formation below
+   instead uses class shapes and SectionOf. *)
 Definition MergeFormed : Prop := forall s es, MostGeneralMerge s es -> Forall (EntryP (TyFormed W)) es ->
   forall g t, In (g, t) s -> TyFormed W t.
 
@@ -695,7 +697,6 @@ Definition MergeFormed : Prop := forall s es, MostGeneralMerge s es -> Forall (E
    PublicWorldFormation.mentions_typed_of. *)
 Definition MentionsTyped : Prop := forall u t, Mentions W u t -> kind_sym W t = Some DKType.
 
-Hypothesis merge_formed : MergeFormed.
 Hypothesis mentions_typed : MentionsTyped.
 
 Definition KeysAbstract (tm : list (nat * ty)) : Prop := forall x, In x (map fst tm) -> Abstract W x.
@@ -717,6 +718,174 @@ Proof.
   - intros [H1 [H2 H3]]. exact (conj (proj1 H1) (conj (Sig g H2) (Ins a H3))).
   - intros H x u0 Iq. exact (proj1 (H x u0 Iq)).
   - intros [H1 H2]. exact (conj (proj1 H1) (proj1 H2)).
+Qed.
+
+
+(* Substitution equality can be observed at each occurrence of a variable.
+   In particular, every generation in an idempotent reading is fixed. *)
+Lemma subst_equal_gens : forall t s r, app_subst s t = app_subst r t ->
+  forall x, In x (gens t) -> app_subst s (TAbs x) = app_subst r (TAbs x).
+Proof.
+  fix IH 1. intros [m|fs| |g|n xs|ms] s r E x Ix;
+    rewrite ?subst_record, ?subst_nom, ?subst_union in E; try contradiction.
+  - injection E as E. induction fs as [|[f t] rest Tail]; cbn in Ix; [contradiction|].
+    cbn in E. injection E as Head Rest.
+    apply in_app_or in Ix as [Ix|Ix]; [exact (IH t s r Head x Ix)|exact (Tail Rest Ix)].
+  - destruct Ix as [<-|[]]. exact E.
+  - injection E as E. unfold PublicTypeRead.smap in E. induction xs as [|[f t] rest Tail]; cbn in Ix; [contradiction|].
+    cbn in E. injection E as Head Rest.
+    apply in_app_or in Ix as [Ix|Ix]; [exact (IH t s r Head x Ix)|exact (Tail Rest Ix)].
+  - injection E as E. induction ms as [|t rest Tail]; cbn in Ix; [contradiction|].
+    cbn in E. injection E as Head Rest.
+    apply in_app_or in Ix as [Ix|Ix]; [exact (IH t s r Head x Ix)|exact (Tail Rest Ix)].
+Qed.
+
+Lemma subst_fixed_gens : forall t s, app_subst s t = t ->
+  forall x, In x (gens t) -> app_subst s (TAbs x) = TAbs x.
+Proof.
+  intros t s E x Ix. rewrite <- (app_subst_nil (TAbs x)).
+  apply (subst_equal_gens t s []); [rewrite app_subst_nil; exact E|exact Ix].
+Qed.
+
+Lemma subst_abs_source : forall s t x, app_subst s t = TAbs x -> exists y, t = TAbs y.
+Proof.
+  intros s [m|fs| |g|n xs|ms] x E;
+    rewrite ?subst_record, ?subst_nom, ?subst_union in E; try discriminate.
+  exists g. reflexivity.
+Qed.
+
+Definition RenamesOn (s : subst) (t : ty) : Prop :=
+  forall x, In x (gens t) -> exists y, app_subst s (TAbs x) = TAbs y.
+
+Lemma renamed_nominal_source : forall s t, RenamesOn s t ->
+  (exists n xs, app_subst s t = TNom n xs) -> exists n xs, t = TNom n xs.
+Proof.
+  intros s [m|fs| |g|n xs|ms] Ren [n' [xs' E]];
+    rewrite ?subst_record, ?subst_nom, ?subst_union in E; try discriminate.
+  - destruct (Ren g (or_introl eq_refl)) as [y Ey]. rewrite Ey in E. discriminate.
+  - eauto.
+Qed.
+
+
+(* Renaming abstract generations changes neither nominal arities nor union
+   heads. This reflection fact is used only on the fixed part of a section. *)
+Lemma renamed_formed_reflect : forall t s, RenamesOn s t ->
+  TyFormed W (app_subst s t) -> TyFormed W t.
+Proof.
+  fix IH 1. intros [m|fs| |g|n xs|ms] s Ren Ft; try exact Logic.I.
+  - rewrite subst_record in Ft. cbn [TyFormed] in Ft |- *.
+    revert Ren Ft. induction fs as [|[f t] rest Tail]; intros Ren Ft; cbn in Ft |- *; [exact Logic.I|].
+    destruct Ft as [Ft Fr]. split.
+    + apply (IH t s); [|exact Ft]. intros x Ix. apply Ren. cbn [gens]. apply in_or_app. left. exact Ix.
+    + apply Tail; [|exact Fr]. intros x Ix. apply Ren. cbn [gens] in Ix |- *. apply in_or_app. right. exact Ix.
+  - rewrite subst_nom in Ft. cbn [TyFormed] in Ft |- *. destruct Ft as [Keys Args]. split.
+    + unfold PublicTypeRead.smap in Keys. rewrite map_map in Keys. exact Keys.
+    + unfold PublicTypeRead.smap in Args. clear Keys.
+      revert Ren Args. induction xs as [|[f t] rest Tail]; intros Ren Args; cbn in Args |- *; [exact Logic.I|].
+      destruct Args as [Ft Fr]. split.
+      * apply (IH t s); [|exact Ft]. intros x Ix. apply Ren. cbn [gens]. apply in_or_app. left. exact Ix.
+      * apply Tail; [|exact Fr]. intros x Ix. apply Ren. cbn [gens] in Ix |- *. apply in_or_app. right. exact Ix.
+  - rewrite subst_union in Ft. apply union_formed in Ft as [Nom [Nd Members]]. apply union_formed.
+    assert (Each : forall t, In t ms -> RenamesOn s t).
+    { intros t It x Ix. apply Ren. cbn [gens]. apply in_flat_map. exists t. split; assumption. }
+    assert (SourceNom : Forall (fun t => exists n xs, t = TNom n xs) ms).
+    { apply Forall_forall. intros t It. apply (renamed_nominal_source s t (Each t It)).
+      rewrite Forall_forall in Nom. apply Nom. apply in_map, It. }
+    split; [exact SourceNom|split].
+    + replace (map head ms) with (map head (map (app_subst s) ms)); [exact Nd|].
+      rewrite map_map. apply map_ext_in. intros t It. rewrite Forall_forall in SourceNom.
+      destruct (SourceNom t It) as [n [xs ->]]. rewrite subst_nom. reflexivity.
+    + clear Nom Nd SourceNom Ren. revert Each Members.
+      induction ms as [|t rest Tail]; intros Each Members; [constructor|].
+      inversion Members as [|? ? Ft Fr]; subst. constructor.
+      * exact (IH t s (Each t (or_introl eq_refl)) Ft).
+      * apply Tail; [|exact Fr]. intros u Iu. apply Each. right. exact Iu.
+
+Qed.
+
+(* Two mutually absorbing readings have the same formation behavior when
+   one reading is formed. The other section may choose different symbols. *)
+Lemma retracted_formed : forall s r,
+  (forall t, app_subst s (app_subst r t) = app_subst s t) ->
+  (forall t, app_subst r (app_subst s t) = app_subst r t) ->
+  (forall t, app_subst s (app_subst s t) = app_subst s t) ->
+  SubstFormed W r -> forall t, TyFormed W t -> TyFormed W (app_subst s t).
+Proof.
+  intros s r SR RS SS Rf t Ft. apply (renamed_formed_reflect (app_subst s t) r).
+  - intros x Ix. destruct (subst_abs_source s (app_subst r (TAbs x)) x) as [y Ey].
+    + rewrite SR. apply (subst_fixed_gens (app_subst s t) s (SS t) x Ix).
+    + exists y. exact Ey.
+  - rewrite RS. exact (subst_formed W t r Rf Ft).
+Qed.
+
+Lemma subterm_formed : forall t u, TypeSubterm t u -> TyFormed W u -> TyFormed W t.
+Proof.
+  intros t u Sub. induction Sub; intro Ft; [exact Ft| | |].
+  - apply IHSub. exact (proj1 (record_formed W _) Ft _ _ H).
+  - apply IHSub. exact (proj2 (proj1 (nom_formed W _ _) Ft) _ _ H).
+  - apply IHSub. apply union_formed in Ft as [_ [_ Ft]]. rewrite Forall_forall in Ft. exact (Ft _ H).
+Qed.
+
+Lemma entry_types_formed : forall e, EntryP (TyFormed W) e -> Forall (TyFormed W) (entry_types e).
+Proof.
+  assert (Inst : forall a, InstP (TyFormed W) a -> Forall (TyFormed W) (map snd (read_inst a))).
+  { intros a Ok. apply Forall_forall. intros t It. apply in_map_iff in It as [[x u] [<- Iq]].
+    unfold read_inst in Iq. apply in_map_iff in Iq as [[y [v|]] [E Iq]]; cbn in E; injection E as _ <-;
+      [exact (Ok _ _ Iq)|exact Logic.I]. }
+  intros [x|v t a|f g a|r m g a|u fx|l r] Ok; cbn in Ok |- *.
+  - repeat constructor.
+  - constructor; [exact (proj1 Ok)|exact (Inst a (proj2 Ok))].
+  - constructor; [exact (proj2 (proj1 Ok))|apply Forall_app; split; [exact (proj1 (proj1 Ok))|exact (Inst a (proj2 Ok))]].
+  - constructor; [exact (proj1 Ok)|constructor; [exact (proj2 (proj1 (proj2 Ok)))|]].
+    apply Forall_app. split; [exact (proj1 (proj1 (proj2 Ok)))|exact (Inst a (proj2 (proj2 Ok)))].
+  - apply Forall_forall. intros t It. apply in_map_iff in It as [[x v] [<- Iq]]. exact (Ok x v Iq).
+  - constructor; [exact (proj1 Ok)|constructor; [exact (proj2 Ok)|constructor]].
+Qed.
+
+Definition ShapesFormed (M : merge) : Prop :=
+  forall c t, In c M -> mc_shape c = Some t -> TyFormed W t.
+
+Lemma merge_shapes_formed : forall es M, ShapesRead es M ->
+  Forall (EntryP (TyFormed W)) es -> ShapesFormed M.
+Proof.
+  intros es M Read Entries c t Ic Shape. destruct (Read c t Ic Shape) as (e & u & Ie & Iu & Sub).
+  apply (subterm_formed t u Sub). rewrite Forall_forall in Entries.
+  pose proof (entry_types_formed e (Entries e Ie)) as Ts. rewrite Forall_forall in Ts. exact (Ts u Iu).
+Qed.
+
+Lemma shape_table_formed : forall M, ShapesFormed M -> forall n, TmFormed W (shape_table M n).
+Proof.
+  intros M Shapes n. induction n as [|n IH]; intros x t It; [contradiction|].
+  apply PublicMerge.shape_pair in It as (c & u & Ic & Ix & Shape & ->).
+  apply subst_formed; [|exact (Shapes c u Ic Shape)].
+  intros y v L. exact (IH y v (PublicOrientation.lookup_subst_pair _ _ _ L)).
+Qed.
+
+Lemma class_section_formed : forall M s, Solved M -> ShapesFormed M -> SectionOf M s ->
+  forall t, TyFormed W t -> TyFormed W (app_subst s t).
+Proof.
+  intros M s Solved Shapes Section.
+  assert (Rf : SubstFormed W (PublicMerge.section_table M)).
+  { intros x t L. apply PublicOrientation.lookup_subst_pair in L.
+    unfold PublicMerge.section_table in L. apply in_map_iff in L as [[y v] [E Iq]]. cbn in E. injection E as <- <-.
+    apply subst_formed.
+    - intros z u Lu. apply PublicOrientation.lookup_subst_pair, PublicMerge.symbol_pair in Lu.
+      destruct Lu as (c & h & rest & Ic & Members & Iz & ->). exact Logic.I.
+    - change (TyFormed W (app_subst (shape_table M (List.length M)) (TAbs y))).
+      apply subst_formed; [|exact Logic.I].
+      intros z u Lu. exact (shape_table_formed M Shapes _ z u (PublicOrientation.lookup_subst_pair _ _ _ Lu)). }
+  pose proof (PublicMerge.section_table_is_section Solved) as Canonical.
+  apply (retracted_formed s (PublicMerge.section_table M)); [| | |exact Rf].
+  - intro t. apply (proj2 Section). apply MESym, PublicMerge.merge_eq_read. exact (proj1 Canonical).
+  - intro t. apply (proj2 Canonical). apply MESym, PublicMerge.merge_eq_read. exact (proj1 Section).
+  - intro t. apply (proj2 Section). apply MESym, PublicMerge.merge_eq_read. exact (proj1 Section).
+Qed.
+
+Lemma merge_section_formed : forall es M s, MergeOf es M -> SectionOf M s ->
+  Forall (EntryP (TyFormed W)) es -> forall t, TyFormed W t -> TyFormed W (app_subst s t).
+Proof.
+  intros es M s Merge Section Entries. apply (class_section_formed M s (proj1 Merge)); [|exact Section].
+  exact (merge_shapes_formed es M (proj1 (proj2 Merge)) Entries).
 Qed.
 
 Lemma spec_types_kind : forall p sp t, SpecTypes W p sp t -> kind_sym W t = Some DKType.
@@ -891,9 +1060,9 @@ Proof.
 Qed.
 
 (* The context a fn or method's assumes form is formed. *)
-Theorem ctxof_cx_formed : forall f C ns, CtxOf W f C ns -> FormedCx W C.
+Theorem ctxof_class_formed : forall f C ns, CtxOf W f C ns -> FormedCx W C.
 Proof.
-  intros f C ns (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & _ & _ & -> & _ & _).
+  intros f C ns (d & es & tm & er & tmr & σ & classes & D & IE & Root & MGM & Merge & Section & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   destruct (proj2 entries_ok _ _ _ _ _ _ IE (tmok_nil W) ltac:(constructor) ltac:(intros x [])) as [_ [KaT OkT]].
   assert (Tmr : IdForm tmr /\ incl (map fst tm) (map fst tmr) /\ Scoped tmr (flat_map entry_gens er) /\
@@ -912,14 +1081,21 @@ Proof.
   apply entries_cx_formed; [exact IdR|exact KaR|exact KdR|exact Ok| |].
   - intros e Ie y Iy. apply All. apply in_flat_map. exists e. split; assumption.
   - intros g t Iq. split.
-    + exact (merge_formed σ (es ++ er) MGM (Forall_impl _ entry_ok_formed Ok) g t Iq).
-    + destruct MGM as [_ [_ [_ [Dom _]]]]. intros y Iy. exact (All y (proj2 (Dom g t Iq) y Iy)).
+    + assert (Read : app_subst σ (TAbs g) = t).
+      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
+      rewrite <- Read. exact (merge_section_formed (es ++ er) classes σ Merge Section
+        (Forall_impl _ entry_ok_formed Ok) (TAbs g) Logic.I).
+    + assert (Read : app_subst σ (TAbs g) = t).
+      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
+      rewrite <- Read. apply (PublicMerge.section_gens_bound Section).
+      * intros y Iy. apply All. exact (proj1 (proj2 (proj2 Merge)) y Iy).
+      * intros y [<-|[]]. apply All. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t Iq)).
 Qed.
 
 (* The context a functor's argument telescope forms is formed. *)
-Theorem functx_cx_formed : forall u C ns, FunCtx W u C ns -> FormedCx W C.
+Theorem functx_class_formed : forall u C ns, FunCtx W u C ns -> FormedCx W C.
 Proof.
-  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & _ & _ & -> & _ & _).
+  intros u C ns (d & ps & a & r & b & es & tm & tm' & σ & classes & implicit & D & FP & IE & Imp & -> & MGM & Merge & Section & -> & _ & _).
   destruct (proj2 (entries_formed W) _ _ _ _ _ _ IE ltac:(constructor) ltac:(intros g [])) as [IdT [_ EsT]].
   destruct (proj2 entries_ok _ _ _ _ _ _ IE (tmok_nil W) ltac:(constructor) ltac:(intros x [])) as [_ [KaT OkT]].
   assert (Id' : IdForm (map (fun t => (t, TAbs t)) implicit ++ tm)).
@@ -936,11 +1112,30 @@ Proof.
   apply entries_cx_formed; [exact Id'|exact Ka'|exact Kd'|exact OkT| |].
   - intros e Ie y Iy. apply Sub. apply EsT. apply in_flat_map. exists e. split; assumption.
   - intros g t Iq. split.
-    + exact (merge_formed σ es MGM (Forall_impl _ entry_ok_formed OkT) g t Iq).
-    + destruct MGM as [_ [_ [_ [Dom _]]]]. intros y Iy. exact (Sub y (EsT y (proj2 (Dom g t Iq) y Iy))).
+    + assert (Read : app_subst σ (TAbs g) = t).
+      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
+      rewrite <- Read. exact (merge_section_formed es classes σ Merge Section
+        (Forall_impl _ entry_ok_formed OkT) (TAbs g) Logic.I).
+    + assert (Read : app_subst σ (TAbs g) = t).
+      { cbn [app_subst]. rewrite (proj2 (proj2 (proj2 (proj2 MGM))) g t Iq). reflexivity. }
+      rewrite <- Read. apply (PublicMerge.section_gens_bound Section).
+      * intros y Iy. apply Sub, EsT. exact (proj1 (proj2 (proj2 Merge)) y Iy).
+      * intros y [<-|[]]. apply Sub, EsT. exact (proj1 (proj1 (proj2 (proj2 (proj2 MGM))) g t Iq)).
 Qed.
 
 End Initial.
+
+
+(* Compatibility entry points retain the old abstract-helper signatures.
+   Actual context formation now follows ShapesRead and SectionOf, without
+   the unrelated world-wide MostGeneralMerge formation premise. *)
+Theorem ctxof_cx_formed (W : A.world) (_ : MergeFormed W) (Mt : MentionsTyped W) :
+  forall f C ns, A.CtxOf W f C ns -> FormedCx W C.
+Proof. exact (ctxof_class_formed W Mt). Qed.
+
+Theorem functx_cx_formed (W : A.world) (_ : MergeFormed W) (Mt : MentionsTyped W) :
+  forall u C ns, A.FunCtx W u C ns -> FormedCx W C.
+Proof. exact (functx_class_formed W Mt). Qed.
 
 (* ---- functor results, families and demand ----------------------------------- *)
 
