@@ -50,6 +50,14 @@ Inductive er (A : Type) : Type := Ok (a : A) | Err (m : string).
 Arguments Ok {A} a.
 Arguments Err {A} m.
 
+Inductive code_table := FunctionTable | FunctorTable.
+
+(* The translator reserves a generated body in one table. A source
+   declaration uses its own symbol when its body is emitted. *)
+Record code_slot (table : code_table) := CodeSlot { slot_index : nat }.
+Arguments CodeSlot {table} slot_index.
+Arguments slot_index {table} _.
+
 (* The global state.  INVARIANTS (to be proved as `Inv`):
    - I1 (counter) every symbol in es_fns/es_funs keys, in any context,
      frame or generated body, and every source symbol, is < es_next;
@@ -64,9 +72,9 @@ Record est := Est {
   es_next : nat;
   es_fns : nmap expr;
   es_funs : nmap functor_code;
-  es_fwd : nmap nat;
-  es_wrap : list ((nat * nat) * nat);
-  es_link : list ((nat * nat) * nat);
+  es_fwd : nmap (code_slot FunctionTable);
+  es_wrap : list ((nat * nat) * code_slot FunctionTable);
+  es_link : list ((nat * nat) * code_slot FunctorTable);
   es_const : nmap (expr * ty);
   es_unsupported : list string;
   es_lamcx : nmap cx;                   (* a lambda provider's context (NodeCx) *)
@@ -369,18 +377,32 @@ Definition set_fn_body (f : nat) (x : expr) : M unit :=
 Definition set_fun_body (h : nat) (c : functor_code) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (nset (es_funs s) h c) (es_fwd s) (es_wrap s)
                       (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
-Definition get_fwd (g : nat) : M (option nat) := fun s => Ok (nget (es_fwd s) g, s).
-Definition put_fwd (g w : nat) : M unit :=
+
+Definition reserve_code (table : code_table) : M (code_slot table) :=
+  let* n := fresh in ret (CodeSlot n).
+
+Definition write_fn_code (slot : code_slot FunctionTable) (code : expr) : M unit :=
+  set_fn_body (slot_index slot) code.
+Definition write_fun_code (slot : code_slot FunctorTable) (code : functor_code) : M unit :=
+  set_fun_body (slot_index slot) code.
+
+Definition emit_fn_code (code : expr) : M (code_slot FunctionTable) :=
+  let* slot := reserve_code FunctionTable in let* _ := write_fn_code slot code in ret slot.
+Definition emit_fun_code (code : functor_code) : M (code_slot FunctorTable) :=
+  let* slot := reserve_code FunctorTable in let* _ := write_fun_code slot code in ret slot.
+
+Definition get_fwd (g : nat) : M (option (code_slot FunctionTable)) := fun s => Ok (nget (es_fwd s) g, s).
+Definition put_fwd (g : nat) (w : code_slot FunctionTable) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (nset (es_fwd s) g w) (es_wrap s)
                       (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
 Fixpoint pair_look {A} (k : nat * nat) (l : list ((nat * nat) * A)) : option A :=
   match l with [] => None | (k', a) :: r => if Nat.eqb (fst k) (fst k') && Nat.eqb (snd k) (snd k') then Some a else pair_look k r end.
-Definition get_wrap (k : nat * nat) : M (option nat) := fun s => Ok (pair_look k (es_wrap s), s).
-Definition put_wrap (k : nat * nat) (w : nat) : M unit :=
+Definition get_wrap (k : nat * nat) : M (option (code_slot FunctionTable)) := fun s => Ok (pair_look k (es_wrap s), s).
+Definition put_wrap (k : nat * nat) (w : code_slot FunctionTable) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) ((k, w) :: es_wrap s)
                       (es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
-Definition get_link (k : nat * nat) : M (option nat) := fun s => Ok (pair_look k (es_link s), s).
-Definition put_link (k : nat * nat) (h : nat) : M unit :=
+Definition get_link (k : nat * nat) : M (option (code_slot FunctorTable)) := fun s => Ok (pair_look k (es_link s), s).
+Definition put_link (k : nat * nat) (h : code_slot FunctorTable) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s)
                       ((k, h) :: es_link s) (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (es_names s)).
 Definition get_const (c : nat) : M (option (expr * ty)) := fun s => Ok (nget (es_const s) c, s).
@@ -400,16 +422,17 @@ Definition unsupported_index (n : string) : M nat :=
     end.
 
 Definition init_state (next : nat) : est := Est next NE NE NE [] [] NE [] NE NE NE.
-Definition put_pins (h : nat) (p : subst) : M unit :=
+Definition put_pins (h : code_slot FunctorTable) (p : subst) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
-                      (es_const s) (es_unsupported s) (es_lamcx s) (nset (es_pins s) h p) (es_names s)).
+                      (es_const s) (es_unsupported s) (es_lamcx s) (nset (es_pins s) (slot_index h) p) (es_names s)).
 Definition put_name (g : nat) (n : string) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
                       (es_const s) (es_unsupported s) (es_lamcx s) (es_pins s) (nset (es_names s) g n)).
-Definition get_pins (h : nat) : M subst := fun s => Ok (match nget (es_pins s) h with Some p => p | None => [] end, s).
-Definition put_lamcx (pid : nat) (C : cx) : M unit :=
+Definition get_pins (h : code_slot FunctorTable) : M subst :=
+  fun s => Ok (match nget (es_pins s) (slot_index h) with Some p => p | None => [] end, s).
+Definition put_lamcx (pid : code_slot FunctionTable) (C : cx) : M unit :=
   fun s => Ok (tt, Est (es_next s) (es_fns s) (es_funs s) (es_fwd s) (es_wrap s) (es_link s)
-                      (es_const s) (es_unsupported s) (nset (es_lamcx s) pid C) (es_pins s) (es_names s)).
+                      (es_const s) (es_unsupported s) (nset (es_lamcx s) (slot_index pid) C) (es_pins s) (es_names s)).
 
 (* ======================================================================== *)
 (* 7. Frames                                                                *)

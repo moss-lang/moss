@@ -296,9 +296,8 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
       | ADFunctor _ _ _ _ None =>
           let* _ := check (fixed_machines_read C u) (at_sym u "platform functor has an incompatible assumed fixed type") in
           let* code := pure (platform_code u) in
-          let* h := fresh in
-          let* _ := set_fun_body h code in
-          ret (FunctorClosure h None empty_environment None)
+          let* h := emit_fun_code code in
+          ret (FunctorClosure (slot_index h) None empty_environment None)
       | _ => fail (unsupported_need (IFun u))
       end
   | _ => fail (unsupported_need k)

@@ -50,11 +50,10 @@ Definition fn_provider (kind : string) (F : frame) (C : cx) (pa : path) (sg : fs
       let* cached := get_fwd g in
       let* w := match cached with
                 | Some w => ret w
-                | None => let* w := fresh in
-                          let* _ := set_fn_body w (EInvoke g (map EVar (seq 0 n))) in
+                | None => let* w := emit_fn_code (EInvoke g (map EVar (seq 0 n))) in
                           let* _ := put_fwd g w in ret w
                 end in
-      ret (w, TypeCapture [] [], [(IFn g, IFn g)])
+      ret (slot_index w, TypeCapture [] [], [(IFn g, IFn g)])
   | _ => fail not_fn
   end.
 
@@ -95,7 +94,7 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
                                     (mentioned_names W F body))
               | _ => [] end in
   let* capvals := fresh_n (List.length caps) in
-  let* pid := fresh in
+  let* pid := reserve_code FunctionTable in
   let* _ := put_lamcx pid C in
   let Cl := captured_cx C caps capvals in
   let Fl := Frame (fr_mod F) (Some (sg_ret sg)) this false
@@ -108,13 +107,13 @@ Definition lambda_provider (what : string) (F : frame) (C : cx) (ps : list (name
                           (ABlock [] (Some body)) (Some (sg_ret sg))) in
   let* _ := check (fitsb ltype (sg_ret sg))
              ("the anonymous function bound to " ++ what ++ " yields " ++ qty W ltype ++ ", but " ++ what ++ " returns " ++ qty W (sg_ret sg)) in
-  let* _ := set_fn_body pid (fold_right (fun q x => ELet (var_of Fl (fst q)) (EVal (snd q)) x) lbody (combine caps capvals)) in
+  let* _ := write_fn_code pid (fold_right (fun q x => ELet (var_of Fl (fst q)) (EVal (snd q)) x) lbody (combine caps capvals)) in
   let ixl := PIdx (pindex (c_provisions Cl)) in
   let ix := PIdx (pindex (c_provisions C)) in
   let keys := filter (fun k => match k with ITy _ => false | _ => providesb_i Cl ixl k && item_eqb k (provision_id k) end)
                      (iuniq_fast (map fst (c_provisions Cl))) in
   let sm := map (fun k => (rkof_i Cl ixl k, rkof_i C ix k)) keys in
-  ret (pid, (fun x => fold_right (fun q x => bind_value_expression (snd q) (EVar (var_of F (fst q))) x) x (combine caps capvals)), sm).
+  ret (slot_index pid, (fun x => fold_right (fun q x => bind_value_expression (snd q) (EVar (var_of F (fst q))) x) x (combine caps capvals)), sm).
 
 (* ---- MethProvider ---- *)
 
@@ -151,12 +150,11 @@ Definition meth_provider (m : nat) (F : frame) (C : cx) (y : aexpr) (sg : fsig) 
       let* cached := get_wrap (g, n) in
       let* w := match cached with
                 | Some w => ret w
-                | None => let* w := fresh in
-                          let* _ := set_fn_body w (ECall g (theta_ctx Cg) (map (fun k => (rkof Cg k, rkof Cg k)) nsg)
+                | None => let* w := emit_fn_code (ECall g (theta_ctx Cg) (map (fun k => (rkof Cg k, rkof Cg k)) nsg)
                                                         (map EVar (seq 1 n))) in
                           let* _ := put_wrap (g, n) w in ret w
                 end in
-      ret (w, types, (fun x => x), sm)
+      ret (slot_index w, types, (fun x => x), sm)
   | AELam ps r body =>
       let* ((pid, pre), sm) := lambda_provider (bq (sty W rt ++ mname W m)) F C ps r body sg (Some rt) in
       ret (pid, lexical_capture C, pre, sm)

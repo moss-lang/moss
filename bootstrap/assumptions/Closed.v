@@ -172,3 +172,8 @@ Print Assumptions NM.EaAssumesSound.choose_assumption_atom_sound.
 Print Assumptions NM.EaAssumesSound.assumption_theta_sound.
 Print Assumptions NM.EaAssumesSound.assumes_complete_sound.
 Print Assumptions NM.EaAssumesSound.elaborate_with_assumes_complete.
+
+From NM Require EaCodeAllocationSound.
+Print Assumptions NM.EaCodeAllocationSound.reserve_code_spec.
+Print Assumptions NM.EaCodeAllocationSound.write_reserved_code_spec.
+Print Assumptions NM.EaCodeAllocationSound.emit_code_spec.

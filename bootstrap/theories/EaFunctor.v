@@ -175,9 +175,9 @@ Definition provision_refinesb (promised actual : provision) : bool :=
                     | Some v => existsb (fun q' => Nat.eqb (fst q') (fst q) && oty_eqb (snd q') (Some v)) (provision_inst actual)
                     | None => true end) (provision_inst promised).
 
-(* SOUND: link_body u gg = Ok h -> LinkBody W P u gg h pins, pins the
+(* SOUND: link_body u gg = Ok h -> LinkBody W P u gg (slot_index h) pins, pins the
    ones it records (get_pins h) (P final, I2) *)
-Definition link_body (u gg : nat) : M nat :=
+Definition link_body (u gg : nat) : M (code_slot FunctorTable) :=
   let* cached := get_link (u, gg) in
   match cached with
   | Some h => ret h
@@ -279,11 +279,10 @@ Definition link_body (u gg : nat) : M nat :=
                                                      ", which is not a family, so where an application is placed could be observed (D84 rule 7)")
                   | _ => ret tt end
                 else ret tt in
-      let* h := fresh in
       let code := FunctorCode (map fst (c_ty Cg))
                     (filter (fun t => existsb (Nat.eqb t) (map fst (c_ty Cu))) (map fst (c_ty Cg))) (c_ty Cg)
                     (map ITy outs) binds0 (map (fun k => rkof site (at_site site k)) ks) in
-      let* _ := set_fun_body h code in
+      let* h := emit_fun_code code in
       let* _ := put_pins h pins in
       let* _ := put_link (u, gg) h in
       ret h
@@ -325,6 +324,6 @@ Definition fun_closure (F : frame) (C : cx) (u gg : nat) : M (wrapper * cx) :=
                       match nlook x (c_ty C) with Some here => qty W (canon C here) | None => "not in force" end ++
                       "; " ++ nu ++ " is fixed in " ++ qs W x ++ " (D84)")
             | None => ret tt end in
-  ret ((fun x => bind_functor_expression u h (lexical_capture C) sm smc x), set_fun C u (fixed_here u C)).
+  ret ((fun x => bind_functor_expression u (slot_index h) (lexical_capture C) sm smc x), set_fun C u (fixed_here u C)).
 
 End Functor.
