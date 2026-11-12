@@ -113,7 +113,7 @@ Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> pattern -> list (nam
    last field but read from its first. *)
 | PRecord : forall pa s xs fs ftys bs fxs,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
-    PayloadOf W s xs (TRecord ftys) ->
+    PayloadOf W s xs (TRecord ftys) -> record_pattern_arity fs ftys = true ->
     FieldPats W F ftys fs bs fxs -> NoDup (map fst bs) ->
     PatOf W F st (APRec (Some pa) fs) (PHead s None fxs) bs [s] false.
 
@@ -155,7 +155,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     Brackets W (fr_mod F) (c_ty C) s a bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->
-    args = [y] -> Ex W P F C y (Some pay) v ty -> fits ty pay ->
+    TagCallPayload W s args y -> Ex W P F C y (Some pay) v ty -> fits ty pay ->
     Ex W P F C (AECall pa a args) exp (ETag s xs v) (TNom s xs)
 (* [D20]/[D21] a defined fn: its needs answered from here (sm), its
    signature read with the meanings here *)

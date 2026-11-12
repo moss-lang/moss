@@ -12,7 +12,7 @@ Lemma functor_decl_read : forall W symbol d parameters arguments results body,
 Proof.
   intros W symbol d parameters arguments results body Read. unfold functor_decl in Read.
   destruct (w_decl W symbol) as [found|] eqn:Declaration; [|discriminate].
-  destruct (d_ast found) as [items declarations|name|name syntax|name params payload|name|name ty initial|
+  destruct (d_ast found) as [items declarations|name|name syntax|name params arity payload|name|name ty initial|
     receiver name params result code|name items|name params inputs outputs code] eqn:Ast; try discriminate.
   injection Read as <- <- <- <- <-.
   exists name. split.

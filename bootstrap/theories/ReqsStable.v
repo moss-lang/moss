@@ -186,7 +186,7 @@ Proof.
   assert (Hlp : forall f g, RQ (listed_params f g)).
   { intros f g s a s' H. assert (E0 : s' = s); [|rewrite E0; apply ext_refl].
     destruct f; cbn [listed_params] in H;
-    (destruct (gs_decl g) as [| | |n0 [|n1 ns] t0| | | | |]; try (injection H as _ <-; reflexivity);
+    (destruct (gs_decl g) as [| | |n0 [|n1 ns] arity t0| | | | |]; try (injection H as _ <-; reflexivity);
      apply bind_inv in H as (nest & s1 & H1 & H); rewrite (assume_type_syms_reader _ _ _ _ H1) in H;
      refine (mfold_reader _ _ _ _ _ _ _ _ _ H);
      intros o n s0 r s0' E; apply bind_inv in E as (t & s2 & E1 & E); rewrite (resolve_sym_reader _ _ _ _ _ E1) in E;

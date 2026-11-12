@@ -1,0 +1,31 @@
+import "../../lib/wasm.moss" as w use Wasm, I32, I64;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
+
+tag Point(I32, I64);
+tag Nested((I32, I32));
+tag Empty();
+tag Marker;
+type Choice = Point | Marker;
+
+assume Wasm, WasiCore {
+  fn singleton(x: I32): (I32,) { (x,) }
+  fn pair(x: I32, y: I64): (I32, I64) { (x, y) }
+
+  fn x_coordinate(choice: Choice): I32 {
+    match choice { Point(x, _) => x, Marker => w::i32_zero }
+  }
+
+  fn main() {
+    let one = w::i32_one;
+    let (first,) = singleton(one);
+    let x, y = pair(first, w::i64_extend_i32_u(one));
+    let position = Point(x, y);
+    let value = x_coordinate(position);
+    let nested = match Nested((one, value)) {
+      Nested(payload) => { let (left, right) = payload; w::i32_add(left, right) },
+    };
+    let ((result, high),) = (pair(nested, y),);
+    let () = ();
+    match Empty() { Empty() => proc_exit(result) };
+  }
+}

@@ -32,7 +32,7 @@ Proof.
   - unfold EaMain.module_main. intro Member.
     destruct (w_scope W p NSName "main") as [[symbol|path]|] eqn:Scope; try contradiction.
     unfold ast_of in Member. destruct (w_decl W symbol) as [d|] eqn:Declaration; try contradiction.
-    cbn in Member. destruct (d_ast d) as [items declarations|name|name syntax|name names syntax|
+    cbn in Member. destruct (d_ast d) as [items declarations|name|name syntax|name names arity syntax|
       name|name syntax initial|receiver name parameters result body|name items|
       name names inputs outputs body] eqn:Ast; try contradiction.
     destruct receiver; try contradiction. destruct Member as [<-|[]].

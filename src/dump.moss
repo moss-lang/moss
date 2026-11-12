@@ -331,6 +331,9 @@ assume Std {
         }
         putchar(char::rbracket);
         sp();
+        let arity = ast::tag_arity(id);
+        if ast::is_some(arity) { put_int(arity); } else { under(); }
+        sp();
         dump(ast::b_of(id));
       } else if k == ast::k_d_val() {
         sp();

@@ -140,6 +140,7 @@ Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * 
       let! pay := payload_of W fuel s xs in
       match pay with
       | TRecord ftys =>
+          let! _ := rcheck (record_pattern_arity fs ftys) "a positional pattern must match the payload arity" in
           let! (bs, fxs) := field_pats F s ftys fs in
           let! _ := rcheck (snodupb (map fst bs)) "a pattern binds a name twice" in
           Ok (PHead s None fxs, bs, [s], false)
@@ -180,7 +181,7 @@ Definition read_global_value (F : frame) (C : cx) (pa : path) : M (expr * ty) :=
   | ADVal _ t0 (Some i) =>
       read_constant s d t0 i
   | ADFn _ _ _ _ _ => fail (qs W s ++ " is a function; call it (no first-class fns yet)")
-  | ADTag _ _ _ => fail (qs W s ++ " is a tag; construct it with a payload")
+  | ADTag _ _ _ _ => fail (qs W s ++ " is a tag; construct it with a payload")
   | _ => fail (qs W s ++ " is not a value")
   end.
 
@@ -242,18 +243,20 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
       let* s := lift (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not in scope") in
       let* d := lift (w_decl W s) "internal: unknown symbol" in
       match d_ast d with
-      | ADTag _ _ _ =>
+      | ADTag _ _ arity _ =>
           let* bs := pure (brackets W fuel (fr_mod F) (c_ty C) s a) in
           let* xs := pure (rmap (fun r => let! t := ropt (nlook r (bs ++ c_ty C))
                                                 ("type " ++ bq (sym_name W r) ++ " (required by " ++ qs W s ++
                                                  ") is not available in the context here") in Ok (r, t)) (w_reqs W s)) in
           let* pay := pure (payload_of W fuel s xs) in
-          match argl with
-          | [y] => let* (v, vt) := ex n' F C y (Some pay) in
-                   let* _ := check (fitsb vt pay) ("payload of " ++ qs W s ++ " is " ++ qty W vt ++ ", expected " ++ qty W pay) in
-                   ret (ETag s xs v, TNom s xs)
-          | _ => fail ("tag " ++ qs W s ++ " takes exactly one payload")
-          end
+          let* y := lift (Syntax.tag_call_payload arity argl)
+            ("tag " ++ qs W s ++ match arity with
+             | None | Some 1 => " takes exactly one payload"
+             | Some n => " takes " ++ nat_str n ++ " positional arguments"
+             end) in
+          let* (v, vt) := ex n' F C y (Some pay) in
+          let* _ := check (fitsb vt pay) ("payload of " ++ qs W s ++ " is " ++ qty W vt ++ ", expected " ++ qty W pay) in
+          ret (ETag s xs v, TNom s xs)
       | ADFn RPlain _ _ _ body =>
           match a with
           | Some bs =>

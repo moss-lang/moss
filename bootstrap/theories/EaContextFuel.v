@@ -110,7 +110,7 @@ Proof.
   all: try exact Present.
   all: destruct (nmem symbol stack); [contradiction|].
   all: destruct (w_decl W symbol) as [d|] eqn:Declaration; [|contradiction].
-  all: destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+  all: destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
     receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
     try contradiction.
   all: apply in_flat_map in Present as [sp [Member Present]];

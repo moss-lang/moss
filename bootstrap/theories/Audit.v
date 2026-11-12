@@ -39,7 +39,7 @@ Inductive aty : Type :=
 (* An annotation can occur on a whole binding or on one of its parts. *)
 Inductive binding_form : Type :=
 | BindName : name -> option aty -> binding_form
-| BindRecord : list (name * binding_form) -> option aty -> binding_form.
+| BindProduct : bool -> list (name * binding_form) -> option aty -> binding_form.
 
 Inductive apat : Type :=
 | APWild
@@ -93,7 +93,7 @@ Inductive adecl : Type :=
 | ADAssume  : list aitem -> list adecl -> adecl
 | ADType    : name -> adecl
 | ADAlias   : name -> aty -> adecl
-| ADTag     : name -> list name -> aty -> adecl
+| ADTag     : name -> list name -> option nat -> aty -> adecl
 | ADBareTag : name -> adecl
 | ADVal     : name -> aty -> option aexpr -> adecl
 | ADFn      : fnrecv -> name -> list (name * aty) -> option aty -> option ablock -> adecl
@@ -466,7 +466,52 @@ with AppBinding : list token -> path * spec -> list token -> Prop :=
 
 (* ===================== Types τ ============================================ *)
 
-(* τ ::= r | This | () | (τ) | {x: τ, ...} | τ | τ | `|`
+Definition hexdig (n : nat) : string :=
+  match n with 0 => "0" | 1 => "1" | 2 => "2" | 3 => "3" | 4 => "4" | 5 => "5"
+  | 6 => "6" | 7 => "7" | 8 => "8" | 9 => "9" | 10 => "a" | 11 => "b" | 12 => "c"
+  | 13 => "d" | 14 => "e" | _ => "f" end.
+Fixpoint nat_digits (fuel n : nat) (acc : string) : string :=
+  match fuel with
+  | 0 => acc
+  | S f => let acc := hexdig (n mod 10) ++ acc in
+           if Nat.ltb n 10 then acc else nat_digits f (n / 10) acc
+  end.
+Definition show_nat (n : nat) : string := nat_digits 25 n "".
+(* Tuple positions use reserved labels, which source fields cannot spell.
+   A nonempty tuple reuses the structural product rules and layout. *)
+Definition tuple_field_name (i : nat) : name := "%" ++ show_nat i.
+
+Definition tuple_fields {A} (items : list A) : list (name * A) :=
+  combine (map tuple_field_name (seq 0 (List.length items))) items.
+
+Definition tuple_type (items : list aty) : aty :=
+  match items with [] => ATUnit | _ => ATRec (tuple_fields items) end.
+
+Definition tuple_expr (items : list aexpr) : aexpr :=
+  match items with [] => AEUnit | _ => AEBareRecord (tuple_fields (map Some items)) end.
+
+(* A tag stores a singleton's element directly. Its declaration retains the
+   arity, so a single tuple element is distinct from multiple elements. *)
+Definition positional_payload_type (items : list aty) : aty :=
+  match items with [t] => t | _ => tuple_type items end.
+
+Definition tag_call_payload (arity : option nat) (args : list aexpr) : option aexpr :=
+  match arity with
+  | None => match args with [e] => Some e | _ => None end
+  | Some n =>
+      if Nat.eqb n (List.length args) then
+        Some (match args with [e] => e | _ => tuple_expr args end)
+      else None
+  end.
+
+Definition positional_pattern (p : path) (items : list apat) : apat :=
+  match items with
+  | [] => APPath p
+  | [q] => APTag p q
+  | _ => APRec (Some p) (tuple_fields (map Some items))
+  end.
+
+(* τ ::= r | This | () | (τ) | (τ, ...) | {x: τ, ...} | τ | τ | `|`
    Refined: a type is a bare `|` (the uninhabited type), or one or more
    atoms separated by `|`, optionally preceded by `|`; several atoms are a
    union, one is itself. *)
@@ -485,6 +530,10 @@ with TypeAtom : list token -> aty -> list token -> Prop :=
 | TAUnit : forall ts ts1 ts2, Tk LPAREN ts ts1 -> Tk RPAREN ts1 ts2 -> TypeAtom ts ATUnit ts2
 | TAParen : forall ts ts1 t ts2 ts3, Tk LPAREN ts ts1 -> Type_ ts1 t ts2 -> Tk RPAREN ts2 ts3 ->
     TypeAtom ts t ts3
+| TATuple : forall ts ts1 t ts2 ts3 rest ts4 ts5,
+    Tk LPAREN ts ts1 -> Type_ ts1 t ts2 -> Tk COMMA ts2 ts3 ->
+    CommaList Type_ [RPAREN] ts3 rest ts4 -> Tk RPAREN ts4 ts5 ->
+    TypeAtom ts (tuple_type (t :: rest)) ts5
 | TARecord : forall ts t ts1, RecordType ts t ts1 -> TypeAtom ts t ts1
 with RecordType : list token -> aty -> list token -> Prop :=
 | RecordTypeG : forall ts ts1 fs ts2 ts3, Tk LBRACE ts ts1 ->
@@ -507,8 +556,9 @@ Inductive Pattern : list token -> apat -> list token -> Prop :=
 (* a path not followed by `(` or `{` *)
 | PatPath : forall ts p ts1, Path ts p ts1 -> ~ In (kind ts1) [LBRACE; LPAREN] ->
     Pattern ts (APPath p) ts1
-| PatTag : forall ts p ts1 ts2 q ts3 ts4, Path ts p ts1 -> Tk LPAREN ts1 ts2 ->
-    Pattern ts2 q ts3 -> Tk RPAREN ts3 ts4 -> Pattern ts (APTag p q) ts4
+| PatTag : forall ts p ts1 ts2 items ts3 ts4, Path ts p ts1 -> Tk LPAREN ts1 ts2 ->
+    CommaList Pattern [RPAREN] ts2 items ts3 -> Tk RPAREN ts3 ts4 ->
+    Pattern ts (positional_pattern p items) ts4
 | PatRecord : forall ts p ts1 fs ts2, Path ts p ts1 -> RecordPattern ts1 fs ts2 ->
     Pattern ts (APRec (Some p) fs) ts2
 | PatAnon : forall ts fs ts1, RecordPattern ts fs ts1 -> Pattern ts (APRec None fs) ts1
@@ -561,17 +611,6 @@ Fixpoint digits_value (ds : list byte) (acc : nat) : nat :=
   | d :: r => digits_value r (acc * 10 + (Byte.to_nat d - 48))
   | [] => acc
   end.
-Definition hexdig (n : nat) : string :=
-  match n with 0 => "0" | 1 => "1" | 2 => "2" | 3 => "3" | 4 => "4" | 5 => "5"
-  | 6 => "6" | 7 => "7" | 8 => "8" | 9 => "9" | 10 => "a" | 11 => "b" | 12 => "c"
-  | 13 => "d" | 14 => "e" | _ => "f" end.
-Fixpoint nat_digits (fuel n : nat) (acc : string) : string :=
-  match fuel with
-  | 0 => acc
-  | S f => let acc := hexdig (n mod 10) ++ acc in
-           if Nat.ltb n 10 then acc else nat_digits f (n / 10) acc
-  end.
-Definition show_nat (n : nat) : string := nat_digits 25 n "".
 Fixpoint span (p : byte -> bool) (cs : list byte) : list byte * list byte :=
   match cs with
   | c :: r => if p c then let (a, b) := span p r in (c :: a, b) else ([], cs)
@@ -835,8 +874,8 @@ Definition for_desugar (x : name) (coll : aexpr) (body : ablock) : astmt :=
    names are outside the source name alphabet. *)
 Fixpoint binding_type (form : binding_form) : option aty :=
   match form with
-  | BindName _ ann | BindRecord _ (Some _ as ann) => ann
-  | BindRecord fields None =>
+  | BindName _ ann | BindProduct _ _ (Some _ as ann) => ann
+  | BindProduct positional fields None =>
       let fix read_fields fs :=
         match fs with
         | [] => Some []
@@ -846,7 +885,10 @@ Fixpoint binding_type (form : binding_form) : option aty :=
             | _, _ => None
             end
         end in
-      option_map ATRec (read_fields fields)
+      match positional, fields with
+      | true, [] => Some ATUnit
+      | _, _ => option_map ATRec (read_fields fields)
+      end
   end.
 
 Fixpoint unique_names (xs : list name) : bool :=
@@ -858,7 +900,7 @@ Fixpoint unique_names (xs : list name) : bool :=
 Fixpoint binding_names (form : binding_form) : list name :=
   match form with
   | BindName x _ => [x]
-  | BindRecord fields _ =>
+  | BindProduct _ fields _ =>
       (fix names fs :=
          match fs with [] => [] | (_, sub) :: rest => List.app (binding_names sub) (names rest) end) fields
   end.
@@ -866,7 +908,7 @@ Fixpoint binding_names (form : binding_form) : list name :=
 Fixpoint binding_fields_valid (form : binding_form) : bool :=
   match form with
   | BindName _ _ => true
-  | BindRecord fields _ =>
+  | BindProduct _ fields _ =>
       unique_names (map fst fields) &&
       (fix valid fs :=
          match fs with [] => true | (_, sub) :: rest => binding_fields_valid sub && valid rest end) fields
@@ -884,12 +926,12 @@ Definition parameter_bindings_valid (forms : list binding_form) : bool :=
    against a second annotation. Use one source of type information along
    each path of its binding form. *)
 Fixpoint abstract_binding_valid (covered : bool) (form : binding_form) : bool :=
-  let ann := match form with BindName _ ann | BindRecord _ ann => ann end in
+  let ann := match form with BindName _ ann | BindProduct _ _ ann => ann end in
   let annotated := match ann with Some _ => true | None => false end in
   negb (covered && annotated) &&
   match form with
   | BindName _ _ => true
-  | BindRecord fields _ =>
+  | BindProduct _ fields _ =>
       (fix valid fs :=
          match fs with
          | [] => true
@@ -915,10 +957,21 @@ Definition checked_field (ann : option aty) (field : aexpr) : aexpr :=
       AEBlock (ABlock [ASLet key (Some (ATRec [(key, t)])) actual] (Some (AEField (ref key) key)))
   end.
 
+(* A positional pattern accounts for the entire tuple. Assigning a tuple
+   rebuilt from the named positions checks both its arity and its kind. *)
+Definition check_tuple_shape (root : name) (fields : list (name * binding_form)) : list astmt :=
+  let check := "%shape" in
+  let rebuilt :=
+    match fields with
+    | [] => AEUnit
+    | _ => AEBareRecord (map (fun '(field, _) => (field, Some (AEField (ref root) field))) fields)
+    end in
+  [ASVar check None (ref root); ASAssign check rebuilt].
+
 Fixpoint bind_components (mutable : bool) (root : name) (form : binding_form) : list astmt :=
   match form with
   | BindName _ _ => []
-  | BindRecord fields _ =>
+  | BindProduct positional fields _ =>
       let fix bind_fields fs :=
         match fs with
         | [] => []
@@ -928,19 +981,19 @@ Fixpoint bind_components (mutable : bool) (root : name) (form : binding_form) : 
               match sub with
               | BindName x ann =>
                   [(if mutable then ASVar else ASLet) x ann (checked_field ann value)]
-              | BindRecord _ ann =>
+              | BindProduct _ _ ann =>
                   let child := root ++ "%" ++ field in
                   ASLet child ann (checked_field ann value) :: bind_components mutable child sub
               end in
             List.app statements (bind_fields rest)
         end in
-      bind_fields fields
+      List.app (if positional then check_tuple_shape root fields else []) (bind_fields fields)
   end.
 
 Definition destructure (mutable : bool) (form : binding_form) (value : aexpr) : list astmt :=
   match form with
   | BindName x ann => [(if mutable then ASVar else ASLet) x ann value]
-  | BindRecord _ _ =>
+  | BindProduct _ _ _ =>
       let root := "%binding" in
       ASLet root (binding_type form) value :: bind_components mutable root form
   end.
@@ -973,12 +1026,36 @@ Definition bind_fn_parameters (forms : list binding_form) (body : ablock) : ablo
 Definition bind_lambda_parameters (forms : list binding_form) (body : aexpr) : aexpr :=
   match parameter_bindings 0 forms with [] => body | ss => AEBlock (ABlock ss (Some body)) end.
 
+Definition tuple_binding (forms : list binding_form) (ann : option aty) : binding_form :=
+  BindProduct true (tuple_fields forms) ann.
+
+Definition annotate_binding (form : binding_form) (ann : option aty) : option binding_form :=
+  match ann with
+  | None => Some form
+  | Some _ =>
+      match form with
+      | BindName x None => Some (BindName x ann)
+      | BindProduct positional fields None => Some (BindProduct positional fields ann)
+      | _ => None
+      end
+  end.
+
 Inductive BindForm : list token -> binding_form -> list token -> Prop :=
 | BindFormName : forall ts x ts1 ann rest,
     TkName ts x ts1 -> OptType ts1 ann rest -> BindForm ts (BindName x ann) rest
 | BindFormRecord : forall ts ts1 fields ts2 ts3 ann rest,
     Tk LBRACE ts ts1 -> CommaList BindFormField [RBRACE] ts1 fields ts2 ->
-    Tk RBRACE ts2 ts3 -> OptType ts3 ann rest -> BindForm ts (BindRecord fields ann) rest
+    Tk RBRACE ts2 ts3 -> OptType ts3 ann rest -> BindForm ts (BindProduct false fields ann) rest
+| BindFormUnit : forall ts ts1 ts2 ann rest,
+    Tk LPAREN ts ts1 -> Tk RPAREN ts1 ts2 -> OptType ts2 ann rest ->
+    BindForm ts (tuple_binding [] ann) rest
+| BindFormGroup : forall ts ts1 first ts2 ts3 ann rest form,
+    Tk LPAREN ts ts1 -> BindForm ts1 first ts2 -> Tk RPAREN ts2 ts3 ->
+    OptType ts3 ann rest -> annotate_binding first ann = Some form -> BindForm ts form rest
+| BindFormTuple : forall ts ts1 first ts2 ts3 items ts4 ts5 ann rest,
+    Tk LPAREN ts ts1 -> BindForm ts1 first ts2 -> Tk COMMA ts2 ts3 ->
+    CommaList BindForm [RPAREN] ts3 items ts4 -> Tk RPAREN ts4 ts5 ->
+    OptType ts5 ann rest -> BindForm ts (tuple_binding (first :: items) ann) rest
 with BindFormField : list token -> name * binding_form -> list token -> Prop :=
 | BindFieldShort : forall ts x ts1 ann rest,
     TkName ts x ts1 -> kind ts1 <> EQUAL -> OptType ts1 ann rest ->
@@ -986,6 +1063,14 @@ with BindFormField : list token -> name * binding_form -> list token -> Prop :=
 | BindFieldLong : forall ts x ts1 ts2 form rest,
     TkName ts x ts1 -> Tk EQUAL ts1 ts2 -> BindForm ts2 form rest ->
     BindFormField ts (x, form) rest.
+
+(* The parentheses around a tuple on the left of a let or var may be omitted. *)
+Inductive BindTarget : list token -> binding_form -> list token -> Prop :=
+| BindTargetOne : forall ts form rest,
+    BindForm ts form rest -> kind rest <> COMMA -> BindTarget ts form rest
+| BindTargetTuple : forall ts first ts1 ts2 items rest,
+    BindForm ts first ts1 -> Tk COMMA ts1 ts2 -> CommaList BindForm [EQUAL] ts2 items rest ->
+    BindTarget ts (tuple_binding (first :: items) None) rest.
 
 (* ===================== Expressions e, Blocks b, Statements i ============== *)
 
@@ -1094,6 +1179,10 @@ with Primary : bool -> list token -> aexpr -> list token -> Prop :=
     Primary nr ts AEUnit ts2
 | PrimParen : forall nr ts ts1 e ts2 ts3, Tk LPAREN ts ts1 -> at_lambda ts = false ->
     Expr false ts1 e ts2 -> Tk RPAREN ts2 ts3 -> Primary nr ts e ts3
+| PrimTuple : forall nr ts ts1 e ts2 ts3 rest ts4 ts5,
+    Tk LPAREN ts ts1 -> at_lambda ts = false -> Expr false ts1 e ts2 -> Tk COMMA ts2 ts3 ->
+    CommaList (Expr false) [RPAREN] ts3 rest ts4 -> Tk RPAREN ts4 ts5 ->
+    Primary nr ts (tuple_expr (e :: rest)) ts5
 | PrimThis : forall nr ts ts1, Tk THIS ts ts1 -> Primary nr ts AEThis ts1
 | PrimLit : forall nr ts, In (kind ts) [INTEGER; DECIMAL] ->
     Primary nr ts (AELit (lit_norm (tx (peek ts)))) (advance ts)
@@ -1140,11 +1229,11 @@ with Block : list token -> ablock -> list token -> Prop :=
 with Stmts : list token -> list astmt -> option aexpr -> list token -> Prop :=
 | StEnd : forall ts, kind ts = RBRACE -> Stmts ts [] None ts
 | StLet : forall ts ts1 form ts2 ts3 e ts4 ts5 ss tl rest,
-    Tk LET ts ts1 -> BindForm ts1 form ts2 -> binding_valid form = true ->
+    Tk LET ts ts1 -> BindTarget ts1 form ts2 -> binding_valid form = true ->
     Tk EQUAL ts2 ts3 -> Expr false ts3 e ts4 -> Tk SEMI ts4 ts5 ->
     Stmts ts5 ss tl rest -> Stmts ts (List.app (destructure false form e) ss) tl rest
 | StVar : forall ts ts1 form ts2 ts3 e ts4 ts5 ss tl rest,
-    Tk VAR ts ts1 -> BindForm ts1 form ts2 -> binding_valid form = true ->
+    Tk VAR ts ts1 -> BindTarget ts1 form ts2 -> binding_valid form = true ->
     Tk EQUAL ts2 ts3 -> Expr false ts3 e ts4 -> Tk SEMI ts4 ts5 ->
     Stmts ts5 ss tl rest -> Stmts ts (List.app (destructure true form e) ss) tl rest
 | StBind : forall ts w ts1 ss tl ts2, Bind ts w ts1 -> Stmts ts1 ss tl ts2 -> Stmts ts (ASBind w :: ss) tl ts2
@@ -1213,7 +1302,7 @@ Definition TagParams (ts : list token) (xs : list name) (rest : list token) : Pr
   (kind ts <> LBRACKET /\ xs = [] /\ rest = ts) \/ NameList ts xs rest.
 
 (* d ::= assume a, ... { d ... } | type x; | type x = τ; | val x: τ (= e)?;
-       | tag x; | tag x([x, ...])? (τ); | tag x([x, ...])? {x: τ, ...};
+       | tag x; | tag x([x, ...])? (τ, ...); | tag x([x, ...])? {x: τ, ...};
        | fn f(x: τ, ...) (: τ)? ; | fn f(x: τ, ...) (: τ)? b
        | context x = c, ...; | functor x([x, ...])?: s, ... -> s, ...;
        | functor x: s, ... -> s, ... { w ... }
@@ -1231,11 +1320,11 @@ Inductive Decl : list token -> adecl -> list token -> Prop :=
 | DBareTag : forall ts ts1 x ts2 ts3, Tk TAG ts ts1 -> TkName ts1 x ts2 -> kind ts2 <> LBRACKET ->
     Tk SEMI ts2 ts3 -> Decl ts (ADBareTag x) ts3
 | DTagRecord : forall ts ts1 x ts2 ps ts3 t ts4 ts5, Tk TAG ts ts1 -> TkName ts1 x ts2 ->
-    TagParams ts2 ps ts3 -> RecordType ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADTag x ps t) ts5
-(* a record payload is written with braces, not `({...})` (D83) *)
-| DTag : forall ts ts1 x ts2 ps ts3 ts4 t ts5 ts6 ts7, Tk TAG ts ts1 -> TkName ts1 x ts2 ->
-    TagParams ts2 ps ts3 -> Tk LPAREN ts3 ts4 -> Type_ ts4 t ts5 -> (forall fs, t <> ATRec fs) ->
-    Tk RPAREN ts5 ts6 -> Tk SEMI ts6 ts7 -> Decl ts (ADTag x ps t) ts7
+    TagParams ts2 ps ts3 -> RecordType ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADTag x ps None t) ts5
+| DTag : forall ts ts1 x ts2 ps ts3 ts4 items ts5 ts6 ts7, Tk TAG ts ts1 -> TkName ts1 x ts2 ->
+    TagParams ts2 ps ts3 -> Tk LPAREN ts3 ts4 -> CommaList Type_ [RPAREN] ts4 items ts5 ->
+    Tk RPAREN ts5 ts6 -> Tk SEMI ts6 ts7 ->
+    Decl ts (ADTag x ps (Some (List.length items)) (positional_payload_type items)) ts7
 | DVal : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk VAL ts ts1 -> TkName ts1 x ts2 -> Tk COLON ts2 ts3 ->
     Type_ ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADVal x t None) ts5
 | DValDefined : forall ts ts1 x ts2 ts3 t ts4 ts5 e ts6 ts7, Tk VAL ts ts1 -> TkName ts1 x ts2 ->
@@ -2487,7 +2576,7 @@ Inductive dkind := DKType | DKAlias | DKTag | DKVal | DKFn | DKCtx | DKMeth | DK
 Definition kind_of (d : adecl) : option dkind :=
   match d with
   | ADType _ => Some DKType | ADBareTag _ => Some DKTag | ADAlias _ _ => Some DKAlias
-  | ADTag _ _ _ => Some DKTag | ADVal _ _ _ => Some DKVal | ADCtx _ _ => Some DKCtx
+  | ADTag _ _ _ _ => Some DKTag | ADVal _ _ _ => Some DKVal | ADCtx _ _ => Some DKCtx
   | ADFunctor _ _ _ _ _ => Some DKFunctor
   | ADFn RPlain _ _ _ _ => Some DKFn
   | ADFn _ _ _ _ _ => Some DKMeth
@@ -2505,7 +2594,7 @@ Definition filed_name (d : adecl) : option (nspace * name) :=
   | ADFn (RAttached _) _ _ _ _ => None
   | ADAssume _ _ => None
   | _ => match d with
-         | ADType n | ADBareTag n | ADAlias n _ | ADTag n _ _ | ADVal n _ _ | ADCtx n _
+         | ADType n | ADBareTag n | ADAlias n _ | ADTag n _ _ _ | ADVal n _ _ | ADCtx n _
          | ADFunctor n _ _ _ _ | ADFn _ n _ _ _ => Some (NSName, n)
          | _ => None
          end
@@ -2704,7 +2793,7 @@ Definition AssumeTypes (W : world) (s : nat) (t : nat) : Prop :=
                SpecTypes W (d_mod d) sp t.
 
 Definition nominal_body (d : adecl) : option (list name * aty) :=
-  match d with ADTag _ ps t => Some (ps, t) | ADAlias _ t => Some ([], t) | _ => None end.
+  match d with ADTag _ ps _ t => Some (ps, t) | ADAlias _ t => Some ([], t) | _ => None end.
 
 Definition has_nominal_body (W : world) (s : nat) : bool :=
   match ast_of W s with
@@ -4203,7 +4292,7 @@ Definition operator_method (op : string) (unary : bool) : option (string * strin
 Definition tag_body (a : adecl) : option (name * list name * aty) :=
   match a with
   | ADBareTag n => Some (n, [], ATUnit)
-  | ADTag n ps t => Some (n, ps, t)
+  | ADTag n ps _ t => Some (n, ps, t)
   | _ => None
   end.
 
@@ -4294,7 +4383,7 @@ Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
    this preliminary leaf-identity check. *)
 Definition result_already_provided (d : adecl) : bool :=
   match d with
-  | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ => true
+  | ADBareTag _ | ADTag _ _ _ _ | ADAlias _ _ => true
   | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => true
   | _ => false
   end.
@@ -4947,7 +5036,7 @@ Definition DeclFormsWith (W : world) (constant : decl -> aty -> aexpr -> Prop) (
   forall d, w_decl W s = Some d ->
     match d_ast d with
     | ADCtx _ its => exists L es tm, ItemsEntries W (d_mod d) [] (as_written L) its es tm
-    | ADTag _ _ t | ADAlias _ t => exists L tau, TyOf W (d_mod d) (as_written L) None t tau
+    | ADTag _ _ _ t | ADAlias _ t => exists L tau, TyOf W (d_mod d) (as_written L) None t tau
     | ADVal _ t i => (exists L tau, TyOf W (d_mod d) (as_written L) None t tau) /\
                      (forall e, i = Some e -> constant d t e)
     | ADFn RPlain _ _ _ _ => exists L g, SigOf W s (as_written L) None g
@@ -5371,6 +5460,15 @@ Definition pattern_catches (plan : pattern_plan) : bool :=
 Definition pattern_scope (C : cx) (plan : pattern_plan) : cx :=
   fold_left (fun C q => add_local C (fst q) (snd q) LLet) (pattern_bindings plan) C.
 
+(* A positional pattern lists every element. Named record patterns may
+   select a subset of the fields. Only tuple syntax produces its labels. *)
+Definition record_pattern_arity (given : list (name * option apat)) (fields : list (fld * ty)) : bool :=
+  match given with
+  | (first, _) :: _ =>
+      if String.eqb first (Syntax.tuple_field_name 0) then Nat.eqb (List.length given) (List.length fields) else true
+  | [] => true
+  end.
+
 Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> pattern_plan -> Prop :=
 | TypesPatternWildcard : TypesPattern W F scrutinee APWild PatternWildcard
 | TypesPatternBinder : forall n,
@@ -5388,6 +5486,7 @@ Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> patter
 | TypesPatternRecord : forall path tag arguments fields field_types plan,
     resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
     In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments (TRecord field_types) ->
+    record_pattern_arity fields field_types = true ->
     TypesFieldPatterns W F field_types fields plan -> NoDup (map fst (field_pattern_bindings plan)) ->
     TypesPattern W F scrutinee (APRec (Some path) fields) (PatternRecord tag plan).
 
@@ -5490,6 +5589,11 @@ Definition FamilyBindPlans (W : world) (plans : list binding_plan) : Prop :=
 Definition closure_arguments (C formal : cx) : subst :=
   map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty formal).
 
+Definition TagCallPayload (W : world) (tag : nat) (args : list aexpr) (payload : aexpr) : Prop :=
+  exists name parameters arity syntax,
+    ast_of W tag = Some (ADTag name parameters arity syntax) /\
+    Syntax.tag_call_payload arity args = Some payload.
+
 (* Checking a conditional produces the same plans as two ordinary matches.
    The condition is checked at Bool before the inner match unpacks it. *)
 Definition conditional_plan (bool_tag true_tag false_tag : nat)
@@ -5547,13 +5651,13 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     (forall n, path = [n] -> slook n (c_locals C) = None) ->
     resolve_sym W (fr_mod F) path = Some tag -> BareTag W tag ->
     TypesExpr W F C (AEPath path None) exp (PlanTag tag [] PlanUnit) (TNom tag [])
-| TypesTag : forall F C exp path brackets payload tag readings arguments payload_type plan actual,
+| TypesTag : forall F C exp path brackets args payload tag readings arguments payload_type plan actual,
     resolve_sym W (fr_mod F) path = Some tag -> ~ BareTag W tag ->
     Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
     Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
-    PayloadOf W tag arguments payload_type ->
+    PayloadOf W tag arguments payload_type -> TagCallPayload W tag args payload ->
     TypesExpr W F C payload (Some payload_type) plan actual -> fits actual payload_type ->
-    TypesExpr W F C (AECall path brackets [payload]) exp (PlanTag tag arguments plan) (TNom tag arguments)
+    TypesExpr W F C (AECall path brackets args) exp (PlanTag tag arguments plan) (TNom tag arguments)
 | TypesRecord : forall F C exp path brackets given tag readings arguments fields plans,
     resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
     Brackets W (fr_mod F) (c_ty C) tag brackets readings ->

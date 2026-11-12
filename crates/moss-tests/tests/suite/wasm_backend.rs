@@ -590,6 +590,54 @@ fn anonymous_records_and_blocks_share_braces() {
     }
 }
 
+#[test]
+fn tuples_and_positional_tags() {
+    both_exit("tests/wasi/tuples.moss", 2);
+    for program in [
+        "fn main() { let pair = ((), ()); pair.0; }",
+        "fn main() { let (a, b) = ((), (), ()); }",
+        "fn main() { let (a, b) = ((),); }",
+        "fn main() { let (a: (), b: {}): ((), ()) = ((), ()); }",
+        "fn f((a, b): ((), (), ())) {} fn main() {}",
+        "tag T((), ()); fn main() { T(()); }",
+        "tag T(()); fn main() { T(); }",
+        "tag T(); fn main() { T(()); }",
+        "tag Z(); tag Pair(Z, Z); fn main() { Pair((), ()); }",
+        "tag Z(); fn main() { let pair: (Z, Z) = ((), ()); }",
+        "tag T((), (), ()); fn main() { match T((), (), ()) { T(a, b) => a } }",
+        "fn main() { let pair: ((),) = {}; }",
+    ] {
+        let entry = source(program);
+        rejects(&entry);
+        oracle_rejects(&entry);
+    }
+}
+
+#[test]
+fn tuple_destructuring_in_parameters_and_locals() {
+    let entry = whole(
+        r"assume Std {
+  fn choose((first: Char, second: Char), {flag: Bool}): Char {
+    if flag { first } else { second }
+  }
+  fn read(pair: (Char, Char)): Char;
+  fn main() {
+    let (a): Char = char::a;
+    let ((b,), {c}) = ((char::b,), {c = char::c});
+    putchar(choose((a, b), {flag = true}));
+    bind read = ((left, right)) => right;
+    putchar(read((a, b)));
+    var one, two: Char = (a, b);
+    two = c;
+    putchar(two);
+    putchar(char::newline);
+  }
+}
+",
+    );
+    agree(&entry, &[], "abc\n");
+}
+
 /// Audit.v note 30: acyclic contexts nest to any depth. Cycles are
 /// rejected at declaration, including when used only by a tag.
 #[test]

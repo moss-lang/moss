@@ -368,8 +368,10 @@ with parse_type_atom (n : nat) (ts : list token) : pr aty :=
         let ts := advance ts in
         if at_ RPAREN ts then POk ATUnit (advance ts) else
         let@ t & ts := parse_type n ts in
-        if at_ COMMA ts then err "there are no tuple types (D63); use a record" ts else
-        let@ _ & ts := expect RPAREN ts in POk t ts
+        if at_ COMMA ts then
+          let@ rest & ts := comma_list n (parse_type n) [RPAREN] (advance ts) in
+          let@ _ & ts := expect RPAREN ts in POk (tuple_type (t :: rest)) ts
+        else let@ _ & ts := expect RPAREN ts in POk t ts
       else if at_ LBRACE ts then parse_record_type n ts
       else err ("expected a type, found " ++ kind_name (kind ts)) ts
   end
@@ -405,7 +407,25 @@ Fixpoint parse_bind_form (n : nat) (ts : list token) : pr binding_form :=
         let@ fields & ts := comma_list n (parse_bind_field n) [RBRACE] (advance ts) in
         let@ _ & ts := expect RBRACE ts in
         let@ ann & ts := parse_opt_type n ts in
-        POk (BindRecord fields ann) ts
+        POk (BindProduct false fields ann) ts
+      else if at_ LPAREN ts then
+        let ts := advance ts in
+        if at_ RPAREN ts then
+          let@ ann & ts := parse_opt_type n (advance ts) in POk (tuple_binding [] ann) ts
+        else
+          let@ first & ts := parse_bind_form n ts in
+          if at_ COMMA ts then
+            let@ items & ts := comma_list n (parse_bind_form n) [RPAREN] (advance ts) in
+            let@ _ & ts := expect RPAREN ts in
+            let@ ann & ts := parse_opt_type n ts in
+            POk (tuple_binding (first :: items) ann) ts
+          else
+            let@ _ & ts := expect RPAREN ts in
+            let@ ann & ts := parse_opt_type n ts in
+            match annotate_binding first ann with
+            | Some form => POk form ts
+            | None => err "a binding can only have one annotation at each level" ts
+            end
       else
         let@ x & ts := expect_name ts in
         let@ ann & ts := parse_opt_type n ts in
@@ -422,6 +442,13 @@ with parse_bind_field (n : nat) (ts : list token) : pr (name * binding_form) :=
         let@ ann & ts := parse_opt_type n ts in POk (x, BindName x ann) ts
   end.
 
+Definition parse_bind_target (n : nat) (ts : list token) : pr binding_form :=
+  let@ first & ts := parse_bind_form n ts in
+  if at_ COMMA ts then
+    let@ items & ts := comma_list n (parse_bind_form n) [EQUAL] (advance ts) in
+    POk (tuple_binding (first :: items) None) ts
+  else POk first ts.
+
 Fixpoint parse_pattern (n : nat) (ts : list token) : pr apat :=
   match n with
   | 0 => fuel_err ts
@@ -432,8 +459,8 @@ Fixpoint parse_pattern (n : nat) (ts : list token) : pr apat :=
         let@ p & ts := parse_path n ts in
         if at_ LBRACE ts then parse_record_pattern n (Some p) ts
         else if at_ LPAREN ts then
-          let@ sub & ts := parse_pattern n (advance ts) in
-          let@ _ & ts := expect RPAREN ts in POk (APTag p sub) ts
+          let@ items & ts := comma_list n (parse_pattern n) [RPAREN] (advance ts) in
+          let@ _ & ts := expect RPAREN ts in POk (positional_pattern p items) ts
         else POk (APPath p) ts
       else err ("expected a pattern, found " ++ kind_name (kind ts)) ts
   end
@@ -693,7 +720,10 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr
         let ts := advance ts in
         if at_ RPAREN ts then POk AEUnit (advance ts) else
         let@ e & ts := parse_expr n false ts in
-        let@ _ & ts := expect RPAREN ts in POk e ts
+        if at_ COMMA ts then
+          let@ rest & ts := comma_list n (parse_expr n false) [RPAREN] (advance ts) in
+          let@ _ & ts := expect RPAREN ts in POk (tuple_expr (e :: rest)) ts
+        else let@ _ & ts := expect RPAREN ts in POk e ts
       else if at_ THIS ts then POk AEThis (advance ts)
       else if at_any [INTEGER; DECIMAL] ts then POk (AELit (lit_norm (tx (peek ts)))) (advance ts)
       else if at_ STRING ts then
@@ -732,7 +762,7 @@ with block_loop (n : nat) (ts : list token) {struct n} : pr (list astmt * option
       if at_ RBRACE ts then POk ([], None) ts
       else if at_ LET ts || at_ VAR ts then
         let mutable := at_ VAR ts in
-        let@ form & ts := parse_bind_form n (advance ts) in
+        let@ form & ts := parse_bind_target n (advance ts) in
         if negb (binding_valid form) then err "duplicate name in destructuring binding" ts else
         let@ _ & ts := expect EQUAL ts in
         let@ e & ts := parse_expr n false ts in
@@ -821,20 +851,16 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
         if at_ SEMI ts then
           (if bracketed then err ("a tag with listed parameters has a payload; a unit tag is `tag " ++ x ++ ";` (D73)") ts
            else POk (ADBareTag x) (advance ts)) else
-        let@ t & ts :=
-          (if at_ LBRACE ts then parse_record_type n ts
-           else
-             let@ _ & ts := expect LPAREN ts in
-             let at0 := ts in
-             let@ t & ts := parse_type n ts in
-             match t with
-             | ATRec _ => err ("a record payload is written `tag " ++ x ++ " { ... };` (D83)") at0
-             | _ =>
-                 if at_ COMMA ts then err "there are no tuple types (D63); use a record" ts else
-                 let@ _ & ts := expect RPAREN ts in POk t ts
-             end) in
-        let@ _ & ts := expect SEMI ts in
-        POk (ADTag x ps t) ts
+        if at_ LBRACE ts then
+          let@ t & ts := parse_record_type n ts in
+          let@ _ & ts := expect SEMI ts in
+          POk (ADTag x ps None t) ts
+        else
+          let@ _ & ts := expect LPAREN ts in
+          let@ items & ts := comma_list n (parse_type n) [RPAREN] ts in
+          let@ _ & ts := expect RPAREN ts in
+          let@ _ & ts := expect SEMI ts in
+          POk (ADTag x ps (Some (List.length items)) (positional_payload_type items)) ts
       else if at_ VAL ts then
         let@ x & ts := expect_name (advance ts) in
         let@ _ & ts := expect COLON ts in

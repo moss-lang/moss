@@ -20,7 +20,7 @@ Proof.
   - cbn [family_result] in Checked. fold W in Checked.
     destruct (resolve_sym W p pa) as [symbol|] eqn:Resolve; [|discriminate].
     destruct (w_decl W symbol) as [d|] eqn:Declaration; [|discriminate].
-    destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+    destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
       receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
       try discriminate.
     destruct (ctx_spec_items items) as [specs|] eqn:Specs; [|discriminate].
@@ -34,7 +34,7 @@ Theorem is_family_shape_sound : forall symbol,
 Proof.
   intros symbol Checked. unfold is_family in Checked. fold W in Checked.
   destruct (w_decl W symbol) as [d|] eqn:Declaration; [|discriminate].
-  destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+  destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
     receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
     try discriminate.
   destruct body as [body|]; [discriminate|].
@@ -150,7 +150,7 @@ Proof.
   - cbn [family_keyed] in Checked. fold W metadata_fuel in Checked.
     destruct (resolve_sym W p pa) as [symbol_context|] eqn:Resolve; [|discriminate].
     destruct (w_decl W symbol_context) as [d|] eqn:Declaration; [|discriminate].
-    destruct (d_ast d) as [items declarations|name|name ty|name parameters payload|name|name value_type initial|
+    destruct (d_ast d) as [items declarations|name|name ty|name parameters arity payload|name|name value_type initial|
       receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
       try discriminate.
     destruct (ctx_spec_items items) as [specs|] eqn:Specs; [|discriminate].

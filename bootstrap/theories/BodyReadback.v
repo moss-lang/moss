@@ -173,7 +173,7 @@ Proof.
     + destruct Initializer as (layout & actual & Init & Fits & Module & Ret & This & Loop & Fresh & Applying & Pins & Layout).
       destruct (read_expression _ _ _ _ _ _ Init) as (plan & Typed & <- & ?Placed).
       exists (PlanConstant layout plan). split; [eapply TypesConstant; eassumption|split; [reflexivity|finish_placements]].
-    + subst args. destruct (read_expression _ _ _ _ _ _ Child) as (plan & Typed & <- & ?Placed).
+    + destruct (read_expression _ _ _ _ _ _ Child) as (plan & Typed & <- & ?Placed).
       exists (PlanTag s arguments plan). split; [eapply TypesTag; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_arguments _ _ _ _ _ Args) as (plans & Typed & <- & ?Placed).
       exists (PlanDefinedCall f formal needs arguments demands result plans).

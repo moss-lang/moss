@@ -213,7 +213,7 @@ Proof.
   - destruct (kind_is W symbol DKVal); [reflexivity|].
     destruct (kind_is W symbol DKFn); [rewrite sig_mentions_context; reflexivity|].
     change (w_decl W') with (w_decl W). destruct (w_decl W symbol) as [d|]; [|reflexivity].
-    destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+    destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
       receiver name parameters result body|name items|name parameters arguments results body]; try reflexivity.
     + destruct (pmem (self,symbol) stack); [reflexivity|].
       f_equal. apply flat_map_pointwise. intro syntax. apply IH.
@@ -292,7 +292,7 @@ Proof.
     + apply rbind_pointwise; [rewrite resolve_sym_context; reflexivity|intro symbol].
       apply rbind_pointwise; [rewrite decl_of_context; reflexivity|intro d].
       rewrite sym_name_context, ?qs_context.
-      destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+      destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
         receiver name parameters result body|name items|name parameters arguments results body];
         [reflexivity|reflexivity|reflexivity|reflexivity|reflexivity| | | |].
       * destruct initial as [initial|]; [reflexivity|].
@@ -332,7 +332,7 @@ Proof.
     rewrite resolve_sym_context. change (w_decl W') with (w_decl W).
     destruct (resolve_sym W q pa) as [symbol|]; [|rewrite (IH es0 tm); reflexivity].
     destruct (w_decl W symbol) as [d|]; [|rewrite (IH es0 tm); reflexivity].
-    destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+    destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
       receiver name parameters result body|name items|name parameters arguments results body].
     1-8: rewrite (IH es0 tm); reflexivity.
     destruct body as [body|].

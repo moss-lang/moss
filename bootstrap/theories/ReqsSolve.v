@@ -748,7 +748,7 @@ Proof.
             d = A.Decl (pathi b ls e (gs_mod g)) (gs_decl g) (gs_assumes g) /\ In (gs_mod g) (ls_order ls)).
   { intros Hgl d Hd. destruct (ldecl _ g Hgl) as (D & Og).
     rewrite Hd in D. injection D as ->. split; [reflexivity | exact Og]. }
-  destruct (gs_decl g) as [| | |tn [|n1 names] t| | | | |] eqn:Dg.
+  destruct (gs_decl g) as [| | |tn [|n1 names] arity t| | | | |] eqn:Dg.
   all: try (injection H as <- <-; split; [reflexivity|]; intros Hgl d ps t' Hd Hb;
             destruct (Hdecl Hgl d Hd) as [-> _]; cbn [A.d_ast] in Hb; try rewrite Dg in Hb; cbn in Hb;
             first [discriminate Hb | injection Hb as <- <-; split; [intros ? [] | intros ? []]]).
@@ -818,7 +818,7 @@ Lemma nominal_decl : forall x g, nget (ls_syms ls) x = Some g -> nominal_k (gs_k
   exists ps t, A.nominal_body (gs_decl g) = Some (ps, t) /\ decl_ty (gs_decl g) = Some t.
 Proof.
   intros x g Hg Hk. pose proof (li_kind _ _ HI x g Hg) as Kd. unfold KindOK in Kd. revert Hk Kd.
-  destruct (gs_kind g), (gs_decl g) as [| | |tn ps t| | | [| |] ? ? ? ? | |]; cbn; intros Hk Kd;
+  destruct (gs_kind g), (gs_decl g) as [| | |tn ps arity t| | | [| |] ? ? ? ? | |]; cbn; intros Hk Kd;
     try discriminate; [exists [], a | exists ps, t]; split; reflexivity.
 Qed.
 

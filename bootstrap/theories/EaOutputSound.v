@@ -75,7 +75,7 @@ Proof.
         destruct (resolve_sym W p pa) as [symbol|] eqn:Resolve; [|discriminate]. cbn [rbind] in Run.
         apply rbind_ok in Run as [d [Declaration Run]]. apply decl_of_sound in Declaration.
         apply rbind_ok in Run as [bindings [Brackets Run]].
-        destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+        destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
           receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
           try discriminate.
         -- injection Run as <- <-. eapply OIEType; [exact Resolve| |eapply output_brackets_sound; exact Brackets].

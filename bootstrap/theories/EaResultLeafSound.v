@@ -22,7 +22,7 @@ Proof.
     destruct Present as [<-|[]]. now apply RSLMethod.
   - destruct (resolve_sym W p pa) as [s|] eqn:Resolve; [|contradiction].
     destruct (w_decl W s) as [d|] eqn:Declared; [|contradiction].
-    destruct (d_ast d) as [items declarations|n|n body|n ps pay|n|n t init|
+    destruct (d_ast d) as [items declarations|n|n body|n ps arity pay|n|n t init|
       recv n ps ret body|n items|n ps ins outs body] eqn:Ast.
     all: try match type of Present with
       | In ?key (if result_already_provided ?a then [] else _) =>

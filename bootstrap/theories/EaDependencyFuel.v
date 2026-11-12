@@ -233,7 +233,7 @@ Proof.
         destruct (kind_sym W symbol) as [kind|]; [destruct kind|]; try discriminate.
         -- destruct application; [discriminate|]. change (1 <= S fuel). lia.
         -- apply rbind_ok in Run as [d [Declaration Run]].
-           destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+           destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
              receiver name parameters result body|name items|name parameters arguments results body]; try discriminate.
            apply rbind_ok in Run as [bindings [Read Run]].
            apply le_n_S. exact (BracketDepth _ _ _ _ _ Read).
@@ -262,7 +262,7 @@ Theorem sig_of_depth : forall fuel symbol tm this signature,
 Proof.
   intros fuel symbol tm this signature Run. unfold sig_of in Run.
   apply rbind_ok in Run as [d [Declaration Run]].
-  destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+  destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
     receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast; try discriminate.
   apply rbind_ok in Run as [parameter_types [Parameters Run]].
   apply rbind_ok in Run as [result_type [Result Run]].

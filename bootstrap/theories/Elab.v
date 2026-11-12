@@ -489,7 +489,7 @@ Definition resolve_sym (mi : nat) (p : path) : M (option gsym) :=
   end.
 
 Definition decl_ty (d : adecl) : option aty :=
-  match d with ADTag _ _ t => Some t | ADAlias _ t => Some t | ADVal _ t _ => Some t | _ => None end.
+  match d with ADTag _ _ _ t => Some t | ADAlias _ t => Some t | ADVal _ t _ => Some t | _ => None end.
 
 (* the tags and aliases a type expression names, brackets included *)
 Fixpoint mentioned_nominals (fuel : nat) (t : aty) (mi : nat) : M (list nat) :=
@@ -667,7 +667,7 @@ with solve_requirements (fuel : nat) (root : gsym) : M unit :=
   end
 with listed_params (fuel : nat) (g : gsym) : M (list nat) :=
   match gs_decl g with
-  | ADTag _ ((_ :: _) as names) _ =>
+  | ADTag _ ((_ :: _) as names) _ _ =>
       let! nesting := assume_type_syms g in
       mfold (fun out n =>
                let! t := resolve_sym (gs_mod g) [n] in
@@ -1164,7 +1164,7 @@ Definition payload_type (t : ety) (e : env) : M ety :=
   | YNom n xs =>
       let! g := sym n in
       match gs_decl g with
-      | ADTag _ _ p => ety_of p (gs_mod g) xs e None
+      | ADTag _ _ _ p => ety_of p (gs_mod g) xs e None
       | _ => ret YUnit
       end
   | _ => ret YUnit
@@ -2087,7 +2087,7 @@ Definition unions_written (w : world) : res unit :=
                   | Some g =>
                       let one := union_written 64 w (gs_mod g) in
                       match gs_decl g with
-                      | ADTag _ _ t | ADAlias _ t | ADVal _ t _ => one t
+                      | ADTag _ _ _ t | ADAlias _ t | ADVal _ t _ => one t
                       | ADFn _ _ ps r _ =>
                           let* _ := (fix each (l : list (name * aty)) : res unit :=
                                        match l with

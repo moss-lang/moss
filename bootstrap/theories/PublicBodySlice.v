@@ -1008,6 +1008,28 @@ Lemma add_locals_merge : forall binds C,
   A.c_merge (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) = A.c_merge C.
 Proof. induction binds as [|q r IH]; intros C; [reflexivity|cbn; rewrite IH; reflexivity]. Qed.
 
+Lemma tag_payload_breaks : forall md tag args payload,
+  A.Typing.TagCallPayload W tag args payload ->
+  A.Breaks W md payload -> exists argument, In argument args /\ A.Breaks W md argument.
+Proof.
+  intros md tag args payload (_ & _ & arity & _ & _ & Payload) Break.
+  unfold Syntax.tag_call_payload in Payload.
+  destruct arity as [arity|].
+  - destruct (Nat.eqb arity (List.length args)); [|discriminate].
+    destruct args as [|x [|y rest]].
+    + injection Payload as <-. inversion Break.
+    + injection Payload as <-. exists x. split; [now left|exact Break].
+    + injection Payload as <-. cbn [Syntax.tuple_expr] in Break.
+      inversion Break; subst.
+      exists y0. split; [|exact H2].
+      unfold Syntax.tuple_fields in H0. apply in_combine_r in H0.
+      change (In (Some y0) (map Some (x :: y :: rest))) in H0.
+      apply in_map_iff in H0 as (argument & Equal & Present).
+      injection Equal as ->. exact Present.
+  - destruct args as [|x [|y rest]]; try discriminate.
+    injection Payload as <-. exists x. split; [now left|exact Break].
+Qed.
+
 Lemma record_args : forall F C exp fs ftys xfs (breaks : Prop),
   (forall n y, In (n, Some y) fs -> A.Breaks W (A.fr_mod F) y -> breaks) ->
   Forall2 (fun ft xf => fst xf = fst ft /\
@@ -5743,10 +5765,11 @@ Proof.
         { split; [intros f g Found; discriminate|]. split; [intros r m g Found; discriminate|].
           intros u fx Found; discriminate. }
         split; [exact PublicMergePresent.empty_merge_section | intros k0 p0 []].
-    + (* tag *) subst args. cbn [AR.O.I.eval].
+    + (* tag *) cbn [AR.O.I.eval].
       pose proof (AR.O.outcome_fits W P state_ok _ _ _ _ _ _ _ _ Fits (sex F C y _ v vty Dy d types H lg lst (pre_lower Pre0))) as Out.
       apply (outcome_seq _ F C d types H lg lst pay _ (A.Breaks W (A.fr_mod F) y) _ _ _ Pre0
-        (fun B => A.BkCall pa a [y] (or_introl eq_refl) B) Out).
+        (fun B => let '(ex_intro _ argument (conj Present Break)) :=
+          tag_payload_breaks _ _ _ _ Args1 B in A.BkCall pa a args Present Break) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
       exact (TC.tag_preserves W Prog argv read d H1 s xs pay w

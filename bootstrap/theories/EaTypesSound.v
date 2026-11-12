@@ -145,7 +145,7 @@ Proof.
            destruct (nlook symbol tm) as [meaning|] eqn:Lookup; [|discriminate].
            injection Run as <-. eapply TyType; eassumption.
         -- apply rbind_ok in Run as [d [Declaration Run]].
-           destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+           destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
              receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
              try discriminate.
            apply rbind_ok in Run as [bindings [Brackets Run]].
@@ -193,7 +193,7 @@ Theorem sig_of_sound : forall fuel symbol tm this signature,
 Proof.
   intros fuel symbol tm this signature Run. unfold sig_of in Run.
   apply rbind_ok in Run as [d [Declaration Run]].
-  destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+  destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
     receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
     try discriminate.
   apply rbind_ok in Run as [parameter_types [Parameters Run]].
@@ -255,7 +255,7 @@ Theorem payload_of_sound : forall fuel symbol arguments payload,
 Proof.
   intros fuel symbol arguments payload Run. unfold payload_of in Run.
   apply rbind_ok in Run as [d [Declaration Run]].
-  destruct (d_ast d) as [| | |name params syntax|name| | | |] eqn:Ast; try discriminate.
+  destruct (d_ast d) as [| | |name params arity syntax|name| | | |] eqn:Ast; try discriminate.
   - apply rbind_ok in Run as [checked [Checked Run]].
     eapply PayTag; [exact (decl_of_sound _ _ Declaration)|rewrite Ast; reflexivity|].
     exact (ty_of_sound _ _ _ _ _ _ Run).
@@ -280,7 +280,7 @@ Proof.
       destruct (nlook x tm) as [meaning|] eqn:Meaning; [|discriminate].
       injection Item as <-. split; reflexivity. }
     destruct (w_decl W receiver) as [d|] eqn:Declaration.
-    + destruct (d_ast d) as [items declarations|name|name body|name parameters syntax|name|name value_type initial|
+    + destruct (d_ast d) as [items declarations|name|name body|name parameters arity syntax|name|name value_type initial|
         rcvr name parameters result body|name items|name parameters inputs outputs body] eqn:Ast.
       all: try solve [exact (ty_of_sound _ _ _ _ _ _ Run)].
       all: destruct (kind_is W receiver DKType) eqn:Kind; [discriminate|].

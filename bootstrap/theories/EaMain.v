@@ -287,9 +287,9 @@ Definition decl_forms (bound : nat) (s : nat) : er unit :=
       match d_ast d with
       | ADCtx _ its =>
           let! _ := items_entries E fuel [s] (d_mod d) [] tm its in Ok tt
-      | ADTag _ _ t | ADAlias _ t =>
+      | ADTag _ _ _ t | ADAlias _ t =>
           let! _ := match d_ast d, t with
-                    | ADTag _ _ _, ATRec fs => rcheck (snodupb (map fst fs)) (qs W s ++ " names a field twice, so no record literal builds it")
+                    | ADTag _ _ _ _, ATRec fs => rcheck (snodupb (map fst fs)) (qs W s ++ " names a field twice, so no record literal builds it")
                     | _, _ => Ok tt end in
           let! _ := ty_of W fuel (d_mod d) tm None t in Ok tt
       | ADVal _ t _ =>

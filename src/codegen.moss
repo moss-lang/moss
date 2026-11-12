@@ -3142,6 +3142,9 @@ assume Std {
       if !ast::is_some(rec) {
         return false;
       }
+      if ast::d_of(pat) == 1 {
+        if ast::c_of(pat) != types::field_count(rec) { return false; }
+      }
       var i = 0;
       while i < ast::c_of(pat) {
         let pf = ast::kid_at(ast::b_of(pat), i);
@@ -4515,20 +4518,12 @@ assume Std {
         return emit_match_as(body, e, m, want);
       }
       let tmp = int_list();
+      let errors_before = cg_error_count() + prog::error_count();
       let got = emit_expr(tmp, e, m);
-      # D17, as the bootstrap checks it: what a position yields must fit
-      # what it declared. Both are generic — the code as written, where
-      # two generations of a type are two types (D72) however this
-      # specialization makes them — so the answer is the same in every
-      # specialization. Record types must also agree when they occupy no
-      # slots, for instance `{}` and `()` have different types.
-      let check_fit = if width(got) > 0 { true }
-        else if types::is_kind(got, types::kd_record()) { true }
-        else { types::is_kind(want, types::kd_record()) };
-      if check_fit {
-        if !types::fits(got, want) {
-          cg_error(c_bad_type(), ast::none());
-        }
+      # Values with no lanes can still have distinct generic types.
+      # An expression that already reported an error may return a fallback type.
+      if errors_before == cg_error_count() + prog::error_count() {
+        if !types::fits(got, want) { cg_error(c_bad_type(), ast::none()); }
       }
       if width(got) == width(want) {
         if !union_remap_needed(got, want) {
@@ -4607,12 +4602,27 @@ assume Std {
         semantic_error(prog::e_scope(), ast::path_last(ast::a_of(callee)));
         return ty_none();
       }
-      # A nominal value *is* its payload (D58), so constructing one emits
-      # the payload and nothing more — the payload at the nominal's arguments.
+      # Each positional element occupies its ordinary run of lanes.
+      # A record constructor also accepts its whole record as one argument.
       if prog::sym_kind.get(sym) == prog::sk_tag() {
         let nominal = tag_type(callee, sym, m);
         let want = int_list();
-        want.push(types::member_payload(nominal));
+        let payload = types::member_payload(nominal);
+        let arity = ast::tag_arity(prog::sym_decl.get(sym));
+        let count = if ast::is_some(arity) { arity } else { 1 };
+        if ast::c_of(e) != count {
+          cg_error(c_bad_type(), prog::sym_name.get(sym));
+          return ty_none();
+        }
+        if arity > 1 {
+          var i = 0;
+          while i < arity {
+            want.push(field_ty(payload, i));
+            i = i + 1;
+          }
+        } else if arity != 0 {
+          want.push(payload);
+        }
         emit_args(body, ast::b_of(e), ast::c_of(e), m, want);
         # Base requires an explicit primitive to recover a typed GC
         # reference. Ordinary wrappers over other representations

@@ -108,7 +108,7 @@ Proof.
     destruct (w_decl W u) as [d|] eqn:Declaration.
     2: { apply Skip; [|exact Run]. intros other Equal Kind. injection Equal as <-.
          unfold kind_sym in Kind. rewrite Declaration in Kind. discriminate. }
-    destruct (d_ast d) as [items declarations|name|name syntax|name parameters syntax|
+    destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity syntax|
       name|name syntax initial|receiver name parameters result body|name items|
       name parameters inputs outputs body] eqn:Ast;
       try (apply Skip; [|exact Run]; intros other Equal Kind; injection Equal as <-;
@@ -153,7 +153,7 @@ Proof.
   2: { injection Run as <- <-. apply RootNone. right.
        intros g found n its Item Found. apply root_context_symbol_complete in Item.
        rewrite Root in Item. injection Item as <-. congruence. }
-  destruct (d_ast d) as [items declarations|name|name syntax|name parameters syntax|
+  destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity syntax|
       name|name syntax initial|receiver name parameters result body|name items|
       name parameters inputs outputs body] eqn:Ast;
     try (injection Run as <- <-; apply RootNone; right;

@@ -316,8 +316,9 @@ at use sites, like `Range[T=NameId]`, absolutely stays — see §6.)
 
 - A path to a type symbol, alias, or nominal type: `Token`, `parse::TypeId`,
   possibly applied: `Option[T=TokenId]`, `Range[T=NameId]`.
-- Unit `()`. There are no tuples: `(T)` is grouping, and records are the
-  product type ([D63], which retired the deferred `(A, B)`).
+- Tuples `(A, B)`, including the singleton `(A,)` and the nullary tuple
+  `()`, also called unit. `(A)` groups a type. Values use the same syntax
+  and bind their elements by position with a tuple pattern.
 - Structural records `{ from: TokenId, name: Option[T=TokenId] }`. Records
   are structural; nominality comes only from tag declarations wrapping them.
 - Unions `A | B | C`, including the leading-pipe multiline form. Members
@@ -1057,7 +1058,10 @@ wrappers delegate to.
 **Destructuring.** A binding is a name or a product of other bindings,
 with an optional type at each level. In a record binding, `field: T`
 binds the field under its own name and `field = local: T` renames it.
-A field can also contain another record binding.
+A field can also contain another record binding or a tuple binding. Tuple
+bindings account for all positions, with annotations on individual
+elements or on the whole tuple. The outer parentheses can be omitted on
+the left of a local binding, as in `let x: A, y: B = pair();`.
 
 ```moss
 fn read({person = {name = who: String}, active: Bool}): String { who }
@@ -1772,7 +1776,17 @@ bootstrap shares, and probing the bootstrap resolves both:
   `tests/wasi/incoherent_*.moss`, with `tests/wasi/coherent_rebound.moss`
   as the control.
 
-**[D63] DECIDED by the designer (records are the only product type).**
+**[D63] SUPERSEDED.** Moss now has both tuples and named records. A tag
+has a bare declaration `tag End;`, positional fields `tag Pair(A, B);`,
+or named fields `tag Pair { left: A, right: B };`. Positional tags use
+parentheses even for zero or one field, and construction takes that
+number of arguments. Existing singleton wrappers such as `tag Box(T);`
+keep their source spelling and unboxed layout. Tuple positions share the
+record representation with numeric labels reserved for them.
+
+Historical decision follows.
+
+**Original D63 (records as the only product type).**
 [D15] kept tuples `(A, B)` in the type grammar and deferred implementing
 them; they had no expressions or patterns, and nothing used them. The
 options were full tuples, with `Tag (a, b)` constructing a tag over the
@@ -4406,7 +4420,7 @@ tag is declared, constructed and matched alike:
 
 - `type X;` is abstract and `type X = T;` an alias; there is no other
   `type` form, and `unit` is gone.
-- The parentheses hold one type: there are no tuples ([D63]), so
+- Before tuples were added, the parentheses held one type, so
   `tag X(A, B);` is an error, and several fields are a record. A union is
   one type, `tag Bool(False | True);`.
 - A record payload is written with braces, never `tag X({ f: T });`: no
@@ -5017,7 +5031,7 @@ library change has landed — one declaration per detached accessor,
 provided with bracket applications — the bootstrap's name-matching
 fallback is gone, and the compiler under `src/` compiles itself to a
 fixpoint. What remains is engineering: the constant factor of `Std`
-written in Moss. (Records are done, and there are no tuples [D63].)
+written in Moss.
 
 Still awaiting the designer, all deferred rather than blocking: attached
 methods on union-headed *aliases* in general ([D47] — solved
@@ -5039,7 +5053,7 @@ vs structure, D54 method providers keep the nominal wrapper (lifted
 for anonymous providers by D70), D55 functors
 as their own declaration applied with `bind`, D61 how a method call
 finds its method, D62 provisions keyed by the receiver's identity, D63
-records are the only product type, D64 bare import paths name library
+tuple and record products, D64 bare import paths name library
 files, D65 bare block expressions, D66 binding a fn to a contextual fn
 captures it at the bind, D67 f32/f64 are scalars, with the float half of
 `Wasm`, and an abstract `Float` in `Std` provided at f64, with no

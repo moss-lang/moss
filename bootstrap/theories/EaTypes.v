@@ -252,7 +252,7 @@ Definition payload_of (fuel : nat) (s : nat) (xs : list (nat * ty)) : er ty :=
   let! d := decl_of s in
   match d_ast d with
   | ADBareTag _ => Ok TUnit
-  | ADTag _ _ t =>
+  | ADTag _ _ _ t =>
       let! _ := match t with
                 | ATRec fs => rcheck (snodupb (map fst fs)) (qs W s ++ " names a field twice, so no record literal builds it")
                 | _ => Ok tt end in

@@ -280,7 +280,7 @@ Definition bind_item (F : frame) (C : cx) (it : spec * option aexpr) : M (wrappe
       | ADType _, Some _ => fail ("binding type " ++ qs W s ++ " needs a type on the right")
       | ADFn RPlain _ _ _ _, Some _ => fail "the right side of a fn bind must name a defined function"
       | ADVal _ _ _, None | ADFn _ _ _ _ _, None | ADType _, None | ADCtx _ _, None
-      | ADTag _ _ _, None | ADBareTag _, None | ADAlias _ _, None =>
+      | ADTag _ _ _ _, None | ADBareTag _, None | ADAlias _ _, None =>
           fail (qs W s ++ " is not a functor; a bind needs `= value`")
       | _, _ => fail ("cannot bind " ++ qs W s)
       end

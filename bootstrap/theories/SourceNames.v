@@ -86,7 +86,7 @@ Definition citem_ok (it : citem) : bool :=
 Fixpoint decl_ok (d : adecl) : bool :=
   match d with
   | ADAssume its ds => forallb aitem_ok its && forallb decl_ok ds
-  | ADAlias _ t | ADTag _ _ t => ty_ok t
+  | ADAlias _ t | ADTag _ _ _ t => ty_ok t
   | ADVal _ t e => ty_ok t && optional expr_ok e
   | ADFn r _ ps ret b => recv_ok r && forallb (fun p => ty_ok (snd p)) ps && optional ty_ok ret && optional block_ok b
   | ADCtx _ its => forallb citem_ok its

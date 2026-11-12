@@ -48,7 +48,7 @@ Proof.
       * cbn [item_entries] in Run. fold W fuel metadata_fuel in Run.
         destruct (resolve_sym W p pa) as [symbol|] eqn:Resolve; [|discriminate]. cbn [rbind] in Run.
         apply rbind_ok in Run as [d [Declaration Run]]. apply decl_of_sound in Declaration.
-        destruct (d_ast d) as [items declarations|name|name syntax|name parameters payload|name|name value_type initial|
+        destruct (d_ast d) as [items declarations|name|name syntax|name parameters arity payload|name|name value_type initial|
           receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
           try discriminate.
         -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.

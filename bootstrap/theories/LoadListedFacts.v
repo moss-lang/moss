@@ -62,7 +62,7 @@ Proof.
   intros fuel g s.
   assert (E : Elab.listed_params fuel g = Elab.listed_params 0 g) by (destruct fuel; reflexivity).
   rewrite E. cbn [Elab.listed_params]. unfold LoadListed.listed_params.
-  destruct (gs_decl g) as [| | |name [|n names] ty| | | | |]; try reflexivity.
+  destruct (gs_decl g) as [| | |name [|n names] arity ty| | | | |]; try reflexivity.
   unfold Elab.mbind. rewrite assume_type_syms_equal.
   destruct (LoadListed.assume_type_syms (st_w s) (st_syms s) g) as [nesting|msg];
     cbn [attach rbind]; try reflexivity.

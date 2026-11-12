@@ -60,7 +60,7 @@ Definition assume_type_syms (g : gsym) : res (list nat) :=
 
 Definition listed_params (g : gsym) : res (list nat) :=
   match gs_decl g with
-  | ADTag _ ((_ :: _) as names) _ =>
+  | ADTag _ ((_ :: _) as names) _ _ =>
       let* nesting := assume_type_syms g in
       fold (fun out n =>
         let* t := resolve_sym (gs_mod g) [n] in

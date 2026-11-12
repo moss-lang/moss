@@ -450,7 +450,7 @@ Proof.
         intros asm' d' [(-> & -> & _)|(its & inner & a' & E & _)] _.
         - rewrite app_nil_r. left. exact D3.
         - exfalso. exact (Hna its inner E). }
-      destruct d as [its inner|n|n t|n ps t|n|n t i|[| |rn] n ps rt body|n its|n ps a r b];
+      destruct d as [its inner|n|n t|n ps arity t|n|n t i|[| |rn] n ps rt body|n its|n ps a r b];
         cbv beta iota zeta in Hd; try unfold fresh_sym in Hd; cbv beta iota zeta in Hd;
         try (apply (Hnamed _ _ eq_refl ltac:(discriminate) ltac:(discriminate) Hd eq_refl)).
       - (* assume *)

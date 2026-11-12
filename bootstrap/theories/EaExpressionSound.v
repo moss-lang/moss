@@ -42,10 +42,10 @@ Proof.
   cbn [mbind ret] in Run.
   destruct (w_decl W symbol) as [d|] eqn:Declared; [|discriminate Run].
   cbn [mbind ret] in Run.
-  destruct (d_ast d) as [| | |name params annotation| | |receiver name params result body| |] eqn:Ast;
+  destruct (d_ast d) as [| | |name params arity annotation| | |receiver name params result body| |] eqn:Ast;
     try discriminate Run.
   - exact (EaConstructSound.tag_call_sound E R P valid post n ExprN F C path brackets arguments
-      expected symbol d name params annotation Resolved Declared Ast before (code, t) after Call).
+      expected symbol d name params arity annotation Resolved Declared Ast before (code, t) after Call).
   - destruct receiver; try discriminate Run.
     destruct brackets as [brackets|].
     + exact (EaCallExpressionSound.bracketed_plain_call_sound E R P valid post n (proj1 Callbacks)

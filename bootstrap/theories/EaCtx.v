@@ -52,7 +52,7 @@ Fixpoint item_entries (n : nat) (stk : list nat) (p : string) (ob tm : list (nat
           | ADType _ =>
               let! _ := rcheck none_a (bq (sym_name W s) ++ " takes no brackets in a context (D71)") in
               Ok ([NTy s], match nlook s tm with Some _ => tm | None => (s, TAbs s) :: tm end)
-          | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ | ADVal _ _ (Some _) =>
+          | ADBareTag _ | ADTag _ _ _ _ | ADAlias _ _ | ADVal _ _ (Some _) =>
               Err (qs W s ++ " is concrete and cannot be listed as a context input")
           | ADVal _ t None =>
               let! bs := brackets W fuel p (ob ++ tm) s a in

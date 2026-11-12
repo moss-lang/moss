@@ -66,7 +66,7 @@ Proof.
   intros W F scrutinee source code bindings heads catch Typed.
   destruct Typed as [|n Resolved Named|path tag arguments Resolved Kind Member
     |path tag arguments binder payload Resolved Kind Member Payload Read Named
-    |path tag arguments fields field_types bindings code Resolved Kind Member Payload Fields Distinct].
+    |path tag arguments fields field_types bindings code Resolved Kind Member Payload Arity Fields Distinct].
   - exists PatternWildcard. repeat split. constructor.
   - exists (PatternBinder n scrutinee). repeat split. now constructor.
   - exists (PatternNominal tag). repeat split. eapply TypesPatternNominal; eassumption.
@@ -420,7 +420,7 @@ Qed.
 
 Theorem tag_source_has_plan : forall W P F C path brackets args tag,
   resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
-  (forall child, In child args -> HasExpressionPlan W P F C child) ->
+  (forall child, TagCallPayload W tag args child -> HasExpressionPlan W P F C child) ->
   HasExpressionPlan W P F C (AECall path brackets args).
 Proof.
   intros W P F C path brackets args tag Resolve Kind Children expected code t Typed.
@@ -432,9 +432,11 @@ Proof.
     end].
   lazymatch goal with
   | Child : Ex W P F C ?source (Some ?payload) ?value ?actual,
-    Tag : PayloadOf W ?symbol ?arguments ?payload |- _ =>
-    destruct (Children source (or_introl eq_refl) (Some payload) value actual Child) as (plan & Types & <-);
-    exists (PlanTag symbol arguments plan); split; [eapply TypesTag; eassumption|reflexivity]
+    Tag : PayloadOf W ?symbol ?arguments ?payload,
+    Source : TagCallPayload W ?symbol args ?source |- _ =>
+    assert (symbol = tag) by congruence; subst symbol;
+    destruct (Children source Source (Some payload) value actual Child) as (plan & Types & <-);
+    exists (PlanTag tag arguments plan); split; [eapply TypesTag; eassumption|reflexivity]
   end.
 Qed.
 

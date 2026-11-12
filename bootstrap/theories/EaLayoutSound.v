@@ -223,12 +223,12 @@ Proof.
   apply IH. destruct Present as [Equal|Present]; [congruence|exact Present].
 Qed.
 
-Local Lemma declarations_check_tag_payload : forall E bound tag d n params syntax,
+Local Lemma declarations_check_tag_payload : forall E bound tag d n params arity syntax,
   EaMain.decls_form E bound = Ok tt ->
-  tag < bound -> w_decl (e_W E) tag = Some d -> d_ast d = ADTag n params syntax ->
+  tag < bound -> w_decl (e_W E) tag = Some d -> d_ast d = ADTag n params arity syntax ->
   exists payload, payload_of (e_W E) (e_fuel E) tag (EaMain.self_all E bound) = Ok payload.
 Proof.
-  intros E bound tag d n params syntax Run Bounded Declared Ast.
+  intros E bound tag d n params arity syntax Run Bounded Declared Ast.
   unfold EaMain.decls_form in Run. apply rbind_ok in Run as (checked & Checks & _).
   assert (Present : In tag (seq 0 bound)) by (apply in_seq; lia).
   destruct (EaDependencyFuel.rmap_member_read _ _ _ _ _ Checks _ Present) as (result & Check).
@@ -254,9 +254,11 @@ Proof.
     injection Body as <- <- <-. inversion Typed; subst.
     unfold payload_of, decl_of. rewrite Declared. cbn [rbind]. rewrite Ast. reflexivity.
   }
-  assert (Tag : d_ast d = ADTag n params syntax) by (rewrite Ast; congruence).
+  assert (Tag : exists arity, d_ast d = ADTag n params arity syntax)
+    by (rewrite Ast; inversion Body; eauto).
+  destruct Tag as [arity Tag].
   clear Ast. rename Tag into Ast.
-  destruct (declarations_check_tag_payload E bound tag d n params syntax Declarations
+  destruct (declarations_check_tag_payload E bound tag d n params arity syntax Declarations
     (Bounded _ _ Declared) Declared Ast) as (other & Read).
   unfold payload_of, decl_of in Read. rewrite Declared in Read. cbn [rbind] in Read.
   rewrite Ast in Read. apply rbind_ok in Read as (fields & Fields & Read).

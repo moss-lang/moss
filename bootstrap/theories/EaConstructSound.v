@@ -45,13 +45,13 @@ Qed.
 
 Theorem tag_call_sound : forall n,
   Expr n ->
-  forall F C path application args expected s d name ps syntax,
+  forall F C path application args expected s d name ps arity syntax,
   resolve_sym W (fr_mod F) path = Some s -> w_decl W s = Some d ->
-  d_ast d = ADTag name ps syntax ->
+  d_ast d = ADTag name ps arity syntax ->
   Action F C (AECall path application args) expected
     (ex E R (S n) F C (AECall path application args) expected).
 Proof.
-  intros n Below F C path application args expected s d name ps syntax
+  intros n Below F C path application args expected s d name ps arity syntax
     Resolve Declared Tag before [value t] after Run.
   cbn [ex] in Run. fold W in Run. rewrite Resolve in Run. cbn [mbind ret] in Run.
   rewrite Declared in Run. cbn [mbind ret] in Run. rewrite Tag in Run.
@@ -61,7 +61,11 @@ Proof.
   apply pure_result in Read as [Arguments <-].
   apply mbind_ok in Run as (payload & mid & Read & Run).
   apply pure_result in Read as [Payload <-].
-  destruct args as [|y [|extra rest]]; try discriminate.
+  apply mbind_ok in Run as (y & started & Read & Run).
+  apply lift_result in Read as [ArgumentsSyntax <-].
+  assert (PayloadSyntax : TagCallPayload W s args y).
+  { exists name, ps, arity, syntax. split; [|exact ArgumentsSyntax].
+    unfold ast_of. rewrite Declared. cbn [option_map]. now rewrite Tag. }
   apply mbind_ok in Run as ([body actual] & finish & Child & Run).
   apply mbind_ok in Run as (checked & final & Check & Run).
   apply check_result in Check as [Fits [_ <-]].
@@ -70,7 +74,7 @@ Proof.
   split; [exact Backward|]. intros Valid Post.
   destruct (Typed Valid Post) as [Final Body]. split; [exact Final|].
   eapply ExTag; [exact Resolve| |eapply brackets_sound; exact Rows|now apply tag_arguments_read|
-    eapply payload_of_sound; exact Payload|reflexivity|exact Body|now apply fitsb_exact].
+    eapply payload_of_sound; exact Payload|exact PayloadSyntax|exact Body|now apply fitsb_exact].
   intros [bare_name Bare]. unfold ast_of in Bare. fold W in Bare.
   rewrite Declared in Bare. cbn in Bare. rewrite Tag in Bare. discriminate.
 Qed.

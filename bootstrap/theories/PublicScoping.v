@@ -830,7 +830,7 @@ Lemma patof_scoped : forall C F st pat xp binds hs ca, PatOf W F st pat xp binds
   forall n t, In (n, t) binds -> ScopedTy W C t.
 Proof.
   intros C F st pat xp binds hs ca Pt Sc.
-  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay FP Nd];
+  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay Arity FP Nd];
     intros n' t' Ib.
   - contradiction.
   - destruct Ib as [E|[]]. injection E as _ <-. exact Sc.

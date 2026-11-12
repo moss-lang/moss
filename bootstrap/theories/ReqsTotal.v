@@ -841,7 +841,7 @@ Proof.
     injection H2 as _ <-. reflexivity. }
   destruct (miter_each _ _ _ _ _ _ Hr H g Hin) as (u' & Hs). cbv beta in Hs.
   rewrite Hg0 in Hs. pose proof (li_kind _ _ HI g g0 Hg0) as Kd. unfold KindOK in Kd.
-  destruct (gs_decl g0) as [| | |tn tps tt| | | | |] eqn:Dd; cbn in Hb; try discriminate; injection Hb as <- <-; [destruct Hn|].
+  destruct (gs_decl g0) as [| | |tn tps arity tt| | | | |] eqn:Dd; cbn in Hb; try discriminate; injection Hb as <- <-; [destruct Hn|].
   assert (Kt : gs_kind g0 = KTag) by (destruct (gs_kind g0); cbn in Kd; congruence).
   rewrite Kt in Hs. cbn [kind_eqb] in Hs. apply bind_inv in Hs as (lst & s3 & H3 & _).
   destruct (listed_spec b ls e HI (fun _ => []) (fun _ => 0) 0 g0 s lst s3 Hg H3) as [_ Hlok].

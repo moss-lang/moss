@@ -106,11 +106,12 @@ Proof.
     destruct (bare_tagb W symbol) eqn:Bare; cbn [rbind negb] in Run; [discriminate|].
     apply rbind_ok in Run as [payload_type [Payload Run]].
     destruct payload_type as [machine|types| |abstract|tag type_arguments|alternatives]; try discriminate.
+    destruct (record_pattern_arity fields types) eqn:Arity; cbn [rbind] in Run; [|discriminate].
     apply rbind_ok in Run as [[names vars] [Fields Run]].
     destruct (snodupb (map fst names)) eqn:Distinct; cbn [rbind] in Run; [|discriminate].
     injection Run as <- <- <- <-.
     eapply PRecord; [exact Resolve|exact Kind|exact Member|
-      eapply payload_of_sound; exact Payload|eapply field_pats_sound; exact Fields|apply snodupb_sound; exact Distinct].
+      eapply payload_of_sound; exact Payload|exact Arity|eapply field_pats_sound; exact Fields|apply snodupb_sound; exact Distinct].
 Qed.
 
 End Patterns.

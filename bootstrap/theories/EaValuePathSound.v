@@ -34,7 +34,7 @@ Proof.
   apply mbind_ok in Run as (declared & middle & Read & Run).
   destruct (w_decl W symbol) as [d|] eqn:Found; [|discriminate Read].
   injection Read as <- <-.
-  destruct (d_ast d) as [assumes declarations|n|n body|n params syntax|n|n syntax initial|
+  destruct (d_ast d) as [assumes declarations|n|n body|n params arity syntax|n|n syntax initial|
     receiver n params result body|n items|n params inputs outputs body] eqn:Ast;
     try discriminate Run.
   - injection Run as <- <- <-. split; [tauto|]. intros Valid _.

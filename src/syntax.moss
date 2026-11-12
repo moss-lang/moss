@@ -319,6 +319,27 @@ assume Std {
       ast::node2(ast::k_ty_union(), ast::commit(xs), xs.length())
     }
 
+    # The first element and its comma may already have been consumed.
+    fn parse_types_to_paren(types: IntList) {
+      while !here(tk_rparen()) {
+        if here(tk_eof()) { break; }
+        types.push(parse_type());
+        if !accept(tk_comma()) { break; }
+      }
+      expect(tk_rparen());
+    }
+
+    fn tuple_type(types: IntList): Int {
+      if types.length() == 0 { return ast::node0(ast::k_ty_unit()); }
+      let fields = int_list();
+      var i = 0;
+      while i < types.length() {
+        fields.push(ast::node2(ast::k_ty_field(), tuple_label(i), types.get(i)));
+        i = i + 1;
+      }
+      ast::node2(ast::k_ty_record(), ast::commit(fields), fields.length())
+    }
+
     fn parse_type_atom(): Int {
       let start = tstart.read();
       let node = parse_type_atom_inner();
@@ -333,9 +354,13 @@ assume Std {
         if accept(tk_rparen()) {
           return ast::node0(ast::k_ty_unit());
         }
-        # Grouping only: there are no tuple types (D63), so a comma here
-        # is the error `expect` reports.
         let inner = parse_type();
+        if accept(tk_comma()) {
+          let types = int_list();
+          types.push(inner);
+          parse_types_to_paren(types);
+          return tuple_type(types);
+        }
         expect(tk_rparen());
         return inner;
       }
@@ -813,6 +838,23 @@ assume Std {
       ast::node4(ast::k_ex_lit(), ast::commit(digits), digits.length(), ast::none(), ast::none())
     }
 
+    fn tuple_label(i: Int): Int {
+      let cs = int_list();
+      cs.push(37);
+      push_name_index(cs, i);
+      intern::intern_chars(cs)
+    }
+
+    fn tuple_expr(values: IntList): Int {
+      let fields = int_list();
+      var i = 0;
+      while i < values.length() {
+        fields.push(ast::node2(ast::k_ex_rfield(), tuple_label(i), values.get(i)));
+        i = i + 1;
+      }
+      ast::node3(ast::k_ex_record(), ast::none(), ast::commit(fields), fields.length())
+    }
+
     fn string_call(which: Int, args: IntList): Int {
       let name = int_list();
       if which == 0 { sp_string_begin(name); }
@@ -1031,6 +1073,12 @@ assume Std {
         if lambda { return parse_lambda_rest(parse_binding_forms()); }
         if accept(tk_rparen()) { return ast::node0(ast::k_ex_unit()); }
         let e = parse_expr();
+        if accept(tk_comma()) {
+          let items = int_list();
+          items.push(e);
+          parse_exprs(items, tk_rparen());
+          return tuple_expr(items);
+        }
         expect(tk_rparen());
         return e;
       }
@@ -1095,16 +1143,40 @@ assume Std {
       if next == tk_equal_greater() { true } else { next == tk_colon() }
     }
 
-    # The opening parenthesis is already consumed by the caller.
-    fn parse_binding_forms(): IntList {
-      let forms = int_list();
-      while !here(tk_rparen()) {
+    fn parse_binding_items(forms: IntList, close: Int) {
+      while !here(close) {
         if here(tk_eof()) { break; }
         forms.push(parse_binding_form());
         if !accept(tk_comma()) { break; }
       }
+    }
+
+    # The opening parenthesis is already consumed by the caller.
+    fn parse_binding_forms(): IntList {
+      let forms = int_list();
+      parse_binding_items(forms, tk_rparen());
       expect(tk_rparen());
       forms
+    }
+
+    fn tuple_binding(forms: IntList, ann: Int): Int {
+      let fields = int_list();
+      var i = 0;
+      while i < forms.length() {
+        fields.push(ast::node2(ast::k_bind_field(), tuple_label(i), forms.get(i)));
+        i = i + 1;
+      }
+      ast::node3(ast::k_bind_tuple(), ast::commit(fields), fields.length(), ann)
+    }
+
+    fn annotate_binding(form: Int, ann: Int): Int {
+      if !ast::is_some(ann) { return form; }
+      if ast::kind_of(form) == ast::k_param() {
+        if ast::is_some(ast::b_of(form)) { fail(); }
+        return ast::node2(ast::k_param(), ast::a_of(form), ann);
+      }
+      if ast::is_some(ast::c_of(form)) { fail(); }
+      ast::node3(ast::kind_of(form), ast::a_of(form), ast::b_of(form), ann)
     }
 
     fn parse_binding_annotation(): Int {
@@ -1134,6 +1206,21 @@ assume Std {
         expect(tk_rbrace());
         return ast::node3(ast::k_bind_record(), ast::commit(fields), fields.length(), parse_binding_annotation());
       }
+      if accept(tk_lparen()) {
+        if accept(tk_rparen()) {
+          return tuple_binding(int_list(), parse_binding_annotation());
+        }
+        let first = parse_binding_form();
+        if accept(tk_comma()) {
+          let forms = int_list();
+          forms.push(first);
+          parse_binding_items(forms, tk_rparen());
+          expect(tk_rparen());
+          return tuple_binding(forms, parse_binding_annotation());
+        }
+        expect(tk_rparen());
+        return annotate_binding(first, parse_binding_annotation());
+      }
       let name = take_name();
       ast::node2(ast::k_param(), name, parse_binding_annotation())
     }
@@ -1141,6 +1228,9 @@ assume Std {
     fn binding_type(form: Int): Int {
       if ast::kind_of(form) == ast::k_param() { return ast::b_of(form); }
       if ast::is_some(ast::c_of(form)) { return ast::c_of(form); }
+      if (ast::kind_of(form) == ast::k_bind_tuple()) & (ast::b_of(form) == 0) {
+        return ast::node0(ast::k_ty_unit());
+      }
       let fields = int_list();
       var i = 0;
       while i < ast::b_of(form) {
@@ -1223,8 +1313,25 @@ assume Std {
       ast::node3(ast::k_ex_block(), ast::commit(checked), 1, field)
     }
 
+    fn check_tuple_shape(stmts: IntList, root: Int, form: Int) {
+      let cs = int_list();
+      push_string(cs, "%shape");
+      let check = intern::intern_chars(cs);
+      stmts.push(ast::node3(ast::k_st_var(), check, ast::none(), local_ref(root)));
+      let values = int_list();
+      var i = 0;
+      while i < ast::b_of(form) {
+        let field = ast::kid_at(ast::a_of(form), i);
+        values.push(ast::node2(ast::k_ex_field(), local_ref(root), ast::a_of(field)));
+        i = i + 1;
+      }
+      let rebuilt = if values.length() == 0 { ast::node0(ast::k_ex_unit()) } else { tuple_expr(values) };
+      stmts.push(ast::node2(ast::k_st_assign(), check, rebuilt));
+    }
+
     fn bind_components(stmts: IntList, kind: Int, root: Int, form: Int) {
       if ast::kind_of(form) == ast::k_param() { return (); }
+      if ast::kind_of(form) == ast::k_bind_tuple() { check_tuple_shape(stmts, root, form); }
       var i = 0;
       while i < ast::b_of(form) {
         let field = ast::kid_at(ast::a_of(form), i);
@@ -1326,9 +1433,22 @@ assume Std {
         return parse_record_pattern(p);
       }
       if accept(tk_lparen()) {
-        let sub = parse_pattern();
+        let items = int_list();
+        while !here(tk_rparen()) {
+          if here(tk_eof()) { break; }
+          items.push(parse_pattern());
+          if !accept(tk_comma()) { break; }
+        }
         expect(tk_rparen());
-        return ast::node2(ast::k_pt_path(), p, sub);
+        if items.length() == 0 { return ast::node2(ast::k_pt_path(), p, ast::none()); }
+        if items.length() == 1 { return ast::node2(ast::k_pt_path(), p, items.get(0)); }
+        let fields = int_list();
+        var i = 0;
+        while i < items.length() {
+          fields.push(ast::node2(ast::k_pt_field(), tuple_label(i), items.get(i)));
+          i = i + 1;
+        }
+        return ast::node4(ast::k_pt_record(), p, ast::commit(fields), fields.length(), 1);
       }
       ast::node2(ast::k_pt_path(), p, ast::none())
     }
@@ -1503,7 +1623,13 @@ assume Std {
     }
 
     fn parse_binding_stmt(stmts: IntList, kind: Int) {
-      let form = parse_binding_form();
+      var form = parse_binding_form();
+      if accept(tk_comma()) {
+        let forms = int_list();
+        forms.push(form);
+        parse_binding_items(forms, tk_equal());
+        form = tuple_binding(forms, ast::none());
+      }
       expect(tk_equal());
       let value = parse_expr();
       expect(tk_semi());
@@ -1789,8 +1915,8 @@ assume Std {
       ast::node4(ast::k_d_assume(), ir, items.length(), dr, inner.length())
     }
 
-    # A nominal type (D83): `tag X;` a unit, `tag X(T);` over a type,
-    # `tag X { f: T, ... };` over a record.
+    # A nominal type has no fields, a positional payload, or a record
+    # payload. Retain the positional arity alongside the lowered type.
     fn parse_tag(): Int {
       let start = tstart.read();
       let node = parse_tag_inner();
@@ -1799,13 +1925,11 @@ assume Std {
 
     fn parse_tag_inner(): Int {
       let nm = take_name();
-      var ps = ast::none();
-      var n = 0;
+      let params = int_list();
       var listed = false;
       # D73: a tag's listed parameters, which its payload need not
       # mention.
       if accept(tk_lbracket()) {
-        let xs = int_list();
         loop {
           if here(tk_rbracket()) {
             break;
@@ -1813,14 +1937,12 @@ assume Std {
           if here(tk_eof()) {
             break;
           }
-          xs.push(take_name());
+          params.push(take_name());
           if !accept(tk_comma()) {
             break;
           }
         }
         expect(tk_rbracket());
-        ps = ast::commit(xs);
-        n = xs.length();
         listed = true;
       }
       # A unit tag has no brackets, not even empty ones (D73): `tag X[];`
@@ -1830,20 +1952,25 @@ assume Std {
           return ast::node1(ast::k_d_unit(), nm);
         }
       }
+      var arity = ast::none();
       var ty = ast::none();
       if here(tk_lbrace()) {
         ty = parse_type_atom();
       } else {
         expect(tk_lparen());
-        ty = parse_type();
-        # A record payload is written with braces, not in parentheses.
-        if ast::kind_of(ty) == ast::k_ty_record() {
-          fail();
+        let types = int_list();
+        parse_types_to_paren(types);
+        arity = types.length();
+        if arity == 1 {
+          ty = types.get(0);
+        } else {
+          ty = tuple_type(types);
         }
-        expect(tk_rparen());
       }
       expect(tk_semi());
-      ast::node4(ast::k_d_tag(), nm, ty, ps, n)
+      let n = params.length();
+      params.push(arity);
+      ast::node4(ast::k_d_tag(), nm, ty, ast::commit(params), n)
     }
 
     fn parse_decl(): Int {

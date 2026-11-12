@@ -1448,7 +1448,7 @@ Inductive dkind := DKType | DKUnit | DKAlias | DKTag | DKVal | DKFn | DKCtx | DK
 Definition kind_of (d : adecl) : option dkind :=
   match d with
   | ADType _ => Some DKType | ADBareTag _ => Some DKUnit | ADAlias _ _ => Some DKAlias
-  | ADTag _ _ _ => Some DKTag | ADVal _ _ _ => Some DKVal | ADCtx _ _ => Some DKCtx
+  | ADTag _ _ _ _ => Some DKTag | ADVal _ _ _ => Some DKVal | ADCtx _ _ => Some DKCtx
   | ADFunctor _ _ _ _ _ => Some DKFunctor
   | ADFn RPlain _ _ _ _ => Some DKFn
   | ADFn _ _ _ _ _ => Some DKMeth
@@ -1466,7 +1466,7 @@ Definition filed_name (d : adecl) : option (nspace * name) :=
   | ADFn (RAttached _) _ _ _ _ => None
   | ADAssume _ _ => None
   | _ => match d with
-         | ADType n | ADBareTag n | ADAlias n _ | ADTag n _ _ | ADVal n _ _ | ADCtx n _
+         | ADType n | ADBareTag n | ADAlias n _ | ADTag n _ _ _ | ADVal n _ _ | ADCtx n _
          | ADFunctor n _ _ _ _ | ADFn _ n _ _ _ => Some (NSName, n)
          | _ => None
          end
@@ -1633,7 +1633,7 @@ Definition AssumeTypes (W : world) (s : nat) (t : nat) : Prop :=
                SpecTypes W (d_mod d) sp t.
 
 Definition nominal_body (d : adecl) : option (list name * aty) :=
-  match d with ADTag _ ps t => Some (ps, t) | ADAlias _ t => Some ([], t) | _ => None end.
+  match d with ADTag _ ps _ t => Some (ps, t) | ADAlias _ t => Some ([], t) | _ => None end.
 
 Definition RelevanceClosed (W : world) (R : nat -> list nat) : Prop :=
   forall g d ps t, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) ->
@@ -2593,8 +2593,8 @@ Definition operator_method (op : string) (unary : bool) : option (string * strin
 
 (* the payload type of a tag at its arguments *)
 Inductive PayloadOf (W : world) : nat -> list (nat * ty) -> ty -> Prop :=
-| PayTag : forall s xs d n ps t pay,
-    w_decl W s = Some d -> d_ast d = ADTag n ps t -> TyOf W (d_mod d) xs None t pay ->
+| PayTag : forall s xs d n ps arity t pay,
+    w_decl W s = Some d -> d_ast d = ADTag n ps arity t -> TyOf W (d_mod d) xs None t pay ->
     PayloadOf W s xs pay.
 
 (* The fields of a record pattern `P{…}` against the payload's fields
@@ -2696,7 +2696,7 @@ Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
    this preliminary leaf-identity check. *)
 Definition result_already_provided (d : adecl) : bool :=
   match d with
-  | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ => true
+  | ADBareTag _ | ADTag _ _ _ _ | ADAlias _ _ => true
   | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => true
   | _ => false
   end.

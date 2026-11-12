@@ -25,7 +25,7 @@ assume Std {
   fn k_ty_never(): Int { 1 }              # |
   fn k_ty_this(): Int { 2 }              # This
   fn k_ty_ref(): Int { 3 }               # a=path b=app run c=app len d=applied
-  fn k_ty_tuple(): Int { 4 }             # retired (D63); kept so no later kind moves
+  fn k_ty_tuple(): Int { 4 }             # reserved; tuple syntax lowers to indexed fields
   fn k_ty_record(): Int { 5 }            # a=run of ty_field b=len
   fn k_ty_union(): Int { 6 }             # a=run b=len
   fn k_ty_field(): Int { 7 }             # a=name b=type
@@ -58,7 +58,7 @@ assume Std {
   # Patterns.
   fn k_pt_wild(): Int { 29 }   # _
   fn k_pt_path(): Int { 30 }   # a=path b=sub-pattern
-  fn k_pt_record(): Int { 31 } # a=path (none if bare) b=run of pt_field c=len
+  fn k_pt_record(): Int { 31 } # a=path (none if bare) b=run of pt_field c=len d=1 if positional
   fn k_pt_field(): Int { 32 }  # a=name b=pattern
   fn k_arm(): Int { 33 }        # a=pattern b=body
 
@@ -74,7 +74,7 @@ assume Std {
   fn k_d_assume(): Int { 38 }  # a=item run b=len c=decl run d=len
   fn k_d_type(): Int { 39 }    # a=name
   fn k_d_alias(): Int { 40 }   # a=name b=type
-  fn k_d_tag(): Int { 41 }     # a=name b=type c=listed run d=count (D73)
+  fn k_d_tag(): Int { 41 }     # a=name b=type c=listed run then arity d=count of listed names
   fn k_d_unit(): Int { 42 }   # a=name
   fn k_d_val(): Int { 43 }    # a=name b=type c=init
   fn k_d_fn(): Int { 44 }     # a=run: recv, name, params, len, ret, body
@@ -114,6 +114,7 @@ assume Std {
   # Parser-only binding forms. A name uses k_param. A field is k_bind_field.
   fn k_bind_record(): Int { 54 } # a=field run b=len c=annotation
   fn k_bind_field(): Int { 55 }  # a=field name b=binding form
+  fn k_bind_tuple(): Int { 56 }  # a=positional field run b=len c=annotation
 
   # `for x in e { body }` (draft) is parsed into a bare block of `let`,
   # `var` and `while`, whose calls of access.moss's iteration methods are
@@ -244,6 +245,10 @@ assume Std {
     fn kid_at(run: Int, i: Int): Int { kids.get(run + i) }
 
     # A path: one id for a run of interned names.
+    # The final word of a tag's parameter run is its positional arity,
+    # or none for a named record payload.
+    fn tag_arity(decl: Int): Int { kid_at(c_of(decl), d_of(decl)) }
+
     fn path_of(xs: IntList): Int {
       let id = pstart.length();
       pstart.push(pnames.length());

@@ -93,6 +93,7 @@ Arguments kind_at : simpl never.
 Arguments advance : simpl never.
 Arguments peek : simpl never.
 Arguments at_lambda : simpl never.
+Arguments parse_bind_target : simpl never.
 Arguments binop : simpl never.
 Arguments binop_in : simpl never.
 Arguments mem : simpl never.
@@ -289,7 +290,8 @@ Proof.
     all: unfold MembersAfter in *.
     + eapply MemMore; eauto with fe.
     + apply MemOne; auto.
-  - intros ts v rest H. simpl in H. crush; use_sound; feed; eauto with fe.
+  - intros ts v rest H. simpl in H. crush; use_sound; feed; feed_lists; eauto with fe.
+    all: try solve [eapply TATuple; eauto with fe].
   - intros ts v rest H. simpl in H. crush; feed_lists; eauto with fe.
   - intros ts v rest H. simpl in H. crush; feed; eauto with fe.
 Qed.
@@ -325,7 +327,7 @@ Lemma pattern_sound : forall n,
 Proof.
   induction n as [|n (IH1 & IH2 & IH3)]; [repeat split; intros; discriminate|].
   repeat split.
-  - intros ts v rest H. simpl in H. crush; use_sound; feed; unfold RecPatAfter in *; feed; subst.
+  - intros ts v rest H. simpl in H. crush; use_sound; feed; feed_lists; unfold RecPatAfter in *; feed; subst.
     all: try solve [eauto with fe].
     all: first
       [ apply PatWild; split; auto
@@ -457,20 +459,27 @@ Lemma bind_form_sound : forall n,
   (forall ts v rest, parse_bind_field n ts = POk v rest -> BindFormField ts v rest).
 Proof.
   induction n as [|n [Form Field]]; [split; intros; discriminate|].
-  split; intros ts v rest H; simpl in H; crush.
-  - list_with BindFormField. grind. eauto with fe.
-  - grind. eauto with fe.
-  - grind. eauto with fe.
-  - grind. eauto with fe.
+  - split; intros ts v rest H; simpl in H; crush;
+      try list_with BindFormField; try list_with BindForm;
+      grind; eauto with fe.
 Qed.
 
 Lemma bind_form1_sound n ts v rest : parse_bind_form n ts = POk v rest -> BindForm ts v rest.
 Proof. apply bind_form_sound. Qed.
 Local Hint Resolve bind_form1_sound : fe.
 
+Global Hint Constructors BindTarget : fe.
+
+Lemma bind_target_sound n ts v rest : parse_bind_target n ts = POk v rest -> BindTarget ts v rest.
+Proof.
+  unfold parse_bind_target. intro H. crush; try list_with BindForm; grind.
+  all: eauto with fe.
+Qed.
+
 Ltac read_bind_form :=
   repeat match goal with
   | H : parse_bind_form ?n _ = POk _ _ |- _ => apply (proj1 (bind_form_sound n)) in H
+  | H : parse_bind_target _ _ = POk _ _ |- _ => apply bind_target_sound in H
   | H : negb _ = false |- _ => apply Bool.negb_false_iff in H
   end.
 
@@ -556,15 +565,17 @@ Proof.
   (* parse_lambda *)
   - intros ts v rest H. simpl in H. crush. list_with BindForm. grind. read_bind_form. eauto 8 with fe.
   (* parse_primary *)
-  - intros nr ts v rest H. simpl in H. crush; try list_with RecField; grind.
+  - intros nr ts v rest H. simpl in H. crush; try list_with RecField; try list_with (Expr false); grind.
     all: try congruence.
     all: try solve [eauto 7 with fe].
+    all: try solve [eapply PrimTuple; eauto 7 with fe].
   (* parse_block *)
   - intros ts v rest H. simpl in H. grind. unfold StmtsOk in *. simpl in *. eauto with fe.
   (* block_loop *)
   - intros ts v rest H. simpl in H. grind. read_bind_form.
     all: unfold StmtsOk in *; simpl in *.
     all: try (destruct (at_ VAR ts) eqn:?; crush).
+    all: read_bind_form.
     all: rewrite ?kind_at1 in *.
     all: try congruence.
     all: try solve [eauto 8 with fe].
@@ -618,7 +629,7 @@ Lemma decl_sound : forall n,
 Proof.
   induction n as [|n (IH1 & IH2)]; [split; intros; discriminate|].
   split; intros ts v rest H; simpl in H; crush; try list_with AssumeItem; try list_with CtxItem; try list_with BindForm;
-    try list_with Spec_; try list_with Spec_; grind; read_bind_form;
+    try list_with Spec_; try list_with Spec_; try list_with Type_; grind; read_bind_form;
     repeat match goal with
     | H : name_list _ _ = POk _ _ |- _ => apply name_list_sound in H
     | H : binds_loop _ _ = POk _ _ |- _ => apply binds_loop_sound in H
@@ -633,7 +644,7 @@ Proof.
   all: try match goal with H : _ = POk _ _, Ht : Type_ _ ?t _ |- _ => is_var t; destruct t; crush end.
   all: try solve [eapply DBareTag; eauto with fe; unfold TagParams; eauto with fe].
   all: try solve [eapply DTagRecord; eauto with fe; unfold TagParams; eauto with fe].
-  all: try solve [eapply DTag; eauto with fe; [unfold TagParams; eauto with fe | intros ? ?; discriminate]].
+  all: try solve [eapply DTag; eauto with fe; unfold TagParams; eauto with fe].
 Qed.
 
 Lemma decl1_sound n ts v rest : parse_decl n ts = POk v rest -> Decl ts v rest.
@@ -1267,12 +1278,11 @@ Proof. destruct 1 as [? ? ? (E & _) _ | ? ? ? ? ? ? (E & _) _ _]; auto. Qed.
 (* A type starts with `|`, a name, `This`, `(` or `{`. *)
 Lemma type_atom_first ts t rest : TypeAtom ts t rest -> In (kind ts) [NAME; THIS_TYPE; LPAREN; LBRACE].
 Proof.
-  intro H. destruct H as [? ? ? ? ? Hp _ | ? ? [E _] | ? ? ? [E _] _ | ? ? ? ? ? [E _] _ _ | ? ? ? Hr].
-  - rewrite (path_kind _ _ _ Hp). simpl. auto.
-  - rewrite E. simpl. auto.
-  - rewrite E. simpl. auto.
-  - rewrite E. simpl. auto.
-  - destruct Hr as [? ? ? ? ? [E _] _ _]. rewrite E. simpl. auto.
+  intro H. destruct H.
+  all: try solve [match goal with H : Tk _ ?start _ |- In (kind ?start) _ => rewrite (proj1 H); simpl; auto end].
+  - match goal with H : Path _ _ _ |- _ => rewrite (path_kind _ _ _ H); simpl; auto end.
+  - match goal with H : RecordType _ _ _ |- _ => destruct H as [? ? ? ? ? [E _] _ _] end.
+    rewrite E. simpl. auto.
 Qed.
 
 Lemma type_first ts t rest : Type_ ts t rest -> In (kind ts) [PIPE; NAME; THIS_TYPE; LPAREN; LBRACE].

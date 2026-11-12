@@ -78,7 +78,7 @@ Theorem sig_mentions_sound : forall fuel symbol x,
 Proof.
   intros fuel symbol x Present. unfold sig_mentions in Present.
   destruct (w_decl W symbol) as [d|] eqn:Declaration; [|contradiction].
-  destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+  destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
     receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
     try contradiction.
   rewrite sort_uniq_members in Present.
@@ -102,7 +102,7 @@ Proof.
   all: try solve [destruct Present as [<-|[]]; eapply STType; eassumption].
   all: destruct (nmem symbol stack); [contradiction|].
   all: destruct (w_decl W symbol) as [d|] eqn:Declaration; [|contradiction].
-  all: destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
+  all: destruct (d_ast d) as [items declarations|name|name body|name parameters arity payload|name|name value_type initial|
     receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
     try contradiction.
   all: apply in_flat_map in Present as [sp [Member Present]];

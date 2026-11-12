@@ -36,7 +36,7 @@ Proof.
   fix IH 5. intros p ns n e Ex m Ens Ee.
   destruct Ex as [p s d ns0 n0 D _ Fn|p mo t imp u e0 ns0 M I _ _ Ens0 Dis|p mo t imp a M I _].
   - injection Ee as ->. subst ns0. unfold kind_sym. rewrite D.
-    destruct (d_ast d) as [|n1|n1 t1|n1 l1 t1|n1|n1 t1 o1|[| |r] n1 ps rt body|n1 l1|n1 o1 l1 l2 o2]; cbn in Fn; try discriminate; try reflexivity;
+    destruct (d_ast d) as [|n1|n1 t1|n1 l1 arity t1|n1|n1 t1 o1|[| |r] n1 ps rt body|n1 l1|n1 o1 l1 l2 o2]; cbn in Fn; try discriminate; try reflexivity;
       injection Fn as E; discriminate E.
   - subst e0. cbn in Ens. subst ns0.
     destruct Dis as [Ex'|[Nd _]]; [exact (IH _ _ _ _ Ex' m Ens eq_refl)|].

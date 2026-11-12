@@ -193,12 +193,14 @@ Proof.
     + rewrite at_neq by auto. fin.
     + destruct (members_split _ _ _ Hm) as (m & ms' & t' & -> & Ha & Hmt).
       step. ih IH3 Ha. ih IH2 Hmt. fin.
-  - simpl. destruct H as [? ? ? ? ? Hp Ha | ? ? Ht | ? ? ? Ht Ht2 | ? ? ? ? ? Ht Hty Ht2 | ? ? ? Hr].
+  - simpl. destruct H as [? ? ? ? ? Hp Ha | ? ? Ht | ? ? ? Ht Ht2 | ? ? ? ? ? Ht Hty Ht2 | ? ? ? ? ? ? ? ? Ht Hty Hc Hl Ht2 | ? ? ? Hr].
     + pose proof (path_kind _ _ _ Hp). step. ext path_complete Hp n. ext app_complete Ha n. fin.
     + step. fin.
     + step. fin.
     + pose proof (type_first _ _ _ Hty). step. ih IH1 Hty.
       step. fin.
+    + pose proof (type_first _ _ _ Hty). step. ih IH1 Hty. step.
+      clist Hl n ltac:(apply Ok1_Ok; apply IH1; auto; lia). step. fin.
     + destruct Hr as [? ? ? ? ? Ht Hl Ht2] eqn:Er. step. ih IH4 Hr. fin.
   - simpl. destruct H as [? ? ? ? ? Ht Hl Ht2]. step.
     clist Hl n ltac:(apply Ok1_Ok; apply IH5; auto; lia). step. fin.
@@ -245,7 +247,7 @@ Proof.
       ext path_complete Hp n. step. fin.
     + pose proof (path_kind _ _ _ Hp). rewrite !at_neq by congruence. rewrite at_eq by auto.
       ext path_complete Hp n.
-      pose proof (pattern_first _ _ _ Hq). step. ih IH1 Hq. step. fin.
+      step. clist Hq n ltac:(apply Ok1_Ok; apply IH1; auto; lia). step. fin.
     + pose proof (path_kind _ _ _ Hp). rewrite !at_neq by congruence. rewrite at_eq by auto.
       ext path_complete Hp n.
       destruct Hr as [? ? ? ? ? Ht Hl Ht2] eqn:Er. step.
@@ -455,6 +457,12 @@ Ltac firsts := repeat match goal with
 Ltac ihp L P := match goal with H : ?T |- _ => lazymatch T with context [P] => ih L H end end.
 Ltac exp L P n := match goal with H : ?T |- _ => lazymatch T with context [P] => ext L H n end end.
 
+Lemma binding_starts ts form rest : BindForm ts form rest ->
+  kind ts = NAME \/ kind ts = LBRACE \/ kind ts = LPAREN.
+Proof.
+  destruct 1; unfold TkName, TkText, Tk in *; intuition.
+Qed.
+
 Lemma bind_form_complete : forall n,
   (forall ts v rest, BindForm ts v rest -> Ends ts -> 3 + 32 * length ts <= n ->
      Ok (parse_bind_form n ts) v ts rest) /\
@@ -466,7 +474,24 @@ Proof.
   - step. exp opt_type_complete OptType n. fin.
   - step. clistx n ltac:(eapply Field; eauto; lia). step. exp opt_type_complete OptType n. fin.
   - step. exp opt_type_complete OptType n. fin.
+  - assert (kind ts1 <> RPAREN)
+      by (destruct (binding_starts _ _ _ H0) as [K|[K|K]]; congruence).
+    step. ihp Form BindForm. step. exp opt_type_complete OptType n. rewrite H3. fin.
+  - assert (kind ts1 <> RPAREN)
+      by (destruct (binding_starts _ _ _ H0) as [K|[K|K]]; congruence).
+    step. ihp Form BindForm. step. clistx n ltac:(eapply Form; eauto; lia).
+    step. exp opt_type_complete OptType n. fin.
+  - step. exp opt_type_complete OptType n. fin.
   - step. ihp Form BindForm. fin.
+Qed.
+
+Lemma bind_target_complete n ts v rest : BindTarget ts v rest -> Ends ts -> 3 + 32 * length ts <= n ->
+  Ok (parse_bind_target n ts) v ts rest.
+Proof.
+  intros H He Hn. unfold parse_bind_target. destruct H; firsts.
+  - exp (proj1 (bind_form_complete n)) BindForm n. step. fin.
+  - exp (proj1 (bind_form_complete n)) BindForm n. step.
+    clistx n ltac:(eapply (proj1 (bind_form_complete n)); eauto; lia). fin.
 Qed.
 
 Lemma expr_group : forall n,
@@ -601,6 +626,10 @@ Proof.
     + rewrite at_eq by auto. rewrite (lambda_ahead _ _ _ H). cbn [andb]. ihp IH13 Lambda. fin.
     + tks. rewrite at_eq by auto. rewrite H0. cbn [andb]. step. fin.
     + tks. rewrite at_eq by auto. rewrite H0. cbn [andb]. step. ihp IH1 Expr. step. fin.
+    + tks. rewrite at_eq by auto.
+      match goal with H : at_lambda _ = false |- _ => rewrite H end.
+      cbn [andb]. step. ihp IH1 Expr. step.
+      clistx n ltac:(apply Ok1_Ok; apply IH1; auto; lia). step. fin.
     + step. cbn [andb]. step. fin.
     + step. cbn [andb]. step. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
     + step. cbn [andb]. step. rewrite H0. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
@@ -622,10 +651,10 @@ Proof.
   (* block_loop *)
   - intros ts ss tl rest H He Hn. simpl. destruct H; firsts.
     + step. fin.
-    + step. cbn [orb]. exp (proj1 (bind_form_complete n)) BindForm n.
+    + step. cbn [orb]. exp (bind_target_complete n) BindTarget n.
       match goal with H : binding_valid _ = true |- _ => rewrite H end. cbn [negb].
       step. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
-    + step. cbn [orb]. exp (proj1 (bind_form_complete n)) BindForm n.
+    + step. cbn [orb]. exp (bind_target_complete n) BindTarget n.
       match goal with H : binding_valid _ = true |- _ => rewrite H end. cbn [negb].
       step. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
     + step. cbn [orb]. step. ihp IH17 Bind. ihp IH16 Stmts. fin.
@@ -709,9 +738,9 @@ Proof.
         exp record_type_complete RecordType n. step. fin.
     (* tag with a parenthesized payload *)
     + destruct H1 as [(Hk & -> & ->) | Hnl].
-      * step. exp type_complete Type_ n. destruct t; try (exfalso; eapply H4; reflexivity); step; fin.
+      * step. clistx n ltac:(apply Ok1_Ok; eapply type_complete; eauto; lia). step. step. fin.
       * pose proof (namelist_first _ _ _ Hnl). step. exp name_list_complete NameList n. step.
-        exp type_complete Type_ n. destruct t; try (exfalso; eapply H4; reflexivity); step; fin.
+        clistx n ltac:(apply Ok1_Ok; eapply type_complete; eauto; lia). step. step. fin.
     (* val *)
     + step. exp type_complete Type_ n. step. fin.
     + step. exp type_complete Type_ n. step. exp expr_complete Expr n. step. fin.

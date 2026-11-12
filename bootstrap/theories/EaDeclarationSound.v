@@ -101,7 +101,7 @@ Theorem decl_forms_sound : forall P symbol,
 Proof.
   intros P symbol Constants Run d Declared.
   unfold EaMain.decl_forms in Run. cbv zeta in Run. fold W in Run. rewrite Declared in Run.
-  destruct (d_ast d) as [assumes declarations|n|n t|n ps t|n|n t initial|
+  destruct (d_ast d) as [assumes declarations|n|n t|n ps arity t|n|n t initial|
     recv n ps ret body|n items|n ps a r bodies] eqn:Ast; try exact I.
   - apply rbind_ok in Run as (ignored & _ & Run).
     apply rbind_ok in Run as (tau & Read & _).

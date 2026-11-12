@@ -1,5 +1,5 @@
 (* S-expression codec for parsed files and module bundles. *)
-From Stdlib Require Import String Ascii List.
+From Stdlib Require Import String Ascii List Bool.
 From NM Require Export ExecutionModel.
 Export ExecutionModel.Input.
 Import ListNotations.
@@ -283,8 +283,22 @@ Fixpoint read_decl (fuel : nat) (x : sx) : res adecl :=
           Good (ADAssume its' ds')
       | SL false [SA "N"; SA n] => Good (ADType n)
       | SL false [SA "O"; SA n; t] => let* t' := read_ty k t in Good (ADAlias n t')
+      | SL false [SA "P"; SA n; SL true ps; arity; t] =>
+          let* ps' := rmap atom ps in
+          let* t' := read_ty k t in
+          let* arity := opt_atom arity in
+          let* arity := match arity with
+            | None => Good None
+            | Some text =>
+                let digits := list_ascii_of_string text in
+                if forallb (fun d => let n := nat_of_ascii d in Nat.leb 48 n && Nat.leb n 57) digits
+                then Good (Some (fold_left (fun n d => n * 10 + (nat_of_ascii d - 48)) digits 0))
+                else bad "tag arity"
+            end in
+          Good (ADTag n ps' arity t')
       | SL false [SA "P"; SA n; SL true ps; t] =>
-          let* ps' := rmap atom ps in let* t' := read_ty k t in Good (ADTag n ps' t')
+          let* ps' := rmap atom ps in let* t' := read_ty k t in
+          Good (ADTag n ps' (match t' with ATRec _ => None | _ => Some 1 end) t')
       | SL false [SA "Q"; SA n] => Good (ADBareTag n)
       | SL false [SA "R"; SA n; t; i] =>
           let* t' := read_ty k t in
@@ -494,7 +508,8 @@ Fixpoint ddecl (d : adecl) : sx :=
   | ADAssume its ds => nd "M" [sl (map dassume its); sl (map ddecl ds)]
   | ADType x => nd "N" [SA x]
   | ADAlias x t => nd "O" [SA x; dty t]
-  | ADTag x ps t => nd "P" [SA x; sl (map SA ps); dty t]
+  | ADTag x ps arity t =>
+      nd "P" [SA x; sl (map SA ps); dopt (fun n => SA (Syntax.show_nat n)) arity; dty t]
   | ADBareTag x => nd "Q" [SA x]
   | ADVal x t i => nd "R" [SA x; dty t; dopt dexpr i]
   | ADFn r x ps ret body =>

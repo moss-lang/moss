@@ -32,7 +32,7 @@ Proof.
   destruct X as [p s d ns n D Md Fn|p mo t imp u e ns Mo It Gl Iu Ens Ex|p mo t imp a Mo It Al];
     intros Ens' m Ee.
   - injection Ee as <-. subst ns.
-    destruct (d_ast d) as [a1 a2|n0|n0 t0|n0 ps0 t0|n0|n0 t0 i0|rcv n' ps rt body|n0 its|n0 ps0 a0 r0 b0] eqn:Ast;
+    destruct (d_ast d) as [a1 a2|n0|n0 t0|n0 ps0 arity t0|n0|n0 t0 i0|rcv n' ps rt body|n0 its|n0 ps0 a0 r0 b0] eqn:Ast;
       cbn in Fn; try discriminate; try (injection Fn as En _; discriminate En).
     destruct rcv; cbn in Fn; try discriminate; try (injection Fn as En _; discriminate En).
     exists d, n', ps, rt, body. split; [exact D|exact Ast].

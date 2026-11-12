@@ -117,7 +117,7 @@ Proof.
         eapply FType; [exact Resolved|exact Kind|intros (b & [] & _)].
       * apply rbind_ok in Run as (d & Declaration & Run).
         rewrite Declaration. cbn [rbind].
-        destruct (d_ast d) as [items declarations|n|n body|n params payload|n|n value init|
+        destruct (d_ast d) as [items declarations|n|n body|n params arity payload|n|n value init|
           receiver n params result body|n items|n params inputs outputs body] eqn:Ast;
           try discriminate.
         apply rbind_ok in Run as (rows & Bindings & Run).
