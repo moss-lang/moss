@@ -127,17 +127,12 @@ Definition trim_program (T : tbl) (p : program) : program :=
   Program (map (fun fb => (fst fb, trim_e T (Dt T (fst fb)) (snd fb))) (program_functions p))
           (map (fun ub => (fst ub, trim_code T (snd ub))) (program_functors p))
           (program_bool p) (program_true p) (program_false p) (program_main p)
-          (program_environment p) (program_unsupported p) (program_casts p) (program_machines p) (program_origins p).
+          (program_environment p) (program_unsupported p) (program_machines p) (program_origins p).
 
 (* ===================== 2. The checker ==================================== *)
 
-Definition cast_gens (p : program) : list nat :=
-  flat_map (fun q => match cast_handle (snd q) with Some (h, _) => [h] | None => [] end)
-    (program_casts p).
-
 Section Check.
 Variable T : tbl.
-Variable casts : list nat.
 (* the enclosing activation's G and D *)
 Variables S Dm : nat -> bool.
 Definition gok (t : ty) : bool := forallb S (Elaboration.gens t).
@@ -150,8 +145,7 @@ Definition cap_ok (f' : fsym) (l : subst) : bool :=
 Fixpoint nchk (e : expr) : bool :=
   match e with
   | EVar _ | EUnit | EBreak | EVal _ => true
-  | ETag _ th e1 => sok th && forallb S casts && nchk e1
-  | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => nchk e1
+  | ETag _ _ e1 | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => nchk e1
   | ECall f th _ args =>
       let kept := trim_call_types T f th in
       sok kept && forallb (fun q => Dt T f (fst q)) kept && forallb nchk args
@@ -188,9 +182,8 @@ Fixpoint pv_ok (T : tbl) (a : provision_value) : bool :=
   end.
 
 Definition check (T : tbl) (p : program) : bool :=
-  let cs := cast_gens p in
-  forallb (fun fb => nchk T cs (Gt T (fst fb)) (Dt T (fst fb)) (snd fb)) (program_functions p)
-  && forallb (fun ub => forallb (bchk T cs all_gens all_gens) (fc_bindings (snd ub))) (program_functors p)
+  forallb (fun fb => nchk T (Gt T (fst fb)) (Dt T (fst fb)) (snd fb)) (program_functions p)
+  && forallb (fun ub => forallb (bchk T all_gens all_gens) (fc_bindings (snd ub))) (program_functors p)
   && forallb (fun q => Dt T (program_main p) (fst q)) (type_meanings (program_environment p))
   && forallb (fun q => pv_ok T (snd q)) (provision_values (program_environment p)).
 
@@ -198,7 +191,6 @@ Definition check (T : tbl) (p : program) : bool :=
 
 Section Compute.
 Variable T : tbl.   (* the previous round *)
-Variable casts : list nat.
 
 Definition tpair (A : tbl) (f : fsym) : gset * gset :=
   match NatTrie.tget A f with Some q => q | None => (NatTrie.TE, NatTrie.TE) end.
@@ -223,8 +215,7 @@ Definition site (cur : option fsym) (Dm : nat -> bool) (f' : fsym) (l : subst) (
 Fixpoint walk_e (cur : option fsym) (Dm : nat -> bool) (e : expr) (A : tbl) : tbl :=
   match e with
   | EVar _ | EUnit | EBreak | EVal _ => A
-  | ETag _ th e1 => walk_e cur Dm e1 (addG cur (sgens th ++ casts) A)
-  | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => walk_e cur Dm e1 A
+  | ETag _ _ e1 | EAssign _ e1 | ELoop e1 | EReturn e1 | EField e1 _ => walk_e cur Dm e1 A
   | ECall f th _ args =>
       let kept := trim_call_types T f th in
       fold_left (fun A a => walk_e cur Dm a A) args (addD f (map fst kept) (addG cur (sgens kept) A))
@@ -264,10 +255,9 @@ Fixpoint env_walk (fuel : nat) (owner : option fsym) (d : environment) (A : tbl)
 End Compute.
 
 Definition round (p : program) (T : tbl) : tbl :=
-  let cs := cast_gens p in
-  let A := fold_left (fun A fb => walk_e T cs (Some (fst fb)) (Dt T (fst fb)) (snd fb) A)
+  let A := fold_left (fun A fb => walk_e T (Some (fst fb)) (Dt T (fst fb)) (snd fb) A)
              (program_functions p) T in
-  let A := fold_left (fun A ub => fold_left (fun A b => walk_b T cs None all_gens b A)
+  let A := fold_left (fun A ub => fold_left (fun A b => walk_b T None all_gens b A)
              (fc_bindings (snd ub)) A) (program_functors p) A in
   env_walk 64 (Some (program_main p)) (program_environment p) A.
 
@@ -671,7 +661,6 @@ Ltac andb_split :=
 
 Section SimSec.
 Variable T : tbl.
-Variable casts : list nat.
 Variables P P' : program_view.
 Variable ok : mstate -> Prop.
 Hypothesis Hfn : forall f, view_function P' f = option_map (trim_e T (Dt T f)) (view_function P f).
@@ -681,13 +670,10 @@ Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
-Hypothesis Hcasts : view_casts P' = view_casts P.
-Hypothesis Hcastg : forall n c h t, lookup_cast n (view_casts P) = Some c ->
-  cast_handle c = Some (h, t) -> In h casts.
 Hypothesis Hclosed : forall f b, view_function P f = Some b ->
-  nchk T casts (Gt T f) (Dt T f) b = true.
+  nchk T (Gt T f) (Dt T f) b = true.
 Hypothesis Hfunchk : forall h c, view_functor P h = Some c ->
-  forallb (bchk T casts all_gens all_gens) (fc_bindings c) = true.
+  forallb (bchk T all_gens all_gens) (fc_bindings c) = true.
 
 Definition brel (S Dm : nat -> bool) (x : bool) (a b : (environment * locals * mstate) + evaluation) : Prop :=
   match a, b with
@@ -705,11 +691,11 @@ Definition arel (outputs : list (tsym * tsym)) (a b : (environment * mstate) + e
   end.
 
 Definition SIM (k : nat) : Prop :=
-  (forall S Dm x d d' g st e, nchk T casts S Dm e = true -> envrel T S Dm x d d' -> ok st ->
+  (forall S Dm x d d' g st e, nchk T S Dm e = true -> envrel T S Dm x d d' -> ok st ->
      eval k P' d' g st (trim_e T Dm e) = eval k P d g st e)
-  /\ (forall S Dm x d d' g st l, forallb (nchk T casts S Dm) l = true -> envrel T S Dm x d d' -> ok st ->
+  /\ (forall S Dm x d d' g st l, forallb (nchk T S Dm) l = true -> envrel T S Dm x d d' -> ok st ->
      eval_arguments k P' d' g st (map (trim_e T Dm) l) = eval_arguments k P d g st l)
-  /\ (forall S Dm x d d' g st bs, forallb (bchk T casts S Dm) bs = true -> envrel T S Dm x d d' -> ok st ->
+  /\ (forall S Dm x d d' g st bs, forallb (bchk T S Dm) bs = true -> envrel T S Dm x d d' -> ok st ->
      brel S Dm x (eval_bindings k P' d' g st (map (trim_b T Dm) bs)) (eval_bindings k P d g st bs))
   /\ (forall S Dm x d d' u th outputs sm rs st, sok S th = true -> envrel T S Dm x d d' -> ok st ->
      arel outputs (apply_functor k P' d' u th outputs sm rs st) (apply_functor k P d u th outputs sm rs st)).
@@ -732,8 +718,8 @@ Proof.
   destruct (match_pat pt w); simpl; auto.
 Qed.
 Lemma select_arm_chk : forall S Dm arms w bs eb,
-  forallb (fun p => nchk T casts S Dm (snd p)) arms = true -> select_arm arms w = Some (bs, eb) ->
-  nchk T casts S Dm eb = true.
+  forallb (fun p => nchk T S Dm (snd p)) arms = true -> select_arm arms w = Some (bs, eb) ->
+  nchk T S Dm eb = true.
 Proof.
   intros S Dm. induction arms as [|[pt b] r IH]; intros w bs eb Hc Ha; simpl in *; [discriminate|].
   apply andb_true_iff in Hc as [Hb Hr].
@@ -746,7 +732,7 @@ Lemma map_fst_trim : forall Dm (fs : list (fld * expr)),
   map fst (map (fun p => (fst p, trim_e T Dm (snd p))) fs) = map fst fs.
 Proof. intros. rewrite map_map. reflexivity. Qed.
 Lemma forallb_snd : forall S Dm (fs : list (fld * expr)),
-  forallb (fun p => nchk T casts S Dm (snd p)) fs = forallb (nchk T casts S Dm) (map snd fs).
+  forallb (fun p => nchk T S Dm (snd p)) fs = forallb (nchk T S Dm) (map snd fs).
 Proof. intros. induction fs; simpl; congruence. Qed.
 
 Lemma truthy_eq : forall w, truthy P' w = truthy P w.
@@ -918,7 +904,7 @@ Proof.
       pose proof (@inv_e k d g st e0 Hst) as Hn.
       destruct (eval k P d g st e0) as [[w0| | | | | | |] g0 st0]; simpl in Hn; try reflexivity.
       rewrite select_arm_trim. destruct (select_arm arms w0) as [[bs eb]|] eqn:Ea; simpl; [|reflexivity].
-      assert (Hb : nchk T casts S Dm eb = true) by (eapply select_arm_chk; eassumption).
+      assert (Hb : nchk T S Dm eb = true) by (eapply select_arm_chk; eassumption).
       rewrite (IHe S Dm x d d' (bs ++ g0) st0 eb Hb H Hn). reflexivity.
   - (* eval_arguments *)
     intros S Dm x d d' g st l Hc H Hst. destruct l as [|e1 r]; simpl in Hc |- *; [reflexivity|]. andb_split.
@@ -1039,12 +1025,6 @@ Proof.
   right. auto.
 Qed.
 
-Lemma lookup_cast_in : forall n cs c, lookup_cast n cs = Some c -> In (n, c) cs.
-Proof.
-  intros n cs. induction cs as [|[n' c'] r IH]; simpl; intros c H; [discriminate|].
-  destruct (Nat.eqb n n') eqn:E; [apply Nat.eqb_eq in E; injection H as ->; subst; auto|auto].
-Qed.
-
 Lemma pv_ok_refl : forall T a, pv_ok T a = true -> prel T a a.
 Proof.
   intros T. fix IH 1. intros [w|f [ts als ps]|h sms [ts als ps] rms|p ot] H; simpl in H.
@@ -1088,17 +1068,13 @@ Proof.
     exact (nlook_map_dep (fun f e => trim_e T (Dt T f) e) f (program_functions p)). }
   assert (Hfun : forall h, view_functor P' h = option_map (trim_code T) (view_functor P h)).
   { intro h. unfold P, P', program_of, trim_program. simpl. apply nlook_map. }
-  assert (Hcastg : forall n c h t, lookup_cast n (view_casts P) = Some c ->
-            cast_handle c = Some (h, t) -> In h (cast_gens p)).
-  { intros n c h t Hl Hh. unfold P, program_of in Hl. simpl in Hl. apply lookup_cast_in in Hl.
-    unfold cast_gens. apply in_flat_map. exists (n, c). split; [exact Hl|]. simpl. rewrite Hh. left. reflexivity. }
   assert (Hclosed : forall f b, view_function P f = Some b ->
-            nchk T (cast_gens p) (Gt T f) (Dt T f) b = true).
+            nchk T (Gt T f) (Dt T f) b = true).
   { intros f b Hf. apply nlook_in in Hf. rewrite forallb_forall in Hc1. exact (Hc1 (f, b) Hf). }
   assert (Hfunchk : forall h c, view_functor P h = Some c ->
-            forallb (bchk T (cast_gens p) all_gens all_gens) (fc_bindings c) = true).
+            forallb (bchk T all_gens all_gens) (fc_bindings c) = true).
   { intros h c Hf. apply nlook_in in Hf. rewrite forallb_forall in Hc2. exact (Hc2 (h, c) Hf). }
-  destruct (@sim_all T (cast_gens p) P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl
+  destruct (@sim_all T P P' ok Hfn Hfun Hprim Hok eq_refl eq_refl eq_refl
               Hclosed Hfunchk fuel) as [Hsim _].
   unfold run_main. simpl program_main. simpl program_environment. rewrite Hfn.
   destruct (view_function P (program_main p)) as [body|] eqn:Em; simpl; [|reflexivity].
@@ -1140,8 +1116,7 @@ End Sim.
 Lemma captrim_view : forall p argv rd,
   let P' := program_of (captrim p) argv rd in let P := program_of p argv rd in
   view_bool P' = view_bool P /\ view_true P' = view_true P /\ view_false P' = view_false P
-  /\ view_arguments P' = view_arguments P /\ view_read P' = view_read P
-  /\ view_casts P' = view_casts P.
+  /\ view_arguments P' = view_arguments P /\ view_read P' = view_read P.
 Proof. intros p argv rd P' P. unfold P', P, captrim. destruct (compute_T 64 p (init_tbl p)); simpl; repeat split. Qed.
 
 (* ===================== 6. Public runs ==================================== *)
@@ -1154,7 +1129,7 @@ Module PS := Sim M.ReferenceHost M.Reference.
 Definition code_blind (interface : M.interface) : Prop :=
   forall P P', view_bool P' = view_bool P -> view_true P' = view_true P ->
     view_false P' = view_false P -> view_arguments P' = view_arguments P ->
-    view_read P' = view_read P -> view_casts P' = view_casts P ->
+    view_read P' = view_read P ->
     forall q ws s, M.primitive interface P' q ws s = M.primitive interface P q ws s.
 
 (* No safety premise: the trimmed run is the reference run. *)
@@ -1171,8 +1146,8 @@ Proof.
               (fun st => fst st = interface)); [reflexivity| | |reflexivity].
   - intros q site ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (captrim_view program (M.arguments initial) (M.read_file initial))
-      as [B [T [F [A [Rd C]]]]].
-    rewrite (Hblind _ _ B T F A Rd C). reflexivity.
+      as [B [T [F [A Rd]]]].
+    rewrite (Hblind _ _ B T F A Rd). reflexivity.
   - intros q site ws st Hi. unfold M.ReferenceHost.run_prim.
     eapply base_call_preserves; [|exact Hi].
     intros operation arguments [i s] Valid. unfold M.ReferenceHost.raw_primitive.

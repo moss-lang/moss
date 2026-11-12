@@ -221,7 +221,7 @@ Definition prune_program (R : rsets) (p : program) : program :=
           (map (fun ub => (fst ub, prune_code R (snd ub))) (program_functors p))
           (program_bool p) (program_true p) (program_false p) (program_main p)
           (prune_env R (program_main p) (program_environment p))
-          (program_unsupported p) (program_casts p) (program_machines p) (program_origins p).
+          (program_unsupported p) (program_machines p) (program_origins p).
 
 (* The pass. *)
 Definition prune (p : program) : program :=
@@ -576,7 +576,6 @@ Hypothesis Hok : forall q site ws st, ok st -> ok (snd (run_prim P q site ws st)
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
-Hypothesis Hcasts : view_casts P' = view_casts P.
 Hypothesis Hclosed : forall f b, view_function P f = Some b -> nchk R (inR R f) b = true.
 Hypothesis Hfunchk : forall h c, view_functor P h = Some c ->
   forallb (bchk R full) (fc_bindings c) = true.
@@ -973,8 +972,7 @@ End Sim.
 Lemma prune_view : forall p argv rd,
   let P' := program_of (prune p) argv rd in let P := program_of p argv rd in
   view_bool P' = view_bool P /\ view_true P' = view_true P /\ view_false P' = view_false P
-  /\ view_arguments P' = view_arguments P /\ view_read P' = view_read P
-  /\ view_casts P' = view_casts P.
+  /\ view_arguments P' = view_arguments P /\ view_read P' = view_read P.
 Proof. intros p argv rd P' P. unfold P', P, prune. destruct (compute_R 64 p NatTrie.TE); simpl; repeat split. Qed.
 
 (* ===================== 5. Public runs ==================================== *)
@@ -988,7 +986,7 @@ Module PS := Sim M.ReferenceHost M.Reference.
 Definition code_blind (interface : M.interface) : Prop :=
   forall P P', view_bool P' = view_bool P -> view_true P' = view_true P ->
     view_false P' = view_false P -> view_arguments P' = view_arguments P ->
-    view_read P' = view_read P -> view_casts P' = view_casts P ->
+    view_read P' = view_read P ->
     forall q ws s, M.primitive interface P' q ws s = M.primitive interface P q ws s.
 
 (* For a program that never runs to Wrong (public_safety: any admissible
@@ -1008,8 +1006,8 @@ Proof.
               (fun st => fst st = interface)) as [Hs|E].
   - intros q site ws [i s] Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
     destruct (prune_view program (M.arguments initial) (M.read_file initial))
-      as [B [T [F [A [Rd C]]]]].
-    rewrite (Hblind _ _ B T F A Rd C). reflexivity.
+      as [B [T [F [A Rd]]]].
+    rewrite (Hblind _ _ B T F A Rd). reflexivity.
   - intros q site ws st Hi. unfold M.ReferenceHost.run_prim.
     eapply base_call_preserves; [|exact Hi].
     intros operation arguments [i s] Valid. unfold M.ReferenceHost.raw_primitive.

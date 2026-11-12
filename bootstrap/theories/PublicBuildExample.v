@@ -252,8 +252,7 @@ Proof.
     + unfold Platform.Layouts, Platform.TagLayout. repeat split; intros; unfold LangItem, lang_item_key in *;
       exfalso; first [eapply NoWasm; eassumption | eapply NoBool; eassumption].
     + split.
-      * split; [reflexivity|]. exists None, None. split; [right;split;[exact (NoWasm NSName "Ref")|reflexivity]|].
-        split; [right;split;[exact (NoWasm NSName "Array")|reflexivity]|reflexivity].
+      * reflexivity.
       * exists empty_context, [], [], []. split; [exact main_context|].
         split; [reflexivity|]. split; [reflexivity|]. split; [constructor|].
         split; [constructor|]. split; [reflexivity|exact (conj main_layouts (conj main_bounded eq_refl))].

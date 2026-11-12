@@ -262,7 +262,7 @@ Qed.
 
 Theorem assemble_explicit_references : forall E bound entry before P after,
   EaMain.assemble E bound entry before = Ok (P, after) ->
-  AuditBase.Compilation.explicit_references P = true.
+  AuditBase.Compilation.explicit_references (e_W E) P = true.
 Proof.
   intros E bound entry before P after Run. unfold EaMain.assemble, EaMain.finish_assembly in Run.
   destruct (EaPlatform.bool_syms E) as [[boolean truth] falsity].
@@ -271,8 +271,8 @@ Proof.
   repeat apply EaControlSound.mbind_ok in Run as (?value & ?state & ?step & Run).
   injection Run as <- <-.
   match goal with
-  | Check : context [AuditBase.Compilation.explicit_references ?program] |- _ =>
-      destruct (AuditBase.Compilation.explicit_references program); [reflexivity|discriminate Check]
+  | Check : context [AuditBase.Compilation.explicit_references ?W ?program] |- _ =>
+      destruct (AuditBase.Compilation.explicit_references W program); [reflexivity|discriminate Check]
   end.
 Qed.
 

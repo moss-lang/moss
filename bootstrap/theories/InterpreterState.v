@@ -14,7 +14,6 @@ Hypothesis functors_agree : forall u, view_functor public_view u = view_functor 
 Hypothesis bool_agrees : view_bool public_view = view_bool raw_view.
 Hypothesis true_agrees : view_true public_view = view_true raw_view.
 Hypothesis false_agrees : view_false public_view = view_false raw_view.
-Hypothesis casts_agree : view_casts public_view = view_casts raw_view.
 Hypothesis primitive_commutes : forall operation site values state,
   Public.run_prim public_view operation site values (lift state) =
     let '(signal, next) := Raw.run_prim raw_view operation site values state in

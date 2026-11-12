@@ -42,7 +42,7 @@ Theorem assemble_entry : forall env bound entry before program after,
     d_ast d = ADFn RPlain n [] rt (Some body)) /\
   (exists start finish, EaPlatform.main_environment env (program_main program) start =
     Ok (program_environment program, finish)) /\
-  P.Tables (e_W env) (program_machines program) (program_casts program) /\
+  P.Tables (e_W env) (program_machines program) /\
   P.EntryPoint (e_W env) program /\ LangItemsFormed (e_W env) /\ InstalledBool (e_W env) program /\
   EaExpand.finite_layouts (e_W env) (e_fuel env) bound = Ok tt /\
   EaExpand.expansion_ok (e_W env) (e_fuel env) program (es_fns after) (es_funs after)
@@ -90,7 +90,6 @@ Proof.
   clear Read.
   apply mbind_ok in Run as (language_checked & after_language & Read & Run).
   destruct (EaPlatform.lang_items_formed env) as [[]|message] eqn:Language; [|discriminate Read].
-  apply mbind_ok in Run as (_ & after_casts & _ & Run).
   apply mbind_ok in Run as (finite_checked & after_finite & FiniteRun & Run).
   destruct (EaExpand.finite_layouts (e_W env) (e_fuel env) bound) as [[]|message] eqn:Finite;
     [|discriminate FiniteRun].
@@ -106,8 +105,8 @@ Proof.
   inversion Check; subst checked after_expansion.
   apply mbind_ok in Run as (references_checked & after_references & References & Run).
   lazymatch type of References with
-  | context [Compilation.explicit_references ?P] =>
-      destruct (Compilation.explicit_references P); [|discriminate References]
+  | context [Compilation.explicit_references ?W ?P] =>
+      destruct (Compilation.explicit_references W P); [|discriminate References]
   end.
   inversion References; subst references_checked after_references.
   injection Run as <- <-.
@@ -219,12 +218,12 @@ Proof.
   assert (Kind : kind_sym (e_W env) (program_main program) = Some DKFn).
   { destruct Main as (d & n & rt & body & Declaration & Shape).
     unfold kind_sym. rewrite Declaration, Shape. reflexivity. }
-  rewrite (proj1 (proj2 Tables)). eapply main_environment_typed; eassumption.
+  rewrite (proj2 Tables). eapply main_environment_typed; eassumption.
 Qed.
 
 Theorem elaborate_platform_sound : forall strategy bundle world program,
   EaMain.elaborate_with strategy bundle = Ok (world, program) ->
-  P.Tables world (program_machines program) (program_casts program) /\
+  P.Tables world (program_machines program) /\
   P.EntryPoint world program /\ LangItemsFormed world /\ InstalledBool world program.
 Proof.
   intros strategy bundle world program Run.
@@ -331,7 +330,7 @@ Proof.
   split; [exact Entry|]. split.
   - split; [eapply elaborate_finite_layouts; exact Run|]. split.
     + eapply elaborate_with_expansion_bounded; exact Run.
-    + destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & _ & _ & _ & Assembled).
+    + destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & _ & _ & Assembled).
       eapply EaCodeAllocationSound.assemble_explicit_references; exact Assembled.
   - split; [exact Tables|].
     exists C, needs, types, provisions. repeat split; assumption.

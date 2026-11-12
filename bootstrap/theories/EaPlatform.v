@@ -210,13 +210,6 @@ Definition lang_items_formed : er unit :=
       end
   end.
 
-(* casts: Platform.CastEntry has no derivation for a tag present with its
-   held type or raw handle missing *)
-Definition casts_ok : bool :=
-  forallb (fun a : bool => match wasm_sym (if a then "Array" else "Ref") with
-    | Some _ => is_some (wasm_sym (if a then "Arrayed" else "Boxed")) && is_some (wasm_sym (if a then "ArrayRef" else "StructRef"))
-    | None => true end) [false; true].
-
 (* The code of a platform family: its items' primitives, each under its
    run-time key, in its own inputs' terms.
    SOUND (with the Linked checks of the TODO): platform_code u = Ok code ->
@@ -324,16 +317,6 @@ Definition main_environment (main : nat) : M environment :=
   let types := map (fun q => (fst q, app_subst (machine_subst (Platform.machine_table W)) (snd q))) (c_ty C) in
   let* platform := mmap (fun k => let* v := platform_entry C (rkof C k) in ret (rkof C k, v)) ns in
   ret (Environment types platform).
-
-(* SOUND: Platform.Representations W P when the program carries machine_table W and casts *)
-Definition cast_entry (array : bool) : list (nsym * cast_spec) :=
-  match wasm_sym (if array then "Array" else "Ref"),
-        wasm_sym (if array then "Arrayed" else "Boxed"),
-        wasm_sym (if array then "ArrayRef" else "StructRef") with
-  | Some n, Some t, Some h => [(n, CastSpec (Platform.ref_kind array) t (Some (h, TMachine h)))]
-  | _, _, _ => []
-  end.
-Definition casts : list (nsym * cast_spec) := cast_entry false ++ cast_entry true.
 
 (* SOUND: the ElaboratesIn clause on Bool's symbols *)
 Definition bool_syms : nat * nat * nat :=

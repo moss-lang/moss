@@ -20,7 +20,7 @@ Definition indexed_program_of (p : program) (argv : list (list PrimInt63.int))
   let functions := index_rows (program_functions p) in
   let functors := index_rows (program_functors p) in
   ProgramView (tget functions) (tget functors)
-    (program_bool p) (program_true p) (program_false p) argv read (program_casts p) (program_machines p).
+    (program_bool p) (program_true p) (program_false p) argv read (program_machines p).
 
 Lemma indexed_function_lookup : forall p argv read f,
   view_function (indexed_program_of p argv read) f = view_function (program_of p argv read) f.
@@ -140,7 +140,7 @@ Proof.
   assert (Primitive : forall arguments, Host.primitive (native_view p initial) operation arguments state =
     Host.primitive (M.runtime p initial) operation arguments state).
   { intros. exact (Blind (M.runtime p initial) (native_view p initial)
-      eq_refl eq_refl eq_refl eq_refl eq_refl eq_refl operation arguments state). }
+      eq_refl eq_refl eq_refl eq_refl eq_refl operation arguments state). }
   destruct (decode operation) as [p0|]; cbn [BaseCall.cast_at_site BaseCall.heap_call_ready].
   - destruct (BaseCall.cast_operation p0) as [[array tag]|]; [reflexivity|].
     destruct (BaseCall.heap_arguments_match p0 _ values); [|reflexivity].

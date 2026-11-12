@@ -69,7 +69,7 @@ Module Host <: HOST.
 End Host.
 Module Model := Public Host.
 Module Reference := Model.Reference.
-Definition unit_program : program := Program [(1,EUnit)] [] 0 0 0 1 empty_environment [] [] [] empty_code_origins.
+Definition unit_program : program := Program [(1,EUnit)] [] 0 0 0 1 empty_environment [] [] empty_code_origins.
 Definition unit_view := program_of unit_program [] (fun _ => None).
 Definition initial : Model.state := Model.World [] (fun _ => None) tt.
 
@@ -88,27 +88,6 @@ Proof. reflexivity. Qed.
 Example machine_identities_do_not_need_nominal_names :
   app_subst [(7,TUnit)] (TMachine 7) = TMachine 7.
 Proof. reflexivity. Qed.
-
-Definition no_library : world :=
-  World (fun _ => None) (fun _ _ _ => None) (fun _ _ _ => None)
-    (fun _ _ => None) (fun _ => []) None None (fun _ => None).
-Lemma no_library_symbols : forall library ns name symbol,
-  ~ LangSym no_library library ns name symbol.
-Proof. intros library ns name symbol [d [p [Impossible _]]]. discriminate. Qed.
-Lemma no_library_casts : forall P,
-  Platform.Representations no_library P -> program_casts P = [].
-Proof.
-  intros P [_ [reference [array [Ref [Arr Table]]]]].
-  destruct Ref as [[n [t [h [Named _]]]]|[_ ->]];
-    [exfalso; eapply no_library_symbols; exact Named|].
-  destruct Arr as [[n [t [h [Named _]]]]|[_ ->]];
-    [exfalso; eapply no_library_symbols; exact Named|].
-  exact Table.
-Qed.
-Example an_arbitrary_cast_entry_is_rejected :
-  ~ Platform.Representations no_library
-    (Program [] [] 0 0 0 0 empty_environment [] [(7,CastSpec 0 8 None)] [] empty_code_origins).
-Proof. intro Valid. pose proof (no_library_casts _ Valid). discriminate. Qed.
 
 (* The oracle plan's N6 (AUDIT-CHANGES #94): a platform constant declared
    with another type than `I32` (`val i32_one: ();` in lib/wasm.moss) does
@@ -140,7 +119,7 @@ Proof. intros W P F C exp code t NoTarget Related. inversion Related; subst; con
 
 Definition output_program := Program []
   [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine 0)] [])]
-  0 0 0 0 empty_environment [] [] [] empty_code_origins.
+  0 0 0 0 empty_environment [] [] empty_code_origins.
 Definition output_environment :=
   Environment [] [(IFun 3,FunctorClosure 2 None empty_environment None)].
 Example fresh_output_meaning_is_exported :

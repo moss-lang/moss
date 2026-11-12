@@ -21,7 +21,7 @@ Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some maker else
     if Nat.eqb h 21 then Some no_input_provider else
     if Nat.eqb h 22 then Some private_input_provider else None)
-  0 0 0 [] (fun _ => None) [] [].
+  0 0 0 [] (fun _ => None) [].
 
 (* type T; tag Concrete;
    functor F: -> T; functor Maker: -> T { bind T=Concrete; }

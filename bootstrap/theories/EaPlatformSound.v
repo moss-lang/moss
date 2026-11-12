@@ -105,40 +105,10 @@ Proof.
   split; [eapply tag_layout_sound; exact Array|eapply tag_layout_sound; exact Address].
 Qed.
 
-Local Lemma cast_entry_sound : forall E (array : bool),
-  P.TagLayout (e_W E) (if array then "Array" else "Ref")
-    (if array then "Arrayed" else "Boxed") (if array then "ArrayRef" else "StructRef") ->
-  exists row, P.CastEntry (e_W E) array row /\
-    EaPlatform.cast_entry E array = match row with Some r => [r] | None => [] end.
-Proof.
-  intros E array Layout.
-  unfold EaPlatform.cast_entry, P.CastEntry, EaPlatform.wasm_sym.
-  set (tag_name := if array then "Array" else "Ref") in *.
-  destruct (lang_sym (e_W E) "wasm" NSName tag_name) as [tag|] eqn:Tag.
-  - pose proof (lang_sym_sound _ _ _ _ _ Tag) as TagFound.
-    destruct (Layout _ TagFound) as (held & raw & rest & Held & Raw & _).
-    rewrite (EaRootSound.lang_sym_complete _ _ _ _ _ Held),
-      (EaRootSound.lang_sym_complete _ _ _ _ _ Raw).
-    exists (Some (tag, CastSpec (P.ref_kind array) held (Some (raw, TMachine raw)))).
-    split; [left|reflexivity].
-    exists tag, held, raw. repeat split; assumption.
-  - exists None. split; [right|reflexivity].
-    split; [|reflexivity]. intros tag Declared.
-    apply EaRootSound.lang_sym_complete in Declared. congruence.
-Qed.
-
 Theorem tables_sound : forall E,
   EaPlatform.layouts E = Ok tt ->
-  P.Tables (e_W E) (P.machine_table (e_W E)) (EaPlatform.casts E).
-Proof.
-  intros E Run. pose proof (layouts_sound E Run) as Layouts.
-  split; [exact Layouts|]. split; [reflexivity|].
-  destruct Layouts as (_ & _ & RefLayout & ArrayLayout & _).
-  destruct (cast_entry_sound E false RefLayout) as (reference & Ref & RefEntry).
-  destruct (cast_entry_sound E true ArrayLayout) as (array & Array & ArrayEntry).
-  exists reference, array. split; [exact Ref|split; [exact Array|]].
-  unfold EaPlatform.casts. now rewrite RefEntry, ArrayEntry.
-Qed.
+  P.Tables (e_W E) (P.machine_table (e_W E)).
+Proof. intros E Run. split; [now apply layouts_sound|reflexivity]. Qed.
 
 Theorem lang_items_formed_sound : forall E,
   EaPlatform.lang_items_formed E = Ok tt -> LangItemsFormed (e_W E).

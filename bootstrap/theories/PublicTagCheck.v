@@ -1,12 +1,8 @@
-(* Checked tag construction from a typed payload, under the platform's
-   layouts and cast representations (T24's premises). A cast tag (Ref or
-   Array) reads its payload at its raw-handle requirement, so the runtime
-   guard reads a complete argument, and an enabled guard makes the payload
-   a handle type. Unit declarations have no cast entry. *)
+(* Typing and layout facts for nominal tags and Base machine values. *)
 From Stdlib Require Import List String Arith Bool.
 From NM Require Import AuditBase.
 From NM Require Import Audit PublicTypeRead PublicTypeFacts PublicValueTyping
-  PublicCastTyping PublicBoolTyping PublicBodySafety.
+  PublicBoolTyping PublicBodySafety.
 Import Audit.Input AuditBase.Semantics ListNotations.
 Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -68,7 +64,7 @@ Lemma represented_machine : forall W Prog name class symbol,
   In (name, class) Platform.initial_machines -> A.LangSym W "wasm" A.NSName name symbol ->
   A.nlook symbol (program_machines Prog) = Some class.
 Proof.
-  intros W Prog name class symbol Layouts [Table _] Member Named.
+  intros W Prog name class symbol Layouts Table Member Named.
   rewrite Table. exact (machine_table_lookup W name class symbol Layouts Member Named).
 Qed.
 
@@ -140,63 +136,6 @@ Proof.
   rewrite (payload_det W _ _ _ _ Actual Read). cbn.
   rewrite lookup_subst_nlook. rewrite <- Keys in InK. destruct (keys_in xs raw InK) as [v Found'].
   rewrite Found'. reflexivity.
-Qed.
-
-Hypothesis Layouts : Platform.Layouts W.
-Hypothesis Reps : Platform.Representations W Prog.
-
-(* The cast table holds exactly the selected Ref and Array entries. *)
-Lemma cast_entry : forall s schema,
-  lookup_cast s (program_casts Prog) = Some schema ->
-  exists (array : bool) (held : tsym) (raw : tsym),
-    A.LangSym W "wasm" A.NSName (if array then "Array" else "Ref") s /\
-    A.LangSym W "wasm" A.NSName (if array then "ArrayRef" else "StructRef") raw /\
-    schema = CastSpec (Platform.ref_kind array) held (Some (raw, TMachine raw)).
-Proof.
-  intros s schema Found. destruct Reps as [_ [reference [array [Ref [Arr Casts]]]]].
-  rewrite Casts in Found.
-  destruct Ref as [[n [t [h [Tag [_ [Raw ->]]]]]]|[_ ->]]; cbn in Found.
-  - destruct (Nat.eqb_spec s n) as [->|_].
-    + injection Found as <-. exists false, t, h. auto.
-    + destruct Arr as [[n' [t' [h' [Tag' [_ [Raw' ->]]]]]]|[_ ->]]; cbn in Found; [|discriminate].
-      destruct (Nat.eqb_spec s n') as [->|_]; [|discriminate].
-      injection Found as <-. exists true, t', h'. auto.
-  - destruct Arr as [[n' [t' [h' [Tag' [_ [Raw' ->]]]]]]|[_ ->]]; cbn in Found; [|discriminate].
-    destruct (Nat.eqb_spec s n') as [->|_]; [|discriminate].
-    injection Found as <-. exists true, t', h'. auto.
-Qed.
-
-Lemma cast_layout : forall s schema,
-  lookup_cast s (program_casts Prog) = Some schema ->
-  A.kind_sym W s = Some A.DKTag /\
-  exists (array : bool) (raw : tsym), schema = CastSpec (Platform.ref_kind array) (cast_held schema) (Some (raw, TMachine raw)) /\
-    cast_kind schema = Platform.ref_kind array /\
-    A.PayloadOf W s (identity_args (A.w_reqs W s)) (TAbs raw) /\
-    A.nlook raw (program_machines Prog) = Some (Platform.ref_class array).
-Proof.
-  intros s schema Found.
-  destruct (cast_entry s schema Found) as [array [held [raw [Tag [Raw ->]]]]].
-  destruct (proj2 (proj2 Layouts)) as [RefLayout [ArrLayout _]].
-  destruct (if array as b return
-      A.LangSym W "wasm" A.NSName (if b then "Array" else "Ref") s ->
-      exists param raw' rest, A.LangSym W "wasm" A.NSName (if b then "Arrayed" else "Boxed") param /\
-        A.LangSym W "wasm" A.NSName (if b then "ArrayRef" else "StructRef") raw' /\
-        A.kind_sym W s = Some A.DKTag /\ A.w_reqs W s = param :: rest /\
-        A.PayloadOf W s (map (fun t => (t, TAbs t)) (A.w_reqs W s)) (TAbs raw')
-    then ArrLayout s else RefLayout s) as [param [raw' [rest [_ [Raw' [Kind [_ Pay]]]]]]];
-    [destruct array; exact Tag|].
-  pose proof (lang_sym_unique _ _ _ _ _ _ Raw Raw') as <-.
-  split; [exact Kind|]. exists array, raw. split; [reflexivity|]. split; [reflexivity|]. split; [exact Pay|].
-  eapply represented_machine; [exact Layouts|exact Reps| |exact Raw].
-  destruct array; cbn; tauto.
-Qed.
-
-Lemma base_cast_table_formed : CastTableFormed W (program_machines Prog) (program_casts Prog).
-Proof.
-  intros tag schema Found.
-  destruct (cast_layout tag schema Found) as [Kind [array [raw [Schema [_ [Identity Class]]]]]].
-  split; [exact Kind|]. exists raw. rewrite Schema. split; [reflexivity|].
-  split; [exact Identity|exact Class].
 Qed.
 
 End Layout.

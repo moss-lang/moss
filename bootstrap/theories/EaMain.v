@@ -134,16 +134,15 @@ Definition finish_assembly (bound : nat) (entry : string) : M program :=
   let* _ := pure (layouts E) in
   (* ElaboratesIn: formation of the language's Bool item. *)
   let* _ := pure (lang_items_formed E) in
-  let* _ := check (casts_ok E) "the platform's `Ref` or `Array` is declared without its held or raw type (Representations)" in
   (* [D58]/[D59] FiniteLayouts (#90) *)
   let* _ := pure (finite_layouts W fuel bound) in
   let* st := get in
   let '(bl, tr, fl) := bool_syms E in
   let program := Program (collect (es_fns st) (es_next st) []) (collect (es_funs st) (es_next st) [])
-                    bl tr fl main env0 [] (casts E) (Platform.machine_table W) (assembled_origins st) in
+                    bl tr fl main env0 [] (Platform.machine_table W) (assembled_origins st) in
   let* _ := check (expansion_ok W fuel program (es_fns st) (es_funs st) bound (es_next st))
              "an expanding cycle (D16/D30, NoExpandingCycle)" in
-  let* _ := check (Compilation.explicit_references program)
+  let* _ := check (Compilation.explicit_references W program)
              "a Wasm reference must be made by Base (use StructCast.cast or ArrayCast.cast for erased handles)" in
   ret program.
 

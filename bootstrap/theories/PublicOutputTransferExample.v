@@ -17,7 +17,7 @@ Definition callee := EBind output_binding EUnit.
 Definition runtime := ProgramView
   (fun f => if Nat.eqb f 10 then Some callee else None)
   (fun h => if Nat.eqb h 20 then Some output_code else None)
-  0 0 0 [] (fun _ => None) [] [].
+  0 0 0 [] (fun _ => None) [].
 Definition initial := Environment [] [(IFun 1,FunctorClosure 20 None empty_environment None)].
 Definition call := ECall 10 [] [(IFun 1,IFun 1)] [].
 

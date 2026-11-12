@@ -304,7 +304,7 @@ Definition fp_program (U : usym) (c : functor_code) (p : program) : program :=
   Program (map (fun fb => (fst fb, fp_e U c (snd fb))) (program_functions p))
           (map (fun ub => (fst ub, fp_code U c (snd ub))) (program_functors p))
           (program_bool p) (program_true p) (program_false p) (program_main p)
-          (program_environment p) (program_unsupported p) (program_casts p) (program_machines p) (program_origins p).
+          (program_environment p) (program_unsupported p) (program_machines p) (program_origins p).
 
 Definition fast_one (U H : usym) (p : program) : program :=
   match Elaboration.nlook H (program_functors p) with
@@ -993,7 +993,6 @@ Hypothesis Hsites : forall operation site ws st,
 Hypothesis Hbool : view_bool P' = view_bool P.
 Hypothesis Htrue : view_true P' = view_true P.
 Hypothesis Hfalse : view_false P' = view_false P.
-Hypothesis Hcasts : view_casts P' = view_casts P.
 Hypothesis Hokf : forall f b, view_function P f = Some b -> ok_e U b = true.
 Hypothesis Hoku : forall h c, view_functor P h = Some c -> forallb (ok_b U) (fc_bindings c) = true.
 Hypothesis HH : view_functor P H = Some cH.
@@ -2072,8 +2071,7 @@ End SimSec.
 Lemma fp_view : forall U cH p argv rd,
   let P' := program_of (fp_program U cH p) argv rd in let P := program_of p argv rd in
   view_bool P' = view_bool P /\ view_true P' = view_true P /\ view_false P' = view_false P
-  /\ view_arguments P' = view_arguments P /\ view_read P' = view_read P
-  /\ view_casts P' = view_casts P.
+  /\ view_arguments P' = view_arguments P /\ view_read P' = view_read P.
 Proof. intros. repeat split. Qed.
 
 Section RunMain.
@@ -2182,8 +2180,8 @@ Proof.
     M.ReferenceHost.run_prim (program_of (fp_program U cH program) (M.arguments initial) (M.read_file initial)) q site ws st
     = M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q site ws st).
   { intros q site ws [i s] Hi. unfold ok in Hi. simpl in Hi. subst i. unfold M.ReferenceHost.run_prim, Base.call, BaseCall.call, M.ReferenceHost.raw_primitive.
-    destruct (FS.fp_view U cH program (M.arguments initial) (M.read_file initial)) as [B [T [F [A [Rd C]]]]].
-    rewrite (Hblind _ _ B T F A Rd C). reflexivity. }
+    destruct (FS.fp_view U cH program (M.arguments initial) (M.read_file initial)) as [B [T [F [A Rd]]]].
+    rewrite (Hblind _ _ B T F A Rd). reflexivity. }
   assert (Hok : forall q site ws st, ok st ->
     ok (snd (M.ReferenceHost.run_prim (program_of program (M.arguments initial) (M.read_file initial)) q site ws st))).
   { intros q site ws st Hi. unfold M.ReferenceHost.run_prim.

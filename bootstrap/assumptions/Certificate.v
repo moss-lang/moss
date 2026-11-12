@@ -12,7 +12,7 @@ From NM Require RuntimeRenaming InterpreterRenaming BaseRenaming BaseHostRenamin
 
 From NM Require PublicModelExamples PublicBuildExample
   SourceSnapshot PublicEmit PublicClosureExample PublicCaptureFacts
-  SnapshotLoaderBound PublicWorld PublicTypeFacts PublicValueTyping PublicCastTyping
+  SnapshotLoaderBound PublicWorld PublicTypeFacts PublicValueTyping
   PublicSavedTypeExample PublicHeapTyping PublicWorldScope SnapshotLoader
   PublicLocalsTyping PublicWorldRequirements SnapshotLoaderWitness
   PublicGenerationFacts PublicAliasContext PublicGenerationCallExample PublicOutputTransferExample
@@ -110,7 +110,7 @@ Definition pruned_runs_agree : forall prelude program interface initial result,
     @PruneTop.runs_pruned program interface initial result Hb
       (PublicEntryTop.public_safety prelude program interface initial Ha Hc).
 Definition default_interface_code_blind : PruneTop.code_blind PublicPublic.default_interface :=
-  fun P P' Bool True False Args Read _ =>
+  fun P P' Bool True False Args Read =>
     BaseHost.primitive_ignores_code P P' Bool True False Args Read.
 
 (* The platform-family fast path for Audit programs (ProgramFastPath.v):
@@ -274,7 +274,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicMergeOps.sigof_merge_agree);
  root (@NM.PublicModelExamples.bare_return_requires_unit);
   root (@NM.PublicModelExamples.one_does_not_insert_a_multiply);
-  root (@NM.PublicModelExamples.an_arbitrary_cast_entry_is_rejected);
   root (@NM.PublicModelExamples.a_unit_platform_constant_is_rejected);
   root (@NM.PublicBuildExample.public_build_is_inhabited);
   root (@NM.PublicBuildExample.built_program_runs);
@@ -541,7 +540,6 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.fn_body_formed);
   root (@NM.PublicFormation.units_bare_of);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.arms_select);
-  root (@NM.PublicTagCheck.base_cast_table_formed);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_preserves);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_extends);
@@ -566,7 +564,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicClosureExample.C.expression_correct);
   root (@NM.PublicClosureExample.compiled_bodies_correct);
   root (@NM.PublicClosureExample.all_fuel_agreement);
-  root (@NM.PublicClosureExample.compiled_capture_output_cast);
+  root (@NM.PublicClosureExample.compiled_capture_output_tag);
   root (@NM.PublicCaptureFacts.substitution_agrees_on_generations);
   root (@NM.PublicCaptureFacts.capture_ground_stable);
   root (@NM.PublicCaptureFacts.capture_provision_stable);

@@ -7,7 +7,7 @@ Import ListNotations.
 Set Implicit Arguments.
 Local Open Scope nat_scope.
 
-(* Base's machine values and the checks on its Wasm reference wrappers. *)
+(* Base's machine types and values. *)
 Module Representation <: Audit.REPRESENTATION.
 Inductive base_class : Type :=
 | MScalar (sort : nat)
@@ -23,30 +23,13 @@ Arguments Scalar {T}.
 Arguments Reference {T}.
 Definition payload := base_payload.
 
-Record base_tag_check (T : Type) : Type := CastSpec {
-  cast_kind : nat;
-  cast_held : nat;
-  (* Ref and Array are ordinary wrappers when the raw handle payload is
-     rebound to another representation. *)
-  cast_handle : option (nat * T)
-}.
-Arguments CastSpec {T}.
-Definition tag_metadata := base_tag_check.
 End Representation.
 
 Module Semantics.
   Include Audit.Semantics Representation.
   Definition address := Representation.address.
-  Notation cast_spec := tag_metadata.
-  Notation program_casts := program_tag_metadata.
-  Notation view_casts := view_tag_metadata.
-  Notation lookup_cast := lookup_tag_metadata.
   Notation MScalar := Representation.MScalar.
   Notation MReference := Representation.MReference.
-  Notation CastSpec := Representation.CastSpec.
-  Notation cast_kind := Representation.cast_kind.
-  Notation cast_held := Representation.cast_held.
-  Notation cast_handle := Representation.cast_handle.
   Notation VScalar sort bits := (VMachine (Representation.Scalar sort bits)).
   Notation VRef address header := (VMachine (Representation.Reference address header)).
 End Semantics.
@@ -663,7 +646,7 @@ Export WasmSignatures.
 
 (* Bounds needed by Base's native representation and specialization. *)
 Module Compilation.
-Import Elaboration.
+Import Input Elaboration.
 Local Unset Implicit Arguments.
 Local Open Scope list_scope.
 
@@ -906,58 +889,73 @@ Definition FiniteLayouts (W : world) : Prop :=
   forall n pay, PayloadOf W n (map (fun t => (t, TAbs t)) (w_reqs W n)) pay ->
     ~ LayoutReaches W pay n.
 
-(* Precise Wasm reference values are produced by Base operations.
-   A scalar, structural type, or nominal type in the handle parameter
-   gives the tag an ordinary Moss representation. *)
-Definition explicit_reference_tag (machines : list (tsym * machine_class))
-    (metadata : list (nsym * tag_metadata))
-    (tag : nsym) (arguments : subst) : bool :=
-  match lookup_tag_metadata tag metadata with
+(* The Wasm library's reference constructors and their raw payload
+   parameters. Resolve these once from the source world during linking. *)
+Local Definition wasm_symbol (W : world) (name : string) : option nat :=
+  match w_library W with
+  | Some dir =>
+      match w_scope W (String.append dir "wasm.moss") NSName name with
+      | Some (ESym symbol) =>
+          match w_decl W symbol with Some _ => Some symbol | None => None end
+      | _ => None
+      end
+  | None => None
+  end.
+
+Local Definition reference_handles (W : world) : list (nsym * tsym) :=
+  flat_map (fun '(name, raw) =>
+    match wasm_symbol W name, wasm_symbol W raw with
+    | Some tag, Some handle => [(tag, handle)]
+    | _, _ => []
+    end) [("Ref"%string, "StructRef"%string); ("Array"%string, "ArrayRef"%string)].
+
+(* Precise Wasm references are produced by Base operations. Rebinding the
+   handle to a scalar, structural type, or nominal type gives the tag an
+   ordinary Moss representation. *)
+Local Definition explicit_reference_tag (machines : list (tsym * machine_class))
+    (handles : list (nsym * tsym)) (tag : nsym) (arguments : subst) : bool :=
+  match nlook tag handles with
   | None => true
-  | Some spec =>
-      match cast_handle spec with
-      | Some (handle, _) =>
-          match lookup_subst handle arguments with
-          | Some (TRecord _ | TUnit | TNom _ _ | TUnion _) => true
-          | Some (TAbs t | TMachine t) =>
-              match nlook t machines with Some (MScalar _) => true | _ => false end
-          | _ => false
-          end
-      | None => false
+  | Some handle =>
+      match lookup_subst handle arguments with
+      | Some (TRecord _ | TUnit | TNom _ _ | TUnion _) => true
+      | Some (TAbs t | TMachine t) =>
+          match nlook t machines with Some (MScalar _) => true | _ => false end
+      | _ => false
       end
   end.
 
-Fixpoint explicit_reference_expr (machines : list (tsym * machine_class))
-    (metadata : list (nsym * tag_metadata)) (e : expr) : bool :=
+Local Fixpoint explicit_reference_expr (machines : list (tsym * machine_class))
+    (handles : list (nsym * tsym)) (e : expr) : bool :=
   match e with
   | ETag tag arguments payload =>
-      explicit_reference_tag machines metadata tag arguments && explicit_reference_expr machines metadata payload
-  | EAssign _ e | ELoop e | EReturn e | EField e _ => explicit_reference_expr machines metadata e
+      explicit_reference_tag machines handles tag arguments && explicit_reference_expr machines handles payload
+  | EAssign _ e | ELoop e | EReturn e | EField e _ => explicit_reference_expr machines handles e
   | EBind (BValue _ value) body | ELet _ value body | ESeq value body | EWhile value body =>
-      explicit_reference_expr machines metadata value && explicit_reference_expr machines metadata body
-  | EBind _ body => explicit_reference_expr machines metadata body
-  | ECall _ _ _ args | EInvoke _ args => forallb (explicit_reference_expr machines metadata) args
+      explicit_reference_expr machines handles value && explicit_reference_expr machines handles body
+  | EBind _ body => explicit_reference_expr machines handles body
+  | ECall _ _ _ args | EInvoke _ args => forallb (explicit_reference_expr machines handles) args
   | EMethod receiver _ _ args =>
-      explicit_reference_expr machines metadata receiver && forallb (explicit_reference_expr machines metadata) args
+      explicit_reference_expr machines handles receiver && forallb (explicit_reference_expr machines handles) args
   | EIf c t f =>
-      explicit_reference_expr machines metadata c && explicit_reference_expr machines metadata t &&
-      explicit_reference_expr machines metadata f
-  | ERecord fields => forallb (fun field => explicit_reference_expr machines metadata (snd field)) fields
+      explicit_reference_expr machines handles c && explicit_reference_expr machines handles t &&
+      explicit_reference_expr machines handles f
+  | ERecord fields => forallb (fun field => explicit_reference_expr machines handles (snd field)) fields
   | EMatch scrutinee arms =>
-      explicit_reference_expr machines metadata scrutinee &&
-      forallb (fun arm => explicit_reference_expr machines metadata (snd arm)) arms
+      explicit_reference_expr machines handles scrutinee &&
+      forallb (fun arm => explicit_reference_expr machines handles (snd arm)) arms
   | EVar _ | EUnit | EVal _ | EBreak => true
   end.
 
-Definition explicit_references (P : program) : bool :=
-  let check := explicit_reference_expr (program_machines P) (program_tag_metadata P) in
+Definition explicit_references (W : world) (P : program) : bool :=
+  let check := explicit_reference_expr (program_machines P) (reference_handles W) in
   forallb (fun fn => check (snd fn)) (program_functions P) &&
   forallb (fun family => forallb
     (fun b => match b with BValue _ value => check value | _ => true end)
     (fc_bindings (snd family))) (program_functors P).
 
 Definition Admissible (W : world) (P : program) : Prop :=
-  FiniteLayouts W /\ NoExpandingCycle W P /\ explicit_references P = true.
+  FiniteLayouts W /\ NoExpandingCycle W P /\ explicit_references W P = true.
 End Compilation.
 
 Module Platform.
@@ -1233,23 +1231,8 @@ Definition Layouts (W : world) : Prop :=
   TagLayout W "Array" "Arrayed" "ArrayRef" /\
   TagLayout W "Addr" "Memory" "I32".
 
-Definition CastEntry (W : world) (array : bool) (entry : option (nsym * cast_spec)) : Prop :=
-  let tag := if array then "Array" else "Ref" in
-  let held := if array then "Arrayed" else "Boxed" in
-  let raw := if array then "ArrayRef" else "StructRef" in
-  (exists n t h, LangSym W "wasm" NSName tag n /\
-    LangSym W "wasm" NSName held t /\ LangSym W "wasm" NSName raw h /\
-    entry = Some (n, CastSpec (ref_kind array) t
-      (Some (h, TMachine h)))) \/
-  ((forall n, ~ LangSym W "wasm" NSName tag n) /\ entry = None).
-Definition RepresentationTables (W : world)
-    (machines : list (tsym * machine_class)) (casts : list (nsym * cast_spec)) : Prop :=
-  machines = machine_table W /\
-  exists reference array, CastEntry W false reference /\ CastEntry W true array /\
-    casts = (match reference with Some x => [x] | None => [] end) ++
-                (match array with Some x => [x] | None => [] end).
 Definition Representations (W : world) (P : program) : Prop :=
-  RepresentationTables W (program_machines P) (program_casts P).
+  program_machines P = machine_table W.
 
 (* The native entry ABI carries no argument or result lanes. Nominal units
    and unions carry discriminators; ordinary tags carry their payload lanes. *)
@@ -1268,9 +1251,8 @@ Definition EntryPoint (W : world) (P : program) : Prop :=
     SigOf W (program_main P) (c_ty context) None signature /\
     sg_params signature = [] /\ EntryResult W (sg_ret signature).
 
-Definition Tables (W : world) (machines : list (tsym * machine_class))
-    (casts : list (nsym * cast_spec)) : Prop :=
-  Layouts W /\ RepresentationTables W machines casts.
+Definition Tables (W : world) (machines : list (tsym * machine_class)) : Prop :=
+  Layouts W /\ machines = machine_table W.
 Definition Provides (W : world) (P : program) (C : cx) (key : item) (value : provision_value) : Prop :=
   Entry W P C key value /\ PlatformEntry W P key value.
 Definition EntryABI := EntryPoint.

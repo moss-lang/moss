@@ -26,9 +26,8 @@ Definition handle_tags : list (string * string * string) :=
   [("Ref", "Boxed", "StructRef"); ("Array", "Arrayed", "ArrayRef"); ("Addr", "Memory", "I32")].
 
 Section Static.
-Variables (W : A.world) (Prog : program).
+Variable W : A.world.
 Hypothesis Layouts : Platform.Layouts W.
-Hypothesis Reps : Platform.Representations W Prog.
 
 Lemma handle_layout : forall name param handle, In (name, param, handle) handle_tags ->
   Platform.TagLayout W name param handle /\ In handle Platform.abstract_names.
@@ -48,69 +47,10 @@ Proof.
   exists raw. split; [exact Raw|]. split; [exact Kind|]. split; [congruence|exact Pay].
 Qed.
 
-Lemma handle_distinct : forall n1 p1 h1 n2 p2 h2 s,
-  In (n1, p1, h1) handle_tags -> In (n2, p2, h2) handle_tags ->
-  A.LangSym W "wasm" A.NSName n1 s -> A.LangSym W "wasm" A.NSName n2 s -> h1 = h2.
-Proof.
-  intros n1 p1 h1 n2 p2 h2 s F1 F2 S1 S2.
-  destruct (layout_raw _ _ _ _ F1 S1) as [r1 [R1 [_ [_ Pay1]]]].
-  destruct (layout_raw _ _ _ _ F2 S2) as [r2 [R2 [_ [_ Pay2]]]].
-  pose proof (payload_det W _ _ _ _ Pay1 Pay2) as E. injection E as <-.
-  destruct Layouts as [_ [Distinct _]].
-  exact (Distinct h1 h2 r1 (proj2 (handle_layout _ _ _ F1)) (proj2 (handle_layout _ _ _ F2)) R1 R2).
-Qed.
-
 Lemma ref_tags : forall array : bool,
   In ((if array then "Array" else "Ref"), (if array then "Arrayed" else "Boxed"),
       (if array then "ArrayRef" else "StructRef")) handle_tags.
 Proof. destruct array; in_list. Qed.
-
-Lemma ref_array_distinct : forall s,
-  A.LangSym W "wasm" A.NSName "Ref" s -> A.LangSym W "wasm" A.NSName "Array" s -> False.
-Proof.
-  intros s R Ar. pose proof (handle_distinct _ _ _ _ _ _ s (ref_tags false) (ref_tags true) R Ar).
-  discriminate.
-Qed.
-
-(* A Ref or Array symbol has its cast entry, at its own kind. *)
-Lemma ref_cast : forall (array : bool) s,
-  A.LangSym W "wasm" A.NSName (if array then "Array" else "Ref") s ->
-  exists held raw, A.LangSym W "wasm" A.NSName (if array then "Arrayed" else "Boxed") held /\
-    A.LangSym W "wasm" A.NSName (if array then "ArrayRef" else "StructRef") raw /\
-    lookup_cast s (program_casts Prog) =
-      Some (CastSpec (Platform.ref_kind array) held (Some (raw, TMachine raw))).
-Proof.
-  intros array s Sym. destruct Reps as [_ [reference [arr [Ref [Arr Casts]]]]]. rewrite Casts.
-  destruct array.
-  - destruct Arr as [[n [t [h [Tag [Held [Raw ->]]]]]]|[None' _]]; [|exfalso; exact (None' s Sym)].
-    pose proof (lang_sym_unique _ _ _ _ _ _ Sym Tag); subst n.
-    exists t, h. split; [exact Held|]. split; [exact Raw|].
-    destruct Ref as [[n' [t' [h' [Tag' [_ [_ ->]]]]]]|[_ ->]]; cbn.
-    + destruct (Nat.eqb_spec s n') as [->|_]; [exfalso; exact (ref_array_distinct n' Tag' Sym)|].
-      rewrite Nat.eqb_refl; reflexivity.
-    + rewrite Nat.eqb_refl; reflexivity.
-  - destruct Ref as [[n [t [h [Tag [Held [Raw ->]]]]]]|[None' _]]; [|exfalso; exact (None' s Sym)].
-    pose proof (lang_sym_unique _ _ _ _ _ _ Sym Tag); subst n.
-    exists t, h. split; [exact Held|]. split; [exact Raw|]. cbn. rewrite Nat.eqb_refl; reflexivity.
-Qed.
-
-Lemma addr_not_cast : forall s, A.LangSym W "wasm" A.NSName "Addr" s ->
-  lookup_cast s (program_casts Prog) = None.
-Proof.
-  intros s Sym. destruct (lookup_cast s (program_casts Prog)) as [schema|] eqn:Found; [|reflexivity].
-  destruct (cast_entry W Prog Reps s schema Found) as [array [_ [_ [Tag _]]]]. exfalso.
-  assert (Addr : In ("Addr", "Memory", "I32") handle_tags) by in_list.
-  pose proof (handle_distinct _ _ _ _ _ _ s (ref_tags array) Addr Tag Sym). destruct array; discriminate.
-Qed.
-
-Lemma bool_not_cast : A.LangItemsFormed W -> forall s, A.LangSym W "bool" A.NSName "Bool" s ->
-  lookup_cast s (program_casts Prog) = None.
-Proof.
-  intros BoolLayout s Sym. destruct (lookup_cast s (program_casts Prog)) as [schema|] eqn:Found; [|reflexivity].
-  destruct (cast_entry W Prog Reps s schema Found) as [array [_ [_ [Tag _]]]]. exfalso.
-  destruct (layout_raw _ _ _ _ (ref_tags array) Tag) as [_ [_ [_ [Reqs _]]]].
-  destruct (BoolLayout s Sym) as [_ [_ [_ [_ [_ [_ [_ [_ [Empty _]]]]]]]]]. exact (Reqs Empty).
-Qed.
 
 (* A tag laid out with a raw requirement reads its payload at complete
    arguments as that argument. *)
@@ -220,11 +160,8 @@ Lemma ref_output : forall H array t held s hv, Platform.ReferenceType W array t 
 Proof.
   intros H array t held s hv [symbol [param [args [Sym [Param [-> Held]]]]]] Formed S Handle.
   pose proof (lang_sym_unique _ _ _ _ _ _ S Sym); subst s.
-  destruct (ref_cast W Prog Layouts Reps array symbol Sym) as [heldsym [raw [HeldSym [RawSym Cast]]]].
-  pose proof (lang_sym_unique _ _ _ _ _ _ HeldSym Param); subst heldsym.
+  destruct (layout_raw W Layouts _ _ _ symbol (ref_tags array) Sym) as [raw [RawSym [_ [_ Identity]]]].
   pose proof (raw_ground _ _ _ _ symbol args raw (ref_tags array) (ref_machine array) Formed Sym RawSym) as Enabled.
-  destruct (layout_raw W Layouts _ _ _ symbol (ref_tags array) Sym) as [raw' [Raw' [_ [_ Identity]]]].
-  pose proof (lang_sym_unique _ _ _ _ _ _ Raw' RawSym); subst raw'.
   destruct (Formed _ _ _ _ _ (ref_tags array) Sym eq_refl) as [Keys _].
   pose proof (payload_at_args W symbol (PublicTypeRead.smap m args) raw ltac:(rewrite keys_smap; exact Keys) Identity) as Pay.
   cbn [app_subst] in Pay. rewrite Enabled in Pay.

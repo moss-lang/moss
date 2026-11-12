@@ -1,7 +1,6 @@
 (* A closed runtime fixture for the common-target compiler experiment.
-   It has no pending compiled-table premise and makes no source Builds or
-   default-host safety claim. The checked handle is an input to the fixture;
-   this exercises cast checking, not allocation or heap-law verification. *)
+   It exercises compiled and reference evaluation of a functor
+   application that exports a fresh generation and a captured value. *)
 From Stdlib Require Import List Bool Arith.
 From NM Require AuditBase.
 From NM Require Import Audit PublicClosurePrototype.
@@ -21,16 +20,16 @@ Definition provider_bindings := [BType 2 (TMachine 0); BValue 3 (EVal 1)].
 Definition provider_code := FunctorCode [] [] [] [ITy 2; IVal 3] provider_bindings [IVal 3].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some provider_code else None)
-  0 0 0 [] (fun _ => None) [(11, CastSpec 0 9 None)] [].
+  0 0 0 [] (fun _ => None) [].
 Definition initial := Environment [(2, TMachine 1)]
   [(IVal 1, ValueProvision captured_handle); (IVal 4, ValueProvision replacement_handle)].
 
 (* Capture seed, rebind the caller's seed, export a new meaning of Fresh,
-   then check the old captured handle at that new output generation. *)
+   then wrap the exported seed in a tag. *)
 Definition setup_bindings :=
   [BFunctor 10 20 (TypeCapture [] []) [] [(IVal 1,IVal 1)]; BValue 1 (EVal 4); BApply 10 [] [(2,7)] [] [IVal 3]].
 Definition expression :=
-  fold_right EBind (ETag 11 [(9,TAbs 7)] (EVal 3)) setup_bindings.
+  fold_right EBind (ETag 11 [] (EVal 3)) setup_bindings.
 
 Definition provider_compilation : {body : C.bcode |
   C.compile_bindings runtime (fun _ => None) provider_bindings = Some body}.
@@ -82,10 +81,10 @@ Example output_installs_fresh_generation :
   option_map (fun d => ground d (TAbs 7)) setup_environment = Some (TMachine 0).
 Proof. vm_compute; reflexivity. Qed.
 
-Example compiled_capture_output_cast :
+Example compiled_capture_output_tag :
   R.evaluation_signal (compiled 30 initial [] tt) = Normal (VTag 11 captured_handle).
 Proof. vm_compute; reflexivity. Qed.
 
-Example reference_capture_output_cast :
+Example reference_capture_output_tag :
   R.evaluation_signal (R.eval 30 runtime initial [] tt expression) = Normal (VTag 11 captured_handle).
-Proof. rewrite <- all_fuel_agreement. exact compiled_capture_output_cast. Qed.
+Proof. rewrite <- all_fuel_agreement. exact compiled_capture_output_tag. Qed.

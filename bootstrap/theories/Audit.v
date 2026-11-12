@@ -1245,7 +1245,6 @@ Module Type REPRESENTATION.
   (* Each platform supplies its own machine types and opaque values. *)
   Parameter machine_class : Type.
   Parameter payload : Type -> Type.
-  Parameter tag_metadata : Type -> Type.
 End REPRESENTATION.
 
 Module Semantics (Repr : REPRESENTATION).
@@ -1583,7 +1582,6 @@ Definition compose_adaptation (a : option smap) (sm : smap) : option smap :=
 Definition parameter_values (ws : list value) : locals := combine (seq 0 (List.length ws)) ws.
 
 (* Program bodies and their declared formal interfaces. *)
-Definition tag_metadata := Repr.tag_metadata ty.
 (* A semantic program contains: the bodies of every
    defined fn (and of the fns elaboration synthesizes: forwarders, lambda
    providers, wrappers), the core functor bodies `bind F = G;` made, Bool's
@@ -1624,7 +1622,6 @@ Record program : Type := Program {
   program_main : nat;
   program_environment : environment;
   program_unsupported : list string;
-  program_tag_metadata : list (nsym * tag_metadata);
   program_machines : list (tsym * machine_class);
   program_origins : code_origins
 }.
@@ -1640,16 +1637,9 @@ Record program_view : Type := ProgramView {
   view_arguments  : list (list int);
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
   view_read  : list int -> option (list int);
-  (* platform-specific information about named representations *)
-  view_tag_metadata : list (nsym * tag_metadata);
   view_machines : list (tsym * machine_class)
 }.
 
-Fixpoint lookup_tag_metadata (n : nsym) (cs : list (nsym * tag_metadata)) : option tag_metadata :=
-  match cs with
-  | [] => None
-  | (n', c) :: r => if Nat.eqb n n' then Some c else lookup_tag_metadata n r
-  end.
 Definition bind_type (d : environment) (t : tsym) (tau : ty) : environment :=
   EnvironmentWithAliases (type_meanings d) ((t, ground d tau) :: type_aliases d) (provision_values d).
 Definition call_environment (d : environment) (th : subst) (dc : environment) : environment :=
@@ -5954,7 +5944,7 @@ End Elaboration.
    and any additional restrictions on the programs it can run. *)
 Module Type STATIC_PLATFORM.
   Parameter root_item : option (string * Input.name).
-  Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> list (nsym * tag_metadata) -> Prop.
+  Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> Prop.
   Parameter Provides : Elaboration.world -> program -> Elaboration.cx -> item -> provision_value -> Prop.
   Parameter EntryABI : Elaboration.world -> program -> Prop.
   Parameter Admissible : Elaboration.world -> program -> Prop.
@@ -5964,7 +5954,7 @@ Module Linking (Pf : STATIC_PLATFORM).
 Import Elaboration.
 Definition Linked (W : world) (P : program) : Prop :=
   w_root_item W = Pf.root_item /\ Pf.EntryABI W P /\ Pf.Admissible W P /\
-  Pf.Tables W (program_machines P) (program_tag_metadata P) /\
+  Pf.Tables W (program_machines P) /\
   exists context needs types entries,
     CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
     program_environment P = Environment types entries /\
@@ -6010,7 +6000,7 @@ Definition program_of (p : program) (argv : list (list int))
     (rd : list int -> option (list int)) : program_view :=
   ProgramView (fun f => Elaboration.nlook f (program_functions p))
     (fun u => Elaboration.nlook u (program_functors p))
-    (program_bool p) (program_true p) (program_false p) argv rd (program_tag_metadata p) (program_machines p).
+    (program_bool p) (program_true p) (program_false p) argv rd (program_machines p).
 
 (* ######################################################################## *)
 (* Public source-to-world contract                                           *)

@@ -1,4 +1,4 @@
-(* Renaming generated symbols preserves runtime lookup and typed casts.
+(* Renaming generated symbols preserves runtime lookup and primitive calls.
    Local positions, heap addresses, scalar bits and diagnostic codes
    keep their values. A concrete renaming fixes source and platform
    symbols in its support. Each platform supplies its operation action. *)
@@ -72,13 +72,6 @@ with rename_environment (d : environment) : environment :=
         (map (fun '(key, provided) => (rename_item key, rename_provision provided)) entries)
   end.
 
-Definition rename_cast_spec (spec : cast_spec) : cast_spec :=
-  CastSpec (cast_kind spec) (rename (cast_held spec))
-    (option_map (fun '(handle, tau) => (rename handle, rename_ty tau)) (cast_handle spec)).
-
-Definition rename_casts (casts : list (nsym * cast_spec)) : list (nsym * cast_spec) :=
-  map (fun '(tag, spec) => (rename tag, rename_cast_spec spec)) casts.
-
 Definition rename_pattern (pat : pattern) : pattern :=
   match pat with
   | PAny x => PAny x
@@ -146,7 +139,7 @@ Definition rename_program (p : program) : program :=
     (map (fun '(u, code) => (rename u, rename_functor_code code)) (program_functors p))
     (rename (program_bool p)) (rename (program_true p)) (rename (program_false p))
     (rename (program_main p)) (rename_environment (program_environment p)) (program_unsupported p)
-    (rename_casts (program_casts p)) (rename_machines (program_machines p))
+    (rename_machines (program_machines p))
     (CodeOrigins
       (map (fun '(f, section) => (rename f, rename_subst section)) (lambda_sections (program_origins p)))
       (map (fun '(h, (u, gg)) => (rename h, (rename u, rename gg))) (linked_origins (program_origins p)))).
@@ -159,7 +152,6 @@ Record views_related (P P' : program_view) : Prop := ViewsRelated {
   related_false : view_false P' = rename (view_false P);
   related_arguments : view_arguments P' = view_arguments P;
   related_read : view_read P' = view_read P;
-  related_casts : view_casts P' = rename_casts (view_casts P);
   related_machines : view_machines P' = rename_machines (view_machines P)
 }.
 
@@ -252,14 +244,6 @@ Lemma rename_lookup_provision : forall key d,
   lookup_provision (rename_item key) (rename_environment d) =
   option_map rename_provision (lookup_provision key d).
 Proof. intros key [meanings aliases entries]. apply rename_lookup_entry. Qed.
-
-Lemma rename_lookup_cast : forall tag casts,
-  lookup_cast (rename tag) (rename_casts casts) = option_map rename_cast_spec (lookup_cast tag casts).
-Proof.
-  intros tag casts. induction casts as [|[key spec] rest IH]; [reflexivity|].
-  cbn [rename_casts map lookup_cast]. rewrite rename_eqb.
-  destruct (Nat.eqb tag key); [reflexivity|exact IH].
-Qed.
 
 Lemma rename_nlook : forall A B (action : A -> B) key rows,
   Elaboration.nlook (rename key) (map (fun '(symbol, value) => (rename symbol, action value)) rows) =

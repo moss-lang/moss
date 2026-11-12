@@ -180,9 +180,7 @@ Proof.
   apply code_effect_bind; [apply code_effect_lift|]. intros [context needs].
   apply code_effect_bind; [apply code_effect_pure|]. intro signature.
   apply code_effect_bind; [apply code_effect_check|intros []].
-  do 2 (apply code_effect_bind; [apply code_effect_pure|intros []]).
-  apply code_effect_bind; [apply code_effect_check|intros []].
-  apply code_effect_bind; [apply code_effect_pure|intros []].
+  do 3 (apply code_effect_bind; [apply code_effect_pure|intros []]).
   apply code_effect_bind; [apply code_effect_get|]. intro state.
   destruct (EaPlatform.bool_syms E) as [[boolean true_symbol] false_symbol].
   do 2 (apply code_effect_bind; [apply code_effect_check|intros []]).
