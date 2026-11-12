@@ -1,7 +1,7 @@
 (* The checked component contracts, supporting proof milestones, and
    the executable roots run/Extract.v extracts. Their
    assumptions are transitively everything the guarantee rests on, and
-   check.sh requires them to be only the kernel's `Primitive` declarations
+   check.py requires them to be only the kernel's `Primitive` declarations
    (Rocq's primitive integers, floats and arrays): no Axiom, no Admitted. *)
 From NM Require Import Audit.
 From NM Require AuditBase.

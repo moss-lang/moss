@@ -1,7 +1,7 @@
 # Contributing to Moss
 
-All commands in this file are assumed to be run within the Nix dev shell from
-the root of a clone of this repository:
+Run compiler and test commands in the default Nix dev shell from the root of
+the checkout. Use `nix develop .#bootstrap` for Rocq, Dune, and VsRocq.
 
 ```sh
 nix develop
@@ -35,11 +35,10 @@ current source correctly: what it writes is then compiled once more by
 itself. So:
 
 - **Everyday work reuses a previously built compiler**, the *seed*. The
-  [`moss`](bin/moss) launcher and the test suite both look for one in
-  `MOSS_SEED` (a `mossc.wasm`), and otherwise in `result-compiler`; the
-  launcher also reuses the compiler it built last in `target/`. Get one
-  once, with the bootstrap above or copied from a machine that has built
-  one, and keep it.
+  The development command and the test suite look for one in `MOSS_SEED`
+  (a `mossc.wasm`) or `result-compiler`. The development command can also
+  use the compiler it last built in `target/`. Keep a seed from the
+  bootstrap above or copy one from a machine that has built it.
 - **Rebuild through the bootstrap only when needed**: when no compiler you
   have can compile the current source (a change the old compiler does not
   understand, such as new syntax the compiler's own source uses), or when
@@ -58,55 +57,53 @@ does not spare the Rocq front end from loading and elaborating it first.
 Keep compiler build-input filesets equally narrow, so edits to tool-only
 files do not invalidate an otherwise unchanged compiler bootstrap.
 
-## Tests
-
-The test suite is the Rust crate [`crates/moss-tests`](crates/moss-tests).
-It needs a seed (above):
+Run a program with the current checkout from the default dev shell:
 
 ```sh
-cargo test
+python3 tools/build.py dev examples/hello.moss
 ```
 
-Before the first test that needs the oracle, the harness runs
-`nix build .#moss-ref` for the current checkout and uses that exact
-executable. Nix reuses an existing build when its inputs have not changed.
-This builds `moss-ref` and audits its proofs. It does not bootstrap the
-Moss compiler. Old `result-moss-ref` links and local Dune executables are
-not selected automatically. To test a particular build deliberately, set
-`MOSS_ORACLE` to its executable, such as
-`bootstrap/_build/default/run/driver.exe`. CI also supplies this explicitly.
+The development command caches the C++ launcher and the Moss compiler
+separately. It rebuilds the compiler from a seed when the source changes.
+Executable examples use the installed `moss` command on `PATH`.
 
-The harness reports the source root, seed and oracle paths as it selects
-them. It gets the source root from Cargo's run-time manifest directory,
-so reusing a Rust build artifact does not select another checkout.
+Release bundles contain `bin/moss` (or `bin/moss.exe`),
+`libexec/moss/compiler.cwasm`, and `share/moss/lib`. Keep these together
+when moving a bundle.
 
-That runs the whole workspace: the driver's unit tests and the suite,
-which compiles `src/` with the seed, checks that the result is a fixpoint
-of itself, and then holds it to every program of `tests/` and `examples/`
-(goldens, expected errors, and what the oracle makes of the same
-programs). Name a module to iterate on it, as in `cargo test -p
-moss-tests language::`, and run the whole suite before you commit. Its
-modules say what they check; `MOSS_BLESS=1` rewrites the goldens of
-[`tests/errors`](tests/errors).
+## Tests
 
-The acceptance and behaviour comparisons distribute their program lists
-over at most eight workers, limited by the available CPUs. Set
-`RUST_TEST_THREADS=1 cargo test` to run both these lists and the individual
-tests serially; `--test-threads=1` alone only controls the individual tests.
-Every corpus input is still checked, and acceptance diagnostics stay in
-source order.
+Run the Python suite with a seed compiler:
+
+```sh
+python3 tools/test.py
+python3 tools/test.py language.context
+python3 tools/test.py --list
+```
+
+The suite checks the compiler fixpoint, the programs in `tests/` and
+`examples/`, and the native launcher. It builds the current checkout's
+`moss-ref` once if needed. Set `MOSS_ORACLE` to use a specific executable,
+such as `bootstrap/_build/default/run/driver.exe`. CI supplies the oracle and
+both raw compiler generations from the bootstrap, so the suite can reuse
+the verified compiler and compare the fixpoint without compiling it again.
+
+The harness reports the source root, seed, and oracle paths as it selects
+them. `MOSS_TEST_JOBS=1` runs the test cases and corpus checks serially.
+Corpus checks use at most eight workers and report diagnostics in source
+order. `MOSS_BLESS=1` rewrites the compiler and oracle diagnostic goldens and
+the WASI output goldens.
 
 The oracle and the compiler must accept and reject the same programs, up
-to an explicit, commented list of known gaps
-([`agreement.rs`](crates/moss-tests/tests/suite/agreement.rs)). A program
-added to `tests/` that one accepts and the other rejects fails the suite
-until one of them is fixed or the gap is listed with its reason.
+to the documented [known gaps](tools/suite/test_agreement.py). A new
+program that one accepts and the other rejects fails the suite until one
+of them is fixed or the gap is recorded with its reason.
 
 For syntax changes, edit the reference grammar in
 [`MossGrammar.vy`](bootstrap/theories/MossGrammar.vy) and the self-hosted
 parser in [`syntax.moss`](src/syntax.moss). The bootstrap build regenerates
 the Rocq parser and checks the Menhir certificate. The
-[`selfhosted::syntax` tests](crates/moss-tests/tests/suite/selfhosted.rs)
+[`selfhosted.syntax` tests](tools/suite/test_selfhosted.py)
 compare AST dumps from both parsers.
 
 The native CLI requests readable diagnostics from the self-hosted compiler.
@@ -131,7 +128,7 @@ nix flake check
 That includes `bootstrap-rocq`, which depends on the audited `moss-ref`
 build. That build compiles every Rocq theory, audits the assumptions of
 what it certifies, and extracts the executable in the same release build
-tree. `bootstrap/check.sh` runs the same checks in `nix develop .#bootstrap`,
+tree. `python3 bootstrap/check.py` runs the same checks in `nix develop .#bootstrap`,
 and `dune build --release run/driver.exe` in `bootstrap` builds the
 executable.
 
@@ -152,7 +149,7 @@ A full reference-interpreter self-compile at `9af8a75` took 65 minutes
 21 seconds and peaked at 2.7 GiB on the local x86 Linux VM. Its output
 reached the compiler fixpoint.
 Start it in the background and continue other work while it runs
-(`bootstrap/run/self-compile.sh`). Record timings and investigate
+(`python3 tools/profile_bootstrap.py`). Record timings and investigate
 regressions. Bootstrap completion should not block ongoing development.
 
 Use the full audit at integration checkpoints. Keep expensive stable
@@ -167,10 +164,10 @@ constructing `ok` or other invariants. Otherwise a failed preservation check
 can cause tactics to construct and discard large invariant proofs repeatedly.
 
 For a reproducible full-build measurement, use an empty, separate build
-directory. `check.sh` uses it for compilation and both assumption audits:
+directory. `check.py` uses it for compilation and both assumption audits:
 
 ```sh
-DUNE_BUILD_DIR="$PWD/scratch/rocq-profile" nix develop .#bootstrap -c ./bootstrap/check.sh
+DUNE_BUILD_DIR="$PWD/scratch/rocq-profile" nix develop .#bootstrap -c python3 bootstrap/check.py
 ```
 
 For editing proofs with
@@ -178,7 +175,7 @@ For editing proofs with
 build the dependencies and launch VS Code from the default dev shell:
 
 ```sh
-nix develop
+nix develop .#bootstrap
 (cd bootstrap && dune build)
 code .
 ```
@@ -198,5 +195,5 @@ generated, and a test enforces that they are up to date: `src/spell.moss`,
 `lib/byte.moss` and `lib/wasibyte.moss`. Regenerate them with
 
 ```sh
-cargo run -p moss-tests --bin gensrc
+python3 tools/gensrc.py
 ```

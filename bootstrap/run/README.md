@@ -72,7 +72,7 @@ the ordinary call for every suspended type.
 world checks. The executable trusts OCaml's recursive table binding and
 array representation, host context setup, I/O, and extraction directives.
 The decoder memo in `primCache.ml` stores pure results alongside immutable
-operation names and operands. `check.sh` audits the extracted roots'
+operation names and operands. `check.py` audits the extracted roots'
 assumptions.
 
 The compiler package validates S1 as WebAssembly, runs its optimized form
@@ -90,7 +90,8 @@ The soundness certificate covers the reference pipeline that produces S1.
 - `primCache.ml`: the native operation carrier and shared decoder memo.
 - `dune`: the extraction, and the executable. The executable needs flambda:
   without it the interpreter keeps every version of linear memory alive.
-- `self-compile.sh`: the bootstrap step run by hand, timed with GNU time.
+- [`tools/profile_bootstrap.py`](../../tools/profile_bootstrap.py) runs the
+  bootstrap step by hand and records wall time and peak RSS.
 
 ## Command line
 
@@ -148,7 +149,7 @@ From `bootstrap/`:
 nix develop ..#bootstrap -c dune build --release run/driver.exe
 ```
 
-With Nix alone, `nix build .#moss-ref`. That runs `check.sh` too.
+With Nix alone, `nix build .#moss-ref`. That runs `check.py` too.
 `nix build .#compiler` bootstraps the compiler with it.
 
 From the repository root:
@@ -156,13 +157,13 @@ From the repository root:
 ```sh
 ulimit -s unlimited
 bootstrap/_build/default/run/driver.exe examples/hello.moss
-bootstrap/run/self-compile.sh OUTDIR [REFERENCE-S1.wasm]
+python3 tools/profile_bootstrap.py OUTDIR [REFERENCE-S1.wasm]
 ```
 
 ## Name
 
 The name `moss-ref` is defined in two places: `referenceName` in
 `flake.nix` (the package attribute and `bin/moss-ref`), and `REFERENCE` in
-`crates/moss-tests/src/lib.rs`, which builds `#moss-ref` and runs
+`tools/suite/support.py`, which builds `#moss-ref` and runs
 `bin/moss-ref`. The driver's own messages do not name it. The docs that
 mention it are this file and `CONTRIBUTING.md`.

@@ -1,6 +1,6 @@
 (* Facts about the definitions in Audit.v that the proofs use. Audit.v
    holds only definitions, so that a reader of the trusted statement need
-   not read any proof; check.sh rejects a proof in it. *)
+   not read any proof; check.py rejects a proof in it. *)
 
 From Stdlib Require Import String List Bool Arith.
 From NM Require AuditBase.

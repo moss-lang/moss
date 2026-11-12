@@ -7,10 +7,11 @@ scratch/
 /.envrc
 /bootstrap/_build/
 /bootstrap/_build2/
-/cargo-update.txt
 /nix-flake-update.txt
 /vscode/bin/
 /result*
 /target/
 dist/
 node_modules/
+
+__pycache__/

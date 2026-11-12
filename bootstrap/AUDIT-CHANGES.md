@@ -3397,7 +3397,7 @@ using one fresh atom per abstract class must preserve that behaviour
   | [float](../tests/wasi/float.moss) | same output | byte-identical output | Wasm scalar operation → its named encoding |
   | [gc_tree](../tests/wasi/gc_tree.moss), [gc_array](../tests/wasi/gc_array.moss) | same output | byte-identical output | allocation operation → name and tag operand |
   | [saved_type_rebinding](../tests/wasi/saved_type_rebinding.moss) | rejects → rejects | trap → same trap | same cast result through named allocations |
-  | [unsupported-operation probes](../crates/moss-tests/tests/suite/runtime_platform.rs) | oracle fixture | each name reported with exit 4 | same unsupported index |
+  | [unsupported-operation probes](../tools/suite/test_runtime_platform.py) | oracle fixture | each name reported with exit 4 | same unsupported index |
 
 - **Proof.** `PublicOperationFacts.v` proves the supported round trip,
   the decoder's canonical inverse, and exact recovery of unsupported
@@ -3900,7 +3900,7 @@ using one fresh atom per abstract class must preserve that behaviour
   A custom `Array.copy` whose source holds `Other` and whose receiver
   holds `Arrayed` used to elaborate. The executable now rejects it.
 - Both checks implement existing clauses of the platform contract. The
-  [custom prelude regressions](../crates/moss-tests/tests/suite/runtime_platform.rs)
+  [custom prelude regressions](../tools/suite/test_runtime_platform.py)
   exercise the formerly accepted declarations.
 
 ### 130. Read an absent private atomic representative through a linked input
@@ -3957,7 +3957,7 @@ relates a successful marked reading to the receiver in each
 conservative fallback also resolves each written method occurrence in its
 own module. This covers detached method names imported under aliases.
 The proof supplies the coverage needed by `OnlyFamily` and `BMethBind`.
-[The executable regression](../crates/moss-tests/tests/suite/wasm_backend.rs)
+[The executable regression](../tools/suite/test_wasm_backend.py)
 checks both diagnostics in both merge orders.
 
 ---

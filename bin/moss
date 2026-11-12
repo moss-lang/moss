@@ -1,9 +1,0 @@
-#!/bin/sh
-# Development launcher for the native Moss driver: builds it (quietly, unless
-# something needs saying) and runs it against this checkout's `src/` and
-# `lib/`. The first run after `src/` or `lib/` changes rebuilds the
-# self-hosted compiler from a seed (see CONTRIBUTING.md).
-set -e
-root=$(cd "$(dirname "$0")/.." && pwd)
-cargo build --quiet --package=moss-cli --profile=release --manifest-path "$root/Cargo.toml"
-MOSS_ROOT=$root exec "$root/target/release/moss" "$@"

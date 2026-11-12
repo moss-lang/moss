@@ -1,7 +1,7 @@
-; The assumption audits (check.sh). Each compiles as soon as the theory
+; The assumption audits (check.py). Each compiles as soon as the theory
 ; files it requires are built, overlapping the rest of the theory build:
 ; `rocq dep` lists the .vo files it requires, and its compiler output (the
-; `Print Assumptions` answers) is the log check.sh inspects.
+; `Print Assumptions` answers) is the log check.py inspects.
 
 (rule
  (target Certificate.deps)

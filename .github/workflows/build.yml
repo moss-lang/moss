@@ -4,98 +4,89 @@ on:
   push:
     branches:
       - main
+  workflow_call:
+    inputs:
+      lock-artifact:
+        description: Artifact containing the updated flake.lock
+        type: string
+        default: ""
+
+permissions:
+  contents: read
 
 jobs:
-  x86_64-linux:
-    runs-on: ubuntu-24.04
+  build:
+    name: ${{ matrix.system }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+            artifact: moss-linux-x86
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+            artifact: moss-linux-arm
+          - system: aarch64-darwin
+            runner: macos-26
+            artifact: moss-macos-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: cachix/install-nix-action@v31
       - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        if: inputs.lock-artifact != ''
+        with:
+          name: ${{ inputs.lock-artifact }}
       - run: nix flake check --print-build-logs
-
-      - run: nix build --print-build-logs .#standalone
-      - run: cp -RL result moss-linux-x86
+      - name: Stage the standalone bundle
+        run: |
+          package=$(nix build --no-link --print-out-paths --print-build-logs .#standalone)
+          cp -RL "$package" bundle
       - uses: actions/upload-artifact@v7
         with:
-          name: moss-linux-x86
-          path: moss-linux-x86
-
-      - run: nix build --print-build-logs .#windows
-      - run: cp -RL result moss-windows-x86
+          name: ${{ matrix.artifact }}
+          path: bundle
+      - name: Stage the Windows bundle
+        if: matrix.system == 'x86_64-linux'
+        run: |
+          package=$(nix build --no-link --print-out-paths --print-build-logs .#windows)
+          cp -RL "$package" windows-bundle
       - uses: actions/upload-artifact@v7
+        if: matrix.system == 'x86_64-linux'
         with:
           name: moss-windows-x86
-          path: moss-windows-x86
+          path: windows-bundle
 
-  aarch64-linux:
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: cachix/install-nix-action@v31
-      - uses: actions/checkout@v6
-      - run: nix flake check --print-build-logs
-
-      - run: nix build --print-build-logs .#standalone
-      - run: cp -RL result moss-linux-arm
-      - uses: actions/upload-artifact@v7
-        with:
-          name: moss-linux-arm
-          path: moss-linux-arm
-
-  aarch64-darwin:
-    runs-on: macos-26
-    steps:
-      - uses: cachix/install-nix-action@v31
-      - uses: actions/checkout@v6
-      - run: nix flake check --print-build-logs
-
-      - run: nix build --print-build-logs .#standalone
-      - run: cp -RL result moss-macos-arm
-      - uses: actions/upload-artifact@v7
-        with:
-          name: moss-macos-arm
-          path: moss-macos-arm
-
-  linux-x86:
-    needs: x86_64-linux
-    runs-on: ubuntu-24.04
+  smoke:
+    name: ${{ matrix.name }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86
+            runner: ubuntu-24.04
+            artifact: moss-linux-x86
+          - name: linux-arm
+            runner: ubuntu-24.04-arm
+            artifact: moss-linux-arm
+          - name: macos-arm
+            runner: macos-26
+            artifact: moss-macos-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
-          name: moss-linux-x86
+          name: ${{ matrix.artifact }}
           path: moss
-      - run: chmod +x moss/bin/moss
-      - run: cp examples/hello.moss moss
-      - run: ./moss/bin/moss moss/hello.moss
-
-  linux-arm:
-    needs: aarch64-linux
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
-        with:
-          name: moss-linux-arm
-          path: moss
-      - run: chmod +x moss/bin/moss
-      - run: cp examples/hello.moss moss
-      - run: ./moss/bin/moss moss/hello.moss
-
-  macos-arm:
-    needs: aarch64-darwin
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
-        with:
-          name: moss-macos-arm
-          path: moss
-      - run: chmod +x moss/bin/moss
-      - run: cp examples/hello.moss moss
-      - run: ./moss/bin/moss moss/hello.moss
+      - run: |
+          chmod +x moss/bin/moss
+          ./moss/bin/moss examples/hello.moss | grep -qx 'Hello, world!'
 
   windows-x86:
-    needs: x86_64-linux
+    needs: build
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@v6
@@ -103,5 +94,6 @@ jobs:
         with:
           name: moss-windows-x86
           path: moss
-      - run: Copy-Item examples\hello.moss moss
-      - run: .\moss\bin\moss.exe moss\hello.moss
+      - run: |
+          $output = .\moss\bin\moss.exe examples\hello.moss
+          if ($LASTEXITCODE -ne 0 -or $output -cne 'Hello, world!') { exit 1 }
