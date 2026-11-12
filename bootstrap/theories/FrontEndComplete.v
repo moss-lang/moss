@@ -460,7 +460,8 @@ Ltac exp L P n := match goal with H : ?T |- _ => lazymatch T with context [P] =>
 Lemma binding_starts ts form rest : BindForm ts form rest ->
   kind ts = NAME \/ kind ts = LBRACE \/ kind ts = LPAREN.
 Proof.
-  destruct 1; unfold TkName, TkText, Tk in *; intuition.
+  destruct 1; try (left; eapply path_kind; eassumption);
+    unfold TkName, TkText, Tk in *; intuition.
 Qed.
 
 Lemma bind_form_complete : forall n,
@@ -471,7 +472,8 @@ Lemma bind_form_complete : forall n,
 Proof.
   induction n as [|n [Form Field]]; [split; intros; lia|].
   split; intros ts v rest H He Hn; simpl; destruct H; firsts.
-  - step. exp opt_type_complete OptType n. fin.
+  - pose proof (path_kind _ _ _ H). step. exp path_complete Path n.
+    step. exp opt_type_complete OptType n. fin.
   - step. clistx n ltac:(eapply Field; eauto; lia). step. exp opt_type_complete OptType n. fin.
   - step. exp opt_type_complete OptType n. fin.
   - assert (kind ts1 <> RPAREN)
@@ -481,6 +483,10 @@ Proof.
       by (destruct (binding_starts _ _ _ H0) as [K|[K|K]]; congruence).
     step. ihp Form BindForm. step. clistx n ltac:(eapply Form; eauto; lia).
     step. exp opt_type_complete OptType n. fin.
+  - pose proof (path_kind _ _ _ H). step. exp path_complete Path n. step.
+    clistx n ltac:(eapply Field; eauto; lia). step. exp opt_type_complete OptType n. fin.
+  - pose proof (path_kind _ _ _ H). step. exp path_complete Path n. step.
+    clistx n ltac:(eapply Form; eauto; lia). step. exp opt_type_complete OptType n. fin.
   - step. exp opt_type_complete OptType n. fin.
   - step. ihp Form BindForm. fin.
 Qed.

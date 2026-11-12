@@ -108,7 +108,7 @@ Lemma pat_match : forall F st pat xp binds hs ca w,
 Proof.
   intros F st pat xp binds hs ca w Pat Formed NotNever T.
   destruct Pat as [|n Res Named|pa s xs R K Member
-                   |pa s xs y pay R K Member Pay Res Named
+                   |pa s xs y pay opening R K Member Pay Res Named
                    |pa s xs fs ftys bs fxs R K Member Pay Arity Pats Distinct].
   - split; [intros s []|]. split; [discriminate|]. left. exists []; repeat split; constructor.
   - split; [intros s []|]. split; [discriminate|]. left.

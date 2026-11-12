@@ -1077,6 +1077,14 @@ anonymous function can also obtain a parameter type from the signature
 it is bound to. A local binding evaluates its initializer once, and
 `var` makes the bound names mutable.
 
+A tag binding names the tag and uses the payload's declared form, for
+example `let Point {x, y} = p;` or `let Pair(x, y) = pair;`. A bare or
+nullary tag uses `Marker()`. The value must have that single tag type.
+Use `match` to select a tag from a union. Bare record and tuple bindings
+apply to structural products. Defined function parameters can infer
+their type from the tag head. An abstract signature can name that type
+directly.
+
 **[D45] DECIDED (nominal `Bool` and conditionals).** The standard library
 declares `tag Bool(False | True);`. Its nominal head allows methods to
 attach to `Bool`. The prelude defines `val true: Bool = Bool(True);` and

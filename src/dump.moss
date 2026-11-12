@@ -124,6 +124,11 @@ assume Std {
       putchar(char::rbracket);
     }
 
+    fn push_bare_field_marker() {
+      sp();
+      putchar(char::b); putchar(char::a); putchar(char::r); putchar(char::e);
+    }
+
     fn dump(id: Int) {
       let k = ast::kind_of(id);
       open_tag(k);
@@ -158,6 +163,7 @@ assume Std {
         dump(ast::a_of(id));
         sp();
         intern::put(ast::b_of(id));
+        if ast::c_of(id) == 1 { push_bare_field_marker(); }
       } else if k == ast::k_ex_method() {
         sp();
         dump(ast::a_of(id));
@@ -243,6 +249,11 @@ assume Std {
         put_path(ast::a_of(id));
         sp();
         opt_node(ast::b_of(id));
+        let shape = ast::c_of(id);
+        if ast::is_some(shape) {
+          sp();
+          if shape == 0 { under(); } else { put_int(shape - 1); }
+        }
       } else if k == ast::k_pt_record() {
         sp();
         opt_path(ast::a_of(id));

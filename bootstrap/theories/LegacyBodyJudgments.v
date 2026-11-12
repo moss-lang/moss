@@ -103,11 +103,11 @@ Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> pattern -> list (nam
     PatOf W F st (APPath pa) (PHead s None []) [] [s] false
 (* `S(y)`: y is the payload, at the member's arguments; a struct tag's is a
    bare record type (note 35) *)
-| PTagBind : forall pa s xs y pay,
-    resolve_sym W (fr_mod F) pa = Some s -> ~ BareTag W s -> In (TNom s xs) (members st) ->
+| PTagBind : forall pa s xs y pay opening,
+    resolve_sym W (fr_mod F) pa = Some s -> TagOpening W st s xs opening -> In (TNom s xs) (members st) ->
     PayloadOf W s xs pay ->
     resolve W (fr_mod F) [y] = None -> Named F y ->
-    PatOf W F st (APTag pa (APPath [y])) (PHead s (Some (var_of F y)) []) [(y, pay)] [s] false
+    PatOf W F st (APTag pa (APPath [y]) opening) (PHead s (Some (var_of F y)) []) [(y, pay)] [s] false
 (* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name.
    The names it binds are distinct: a repeated binder would be typed by its
    last field but read from its first. *)
@@ -251,12 +251,12 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
                  Ex W P F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
                  fits vt (snd ft)) ftys xfs ->
     Ex W P F C (AERec pa a fs) exp (ETag s xs (ERecord xfs)) (TNom s xs)
-| ExField : forall F C exp o n ox ot rec t,
+| ExField : forall F C exp o n ox ot rec t bare,
     Ex W P F C o None ox ot ->
     (* a tag's payload, or a bare record (note 44) *)
-    ((exists s xs, ot = TNom s xs /\ kind_sym W s = Some DKTag /\ PayloadOf W s xs rec) \/ rec = ot) ->
+    ((bare = false /\ exists s xs, ot = TNom s xs /\ kind_sym W s = Some DKTag /\ PayloadOf W s xs rec) \/ rec = ot) ->
     (exists ftys, rec = TRecord ftys /\ slook n ftys = Some t) ->
-    Ex W P F C (AEField o n) exp (EField ox (n)) t
+    Ex W P F C (AEField o n bare) exp (EField ox (n)) t
 | ExBareRecord : forall F C exp fs ftys xfs,
     NoDup (map fst fs) -> List.length fs = List.length ftys ->
     record_literal_shape fs exp ftys ->
@@ -615,7 +615,7 @@ with MethProvider (W : world) (P : program) : frame -> cx -> aexpr -> fsig -> ty
     SigOf W att (c_ty Cd) (Some (canon C rt))
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
     RequirementsInForce Cd Ca ->
-    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (TypeCapture th th) (fun x => x) sm
+    MethProvider W P F C (AEField (AEPath rp None) n false) sg rt att (TypeCapture th th) (fun x => x) sm
 | MPWrapped : forall F C pa sg rt g sm w n Cg nsg types,
     FnProvider W P F C (AEPath pa None) sg None g types sm ->
     CtxOf W g Cg nsg -> n = List.length (sg_params sg) ->

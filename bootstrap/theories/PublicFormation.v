@@ -400,7 +400,7 @@ Lemma patof_ok : forall F st pat xp binds hs ca, PatOf W F st pat xp binds hs ca
   forall n t, In (n, t) binds -> TyOk t.
 Proof.
   intros F st pat xp binds hs ca Pt Ok.
-  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay Arity FP Nd];
+  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay opening R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay Arity FP Nd];
     intros n' t' Ib.
   - contradiction.
   - destruct Ib as [E|[]]. injection E as _ <-. exact Ok.
@@ -1768,7 +1768,7 @@ Proof.
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt bool_tag true_tag false_tag Tags Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag Tags Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
                   |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len F2
-                  |F C exp o n ox ot rec t Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
+                  |F C exp o n ox ot rec t bare Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
       intros Fc Ff Oe.
     + exact (tyok_unit W).
     + exact (proj2 Ff t Th).
@@ -1803,7 +1803,7 @@ Proof.
       exact (nom_ok_intro W s xs Kx Ox).
     + pose proof (ex_ok _ _ _ _ _ _ Eo Fc Ff (optok_none W)) as Ot.
       assert (Rok : TyOk W rec).
-      { destruct Rc as [(s & xs & -> & Kt & Pay)| ->]; [|exact Ot].
+      { destruct Rc as [(_ & s & xs & -> & Kt & Pay)| ->]; [|exact Ot].
         exact (payload_ok W _ _ _ Pay (proj2 (nom_ok_elim W _ _ Ot))). }
       destruct Ft as [ftys [-> S]]. exact (record_ok_elim W _ _ _ Rok (slook_in _ _ _ _ S)).
     + destruct exp as [expected|].

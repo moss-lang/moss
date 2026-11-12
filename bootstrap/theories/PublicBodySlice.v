@@ -5728,7 +5728,7 @@ Proof.
       |F C exp e expected v actual Ret De Fits
       |F C exp Loop
       |F C exp pa a fs s bs xs pay ftys xfs R K Br F2 Pay PayEq Nd Len Fields
-      |F C exp o n ox ot rcd t Do Rcd Fld|F C exp fs ftys xfs Nd Len Shape Fields];
+      |F C exp o n ox ot rcd t bare Do Rcd Fld|F C exp fs ftys xfs Nd Len Shape Fields];
       intros d types H lg lst Pre0.
     + (* unit *) cbn [AR.O.I.eval]. eapply outcome_now; [exact Pre0|constructor].
     + (* this *) cbn [AR.O.I.eval]. pose proof Pre0 as [_ [[_ [Rcv _]] [L _]]].
@@ -5890,12 +5890,12 @@ Proof.
         Pay T1).
     + (* field *) cbn [AR.O.I.eval].
       pose proof (sex F C o None ox ot Do d types H lg lst (pre_lower Pre0)) as Out.
-      apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkField n B) Out).
+      apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkField n bare B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       destruct Fld as [ftys [-> Look]].
       assert (Rec : exists values, AR.O.I.get_field n w = A.slook n values /\
         fields_typed W P H1 values (map (fun q => (fst q, ground d (snd q))) ftys)).
-      { destruct Rcd as [[s [xs [-> [K Pay]]]]|Same].
+      { destruct Rcd as [[_ [s [xs [-> [K Pay]]]]]|Same].
         - rewrite ground_nom in T1. destruct (nominal_value W P _ _ _ _ T1) as [inner ->].
           destruct (tagged_payload_typed W P H1 s _ inner T1) as [payload [Pay' Inner]].
           pose proof (payload_det W _ _ _ _ Pay' (payload_subst W (type_meanings d) _ _ _ Pay)) as ->.

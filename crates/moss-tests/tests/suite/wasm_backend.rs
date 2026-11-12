@@ -638,6 +638,54 @@ fn tuple_destructuring_in_parameters_and_locals() {
     agree(&entry, &[], "abc\n");
 }
 
+#[test]
+fn tag_destructuring_in_parameters_and_locals() {
+    let entry = whole(
+        r"assume Std {
+  tag Point { x: Char, y: Char };
+  tag Pair(Char, Char);
+  tag Wrapped(Point);
+  tag Empty();
+  tag Marker;
+  fn first(Point { x, y }): Char { x }
+  fn second(Pair(a, b)): Char { b }
+  fn read(pair: Pair): Char;
+  fn main() {
+    let p = Point { x = char::a, y = char::b };
+    putchar(first(p));
+    var Point { x: Char, y = changed } = p;
+    changed = char::c;
+    let Wrapped(Point { x = left, y = right }) = Wrapped(p);
+    putchar(second(Pair(left, right)));
+    let Empty() = Empty();
+    let Marker() = Marker;
+    bind read = (Pair(a, b)) => a;
+    putchar(read(Pair(changed, x)));
+    putchar(char::newline);
+  }
+}
+",
+    );
+    agree(&entry, &[], "abc\n");
+}
+
+#[test]
+fn tag_destructuring_requires_the_single_declared_head_and_shape() {
+    for text in [
+        "tag T { x: () }; fn main() { let {x} = T {x = ()}; }",
+        "tag T { x: () }; fn main() { let {}: T = T {x = ()}; }",
+        "tag T(()); tag U; fn main() { let value: T | U = T(()); let T(x) = value; }",
+        "tag T(()); tag U(()); fn main() { let T(x) = U(()); }",
+        "tag T((), ()); fn main() { let T(x) = T((), ()); }",
+        "tag T(()); fn main() { let T() = T(()); }",
+        "tag T({x: ()}); fn main() { let T {x} = T({x = ()}); }",
+    ] {
+        let entry = source(text);
+        rejects(&entry);
+        oracle_rejects(&entry);
+    }
+}
+
 /// Audit.v note 30: acyclic contexts nest to any depth. Cycles are
 /// rejected at declaration, including when used only by a tag.
 #[test]

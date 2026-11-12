@@ -403,11 +403,12 @@ Fixpoint parse_bind_form (n : nat) (ts : list token) : pr binding_form :=
   match n with
   | 0 => fuel_err ts
   | S n =>
-      if at_ LBRACE ts then
+      let record make ts :=
         let@ fields & ts := comma_list n (parse_bind_field n) [RBRACE] (advance ts) in
         let@ _ & ts := expect RBRACE ts in
         let@ ann & ts := parse_opt_type n ts in
-        POk (BindProduct false fields ann) ts
+        POk (make fields ann) ts in
+      if at_ LBRACE ts then record (BindProduct false) ts
       else if at_ LPAREN ts then
         let ts := advance ts in
         if at_ RPAREN ts then
@@ -427,9 +428,18 @@ Fixpoint parse_bind_form (n : nat) (ts : list token) : pr binding_form :=
             | None => err "a binding can only have one annotation at each level" ts
             end
       else
-        let@ x & ts := expect_name ts in
-        let@ ann & ts := parse_opt_type n ts in
-        POk (BindName x ann) ts
+        let@ tag & ts := parse_path n ts in
+        if at_ LBRACE ts then record (fun fields => BindTag tag None (BindProduct false fields None)) ts
+        else if at_ LPAREN ts then
+          let@ forms & ts := comma_list n (parse_bind_form n) [RPAREN] (advance ts) in
+          let@ _ & ts := expect RPAREN ts in
+          let@ ann & ts := parse_opt_type n ts in
+          POk (positional_binding tag forms ann) ts
+        else
+          match tag with
+          | [x] => let@ ann & ts := parse_opt_type n ts in POk (BindName x ann) ts
+          | _ => err "a qualified binding needs a tag payload pattern" ts
+          end
   end
 with parse_bind_field (n : nat) (ts : list token) : pr (name * binding_form) :=
   match n with
@@ -685,7 +695,7 @@ with postfix_loop (n : nat) (e : aexpr) (ts : list token) {struct n} : pr aexpr 
           let@ _ & ts := expect RPAREN ts in
           postfix_loop n (AEMeth e p args) ts
         else match p with
-             | [f] => postfix_loop n (AEField e f) ts
+             | [f] => postfix_loop n (AEField e f false) ts
              | _ => err "field access takes a single name" ts
              end
       else POk e ts
@@ -889,7 +899,7 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
         if at_ SEMI ts then
           if forallb (abstract_binding_valid false) forms then
             POk (ADFn rcv x ps ret None) (advance ts)
-          else err "an abstract parameter cannot annotate both a product and its parts" ts
+          else err "an abstract parameter cannot destructure tags or annotate a product and its parts" ts
         else let@ b & ts := parse_block n ts in POk (ADFn rcv x ps ret (Some (bind_fn_parameters forms b))) ts
         end
       else if at_ CONTEXT ts then

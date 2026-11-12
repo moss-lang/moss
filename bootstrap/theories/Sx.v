@@ -121,6 +121,16 @@ Definition read_opt_ty (fuel : nat) (x : sx) : res (option aty) :=
   | _ => let* t := read_ty fuel x in Good (Some t)
   end.
 
+Definition read_arity (arity : sx) : res (option nat) :=
+  let* arity := opt_atom arity in
+  match arity with
+            | None => Good None
+            | Some text =>
+                let digits := list_ascii_of_string text in
+                if forallb (fun d => let n := nat_of_ascii d in Nat.leb 48 n && Nat.leb n 57) digits
+                then Good (Some (fold_left (fun n d => n * 10 + (nat_of_ascii d - 48)) digits 0))
+                else bad "tag arity"
+  end.
 Fixpoint read_pat (fuel : nat) (x : sx) : res apat :=
   match fuel with
   | 0 => bad "too deep"
@@ -129,7 +139,11 @@ Fixpoint read_pat (fuel : nat) (x : sx) : res apat :=
       | SL false [SA "D"] => Good APWild
       | SL false [SA "E"; SA p; SA "_"] => Good (APPath (split_path p))
       | SL false [SA "E"; SA p; sub] =>
-          let* s := read_pat k sub in Good (APTag (split_path p) s)
+          let* s := read_pat k sub in Good (APTag (split_path p) s None)
+      | SL false [SA "E"; SA p; sub; arity] =>
+          let* s := read_pat k sub in
+          let* arity := read_arity arity in
+          Good (APTag (split_path p) s (Some arity))
       | SL false [SA "F"; p; SL true fs] =>
           let* p' := opt_path p in
           let* fs' := rmap (fun f => match f with
@@ -157,7 +171,9 @@ Fixpoint read_expr (fuel : nat) (x : sx) : res aexpr :=
           let* args' := rmap (read_expr k) args in
           Good (AECall (split_path p) a' args')
       | SL false [SA "m"; o; SA f] =>
-          let* o' := read_expr k o in Good (AEField o' f)
+          let* o' := read_expr k o in Good (AEField o' f false)
+      | SL false [SA "m"; o; SA f; SA "bare"] =>
+          let* o' := read_expr k o in Good (AEField o' f true)
       | SL false [SA "n"; o; SA p; SL true args] =>
           let* o' := read_expr k o in
           let* args' := rmap (read_expr k) args in
@@ -286,15 +302,7 @@ Fixpoint read_decl (fuel : nat) (x : sx) : res adecl :=
       | SL false [SA "P"; SA n; SL true ps; arity; t] =>
           let* ps' := rmap atom ps in
           let* t' := read_ty k t in
-          let* arity := opt_atom arity in
-          let* arity := match arity with
-            | None => Good None
-            | Some text =>
-                let digits := list_ascii_of_string text in
-                if forallb (fun d => let n := nat_of_ascii d in Nat.leb 48 n && Nat.leb n 57) digits
-                then Good (Some (fold_left (fun n d => n * 10 + (nat_of_ascii d - 48)) digits 0))
-                else bad "tag arity"
-            end in
+          let* arity := read_arity arity in
           Good (ADTag n ps' arity t')
       | SL false [SA "P"; SA n; SL true ps; t] =>
           let* ps' := rmap atom ps in let* t' := read_ty k t in
@@ -447,7 +455,8 @@ Fixpoint dpat (p : apat) : sx :=
   match p with
   | APWild => nd "D" []
   | APPath q => nd "E" [dpath q; SA "_"]
-  | APTag q s => nd "E" [dpath q; dpat s]
+  | APTag q s None => nd "E" [dpath q; dpat s]
+  | APTag q s (Some arity) => nd "E" [dpath q; dpat s; dopt (fun n => SA (Syntax.show_nat n)) arity]
   | APRec q fs => nd "F" [dopt dpath q; sl (map (fun '(x, s) => nd "G" [SA x; dopt dpat s]) fs)]
   end.
 
@@ -457,7 +466,7 @@ Fixpoint dexpr (e : aexpr) : sx :=
   | AEThis => nd "j" []
   | AEPath p a => nd "k" [dpath p; dapp a]
   | AECall p a args => nd "l" [nd "k" [dpath p; dapp a]; sl (map dexpr args)]
-  | AEField o f => nd "m" [dexpr o; SA f]
+  | AEField o f bare => nd "m" (if bare then [dexpr o; SA f; SA "bare"] else [dexpr o; SA f])
   | AEMeth o p args => nd "n" [dexpr o; dpath p; sl (map dexpr args)]
   | AEBareRecord fs => nd "o" [SA "_"; sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]
   | AERec p a fs => nd "o" [nd "k" [dpath p; dapp a];

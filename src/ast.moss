@@ -35,7 +35,7 @@ assume Std {
   fn k_ex_this(): Int { 9 }              # this
   fn k_ex_path(): Int { 10 }             # a=path b=app run c=app len d=applied
   fn k_ex_call(): Int { 11 }             # a=callee b=args run c=len
-  fn k_ex_field(): Int { 12 }            # a=object b=name
+  fn k_ex_field(): Int { 12 }            # a=object b=name c=bare only (1)
   fn k_ex_method(): Int { 13 }           # a=receiver b=path c=args run d=len
   fn k_ex_record(): Int { 14 }           # a=constructor or none b=run of ex_rfield c=len
   fn k_ex_rfield(): Int { 15 }           # a=name b=expr (none = shorthand)
@@ -57,7 +57,7 @@ assume Std {
 
   # Patterns.
   fn k_pt_wild(): Int { 29 }   # _
-  fn k_pt_path(): Int { 30 }   # a=path b=sub-pattern
+  fn k_pt_path(): Int { 30 }   # a=path b=sub-pattern c=opening shape for a binding
   fn k_pt_record(): Int { 31 } # a=path (none if bare) b=run of pt_field c=len d=1 if positional
   fn k_pt_field(): Int { 32 }  # a=name b=pattern
   fn k_arm(): Int { 33 }        # a=pattern b=body
@@ -115,6 +115,7 @@ assume Std {
   fn k_bind_record(): Int { 54 } # a=field run b=len c=annotation
   fn k_bind_field(): Int { 55 }  # a=field name b=binding form
   fn k_bind_tuple(): Int { 56 }  # a=positional field run b=len c=annotation
+  fn k_bind_tag(): Int { 57 }    # a=tag path b=payload binding c=annotation d=arity
 
   # `for x in e { body }` (draft) is parsed into a bare block of `let`,
   # `var` and `while`, whose calls of access.moss's iteration methods are

@@ -426,7 +426,7 @@ Theorem meth_provider_code_effect : forall E R method F C provider sg receiver,
   PreservesOldCode (meth_provider E R method F C provider sg receiver).
 Proof.
   intros E R method F C provider sg receiver Lower. unfold meth_provider.
-  destruct provider as [| |path application| |syntax field| | | | | | | | | | |parameters ann body|];
+  destruct provider as [| |path application| |syntax field bare| | | | | | | | | | |parameters ann body|];
     try apply code_effect_fail.
   - destruct application; [apply code_effect_fail|].
     apply code_effect_bind; [apply fn_provider_code_effect|]. intros [[g types] sm].
@@ -435,6 +435,7 @@ Proof.
     intro slot. apply code_effect_return.
   - destruct syntax as [| |path application| | | | | | | | | | | | | |]; try apply code_effect_fail.
     destruct application; [apply code_effect_fail|].
+    destruct bare; [apply code_effect_fail|].
     apply code_effect_bind; [apply code_effect_lift|]. intro nominal.
     apply code_effect_bind; [apply code_effect_lift|]. intro attached.
     destruct (ast_of (e_W E) attached) as [syntax|]; [|apply code_effect_fail].

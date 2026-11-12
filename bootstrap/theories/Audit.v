@@ -39,19 +39,22 @@ Inductive aty : Type :=
 (* An annotation can occur on a whole binding or on one of its parts. *)
 Inductive binding_form : Type :=
 | BindName : name -> option aty -> binding_form
-| BindProduct : bool -> list (name * binding_form) -> option aty -> binding_form.
+| BindProduct : bool -> list (name * binding_form) -> option aty -> binding_form
+| BindTag : path -> option nat -> binding_form -> option aty -> binding_form.
 
 Inductive apat : Type :=
 | APWild
 | APPath : path -> apat
-| APTag  : path -> apat -> apat
+(* None is a match pattern. Some arity opens a single tag at a binding,
+   with None arity for a named record payload. *)
+| APTag  : path -> apat -> option (option nat) -> apat
 | APRec  : option path -> list (name * option apat) -> apat.
 
 Inductive aexpr : Type :=
 | AEUnit | AEThis
 | AEPath   : path -> sapp -> aexpr
 | AECall   : path -> sapp -> list aexpr -> aexpr
-| AEField  : aexpr -> name -> aexpr
+| AEField  : aexpr -> name -> bool -> aexpr  (* true requires a bare product *)
 | AEMeth   : aexpr -> path -> list aexpr -> aexpr
 | AERec    : path -> sapp -> list (name * option aexpr) -> aexpr
 | AEIf     : aexpr -> ablock -> option aexpr -> aexpr
@@ -507,7 +510,7 @@ Definition tag_call_payload (arity : option nat) (args : list aexpr) : option ae
 Definition positional_pattern (p : path) (items : list apat) : apat :=
   match items with
   | [] => APPath p
-  | [q] => APTag p q
+  | [q] => APTag p q None
   | _ => APRec (Some p) (tuple_fields (map Some items))
   end.
 
@@ -872,15 +875,16 @@ Definition for_desugar (x : name) (coll : aexpr) (body : ablock) : astmt :=
 
 (* Bindings translate to ordinary local bindings and field reads. Generated
    names are outside the source name alphabet. *)
-Fixpoint binding_type (form : binding_form) : option aty :=
+Fixpoint binding_type (parameter : bool) (form : binding_form) : option aty :=
   match form with
-  | BindName _ ann | BindProduct _ _ (Some _ as ann) => ann
+  | BindName _ ann | BindProduct _ _ (Some _ as ann) | BindTag _ _ _ (Some _ as ann) => ann
+  | BindTag tag _ _ None => if parameter then Some (ATRef tag None) else None
   | BindProduct positional fields None =>
       let fix read_fields fs :=
         match fs with
         | [] => Some []
         | (field, sub) :: rest =>
-            match binding_type sub, read_fields rest with
+            match binding_type parameter sub, read_fields rest with
             | Some t, Some types => Some ((field, t) :: types)
             | _, _ => None
             end
@@ -900,6 +904,7 @@ Fixpoint unique_names (xs : list name) : bool :=
 Fixpoint binding_names (form : binding_form) : list name :=
   match form with
   | BindName x _ => [x]
+  | BindTag _ _ sub _ => binding_names sub
   | BindProduct _ fields _ =>
       (fix names fs :=
          match fs with [] => [] | (_, sub) :: rest => List.app (binding_names sub) (names rest) end) fields
@@ -908,6 +913,7 @@ Fixpoint binding_names (form : binding_form) : list name :=
 Fixpoint binding_fields_valid (form : binding_form) : bool :=
   match form with
   | BindName _ _ => true
+  | BindTag _ _ sub _ => binding_fields_valid sub
   | BindProduct _ fields _ =>
       unique_names (map fst fields) &&
       (fix valid fs :=
@@ -925,12 +931,16 @@ Definition parameter_bindings_valid (forms : list binding_form) : bool :=
 (* An abstract signature has no body in which to check a projection
    against a second annotation. Use one source of type information along
    each path of its binding form. *)
+Definition binding_annotation (form : binding_form) : option aty :=
+  match form with BindName _ ann | BindProduct _ _ ann | BindTag _ _ _ ann => ann end.
+
 Fixpoint abstract_binding_valid (covered : bool) (form : binding_form) : bool :=
-  let ann := match form with BindName _ ann | BindProduct _ _ ann => ann end in
+  let ann := binding_annotation form in
   let annotated := match ann with Some _ => true | None => false end in
   negb (covered && annotated) &&
   match form with
   | BindName _ _ => true
+  | BindTag _ _ _ _ => false
   | BindProduct _ fields _ =>
       (fix valid fs :=
          match fs with
@@ -954,55 +964,64 @@ Definition checked_field (ann : option aty) (field : aexpr) : aexpr :=
   | Some t =>
       let key := "%field" in
       let actual := AEBlock (ABlock [ASLet key None (AEBareRecord [(key, Some field)])] (Some (ref key))) in
-      AEBlock (ABlock [ASLet key (Some (ATRec [(key, t)])) actual] (Some (AEField (ref key) key)))
+      AEBlock (ABlock [ASLet key (Some (ATRec [(key, t)])) actual] (Some (AEField (ref key) key true)))
   end.
 
 (* A positional pattern accounts for the entire tuple. Assigning a tuple
    rebuilt from the named positions checks both its arity and its kind. *)
-Definition check_tuple_shape (root : name) (fields : list (name * binding_form)) : list astmt :=
+Definition check_product_shape (positional : bool) (root : name) (fields : list (name * binding_form)) : list astmt :=
   let check := "%shape" in
   let rebuilt :=
-    match fields with
-    | [] => AEUnit
-    | _ => AEBareRecord (map (fun '(field, _) => (field, Some (AEField (ref root) field))) fields)
+    match positional, fields with
+    | true, [] => AEUnit
+    | _, _ => AEBareRecord (map (fun '(field, _) => (field, Some (AEField (ref root) field true))) fields)
     end in
   [ASVar check None (ref root); ASAssign check rebuilt].
+
+Definition bind_component (mutable : bool) (slot : name) (form : binding_form) (value : aexpr) : astmt :=
+  let ann := binding_annotation form in
+  let value := checked_field ann value in
+  match form with
+  | BindName x _ => (if mutable then ASVar else ASLet) x ann value
+  | _ => ASLet slot ann value
+  end.
 
 Fixpoint bind_components (mutable : bool) (root : name) (form : binding_form) : list astmt :=
   match form with
   | BindName _ _ => []
+  | BindTag tag arity payload _ =>
+      let slot := root ++ "%payload" in
+      let binder := "%opened" in
+      let value := AEMatch (ref root) [(APTag tag (APPath [binder]) (Some arity), ref binder)] in
+      bind_component mutable slot payload value ::
+      match payload with BindProduct false [] _ => [] | _ => bind_components mutable slot payload end
   | BindProduct positional fields _ =>
       let fix bind_fields fs :=
         match fs with
         | [] => []
         | (field, sub) :: rest =>
-            let value := AEField (ref root) field in
-            let statements :=
-              match sub with
-              | BindName x ann =>
-                  [(if mutable then ASVar else ASLet) x ann (checked_field ann value)]
-              | BindProduct _ _ ann =>
-                  let child := root ++ "%" ++ field in
-                  ASLet child ann (checked_field ann value) :: bind_components mutable child sub
-              end in
-            List.app statements (bind_fields rest)
+            let child := root ++ "%" ++ field in
+            let value := AEField (ref root) field true in
+            bind_component mutable child sub value :: List.app (bind_components mutable child sub) (bind_fields rest)
         end in
-      List.app (if positional then check_tuple_shape root fields else []) (bind_fields fields)
+      let check := if positional || match fields with [] => true | _ => false end
+                   then check_product_shape positional root fields else [] in
+      List.app check (bind_fields fields)
   end.
 
 Definition destructure (mutable : bool) (form : binding_form) (value : aexpr) : list astmt :=
   match form with
   | BindName x ann => [(if mutable then ASVar else ASLet) x ann value]
-  | BindProduct _ _ _ =>
+  | _ =>
       let root := "%binding" in
-      ASLet root (binding_type form) value :: bind_components mutable root form
+      ASLet root (binding_type false form) value :: bind_components mutable root form
   end.
 
 Fixpoint parameter_signature (i : nat) (forms : list binding_form) : option (list (name * aty)) :=
   match forms with
   | [] => Some []
   | form :: rest =>
-      match binding_type form, parameter_signature (S i) rest with
+      match binding_type true form, parameter_signature (S i) rest with
       | Some t, Some ps => Some ((parameter_name i form, t) :: ps)
       | _, _ => None
       end
@@ -1011,7 +1030,7 @@ Fixpoint parameter_signature (i : nat) (forms : list binding_form) : option (lis
 Fixpoint lambda_signature (i : nat) (forms : list binding_form) : list (name * option aty) :=
   match forms with
   | [] => []
-  | form :: rest => (parameter_name i form, binding_type form) :: lambda_signature (S i) rest
+  | form :: rest => (parameter_name i form, binding_type false form) :: lambda_signature (S i) rest
   end.
 
 Fixpoint parameter_bindings (i : nat) (forms : list binding_form) : list astmt :=
@@ -1036,13 +1055,19 @@ Definition annotate_binding (form : binding_form) (ann : option aty) : option bi
       match form with
       | BindName x None => Some (BindName x ann)
       | BindProduct positional fields None => Some (BindProduct positional fields ann)
+      | BindTag tag arity payload None => Some (BindTag tag arity payload ann)
       | _ => None
       end
   end.
 
+Definition positional_binding (tag : path) (forms : list binding_form) (ann : option aty) : binding_form :=
+  let payload := match forms with [one] => one | _ => tuple_binding forms None end in
+  BindTag tag (Some (List.length forms)) payload ann.
+
 Inductive BindForm : list token -> binding_form -> list token -> Prop :=
 | BindFormName : forall ts x ts1 ann rest,
-    TkName ts x ts1 -> OptType ts1 ann rest -> BindForm ts (BindName x ann) rest
+    Path ts [x] ts1 -> kind ts1 <> LBRACE -> kind ts1 <> LPAREN ->
+    OptType ts1 ann rest -> BindForm ts (BindName x ann) rest
 | BindFormRecord : forall ts ts1 fields ts2 ts3 ann rest,
     Tk LBRACE ts ts1 -> CommaList BindFormField [RBRACE] ts1 fields ts2 ->
     Tk RBRACE ts2 ts3 -> OptType ts3 ann rest -> BindForm ts (BindProduct false fields ann) rest
@@ -1056,6 +1081,14 @@ Inductive BindForm : list token -> binding_form -> list token -> Prop :=
     Tk LPAREN ts ts1 -> BindForm ts1 first ts2 -> Tk COMMA ts2 ts3 ->
     CommaList BindForm [RPAREN] ts3 items ts4 -> Tk RPAREN ts4 ts5 ->
     OptType ts5 ann rest -> BindForm ts (tuple_binding (first :: items) ann) rest
+| BindFormTagRecord : forall ts tag ts1 ts2 fields ts3 ts4 ann rest,
+    Path ts tag ts1 -> Tk LBRACE ts1 ts2 -> CommaList BindFormField [RBRACE] ts2 fields ts3 ->
+    Tk RBRACE ts3 ts4 -> OptType ts4 ann rest ->
+    BindForm ts (BindTag tag None (BindProduct false fields None) ann) rest
+| BindFormTagPositional : forall ts tag ts1 ts2 forms ts3 ts4 ann rest,
+    Path ts tag ts1 -> Tk LPAREN ts1 ts2 -> CommaList BindForm [RPAREN] ts2 forms ts3 ->
+    Tk RPAREN ts3 ts4 -> OptType ts4 ann rest ->
+    BindForm ts (positional_binding tag forms ann) rest
 with BindFormField : list token -> name * binding_form -> list token -> Prop :=
 | BindFieldShort : forall ts x ts1 ann rest,
     TkName ts x ts1 -> kind ts1 <> EQUAL -> OptType ts1 ann rest ->
@@ -1169,7 +1202,7 @@ with Suffixes : aexpr -> list token -> aexpr -> list token -> Prop :=
     Tk LPAREN ts2 ts3 -> CommaList (Expr false) [RPAREN] ts3 args ts4 -> Tk RPAREN ts4 ts5 ->
     Suffixes (AEMeth e p args) ts5 e' ts6 -> Suffixes e ts e' ts6
 | SufField : forall e ts ts1 x ts2 e' ts3, Tk DOT ts ts1 -> Path ts1 [x] ts2 -> kind ts2 <> LPAREN ->
-    Suffixes (AEField e x) ts2 e' ts3 -> Suffixes e ts e' ts3
+    Suffixes (AEField e x false) ts2 e' ts3 -> Suffixes e ts e' ts3
 
 (* (e) | () | this | b | int | dec | r | r(e, ...) | r{x = e, ...}, and
    the lambda (x: τ, ...): τ => e (D70), which the figure lists under β *)
@@ -4313,7 +4346,7 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 Inductive Breaks (W : world) : string -> aexpr -> Prop :=
 | BkBreak : forall md,Breaks W md AEBreak
 | BkCall : forall md p a args y, In y args -> Breaks W md y -> Breaks W md (AECall p a args)
-| BkField : forall md o n, Breaks W md o -> Breaks W md (AEField o n)
+| BkField : forall md o n bare, Breaks W md o -> Breaks W md (AEField o n bare)
 | BkMethRecv : forall md o p args, Breaks W md o -> Breaks W md (AEMeth o p args)
 | BkMethArg : forall md o p args y, In y args -> Breaks W md y -> Breaks W md (AEMeth o p args)
 | BkBareRecord : forall md fs n y, In (n, Some y) fs -> Breaks W md y -> Breaks W md (AEBareRecord fs)
@@ -4629,7 +4662,7 @@ Fixpoint pattern_names (pattern : apat) : list name :=
   | APWild => []
   | APPath [n] => if global_name n then [] else [n]
   | APPath _ => []
-  | APTag _ payload => pattern_names payload
+  | APTag _ payload _ => pattern_names payload
   | APRec _ fields => flat_map (fun q => match snd q with
       | None => [fst q] | Some p => pattern_names p end) fields
   end.
@@ -4639,7 +4672,7 @@ Fixpoint free_names (e : aexpr) : list name :=
   | AEPath [n] None => [n]
   | AEPath _ _ => []
   | AECall _ _ args => flat_map free_names args
-  | AEField receiver _ | AEUnary _ receiver => free_names receiver
+  | AEField receiver _ _ | AEUnary _ receiver => free_names receiver
   | AEMeth receiver _ args => free_names receiver ++ flat_map free_names args
   | AERec _ _ fields | AEBareRecord fields => flat_map (fun q => match snd q with
       | Some value => free_names value | None => [fst q] end) fields
@@ -5469,6 +5502,21 @@ Definition record_pattern_arity (given : list (name * option apat)) (fields : li
   | [] => true
   end.
 
+Definition tag_binding_shape (W : world) (tag : nat) (arity : option nat) : bool :=
+  match ast_of W tag, arity with
+  | Some (ADBareTag _), Some 0 => true
+  | Some (ADTag _ _ None _), None => true
+  | Some (ADTag _ _ (Some expected) _), Some given => Nat.eqb given expected
+  | _, _ => false
+  end.
+
+Definition TagOpening (W : world) (scrutinee : ty) (tag : nat) (arguments : subst)
+    (opening : option (option nat)) : Prop :=
+  match opening with
+  | None => ~ BareTag W tag
+  | Some arity => scrutinee = TNom tag arguments /\ tag_binding_shape W tag arity = true
+  end.
+
 Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> pattern_plan -> Prop :=
 | TypesPatternWildcard : TypesPattern W F scrutinee APWild PatternWildcard
 | TypesPatternBinder : forall n,
@@ -5478,11 +5526,11 @@ Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> patter
     resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
     In (TNom tag arguments) (members scrutinee) ->
     TypesPattern W F scrutinee (APPath path) (PatternNominal tag)
-| TypesPatternPayload : forall path tag arguments binder payload,
-    resolve_sym W (fr_mod F) path = Some tag -> ~ BareTag W tag ->
+| TypesPatternPayload : forall path tag arguments binder payload opening,
+    resolve_sym W (fr_mod F) path = Some tag -> TagOpening W scrutinee tag arguments opening ->
     In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments payload ->
     resolve W (fr_mod F) [binder] = None -> Named F binder ->
-    TypesPattern W F scrutinee (APTag path (APPath [binder])) (PatternPayload tag binder payload)
+    TypesPattern W F scrutinee (APTag path (APPath [binder]) opening) (PatternPayload tag binder payload)
 | TypesPatternRecord : forall path tag arguments fields field_types plan,
     resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
     In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments (TRecord field_types) ->
@@ -5671,12 +5719,12 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     record_literal_shape given exp fields ->
     TypesRecordFields W F C given exp fields plans ->
     TypesExpr W F C (AEBareRecord given) exp (PlanBareRecord plans) (TRecord fields)
-| TypesField : forall F C exp object field plan actual payload t,
+| TypesField : forall F C exp object field plan actual payload t bare,
     TypesExpr W F C object None plan actual ->
-    ((exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\
+    ((bare = false /\ exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\
       PayloadOf W tag arguments payload) \/ payload = actual) ->
     (exists fields, payload = TRecord fields /\ slook field fields = Some t) ->
-    TypesExpr W F C (AEField object field) exp (PlanField plan field) t
+    TypesExpr W F C (AEField object field bare) exp (PlanField plan field) t
 | TypesMatch : forall F C exp scrutinee arms plan st plans t,
     TypesExpr W F C scrutinee None plan st -> TypesArms W F C (canon C st) arms exp plans t ->
     TypesExpr W F C (AEMatch scrutinee arms) exp (PlanMatch plan plans) t
@@ -5867,7 +5915,7 @@ with TypesBindItem (W : world) : frame -> cx -> (spec * option aexpr) ->
 | TypesBindAttached : forall F C path label brackets method receiver signature arguments provider name site plan,
     TypesMethodBindHeader W F C path label brackets method receiver signature arguments ->
     TypesAttachedMethodPlan W F C provider name receiver signature site plan ->
-    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AEField (AEPath provider None) name))
+    TypesBindItem W F C (Spec (Some path) (Some label) brackets, Some (AEField (AEPath provider None) name false))
       (PlanAttachedBind (canon C receiver) method (theta_of C arguments) site plan)
       (provide C (mkey (canon C receiver) method) arguments (set_mth C (canon C receiver) method signature)) F []
 | TypesBindWrapped : forall F C path label brackets method receiver signature arguments provider plan,

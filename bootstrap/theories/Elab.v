@@ -2134,7 +2134,7 @@ Fixpoint has_break_e (x : aexpr) : bool :=
   match x with
   | AEBreak => true
   | AECall _ _ args => (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
-  | AEField o _ => has_break_e o
+  | AEField o _ _ => has_break_e o
   | AEMeth o _ args =>
       has_break_e o || (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
   | AERec _ _ fs | AEBareRecord fs =>
@@ -2174,7 +2174,7 @@ Fixpoint free_names_complete_e (x : aexpr) : list string :=
   match x with
   | AEPath [n] None => [n]
   | AECall _ _ args => flat_map free_names_complete_e args
-  | AEField o _ => free_names_complete_e o
+  | AEField o _ _ => free_names_complete_e o
   | AEMeth o _ args => free_names_complete_e o +++ flat_map free_names_complete_e args
   | AERec _ _ fs | AEBareRecord fs => flat_map (fun p => match snd p with
                     | Some v => free_names_complete_e v | None => [fst p] end) fs
@@ -2994,7 +2994,8 @@ Definition compile_pattern (mi : nat) (e : env) (p : apat) (sty : ety) (heads : 
           else err mi ("`" ++ show_path pp ++ "` is not a matchable pattern")
       | _, _ => err mi ("`" ++ show_path pp ++ "` is not a matchable pattern")
       end
-  | APTag pp sub =>
+  | APTag _ _ (Some _) => err mi "tag binding in legacy elaborator"
+  | APTag pp sub None =>
       let! t := resolve_sym mi pp in
       match t with
       | Some g =>
@@ -3124,7 +3125,7 @@ Definition expect_defined_fn (mi : nat) (y : aexpr) : M gsym :=
 Definition expect_provider (c : cx) (e : env) (y : aexpr) (this : ety) : M gsym :=
   let mi := cx_mod c in
   match y with
-  | AEField (AEPath rp None) n =>
+  | AEField (AEPath rp None) n false =>
       let! rt := resolve_sym mi rp in
       match rt with
       | Some rg =>
@@ -3544,7 +3545,8 @@ Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {s
     | AECall p a args => synth_call f c e p a args
     | AEBareRecord _ => err mi "anonymous record literal in legacy elaborator"
     | AERec p a fs => synth_record f c e p a fs
-    | AEField o n => synth_field f c e o n
+    | AEField o n false => synth_field f c e o n
+    | AEField _ _ true => err mi "product binding in legacy elaborator"
     | AEMeth o p args => synth_method f c e o p args
     | AEUnary op y =>
         match operator_method op true with

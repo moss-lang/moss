@@ -45,7 +45,7 @@ Fixpoint breaks (n : nat) (md : string) (e : aexpr) {struct n} : option bool :=
       match e with
       | AEBreak => Some true
       | AECall _ _ args => any_break (breaks n' md) args
-      | AEField o _ => breaks n' md o
+      | AEField o _ _ => breaks n' md o
       | AEMeth o _ args => break_or (breaks n' md o) (fun _ => any_break (breaks n' md) args)
       | AERec _ _ fs | AEBareRecord fs => any_break (fun q => optional_break (breaks n' md) (snd q)) fs
       | AEIf c b oe =>
@@ -195,7 +195,7 @@ Fixpoint pat_names (p : apat) : list name :=
   | APWild => []
   | APPath [n] => [n]
   | APPath _ => []
-  | APTag _ q => pat_names q
+  | APTag _ q _ => pat_names q
   | APRec _ fs => flat_map (fun q => match snd q with None => [fst q] | Some p => pat_names p end) fs
   end.
 Fixpoint ex_names (n : nat) (md : string) (e : aexpr) {struct n} : list name :=
@@ -206,7 +206,7 @@ Fixpoint ex_names (n : nat) (md : string) (e : aexpr) {struct n} : list name :=
       | AECall _ a args =>
           (match a with Some _ => map Syntax.call_arg_name (seq 0 (List.length args)) | None => [] end) ++
           flat_map (ex_names n' md) args
-      | AEField o _ | AEUnary _ o => ex_names n' md o
+      | AEField o _ _ | AEUnary _ o => ex_names n' md o
       | AEMeth o _ args => ex_names n' md o ++ flat_map (ex_names n' md) args
       | AERec _ _ fs | AEBareRecord fs => flat_map (fun q => match snd q with Some y => ex_names n' md y | None => [] end) fs
       | AEIf c b oe => ex_names n' md c ++ block_names n' md b ++ match oe with Some y => ex_names n' md y | None => [] end

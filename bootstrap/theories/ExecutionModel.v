@@ -2633,7 +2633,7 @@ Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> xpat -> list (name *
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
     PayloadOf W s xs pay ->
     resolve W (fr_mod F) [y] = None -> Named F y ->
-    PatOf W F st (APTag pa (APPath [y])) (XPHead s (Some (var_of F y)) []) [(y, pay)] [s] false
+    PatOf W F st (APTag pa (APPath [y]) None) (XPHead s (Some (var_of F y)) []) [(y, pay)] [s] false
 (* `S{x, x = y, x = _}`: S's payload is a record, its fields bound by name *)
 | PRecord : forall pa s xs fs ftys bs fxs,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
@@ -2652,7 +2652,7 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 Inductive Breaks : aexpr -> Prop :=
 | BkBreak : Breaks AEBreak
 | BkCall : forall p a args y, In y args -> Breaks y -> Breaks (AECall p a args)
-| BkField : forall o n, Breaks o -> Breaks (AEField o n)
+| BkField : forall o n, Breaks o -> Breaks (AEField o n false)
 | BkMethRecv : forall o p args, Breaks o -> Breaks (AEMeth o p args)
 | BkMethArg : forall o p args y, In y args -> Breaks y -> Breaks (AEMeth o p args)
 | BkRec : forall p a fs n y, In (n, Some y) fs -> Breaks y -> Breaks (AERec p a fs)
@@ -2757,7 +2757,7 @@ Inductive Mentions_name : aexpr -> name -> Prop :=
 
 with Sub_expr : aexpr -> aexpr -> Prop :=
 | SubCallArg : forall p a args y, In y args -> Sub_expr y (AECall p a args)
-| SubField : forall o n, Sub_expr o (AEField o n)
+| SubField : forall o n, Sub_expr o (AEField o n false)
 | SubMethRecv : forall o p args, Sub_expr o (AEMeth o p args)
 | SubMethArg : forall o p args y, In y args -> Sub_expr y (AEMeth o p args)
 | SubRec : forall p a fs n y, In (n, Some y) fs -> Sub_expr y (AERec p a fs)
@@ -2968,7 +2968,7 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
     (* a tag's payload, or a bare record (note 44) *)
     ((exists s xs, ot = TNom s xs /\ kind_sym W s = Some DKTag /\ PayloadOf W s xs rec) \/ rec = ot) ->
     (exists ftys, rec = TNom rec_head ftys /\ nlook (w_fld W n) ftys = Some t) ->
-    Ex W P F C (AEField o n) exp (XField ox (w_fld W n)) t
+    Ex W P F C (AEField o n false) exp (XField ox (w_fld W n)) t
 
 (* the payload type of a tag at its arguments *)
 
@@ -3309,7 +3309,7 @@ with MethProvider (W : world) (P : xprogram) : frame -> cx -> aexpr -> fsig -> t
     CtxOf W att Ca ns -> Satisfies C Ca ns sm ->
     SigOf W att (c_ty C) None
       (FSig (map (canon C) (sg_params sg)) (canon C (sg_ret sg))) ->
-    MethProvider W P F C (AEField (AEPath rp None) n) sg rt att (fun x => x) sm
+    MethProvider W P F C (AEField (AEPath rp None) n false) sg rt att (fun x => x) sm
 | MPWrapped : forall F C pa sg rt g sm w n Cg nsg,
     FnProvider W P F C (AEPath pa None) sg None g sm ->
     CtxOf W g Cg nsg -> n = length (sg_params sg) ->

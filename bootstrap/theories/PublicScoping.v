@@ -830,7 +830,7 @@ Lemma patof_scoped : forall C F st pat xp binds hs ca, PatOf W F st pat xp binds
   forall n t, In (n, t) binds -> ScopedTy W C t.
 Proof.
   intros C F st pat xp binds hs ca Pt Sc.
-  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay Arity FP Nd];
+  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay opening R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay Arity FP Nd];
     intros n' t' Ib.
   - contradiction.
   - destruct Ib as [E|[]]. injection E as _ <-. exact Sc.
@@ -1297,7 +1297,7 @@ Proof.
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt bool_tag true_tag false_tag Tags Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag Tags Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
                   |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len F2
-                  |F C exp o n ox ot rec t Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
+                  |F C exp o n ox ot rec t bare Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
       intros Fc Ff Cs Se; pose proof Cs as [Lc [Ps [Ts Mr]]].
     + exact (unit_scoped W C).
     + exact (Ts t Th).
@@ -1334,7 +1334,7 @@ Proof.
     + exact (nom_reqs_scoped W C _ _ _ _ _ _ _ B Fx).
     + pose proof (ex_scoped _ _ _ _ _ _ Eo Fc Ff Cs (optscoped_none C)) as So.
       assert (Rs : ScopedTy W C rec).
-      { destruct Rc as [(s & xs & -> & Kt & Pay)| ->]; [|exact So].
+      { destruct Rc as [(_ & s & xs & -> & Kt & Pay)| ->]; [|exact So].
         intros y' Iy. apply So. rewrite gens_nom. exact (payload_gens W _ _ _ y' Pay Iy). }
       destruct Ft as [ftys [-> S]]. intros y' Iy. apply Rs. rewrite gens_record. apply in_flat_map.
       exists (n, t). split; [exact (slook_in _ _ _ _ S)|exact Iy].

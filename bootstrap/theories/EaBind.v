@@ -183,7 +183,7 @@ Definition place_method_wrapper (g n : nat) (Cg : cx) (needs : list item) : M (c
      MethProvider W P F C y sg rt target types pre sm *)
 Definition meth_provider (m : nat) (F : frame) (C : cx) (y : aexpr) (sg : fsig) (rt : ty) : M (nat * type_capture * wrapper * smap) :=
   match y with
-  | AEField (AEPath rp None) n =>
+  | AEField (AEPath rp None) n false =>
       let* rg := lift (resolve_sym W (fr_mod F) rp) (bq (show_path rp) ++ " is not in scope") in
       let* att := lift (w_attached W rg n) (qs W rg ++ " has no defined attached method `." ++ n ++ "`") in
       match ast_of W att with

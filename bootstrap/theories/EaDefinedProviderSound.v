@@ -126,9 +126,9 @@ Qed.
 Theorem attached_method_provider_post_sound : forall bundle R method F C path name signature receiver,
   WorldOf bundle W ->
   Checked post (valid F C) (fun _ => valid F C)
-    (meth_provider E R method F C (AEField (AEPath path None) name) signature receiver)
+    (meth_provider E R method F C (AEField (AEPath path None) name false) signature receiver)
     (fun '(target, types, prefix, sm) _ =>
-      MethProvider W P F C (AEField (AEPath path None) name) signature receiver target types prefix sm).
+      MethProvider W P F C (AEField (AEPath path None) name false) signature receiver target types prefix sm).
 Proof.
   intros bundle R method F C path name signature receiver World before [[[target types] prefix] sm] after Run.
   unfold meth_provider in Run. fold W fuel in Run.

@@ -108,6 +108,12 @@ Fixpoint field_pats (F : frame) (g : nat) (ftys : list (fld * ty)) (fs : list (n
       end
   end.
 
+Definition tag_openingb (st : ty) (tag : nat) (args : subst) (opening : option (option nat)) : bool :=
+  match opening with
+  | None => negb (bare_tagb W tag)
+  | Some arity => ty_eqb st (TNom tag args) && tag_binding_shape W tag arity
+  end.
+
 (* SOUND: pat_of F st p = Ok (xp, binds, hs, catch) -> PatOf W F st p xp binds hs catch *)
 Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * ty) * list nat * bool) :=
   let tag_of pa := let! s := ropt (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not a tag") in
@@ -127,9 +133,13 @@ Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * 
   | APPath pa =>
       let! (s, _) := tag_of pa in
       Ok (PHead s None [], [], [s], false)
-  | APTag pa (APPath [y]) =>
+  | APTag pa (APPath [y]) opening =>
       let! (s, xs) := tag_of pa in
-      let! _ := rcheck (negb (bare_tagb W s)) (bq (show_path pa) ++ " has no explicit payload") in
+      let! _ := rcheck (tag_openingb st s xs opening)
+        (match opening with
+         | None => bq (show_path pa) ++ " has no explicit payload"
+         | Some _ => "a tag binding needs the single declared tag and its payload shape"
+         end) in
       let! pay := payload_of W fuel s xs in
       let! _ := rcheck (negb (is_some (resolve W (fr_mod F) [y]))) "a pattern binder is a declared name" in
       let! _ := rcheck (is_some (slook y (fr_var F))) "internal: a pattern binder is not numbered" in
@@ -386,10 +396,10 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
           ret (ERecord xfs, TRecord ftys)
       | Some _ => fail "a record literal needs a record type"
       end
-  | AEField o nm =>
+  | AEField o nm bare =>
       let* (ox, ot) := ex n' F C o None in
       let* rc := match ot with
-                 | TNom s xs => if kind_is W s DKTag then pure (payload_of W fuel s xs) else ret ot
+                 | TNom s xs => if negb bare && kind_is W s DKTag then pure (payload_of W fuel s xs) else ret ot
                  | _ => ret ot end in
       match rc with
       | TRecord ftys => let* t := lift (slook nm ftys) (qty W ot ++ " has no field `" ++ nm ++ "`") in ret (EField ox nm, t)

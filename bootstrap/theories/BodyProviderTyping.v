@@ -21,7 +21,7 @@ Qed.
 
 Lemma attached_method_plan_translates : forall W P F C path name receiver signature site plan,
   TypesAttachedMethodPlan W F C path name receiver signature site plan ->
-  MethProvider W P F C (AEField (AEPath path None) name) signature receiver
+  MethProvider W P F C (AEField (AEPath path None) name false) signature receiver
     (provider_symbol plan) (named_provider_capture plan) (fun body => body) (named_provider_provisions site plan).
 Proof.
   intros W P F C path name receiver signature site plan
@@ -56,7 +56,7 @@ Proof.
 Qed.
 
 Theorem attached_method_plan_readback : forall W P F C path name receiver signature g types prefix sm,
-  MethProvider W P F C (AEField (AEPath path None) name) signature receiver g types prefix sm ->
+  MethProvider W P F C (AEField (AEPath path None) name false) signature receiver g types prefix sm ->
   exists site plan, TypesAttachedMethodPlan W F C path name receiver signature site plan /\
     g = provider_symbol plan /\ types = named_provider_capture plan /\
     prefix = (fun body => body) /\ sm = named_provider_provisions site plan.

@@ -1176,7 +1176,7 @@ assume Std {
         return ast::node2(ast::k_param(), ast::a_of(form), ann);
       }
       if ast::is_some(ast::c_of(form)) { fail(); }
-      ast::node3(ast::kind_of(form), ast::a_of(form), ast::b_of(form), ann)
+      ast::node4(ast::kind_of(form), ast::a_of(form), ast::b_of(form), ann, ast::d_of(form))
     }
 
     fn parse_binding_annotation(): Int {
@@ -1189,21 +1189,27 @@ assume Std {
       ast::located(form, start, previous_end.read())
     }
 
+    # The opening brace is consumed by the caller.
+    fn parse_binding_record(): IntList {
+      let fields = int_list();
+      while !here(tk_rbrace()) {
+        if here(tk_eof()) { break; }
+        let field = take_name();
+        let sub = if accept(tk_equal()) {
+          parse_binding_form()
+        } else {
+          ast::node2(ast::k_param(), field, parse_binding_annotation())
+        };
+        fields.push(ast::node2(ast::k_bind_field(), field, sub));
+        if !accept(tk_comma()) { break; }
+      }
+      expect(tk_rbrace());
+      fields
+    }
+
     fn parse_binding_form_inner(): Int {
       if accept(tk_lbrace()) {
-        let fields = int_list();
-        while !here(tk_rbrace()) {
-          if here(tk_eof()) { break; }
-          let field = take_name();
-          let sub = if accept(tk_equal()) {
-            parse_binding_form()
-          } else {
-            ast::node2(ast::k_param(), field, parse_binding_annotation())
-          };
-          fields.push(ast::node2(ast::k_bind_field(), field, sub));
-          if !accept(tk_comma()) { break; }
-        }
-        expect(tk_rbrace());
+        let fields = parse_binding_record();
         return ast::node3(ast::k_bind_record(), ast::commit(fields), fields.length(), parse_binding_annotation());
       }
       if accept(tk_lparen()) {
@@ -1221,13 +1227,28 @@ assume Std {
         expect(tk_rparen());
         return annotate_binding(first, parse_binding_annotation());
       }
-      let name = take_name();
-      ast::node2(ast::k_param(), name, parse_binding_annotation())
+      let head = parse_path();
+      if accept(tk_lbrace()) {
+        let fields = parse_binding_record();
+        let payload = ast::node3(ast::k_bind_record(), ast::commit(fields), fields.length(), ast::none());
+        return ast::node4(ast::k_bind_tag(), head, payload, parse_binding_annotation(), ast::none());
+      }
+      if accept(tk_lparen()) {
+        let forms = parse_binding_forms();
+        let payload = if forms.length() == 1 { forms.get(0) } else { tuple_binding(forms, ast::none()) };
+        return ast::node4(ast::k_bind_tag(), head, payload, parse_binding_annotation(), forms.length());
+      }
+      if ast::path_len(head) != 1 { fail(); }
+      ast::node2(ast::k_param(), ast::path_last(head), parse_binding_annotation())
     }
 
-    fn binding_type(form: Int): Int {
+    fn binding_type(form: Int, parameter: Bool): Int {
       if ast::kind_of(form) == ast::k_param() { return ast::b_of(form); }
       if ast::is_some(ast::c_of(form)) { return ast::c_of(form); }
+      if ast::kind_of(form) == ast::k_bind_tag() {
+        if parameter { return ast::node4(ast::k_ty_ref(), ast::a_of(form), ast::none(), 0, 0); }
+        return ast::none();
+      }
       if (ast::kind_of(form) == ast::k_bind_tuple()) & (ast::b_of(form) == 0) {
         return ast::node0(ast::k_ty_unit());
       }
@@ -1235,7 +1256,7 @@ assume Std {
       var i = 0;
       while i < ast::b_of(form) {
         let field = ast::kid_at(ast::a_of(form), i);
-        let ty = binding_type(ast::b_of(field));
+        let ty = binding_type(ast::b_of(field), parameter);
         if !ast::is_some(ty) { return ast::none(); }
         fields.push(ast::node2(ast::k_ty_field(), ast::a_of(field), ty));
         i = i + 1;
@@ -1258,6 +1279,10 @@ assume Std {
     fn check_binding_names(form: Int, names: IntList) {
       if ast::kind_of(form) == ast::k_param() {
         add_binding_name(names, ast::a_of(form));
+        return ();
+      }
+      if ast::kind_of(form) == ast::k_bind_tag() {
+        check_binding_names(ast::b_of(form), names);
         return ();
       }
       let fields = int_list();
@@ -1309,11 +1334,11 @@ assume Std {
       let ty = ast::node2(ast::k_ty_record(), ast::commit(types), 1);
       let checked = int_list();
       checked.push(ast::node3(ast::k_st_let(), key, ty, expression));
-      let field = ast::node2(ast::k_ex_field(), local_ref(key), key);
+      let field = ast::node3(ast::k_ex_field(), local_ref(key), key, 1);
       ast::node3(ast::k_ex_block(), ast::commit(checked), 1, field)
     }
 
-    fn check_tuple_shape(stmts: IntList, root: Int, form: Int) {
+    fn check_product_shape(stmts: IntList, root: Int, form: Int) {
       let cs = int_list();
       push_string(cs, "%shape");
       let check = intern::intern_chars(cs);
@@ -1322,36 +1347,73 @@ assume Std {
       var i = 0;
       while i < ast::b_of(form) {
         let field = ast::kid_at(ast::a_of(form), i);
-        values.push(ast::node2(ast::k_ex_field(), local_ref(root), ast::a_of(field)));
+        values.push(ast::node3(ast::k_ex_field(), local_ref(root), ast::a_of(field), 1));
         i = i + 1;
       }
-      let rebuilt = if values.length() == 0 { ast::node0(ast::k_ex_unit()) } else { tuple_expr(values) };
+      let rebuilt = if (ast::kind_of(form) == ast::k_bind_tuple()) & (values.length() == 0) {
+        ast::node0(ast::k_ex_unit())
+      } else { tuple_expr(values) };
       stmts.push(ast::node2(ast::k_st_assign(), check, rebuilt));
+    }
+
+    fn bind_component(stmts: IntList, kind: Int, slot: Int, form: Int, value: Int) {
+      if ast::kind_of(form) == ast::k_param() {
+        let ann = ast::b_of(form);
+        stmts.push(ast::node3(kind, ast::a_of(form), ann, checked_binding_field(ann, value)));
+      } else {
+        let ann = ast::c_of(form);
+        stmts.push(ast::node3(ast::k_st_let(), slot, ann, checked_binding_field(ann, value)));
+      }
+    }
+
+    fn binding_payload(root: Int, form: Int): Int {
+      let cs = int_list();
+      push_string(cs, "%opened");
+      let binder = intern::intern_chars(cs);
+      let names = int_list();
+      names.push(binder);
+      let sub = ast::node2(ast::k_pt_path(), ast::path_of(names), ast::none());
+      let pattern = ast::node3(ast::k_pt_path(), ast::a_of(form), sub, ast::d_of(form) + 1);
+      let arms = int_list();
+      arms.push(ast::node2(ast::k_arm(), pattern, local_ref(binder)));
+      ast::node3(ast::k_ex_match(), local_ref(root), ast::commit(arms), 1)
     }
 
     fn bind_components(stmts: IntList, kind: Int, root: Int, form: Int) {
       if ast::kind_of(form) == ast::k_param() { return (); }
-      if ast::kind_of(form) == ast::k_bind_tuple() { check_tuple_shape(stmts, root, form); }
+      if ast::kind_of(form) == ast::k_bind_tag() {
+        let cs = int_list();
+        intern::put_chars(cs, root);
+        push_string(cs, "%payload");
+        let slot = intern::intern_chars(cs);
+        let payload = ast::b_of(form);
+        bind_component(stmts, kind, slot, payload, binding_payload(root, form));
+        if (ast::kind_of(payload) != ast::k_bind_record()) | (ast::b_of(payload) != 0) {
+          bind_components(stmts, kind, slot, payload);
+        }
+        return ();
+      }
+      if (ast::kind_of(form) == ast::k_bind_tuple()) | (ast::b_of(form) == 0) {
+        check_product_shape(stmts, root, form);
+      }
       var i = 0;
       while i < ast::b_of(form) {
         let field = ast::kid_at(ast::a_of(form), i);
         let name = ast::a_of(field);
         let sub = ast::b_of(field);
-        let projection = ast::node2(ast::k_ex_field(), local_ref(root), name);
-        if ast::kind_of(sub) == ast::k_param() {
-          let ann = ast::b_of(sub);
-          stmts.push(ast::node3(kind, ast::a_of(sub), ann, checked_binding_field(ann, projection)));
-        } else {
-          let ann = ast::c_of(sub);
-          let child = nested_binding_name(root, name);
-          stmts.push(ast::node3(ast::k_st_let(), child, ann, checked_binding_field(ann, projection)));
-          bind_components(stmts, kind, child, sub);
-        }
+        let projection = ast::node3(ast::k_ex_field(), local_ref(root), name, 1);
+        let child = nested_binding_name(root, name);
+        bind_component(stmts, kind, child, sub, projection);
+        bind_components(stmts, kind, child, sub);
         i = i + 1;
       }
     }
 
     fn check_abstract_binding(form: Int, covered: Bool) {
+      if ast::kind_of(form) == ast::k_bind_tag() {
+        fail();
+        return ();
+      }
       let named = ast::kind_of(form) == ast::k_param();
       let ann = if named { ast::b_of(form) } else { ast::c_of(form) };
       let annotated = ast::is_some(ann);
@@ -1377,7 +1439,7 @@ assume Std {
         } else {
           destructures = true;
           let root = parameter_name(form, i);
-          let ty = binding_type(form);
+          let ty = binding_type(form, strict);
           if strict & !ast::is_some(ty) { fail_expected(tk_colon()); }
           ps.push(ast::node2(ast::k_param(), root, ty));
           bind_components(stmts, ast::k_st_let(), root, form);
@@ -1640,7 +1702,7 @@ assume Std {
         let cs = int_list();
         push_string(cs, "%binding");
         let root = intern::intern_chars(cs);
-        stmts.push(ast::node3(ast::k_st_let(), root, binding_type(form), value));
+        stmts.push(ast::node3(ast::k_st_let(), root, binding_type(form, false), value));
         bind_components(stmts, kind, root, form);
       }
     }

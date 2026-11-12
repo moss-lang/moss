@@ -336,6 +336,8 @@ assume Std {
         ("(x,)", false),
         ("(x, y).0", true),
         ("let x, y = (a, b);", false),
+        ("let outer::Wrapped(Point {x, y = other: T}) = p;", false),
+        ("let Marker() = marker;", false),
         ("let ((x: T,), {name = y: U}) = v;", false),
         ("bind f = ((x: Int, y: Int)) => x;", false),
         ("bind f = (x, y) => (x, y);", false),

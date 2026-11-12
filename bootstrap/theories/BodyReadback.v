@@ -163,7 +163,7 @@ Proof.
       |F C exp Loop
       |F C exp path brackets given tag readings arguments payload field_types field_code
          Resolve Kind Brackets Readings Payload Shape Distinct Count Fields
-      |F C exp object field value actual payload t Object Payload Field
+      |F C exp object field value actual payload t bare Object Payload Field
       |F C exp given field_types field_code Distinct Count Shape Fields].
     + exists PlanUnit. split; [constructor|split; [reflexivity|finish_placements]].
     + exists PlanThis. split; [now constructor|split; [reflexivity|finish_placements]].
@@ -377,7 +377,7 @@ Proof.
       { exists receiver_symbol, readings. repeat first [assumption|split]. }
       pose proof Provider as OriginalProvider. destruct Provider.
       * lazymatch goal with
-        | Provider : MethProvider _ _ _ ?caller (AEField (AEPath ?provider None) ?method_name) ?signature ?receiver _ _ _ _,
+        | Provider : MethProvider _ _ _ ?caller (AEField (AEPath ?provider None) ?method_name false) ?signature ?receiver _ _ _ _,
           Header : TypesMethodBindHeader _ _ ?caller _ _ _ ?method ?receiver ?signature ?arguments |- _ =>
           destruct (BodyProviderTyping.attached_method_plan_readback _ _ _ _ provider method_name _ _ _ _ _ _ OriginalProvider)
             as (site & plan & Typed & Target & Capture & Prefix & Needs);

@@ -224,25 +224,27 @@ Qed.
 
 Theorem field_expression_sound : forall n,
   Expr n ->
-  forall F C receiver field expected,
-  Action F C (AEField receiver field) expected (ex E R (S n) F C (AEField receiver field) expected).
+  forall F C receiver field bare expected,
+  Action F C (AEField receiver field bare) expected (ex E R (S n) F C (AEField receiver field bare) expected).
 Proof.
-  intros n Below F C receiver field expected before [value t] after Run.
+  intros n Below F C receiver field bare expected before [value t] after Run.
   cbn [ex] in Run.
   apply mbind_ok in Run as ([object object_type] & middle & Object & Run).
   destruct (Below _ _ _ _ _ _ _ Object) as [Backward Typed].
   apply mbind_ok in Run as (record & start & Record & Run).
   assert (ReadRecord :
-    ((exists tag args, object_type = TNom tag args /\ kind_sym W tag = Some DKTag /\
+    ((bare = false /\ exists tag args, object_type = TNom tag args /\ kind_sym W tag = Some DKTag /\
        PayloadOf W tag args record) \/ record = object_type) /\ start = middle).
   {
     destruct object_type as [| | | |tag args|];
       try (injection Record as <- <-; split; [now right|reflexivity]).
-    destruct (kind_is (e_W E) tag DKTag) eqn:Tag.
-    - apply pure_result in Record as [Read <-]. split; [left|reflexivity].
-      exists tag, args. split; [reflexivity|split; [now apply kind_is_spec|]].
-      eapply payload_of_sound. exact Read.
+    destruct bare; cbn [negb andb] in Record.
     - injection Record as <- <-. split; [now right|reflexivity].
+    - destruct (kind_is (e_W E) tag DKTag) eqn:Tag.
+      + apply pure_result in Record as [Read <-]. split; [left|reflexivity].
+        split; [reflexivity|]. exists tag, args. split; [reflexivity|split; [now apply kind_is_spec|]].
+        eapply payload_of_sound. exact Read.
+      + injection Record as <- <-. split; [now right|reflexivity].
   }
   destruct ReadRecord as [Shape ->].
   destruct record as [|fields| | | |]; try discriminate.

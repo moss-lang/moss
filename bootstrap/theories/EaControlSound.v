@@ -171,7 +171,7 @@ Proof.
       destruct (ExprBelow n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ Run) as [Backward Typed];
       split; [exact Backward|intros Valid Post];
       destruct (Typed Valid Post) as [Final Expression];
-      split; [exact Final|apply BranchExpr; [intros b Impossible; discriminate|exact Expression]]].
+      split; [exact Final|apply BranchExpr; [intros block0 Impossible; discriminate|exact Expression]]].
   apply mbind_ok in Run as [[x actual] [middle [Read Run]]]. unfold ret in Run. injection Run as <- <- <-.
   destruct (BlockBelow n (Nat.lt_succ_diag_r n) _ _ _ _ _ _ _ Read) as [Backward Typed].
   split; [exact Backward|]. intros Valid Post.

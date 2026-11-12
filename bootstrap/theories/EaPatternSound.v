@@ -3,6 +3,7 @@ From Stdlib Require Import List String Bool Arith.
 From NM Require AuditBase.
 From NM Require Import Audit EaBase EaTypes EaExpr EaTypesSound.
 From NM Require Import LegacyBodyJudgments.
+From NM Require PublicTypeFacts.
 Import ListNotations Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope list_scope.
 
@@ -70,7 +71,7 @@ Theorem pat_of_sound : forall F st syntax pattern bindings covered catch,
   PatOf W F st syntax pattern bindings covered catch.
 Proof.
   intros F st syntax pattern bindings covered catch Run.
-  destruct syntax as [|path|path payload|path fields].
+  destruct syntax as [|path|path payload opening|path fields].
   - unfold pat_of in Run. injection Run as <- <- <- <-. constructor.
   - destruct path as [|name [|next rest]]; [discriminate| |].
     1: { unfold pat_of in Run. fold W fuel in Run.
@@ -87,17 +88,23 @@ Proof.
     apply tag_member_read_sound in Read as [Resolve [Kind Member]].
     injection Run as <- <- <- <-.
     eapply PNominal; eassumption.
-  - destruct payload as [|payload|head payload|head fields]; try discriminate.
+  - destruct payload as [|payload|head payload inner|head fields]; try discriminate.
     destruct payload as [|binder [|next rest]]; try discriminate.
     unfold pat_of in Run. fold W fuel in Run.
     apply rbind_ok in Run as [[symbol arguments] [Read Run]].
     apply tag_member_read_sound in Read as [Resolve [Kind Member]].
-    destruct (bare_tagb W symbol) eqn:Bare; cbn [rbind negb] in Run; [discriminate|].
+    destruct (tag_openingb E st symbol arguments opening) eqn:Opening; cbn [rbind] in Run; [|discriminate].
+    assert (Open : TagOpening W st symbol arguments opening).
+    { destruct opening as [arity|]; cbn [tag_openingb TagOpening] in *.
+      - apply andb_true_iff in Opening as [Equal Shape]. split; [now apply PublicTypeFacts.ty_eqb_spec|exact Shape].
+      - change (negb (bare_tagb W symbol) = true) in Opening.
+        apply negb_true_iff in Opening. intro H. apply bare_tagb_spec in H.
+        rewrite H in Opening. discriminate. }
     apply rbind_ok in Run as [payload_type [Payload Run]].
     destruct (resolve W (fr_mod F) [binder]) eqn:Unbound; cbn [is_some negb rbind] in Run; [discriminate|].
     destruct (slook binder (fr_var F)) eqn:Numbered; cbn [is_some rbind] in Run; [|discriminate].
     injection Run as <- <- <- <-.
-    eapply PTagBind; [exact Resolve|intro H; apply bare_tagb_spec in H; congruence|exact Member|
+    eapply PTagBind; [exact Resolve|exact Open|exact Member|
       eapply payload_of_sound; exact Payload|exact Unbound|].
     unfold Named. rewrite Numbered. discriminate.
   - destruct path as [path|]; [|discriminate]. unfold pat_of in Run. fold W fuel in Run.

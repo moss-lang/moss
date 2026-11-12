@@ -39,14 +39,14 @@ Fixpoint pat_ok (p : apat) : bool :=
   match p with
   | APWild => true
   | APPath q => path_ok q
-  | APTag q p => path_ok q && pat_ok p
+  | APTag q p _ => path_ok q && pat_ok p
   | APRec q fs => opt_path_ok q && forallb (fun f => optional pat_ok (snd f)) fs
   end.
 Fixpoint expr_ok (e : aexpr) : bool :=
   match e with
   | AEPath p a => path_ok p && app_ok a
   | AECall p a es => path_ok p && app_ok a && forallb expr_ok es
-  | AEField o _ => expr_ok o
+  | AEField o _ _ => expr_ok o
   | AEMeth o p es => expr_ok o && path_ok p && forallb expr_ok es
   | AEBareRecord fs => forallb (fun f => optional expr_ok (snd f)) fs
   | AERec p a fs => path_ok p && app_ok a && forallb (fun f => optional expr_ok (snd f)) fs

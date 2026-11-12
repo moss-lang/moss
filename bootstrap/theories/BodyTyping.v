@@ -65,7 +65,7 @@ Theorem pattern_has_plan : forall W F scrutinee source code bindings heads catch
 Proof.
   intros W F scrutinee source code bindings heads catch Typed.
   destruct Typed as [|n Resolved Named|path tag arguments Resolved Kind Member
-    |path tag arguments binder payload Resolved Kind Member Payload Read Named
+    |path tag arguments binder payload opening Resolved Kind Member Payload Read Named
     |path tag arguments fields field_types bindings code Resolved Kind Member Payload Arity Fields Distinct].
   - exists PatternWildcard. repeat split. constructor.
   - exists (PatternBinder n scrutinee). repeat split. now constructor.
@@ -356,7 +356,7 @@ Proof.
     eapply BodyFunctionProviderTyping.function_provider_plan_translates;
       [eassumption|now apply function_placements_exact].
   - eapply (@method_binding_from_header W P F C path0 label brackets method receiver signature arguments
-      (AEField (AEPath provider None) name0) (provider_symbol plan) (named_provider_capture plan)
+      (AEField (AEPath provider None) name0 false) (provider_symbol plan) (named_provider_capture plan)
       (fun body => body) (named_provider_provisions site plan)); [eassumption|].
     eapply BodyProviderTyping.attached_method_plan_translates; eassumption.
   - eapply (@method_binding_from_header W P F C path0 label brackets method receiver signature arguments
@@ -473,10 +473,10 @@ Proof.
   end.
 Qed.
 
-Theorem field_source_has_plan : forall W P F C source field,
-  HasExpressionPlan W P F C source -> HasExpressionPlan W P F C (AEField source field).
+Theorem field_source_has_plan : forall W P F C source field bare,
+  HasExpressionPlan W P F C source -> HasExpressionPlan W P F C (AEField source field bare).
 Proof.
-  intros W P F C source field Object expected code t Typed. inversion Typed; subst.
+  intros W P F C source field bare Object expected code t Typed. inversion Typed; subst.
   match goal with
   | Child : Ex W P F C source None ?value ?actual |- _ =>
     destruct (Object _ _ _ Child) as (plan & TypedPlan & <-);
