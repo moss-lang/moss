@@ -397,6 +397,31 @@ Definition parse_opt_type (n : nat) (ts : list token) : pr (option aty) :=
 
 (* ===================== Patterns =========================================== *)
 
+Fixpoint parse_bind_form (n : nat) (ts : list token) : pr binding_form :=
+  match n with
+  | 0 => fuel_err ts
+  | S n =>
+      if at_ LBRACE ts then
+        let@ fields & ts := comma_list n (parse_bind_field n) [RBRACE] (advance ts) in
+        let@ _ & ts := expect RBRACE ts in
+        let@ ann & ts := parse_opt_type n ts in
+        POk (BindRecord fields ann) ts
+      else
+        let@ x & ts := expect_name ts in
+        let@ ann & ts := parse_opt_type n ts in
+        POk (BindName x ann) ts
+  end
+with parse_bind_field (n : nat) (ts : list token) : pr (name * binding_form) :=
+  match n with
+  | 0 => fuel_err ts
+  | S n =>
+      let@ x & ts := expect_name ts in
+      if at_ EQUAL ts then
+        let@ sub & ts := parse_bind_form n (advance ts) in POk (x, sub) ts
+      else
+        let@ ann & ts := parse_opt_type n ts in POk (x, BindName x ann) ts
+  end.
+
 Fixpoint parse_pattern (n : nat) (ts : list token) : pr apat :=
   match n with
   | 0 => fuel_err ts
@@ -642,15 +667,15 @@ with parse_lambda (n : nat) (ts : list token) {struct n} : pr aexpr :=
   match n with
   | 0 => fuel_err ts
   | S n =>
+      if negb (at_lambda ts) then err "expected a lambda" ts else
       let@ _ & ts := expect LPAREN ts in
-      let@ ps & ts := comma_list n (fun ts => let@ x & ts := expect_name ts in
-                                              let@ t & ts := parse_opt_type n ts in
-                                              POk (x, t) ts) [RPAREN] ts in
+      let@ ps & ts := comma_list n (parse_bind_form n) [RPAREN] ts in
+      if negb (parameter_bindings_valid ps) then err "duplicate parameter binding" ts else
       let@ _ & ts := expect RPAREN ts in
       let@ ret & ts := parse_opt_type n ts in
       let@ _ & ts := expect EQUAL_GREATER ts in
       let@ body & ts := parse_expr n false ts in
-      POk (AELam ps ret body) ts
+      POk (AELam (lambda_signature 0 ps) ret (bind_lambda_parameters ps body)) ts
   end
 with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr :=
   match n with
@@ -706,13 +731,14 @@ with block_loop (n : nat) (ts : list token) {struct n} : pr (list astmt * option
         let@ (ss, tl) & ts := block_loop n ts in POk (s :: ss, tl) ts in
       if at_ RBRACE ts then POk ([], None) ts
       else if at_ LET ts || at_ VAR ts then
-        let is_let := at_ LET ts in
-        let@ x & ts := expect_name (advance ts) in
-        let@ t & ts := parse_opt_type n ts in
+        let mutable := at_ VAR ts in
+        let@ form & ts := parse_bind_form n (advance ts) in
+        if negb (binding_valid form) then err "duplicate name in destructuring binding" ts else
         let@ _ & ts := expect EQUAL ts in
         let@ e & ts := parse_expr n false ts in
         let@ _ & ts := expect SEMI ts in
-        more ((if is_let then ASLet else ASVar) x t e) ts
+        let@ (ss, tl) & ts := block_loop n ts in
+        POk (List.app (destructure mutable form e) ss, tl) ts
       else if at_ BIND ts then
         let@ b & ts := parse_bind n ts in more (ASBind b) ts
       else if at_ WHILE ts then
@@ -827,14 +853,19 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
              if at_ DOT ts then let@ y & ts := expect_name (advance ts) in POk (RAttached x, y) ts
              else POk (RPlain, x) ts) in
         let@ _ & ts := expect LPAREN ts in
-        let@ ps & ts := comma_list n (fun ts => let@ p & ts := expect_name ts in
-                                                let@ _ & ts := expect COLON ts in
-                                                let@ t & ts := parse_type n ts in
-                                                POk (p, t) ts) [RPAREN] ts in
+        let@ forms & ts := comma_list n (parse_bind_form n) [RPAREN] ts in
+        if negb (parameter_bindings_valid forms) then err "duplicate parameter binding" ts else
+        match parameter_signature 0 forms with
+        | None => err "a function parameter needs a complete type" ts
+        | Some ps =>
         let@ _ & ts := expect RPAREN ts in
         let@ ret & ts := parse_opt_type n ts in
-        if at_ SEMI ts then POk (ADFn rcv x ps ret None) (advance ts)
-        else let@ b & ts := parse_block n ts in POk (ADFn rcv x ps ret (Some b)) ts
+        if at_ SEMI ts then
+          if forallb (abstract_binding_valid false) forms then
+            POk (ADFn rcv x ps ret None) (advance ts)
+          else err "an abstract parameter cannot annotate both a product and its parts" ts
+        else let@ b & ts := parse_block n ts in POk (ADFn rcv x ps ret (Some (bind_fn_parameters forms b))) ts
+        end
       else if at_ CONTEXT ts then
         let@ x & ts := expect_name (advance ts) in
         let@ _ & ts := expect EQUAL ts in

@@ -93,6 +93,52 @@ fn if_requires_bool_and_unit_for_an_omitted_else() {
     }
 }
 
+#[test]
+fn record_destructuring_in_parameters_and_locals() {
+    let entry = whole(
+        r"assume Std {
+  fn choose({left = {name = who: Char}, right: Char}, use_left: Bool): Char {
+    if use_left { who } else { right }
+  }
+  fn choose_outer({left = {name = who: Char}, right}: {left: {name: Char}, right: Char}): Char {
+    if true { who } else { right }
+  }
+  fn read({value: Char}): Char;
+  fn main() {
+    let row = {left = {name = char::a}, right = char::b};
+    putchar(choose(row, true));
+    putchar(choose(row, false));
+    putchar(choose_outer(row));
+    var calls = zero;
+    let {left = {name = saved}, right} = ({ calls = calls.add(one); row });
+    if calls.eq(one) { putchar(saved); putchar(right); }
+    var {value,} = {value = char::n};
+    value = char::c;
+    bind read = ({value,}) => value;
+    putchar(read({value,}));
+    putchar(char::newline);
+  }
+}
+",
+    );
+    agree(&entry, &[], "abaabc\n");
+}
+
+#[test]
+fn record_destructuring_rejects_conflicting_annotations_and_duplicates() {
+    for text in [
+        "fn f({x: ()}: {x: {}}) {} fn main() {}",
+        "fn f({x: ()}: {x: {}}); fn main() {}",
+        "fn f({x, y = x}: {x: (), y: ()}) {} fn main() {}",
+        "fn f({x: (), x: ()}) {} fn main() {}",
+        "fn f({x,}) {} fn main() {}",
+    ] {
+        let entry = source(text);
+        rejects(&entry);
+        oracle_rejects(&entry);
+    }
+}
+
 /// D67: `Std` has a `Float`, an f64 under `WasiStd`, and the compiled
 /// program gets the same answers as the oracle. A function taking and
 /// returning a `Float` is compiled with f64 parameters and results.

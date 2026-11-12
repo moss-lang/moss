@@ -1054,6 +1054,25 @@ instantiations — arguably a feature); a context that lists a shared type
 concrete `IntList` as the native backing store that per-receiver list
 wrappers delegate to.
 
+**Destructuring.** A binding is a name or a product of other bindings,
+with an optional type at each level. In a record binding, `field: T`
+binds the field under its own name and `field = local: T` renames it.
+A field can also contain another record binding.
+
+```moss
+fn read({person = {name = who: String}, active: Bool}): String { who }
+let {person = {name}, active} = entry;
+```
+
+A defined function needs enough annotations to determine each parameter's
+type. An outer annotation supplies the whole type, or field annotations
+supply the types used to form a record. An explicit annotation on a
+projected field must agree with the field type of the containing value.
+An abstract signature supplies each type once along each path. An
+anonymous function can also obtain a parameter type from the signature
+it is bound to. A local binding evaluates its initializer once, and
+`var` makes the bound names mutable.
+
 **[D45] DECIDED (nominal `Bool` and conditionals).** The standard library
 declares `tag Bool(False | True);`. Its nominal head allows methods to
 attach to `Bool`. The prelude defines `val true: Bool = Bool(True);` and

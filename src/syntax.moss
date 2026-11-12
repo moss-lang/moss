@@ -979,6 +979,38 @@ assume Std {
       ast::node3(ast::k_ex_block(), ast::commit(statements), statements.length(), string_call(5, finish_args))
     }
 
+    # Look past the balanced parameter list to distinguish it from grouping.
+    fn lambda_ahead(): Bool {
+      var next = peek2();
+      if next != tk_name() {
+        if next != tk_lbrace() {
+          if next != tk_lparen() {
+            if next != tk_rparen() { return false; }
+          }
+        }
+      }
+      let saved_at = lexer::at.read();
+      let saved_mark = lexer::mark.read();
+      var depth = 0;
+      while next != tk_eof() {
+        if next == tk_rparen() {
+          if depth == 0 { break; }
+          depth = depth - 1;
+        } else if next == tk_lparen() {
+          depth = depth + 1;
+        }
+        next = token_code(lexer::lex());
+      }
+      var lambda = false;
+      if next == tk_rparen() {
+        next = token_code(lexer::lex());
+        lambda = at_lambda_tail(next);
+      }
+      lexer::at.write(saved_at);
+      lexer::mark.write(saved_mark);
+      lambda
+    }
+
     fn parse_primary(no_rec: Bool): Int {
       let start = tstart.read();
       let node = parse_primary_inner(no_rec);
@@ -993,57 +1025,11 @@ assume Std {
       if at_literal() {
         return parse_literal();
       }
-      if accept(tk_lparen()) {
-        # D70: an anonymous function, told from `()` and a parenthesized
-        # expression by what follows — `()` or `(x)` then `=>` or `:`, or
-        # a name then `:` or `,`, which no expression has. Two tokens of
-        # lookahead decide it, as they do bootstrap/mossc/parse.py's.
-        let xs = int_list();
-        if accept(tk_rparen()) {
-          if at_lambda_tail() {
-            return parse_lambda_rest(xs);
-          }
-          return ast::node0(ast::k_ex_unit());
-        }
-        if here(tk_name()) {
-          let after = peek2();
-          var lambda = after == tk_colon();
-          if !lambda {
-            lambda = after == tk_comma();
-          }
-          if lambda {
-            loop {
-              if here(tk_rparen()) {
-                break;
-              }
-              if here(tk_eof()) {
-                break;
-              }
-              let nm = take_name();
-              var ty = ast::none();
-              if accept(tk_colon()) {
-                ty = parse_type();
-              }
-              xs.push(ast::node2(ast::k_param(), nm, ty));
-              if !accept(tk_comma()) {
-                break;
-              }
-            }
-            expect(tk_rparen());
-            return parse_lambda_rest(xs);
-          }
-          if after == tk_rparen() {
-            let nm = take_name();
-            advance();
-            if at_lambda_tail() {
-              xs.push(ast::node2(ast::k_param(), nm, ast::none()));
-              return parse_lambda_rest(xs);
-            }
-            let ps = int_list();
-            ps.push(nm);
-            return ast::node4(ast::k_ex_path(), ast::path_of(ps), ast::none(), 0, 0);
-          }
-        }
+      if here(tk_lparen()) {
+        let lambda = lambda_ahead();
+        advance();
+        if lambda { return parse_lambda_rest(parse_binding_forms()); }
+        if accept(tk_rparen()) { return ast::node0(ast::k_ex_unit()); }
         let e = parse_expr();
         expect(tk_rparen());
         return e;
@@ -1105,24 +1091,213 @@ assume Std {
       ast::node3(ast::k_ex_record(), callee, ast::commit(xs), xs.length())
     }
 
-    fn at_lambda_tail(): Bool {
-      if here(tk_equal_greater()) {
-        true
-      } else {
-        here(tk_colon())
+    fn at_lambda_tail(next: Int): Bool {
+      if next == tk_equal_greater() { true } else { next == tk_colon() }
+    }
+
+    # The opening parenthesis is already consumed by the caller.
+    fn parse_binding_forms(): IntList {
+      let forms = int_list();
+      while !here(tk_rparen()) {
+        if here(tk_eof()) { break; }
+        forms.push(parse_binding_form());
+        if !accept(tk_comma()) { break; }
+      }
+      expect(tk_rparen());
+      forms
+    }
+
+    fn parse_binding_annotation(): Int {
+      if accept(tk_colon()) { parse_type() } else { ast::none() }
+    }
+
+    fn parse_binding_form(): Int {
+      let start = tstart.read();
+      let form = parse_binding_form_inner();
+      ast::located(form, start, previous_end.read())
+    }
+
+    fn parse_binding_form_inner(): Int {
+      if accept(tk_lbrace()) {
+        let fields = int_list();
+        while !here(tk_rbrace()) {
+          if here(tk_eof()) { break; }
+          let field = take_name();
+          let sub = if accept(tk_equal()) {
+            parse_binding_form()
+          } else {
+            ast::node2(ast::k_param(), field, parse_binding_annotation())
+          };
+          fields.push(ast::node2(ast::k_bind_field(), field, sub));
+          if !accept(tk_comma()) { break; }
+        }
+        expect(tk_rbrace());
+        return ast::node3(ast::k_bind_record(), ast::commit(fields), fields.length(), parse_binding_annotation());
+      }
+      let name = take_name();
+      ast::node2(ast::k_param(), name, parse_binding_annotation())
+    }
+
+    fn binding_type(form: Int): Int {
+      if ast::kind_of(form) == ast::k_param() { return ast::b_of(form); }
+      if ast::is_some(ast::c_of(form)) { return ast::c_of(form); }
+      let fields = int_list();
+      var i = 0;
+      while i < ast::b_of(form) {
+        let field = ast::kid_at(ast::a_of(form), i);
+        let ty = binding_type(ast::b_of(field));
+        if !ast::is_some(ty) { return ast::none(); }
+        fields.push(ast::node2(ast::k_ty_field(), ast::a_of(field), ty));
+        i = i + 1;
+      }
+      ast::node2(ast::k_ty_record(), ast::commit(fields), fields.length())
+    }
+
+    fn add_binding_name(names: IntList, name: Int) {
+      var i = 0;
+      while i < names.length() {
+        if names.get(i) == name {
+          fail();
+          return ();
+        }
+        i = i + 1;
+      }
+      names.push(name);
+    }
+
+    fn check_binding_names(form: Int, names: IntList) {
+      if ast::kind_of(form) == ast::k_param() {
+        add_binding_name(names, ast::a_of(form));
+        return ();
+      }
+      let fields = int_list();
+      var i = 0;
+      while i < ast::b_of(form) {
+        let field = ast::kid_at(ast::a_of(form), i);
+        add_binding_name(fields, ast::a_of(field));
+        check_binding_names(ast::b_of(field), names);
+        i = i + 1;
       }
     }
 
-    # The rest of an anonymous function, its parameters `xs` already
-    # read: an optional result type, the arrow, and the body.
-    fn parse_lambda_rest(xs: IntList): Int {
-      var ret = ast::none();
-      if accept(tk_colon()) {
-        ret = parse_type();
+    fn push_name_index(cs: IntList, i: Int) {
+      if i >= 10 { push_name_index(cs, i / 10); }
+      cs.push(char::digit0.code() + i % 10);
+    }
+
+    fn parameter_name(form: Int, i: Int): Int {
+      if ast::kind_of(form) == ast::k_param() { return ast::a_of(form); }
+      let cs = int_list();
+      push_string(cs, "%parameter");
+      push_name_index(cs, i);
+      intern::intern_chars(cs)
+    }
+
+    fn nested_binding_name(root: Int, field: Int): Int {
+      let cs = int_list();
+      intern::put_chars(cs, root);
+      cs.push(37);
+      intern::put_chars(cs, field);
+      intern::intern_chars(cs)
+    }
+
+    # Checking a synthesized singleton record compares its field type
+    # exactly, including when the explicit annotation is a union.
+    fn checked_binding_field(ann: Int, value: Int): Int {
+      if !ast::is_some(ann) { return value; }
+      let cs = int_list();
+      push_string(cs, "%field");
+      let key = intern::intern_chars(cs);
+      let entries = int_list();
+      entries.push(ast::node2(ast::k_ex_rfield(), key, value));
+      let record = ast::node3(ast::k_ex_record(), ast::none(), ast::commit(entries), 1);
+      let actual = int_list();
+      actual.push(ast::node3(ast::k_st_let(), key, ast::none(), record));
+      let expression = ast::node3(ast::k_ex_block(), ast::commit(actual), 1, local_ref(key));
+      let types = int_list();
+      types.push(ast::node2(ast::k_ty_field(), key, ann));
+      let ty = ast::node2(ast::k_ty_record(), ast::commit(types), 1);
+      let checked = int_list();
+      checked.push(ast::node3(ast::k_st_let(), key, ty, expression));
+      let field = ast::node2(ast::k_ex_field(), local_ref(key), key);
+      ast::node3(ast::k_ex_block(), ast::commit(checked), 1, field)
+    }
+
+    fn bind_components(stmts: IntList, kind: Int, root: Int, form: Int) {
+      if ast::kind_of(form) == ast::k_param() { return (); }
+      var i = 0;
+      while i < ast::b_of(form) {
+        let field = ast::kid_at(ast::a_of(form), i);
+        let name = ast::a_of(field);
+        let sub = ast::b_of(field);
+        let projection = ast::node2(ast::k_ex_field(), local_ref(root), name);
+        if ast::kind_of(sub) == ast::k_param() {
+          let ann = ast::b_of(sub);
+          stmts.push(ast::node3(kind, ast::a_of(sub), ann, checked_binding_field(ann, projection)));
+        } else {
+          let ann = ast::c_of(sub);
+          let child = nested_binding_name(root, name);
+          stmts.push(ast::node3(ast::k_st_let(), child, ann, checked_binding_field(ann, projection)));
+          bind_components(stmts, kind, child, sub);
+        }
+        i = i + 1;
       }
+    }
+
+    fn check_abstract_binding(form: Int, covered: Bool) {
+      let named = ast::kind_of(form) == ast::k_param();
+      let ann = if named { ast::b_of(form) } else { ast::c_of(form) };
+      let annotated = ast::is_some(ann);
+      if covered & annotated { fail(); }
+      if !named {
+        var i = 0;
+        while i < ast::b_of(form) {
+          let field = ast::kid_at(ast::a_of(form), i);
+          check_abstract_binding(ast::b_of(field), covered | annotated);
+          i = i + 1;
+        }
+      }
+    }
+
+    fn lower_parameters(forms: IntList, ps: IntList, stmts: IntList, strict: Bool) {
+      var destructures = false;
+      var i = 0;
+      while i < forms.length() {
+        let form = forms.get(i);
+        if ast::kind_of(form) == ast::k_param() {
+          if strict & !ast::is_some(ast::b_of(form)) { fail_expected(tk_colon()); }
+          ps.push(form);
+        } else {
+          destructures = true;
+          let root = parameter_name(form, i);
+          let ty = binding_type(form);
+          if strict & !ast::is_some(ty) { fail_expected(tk_colon()); }
+          ps.push(ast::node2(ast::k_param(), root, ty));
+          bind_components(stmts, ast::k_st_let(), root, form);
+        }
+        i = i + 1;
+      }
+      if destructures {
+        let names = int_list();
+        i = 0;
+        while i < forms.length() {
+          check_binding_names(forms.get(i), names);
+          i = i + 1;
+        }
+      }
+    }
+
+    fn parse_lambda_rest(forms: IntList): Int {
+      let ret = parse_binding_annotation();
       expect(tk_equal_greater());
-      let body = parse_expr();
-      ast::node4(ast::k_ex_lambda(), ast::commit(xs), xs.length(), ret, body)
+      var body = parse_expr();
+      let ps = int_list();
+      let stmts = int_list();
+      lower_parameters(forms, ps, stmts, false);
+      if stmts.length() > 0 {
+        body = ast::node3(ast::k_ex_block(), ast::commit(stmts), stmts.length(), body);
+      }
+      ast::node4(ast::k_ex_lambda(), ast::commit(ps), ps.length(), ret, body)
     }
 
     # Patterns.
@@ -1205,10 +1380,10 @@ assume Std {
         let statement_index = stmts.length();
         if here(tk_let()) {
           advance();
-          stmts.push(parse_binding_stmt(ast::k_st_let()));
+          parse_binding_stmt(stmts, ast::k_st_let());
         } else if here(tk_var()) {
           advance();
-          stmts.push(parse_binding_stmt(ast::k_st_var()));
+          parse_binding_stmt(stmts, ast::k_st_var());
         } else if here(tk_bind()) {
           advance();
           stmts.push(parse_bind());
@@ -1327,22 +1502,21 @@ assume Std {
       }
     }
 
-    fn parse_binding_stmt(kind: Int): Int {
-      let start = tstart.read();
-      let node = parse_binding_stmt_inner(kind);
-      ast::located(node, start, previous_end.read())
-    }
-
-    fn parse_binding_stmt_inner(kind: Int): Int {
-      let nm = take_name();
-      var ty = ast::none();
-      if accept(tk_colon()) {
-        ty = parse_type();
-      }
+    fn parse_binding_stmt(stmts: IntList, kind: Int) {
+      let form = parse_binding_form();
       expect(tk_equal());
       let value = parse_expr();
       expect(tk_semi());
-      ast::node3(kind, nm, ty, value)
+      if ast::kind_of(form) == ast::k_param() {
+        stmts.push(ast::node3(kind, ast::a_of(form), ast::b_of(form), value));
+      } else {
+        check_binding_names(form, int_list());
+        let cs = int_list();
+        push_string(cs, "%binding");
+        let root = intern::intern_chars(cs);
+        stmts.push(ast::node3(ast::k_st_let(), root, binding_type(form), value));
+        bind_components(stmts, kind, root, form);
+      }
     }
 
     # `bind` List[Spec (`=` Expr)?] `;`. An item with no `=` applies a
@@ -1456,31 +1630,29 @@ assume Std {
         }
       }
       expect(tk_lparen());
+      let forms = parse_binding_forms();
+      let ret = parse_binding_annotation();
       let ps = int_list();
-      loop {
-        if here(tk_rparen()) {
-          break;
-        }
-        if here(tk_eof()) {
-          break;
-        }
-        let pn = take_name();
-        expect(tk_colon());
-        ps.push(ast::node2(ast::k_param(), pn, parse_type()));
-        if !accept(tk_comma()) {
-          break;
-        }
-      }
-      expect(tk_rparen());
-      var ret = ast::none();
-      if accept(tk_colon()) {
-        ret = parse_type();
-      }
+      let stmts = int_list();
+      lower_parameters(forms, ps, stmts, true);
       var body = ast::none();
       if accept(tk_lbrace()) {
         body = parse_block();
+        if stmts.length() > 0 {
+          var i = 0;
+          while i < ast::b_of(body) {
+            stmts.push(ast::kid_at(ast::a_of(body), i));
+            i = i + 1;
+          }
+          body = ast::node3(ast::k_ex_block(), ast::commit(stmts), stmts.length(), ast::c_of(body));
+        }
       } else {
         expect(tk_semi());
+        var i = 0;
+        while i < forms.length() {
+          check_abstract_binding(forms.get(i), false);
+          i = i + 1;
+        }
       }
       ast::make_fn(recv, nm, ast::commit(ps), ps.length(), ret, body)
     }

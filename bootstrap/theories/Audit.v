@@ -36,6 +36,11 @@ Inductive aty : Type :=
 | ATUnion : list aty -> aty
 | ATRef   : path -> sapp -> aty.
 
+(* An annotation can occur on a whole binding or on one of its parts. *)
+Inductive binding_form : Type :=
+| BindName : name -> option aty -> binding_form
+| BindRecord : list (name * binding_form) -> option aty -> binding_form.
+
 Inductive apat : Type :=
 | APWild
 | APPath : path -> apat
@@ -229,8 +234,8 @@ End Input.
        the parser does both, and the dump format fixes them.
    (d) [!] The source is read with universal newlines (`newlines`: `\r\n`
        and a lone `\r` are `\n`), as the parser reads it.
-   (e) The lambda/parenthesis decision is the parser's two-to-three-token
-       lookahead `at_lambda` (D70), stated as such. *)
+   (e) The lambda/parenthesis decision uses the token after the matching
+       parenthesis, as specified by `at_lambda` (D70). *)
 
 Module Syntax.
 Import Stdlib.Strings.Byte.
@@ -755,15 +760,23 @@ Definition call_block (p : path) (a : list (path * spec)) (args : list aexpr) : 
                                                  end))) a)])
                   (Some (AECall p None (map (fun n => AEPath [n] None) names)))).
 
-(* (e) D70: at `(`, a lambda is next: `()` or `(x)` followed by `=>` or
-   `:`, or `(x` followed by `:` or `,`. *)
+(* A lambda has a result annotation or arrow after its closing parenthesis. *)
+Fixpoint after_parens (depth : nat) (ts : list token) : list token :=
+  match ts with
+  | [] => []
+  | t :: rest =>
+      match tk t, depth with
+      | EOF, _ => []
+      | RPAREN, 0 => rest
+      | RPAREN, S d => after_parens d rest
+      | LPAREN, _ => after_parens (S depth) rest
+      | _, _ => after_parens depth rest
+      end
+  end.
+
 Definition at_lambda (ts : list token) : bool :=
-  let arrow k := token_kind_eqb k EQUAL_GREATER || token_kind_eqb k COLON in
-  if token_kind_eqb (kind_at 1 ts) RPAREN then arrow (kind_at 2 ts)
-  else if token_kind_eqb (kind_at 1 ts) NAME then
-    if token_kind_eqb (kind_at 2 ts) COLON || token_kind_eqb (kind_at 2 ts) COMMA then true
-    else token_kind_eqb (kind_at 2 ts) RPAREN && arrow (kind_at 3 ts)
-  else false.
+  let next := kind (after_parens 0 (advance ts)) in
+  token_kind_eqb next EQUAL_GREATER || token_kind_eqb next COLON.
 
 (* At an expression brace, distinguish a first field initializer from a
    first assignment. Only separators at the brace's own depth count. *)
@@ -817,6 +830,162 @@ Definition for_desugar (x : name) (coll : aexpr) (body : ablock) : astmt :=
   ASExpr (AEBlock (ABlock [ASLet c None coll;
                            ASVar i None (AEUnary "for.begin" (ref c));
                            loop] None)).
+
+(* Bindings translate to ordinary local bindings and field reads. Generated
+   names are outside the source name alphabet. *)
+Fixpoint binding_type (form : binding_form) : option aty :=
+  match form with
+  | BindName _ ann | BindRecord _ (Some _ as ann) => ann
+  | BindRecord fields None =>
+      let fix read_fields fs :=
+        match fs with
+        | [] => Some []
+        | (field, sub) :: rest =>
+            match binding_type sub, read_fields rest with
+            | Some t, Some types => Some ((field, t) :: types)
+            | _, _ => None
+            end
+        end in
+      option_map ATRec (read_fields fields)
+  end.
+
+Fixpoint unique_names (xs : list name) : bool :=
+  match xs with
+  | [] => true
+  | x :: rest => negb (existsb (String.eqb x) rest) && unique_names rest
+  end.
+
+Fixpoint binding_names (form : binding_form) : list name :=
+  match form with
+  | BindName x _ => [x]
+  | BindRecord fields _ =>
+      (fix names fs :=
+         match fs with [] => [] | (_, sub) :: rest => List.app (binding_names sub) (names rest) end) fields
+  end.
+
+Fixpoint binding_fields_valid (form : binding_form) : bool :=
+  match form with
+  | BindName _ _ => true
+  | BindRecord fields _ =>
+      unique_names (map fst fields) &&
+      (fix valid fs :=
+         match fs with [] => true | (_, sub) :: rest => binding_fields_valid sub && valid rest end) fields
+  end.
+
+Definition binding_valid (form : binding_form) : bool :=
+  binding_fields_valid form && unique_names (binding_names form).
+
+Definition parameter_bindings_valid (forms : list binding_form) : bool :=
+  if existsb (fun form => match form with BindName _ _ => false | _ => true end) forms then
+    forallb binding_fields_valid forms && unique_names (flat_map binding_names forms)
+  else true.
+
+(* An abstract signature has no body in which to check a projection
+   against a second annotation. Use one source of type information along
+   each path of its binding form. *)
+Fixpoint abstract_binding_valid (covered : bool) (form : binding_form) : bool :=
+  let ann := match form with BindName _ ann | BindRecord _ ann => ann end in
+  let annotated := match ann with Some _ => true | None => false end in
+  negb (covered && annotated) &&
+  match form with
+  | BindName _ _ => true
+  | BindRecord fields _ =>
+      (fix valid fs :=
+         match fs with
+         | [] => true
+         | (_, sub) :: rest => abstract_binding_valid (covered || annotated) sub && valid rest
+         end) fields
+  end.
+
+Definition parameter_name (i : nat) (form : binding_form) : name :=
+  match form with
+  | BindName x _ => x
+  | _ => "%parameter" ++ show_nat i
+  end.
+
+(* A field with its own annotation agrees exactly with the containing
+   product's field type. Synthesize the singleton record before checking it
+   so the check cannot inject its field into a larger union. *)
+Definition checked_field (ann : option aty) (field : aexpr) : aexpr :=
+  match ann with
+  | None => field
+  | Some t =>
+      let key := "%field" in
+      let actual := AEBlock (ABlock [ASLet key None (AEBareRecord [(key, Some field)])] (Some (ref key))) in
+      AEBlock (ABlock [ASLet key (Some (ATRec [(key, t)])) actual] (Some (AEField (ref key) key)))
+  end.
+
+Fixpoint bind_components (mutable : bool) (root : name) (form : binding_form) : list astmt :=
+  match form with
+  | BindName _ _ => []
+  | BindRecord fields _ =>
+      let fix bind_fields fs :=
+        match fs with
+        | [] => []
+        | (field, sub) :: rest =>
+            let value := AEField (ref root) field in
+            let statements :=
+              match sub with
+              | BindName x ann =>
+                  [(if mutable then ASVar else ASLet) x ann (checked_field ann value)]
+              | BindRecord _ ann =>
+                  let child := root ++ "%" ++ field in
+                  ASLet child ann (checked_field ann value) :: bind_components mutable child sub
+              end in
+            List.app statements (bind_fields rest)
+        end in
+      bind_fields fields
+  end.
+
+Definition destructure (mutable : bool) (form : binding_form) (value : aexpr) : list astmt :=
+  match form with
+  | BindName x ann => [(if mutable then ASVar else ASLet) x ann value]
+  | BindRecord _ _ =>
+      let root := "%binding" in
+      ASLet root (binding_type form) value :: bind_components mutable root form
+  end.
+
+Fixpoint parameter_signature (i : nat) (forms : list binding_form) : option (list (name * aty)) :=
+  match forms with
+  | [] => Some []
+  | form :: rest =>
+      match binding_type form, parameter_signature (S i) rest with
+      | Some t, Some ps => Some ((parameter_name i form, t) :: ps)
+      | _, _ => None
+      end
+  end.
+
+Fixpoint lambda_signature (i : nat) (forms : list binding_form) : list (name * option aty) :=
+  match forms with
+  | [] => []
+  | form :: rest => (parameter_name i form, binding_type form) :: lambda_signature (S i) rest
+  end.
+
+Fixpoint parameter_bindings (i : nat) (forms : list binding_form) : list astmt :=
+  match forms with
+  | [] => []
+  | form :: rest => List.app (bind_components false (parameter_name i form) form) (parameter_bindings (S i) rest)
+  end.
+
+Definition bind_fn_parameters (forms : list binding_form) (body : ablock) : ablock :=
+  let 'ABlock ss tail := body in ABlock (List.app (parameter_bindings 0 forms) ss) tail.
+
+Definition bind_lambda_parameters (forms : list binding_form) (body : aexpr) : aexpr :=
+  match parameter_bindings 0 forms with [] => body | ss => AEBlock (ABlock ss (Some body)) end.
+
+Inductive BindForm : list token -> binding_form -> list token -> Prop :=
+| BindFormName : forall ts x ts1 ann rest,
+    TkName ts x ts1 -> OptType ts1 ann rest -> BindForm ts (BindName x ann) rest
+| BindFormRecord : forall ts ts1 fields ts2 ts3 ann rest,
+    Tk LBRACE ts ts1 -> CommaList BindFormField [RBRACE] ts1 fields ts2 ->
+    Tk RBRACE ts2 ts3 -> OptType ts3 ann rest -> BindForm ts (BindRecord fields ann) rest
+with BindFormField : list token -> name * binding_form -> list token -> Prop :=
+| BindFieldShort : forall ts x ts1 ann rest,
+    TkName ts x ts1 -> kind ts1 <> EQUAL -> OptType ts1 ann rest ->
+    BindFormField ts (x, BindName x ann) rest
+| BindFieldLong : forall ts x ts1 ts2 form rest,
+    TkName ts x ts1 -> Tk EQUAL ts1 ts2 -> BindForm ts2 form rest ->
+    BindFormField ts (x, form) rest.
 
 (* ===================== Expressions e, Blocks b, Statements i ============== *)
 
@@ -949,11 +1118,12 @@ with RecField : list token -> name * option aexpr -> list token -> Prop :=
 | RecFieldLong : forall ts x ts1 ts2 e ts3, TkName ts x ts1 -> Tk EQUAL ts1 ts2 -> Expr false ts2 e ts3 ->
     RecField ts (x, Some e) ts3
 with Lambda : list token -> aexpr -> list token -> Prop :=
-| LambdaG : forall ts ts1 ps ts2 ts3 ret ts4 ts5 body ts6, Tk LPAREN ts ts1 ->
-    CommaList LamParam [RPAREN] ts1 ps ts2 -> Tk RPAREN ts2 ts3 -> OptType ts3 ret ts4 ->
-    Tk EQUAL_GREATER ts4 ts5 -> Expr false ts5 body ts6 -> Lambda ts (AELam ps ret body) ts6
-with LamParam : list token -> name * option aty -> list token -> Prop :=
-| LamParamG : forall ts x ts1 t ts2, TkName ts x ts1 -> OptType ts1 t ts2 -> LamParam ts (x, t) ts2
+| LambdaG : forall ts ts1 ps ts2 ts3 ret ts4 ts5 body ts6,
+    at_lambda ts = true -> Tk LPAREN ts ts1 ->
+    CommaList BindForm [RPAREN] ts1 ps ts2 -> parameter_bindings_valid ps = true ->
+    Tk RPAREN ts2 ts3 -> OptType ts3 ret ts4 ->
+    Tk EQUAL_GREATER ts4 ts5 -> Expr false ts5 body ts6 ->
+    Lambda ts (AELam (lambda_signature 0 ps) ret (bind_lambda_parameters ps body)) ts6
 
 (* b ::= { i ... e? } *)
 with Block : list token -> ablock -> list token -> Prop :=
@@ -961,7 +1131,7 @@ with Block : list token -> ablock -> list token -> Prop :=
     Block ts (ABlock ss tl) ts3
 
 (* i ...  e?: the statements of a block, and its trailing expression.
-   i ::= let x (: τ)? = e; | var x (: τ)? = e; | x = e; | w
+   i ::= let p = e; | var p = e; | x = e; | w
        | while e b | loop b | for x in e b | e; | e
    An expression statement without `;` must start with `if`, `match` or
    a bare block and not be followed by `;` or `}` (then it is the trailing
@@ -969,12 +1139,14 @@ with Block : list token -> ablock -> list token -> Prop :=
    statement and no `x = ...` is next (b). *)
 with Stmts : list token -> list astmt -> option aexpr -> list token -> Prop :=
 | StEnd : forall ts, kind ts = RBRACE -> Stmts ts [] None ts
-| StLet : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk LET ts ts1 -> TkName ts1 x ts2 ->
-    OptType ts2 t ts3 -> Tk EQUAL ts3 ts4 -> Expr false ts4 e ts5 -> Tk SEMI ts5 ts6 ->
-    Stmts ts6 ss tl ts7 -> Stmts ts (ASLet x t e :: ss) tl ts7
-| StVar : forall ts ts1 x ts2 t ts3 ts4 e ts5 ts6 ss tl ts7, Tk VAR ts ts1 -> TkName ts1 x ts2 ->
-    OptType ts2 t ts3 -> Tk EQUAL ts3 ts4 -> Expr false ts4 e ts5 -> Tk SEMI ts5 ts6 ->
-    Stmts ts6 ss tl ts7 -> Stmts ts (ASVar x t e :: ss) tl ts7
+| StLet : forall ts ts1 form ts2 ts3 e ts4 ts5 ss tl rest,
+    Tk LET ts ts1 -> BindForm ts1 form ts2 -> binding_valid form = true ->
+    Tk EQUAL ts2 ts3 -> Expr false ts3 e ts4 -> Tk SEMI ts4 ts5 ->
+    Stmts ts5 ss tl rest -> Stmts ts (List.app (destructure false form e) ss) tl rest
+| StVar : forall ts ts1 form ts2 ts3 e ts4 ts5 ss tl rest,
+    Tk VAR ts ts1 -> BindForm ts1 form ts2 -> binding_valid form = true ->
+    Tk EQUAL ts2 ts3 -> Expr false ts3 e ts4 -> Tk SEMI ts4 ts5 ->
+    Stmts ts5 ss tl rest -> Stmts ts (List.app (destructure true form e) ss) tl rest
 | StBind : forall ts w ts1 ss tl ts2, Bind ts w ts1 -> Stmts ts1 ss tl ts2 -> Stmts ts (ASBind w :: ss) tl ts2
 | StWhile : forall ts ts1 c ts2 b ts3 ss tl ts4, Tk WHILE ts ts1 -> Expr true ts1 c ts2 ->
     Block ts2 b ts3 -> Stmts ts3 ss tl ts4 -> Stmts ts (ASWhile c b :: ss) tl ts4
@@ -1014,10 +1186,6 @@ Inductive Function_ : list token -> fnrecv * name -> list token -> Prop :=
 | FnAttached : forall ts r ts1 ts2 x ts3, TkName ts r ts1 -> Tk DOT ts1 ts2 -> TkName ts2 x ts3 ->
     Function_ ts (RAttached r, x) ts3
 | FnDetached : forall ts ts1 x ts2, Tk DOT ts ts1 -> TkName ts1 x ts2 -> Function_ ts (RDetached, x) ts2.
-
-Inductive Param : list token -> name * aty -> list token -> Prop :=
-| ParamG : forall ts x ts1 ts2 t ts3, TkName ts x ts1 -> Tk COLON ts1 ts2 -> Type_ ts2 t ts3 ->
-    Param ts (x, t) ts3.
 
 (* A type equation's side ([D90]): a type reference `p` or `p[p = s, ...]`. *)
 Definition TypeRef (ts : list token) (t : aty) (rest : list token) : Prop :=
@@ -1073,12 +1241,19 @@ Inductive Decl : list token -> adecl -> list token -> Prop :=
 | DValDefined : forall ts ts1 x ts2 ts3 t ts4 ts5 e ts6 ts7, Tk VAL ts ts1 -> TkName ts1 x ts2 ->
     Tk COLON ts2 ts3 -> Type_ ts3 t ts4 -> Tk EQUAL ts4 ts5 -> Expr false ts5 e ts6 ->
     Tk SEMI ts6 ts7 -> Decl ts (ADVal x t (Some e)) ts7
-| DFnAbstract : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 ts7, Tk FN ts ts1 -> Function_ ts1 rx ts2 ->
-    Tk LPAREN ts2 ts3 -> CommaList Param [RPAREN] ts3 ps ts4 -> Tk RPAREN ts4 ts5 ->
-    OptType ts5 ret ts6 -> Tk SEMI ts6 ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret None) ts7
-| DFn : forall ts ts1 rx ts2 ts3 ps ts4 ts5 ret ts6 b ts7, Tk FN ts ts1 -> Function_ ts1 rx ts2 ->
-    Tk LPAREN ts2 ts3 -> CommaList Param [RPAREN] ts3 ps ts4 -> Tk RPAREN ts4 ts5 ->
-    OptType ts5 ret ts6 -> Block ts6 b ts7 -> Decl ts (ADFn (fst rx) (snd rx) ps ret (Some b)) ts7
+| DFnAbstract : forall ts ts1 rx ts2 ts3 forms ts4 ps ts5 ret ts6 ts7,
+    Tk FN ts ts1 -> Function_ ts1 rx ts2 ->
+    Tk LPAREN ts2 ts3 -> CommaList BindForm [RPAREN] ts3 forms ts4 ->
+    parameter_bindings_valid forms = true -> parameter_signature 0 forms = Some ps ->
+    Tk RPAREN ts4 ts5 -> OptType ts5 ret ts6 -> Tk SEMI ts6 ts7 ->
+    forallb (abstract_binding_valid false) forms = true ->
+    Decl ts (ADFn (fst rx) (snd rx) ps ret None) ts7
+| DFn : forall ts ts1 rx ts2 ts3 forms ts4 ps ts5 ret ts6 b ts7,
+    Tk FN ts ts1 -> Function_ ts1 rx ts2 ->
+    Tk LPAREN ts2 ts3 -> CommaList BindForm [RPAREN] ts3 forms ts4 ->
+    parameter_bindings_valid forms = true -> parameter_signature 0 forms = Some ps ->
+    Tk RPAREN ts4 ts5 -> OptType ts5 ret ts6 -> Block ts6 b ts7 ->
+    Decl ts (ADFn (fst rx) (snd rx) ps ret (Some (bind_fn_parameters forms b))) ts7
 | DContext : forall ts ts1 x ts2 ts3 ss ts4 ts5, Tk CONTEXT ts ts1 -> TkName ts1 x ts2 ->
     Tk EQUAL ts2 ts3 -> CommaList CtxItem [SEMI] ts3 ss ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADCtx x ss) ts5
 (* an abstract functor, its brackets optional (D78, D84) *)

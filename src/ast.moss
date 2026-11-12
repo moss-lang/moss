@@ -111,6 +111,10 @@ assume Std {
   # `k_d_bad` (never dumped) leaves free.
   fn k_eq(): Int { 53 }        # a=left type b=right type c=written specs run d=len
 
+  # Parser-only binding forms. A name uses k_param. A field is k_bind_field.
+  fn k_bind_record(): Int { 54 } # a=field run b=len c=annotation
+  fn k_bind_field(): Int { 55 }  # a=field name b=binding form
+
   # `for x in e { body }` (draft) is parsed into a bare block of `let`,
   # `var` and `while`, whose calls of access.moss's iteration methods are
   # operator nodes with these operators: past every token code, and past

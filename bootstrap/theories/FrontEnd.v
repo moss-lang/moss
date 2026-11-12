@@ -354,7 +354,7 @@ Global Hint Unfold OptTk : fe.
 (* ===================== Expressions ======================================== *)
 
 Global Hint Constructors LeftChain Expr Cond Arms ArmBody Operators Operand Additive Term Unary
-  Suffixes Primary RecField Lambda LamParam Block Stmts Bind Binding : fe.
+  Suffixes Primary RecField Lambda Block Stmts Bind Binding : fe.
 
 Lemma TkName_intro ts ts' x : Tk NAME ts ts' -> tx (peek ts) = x -> TkName ts x ts'.
 Proof. intros [E1 E2] E3. repeat split; auto. Qed.
@@ -450,6 +450,30 @@ Ltac list_with X :=
          intros ts v r Hi; solve [crush; use_sound; feed; subst; eauto 6 with fe] ]
   end.
 
+Global Hint Constructors BindForm BindFormField : fe.
+
+Lemma bind_form_sound : forall n,
+  (forall ts v rest, parse_bind_form n ts = POk v rest -> BindForm ts v rest) /\
+  (forall ts v rest, parse_bind_field n ts = POk v rest -> BindFormField ts v rest).
+Proof.
+  induction n as [|n [Form Field]]; [split; intros; discriminate|].
+  split; intros ts v rest H; simpl in H; crush.
+  - list_with BindFormField. grind. eauto with fe.
+  - grind. eauto with fe.
+  - grind. eauto with fe.
+  - grind. eauto with fe.
+Qed.
+
+Lemma bind_form1_sound n ts v rest : parse_bind_form n ts = POk v rest -> BindForm ts v rest.
+Proof. apply bind_form_sound. Qed.
+Local Hint Resolve bind_form1_sound : fe.
+
+Ltac read_bind_form :=
+  repeat match goal with
+  | H : parse_bind_form ?n _ = POk _ _ |- _ => apply (proj1 (bind_form_sound n)) in H
+  | H : negb _ = false |- _ => apply Bool.negb_false_iff in H
+  end.
+
 Lemma expr_sound : forall n,
   (forall nr ts v rest, parse_expr n nr ts = POk v rest -> Expr nr ts v rest) /\
   (forall ts v rest, parse_if n ts = POk v rest -> Cond ts v rest) /\
@@ -530,7 +554,7 @@ Proof.
   - intros e ts v rest H. simpl in H. grind.
     all: eauto 6 with fe.
   (* parse_lambda *)
-  - intros ts v rest H. simpl in H. crush. list_with LamParam. grind. eauto 8 with fe.
+  - intros ts v rest H. simpl in H. crush. list_with BindForm. grind. read_bind_form. eauto 8 with fe.
   (* parse_primary *)
   - intros nr ts v rest H. simpl in H. crush; try list_with RecField; grind.
     all: try congruence.
@@ -538,9 +562,9 @@ Proof.
   (* parse_block *)
   - intros ts v rest H. simpl in H. grind. unfold StmtsOk in *. simpl in *. eauto with fe.
   (* block_loop *)
-  - intros ts v rest H. simpl in H. grind.
+  - intros ts v rest H. simpl in H. grind. read_bind_form.
     all: unfold StmtsOk in *; simpl in *.
-    all: try (destruct (at_ LET ts) eqn:?; crush).
+    all: try (destruct (at_ VAR ts) eqn:?; crush).
     all: rewrite ?kind_at1 in *.
     all: try congruence.
     all: try solve [eauto 8 with fe].
@@ -560,7 +584,7 @@ Proof. apply expr_sound. Qed.
 
 (* ===================== Declarations and files ============================= *)
 
-Global Hint Constructors Decl Decls Binds Function_ Param Use Import_ Imports DeclsToEnd : fe.
+Global Hint Constructors Decl Decls Binds Function_ Use Import_ Imports DeclsToEnd : fe.
 
 Ltac use_sound ::=
   repeat match goal with
@@ -593,8 +617,8 @@ Lemma decl_sound : forall n,
   (forall ts v rest, decls_until n ts = POk v rest -> Decls ts v rest).
 Proof.
   induction n as [|n (IH1 & IH2)]; [split; intros; discriminate|].
-  split; intros ts v rest H; simpl in H; crush; try list_with AssumeItem; try list_with CtxItem; try list_with Param;
-    try list_with Spec_; try list_with Spec_; grind;
+  split; intros ts v rest H; simpl in H; crush; try list_with AssumeItem; try list_with CtxItem; try list_with BindForm;
+    try list_with Spec_; try list_with Spec_; grind; read_bind_form;
     repeat match goal with
     | H : name_list _ _ = POk _ _ |- _ => apply name_list_sound in H
     | H : binds_loop _ _ = POk _ _ |- _ => apply binds_loop_sound in H
