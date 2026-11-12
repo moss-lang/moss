@@ -4604,11 +4604,6 @@ Definition AssumeCtx (W : world) (s : nat) (C : cx) (ns : list item) : Prop :=
     MostGeneralMerge σ (es ++ er) /\ MergeOf (es ++ er) M /\ SectionOf M σ /\
     C = entries_cx σ M tmr (es ++ er) /\ Needs σ (es ++ er) ns.
 
-(* The symbol a need names: a val, fn or method (a functor's fixed inputs
-   are asked in force where it is assumed, IEFun). *)
-Definition need_item (k : item) : option nat :=
-  match k with IVal v => Some v | IFn f => Some f | IMth _ m _ => Some m | _ => None end.
-
 (* An atomic class needed by an assumption is a leaf of an expanded
    requirement. It needs a fresh reading when no member is in force. *)
 Definition MissingAtomicClass (C Cs : cx) (r : nat) : Prop :=
@@ -4635,27 +4630,56 @@ Definition AssumptionReadings (W : world) (C Cs : cx) (th : subst) : Prop :=
     forall r a, In r (map fst (c_ty Cs)) -> atom r = Some a ->
       lookup_subst r th = Some (TAbs a).
 
-(* `AssumedComplete W C ns`: in the formed context C, each assumed item
-   (a need) has its requirements in force, bound by a bracket on it or
-   assumed anywhere in the list (the instantiation it is recorded at,
-   completed from the whole list, so list order is immaterial), and its
-   own needs are provided here, read as a call of it at that
-   instantiation would read them (CallTheta, Satisfies).  This is the
-   oracle's check_assumes and check_assumed_requirements. *)
-Definition AssumedComplete (W : world) (C : cx) (ns : list item) : Prop :=
-  forall k s, In k ns -> need_item k = Some s ->
-    exists a, ilook k (c_apps C) = Some a /\ (forall t o, In (t, o) a -> o <> None) /\
-      let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
-      exists Cs nss th sm, CtxOf W s Cs nss /\ CallTheta W Cv Cs s th /\ Satisfies Cv Cs th nss sm /\
-        AssumptionReadings W Cv Cs th.
+(* A callable entry carries the instantiation read from its prefix and
+   its enclosing brackets. *)
+Definition assumed_application (e : entry) : option (nat * inst) :=
+  match e with
+  | NVal s _ a | NFn s _ a | NMth _ s _ a => Some (s, a)
+  | _ => None
+  end.
 
-(* Every symbol's assume nesting forms, with its assumed items complete.
-   The oracle checks each val, fn, method, context and functor symbol's;
-   a type's, tag's or alias's nesting is checked too (criteria
-   section 7), so a nesting that holds only those is not exempt. *)
+Definition extend_assumed_types (tm : subst) (e : entry) : subst :=
+  match e with NTy t => add_tys [t] tm | _ => tm end.
+
+(* Each callable provision is checked against the merged prefix before it
+   is added. Its brackets can supply readings for its own requirements. *)
+Definition AssumedEntry (W : world) (before : list entry) (tm : subst) (e : entry) : Prop :=
+  forall s a, assumed_application e = Some (s, a) ->
+    (forall t o, In (t, o) a -> o <> None) /\
+    exists Cs needs, CtxOf W s Cs needs /\
+      ((c_sub Cs = [] /\ needs = [] /\
+        forall t, In t (map fst (c_ty Cs)) -> nlook t (known a) <> None) \/
+       exists sigma M th sm,
+         MostGeneralMerge sigma before /\ MergeOf before M /\ SectionOf M sigma /\
+         let C := entries_cx sigma M tm before in
+         let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
+         (kind_sym W s <> Some DKMeth -> RequirementsInForce Cv Cs) /\
+         CallTheta W Cv Cs s th /\ Satisfies Cv Cs th needs sm /\
+         AssumptionReadings W Cv Cs th).
+
+Fixpoint OrderedEntries (W : world) (before : list entry) (tm : subst) (es : list entry) : Prop :=
+  match es with
+  | [] => True
+  | e :: rest =>
+      AssumedEntry W before tm e /\
+      OrderedEntries W (before ++ [e]) (extend_assumed_types tm e) rest
+  end.
+
+Definition OrderedItems (W : world) (p : string) (its : list citem) : Prop :=
+  exists es tm, ItemsEntries W p [] [] its es tm /\ OrderedEntries W [] [] es.
+
+(* Every declaration's assume nesting forms and its items check in order.
+   Functor inputs are read by the same rule. Named contexts are checked at
+   each expansion, in the surrounding prefix and bracket bindings. *)
 Definition AssumesComplete (W : world) : Prop :=
   forall s k, kind_sym W s = Some k ->
-    exists C ns, AssumeCtx W s C ns /\ AssumedComplete W C ns.
+    (exists C ns, AssumeCtx W s C ns) /\
+    forall d, w_decl W s = Some d ->
+      OrderedItems W (d_mod d) (map assume_spec (d_assumes d)) /\
+      match functor_parts (d_ast d) with
+      | Some (_, inputs, _, _) => OrderedItems W (d_mod d) (map CISpec inputs)
+      | None => True
+      end.
 
 (* Criteria section 7: every declaration is checked as written, whether
    or not anything uses it ([D16]'s rule for defined fns, for every kind

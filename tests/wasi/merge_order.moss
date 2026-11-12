@@ -3,8 +3,8 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use WasiCore;
 
-# D43 merging is symmetric, so the order of an assume list does not
-# matter. `B.w[Foo=X]` and `C.w[Foo=Y]` are assumed before the contexts
+# D43 merging is symmetric. The provisions `B.w[Foo=X]` and `C.w[Foo=Y]`
+# have their requirements before them, and precede the contexts
 # that merge `B` with `C`; once they are merged the two are one key,
 # `w` at the merged type, and merging its two bindings makes `X` and
 # `Y` one type too, so `f` may return its `X` as a `Y`. Accepted by

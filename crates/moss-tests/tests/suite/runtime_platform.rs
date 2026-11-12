@@ -721,7 +721,7 @@ fn private_checked_casts_preserve_chained_fixed_pin_meanings() {
          assume StructRef{val raw:StructRef;} \
          assume T{val private:w::Ref[Boxed=T];} \
          assume T,U,V{fn q(a:T,b:U,c:V);} \
-         functor F[]:Wasm,T,U,V,raw->q; \
+         functor F[]:Wasm,Gc,T,U,V,raw->q; \
          functor G:Wasm,Gc,T,U,V,raw->q{ \
            bind private=w::StructCast[Boxed=T](raw).cast(); \
            bind T=U;bind U=V;bind V=Old;bind q=(a,b,c)=>();}",

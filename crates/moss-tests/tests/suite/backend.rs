@@ -16,7 +16,7 @@
 //! end, which were cross-checks there, are both the oracle here.
 
 use moss_tests::{
-    build_with, compile, oracle, oracle_rejects, oracle_run, rejects_with,
+    build_with, compile, oracle, oracle_command, oracle_rejects, oracle_run, rejects_with, source,
     run_module, run_module_code, starts_with_rec_group, wasm_file, wasm_text, wasmtime, Out,
     ORACLE_REJECTED, TRAP,
 };
@@ -1905,12 +1905,48 @@ fn a_provision_is_read_through_the_principal_instantiation() {
     assert_eq!(run_moss(&entry, PRELUDE), "k\n");
 }
 
-/// `assume seed, T` — the type after the item — still puts `seed` at the
-/// function's `T`, so two functions of that block call each other. The
-/// Python bootstrap's first coherence check read `T` as not in force for
-/// `seed`, and refused the call.
+/// An item's whole declared context must be supplied by its prefix.
 #[test]
-fn an_assumed_provision_is_at_the_whole_ambient_instantiation() {
+fn assumptions_check_their_entire_context_in_order() {
+    let check = |text: &str, accepted| {
+        let entry = source(text);
+        let native = compile(&entry, "");
+        let reference = oracle_command(&["--prelude", "", "--elab-only", &entry]);
+        assert_eq!(native.is_module(), accepted, "{text}: {native:?}");
+        assert_eq!(
+            reference.code,
+            if accepted { 0 } else { ORACLE_REJECTED },
+            "{text}: {}", reference.stderr,
+        );
+    };
+
+    for params in ["", "x: T"] {
+        for (items, accepted) in [("T, seed, f", true), ("f, seed, T", false), ("T, f, seed", false)] {
+            check(&format!(
+                "type T; fn seed(); assume T, seed {{ fn f({params}); }}
+                 assume {items} {{ fn g() {{}} }} fn main() {{}}"
+            ), accepted);
+        }
+    }
+
+    for (inputs, accepted) in [("T, seed, f", true), ("T, f, seed", false)] {
+        check(&format!(
+            "type T; fn seed(); assume T, seed {{ fn f(); }} fn h();
+             functor F: {inputs} -> h; fn main() {{}}"
+        ), accepted);
+    }
+
+    for (items, accepted) in [("A, B, A=B, NeedF", true), ("A, B, NeedF, A=B", false)] {
+        check(&format!(
+            "type A; type B; assume A=B {{ fn f(); }} context NeedF=f;
+             assume {items} {{ fn g() {{}} }} fn main() {{}}"
+        ), accepted);
+    }
+}
+
+/// The preceding `T` instantiates `seed` even though its signature omits it.
+#[test]
+fn an_assumed_provision_uses_the_preceding_type() {
     let entry = wasi("coherent_assume_order");
     assert_eq!(oracle_run(&entry, &[]), "c\n");
     assert_eq!(run_moss(&entry, PRELUDE), "c\n");

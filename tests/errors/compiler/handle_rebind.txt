@@ -1,0 +1,2 @@
+!R tests/errors/handle_rebind.moss Memories
+!R tests/errors/handle_rebind.moss i32_zero

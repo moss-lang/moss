@@ -9,9 +9,9 @@
 # requirement (I32) reads as I64. Audit's Platform.Entry now requires each
 # platform fn's signature to read its raw handles as themselves
 # (HandlesRead). The oracle rejects this program (assumed-requirement
-# coherence, D20/D62: i64_store needs Memories, fixed at I32). Native accepts
-# it, but main never calls i64_store (i64_store is defined, so a call would
-# be direct and native rejects that call with a type error).
+# coherence, D20/D62: i64_store needs Memories, fixed at I32).
+# The self-hosted compiler checks the same requirement when it reaches
+# the bracketed assumption of i64_store.
 import "../../lib/wasm.moss" use I32;
 import "../../lib/wasm.moss" use I64;
 import "../../lib/wasm.moss" use F32;

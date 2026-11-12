@@ -159,41 +159,103 @@ Section Assumes.
 Variable E : env.
 Let W := e_W E.
 
-(* SOUND: assumed_complete bound C ns = Ok tt -> AssumedComplete W C ns *)
-Definition assumed_complete (bound : nat) (C : cx) (ns : list item) : er unit :=
-  let! _ := rmap (fun k =>
-    match need_item k with
-    | None => Ok tt
-    | Some s =>
-        let! a := ropt (capp C k) ("internal: assumed item without an instantiation: " ++ show_item W k) in
-        let! _ := match find (fun q => negb (is_some (snd q))) a with
-                  | Some (t, _) => Err ("assuming " ++ qs W s ++ " needs " ++ qs W t ++ " in force (D20)")
-                  | None => Ok tt end in
-        let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
-        let! (Cs, nss) := ropt (w_context W s) ("the context of " ++ qs W s ++ " does not form") in
-        let! _ := resolve_assumption_error W Cv Cs bound
-          (let! th := assumption_theta W ("assuming " ++ qs W s) Cv Cs bound in
-           satisfies W ("calling " ++ qs W s) ("assuming " ++ qs W s) Cv Cs th nss) in
-        Ok tt
-    end) ns in
-  Ok tt.
+(* If the callee needs only the types already read for this item, there
+   are no equations or provisions to check against a merged prefix. *)
+Definition direct_assumption (Cs : cx) (needs : list item) (a : inst) : bool :=
+  match c_sub Cs, needs with
+  | [], [] => forallb (fun q => is_some (nlook (fst q) (known a))) (c_ty Cs)
+  | _, _ => false
+  end.
+
+Definition assumed_entry (bound : nat) (before : list entry) (tm : subst) (e : entry) : er unit :=
+  match assumed_application e with
+  | None => Ok tt
+  | Some (s, a) =>
+      let! _ := match find (fun q => negb (is_some (snd q))) a with
+                | Some (t, _) => Err ("assuming " ++ qs W s ++ " needs " ++ qs W t ++ " in force (D20)")
+                | None => Ok tt
+                end in
+      let! (Cs, needs) := ropt (w_context W s) ("the context of " ++ qs W s ++ " does not form") in
+      if direct_assumption Cs needs a then Ok tt
+      else
+          let! (sigma, classes) := EaCtx.merge E before in
+          let C := entries_cx sigma classes tm before in
+          let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
+          let who := String.append "assuming " (qs W s) in
+          let! _ := if kind_is W s DKMeth then Ok tt else rule_b W who Cv Cs in
+          let! _ := resolve_assumption_error W Cv Cs bound
+            (let! th := assumption_theta W who Cv Cs bound in
+             satisfies W ("calling " ++ qs W s) who Cv Cs th needs) in
+          Ok tt
+  end.
+
+Fixpoint ordered_entries (bound : nat) (before : list entry) (tm : subst) (es : list entry) : er unit :=
+  match es with
+  | [] => Ok tt
+  | e :: rest =>
+      let! _ := assumed_entry bound before tm e in
+      ordered_entries bound (before ++ [e]) (extend_assumed_types tm e) rest
+  end.
+
+Definition ordered_items (bound : nat) (p : string) (its : list citem) : er unit :=
+  let! (es, _) := items_entries E (e_fuel E) [] p [] [] its in
+  ordered_entries bound [] [] es.
+
+Definition assumption_module_error {A} (p : string) (result : er A) : er A :=
+  match result with Ok x => Ok x | Err msg => Err (p ++ ": " ++ msg) end.
+
+(* Plain assume lists often enclose many declarations. Reuse the ordered
+   check when the module and every written head are the same. Equations
+   take the ordinary checking path. *)
+Fixpoint same_assume_heads (a b : list aitem) : bool :=
+  match a, b with
+  | [], [] => true
+  | AIHead (pa, ma) :: ar, AIHead (pb, mb) :: br =>
+      slist_eqb pa pb &&
+      (match ma, mb with
+       | None, None => true | Some na, Some nb => String.eqb na nb | _, _ => false
+       end) && same_assume_heads ar br
+  | _, _ => false
+  end.
+
+Definition same_assume_nesting (d d' : decl) : bool :=
+  String.eqb (d_mod d) (d_mod d') && same_assume_heads (d_assumes d) (d_assumes d').
+
+Definition check_assume_nesting (bound : nat) (seen : list decl) (d : decl) : er (list decl) :=
+  if existsb (same_assume_nesting d) seen then Ok seen
+  else let! _ := assumption_module_error (d_mod d)
+             (ordered_items bound (d_mod d) (map assume_spec (d_assumes d))) in
+       Ok (d :: seen).
+
+Definition check_functor_inputs (bound : nat) (d : decl) : er unit :=
+  match functor_parts (d_ast d) with
+  | Some (_, inputs, _, _) => assumption_module_error (d_mod d)
+      (ordered_items bound (d_mod d) (map CISpec inputs))
+  | None => Ok tt
+  end.
+
+Fixpoint check_assume_symbols (bound : nat) (seen : list decl) (symbols : list nat) : er unit :=
+  match symbols with
+  | [] => Ok tt
+  | s :: rest =>
+      match w_decl W s with
+      | Some d =>
+          match kind_of (d_ast d) with
+          | Some _ =>
+              let! _ := assumption_module_error (d_mod d) (assume_ctx E s) in
+              let! next := check_assume_nesting bound seen d in
+              let! _ := check_functor_inputs bound d in
+              check_assume_symbols bound next rest
+          | None => check_assume_symbols bound seen rest
+          end
+      | None => check_assume_symbols bound seen rest
+      end
+  end.
 
 (* SOUND: assumes_complete bound = Ok tt -> AssumesComplete W (every
    symbol is below bound) *)
 Definition assumes_complete (bound : nat) : er unit :=
-  let! _ := rmap (fun s =>
-    match kind_sym W s with
-    | Some _ =>
-        match assume_ctx E s with
-        | Ok (C, ns) => match assumed_complete bound C ns with
-                        | Ok _ => Ok tt
-                        | Err m => Err (mod_of W s ++ ": " ++ m)
-                        end
-        | Err m => Err (mod_of W s ++ ": " ++ m)
-        end
-    | _ => Ok tt
-    end) (seq 0 bound) in
-  Ok tt.
+  check_assume_symbols bound [] (seq 0 bound).
 End Assumes.
 
 

@@ -44,11 +44,6 @@ pub const COMPILER_ACCEPTS: &[(&str, &str)] = &[
          types; the self-hosted compiler does not check it",
     ),
     (
-        "tests/errors/handle_rebind.moss",
-        "AUDIT-CHANGES #8: a platform fn's raw handles read as themselves \
-         (HandlesRead); the self-hosted compiler accepts the unused fn",
-    ),
-    (
         "tests/errors/sameneed_ambiguous.moss",
         "AUDIT-CHANGES #11 and #51: the self-hosted compiler prints 7",
     ),

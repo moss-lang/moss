@@ -3,10 +3,8 @@ import "../../lib/wasistd.moss" use Branch;
 import "../../lib/wasm.moss" use Wasm;
 import "../../lib/wasip1.moss" use WasiCore;
 
-# An assumed item is in force at the function's whole ambient
-# instantiation, whatever its place in the assume list: `seed` comes
-# before `T` below, and `b` still calls `a` — both assume `seed` at the
-# same `T`. (Its type does not mention `T`, so D20 lets it come first.)
+# The preceding T instantiates seed even though its signature omits T.
+# Both functions see the same provision, so b can call a.
 
 type T;
 
@@ -14,7 +12,7 @@ assume T {
   val seed: Char;
 }
 
-assume Std, seed, T {
+assume Std, T, seed {
   fn a(): Char { seed }
   fn b(): Char { a() }
 }

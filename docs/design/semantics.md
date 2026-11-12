@@ -649,10 +649,12 @@ requirement set of every declaration inside. Requirement sets nest by union:
 `src/lex.moss`'s `lex` sits inside `assume Char { ... assume next_byte { }}`
 and so requires `{Char, next_byte}`. Assuming a symbol requires all of its requirements to be in force, both
 type symbols and needs, including those absent from its declared signature.
-They may be supplied by the same `assume` list or an enclosing region;
-order within that list does not matter. For example, if `f` is declared
-inside `assume T, seed`, then `assume f` also needs `T` and `seed`, even
-when `f` takes no arguments and returns unit. A method keeps the signature-relevant type requirements used by its
+Each item is checked against the preceding items and the enclosing region.
+A context expands in place with its bracket readings in force during the
+expansion. The prefix supplies the item's provisions and required
+equalities, and brackets can supply type readings. For example, if `f`
+is declared inside `assume T, seed`, both `T` and `seed` must precede `f`
+even when its signature mentions neither requirement. A method keeps the signature-relevant type requirements used by its
 provision ([D71], Audit note 51); its item's brackets may supply those
 local signature types. An abstract functor's
 application inputs remain deferred under [D84], while its fixed inputs

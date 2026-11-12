@@ -1,6 +1,6 @@
 type T;
 fn seed();
 assume T, seed { fn f(); }
-# The whole list is in force, regardless of order.
-assume f, seed, T { fn g() {} }
+# Both of f's requirements precede it.
+assume T, seed, f { fn g() {} }
 fn main() {}

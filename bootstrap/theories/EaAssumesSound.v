@@ -1,10 +1,11 @@
 (* Fresh assumption readings and the declaration-level assumption check. *)
 From Stdlib Require Import List String Bool Arith Lia.
 From NM Require AuditBase.
+From NM Require Import EaBudget.
 From NM Require Import Audit EaBase EaCall EaAssumptionAtoms EaCtx EaMain EaTypesSound EaContextTableSound.
 From NM Require AllocationFacts PublicMerge PublicFormation PublicContextFacts PublicSubstFacts
   PublicTypeFacts PublicTypeRead PublicCallRealize EaMentionsSound EaRootSound EaDependencyFuel EaCallSound.
-From NM Require EaWorldSound EaMainSymbols EaMetadataSound EaSatisfiesSound ElabWorld NMap.
+From NM Require EaWorldSound EaMainSymbols EaMetadataSound EaSatisfiesSound EaEntriesSound EaUnifySound ElabWorld NMap.
 Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration ListNotations.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -205,22 +206,6 @@ Proof.
   unfold call_read, bound_in, assumption_class_read. now rewrite Unread, Class, Same.
 Qed.
 
-Lemma capp_apps : forall C k, capp C k = ilook k (c_apps C).
-Proof.
-  intros C k. unfold capp, c_apps. generalize (c_provisions C).
-  induction l as [|[k' p] rest IH]; [reflexivity|].
-  cbn [map ilook fst snd]. destruct (item_eqb k k'); [reflexivity|exact IH].
-Qed.
-
-Lemma rmap_each : forall A B (f : A -> er B) xs ys,
-  rmap f xs = Ok ys -> forall x, In x xs -> exists y, f x = Ok y.
-Proof.
-  intros A B f xs. induction xs as [|x xs IH]; intros ys Run z Member; [contradiction|].
-  cbn [rmap] in Run. apply rbind_ok in Run as [y [First Run]].
-  apply rbind_ok in Run as [rest [Tail Run]]. destruct Member as [<-|Member]; [eauto|].
-  exact (IH rest Tail z Member).
-Qed.
-
 Lemma ctxof_class_reading : forall W s C ns, CtxOf W s C ns ->
   Solved (c_merge C) /\ PublicContextFacts.CxSection C.
 Proof.
@@ -238,50 +223,6 @@ Qed.
 
 Definition AssumedCallee (W : world) (s : nat) : Prop :=
   kind_sym W s = Some DKFn \/ kind_sym W s = Some DKMeth \/ kind_sym W s = Some DKVal.
-
-(* An installed table supplies the context of each callable declaration.
-   The merge in that context makes its provision checks sound. *)
-Theorem assumed_complete_sound : forall E bound C ns,
-  (forall g d, w_decl (e_W E) g = Some d -> g < bound) ->
-  PublicContextFacts.CxSection C ->
-  ContextTableSound (e_W E) ->
-  (forall k s, In k ns -> need_item k = Some s -> AssumedCallee (e_W E) s) ->
-  assumed_complete E bound C ns = Ok tt -> AssumedComplete (e_W E) C ns.
-Proof.
-  intros E bound C ns WorldBound Caller Context Kinds Run k s Member Need. unfold assumed_complete in Run.
-  apply rbind_ok in Run as [results [Mapped _]].
-  destruct (rmap_each _ _ _ _ _ Mapped k Member) as [u Step].
-  rewrite Need in Step.
-  apply rbind_ok in Step as [a [Inst Step]].
-  destruct (capp C k) as [found|] eqn:Found; [|discriminate].
-  injection Inst as <-. exists found. split; [now rewrite <- capp_apps|].
-  apply rbind_ok in Step as [check [Present Step]].
-  destruct (find (fun q => negb (is_some (snd q))) found) as [[g t]|] eqn:Missing;
-    [discriminate|].
-  split.
-  { intros t o I Equal. pose proof (find_none _ _ Missing (t, o) I) as Absent.
-    subst o. discriminate. }
-  cbn zeta. set (Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known found) C) in *.
-  apply rbind_ok in Step as [[Cs needs] [Table Step]].
-  destruct (w_context (e_W E) s) as [[ReadCs ReadNeeds]|] eqn:Installed; [|discriminate].
-  injection Table as <- <-.
-  apply rbind_ok in Step as [sm [Checked _]].
-  set (check_needs := let! th := assumption_theta (e_W E) ("assuming " ++ qs (e_W E) s) Cv ReadCs bound in
-    satisfies (e_W E) ("calling " ++ qs (e_W E) s) ("assuming " ++ qs (e_W E) s) Cv ReadCs th ReadNeeds) in Checked.
-  destruct check_needs as [selected|message] eqn:SatisfiesRun; [|discriminate].
-  unfold check_needs in SatisfiesRun. injection Checked as <-.
-  apply rbind_ok in SatisfiesRun as [th [Theta Sat]].
-  assert (Formed : CtxOf (e_W E) s ReadCs ReadNeeds).
-  { pose proof (Context _ _ _ Installed) as Reading.
-    destruct (Kinds _ _ Member Need) as [Kind|[Kind|Kind]]; now rewrite Kind in Reading. }
-  destruct (ctxof_class_reading _ _ _ _ Formed) as [Solved Callee].
-  destruct (assumption_theta_sound (e_W E) ("assuming " ++ qs (e_W E) s) Cv ReadCs bound s th
-    (known_types_preserve_section (known found) C Caller) Solved Callee WorldBound Theta) as [Call Reads].
-  exists ReadCs, ReadNeeds, th, selected. split; [exact Formed|].
-  split; [exact Call|]. split; [|exact Reads].
-  eapply EaSatisfiesSound.satisfies_sound; [|exact Sat].
-  eapply EaSatisfiesSound.ctxof_subst_functional. exact Formed.
-Qed.
 
 Definition EntryCallee (W : world) (e : entry) : Prop :=
   match e with NVal s _ _ | NFn s _ _ | NMth _ s _ _ => AssumedCallee W s | _ => True end.
@@ -317,57 +258,185 @@ Proof.
   - intros. apply Forall_app. split; [assumption|]. constructor; [exact I|assumption].
 Qed.
 
-Lemma root_items_callees : forall W q es0 tm its es tm',
-  RootItems W q es0 tm its es tm' -> Forall (EntryCallee W) es.
+Lemma assumed_application_callee : forall W e s a,
+  EntryCallee W e -> assumed_application e = Some (s, a) -> AssumedCallee W s.
 Proof.
-  intros W q es0 tm its es tm' Root. induction Root.
-  - constructor.
-  - apply Forall_app. split.
-    + rewrite Forall_map. apply Forall_forall. intros t _. exact I.
-    + constructor; [exact I|assumption].
-  - assumption.
+  intros W [] target instantiation Kind App; cbn [assumed_application] in App; try discriminate;
+    injection App as <- <-; exact Kind.
 Qed.
 
-Lemma entry_need_callee : forall W sigma e k s,
-  EntryCallee W e -> entry_key sigma e = Some k -> need_item k = Some s -> AssumedCallee W s.
+Section Ordered.
+Variable E : env.
+Let W := e_W E.
+Variable bound : nat.
+Hypothesis Bounded : forall g d, w_decl W g = Some d -> g < bound.
+Hypothesis Context : ContextTableSound W.
+Hypothesis Enough : metadata_budget W bound < e_metadata_fuel E.
+
+Lemma assumed_entry_sound : forall before tm e,
+  EntryCallee W e ->
+  assumed_entry E bound before tm e = Ok tt -> AssumedEntry W before tm e.
 Proof.
-  intros W sigma [] k s Kind Key Need; cbn [entry_key] in Key; try discriminate;
-    injection Key as <-; cbn [need_item mkey] in Need; try discriminate;
-    injection Need as <-; exact Kind.
+  intros before tm e Kind Run s a App. unfold assumed_entry in Run. fold W in Run.
+  rewrite App in Run.
+  apply rbind_ok in Run as (checked & Present & Run).
+  destruct (find (fun q => negb (is_some (snd q))) a) as [[g t]|] eqn:Missing; [discriminate|].
+  split.
+  { intros t o Member Equal. pose proof (find_none _ _ Missing (t, o) Member) as Absent.
+    subst o. discriminate. }
+  apply rbind_ok in Run as ([Cs needs] & Table & Run).
+  destruct (w_context W s) as [[ReadCs ReadNeeds]|] eqn:Installed; [|discriminate].
+  injection Table as <- <-. rename ReadCs into Cs. rename ReadNeeds into needs.
+  assert (Formed : CtxOf W s Cs needs).
+  { pose proof (Context _ _ _ Installed) as Reading.
+    destruct (assumed_application_callee _ _ _ _ Kind App) as [K|[K|K]]; now rewrite K in Reading. }
+  exists Cs, needs. split; [exact Formed|].
+  destruct (direct_assumption Cs needs a) eqn:Direct.
+  { left. unfold direct_assumption in Direct.
+    destruct (c_sub Cs), needs; try discriminate.
+    split; [reflexivity|]. split; [reflexivity|].
+    intros t Required. apply in_map_iff in Required as (q & <- & Required).
+    rewrite forallb_forall in Direct. specialize (Direct q Required).
+    change (is_some (nlook (fst q) (known a)) = true) in Direct.
+    intro MissingType. rewrite MissingType in Direct. discriminate. }
+  right.
+  all: apply rbind_ok in Run as ([sigma classes] & Merge & Run).
+  all: destruct (EaUnifySound.merge_sound E _ _ _ Merge) as (MostGeneral & Classes & Section).
+  all: set (C := entries_cx sigma classes tm before) in *.
+  all: set (Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C) in *.
+  all: destruct (ctxof_class_reading _ _ _ _ Formed) as [Solved Callee].
+  all: apply rbind_ok in Run as (checked_types & TypeCheck & Run).
+  all: assert (TypeForce : kind_sym W s <> Some DKMeth -> RequirementsInForce Cv Cs)
+    by (intro NotMethod; destruct (EaTypes.kind_is W s DKMeth) eqn:Method;
+        [apply kind_is_spec in Method; contradiction|];
+        destruct checked_types; eapply EaCallSound.rule_b_sound; eassumption).
+  all: apply rbind_ok in Run as (sm & Checked & _).
+  all: set (who := String.append "assuming " (qs W s)) in *.
+  all: lazymatch type of Checked with
+    | resolve_assumption_error _ _ _ _ ?run = _ => set (check_needs := run) in Checked
+    end.
+  all: destruct check_needs as [selected|message] eqn:SatisfiesRun; [|discriminate].
+  all: unfold check_needs in SatisfiesRun; injection Checked as <-.
+  all: apply rbind_ok in SatisfiesRun as (th & Theta & Sat).
+  all: destruct (assumption_theta_sound W who Cv Cs bound s th
+    (known_types_preserve_section (known a) C Section) Solved Callee Bounded Theta) as [Call Reads].
+  all: exists sigma, classes, th, selected; split; [exact MostGeneral|];
+    split; [exact Classes|]; split; [exact Section|]; split; [exact TypeForce|];
+    split; [exact Call|]; split; [|exact Reads].
+  all: eapply EaSatisfiesSound.satisfies_sound; [|exact Sat];
+    eapply EaSatisfiesSound.ctxof_subst_functional; exact Formed.
 Qed.
 
-Lemma assume_ctx_callees : forall W symbol C ns,
-  AssumeCtx W symbol C ns -> forall k s, In k ns -> need_item k = Some s -> AssumedCallee W s.
+Lemma ordered_entries_sound : forall es before tm,
+  Forall (EntryCallee W) es ->
+  ordered_entries E bound before tm es = Ok tt -> OrderedEntries W before tm es.
 Proof.
-  intros W symbol C ns (d & es & tm & er & tmr & sigma & M & _ & Items & Root & _ & _ & _ & -> & [_ Needs]) k s Member Need.
-  apply Needs in Member as [entry [Present Key]].
-  assert (Callees : Forall (EntryCallee W) (es ++ er)).
-  { apply Forall_app. split.
-    - eapply (proj2 (entries_callees W)); exact Items.
-    - destruct Root; [constructor|eapply root_items_callees; eassumption]. }
-  apply Forall_forall with (x:=entry) in Callees; [|exact Present].
-  exact (entry_need_callee _ _ _ _ _ Callees Key Need).
+  induction es as [|e rest IH]; intros before tm Kinds Run; [exact I|].
+  cbn [ordered_entries] in Run. apply rbind_ok in Run as (checked & First & Rest).
+  inversion Kinds; subst. split.
+  - destruct checked. eapply assumed_entry_sound; eassumption.
+  - eapply IH; eassumption.
 Qed.
 
-Theorem assumes_complete_sound : forall E bound,
-  (forall s d, w_decl (e_W E) s = Some d -> s < bound) ->
-  ContextTableSound (e_W E) ->
-  (forall s C ns, assume_ctx E s = Ok (C, ns) -> AssumeCtx (e_W E) s C ns) ->
-  assumes_complete E bound = Ok tt -> AssumesComplete (e_W E).
+Lemma ordered_items_sound : forall p its,
+  ordered_items E bound p its = Ok tt -> OrderedItems W p its.
 Proof.
-  intros E bound Bounded Context Assumes Run s kind Kind.
-  assert (Member : In s (seq 0 bound)).
-  { unfold kind_sym in Kind. destruct (w_decl (e_W E) s) eqn:Decl; [|discriminate].
-    apply in_seq. cbn [Nat.add]. split; [apply Nat.le_0_l|eapply Bounded; exact Decl]. }
-  unfold assumes_complete in Run. apply rbind_ok in Run as [checked [Mapped _]].
-  destruct (rmap_each _ _ _ _ _ Mapped s Member) as [u Step]. rewrite Kind in Step.
-  destruct (assume_ctx E s) as [[C ns]|msg] eqn:Read; [|discriminate].
-  destruct (assumed_complete E bound C ns) as [[]|msg] eqn:Checked; [|discriminate].
-  pose proof (Assumes _ _ _ Read) as Formed. exists C, ns. split; [exact Formed|].
-  eapply assumed_complete_sound; [exact Bounded| |exact Context|eapply assume_ctx_callees; exact Formed|exact Checked].
-  destruct Formed as (d & es & tm & er & tmr & sigma & classes & _ & _ & _ & _ & _ & Section & -> & _).
-  exact Section.
+  intros p its Run. unfold ordered_items in Run.
+  apply rbind_ok in Run as ([es tm] & Read & Checked).
+  pose proof (proj2 (EaEntriesSound.entries_sound_at_budget E bound Bounded Enough (e_fuel E))
+    _ _ _ _ _ _ _ Read) as Items.
+  exists es, tm. split; [exact Items|].
+  eapply ordered_entries_sound; [|exact Checked].
+  eapply (proj2 (entries_callees W)); exact Items.
 Qed.
+
+Lemma same_assume_heads_sound : forall a b,
+  same_assume_heads a b = true -> a = b.
+Proof.
+  induction a as [|a ar IH].
+  - destruct b; [reflexivity|discriminate].
+  - destruct b as [|b br]; [destruct a as [[p m]|]; discriminate|].
+  destruct a as [[pa ma]|], b as [[pb mb]|]; cbn [same_assume_heads]; try discriminate.
+  rewrite !andb_true_iff. intros [[Path Method] Rest].
+  assert (pa = pb) as ->.
+  { clear -Path. revert pb Path. induction pa as [|a ar IH]; destruct pb as [|b br];
+      cbn [slist_eqb]; try discriminate; [reflexivity|].
+    rewrite andb_true_iff, String.eqb_eq. intros [-> Tail]. f_equal. now apply IH. }
+  assert (ma = mb) as -> by (destruct ma, mb; try discriminate; f_equal; now apply String.eqb_eq).
+  now rewrite (IH _ Rest).
+Qed.
+
+Definition CheckedNesting (d : decl) : Prop :=
+  OrderedItems W (d_mod d) (map assume_spec (d_assumes d)).
+
+Lemma check_assume_nesting_sound : forall seen d next,
+  Forall CheckedNesting seen ->
+  check_assume_nesting E bound seen d = Ok next ->
+  CheckedNesting d /\ Forall CheckedNesting next.
+Proof.
+  intros seen d next Seen Run. unfold check_assume_nesting in Run.
+  destruct (existsb (same_assume_nesting d) seen) eqn:Reuse.
+  - injection Run as <-. split; [|exact Seen].
+    apply existsb_exists in Reuse as (other & Member & Same).
+    unfold same_assume_nesting in Same. apply andb_true_iff in Same as [Module Heads].
+    apply String.eqb_eq in Module. apply same_assume_heads_sound in Heads.
+    unfold CheckedNesting. rewrite Module, Heads.
+    apply Forall_forall with (x := other) in Seen; assumption.
+  - apply rbind_ok in Run as (checked & New & Finish). injection Finish as <-.
+    unfold assumption_module_error in New.
+    destruct (ordered_items E bound (d_mod d) (map assume_spec (d_assumes d))) as [[]|msg] eqn:Order;
+      [|discriminate].
+    assert (NewScope : CheckedNesting d) by (unfold CheckedNesting; now apply ordered_items_sound).
+    split; [exact NewScope|now constructor].
+Qed.
+
+Lemma check_assume_symbols_sound :
+  (forall s C ns, assume_ctx E s = Ok (C, ns) -> AssumeCtx W s C ns) ->
+  forall symbols seen, Forall CheckedNesting seen ->
+  check_assume_symbols E bound seen symbols = Ok tt ->
+  forall s k, In s symbols -> kind_sym W s = Some k ->
+    (exists C ns, AssumeCtx W s C ns) /\
+    forall d, w_decl W s = Some d ->
+      CheckedNesting d /\
+      match functor_parts (d_ast d) with
+      | Some (_, inputs, _, _) => OrderedItems W (d_mod d) (map CISpec inputs)
+      | None => True
+      end.
+Proof.
+  intros Assumes symbols. induction symbols as [|first rest IH]; [intros ? ? ? ? ? []|].
+  intros seen Seen Run s k Member Kind. cbn [check_assume_symbols] in Run. fold W in Run.
+  destruct (w_decl W first) as [d|] eqn:Decl;
+    [destruct (kind_of (d_ast d)) as [dk|] eqn:DKind|].
+  all: try solve [destruct Member as [<-|Member];
+    [unfold kind_sym in Kind; rewrite Decl in Kind; try rewrite DKind in Kind; discriminate
+    |eapply IH; eassumption]].
+  apply rbind_ok in Run as (formed & Form & Run).
+  apply rbind_ok in Run as (next & Nesting & Run).
+  apply rbind_ok in Run as (checked & Inputs & Tail).
+  destruct (check_assume_nesting_sound _ _ _ Seen Nesting) as [Order SeenNext].
+  destruct Member as [<-|Member]; [|eapply IH; eassumption].
+  split.
+  - unfold assumption_module_error in Form.
+    destruct (assume_ctx E first) as [[C ns]|msg] eqn:Read; [|discriminate].
+    exists C, ns. now apply Assumes.
+  - intros d' Same. rewrite Decl in Same. injection Same as <-.
+    split; [exact Order|].
+    unfold check_functor_inputs, assumption_module_error in Inputs.
+    destruct (functor_parts (d_ast d)) as [[[[ps args] outputs] body]|]; [|exact I].
+    destruct (ordered_items E bound (d_mod d) (map CISpec args)) as [[]|msg] eqn:Read;
+      [now apply ordered_items_sound|discriminate].
+Qed.
+
+Theorem assumes_complete_sound :
+  (forall s C ns, assume_ctx E s = Ok (C, ns) -> AssumeCtx W s C ns) ->
+  assumes_complete E bound = Ok tt -> AssumesComplete W.
+Proof.
+  intros Assumes Run s k Kind.
+  eapply (check_assume_symbols_sound Assumes (seq 0 bound) []); [constructor|exact Run| |exact Kind].
+  unfold kind_sym in Kind. destruct (w_decl W s) as [d|] eqn:Decl; [|discriminate].
+  apply in_seq. cbn [Nat.add]. split; [apply Nat.le_0_l|eapply Bounded; exact Decl].
+Qed.
+End Ordered.
 
 Theorem elaborate_with_assumes_complete : forall strategy b W program,
   elaborate_with strategy b = Ok (W, program) -> AssumesComplete W.
@@ -390,6 +459,7 @@ Proof.
   apply (assumes_complete_sound E bound).
   - exact (EaWorldSound.bundle_world_r_bound _ _ _ Loaded).
   - exact (bundle_world_r_context_table_sound _ _ _ Loaded strategy).
+  - exact (EaMetadataSound.metadata_fuel_sufficient W0 bound).
   - apply assume_ctx_sound with (bound := bound).
     + exact (EaWorldSound.bundle_world_r_bound _ _ _ Loaded).
     + exact (EaMetadataSound.metadata_fuel_sufficient W0 bound).

@@ -47,12 +47,16 @@ Definition assumption_observation (strat : strategy) (src : string) :=
           resolve_sym W "/lib/main.moss" ["Receiver"] with
     | Some (ESym m), Some u, Some recv =>
       match w_context W m, w_context W u with
-      | Some (Cs, _), Some (C, ns) =>
+      | Some (Cs, _), Some (C, _) =>
         match capp C (mkey (TAbs recv) m) with
         | Some a =>
           let Cv := fold_left (fun C q => set_ty C (fst q) (snd q)) (known a) C in
           let E := Env W strat mods mains elab_fuel fuel in
-          Some (bound, assumption_theta W "assuming .m" Cv Cs bound, assumed_complete E bound C ns)
+          match w_decl W u with
+          | Some d => Some (bound, assumption_theta W "assuming .m" Cv Cs bound,
+                             ordered_items E bound (d_mod d) (map assume_spec (d_assumes d)))
+          | None => None
+          end
         | None => None
         end
       | _, _ => None

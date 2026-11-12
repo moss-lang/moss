@@ -200,8 +200,10 @@ Lemma main_assumes : AssumesComplete world_main.
 Proof.
   intros s k Kind. unfold kind_sym in Kind.
   destruct (w_decl world_main s) as [d|] eqn:Read; [|discriminate].
-  apply reads_decl in Read as [-> ->]. exists empty_context, [].
-  split; [|intros k' s' []].
+  apply reads_decl in Read as [-> ->]. split.
+  2: { intros d Declared. injection Declared as <-.
+       split; [exists [], []; split; [constructor|exact I]|exact I]. }
+  exists empty_context, [].
   destruct main_context as (d & es & tm & er & tmr & σ & classes & R & Its & Root & M & Form & Section & E & N & _).
   exists d, es, tm, er, tmr, σ, classes.
   exact (conj R (conj Its (conj Root (conj M (conj Form (conj Section (conj E N))))))).

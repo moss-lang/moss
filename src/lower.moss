@@ -395,7 +395,7 @@ assume Std {
       var floor = env_empty();
       var r = int_list();
       var s = int_list();
-      var env = assume_run(floor, m, run, len, r, s);
+      var env = assume_run(floor, m, run, len, r, s, false);
       var fuel = 8;
       while fuel > 0 {
         let edges = edges_of(env);
@@ -405,7 +405,7 @@ assume Std {
           floor = edges;
           r = int_list();
           s = int_list();
-          env = assume_run(floor, m, run, len, r, s);
+          env = assume_run(floor, m, run, len, r, s, false);
           fuel = fuel - 1;
         }
       }
@@ -419,11 +419,11 @@ assume Std {
     }
 
     # One walk of the items, on `env`.
-    fn assume_run(env: Int, m: Int, run: Int, len: Int, recv: IntList, sym: IntList): Int {
+    fn assume_run(env: Int, m: Int, run: Int, len: Int, recv: IntList, sym: IntList, checked: Bool): Int {
       var out = env;
       var i = 0;
       while i < len {
-        out = add_assume_item(out, m, ast::kid_at(run, i), recv, sym);
+        out = walk_assume_item(out, m, ast::kid_at(run, i), recv, sym, checked);
         i = i + 1;
       }
       out
@@ -540,7 +540,7 @@ assume Std {
         var k = 0;
         while k < root.length() {
           env = add_symbol_item(
-            env, prog::sym_mod.get(f), root.get(k), recv, sym, int_list(), env, int_list()
+            env, prog::sym_mod.get(f), root.get(k), recv, sym, int_list(), env, int_list(), false
           );
           k = k + 1;
         }
@@ -594,18 +594,22 @@ assume Std {
 
     # `assume` takes bare paths, optionally with a receiver dot (D24).
     fn add_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
+      walk_assume_item(env, m, spec, recv, sym, false)
+    }
+
+    fn walk_assume_item(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, checked: Bool): Int {
       let saved = prog::location.read();
       if ast::is_some(ast::source_start(spec)) { prog::location.write(spec + 1); }
-      let result = add_assume_item_inner(env, m, spec, recv, sym);
+      let result = add_assume_item_inner(env, m, spec, recv, sym, checked);
       prog::location.write(saved);
       result
     }
 
-    fn add_assume_item_inner(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList): Int {
+    fn add_assume_item_inner(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, checked: Bool): Int {
       if ast::is_kind(spec, ast::k_eq()) {
-        return add_eq_item(env, m, spec, recv, sym, int_list(), int_list());
+        return add_eq_item(env, m, spec, recv, sym, int_list(), int_list(), checked);
       }
-      add_spec(env, m, spec, recv, sym, int_list(), int_list())
+      add_spec(env, m, spec, recv, sym, int_list(), int_list(), checked)
     }
 
     # D90: a type equation item `l = r`. The references its sides write
@@ -617,14 +621,14 @@ assume Std {
     # bootstrap's `add_eq_merge` is the same.
     fn add_eq_item(
       env: Int, m: Int, item: Int, recv: IntList, sym: IntList, walking: IntList,
-      over: IntList
+      over: IntList, checked: Bool
     ): Int {
       let lhs = ast::a_of(item);
       let rhs = ast::b_of(item);
       var e = env;
       var i = 0;
       while i < ast::d_of(item) {
-        e = add_spec(e, m, ast::kid_at(ast::c_of(item), i), recv, sym, walking, over);
+        e = add_spec(e, m, ast::kid_at(ast::c_of(item), i), recv, sym, walking, over, checked);
         i = i + 1;
       }
       let named = prog::resolve_path(m, ast::a_of(lhs));
@@ -632,7 +636,7 @@ assume Std {
         return e;
       }
       let view = overlay(e, over);
-      unify(e, elab(view, lhs, m), elab(view, rhs, m), m, named)
+      close_prefix_if_changed(checked, e, unify(e, elab(view, lhs, m), elab(view, rhs, m), m, named), m)
     }
 
     # One type binding of a context item's application. The left-hand side
@@ -682,7 +686,7 @@ assume Std {
     # would be walked forever (`add_symbol_item`).
     fn add_spec(
       env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, walking: IntList,
-      over: IntList
+      over: IntList, checked: Bool
     ): Int {
       let outer = overlay(env, over);
       let inner = app_view(outer, m, spec);
@@ -698,7 +702,7 @@ assume Std {
           prog::error(prog::e_scope(), m, ast::path_last(path));
           return env;
         }
-        return add_method_item(env, m, receiver, dot, recv, sym, inner);
+        return add_method_item(env, m, receiver, dot, recv, sym, inner, checked);
       }
       let target = prog::resolve_path(m, path);
       if !ast::is_some(target) {
@@ -713,7 +717,7 @@ assume Std {
         i = i + 1;
       }
       bracket_pairs(inner, outer, inside);
-      add_symbol_item(env, m, target, recv, sym, walking, inner, inside)
+      add_symbol_item(env, m, target, recv, sym, walking, inner, inside, checked)
     }
 
     # `env` with the pairs of `over` pushed on it, in order.
@@ -746,7 +750,7 @@ assume Std {
 
     fn add_symbol_item(
       env: Int, m: Int, s: Int, recv: IntList, sym: IntList, walking: IntList,
-      view: Int, over: IntList
+      view: Int, over: IntList, checked: Bool
     ): Int {
       let kind = prog::sym_kind.get(s);
       if kind == prog::sk_type() {
@@ -761,17 +765,20 @@ assume Std {
           return env;
         }
         check_mentions(env, view, m, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
+        if checked { check_assumed_requirements(env, full_app(s, view), m, s); }
         need_add(recv, sym, ast::none(), s);
         let ty = elab(view, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
         let had = env_find(env, ek_val(), ast::none(), s);
         if ast::is_some(had) {
           let merged = unify(env, en_a.get(had), ty, m, s);
-          return merge_app(merged, en_b.get(had), env, view, m, s);
+          return close_prefix_if_changed(checked, env,
+            merge_app(merged, en_b.get(had), env, view, m, s), m);
         }
         return env_push(env, ek_val(), ast::none(), s, ty, assumed_app(s, view));
       }
       if kind == prog::sk_fn() {
-        # A defined fn carries its own body; assuming it is a no-op.
+        if checked { check_assumed_requirements(env, full_app(s, view), m, s); }
+        # A defined fn carries its own body and adds no runtime provision.
         if ast::is_some(ast::fn_body(prog::sym_decl.get(s))) {
           return env;
         }
@@ -780,7 +787,8 @@ assume Std {
         let had = env_find(env, ek_fn(), ast::none(), s);
         if ast::is_some(had) {
           let merged = merge_sig(env, en_a.get(had), view, m, s);
-          return merge_app(merged, en_b.get(had), env, view, m, s);
+          return close_prefix_if_changed(checked, env,
+            merge_app(merged, en_b.get(had), env, view, m, s), m);
         }
         return env_push(env, ek_fn(), ast::none(), s, view, assumed_app(s, view));
       }
@@ -804,9 +812,9 @@ assume Std {
         while i < ast::c_of(d) {
           let item = ast::kid_at(ast::b_of(d), i);
           if ast::is_kind(item, ast::k_eq()) {
-            e = add_eq_item(e, prog::sym_mod.get(s), item, recv, sym, within, over);
+            e = add_eq_item(e, prog::sym_mod.get(s), item, recv, sym, within, over, checked);
           } else {
-            e = add_spec(e, prog::sym_mod.get(s), item, recv, sym, within, over);
+            e = add_spec(e, prog::sym_mod.get(s), item, recv, sym, within, over, checked);
           }
           i = i + 1;
         }
@@ -849,7 +857,7 @@ assume Std {
     # (D62), not just its head.
     fn add_method_item(
       env: Int, m: Int, receiver: Int, name: Int, recv: IntList, sym: IntList,
-      view: Int
+      view: Int, checked: Bool
     ): Int {
       let method = find_method_decl(m, receiver, name);
       if !ast::is_some(method) {
@@ -880,11 +888,14 @@ assume Std {
         }
       }
       check_signature(env, view, m, method);
+      if checked { check_assumed_requirements(env, full_app(method, view), m, method); }
       need_add(recv, sym, this_ty, method);
-      let had = env_find(env, ek_fn(), this_ty, method);
+      var had = env_find(env, ek_fn(), this_ty, method);
+      if checked { had = assumed_provision(env, this_ty, method); }
       if ast::is_some(had) {
         let merged = merge_sig(env, en_a.get(had), view, m, method);
-        return merge_app(merged, en_b.get(had), env, view, m, method);
+        return close_prefix_if_changed(checked, env,
+          merge_app(merged, en_b.get(had), env, view, m, method), m);
       }
       env_push(env, ek_fn(), this_ty, method, view, assumed_app(method, view))
     }
@@ -1055,6 +1066,41 @@ assume Std {
         e = en_next.get(e);
       }
       ast::none()
+    }
+
+    # A new equation can merge old method keys, whose signatures and apps
+    # then contribute more equations. Close the prefix before checking the
+    # next item. The regular unchecked walk closes the full list separately.
+    fn close_prefix_if_changed(checked: Bool, before: Int, merged: Int, m: Int): Int {
+      if !checked | (before == merged) { return merged; }
+      var out = merged;
+      var changed = true;
+      var rounds = prog::sym_count();
+      while changed & (rounds > 0) {
+        let start = out;
+        var row = before;
+        while ast::is_some(row) {
+          let recv = en_recv.get(row);
+          if (en_kind.get(row) == ek_fn()) & ast::is_some(recv) {
+            let method = en_sym.get(row);
+            var old = en_next.get(row);
+            while ast::is_some(old) {
+              if (en_kind.get(old) == ek_fn()) & (en_sym.get(old) == method) {
+                if canon(out, en_recv.get(old)) == canon(out, recv) {
+                  let view = en_a.get(row);
+                  out = merge_sig(out, en_a.get(old), view, m, method);
+                  out = merge_app(out, en_b.get(old), out, view, m, method);
+                }
+              }
+              old = en_next.get(old);
+            }
+          }
+          row = en_next.get(row);
+        }
+        changed = out != start;
+        rounds = rounds - 1;
+      }
+      out
     }
 
     # The abstract symbols a type mentions, appended to `out`.
@@ -1492,7 +1538,7 @@ assume Std {
             if !cyclic { decl_signature(d, m); }
           } else if kind == prog::sk_context() {
             if ast::is_kind(d, ast::k_d_context()) {
-              assume_run(as_written, m, ast::b_of(d), ast::c_of(d), int_list(), int_list());
+              assume_run(as_written, m, ast::b_of(d), ast::c_of(d), int_list(), int_list(), false);
             }
           } else if kind == prog::sk_functor() {
             decl_functor(d, m);
@@ -1654,8 +1700,8 @@ assume Std {
 
     # An assumed item's app: only what the item's own brackets (`view`)
     # make of its symbols. The rest is read against the environment the
-    # function ends up with (`app_get`), so the order of an assume list
-    # does not matter.
+    # function ends up with (`app_get`). The separate ordered check
+    # validates each item against its prefix.
     fn assumed_app(s: Int, view: Int): Int {
       let deps = int_list();
       item_deps(s, deps);
@@ -1828,28 +1874,22 @@ assume Std {
       false
     }
 
-    # D20: validate the callee's complete context, including the platform
-    # root when it is main. Reconstructing just its written assumes would
-    # omit those implicit type and functor requirements.
-    fn check_assumed_requirements(env: Int, m: Int, receiver: Int, s: Int) {
-      if prog::sym_kind.get(s) == prog::sk_functor() {
-        return ();
-      }
+    # D20: check the complete declared context at the prefix where the
+    # item is written, with its own and enclosing brackets in its app.
+    fn check_assumed_requirements(env: Int, app: Int, m: Int, s: Int) {
       if is_root_fn(s) {
         lower_needs_at(s, root_context());
       } else {
         lower_needs(s);
       }
-      let row = env_find(env, need_kind(s), receiver, s);
-      var app = env_empty();
-      if ast::is_some(row) {
-        app = en_b.get(row);
-      }
       let all = int_list();
       var at = env_of(s);
       while ast::is_some(at) {
         if en_kind.get(at) == ek_type() {
-          types::push_new(all, en_sym.get(at));
+          let t = en_sym.get(at);
+          if !ast::is_some(prog::origin_of(t)) {
+            types::push_new(all, t);
+          }
         }
         at = en_next.get(at);
       }
@@ -1875,6 +1915,10 @@ assume Std {
         }
         i = i + 1;
       }
+      let conflict = merge_conflict(view, s);
+      if ast::is_some(conflict) {
+        prog::error(prog::e_merge(), m, prog::sym_name.get(conflict));
+      }
       i = 0;
       while i < needs_count(s) {
         let ds = need_sym_at(s, i);
@@ -1883,7 +1927,7 @@ assume Std {
         if ast::is_some(dr) {
           here = instantiate(view, dr);
         }
-        let have = env_find(view, need_kind(ds), here, ds);
+        let have = assumed_provision(env, here, ds);
         if !ast::is_some(have) {
           prog::error(prog::e_absent(), m, prog::sym_name.get(ds));
         } else if !assumed_coherent(ds, need_app_at(s, i), env_of(s), en_b.get(have), env, view) {
@@ -1894,6 +1938,25 @@ assume Std {
         }
         i = i + 1;
       }
+    }
+
+    # A preceding equation can identify receivers after their provision
+    # rows were first added. Compare those rows in the current prefix.
+    fn assumed_provision(env: Int, receiver: Int, s: Int): Int {
+      let row = env_find(env, need_kind(s), receiver, s);
+      if ast::is_some(row) | !ast::is_some(receiver) {
+        return row;
+      }
+      var e = env;
+      while ast::is_some(e) {
+        if (en_kind.get(e) == ek_fn()) & (en_sym.get(e) == s) {
+          if canon(env, en_recv.get(e)) == receiver {
+            return e;
+          }
+        }
+        e = en_next.get(e);
+      }
+      ast::none()
     }
 
     # One need of an assumed item, as codegen's `coherent` compares a
@@ -1910,7 +1973,7 @@ assume Std {
         let wv = app_get(want, t, wbase);
         var need = ast::none();
         if ast::is_some(wv) {
-          need = instantiate(view, wv);
+          need = instantiate(view, canon(wbase, wv));
         } else if env_has(view, ek_type(), ast::none(), t) {
           need = canon(view, types::ty_of_symbol(types::kd_abstract(), t));
         }
@@ -1926,64 +1989,22 @@ assume Std {
       true
     }
 
-    # Defined functions do not become run-time provisions in the native
-    # compiler, but listing one still checks its ambient requirements.
-    # Traverse those items separately from the run-time need list.
-    fn check_defined_items(env: Int, m: Int, run: Int, n: Int, walking: IntList) {
-      var i = 0;
-      while i < n {
-        let spec = ast::kid_at(run, i);
-        if ast::is_kind(spec, ast::k_eq()) {
-          # D90: an equation lists no defined function.
-        } else if !ast::is_some(ast::b_of(spec)) {
-          let s = prog::resolve_path(m, ast::a_of(spec));
-          if ast::is_some(s) {
-            let view = app_view(env, m, spec);
-            let kind = prog::sym_kind.get(s);
-            let d = prog::sym_decl.get(s);
-            if kind == prog::sk_fn() {
-              if ast::is_some(ast::fn_body(d)) {
-                check_assumed_requirements(view, m, ast::none(), s);
-              }
-            } else if kind == prog::sk_context() {
-              if !types::contains_sym(walking, s) {
-                let next = int_list();
-                var j = 0;
-                while j < walking.length() {
-                  next.push(walking.get(j));
-                  j = j + 1;
-                }
-                next.push(s);
-                check_defined_items(view, prog::sym_mod.get(s), ast::b_of(d), ast::c_of(d), next);
-              }
-            }
-          }
-        }
-        i = i + 1;
-      }
-    }
-
     fn check_assumes() {
       let seen_run = int_list();
       let seen_len = int_list();
-      let seen_root = int_list();
       var f = 0;
       while f < prog::sym_count() {
-        # Every symbol's nesting, whatever its kind (criteria section 7):
-        # a nesting that holds only types or tags forms too.
-        if ast::is_some(prog::sym_decl.get(f)) {
+        let d = prog::sym_decl.get(f);
+        if ast::is_some(d) {
+          let m = prog::sym_mod.get(f);
           let run = prog::sym_asm.get(f);
           let len = prog::sym_nasm.get(f);
-          var rooted = 0;
-          if is_root_fn(f) { rooted = 1; }
           var seen = false;
           var at = 0;
           while at < seen_run.length() {
             if seen_run.get(at) == run {
               if seen_len.get(at) == len {
-                if seen_root.get(at) == rooted {
-                  seen = true;
-                }
+                seen = true;
               }
             }
             at = at + 1;
@@ -1991,20 +2012,10 @@ assume Std {
           if !seen {
             seen_run.push(run);
             seen_len.push(len);
-            seen_root.push(rooted);
-            let recv = int_list();
-            let syms = int_list();
-            var env = base_env(f, recv, syms);
-            if rooted == 1 {
-              lower_needs_at(f, root_context());
-              env = env_of(f);
-            }
-            var i = 0;
-            while i < syms.length() {
-              check_assumed_requirements(env, prog::sym_mod.get(f), recv.get(i), syms.get(i));
-              i = i + 1;
-            }
-            check_defined_items(env, prog::sym_mod.get(f), run, len, int_list());
+            assume_run(env_empty(), m, run, len, int_list(), int_list(), true);
+          }
+          if prog::sym_kind.get(f) == prog::sk_functor() {
+            assume_run(env_empty(), m, ast::fu_args(d), ast::fu_nargs(d), int_list(), int_list(), true);
           }
         }
         f = f + 1;
